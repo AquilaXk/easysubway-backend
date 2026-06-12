@@ -1,0 +1,9 @@
+spring:
+  application:
+    name: easysubway-backend
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info"
