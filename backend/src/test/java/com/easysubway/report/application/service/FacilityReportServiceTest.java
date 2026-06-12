@@ -1,0 +1,108 @@
+package com.easysubway.report.application.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
+import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.domain.FacilityReportNotFoundException;
+import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
+import com.easysubway.report.domain.FacilityReportType;
+import com.easysubway.report.domain.InvalidFacilityReportException;
+import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.domain.StationNotFoundException;
+import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import org.junit.jupiter.api.Test;
+
+class FacilityReportServiceTest {
+
+	private final InMemoryFacilityReportRepository reportRepository = new InMemoryFacilityReportRepository();
+	private final FacilityReportService service = new FacilityReportService(
+		new InMemoryTransitMasterRepository(),
+		reportRepository,
+		reportRepository,
+		Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+	);
+
+	@Test
+	void createReportStoresSubmittedFacilityReport() {
+		var report = service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"엘리베이터 문이 열리지 않습니다.",
+			null,
+			new BigDecimal("37.302421"),
+			new BigDecimal("126.866221")
+		));
+
+		assertThat(report.id()).isNotBlank();
+		assertThat(report.stationId()).isEqualTo("station-sangnoksu");
+		assertThat(report.facilityId()).isEqualTo("facility-sangnoksu-elevator-1");
+		assertThat(report.reportType()).isEqualTo(FacilityReportType.BROKEN);
+		assertThat(report.status()).isEqualTo(FacilityReportStatus.SUBMITTED);
+		assertThat(report.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 12, 9, 0));
+		assertThat(service.getReport(report.id())).isEqualTo(report);
+	}
+
+	@Test
+	void createReportRequiresExistingStation() {
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-1",
+			"missing-station",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"엘리베이터가 멈춰 있습니다.",
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	void createReportRequiresFacilityInStation() {
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-1",
+			"station-sadang",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"다른 역 시설로 신고할 수 없습니다.",
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(FacilityReportTargetNotFoundException.class)
+			.hasMessage("시설 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	void createReportRequiresReportType() {
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			null,
+			"신고 유형이 없는 요청입니다.",
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("신고 유형을 선택해야 합니다.");
+	}
+
+	@Test
+	void getReportRequiresExistingReport() {
+		assertThatThrownBy(() -> service.getReport("missing-report"))
+			.isInstanceOf(FacilityReportNotFoundException.class)
+			.hasMessage("신고 정보를 찾을 수 없습니다.");
+	}
+}
