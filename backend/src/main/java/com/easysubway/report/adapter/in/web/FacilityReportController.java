@@ -3,10 +3,13 @@ package com.easysubway.report.adapter.in.web;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
+import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.time.LocalDateTime;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -37,6 +40,16 @@ class FacilityReportController {
 		return ApiResponse.ok(FacilityReportResponse.from(facilityReportUseCase.getReport(reportId)));
 	}
 
+	@PostMapping("/admin/reports/{reportId}/review")
+	ApiResponse<FacilityReportResponse> reviewReport(
+		@PathVariable String reportId,
+		@RequestBody ReviewFacilityReportRequest request,
+		Principal principal
+	) {
+		FacilityReport report = facilityReportUseCase.reviewReport(request.toCommand(reportId, principal.getName()));
+		return ApiResponse.ok(FacilityReportResponse.from(report));
+	}
+
 	record CreateFacilityReportRequest(
 		String userId,
 		String stationId,
@@ -59,6 +72,15 @@ class FacilityReportController {
 				latitude,
 				longitude
 			);
+		}
+	}
+
+	record ReviewFacilityReportRequest(
+		FacilityReportReviewDecision decision
+	) {
+
+		ReviewFacilityReportCommand toCommand(String reportId, String reviewedBy) {
+			return new ReviewFacilityReportCommand(reportId, decision, reviewedBy);
 		}
 	}
 

@@ -1,5 +1,6 @@
 package com.easysubway.transit.adapter.in.web;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -49,6 +50,16 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.data[0].nameKo").value("상록수"))
 			.andExpect(jsonPath("$.data[0].dataQualityLevel").value("LEVEL_1"))
 			.andExpect(jsonPath("$.data[0].lines[0].id").value("seoul-4"));
+	}
+
+	@Test
+	void publicStationSearchIgnoresInvalidBasicAuthentication() throws Exception {
+		mockMvc.perform(get("/api/v1/stations")
+				.param("query", "상록수")
+				.with(httpBasic("wrong-admin", "wrong-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("station-sangnoksu"));
 	}
 
 	@Test

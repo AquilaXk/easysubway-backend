@@ -2,10 +2,12 @@ package com.easysubway.report.application.service;
 
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
+import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
+import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
 import com.easysubway.report.domain.InvalidFacilityReportException;
@@ -78,9 +80,46 @@ public class FacilityReportService implements FacilityReportUseCase {
 			.orElseThrow(FacilityReportNotFoundException::new);
 	}
 
+	@Override
+	public FacilityReport reviewReport(ReviewFacilityReportCommand command) {
+		requireReviewDecision(command);
+		requireReviewer(command);
+
+		FacilityReport report = getReport(command.reportId());
+		FacilityReport reviewed = new FacilityReport(
+			report.id(),
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType(),
+			report.description(),
+			report.photoUrl(),
+			report.latitude(),
+			report.longitude(),
+			toStatus(command.decision()),
+			report.createdAt(),
+			LocalDateTime.now(clock),
+			command.reviewedBy()
+		);
+
+		return saveFacilityReportPort.saveReport(reviewed);
+	}
+
 	private void requireReportType(CreateFacilityReportCommand command) {
 		if (command.reportType() == null) {
 			throw new InvalidFacilityReportException("신고 유형을 선택해야 합니다.");
+		}
+	}
+
+	private void requireReviewDecision(ReviewFacilityReportCommand command) {
+		if (command.decision() == null) {
+			throw new InvalidFacilityReportException("검수 결과를 선택해야 합니다.");
+		}
+	}
+
+	private void requireReviewer(ReviewFacilityReportCommand command) {
+		if (command.reviewedBy() == null || command.reviewedBy().isBlank()) {
+			throw new InvalidFacilityReportException("검수자 식별자가 필요합니다.");
 		}
 	}
 
@@ -101,5 +140,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (!exists) {
 			throw new FacilityReportTargetNotFoundException();
 		}
+	}
+
+	private FacilityReportStatus toStatus(FacilityReportReviewDecision decision) {
+		return switch (decision) {
+			case ACCEPT -> FacilityReportStatus.ACCEPTED;
+			case REJECT -> FacilityReportStatus.REJECTED;
+			case MARK_DUPLICATE -> FacilityReportStatus.DUPLICATE;
+		};
 	}
 }
