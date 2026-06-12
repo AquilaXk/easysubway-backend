@@ -94,6 +94,9 @@ jobs:
       - name: Repository CI / Run contract tests
         run: node --test tools/ci/*.test.mjs
 
+      - name: Repository CI / Validate Docker Compose config
+        run: docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
+
       - name: Repository CI / Validate issue forms
         run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts f }' .github/ISSUE_TEMPLATE/*.yml
 
