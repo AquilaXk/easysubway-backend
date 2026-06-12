@@ -3,7 +3,9 @@ package com.easysubway.transit.application.service;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationNotFoundException;
@@ -55,12 +57,33 @@ public class TransitMasterService implements TransitMasterQueryUseCase {
 
 	@Override
 	public StationWithLines getStation(String stationId) {
+		return withLines(loadActiveStation(stationId));
+	}
+
+	@Override
+	public List<StationExit> listStationExits(String stationId) {
+		loadActiveStation(stationId);
+		return loadTransitMasterPort.loadStationExits()
+			.stream()
+			.filter(exit -> exit.stationId().equals(stationId))
+			.toList();
+	}
+
+	@Override
+	public List<AccessibilityFacility> listStationFacilities(String stationId) {
+		loadActiveStation(stationId);
+		return loadTransitMasterPort.loadAccessibilityFacilities()
+			.stream()
+			.filter(facility -> facility.stationId().equals(stationId))
+			.toList();
+	}
+
+	private Station loadActiveStation(String stationId) {
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
 			.filter(station -> station.id().equals(stationId))
 			.findFirst()
-			.map(this::withLines)
 			.orElseThrow(StationNotFoundException::new);
 	}
 

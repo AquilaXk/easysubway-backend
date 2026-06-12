@@ -65,8 +65,53 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	void stationExitsIncludeAccessibilitySignals() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/exits"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("exit-sangnoksu-1"))
+			.andExpect(jsonPath("$.data[0].exitNumber").value("1"))
+			.andExpect(jsonPath("$.data[0].name").value("1번 출구"))
+			.andExpect(jsonPath("$.data[0].hasElevatorConnection").value(true))
+			.andExpect(jsonPath("$.data[0].hasStairOnlyPath").value(false))
+			.andExpect(jsonPath("$.data[0].dataConfidence").value("HIGH"));
+	}
+
+	@Test
+	void stationFacilitiesIncludeTypeStatusAndConfidence() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].type").value("ELEVATOR"))
+			.andExpect(jsonPath("$.data[0].name").value("1번 출구 엘리베이터"))
+			.andExpect(jsonPath("$.data[0].exitId").value("exit-sangnoksu-1"))
+			.andExpect(jsonPath("$.data[0].status").value("NORMAL"))
+			.andExpect(jsonPath("$.data[0].dataConfidence").value("HIGH"))
+			.andExpect(jsonPath("$.data[0].lastUpdatedAt").value("2026-06-12"));
+	}
+
+	@Test
 	void missingStationReturnsCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/unknown-station"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	void missingStationExitsReturnCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/unknown-station/exits"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	void missingStationFacilitiesReturnCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/unknown-station/facilities"))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())

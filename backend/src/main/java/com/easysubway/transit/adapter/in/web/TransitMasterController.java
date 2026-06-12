@@ -3,9 +3,14 @@ package com.easysubway.transit.adapter.in.web;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.AccessibilityFacilityType;
+import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SubwayLine;
@@ -66,6 +71,26 @@ class TransitMasterController {
 	@GetMapping("/api/v1/stations/{stationId}")
 	ApiResponse<StationDetailResponse> station(@PathVariable String stationId) {
 		return ApiResponse.ok(StationDetailResponse.from(transitMasterQueryUseCase.getStation(stationId)));
+	}
+
+	@GetMapping("/api/v1/stations/{stationId}/exits")
+	ApiResponse<List<StationExitResponse>> stationExits(@PathVariable String stationId) {
+		List<StationExitResponse> response = transitMasterQueryUseCase.listStationExits(stationId)
+			.stream()
+			.map(StationExitResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/api/v1/stations/{stationId}/facilities")
+	ApiResponse<List<AccessibilityFacilityResponse>> stationFacilities(@PathVariable String stationId) {
+		List<AccessibilityFacilityResponse> response = transitMasterQueryUseCase.listStationFacilities(stationId)
+			.stream()
+			.map(AccessibilityFacilityResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
 	}
 
 	record TransitOperatorResponse(
@@ -191,6 +216,68 @@ class TransitMasterController {
 				line.stationCode(),
 				line.sequence(),
 				line.platformInfo()
+			);
+		}
+	}
+
+	record StationExitResponse(
+		String id,
+		String stationId,
+		String exitNumber,
+		String name,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		boolean hasElevatorConnection,
+		boolean hasStairOnlyPath,
+		DataConfidenceLevel dataConfidence
+	) {
+
+		static StationExitResponse from(StationExit exit) {
+			return new StationExitResponse(
+				exit.id(),
+				exit.stationId(),
+				exit.exitNumber(),
+				exit.name(),
+				exit.latitude(),
+				exit.longitude(),
+				exit.hasElevatorConnection(),
+				exit.hasStairOnlyPath(),
+				exit.dataConfidence()
+			);
+		}
+	}
+
+	record AccessibilityFacilityResponse(
+		String id,
+		String stationId,
+		String exitId,
+		AccessibilityFacilityType type,
+		String name,
+		String floorFrom,
+		String floorTo,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		String description,
+		AccessibilityFacilityStatus status,
+		DataConfidenceLevel dataConfidence,
+		LocalDate lastUpdatedAt
+	) {
+
+		static AccessibilityFacilityResponse from(AccessibilityFacility facility) {
+			return new AccessibilityFacilityResponse(
+				facility.id(),
+				facility.stationId(),
+				facility.exitId(),
+				facility.type(),
+				facility.name(),
+				facility.floorFrom(),
+				facility.floorTo(),
+				facility.latitude(),
+				facility.longitude(),
+				facility.description(),
+				facility.status(),
+				facility.dataConfidence(),
+				facility.lastUpdatedAt()
 			);
 		}
 	}

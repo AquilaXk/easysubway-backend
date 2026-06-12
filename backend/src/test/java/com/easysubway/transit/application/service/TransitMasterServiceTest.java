@@ -6,9 +6,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.AccessibilityFacilityType;
+import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SubwayLine;
@@ -71,6 +76,42 @@ class TransitMasterServiceTest {
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 	}
 
+	@Test
+	void listStationExitsReturnsExitAccessibilitySignals() {
+		var exits = service.listStationExits("station-sangnoksu");
+
+		assertThat(exits)
+			.extracting("id")
+			.containsExactly("exit-sangnoksu-1", "exit-sangnoksu-2");
+		assertThat(exits.getFirst().exitNumber()).isEqualTo("1");
+		assertThat(exits.getFirst().hasElevatorConnection()).isTrue();
+		assertThat(exits.getFirst().hasStairOnlyPath()).isFalse();
+		assertThat(exits.getFirst().dataConfidence()).isEqualTo(DataConfidenceLevel.HIGH);
+	}
+
+	@Test
+	void listStationFacilitiesReturnsStatusAndConfidence() {
+		var facilities = service.listStationFacilities("station-sangnoksu");
+
+		assertThat(facilities)
+			.extracting("id")
+			.containsExactly("facility-sangnoksu-elevator-1", "facility-sangnoksu-escalator-1", "facility-sangnoksu-accessible-toilet");
+		assertThat(facilities.getFirst().type()).isEqualTo(AccessibilityFacilityType.ELEVATOR);
+		assertThat(facilities.getFirst().status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
+		assertThat(facilities.getFirst().exitId()).isEqualTo("exit-sangnoksu-1");
+		assertThat(facilities.getFirst().dataConfidence()).isEqualTo(DataConfidenceLevel.HIGH);
+	}
+
+	@Test
+	void stationExitsAndFacilitiesRequireExistingStation() {
+		assertThatThrownBy(() -> service.listStationExits("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listStationFacilities("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+	}
+
 	private static class TransitMasterPortWithInactiveLine implements LoadTransitMasterPort {
 
 		@Override
@@ -119,6 +160,16 @@ class TransitMasterServiceTest {
 				new StationLine("station-sangnoksu", "seoul-4", "448", 48, "당고개 방면 / 오이도 방면"),
 				new StationLine("station-sangnoksu", "closed-line", "999", 99, "운영 종료")
 			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of();
 		}
 	}
 }
