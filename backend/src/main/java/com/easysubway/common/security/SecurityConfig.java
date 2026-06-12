@@ -34,6 +34,19 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(2)
+	SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
+		return http
+			.securityMatcher("/api/v1/me/favorites/**")
+			.csrf(AbstractHttpConfigurer::disable)
+			.authorizeHttpRequests(authorize -> authorize
+				.anyRequest().authenticated()
+			)
+			.httpBasic(Customizer.withDefaults())
+			.build();
+	}
+
+	@Bean
+	@Order(3)
 	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
@@ -47,6 +60,8 @@ public class SecurityConfig {
 	UserDetailsService userDetailsService(
 		@Value("${easysubway.admin.username:}") String adminUsername,
 		@Value("${easysubway.admin.password:}") String adminPassword,
+		@Value("${easysubway.user.username:}") String userUsername,
+		@Value("${easysubway.user.password:}") String userPassword,
 		PasswordEncoder passwordEncoder
 	) {
 		var users = new InMemoryUserDetailsManager();
@@ -54,6 +69,12 @@ public class SecurityConfig {
 			users.createUser(User.withUsername(adminUsername)
 				.password(passwordEncoder.encode(adminPassword))
 				.roles("ADMIN")
+				.build());
+		}
+		if (!userUsername.isBlank() && !userPassword.isBlank()) {
+			users.createUser(User.withUsername(userUsername)
+				.password(passwordEncoder.encode(userPassword))
+				.roles("USER")
 				.build());
 		}
 		return users;
