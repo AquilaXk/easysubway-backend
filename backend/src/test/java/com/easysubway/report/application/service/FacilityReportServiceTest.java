@@ -19,8 +19,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+@DisplayName("시설 신고 서비스")
 class FacilityReportServiceTest {
 
 	private final InMemoryFacilityReportRepository reportRepository = new InMemoryFacilityReportRepository();
@@ -32,6 +34,7 @@ class FacilityReportServiceTest {
 	);
 
 	@Test
+	@DisplayName("시설 신고는 제출 상태로 저장되고 다시 조회된다")
 	void createReportStoresSubmittedFacilityReport() {
 		var report = service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -54,6 +57,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고는 존재하는 역을 요구한다")
 	void createReportRequiresExistingStation() {
 		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -70,6 +74,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고는 해당 역에 속한 시설을 요구한다")
 	void createReportRequiresFacilityInStation() {
 		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -86,6 +91,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고는 신고 유형을 요구한다")
 	void createReportRequiresReportType() {
 		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -102,6 +108,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 신고는 조회할 수 없다")
 	void getReportRequiresExistingReport() {
 		assertThatThrownBy(() -> service.getReport("missing-report"))
 			.isInstanceOf(FacilityReportNotFoundException.class)
@@ -109,6 +116,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("신고 검수 승인 결과와 검수자를 저장한다")
 	void reviewReportStoresAcceptedDecisionAndReviewer() {
 		var report = service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -134,6 +142,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("신고 검수는 반려와 중복 처리 상태를 저장한다")
 	void reviewReportCanRejectOrMarkDuplicate() {
 		var rejected = service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -169,6 +178,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("신고 검수는 결정값과 검수자 식별자를 요구한다")
 	void reviewReportRequiresDecisionAndReviewer() {
 		var report = service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -198,6 +208,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 신고는 검수할 수 없다")
 	void reviewReportRequiresExistingReport() {
 		assertThatThrownBy(() -> service.reviewReport(new ReviewFacilityReportCommand(
 			"missing-report",

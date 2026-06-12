@@ -11,8 +11,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+@DisplayName("이동 프로필 서비스")
 class MobilityProfileServiceTest {
 
 	private final InMemoryMobilityProfileRepository repository = new InMemoryMobilityProfileRepository();
@@ -23,6 +25,7 @@ class MobilityProfileServiceTest {
 	);
 
 	@Test
+	@DisplayName("새 익명 사용자는 고령자 기본 이동 프로필을 받는다")
 	void getProfileReturnsDefaultProfileForNewAnonymousUser() {
 		var profile = service.getProfile("anonymous-user-1");
 
@@ -40,6 +43,7 @@ class MobilityProfileServiceTest {
 	}
 
 	@Test
+	@DisplayName("이동 유형과 접근성 선호 설정을 저장한다")
 	void saveProfileStoresMobilityAndAccessibilityPreferences() {
 		var profile = service.saveProfile(new SaveMobilityProfileCommand(
 			"anonymous-user-1",
@@ -64,6 +68,7 @@ class MobilityProfileServiceTest {
 	}
 
 	@Test
+	@DisplayName("휠체어 프로필은 계단 허용 설정으로 저장할 수 없다")
 	void saveProfileRejectsWheelchairProfileThatAllowsStairs() {
 		assertThatThrownBy(() -> service.saveProfile(new SaveMobilityProfileCommand(
 			"anonymous-user-1",
@@ -82,6 +87,7 @@ class MobilityProfileServiceTest {
 	}
 
 	@Test
+	@DisplayName("프로필 저장은 사용자 식별자와 이동 유형을 요구한다")
 	void saveProfileRequiresUserIdAndMobilityType() {
 		assertThatThrownBy(() -> service.saveProfile(new SaveMobilityProfileCommand(
 			"",

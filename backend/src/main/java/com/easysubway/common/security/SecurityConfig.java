@@ -22,6 +22,7 @@ public class SecurityConfig {
 	@Bean
 	@Order(1)
 	SecurityFilterChain adminSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 관리자 검수 API는 다른 공개 API보다 먼저 매칭해야 잘못된 인증 우회를 막을 수 있다.
 		return http
 			.securityMatcher("/admin/**")
 			.csrf(AbstractHttpConfigurer::disable)
@@ -35,6 +36,7 @@ public class SecurityConfig {
 	@Bean
 	@Order(2)
 	SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 사용자별 데이터는 URL이나 본문 userId가 아니라 인증 계정을 기준으로 다룬다.
 		return http
 			.securityMatcher("/api/v1/me/favorites/**")
 			.csrf(AbstractHttpConfigurer::disable)
@@ -48,6 +50,7 @@ public class SecurityConfig {
 	@Bean
 	@Order(3)
 	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 역 검색과 경로 검색은 로그인 전 이동 계획에 필요한 공개 조회 기능이다.
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize

@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -13,12 +14,14 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@DisplayName("도시철도 마스터데이터 API")
 class TransitMasterControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
 
 	@Test
+	@DisplayName("운영기관 목록은 시드된 활성 기관을 반환한다")
 	void operatorsReturnsSeededTransitOperators() throws Exception {
 		mockMvc.perform(get("/api/v1/operators"))
 			.andExpect(status().isOk())
@@ -31,6 +34,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("노선 목록은 운영기관으로 필터링할 수 있다")
 	void linesCanBeFilteredByOperator() throws Exception {
 		mockMvc.perform(get("/api/v1/lines").param("operatorId", "seoul-metro"))
 			.andExpect(status().isOk())
@@ -42,6 +46,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 검색은 한글 역명으로 조회할 수 있다")
 	void stationsCanBeSearchedByKoreanName() throws Exception {
 		mockMvc.perform(get("/api/v1/stations").param("query", "상록수"))
 			.andExpect(status().isOk())
@@ -53,6 +58,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("공개 역 검색은 잘못된 Basic 인증 헤더가 있어도 허용한다")
 	void publicStationSearchIgnoresInvalidBasicAuthentication() throws Exception {
 		mockMvc.perform(get("/api/v1/stations")
 				.param("query", "상록수")
@@ -63,6 +69,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 상세는 연결 노선과 데이터 품질을 포함한다")
 	void stationDetailIncludesConnectedLinesAndQuality() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu"))
 			.andExpect(status().isOk())
@@ -76,6 +83,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 출구 목록은 접근성 신호를 포함한다")
 	void stationExitsIncludeAccessibilitySignals() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/exits"))
 			.andExpect(status().isOk())
@@ -89,6 +97,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 시설 목록은 시설 유형과 상태와 신뢰도를 포함한다")
 	void stationFacilitiesIncludeTypeStatusAndConfidence() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
 			.andExpect(status().isOk())
@@ -103,6 +112,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 역 상세는 공통 404 응답을 반환한다")
 	void missingStationReturnsCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/unknown-station"))
 			.andExpect(status().isNotFound())
@@ -112,6 +122,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 역 출구 목록은 공통 404 응답을 반환한다")
 	void missingStationExitsReturnCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/unknown-station/exits"))
 			.andExpect(status().isNotFound())
@@ -121,6 +132,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 역 시설 목록은 공통 404 응답을 반환한다")
 	void missingStationFacilitiesReturnCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/unknown-station/facilities"))
 			.andExpect(status().isNotFound())

@@ -80,6 +80,7 @@ public class FavoriteStationService implements FavoriteStationUseCase {
 	public FavoriteStationWithDetails saveFavoriteStation(SaveFavoriteStationCommand command) {
 		requireUserId(command.userId());
 		requireStationId(command.stationId());
+		// 즐겨찾기는 운영 중인 역만 허용해 폐역 또는 잘못된 역 식별자가 사용자 목록에 남지 않게 한다.
 		loadActiveStation(command.stationId());
 
 		FavoriteStation favoriteStation = loadFavoriteStationPort
@@ -117,6 +118,7 @@ public class FavoriteStationService implements FavoriteStationUseCase {
 	}
 
 	private StationWithLines withLines(Station station) {
+		// 응답 노선은 현재 활성 노선만 노출해 검색/즐겨찾기 화면의 혼동을 줄인다.
 		Map<String, SubwayLine> linesById = loadTransitMasterPort.loadLines()
 			.stream()
 			.filter(SubwayLine::active)

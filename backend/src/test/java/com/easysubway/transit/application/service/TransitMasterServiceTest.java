@@ -21,13 +21,16 @@ import com.easysubway.transit.domain.TransitOperator;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+@DisplayName("도시철도 마스터데이터 서비스")
 class TransitMasterServiceTest {
 
 	private final TransitMasterService service = new TransitMasterService(new InMemoryTransitMasterRepository());
 
 	@Test
+	@DisplayName("활성 운영기관 마스터데이터를 반환한다")
 	void listOperatorsReturnsActiveMasterData() {
 		var operators = service.listOperators();
 
@@ -37,6 +40,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("운영기관 식별자로 노선을 필터링한다")
 	void listLinesCanFilterByOperatorId() {
 		var lines = service.listLines("korail");
 
@@ -46,6 +50,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 검색은 한글 이름과 영문 이름을 모두 찾는다")
 	void searchStationsMatchesKoreanAndEnglishNames() {
 		var koreanMatches = service.searchStations(new StationSearchCommand("상록수", null));
 		var englishMatches = service.searchStations(new StationSearchCommand("sang", null));
@@ -56,6 +61,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 검색 응답에서 비활성 노선은 제외한다")
 	void searchStationsExcludesInactiveLinesFromStationResponses() {
 		var serviceWithInactiveLine = new TransitMasterService(new TransitMasterPortWithInactiveLine());
 
@@ -70,6 +76,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 역 상세 조회는 도메인 예외를 던진다")
 	void getStationThrowsDomainExceptionForUnknownStation() {
 		assertThatThrownBy(() -> service.getStation("missing"))
 			.isInstanceOf(StationNotFoundException.class)
@@ -77,6 +84,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 출구 목록은 접근성 신호를 함께 반환한다")
 	void listStationExitsReturnsExitAccessibilitySignals() {
 		var exits = service.listStationExits("station-sangnoksu");
 
@@ -90,6 +98,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 시설 목록은 상태와 데이터 신뢰도를 함께 반환한다")
 	void listStationFacilitiesReturnsStatusAndConfidence() {
 		var facilities = service.listStationFacilities("station-sangnoksu");
 
@@ -103,6 +112,7 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 출구와 시설 목록은 존재하는 역을 요구한다")
 	void stationExitsAndFacilitiesRequireExistingStation() {
 		assertThatThrownBy(() -> service.listStationExits("missing"))
 			.isInstanceOf(StationNotFoundException.class)

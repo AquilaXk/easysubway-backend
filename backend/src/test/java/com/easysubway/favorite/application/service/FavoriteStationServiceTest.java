@@ -15,8 +15,10 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
+@DisplayName("즐겨찾기 역 서비스")
 class FavoriteStationServiceTest {
 
 	private final InMemoryFavoriteStationRepository favoriteStationRepository =
@@ -30,6 +32,7 @@ class FavoriteStationServiceTest {
 	);
 
 	@Test
+	@DisplayName("활성 역은 사용자별 즐겨찾기에 한 번만 저장된다")
 	void saveFavoriteStationStoresActiveStationOnce() {
 		var favorite = service.saveFavoriteStation(new SaveFavoriteStationCommand(
 			"anonymous-user-1",
@@ -50,6 +53,7 @@ class FavoriteStationServiceTest {
 	}
 
 	@Test
+	@DisplayName("삭제 요청은 같은 사용자와 같은 역의 즐겨찾기만 제거한다")
 	void removeFavoriteStationDeletesOnlyRequestedStation() {
 		service.saveFavoriteStation(new SaveFavoriteStationCommand("anonymous-user-1", "station-sangnoksu"));
 		service.saveFavoriteStation(new SaveFavoriteStationCommand("anonymous-user-1", "station-sadang"));
@@ -62,6 +66,7 @@ class FavoriteStationServiceTest {
 	}
 
 	@Test
+	@DisplayName("즐겨찾기 저장은 존재하는 활성 역을 요구한다")
 	void saveFavoriteStationRequiresExistingActiveStation() {
 		assertThatThrownBy(() -> service.saveFavoriteStation(new SaveFavoriteStationCommand(
 			"anonymous-user-1",
@@ -72,6 +77,7 @@ class FavoriteStationServiceTest {
 	}
 
 	@Test
+	@DisplayName("즐겨찾기 명령은 사용자와 역 식별자를 요구한다")
 	void favoriteStationCommandsRequireUserAndStation() {
 		assertThatThrownBy(() -> service.listFavoriteStations(new ListFavoriteStationsCommand("")))
 			.isInstanceOf(InvalidFavoriteStationException.class)
@@ -86,6 +92,7 @@ class FavoriteStationServiceTest {
 	}
 
 	@Test
+	@DisplayName("즐겨찾기 도메인은 비어 있는 사용자와 역 정보를 허용하지 않는다")
 	void favoriteStationDomainRejectsInvalidState() {
 		assertThatThrownBy(() -> new FavoriteStation("", "station-sangnoksu", LocalDateTime.now()))
 			.isInstanceOf(InvalidFavoriteStationException.class)

@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -14,12 +15,14 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
 @AutoConfigureMockMvc
+@DisplayName("이동 프로필 API")
 class MobilityProfileControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
 
 	@Test
+	@DisplayName("익명 사용자의 기본 이동 프로필을 조회한다")
 	void getProfileReturnsDefaultProfileForAnonymousUser() throws Exception {
 		mockMvc.perform(get("/api/v1/me/mobility-profile")
 				.param("userId", "anonymous-user-1"))
@@ -38,6 +41,7 @@ class MobilityProfileControllerTest {
 	}
 
 	@Test
+	@DisplayName("이동 프로필을 저장하고 다시 조회할 수 있다")
 	void putProfileStoresAndReturnsMobilityProfile() throws Exception {
 		mockMvc.perform(put("/api/v1/me/mobility-profile")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -71,6 +75,7 @@ class MobilityProfileControllerTest {
 	}
 
 	@Test
+	@DisplayName("휠체어 프로필의 계단 허용 요청은 공통 400 응답으로 거부한다")
 	void putProfileRejectsWheelchairProfileThatAllowsStairs() throws Exception {
 		mockMvc.perform(put("/api/v1/me/mobility-profile")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -95,6 +100,7 @@ class MobilityProfileControllerTest {
 	}
 
 	@Test
+	@DisplayName("알 수 없는 이동 유형은 공통 400 응답으로 거부한다")
 	void putProfileReturnsCommonErrorForInvalidMobilityType() throws Exception {
 		mockMvc.perform(put("/api/v1/me/mobility-profile")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -119,6 +125,7 @@ class MobilityProfileControllerTest {
 	}
 
 	@Test
+	@DisplayName("프로필 조회는 사용자 식별자를 요구한다")
 	void getProfileRequiresUserId() throws Exception {
 		mockMvc.perform(get("/api/v1/me/mobility-profile"))
 			.andExpect(status().isBadRequest())

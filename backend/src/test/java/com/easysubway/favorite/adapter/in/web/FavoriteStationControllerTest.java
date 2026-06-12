@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -19,12 +20,14 @@ import org.springframework.test.web.servlet.MockMvc;
 	"easysubway.user.password=user-test-password"
 })
 @AutoConfigureMockMvc
+@DisplayName("즐겨찾기 역 API")
 class FavoriteStationControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
 
 	@Test
+	@DisplayName("인증 사용자 기준으로 역을 저장하고 목록 조회와 삭제를 처리한다")
 	void favoriteStationsCanBeSavedListedAndRemoved() throws Exception {
 		mockMvc.perform(put("/api/v1/me/favorites/stations/station-sangnoksu")
 				.with(httpBasic("anonymous-user-1", "user-test-password"))
@@ -63,6 +66,7 @@ class FavoriteStationControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 역은 공통 404 응답으로 거부한다")
 	void favoriteStationsRejectUnknownStation() throws Exception {
 		mockMvc.perform(put("/api/v1/me/favorites/stations/missing-station")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))
@@ -73,6 +77,7 @@ class FavoriteStationControllerTest {
 	}
 
 	@Test
+	@DisplayName("즐겨찾기 목록은 인증된 사용자만 조회할 수 있다")
 	void favoriteStationsRequireAuthentication() throws Exception {
 		mockMvc.perform(get("/api/v1/me/favorites/stations"))
 			.andExpect(status().isUnauthorized());

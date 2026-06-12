@@ -66,6 +66,7 @@ public class MobilityProfileService implements MobilityProfileUseCase {
 	}
 
 	private MobilityProfile defaultProfile(String userId) {
+		// 새 사용자는 디지털 소외계층을 기본 사용자로 보고 계단과 긴 이동을 피하는 값으로 시작한다.
 		return new MobilityProfile(
 			userId,
 			MobilityType.SENIOR,
@@ -94,6 +95,7 @@ public class MobilityProfileService implements MobilityProfileUseCase {
 	}
 
 	private void requireWheelchairRules(SaveMobilityProfileCommand command) {
+		// 휠체어 사용자는 계단 허용 여부가 경로 안전성과 직결되므로 저장 단계에서 차단한다.
 		if (command.mobilityType() == MobilityType.WHEELCHAIR && !command.avoidStairs()) {
 			throw new InvalidMobilityProfileException("휠체어 프로필은 계단 없는 경로만 저장할 수 있습니다.");
 		}

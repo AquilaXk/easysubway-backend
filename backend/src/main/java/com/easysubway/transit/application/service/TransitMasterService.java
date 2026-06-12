@@ -46,6 +46,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase {
 
 	@Override
 	public List<StationWithLines> searchStations(StationSearchCommand command) {
+		// 역 검색 결과에는 운영 중인 역과 노선만 포함해 사용자에게 닫힌 노선 선택지를 노출하지 않는다.
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
@@ -88,6 +89,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase {
 	}
 
 	private StationWithLines withLines(Station station) {
+		// 역-노선 연결 데이터가 있어도 노선 자체가 비활성이면 응답에서 제외한다.
 		Map<String, SubwayLine> linesById = loadTransitMasterPort.loadLines()
 			.stream()
 			.filter(SubwayLine::active)

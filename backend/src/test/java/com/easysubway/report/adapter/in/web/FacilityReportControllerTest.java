@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
@@ -19,12 +20,14 @@ import org.springframework.test.web.servlet.MockMvc;
 	"easysubway.admin.password=admin-test-password"
 })
 @AutoConfigureMockMvc
+@DisplayName("시설 신고 API")
 class FacilityReportControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
 
 	@Test
+	@DisplayName("시설 신고를 생성하고 같은 식별자로 조회한다")
 	void createReportReturnsSubmittedReportAndCanBeRead() throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -60,6 +63,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 시설 신고 요청은 공통 404 응답을 반환한다")
 	void createReportReturnsCommonErrorForUnknownFacility() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -79,6 +83,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 유형이 없는 요청은 공통 400 응답을 반환한다")
 	void createReportReturnsCommonErrorForMissingReportType() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -97,6 +102,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("알 수 없는 신고 유형은 공통 400 응답을 반환한다")
 	void createReportReturnsCommonErrorForInvalidReportType() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -116,6 +122,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 신고 조회는 공통 404 응답을 반환한다")
 	void missingReportReturnsCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/api/v1/reports/missing-report"))
 			.andExpect(status().isNotFound())
@@ -125,6 +132,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 신고를 승인하고 조회 결과에서 검수 상태를 확인할 수 있다")
 	void reviewReportStoresAcceptedStatusAndCanBeRead() throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -166,6 +174,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 검수는 관리자 인증을 요구한다")
 	void reviewReportRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(post("/admin/reports/report-1/review")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -178,6 +187,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("검수 결정값이 없는 요청은 공통 400 응답을 반환한다")
 	void reviewReportRejectsInvalidDecisionRequest() throws Exception {
 		mockMvc.perform(post("/admin/reports/report-1/review")
 				.with(httpBasic("admin-test", "admin-test-password"))
@@ -192,6 +202,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 신고 검수는 공통 404 응답을 반환한다")
 	void reviewReportReturnsCommonErrorForMissingReport() throws Exception {
 		mockMvc.perform(post("/admin/reports/missing-report/review")
 				.with(httpBasic("admin-test", "admin-test-password"))

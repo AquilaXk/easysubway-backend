@@ -53,6 +53,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public FacilityReport createReport(CreateFacilityReportCommand command) {
 		requireReportType(command);
 		requireActiveStation(command.stationId());
+		// 신고 대상 시설이 요청한 역에 속해야 다른 역 시설 상태가 잘못 갱신되는 일을 막을 수 있다.
 		requireFacilityInStation(command.stationId(), command.facilityId());
 
 		FacilityReport report = new FacilityReport(
@@ -143,6 +144,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private FacilityReportStatus toStatus(FacilityReportReviewDecision decision) {
+		// 외부 요청의 검수 결정값을 내부 신고 상태로 한 곳에서만 변환한다.
 		return switch (decision) {
 			case ACCEPT -> FacilityReportStatus.ACCEPTED;
 			case REJECT -> FacilityReportStatus.REJECTED;
