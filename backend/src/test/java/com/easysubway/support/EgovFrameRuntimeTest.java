@@ -13,4 +13,3 @@ class EgovFrameRuntimeTest {
 		assertThat(paginationInfo.getPackageName()).isEqualTo("org.egovframe.rte.ptl.mvc.tags.ui.pagination");
 	}
 }
-

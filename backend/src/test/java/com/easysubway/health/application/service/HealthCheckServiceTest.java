@@ -15,4 +15,3 @@ class HealthCheckServiceTest {
 		assertThat(status.service()).isEqualTo("easysubway-backend");
 	}
 }
-

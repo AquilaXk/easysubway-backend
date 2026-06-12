@@ -6,4 +6,3 @@ public record HealthStatus(String status, String service) {
 		return new HealthStatus("UP", service);
 	}
 }
-

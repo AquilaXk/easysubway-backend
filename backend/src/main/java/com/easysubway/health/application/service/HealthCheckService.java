@@ -14,4 +14,3 @@ public class HealthCheckService implements CheckHealthUseCase {
 		return HealthStatus.up(SERVICE_NAME);
 	}
 }
-

@@ -6,4 +6,3 @@ public interface CheckHealthUseCase {
 
 	HealthStatus checkHealth();
 }
-
