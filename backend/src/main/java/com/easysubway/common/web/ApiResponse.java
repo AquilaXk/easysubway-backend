@@ -1,4 +1,4 @@
-package com.easysubway.api;
+package com.easysubway.common.web;
 
 public record ApiResponse<T>(boolean success, T data, String message) {
 

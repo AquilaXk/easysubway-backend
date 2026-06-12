@@ -1,7 +1,13 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.5.15'
+	id 'org.springframework.boot' version '3.5.6'
 	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+configurations {
+	all {
+		exclude group: 'org.springframework.boot', module: 'spring-boot-starter-logging'
+	}
 }
 
 group = 'com.easysubway'
@@ -16,10 +22,21 @@ java {
 
 repositories {
 	mavenCentral()
+	maven {
+		url 'https://maven.egovframe.go.kr/maven'
+	}
+}
+
+dependencyManagement {
+	imports {
+		mavenBom 'org.egovframe.boot:egovframe-boot-starter-parent:5.0.0'
+	}
 }
 
 dependencies {
+	implementation 'org.egovframe.rte:egovframe-rte-ptl-mvc'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
+	implementation 'org.springframework.boot:spring-boot-starter-log4j2'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
