@@ -9,10 +9,8 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.User;
-import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.provisioning.InMemoryUserDetailsManager;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
@@ -38,7 +36,12 @@ public class SecurityConfig {
 	SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
 		// 사용자별 데이터는 URL이나 본문 userId가 아니라 인증 계정을 기준으로 다룬다.
 		return http
-			.securityMatcher("/api/v1/me/favorites/**", "/api/v1/devices", "/api/v1/me/notification-settings")
+			.securityMatcher(
+				"/api/v1/me",
+				"/api/v1/me/favorites/**",
+				"/api/v1/devices",
+				"/api/v1/me/notification-settings"
+			)
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().authenticated()
@@ -60,14 +63,14 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	UserDetailsService userDetailsService(
+	ConcurrentUserDetailsManager userDetailsService(
 		@Value("${easysubway.admin.username:}") String adminUsername,
 		@Value("${easysubway.admin.password:}") String adminPassword,
 		@Value("${easysubway.user.username:}") String userUsername,
 		@Value("${easysubway.user.password:}") String userPassword,
 		PasswordEncoder passwordEncoder
 	) {
-		var users = new InMemoryUserDetailsManager();
+		var users = new ConcurrentUserDetailsManager();
 		if (!adminUsername.isBlank() && !adminPassword.isBlank()) {
 			users.createUser(User.withUsername(adminUsername)
 				.password(passwordEncoder.encode(adminPassword))
