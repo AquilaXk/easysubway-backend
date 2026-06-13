@@ -38,7 +38,7 @@ public class SecurityConfig {
 	SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
 		// 사용자별 데이터는 URL이나 본문 userId가 아니라 인증 계정을 기준으로 다룬다.
 		return http
-			.securityMatcher("/api/v1/me/favorites/**")
+			.securityMatcher("/api/v1/me/favorites/**", "/api/v1/devices", "/api/v1/me/notification-settings")
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().authenticated()
