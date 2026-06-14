@@ -29,6 +29,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.stream.Collectors;
@@ -73,7 +74,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			throw new InvalidRouteSearchException("출발역과 도착역이 달라야 합니다.");
 		}
 
-		DirectLine directLine = findDirectLine(origin.id(), destination.id());
+		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id());
 		boolean stairOnlyAccess = hasStairOnlyAccess(origin.id(), destination.id());
 		List<RouteWarning> warnings = routeWarnings(origin.id(), destination.id(), stairOnlyAccess);
 		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
@@ -87,8 +88,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 				destination.nameKo(),
 				command.mobilityType(),
 				RouteSearchStatus.BLOCKED,
-				directLine.line().id(),
-				directLine.line().name(),
+				routePlan.lineId(),
+				routePlan.lineName(),
 				0,
 				List.of(),
 				warnings,
@@ -97,7 +98,6 @@ public class RouteSearchService implements RouteSearchUseCase {
 			));
 		}
 
-		List<RouteStep> steps = directLineSteps(origin, destination, directLine, profileWeight);
 		return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
 			newRouteSearchId(),
 			origin.id(),
@@ -106,10 +106,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 			destination.nameKo(),
 			command.mobilityType(),
 			RouteSearchStatus.FOUND,
-			directLine.line().id(),
-			directLine.line().name(),
-			routeScore(profileWeight, directLine, warnings),
-			steps,
+			routePlan.lineId(),
+			routePlan.lineName(),
+			routeScore(profileWeight, routePlan, warnings),
+			routeSteps(origin, destination, routePlan, profileWeight),
 			warnings,
 			List.of(),
 			LocalDateTime.now(clock)
@@ -146,8 +146,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.orElseThrow(StationNotFoundException::new);
 	}
 
-	private DirectLine findDirectLine(String originStationId, String destinationStationId) {
-		// 현재 기준선은 환승 없이 같은 활성 노선에 속한 두 역만 직접 경로로 계산한다.
+	private RoutePlan findRoutePlan(String originStationId, String destinationStationId) {
+		return findDirectLine(originStationId, destinationStationId)
+			.map(RoutePlan::direct)
+			.or(() -> findOneTransferRoute(originStationId, destinationStationId).map(RoutePlan::transfer))
+			.orElseThrow(RouteNotFoundException::new);
+	}
+
+	private Optional<DirectLine> findDirectLine(String originStationId, String destinationStationId) {
 		Map<String, SubwayLine> activeLinesById = loadTransitMasterPort.loadLines()
 			.stream()
 			.filter(SubwayLine::active)
@@ -169,8 +175,94 @@ public class RouteSearchService implements RouteSearchUseCase {
 				originLinesByLineId.get(destinationLine.lineId()),
 				destinationLine
 			))
-			.min(Comparator.comparingInt(DirectLine::stopCount))
-			.orElseThrow(RouteNotFoundException::new);
+			.min(Comparator.comparingInt(DirectLine::stopCount));
+	}
+
+	private Optional<TransferRoute> findOneTransferRoute(String originStationId, String destinationStationId) {
+		Map<String, SubwayLine> activeLinesById = loadTransitMasterPort.loadLines()
+			.stream()
+			.filter(SubwayLine::active)
+			.collect(Collectors.toMap(SubwayLine::id, Function.identity()));
+		Map<String, Station> activeStationsById = loadTransitMasterPort.loadStations()
+			.stream()
+			.filter(Station::active)
+			.collect(Collectors.toMap(Station::id, Function.identity()));
+		List<StationLine> activeStationLines = loadTransitMasterPort.loadStationLines()
+			.stream()
+			.filter(stationLine -> activeLinesById.containsKey(stationLine.lineId()))
+			.filter(stationLine -> activeStationsById.containsKey(stationLine.stationId()))
+			.toList();
+		List<StationLine> originLines = stationLines(activeStationLines, originStationId);
+		List<StationLine> destinationLines = stationLines(activeStationLines, destinationStationId);
+		Map<String, List<StationLine>> stationLinesByStationId = activeStationLines.stream()
+			.collect(Collectors.groupingBy(StationLine::stationId));
+
+		// 한 번 환승 기준선은 두 노선이 만나는 활성 역을 찾아 총 이동 역 수가 가장 짧은 후보를 고른다.
+		List<TransferRoute> candidates = new ArrayList<>();
+		for (StationLine originLine : originLines) {
+			for (StationLine destinationLine : destinationLines) {
+				if (originLine.lineId().equals(destinationLine.lineId())) {
+					continue;
+				}
+				stationLinesByStationId.forEach((stationId, linesAtStation) -> addTransferCandidate(
+					candidates,
+					activeLinesById,
+					activeStationsById,
+					originStationId,
+					destinationStationId,
+					originLine,
+					destinationLine,
+					stationId,
+					linesAtStation
+				));
+			}
+		}
+
+		return candidates.stream()
+			.min(Comparator.comparingInt(TransferRoute::stopCount)
+				.thenComparing(route -> route.transferStation().nameKo()));
+	}
+
+	private void addTransferCandidate(
+		List<TransferRoute> candidates,
+		Map<String, SubwayLine> activeLinesById,
+		Map<String, Station> activeStationsById,
+		String originStationId,
+		String destinationStationId,
+		StationLine originLine,
+		StationLine destinationLine,
+		String stationId,
+		List<StationLine> linesAtStation
+	) {
+		if (stationId.equals(originStationId) || stationId.equals(destinationStationId)) {
+			return;
+		}
+		Optional<StationLine> transferOriginLine = stationLineFor(linesAtStation, originLine.lineId());
+		Optional<StationLine> transferDestinationLine = stationLineFor(linesAtStation, destinationLine.lineId());
+		if (transferOriginLine.isEmpty() || transferDestinationLine.isEmpty()) {
+			return;
+		}
+		candidates.add(new TransferRoute(
+			activeLinesById.get(originLine.lineId()),
+			originLine,
+			transferOriginLine.get(),
+			activeLinesById.get(destinationLine.lineId()),
+			transferDestinationLine.get(),
+			destinationLine,
+			activeStationsById.get(stationId)
+		));
+	}
+
+	private List<StationLine> stationLines(List<StationLine> stationLines, String stationId) {
+		return stationLines.stream()
+			.filter(stationLine -> stationLine.stationId().equals(stationId))
+			.toList();
+	}
+
+	private Optional<StationLine> stationLineFor(List<StationLine> stationLines, String lineId) {
+		return stationLines.stream()
+			.filter(stationLine -> stationLine.lineId().equals(lineId))
+			.findFirst();
 	}
 
 	private List<RouteWarning> routeWarnings(String originStationId, String destinationStationId, boolean stairOnlyAccess) {
@@ -268,9 +360,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.toList();
 	}
 
-	private int routeScore(RouteProfileWeight profileWeight, DirectLine directLine, List<RouteWarning> warnings) {
+	private int routeScore(RouteProfileWeight profileWeight, RoutePlan routePlan, List<RouteWarning> warnings) {
 		// 점수는 시간이 아니라 상대 비용이다. 낮을수록 쉬운 경로에 가깝다.
-		int trainTime = directLine.stopCount() * 3;
+		int trainTime = routePlan.stopCount() * 3;
+		int transferPenalty = routePlan.transferCount() * profileWeight.transferPenalty();
 		int lowDataPenalty = warnings.stream()
 			.anyMatch(warning -> warning.code() == RouteWarningCode.LOW_DATA_CONFIDENCE)
 			? profileWeight.lowDataConfidencePenalty()
@@ -279,7 +372,19 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.anyMatch(warning -> warning.code() == RouteWarningCode.STAIR_ONLY_ACCESS)
 			? profileWeight.stairOnlyAccessPenalty()
 			: 0;
-		return trainTime + profileWeight.baseAccessCost() + lowDataPenalty + stairOnlyPenalty;
+		return trainTime + transferPenalty + profileWeight.baseAccessCost() + lowDataPenalty + stairOnlyPenalty;
+	}
+
+	private List<RouteStep> routeSteps(
+		Station origin,
+		Station destination,
+		RoutePlan routePlan,
+		RouteProfileWeight profileWeight
+	) {
+		if (routePlan.transferRoute().isPresent()) {
+			return transferSteps(origin, destination, routePlan.transferRoute().get(), profileWeight);
+		}
+		return directLineSteps(origin, destination, routePlan.directLine().orElseThrow(), profileWeight);
 	}
 
 	private List<RouteStep> directLineSteps(
@@ -320,6 +425,63 @@ public class RouteSearchService implements RouteSearchUseCase {
 		);
 	}
 
+	private List<RouteStep> transferSteps(
+		Station origin,
+		Station destination,
+		TransferRoute route,
+		RouteProfileWeight profileWeight
+	) {
+		String firstDisplayLine = displayLineName(route.firstLine());
+		String secondDisplayLine = displayLineName(route.secondLine());
+		return List.of(
+			new RouteStep(
+				1,
+				origin.nameKo() + "역에서 " + firstDisplayLine + " 승강장으로 이동",
+				profileWeight.entryGuidance(),
+				route.firstLine().id(),
+				route.firstLine().name(),
+				origin.id(),
+				origin.id()
+			),
+			new RouteStep(
+				2,
+				route.firstLine().name() + "으로 " + route.transferStation().nameKo() + "역까지 이동",
+				route.firstSegmentStopCount() + "개 역을 이동한 뒤 환승합니다.",
+				route.firstLine().id(),
+				route.firstLine().name(),
+				origin.id(),
+				route.transferStation().id()
+			),
+			new RouteStep(
+				3,
+				route.transferStation().nameKo() + "역에서 " + secondDisplayLine + " 승강장으로 환승",
+				route.transferStation().nameKo() + "의 엘리베이터와 계단 없는 연결 동선을 먼저 확인합니다.",
+				route.secondLine().id(),
+				route.secondLine().name(),
+				route.transferStation().id(),
+				route.transferStation().id()
+			),
+			new RouteStep(
+				4,
+				route.secondLine().name() + "으로 " + destination.nameKo() + "역까지 이동",
+				route.secondSegmentStopCount() + "개 역을 이동합니다.",
+				route.secondLine().id(),
+				route.secondLine().name(),
+				route.transferStation().id(),
+				destination.id()
+			),
+			new RouteStep(
+				5,
+				destination.nameKo() + "역에서 출구 접근성 정보를 확인",
+				profileWeight.exitGuidance(),
+				route.secondLine().id(),
+				route.secondLine().name(),
+				destination.id(),
+				destination.id()
+			)
+		);
+	}
+
 	private String displayLineName(SubwayLine line) {
 		String lineCode = line.lineCode();
 		if (lineCode != null && !lineCode.isBlank() && lineCode.chars().allMatch(Character::isDigit)) {
@@ -340,6 +502,69 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 		int stopCount() {
 			return Math.abs(origin.sequence() - destination.sequence());
+		}
+	}
+
+	private record TransferRoute(
+		SubwayLine firstLine,
+		StationLine origin,
+		StationLine transferOriginLine,
+		SubwayLine secondLine,
+		StationLine transferDestinationLine,
+		StationLine destination,
+		Station transferStation
+	) {
+
+		int firstSegmentStopCount() {
+			return Math.abs(origin.sequence() - transferOriginLine.sequence());
+		}
+
+		int secondSegmentStopCount() {
+			return Math.abs(transferDestinationLine.sequence() - destination.sequence());
+		}
+
+		int stopCount() {
+			return firstSegmentStopCount() + secondSegmentStopCount();
+		}
+	}
+
+	private record RoutePlan(
+		Optional<DirectLine> directLine,
+		Optional<TransferRoute> transferRoute
+	) {
+
+		static RoutePlan direct(DirectLine directLine) {
+			return new RoutePlan(Optional.of(directLine), Optional.empty());
+		}
+
+		static RoutePlan transfer(TransferRoute transferRoute) {
+			return new RoutePlan(Optional.empty(), Optional.of(transferRoute));
+		}
+
+		String lineId() {
+			return directLine
+				.map(direct -> direct.line().id())
+				.orElseGet(() -> transferRoute
+					.map(route -> route.firstLine().id() + "/" + route.secondLine().id())
+					.orElseThrow());
+		}
+
+		String lineName() {
+			return directLine
+				.map(direct -> direct.line().name())
+				.orElseGet(() -> transferRoute
+					.map(route -> route.firstLine().name() + " / " + route.secondLine().name())
+					.orElseThrow());
+		}
+
+		int stopCount() {
+			return directLine
+				.map(DirectLine::stopCount)
+				.orElseGet(() -> transferRoute.map(TransferRoute::stopCount).orElseThrow());
+		}
+
+		int transferCount() {
+			return transferRoute.isPresent() ? 1 : 0;
 		}
 	}
 }
