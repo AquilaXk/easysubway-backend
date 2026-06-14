@@ -21,13 +21,16 @@ class AnonymousAuthController {
 
 	private final AnonymousAuthUseCase anonymousAuthUseCase;
 	private final AnonymousAuthRateLimitUseCase anonymousAuthRateLimitUseCase;
+	private final AnonymousAuthClientIpResolver anonymousAuthClientIpResolver;
 
 	AnonymousAuthController(
 		AnonymousAuthUseCase anonymousAuthUseCase,
-		AnonymousAuthRateLimitUseCase anonymousAuthRateLimitUseCase
+		AnonymousAuthRateLimitUseCase anonymousAuthRateLimitUseCase,
+		AnonymousAuthClientIpResolver anonymousAuthClientIpResolver
 	) {
 		this.anonymousAuthUseCase = anonymousAuthUseCase;
 		this.anonymousAuthRateLimitUseCase = anonymousAuthRateLimitUseCase;
+		this.anonymousAuthClientIpResolver = anonymousAuthClientIpResolver;
 	}
 
 	@PostMapping("/api/v1/auth/anonymous")
@@ -48,8 +51,7 @@ class AnonymousAuthController {
 	}
 
 	private String clientKeyFrom(HttpServletRequest request) {
-		// 신뢰 프록시 설정 전에는 조작 가능한 전달 헤더 대신 서블릿 원격 주소로 발급 남용을 제한한다.
-		return request.getRemoteAddr();
+		return anonymousAuthClientIpResolver.resolve(request);
 	}
 
 	record AnonymousAuthResponse(

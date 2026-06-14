@@ -18,3 +18,8 @@ spring:
     redis:
       host: ${EASYSUBWAY_REDIS_HOST:localhost}
       port: ${EASYSUBWAY_REDIS_PORT:6379}
+
+easysubway:
+  auth:
+    client-ip:
+      trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS:}

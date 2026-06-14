@@ -21,3 +21,8 @@ spring:
     jdbc:
       # Boot 기본 Batch 스크립트는 반복 실행에 취약하므로 운영은 별도 멱등 스크립트로 관리한다.
       initialize-schema: never
+
+easysubway:
+  auth:
+    client-ip:
+      trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS}

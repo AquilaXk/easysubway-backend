@@ -28,7 +28,8 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.user.username=configured-user",
-	"easysubway.user.password=configured-password"
+	"easysubway.user.password=configured-password",
+	"easysubway.auth.client-ip.trusted-proxies=10.0.0.0/8"
 })
 @AutoConfigureMockMvc
 @DisplayName("익명 사용자 인증 API")
@@ -96,6 +97,50 @@ class AnonymousAuthControllerTest {
 			.andExpect(status().isOk());
 
 		assertThat(rateLimitUseCase.clientKeys).containsExactly("198.51.100.55");
+	}
+
+	@Test
+	@DisplayName("신뢰 프록시 요청은 전달된 첫 번째 클라이언트 IP를 발급 제한 키로 사용한다")
+	void issueAnonymousUserUsesForwardedClientIpFromTrustedProxy() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/anonymous")
+				.with(remoteAddr("10.12.0.8"))
+				.header("X-Forwarded-For", "203.0.113.77, 10.12.0.8"))
+			.andExpect(status().isOk());
+
+		assertThat(rateLimitUseCase.clientKeys).containsExactly("203.0.113.77");
+	}
+
+	@Test
+	@DisplayName("신뢰 프록시 요청은 주입된 전달 헤더보다 마지막 비신뢰 IP를 우선한다")
+	void issueAnonymousUserUsesLastUntrustedForwardedClientIpFromTrustedProxy() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/anonymous")
+				.with(remoteAddr("10.12.0.8"))
+				.header("X-Forwarded-For", "198.51.100.200, 203.0.113.77, 10.12.0.8"))
+			.andExpect(status().isOk());
+
+		assertThat(rateLimitUseCase.clientKeys).containsExactly("203.0.113.77");
+	}
+
+	@Test
+	@DisplayName("신뢰하지 않는 원격 주소의 전달 헤더는 발급 제한 키로 사용하지 않는다")
+	void issueAnonymousUserIgnoresForwardedClientIpFromUntrustedRemoteAddress() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/anonymous")
+				.with(remoteAddr("198.51.100.20"))
+				.header("X-Forwarded-For", "203.0.113.88"))
+			.andExpect(status().isOk());
+
+		assertThat(rateLimitUseCase.clientKeys).containsExactly("198.51.100.20");
+	}
+
+	@Test
+	@DisplayName("잘못된 전달 헤더는 원격 주소로 되돌아가 발급 제한 키를 만든다")
+	void issueAnonymousUserFallsBackToRemoteAddressWhenForwardedHeaderIsInvalid() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/anonymous")
+				.with(remoteAddr("10.12.0.8"))
+				.header("X-Forwarded-For", "localhost"))
+			.andExpect(status().isOk());
+
+		assertThat(rateLimitUseCase.clientKeys).containsExactly("10.12.0.8");
 	}
 
 	@Test
