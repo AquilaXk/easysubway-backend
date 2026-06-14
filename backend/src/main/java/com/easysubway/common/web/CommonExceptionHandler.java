@@ -4,6 +4,7 @@ import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.error.ResourceNotFoundException;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
@@ -21,6 +22,16 @@ class CommonExceptionHandler {
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	ApiResponse<Void> handleInvalidRequest(InvalidRequestException exception) {
 		return ApiResponse.fail(exception.getMessage());
+	}
+
+	@ExceptionHandler(MethodArgumentNotValidException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	ApiResponse<Void> handleInvalidRequestBody(MethodArgumentNotValidException exception) {
+		String message = exception.getBindingResult().getFieldErrors().stream()
+			.findFirst()
+			.map(error -> error.getDefaultMessage())
+			.orElse("요청 값을 확인해야 합니다.");
+		return ApiResponse.fail(message);
 	}
 
 	@ExceptionHandler(ResourceNotFoundException.class)

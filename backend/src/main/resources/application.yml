@@ -1,6 +1,11 @@
 spring:
   application:
     name: easysubway-backend
+  profiles:
+    default: dev
+  batch:
+    job:
+      enabled: false
 
 management:
   endpoints:

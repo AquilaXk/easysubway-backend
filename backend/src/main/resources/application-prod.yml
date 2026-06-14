@@ -1,3 +1,19 @@
 logging:
   level:
     com.easysubway: INFO
+
+spring:
+  datasource:
+    url: ${EASYSUBWAY_DATASOURCE_URL}
+    username: ${EASYSUBWAY_DATASOURCE_USERNAME}
+    password: ${EASYSUBWAY_DATASOURCE_PASSWORD}
+    driver-class-name: org.postgresql.Driver
+  sql:
+    init:
+      # 운영 schema는 배포 파이프라인에서 아래 스크립트를 명시 실행한다.
+      mode: never
+      schema-locations: classpath:db/batch/schema-postgresql.sql
+  batch:
+    jdbc:
+      # Boot 기본 Batch 스크립트는 반복 실행에 취약하므로 운영은 별도 멱등 스크립트로 관리한다.
+      initialize-schema: never
