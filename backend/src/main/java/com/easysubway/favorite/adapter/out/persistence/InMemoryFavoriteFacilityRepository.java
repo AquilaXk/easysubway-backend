@@ -1,0 +1,47 @@
+package com.easysubway.favorite.adapter.out.persistence;
+
+import com.easysubway.favorite.application.port.out.DeleteFavoriteFacilityPort;
+import com.easysubway.favorite.application.port.out.LoadFavoriteFacilityPort;
+import com.easysubway.favorite.application.port.out.SaveFavoriteFacilityPort;
+import com.easysubway.favorite.domain.FavoriteFacility;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class InMemoryFavoriteFacilityRepository implements
+	LoadFavoriteFacilityPort,
+	SaveFavoriteFacilityPort,
+	DeleteFavoriteFacilityPort {
+
+	private final Map<String, Map<String, FavoriteFacility>> favoritesByUserId = new ConcurrentHashMap<>();
+
+	@Override
+	public List<FavoriteFacility> loadFavoriteFacilities(String userId) {
+		return new ArrayList<>(favoritesByUserId.getOrDefault(userId, Map.of()).values());
+	}
+
+	@Override
+	public Optional<FavoriteFacility> loadFavoriteFacility(String userId, String facilityId) {
+		return Optional.ofNullable(favoritesByUserId.getOrDefault(userId, Map.of()).get(facilityId));
+	}
+
+	@Override
+	public FavoriteFacility saveFavoriteFacility(FavoriteFacility favoriteFacility) {
+		favoritesByUserId
+			.computeIfAbsent(favoriteFacility.userId(), ignored -> new ConcurrentHashMap<>())
+			.put(favoriteFacility.facilityId(), favoriteFacility);
+		return favoriteFacility;
+	}
+
+	@Override
+	public void deleteFavoriteFacility(String userId, String facilityId) {
+		Map<String, FavoriteFacility> favorites = favoritesByUserId.get(userId);
+		if (favorites != null) {
+			favorites.remove(facilityId);
+		}
+	}
+}
