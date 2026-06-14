@@ -71,6 +71,16 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 검색은 한글 초성만 입력해도 역을 찾는다")
+	void searchStationsMatchesKoreanInitialConsonants() {
+		var stations = service.searchStations(new StationSearchCommand("ㅅㄹㅅ", null));
+
+		assertThat(stations)
+			.extracting(station -> station.station().id())
+			.containsExactly("station-sangnoksu");
+	}
+
+	@Test
 	@DisplayName("역 검색 응답에서 비활성 노선은 제외한다")
 	void searchStationsExcludesInactiveLinesFromStationResponses() {
 		var serviceWithInactiveLine = new TransitMasterService(

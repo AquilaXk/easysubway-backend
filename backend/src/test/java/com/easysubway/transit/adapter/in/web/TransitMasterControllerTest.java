@@ -67,6 +67,16 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 검색은 한글 초성만 입력해도 조회할 수 있다")
+	void stationsCanBeSearchedByKoreanInitialConsonants() throws Exception {
+		mockMvc.perform(get("/api/v1/stations").param("query", "ㅅㄹㅅ"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].nameKo").value("상록수"));
+	}
+
+	@Test
 	@DisplayName("공개 역 검색은 잘못된 Basic 인증 헤더가 있어도 허용한다")
 	void publicStationSearchIgnoresInvalidBasicAuthentication() throws Exception {
 		mockMvc.perform(get("/api/v1/stations")
