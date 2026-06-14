@@ -221,7 +221,8 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		double haversine = Math.sin(deltaLatitude / 2) * Math.sin(deltaLatitude / 2)
 			+ Math.cos(latitude1) * Math.cos(latitude2)
 			* Math.sin(deltaLongitude / 2) * Math.sin(deltaLongitude / 2);
-		double centralAngle = 2 * Math.atan2(Math.sqrt(haversine), Math.sqrt(1 - haversine));
+		double boundedHaversine = Math.min(1.0, Math.max(0.0, haversine));
+		double centralAngle = 2 * Math.atan2(Math.sqrt(boundedHaversine), Math.sqrt(1 - boundedHaversine));
 		return (int) Math.round(EARTH_RADIUS_METERS * centralAngle);
 	}
 
