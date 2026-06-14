@@ -13,6 +13,7 @@ import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.math.BigDecimal;
 import java.time.Clock;
@@ -26,8 +27,10 @@ import org.junit.jupiter.api.Test;
 class FacilityReportServiceTest {
 
 	private final InMemoryFacilityReportRepository reportRepository = new InMemoryFacilityReportRepository();
+	private final InMemoryTransitMasterRepository transitRepository = new InMemoryTransitMasterRepository();
 	private final FacilityReportService service = new FacilityReportService(
-		new InMemoryTransitMasterRepository(),
+		transitRepository,
+		transitRepository,
 		reportRepository,
 		reportRepository,
 		Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
@@ -179,6 +182,74 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("승인된 시설 신고는 신고 유형에 맞춰 시설 상태를 바꾼다")
+	void acceptedReportUpdatesFacilityStatusByReportType() {
+		var transitRepository = new InMemoryTransitMasterRepository();
+		var serviceWithFacilityStatus = serviceWithTransitRepository(transitRepository);
+
+		var broken = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-broken",
+			FacilityReportType.BROKEN,
+			"엘리베이터가 멈춰 있습니다."
+		));
+		serviceWithFacilityStatus.reviewReport(reviewCommand(broken.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.BROKEN);
+
+		var underConstruction = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-construction",
+			FacilityReportType.UNDER_CONSTRUCTION,
+			"시설 앞 공사가 진행 중입니다."
+		));
+		serviceWithFacilityStatus.reviewReport(reviewCommand(underConstruction.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.UNDER_CONSTRUCTION);
+
+		var closed = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-closed",
+			FacilityReportType.CLOSED,
+			"출입이 막혀 있습니다."
+		));
+		serviceWithFacilityStatus.reviewReport(reviewCommand(closed.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.CLOSED);
+
+		var recovered = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-recovered",
+			FacilityReportType.RECOVERED,
+			"다시 정상 이용 가능합니다."
+		));
+		serviceWithFacilityStatus.reviewReport(reviewCommand(recovered.id(), FacilityReportReviewDecision.ACCEPT));
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
+	}
+
+	@Test
+	@DisplayName("반려와 중복 처리된 시설 신고는 시설 상태를 바꾸지 않는다")
+	void rejectedOrDuplicateReportDoesNotUpdateFacilityStatus() {
+		var transitRepository = new InMemoryTransitMasterRepository();
+		var serviceWithFacilityStatus = serviceWithTransitRepository(transitRepository);
+
+		var rejected = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-rejected-status",
+			FacilityReportType.BROKEN,
+			"반려할 고장 신고입니다."
+		));
+		serviceWithFacilityStatus.reviewReport(reviewCommand(rejected.id(), FacilityReportReviewDecision.REJECT));
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
+
+		var duplicated = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-duplicate-status",
+			FacilityReportType.CLOSED,
+			"중복 처리할 폐쇄 신고입니다."
+		));
+		serviceWithFacilityStatus.reviewReport(reviewCommand(duplicated.id(), FacilityReportReviewDecision.MARK_DUPLICATE));
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
+	}
+
+	@Test
 	@DisplayName("신고 검수는 반려와 중복 처리 상태를 저장한다")
 	void reviewReportCanRejectOrMarkDuplicate() {
 		var rejected = service.createReport(new CreateFacilityReportCommand(
@@ -257,11 +328,19 @@ class FacilityReportServiceTest {
 	}
 
 	private CreateFacilityReportCommand reportCommand(String userId, String description) {
+		return reportCommand(userId, FacilityReportType.BROKEN, description);
+	}
+
+	private CreateFacilityReportCommand reportCommand(
+		String userId,
+		FacilityReportType reportType,
+		String description
+	) {
 		return new CreateFacilityReportCommand(
 			userId,
 			"station-sangnoksu",
 			"facility-sangnoksu-elevator-1",
-			FacilityReportType.BROKEN,
+			reportType,
 			description,
 			null,
 			null,
@@ -270,13 +349,44 @@ class FacilityReportServiceTest {
 	}
 
 	private FacilityReportService serviceWithClock(Clock clock) {
+		return serviceWithClockAndTransitRepository(clock, new InMemoryTransitMasterRepository());
+	}
+
+	private FacilityReportService serviceWithTransitRepository(InMemoryTransitMasterRepository transitRepository) {
+		return serviceWithClockAndTransitRepository(
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul")),
+			transitRepository
+		);
+	}
+
+	private FacilityReportService serviceWithClockAndTransitRepository(
+		Clock clock,
+		InMemoryTransitMasterRepository transitRepository
+	) {
 		var repository = new InMemoryFacilityReportRepository();
 		return new FacilityReportService(
-			new InMemoryTransitMasterRepository(),
+			transitRepository,
+			transitRepository,
 			repository,
 			repository,
 			clock
 		);
+	}
+
+	private ReviewFacilityReportCommand reviewCommand(String reportId, FacilityReportReviewDecision decision) {
+		return new ReviewFacilityReportCommand(reportId, decision, "admin-1");
+	}
+
+	private AccessibilityFacilityStatus facilityStatus(
+		InMemoryTransitMasterRepository transitRepository,
+		String facilityId
+	) {
+		return transitRepository.loadAccessibilityFacilities()
+			.stream()
+			.filter(facility -> facility.id().equals(facilityId))
+			.findFirst()
+			.orElseThrow()
+			.status();
 	}
 
 	private static class TickingClock extends Clock {

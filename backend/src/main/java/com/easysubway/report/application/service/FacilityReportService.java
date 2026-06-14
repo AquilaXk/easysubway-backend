@@ -10,14 +10,19 @@ import com.easysubway.report.domain.FacilityReportNotFoundException;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
+import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -26,6 +31,7 @@ import org.springframework.stereotype.Service;
 public class FacilityReportService implements FacilityReportUseCase {
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
+	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
 	private final Clock clock;
@@ -33,19 +39,28 @@ public class FacilityReportService implements FacilityReportUseCase {
 	@Autowired
 	public FacilityReportService(
 		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		LoadFacilityReportPort loadFacilityReportPort,
 		SaveFacilityReportPort saveFacilityReportPort
 	) {
-		this(loadTransitMasterPort, loadFacilityReportPort, saveFacilityReportPort, Clock.systemDefaultZone());
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			Clock.systemDefaultZone()
+		);
 	}
 
 	public FacilityReportService(
 		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		LoadFacilityReportPort loadFacilityReportPort,
 		SaveFacilityReportPort saveFacilityReportPort,
 		Clock clock
 	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
+		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
 		this.clock = clock;
@@ -114,7 +129,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 			command.reviewedBy()
 		);
 
-		return saveFacilityReportPort.saveReport(reviewed);
+		FacilityReport saved = saveFacilityReportPort.saveReport(reviewed);
+		// 승인된 상태 신고만 실제 시설 운영 상태에 반영한다.
+		applyAcceptedReportToFacilityStatus(report, command.decision());
+		return saved;
 	}
 
 	private void requireReportType(CreateFacilityReportCommand command) {
@@ -160,6 +178,28 @@ public class FacilityReportService implements FacilityReportUseCase {
 			case ACCEPT -> FacilityReportStatus.ACCEPTED;
 			case REJECT -> FacilityReportStatus.REJECTED;
 			case MARK_DUPLICATE -> FacilityReportStatus.DUPLICATE;
+		};
+	}
+
+	private void applyAcceptedReportToFacilityStatus(FacilityReport report, FacilityReportReviewDecision decision) {
+		if (decision != FacilityReportReviewDecision.ACCEPT) {
+			return;
+		}
+
+		toFacilityStatus(report.reportType()).ifPresent(status -> saveAccessibilityFacilityStatusPort.saveFacilityStatus(
+			report.facilityId(),
+			status,
+			LocalDate.now(clock)
+		));
+	}
+
+	private Optional<AccessibilityFacilityStatus> toFacilityStatus(FacilityReportType reportType) {
+		return switch (reportType) {
+			case BROKEN -> Optional.of(AccessibilityFacilityStatus.BROKEN);
+			case UNDER_CONSTRUCTION -> Optional.of(AccessibilityFacilityStatus.UNDER_CONSTRUCTION);
+			case CLOSED -> Optional.of(AccessibilityFacilityStatus.CLOSED);
+			case RECOVERED -> Optional.of(AccessibilityFacilityStatus.NORMAL);
+			case LOCATION_WRONG, INFORMATION_WRONG -> Optional.empty();
 		};
 	}
 }

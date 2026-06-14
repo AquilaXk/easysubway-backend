@@ -175,6 +175,11 @@ class FacilityReportControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.status").value("ACCEPTED"))
 			.andExpect(jsonPath("$.data.reviewedBy").value("admin-test"));
+
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].status").value("BROKEN"));
 	}
 
 	@Test
