@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -145,6 +146,34 @@ class RouteSearchServiceTest {
 			.extracting("code")
 			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
 		assertThat(stairOnlyResult.score()).isGreaterThan(accessibleResult.score());
+	}
+
+	@Test
+	@DisplayName("계단 접근 경고 점수는 이동 유형별 이동 부담을 다르게 반영한다")
+	void stairOnlyWarningScoreReflectsMobilityProfileCost() {
+		assertThat(stairOnlyScoreByMobilityType())
+			.containsEntry(MobilityType.TEMPORARY_INJURY, 77)
+			.containsEntry(MobilityType.STROLLER, 71)
+			.containsEntry(MobilityType.PREGNANT, 62)
+			.containsEntry(MobilityType.SENIOR, 59)
+			.containsEntry(MobilityType.LUGGAGE, 53);
+	}
+
+	@Test
+	@DisplayName("경로 단계 설명은 이동 유형별로 필요한 접근 조건을 안내한다")
+	void routeStepDescriptionReflectsMobilityProfile() {
+		assertThat(firstStepDescription(MobilityType.SENIOR))
+			.isEqualTo("계단을 피하고 이동 거리가 짧은 출구를 먼저 확인합니다.");
+		assertThat(firstStepDescription(MobilityType.STROLLER))
+			.isEqualTo("엘리베이터와 넓은 통로가 있는 출구를 먼저 확인합니다.");
+		assertThat(firstStepDescription(MobilityType.WHEELCHAIR))
+			.isEqualTo("엘리베이터, 리프트, 경사로 연결을 먼저 확인합니다.");
+		assertThat(firstStepDescription(MobilityType.PREGNANT))
+			.isEqualTo("엘리베이터와 짧은 이동 동선을 먼저 확인합니다.");
+		assertThat(firstStepDescription(MobilityType.TEMPORARY_INJURY))
+			.isEqualTo("계단을 피하고 쉬어 갈 수 있는 동선을 먼저 확인합니다.");
+		assertThat(firstStepDescription(MobilityType.LUGGAGE))
+			.isEqualTo("엘리베이터와 넓은 출구 동선을 먼저 확인합니다.");
 	}
 
 	@Test
@@ -362,6 +391,36 @@ class RouteSearchServiceTest {
 		assertThatThrownBy(() -> service.getRouteSearch("route-missing"))
 			.isInstanceOf(RouteSearchNotFoundException.class)
 			.hasMessage("경로 검색 결과를 찾을 수 없습니다.");
+	}
+
+	private static Map<MobilityType, Integer> stairOnlyScoreByMobilityType() {
+		return Map.of(
+			MobilityType.SENIOR, scoreFor(MobilityType.SENIOR, new StairOnlyTransitMasterPort()),
+			MobilityType.STROLLER, scoreFor(MobilityType.STROLLER, new StairOnlyTransitMasterPort()),
+			MobilityType.PREGNANT, scoreFor(MobilityType.PREGNANT, new StairOnlyTransitMasterPort()),
+			MobilityType.TEMPORARY_INJURY, scoreFor(MobilityType.TEMPORARY_INJURY, new StairOnlyTransitMasterPort()),
+			MobilityType.LUGGAGE, scoreFor(MobilityType.LUGGAGE, new StairOnlyTransitMasterPort())
+		);
+	}
+
+	private static int scoreFor(MobilityType mobilityType, LoadTransitMasterPort transitMasterPort) {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, transitMasterPort, CLOCK);
+		return routeSearchService.searchRoute(new SearchRouteCommand("station-a", "station-b", mobilityType)).score();
+	}
+
+	private static String firstStepDescription(MobilityType mobilityType) {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new RampAccessibleTransitMasterPort(),
+			CLOCK
+		);
+		return routeSearchService.searchRoute(new SearchRouteCommand("station-a", "station-b", mobilityType))
+			.steps()
+			.getFirst()
+			.description();
 	}
 
 	private static class StairOnlyTransitMasterPort implements LoadTransitMasterPort {

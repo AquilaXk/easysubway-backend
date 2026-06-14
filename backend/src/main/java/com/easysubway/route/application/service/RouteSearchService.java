@@ -1,12 +1,12 @@
 package com.easysubway.route.application.service;
 
-import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.domain.InvalidRouteSearchException;
 import com.easysubway.route.domain.RouteNotFoundException;
+import com.easysubway.route.domain.RouteProfileWeight;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
@@ -76,8 +76,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 		DirectLine directLine = findDirectLine(origin.id(), destination.id());
 		boolean stairOnlyAccess = hasStairOnlyAccess(origin.id(), destination.id());
 		List<RouteWarning> warnings = routeWarnings(origin.id(), destination.id(), stairOnlyAccess);
+		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
 
-		if (command.mobilityType() == MobilityType.WHEELCHAIR && stairOnlyAccess) {
+		if (profileWeight.blocksStairOnlyAccess() && stairOnlyAccess) {
 			return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
 				newRouteSearchId(),
 				origin.id(),
@@ -96,7 +97,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			));
 		}
 
-		List<RouteStep> steps = directLineSteps(origin, destination, directLine);
+		List<RouteStep> steps = directLineSteps(origin, destination, directLine, profileWeight);
 		return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
 			newRouteSearchId(),
 			origin.id(),
@@ -107,7 +108,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			RouteSearchStatus.FOUND,
 			directLine.line().id(),
 			directLine.line().name(),
-			routeScore(command.mobilityType(), directLine, warnings),
+			routeScore(profileWeight, directLine, warnings),
 			steps,
 			warnings,
 			List.of(),
@@ -267,30 +268,32 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.toList();
 	}
 
-	private int routeScore(MobilityType mobilityType, DirectLine directLine, List<RouteWarning> warnings) {
+	private int routeScore(RouteProfileWeight profileWeight, DirectLine directLine, List<RouteWarning> warnings) {
 		// 점수는 시간이 아니라 상대 비용이다. 낮을수록 쉬운 경로에 가깝다.
 		int trainTime = directLine.stopCount() * 3;
-		int walkingTime = 8;
-		int profilePenalty = switch (mobilityType) {
-			case SENIOR -> 12;
-			case STROLLER, PREGNANT, LUGGAGE -> 10;
-			case TEMPORARY_INJURY -> 14;
-			case WHEELCHAIR -> 18;
-		};
 		int lowDataPenalty = warnings.stream()
-			.anyMatch(warning -> warning.code() == RouteWarningCode.LOW_DATA_CONFIDENCE) ? 20 : 0;
+			.anyMatch(warning -> warning.code() == RouteWarningCode.LOW_DATA_CONFIDENCE)
+			? profileWeight.lowDataConfidencePenalty()
+			: 0;
 		int stairOnlyPenalty = warnings.stream()
-			.anyMatch(warning -> warning.code() == RouteWarningCode.STAIR_ONLY_ACCESS) ? 30 : 0;
-		return trainTime + walkingTime + profilePenalty + lowDataPenalty + stairOnlyPenalty;
+			.anyMatch(warning -> warning.code() == RouteWarningCode.STAIR_ONLY_ACCESS)
+			? profileWeight.stairOnlyAccessPenalty()
+			: 0;
+		return trainTime + profileWeight.baseAccessCost() + lowDataPenalty + stairOnlyPenalty;
 	}
 
-	private List<RouteStep> directLineSteps(Station origin, Station destination, DirectLine directLine) {
+	private List<RouteStep> directLineSteps(
+		Station origin,
+		Station destination,
+		DirectLine directLine,
+		RouteProfileWeight profileWeight
+	) {
 		String displayLine = displayLineName(directLine.line());
 		return List.of(
 			new RouteStep(
 				1,
 				origin.nameKo() + "역에서 " + displayLine + " 승강장으로 이동",
-				"엘리베이터와 넓은 통로가 있는 출구를 먼저 확인한 뒤 승강장으로 이동합니다.",
+				profileWeight.entryGuidance(),
 				directLine.line().id(),
 				directLine.line().name(),
 				origin.id(),
@@ -308,7 +311,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			new RouteStep(
 				3,
 				destination.nameKo() + "역에서 출구 접근성 정보를 확인",
-				"도착역 출구와 엘리베이터 상태를 확인한 뒤 이동합니다.",
+				profileWeight.exitGuidance(),
 				directLine.line().id(),
 				directLine.line().name(),
 				destination.id(),
