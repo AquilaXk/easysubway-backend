@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
@@ -86,6 +87,35 @@ class TransitMasterServiceTest {
 			.extracting("id")
 			.containsExactly("seoul-4");
 		assertThat(inactiveLineMatches).isEmpty();
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 대척점 부동소수점 오차로 먼 역을 포함하지 않는다")
+	void searchNearbyStationsDoesNotIncludeAntipodalStationAsZeroDistance() {
+		var nearbyStations = service.searchNearbyStations(NearbyStationSearchCommand.of(
+			new BigDecimal("-37.302795319689004"),
+			new BigDecimal("-53.13351073508813"),
+			500,
+			10
+		));
+
+		assertThat(nearbyStations).isEmpty();
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 역-노선 연결을 한 번만 불러온다")
+	void searchNearbyStationsLoadsStationLinesOnce() {
+		var repository = new CountingTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		service.searchNearbyStations(NearbyStationSearchCommand.of(
+			new BigDecimal("37.302795"),
+			new BigDecimal("126.866489"),
+			50_000,
+			10
+		));
+
+		assertThat(repository.stationLineLoadCount).isEqualTo(1);
 	}
 
 	@Test
@@ -319,6 +349,17 @@ class TransitMasterServiceTest {
 		@Override
 		public void alertFacilityStatusChanged(FacilityStatusChangedAlertCommand command) {
 			commands.add(command);
+		}
+	}
+
+	private static class CountingTransitMasterRepository extends InMemoryTransitMasterRepository {
+
+		private int stationLineLoadCount;
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			stationLineLoadCount++;
+			return super.loadStationLines();
 		}
 	}
 }

@@ -93,6 +93,58 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("가까운 역 조회는 현재 위치 기준으로 역을 거리순 반환한다")
+	void nearbyStationsReturnStationsOrderedByDistance() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/nearby")
+				.param("lat", "37.302800")
+				.param("lng", "126.866500")
+				.param("radiusMeters", "30000"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].nameKo").value("상록수"))
+			.andExpect(jsonPath("$.data[0].distanceMeters").isNumber())
+			.andExpect(jsonPath("$.data[0].lines[0].id").value("seoul-4"))
+			.andExpect(jsonPath("$.data[1].id").value("station-sadang"));
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 반경 밖 역을 제외한다")
+	void nearbyStationsExcludeStationsOutsideRadius() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/nearby")
+				.param("lat", "37.302800")
+				.param("lng", "126.866500")
+				.param("radiusMeters", "500"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.length()").value(1))
+			.andExpect(jsonPath("$.data[0].id").value("station-sangnoksu"));
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 올바른 좌표를 요구한다")
+	void nearbyStationsRequireValidCoordinates() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/nearby")
+				.param("lat", "91.0")
+				.param("lng", "126.866500"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("위도는 -90부터 90 사이여야 합니다."));
+	}
+
+	@Test
+	@DisplayName("가까운 역 조회는 좌표 누락도 공통 오류 응답으로 반환한다")
+	void nearbyStationsReturnCommonErrorWhenCoordinatesAreMissing() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/nearby")
+				.param("lng", "126.866500"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("위도가 필요합니다."));
+	}
+
+	@Test
 	@DisplayName("역 출구 목록은 접근성 신호와 데이터 출처를 포함한다")
 	void stationExitsIncludeAccessibilitySignals() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/exits"))

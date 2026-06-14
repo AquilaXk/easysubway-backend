@@ -1,5 +1,6 @@
 package com.easysubway.transit.application.service;
 
+import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
@@ -12,6 +13,7 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -22,6 +24,7 @@ import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
@@ -31,6 +34,8 @@ import org.springframework.stereotype.Service;
 
 @Service
 public class TransitMasterService implements TransitMasterQueryUseCase, TransitMasterAdminUseCase {
+
+	private static final double EARTH_RADIUS_METERS = 6_371_000.0;
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
@@ -95,12 +100,31 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	@Override
 	public List<StationWithLines> searchStations(StationSearchCommand command) {
 		// 역 검색 결과에는 운영 중인 역과 노선만 포함해 사용자에게 닫힌 노선 선택지를 노출하지 않는다.
+		Map<String, SubwayLine> linesById = activeLinesById();
+		Map<String, List<StationLine>> stationLinesByStationId = activeStationLinesByStationId(linesById);
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
 			.filter(station -> station.matches(command.query()))
-			.map(this::withLines)
+			.map(station -> withLines(station, linesById, stationLinesByStationId))
 			.filter(station -> hasLine(station, command.lineId()))
+			.toList();
+	}
+
+	@Override
+	public List<NearbyStation> searchNearbyStations(NearbyStationSearchCommand command) {
+		Map<String, SubwayLine> linesById = activeLinesById();
+		Map<String, List<StationLine>> stationLinesByStationId = activeStationLinesByStationId(linesById);
+		return loadTransitMasterPort.loadStations()
+			.stream()
+			.filter(Station::active)
+			.map(station -> new NearbyStation(
+				withLines(station, linesById, stationLinesByStationId),
+				distanceMeters(command, station)
+			))
+			.filter(nearbyStation -> nearbyStation.distanceMeters() <= command.radiusMeters())
+			.sorted(Comparator.comparingInt(NearbyStation::distanceMeters))
+			.limit(command.limit())
 			.toList();
 	}
 
@@ -155,15 +179,34 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 	private StationWithLines withLines(Station station) {
 		// 역-노선 연결 데이터가 있어도 노선 자체가 비활성이면 응답에서 제외한다.
-		Map<String, SubwayLine> linesById = loadTransitMasterPort.loadLines()
+		return withLines(station, activeLinesById());
+	}
+
+	private Map<String, SubwayLine> activeLinesById() {
+		return loadTransitMasterPort.loadLines()
 			.stream()
 			.filter(SubwayLine::active)
 			.collect(Collectors.toMap(SubwayLine::id, Function.identity()));
+	}
 
-		List<StationLineSummary> lines = loadTransitMasterPort.loadStationLines()
+	private StationWithLines withLines(Station station, Map<String, SubwayLine> linesById) {
+		return withLines(station, linesById, activeStationLinesByStationId(linesById));
+	}
+
+	private Map<String, List<StationLine>> activeStationLinesByStationId(Map<String, SubwayLine> linesById) {
+		return loadTransitMasterPort.loadStationLines()
 			.stream()
-			.filter(stationLine -> stationLine.stationId().equals(station.id()))
 			.filter(stationLine -> linesById.containsKey(stationLine.lineId()))
+			.collect(Collectors.groupingBy(StationLine::stationId));
+	}
+
+	private StationWithLines withLines(
+		Station station,
+		Map<String, SubwayLine> linesById,
+		Map<String, List<StationLine>> stationLinesByStationId
+	) {
+		List<StationLineSummary> lines = stationLinesByStationId.getOrDefault(station.id(), List.of())
+			.stream()
 			.map(stationLine -> toSummary(stationLine, linesById))
 			.toList();
 
@@ -185,6 +228,20 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return station.lines()
 			.stream()
 			.anyMatch(line -> line.id().equals(lineId));
+	}
+
+	private int distanceMeters(NearbyStationSearchCommand command, Station station) {
+		double latitude1 = Math.toRadians(command.latitude().doubleValue());
+		double latitude2 = Math.toRadians(station.latitude().doubleValue());
+		double deltaLatitude = Math.toRadians(station.latitude().doubleValue() - command.latitude().doubleValue());
+		double deltaLongitude = Math.toRadians(station.longitude().doubleValue() - command.longitude().doubleValue());
+
+		double haversine = Math.sin(deltaLatitude / 2) * Math.sin(deltaLatitude / 2)
+			+ Math.cos(latitude1) * Math.cos(latitude2)
+			* Math.sin(deltaLongitude / 2) * Math.sin(deltaLongitude / 2);
+		double boundedHaversine = Math.min(1.0, Math.max(0.0, haversine));
+		double centralAngle = 2 * Math.atan2(Math.sqrt(boundedHaversine), Math.sqrt(1 - boundedHaversine));
+		return (int) Math.round(EARTH_RADIUS_METERS * centralAngle);
 	}
 
 	private void requireFacilityStatus(UpdateAccessibilityFacilityStatusCommand command) {

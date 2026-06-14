@@ -1,6 +1,7 @@
 package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
@@ -11,6 +12,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLineSummary;
@@ -73,6 +75,22 @@ class TransitMasterController {
 			.searchStations(new StationSearchCommand(query, lineId))
 			.stream()
 			.map(StationSummaryResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/api/v1/stations/nearby")
+	ApiResponse<List<NearbyStationResponse>> nearbyStations(
+		@RequestParam(required = false) BigDecimal lat,
+		@RequestParam(required = false) BigDecimal lng,
+		@RequestParam(required = false) Integer radiusMeters,
+		@RequestParam(required = false) Integer limit
+	) {
+		List<NearbyStationResponse> response = transitMasterQueryUseCase
+			.searchNearbyStations(NearbyStationSearchCommand.of(lat, lng, radiusMeters, limit))
+			.stream()
+			.map(NearbyStationResponse::from)
 			.toList();
 
 		return ApiResponse.ok(response);
@@ -182,6 +200,38 @@ class TransitMasterController {
 				station.dataQualityLevel(),
 				station.dataSourceType(),
 				station.lastVerifiedAt(),
+				stationWithLines.lines()
+					.stream()
+					.map(StationLineResponse::from)
+					.toList()
+			);
+		}
+	}
+
+	record NearbyStationResponse(
+		String id,
+		String nameKo,
+		String nameEn,
+		String region,
+		DataQualityLevel dataQualityLevel,
+		DataSourceType dataSourceType,
+		LocalDate lastVerifiedAt,
+		int distanceMeters,
+		List<StationLineResponse> lines
+	) {
+
+		static NearbyStationResponse from(NearbyStation nearbyStation) {
+			StationWithLines stationWithLines = nearbyStation.stationWithLines();
+			Station station = stationWithLines.station();
+			return new NearbyStationResponse(
+				station.id(),
+				station.nameKo(),
+				station.nameEn(),
+				station.region(),
+				station.dataQualityLevel(),
+				station.dataSourceType(),
+				station.lastVerifiedAt(),
+				nearbyStation.distanceMeters(),
 				stationWithLines.lines()
 					.stream()
 					.map(StationLineResponse::from)
