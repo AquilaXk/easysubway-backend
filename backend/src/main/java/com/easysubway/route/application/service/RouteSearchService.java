@@ -75,8 +75,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 
 		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id());
-		boolean stairOnlyAccess = hasStairOnlyAccess(origin.id(), destination.id());
-		List<RouteWarning> warnings = routeWarnings(origin.id(), destination.id(), stairOnlyAccess);
+		List<String> accessibilityStationIds = routePlan.accessibilityStationIds(origin.id(), destination.id());
+		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
+		List<RouteWarning> warnings = routeWarnings(accessibilityStationIds, stairOnlyAccess);
 		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
 
 		if (profileWeight.blocksStairOnlyAccess() && stairOnlyAccess) {
@@ -265,19 +266,19 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.findFirst();
 	}
 
-	private List<RouteWarning> routeWarnings(String originStationId, String destinationStationId, boolean stairOnlyAccess) {
+	private List<RouteWarning> routeWarnings(List<String> stationIds, boolean stairOnlyAccess) {
 		// 출구 데이터가 없거나 신뢰도가 낮으면 사용자가 이동 전 확인할 수 있게 경고를 남긴다.
 		List<RouteWarning> warnings = new ArrayList<>();
-		if (hasLowAccessibilityData(originStationId) || hasLowAccessibilityData(destinationStationId)) {
+		if (stationIds.stream().anyMatch(this::hasLowAccessibilityData)) {
 			warnings.add(new RouteWarning(
 				RouteWarningCode.LOW_DATA_CONFIDENCE,
-				"출발역 또는 도착역 접근성 정보가 부족합니다. 이동 전 역 상세 정보를 확인하세요."
+				"이동 경로 중 일부 역의 접근성 정보가 부족합니다. 이동 전 역 상세 정보를 확인하세요."
 			));
 		}
 		if (stairOnlyAccess) {
 			warnings.add(new RouteWarning(
 				RouteWarningCode.STAIR_ONLY_ACCESS,
-				"출발역 또는 도착역에 계단 없는 접근 경로가 확인되지 않았습니다."
+				"이동 경로 중 일부 역에 계단 없는 접근 경로가 확인되지 않았습니다."
 			));
 		}
 		return List.copyOf(warnings);
@@ -296,8 +297,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return hasLowConfidenceExit || hasLowConfidenceStepFreeFacility;
 	}
 
-	private boolean hasStairOnlyAccess(String originStationId, String destinationStationId) {
-		return hasStairOnlyAccess(originStationId) || hasStairOnlyAccess(destinationStationId);
+	private boolean hasStairOnlyAccess(List<String> stationIds) {
+		return stationIds.stream().anyMatch(this::hasStairOnlyAccess);
 	}
 
 	private boolean hasStairOnlyAccess(String stationId) {
@@ -565,6 +566,12 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 		int transferCount() {
 			return transferRoute.isPresent() ? 1 : 0;
+		}
+
+		List<String> accessibilityStationIds(String originStationId, String destinationStationId) {
+			return transferRoute
+				.map(route -> List.of(originStationId, route.transferStation().id(), destinationStationId))
+				.orElseGet(() -> List.of(originStationId, destinationStationId));
 		}
 	}
 }

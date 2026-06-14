@@ -154,6 +154,30 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("휠체어 이동 유형은 환승역이 계단 전용이면 경로를 차단한다")
+	void wheelchairRouteBlocksStairOnlyTransferStation() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new StairOnlyTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("유모차 이동 유형은 계단만 있는 역 접근 경로를 경고하고 점수를 높인다")
 	void strollerRouteWarnsStairOnlyStationAccess() {
 		var stairOnlyRepository = new InMemoryRouteSearchRepository();
@@ -591,6 +615,26 @@ class RouteSearchServiceTest {
 		public List<StationExit> loadStationExits() {
 			return List.of(
 				stepFreeExit("exit-a-1", "station-a"),
+				stepFreeExit("exit-b-1", "station-b")
+			);
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
+			);
+		}
+	}
+
+	private static class StairOnlyTransferTransitMasterPort extends OneTransferTransitMasterPort {
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of(
+				stepFreeExit("exit-a-1", "station-a"),
+				stairOnlyExit("exit-transfer-1", "station-transfer"),
 				stepFreeExit("exit-b-1", "station-b")
 			);
 		}
