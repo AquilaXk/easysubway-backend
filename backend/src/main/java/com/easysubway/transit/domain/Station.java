@@ -11,6 +11,7 @@ public record Station(
 	BigDecimal latitude,
 	BigDecimal longitude,
 	DataQualityLevel dataQualityLevel,
+	DataSourceType dataSourceType,
 	LocalDate lastVerifiedAt,
 	boolean active
 ) {

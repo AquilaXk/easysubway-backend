@@ -54,7 +54,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
-	@DisplayName("역 검색은 한글 역명으로 조회할 수 있다")
+	@DisplayName("역 검색은 한글 역명과 데이터 출처로 조회할 수 있다")
 	void stationsCanBeSearchedByKoreanName() throws Exception {
 		mockMvc.perform(get("/api/v1/stations").param("query", "상록수"))
 			.andExpect(status().isOk())
@@ -62,6 +62,7 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.data[0].id").value("station-sangnoksu"))
 			.andExpect(jsonPath("$.data[0].nameKo").value("상록수"))
 			.andExpect(jsonPath("$.data[0].dataQualityLevel").value("LEVEL_1"))
+			.andExpect(jsonPath("$.data[0].dataSourceType").value("OFFICIAL_FILE"))
 			.andExpect(jsonPath("$.data[0].lines[0].id").value("seoul-4"));
 	}
 
@@ -77,7 +78,7 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
-	@DisplayName("역 상세는 연결 노선과 데이터 품질을 포함한다")
+	@DisplayName("역 상세는 연결 노선과 데이터 품질과 출처를 포함한다")
 	void stationDetailIncludesConnectedLinesAndQuality() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu"))
 			.andExpect(status().isOk())
@@ -87,11 +88,12 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.data.latitude").value(37.302795))
 			.andExpect(jsonPath("$.data.longitude").value(126.866489))
 			.andExpect(jsonPath("$.data.dataQualityLevel").value("LEVEL_1"))
+			.andExpect(jsonPath("$.data.dataSourceType").value("OFFICIAL_FILE"))
 			.andExpect(jsonPath("$.data.lines[0].stationCode").value("448"));
 	}
 
 	@Test
-	@DisplayName("역 출구 목록은 접근성 신호를 포함한다")
+	@DisplayName("역 출구 목록은 접근성 신호와 데이터 출처를 포함한다")
 	void stationExitsIncludeAccessibilitySignals() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/exits"))
 			.andExpect(status().isOk())
@@ -101,11 +103,12 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.data[0].name").value("1번 출구"))
 			.andExpect(jsonPath("$.data[0].hasElevatorConnection").value(true))
 			.andExpect(jsonPath("$.data[0].hasStairOnlyPath").value(false))
+			.andExpect(jsonPath("$.data[0].dataSourceType").value("OFFICIAL_FILE"))
 			.andExpect(jsonPath("$.data[0].dataConfidence").value("HIGH"));
 	}
 
 	@Test
-	@DisplayName("역 시설 목록은 시설 유형과 상태와 신뢰도를 포함한다")
+	@DisplayName("역 시설 목록은 시설 유형과 상태와 신뢰도와 출처를 포함한다")
 	void stationFacilitiesIncludeTypeStatusAndConfidence() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
 			.andExpect(status().isOk())
@@ -116,6 +119,7 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.data[0].exitId").value("exit-sangnoksu-1"))
 			.andExpect(jsonPath("$.data[0].status").value("NORMAL"))
 			.andExpect(jsonPath("$.data[0].dataConfidence").value("HIGH"))
+			.andExpect(jsonPath("$.data[0].dataSourceType").value("OFFICIAL_FILE"))
 			.andExpect(jsonPath("$.data[0].lastUpdatedAt").value("2026-06-12"));
 	}
 

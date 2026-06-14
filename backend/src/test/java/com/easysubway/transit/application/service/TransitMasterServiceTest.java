@@ -286,6 +286,7 @@ class TransitMasterServiceTest {
 					new BigDecimal("37.302795"),
 					new BigDecimal("126.866489"),
 					DataQualityLevel.LEVEL_1,
+					DataSourceType.OFFICIAL_FILE,
 					LocalDate.of(2026, 6, 12),
 					true
 				)

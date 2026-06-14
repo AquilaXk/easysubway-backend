@@ -235,6 +235,7 @@ class FacilityStatusAlertServiceTest {
 				new BigDecimal("37.000000"),
 				new BigDecimal("127.000000"),
 				DataQualityLevel.LEVEL_1,
+				DataSourceType.OFFICIAL_FILE,
 				LocalDate.of(2026, 6, 12),
 				false
 			));
@@ -265,6 +266,7 @@ class FacilityStatusAlertServiceTest {
 				"운영 종료 역에 남아 있는 시설 데이터입니다.",
 				AccessibilityFacilityStatus.NORMAL,
 				DataConfidenceLevel.HIGH,
+				DataSourceType.OFFICIAL_FILE,
 				LocalDate.of(2026, 6, 12)
 			));
 		}
