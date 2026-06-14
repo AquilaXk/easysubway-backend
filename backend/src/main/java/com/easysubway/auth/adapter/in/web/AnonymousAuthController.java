@@ -1,6 +1,8 @@
 package com.easysubway.auth.adapter.in.web;
 
+import com.easysubway.auth.application.port.in.AnonymousAuthRateLimitUseCase;
 import com.easysubway.auth.application.port.in.AnonymousAuthUseCase;
+import com.easysubway.auth.domain.AnonymousAuthRateLimitExceededException;
 import com.easysubway.auth.domain.AnonymousUserCredentials;
 import com.easysubway.auth.domain.AuthenticatedUser;
 import com.easysubway.common.web.ApiResponse;
@@ -18,19 +20,19 @@ import org.springframework.web.bind.annotation.RestController;
 class AnonymousAuthController {
 
 	private final AnonymousAuthUseCase anonymousAuthUseCase;
-	private final AnonymousAuthRateLimiter anonymousAuthRateLimiter;
+	private final AnonymousAuthRateLimitUseCase anonymousAuthRateLimitUseCase;
 
 	AnonymousAuthController(
 		AnonymousAuthUseCase anonymousAuthUseCase,
-		AnonymousAuthRateLimiter anonymousAuthRateLimiter
+		AnonymousAuthRateLimitUseCase anonymousAuthRateLimitUseCase
 	) {
 		this.anonymousAuthUseCase = anonymousAuthUseCase;
-		this.anonymousAuthRateLimiter = anonymousAuthRateLimiter;
+		this.anonymousAuthRateLimitUseCase = anonymousAuthRateLimitUseCase;
 	}
 
 	@PostMapping("/api/v1/auth/anonymous")
 	ApiResponse<AnonymousAuthResponse> issueAnonymousUser(HttpServletRequest request) {
-		anonymousAuthRateLimiter.check(clientKeyFrom(request));
+		anonymousAuthRateLimitUseCase.check(clientKeyFrom(request));
 		return ApiResponse.ok(AnonymousAuthResponse.from(anonymousAuthUseCase.issueAnonymousUser()));
 	}
 

@@ -2,9 +2,19 @@ logging:
   level:
     com.easysubway: DEBUG
 
+management:
+  health:
+    redis:
+      # 로컬 단위 테스트는 Redis 서버 없이 실행하므로 Actuator 전체 상태가 DOWN이 되지 않게 한다.
+      enabled: false
+
 spring:
   datasource:
     url: jdbc:h2:mem:easysubway-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
     driver-class-name: org.h2.Driver
     username: sa
     password: ""
+  data:
+    redis:
+      host: ${EASYSUBWAY_REDIS_HOST:localhost}
+      port: ${EASYSUBWAY_REDIS_PORT:6379}

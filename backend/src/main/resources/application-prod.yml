@@ -8,6 +8,10 @@ spring:
     username: ${EASYSUBWAY_DATASOURCE_USERNAME}
     password: ${EASYSUBWAY_DATASOURCE_PASSWORD}
     driver-class-name: org.postgresql.Driver
+  data:
+    redis:
+      host: ${EASYSUBWAY_REDIS_HOST}
+      port: ${EASYSUBWAY_REDIS_PORT:6379}
   sql:
     init:
       # 운영 schema는 배포 파이프라인에서 아래 스크립트를 명시 실행한다.

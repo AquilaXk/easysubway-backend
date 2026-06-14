@@ -7,11 +7,14 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.auth.application.port.in.AnonymousAuthRateLimitUseCase;
+import com.easysubway.auth.domain.AnonymousAuthRateLimitExceededException;
 import com.jayway.jsonpath.JsonPath;
-import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.HashMap;
+import java.util.List;
+import java.util.Map;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +36,14 @@ class AnonymousAuthControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private RecordingAnonymousAuthRateLimitUseCase rateLimitUseCase;
+
+	@BeforeEach
+	void resetRateLimitUseCase() {
+		rateLimitUseCase.reset();
+	}
 
 	@Test
 	@DisplayName("익명 사용자를 발급하고 같은 Basic 인증 정보로 현재 사용자를 조회한다")
@@ -78,6 +89,16 @@ class AnonymousAuthControllerTest {
 	}
 
 	@Test
+	@DisplayName("익명 사용자 발급은 원격 주소를 발급 제한 키로 사용한다")
+	void issueAnonymousUserUsesRemoteAddressAsRateLimitKey() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/anonymous")
+				.with(remoteAddr("198.51.100.55")))
+			.andExpect(status().isOk());
+
+		assertThat(rateLimitUseCase.clientKeys).containsExactly("198.51.100.55");
+	}
+
+	@Test
 	@DisplayName("현재 사용자 조회는 고정 Basic 계정을 익명 사용자가 아닌 계정으로 반환한다")
 	void currentUserReturnsNonAnonymousForConfiguredBasicUser() throws Exception {
 		mockMvc.perform(get("/api/v1/me")
@@ -108,13 +129,28 @@ class AnonymousAuthControllerTest {
 
 		@Bean
 		@Primary
-		AnonymousAuthRateLimiter anonymousAuthRateLimiter() {
-			return new AnonymousAuthRateLimiter(
-				Clock.fixed(Instant.parse("2026-06-13T00:00:00Z"), ZoneId.of("Asia/Seoul")),
-				1,
-				Duration.ofMinutes(10),
-				100
-			);
+		RecordingAnonymousAuthRateLimitUseCase anonymousAuthRateLimitUseCase() {
+			return new RecordingAnonymousAuthRateLimitUseCase();
+		}
+	}
+
+	private static final class RecordingAnonymousAuthRateLimitUseCase implements AnonymousAuthRateLimitUseCase {
+
+		private final List<String> clientKeys = new ArrayList<>();
+		private final Map<String, Integer> countsByClientKey = new HashMap<>();
+
+		@Override
+		public void check(String clientKey) {
+			clientKeys.add(clientKey);
+			int count = countsByClientKey.merge(clientKey, 1, Integer::sum);
+			if (count > 1) {
+				throw new AnonymousAuthRateLimitExceededException("잠시 후 다시 시도해 주세요.");
+			}
+		}
+
+		private void reset() {
+			clientKeys.clear();
+			countsByClientKey.clear();
 		}
 	}
 }
