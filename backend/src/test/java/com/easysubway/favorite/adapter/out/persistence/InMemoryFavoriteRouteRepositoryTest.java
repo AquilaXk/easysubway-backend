@@ -81,10 +81,10 @@ class InMemoryFavoriteRouteRepositoryTest {
 			"A 노선 / B 노선",
 			45,
 			List.of(
-				new RouteStep(1, "출발역에서 A 노선 승강장으로 이동", "엘리베이터를 확인합니다.", "line-a", "A 노선", "station-origin", "station-origin"),
-				new RouteStep(2, "A 노선으로 환승역까지 이동", "2개 역을 이동한 뒤 환승합니다.", "line-a", "A 노선", "station-origin", "station-transfer"),
-				new RouteStep(3, "환승역에서 B 노선 승강장으로 환승", "환승역의 엘리베이터를 확인합니다.", "line-b", "B 노선", "station-transfer", "station-transfer"),
-				new RouteStep(4, "B 노선으로 도착역까지 이동", "2개 역을 이동합니다.", "line-b", "B 노선", "station-transfer", "station-destination")
+				new RouteStep(1, "출발역에서 A 노선 승강장으로 이동", "엘리베이터를 확인합니다.", "line-a", "A 노선", "station-origin", "station-origin", 4, 180, false, true),
+				new RouteStep(2, "A 노선으로 환승역까지 이동", "2개 역을 이동한 뒤 환승합니다.", "line-a", "A 노선", "station-origin", "station-transfer", 4, 1800, false, false),
+				new RouteStep(3, "환승역에서 B 노선 승강장으로 환승", "환승역의 엘리베이터를 확인합니다.", "line-b", "B 노선", "station-transfer", "station-transfer", 6, 260, false, true),
+				new RouteStep(4, "B 노선으로 도착역까지 이동", "2개 역을 이동합니다.", "line-b", "B 노선", "station-transfer", "station-destination", 4, 1800, false, false)
 			),
 			List.of(),
 			List.of(),

@@ -42,6 +42,10 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.data.destinationStationName").value("사당"))
 			.andExpect(jsonPath("$.data.lineName").value("수도권 4호선"))
 			.andExpect(jsonPath("$.data.steps[0].title").value("상록수역에서 4호선 승강장으로 이동"))
+			.andExpect(jsonPath("$.data.steps[0].estimatedMinutes").value(4))
+			.andExpect(jsonPath("$.data.steps[0].distanceMeters").value(180))
+			.andExpect(jsonPath("$.data.steps[0].includesStairs").value(false))
+			.andExpect(jsonPath("$.data.steps[0].requiresAccessibilityCheck").value(true))
 			.andReturn();
 
 		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");

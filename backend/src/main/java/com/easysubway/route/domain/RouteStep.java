@@ -7,6 +7,10 @@ public record RouteStep(
 	String lineId,
 	String lineName,
 	String fromStationId,
-	String toStationId
+	String toStationId,
+	int estimatedMinutes,
+	int distanceMeters,
+	boolean includesStairs,
+	boolean requiresAccessibilityCheck
 ) {
 }
