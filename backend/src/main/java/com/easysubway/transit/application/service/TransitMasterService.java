@@ -101,11 +101,12 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	public List<StationWithLines> searchStations(StationSearchCommand command) {
 		// 역 검색 결과에는 운영 중인 역과 노선만 포함해 사용자에게 닫힌 노선 선택지를 노출하지 않는다.
 		Map<String, SubwayLine> linesById = activeLinesById();
+		Map<String, List<StationLine>> stationLinesByStationId = activeStationLinesByStationId(linesById);
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
 			.filter(station -> station.matches(command.query()))
-			.map(station -> withLines(station, linesById))
+			.map(station -> withLines(station, linesById, stationLinesByStationId))
 			.filter(station -> hasLine(station, command.lineId()))
 			.toList();
 	}
@@ -113,10 +114,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	@Override
 	public List<NearbyStation> searchNearbyStations(NearbyStationSearchCommand command) {
 		Map<String, SubwayLine> linesById = activeLinesById();
+		Map<String, List<StationLine>> stationLinesByStationId = activeStationLinesByStationId(linesById);
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
-			.map(station -> new NearbyStation(withLines(station, linesById), distanceMeters(command, station)))
+			.map(station -> new NearbyStation(
+				withLines(station, linesById, stationLinesByStationId),
+				distanceMeters(command, station)
+			))
 			.filter(nearbyStation -> nearbyStation.distanceMeters() <= command.radiusMeters())
 			.sorted(Comparator.comparingInt(NearbyStation::distanceMeters))
 			.limit(command.limit())
@@ -185,10 +190,23 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	private StationWithLines withLines(Station station, Map<String, SubwayLine> linesById) {
-		List<StationLineSummary> lines = loadTransitMasterPort.loadStationLines()
+		return withLines(station, linesById, activeStationLinesByStationId(linesById));
+	}
+
+	private Map<String, List<StationLine>> activeStationLinesByStationId(Map<String, SubwayLine> linesById) {
+		return loadTransitMasterPort.loadStationLines()
 			.stream()
-			.filter(stationLine -> stationLine.stationId().equals(station.id()))
 			.filter(stationLine -> linesById.containsKey(stationLine.lineId()))
+			.collect(Collectors.groupingBy(StationLine::stationId));
+	}
+
+	private StationWithLines withLines(
+		Station station,
+		Map<String, SubwayLine> linesById,
+		Map<String, List<StationLine>> stationLinesByStationId
+	) {
+		List<StationLineSummary> lines = stationLinesByStationId.getOrDefault(station.id(), List.of())
+			.stream()
 			.map(stationLine -> toSummary(stationLine, linesById))
 			.toList();
 

@@ -103,6 +103,22 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("가까운 역 조회는 역-노선 연결을 한 번만 불러온다")
+	void searchNearbyStationsLoadsStationLinesOnce() {
+		var repository = new CountingTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		service.searchNearbyStations(NearbyStationSearchCommand.of(
+			new BigDecimal("37.302795"),
+			new BigDecimal("126.866489"),
+			50_000,
+			10
+		));
+
+		assertThat(repository.stationLineLoadCount).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 역 상세 조회는 도메인 예외를 던진다")
 	void getStationThrowsDomainExceptionForUnknownStation() {
 		assertThatThrownBy(() -> service.getStation("missing"))
@@ -333,6 +349,17 @@ class TransitMasterServiceTest {
 		@Override
 		public void alertFacilityStatusChanged(FacilityStatusChangedAlertCommand command) {
 			commands.add(command);
+		}
+	}
+
+	private static class CountingTransitMasterRepository extends InMemoryTransitMasterRepository {
+
+		private int stationLineLoadCount;
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			stationLineLoadCount++;
+			return super.loadStationLines();
 		}
 	}
 }
