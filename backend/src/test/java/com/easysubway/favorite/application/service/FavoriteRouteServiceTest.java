@@ -141,6 +141,19 @@ class FavoriteRouteServiceTest {
 	}
 
 	@Test
+	@DisplayName("차단된 경로 검색 결과는 즐겨찾기에 저장할 수 없다")
+	void saveFavoriteRouteRejectsBlockedRouteSearchResult() {
+		routeSearchRepository.saveRouteSearch(blockedRouteSearch("route-search-blocked"));
+
+		assertThatThrownBy(() -> service.saveFavoriteRoute(new SaveFavoriteRouteCommand(
+			"anonymous-user-1",
+			"route-search-blocked"
+		)))
+			.isInstanceOf(InvalidFavoriteRouteException.class)
+			.hasMessage("이동 가능한 경로만 즐겨찾기에 저장할 수 있습니다.");
+	}
+
+	@Test
 	@DisplayName("즐겨찾기 경로 명령은 사용자와 경로 식별자를 요구한다")
 	void favoriteRouteCommandsRequireUserAndRouteSearchId() {
 		assertThatThrownBy(() -> service.listFavoriteRoutes(new ListFavoriteRoutesCommand("")))
@@ -191,6 +204,25 @@ class FavoriteRouteServiceTest {
 			List.of(),
 			List.of(),
 			List.of(),
+			LocalDateTime.of(2026, 6, 13, 9, 0)
+		);
+	}
+
+	private RouteSearchResult blockedRouteSearch(String routeSearchId) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-sangnoksu",
+			"상록수",
+			"station-sadang",
+			"사당",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.BLOCKED,
+			"line-4",
+			"수도권 4호선",
+			0,
+			List.of(),
+			List.of(),
+			List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
 			LocalDateTime.of(2026, 6, 13, 9, 0)
 		);
 	}
