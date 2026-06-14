@@ -116,6 +116,43 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("신고 목록은 최신 신고부터 반환한다")
+	void listReportsReturnsNewestReportFirst() {
+		FacilityReportService serviceWithTickingClock = serviceWithClock(new TickingClock());
+
+		var first = serviceWithTickingClock.createReport(reportCommand("anonymous-user-list-1", "처음 접수한 신고"));
+		var second = serviceWithTickingClock.createReport(reportCommand("anonymous-user-list-2", "나중에 접수한 신고"));
+
+		assertThat(serviceWithTickingClock.listReports(null))
+			.extracting("id")
+			.containsExactly(second.id(), first.id());
+	}
+
+	@Test
+	@DisplayName("신고 목록은 상태별로 필터링한다")
+	void listReportsCanFilterByStatus() {
+		FacilityReportService serviceWithTickingClock = serviceWithClock(new TickingClock());
+
+		var submitted = serviceWithTickingClock.createReport(reportCommand("anonymous-user-submitted", "검수 대기 신고"));
+		var accepted = serviceWithTickingClock.createReport(reportCommand("anonymous-user-accepted", "승인할 신고"));
+
+		serviceWithTickingClock.reviewReport(new ReviewFacilityReportCommand(
+			accepted.id(),
+			FacilityReportReviewDecision.ACCEPT,
+			"admin-1"
+		));
+
+		assertThat(serviceWithTickingClock.listReports(FacilityReportStatus.SUBMITTED))
+			.extracting("id")
+			.contains(submitted.id())
+			.doesNotContain(accepted.id());
+		assertThat(serviceWithTickingClock.listReports(FacilityReportStatus.ACCEPTED))
+			.extracting("id")
+			.contains(accepted.id())
+			.doesNotContain(submitted.id());
+	}
+
+	@Test
 	@DisplayName("신고 검수 승인 결과와 검수자를 저장한다")
 	void reviewReportStoresAcceptedDecisionAndReviewer() {
 		var report = service.createReport(new CreateFacilityReportCommand(
@@ -217,5 +254,51 @@ class FacilityReportServiceTest {
 		)))
 			.isInstanceOf(FacilityReportNotFoundException.class)
 			.hasMessage("신고 정보를 찾을 수 없습니다.");
+	}
+
+	private CreateFacilityReportCommand reportCommand(String userId, String description) {
+		return new CreateFacilityReportCommand(
+			userId,
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			description,
+			null,
+			null,
+			null
+		);
+	}
+
+	private FacilityReportService serviceWithClock(Clock clock) {
+		var repository = new InMemoryFacilityReportRepository();
+		return new FacilityReportService(
+			new InMemoryTransitMasterRepository(),
+			repository,
+			repository,
+			clock
+		);
+	}
+
+	private static class TickingClock extends Clock {
+
+		private final ZoneId zone = ZoneId.of("Asia/Seoul");
+		private Instant current = Instant.parse("2026-06-12T00:00:00Z");
+
+		@Override
+		public ZoneId getZone() {
+			return zone;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			Instant instant = current;
+			current = current.plusSeconds(1);
+			return instant;
+		}
 	}
 }

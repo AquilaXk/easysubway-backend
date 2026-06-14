@@ -16,6 +16,8 @@ import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Comparator;
+import java.util.List;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -79,6 +81,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public FacilityReport getReport(String reportId) {
 		return loadFacilityReportPort.loadReport(reportId)
 			.orElseThrow(FacilityReportNotFoundException::new);
+	}
+
+	@Override
+	public List<FacilityReport> listReports(FacilityReportStatus status) {
+		return loadFacilityReportPort.loadReports()
+			.stream()
+			.filter(report -> status == null || report.status() == status)
+			.sorted(Comparator.comparing(FacilityReport::createdAt).reversed())
+			.toList();
 	}
 
 	@Override

@@ -3,6 +3,7 @@ package com.easysubway.report.adapter.out.persistence;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
@@ -16,6 +17,11 @@ public class InMemoryFacilityReportRepository implements LoadFacilityReportPort,
 	@Override
 	public Optional<FacilityReport> loadReport(String reportId) {
 		return Optional.ofNullable(reports.get(reportId));
+	}
+
+	@Override
+	public List<FacilityReport> loadReports() {
+		return List.copyOf(reports.values());
 	}
 
 	@Override

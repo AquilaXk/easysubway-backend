@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import java.util.List;
+import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -17,7 +19,9 @@ import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-test",
-	"easysubway.admin.password=admin-test-password"
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.user.username=basic-user",
+	"easysubway.user.password=user-test-password"
 })
 @AutoConfigureMockMvc
 @DisplayName("시설 신고 API")
@@ -216,5 +220,93 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("신고 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("관리자는 신고 목록을 최신순으로 조회하고 상태별로 좁혀 본다")
+	void adminListsReportsByNewestFirstAndStatus() throws Exception {
+		String submittedReportId = createReport("anonymous-user-list-submitted", "승강기 문이 닫히지 않습니다.");
+		String acceptedReportId = createReport("anonymous-user-list-accepted", "엘리베이터 위치가 다릅니다.");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", acceptedReportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "ACCEPT"
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		String listResponse = mockMvc.perform(get("/admin/reports")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data").isArray())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		List<String> reportIds = JsonPath.read(listResponse, "$.data[*].id");
+		Assertions.assertThat(reportIds)
+			.contains(acceptedReportId, submittedReportId);
+		Assertions.assertThat(reportIds.indexOf(acceptedReportId))
+			.isLessThan(reportIds.indexOf(submittedReportId));
+
+		String submittedOnlyResponse = mockMvc.perform(get("/admin/reports")
+				.queryParam("status", "SUBMITTED")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		List<String> submittedIds = JsonPath.read(submittedOnlyResponse, "$.data[*].id");
+		Assertions.assertThat(submittedIds).contains(submittedReportId);
+		Assertions.assertThat(submittedIds).doesNotContain(acceptedReportId);
+	}
+
+	@Test
+	@DisplayName("관리자 신고 목록은 관리자만 사용할 수 있다")
+	void adminReportListRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/reports"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/reports")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("관리자 신고 목록은 잘못된 상태 필터를 공통 오류 형식으로 응답한다")
+	void adminReportListRejectsInvalidStatusWithCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/admin/reports")
+				.queryParam("status", "submitted")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("요청 값을 확인해야 합니다."));
+	}
+
+	private String createReport(String userId, String description) throws Exception {
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "%s",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "%s"
+					}
+					""".formatted(userId, description)))
+			.andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		return JsonPath.read(response, "$.data.id");
 	}
 }

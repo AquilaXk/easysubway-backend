@@ -8,6 +8,7 @@ import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
+import org.springframework.web.method.annotation.MethodArgumentTypeMismatchException;
 
 @RestControllerAdvice
 class CommonExceptionHandler {
@@ -32,6 +33,12 @@ class CommonExceptionHandler {
 			.map(error -> error.getDefaultMessage())
 			.orElse("요청 값을 확인해야 합니다.");
 		return ApiResponse.fail(message);
+	}
+
+	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
+	@ResponseStatus(HttpStatus.BAD_REQUEST)
+	ApiResponse<Void> handleInvalidRequestParameter() {
+		return ApiResponse.fail("요청 값을 확인해야 합니다.");
 	}
 
 	@ExceptionHandler(ResourceNotFoundException.class)

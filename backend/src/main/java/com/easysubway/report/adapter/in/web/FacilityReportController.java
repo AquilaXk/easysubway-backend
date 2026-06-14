@@ -11,10 +11,12 @@ import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
@@ -38,6 +40,15 @@ class FacilityReportController {
 	@GetMapping("/api/v1/reports/{reportId}")
 	ApiResponse<FacilityReportResponse> report(@PathVariable String reportId) {
 		return ApiResponse.ok(FacilityReportResponse.from(facilityReportUseCase.getReport(reportId)));
+	}
+
+	@GetMapping("/admin/reports")
+	ApiResponse<List<FacilityReportResponse>> adminReports(@RequestParam(required = false) FacilityReportStatus status) {
+		List<FacilityReportResponse> reports = facilityReportUseCase.listReports(status)
+			.stream()
+			.map(FacilityReportResponse::from)
+			.toList();
+		return ApiResponse.ok(reports);
 	}
 
 	@PostMapping("/admin/reports/{reportId}/review")
