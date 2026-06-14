@@ -11,6 +11,7 @@ public record StationExit(
 	BigDecimal longitude,
 	boolean hasElevatorConnection,
 	boolean hasStairOnlyPath,
-	DataConfidenceLevel dataConfidence
+	DataConfidenceLevel dataConfidence,
+	DataSourceType dataSourceType
 ) {
 }

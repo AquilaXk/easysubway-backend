@@ -8,6 +8,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -76,6 +77,7 @@ class DataQualityServiceTest {
 			new BigDecimal("37.302795"),
 			new BigDecimal("126.866489"),
 			qualityLevel,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12),
 			true
 		);
@@ -91,7 +93,8 @@ class DataQualityServiceTest {
 			new BigDecimal("126.866100"),
 			true,
 			false,
-			confidenceLevel
+			confidenceLevel,
+			DataSourceType.OFFICIAL_FILE
 		);
 	}
 
@@ -109,6 +112,7 @@ class DataQualityServiceTest {
 			"교통약자 승강 편의시설",
 			AccessibilityFacilityStatus.NORMAL,
 			confidenceLevel,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12)
 		);
 	}

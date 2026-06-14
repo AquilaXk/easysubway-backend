@@ -451,8 +451,8 @@ class RouteSearchServiceTest {
 		@Override
 		public List<StationExit> loadStationExits() {
 			return List.of(
-				new StationExit("exit-a-1", "station-a", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.HIGH),
-				new StationExit("exit-b-1", "station-b", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.HIGH)
+				new StationExit("exit-a-1", "station-a", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.HIGH, DataSourceType.OFFICIAL_FILE),
+				new StationExit("exit-b-1", "station-b", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.HIGH, DataSourceType.OFFICIAL_FILE)
 			);
 		}
 
@@ -483,8 +483,8 @@ class RouteSearchServiceTest {
 		@Override
 		public List<StationExit> loadStationExits() {
 			return List.of(
-				new StationExit("exit-a-1", "station-a", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.LOW),
-				new StationExit("exit-b-1", "station-b", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.LOW)
+				new StationExit("exit-a-1", "station-a", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.LOW, DataSourceType.OFFICIAL_FILE),
+				new StationExit("exit-b-1", "station-b", "1", "1번 출구", BigDecimal.ONE, BigDecimal.ONE, false, true, DataConfidenceLevel.LOW, DataSourceType.OFFICIAL_FILE)
 			);
 		}
 	}
@@ -677,6 +677,7 @@ class RouteSearchServiceTest {
 			"테스트용 접근성 시설입니다.",
 			status,
 			dataConfidence,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 13)
 		);
 	}
@@ -703,6 +704,7 @@ class RouteSearchServiceTest {
 			BigDecimal.ONE,
 			BigDecimal.ONE,
 			DataQualityLevel.LEVEL_1,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 13),
 			true
 		);
@@ -718,7 +720,8 @@ class RouteSearchServiceTest {
 			BigDecimal.ONE,
 			false,
 			true,
-			DataConfidenceLevel.HIGH
+			DataConfidenceLevel.HIGH,
+			DataSourceType.OFFICIAL_FILE
 		);
 	}
 
@@ -732,7 +735,8 @@ class RouteSearchServiceTest {
 			BigDecimal.ONE,
 			true,
 			false,
-			DataConfidenceLevel.HIGH
+			DataConfidenceLevel.HIGH,
+			DataSourceType.OFFICIAL_FILE
 		);
 	}
 }

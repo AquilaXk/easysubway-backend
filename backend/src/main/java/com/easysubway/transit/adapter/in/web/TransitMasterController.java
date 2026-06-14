@@ -167,6 +167,7 @@ class TransitMasterController {
 		String nameEn,
 		String region,
 		DataQualityLevel dataQualityLevel,
+		DataSourceType dataSourceType,
 		LocalDate lastVerifiedAt,
 		List<StationLineResponse> lines
 	) {
@@ -179,6 +180,7 @@ class TransitMasterController {
 				station.nameEn(),
 				station.region(),
 				station.dataQualityLevel(),
+				station.dataSourceType(),
 				station.lastVerifiedAt(),
 				stationWithLines.lines()
 					.stream()
@@ -196,6 +198,7 @@ class TransitMasterController {
 		BigDecimal latitude,
 		BigDecimal longitude,
 		DataQualityLevel dataQualityLevel,
+		DataSourceType dataSourceType,
 		LocalDate lastVerifiedAt,
 		List<StationLineResponse> lines
 	) {
@@ -210,6 +213,7 @@ class TransitMasterController {
 				station.latitude(),
 				station.longitude(),
 				station.dataQualityLevel(),
+				station.dataSourceType(),
 				station.lastVerifiedAt(),
 				stationWithLines.lines()
 					.stream()
@@ -251,7 +255,8 @@ class TransitMasterController {
 		BigDecimal longitude,
 		boolean hasElevatorConnection,
 		boolean hasStairOnlyPath,
-		DataConfidenceLevel dataConfidence
+		DataConfidenceLevel dataConfidence,
+		DataSourceType dataSourceType
 	) {
 
 		static StationExitResponse from(StationExit exit) {
@@ -264,7 +269,8 @@ class TransitMasterController {
 				exit.longitude(),
 				exit.hasElevatorConnection(),
 				exit.hasStairOnlyPath(),
-				exit.dataConfidence()
+				exit.dataConfidence(),
+				exit.dataSourceType()
 			);
 		}
 	}
@@ -282,6 +288,7 @@ class TransitMasterController {
 		String description,
 		AccessibilityFacilityStatus status,
 		DataConfidenceLevel dataConfidence,
+		DataSourceType dataSourceType,
 		LocalDate lastUpdatedAt
 	) {
 
@@ -299,6 +306,7 @@ class TransitMasterController {
 				facility.description(),
 				facility.status(),
 				facility.dataConfidence(),
+				facility.dataSourceType(),
 				facility.lastUpdatedAt()
 			);
 		}

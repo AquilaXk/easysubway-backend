@@ -58,6 +58,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			new BigDecimal("37.302795"),
 			new BigDecimal("126.866489"),
 			DataQualityLevel.LEVEL_1,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12),
 			true
 		),
@@ -69,6 +70,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			new BigDecimal("37.476530"),
 			new BigDecimal("126.981685"),
 			DataQualityLevel.LEVEL_1,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12),
 			true
 		)
@@ -89,7 +91,8 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			new BigDecimal("126.866221"),
 			true,
 			false,
-			DataConfidenceLevel.HIGH
+			DataConfidenceLevel.HIGH,
+			DataSourceType.OFFICIAL_FILE
 		),
 		new StationExit(
 			"exit-sangnoksu-2",
@@ -100,7 +103,8 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			new BigDecimal("126.866768"),
 			false,
 			true,
-			DataConfidenceLevel.MEDIUM
+			DataConfidenceLevel.MEDIUM,
+			DataSourceType.OFFICIAL_FILE
 		)
 	);
 
@@ -161,6 +165,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			facility.description(),
 			status,
 			facility.dataConfidence(),
+			facility.dataSourceType(),
 			updatedAt
 		));
 	}
@@ -179,6 +184,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			"1번 출구와 대합실을 연결합니다.",
 			AccessibilityFacilityStatus.NORMAL,
 			DataConfidenceLevel.HIGH,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12)
 		));
 		saveSeedFacility(new AccessibilityFacility(
@@ -194,6 +200,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			"1번 출구 방향 상행 에스컬레이터입니다.",
 			AccessibilityFacilityStatus.NORMAL,
 			DataConfidenceLevel.MEDIUM,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12)
 		));
 		saveSeedFacility(new AccessibilityFacility(
@@ -209,6 +216,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			"개찰구 안쪽 대합실에 있습니다.",
 			AccessibilityFacilityStatus.UNKNOWN,
 			DataConfidenceLevel.NEEDS_VERIFICATION,
+			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12)
 		));
 	}

@@ -225,6 +225,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			facility.description(),
 			status,
 			facility.dataConfidence(),
+			facility.dataSourceType(),
 			updatedAt
 		);
 	}

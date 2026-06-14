@@ -16,6 +16,7 @@ public record AccessibilityFacility(
 	String description,
 	AccessibilityFacilityStatus status,
 	DataConfidenceLevel dataConfidence,
+	DataSourceType dataSourceType,
 	LocalDate lastUpdatedAt
 ) {
 }

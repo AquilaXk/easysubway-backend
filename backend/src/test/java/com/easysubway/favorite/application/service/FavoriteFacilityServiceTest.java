@@ -16,6 +16,7 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -197,6 +198,7 @@ class FavoriteFacilityServiceTest {
 				"연결 역 데이터가 없는 테스트 시설입니다.",
 				AccessibilityFacilityStatus.NORMAL,
 				DataConfidenceLevel.HIGH,
+				DataSourceType.OFFICIAL_FILE,
 				LocalDate.of(2026, 6, 12)
 			));
 		}
