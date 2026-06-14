@@ -10,6 +10,7 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
 import java.security.Principal;
 import java.time.LocalDate;
@@ -77,6 +78,7 @@ class FavoriteFacilityController {
 		String description,
 		AccessibilityFacilityStatus status,
 		DataConfidenceLevel dataConfidence,
+		DataSourceType dataSourceType,
 		LocalDate lastUpdatedAt,
 		LocalDateTime addedAt
 	) {
@@ -98,6 +100,7 @@ class FavoriteFacilityController {
 				facility.description(),
 				facility.status(),
 				facility.dataConfidence(),
+				facility.dataSourceType(),
 				facility.lastUpdatedAt(),
 				favoriteFacility.favoriteFacility().addedAt()
 			);

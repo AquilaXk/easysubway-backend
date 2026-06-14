@@ -7,6 +7,7 @@ import com.easysubway.favorite.application.port.in.RemoveFavoriteStationCommand;
 import com.easysubway.favorite.application.port.in.SaveFavoriteStationCommand;
 import com.easysubway.favorite.domain.FavoriteStationWithDetails;
 import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationLineSummary;
 import java.security.Principal;
@@ -65,6 +66,7 @@ class FavoriteStationController {
 		String nameEn,
 		String region,
 		DataQualityLevel dataQualityLevel,
+		DataSourceType dataSourceType,
 		LocalDate lastVerifiedAt,
 		List<FavoriteStationLineResponse> lines,
 		LocalDateTime addedAt
@@ -79,6 +81,7 @@ class FavoriteStationController {
 				station.nameEn(),
 				station.region(),
 				station.dataQualityLevel(),
+				station.dataSourceType(),
 				station.lastVerifiedAt(),
 				favoriteStation.station().lines()
 					.stream()

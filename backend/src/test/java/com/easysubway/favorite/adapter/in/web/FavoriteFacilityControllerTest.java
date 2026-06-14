@@ -27,7 +27,7 @@ class FavoriteFacilityControllerTest {
 	private MockMvc mockMvc;
 
 	@Test
-	@DisplayName("인증 사용자 기준으로 시설을 저장하고 목록 조회와 삭제를 처리한다")
+	@DisplayName("인증 사용자 기준으로 시설을 저장하고 데이터 출처와 함께 목록 조회와 삭제를 처리한다")
 	void favoriteFacilitiesCanBeSavedListedAndRemoved() throws Exception {
 		mockMvc.perform(put("/api/v1/me/favorites/facilities/facility-sangnoksu-elevator-1")
 				.with(httpBasic("anonymous-user-1", "user-test-password"))
@@ -47,6 +47,7 @@ class FavoriteFacilityControllerTest {
 			.andExpect(jsonPath("$.data.type").value("ELEVATOR"))
 			.andExpect(jsonPath("$.data.status").value("NORMAL"))
 			.andExpect(jsonPath("$.data.dataConfidence").value("HIGH"))
+			.andExpect(jsonPath("$.data.dataSourceType").value("OFFICIAL_FILE"))
 			.andExpect(jsonPath("$.data.lastUpdatedAt").value("2026-06-12"))
 			.andExpect(jsonPath("$.data.addedAt").isNotEmpty());
 
@@ -56,7 +57,8 @@ class FavoriteFacilityControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data[0].facilityId").value("facility-sangnoksu-elevator-1"))
 			.andExpect(jsonPath("$.data[0].stationNameKo").value("상록수"))
-			.andExpect(jsonPath("$.data[0].name").value("1번 출구 엘리베이터"));
+			.andExpect(jsonPath("$.data[0].name").value("1번 출구 엘리베이터"))
+			.andExpect(jsonPath("$.data[0].dataSourceType").value("OFFICIAL_FILE"));
 
 		mockMvc.perform(delete("/api/v1/me/favorites/facilities/facility-sangnoksu-elevator-1")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))
