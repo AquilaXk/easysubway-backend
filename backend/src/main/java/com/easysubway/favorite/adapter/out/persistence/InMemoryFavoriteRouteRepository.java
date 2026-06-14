@@ -5,6 +5,8 @@ import com.easysubway.favorite.application.port.out.LoadFavoriteRouteAlertTarget
 import com.easysubway.favorite.application.port.out.LoadFavoriteRoutePort;
 import com.easysubway.favorite.application.port.out.SaveFavoriteRoutePort;
 import com.easysubway.favorite.domain.FavoriteRoute;
+import com.easysubway.route.domain.RouteSearchResult;
+import com.easysubway.route.domain.RouteStep;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -73,7 +75,20 @@ public class InMemoryFavoriteRouteRepository implements
 	private boolean hasRouteTouchingStation(Map<String, FavoriteRoute> favorites, String stationId) {
 		return favorites.values()
 			.stream()
-			.anyMatch(favorite -> stationId.equals(favorite.route().originStationId())
-				|| stationId.equals(favorite.route().destinationStationId()));
+			.anyMatch(favorite -> routeTouchesStation(favorite.route(), stationId));
+	}
+
+	private boolean routeTouchesStation(RouteSearchResult route, String stationId) {
+		if (stationId.equals(route.originStationId()) || stationId.equals(route.destinationStationId())) {
+			return true;
+		}
+		// 환승 경로는 중간 단계에 장애 알림 대상 역이 포함될 수 있어 모든 이동 구간을 확인한다.
+		return route.steps()
+			.stream()
+			.anyMatch(step -> stepTouchesStation(step, stationId));
+	}
+
+	private boolean stepTouchesStation(RouteStep step, String stationId) {
+		return stationId.equals(step.fromStationId()) || stationId.equals(step.toStationId());
 	}
 }
