@@ -212,6 +212,16 @@ jobs:
           channel: stable
           cache: true
 
+      - name: Mobile App CI / Set up Node.js for mobile contracts
+        if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Mobile App CI / Run mobile catch contract
+        if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
+        run: node --test --test-name-pattern "모바일 generic catch" tools/ci/repository-contract.test.mjs
+
       - name: Mobile App CI / Run Flutter analyzer and tests
         if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
         working-directory: apps/mobile
