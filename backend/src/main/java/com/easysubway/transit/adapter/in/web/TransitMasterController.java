@@ -82,8 +82,8 @@ class TransitMasterController {
 
 	@GetMapping("/api/v1/stations/nearby")
 	ApiResponse<List<NearbyStationResponse>> nearbyStations(
-		@RequestParam BigDecimal lat,
-		@RequestParam BigDecimal lng,
+		@RequestParam(required = false) BigDecimal lat,
+		@RequestParam(required = false) BigDecimal lng,
 		@RequestParam(required = false) Integer radiusMeters,
 		@RequestParam(required = false) Integer limit
 	) {

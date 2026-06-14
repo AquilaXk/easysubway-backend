@@ -134,6 +134,17 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("가까운 역 조회는 좌표 누락도 공통 오류 응답으로 반환한다")
+	void nearbyStationsReturnCommonErrorWhenCoordinatesAreMissing() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/nearby")
+				.param("lng", "126.866500"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("위도가 필요합니다."));
+	}
+
+	@Test
 	@DisplayName("역 출구 목록은 접근성 신호와 데이터 출처를 포함한다")
 	void stationExitsIncludeAccessibilitySignals() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/exits"))
