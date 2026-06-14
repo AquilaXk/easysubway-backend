@@ -74,11 +74,11 @@ public class RouteSearchService implements RouteSearchUseCase {
 			throw new InvalidRouteSearchException("출발역과 도착역이 달라야 합니다.");
 		}
 
-		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id());
+		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
+		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id(), profileWeight);
 		List<String> accessibilityStationIds = routePlan.accessibilityStationIds(origin.id(), destination.id());
 		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
 		List<RouteWarning> warnings = routeWarnings(accessibilityStationIds, stairOnlyAccess);
-		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
 
 		if (profileWeight.blocksStairOnlyAccess() && stairOnlyAccess) {
 			return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
@@ -147,10 +147,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.orElseThrow(StationNotFoundException::new);
 	}
 
-	private RoutePlan findRoutePlan(String originStationId, String destinationStationId) {
+	private RoutePlan findRoutePlan(
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight
+	) {
 		return findDirectLine(originStationId, destinationStationId)
 			.map(RoutePlan::direct)
-			.or(() -> findOneTransferRoute(originStationId, destinationStationId).map(RoutePlan::transfer))
+			.or(() -> findOneTransferRoute(originStationId, destinationStationId, profileWeight).map(RoutePlan::transfer))
 			.orElseThrow(RouteNotFoundException::new);
 	}
 
@@ -179,7 +183,11 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.min(Comparator.comparingInt(DirectLine::stopCount));
 	}
 
-	private Optional<TransferRoute> findOneTransferRoute(String originStationId, String destinationStationId) {
+	private Optional<TransferRoute> findOneTransferRoute(
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight
+	) {
 		Map<String, SubwayLine> activeLinesById = loadTransitMasterPort.loadLines()
 			.stream()
 			.filter(SubwayLine::active)
@@ -220,8 +228,22 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 
 		return candidates.stream()
-			.min(Comparator.comparingInt(TransferRoute::stopCount)
+			.min(Comparator.comparingInt((TransferRoute route) -> transferCandidateCost(route, profileWeight))
 				.thenComparing(route -> route.transferStation().nameKo()));
+	}
+
+	private int transferCandidateCost(TransferRoute route, RouteProfileWeight profileWeight) {
+		String transferStationId = route.transferStation().id();
+		int stairOnlyCost = hasStairOnlyAccess(transferStationId)
+			? profileWeight.stairOnlyAccessPenalty()
+			: 0;
+		int lowDataCost = hasLowAccessibilityData(transferStationId)
+			? profileWeight.lowDataConfidencePenalty()
+			: 0;
+		int blockedTransferCost = profileWeight.blocksStairOnlyAccess() && hasStairOnlyAccess(transferStationId)
+			? 10_000
+			: 0;
+		return route.stopCount() * 3 + profileWeight.transferPenalty() + stairOnlyCost + lowDataCost + blockedTransferCost;
 	}
 
 	private void addTransferCandidate(
