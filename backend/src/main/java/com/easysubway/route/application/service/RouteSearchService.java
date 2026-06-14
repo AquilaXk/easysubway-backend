@@ -228,8 +228,16 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 
 		return candidates.stream()
-			.min(Comparator.comparingInt((TransferRoute route) -> transferCandidateCost(route, profileWeight))
+			.min(Comparator.comparingInt((TransferRoute route) -> transferAccessibilityRank(route, profileWeight))
+				.thenComparingInt(route -> transferCandidateCost(route, profileWeight))
 				.thenComparing(route -> route.transferStation().nameKo()));
+	}
+
+	private int transferAccessibilityRank(TransferRoute route, RouteProfileWeight profileWeight) {
+		if (profileWeight.blocksStairOnlyAccess() && hasStairOnlyAccess(route.transferStation().id())) {
+			return 1;
+		}
+		return 0;
 	}
 
 	private int transferCandidateCost(TransferRoute route, RouteProfileWeight profileWeight) {
@@ -240,10 +248,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		int lowDataCost = hasLowAccessibilityData(transferStationId)
 			? profileWeight.lowDataConfidencePenalty()
 			: 0;
-		int blockedTransferCost = profileWeight.blocksStairOnlyAccess() && hasStairOnlyAccess(transferStationId)
-			? 10_000
-			: 0;
-		return route.stopCount() * 3 + profileWeight.transferPenalty() + stairOnlyCost + lowDataCost + blockedTransferCost;
+		return route.stopCount() * 3 + profileWeight.transferPenalty() + stairOnlyCost + lowDataCost;
 	}
 
 	private void addTransferCandidate(

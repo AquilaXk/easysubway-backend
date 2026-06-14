@@ -13,6 +13,7 @@ import com.easysubway.favorite.domain.InvalidFavoriteRouteException;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
+import com.easysubway.route.domain.RouteSearchStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Comparator;
@@ -81,6 +82,7 @@ public class FavoriteRouteService implements FavoriteRouteUseCase {
 		}
 
 		RouteSearchResult route = loadRouteSearch(command.routeSearchId());
+		requireSavableRoute(route);
 
 		FavoriteRoute favoriteRoute = saveFavoriteRoutePort.saveFavoriteRoute(new FavoriteRoute(
 			command.userId(),
@@ -106,6 +108,13 @@ public class FavoriteRouteService implements FavoriteRouteUseCase {
 		// 즐겨찾기 경로는 사용자가 방금 확인한 경로 검색 결과만 저장해 오래된 임의 ID 저장을 막는다.
 		return loadRouteSearchPort.loadRouteSearch(routeSearchId)
 			.orElseThrow(RouteSearchNotFoundException::new);
+	}
+
+	private void requireSavableRoute(RouteSearchResult route) {
+		// 실제 이동 후보가 아닌 차단 경로는 즐겨찾기와 시설 알림 대상에서 제외한다.
+		if (route.status() != RouteSearchStatus.FOUND) {
+			throw new InvalidFavoriteRouteException("이동 가능한 경로만 즐겨찾기에 저장할 수 있습니다.");
+		}
 	}
 
 	private void requireUserId(String userId) {
