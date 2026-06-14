@@ -2,6 +2,7 @@ package com.easysubway.transit.adapter.in.web;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -10,9 +11,16 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+	"easysubway.admin.username=admin-user",
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.user.username=basic-user",
+	"easysubway.user.password=user-test-password"
+})
 @AutoConfigureMockMvc
 @DisplayName("도시철도 마스터데이터 API")
 class TransitMasterControllerTest {
@@ -139,5 +147,81 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("관리자는 시설 상태를 수정하고 공개 시설 목록에서 확인할 수 있다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesFacilityStatusAndPublicListReflectsIt() throws Exception {
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "BROKEN"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data.status").value("BROKEN"));
+
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].status").value("BROKEN"));
+	}
+
+	@Test
+	@DisplayName("시설 상태 수정 API는 관리자 인증을 요구한다")
+	void updateFacilityStatusRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "BROKEN"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "BROKEN"
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("시설 상태 수정 요청은 상태값을 요구한다")
+	void updateFacilityStatusRequiresStatus() throws Exception {
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("시설 상태를 선택해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 시설 상태 수정은 공통 404 응답을 반환한다")
+	void updateFacilityStatusReturnsCommonErrorForMissingFacility() throws Exception {
+		mockMvc.perform(patch("/admin/facilities/missing-facility/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "BROKEN"
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("시설 정보를 찾을 수 없습니다."));
 	}
 }

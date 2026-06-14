@@ -2,7 +2,9 @@ package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
+import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
@@ -16,20 +18,28 @@ import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.math.BigDecimal;
+import java.security.Principal;
 import java.time.LocalDate;
 import java.util.List;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 class TransitMasterController {
 
 	private final TransitMasterQueryUseCase transitMasterQueryUseCase;
+	private final TransitMasterAdminUseCase transitMasterAdminUseCase;
 
-	TransitMasterController(TransitMasterQueryUseCase transitMasterQueryUseCase) {
+	TransitMasterController(
+		TransitMasterQueryUseCase transitMasterQueryUseCase,
+		TransitMasterAdminUseCase transitMasterAdminUseCase
+	) {
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
+		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
 	}
 
 	@GetMapping("/api/v1/operators")
@@ -91,6 +101,18 @@ class TransitMasterController {
 			.toList();
 
 		return ApiResponse.ok(response);
+	}
+
+	@PatchMapping("/admin/facilities/{facilityId}/status")
+	ApiResponse<AccessibilityFacilityResponse> updateFacilityStatus(
+		@PathVariable String facilityId,
+		@RequestBody UpdateAccessibilityFacilityStatusRequest request,
+		Principal principal
+	) {
+		AccessibilityFacility facility = transitMasterAdminUseCase.updateFacilityStatus(
+			request.toCommand(facilityId, principal.getName())
+		);
+		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
 	}
 
 	record TransitOperatorResponse(
@@ -279,6 +301,15 @@ class TransitMasterController {
 				facility.dataConfidence(),
 				facility.lastUpdatedAt()
 			);
+		}
+	}
+
+	record UpdateAccessibilityFacilityStatusRequest(
+		AccessibilityFacilityStatus status
+	) {
+
+		UpdateAccessibilityFacilityStatusCommand toCommand(String facilityId, String updatedBy) {
+			return new UpdateAccessibilityFacilityStatusCommand(facilityId, status, updatedBy);
 		}
 	}
 }

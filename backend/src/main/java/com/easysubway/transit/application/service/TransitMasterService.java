@@ -1,9 +1,15 @@
 package com.easysubway.transit.application.service;
 
 import com.easysubway.transit.application.port.in.StationSearchCommand;
+import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -12,19 +18,38 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
-public class TransitMasterService implements TransitMasterQueryUseCase {
+public class TransitMasterService implements TransitMasterQueryUseCase, TransitMasterAdminUseCase {
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
+	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
+	private final Clock clock;
 
-	public TransitMasterService(LoadTransitMasterPort loadTransitMasterPort) {
+	@Autowired
+	public TransitMasterService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort
+	) {
+		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, Clock.systemDefaultZone());
+	}
+
+	public TransitMasterService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		Clock clock
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
+		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
+		this.clock = clock;
 	}
 
 	@Override
@@ -79,6 +104,18 @@ public class TransitMasterService implements TransitMasterQueryUseCase {
 			.toList();
 	}
 
+	@Override
+	public AccessibilityFacility updateFacilityStatus(UpdateAccessibilityFacilityStatusCommand command) {
+		requireFacilityStatus(command);
+		requireUpdater(command);
+
+		AccessibilityFacility facility = loadAccessibilityFacility(command.facilityId());
+		LocalDate updatedAt = LocalDate.now(clock);
+		// 관리자 직접 수정은 역 상세와 경로 추천이 함께 사용하는 운영 상태의 기준값을 바꾼다.
+		saveAccessibilityFacilityStatusPort.saveFacilityStatus(facility.id(), command.status(), updatedAt);
+		return withStatus(facility, command.status(), updatedAt);
+	}
+
 	private Station loadActiveStation(String stationId) {
 		return loadTransitMasterPort.loadStations()
 			.stream()
@@ -120,5 +157,47 @@ public class TransitMasterService implements TransitMasterQueryUseCase {
 		return station.lines()
 			.stream()
 			.anyMatch(line -> line.id().equals(lineId));
+	}
+
+	private void requireFacilityStatus(UpdateAccessibilityFacilityStatusCommand command) {
+		if (command.status() == null) {
+			throw new InvalidAccessibilityFacilityException("시설 상태를 선택해야 합니다.");
+		}
+	}
+
+	private void requireUpdater(UpdateAccessibilityFacilityStatusCommand command) {
+		if (command.updatedBy() == null || command.updatedBy().isBlank()) {
+			throw new InvalidAccessibilityFacilityException("수정자 식별자가 필요합니다.");
+		}
+	}
+
+	private AccessibilityFacility loadAccessibilityFacility(String facilityId) {
+		return loadTransitMasterPort.loadAccessibilityFacilities()
+			.stream()
+			.filter(facility -> facility.id().equals(facilityId))
+			.findFirst()
+			.orElseThrow(AccessibilityFacilityNotFoundException::new);
+	}
+
+	private AccessibilityFacility withStatus(
+		AccessibilityFacility facility,
+		AccessibilityFacilityStatus status,
+		LocalDate updatedAt
+	) {
+		return new AccessibilityFacility(
+			facility.id(),
+			facility.stationId(),
+			facility.exitId(),
+			facility.type(),
+			facility.name(),
+			facility.floorFrom(),
+			facility.floorTo(),
+			facility.latitude(),
+			facility.longitude(),
+			facility.description(),
+			status,
+			facility.dataConfidence(),
+			updatedAt
+		);
 	}
 }

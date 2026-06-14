@@ -5,13 +5,16 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -19,7 +22,10 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -27,7 +33,8 @@ import org.junit.jupiter.api.Test;
 @DisplayName("도시철도 마스터데이터 서비스")
 class TransitMasterServiceTest {
 
-	private final TransitMasterService service = new TransitMasterService(new InMemoryTransitMasterRepository());
+	private final InMemoryTransitMasterRepository transitRepository = new InMemoryTransitMasterRepository();
+	private final TransitMasterService service = new TransitMasterService(transitRepository, transitRepository);
 
 	@Test
 	@DisplayName("활성 운영기관 마스터데이터를 반환한다")
@@ -63,7 +70,11 @@ class TransitMasterServiceTest {
 	@Test
 	@DisplayName("역 검색 응답에서 비활성 노선은 제외한다")
 	void searchStationsExcludesInactiveLinesFromStationResponses() {
-		var serviceWithInactiveLine = new TransitMasterService(new TransitMasterPortWithInactiveLine());
+		var serviceWithInactiveLine = new TransitMasterService(
+			new TransitMasterPortWithInactiveLine(),
+			(facilityId, status, updatedAt) -> {
+			}
+		);
 
 		var stations = serviceWithInactiveLine.searchStations(new StationSearchCommand("상록수", null));
 		var inactiveLineMatches = serviceWithInactiveLine.searchStations(new StationSearchCommand("상록수", "closed-line"));
@@ -120,6 +131,74 @@ class TransitMasterServiceTest {
 		assertThatThrownBy(() -> service.listStationFacilities("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 시설 상태를 수정하고 갱신일을 기록한다")
+	void updateFacilityStatusStoresStatusAndUpdatedDate() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var updated = service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		));
+
+		assertThat(updated.status()).isEqualTo(AccessibilityFacilityStatus.BROKEN);
+		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
+		assertThat(service.listStationFacilities("station-sangnoksu").getFirst().status())
+			.isEqualTo(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("시설 상태 수정은 상태값과 관리자 식별자를 요구한다")
+	void updateFacilityStatusRequiresStatusAndReviewer() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		assertThatThrownBy(() -> service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("시설 상태를 선택해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			""
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 시설 상태는 수정할 수 없다")
+	void updateFacilityStatusRequiresExistingFacility() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		assertThatThrownBy(() -> service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"missing-facility",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		)))
+			.isInstanceOf(AccessibilityFacilityNotFoundException.class)
+			.hasMessage("시설 정보를 찾을 수 없습니다.");
 	}
 
 	private static class TransitMasterPortWithInactiveLine implements LoadTransitMasterPort {
