@@ -290,6 +290,65 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.message").value("요청 값을 확인해야 합니다."));
 	}
 
+	@Test
+	@DisplayName("관리자는 신고 상세에서 사진과 위치 정보를 확인한다")
+	void adminReadsReportDetailWithPhotoAndLocation() throws Exception {
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-admin-detail",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "엘리베이터 앞 안내문이 떨어져 있습니다.",
+					  "photoUrl": "https://cdn.example.test/reports/elevator-notice.jpg",
+					  "latitude": 37.302421,
+					  "longitude": 126.866221
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+
+		mockMvc.perform(get("/admin/reports/{reportId}", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.userId").value("anonymous-user-admin-detail"))
+			.andExpect(jsonPath("$.data.description").value("엘리베이터 앞 안내문이 떨어져 있습니다."))
+			.andExpect(jsonPath("$.data.photoUrl").value("https://cdn.example.test/reports/elevator-notice.jpg"))
+			.andExpect(jsonPath("$.data.latitude").value(37.302421))
+			.andExpect(jsonPath("$.data.longitude").value(126.866221))
+			.andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+	}
+
+	@Test
+	@DisplayName("관리자 신고 상세는 관리자만 사용할 수 있다")
+	void adminReportDetailRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/reports/report-1"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/reports/report-1")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 관리자 신고 상세는 공통 404 응답을 반환한다")
+	void adminReportDetailReturnsCommonErrorForMissingReport() throws Exception {
+		mockMvc.perform(get("/admin/reports/missing-report")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("신고 정보를 찾을 수 없습니다."));
+	}
+
 	private String createReport(String userId, String description) throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.contentType(MediaType.APPLICATION_JSON)

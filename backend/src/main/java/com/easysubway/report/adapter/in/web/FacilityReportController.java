@@ -51,6 +51,11 @@ class FacilityReportController {
 		return ApiResponse.ok(reports);
 	}
 
+	@GetMapping("/admin/reports/{reportId}")
+	ApiResponse<FacilityReportResponse> adminReport(@PathVariable String reportId) {
+		return ApiResponse.ok(FacilityReportResponse.from(facilityReportUseCase.getReport(reportId)));
+	}
+
 	@PostMapping("/admin/reports/{reportId}/review")
 	ApiResponse<FacilityReportResponse> reviewReport(
 		@PathVariable String reportId,
