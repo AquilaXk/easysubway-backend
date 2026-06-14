@@ -12,6 +12,8 @@ import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
+import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
+import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.StationNotFoundException;
@@ -225,6 +227,95 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("승인된 시설 상태 신고는 즐겨찾기 알림을 요청한다")
+	void acceptedReportRequestsFavoriteFacilityStatusAlert() {
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var transitRepository = new InMemoryTransitMasterRepository();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var report = service.createReport(reportCommand(
+			"anonymous-user-alert",
+			FacilityReportType.BROKEN,
+			"알림을 보낼 고장 신고입니다."
+		));
+
+		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.ACCEPT));
+
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::facilityId)
+			.containsExactly("facility-sangnoksu-elevator-1");
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::status)
+			.containsExactly(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("시설 상태를 바꾸지 않는 신고 검수는 즐겨찾기 알림을 요청하지 않는다")
+	void reviewWithoutFacilityStatusChangeDoesNotRequestFavoriteAlert() {
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var transitRepository = new InMemoryTransitMasterRepository();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var rejected = service.createReport(reportCommand(
+			"anonymous-user-rejected-alert",
+			FacilityReportType.BROKEN,
+			"반려할 고장 신고입니다."
+		));
+		var informationWrong = service.createReport(reportCommand(
+			"anonymous-user-info-alert",
+			FacilityReportType.INFORMATION_WRONG,
+			"위치 설명이 다릅니다."
+		));
+
+		service.reviewReport(reviewCommand(rejected.id(), FacilityReportReviewDecision.REJECT));
+		service.reviewReport(reviewCommand(informationWrong.id(), FacilityReportReviewDecision.ACCEPT));
+
+		assertThat(alertUseCase.commands).isEmpty();
+	}
+
+	@Test
+	@DisplayName("이미 같은 상태인 신고 승인은 즐겨찾기 알림을 요청하지 않는다")
+	void acceptedReportWithSameFacilityStatusDoesNotRequestFavoriteAlert() {
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var transitRepository = new InMemoryTransitMasterRepository();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var report = service.createReport(reportCommand(
+			"anonymous-user-same-status",
+			FacilityReportType.RECOVERED,
+			"이미 정상 상태인 시설입니다."
+		));
+
+		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.ACCEPT));
+
+		assertThat(alertUseCase.commands).isEmpty();
+	}
+
+	@Test
 	@DisplayName("반려와 중복 처리된 시설 신고는 시설 상태를 바꾸지 않는다")
 	void rejectedOrDuplicateReportDoesNotUpdateFacilityStatus() {
 		var transitRepository = new InMemoryTransitMasterRepository();
@@ -409,6 +500,16 @@ class FacilityReportServiceTest {
 			Instant instant = current;
 			current = current.plusSeconds(1);
 			return instant;
+		}
+	}
+
+	private static class RecordingFacilityStatusAlertUseCase implements FacilityStatusAlertUseCase {
+
+		private final java.util.List<FacilityStatusChangedAlertCommand> commands = new java.util.ArrayList<>();
+
+		@Override
+		public void alertFacilityStatusChanged(FacilityStatusChangedAlertCommand command) {
+			commands.add(command);
 		}
 	}
 }

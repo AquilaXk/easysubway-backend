@@ -7,6 +7,8 @@ import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepos
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
+import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -156,6 +158,53 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("관리자 시설 상태 수정은 즐겨찾기 알림을 요청한다")
+	void updateFacilityStatusRequestsFavoriteAlert() {
+		var repository = new InMemoryTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		));
+
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::facilityId)
+			.containsExactly("facility-sangnoksu-elevator-1");
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::status)
+			.containsExactly(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("관리자 시설 상태 수정은 값이 같으면 즐겨찾기 알림을 요청하지 않는다")
+	void updateFacilityStatusDoesNotRequestFavoriteAlertWhenStatusIsSame() {
+		var repository = new InMemoryTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		service.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.NORMAL,
+			"admin-user"
+		));
+
+		assertThat(alertUseCase.commands).isEmpty();
+	}
+
+	@Test
 	@DisplayName("시설 상태 수정은 상태값과 관리자 식별자를 요구한다")
 	void updateFacilityStatusRequiresStatusAndReviewer() {
 		var repository = new InMemoryTransitMasterRepository();
@@ -259,6 +308,16 @@ class TransitMasterServiceTest {
 		@Override
 		public List<AccessibilityFacility> loadAccessibilityFacilities() {
 			return List.of();
+		}
+	}
+
+	private static class RecordingFacilityStatusAlertUseCase implements FacilityStatusAlertUseCase {
+
+		private final java.util.List<FacilityStatusChangedAlertCommand> commands = new java.util.ArrayList<>();
+
+		@Override
+		public void alertFacilityStatusChanged(FacilityStatusChangedAlertCommand command) {
+			commands.add(command);
 		}
 	}
 }

@@ -12,6 +12,8 @@ import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
+import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
+import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -34,6 +36,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
+	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final Clock clock;
 
 	@Autowired
@@ -41,13 +44,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		LoadFacilityReportPort loadFacilityReportPort,
-		SaveFacilityReportPort saveFacilityReportPort
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase
 	) {
 		this(
 			loadTransitMasterPort,
 			saveAccessibilityFacilityStatusPort,
 			loadFacilityReportPort,
 			saveFacilityReportPort,
+			facilityStatusAlertUseCase,
 			Clock.systemDefaultZone()
 		);
 	}
@@ -59,10 +64,30 @@ public class FacilityReportService implements FacilityReportUseCase {
 		SaveFacilityReportPort saveFacilityReportPort,
 		Clock clock
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			command -> {
+			},
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		Clock clock
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
+		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.clock = clock;
 	}
 
@@ -186,11 +211,31 @@ public class FacilityReportService implements FacilityReportUseCase {
 			return;
 		}
 
-		toFacilityStatus(report.reportType()).ifPresent(status -> saveAccessibilityFacilityStatusPort.saveFacilityStatus(
-			report.facilityId(),
-			status,
-			LocalDate.now(clock)
-		));
+		toFacilityStatus(report.reportType()).ifPresent(status -> {
+			boolean statusChanged = isFacilityStatusChanged(report.facilityId(), status);
+			saveAccessibilityFacilityStatusPort.saveFacilityStatus(
+				report.facilityId(),
+				status,
+				LocalDate.now(clock)
+			);
+			if (!statusChanged) {
+				return;
+			}
+			// 신고 승인과 관리자 직접 수정은 같은 알림 정책을 사용해야 사용자 경험이 일관된다.
+			// 현재는 outbox 생성까지 같은 요청에서 처리하며, 외부 push 발송 어댑터는 별도 재시도/트랜잭션 경계를 둔다.
+			facilityStatusAlertUseCase.alertFacilityStatusChanged(
+				new FacilityStatusChangedAlertCommand(report.facilityId(), status)
+			);
+		});
+	}
+
+	private boolean isFacilityStatusChanged(String facilityId, AccessibilityFacilityStatus status) {
+		return loadTransitMasterPort.loadAccessibilityFacilities()
+			.stream()
+			.filter(facility -> facility.id().equals(facilityId))
+			.findFirst()
+			.map(facility -> facility.status() != status)
+			.orElseThrow(FacilityReportTargetNotFoundException::new);
 	}
 
 	private Optional<AccessibilityFacilityStatus> toFacilityStatus(FacilityReportType reportType) {

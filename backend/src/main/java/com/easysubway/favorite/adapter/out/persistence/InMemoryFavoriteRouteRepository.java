@@ -1,6 +1,7 @@
 package com.easysubway.favorite.adapter.out.persistence;
 
 import com.easysubway.favorite.application.port.out.DeleteFavoriteRoutePort;
+import com.easysubway.favorite.application.port.out.LoadFavoriteRouteAlertTargetPort;
 import com.easysubway.favorite.application.port.out.LoadFavoriteRoutePort;
 import com.easysubway.favorite.application.port.out.SaveFavoriteRoutePort;
 import com.easysubway.favorite.domain.FavoriteRoute;
@@ -8,12 +9,14 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class InMemoryFavoriteRouteRepository implements
 	LoadFavoriteRoutePort,
+	LoadFavoriteRouteAlertTargetPort,
 	SaveFavoriteRoutePort,
 	DeleteFavoriteRoutePort {
 
@@ -29,6 +32,17 @@ public class InMemoryFavoriteRouteRepository implements
 	@Override
 	public synchronized Optional<FavoriteRoute> loadFavoriteRoute(String userId, String routeSearchId) {
 		return Optional.ofNullable(favoritesByUserId.getOrDefault(userId, Map.of()).get(routeSearchId));
+	}
+
+	@Override
+	public synchronized List<String> loadUserIdsByRouteStationId(String stationId) {
+		Objects.requireNonNull(stationId, "역 식별자가 필요합니다.");
+		return favoritesByUserId.entrySet()
+			.stream()
+			.filter(entry -> hasRouteTouchingStation(entry.getValue(), stationId))
+			.map(Map.Entry::getKey)
+			.sorted()
+			.toList();
 	}
 
 	@Override
@@ -54,5 +68,12 @@ public class InMemoryFavoriteRouteRepository implements
 			String oldestRouteSearchId = favorites.keySet().iterator().next();
 			favorites.remove(oldestRouteSearchId);
 		}
+	}
+
+	private boolean hasRouteTouchingStation(Map<String, FavoriteRoute> favorites, String stationId) {
+		return favorites.values()
+			.stream()
+			.anyMatch(favorite -> stationId.equals(favorite.route().originStationId())
+				|| stationId.equals(favorite.route().destinationStationId()));
 	}
 }

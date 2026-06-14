@@ -4,6 +4,8 @@ import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
+import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
@@ -32,14 +34,24 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
+	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final Clock clock;
 
 	@Autowired
 	public TransitMasterService(
 		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase
+	) {
+		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, facilityStatusAlertUseCase, Clock.systemDefaultZone());
+	}
+
+	public TransitMasterService(
+		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort
 	) {
-		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, Clock.systemDefaultZone());
+		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, command -> {
+		}, Clock.systemDefaultZone());
 	}
 
 	public TransitMasterService(
@@ -47,8 +59,19 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		Clock clock
 	) {
+		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, command -> {
+		}, clock);
+	}
+
+	public TransitMasterService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		Clock clock
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
+		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.clock = clock;
 	}
 
@@ -113,6 +136,11 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		LocalDate updatedAt = LocalDate.now(clock);
 		// 관리자 직접 수정은 역 상세와 경로 추천이 함께 사용하는 운영 상태의 기준값을 바꾼다.
 		saveAccessibilityFacilityStatusPort.saveFacilityStatus(facility.id(), command.status(), updatedAt);
+		if (facility.status() != command.status()) {
+			facilityStatusAlertUseCase.alertFacilityStatusChanged(
+				new FacilityStatusChangedAlertCommand(facility.id(), command.status())
+			);
+		}
 		return withStatus(facility, command.status(), updatedAt);
 	}
 

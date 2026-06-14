@@ -1,12 +1,14 @@
 package com.easysubway.favorite.adapter.out.persistence;
 
 import com.easysubway.favorite.application.port.out.DeleteFavoriteStationPort;
+import com.easysubway.favorite.application.port.out.LoadFavoriteStationAlertTargetPort;
 import com.easysubway.favorite.application.port.out.LoadFavoriteStationPort;
 import com.easysubway.favorite.application.port.out.SaveFavoriteStationPort;
 import com.easysubway.favorite.domain.FavoriteStation;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import org.springframework.stereotype.Repository;
@@ -14,6 +16,7 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class InMemoryFavoriteStationRepository implements
 	LoadFavoriteStationPort,
+	LoadFavoriteStationAlertTargetPort,
 	SaveFavoriteStationPort,
 	DeleteFavoriteStationPort {
 
@@ -27,6 +30,17 @@ public class InMemoryFavoriteStationRepository implements
 	@Override
 	public Optional<FavoriteStation> loadFavoriteStation(String userId, String stationId) {
 		return Optional.ofNullable(favoritesByUserId.getOrDefault(userId, Map.of()).get(stationId));
+	}
+
+	@Override
+	public List<String> loadUserIdsByFavoriteStationId(String stationId) {
+		Objects.requireNonNull(stationId, "역 식별자가 필요합니다.");
+		return favoritesByUserId.entrySet()
+			.stream()
+			.filter(entry -> entry.getValue().containsKey(stationId))
+			.map(Map.Entry::getKey)
+			.sorted()
+			.toList();
 	}
 
 	@Override
