@@ -50,6 +50,22 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("지역 목록은 활성 운영기관과 노선과 역 수를 집계한다")
+	void listRegionsSummarizesActiveMasterDataCounts() {
+		var regions = service.listRegions();
+
+		assertThat(regions)
+			.extracting("name")
+			.containsExactly("수도권");
+		var region = regions.getFirst();
+		assertThat(region.operatorCount()).isEqualTo(2);
+		assertThat(region.lineCount()).isEqualTo(2);
+		assertThat(region.stationCount()).isEqualTo(2);
+		assertThat(region.dataQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_1, 2L);
+	}
+
+	@Test
 	@DisplayName("운영기관 식별자로 노선을 필터링한다")
 	void listLinesCanFilterByOperatorId() {
 		var lines = service.listLines("korail");

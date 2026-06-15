@@ -19,10 +19,12 @@ import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
+import com.easysubway.transit.domain.TransitRegionSummary;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -42,6 +44,16 @@ class TransitMasterController {
 	) {
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
+	}
+
+	@GetMapping("/api/v1/regions")
+	ApiResponse<List<TransitRegionResponse>> regions() {
+		List<TransitRegionResponse> response = transitMasterQueryUseCase.listRegions()
+			.stream()
+			.map(TransitRegionResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
 	}
 
 	@GetMapping("/api/v1/operators")
@@ -131,6 +143,25 @@ class TransitMasterController {
 			request.toCommand(facilityId, principal.getName())
 		);
 		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
+	}
+
+	record TransitRegionResponse(
+		String name,
+		int operatorCount,
+		int lineCount,
+		int stationCount,
+		Map<DataQualityLevel, Long> dataQualityCounts
+	) {
+
+		static TransitRegionResponse from(TransitRegionSummary region) {
+			return new TransitRegionResponse(
+				region.name(),
+				region.operatorCount(),
+				region.lineCount(),
+				region.stationCount(),
+				region.dataQualityCounts()
+			);
+		}
 	}
 
 	record TransitOperatorResponse(

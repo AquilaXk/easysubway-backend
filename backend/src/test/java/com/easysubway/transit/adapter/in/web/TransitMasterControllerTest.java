@@ -29,6 +29,19 @@ class TransitMasterControllerTest {
 	private MockMvc mockMvc;
 
 	@Test
+	@DisplayName("지역 목록은 활성 마스터데이터 수와 데이터 품질 분포를 반환한다")
+	void regionsReturnActiveMasterDataCountsAndQualityCounts() throws Exception {
+		mockMvc.perform(get("/api/v1/regions"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].name").value("수도권"))
+			.andExpect(jsonPath("$.data[0].operatorCount").value(2))
+			.andExpect(jsonPath("$.data[0].lineCount").value(2))
+			.andExpect(jsonPath("$.data[0].stationCount").value(2))
+			.andExpect(jsonPath("$.data[0].dataQualityCounts.LEVEL_1").value(2));
+	}
+
+	@Test
 	@DisplayName("운영기관 목록은 시드된 활성 기관을 반환한다")
 	void operatorsReturnsSeededTransitOperators() throws Exception {
 		mockMvc.perform(get("/api/v1/operators"))

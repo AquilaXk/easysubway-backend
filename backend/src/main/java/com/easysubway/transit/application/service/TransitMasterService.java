@@ -12,6 +12,7 @@ import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStat
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.Station;
@@ -22,13 +23,16 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
+import com.easysubway.transit.domain.TransitRegionSummary;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.function.Function;
 import java.util.stream.Collectors;
+import java.util.stream.Stream;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -81,18 +85,31 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	@Override
-	public List<TransitOperator> listOperators() {
-		return loadTransitMasterPort.loadOperators()
-			.stream()
-			.filter(TransitOperator::active)
+	public List<TransitRegionSummary> listRegions() {
+		List<TransitOperator> operators = activeOperators();
+		List<SubwayLine> lines = activeLines();
+		List<Station> stations = activeStations();
+
+		return Stream.concat(
+				Stream.concat(operators.stream().map(TransitOperator::region), lines.stream().map(SubwayLine::region)),
+				stations.stream().map(Station::region)
+			)
+			.filter(region -> region != null && !region.isBlank())
+			.distinct()
+			.sorted()
+			.map(region -> summarizeRegion(region, operators, lines, stations))
 			.toList();
 	}
 
 	@Override
+	public List<TransitOperator> listOperators() {
+		return activeOperators();
+	}
+
+	@Override
 	public List<SubwayLine> listLines(String operatorId) {
-		return loadTransitMasterPort.loadLines()
+		return activeLines()
 			.stream()
-			.filter(SubwayLine::active)
 			.filter(line -> operatorId == null || operatorId.isBlank() || line.operatorId().equals(operatorId))
 			.toList();
 	}
@@ -168,10 +185,57 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return withStatus(facility, command.status(), updatedAt);
 	}
 
-	private Station loadActiveStation(String stationId) {
+	private TransitRegionSummary summarizeRegion(
+		String region,
+		List<TransitOperator> operators,
+		List<SubwayLine> lines,
+		List<Station> stations
+	) {
+		List<Station> stationsInRegion = stations.stream()
+			.filter(station -> region.equals(station.region()))
+			.toList();
+		return new TransitRegionSummary(
+			region,
+			(int) operators.stream().filter(operator -> region.equals(operator.region())).count(),
+			(int) lines.stream().filter(line -> region.equals(line.region())).count(),
+			stationsInRegion.size(),
+			dataQualityCounts(stationsInRegion)
+		);
+	}
+
+	private Map<DataQualityLevel, Long> dataQualityCounts(List<Station> stations) {
+		// 응답 키 순서를 데이터 품질 단계 순서와 맞춰 화면에서 안정적으로 표시할 수 있게 한다.
+		Map<DataQualityLevel, Long> counts = new EnumMap<>(DataQualityLevel.class);
+		for (Station station : stations) {
+			counts.merge(station.dataQualityLevel(), 1L, Long::sum);
+		}
+		return counts;
+	}
+
+	private List<TransitOperator> activeOperators() {
+		return loadTransitMasterPort.loadOperators()
+			.stream()
+			.filter(TransitOperator::active)
+			.toList();
+	}
+
+	private List<SubwayLine> activeLines() {
+		return loadTransitMasterPort.loadLines()
+			.stream()
+			.filter(SubwayLine::active)
+			.toList();
+	}
+
+	private List<Station> activeStations() {
 		return loadTransitMasterPort.loadStations()
 			.stream()
 			.filter(Station::active)
+			.toList();
+	}
+
+	private Station loadActiveStation(String stationId) {
+		return activeStations()
+			.stream()
 			.filter(station -> station.id().equals(stationId))
 			.findFirst()
 			.orElseThrow(StationNotFoundException::new);
@@ -183,9 +247,8 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	private Map<String, SubwayLine> activeLinesById() {
-		return loadTransitMasterPort.loadLines()
+		return activeLines()
 			.stream()
-			.filter(SubwayLine::active)
 			.collect(Collectors.toMap(SubwayLine::id, Function.identity()));
 	}
 
