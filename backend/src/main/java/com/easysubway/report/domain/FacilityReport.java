@@ -21,4 +21,10 @@ public record FacilityReport(
 	LocalDateTime reviewedAt,
 	String reviewedBy
 ) {
+
+	public static final String ANONYMIZED_USER_ID = "__easysubway_deleted_facility_report__";
+
+	public boolean isAnonymizedUserData() {
+		return ANONYMIZED_USER_ID.equals(userId);
+	}
 }

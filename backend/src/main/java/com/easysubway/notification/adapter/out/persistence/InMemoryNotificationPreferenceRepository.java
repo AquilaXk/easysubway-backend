@@ -6,6 +6,7 @@ import com.easysubway.notification.application.port.out.SaveRegisteredDevicePort
 import com.easysubway.notification.domain.DevicePlatform;
 import com.easysubway.notification.domain.NotificationSettings;
 import com.easysubway.notification.domain.RegisteredDevice;
+import com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -17,7 +18,8 @@ import org.springframework.stereotype.Repository;
 public class InMemoryNotificationPreferenceRepository implements
 	LoadNotificationPreferencePort,
 	SaveRegisteredDevicePort,
-	SaveNotificationSettingsPort {
+	SaveNotificationSettingsPort,
+	DeleteUserNotificationPreferencePort {
 
 	private final Map<String, NotificationSettings> settingsByUserId = new ConcurrentHashMap<>();
 	private final Map<String, Map<DeviceKey, RegisteredDevice>> devicesByUserId = new ConcurrentHashMap<>();
@@ -53,6 +55,17 @@ public class InMemoryNotificationPreferenceRepository implements
 	public NotificationSettings saveNotificationSettings(NotificationSettings settings) {
 		settingsByUserId.put(settings.userId(), settings);
 		return settings;
+	}
+
+	@Override
+	public boolean deleteNotificationSettings(String userId) {
+		return settingsByUserId.remove(userId) != null;
+	}
+
+	@Override
+	public int deleteRegisteredDevices(String userId) {
+		Map<DeviceKey, RegisteredDevice> removed = devicesByUserId.remove(userId);
+		return removed == null ? 0 : removed.size();
 	}
 
 	private record DeviceKey(DevicePlatform platform, String deviceToken) {

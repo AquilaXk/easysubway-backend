@@ -5,6 +5,7 @@ import com.easysubway.favorite.application.port.out.LoadFavoriteFacilityAlertTar
 import com.easysubway.favorite.application.port.out.LoadFavoriteFacilityPort;
 import com.easysubway.favorite.application.port.out.SaveFavoriteFacilityPort;
 import com.easysubway.favorite.domain.FavoriteFacility;
+import com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -18,7 +19,8 @@ public class InMemoryFavoriteFacilityRepository implements
 	LoadFavoriteFacilityPort,
 	LoadFavoriteFacilityAlertTargetPort,
 	SaveFavoriteFacilityPort,
-	DeleteFavoriteFacilityPort {
+	DeleteFavoriteFacilityPort,
+	DeleteUserFavoriteFacilityPort {
 
 	private final Map<String, Map<String, FavoriteFacility>> favoritesByUserId = new ConcurrentHashMap<>();
 
@@ -57,5 +59,11 @@ public class InMemoryFavoriteFacilityRepository implements
 		if (favorites != null) {
 			favorites.remove(facilityId);
 		}
+	}
+
+	@Override
+	public int deleteFavoriteFacilitiesByUserId(String userId) {
+		Map<String, FavoriteFacility> removed = favoritesByUserId.remove(userId);
+		return removed == null ? 0 : removed.size();
 	}
 }

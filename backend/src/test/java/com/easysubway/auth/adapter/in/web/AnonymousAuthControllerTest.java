@@ -2,6 +2,7 @@ package com.easysubway.auth.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -153,6 +154,28 @@ class AnonymousAuthControllerTest {
 			.andExpect(jsonPath("$.data.userId").value("configured-user"))
 			.andExpect(jsonPath("$.data.authType").value("BASIC"))
 			.andExpect(jsonPath("$.data.anonymous").value(false));
+	}
+
+	@Test
+	@DisplayName("익명 사용자는 데이터 삭제 후 같은 인증 정보를 다시 사용할 수 없다")
+	void deleteCurrentAnonymousUserDataInvalidatesIssuedCredentials() throws Exception {
+		var result = mockMvc.perform(post("/api/v1/auth/anonymous"))
+			.andExpect(status().isOk())
+			.andReturn();
+		String body = result.getResponse().getContentAsString();
+		String userId = JsonPath.read(body, "$.data.userId");
+		String password = JsonPath.read(body, "$.data.password");
+
+		mockMvc.perform(delete("/api/v1/me")
+				.with(httpBasic(userId, password)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.userId").value(userId))
+			.andExpect(jsonPath("$.data.anonymousCredentialsDeleted").value(true));
+
+		mockMvc.perform(get("/api/v1/me")
+				.with(httpBasic(userId, password)))
+			.andExpect(status().isUnauthorized());
 	}
 
 	@Test

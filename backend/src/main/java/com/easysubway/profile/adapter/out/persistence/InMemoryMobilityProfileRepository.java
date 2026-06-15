@@ -3,13 +3,17 @@ package com.easysubway.profile.adapter.out.persistence;
 import com.easysubway.profile.application.port.out.LoadMobilityProfilePort;
 import com.easysubway.profile.application.port.out.SaveMobilityProfilePort;
 import com.easysubway.profile.domain.MobilityProfile;
+import com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.ConcurrentMap;
 import org.springframework.stereotype.Repository;
 
 @Repository
-public class InMemoryMobilityProfileRepository implements LoadMobilityProfilePort, SaveMobilityProfilePort {
+public class InMemoryMobilityProfileRepository implements
+	LoadMobilityProfilePort,
+	SaveMobilityProfilePort,
+	DeleteUserMobilityProfilePort {
 
 	private final ConcurrentMap<String, MobilityProfile> profiles = new ConcurrentHashMap<>();
 
@@ -22,5 +26,10 @@ public class InMemoryMobilityProfileRepository implements LoadMobilityProfilePor
 	public MobilityProfile saveProfile(MobilityProfile profile) {
 		profiles.put(profile.userId(), profile);
 		return profile;
+	}
+
+	@Override
+	public boolean deleteMobilityProfile(String userId) {
+		return profiles.remove(userId) != null;
 	}
 }

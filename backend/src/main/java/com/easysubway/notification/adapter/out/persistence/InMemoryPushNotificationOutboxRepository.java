@@ -3,6 +3,7 @@ package com.easysubway.notification.adapter.out.persistence;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
 import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
@@ -12,7 +13,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class InMemoryPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
-	SavePushNotificationOutboxPort {
+	SavePushNotificationOutboxPort,
+	DeleteUserPushNotificationPort {
 
 	private final Map<String, List<PushNotification>> notificationsByUserId = new ConcurrentHashMap<>();
 
@@ -28,5 +30,11 @@ public class InMemoryPushNotificationOutboxRepository implements
 	@Override
 	public List<PushNotification> loadPushNotifications(String userId) {
 		return List.copyOf(notificationsByUserId.getOrDefault(userId, List.of()));
+	}
+
+	@Override
+	public int deletePushNotifications(String userId) {
+		List<PushNotification> removed = notificationsByUserId.remove(userId);
+		return removed == null ? 0 : removed.size();
 	}
 }

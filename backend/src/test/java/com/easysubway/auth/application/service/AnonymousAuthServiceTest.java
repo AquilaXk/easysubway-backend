@@ -131,6 +131,13 @@ class AnonymousAuthServiceTest {
 			registeredPasswordsByUserId.put(credentials.userId(), credentials.password());
 			issuedAnonymousUserIds.add(credentials.userId());
 		}
+
+		@Override
+		public boolean deleteAnonymousUser(String userId) {
+			boolean removed = issuedAnonymousUserIds.remove(userId);
+			registeredPasswordsByUserId.remove(userId);
+			return removed;
+		}
 	}
 
 	private static final class SequentialStringSupplier implements Supplier<String> {

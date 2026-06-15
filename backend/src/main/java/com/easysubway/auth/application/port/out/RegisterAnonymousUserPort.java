@@ -9,4 +9,6 @@ public interface RegisterAnonymousUserPort {
 	boolean isAnonymousUser(String userId);
 
 	void registerAnonymousUser(AnonymousUserCredentials credentials);
+
+	boolean deleteAnonymousUser(String userId);
 }

@@ -260,6 +260,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public List<FacilityReport> listUserReports(String userId) {
 		return sortedReports()
 			.stream()
+			// 익명화된 신고는 운영 검수 이력만 보존하므로 어떤 사용자 계정의 내역에도 다시 연결하지 않는다.
+			.filter(report -> !report.isAnonymizedUserData())
 			.filter(report -> userId.equals(report.userId()))
 			.toList();
 	}

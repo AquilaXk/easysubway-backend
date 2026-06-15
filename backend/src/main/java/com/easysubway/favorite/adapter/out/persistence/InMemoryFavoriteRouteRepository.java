@@ -7,6 +7,7 @@ import com.easysubway.favorite.application.port.out.SaveFavoriteRoutePort;
 import com.easysubway.favorite.domain.FavoriteRoute;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteStep;
+import com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -20,7 +21,8 @@ public class InMemoryFavoriteRouteRepository implements
 	LoadFavoriteRoutePort,
 	LoadFavoriteRouteAlertTargetPort,
 	SaveFavoriteRoutePort,
-	DeleteFavoriteRoutePort {
+	DeleteFavoriteRoutePort,
+	DeleteUserFavoriteRoutePort {
 
 	static final int MAX_FAVORITE_ROUTES_PER_USER = 100;
 
@@ -62,6 +64,12 @@ public class InMemoryFavoriteRouteRepository implements
 		if (favorites != null) {
 			favorites.remove(routeSearchId);
 		}
+	}
+
+	@Override
+	public synchronized int deleteFavoriteRoutesByUserId(String userId) {
+		Map<String, FavoriteRoute> removed = favoritesByUserId.remove(userId);
+		return removed == null ? 0 : removed.size();
 	}
 
 	private void evictOldestFavoriteRoutes(Map<String, FavoriteRoute> favorites) {
