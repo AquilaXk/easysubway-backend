@@ -26,6 +26,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.Base64;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -52,6 +53,8 @@ class FacilityReportServiceTest {
 			FacilityReportType.BROKEN,
 			"엘리베이터 문이 열리지 않습니다.",
 			null,
+			null,
+			null,
 			new BigDecimal("37.302421"),
 			new BigDecimal("126.866221")
 		));
@@ -76,6 +79,8 @@ class FacilityReportServiceTest {
 			"엘리베이터가 멈춰 있습니다.",
 			null,
 			null,
+			null,
+			null,
 			null
 		)))
 			.isInstanceOf(StationNotFoundException.class)
@@ -91,6 +96,8 @@ class FacilityReportServiceTest {
 			"facility-sangnoksu-elevator-1",
 			FacilityReportType.BROKEN,
 			"다른 역 시설로 신고할 수 없습니다.",
+			null,
+			null,
 			null,
 			null,
 			null
@@ -110,6 +117,8 @@ class FacilityReportServiceTest {
 			"신고 유형이 없는 요청입니다.",
 			null,
 			null,
+			null,
+			null,
 			null
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
@@ -127,10 +136,64 @@ class FacilityReportServiceTest {
 			"신고 작성자 식별자가 없는 요청입니다.",
 			null,
 			null,
+			null,
+			null,
 			null
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사용자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 사진은 허용된 이미지 형식만 저장한다")
+	void createReportRequiresAllowedPhotoContentType() {
+		assertThatThrownBy(() -> service.createReport(photoReportCommand(
+			"memo.txt",
+			"text/plain",
+			"aW1hZ2UtYnl0ZXM="
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 형식을 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 사진은 저장 전에 공백과 형식을 정리한다")
+	void createReportNormalizesPhotoFieldsBeforeSaving() {
+		FacilityReport report = service.createReport(photoReportCommand(
+			" elevator.jpg ",
+			" IMAGE/JPEG ",
+			" aW1hZ2UtYnl0ZXM= "
+		));
+
+		assertThat(report.photoFileName()).isEqualTo("elevator.jpg");
+		assertThat(report.photoContentType()).isEqualTo("image/jpeg");
+		assertThat(report.photoDataBase64()).isEqualTo("aW1hZ2UtYnl0ZXM=");
+	}
+
+	@Test
+	@DisplayName("시설 신고 사진은 서버 크기 제한을 넘을 수 없다")
+	void createReportRejectsOversizedPhotoPayload() {
+		String largePhotoBase64 = Base64.getEncoder().encodeToString(new byte[(900 * 1024) + 1]);
+
+		assertThatThrownBy(() -> service.createReport(photoReportCommand(
+			"large.jpg",
+			"image/jpeg",
+			largePhotoBase64
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 사진은 올바른 base64 본문을 요구한다")
+	void createReportRequiresValidPhotoPayload() {
+		assertThatThrownBy(() -> service.createReport(photoReportCommand(
+			"broken.jpg",
+			"image/jpeg",
+			"not-base64"
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
 	}
 
 	@Test
@@ -184,6 +247,8 @@ class FacilityReportServiceTest {
 			null,
 			null,
 			null,
+			null,
+			null,
 			FacilityReportStatus.SUBMITTED,
 			LocalDateTime.of(2026, 6, 12, 9, 0),
 			null,
@@ -227,6 +292,8 @@ class FacilityReportServiceTest {
 			"facility-sangnoksu-elevator-1",
 			FacilityReportType.BROKEN,
 			"엘리베이터 문이 열리지 않습니다.",
+			null,
+			null,
 			null,
 			null,
 			null
@@ -502,6 +569,8 @@ class FacilityReportServiceTest {
 			"기존 정보가 맞습니다.",
 			null,
 			null,
+			null,
+			null,
 			null
 		));
 		var duplicated = service.createReport(new CreateFacilityReportCommand(
@@ -510,6 +579,8 @@ class FacilityReportServiceTest {
 			"facility-sangnoksu-elevator-1",
 			FacilityReportType.BROKEN,
 			"이미 접수된 신고입니다.",
+			null,
+			null,
 			null,
 			null,
 			null
@@ -536,6 +607,8 @@ class FacilityReportServiceTest {
 			"facility-sangnoksu-elevator-1",
 			FacilityReportType.BROKEN,
 			"검수 대상 신고입니다.",
+			null,
+			null,
 			null,
 			null,
 			null
@@ -573,6 +646,25 @@ class FacilityReportServiceTest {
 		return reportCommand(userId, FacilityReportType.BROKEN, description);
 	}
 
+	private CreateFacilityReportCommand photoReportCommand(
+		String photoFileName,
+		String photoContentType,
+		String photoDataBase64
+	) {
+		return new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			photoFileName,
+			photoContentType,
+			photoDataBase64,
+			null,
+			null
+		);
+	}
+
 	private CreateFacilityReportCommand reportCommand(
 		String userId,
 		FacilityReportType reportType,
@@ -584,6 +676,8 @@ class FacilityReportServiceTest {
 			"facility-sangnoksu-elevator-1",
 			reportType,
 			description,
+			null,
+			null,
 			null,
 			null,
 			null

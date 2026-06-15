@@ -24,9 +24,11 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -37,6 +39,13 @@ import org.springframework.stereotype.Service;
 public class FacilityReportService implements FacilityReportUseCase {
 
 	private static final Logger log = LoggerFactory.getLogger(FacilityReportService.class);
+	private static final int MAX_PHOTO_BYTES = 900 * 1024;
+	private static final int MAX_PHOTO_BASE64_CHARS = ((MAX_PHOTO_BYTES + 2) / 3) * 4;
+	private static final Set<String> ALLOWED_PHOTO_CONTENT_TYPES = Set.of(
+		"image/jpeg",
+		"image/png",
+		"image/webp"
+	);
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
@@ -150,6 +159,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 		requireActiveStation(command.stationId());
 		// 신고 대상 시설이 요청한 역에 속해야 다른 역 시설 상태가 잘못 갱신되는 일을 막을 수 있다.
 		requireFacilityInStation(command.stationId(), command.facilityId());
+		validatePhotoAttachment(command);
+		String photoFileName = normalizePhotoFileName(command.photoFileName());
+		String photoContentType = normalizePhotoContentType(command.photoContentType());
+		String photoDataBase64 = normalizePhotoDataBase64(command.photoDataBase64());
 
 		FacilityReport report = new FacilityReport(
 			"report-" + UUID.randomUUID(),
@@ -158,7 +171,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			command.facilityId(),
 			command.reportType(),
 			command.description(),
-			command.photoUrl(),
+			photoFileName,
+			photoContentType,
+			photoDataBase64,
 			command.latitude(),
 			command.longitude(),
 			FacilityReportStatus.SUBMITTED,
@@ -205,7 +220,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			report.facilityId(),
 			report.reportType(),
 			report.description(),
-			report.photoUrl(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoDataBase64(),
 			report.latitude(),
 			report.longitude(),
 			toStatus(command.decision()),
@@ -228,6 +245,54 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (command.userId() == null || command.userId().isBlank()) {
 			throw new InvalidFacilityReportException("사용자 식별자가 필요합니다.");
 		}
+	}
+
+	private void validatePhotoAttachment(CreateFacilityReportCommand command) {
+		boolean hasAnyPhotoField = hasText(command.photoFileName())
+			|| hasText(command.photoContentType())
+			|| hasText(command.photoDataBase64());
+		if (!hasAnyPhotoField) {
+			return;
+		}
+		if (!hasText(command.photoFileName())
+			|| !hasText(command.photoContentType())
+			|| !hasText(command.photoDataBase64())) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+
+		String contentType = command.photoContentType().trim().toLowerCase();
+		if (!ALLOWED_PHOTO_CONTENT_TYPES.contains(contentType)) {
+			throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
+		}
+
+		String photoDataBase64 = command.photoDataBase64().trim();
+		if (photoDataBase64.length() > MAX_PHOTO_BASE64_CHARS) {
+			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+		}
+		try {
+			byte[] photoBytes = Base64.getDecoder().decode(photoDataBase64);
+			if (photoBytes.length > MAX_PHOTO_BYTES) {
+				throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+			}
+		} catch (IllegalArgumentException exception) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+	}
+
+	private boolean hasText(String value) {
+		return value != null && !value.isBlank();
+	}
+
+	private String normalizePhotoFileName(String value) {
+		return hasText(value) ? value.trim() : null;
+	}
+
+	private String normalizePhotoContentType(String value) {
+		return hasText(value) ? value.trim().toLowerCase() : null;
+	}
+
+	private String normalizePhotoDataBase64(String value) {
+		return hasText(value) ? value.trim() : null;
 	}
 
 	private List<FacilityReport> sortedReports() {

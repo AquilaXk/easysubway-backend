@@ -9,7 +9,9 @@ public record CreateFacilityReportCommand(
 	String facilityId,
 	FacilityReportType reportType,
 	String description,
-	String photoUrl,
+	String photoFileName,
+	String photoContentType,
+	String photoDataBase64,
 	BigDecimal latitude,
 	BigDecimal longitude
 ) {

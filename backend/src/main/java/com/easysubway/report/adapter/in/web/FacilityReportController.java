@@ -32,33 +32,33 @@ class FacilityReportController {
 
 	@PostMapping("/api/v1/reports")
 	@ResponseStatus(HttpStatus.CREATED)
-	ApiResponse<FacilityReportResponse> createReport(
+	ApiResponse<FacilityReportStatusResponse> createReport(
 		@RequestBody CreateFacilityReportRequest request,
 		Principal principal
 	) {
 		FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
-		return ApiResponse.ok(FacilityReportResponse.from(report));
+		return ApiResponse.ok(FacilityReportStatusResponse.from(report));
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")
-	ApiResponse<FacilityReportResponse> report(@PathVariable String reportId) {
-		return ApiResponse.ok(FacilityReportResponse.from(facilityReportUseCase.getReport(reportId)));
+	ApiResponse<FacilityReportStatusResponse> report(@PathVariable String reportId) {
+		return ApiResponse.ok(FacilityReportStatusResponse.from(facilityReportUseCase.getReport(reportId)));
 	}
 
 	@GetMapping("/api/v1/me/reports")
-	ApiResponse<List<FacilityReportResponse>> myReports(Principal principal) {
-		List<FacilityReportResponse> reports = facilityReportUseCase.listUserReports(principal.getName())
+	ApiResponse<List<FacilityReportListResponse>> myReports(Principal principal) {
+		List<FacilityReportListResponse> reports = facilityReportUseCase.listUserReports(principal.getName())
 			.stream()
-			.map(FacilityReportResponse::from)
+			.map(FacilityReportListResponse::from)
 			.toList();
 		return ApiResponse.ok(reports);
 	}
 
 	@GetMapping("/admin/reports")
-	ApiResponse<List<FacilityReportResponse>> adminReports(@RequestParam(required = false) FacilityReportStatus status) {
-		List<FacilityReportResponse> reports = facilityReportUseCase.listReports(status)
+	ApiResponse<List<FacilityReportListResponse>> adminReports(@RequestParam(required = false) FacilityReportStatus status) {
+		List<FacilityReportListResponse> reports = facilityReportUseCase.listReports(status)
 			.stream()
-			.map(FacilityReportResponse::from)
+			.map(FacilityReportListResponse::from)
 			.toList();
 		return ApiResponse.ok(reports);
 	}
@@ -84,7 +84,9 @@ class FacilityReportController {
 		String facilityId,
 		FacilityReportType reportType,
 		String description,
-		String photoUrl,
+		String photoFileName,
+		String photoContentType,
+		String photoDataBase64,
 		BigDecimal latitude,
 		BigDecimal longitude
 	) {
@@ -96,7 +98,9 @@ class FacilityReportController {
 				facilityId,
 				reportType,
 				description,
-				photoUrl,
+				photoFileName,
+				photoContentType,
+				photoDataBase64,
 				latitude,
 				longitude
 			);
@@ -112,6 +116,81 @@ class FacilityReportController {
 		}
 	}
 
+	record FacilityReportListResponse(
+		String id,
+		String userId,
+		String stationId,
+		String facilityId,
+		FacilityReportType reportType,
+		String description,
+		String photoFileName,
+		String photoContentType,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		FacilityReportStatus status,
+		LocalDateTime createdAt,
+		LocalDateTime reviewedAt,
+		String reviewedBy
+	) {
+
+		static FacilityReportListResponse from(FacilityReport report) {
+			return new FacilityReportListResponse(
+				report.id(),
+				report.userId(),
+				report.stationId(),
+				report.facilityId(),
+				report.reportType(),
+				report.description(),
+				report.photoFileName(),
+				report.photoContentType(),
+				report.latitude(),
+				report.longitude(),
+				report.status(),
+				report.createdAt(),
+				report.reviewedAt(),
+				report.reviewedBy()
+			);
+		}
+	}
+
+	record FacilityReportStatusResponse(
+		String id,
+		String userId,
+		String stationId,
+		String facilityId,
+		FacilityReportType reportType,
+		String description,
+		String photoFileName,
+		String photoContentType,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		FacilityReportStatus status,
+		LocalDateTime createdAt,
+		LocalDateTime reviewedAt,
+		String reviewedBy
+	) {
+
+		static FacilityReportStatusResponse from(FacilityReport report) {
+			// 공개 상태 조회는 모바일 진행 상태 확인용이므로 첨부 사진 본문은 관리자 상세에서만 내려준다.
+			return new FacilityReportStatusResponse(
+				report.id(),
+				report.userId(),
+				report.stationId(),
+				report.facilityId(),
+				report.reportType(),
+				report.description(),
+				report.photoFileName(),
+				report.photoContentType(),
+				report.latitude(),
+				report.longitude(),
+				report.status(),
+				report.createdAt(),
+				report.reviewedAt(),
+				report.reviewedBy()
+			);
+		}
+	}
+
 	record FacilityReportResponse(
 		String id,
 		String userId,
@@ -119,7 +198,9 @@ class FacilityReportController {
 		String facilityId,
 		FacilityReportType reportType,
 		String description,
-		String photoUrl,
+		String photoFileName,
+		String photoContentType,
+		String photoDataBase64,
 		BigDecimal latitude,
 		BigDecimal longitude,
 		FacilityReportStatus status,
@@ -136,7 +217,9 @@ class FacilityReportController {
 				report.facilityId(),
 				report.reportType(),
 				report.description(),
-				report.photoUrl(),
+				report.photoFileName(),
+				report.photoContentType(),
+				report.photoDataBase64(),
 				report.latitude(),
 				report.longitude(),
 				report.status(),

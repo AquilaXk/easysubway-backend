@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import java.util.Base64;
 import java.util.List;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
@@ -182,6 +183,39 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 목록은 사진 본문을 제외하고 메타데이터만 반환한다")
+	void reportListsReturnPhotoMetadataWithoutPayload() throws Exception {
+		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
+
+		String myReportsResponse = mockMvc.perform(get("/api/v1/me/reports")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		// 목록 화면에서는 사진 존재만 알면 충분하므로 실제 이미지 본문은 상세에서만 내려준다.
+		Assertions.assertThat(myReportsResponse)
+			.contains("photoFileName")
+			.contains("photoContentType")
+			.doesNotContain("photoDataBase64");
+
+		String adminReportsResponse = mockMvc.perform(get("/admin/reports")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		Assertions.assertThat(adminReportsResponse)
+			.contains("photoFileName")
+			.contains("photoContentType")
+			.doesNotContain("photoDataBase64");
+	}
+
+	@Test
 	@DisplayName("내 신고 이력은 인증된 사용자만 조회할 수 있다")
 	void myReportListRequiresAuthentication() throws Exception {
 		mockMvc.perform(get("/api/v1/me/reports"))
@@ -350,7 +384,7 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
-	@DisplayName("관리자는 신고 상세에서 사진과 위치 정보를 확인한다")
+	@DisplayName("관리자는 신고 상세에서 사진 첨부와 위치 정보를 확인한다")
 	void adminReadsReportDetailWithPhotoAndLocation() throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.with(httpBasic("basic-user", "user-test-password"))
@@ -362,7 +396,9 @@ class FacilityReportControllerTest {
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
 					  "description": "엘리베이터 앞 안내문이 떨어져 있습니다.",
-					  "photoUrl": "https://cdn.example.test/reports/elevator-notice.jpg",
+					  "photoFileName": "elevator-notice.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoDataBase64": "aW1hZ2UtYnl0ZXM=",
 					  "latitude": 37.302421,
 					  "longitude": 126.866221
 					}
@@ -373,6 +409,9 @@ class FacilityReportControllerTest {
 			.getContentAsString();
 
 		String reportId = JsonPath.read(response, "$.data.id");
+		Assertions.assertThat(response)
+			.doesNotContain("photoDataBase64")
+			.doesNotContain("aW1hZ2UtYnl0ZXM=");
 
 		mockMvc.perform(get("/admin/reports/{reportId}", reportId)
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -381,10 +420,80 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.data.id").value(reportId))
 			.andExpect(jsonPath("$.data.userId").value("basic-user"))
 			.andExpect(jsonPath("$.data.description").value("엘리베이터 앞 안내문이 떨어져 있습니다."))
-			.andExpect(jsonPath("$.data.photoUrl").value("https://cdn.example.test/reports/elevator-notice.jpg"))
+			.andExpect(jsonPath("$.data.photoFileName").value("elevator-notice.jpg"))
+			.andExpect(jsonPath("$.data.photoContentType").value("image/jpeg"))
+			.andExpect(jsonPath("$.data.photoDataBase64").value("aW1hZ2UtYnl0ZXM="))
+			.andExpect(jsonPath("$.data.photoUrl").doesNotExist())
 			.andExpect(jsonPath("$.data.latitude").value(37.302421))
 			.andExpect(jsonPath("$.data.longitude").value(126.866221))
 			.andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+	}
+
+	@Test
+	@DisplayName("공개 신고 조회는 사진 본문을 반환하지 않는다")
+	void publicReportDetailDoesNotReturnPhotoPayload() throws Exception {
+		String reportId = createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
+
+		String response = mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.photoFileName").value("elevator-notice.jpg"))
+			.andExpect(jsonPath("$.data.photoContentType").value("image/jpeg"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		Assertions.assertThat(response)
+			.doesNotContain("photoDataBase64")
+			.doesNotContain("aW1hZ2UtYnl0ZXM=");
+	}
+
+	@Test
+	@DisplayName("사진 형식이 잘못된 신고 생성은 공통 400 응답을 반환한다")
+	void createReportRejectsUnsupportedPhotoContentType() throws Exception {
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "spoofed-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "이미지 형식이 아닌 파일입니다.",
+					  "photoFileName": "memo.txt",
+					  "photoContentType": "text/plain",
+					  "photoDataBase64": "aW1hZ2UtYnl0ZXM="
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 파일 형식을 확인해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("사진 크기가 큰 신고 생성은 공통 400 응답을 반환한다")
+	void createReportRejectsLargePhotoPayload() throws Exception {
+		String largePhotoBase64 = Base64.getEncoder().encodeToString(new byte[(900 * 1024) + 1]);
+
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "spoofed-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "사진이 너무 큰 신고입니다.",
+					  "photoFileName": "large.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoDataBase64": "%s"
+					}
+					""".formatted(largePhotoBase64)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 파일 크기를 줄여야 합니다."));
 	}
 
 	@Test
@@ -419,6 +528,36 @@ class FacilityReportControllerTest {
 		String userId,
 		String description
 	) throws Exception {
+		return createReport(username, password, userId, description, "");
+	}
+
+	private String createReportWithPhoto(
+		String username,
+		String password,
+		String userId,
+		String description
+	) throws Exception {
+		return createReport(
+			username,
+			password,
+			userId,
+			description,
+			"""
+				,
+					  "photoFileName": "elevator-notice.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoDataBase64": "aW1hZ2UtYnl0ZXM="
+				"""
+		);
+	}
+
+	private String createReport(
+		String username,
+		String password,
+		String userId,
+		String description,
+		String photoJson
+	) throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.with(httpBasic(username, password))
 				.contentType(MediaType.APPLICATION_JSON)
@@ -429,8 +568,9 @@ class FacilityReportControllerTest {
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
 					  "description": "%s"
+					  %s
 					}
-					""".formatted(userId, description)))
+					""".formatted(userId, description, photoJson)))
 			.andExpect(status().isCreated())
 			.andReturn()
 			.getResponse()
