@@ -6,7 +6,10 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
+import com.easysubway.route.domain.InvalidRouteFeedbackException;
 import com.easysubway.route.domain.RouteNotFoundException;
+import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteWarningCode;
@@ -93,6 +96,71 @@ class RouteSearchServiceTest {
 		var loaded = service.getRouteSearch(created.routeSearchId());
 
 		assertThat(loaded).isEqualTo(created);
+	}
+
+	@Test
+	@DisplayName("경로 피드백은 생성된 경로 검색 결과에 연결해 저장한다")
+	void submitRouteFeedbackStoresFeedbackForRouteSearch() {
+		var routeSearch = service.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.SENIOR
+		));
+
+		var feedback = service.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			routeSearch.routeSearchId(),
+			"anonymous-user-1",
+			RouteFeedbackRating.HELPFUL,
+			"엘리베이터 안내가 실제 이동에 맞았어요"
+		));
+
+		assertThat(feedback.feedbackId()).startsWith("route-feedback-");
+		assertThat(feedback.routeSearchId()).isEqualTo(routeSearch.routeSearchId());
+		assertThat(feedback.userId()).isEqualTo("anonymous-user-1");
+		assertThat(feedback.rating()).isEqualTo(RouteFeedbackRating.HELPFUL);
+		assertThat(feedback.comment()).isEqualTo("엘리베이터 안내가 실제 이동에 맞았어요");
+		assertThat(feedback.createdAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
+	}
+
+	@Test
+	@DisplayName("경로 피드백은 알 수 없는 경로 검색 식별자를 거부한다")
+	void submitRouteFeedbackRejectsUnknownRouteSearchId() {
+		assertThatThrownBy(() -> service.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			"route-missing",
+			"anonymous-user-1",
+			RouteFeedbackRating.HELPFUL,
+			"안내가 도움이 됐어요"
+		)))
+			.isInstanceOf(RouteSearchNotFoundException.class)
+			.hasMessage("경로 검색 결과를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("경로 피드백은 작성자와 평가가 필요하다")
+	void submitRouteFeedbackRequiresUserIdAndRating() {
+		var routeSearch = service.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.SENIOR
+		));
+
+		assertThatThrownBy(() -> service.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			routeSearch.routeSearchId(),
+			" ",
+			null,
+			" "
+		)))
+			.isInstanceOf(InvalidRouteFeedbackException.class)
+			.hasMessage("피드백 작성자를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> service.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			routeSearch.routeSearchId(),
+			"anonymous-user-1",
+			null,
+			"안내 확인이 필요했어요"
+		)))
+			.isInstanceOf(InvalidRouteFeedbackException.class)
+			.hasMessage("피드백 평가를 선택해야 합니다.");
 	}
 
 	@Test

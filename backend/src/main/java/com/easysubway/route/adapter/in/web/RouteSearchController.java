@@ -4,6 +4,9 @@ import com.easysubway.common.web.ApiResponse;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
+import com.easysubway.route.domain.RouteFeedback;
+import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteSearchResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,6 +34,14 @@ class RouteSearchController {
 		return ApiResponse.ok(routeSearchUseCase.getRouteSearch(routeSearchId));
 	}
 
+	@PostMapping("/api/v1/routes/{routeSearchId}/feedback")
+	ApiResponse<RouteFeedback> submitRouteFeedback(
+		@PathVariable String routeSearchId,
+		@RequestBody SubmitRouteFeedbackRequest request
+	) {
+		return ApiResponse.ok(routeSearchUseCase.submitRouteFeedback(request.toCommand(routeSearchId)));
+	}
+
 	record SearchRouteRequest(
 		String originStationId,
 		String destinationStationId,
@@ -39,6 +50,17 @@ class RouteSearchController {
 
 		SearchRouteCommand toCommand() {
 			return new SearchRouteCommand(originStationId, destinationStationId, mobilityType);
+		}
+	}
+
+	record SubmitRouteFeedbackRequest(
+		String userId,
+		RouteFeedbackRating rating,
+		String comment
+	) {
+
+		SubmitRouteFeedbackCommand toCommand(String routeSearchId) {
+			return new SubmitRouteFeedbackCommand(routeSearchId, userId, rating, comment);
 		}
 	}
 }

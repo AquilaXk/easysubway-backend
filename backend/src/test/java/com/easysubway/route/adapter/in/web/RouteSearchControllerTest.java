@@ -100,4 +100,98 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("경로 검색 결과를 찾을 수 없습니다."));
 	}
+
+	@Test
+	@DisplayName("경로 피드백은 생성된 경로 검색 결과에 연결해 저장한다")
+	void postRouteFeedbackSavesFeedbackForStoredRouteSearch() throws Exception {
+		var result = mockMvc.perform(post("/api/v1/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "mobilityType": "SENIOR"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andReturn();
+		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");
+
+		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "rating": "HELPFUL",
+					  "comment": "엘리베이터 안내가 실제 이동에 맞았어요"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.feedbackId").exists())
+			.andExpect(jsonPath("$.data.routeSearchId").value(routeSearchId))
+			.andExpect(jsonPath("$.data.userId").value("anonymous-user-1"))
+			.andExpect(jsonPath("$.data.rating").value("HELPFUL"))
+			.andExpect(jsonPath("$.data.comment").value("엘리베이터 안내가 실제 이동에 맞았어요"));
+	}
+
+	@Test
+	@DisplayName("알 수 없는 경로 검색 결과에는 피드백을 저장하지 않는다")
+	void postRouteFeedbackRejectsUnknownRouteSearchId() throws Exception {
+		mockMvc.perform(post("/api/v1/routes/route-missing/feedback")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "rating": "HELPFUL",
+					  "comment": "안내가 도움이 됐어요"
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("경로 검색 결과를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("경로 피드백은 사용자 식별자와 평가가 필요하다")
+	void postRouteFeedbackRequiresUserIdAndRating() throws Exception {
+		var result = mockMvc.perform(post("/api/v1/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "mobilityType": "SENIOR"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andReturn();
+		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");
+
+		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": " ",
+					  "rating": null,
+					  "comment": " "
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("피드백 작성자를 확인해야 합니다."));
+
+		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "rating": null,
+					  "comment": "안내 확인이 필요했어요"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("피드백 평가를 선택해야 합니다."));
+	}
 }

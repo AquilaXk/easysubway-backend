@@ -2,9 +2,13 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
+import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.domain.InvalidRouteFeedbackException;
 import com.easysubway.route.domain.InvalidRouteSearchException;
+import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteProfileWeight;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
@@ -50,6 +54,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private final LoadRouteSearchPort loadRouteSearchPort;
 	private final SaveRouteSearchPort saveRouteSearchPort;
+	private final SaveRouteFeedbackPort saveRouteFeedbackPort;
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final Clock clock;
 
@@ -57,9 +62,38 @@ public class RouteSearchService implements RouteSearchUseCase {
 	public RouteSearchService(
 		LoadRouteSearchPort loadRouteSearchPort,
 		SaveRouteSearchPort saveRouteSearchPort,
+		SaveRouteFeedbackPort saveRouteFeedbackPort,
 		LoadTransitMasterPort loadTransitMasterPort
 	) {
-		this(loadRouteSearchPort, saveRouteSearchPort, loadTransitMasterPort, Clock.systemDefaultZone());
+		this(loadRouteSearchPort, saveRouteSearchPort, saveRouteFeedbackPort, loadTransitMasterPort, Clock.systemDefaultZone());
+	}
+
+	public RouteSearchService(
+		LoadRouteSearchPort loadRouteSearchPort,
+		SaveRouteSearchPort saveRouteSearchPort,
+		LoadTransitMasterPort loadTransitMasterPort
+	) {
+		this(
+			loadRouteSearchPort,
+			saveRouteSearchPort,
+			requireFeedbackPort(saveRouteSearchPort),
+			loadTransitMasterPort,
+			Clock.systemDefaultZone()
+		);
+	}
+
+	public RouteSearchService(
+		LoadRouteSearchPort loadRouteSearchPort,
+		SaveRouteSearchPort saveRouteSearchPort,
+		SaveRouteFeedbackPort saveRouteFeedbackPort,
+		LoadTransitMasterPort loadTransitMasterPort,
+		Clock clock
+	) {
+		this.loadRouteSearchPort = loadRouteSearchPort;
+		this.saveRouteSearchPort = saveRouteSearchPort;
+		this.saveRouteFeedbackPort = saveRouteFeedbackPort;
+		this.loadTransitMasterPort = loadTransitMasterPort;
+		this.clock = clock;
 	}
 
 	public RouteSearchService(
@@ -68,10 +102,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		LoadTransitMasterPort loadTransitMasterPort,
 		Clock clock
 	) {
-		this.loadRouteSearchPort = loadRouteSearchPort;
-		this.saveRouteSearchPort = saveRouteSearchPort;
-		this.loadTransitMasterPort = loadTransitMasterPort;
-		this.clock = clock;
+		this(loadRouteSearchPort, saveRouteSearchPort, requireFeedbackPort(saveRouteSearchPort), loadTransitMasterPort, clock);
 	}
 
 	@Override
@@ -135,6 +166,23 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.orElseThrow(RouteSearchNotFoundException::new);
 	}
 
+	@Override
+	public RouteFeedback submitRouteFeedback(SubmitRouteFeedbackCommand command) {
+		requireFeedbackCommand(command);
+		String routeSearchId = command.routeSearchId().trim();
+		if (loadRouteSearchPort.loadRouteSearch(routeSearchId).isEmpty()) {
+			throw new RouteSearchNotFoundException();
+		}
+		return saveRouteFeedbackPort.saveRouteFeedback(new RouteFeedback(
+			newRouteFeedbackId(),
+			routeSearchId,
+			command.userId().trim(),
+			command.rating(),
+			normalizeFeedbackComment(command.comment()),
+			LocalDateTime.now(clock)
+		));
+	}
+
 	private void requireCommand(SearchRouteCommand command) {
 		if (command.originStationId() == null || command.originStationId().isBlank()) {
 			throw new InvalidRouteSearchException("출발역을 선택해야 합니다.");
@@ -145,6 +193,32 @@ public class RouteSearchService implements RouteSearchUseCase {
 		if (command.mobilityType() == null) {
 			throw new InvalidRouteSearchException("이동 유형을 선택해야 합니다.");
 		}
+	}
+
+	private void requireFeedbackCommand(SubmitRouteFeedbackCommand command) {
+		if (command == null || command.routeSearchId() == null || command.routeSearchId().isBlank()) {
+			throw new RouteSearchNotFoundException();
+		}
+		if (command.userId() == null || command.userId().isBlank()) {
+			throw new InvalidRouteFeedbackException("피드백 작성자를 확인해야 합니다.");
+		}
+		if (command.rating() == null) {
+			throw new InvalidRouteFeedbackException("피드백 평가를 선택해야 합니다.");
+		}
+	}
+
+	private String normalizeFeedbackComment(String comment) {
+		if (comment == null) {
+			return "";
+		}
+		return comment.trim();
+	}
+
+	private static SaveRouteFeedbackPort requireFeedbackPort(SaveRouteSearchPort saveRouteSearchPort) {
+		if (saveRouteSearchPort instanceof SaveRouteFeedbackPort saveRouteFeedbackPort) {
+			return saveRouteFeedbackPort;
+		}
+		throw new IllegalArgumentException("경로 피드백 저장 포트가 필요합니다.");
 	}
 
 	private Station loadActiveStation(String stationId) {
@@ -574,6 +648,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private String newRouteSearchId() {
 		return "route-" + UUID.randomUUID();
+	}
+
+	private String newRouteFeedbackId() {
+		return "route-feedback-" + UUID.randomUUID();
 	}
 
 	private record DirectLine(
