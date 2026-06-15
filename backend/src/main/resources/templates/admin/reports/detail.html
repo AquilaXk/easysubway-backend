@@ -161,6 +161,31 @@
 		</dl>
 	</section>
 
+	<section>
+		<h2>감사 이력</h2>
+		<p th:if="${reviewAudits.isEmpty()}">없음</p>
+		<table th:if="${!reviewAudits.isEmpty()}">
+			<thead>
+			<tr>
+				<th>검수자</th>
+				<th>결정</th>
+				<th>이전 상태</th>
+				<th>이후 상태</th>
+				<th>기록일</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="audit : ${reviewAudits}">
+				<td th:text="${audit.reviewerId}">admin</td>
+				<td th:text="${audit.decisionLabel}">승인</td>
+				<td th:text="${audit.previousStatusLabel}">접수됨</td>
+				<td th:text="${audit.nextStatusLabel}">반영됨</td>
+				<td th:text="${audit.createdAt}">2026-06-15T10:00:00</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
 	<form class="review-form"
 	      th:action="@{/admin/reports/{reportId}/page/review(reportId=${report.id})}"
 	      method="post">

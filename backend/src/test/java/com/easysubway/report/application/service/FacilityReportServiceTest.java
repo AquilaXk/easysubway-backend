@@ -7,8 +7,11 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
+import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
+import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
+import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
@@ -310,6 +313,116 @@ class FacilityReportServiceTest {
 		assertThat(reviewed.reviewedAt()).isEqualTo(LocalDateTime.of(2026, 6, 12, 9, 0));
 		assertThat(reviewed.reviewedBy()).isEqualTo("admin-1");
 		assertThat(service.getReport(report.id())).isEqualTo(reviewed);
+	}
+
+	@Test
+	@DisplayName("신고 검수는 관리자 행동을 감사 로그로 기록한다")
+	void reviewReportStoresAuditLogForReviewerDecision() {
+		var auditPort = new RecordingFacilityReportReviewAuditPort();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			new InMemoryTransitMasterRepository(),
+			new InMemoryTransitMasterRepository(),
+			repository,
+			repository,
+			command -> {
+			},
+			command -> {
+			},
+			auditPort,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+		var report = service.createReport(reportCommand(
+			"anonymous-user-audit",
+			FacilityReportType.INFORMATION_WRONG,
+			"감사 로그를 남길 신고입니다."
+		));
+
+		service.reviewReport(new ReviewFacilityReportCommand(
+			report.id(),
+			FacilityReportReviewDecision.REJECT,
+			"admin-auditor"
+		));
+
+		assertThat(auditPort.savedAudits).hasSize(1);
+		FacilityReportReviewAudit audit = auditPort.savedAudits.getFirst();
+		assertThat(audit.reportId()).isEqualTo(report.id());
+		assertThat(audit.reviewerId()).isEqualTo("admin-auditor");
+		assertThat(audit.decision()).isEqualTo(FacilityReportReviewDecision.REJECT);
+		assertThat(audit.previousStatus()).isEqualTo(FacilityReportStatus.SUBMITTED);
+		assertThat(audit.nextStatus()).isEqualTo(FacilityReportStatus.REJECTED);
+		assertThat(audit.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 12, 9, 0));
+	}
+
+	@Test
+	@DisplayName("같은 신고를 다시 검수해도 관리자 행동은 감사 로그로 남긴다")
+	void repeatedReviewStoresAuditLogForEachReviewerAction() {
+		var auditPort = new RecordingFacilityReportReviewAuditPort();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			new InMemoryTransitMasterRepository(),
+			new InMemoryTransitMasterRepository(),
+			repository,
+			repository,
+			command -> {
+			},
+			command -> {
+			},
+			auditPort,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+		var report = service.createReport(reportCommand(
+			"anonymous-user-repeat-audit",
+			FacilityReportType.INFORMATION_WRONG,
+			"반복 검수 감사 로그를 남길 신고입니다."
+		));
+
+		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
+		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
+
+		assertThat(auditPort.savedAudits)
+			.extracting(FacilityReportReviewAudit::previousStatus)
+			.containsExactly(FacilityReportStatus.SUBMITTED, FacilityReportStatus.REJECTED);
+		assertThat(auditPort.savedAudits)
+			.extracting(FacilityReportReviewAudit::nextStatus)
+			.containsExactly(FacilityReportStatus.REJECTED, FacilityReportStatus.REJECTED);
+	}
+
+	@Test
+	@DisplayName("신고 검수 감사 로그는 신고별로 조회한다")
+	void listReportReviewAuditsReturnsOnlyRequestedReportAudits() {
+		var auditPort = new RecordingFacilityReportReviewAuditPort();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			new InMemoryTransitMasterRepository(),
+			new InMemoryTransitMasterRepository(),
+			repository,
+			repository,
+			command -> {
+			},
+			command -> {
+			},
+			auditPort,
+			auditPort,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+		var targetReport = service.createReport(reportCommand(
+			"anonymous-user-audit-target",
+			FacilityReportType.INFORMATION_WRONG,
+			"조회할 감사 로그를 남길 신고입니다."
+		));
+		var otherReport = service.createReport(reportCommand(
+			"anonymous-user-audit-other",
+			FacilityReportType.INFORMATION_WRONG,
+			"다른 신고입니다."
+		));
+
+		service.reviewReport(reviewCommand(targetReport.id(), FacilityReportReviewDecision.REJECT));
+		service.reviewReport(reviewCommand(otherReport.id(), FacilityReportReviewDecision.REJECT));
+
+		assertThat(service.listReviewAudits(targetReport.id()))
+			.extracting(FacilityReportReviewAudit::reportId)
+			.containsExactly(targetReport.id());
 	}
 
 	@Test
@@ -815,6 +928,25 @@ class FacilityReportServiceTest {
 		@Override
 		public void alertFacilityStatusChanged(FacilityStatusChangedAlertCommand command) {
 			commands.add(command);
+		}
+	}
+
+	private static class RecordingFacilityReportReviewAuditPort
+		implements SaveFacilityReportReviewAuditPort, LoadFacilityReportReviewAuditPort {
+
+		private final java.util.List<FacilityReportReviewAudit> savedAudits = new java.util.ArrayList<>();
+
+		@Override
+		public FacilityReportReviewAudit saveAudit(FacilityReportReviewAudit audit) {
+			savedAudits.add(audit);
+			return audit;
+		}
+
+		@Override
+		public java.util.List<FacilityReportReviewAudit> loadAuditsByReportId(String reportId) {
+			return savedAudits.stream()
+				.filter(audit -> audit.reportId().equals(reportId))
+				.toList();
 		}
 	}
 

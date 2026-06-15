@@ -3,6 +3,7 @@ package com.easysubway.report.adapter.in.web;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
@@ -46,6 +47,13 @@ class FacilityReportAdminPageController {
 	@GetMapping("/admin/reports/{reportId}/page")
 	String reportDetailPage(@PathVariable String reportId, Model model) {
 		model.addAttribute("report", FacilityReportDetailPageView.from(facilityReportUseCase.getReport(reportId)));
+		model.addAttribute(
+			"reviewAudits",
+			facilityReportUseCase.listReviewAudits(reportId)
+				.stream()
+				.map(FacilityReportReviewAuditPageRow::from)
+				.toList()
+		);
 		model.addAttribute("reviewActions", reviewActions());
 		return "admin/reports/detail";
 	}
@@ -96,6 +104,14 @@ class FacilityReportAdminPageController {
 			case REJECTED -> "반려됨";
 			case DUPLICATE -> "중복";
 			case RESOLVED -> "완료";
+		};
+	}
+
+	private static String reviewDecisionLabel(FacilityReportReviewDecision decision) {
+		return switch (decision) {
+			case ACCEPT -> "승인";
+			case REJECT -> "반려";
+			case MARK_DUPLICATE -> "중복 처리";
 		};
 	}
 
@@ -192,5 +208,24 @@ class FacilityReportAdminPageController {
 	}
 
 	record ReviewAction(FacilityReportReviewDecision value, String label) {
+	}
+
+	record FacilityReportReviewAuditPageRow(
+		String reviewerId,
+		String decisionLabel,
+		String previousStatusLabel,
+		String nextStatusLabel,
+		LocalDateTime createdAt
+	) {
+
+		static FacilityReportReviewAuditPageRow from(FacilityReportReviewAudit audit) {
+			return new FacilityReportReviewAuditPageRow(
+				audit.reviewerId(),
+				FacilityReportAdminPageController.reviewDecisionLabel(audit.decision()),
+				FacilityReportAdminPageController.statusLabel(audit.previousStatus()),
+				FacilityReportAdminPageController.statusLabel(audit.nextStatus()),
+				audit.createdAt()
+			);
+		}
 	}
 }

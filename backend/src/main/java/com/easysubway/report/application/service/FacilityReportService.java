@@ -4,9 +4,12 @@ import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
+import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
+import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
@@ -51,8 +54,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
+	private final LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort;
 	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final ReportStatusAlertUseCase reportStatusAlertUseCase;
+	private final SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort;
 	private final Clock clock;
 
 	@Autowired
@@ -62,7 +67,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 		LoadFacilityReportPort loadFacilityReportPort,
 		SaveFacilityReportPort saveFacilityReportPort,
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
-		ReportStatusAlertUseCase reportStatusAlertUseCase
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort
 	) {
 		this(
 			loadTransitMasterPort,
@@ -71,6 +78,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 			saveFacilityReportPort,
 			facilityStatusAlertUseCase,
 			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
 			Clock.systemDefaultZone()
 		);
 	}
@@ -90,6 +99,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 			facilityStatusAlertUseCase,
 			command -> {
 			},
+			audit -> audit,
+			reportId -> List.of(),
 			Clock.systemDefaultZone()
 		);
 	}
@@ -110,6 +121,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 			},
 			command -> {
 			},
+			audit -> audit,
+			reportId -> List.of(),
 			clock
 		);
 	}
@@ -130,6 +143,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 			facilityStatusAlertUseCase,
 			command -> {
 			},
+			audit -> audit,
+			reportId -> List.of(),
 			clock
 		);
 	}
@@ -143,12 +158,61 @@ public class FacilityReportService implements FacilityReportUseCase {
 		ReportStatusAlertUseCase reportStatusAlertUseCase,
 		Clock clock
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			audit -> audit,
+			reportId -> List.of(),
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		Clock clock
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			reportId -> List.of(),
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		Clock clock
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
+		this.loadFacilityReportReviewAuditPort = loadFacilityReportReviewAuditPort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.reportStatusAlertUseCase = reportStatusAlertUseCase;
+		this.saveFacilityReportReviewAuditPort = saveFacilityReportReviewAuditPort;
 		this.clock = clock;
 	}
 
@@ -235,6 +299,16 @@ public class FacilityReportService implements FacilityReportUseCase {
 		);
 
 		FacilityReport saved = saveFacilityReportPort.saveReport(reviewed);
+		// 신고 상태 변경과 별개로 관리자 검수 행동 자체를 추적할 수 있게 별도 감사 로그를 남긴다.
+		saveFacilityReportReviewAuditPort.saveAudit(new FacilityReportReviewAudit(
+			"audit-" + UUID.randomUUID(),
+			saved.id(),
+			command.reviewedBy(),
+			command.decision(),
+			report.status(),
+			saved.status(),
+			saved.reviewedAt()
+		));
 		// 같은 결과로 재검수한 경우 사용자가 중복 처리 알림을 받지 않도록 상태 변경만 알린다.
 		if (report.status() != saved.status()) {
 			alertReportStatusChanged(saved);
@@ -242,6 +316,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 		// 승인된 상태 신고만 실제 시설 운영 상태에 반영한다.
 		applyAcceptedReportToFacilityStatus(report, command.decision());
 		return saved;
+	}
+
+	@Override
+	public List<FacilityReportReviewAudit> listReviewAudits(String reportId) {
+		getReport(reportId);
+		return loadFacilityReportReviewAuditPort.loadAuditsByReportId(reportId)
+			.stream()
+			.sorted(Comparator.comparing(FacilityReportReviewAudit::createdAt))
+			.toList();
 	}
 
 	private void requireReporter(CreateFacilityReportCommand command) {

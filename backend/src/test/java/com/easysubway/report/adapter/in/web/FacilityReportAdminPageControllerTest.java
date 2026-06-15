@@ -99,6 +99,33 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 신고 상세 화면에서 검수 감사 이력을 확인한다")
+	void adminReportDetailPageShowsReviewAuditHistory() throws Exception {
+		String reportId = createReport("감사 이력을 확인할 신고");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("decision", "REJECT"))
+			.andExpect(status().is3xxRedirection());
+
+		String html = mockMvc.perform(get("/admin/reports/{reportId}/page", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("감사 이력")
+			.contains("admin-test")
+			.contains("반려")
+			.contains("접수됨")
+			.contains("반려됨");
+	}
+
+	@Test
 	@DisplayName("관리자는 상세 화면에서 중복 처리 기준 신고를 확인한다")
 	void adminReportDetailPageShowsDuplicateOriginalReport() throws Exception {
 		String originalReportId = createReport("먼저 접수된 고장 신고");
