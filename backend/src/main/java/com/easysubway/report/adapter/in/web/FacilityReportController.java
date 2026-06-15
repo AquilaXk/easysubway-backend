@@ -32,14 +32,26 @@ class FacilityReportController {
 
 	@PostMapping("/api/v1/reports")
 	@ResponseStatus(HttpStatus.CREATED)
-	ApiResponse<FacilityReportResponse> createReport(@RequestBody CreateFacilityReportRequest request) {
-		FacilityReport report = facilityReportUseCase.createReport(request.toCommand());
+	ApiResponse<FacilityReportResponse> createReport(
+		@RequestBody CreateFacilityReportRequest request,
+		Principal principal
+	) {
+		FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
 		return ApiResponse.ok(FacilityReportResponse.from(report));
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")
 	ApiResponse<FacilityReportResponse> report(@PathVariable String reportId) {
 		return ApiResponse.ok(FacilityReportResponse.from(facilityReportUseCase.getReport(reportId)));
+	}
+
+	@GetMapping("/api/v1/me/reports")
+	ApiResponse<List<FacilityReportResponse>> myReports(Principal principal) {
+		List<FacilityReportResponse> reports = facilityReportUseCase.listUserReports(principal.getName())
+			.stream()
+			.map(FacilityReportResponse::from)
+			.toList();
+		return ApiResponse.ok(reports);
 	}
 
 	@GetMapping("/admin/reports")
@@ -77,9 +89,9 @@ class FacilityReportController {
 		BigDecimal longitude
 	) {
 
-		CreateFacilityReportCommand toCommand() {
+		CreateFacilityReportCommand toCommand(String authenticatedUserId) {
 			return new CreateFacilityReportCommand(
-				userId,
+				authenticatedUserId,
 				stationId,
 				facilityId,
 				reportType,

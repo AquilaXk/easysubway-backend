@@ -10,6 +10,8 @@ public interface FacilityReportUseCase {
 
 	FacilityReport getReport(String reportId);
 
+	List<FacilityReport> listUserReports(String userId);
+
 	List<FacilityReport> listReports(FacilityReportStatus status);
 
 	FacilityReport reviewReport(ReviewFacilityReportCommand command);

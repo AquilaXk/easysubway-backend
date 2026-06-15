@@ -31,13 +31,14 @@ class FacilityReportControllerTest {
 	private MockMvc mockMvc;
 
 	@Test
-	@DisplayName("시설 신고를 생성하고 같은 식별자로 조회한다")
+	@DisplayName("시설 신고는 인증 사용자 기준으로 생성되고 같은 식별자로 조회한다")
 	void createReportReturnsSubmittedReportAndCanBeRead() throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
-					  "userId": "anonymous-user-1",
+					  "userId": "spoofed-user",
 					  "stationId": "station-sangnoksu",
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
@@ -53,6 +54,7 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.data.facilityId").value("facility-sangnoksu-elevator-1"))
 			.andExpect(jsonPath("$.data.reportType").value("BROKEN"))
 			.andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+			.andExpect(jsonPath("$.data.userId").value("basic-user"))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -67,9 +69,27 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고 생성은 인증된 사용자만 사용할 수 있다")
+	void createReportRequiresAuthentication() throws Exception {
+		mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "엘리베이터가 멈춰 있습니다."
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 시설 신고 요청은 공통 404 응답을 반환한다")
 	void createReportReturnsCommonErrorForUnknownFacility() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -90,6 +110,7 @@ class FacilityReportControllerTest {
 	@DisplayName("신고 유형이 없는 요청은 공통 400 응답을 반환한다")
 	void createReportReturnsCommonErrorForMissingReportType() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -109,6 +130,7 @@ class FacilityReportControllerTest {
 	@DisplayName("알 수 없는 신고 유형은 공통 400 응답을 반환한다")
 	void createReportReturnsCommonErrorForInvalidReportType() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -136,9 +158,41 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("내 신고 이력은 인증 사용자 신고만 최신순으로 반환한다")
+	void myReportListReturnsOnlyAuthenticatedUserReportsByNewestFirst() throws Exception {
+		String olderReportId = createReport("basic-user", "user-test-password", "spoofed-user", "먼저 접수한 내 신고");
+		String otherUserReportId = createReport("admin-test", "admin-test-password", "basic-user", "다른 사용자의 신고");
+		String newerReportId = createReport("basic-user", "user-test-password", "spoofed-user", "나중에 접수한 내 신고");
+
+		String response = mockMvc.perform(get("/api/v1/me/reports")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data").isArray())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		List<String> reportIds = JsonPath.read(response, "$.data[*].id");
+		Assertions.assertThat(reportIds)
+			.contains(newerReportId, olderReportId)
+			.doesNotContain(otherUserReportId);
+		Assertions.assertThat(reportIds.indexOf(newerReportId))
+			.isLessThan(reportIds.indexOf(olderReportId));
+	}
+
+	@Test
+	@DisplayName("내 신고 이력은 인증된 사용자만 조회할 수 있다")
+	void myReportListRequiresAuthentication() throws Exception {
+		mockMvc.perform(get("/api/v1/me/reports"))
+			.andExpect(status().isUnauthorized());
+	}
+
+	@Test
 	@DisplayName("관리자는 신고를 승인하고 조회 결과에서 검수 상태를 확인할 수 있다")
 	void reviewReportStoresAcceptedStatusAndCanBeRead() throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -299,6 +353,7 @@ class FacilityReportControllerTest {
 	@DisplayName("관리자는 신고 상세에서 사진과 위치 정보를 확인한다")
 	void adminReadsReportDetailWithPhotoAndLocation() throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -324,7 +379,7 @@ class FacilityReportControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.id").value(reportId))
-			.andExpect(jsonPath("$.data.userId").value("anonymous-user-admin-detail"))
+			.andExpect(jsonPath("$.data.userId").value("basic-user"))
 			.andExpect(jsonPath("$.data.description").value("엘리베이터 앞 안내문이 떨어져 있습니다."))
 			.andExpect(jsonPath("$.data.photoUrl").value("https://cdn.example.test/reports/elevator-notice.jpg"))
 			.andExpect(jsonPath("$.data.latitude").value(37.302421))
@@ -355,7 +410,17 @@ class FacilityReportControllerTest {
 	}
 
 	private String createReport(String userId, String description) throws Exception {
+		return createReport("basic-user", "user-test-password", userId, description);
+	}
+
+	private String createReport(
+		String username,
+		String password,
+		String userId,
+		String description
+	) throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic(username, password))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
