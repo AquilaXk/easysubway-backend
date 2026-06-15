@@ -108,11 +108,12 @@ class FacilityReportController {
 	}
 
 	record ReviewFacilityReportRequest(
-		FacilityReportReviewDecision decision
+		FacilityReportReviewDecision decision,
+		String duplicateOfReportId
 	) {
 
 		ReviewFacilityReportCommand toCommand(String reportId, String reviewedBy) {
-			return new ReviewFacilityReportCommand(reportId, decision, reviewedBy);
+			return new ReviewFacilityReportCommand(reportId, decision, reviewedBy, duplicateOfReportId);
 		}
 	}
 
@@ -127,6 +128,7 @@ class FacilityReportController {
 		String photoContentType,
 		BigDecimal latitude,
 		BigDecimal longitude,
+		String duplicateOfReportId,
 		FacilityReportStatus status,
 		LocalDateTime createdAt,
 		LocalDateTime reviewedAt,
@@ -145,6 +147,7 @@ class FacilityReportController {
 				report.photoContentType(),
 				report.latitude(),
 				report.longitude(),
+				report.duplicateOfReportId(),
 				report.status(),
 				report.createdAt(),
 				report.reviewedAt(),
@@ -164,6 +167,7 @@ class FacilityReportController {
 		String photoContentType,
 		BigDecimal latitude,
 		BigDecimal longitude,
+		String duplicateOfReportId,
 		FacilityReportStatus status,
 		LocalDateTime createdAt,
 		LocalDateTime reviewedAt,
@@ -183,6 +187,7 @@ class FacilityReportController {
 				report.photoContentType(),
 				report.latitude(),
 				report.longitude(),
+				report.duplicateOfReportId(),
 				report.status(),
 				report.createdAt(),
 				report.reviewedAt(),
@@ -203,6 +208,7 @@ class FacilityReportController {
 		String photoDataBase64,
 		BigDecimal latitude,
 		BigDecimal longitude,
+		String duplicateOfReportId,
 		FacilityReportStatus status,
 		LocalDateTime createdAt,
 		LocalDateTime reviewedAt,
@@ -222,6 +228,7 @@ class FacilityReportController {
 				report.photoDataBase64(),
 				report.latitude(),
 				report.longitude(),
+				report.duplicateOfReportId(),
 				report.status(),
 				report.createdAt(),
 				report.reviewedAt(),

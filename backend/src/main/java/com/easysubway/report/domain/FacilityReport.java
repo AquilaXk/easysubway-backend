@@ -15,6 +15,7 @@ public record FacilityReport(
 	String photoDataBase64,
 	BigDecimal latitude,
 	BigDecimal longitude,
+	String duplicateOfReportId,
 	FacilityReportStatus status,
 	LocalDateTime createdAt,
 	LocalDateTime reviewedAt,

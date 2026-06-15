@@ -303,6 +303,54 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 중복 신고를 기준 신고와 함께 처리한다")
+	void reviewReportMarksDuplicateWithOriginalReport() throws Exception {
+		String originalReportId = createReport("anonymous-user-original", "먼저 접수된 고장 신고");
+		String duplicatedReportId = createReport("anonymous-user-duplicated", "같은 시설에 대해 다시 들어온 신고");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", duplicatedReportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "MARK_DUPLICATE",
+					  "duplicateOfReportId": "%s"
+					}
+					""".formatted(originalReportId)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(duplicatedReportId))
+			.andExpect(jsonPath("$.data.status").value("DUPLICATE"))
+			.andExpect(jsonPath("$.data.duplicateOfReportId").value(originalReportId));
+
+		mockMvc.perform(get("/admin/reports/{reportId}", duplicatedReportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.duplicateOfReportId").value(originalReportId));
+	}
+
+	@Test
+	@DisplayName("중복 신고 검수는 기준 신고 식별자를 요구한다")
+	void duplicateReviewRequiresOriginalReportId() throws Exception {
+		String duplicatedReportId = createReport("anonymous-user-duplicated", "기준 신고 없이 중복 처리할 신고");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", duplicatedReportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "MARK_DUPLICATE"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("기준 신고를 확인해야 합니다."));
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 신고 검수는 공통 404 응답을 반환한다")
 	void reviewReportReturnsCommonErrorForMissingReport() throws Exception {
 		mockMvc.perform(post("/admin/reports/missing-report/review")

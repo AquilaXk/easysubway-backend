@@ -99,6 +99,34 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 상세 화면에서 중복 처리 기준 신고를 확인한다")
+	void adminReportDetailPageShowsDuplicateOriginalReport() throws Exception {
+		String originalReportId = createReport("먼저 접수된 고장 신고");
+		String duplicatedReportId = createReport("같은 시설에 대해 다시 들어온 신고");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/page/review", duplicatedReportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("decision", "MARK_DUPLICATE")
+				.param("duplicateOfReportId", originalReportId))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/reports/%s/page".formatted(duplicatedReportId)));
+
+		String html = mockMvc.perform(get("/admin/reports/{reportId}/page", duplicatedReportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("중복")
+			.contains("기준 신고")
+			.contains(originalReportId);
+	}
+
+	@Test
 	@DisplayName("관리자 신고 화면은 관리자 인증을 요구한다")
 	void adminReportPagesRequireAdminAuthentication() throws Exception {
 		String reportId = createReport("인증 검증용 신고");

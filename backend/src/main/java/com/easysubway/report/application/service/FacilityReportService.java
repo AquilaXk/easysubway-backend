@@ -176,6 +176,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			photoDataBase64,
 			command.latitude(),
 			command.longitude(),
+			null,
 			FacilityReportStatus.SUBMITTED,
 			LocalDateTime.now(clock),
 			null,
@@ -213,6 +214,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		requireReviewer(command);
 
 		FacilityReport report = getReport(command.reportId());
+		String duplicateOfReportId = resolveDuplicateOfReportId(command, report);
 		FacilityReport reviewed = new FacilityReport(
 			report.id(),
 			report.userId(),
@@ -225,6 +227,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			report.photoDataBase64(),
 			report.latitude(),
 			report.longitude(),
+			duplicateOfReportId,
 			toStatus(command.decision()),
 			report.createdAt(),
 			LocalDateTime.now(clock),
@@ -336,6 +339,22 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (command.reviewedBy() == null || command.reviewedBy().isBlank()) {
 			throw new InvalidFacilityReportException("검수자 식별자가 필요합니다.");
 		}
+	}
+
+	private String resolveDuplicateOfReportId(ReviewFacilityReportCommand command, FacilityReport report) {
+		if (command.decision() != FacilityReportReviewDecision.MARK_DUPLICATE) {
+			return null;
+		}
+		String duplicateOfReportId = normalizeDuplicateOfReportId(command.duplicateOfReportId());
+		if (duplicateOfReportId == null || duplicateOfReportId.equals(report.id())) {
+			throw new InvalidFacilityReportException("기준 신고를 확인해야 합니다.");
+		}
+		getReport(duplicateOfReportId);
+		return duplicateOfReportId;
+	}
+
+	private String normalizeDuplicateOfReportId(String duplicateOfReportId) {
+		return hasText(duplicateOfReportId) ? duplicateOfReportId.trim() : null;
 	}
 
 	private void requireActiveStation(String stationId) {

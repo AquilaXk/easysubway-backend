@@ -249,6 +249,7 @@ class FacilityReportServiceTest {
 			null,
 			null,
 			null,
+			null,
 			FacilityReportStatus.SUBMITTED,
 			LocalDateTime.of(2026, 6, 12, 9, 0),
 			null,
@@ -553,7 +554,12 @@ class FacilityReportServiceTest {
 			FacilityReportType.CLOSED,
 			"중복 처리할 폐쇄 신고입니다."
 		));
-		serviceWithFacilityStatus.reviewReport(reviewCommand(duplicated.id(), FacilityReportReviewDecision.MARK_DUPLICATE));
+		serviceWithFacilityStatus.reviewReport(new ReviewFacilityReportCommand(
+			duplicated.id(),
+			FacilityReportReviewDecision.MARK_DUPLICATE,
+			"admin-1",
+			rejected.id()
+		));
 		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
 			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
 	}
@@ -594,8 +600,62 @@ class FacilityReportServiceTest {
 		assertThat(service.reviewReport(new ReviewFacilityReportCommand(
 			duplicated.id(),
 			FacilityReportReviewDecision.MARK_DUPLICATE,
-			"admin-1"
+			"admin-1",
+			rejected.id()
 		)).status()).isEqualTo(FacilityReportStatus.DUPLICATE);
+	}
+
+	@Test
+	@DisplayName("중복 처리된 신고는 기준 신고 식별자를 함께 저장한다")
+	void duplicateReportStoresMergedReportId() {
+		var original = service.createReport(reportCommand(
+			"anonymous-user-original",
+			FacilityReportType.BROKEN,
+			"먼저 접수된 고장 신고입니다."
+		));
+		var duplicated = service.createReport(reportCommand(
+			"anonymous-user-duplicated",
+			FacilityReportType.BROKEN,
+			"같은 시설에 대해 다시 들어온 신고입니다."
+		));
+
+		var reviewed = service.reviewReport(new ReviewFacilityReportCommand(
+			duplicated.id(),
+			FacilityReportReviewDecision.MARK_DUPLICATE,
+			"admin-1",
+			original.id()
+		));
+
+		assertThat(reviewed.status()).isEqualTo(FacilityReportStatus.DUPLICATE);
+		assertThat(reviewed.duplicateOfReportId()).isEqualTo(original.id());
+		assertThat(service.getReport(duplicated.id()).duplicateOfReportId()).isEqualTo(original.id());
+	}
+
+	@Test
+	@DisplayName("중복 처리는 존재하는 다른 신고를 기준으로 요구한다")
+	void duplicateReviewRequiresExistingDifferentReport() {
+		var report = service.createReport(reportCommand(
+			"anonymous-user-duplicated",
+			FacilityReportType.BROKEN,
+			"중복 처리할 신고입니다."
+		));
+
+		assertThatThrownBy(() -> service.reviewReport(new ReviewFacilityReportCommand(
+			report.id(),
+			FacilityReportReviewDecision.MARK_DUPLICATE,
+			"admin-1",
+			"missing-report"
+		)))
+			.isInstanceOf(FacilityReportNotFoundException.class)
+			.hasMessage("신고 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.reviewReport(new ReviewFacilityReportCommand(
+			report.id(),
+			FacilityReportReviewDecision.MARK_DUPLICATE,
+			"admin-1",
+			report.id()
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("기준 신고를 확인해야 합니다.");
 	}
 
 	@Test
@@ -710,7 +770,7 @@ class FacilityReportServiceTest {
 	}
 
 	private ReviewFacilityReportCommand reviewCommand(String reportId, FacilityReportReviewDecision decision) {
-		return new ReviewFacilityReportCommand(reportId, decision, "admin-1");
+		return new ReviewFacilityReportCommand(reportId, decision, "admin-1", null);
 	}
 
 	private AccessibilityFacilityStatus facilityStatus(

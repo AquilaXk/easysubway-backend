@@ -156,6 +156,8 @@
 			<dd th:text="${report.reviewedBy != null ? report.reviewedBy : '없음'}">없음</dd>
 			<dt>검수일</dt>
 			<dd th:text="${report.reviewedAt != null ? report.reviewedAt : '없음'}">없음</dd>
+			<dt>기준 신고</dt>
+			<dd th:text="${report.duplicateOfReportId != null ? report.duplicateOfReportId : '없음'}">없음</dd>
 		</dl>
 	</section>
 
@@ -163,6 +165,10 @@
 	      th:action="@{/admin/reports/{reportId}/page/review(reportId=${report.id})}"
 	      method="post">
 		<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+		<label>
+			기준 신고 ID
+			<input name="duplicateOfReportId" type="text" autocomplete="off" placeholder="중복 처리할 때 입력">
+		</label>
 		<button type="submit" name="decision" value="ACCEPT">승인</button>
 		<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
 		<button class="secondary" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>

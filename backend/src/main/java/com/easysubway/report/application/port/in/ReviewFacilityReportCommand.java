@@ -5,6 +5,15 @@ import com.easysubway.report.domain.FacilityReportReviewDecision;
 public record ReviewFacilityReportCommand(
 	String reportId,
 	FacilityReportReviewDecision decision,
-	String reviewedBy
+	String reviewedBy,
+	String duplicateOfReportId
 ) {
+
+	public ReviewFacilityReportCommand(
+		String reportId,
+		FacilityReportReviewDecision decision,
+		String reviewedBy
+	) {
+		this(reportId, decision, reviewedBy, null);
+	}
 }

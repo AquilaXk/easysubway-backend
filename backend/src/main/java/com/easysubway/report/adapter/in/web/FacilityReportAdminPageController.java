@@ -54,9 +54,12 @@ class FacilityReportAdminPageController {
 	String reviewReportFromPage(
 		@PathVariable String reportId,
 		@RequestParam FacilityReportReviewDecision decision,
+		@RequestParam(required = false) String duplicateOfReportId,
 		Principal principal
 	) {
-		facilityReportUseCase.reviewReport(new ReviewFacilityReportCommand(reportId, decision, principal.getName()));
+		facilityReportUseCase.reviewReport(
+			new ReviewFacilityReportCommand(reportId, decision, principal.getName(), duplicateOfReportId)
+		);
 		return "redirect:/admin/reports/%s/page".formatted(reportId);
 	}
 
@@ -154,6 +157,7 @@ class FacilityReportAdminPageController {
 		String photoFileName,
 		String photoContentType,
 		String photoDataBase64,
+		String duplicateOfReportId,
 		String coordinateLabel
 	) {
 
@@ -172,6 +176,7 @@ class FacilityReportAdminPageController {
 				report.photoFileName(),
 				report.photoContentType(),
 				report.photoDataBase64(),
+				report.duplicateOfReportId(),
 				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
 			);
 		}
