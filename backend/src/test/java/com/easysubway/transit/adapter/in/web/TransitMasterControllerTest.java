@@ -1,5 +1,6 @@
 package com.easysubway.transit.adapter.in.web;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
@@ -234,6 +235,7 @@ class TransitMasterControllerTest {
 	void adminUpdatesFacilityStatusAndPublicListReflectsIt() throws Exception {
 		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
 				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -255,6 +257,7 @@ class TransitMasterControllerTest {
 	@DisplayName("시설 상태 수정 API는 관리자 인증을 요구한다")
 	void updateFacilityStatusRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -265,6 +268,7 @@ class TransitMasterControllerTest {
 
 		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
 				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -279,6 +283,7 @@ class TransitMasterControllerTest {
 	void updateFacilityStatusRequiresStatus() throws Exception {
 		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
 				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("{}"))
 			.andExpect(status().isBadRequest())
@@ -292,6 +297,7 @@ class TransitMasterControllerTest {
 	void updateFacilityStatusReturnsCommonErrorForMissingFacility() throws Exception {
 		mockMvc.perform(patch("/admin/facilities/missing-facility/status")
 				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

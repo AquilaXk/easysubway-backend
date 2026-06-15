@@ -1,8 +1,9 @@
 package com.easysubway.report.adapter.in.web;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
-import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -246,6 +247,7 @@ class FacilityReportControllerTest {
 
 		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -274,6 +276,7 @@ class FacilityReportControllerTest {
 	@DisplayName("신고 검수는 관리자 인증을 요구한다")
 	void reviewReportRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(post("/admin/reports/report-1/review")
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -288,6 +291,7 @@ class FacilityReportControllerTest {
 	void reviewReportRejectsInvalidDecisionRequest() throws Exception {
 		mockMvc.perform(post("/admin/reports/report-1/review")
 				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{}
@@ -303,6 +307,7 @@ class FacilityReportControllerTest {
 	void reviewReportReturnsCommonErrorForMissingReport() throws Exception {
 		mockMvc.perform(post("/admin/reports/missing-report/review")
 				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -323,6 +328,7 @@ class FacilityReportControllerTest {
 
 		mockMvc.perform(post("/admin/reports/{reportId}/review", acceptedReportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

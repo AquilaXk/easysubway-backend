@@ -20,10 +20,9 @@ public class SecurityConfig {
 	@Bean
 	@Order(1)
 	SecurityFilterChain adminSecurityFilterChain(HttpSecurity http) throws Exception {
-		// 관리자 검수 API는 다른 공개 API보다 먼저 매칭해야 잘못된 인증 우회를 막을 수 있다.
+		// 관리자 검수 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
 		return http
 			.securityMatcher("/admin/**")
-			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().hasRole("ADMIN")
 			)

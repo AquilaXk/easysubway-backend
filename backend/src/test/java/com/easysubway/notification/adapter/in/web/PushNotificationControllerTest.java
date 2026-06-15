@@ -1,5 +1,6 @@
 package com.easysubway.notification.adapter.in.web;
 
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -42,6 +43,7 @@ class PushNotificationControllerTest {
 
 		mockMvc.perform(post("/admin/notifications/push")
 				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -66,6 +68,7 @@ class PushNotificationControllerTest {
 	@DisplayName("푸시 알림 발송 API는 관리자만 사용할 수 있다")
 	void pushNotificationDispatchRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(post("/admin/notifications/push")
+				.with(csrf())
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
