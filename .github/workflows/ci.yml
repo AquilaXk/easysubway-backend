@@ -218,9 +218,9 @@ jobs:
         with:
           node-version: "24"
 
-      - name: Mobile App CI / Run mobile catch contract
+      - name: Mobile App CI / Run mobile contracts
         if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
-        run: node --test --test-name-pattern "모바일 generic catch" tools/ci/repository-contract.test.mjs
+        run: node --test --test-name-pattern "모바일 generic catch|Android 런처 아이콘" tools/ci/repository-contract.test.mjs
 
       - name: Mobile App CI / Run Flutter analyzer and tests
         if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
