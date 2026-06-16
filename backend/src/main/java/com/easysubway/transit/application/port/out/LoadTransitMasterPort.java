@@ -25,7 +25,7 @@ public interface LoadTransitMasterPort {
 	List<AccessibilityFacility> loadAccessibilityFacilities();
 
 	default List<StationLayoutSource> loadStationLayoutSources() {
-		return List.of();
+		throw new UnsupportedOperationException("Station layout source loading is not implemented.");
 	}
 
 	default Optional<Station> loadStation(String stationId) {
