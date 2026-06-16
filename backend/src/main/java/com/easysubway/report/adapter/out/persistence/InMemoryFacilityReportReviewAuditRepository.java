@@ -6,9 +6,11 @@ import com.easysubway.report.domain.FacilityReportReviewAudit;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("!prod")
 public class InMemoryFacilityReportReviewAuditRepository implements
 	LoadFacilityReportReviewAuditPort,
 	SaveFacilityReportReviewAuditPort {
