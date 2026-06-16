@@ -127,7 +127,9 @@ public class JdbcFacilityReportRepository implements
 
 	private void upsertReport(FacilityReport report) {
 		if (databaseDialect == DatabaseDialect.H2) {
-			upsertReportWithH2Merge(report);
+			if (updateReportPreservingCreatedAt(report) == 0) {
+				insertReport(report);
+			}
 			return;
 		}
 		upsertReportWithPostgresql(report);
@@ -169,7 +171,6 @@ public class JdbcFacilityReportRepository implements
 					longitude = EXCLUDED.longitude,
 					duplicate_of_report_id = EXCLUDED.duplicate_of_report_id,
 					status = EXCLUDED.status,
-					created_at = EXCLUDED.created_at,
 					reviewed_at = EXCLUDED.reviewed_at,
 					reviewed_by = EXCLUDED.reviewed_by
 				""",
@@ -177,10 +178,48 @@ public class JdbcFacilityReportRepository implements
 		);
 	}
 
-	private void upsertReportWithH2Merge(FacilityReport report) {
+	private int updateReportPreservingCreatedAt(FacilityReport report) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET user_id = ?,
+					station_id = ?,
+					facility_id = ?,
+					report_type = ?,
+					description = ?,
+					photo_file_name = ?,
+					photo_content_type = ?,
+					photo_data_base64 = ?,
+					latitude = ?,
+					longitude = ?,
+					duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?
+				WHERE report_id = ?
+				""",
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType().name(),
+			report.description(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoDataBase64(),
+			report.latitude(),
+			report.longitude(),
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.id()
+		);
+	}
+
+	private void insertReport(FacilityReport report) {
 		jdbcTemplate.update(
 			"""
-				MERGE INTO facility_reports (
+				INSERT INTO facility_reports (
 					report_id,
 					user_id,
 					station_id,
@@ -198,7 +237,6 @@ public class JdbcFacilityReportRepository implements
 					reviewed_at,
 					reviewed_by
 				)
-				KEY (report_id)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			reportParameters(report)

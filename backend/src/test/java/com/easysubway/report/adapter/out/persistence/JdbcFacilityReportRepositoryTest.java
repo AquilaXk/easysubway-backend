@@ -44,7 +44,14 @@ class JdbcFacilityReportRepositoryTest {
 				status VARCHAR(40) NOT NULL,
 				created_at TIMESTAMP NOT NULL,
 				reviewed_at TIMESTAMP,
-				reviewed_by VARCHAR(120)
+				reviewed_by VARCHAR(120),
+				CONSTRAINT fk_facility_reports_duplicate
+					FOREIGN KEY (duplicate_of_report_id) REFERENCES facility_reports(report_id)
+					ON DELETE SET NULL ON UPDATE CASCADE,
+				CONSTRAINT chk_facility_reports_report_type
+					CHECK (report_type IN ('BROKEN', 'UNDER_CONSTRUCTION', 'CLOSED', 'LOCATION_WRONG', 'INFORMATION_WRONG', 'RECOVERED')),
+				CONSTRAINT chk_facility_reports_status
+					CHECK (status IN ('SUBMITTED', 'DUPLICATE', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'RESOLVED'))
 			)
 			""");
 		repository = new JdbcFacilityReportRepository(jdbcTemplate);
@@ -77,6 +84,7 @@ class JdbcFacilityReportRepositoryTest {
 	@Test
 	@DisplayName("이미 저장된 시설 신고는 검수 상태와 중복 신고 정보를 갱신한다")
 	void saveReportUpdatesExistingReport() {
+		repository.saveReport(submittedReport("report-0", "anonymous-user-2", 8));
 		repository.saveReport(submittedReport("report-1", "anonymous-user-1", 9));
 		var reviewedReport = reviewedReport("report-1");
 
@@ -86,8 +94,40 @@ class JdbcFacilityReportRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("사용자 데이터 삭제 요청은 신고 본문과 사진과 위치를 익명화한다")
-	void anonymizeFacilityReportsByUserIdClearsPersonalReportData() {
+	@DisplayName("이미 저장된 시설 신고 갱신은 최초 생성 시각을 유지한다")
+	void saveReportKeepsOriginalCreatedAtWhenUpdatingExistingReport() {
+		var originalReport = submittedReport("report-1", "anonymous-user-1", 9);
+		var updatedReport = new FacilityReport(
+			"report-1",
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-elevator-1",
+			FacilityReportType.BROKEN,
+			"엘리베이터가 다시 움직이지 않습니다.",
+			"elevator-updated.jpg",
+			"image/jpeg",
+			"dXBkYXRlZC1pbWFnZQ==",
+			new BigDecimal("37.3123450"),
+			new BigDecimal("126.9876540"),
+			null,
+			FacilityReportStatus.UNDER_REVIEW,
+			LocalDateTime.of(2026, 6, 17, 11, 0),
+			LocalDateTime.of(2026, 6, 17, 11, 10),
+			"admin-user"
+		);
+		repository.saveReport(originalReport);
+
+		repository.saveReport(updatedReport);
+
+		FacilityReport savedReport = repository.loadReport("report-1").orElseThrow();
+		assertThat(savedReport.createdAt()).isEqualTo(originalReport.createdAt());
+		assertThat(savedReport.status()).isEqualTo(FacilityReportStatus.UNDER_REVIEW);
+		assertThat(savedReport.reviewedAt()).isEqualTo(updatedReport.reviewedAt());
+	}
+
+	@Test
+	@DisplayName("사용자 데이터 삭제 요청은 미검수 신고 본문과 사진과 위치를 익명화한다")
+	void anonymizeFacilityReportsByUserIdClearsSubmittedReportPersonalData() {
 		var targetReport = submittedReport("report-1", "anonymous-user-1", 9);
 		var otherUserReport = submittedReport("report-2", "anonymous-user-2", 10);
 		repository.saveReport(targetReport);
@@ -117,6 +157,28 @@ class JdbcFacilityReportRepositoryTest {
 			targetReport.reviewedBy()
 		));
 		assertThat(repository.loadReport("report-2")).contains(otherUserReport);
+	}
+
+	@Test
+	@DisplayName("사용자 데이터 삭제 요청은 검수 완료 신고의 검수 정보를 유지한다")
+	void anonymizeFacilityReportsByUserIdKeepsReviewedReportMetadata() {
+		repository.saveReport(submittedReport("report-0", "anonymous-user-2", 8));
+		var targetReport = reviewedReport("report-1");
+		repository.saveReport(targetReport);
+
+		int anonymizedCount = repository.anonymizeFacilityReportsByUserId("anonymous-user-1");
+
+		assertThat(anonymizedCount).isEqualTo(1);
+		FacilityReport anonymizedReport = repository.loadReport("report-1").orElseThrow();
+		assertThat(anonymizedReport.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(anonymizedReport.description()).isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(anonymizedReport.photoDataBase64()).isNull();
+		assertThat(anonymizedReport.latitude()).isNull();
+		assertThat(anonymizedReport.longitude()).isNull();
+		assertThat(anonymizedReport.duplicateOfReportId()).isEqualTo(targetReport.duplicateOfReportId());
+		assertThat(anonymizedReport.status()).isEqualTo(targetReport.status());
+		assertThat(anonymizedReport.reviewedAt()).isEqualTo(targetReport.reviewedAt());
+		assertThat(anonymizedReport.reviewedBy()).isEqualTo(targetReport.reviewedBy());
 	}
 
 	private FacilityReport submittedReport(String reportId, String userId, int hour) {

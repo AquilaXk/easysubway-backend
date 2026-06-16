@@ -184,7 +184,14 @@ CREATE TABLE IF NOT EXISTS facility_reports (
 	status VARCHAR(40) NOT NULL,
 	created_at TIMESTAMP NOT NULL,
 	reviewed_at TIMESTAMP,
-	reviewed_by VARCHAR(120)
+	reviewed_by VARCHAR(120),
+	CONSTRAINT fk_facility_reports_duplicate
+		FOREIGN KEY (duplicate_of_report_id) REFERENCES facility_reports(report_id)
+		ON DELETE SET NULL ON UPDATE CASCADE,
+	CONSTRAINT chk_facility_reports_report_type
+		CHECK (report_type IN ('BROKEN', 'UNDER_CONSTRUCTION', 'CLOSED', 'LOCATION_WRONG', 'INFORMATION_WRONG', 'RECOVERED')),
+	CONSTRAINT chk_facility_reports_status
+		CHECK (status IN ('SUBMITTED', 'DUPLICATE', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'RESOLVED'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_facility_reports_created
