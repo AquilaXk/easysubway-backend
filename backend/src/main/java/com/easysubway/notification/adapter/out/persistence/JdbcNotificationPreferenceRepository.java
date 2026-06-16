@@ -15,6 +15,7 @@ import javax.sql.DataSource;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -28,6 +29,7 @@ public class JdbcNotificationPreferenceRepository implements
 	DeleteUserNotificationPreferencePort {
 
 	private final JdbcTemplate jdbcTemplate;
+	private final DatabaseDialect databaseDialect;
 
 	public JdbcNotificationPreferenceRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource));
@@ -35,6 +37,7 @@ public class JdbcNotificationPreferenceRepository implements
 
 	JdbcNotificationPreferenceRepository(JdbcTemplate jdbcTemplate) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
@@ -79,15 +82,40 @@ public class JdbcNotificationPreferenceRepository implements
 	@Override
 	@Transactional
 	public RegisteredDevice saveRegisteredDevice(RegisteredDevice device) {
-		// 같은 물리 기기가 여러 사용자에게 중복 발송되지 않도록 플랫폼/토큰 단위로 소유자를 하나만 둔다.
-		if (updateRegisteredDeviceOwner(device) == 0) {
-			try {
-				insertRegisteredDevice(device);
-			} catch (DuplicateKeyException exception) {
-				updateRegisteredDeviceOwner(device);
-			}
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			upsertRegisteredDeviceWithPostgresql(device);
+			return device;
 		}
+		saveRegisteredDeviceWithUpdateInsert(device);
 		return device;
+	}
+
+	private void upsertRegisteredDeviceWithPostgresql(RegisteredDevice device) {
+		// 같은 물리 기기가 여러 사용자에게 중복 발송되지 않도록 플랫폼/토큰 단위로 소유자를 하나만 둔다.
+		jdbcTemplate.update(
+			"""
+				INSERT INTO registered_devices (
+					user_id,
+					platform,
+					device_token,
+					registered_at
+				)
+				VALUES (?, ?, ?, ?)
+				ON CONFLICT (platform, device_token) DO UPDATE
+				SET user_id = EXCLUDED.user_id,
+					registered_at = EXCLUDED.registered_at
+				""",
+			device.userId(),
+			device.platform().name(),
+			device.deviceToken(),
+			device.registeredAt()
+		);
+	}
+
+	private void saveRegisteredDeviceWithUpdateInsert(RegisteredDevice device) {
+		if (updateRegisteredDeviceOwner(device) == 0) {
+			insertRegisteredDevice(device);
+		}
 	}
 
 	@Override
@@ -217,5 +245,18 @@ public class JdbcNotificationPreferenceRepository implements
 			resultSet.getString("device_token"),
 			resultSet.getTimestamp("registered_at").toLocalDateTime()
 		);
+	}
+
+	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }
