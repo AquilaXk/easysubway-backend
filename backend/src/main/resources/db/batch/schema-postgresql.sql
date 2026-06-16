@@ -108,3 +108,16 @@ CREATE TABLE IF NOT EXISTS mobility_profiles (
 
 CREATE INDEX IF NOT EXISTS idx_mobility_profiles_updated_at
 	ON mobility_profiles (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS favorite_stations (
+	user_id VARCHAR(120) NOT NULL,
+	station_id VARCHAR(120) NOT NULL,
+	added_at TIMESTAMP NOT NULL,
+	PRIMARY KEY (user_id, station_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_stations_station_user
+	ON favorite_stations (station_id, user_id);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_stations_user_added
+	ON favorite_stations (user_id, added_at ASC, station_id ASC);
