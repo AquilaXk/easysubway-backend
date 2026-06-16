@@ -22,6 +22,7 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -343,6 +344,11 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	private boolean hasStairOnlyAccess(String stationId) {
+		Optional<Boolean> stairOnlyInternalEdges = hasStairOnlyInternalEdges(stationId);
+		if (stairOnlyInternalEdges.isPresent()) {
+			return stairOnlyInternalEdges.get();
+		}
+
 		List<StationExit> exits = stationExits(stationId);
 		if (exits.isEmpty()) {
 			return false;
@@ -363,6 +369,19 @@ public class RouteSearchService implements RouteSearchUseCase {
 		boolean hasUsableStepFreeExit = highConfidenceExits.stream()
 			.anyMatch(exit -> isUsableStepFreeExit(exit, highConfidenceStepFreeFacilities));
 		return !hasUsableStepFreeFacility && !hasUsableStepFreeExit;
+	}
+
+	private Optional<Boolean> hasStairOnlyInternalEdges(String stationId) {
+		List<RouteEdge> activeStationEdges = loadTransitMasterPort.loadRouteEdges()
+			.stream()
+			.filter(RouteEdge::active)
+			.filter(edge -> edge.stationId().equals(stationId))
+			.toList();
+		if (activeStationEdges.isEmpty()) {
+			return Optional.empty();
+		}
+		// 내부 이동 간선 데이터가 있으면 출구 요약보다 실제 승강장 연결 동선을 우선한다.
+		return Optional.of(activeStationEdges.stream().allMatch(RouteEdge::hasStairs));
 	}
 
 	private String exitGuidance(String stationId, String fallbackGuidance) {
