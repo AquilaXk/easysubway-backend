@@ -17,6 +17,7 @@ import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
+import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationNotFoundException;
@@ -165,6 +166,15 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return loadTransitMasterPort.loadAccessibilityFacilities()
 			.stream()
 			.filter(facility -> facility.stationId().equals(stationId))
+			.toList();
+	}
+
+	@Override
+	public List<StationLayoutSource> listStationLayoutSources(String stationId) {
+		loadActiveStation(stationId);
+		return loadTransitMasterPort.loadStationLayoutSources()
+			.stream()
+			.filter(source -> source.stationId().equals(stationId))
 			.toList();
 	}
 

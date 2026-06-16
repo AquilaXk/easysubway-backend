@@ -3,6 +3,7 @@ package com.easysubway.transit.application.port.out;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
+import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
@@ -22,6 +23,10 @@ public interface LoadTransitMasterPort {
 	List<StationExit> loadStationExits();
 
 	List<AccessibilityFacility> loadAccessibilityFacilities();
+
+	default List<StationLayoutSource> loadStationLayoutSources() {
+		throw new UnsupportedOperationException("Station layout source loading is not implemented.");
+	}
 
 	default Optional<Station> loadStation(String stationId) {
 		return loadStations()
