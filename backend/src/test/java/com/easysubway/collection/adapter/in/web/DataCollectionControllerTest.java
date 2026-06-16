@@ -46,7 +46,7 @@ class DataCollectionControllerTest {
 			.andExpect(jsonPath("$.data.source").value("TRANSIT_MASTER"))
 			.andExpect(jsonPath("$.data.status").value("COMPLETED"))
 			.andExpect(jsonPath("$.data.requestedBy").value("admin-user"))
-			.andExpect(jsonPath("$.data.collectedCount").value(13));
+			.andExpect(jsonPath("$.data.collectedCount").value(14));
 
 		mockMvc.perform(get("/admin/data-collections/runs")
 				.with(httpBasic("admin-user", "admin-test-password")))

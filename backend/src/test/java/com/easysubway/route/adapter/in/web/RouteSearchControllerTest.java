@@ -46,6 +46,7 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.data.steps[0].distanceMeters").value(180))
 			.andExpect(jsonPath("$.data.steps[0].includesStairs").value(false))
 			.andExpect(jsonPath("$.data.steps[0].requiresAccessibilityCheck").value(true))
+			.andExpect(jsonPath("$.data.steps[2].description").value("2번 출구의 엘리베이터를 먼저 확인하세요."))
 			.andReturn();
 
 		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");

@@ -48,7 +48,7 @@ class DataCollectionAdminPageControllerTest {
 			.contains("최근 실행 기록")
 			.contains("완료")
 			.contains("admin-user")
-			.contains(">13<")
+			.contains(">14<")
 			.contains("name=\"source\"")
 			.contains("value=\"TRANSIT_MASTER\"")
 			.contains("name=\"_csrf\"");

@@ -351,6 +351,23 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return !hasUsableStepFreeFacility && !hasUsableStepFreeExit;
 	}
 
+	private String exitGuidance(String stationId, String fallbackGuidance) {
+		return recommendedStepFreeExit(stationId)
+			.map(exit -> exit.name() + "의 엘리베이터를 먼저 확인하세요.")
+			.orElse(fallbackGuidance);
+	}
+
+	private Optional<StationExit> recommendedStepFreeExit(String stationId) {
+		List<AccessibilityFacility> highConfidenceStepFreeFacilities = stationFacilities(stationId).stream()
+			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
+			.filter(this::isStepFreeFacility)
+			.toList();
+		return stationExits(stationId).stream()
+			.filter(exit -> exit.dataConfidence() == DataConfidenceLevel.HIGH)
+			.filter(exit -> isUsableStepFreeExit(exit, highConfidenceStepFreeFacilities))
+			.findFirst();
+	}
+
 	private boolean isStepFreeFacility(AccessibilityFacility facility) {
 		return switch (facility.type()) {
 			case ELEVATOR, WHEELCHAIR_LIFT, RAMP -> true;
@@ -454,7 +471,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			new RouteStep(
 				3,
 				destination.nameKo() + "역에서 출구 접근성 정보를 확인",
-				profileWeight.exitGuidance(),
+				exitGuidance(destination.id(), profileWeight.exitGuidance()),
 				directLine.line().id(),
 				directLine.line().name(),
 				destination.id(),
@@ -534,7 +551,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			new RouteStep(
 				5,
 				destination.nameKo() + "역에서 출구 접근성 정보를 확인",
-				profileWeight.exitGuidance(),
+				exitGuidance(destination.id(), profileWeight.exitGuidance()),
 				route.secondLine().id(),
 				route.secondLine().name(),
 				destination.id(),
