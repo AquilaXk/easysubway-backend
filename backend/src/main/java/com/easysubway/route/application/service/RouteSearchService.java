@@ -31,11 +31,13 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -271,109 +273,24 @@ public class RouteSearchService implements RouteSearchUseCase {
 		String destinationStationId,
 		RouteProfileWeight profileWeight
 	) {
-		Map<String, SubwayLine> activeLinesById = loadTransitMasterPort.loadLines()
-			.stream()
-			.filter(SubwayLine::active)
-			.collect(Collectors.toMap(SubwayLine::id, Function.identity()));
-		Map<String, Station> activeStationsById = loadTransitMasterPort.loadStations()
-			.stream()
-			.filter(Station::active)
-			.collect(Collectors.toMap(Station::id, Function.identity()));
-		List<StationLine> activeStationLines = loadTransitMasterPort.loadStationLines()
-			.stream()
-			.filter(stationLine -> activeLinesById.containsKey(stationLine.lineId()))
-			.filter(stationLine -> activeStationsById.containsKey(stationLine.stationId()))
-			.toList();
-		List<StationLine> originLines = stationLines(activeStationLines, originStationId);
-		List<StationLine> destinationLines = stationLines(activeStationLines, destinationStationId);
-		Map<String, List<StationLine>> stationLinesByStationId = activeStationLines.stream()
-			.collect(Collectors.groupingBy(StationLine::stationId));
+		Map<String, Boolean> stairOnlyAccessCache = new HashMap<>();
+		Map<String, Boolean> lowAccessibilityDataCache = new HashMap<>();
+		Predicate<String> stairOnlyAccess = stationId ->
+			stairOnlyAccessCache.computeIfAbsent(stationId, this::hasStairOnlyAccess);
+		Predicate<String> lowAccessibilityData = stationId ->
+			lowAccessibilityDataCache.computeIfAbsent(stationId, this::hasLowAccessibilityData);
 
-		// 한 번 환승 기준선은 두 노선이 만나는 활성 역을 찾아 총 이동 역 수가 가장 짧은 후보를 고른다.
-		List<TransferRoute> candidates = new ArrayList<>();
-		for (StationLine originLine : originLines) {
-			for (StationLine destinationLine : destinationLines) {
-				if (originLine.lineId().equals(destinationLine.lineId())) {
-					continue;
-				}
-				stationLinesByStationId.forEach((stationId, linesAtStation) -> addTransferCandidate(
-					candidates,
-					activeLinesById,
-					activeStationsById,
-					originStationId,
-					destinationStationId,
-					originLine,
-					destinationLine,
-					stationId,
-					linesAtStation
-				));
-			}
-		}
-
-		return candidates.stream()
-			.min(Comparator.comparingInt((TransferRoute route) -> transferAccessibilityRank(route, profileWeight))
-				.thenComparingInt(route -> transferCandidateCost(route, profileWeight))
-				.thenComparing(route -> route.transferStation().nameKo()));
-	}
-
-	private int transferAccessibilityRank(TransferRoute route, RouteProfileWeight profileWeight) {
-		if (profileWeight.blocksStairOnlyAccess() && hasStairOnlyAccess(route.transferStation().id())) {
-			return 1;
-		}
-		return 0;
-	}
-
-	private int transferCandidateCost(TransferRoute route, RouteProfileWeight profileWeight) {
-		String transferStationId = route.transferStation().id();
-		int stairOnlyCost = hasStairOnlyAccess(transferStationId)
-			? profileWeight.stairOnlyAccessPenalty()
-			: 0;
-		int lowDataCost = hasLowAccessibilityData(transferStationId)
-			? profileWeight.lowDataConfidencePenalty()
-			: 0;
-		return route.stopCount() * 3 + profileWeight.transferPenalty() + stairOnlyCost + lowDataCost;
-	}
-
-	private void addTransferCandidate(
-		List<TransferRoute> candidates,
-		Map<String, SubwayLine> activeLinesById,
-		Map<String, Station> activeStationsById,
-		String originStationId,
-		String destinationStationId,
-		StationLine originLine,
-		StationLine destinationLine,
-		String stationId,
-		List<StationLine> linesAtStation
-	) {
-		if (stationId.equals(originStationId) || stationId.equals(destinationStationId)) {
-			return;
-		}
-		Optional<StationLine> transferOriginLine = stationLineFor(linesAtStation, originLine.lineId());
-		Optional<StationLine> transferDestinationLine = stationLineFor(linesAtStation, destinationLine.lineId());
-		if (transferOriginLine.isEmpty() || transferDestinationLine.isEmpty()) {
-			return;
-		}
-		candidates.add(new TransferRoute(
-			activeLinesById.get(originLine.lineId()),
-			originLine,
-			transferOriginLine.get(),
-			activeLinesById.get(destinationLine.lineId()),
-			transferDestinationLine.get(),
-			destinationLine,
-			activeStationsById.get(stationId)
-		));
-	}
-
-	private List<StationLine> stationLines(List<StationLine> stationLines, String stationId) {
-		return stationLines.stream()
-			.filter(stationLine -> stationLine.stationId().equals(stationId))
-			.toList();
-	}
-
-	private Optional<StationLine> stationLineFor(List<StationLine> stationLines, String lineId) {
-		return stationLines.stream()
-			.filter(stationLine -> stationLine.lineId().equals(lineId))
-			.findFirst();
+		return new TransferRouteGraph(
+			loadTransitMasterPort.loadLines(),
+			loadTransitMasterPort.loadStations(),
+			loadTransitMasterPort.loadStationLines()
+		).findBestOneTransferRoute(
+			originStationId,
+			destinationStationId,
+			profileWeight,
+			stairOnlyAccess,
+			lowAccessibilityData
+		);
 	}
 
 	private List<RouteWarning> routeWarnings(List<String> stationIds, boolean stairOnlyAccess) {
@@ -662,29 +579,6 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 		int stopCount() {
 			return Math.abs(origin.sequence() - destination.sequence());
-		}
-	}
-
-	private record TransferRoute(
-		SubwayLine firstLine,
-		StationLine origin,
-		StationLine transferOriginLine,
-		SubwayLine secondLine,
-		StationLine transferDestinationLine,
-		StationLine destination,
-		Station transferStation
-	) {
-
-		int firstSegmentStopCount() {
-			return Math.abs(origin.sequence() - transferOriginLine.sequence());
-		}
-
-		int secondSegmentStopCount() {
-			return Math.abs(transferDestinationLine.sequence() - destination.sequence());
-		}
-
-		int stopCount() {
-			return firstSegmentStopCount() + secondSegmentStopCount();
 		}
 	}
 
