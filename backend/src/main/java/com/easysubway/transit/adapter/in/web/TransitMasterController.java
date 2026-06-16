@@ -19,6 +19,9 @@ import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
+import com.easysubway.transit.domain.SimplifiedStationLayoutConfidence;
+import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
@@ -140,6 +143,17 @@ class TransitMasterController {
 		List<StationLayoutSourceResponse> response = transitMasterQueryUseCase.listStationLayoutSources(stationId)
 			.stream()
 			.map(StationLayoutSourceResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/admin/stations/{stationId}/layouts")
+	ApiResponse<List<SimplifiedStationLayoutResponse>> simplifiedStationLayouts(@PathVariable String stationId) {
+		List<SimplifiedStationLayoutResponse> response = transitMasterQueryUseCase
+			.listSimplifiedStationLayouts(stationId)
+			.stream()
+			.map(SimplifiedStationLayoutResponse::from)
 			.toList();
 
 		return ApiResponse.ok(response);
@@ -430,6 +444,41 @@ class TransitMasterController {
 				source.attributionRequired(),
 				source.capturedAt(),
 				source.reviewedAt()
+			);
+		}
+	}
+
+	record SimplifiedStationLayoutResponse(
+		String id,
+		String stationId,
+		int version,
+		SimplifiedStationLayoutStatus status,
+		List<String> sourceIds,
+		SimplifiedStationLayoutConfidence confidenceLevel,
+		String baseFloor,
+		String layoutJson,
+		String renderedPreviewUrl,
+		String createdBy,
+		String reviewedBy,
+		LocalDate publishedAt,
+		LocalDate lastVerifiedAt
+	) {
+
+		static SimplifiedStationLayoutResponse from(SimplifiedStationLayout layout) {
+			return new SimplifiedStationLayoutResponse(
+				layout.id(),
+				layout.stationId(),
+				layout.version(),
+				layout.status(),
+				layout.sourceIds(),
+				layout.confidenceLevel(),
+				layout.baseFloor(),
+				layout.layoutJson(),
+				layout.renderedPreviewUrl(),
+				layout.createdBy(),
+				layout.reviewedBy(),
+				layout.publishedAt(),
+				layout.lastVerifiedAt()
 			);
 		}
 	}

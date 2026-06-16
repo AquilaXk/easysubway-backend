@@ -13,6 +13,9 @@ import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
+import com.easysubway.transit.domain.SimplifiedStationLayoutConfidence;
+import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.math.BigDecimal;
@@ -140,6 +143,24 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 		)
 	);
 
+	private static final List<SimplifiedStationLayout> SIMPLIFIED_STATION_LAYOUTS = List.of(
+		new SimplifiedStationLayout(
+			"layout-sangnoksu-draft",
+			"station-sangnoksu",
+			1,
+			SimplifiedStationLayoutStatus.DRAFT,
+			List.of("layout-source-sangnoksu-station-map"),
+			SimplifiedStationLayoutConfidence.OFFICIAL_DIAGRAM_REFERENCED,
+			"B1",
+			"{\"nodes\":[],\"edges\":[]}",
+			null,
+			"admin-user",
+			null,
+			null,
+			LocalDate.of(2026, 6, 12)
+		)
+	);
+
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
@@ -179,6 +200,11 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 	@Override
 	public List<StationLayoutSource> loadStationLayoutSources() {
 		return STATION_LAYOUT_SOURCES;
+	}
+
+	@Override
+	public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
+		return SIMPLIFIED_STATION_LAYOUTS;
 	}
 
 	@Override

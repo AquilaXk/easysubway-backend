@@ -22,6 +22,7 @@ import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
@@ -175,6 +176,15 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return loadTransitMasterPort.loadStationLayoutSources()
 			.stream()
 			.filter(source -> source.stationId().equals(stationId))
+			.toList();
+	}
+
+	@Override
+	public List<SimplifiedStationLayout> listSimplifiedStationLayouts(String stationId) {
+		loadActiveStation(stationId);
+		return loadTransitMasterPort.loadSimplifiedStationLayouts()
+			.stream()
+			.filter(layout -> layout.stationId().equals(stationId))
 			.toList();
 	}
 
