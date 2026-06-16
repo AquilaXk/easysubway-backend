@@ -91,3 +91,20 @@ CREATE TABLE IF NOT EXISTS data_collection_runs (
 
 CREATE INDEX IF NOT EXISTS idx_data_collection_runs_started_at
 	ON data_collection_runs (started_at DESC);
+
+CREATE TABLE IF NOT EXISTS mobility_profiles (
+	user_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	mobility_type VARCHAR(40) NOT NULL,
+	avoid_stairs BOOLEAN NOT NULL,
+	require_elevator BOOLEAN NOT NULL,
+	allow_escalator BOOLEAN NOT NULL,
+	minimize_transfers BOOLEAN NOT NULL,
+	avoid_long_walks BOOLEAN NOT NULL,
+	large_text BOOLEAN NOT NULL,
+	high_contrast BOOLEAN NOT NULL,
+	simple_view BOOLEAN NOT NULL,
+	updated_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_mobility_profiles_updated_at
+	ON mobility_profiles (updated_at DESC);
