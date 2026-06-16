@@ -5,6 +5,7 @@ import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.util.List;
@@ -26,6 +27,10 @@ public interface LoadTransitMasterPort {
 
 	default List<StationLayoutSource> loadStationLayoutSources() {
 		throw new UnsupportedOperationException("Station layout source loading is not implemented.");
+	}
+
+	default List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
+		throw new UnsupportedOperationException("Simplified station layout loading is not implemented.");
 	}
 
 	default Optional<Station> loadStation(String stationId) {

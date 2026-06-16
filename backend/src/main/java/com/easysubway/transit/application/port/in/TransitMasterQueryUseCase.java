@@ -5,6 +5,7 @@ import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
@@ -29,4 +30,6 @@ public interface TransitMasterQueryUseCase {
 	List<AccessibilityFacility> listStationFacilities(String stationId);
 
 	List<StationLayoutSource> listStationLayoutSources(String stationId);
+
+	List<SimplifiedStationLayout> listSimplifiedStationLayouts(String stationId);
 }

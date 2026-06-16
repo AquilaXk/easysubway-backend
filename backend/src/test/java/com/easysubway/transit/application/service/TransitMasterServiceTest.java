@@ -23,6 +23,8 @@ import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationNotFoundException;
+import com.easysubway.transit.domain.SimplifiedStationLayoutConfidence;
+import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.math.BigDecimal;
@@ -197,8 +199,26 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
-	@DisplayName("역 출구와 시설과 구조도 기준 자료 목록은 존재하는 역을 요구한다")
-	void stationExitsFacilitiesAndLayoutSourcesRequireExistingStation() {
+	@DisplayName("쉬운 내부 구조도 초안은 상태와 신뢰도와 기준 자료를 함께 반환한다")
+	void listSimplifiedStationLayoutsReturnsStatusConfidenceAndSources() {
+		var layouts = service.listSimplifiedStationLayouts("station-sangnoksu");
+
+		assertThat(layouts)
+			.extracting("id")
+			.containsExactly("layout-sangnoksu-draft");
+		assertThat(layouts.getFirst().version()).isEqualTo(1);
+		assertThat(layouts.getFirst().status()).isEqualTo(SimplifiedStationLayoutStatus.DRAFT);
+		assertThat(layouts.getFirst().confidenceLevel())
+			.isEqualTo(SimplifiedStationLayoutConfidence.OFFICIAL_DIAGRAM_REFERENCED);
+		assertThat(layouts.getFirst().sourceIds())
+			.containsExactly("layout-source-sangnoksu-station-map");
+		assertThat(layouts.getFirst().layoutJson()).contains("\"nodes\"");
+		assertThat(layouts.getFirst().lastVerifiedAt()).isEqualTo(LocalDate.of(2026, 6, 12));
+	}
+
+	@Test
+	@DisplayName("역 출구와 시설과 구조도 목록은 존재하는 역을 요구한다")
+	void stationExitsFacilitiesAndLayoutsRequireExistingStation() {
 		assertThatThrownBy(() -> service.listStationExits("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
@@ -206,6 +226,9 @@ class TransitMasterServiceTest {
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 		assertThatThrownBy(() -> service.listStationLayoutSources("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listSimplifiedStationLayouts("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 	}

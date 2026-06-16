@@ -270,6 +270,47 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역별 쉬운 내부 구조도 초안의 상태와 신뢰도를 조회한다")
+	void adminListsSimplifiedStationLayoutsWithStatusAndConfidence() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("layout-sangnoksu-draft"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].version").value(1))
+			.andExpect(jsonPath("$.data[0].status").value("DRAFT"))
+			.andExpect(jsonPath("$.data[0].sourceIds[0]").value("layout-source-sangnoksu-station-map"))
+			.andExpect(jsonPath("$.data[0].confidenceLevel").value("OFFICIAL_DIAGRAM_REFERENCED"))
+			.andExpect(jsonPath("$.data[0].baseFloor").value("B1"))
+			.andExpect(jsonPath("$.data[0].layoutJson").value("{\"nodes\":[],\"edges\":[]}"))
+			.andExpect(jsonPath("$.data[0].createdBy").value("admin-user"))
+			.andExpect(jsonPath("$.data[0].lastVerifiedAt").value("2026-06-12"));
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 관리자 API는 관리자 인증을 요구한다")
+	void adminSimplifiedStationLayoutsRequireAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 쉬운 내부 구조도는 공통 404 응답을 반환한다")
+	void missingSimplifiedStationLayoutsReturnCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/admin/stations/unknown-station/layouts")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 시설 상태를 수정하고 공개 시설 목록에서 확인할 수 있다")
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
 	void adminUpdatesFacilityStatusAndPublicListReflectsIt() throws Exception {
