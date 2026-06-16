@@ -48,4 +48,18 @@ public record PushNotification(
 		title = title.trim();
 		body = body.trim();
 	}
+
+	public PushNotification withStatus(PushNotificationStatus nextStatus) {
+		return new PushNotification(
+			notificationId,
+			userId,
+			platform,
+			deviceToken,
+			type,
+			title,
+			body,
+			nextStatus,
+			createdAt
+		);
+	}
 }

@@ -12,6 +12,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -21,6 +22,7 @@ import org.springframework.test.web.servlet.MockMvc;
 	"easysubway.user.password=user-test-password"
 })
 @AutoConfigureMockMvc
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @DisplayName("푸시 알림 발송 API")
 class PushNotificationControllerTest {
 
@@ -79,5 +81,52 @@ class PushNotificationControllerTest {
 					}
 					"""))
 			.andExpect(status().isUnauthorized());
+	}
+
+	@Test
+	@DisplayName("관리자는 대기 중인 푸시 알림 발송 처리를 실행할 수 있다")
+	void adminDeliversPendingPushNotifications() throws Exception {
+		mockMvc.perform(post("/api/v1/devices")
+				.with(httpBasic("anonymous-user-1", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "platform": "ANDROID",
+					  "deviceToken": "secret-device-token"
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(post("/admin/notifications/push")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "type": "REPORT_STATUS",
+					  "title": "신고 처리 알림",
+					  "body": "제보한 내용이 확인되었습니다."
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(post("/admin/notifications/push/deliveries")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.requestedUserId").value("anonymous-user-1"))
+			.andExpect(jsonPath("$.data.processedCount").value(1))
+			.andExpect(jsonPath("$.data.sentCount").value(0))
+			.andExpect(jsonPath("$.data.failedCount").value(1))
+			.andExpect(jsonPath("$.data.notifications[0].status").value("FAILED"))
+			.andExpect(jsonPath("$.data.notifications[0].deviceToken").doesNotExist());
 	}
 }

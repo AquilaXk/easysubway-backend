@@ -1,8 +1,10 @@
 package com.easysubway.notification.adapter.out.persistence;
 
+import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
 import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
 import java.util.List;
 import java.util.Map;
@@ -15,6 +17,7 @@ import org.springframework.stereotype.Repository;
 @Profile("!prod")
 public class InMemoryPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
+	LoadPendingPushNotificationOutboxPort,
 	SavePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
 
@@ -23,15 +26,38 @@ public class InMemoryPushNotificationOutboxRepository implements
 	@Override
 	public PushNotification savePushNotification(PushNotification notification) {
 		// outbox는 실제 발송 어댑터가 붙기 전까지 생성 순서를 보존해 운영자가 대기열을 확인할 수 있게 둔다.
-		notificationsByUserId
-			.computeIfAbsent(notification.userId(), ignored -> new CopyOnWriteArrayList<>())
-			.add(notification);
+		for (Map.Entry<String, List<PushNotification>> entry : notificationsByUserId.entrySet()) {
+			List<PushNotification> notifications = entry.getValue();
+			for (int index = 0; index < notifications.size(); index++) {
+				if (!notifications.get(index).notificationId().equals(notification.notificationId())) {
+					continue;
+				}
+				if (entry.getKey().equals(notification.userId())) {
+					notifications.set(index, notification);
+					return notification;
+				}
+				notifications.remove(index);
+				break;
+			}
+		}
+		List<PushNotification> targetNotifications = notificationsByUserId.computeIfAbsent(
+			notification.userId(),
+			ignored -> new CopyOnWriteArrayList<>()
+		);
+		targetNotifications.add(notification);
 		return notification;
 	}
 
 	@Override
 	public List<PushNotification> loadPushNotifications(String userId) {
 		return List.copyOf(notificationsByUserId.getOrDefault(userId, List.of()));
+	}
+
+	@Override
+	public List<PushNotification> loadPendingPushNotifications(String userId) {
+		return notificationsByUserId.getOrDefault(userId, List.of()).stream()
+			.filter(notification -> notification.status() == PushNotificationStatus.PENDING)
+			.toList();
 	}
 
 	@Override

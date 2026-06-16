@@ -1,10 +1,13 @@
 package com.easysubway.notification.adapter.in.web;
 
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.notification.application.port.in.DeliverPushNotificationsCommand;
 import com.easysubway.notification.application.port.in.DispatchPushNotificationCommand;
+import com.easysubway.notification.application.port.in.PushNotificationDeliveryUseCase;
 import com.easysubway.notification.application.port.in.PushNotificationDispatchUseCase;
 import com.easysubway.notification.domain.DevicePlatform;
 import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.notification.domain.PushNotificationDeliveryResult;
 import com.easysubway.notification.domain.PushNotificationDispatchResult;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
@@ -18,9 +21,14 @@ import org.springframework.web.bind.annotation.RestController;
 class PushNotificationController {
 
 	private final PushNotificationDispatchUseCase pushNotificationDispatchUseCase;
+	private final PushNotificationDeliveryUseCase pushNotificationDeliveryUseCase;
 
-	PushNotificationController(PushNotificationDispatchUseCase pushNotificationDispatchUseCase) {
+	PushNotificationController(
+		PushNotificationDispatchUseCase pushNotificationDispatchUseCase,
+		PushNotificationDeliveryUseCase pushNotificationDeliveryUseCase
+	) {
 		this.pushNotificationDispatchUseCase = pushNotificationDispatchUseCase;
+		this.pushNotificationDeliveryUseCase = pushNotificationDeliveryUseCase;
 	}
 
 	@PostMapping("/admin/notifications/push")
@@ -36,12 +44,23 @@ class PushNotificationController {
 		return ApiResponse.ok(PushNotificationDispatchResponse.from(result));
 	}
 
+	@PostMapping("/admin/notifications/push/deliveries")
+	ApiResponse<PushNotificationDeliveryResponse> deliver(@RequestBody PushNotificationDeliveryRequest request) {
+		PushNotificationDeliveryResult result = pushNotificationDeliveryUseCase.deliverPending(
+			new DeliverPushNotificationsCommand(request.userId())
+		);
+		return ApiResponse.ok(PushNotificationDeliveryResponse.from(result));
+	}
+
 	record PushNotificationDispatchRequest(
 		String userId,
 		PushNotificationType type,
 		String title,
 		String body
 	) {
+	}
+
+	record PushNotificationDeliveryRequest(String userId) {
 	}
 
 	record PushNotificationDispatchResponse(
@@ -56,6 +75,27 @@ class PushNotificationController {
 				result.requestedUserId(),
 				result.type(),
 				result.createdCount(),
+				result.notifications().stream()
+					.map(PushNotificationResponse::from)
+					.toList()
+			);
+		}
+	}
+
+	record PushNotificationDeliveryResponse(
+		String requestedUserId,
+		int processedCount,
+		int sentCount,
+		int failedCount,
+		List<PushNotificationResponse> notifications
+	) {
+
+		static PushNotificationDeliveryResponse from(PushNotificationDeliveryResult result) {
+			return new PushNotificationDeliveryResponse(
+				result.requestedUserId(),
+				result.processedCount(),
+				result.sentCount(),
+				result.failedCount(),
 				result.notifications().stream()
 					.map(PushNotificationResponse::from)
 					.toList()
