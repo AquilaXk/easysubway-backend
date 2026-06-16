@@ -101,6 +101,34 @@ class JdbcPushNotificationOutboxRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("전체 outbox를 상태별로 집계한다")
+	void summarizePushNotificationOutboxByStatus() {
+		repository.savePushNotification(notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9));
+		repository.savePushNotification(notification("push-2", "anonymous-user-1", PushNotificationType.DATA_QUALITY, 10));
+		repository.savePushNotification(notification(
+			"push-3",
+			"anonymous-user-2",
+			PushNotificationType.FAVORITE_ROUTE_FACILITY,
+			PushNotificationStatus.SENT,
+			11
+		));
+		repository.savePushNotification(notification(
+			"push-4",
+			"anonymous-user-3",
+			PushNotificationType.FAVORITE_STATION_FACILITY,
+			PushNotificationStatus.FAILED,
+			12
+		));
+
+		var summary = repository.summarizePushNotificationOutbox();
+
+		assertThat(summary.totalCount()).isEqualTo(4);
+		assertThat(summary.pendingCount()).isEqualTo(2);
+		assertThat(summary.sentCount()).isEqualTo(1);
+		assertThat(summary.failedCount()).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("사용자 데이터 삭제 요청은 해당 사용자의 푸시 알림 개수를 반환한다")
 	void deletePushNotificationsByUserIdReturnsDeletedCount() {
 		repository.savePushNotification(notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9));

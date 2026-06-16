@@ -3,8 +3,10 @@ package com.easysubway.notification.adapter.out.persistence;
 import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SummarizePushNotificationOutboxPort;
 import com.easysubway.notification.domain.DevicePlatform;
 import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
@@ -23,6 +25,7 @@ public class JdbcPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
 	LoadPendingPushNotificationOutboxPort,
 	SavePushNotificationOutboxPort,
+	SummarizePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
 
 	private final JdbcTemplate jdbcTemplate;
@@ -94,6 +97,31 @@ public class JdbcPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public PushNotificationDashboardSummary summarizePushNotificationOutbox() {
+		List<StatusCountRow> statusCounts = jdbcTemplate.query(
+			"""
+				SELECT status,
+					COUNT(*) AS count
+				FROM push_notification_outbox
+				GROUP BY status
+				""",
+			(resultSet, rowNumber) -> new StatusCountRow(
+				PushNotificationStatus.valueOf(resultSet.getString("status")),
+				resultSet.getLong("count")
+			)
+		);
+		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING);
+		long sentCount = countByStatus(statusCounts, PushNotificationStatus.SENT);
+		long failedCount = countByStatus(statusCounts, PushNotificationStatus.FAILED);
+		return new PushNotificationDashboardSummary(
+			pendingCount + sentCount + failedCount,
+			pendingCount,
+			sentCount,
+			failedCount
+		);
+	}
+
+	@Override
 	public int deletePushNotifications(String userId) {
 		return jdbcTemplate.update(
 			"""
@@ -102,6 +130,13 @@ public class JdbcPushNotificationOutboxRepository implements
 				""",
 			userId
 		);
+	}
+
+	private long countByStatus(List<StatusCountRow> rows, PushNotificationStatus status) {
+		return rows.stream()
+			.filter(row -> row.status() == status)
+			.mapToLong(StatusCountRow::count)
+			.sum();
 	}
 
 	private int updatePushNotification(PushNotification notification) {
@@ -170,5 +205,8 @@ public class JdbcPushNotificationOutboxRepository implements
 			PushNotificationStatus.valueOf(resultSet.getString("status")),
 			resultSet.getTimestamp("created_at").toLocalDateTime()
 		);
+	}
+
+	private record StatusCountRow(PushNotificationStatus status, long count) {
 	}
 }

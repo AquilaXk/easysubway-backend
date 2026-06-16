@@ -3,7 +3,9 @@ package com.easysubway.notification.adapter.out.persistence;
 import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SummarizePushNotificationOutboxPort;
 import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
 import java.util.List;
@@ -19,6 +21,7 @@ public class InMemoryPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
 	LoadPendingPushNotificationOutboxPort,
 	SavePushNotificationOutboxPort,
+	SummarizePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
 
 	private final Map<String, List<PushNotification>> notificationsByUserId = new ConcurrentHashMap<>();
@@ -58,6 +61,28 @@ public class InMemoryPushNotificationOutboxRepository implements
 		return notificationsByUserId.getOrDefault(userId, List.of()).stream()
 			.filter(notification -> notification.status() == PushNotificationStatus.PENDING)
 			.toList();
+	}
+
+	@Override
+	public PushNotificationDashboardSummary summarizePushNotificationOutbox() {
+		long pendingCount = 0;
+		long sentCount = 0;
+		long failedCount = 0;
+		for (List<PushNotification> notifications : notificationsByUserId.values()) {
+			for (PushNotification notification : notifications) {
+				switch (notification.status()) {
+					case PENDING -> pendingCount++;
+					case SENT -> sentCount++;
+					case FAILED -> failedCount++;
+				}
+			}
+		}
+		return new PushNotificationDashboardSummary(
+			pendingCount + sentCount + failedCount,
+			pendingCount,
+			sentCount,
+			failedCount
+		);
 	}
 
 	@Override
