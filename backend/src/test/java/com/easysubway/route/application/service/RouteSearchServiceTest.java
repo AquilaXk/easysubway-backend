@@ -509,6 +509,32 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("접근성 시설 갱신일이 30일을 넘으면 이동 전 확인 경고를 표시한다")
+	void routeWarnsWhenAccessibilityFacilityDataIsStale() {
+		var repository = new InMemoryRouteSearchRepository();
+		var staleDataService = new RouteSearchService(
+			repository,
+			repository,
+			new StaleAccessibilityFacilityTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = staleDataService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STALE_ACCESSIBILITY_DATA);
+		assertThat(result.warnings())
+			.extracting("message")
+			.contains("접근성 시설 정보가 최근 30일 이내 확인되지 않았습니다. 이동 전 역 상세 정보를 확인하세요.");
+	}
+
+	@Test
 	@DisplayName("휠체어 이동 유형은 고장난 엘리베이터만 있으면 계단 없는 경로로 보지 않는다")
 	void wheelchairRouteBlocksBrokenElevatorAsStepFreeAccess() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -978,6 +1004,33 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class StaleAccessibilityFacilityTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility(
+					"facility-a-elevator",
+					"station-a",
+					"exit-a-2",
+					AccessibilityFacilityType.ELEVATOR,
+					AccessibilityFacilityStatus.NORMAL,
+					DataConfidenceLevel.HIGH,
+					LocalDate.of(2026, 5, 1)
+				),
+				facility(
+					"facility-b-elevator",
+					"station-b",
+					"exit-b-1",
+					AccessibilityFacilityType.ELEVATOR,
+					AccessibilityFacilityStatus.NORMAL,
+					DataConfidenceLevel.HIGH,
+					LocalDate.of(2026, 6, 13)
+				)
+			);
+		}
+	}
+
 	private static class BrokenElevatorTransitMasterPort extends StairOnlyTransitMasterPort {
 
 		@Override
@@ -1071,6 +1124,18 @@ class RouteSearchServiceTest {
 		AccessibilityFacilityStatus status,
 		DataConfidenceLevel dataConfidence
 	) {
+		return facility(id, stationId, exitId, type, status, dataConfidence, LocalDate.of(2026, 6, 13));
+	}
+
+	private static AccessibilityFacility facility(
+		String id,
+		String stationId,
+		String exitId,
+		AccessibilityFacilityType type,
+		AccessibilityFacilityStatus status,
+		DataConfidenceLevel dataConfidence,
+		LocalDate lastUpdatedAt
+	) {
 		return new AccessibilityFacility(
 			id,
 			stationId,
@@ -1085,7 +1150,7 @@ class RouteSearchServiceTest {
 			status,
 			dataConfidence,
 			DataSourceType.OFFICIAL_FILE,
-			LocalDate.of(2026, 6, 13)
+			lastUpdatedAt
 		);
 	}
 

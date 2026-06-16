@@ -21,9 +21,21 @@ java {
 }
 
 repositories {
+	// eGovFrame 공식 Maven 저장소가 CI runner에서 간헐적으로 timeout되어 필요한 artifact만 로컬 mirror로 먼저 해석한다.
+	maven {
+		url = uri('gradle/local-maven')
+		content {
+			includeGroup 'org.egovframe.boot'
+			includeGroup 'org.egovframe.rte'
+		}
+	}
 	mavenCentral()
 	maven {
 		url 'https://maven.egovframe.go.kr/maven'
+		content {
+			includeGroup 'org.egovframe.boot'
+			includeGroup 'org.egovframe.rte'
+		}
 	}
 }
 
