@@ -8,9 +8,11 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("!prod")
 public class InMemoryDataCollectionRunRepository implements
 	LoadDataCollectionRunPort,
 	SaveDataCollectionRunPort {
