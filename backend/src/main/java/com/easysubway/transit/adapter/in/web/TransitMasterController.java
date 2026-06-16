@@ -13,6 +13,8 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.NearbyStation;
+import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
@@ -154,6 +156,16 @@ class TransitMasterController {
 			.listSimplifiedStationLayouts(stationId)
 			.stream()
 			.map(SimplifiedStationLayoutResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/admin/stations/{stationId}/route-nodes")
+	ApiResponse<List<RouteNodeResponse>> routeNodes(@PathVariable String stationId) {
+		List<RouteNodeResponse> response = transitMasterQueryUseCase.listRouteNodes(stationId)
+			.stream()
+			.map(RouteNodeResponse::from)
 			.toList();
 
 		return ApiResponse.ok(response);
@@ -479,6 +491,41 @@ class TransitMasterController {
 				layout.reviewedBy(),
 				layout.publishedAt(),
 				layout.lastVerifiedAt()
+			);
+		}
+	}
+
+	record RouteNodeResponse(
+		String id,
+		String stationId,
+		RouteNodeType type,
+		String name,
+		String floor,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		String facilityId,
+		String layoutId,
+		int displayX,
+		int displayY,
+		String displayLabel,
+		String accessibilityNote
+	) {
+
+		static RouteNodeResponse from(RouteNode node) {
+			return new RouteNodeResponse(
+				node.id(),
+				node.stationId(),
+				node.type(),
+				node.name(),
+				node.floor(),
+				node.latitude(),
+				node.longitude(),
+				node.facilityId(),
+				node.layoutId(),
+				node.displayX(),
+				node.displayY(),
+				node.displayLabel(),
+				node.accessibilityNote()
 			);
 		}
 	}
