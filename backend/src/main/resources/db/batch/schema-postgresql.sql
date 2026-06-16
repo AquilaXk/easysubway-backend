@@ -244,7 +244,7 @@ CREATE TABLE IF NOT EXISTS push_notification_outbox (
 	CONSTRAINT chk_push_notification_outbox_type
 		CHECK (notification_type IN ('FAVORITE_STATION_FACILITY', 'FAVORITE_ROUTE_FACILITY', 'REPORT_STATUS', 'DATA_QUALITY')),
 	CONSTRAINT chk_push_notification_outbox_status
-		CHECK (status IN ('PENDING'))
+		CHECK (status IN ('PENDING', 'SENT', 'FAILED'))
 );
 
 CREATE INDEX IF NOT EXISTS idx_push_notification_outbox_user_created

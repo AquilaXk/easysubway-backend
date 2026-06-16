@@ -1,5 +1,6 @@
 package com.easysubway.notification.adapter.out.persistence;
 
+import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
 import com.easysubway.notification.domain.DevicePlatform;
@@ -20,6 +21,7 @@ import org.springframework.stereotype.Repository;
 @Profile("prod")
 public class JdbcPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
+	LoadPendingPushNotificationOutboxPort,
 	SavePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
 
@@ -52,6 +54,30 @@ public class JdbcPushNotificationOutboxRepository implements
 				""",
 			this::mapPushNotification,
 			userId
+		);
+	}
+
+	@Override
+	public List<PushNotification> loadPendingPushNotifications(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					created_at
+				FROM push_notification_outbox
+				WHERE user_id = ?
+					AND status = ?
+				ORDER BY created_at ASC, notification_id ASC
+				""",
+			this::mapPushNotification,
+			userId,
+			PushNotificationStatus.PENDING.name()
 		);
 	}
 

@@ -40,7 +40,7 @@ class JdbcPushNotificationOutboxRepositoryTest {
 				created_at TIMESTAMP NOT NULL,
 				CONSTRAINT chk_push_notification_outbox_platform CHECK (platform IN ('ANDROID', 'IOS')),
 				CONSTRAINT chk_push_notification_outbox_type CHECK (notification_type IN ('FAVORITE_STATION_FACILITY', 'FAVORITE_ROUTE_FACILITY', 'REPORT_STATUS', 'DATA_QUALITY')),
-				CONSTRAINT chk_push_notification_outbox_status CHECK (status IN ('PENDING'))
+				CONSTRAINT chk_push_notification_outbox_status CHECK (status IN ('PENDING', 'SENT', 'FAILED'))
 			)
 			""");
 		repository = new JdbcPushNotificationOutboxRepository(jdbcTemplate);
@@ -63,11 +63,41 @@ class JdbcPushNotificationOutboxRepositoryTest {
 	@DisplayName("같은 푸시 알림 식별자는 한 행만 갱신한다")
 	void savePushNotificationUpdatesExistingNotification() {
 		repository.savePushNotification(notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9));
-		var updatedNotification = notification("push-1", "anonymous-user-1", PushNotificationType.DATA_QUALITY, 10);
+		var updatedNotification = notification(
+			"push-1",
+			"anonymous-user-1",
+			PushNotificationType.DATA_QUALITY,
+			PushNotificationStatus.SENT,
+			10
+		);
 
 		repository.savePushNotification(updatedNotification);
 
 		assertThat(repository.loadPushNotifications("anonymous-user-1")).containsExactly(updatedNotification);
+	}
+
+	@Test
+	@DisplayName("대기 중인 푸시 알림만 발송 대상으로 조회한다")
+	void loadPendingPushNotificationsReturnsPendingOnly() {
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9);
+		repository.savePushNotification(pendingNotification);
+		repository.savePushNotification(notification(
+			"push-2",
+			"anonymous-user-1",
+			PushNotificationType.DATA_QUALITY,
+			PushNotificationStatus.SENT,
+			10
+		));
+		repository.savePushNotification(notification(
+			"push-3",
+			"anonymous-user-1",
+			PushNotificationType.FAVORITE_ROUTE_FACILITY,
+			PushNotificationStatus.FAILED,
+			11
+		));
+
+		assertThat(repository.loadPendingPushNotifications("anonymous-user-1"))
+			.containsExactly(pendingNotification);
 	}
 
 	@Test
@@ -93,6 +123,16 @@ class JdbcPushNotificationOutboxRepositoryTest {
 		PushNotificationType type,
 		int hour
 	) {
+		return notification(notificationId, userId, type, PushNotificationStatus.PENDING, hour);
+	}
+
+	private PushNotification notification(
+		String notificationId,
+		String userId,
+		PushNotificationType type,
+		PushNotificationStatus status,
+		int hour
+	) {
 		return new PushNotification(
 			notificationId,
 			userId,
@@ -101,7 +141,7 @@ class JdbcPushNotificationOutboxRepositoryTest {
 			type,
 			"알림 제목 " + notificationId,
 			"알림 본문 " + notificationId,
-			PushNotificationStatus.PENDING,
+			status,
 			LocalDateTime.of(2026, 6, 17, hour, 0)
 		);
 	}
