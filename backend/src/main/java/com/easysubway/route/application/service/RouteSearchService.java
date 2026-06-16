@@ -381,7 +381,22 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return Optional.empty();
 		}
 		// 내부 이동 간선 데이터가 있으면 출구 요약보다 실제 승강장 연결 동선을 우선한다.
-		return Optional.of(activeStationEdges.stream().allMatch(RouteEdge::hasStairs));
+		boolean hasUsableStepFreeInternalEdge = activeStationEdges.stream()
+			.anyMatch(edge -> isUsableStepFreeInternalEdge(stationId, edge));
+		return Optional.of(!hasUsableStepFreeInternalEdge);
+	}
+
+	private boolean isUsableStepFreeInternalEdge(String stationId, RouteEdge edge) {
+		if (edge.hasStairs()) {
+			return false;
+		}
+		if (edge.requiresEscalator()) {
+			return false;
+		}
+		if (edge.requiresElevator()) {
+			return hasUsableStepFreeFacility(stationId);
+		}
+		return true;
 	}
 
 	private String exitGuidance(String stationId, String fallbackGuidance) {
@@ -406,6 +421,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case ELEVATOR, WHEELCHAIR_LIFT, RAMP -> true;
 			default -> false;
 		};
+	}
+
+	private boolean hasUsableStepFreeFacility(String stationId) {
+		return stationFacilities(stationId).stream()
+			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
+			.filter(this::isStepFreeFacility)
+			.anyMatch(this::hasUsableStatus);
 	}
 
 	private boolean hasUsableStatus(AccessibilityFacility facility) {

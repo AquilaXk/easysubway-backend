@@ -635,6 +635,30 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("휠체어 이동 유형은 내부 간선의 엘리베이터가 고장나면 계단 없는 경로로 보지 않는다")
+	void wheelchairRouteBlocksWhenInternalEdgeElevatorIsBroken() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new BrokenElevatorInternalEdgeTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("경로 검색은 존재하는 역과 공통 노선을 요구한다")
 	void searchRouteRequiresExistingStationsAndSharedLine() {
 		assertThatThrownBy(() -> service.searchRoute(new SearchRouteCommand(
@@ -1164,6 +1188,25 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class BrokenElevatorInternalEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(facility(
+				"facility-a-elevator",
+				"station-a",
+				"exit-a-2",
+				AccessibilityFacilityType.ELEVATOR,
+				AccessibilityFacilityStatus.BROKEN
+			));
+		}
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(elevatorEdge("edge-a-elevator", "station-a"));
+		}
+	}
+
 	private static TransitOperator operator() {
 		return new TransitOperator(
 			"operator-a",
@@ -1295,6 +1338,25 @@ class RouteSearchServiceTest {
 			false,
 			false,
 			3,
+			2,
+			95,
+			true
+		);
+	}
+
+	private static RouteEdge elevatorEdge(String id, String stationId) {
+		return new RouteEdge(
+			id,
+			stationId,
+			"node-" + stationId + "-entrance",
+			"node-" + stationId + "-platform",
+			RouteEdgeType.ELEVATOR,
+			30,
+			90,
+			false,
+			true,
+			false,
+			1,
 			2,
 			95,
 			true
