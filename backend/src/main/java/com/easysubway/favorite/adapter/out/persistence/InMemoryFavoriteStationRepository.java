@@ -12,9 +12,11 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("!prod")
 public class InMemoryFavoriteStationRepository implements
 	LoadFavoriteStationPort,
 	LoadFavoriteStationAlertTargetPort,

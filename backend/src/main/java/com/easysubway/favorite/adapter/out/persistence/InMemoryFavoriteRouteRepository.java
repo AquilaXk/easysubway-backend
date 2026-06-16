@@ -14,9 +14,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("!prod")
 public class InMemoryFavoriteRouteRepository implements
 	LoadFavoriteRoutePort,
 	LoadFavoriteRouteAlertTargetPort,

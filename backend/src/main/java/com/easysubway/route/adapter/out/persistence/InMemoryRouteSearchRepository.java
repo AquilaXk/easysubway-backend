@@ -9,9 +9,11 @@ import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
 import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Optional;
+import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
+@Profile("!prod")
 public class InMemoryRouteSearchRepository
 	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, AnonymizeUserRouteFeedbackPort {
 
