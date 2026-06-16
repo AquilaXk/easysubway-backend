@@ -21,6 +21,8 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -581,6 +583,106 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("휠체어 이동 유형은 역 내부 활성 간선이 계단만 제공하면 경로를 차단한다")
+	void wheelchairRouteBlocksWhenInternalEdgesRequireStairs() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new InternalStairEdgeTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.blockedReasons())
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
+	@DisplayName("휠체어 이동 유형은 비내부 간선이 섞여도 내부 계단 간선을 기준으로 차단한다")
+	void wheelchairRouteIgnoresNonInternalEdgesWhenCheckingInternalStairs() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new MixedInternalAndTrainEdgeTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
+	@DisplayName("유모차 이동 유형은 역 내부 활성 간선의 계단 포함을 경고와 단계에 표시한다")
+	void strollerRouteWarnsWhenInternalEdgesIncludeStairs() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new InternalStairEdgeTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.STROLLER
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+		assertThat(result.steps())
+			.extracting("includesStairs")
+			.containsExactly(true, false, true);
+	}
+
+	@Test
+	@DisplayName("휠체어 이동 유형은 내부 간선의 엘리베이터가 고장나면 계단 없는 경로로 보지 않는다")
+	void wheelchairRouteBlocksWhenInternalEdgeElevatorIsBroken() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new BrokenElevatorInternalEdgeTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("경로 검색은 존재하는 역과 공통 노선을 요구한다")
 	void searchRouteRequiresExistingStationsAndSharedLine() {
 		assertThatThrownBy(() -> service.searchRoute(new SearchRouteCommand(
@@ -727,6 +829,11 @@ class RouteSearchServiceTest {
 
 		@Override
 		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of();
+		}
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
 			return List.of();
 		}
 	}
@@ -1094,6 +1201,49 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class InternalStairEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(
+				stairEdge("edge-a-stair", "station-a"),
+				stairEdge("edge-b-stair", "station-b")
+			);
+		}
+	}
+
+	private static class BrokenElevatorInternalEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(facility(
+				"facility-a-elevator",
+				"station-a",
+				"exit-a-2",
+				AccessibilityFacilityType.ELEVATOR,
+				AccessibilityFacilityStatus.BROKEN
+			));
+		}
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(elevatorEdge("edge-a-elevator", "station-a"));
+		}
+	}
+
+	private static class MixedInternalAndTrainEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(
+				stairEdge("edge-a-stair", "station-a"),
+				trainEdge("edge-a-train", "station-a"),
+				stairEdge("edge-b-stair", "station-b"),
+				trainEdge("edge-b-train", "station-b")
+			);
+		}
+	}
+
 	private static TransitOperator operator() {
 		return new TransitOperator(
 			"operator-a",
@@ -1209,6 +1359,63 @@ class RouteSearchServiceTest {
 			false,
 			DataConfidenceLevel.HIGH,
 			DataSourceType.OFFICIAL_FILE
+		);
+	}
+
+	private static RouteEdge stairEdge(String id, String stationId) {
+		return new RouteEdge(
+			id,
+			stationId,
+			"node-" + stationId + "-entrance",
+			"node-" + stationId + "-platform",
+			RouteEdgeType.STAIR,
+			30,
+			90,
+			true,
+			false,
+			false,
+			3,
+			2,
+			95,
+			true
+		);
+	}
+
+	private static RouteEdge elevatorEdge(String id, String stationId) {
+		return new RouteEdge(
+			id,
+			stationId,
+			"node-" + stationId + "-entrance",
+			"node-" + stationId + "-platform",
+			RouteEdgeType.ELEVATOR,
+			30,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			95,
+			true
+		);
+	}
+
+	private static RouteEdge trainEdge(String id, String stationId) {
+		return new RouteEdge(
+			id,
+			stationId,
+			"node-" + stationId + "-platform",
+			"node-" + stationId + "-next-platform",
+			RouteEdgeType.TRAIN,
+			900,
+			120,
+			false,
+			false,
+			false,
+			1,
+			3,
+			95,
+			true
 		);
 	}
 }

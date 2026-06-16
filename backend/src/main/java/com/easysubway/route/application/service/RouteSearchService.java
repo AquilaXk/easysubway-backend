@@ -22,6 +22,8 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -343,6 +345,11 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	private boolean hasStairOnlyAccess(String stationId) {
+		Optional<Boolean> stairOnlyInternalEdges = hasStairOnlyInternalEdges(stationId);
+		if (stairOnlyInternalEdges.isPresent()) {
+			return stairOnlyInternalEdges.get();
+		}
+
 		List<StationExit> exits = stationExits(stationId);
 		if (exits.isEmpty()) {
 			return false;
@@ -363,6 +370,42 @@ public class RouteSearchService implements RouteSearchUseCase {
 		boolean hasUsableStepFreeExit = highConfidenceExits.stream()
 			.anyMatch(exit -> isUsableStepFreeExit(exit, highConfidenceStepFreeFacilities));
 		return !hasUsableStepFreeFacility && !hasUsableStepFreeExit;
+	}
+
+	private Optional<Boolean> hasStairOnlyInternalEdges(String stationId) {
+		List<RouteEdge> activeStationEdges = loadTransitMasterPort.loadRouteEdges()
+			.stream()
+			.filter(RouteEdge::active)
+			.filter(edge -> edge.stationId().equals(stationId))
+			.filter(this::isInternalMovementEdge)
+			.toList();
+		if (activeStationEdges.isEmpty()) {
+			return Optional.empty();
+		}
+		// 내부 이동 간선 데이터가 있으면 출구 요약보다 실제 승강장 연결 동선을 우선한다.
+		boolean hasUsableStepFreeInternalEdge = activeStationEdges.stream()
+			.anyMatch(edge -> isUsableStepFreeInternalEdge(stationId, edge));
+		return Optional.of(!hasUsableStepFreeInternalEdge);
+	}
+
+	private boolean isUsableStepFreeInternalEdge(String stationId, RouteEdge edge) {
+		if (edge.hasStairs()) {
+			return false;
+		}
+		if (edge.requiresEscalator()) {
+			return false;
+		}
+		if (edge.requiresElevator()) {
+			return hasUsableStepFreeFacility(stationId);
+		}
+		return true;
+	}
+
+	private boolean isInternalMovementEdge(RouteEdge edge) {
+		return switch (edge.type()) {
+			case WALK, STAIR, ELEVATOR, ESCALATOR, RAMP -> true;
+			case TRAIN, TRANSFER -> false;
+		};
 	}
 
 	private String exitGuidance(String stationId, String fallbackGuidance) {
@@ -387,6 +430,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case ELEVATOR, WHEELCHAIR_LIFT, RAMP -> true;
 			default -> false;
 		};
+	}
+
+	private boolean hasUsableStepFreeFacility(String stationId) {
+		return stationFacilities(stationId).stream()
+			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
+			.filter(this::isStepFreeFacility)
+			.anyMatch(this::hasUsableStatus);
 	}
 
 	private boolean hasUsableStatus(AccessibilityFacility facility) {
