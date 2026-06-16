@@ -23,6 +23,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -376,6 +377,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.stream()
 			.filter(RouteEdge::active)
 			.filter(edge -> edge.stationId().equals(stationId))
+			.filter(this::isInternalMovementEdge)
 			.toList();
 		if (activeStationEdges.isEmpty()) {
 			return Optional.empty();
@@ -397,6 +399,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return hasUsableStepFreeFacility(stationId);
 		}
 		return true;
+	}
+
+	private boolean isInternalMovementEdge(RouteEdge edge) {
+		return switch (edge.type()) {
+			case WALK, STAIR, ELEVATOR, ESCALATOR, RAMP -> true;
+			case TRAIN, TRANSFER -> false;
+		};
 	}
 
 	private String exitGuidance(String stationId, String fallbackGuidance) {

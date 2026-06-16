@@ -609,6 +609,30 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("휠체어 이동 유형은 비내부 간선이 섞여도 내부 계단 간선을 기준으로 차단한다")
+	void wheelchairRouteIgnoresNonInternalEdgesWhenCheckingInternalStairs() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new MixedInternalAndTrainEdgeTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("유모차 이동 유형은 역 내부 활성 간선의 계단 포함을 경고와 단계에 표시한다")
 	void strollerRouteWarnsWhenInternalEdgesIncludeStairs() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -1207,6 +1231,19 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class MixedInternalAndTrainEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(
+				stairEdge("edge-a-stair", "station-a"),
+				trainEdge("edge-a-train", "station-a"),
+				stairEdge("edge-b-stair", "station-b"),
+				trainEdge("edge-b-train", "station-b")
+			);
+		}
+	}
+
 	private static TransitOperator operator() {
 		return new TransitOperator(
 			"operator-a",
@@ -1358,6 +1395,25 @@ class RouteSearchServiceTest {
 			false,
 			1,
 			2,
+			95,
+			true
+		);
+	}
+
+	private static RouteEdge trainEdge(String id, String stationId) {
+		return new RouteEdge(
+			id,
+			stationId,
+			"node-" + stationId + "-platform",
+			"node-" + stationId + "-next-platform",
+			RouteEdgeType.TRAIN,
+			900,
+			120,
+			false,
+			false,
+			false,
+			1,
+			3,
 			95,
 			true
 		);
