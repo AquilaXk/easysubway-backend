@@ -21,6 +21,7 @@ import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
@@ -181,12 +182,30 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
-	@DisplayName("역 출구와 시설 목록은 존재하는 역을 요구한다")
-	void stationExitsAndFacilitiesRequireExistingStation() {
+	@DisplayName("역 내부 구조도 기준 자료는 출처와 검수 정보를 함께 반환한다")
+	void listStationLayoutSourcesReturnsLicenseAndReviewMetadata() {
+		var sources = service.listStationLayoutSources("station-sangnoksu");
+
+		assertThat(sources)
+			.extracting("id")
+			.containsExactly("layout-source-sangnoksu-station-map");
+		assertThat(sources.getFirst().sourceType()).isEqualTo(StationLayoutSourceType.OPERATOR_DIAGRAM);
+		assertThat(sources.getFirst().sourceName()).isEqualTo("상록수역 역사 안내도");
+		assertThat(sources.getFirst().commercialUseAllowed()).isFalse();
+		assertThat(sources.getFirst().attributionRequired()).isTrue();
+		assertThat(sources.getFirst().reviewedAt()).isEqualTo(LocalDate.of(2026, 6, 12));
+	}
+
+	@Test
+	@DisplayName("역 출구와 시설과 구조도 기준 자료 목록은 존재하는 역을 요구한다")
+	void stationExitsFacilitiesAndLayoutSourcesRequireExistingStation() {
 		assertThatThrownBy(() -> service.listStationExits("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 		assertThatThrownBy(() -> service.listStationFacilities("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listStationLayoutSources("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 	}

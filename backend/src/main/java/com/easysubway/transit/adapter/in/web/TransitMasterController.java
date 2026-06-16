@@ -15,6 +15,8 @@ import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
+import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SubwayLine;
@@ -128,6 +130,16 @@ class TransitMasterController {
 		List<AccessibilityFacilityResponse> response = transitMasterQueryUseCase.listStationFacilities(stationId)
 			.stream()
 			.map(AccessibilityFacilityResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/admin/stations/{stationId}/layout-sources")
+	ApiResponse<List<StationLayoutSourceResponse>> stationLayoutSources(@PathVariable String stationId) {
+		List<StationLayoutSourceResponse> response = transitMasterQueryUseCase.listStationLayoutSources(stationId)
+			.stream()
+			.map(StationLayoutSourceResponse::from)
 			.toList();
 
 		return ApiResponse.ok(response);
@@ -389,6 +401,35 @@ class TransitMasterController {
 				facility.dataConfidence(),
 				facility.dataSourceType(),
 				facility.lastUpdatedAt()
+			);
+		}
+	}
+
+	record StationLayoutSourceResponse(
+		String id,
+		String stationId,
+		StationLayoutSourceType sourceType,
+		String sourceName,
+		String sourceUrl,
+		String license,
+		boolean commercialUseAllowed,
+		boolean attributionRequired,
+		LocalDate capturedAt,
+		LocalDate reviewedAt
+	) {
+
+		static StationLayoutSourceResponse from(StationLayoutSource source) {
+			return new StationLayoutSourceResponse(
+				source.id(),
+				source.stationId(),
+				source.sourceType(),
+				source.sourceName(),
+				source.sourceUrl(),
+				source.license(),
+				source.commercialUseAllowed(),
+				source.attributionRequired(),
+				source.capturedAt(),
+				source.reviewedAt()
 			);
 		}
 	}

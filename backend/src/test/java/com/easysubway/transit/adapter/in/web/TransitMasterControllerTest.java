@@ -230,6 +230,46 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역 내부 구조도 기준 자료의 출처와 검수일을 조회한다")
+	void adminListsStationLayoutSourcesWithLicenseAndReviewMetadata() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layout-sources")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("layout-source-sangnoksu-station-map"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].sourceType").value("OPERATOR_DIAGRAM"))
+			.andExpect(jsonPath("$.data[0].sourceName").value("상록수역 역사 안내도"))
+			.andExpect(jsonPath("$.data[0].license").value("운영기관 안내도 확인용"))
+			.andExpect(jsonPath("$.data[0].commercialUseAllowed").value(false))
+			.andExpect(jsonPath("$.data[0].attributionRequired").value(true))
+			.andExpect(jsonPath("$.data[0].capturedAt").value("2026-06-12"))
+			.andExpect(jsonPath("$.data[0].reviewedAt").value("2026-06-12"));
+	}
+
+	@Test
+	@DisplayName("역 내부 구조도 기준 자료 관리자 API는 관리자 인증을 요구한다")
+	void adminStationLayoutSourcesRequireAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layout-sources"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layout-sources")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 구조도 기준 자료는 공통 404 응답을 반환한다")
+	void missingStationLayoutSourcesReturnCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/admin/stations/unknown-station/layout-sources")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 시설 상태를 수정하고 공개 시설 목록에서 확인할 수 있다")
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
 	void adminUpdatesFacilityStatusAndPublicListReflectsIt() throws Exception {

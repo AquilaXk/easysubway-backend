@@ -10,6 +10,8 @@ import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
+import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
@@ -122,6 +124,22 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 		)
 	);
 
+	private static final List<StationLayoutSource> STATION_LAYOUT_SOURCES = List.of(
+		// 저작권 리스크가 있는 원본 도면은 저장하지 않고, 구조도 단순화에 사용한 출처 메타데이터만 보관한다.
+		new StationLayoutSource(
+			"layout-source-sangnoksu-station-map",
+			"station-sangnoksu",
+			StationLayoutSourceType.OPERATOR_DIAGRAM,
+			"상록수역 역사 안내도",
+			"https://www.seoulmetro.co.kr",
+			"운영기관 안내도 확인용",
+			false,
+			true,
+			LocalDate.of(2026, 6, 12),
+			LocalDate.of(2026, 6, 12)
+		)
+	);
+
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
@@ -156,6 +174,11 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 	@Override
 	public List<AccessibilityFacility> loadAccessibilityFacilities() {
 		return List.copyOf(accessibilityFacilities.values());
+	}
+
+	@Override
+	public List<StationLayoutSource> loadStationLayoutSources() {
+		return STATION_LAYOUT_SOURCES;
 	}
 
 	@Override
