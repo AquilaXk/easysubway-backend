@@ -167,3 +167,38 @@ CREATE TABLE IF NOT EXISTS favorite_route_stations (
 
 CREATE INDEX IF NOT EXISTS idx_favorite_route_stations_station_user
 	ON favorite_route_stations (station_id, user_id);
+
+CREATE TABLE IF NOT EXISTS facility_reports (
+	report_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	user_id VARCHAR(120) NOT NULL,
+	station_id VARCHAR(120) NOT NULL,
+	facility_id VARCHAR(120) NOT NULL,
+	report_type VARCHAR(40) NOT NULL,
+	description VARCHAR(1000),
+	photo_file_name VARCHAR(255),
+	photo_content_type VARCHAR(80),
+	photo_data_base64 TEXT,
+	latitude DECIMAL(10, 7),
+	longitude DECIMAL(10, 7),
+	duplicate_of_report_id VARCHAR(120),
+	status VARCHAR(40) NOT NULL,
+	created_at TIMESTAMP NOT NULL,
+	reviewed_at TIMESTAMP,
+	reviewed_by VARCHAR(120),
+	CONSTRAINT fk_facility_reports_duplicate
+		FOREIGN KEY (duplicate_of_report_id) REFERENCES facility_reports(report_id)
+		ON DELETE SET NULL ON UPDATE CASCADE,
+	CONSTRAINT chk_facility_reports_report_type
+		CHECK (report_type IN ('BROKEN', 'UNDER_CONSTRUCTION', 'CLOSED', 'LOCATION_WRONG', 'INFORMATION_WRONG', 'RECOVERED')),
+	CONSTRAINT chk_facility_reports_status
+		CHECK (status IN ('SUBMITTED', 'DUPLICATE', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'RESOLVED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_facility_reports_created
+	ON facility_reports (created_at DESC, report_id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_facility_reports_user
+	ON facility_reports (user_id);
+
+CREATE INDEX IF NOT EXISTS idx_facility_reports_status_created
+	ON facility_reports (status, created_at DESC, report_id ASC);
