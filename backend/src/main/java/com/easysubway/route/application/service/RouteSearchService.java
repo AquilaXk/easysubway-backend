@@ -28,6 +28,7 @@ import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SubwayLine;
 import java.time.Clock;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -53,6 +54,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private static final int TRANSFER_DISTANCE_METERS = 260;
 	private static final int MINUTES_PER_STATION = 2;
 	private static final int METERS_PER_STATION = 900;
+	private static final int ACCESSIBILITY_DATA_FRESH_DAYS = 30;
 
 	private final LoadRouteSearchPort loadRouteSearchPort;
 	private final SaveRouteSearchPort saveRouteSearchPort;
@@ -308,6 +310,12 @@ public class RouteSearchService implements RouteSearchUseCase {
 				"이동 경로 중 일부 역에 계단 없는 접근 경로가 확인되지 않았습니다."
 			));
 		}
+		if (stationIds.stream().anyMatch(this::hasStaleAccessibilityData)) {
+			warnings.add(new RouteWarning(
+				RouteWarningCode.STALE_ACCESSIBILITY_DATA,
+				"접근성 시설 정보가 최근 30일 이내 확인되지 않았습니다. 이동 전 역 상세 정보를 확인하세요."
+			));
+		}
 		return List.copyOf(warnings);
 	}
 
@@ -322,6 +330,12 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(this::isStepFreeFacility)
 			.anyMatch(facility -> facility.dataConfidence() != DataConfidenceLevel.HIGH);
 		return hasLowConfidenceExit || hasLowConfidenceStepFreeFacility;
+	}
+
+	private boolean hasStaleAccessibilityData(String stationId) {
+		LocalDate staleBefore = LocalDate.now(clock).minusDays(ACCESSIBILITY_DATA_FRESH_DAYS);
+		return stationFacilities(stationId).stream()
+			.anyMatch(facility -> facility.lastUpdatedAt().isBefore(staleBefore));
 	}
 
 	private boolean hasStairOnlyAccess(List<String> stationIds) {
