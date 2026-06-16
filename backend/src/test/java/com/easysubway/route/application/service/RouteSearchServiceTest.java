@@ -68,6 +68,12 @@ class RouteSearchServiceTest {
 		assertThat(result.destinationStationName()).isEqualTo("사당");
 		assertThat(result.lineName()).isEqualTo("수도권 4호선");
 		assertThat(result.score()).isGreaterThan(0);
+		assertThat(result.recommendationReasons())
+			.containsExactly(
+				"엘리베이터 동선을 우선했어요",
+				"계단 없는 출구를 확인했어요",
+				"유모차 이동에 맞춰 넓은 동선을 확인했어요"
+			);
 		assertThat(result.steps())
 			.extracting("title")
 			.containsExactly(
@@ -184,6 +190,7 @@ class RouteSearchServiceTest {
 
 		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
 		assertThat(result.steps()).isEmpty();
+		assertThat(result.recommendationReasons()).isEmpty();
 		assertThat(result.blockedReasons())
 			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
 	}
