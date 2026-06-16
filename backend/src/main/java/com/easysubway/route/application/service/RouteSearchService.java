@@ -31,11 +31,13 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
 import java.util.function.Function;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
@@ -271,6 +273,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 		String destinationStationId,
 		RouteProfileWeight profileWeight
 	) {
+		Map<String, Boolean> stairOnlyAccessCache = new HashMap<>();
+		Map<String, Boolean> lowAccessibilityDataCache = new HashMap<>();
+		Predicate<String> stairOnlyAccess = stationId ->
+			stairOnlyAccessCache.computeIfAbsent(stationId, this::hasStairOnlyAccess);
+		Predicate<String> lowAccessibilityData = stationId ->
+			lowAccessibilityDataCache.computeIfAbsent(stationId, this::hasLowAccessibilityData);
+
 		return new TransferRouteGraph(
 			loadTransitMasterPort.loadLines(),
 			loadTransitMasterPort.loadStations(),
@@ -279,8 +288,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 			originStationId,
 			destinationStationId,
 			profileWeight,
-			this::hasStairOnlyAccess,
-			this::hasLowAccessibilityData
+			stairOnlyAccess,
+			lowAccessibilityData
 		);
 	}
 

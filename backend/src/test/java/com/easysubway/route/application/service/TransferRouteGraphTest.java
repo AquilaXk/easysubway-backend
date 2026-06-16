@@ -82,6 +82,39 @@ class TransferRouteGraphTest {
 		assertThat(route.get().transferStation().id()).isEqualTo("step-free-transfer");
 	}
 
+	@Test
+	@DisplayName("접근성 데이터 신뢰도가 낮은 환승역은 비용 패널티를 반영한다")
+	void findBestOneTransferRouteAppliesLowAccessibilityPenalty() {
+		var graph = new TransferRouteGraph(
+			List.of(line("line-a", "A 노선"), line("line-b", "B 노선")),
+			List.of(
+				station("origin", "출발"),
+				station("low-data-transfer", "저신뢰환승"),
+				station("high-data-transfer", "고신뢰환승"),
+				station("destination", "도착")
+			),
+			List.of(
+				stationLine("origin", "line-a", 1),
+				stationLine("low-data-transfer", "line-a", 2),
+				stationLine("low-data-transfer", "line-b", 4),
+				stationLine("high-data-transfer", "line-a", 3),
+				stationLine("high-data-transfer", "line-b", 3),
+				stationLine("destination", "line-b", 5)
+			)
+		);
+
+		var route = graph.findBestOneTransferRoute(
+			"origin",
+			"destination",
+			RouteProfileWeight.from(MobilityType.SENIOR),
+			stationId -> false,
+			stationId -> stationId.equals("low-data-transfer")
+		);
+
+		assertThat(route).isPresent();
+		assertThat(route.get().transferStation().id()).isEqualTo("high-data-transfer");
+	}
+
 	private SubwayLine line(String id, String name) {
 		return new SubwayLine(id, "operator", name, "#111111", "수도권", id, true);
 	}
