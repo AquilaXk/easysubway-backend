@@ -18,6 +18,7 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
@@ -234,8 +235,29 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
-	@DisplayName("역 출구와 시설과 구조도와 노드 목록은 존재하는 역을 요구한다")
-	void stationExitsFacilitiesLayoutsAndNodesRequireExistingStation() {
+	@DisplayName("내부 이동 간선은 이동 난이도와 접근성 제약을 함께 반환한다")
+	void listRouteEdgesReturnsDifficultyAndAccessibilityMetadata() {
+		var edges = service.listRouteEdges("station-sangnoksu");
+
+		assertThat(edges)
+			.extracting("id")
+			.containsExactly("edge-sangnoksu-elevator-to-faregate");
+		assertThat(edges.getFirst().type()).isEqualTo(RouteEdgeType.WALK);
+		assertThat(edges.getFirst().fromNodeId()).isEqualTo("node-sangnoksu-elevator-1");
+		assertThat(edges.getFirst().toNodeId()).isEqualTo("node-sangnoksu-faregate");
+		assertThat(edges.getFirst().distanceMeters()).isEqualTo(28);
+		assertThat(edges.getFirst().estimatedSeconds()).isEqualTo(75);
+		assertThat(edges.getFirst().hasStairs()).isFalse();
+		assertThat(edges.getFirst().requiresElevator()).isTrue();
+		assertThat(edges.getFirst().slopeLevel()).isEqualTo(1);
+		assertThat(edges.getFirst().widthLevel()).isEqualTo(2);
+		assertThat(edges.getFirst().reliabilityScore()).isEqualTo(92);
+		assertThat(edges.getFirst().active()).isTrue();
+	}
+
+	@Test
+	@DisplayName("역 출구와 시설과 구조도와 노드와 간선 목록은 존재하는 역을 요구한다")
+	void stationExitsFacilitiesLayoutsNodesAndEdgesRequireExistingStation() {
 		assertThatThrownBy(() -> service.listStationExits("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
@@ -249,6 +271,9 @@ class TransitMasterServiceTest {
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 		assertThatThrownBy(() -> service.listRouteNodes("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listRouteEdges("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 	}

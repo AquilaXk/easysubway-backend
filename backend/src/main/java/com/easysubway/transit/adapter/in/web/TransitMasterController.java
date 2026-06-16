@@ -13,6 +13,8 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.NearbyStation;
+import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
@@ -166,6 +168,16 @@ class TransitMasterController {
 		List<RouteNodeResponse> response = transitMasterQueryUseCase.listRouteNodes(stationId)
 			.stream()
 			.map(RouteNodeResponse::from)
+			.toList();
+
+		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/admin/stations/{stationId}/route-edges")
+	ApiResponse<List<RouteEdgeResponse>> routeEdges(@PathVariable String stationId) {
+		List<RouteEdgeResponse> response = transitMasterQueryUseCase.listRouteEdges(stationId)
+			.stream()
+			.map(RouteEdgeResponse::from)
 			.toList();
 
 		return ApiResponse.ok(response);
@@ -526,6 +538,43 @@ class TransitMasterController {
 				node.displayY(),
 				node.displayLabel(),
 				node.accessibilityNote()
+			);
+		}
+	}
+
+	record RouteEdgeResponse(
+		String id,
+		String stationId,
+		String fromNodeId,
+		String toNodeId,
+		RouteEdgeType type,
+		int distanceMeters,
+		int estimatedSeconds,
+		boolean hasStairs,
+		boolean requiresElevator,
+		boolean requiresEscalator,
+		int slopeLevel,
+		int widthLevel,
+		int reliabilityScore,
+		boolean active
+	) {
+
+		static RouteEdgeResponse from(RouteEdge edge) {
+			return new RouteEdgeResponse(
+				edge.id(),
+				edge.stationId(),
+				edge.fromNodeId(),
+				edge.toNodeId(),
+				edge.type(),
+				edge.distanceMeters(),
+				edge.estimatedSeconds(),
+				edge.hasStairs(),
+				edge.requiresElevator(),
+				edge.requiresEscalator(),
+				edge.slopeLevel(),
+				edge.widthLevel(),
+				edge.reliabilityScore(),
+				edge.active()
 			);
 		}
 	}

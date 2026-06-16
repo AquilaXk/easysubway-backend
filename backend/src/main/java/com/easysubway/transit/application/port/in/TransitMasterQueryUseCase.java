@@ -2,6 +2,7 @@ package com.easysubway.transit.application.port.in;
 
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.NearbyStation;
+import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.StationExit;
@@ -35,4 +36,6 @@ public interface TransitMasterQueryUseCase {
 	List<SimplifiedStationLayout> listSimplifiedStationLayouts(String stationId);
 
 	List<RouteNode> listRouteNodes(String stationId);
+
+	List<RouteEdge> listRouteEdges(String stationId);
 }
