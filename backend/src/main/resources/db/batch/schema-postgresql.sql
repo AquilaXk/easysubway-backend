@@ -247,5 +247,12 @@ CREATE TABLE IF NOT EXISTS push_notification_outbox (
 		CHECK (status IN ('PENDING', 'SENT', 'FAILED'))
 );
 
+ALTER TABLE push_notification_outbox
+	DROP CONSTRAINT IF EXISTS chk_push_notification_outbox_status;
+
+ALTER TABLE push_notification_outbox
+	ADD CONSTRAINT chk_push_notification_outbox_status
+		CHECK (status IN ('PENDING', 'SENT', 'FAILED'));
+
 CREATE INDEX IF NOT EXISTS idx_push_notification_outbox_user_created
 	ON push_notification_outbox (user_id, created_at ASC, notification_id ASC);
