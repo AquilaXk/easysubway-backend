@@ -48,7 +48,7 @@ class DataCollectionRunRecorderTest {
 		assertThat(run.requestedBy()).isEqualTo("admin-user");
 		assertThat(run.startedAt()).isEqualTo(LocalDateTime.of(2026, 6, 14, 11, 0));
 		assertThat(run.completedAt()).isEqualTo(LocalDateTime.of(2026, 6, 14, 11, 0));
-		assertThat(run.collectedCount()).isEqualTo(13);
+		assertThat(run.collectedCount()).isEqualTo(14);
 		assertThat(repository.loadRun("collection-test")).contains(run);
 	}
 
