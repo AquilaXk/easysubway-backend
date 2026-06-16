@@ -1,0 +1,148 @@
+package com.easysubway.notification.adapter.out.persistence;
+
+import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
+import com.easysubway.notification.domain.DevicePlatform;
+import com.easysubway.notification.domain.PushNotification;
+import com.easysubway.notification.domain.PushNotificationStatus;
+import com.easysubway.notification.domain.PushNotificationType;
+import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
+import java.sql.ResultSet;
+import java.sql.SQLException;
+import java.util.List;
+import javax.sql.DataSource;
+import org.springframework.context.annotation.Profile;
+import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.stereotype.Repository;
+
+@Repository
+@Profile("prod")
+public class JdbcPushNotificationOutboxRepository implements
+	LoadPushNotificationOutboxPort,
+	SavePushNotificationOutboxPort,
+	DeleteUserPushNotificationPort {
+
+	private final JdbcTemplate jdbcTemplate;
+
+	public JdbcPushNotificationOutboxRepository(DataSource dataSource) {
+		this(new JdbcTemplate(dataSource));
+	}
+
+	JdbcPushNotificationOutboxRepository(JdbcTemplate jdbcTemplate) {
+		this.jdbcTemplate = jdbcTemplate;
+	}
+
+	@Override
+	public List<PushNotification> loadPushNotifications(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					created_at
+				FROM push_notification_outbox
+				WHERE user_id = ?
+				ORDER BY created_at ASC, notification_id ASC
+				""",
+			this::mapPushNotification,
+			userId
+		);
+	}
+
+	@Override
+	public PushNotification savePushNotification(PushNotification notification) {
+		if (updatePushNotification(notification) == 0) {
+			try {
+				insertPushNotification(notification);
+			} catch (DuplicateKeyException exception) {
+				updatePushNotification(notification);
+			}
+		}
+		return notification;
+	}
+
+	@Override
+	public int deletePushNotifications(String userId) {
+		return jdbcTemplate.update(
+			"""
+				DELETE FROM push_notification_outbox
+				WHERE user_id = ?
+				""",
+			userId
+		);
+	}
+
+	private int updatePushNotification(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE push_notification_outbox
+				SET user_id = ?,
+					platform = ?,
+					device_token = ?,
+					notification_type = ?,
+					title = ?,
+					body = ?,
+					status = ?,
+					created_at = ?
+				WHERE notification_id = ?
+				""",
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.createdAt(),
+			notification.notificationId()
+		);
+	}
+
+	private void insertPushNotification(PushNotification notification) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+			notification.notificationId(),
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.createdAt()
+		);
+	}
+
+	private PushNotification mapPushNotification(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new PushNotification(
+			resultSet.getString("notification_id"),
+			resultSet.getString("user_id"),
+			DevicePlatform.valueOf(resultSet.getString("platform")),
+			resultSet.getString("device_token"),
+			PushNotificationType.valueOf(resultSet.getString("notification_type")),
+			resultSet.getString("title"),
+			resultSet.getString("body"),
+			PushNotificationStatus.valueOf(resultSet.getString("status")),
+			resultSet.getTimestamp("created_at").toLocalDateTime()
+		);
+	}
+}
