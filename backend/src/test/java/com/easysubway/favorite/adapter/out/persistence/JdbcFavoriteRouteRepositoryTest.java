@@ -114,7 +114,7 @@ class JdbcFavoriteRouteRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("같은 사용자와 경로 즐겨찾기는 마지막 저장 값으로 갱신한다")
+	@DisplayName("같은 사용자와 경로 즐겨찾기는 upsert로 한 행만 갱신한다")
 	void saveFavoriteRouteUpdatesExistingFavorite() {
 		repository.saveFavoriteRoute(favorite("anonymous-user-1", directRouteSearch("route-search-1", "상록수", "사당"), 9));
 		var updatedFavorite = favorite("anonymous-user-1", transferRouteSearch("route-search-1"), 10);

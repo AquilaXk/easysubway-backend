@@ -24,8 +24,8 @@ import java.util.Set;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
@@ -48,6 +48,7 @@ public class JdbcFavoriteRouteRepository implements
 
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectMapper objectMapper;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcFavoriteRouteRepository(DataSource dataSource, ObjectMapper objectMapper) {
@@ -61,6 +62,7 @@ public class JdbcFavoriteRouteRepository implements
 	JdbcFavoriteRouteRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.objectMapper = objectMapper;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
@@ -145,26 +147,9 @@ public class JdbcFavoriteRouteRepository implements
 	@Override
 	@Transactional
 	public FavoriteRoute saveFavoriteRoute(FavoriteRoute favoriteRoute) {
-		DuplicateKeyException lastDuplicateKeyException = null;
-		for (int attempt = 0; attempt < 2; attempt++) {
-			if (updateFavoriteRoute(favoriteRoute) > 0) {
-				replaceRouteStations(favoriteRoute);
-				return favoriteRoute;
-			}
-			try {
-				insertFavoriteRoute(favoriteRoute);
-				replaceRouteStations(favoriteRoute);
-				return favoriteRoute;
-			} catch (DuplicateKeyException exception) {
-				lastDuplicateKeyException = exception;
-				// 저장과 삭제가 동시에 교차하면 재갱신이 빗나갈 수 있어 삽입 경로를 한 번 더 시도한다.
-				if (updateFavoriteRoute(favoriteRoute) > 0) {
-					replaceRouteStations(favoriteRoute);
-					return favoriteRoute;
-				}
-			}
-		}
-		throw new IllegalStateException("즐겨찾기 경로 저장 중 동시 변경이 반복되었습니다.", lastDuplicateKeyException);
+		upsertFavoriteRoute(favoriteRoute);
+		replaceRouteStations(favoriteRoute);
+		return favoriteRoute;
 	}
 
 	@Override
@@ -210,48 +195,16 @@ public class JdbcFavoriteRouteRepository implements
 		return favoriteRouteCount == null ? 0 : favoriteRouteCount;
 	}
 
-	private int updateFavoriteRoute(FavoriteRoute favoriteRoute) {
-		RouteSearchResult route = favoriteRoute.route();
-		return jdbcTemplate.update(
-			"""
-				UPDATE favorite_routes
-				SET origin_station_id = ?,
-					origin_station_name = ?,
-					destination_station_id = ?,
-					destination_station_name = ?,
-					mobility_type = ?,
-					status = ?,
-					line_id = ?,
-					line_name = ?,
-					score = ?,
-					steps_json = ?,
-					warnings_json = ?,
-					blocked_reasons_json = ?,
-					route_created_at = ?,
-					added_at = ?
-				WHERE user_id = ? AND route_search_id = ?
-				""",
-			route.originStationId(),
-			route.originStationName(),
-			route.destinationStationId(),
-			route.destinationStationName(),
-			route.mobilityType().name(),
-			route.status().name(),
-			route.lineId(),
-			route.lineName(),
-			route.score(),
-			writeJson(route.steps()),
-			writeJson(route.warnings()),
-			writeJson(route.blockedReasons()),
-			route.createdAt(),
-			favoriteRoute.addedAt(),
-			favoriteRoute.userId(),
-			favoriteRoute.routeSearchId()
-		);
+	private void upsertFavoriteRoute(FavoriteRoute favoriteRoute) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			upsertFavoriteRouteWithH2Merge(favoriteRoute);
+			return;
+		}
+		upsertFavoriteRouteWithPostgresql(favoriteRoute);
 	}
 
-	private void insertFavoriteRoute(FavoriteRoute favoriteRoute) {
-		RouteSearchResult route = favoriteRoute.route();
+	private void upsertFavoriteRouteWithPostgresql(FavoriteRoute favoriteRoute) {
+		// PostgreSQL은 중복 키 예외 뒤 같은 트랜잭션 재시도가 불가능하므로 단일 upsert로 저장한다.
 		jdbcTemplate.update(
 			"""
 				INSERT INTO favorite_routes (
@@ -273,7 +226,57 @@ public class JdbcFavoriteRouteRepository implements
 					added_at
 				)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (user_id, route_search_id) DO UPDATE
+				SET origin_station_id = EXCLUDED.origin_station_id,
+					origin_station_name = EXCLUDED.origin_station_name,
+					destination_station_id = EXCLUDED.destination_station_id,
+					destination_station_name = EXCLUDED.destination_station_name,
+					mobility_type = EXCLUDED.mobility_type,
+					status = EXCLUDED.status,
+					line_id = EXCLUDED.line_id,
+					line_name = EXCLUDED.line_name,
+					score = EXCLUDED.score,
+					steps_json = EXCLUDED.steps_json,
+					warnings_json = EXCLUDED.warnings_json,
+					blocked_reasons_json = EXCLUDED.blocked_reasons_json,
+					route_created_at = EXCLUDED.route_created_at,
+					added_at = EXCLUDED.added_at
 				""",
+			favoriteRouteParameters(favoriteRoute)
+		);
+	}
+
+	private void upsertFavoriteRouteWithH2Merge(FavoriteRoute favoriteRoute) {
+		jdbcTemplate.update(
+			"""
+				MERGE INTO favorite_routes (
+					user_id,
+					route_search_id,
+					origin_station_id,
+					origin_station_name,
+					destination_station_id,
+					destination_station_name,
+					mobility_type,
+					status,
+					line_id,
+					line_name,
+					score,
+					steps_json,
+					warnings_json,
+					blocked_reasons_json,
+					route_created_at,
+					added_at
+				)
+				KEY (user_id, route_search_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+			favoriteRouteParameters(favoriteRoute)
+		);
+	}
+
+	private Object[] favoriteRouteParameters(FavoriteRoute favoriteRoute) {
+		RouteSearchResult route = favoriteRoute.route();
+		return new Object[] {
 			favoriteRoute.userId(),
 			favoriteRoute.routeSearchId(),
 			route.originStationId(),
@@ -290,7 +293,7 @@ public class JdbcFavoriteRouteRepository implements
 			writeJson(route.blockedReasons()),
 			route.createdAt(),
 			favoriteRoute.addedAt()
-		);
+		};
 	}
 
 	private void replaceRouteStations(FavoriteRoute favoriteRoute) {
@@ -379,5 +382,18 @@ public class JdbcFavoriteRouteRepository implements
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("즐겨찾기 경로 JSON 저장값을 읽지 못했습니다.", exception);
 		}
+	}
+
+	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }
