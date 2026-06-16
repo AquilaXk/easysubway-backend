@@ -134,3 +134,36 @@ CREATE INDEX IF NOT EXISTS idx_favorite_facilities_facility_user
 
 CREATE INDEX IF NOT EXISTS idx_favorite_facilities_user_added
 	ON favorite_facilities (user_id, added_at ASC, facility_id ASC);
+
+CREATE TABLE IF NOT EXISTS favorite_routes (
+	user_id VARCHAR(120) NOT NULL,
+	route_search_id VARCHAR(120) NOT NULL,
+	origin_station_id VARCHAR(120) NOT NULL,
+	origin_station_name VARCHAR(120) NOT NULL,
+	destination_station_id VARCHAR(120) NOT NULL,
+	destination_station_name VARCHAR(120) NOT NULL,
+	mobility_type VARCHAR(40) NOT NULL,
+	status VARCHAR(40) NOT NULL,
+	line_id VARCHAR(120) NOT NULL,
+	line_name VARCHAR(120) NOT NULL,
+	score INTEGER NOT NULL,
+	steps_json TEXT NOT NULL,
+	warnings_json TEXT NOT NULL,
+	blocked_reasons_json TEXT NOT NULL,
+	route_created_at TIMESTAMP NOT NULL,
+	added_at TIMESTAMP NOT NULL,
+	PRIMARY KEY (user_id, route_search_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_routes_user_added
+	ON favorite_routes (user_id, added_at ASC, route_search_id ASC);
+
+CREATE TABLE IF NOT EXISTS favorite_route_stations (
+	user_id VARCHAR(120) NOT NULL,
+	route_search_id VARCHAR(120) NOT NULL,
+	station_id VARCHAR(120) NOT NULL,
+	PRIMARY KEY (user_id, route_search_id, station_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_route_stations_station_user
+	ON favorite_route_stations (station_id, user_id);
