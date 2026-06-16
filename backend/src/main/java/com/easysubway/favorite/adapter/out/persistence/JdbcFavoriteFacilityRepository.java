@@ -90,15 +90,23 @@ public class JdbcFavoriteFacilityRepository implements
 	@Override
 	@Transactional
 	public FavoriteFacility saveFavoriteFacility(FavoriteFacility favoriteFacility) {
-		if (updateFavoriteFacility(favoriteFacility) == 0) {
+		DuplicateKeyException lastDuplicateKeyException = null;
+		for (int attempt = 0; attempt < 2; attempt++) {
+			if (updateFavoriteFacility(favoriteFacility) > 0) {
+				return favoriteFacility;
+			}
 			try {
 				insertFavoriteFacility(favoriteFacility);
+				return favoriteFacility;
 			} catch (DuplicateKeyException exception) {
-				// 같은 사용자가 같은 시설을 동시에 저장하면 삽입 충돌 후 최신 추가 시각으로 맞춘다.
-				updateFavoriteFacility(favoriteFacility);
+				lastDuplicateKeyException = exception;
+				// 같은 시설 저장과 삭제가 교차하면 재갱신이 빗나갈 수 있어 삽입 경로를 한 번 더 시도한다.
+				if (updateFavoriteFacility(favoriteFacility) > 0) {
+					return favoriteFacility;
+				}
 			}
 		}
-		return favoriteFacility;
+		throw new IllegalStateException("즐겨찾기 시설 저장 중 동시 변경이 반복되었습니다.", lastDuplicateKeyException);
 	}
 
 	@Override

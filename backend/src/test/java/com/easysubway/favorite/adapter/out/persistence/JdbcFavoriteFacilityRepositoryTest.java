@@ -9,6 +9,7 @@ import java.time.LocalDateTime;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
@@ -57,6 +58,18 @@ class JdbcFavoriteFacilityRepositoryTest {
 		repository.saveFavoriteFacility(updatedFavorite);
 
 		assertThat(repository.loadFavoriteFacilities("anonymous-user-1")).containsExactly(updatedFavorite);
+	}
+
+	@Test
+	@DisplayName("동시 저장 충돌 후 행이 사라지면 다시 삽입한다")
+	void saveFavoriteFacilityRetriesInsertWhenDuplicateRetryUpdateMissesRow() {
+		var jdbcTemplate = new DuplicateOnceJdbcTemplate(repositoryJdbcTemplate());
+		var retryRepository = new JdbcFavoriteFacilityRepository(jdbcTemplate);
+		var favorite = favorite("anonymous-user-1", "facility-elevator-1", 9);
+
+		retryRepository.saveFavoriteFacility(favorite);
+
+		assertThat(retryRepository.loadFavoriteFacility("anonymous-user-1", "facility-elevator-1")).contains(favorite);
 	}
 
 	@Test
@@ -116,5 +129,42 @@ class JdbcFavoriteFacilityRepositoryTest {
 			facilityId,
 			LocalDateTime.of(2026, 6, 17, hour, 0)
 		);
+	}
+
+	private JdbcTemplate repositoryJdbcTemplate() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:favorite-facilities-retry;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate.execute("DROP TABLE IF EXISTS favorite_facilities");
+		jdbcTemplate.execute("""
+			CREATE TABLE favorite_facilities (
+				user_id VARCHAR(120) NOT NULL,
+				facility_id VARCHAR(120) NOT NULL,
+				added_at TIMESTAMP NOT NULL,
+				PRIMARY KEY (user_id, facility_id)
+			)
+			""");
+		return jdbcTemplate;
+	}
+
+	private static final class DuplicateOnceJdbcTemplate extends JdbcTemplate {
+
+		private boolean duplicateRaised;
+
+		private DuplicateOnceJdbcTemplate(JdbcTemplate delegate) {
+			super(delegate.getDataSource());
+		}
+
+		@Override
+		public int update(String sql, Object... args) {
+			if (!duplicateRaised && sql.contains("INSERT INTO favorite_facilities")) {
+				duplicateRaised = true;
+				throw new DuplicateKeyException("stale duplicate");
+			}
+			return super.update(sql, args);
+		}
 	}
 }
