@@ -121,3 +121,16 @@ CREATE INDEX IF NOT EXISTS idx_favorite_stations_station_user
 
 CREATE INDEX IF NOT EXISTS idx_favorite_stations_user_added
 	ON favorite_stations (user_id, added_at ASC, station_id ASC);
+
+CREATE TABLE IF NOT EXISTS favorite_facilities (
+	user_id VARCHAR(120) NOT NULL,
+	facility_id VARCHAR(120) NOT NULL,
+	added_at TIMESTAMP NOT NULL,
+	PRIMARY KEY (user_id, facility_id)
+);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_facilities_facility_user
+	ON favorite_facilities (facility_id, user_id);
+
+CREATE INDEX IF NOT EXISTS idx_favorite_facilities_user_added
+	ON favorite_facilities (user_id, added_at ASC, facility_id ASC);
