@@ -13,8 +13,10 @@ import com.easysubway.notification.domain.PushNotificationSendResult;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
 import java.time.LocalDateTime;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Queue;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -85,6 +87,28 @@ class PushNotificationDeliveryServiceTest {
 	}
 
 	@Test
+	@DisplayName("sender 예외는 실패 상태로 저장하고 다음 알림 처리를 계속한다")
+	void deliverPendingNotificationsContinuesWhenSenderThrowsException() {
+		outboxRepository.savePushNotification(notification("push-1", PushNotificationStatus.PENDING));
+		outboxRepository.savePushNotification(notification("push-2", PushNotificationStatus.PENDING));
+		sender.throwOnNextSend = true;
+		sender.results.add(PushNotificationSendResult.sent());
+
+		var result = deliveryService.deliverPending(new DeliverPushNotificationsCommand("anonymous-user-1"));
+
+		assertThat(result.sentCount()).isEqualTo(1);
+		assertThat(result.failedCount()).isEqualTo(1);
+		assertThat(result.processedCount()).isEqualTo(2);
+		assertThat(sender.sentNotifications).extracting("notificationId").containsExactly("push-1", "push-2");
+		assertThat(outboxRepository.loadPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(
+				tuple("push-1", PushNotificationStatus.FAILED),
+				tuple("push-2", PushNotificationStatus.SENT)
+			);
+	}
+
+	@Test
 	@DisplayName("발송 처리 명령은 사용자 식별자를 요구한다")
 	void deliverCommandRequiresUserId() {
 		assertThatThrownBy(() -> new DeliverPushNotificationsCommand(" "))
@@ -113,11 +137,20 @@ class PushNotificationDeliveryServiceTest {
 	private static class RecordingPushNotificationSender implements PushNotificationSenderPort {
 
 		private final List<PushNotification> sentNotifications = new ArrayList<>();
+		private final Queue<PushNotificationSendResult> results = new ArrayDeque<>();
 		private PushNotificationSendResult nextResult = PushNotificationSendResult.sent();
+		private boolean throwOnNextSend;
 
 		@Override
 		public PushNotificationSendResult send(PushNotification notification) {
 			sentNotifications.add(notification);
+			if (throwOnNextSend) {
+				throwOnNextSend = false;
+				throw new IllegalStateException("푸시 발송 실패");
+			}
+			if (!results.isEmpty()) {
+				return results.remove();
+			}
 			return nextResult;
 		}
 	}

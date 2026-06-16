@@ -22,6 +22,9 @@ public record PushNotificationDeliveryResult(
 		if (notifications == null) {
 			throw new InvalidPushNotificationException("알림 목록이 필요합니다.");
 		}
+		if (sentCount + failedCount != notifications.size()) {
+			throw new InvalidPushNotificationException("처리 건수와 알림 목록 크기가 일치해야 합니다.");
+		}
 		requestedUserId = requestedUserId.trim();
 		notifications = List.copyOf(notifications);
 	}

@@ -26,17 +26,25 @@ public class InMemoryPushNotificationOutboxRepository implements
 	@Override
 	public PushNotification savePushNotification(PushNotification notification) {
 		// outbox는 실제 발송 어댑터가 붙기 전까지 생성 순서를 보존해 운영자가 대기열을 확인할 수 있게 둔다.
-		List<PushNotification> notifications = notificationsByUserId.computeIfAbsent(
+		for (Map.Entry<String, List<PushNotification>> entry : notificationsByUserId.entrySet()) {
+			List<PushNotification> notifications = entry.getValue();
+			for (int index = 0; index < notifications.size(); index++) {
+				if (!notifications.get(index).notificationId().equals(notification.notificationId())) {
+					continue;
+				}
+				if (entry.getKey().equals(notification.userId())) {
+					notifications.set(index, notification);
+					return notification;
+				}
+				notifications.remove(index);
+				break;
+			}
+		}
+		List<PushNotification> targetNotifications = notificationsByUserId.computeIfAbsent(
 			notification.userId(),
 			ignored -> new CopyOnWriteArrayList<>()
 		);
-		for (int index = 0; index < notifications.size(); index++) {
-			if (notifications.get(index).notificationId().equals(notification.notificationId())) {
-				notifications.set(index, notification);
-				return notification;
-			}
-		}
-		notifications.add(notification);
+		targetNotifications.add(notification);
 		return notification;
 	}
 
