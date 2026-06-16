@@ -202,3 +202,50 @@ CREATE INDEX IF NOT EXISTS idx_facility_reports_user
 
 CREATE INDEX IF NOT EXISTS idx_facility_reports_status_created
 	ON facility_reports (status, created_at DESC, report_id ASC);
+
+CREATE TABLE IF NOT EXISTS notification_settings (
+	user_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	favorite_station_facility_alerts BOOLEAN NOT NULL,
+	favorite_route_facility_alerts BOOLEAN NOT NULL,
+	report_status_alerts BOOLEAN NOT NULL,
+	data_quality_alerts BOOLEAN NOT NULL,
+	updated_at TIMESTAMP NOT NULL
+);
+
+CREATE INDEX IF NOT EXISTS idx_notification_settings_updated
+	ON notification_settings (updated_at DESC);
+
+CREATE TABLE IF NOT EXISTS registered_devices (
+	user_id VARCHAR(120) NOT NULL,
+	platform VARCHAR(20) NOT NULL,
+	device_token VARCHAR(255) NOT NULL,
+	registered_at TIMESTAMP NOT NULL,
+	PRIMARY KEY (user_id, platform, device_token),
+	CONSTRAINT uq_registered_devices_platform_token UNIQUE (platform, device_token),
+	CONSTRAINT chk_registered_devices_platform
+		CHECK (platform IN ('ANDROID', 'IOS'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_registered_devices_user_registered
+	ON registered_devices (user_id, registered_at ASC, device_token ASC);
+
+CREATE TABLE IF NOT EXISTS push_notification_outbox (
+	notification_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	user_id VARCHAR(120) NOT NULL,
+	platform VARCHAR(20) NOT NULL,
+	device_token VARCHAR(255) NOT NULL,
+	notification_type VARCHAR(60) NOT NULL,
+	title VARCHAR(120) NOT NULL,
+	body VARCHAR(1000) NOT NULL,
+	status VARCHAR(40) NOT NULL,
+	created_at TIMESTAMP NOT NULL,
+	CONSTRAINT chk_push_notification_outbox_platform
+		CHECK (platform IN ('ANDROID', 'IOS')),
+	CONSTRAINT chk_push_notification_outbox_type
+		CHECK (notification_type IN ('FAVORITE_STATION_FACILITY', 'FAVORITE_ROUTE_FACILITY', 'REPORT_STATUS', 'DATA_QUALITY')),
+	CONSTRAINT chk_push_notification_outbox_status
+		CHECK (status IN ('PENDING'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_push_notification_outbox_user_created
+	ON push_notification_outbox (user_id, created_at ASC, notification_id ASC);
