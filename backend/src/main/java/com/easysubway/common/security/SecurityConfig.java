@@ -1,9 +1,11 @@
 package com.easysubway.common.security;
 
+import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
+import org.springframework.core.env.Environment;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -69,8 +71,10 @@ public class SecurityConfig {
 		@Value("${easysubway.admin.password:}") String adminPassword,
 		@Value("${easysubway.user.username:}") String userUsername,
 		@Value("${easysubway.user.password:}") String userPassword,
-		PasswordEncoder passwordEncoder
+		PasswordEncoder passwordEncoder,
+		Environment environment
 	) {
+		validateProdAdminCredentials(adminUsername, adminPassword, environment);
 		var users = new ConcurrentUserDetailsManager();
 		if (!adminUsername.isBlank() && !adminPassword.isBlank()) {
 			users.createUser(User.withUsername(adminUsername)
@@ -90,5 +94,12 @@ public class SecurityConfig {
 	@Bean
 	PasswordEncoder passwordEncoder() {
 		return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+	}
+
+	private void validateProdAdminCredentials(String adminUsername, String adminPassword, Environment environment) {
+		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")
+			&& (adminUsername.isBlank() || adminPassword.isBlank())) {
+			throw new IllegalStateException("운영 관리자 계정 설정이 필요합니다.");
+		}
 	}
 }
