@@ -15,6 +15,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.NearbyStation;
+import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
@@ -185,6 +186,15 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return loadTransitMasterPort.loadSimplifiedStationLayouts()
 			.stream()
 			.filter(layout -> layout.stationId().equals(stationId))
+			.toList();
+	}
+
+	@Override
+	public List<RouteNode> listRouteNodes(String stationId) {
+		loadActiveStation(stationId);
+		return loadTransitMasterPort.loadRouteNodes()
+			.stream()
+			.filter(node -> node.stationId().equals(stationId))
 			.toList();
 	}
 

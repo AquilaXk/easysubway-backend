@@ -311,6 +311,48 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역별 내부 이동 노드의 유형과 표시 정보를 조회한다")
+	void adminListsRouteNodesWithDisplayMetadata() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-nodes")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("node-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].type").value("ELEVATOR"))
+			.andExpect(jsonPath("$.data[0].name").value("1번 출구 엘리베이터"))
+			.andExpect(jsonPath("$.data[0].floor").value("B1"))
+			.andExpect(jsonPath("$.data[0].facilityId").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].layoutId").value("layout-sangnoksu-draft"))
+			.andExpect(jsonPath("$.data[0].displayX").value(120))
+			.andExpect(jsonPath("$.data[0].displayY").value(240))
+			.andExpect(jsonPath("$.data[0].displayLabel").value("엘리베이터"))
+			.andExpect(jsonPath("$.data[0].accessibilityNote").value("휠체어 이동 가능"));
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 관리자 API는 관리자 인증을 요구한다")
+	void adminRouteNodesRequireAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-nodes"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-nodes")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 내부 이동 노드는 공통 404 응답을 반환한다")
+	void missingRouteNodesReturnCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/admin/stations/unknown-station/route-nodes")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 시설 상태를 수정하고 공개 시설 목록에서 확인할 수 있다")
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
 	void adminUpdatesFacilityStatusAndPublicListReflectsIt() throws Exception {

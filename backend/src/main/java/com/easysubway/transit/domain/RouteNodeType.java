@@ -1,0 +1,18 @@
+package com.easysubway.transit.domain;
+
+public enum RouteNodeType {
+	ENTRANCE,
+	EXIT,
+	CONCOURSE,
+	FAREGATE,
+	PLATFORM,
+	TRANSFER_PASSAGE,
+	ELEVATOR,
+	ESCALATOR,
+	STAIR,
+	RAMP,
+	TOILET,
+	ACCESSIBLE_TOILET,
+	NURSING_ROOM,
+	CUSTOMER_CENTER
+}

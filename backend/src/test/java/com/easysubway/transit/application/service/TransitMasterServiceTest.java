@@ -18,6 +18,7 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -217,8 +218,24 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
-	@DisplayName("역 출구와 시설과 구조도 목록은 존재하는 역을 요구한다")
-	void stationExitsFacilitiesAndLayoutsRequireExistingStation() {
+	@DisplayName("내부 이동 노드는 구조도와 현장 표시 정보를 함께 반환한다")
+	void listRouteNodesReturnsLayoutAndDisplayMetadata() {
+		var nodes = service.listRouteNodes("station-sangnoksu");
+
+		assertThat(nodes)
+			.extracting("id")
+			.containsExactly("node-sangnoksu-elevator-1", "node-sangnoksu-faregate");
+		assertThat(nodes.getFirst().type()).isEqualTo(RouteNodeType.ELEVATOR);
+		assertThat(nodes.getFirst().layoutId()).isEqualTo("layout-sangnoksu-draft");
+		assertThat(nodes.getFirst().facilityId()).isEqualTo("facility-sangnoksu-elevator-1");
+		assertThat(nodes.getFirst().displayLabel()).isEqualTo("엘리베이터");
+		assertThat(nodes.getFirst().displayX()).isEqualTo(120);
+		assertThat(nodes.getFirst().displayY()).isEqualTo(240);
+	}
+
+	@Test
+	@DisplayName("역 출구와 시설과 구조도와 노드 목록은 존재하는 역을 요구한다")
+	void stationExitsFacilitiesLayoutsAndNodesRequireExistingStation() {
 		assertThatThrownBy(() -> service.listStationExits("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
@@ -229,6 +246,9 @@ class TransitMasterServiceTest {
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 		assertThatThrownBy(() -> service.listSimplifiedStationLayouts("missing"))
+			.isInstanceOf(StationNotFoundException.class)
+			.hasMessage("역 정보를 찾을 수 없습니다.");
+		assertThatThrownBy(() -> service.listRouteNodes("missing"))
 			.isInstanceOf(StationNotFoundException.class)
 			.hasMessage("역 정보를 찾을 수 없습니다.");
 	}

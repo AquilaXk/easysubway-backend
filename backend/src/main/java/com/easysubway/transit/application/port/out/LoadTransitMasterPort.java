@@ -1,6 +1,7 @@
 package com.easysubway.transit.application.port.out;
 
 import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
@@ -31,6 +32,10 @@ public interface LoadTransitMasterPort {
 
 	default List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
 		throw new UnsupportedOperationException("Simplified station layout loading is not implemented.");
+	}
+
+	default List<RouteNode> loadRouteNodes() {
+		throw new UnsupportedOperationException("Route node loading is not implemented.");
 	}
 
 	default Optional<Station> loadStation(String stationId) {

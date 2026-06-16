@@ -8,6 +8,8 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
@@ -161,6 +163,39 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 		)
 	);
 
+	private static final List<RouteNode> ROUTE_NODES = List.of(
+		new RouteNode(
+			"node-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			RouteNodeType.ELEVATOR,
+			"1번 출구 엘리베이터",
+			"B1",
+			new BigDecimal("37.302421"),
+			new BigDecimal("126.866221"),
+			"facility-sangnoksu-elevator-1",
+			"layout-sangnoksu-draft",
+			120,
+			240,
+			"엘리베이터",
+			"휠체어 이동 가능"
+		),
+		new RouteNode(
+			"node-sangnoksu-faregate",
+			"station-sangnoksu",
+			RouteNodeType.FAREGATE,
+			"개찰구",
+			"B1",
+			null,
+			null,
+			null,
+			"layout-sangnoksu-draft",
+			260,
+			240,
+			"개찰구",
+			null
+		)
+	);
+
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
@@ -205,6 +240,11 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 	@Override
 	public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
 		return SIMPLIFIED_STATION_LAYOUTS;
+	}
+
+	@Override
+	public List<RouteNode> loadRouteNodes() {
+		return ROUTE_NODES;
 	}
 
 	@Override
