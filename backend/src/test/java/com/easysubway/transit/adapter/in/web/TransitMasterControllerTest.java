@@ -353,6 +353,51 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역별 내부 이동 간선의 난이도와 접근성 제약을 조회한다")
+	void adminListsRouteEdgesWithAccessibilityMetadata() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-edges")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("edge-sangnoksu-elevator-to-faregate"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].fromNodeId").value("node-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].toNodeId").value("node-sangnoksu-faregate"))
+			.andExpect(jsonPath("$.data[0].type").value("WALK"))
+			.andExpect(jsonPath("$.data[0].distanceMeters").value(28))
+			.andExpect(jsonPath("$.data[0].estimatedSeconds").value(75))
+			.andExpect(jsonPath("$.data[0].hasStairs").value(false))
+			.andExpect(jsonPath("$.data[0].requiresElevator").value(true))
+			.andExpect(jsonPath("$.data[0].requiresEscalator").value(false))
+			.andExpect(jsonPath("$.data[0].slopeLevel").value(1))
+			.andExpect(jsonPath("$.data[0].widthLevel").value(2))
+			.andExpect(jsonPath("$.data[0].reliabilityScore").value(92))
+			.andExpect(jsonPath("$.data[0].active").value(true));
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 관리자 API는 관리자 인증을 요구한다")
+	void adminRouteEdgesRequireAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-edges"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-edges")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 내부 이동 간선은 공통 404 응답을 반환한다")
+	void missingRouteEdgesReturnCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/admin/stations/unknown-station/route-edges")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 시설 상태를 수정하고 공개 시설 목록에서 확인할 수 있다")
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
 	void adminUpdatesFacilityStatusAndPublicListReflectsIt() throws Exception {

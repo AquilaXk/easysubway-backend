@@ -8,6 +8,8 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
@@ -196,6 +198,25 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 		)
 	);
 
+	private static final List<RouteEdge> ROUTE_EDGES = List.of(
+		new RouteEdge(
+			"edge-sangnoksu-elevator-to-faregate",
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			"node-sangnoksu-faregate",
+			RouteEdgeType.WALK,
+			28,
+			75,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true
+		)
+	);
+
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
@@ -245,6 +266,11 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 	@Override
 	public List<RouteNode> loadRouteNodes() {
 		return ROUTE_NODES;
+	}
+
+	@Override
+	public List<RouteEdge> loadRouteEdges() {
+		return ROUTE_EDGES;
 	}
 
 	@Override

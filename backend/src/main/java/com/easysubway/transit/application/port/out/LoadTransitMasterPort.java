@@ -1,6 +1,7 @@
 package com.easysubway.transit.application.port.out;
 
 import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
@@ -36,6 +37,10 @@ public interface LoadTransitMasterPort {
 
 	default List<RouteNode> loadRouteNodes() {
 		throw new UnsupportedOperationException("Route node loading is not implemented.");
+	}
+
+	default List<RouteEdge> loadRouteEdges() {
+		throw new UnsupportedOperationException("Route edge loading is not implemented.");
 	}
 
 	default Optional<Station> loadStation(String stationId) {
