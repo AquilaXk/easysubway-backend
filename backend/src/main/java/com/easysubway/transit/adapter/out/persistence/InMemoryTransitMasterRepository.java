@@ -107,6 +107,18 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 			true,
 			DataConfidenceLevel.MEDIUM,
 			DataSourceType.OFFICIAL_FILE
+		),
+		new StationExit(
+			"exit-sadang-2",
+			"station-sadang",
+			"2",
+			"2번 출구",
+			new BigDecimal("37.476208"),
+			new BigDecimal("126.982157"),
+			true,
+			false,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.OFFICIAL_FILE
 		)
 	);
 

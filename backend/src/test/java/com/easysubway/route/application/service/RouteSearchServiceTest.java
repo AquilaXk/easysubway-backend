@@ -464,6 +464,28 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("도착역에 접근 가능한 출구가 있으면 마지막 이동 단계에서 먼저 안내한다")
+	void routeDescribesRecommendedDestinationExit() {
+		var repository = new InMemoryRouteSearchRepository();
+		var exitGuidanceService = new RouteSearchService(
+			repository,
+			repository,
+			new ExitSummaryAccessibleTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = exitGuidanceService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR
+		));
+
+		assertThat(result.steps().getLast().title()).contains("출구 접근성 정보를 확인");
+		assertThat(result.steps().getLast().description()).contains("2번 출구");
+		assertThat(result.steps().getLast().description()).contains("엘리베이터");
+	}
+
+	@Test
 	@DisplayName("출구 신뢰도가 높아도 무단차 시설 신뢰도가 낮으면 경고한다")
 	void routeWarnsWhenStepFreeFacilityConfidenceIsLow() {
 		var repository = new InMemoryRouteSearchRepository();
