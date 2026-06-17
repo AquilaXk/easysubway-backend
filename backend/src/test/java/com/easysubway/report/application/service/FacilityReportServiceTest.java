@@ -30,6 +30,7 @@ import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Base64;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -337,6 +338,30 @@ class FacilityReportServiceTest {
 			.extracting("id")
 			.contains(accepted.id())
 			.doesNotContain(submitted.id());
+	}
+
+	@Test
+	@DisplayName("신고 상태별 집계는 목록 조회 없이 상태별 개수를 반환한다")
+	void countReportsByStatusReturnsStatusCounts() {
+		FacilityReportService serviceWithTickingClock = serviceWithClock(new TickingClock());
+
+		var submitted = serviceWithTickingClock.createReport(reportCommand("anonymous-user-submitted", "검수 대기 신고"));
+		var accepted = serviceWithTickingClock.createReport(reportCommand("anonymous-user-accepted", "승인할 신고"));
+		serviceWithTickingClock.reviewReport(new ReviewFacilityReportCommand(
+			accepted.id(),
+			FacilityReportReviewDecision.ACCEPT,
+			"admin-1"
+		));
+
+		assertThat(serviceWithTickingClock.countReportsByStatus())
+			.containsExactlyInAnyOrderEntriesOf(Map.of(
+				FacilityReportStatus.SUBMITTED, 1L,
+				FacilityReportStatus.ACCEPTED, 1L
+			))
+			.doesNotContainKey(FacilityReportStatus.REJECTED);
+		assertThat(serviceWithTickingClock.listReports(FacilityReportStatus.SUBMITTED))
+			.extracting("id")
+			.containsExactly(submitted.id());
 	}
 
 	@Test

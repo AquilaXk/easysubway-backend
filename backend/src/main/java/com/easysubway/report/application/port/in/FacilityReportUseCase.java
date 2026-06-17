@@ -4,6 +4,7 @@ import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportStatus;
 import java.util.List;
+import java.util.Map;
 
 public interface FacilityReportUseCase {
 
@@ -14,6 +15,8 @@ public interface FacilityReportUseCase {
 	List<FacilityReport> listUserReports(String userId);
 
 	List<FacilityReport> listReports(FacilityReportStatus status);
+
+	Map<FacilityReportStatus, Long> countReportsByStatus();
 
 	FacilityReport reviewReport(ReviewFacilityReportCommand command);
 

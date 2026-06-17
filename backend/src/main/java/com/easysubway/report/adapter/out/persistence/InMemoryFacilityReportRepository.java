@@ -3,7 +3,9 @@ package com.easysubway.report.adapter.out.persistence;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -30,6 +32,15 @@ public class InMemoryFacilityReportRepository implements
 	@Override
 	public List<FacilityReport> loadReports() {
 		return List.copyOf(reports.values());
+	}
+
+	@Override
+	public Map<FacilityReportStatus, Long> loadReportStatusCounts() {
+		Map<FacilityReportStatus, Long> counts = new EnumMap<>(FacilityReportStatus.class);
+		for (FacilityReport report : reports.values()) {
+			counts.merge(report.status(), 1L, Long::sum);
+		}
+		return Map.copyOf(counts);
 	}
 
 	@Override

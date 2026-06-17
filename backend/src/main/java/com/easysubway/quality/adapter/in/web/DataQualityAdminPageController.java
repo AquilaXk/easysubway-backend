@@ -3,6 +3,8 @@ package com.easysubway.quality.adapter.in.web;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
+import com.easysubway.report.application.port.in.FacilityReportUseCase;
+import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataConfidenceLevel;
@@ -21,20 +23,24 @@ class DataQualityAdminPageController {
 
 	private final DataQualityUseCase dataQualityUseCase;
 	private final TransitMasterQueryUseCase transitMasterQueryUseCase;
+	private final FacilityReportUseCase facilityReportUseCase;
 
 	DataQualityAdminPageController(
 		DataQualityUseCase dataQualityUseCase,
-		TransitMasterQueryUseCase transitMasterQueryUseCase
+		TransitMasterQueryUseCase transitMasterQueryUseCase,
+		FacilityReportUseCase facilityReportUseCase
 	) {
 		this.dataQualityUseCase = dataQualityUseCase;
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
+		this.facilityReportUseCase = facilityReportUseCase;
 	}
 
 	@GetMapping("/admin/data-quality/page")
 	String dataQualityDashboardPage(Model model) {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
-		model.addAttribute("summary", DataQualityDashboardView.from(summary, regions));
+		Map<FacilityReportStatus, Long> reportStatusCounts = facilityReportUseCase.countReportsByStatus();
+		model.addAttribute("summary", DataQualityDashboardView.from(summary, regions, reportStatusCounts));
 		return "admin/quality/dashboard";
 	}
 
@@ -77,6 +83,17 @@ class DataQualityAdminPageController {
 		};
 	}
 
+	private static String statusLabel(FacilityReportStatus status) {
+		return switch (status) {
+			case SUBMITTED -> "접수됨";
+			case UNDER_REVIEW -> "검수 중";
+			case ACCEPTED -> "반영됨";
+			case REJECTED -> "반려됨";
+			case DUPLICATE -> "중복";
+			case RESOLVED -> "완료";
+		};
+	}
+
 	record DataQualityDashboardView(
 		int totalStations,
 		int totalExits,
@@ -88,23 +105,43 @@ class DataQualityAdminPageController {
 		List<RegionQualityRow> regionQualityRows,
 		List<ConfidenceCountRow> exitConfidenceRows,
 		List<ConfidenceCountRow> facilityConfidenceRows,
-		List<FacilityStatusDelayRow> facilityStatusDelayRows
+		List<FacilityStatusDelayRow> facilityStatusDelayRows,
+		long totalReportCount,
+		long verifiedReportCount,
+		long pendingReportCount,
+		int reportVerificationRatePercent,
+		List<ReportStatusCountRow> reportStatusRows
 	) {
 
-		static DataQualityDashboardView from(DataQualitySummary summary, List<TransitRegionSummary> regions) {
-				return new DataQualityDashboardView(
-					summary.totalStations(),
-					summary.totalExits(),
-					summary.totalFacilities(),
-					summary.needsVerificationFacilityCount(),
-					summary.delayedFacilityStatusCount(),
-					summary.missingStationVerificationDateCount(),
-					qualityRows(summary.stationQualityCounts()),
-					regionQualityRows(summary.regionSummaries(), regions),
-					confidenceRows(summary.exitConfidenceCounts()),
-					confidenceRows(summary.facilityConfidenceCounts()),
-					facilityStatusDelayRows(summary.delayedFacilityStatusCounts())
-				);
+		static DataQualityDashboardView from(
+			DataQualitySummary summary,
+			List<TransitRegionSummary> regions,
+			Map<FacilityReportStatus, Long> reportStatusCounts
+		) {
+			long totalReportCount = reportStatusCounts.values()
+				.stream()
+				.mapToLong(Long::longValue)
+				.sum();
+			long verifiedReportCount = countMatchingReportStatuses(reportStatusCounts, true);
+			long pendingReportCount = countMatchingReportStatuses(reportStatusCounts, false);
+			return new DataQualityDashboardView(
+				summary.totalStations(),
+				summary.totalExits(),
+				summary.totalFacilities(),
+				summary.needsVerificationFacilityCount(),
+				summary.delayedFacilityStatusCount(),
+				summary.missingStationVerificationDateCount(),
+				qualityRows(summary.stationQualityCounts()),
+				regionQualityRows(summary.regionSummaries(), regions),
+				confidenceRows(summary.exitConfidenceCounts()),
+				confidenceRows(summary.facilityConfidenceCounts()),
+				facilityStatusDelayRows(summary.delayedFacilityStatusCounts()),
+				totalReportCount,
+				verifiedReportCount,
+				pendingReportCount,
+				verificationRatePercent(totalReportCount, verifiedReportCount),
+				reportStatusRows(reportStatusCounts)
+			);
 		}
 
 		private static List<QualityCountRow> qualityRows(Map<DataQualityLevel, Long> counts) {
@@ -153,6 +190,43 @@ class DataQualityAdminPageController {
 				.map(status -> new FacilityStatusDelayRow(statusLabel(status), counts.getOrDefault(status, 0L)))
 				.toList();
 		}
+
+		private static long countMatchingReportStatuses(
+			Map<FacilityReportStatus, Long> counts,
+			boolean verified
+		) {
+			return Arrays.stream(FacilityReportStatus.values())
+				.filter(status -> isVerifiedReportStatus(status) == verified)
+				.mapToLong(status -> counts.getOrDefault(status, 0L))
+				.sum();
+		}
+
+		private static List<ReportStatusCountRow> reportStatusRows(Map<FacilityReportStatus, Long> counts) {
+			return Arrays.stream(FacilityReportStatus.values())
+				.map(status -> new ReportStatusCountRow(statusLabel(status), counts.getOrDefault(status, 0L)))
+				.toList();
+		}
+
+		private static boolean isVerifiedReportStatus(FacilityReportStatus status) {
+			return switch (status) {
+				case ACCEPTED, REJECTED, DUPLICATE, RESOLVED -> true;
+				case SUBMITTED, UNDER_REVIEW -> false;
+			};
+		}
+
+		private static boolean isPendingReportStatus(FacilityReportStatus status) {
+			return switch (status) {
+				case SUBMITTED, UNDER_REVIEW -> true;
+				case ACCEPTED, REJECTED, DUPLICATE, RESOLVED -> false;
+			};
+		}
+
+		private static int verificationRatePercent(long totalReportCount, long verifiedReportCount) {
+			if (totalReportCount == 0) {
+				return 0;
+			}
+			return (int) Math.round((verifiedReportCount * 100.0) / totalReportCount);
+		}
 	}
 
 	record QualityCountRow(String label, String description, long count) {
@@ -174,5 +248,8 @@ class DataQualityAdminPageController {
 	}
 
 	record FacilityStatusDelayRow(String statusLabel, long count) {
+	}
+
+	record ReportStatusCountRow(String statusLabel, long count) {
 	}
 }

@@ -8,7 +8,9 @@ import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.EnumMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -96,6 +98,28 @@ public class JdbcFacilityReportRepository implements
 				ORDER BY created_at DESC, report_id ASC
 				""",
 			this::mapFacilityReport
+		);
+	}
+
+	@Override
+	public Map<FacilityReportStatus, Long> loadReportStatusCounts() {
+		return jdbcTemplate.query(
+			"""
+				SELECT status,
+					COUNT(*) AS report_count
+				FROM facility_reports
+				GROUP BY status
+				""",
+			resultSet -> {
+				Map<FacilityReportStatus, Long> counts = new EnumMap<>(FacilityReportStatus.class);
+				while (resultSet.next()) {
+					counts.put(
+						FacilityReportStatus.valueOf(resultSet.getString("status")),
+						resultSet.getLong("report_count")
+					);
+				}
+				return Map.copyOf(counts);
+			}
 		);
 	}
 
