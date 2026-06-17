@@ -2,6 +2,7 @@ package com.easysubway.quality.application.service;
 
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
+import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -12,6 +13,8 @@ import com.easysubway.transit.domain.StationExit;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,6 +37,7 @@ public class DataQualityService implements DataQualityUseCase {
 			exits.size(),
 			facilities.size(),
 			countStationQuality(stations),
+			summarizeRegionQuality(stations),
 			countExitConfidence(exits),
 			countFacilityConfidence(facilities),
 			countNeedsVerificationFacilities(facilities),
@@ -48,6 +52,20 @@ public class DataQualityService implements DataQualityUseCase {
 			counts.put(level, counts.get(level) + 1);
 		}
 		return counts;
+	}
+
+	private List<RegionDataQualitySummary> summarizeRegionQuality(List<Station> stations) {
+		return stations.stream()
+			.filter(station -> station.region() != null && !station.region().isBlank())
+			.collect(Collectors.groupingBy(Station::region, TreeMap::new, Collectors.toList()))
+			.entrySet()
+			.stream()
+			.map(entry -> new RegionDataQualitySummary(
+				entry.getKey(),
+				entry.getValue().size(),
+				countStationQuality(entry.getValue())
+			))
+			.toList();
 	}
 
 	private Map<DataConfidenceLevel, Long> countExitConfidence(List<StationExit> exits) {

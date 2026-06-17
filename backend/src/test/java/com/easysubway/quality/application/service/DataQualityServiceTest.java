@@ -1,5 +1,6 @@
 package com.easysubway.quality.application.service;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
@@ -22,6 +23,34 @@ import org.junit.jupiter.api.Test;
 
 @DisplayName("데이터 품질 요약 서비스")
 class DataQualityServiceTest {
+
+	@Test
+	@DisplayName("지역별 역 품질 요약은 전체 데이터 품질 요약과 같은 역 포함 기준을 사용한다")
+	void summarizeDataQualityCountsRegionStationQualityWithSameStationSet() {
+		var service = new DataQualityService(new StubTransitMasterPort(
+			List.of(
+				station("station-active-level1", "수도권", DataQualityLevel.LEVEL_1, true),
+				station("station-inactive-level4", "수도권", DataQualityLevel.LEVEL_4, false),
+				station("station-busan-level2", "부산권", DataQualityLevel.LEVEL_2, true)
+			),
+			List.of(),
+			List.of()
+		));
+
+		var summary = service.summarizeDataQuality();
+
+		assertThat(summary.totalStations()).isEqualTo(3);
+		assertThat(summary.regionSummaries()).hasSize(2);
+		assertThat(summary.regionSummaries().getFirst().name()).isEqualTo("부산권");
+		assertThat(summary.regionSummaries().getFirst().stationCount()).isEqualTo(1);
+		assertThat(summary.regionSummaries().getFirst().stationQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_2, 1L);
+		assertThat(summary.regionSummaries().getLast().name()).isEqualTo("수도권");
+		assertThat(summary.regionSummaries().getLast().stationCount()).isEqualTo(2);
+		assertThat(summary.regionSummaries().getLast().stationQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_1, 1L)
+			.containsEntry(DataQualityLevel.LEVEL_4, 1L);
+	}
 
 	@Test
 	@DisplayName("역 품질 등급이 비어 있으면 집계하지 않고 마스터 데이터 오류를 알린다")
@@ -69,17 +98,21 @@ class DataQualityServiceTest {
 	}
 
 	private static Station station(String id, DataQualityLevel qualityLevel) {
+		return station(id, "수도권", qualityLevel, true);
+	}
+
+	private static Station station(String id, String region, DataQualityLevel qualityLevel, boolean active) {
 		return new Station(
 			id,
 			"상록수",
 			"Sangnoksu",
-			"수도권",
+			region,
 			new BigDecimal("37.302795"),
 			new BigDecimal("126.866489"),
 			qualityLevel,
 			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12),
-			true
+			active
 		);
 	}
 
