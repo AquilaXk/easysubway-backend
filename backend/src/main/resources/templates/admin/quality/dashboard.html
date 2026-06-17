@@ -120,6 +120,22 @@
 			<span>검수일 없는 역</span>
 			<strong th:text="${summary.missingStationVerificationDateCount}">0</strong>
 		</div>
+		<div class="metric">
+			<span>전체 제보</span>
+			<strong th:text="${summary.totalReportCount}">0</strong>
+		</div>
+		<div class="metric">
+			<span>검증 완료</span>
+			<strong th:text="${summary.verifiedReportCount}">0</strong>
+		</div>
+		<div class="metric">
+			<span>검증 대기</span>
+			<strong th:text="${summary.pendingReportCount}">0</strong>
+		</div>
+		<div class="metric">
+			<span>제보 검증률</span>
+			<strong th:text="|${summary.reportVerificationRatePercent}%|">0%</strong>
+		</div>
 	</div>
 
 	<section>
@@ -220,6 +236,24 @@
 			<tbody>
 			<tr th:each="row : ${summary.facilityStatusDelayRows}">
 				<td th:text="${row.statusLabel}">정상</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>사용자 제보 검증률</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">상태</th>
+				<th scope="col">제보 수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.reportStatusRows}">
+				<td th:text="${row.statusLabel}">접수됨</td>
 				<td th:text="${row.count}">0</td>
 			</tr>
 			</tbody>
