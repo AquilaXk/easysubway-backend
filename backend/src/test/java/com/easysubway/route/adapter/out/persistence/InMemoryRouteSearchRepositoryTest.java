@@ -1,6 +1,7 @@
 package com.easysubway.route.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.domain.RouteSearchResult;
@@ -25,6 +26,9 @@ class InMemoryRouteSearchRepositoryTest {
 		assertThat(repository.loadRouteSearch("route-0")).isEmpty();
 		assertThat(repository.loadRouteSearch("route-" + InMemoryRouteSearchRepository.MAX_STORED_ROUTE_SEARCHES))
 			.isPresent();
+		assertThat(repository.loadRouteSearchStationPairsForDashboard())
+			.extracting("originStationId", "destinationStationId")
+			.contains(tuple("station-a", "station-b"));
 	}
 
 	private RouteSearchResult routeSearchResult(String routeSearchId) {

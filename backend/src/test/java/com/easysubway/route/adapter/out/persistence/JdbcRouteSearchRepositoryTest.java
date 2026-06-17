@@ -193,6 +193,13 @@ class JdbcRouteSearchRepositoryTest {
 				tuple(MobilityType.SENIOR, 2L),
 				tuple(MobilityType.WHEELCHAIR, 1L)
 			);
+		assertThat(repository.loadRouteSearchStationPairsForDashboard())
+			.extracting("originStationId", "destinationStationId")
+			.containsExactlyInAnyOrder(
+				tuple("station-sangnoksu", "station-sadang"),
+				tuple("station-origin", "station-destination"),
+				tuple("station-origin", "station-destination")
+			);
 	}
 
 	private RouteSearchResult directRouteSearch(

@@ -61,6 +61,7 @@
 		section {
 			background: #fff;
 			border: 1px solid #d8e0e0;
+			margin-top: 18px;
 		}
 
 		table {
@@ -122,6 +123,26 @@
 			<tr th:each="row : ${summary.mobilityTypeRows}">
 				<td th:text="${row.label}">고령자</td>
 				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>지역별 사용량</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">지역</th>
+				<th scope="col">출발 검색</th>
+				<th scope="col">도착 검색</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.regionUsageRows}">
+				<td th:text="${row.region}">수도권</td>
+				<td th:text="${row.originCount}">0</td>
+				<td th:text="${row.destinationCount}">0</td>
 			</tr>
 			</tbody>
 		</table>

@@ -52,6 +52,11 @@ class RouteSearchAdminPageControllerTest {
 			.contains("이동 프로필별 검색")
 			.contains("고령자")
 			.contains("휠체어 사용자")
+			.contains("지역별 사용량")
+			.contains("지역")
+			.contains("출발 검색")
+			.contains("도착 검색")
+			.contains("수도권")
 			.doesNotContain("routeSearchId")
 			.doesNotContain("station-sangnoksu");
 	}
