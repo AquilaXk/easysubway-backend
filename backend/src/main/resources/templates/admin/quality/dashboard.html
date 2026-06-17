@@ -259,6 +259,28 @@
 			</tbody>
 		</table>
 	</section>
+
+	<section>
+		<h2>반복 고장 신고 시설</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">역</th>
+				<th scope="col">시설</th>
+				<th scope="col">현재 상태</th>
+				<th scope="col">고장 신고 수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.repeatedBrokenFacilityRows}">
+				<td th:text="${row.stationName}">상록수</td>
+				<td th:text="${row.facilityName}">1번 출구 엘리베이터</td>
+				<td th:text="${row.statusLabel}">정상</td>
+				<td th:text="${row.reportCount}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
 </main>
 </body>
 </html>

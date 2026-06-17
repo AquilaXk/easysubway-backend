@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
@@ -95,6 +96,35 @@ class JdbcFacilityReportRepositoryTest {
 				FacilityReportStatus.SUBMITTED, 3L,
 				FacilityReportStatus.DUPLICATE, 1L
 			));
+	}
+
+	@Test
+	@DisplayName("시설 신고 저장소는 반복 고장 신고 시설을 집계한다")
+	void loadRepeatedBrokenReportFacilitiesAggregatesBrokenReportsByFacility() {
+		repository.saveReport(submittedReport("report-1", "anonymous-user-1", 9));
+		repository.saveReport(submittedReport("report-2", "anonymous-user-2", 10));
+		repository.saveReport(new FacilityReport(
+			"report-3",
+			"anonymous-user-3",
+			"station-sangnoksu",
+			"facility-elevator-1",
+			FacilityReportType.INFORMATION_WRONG,
+			"시설 정보가 다릅니다.",
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 11, 0),
+			null,
+			null
+		));
+
+		assertThat(repository.loadRepeatedBrokenReportFacilities())
+			.extracting("stationId", "facilityId", "reportCount")
+			.containsExactly(tuple("station-sangnoksu", "facility-elevator-1", 2L));
 	}
 
 	@Test

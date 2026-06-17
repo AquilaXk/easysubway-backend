@@ -15,6 +15,7 @@ import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
+import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.notification.application.port.in.ReportStatusAlertUseCase;
@@ -278,6 +279,11 @@ public class FacilityReportService implements FacilityReportUseCase {
 	@Override
 	public Map<FacilityReportStatus, Long> countReportsByStatus() {
 		return loadFacilityReportPort.loadReportStatusCounts();
+	}
+
+	@Override
+	public List<RepeatedBrokenFacilityReportSummary> listRepeatedBrokenReportFacilities() {
+		return loadFacilityReportPort.loadRepeatedBrokenReportFacilities();
 	}
 
 	@Override

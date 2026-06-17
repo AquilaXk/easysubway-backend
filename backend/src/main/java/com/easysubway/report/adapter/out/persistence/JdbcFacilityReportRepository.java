@@ -5,6 +5,7 @@ import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
+import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -120,6 +121,28 @@ public class JdbcFacilityReportRepository implements
 				}
 				return Map.copyOf(counts);
 			}
+		);
+	}
+
+	@Override
+	public List<RepeatedBrokenFacilityReportSummary> loadRepeatedBrokenReportFacilities() {
+		return jdbcTemplate.query(
+			"""
+				SELECT station_id,
+					facility_id,
+					COUNT(*) AS report_count
+				FROM facility_reports
+				WHERE report_type = ?
+				GROUP BY station_id, facility_id
+				HAVING COUNT(*) >= 2
+				ORDER BY report_count DESC, station_id ASC, facility_id ASC
+				""",
+			(resultSet, rowNumber) -> new RepeatedBrokenFacilityReportSummary(
+				resultSet.getString("station_id"),
+				resultSet.getString("facility_id"),
+				resultSet.getLong("report_count")
+			),
+			FacilityReportType.BROKEN.name()
 		);
 	}
 
