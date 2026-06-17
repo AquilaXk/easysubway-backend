@@ -1,6 +1,7 @@
 package com.easysubway.route.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.domain.RouteFeedback;
@@ -174,6 +175,26 @@ class JdbcRouteSearchRepositoryTest {
 		assertThat(summary.blockedByRealWorldCount()).isEqualTo(1);
 	}
 
+	@Test
+	@DisplayName("경로 검색 결과를 상태와 이동 프로필별로 집계한다")
+	void summarizeRouteSearchesByStatusAndMobilityType() {
+		repository.saveRouteSearch(directRouteSearch("route-search-1", "상록수", "사당"));
+		repository.saveRouteSearch(blockedRouteSearch("route-search-2"));
+		repository.saveRouteSearch(transferRouteSearch("route-search-3"));
+
+		var summary = repository.summarizeRouteSearches();
+
+		assertThat(summary.totalCount()).isEqualTo(3);
+		assertThat(summary.foundCount()).isEqualTo(2);
+		assertThat(summary.blockedCount()).isEqualTo(1);
+		assertThat(summary.mobilityTypeCounts())
+			.extracting("mobilityType", "count")
+			.containsExactly(
+				tuple(MobilityType.SENIOR, 2L),
+				tuple(MobilityType.WHEELCHAIR, 1L)
+			);
+	}
+
 	private RouteSearchResult directRouteSearch(
 		String routeSearchId,
 		String originStationName,
@@ -217,6 +238,25 @@ class JdbcRouteSearchRepositoryTest {
 			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS, "일부 구간은 도움을 요청해야 할 수 있습니다.")),
 			List.of("엘리베이터 검증이 필요한 구간이 있습니다."),
 			LocalDateTime.of(2026, 6, 13, 9, 0)
+		);
+	}
+
+	private RouteSearchResult blockedRouteSearch(String routeSearchId) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-origin",
+			"출발역",
+			"station-destination",
+			"도착역",
+			MobilityType.SENIOR,
+			RouteSearchStatus.BLOCKED,
+			"line-4",
+			"수도권 4호선",
+			0,
+			List.of(),
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS, "계단 없는 접근 경로가 확인되지 않았습니다.")),
+			List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
+			LocalDateTime.of(2026, 6, 17, 10, 0)
 		);
 	}
 
