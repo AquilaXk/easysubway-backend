@@ -21,6 +21,7 @@ import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -40,6 +41,7 @@ public class JdbcRouteSearchRepository
 
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectMapper objectMapper;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcRouteSearchRepository(DataSource dataSource, ObjectMapper objectMapper) {
@@ -53,6 +55,7 @@ public class JdbcRouteSearchRepository
 	JdbcRouteSearchRepository(JdbcTemplate jdbcTemplate, ObjectMapper objectMapper) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.objectMapper = objectMapper;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
@@ -87,18 +90,13 @@ public class JdbcRouteSearchRepository
 
 	@Override
 	public RouteSearchResult saveRouteSearch(RouteSearchResult routeSearchResult) {
-		// 경로 재계산 결과는 같은 식별자를 다시 받을 수 있어 기존 행을 먼저 갱신한다.
-		if (updateRouteSearch(routeSearchResult) == 0) {
-			insertRouteSearch(routeSearchResult);
-		}
+		upsertRouteSearch(routeSearchResult);
 		return routeSearchResult;
 	}
 
 	@Override
 	public RouteFeedback saveRouteFeedback(RouteFeedback feedback) {
-		if (updateRouteFeedback(feedback) == 0) {
-			insertRouteFeedback(feedback);
-		}
+		upsertRouteFeedback(feedback);
 		return feedback;
 	}
 
@@ -117,44 +115,16 @@ public class JdbcRouteSearchRepository
 		);
 	}
 
-	private int updateRouteSearch(RouteSearchResult route) {
-		return jdbcTemplate.update(
-			"""
-				UPDATE route_search_results
-				SET origin_station_id = ?,
-					origin_station_name = ?,
-					destination_station_id = ?,
-					destination_station_name = ?,
-					mobility_type = ?,
-					status = ?,
-					line_id = ?,
-					line_name = ?,
-					score = ?,
-					steps_json = ?,
-					warnings_json = ?,
-					blocked_reasons_json = ?,
-					created_at = ?
-				WHERE route_search_id = ?
-				""",
-			route.originStationId(),
-			route.originStationName(),
-			route.destinationStationId(),
-			route.destinationStationName(),
-			route.mobilityType().name(),
-			route.status().name(),
-			route.lineId(),
-			route.lineName(),
-			route.score(),
-			// PostgreSQL 운영 스키마에서는 경로 단계와 경고처럼 구조가 자주 바뀌는 값을 JSON으로 보관한다.
-			writeJson(route.steps()),
-			writeJson(route.warnings()),
-			writeJson(route.blockedReasons()),
-			route.createdAt(),
-			route.routeSearchId()
-		);
+	private void upsertRouteSearch(RouteSearchResult route) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			upsertRouteSearchWithH2Merge(route);
+			return;
+		}
+		upsertRouteSearchWithPostgresql(route);
 	}
 
-	private void insertRouteSearch(RouteSearchResult route) {
+	private void upsertRouteSearchWithPostgresql(RouteSearchResult route) {
+		// PostgreSQL ON CONFLICT로 같은 경로 검색 ID의 동시 저장을 원자적으로 처리한다.
 		jdbcTemplate.update(
 			"""
 				INSERT INTO route_search_results (
@@ -174,6 +144,68 @@ public class JdbcRouteSearchRepository
 					created_at
 				)
 				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (route_search_id) DO UPDATE
+				SET origin_station_id = EXCLUDED.origin_station_id,
+					origin_station_name = EXCLUDED.origin_station_name,
+					destination_station_id = EXCLUDED.destination_station_id,
+					destination_station_name = EXCLUDED.destination_station_name,
+					mobility_type = EXCLUDED.mobility_type,
+					status = EXCLUDED.status,
+					line_id = EXCLUDED.line_id,
+					line_name = EXCLUDED.line_name,
+					score = EXCLUDED.score,
+					steps_json = EXCLUDED.steps_json,
+					warnings_json = EXCLUDED.warnings_json,
+					blocked_reasons_json = EXCLUDED.blocked_reasons_json,
+					created_at = EXCLUDED.created_at
+				""",
+			route.routeSearchId(),
+			route.originStationId(),
+			route.originStationName(),
+			route.destinationStationId(),
+			route.destinationStationName(),
+			route.mobilityType().name(),
+			route.status().name(),
+			route.lineId(),
+			route.lineName(),
+			route.score(),
+			// 경로 단계와 경고처럼 구조가 자주 바뀌는 값은 운영 DB에서 JSON으로 보관한다.
+			writeJson(route.steps()),
+			writeJson(route.warnings()),
+			writeJson(route.blockedReasons()),
+			route.createdAt()
+		);
+	}
+
+	private void upsertRouteFeedback(RouteFeedback feedback) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			upsertRouteFeedbackWithH2Merge(feedback);
+			return;
+		}
+		upsertRouteFeedbackWithPostgresql(feedback);
+	}
+
+	private void upsertRouteSearchWithH2Merge(RouteSearchResult route) {
+		jdbcTemplate.update(
+			"""
+				MERGE INTO route_search_results (
+					route_search_id,
+					origin_station_id,
+					origin_station_name,
+					destination_station_id,
+					destination_station_name,
+					mobility_type,
+					status,
+					line_id,
+					line_name,
+					score,
+					steps_json,
+					warnings_json,
+					blocked_reasons_json,
+					created_at
+				)
+				KEY (route_search_id)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			route.routeSearchId(),
 			route.originStationId(),
@@ -192,27 +224,8 @@ public class JdbcRouteSearchRepository
 		);
 	}
 
-	private int updateRouteFeedback(RouteFeedback feedback) {
-		return jdbcTemplate.update(
-			"""
-				UPDATE route_feedbacks
-				SET route_search_id = ?,
-					user_id = ?,
-					rating = ?,
-					comment = ?,
-					created_at = ?
-				WHERE feedback_id = ?
-				""",
-			feedback.routeSearchId(),
-			feedback.userId(),
-			feedback.rating().name(),
-			feedback.comment(),
-			feedback.createdAt(),
-			feedback.feedbackId()
-		);
-	}
-
-	private void insertRouteFeedback(RouteFeedback feedback) {
+	private void upsertRouteFeedbackWithPostgresql(RouteFeedback feedback) {
+		// 피드백 재전송도 같은 ID를 쓸 수 있어 단일 upsert 문으로 PK 충돌을 피한다.
 		jdbcTemplate.update(
 			"""
 				INSERT INTO route_feedbacks (
@@ -223,6 +236,35 @@ public class JdbcRouteSearchRepository
 					comment,
 					created_at
 				)
+				VALUES (?, ?, ?, ?, ?, ?)
+				ON CONFLICT (feedback_id) DO UPDATE
+				SET route_search_id = EXCLUDED.route_search_id,
+					user_id = EXCLUDED.user_id,
+					rating = EXCLUDED.rating,
+					comment = EXCLUDED.comment,
+					created_at = EXCLUDED.created_at
+				""",
+			feedback.feedbackId(),
+			feedback.routeSearchId(),
+			feedback.userId(),
+			feedback.rating().name(),
+			feedback.comment(),
+			feedback.createdAt()
+		);
+	}
+
+	private void upsertRouteFeedbackWithH2Merge(RouteFeedback feedback) {
+		jdbcTemplate.update(
+			"""
+				MERGE INTO route_feedbacks (
+					feedback_id,
+					route_search_id,
+					user_id,
+					rating,
+					comment,
+					created_at
+				)
+				KEY (feedback_id)
 				VALUES (?, ?, ?, ?, ?, ?)
 				""",
 			feedback.feedbackId(),
@@ -267,5 +309,18 @@ public class JdbcRouteSearchRepository
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.", exception);
 		}
+	}
+
+	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

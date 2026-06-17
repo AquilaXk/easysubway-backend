@@ -125,6 +125,36 @@ class JdbcRouteSearchRepositoryTest {
 		)).isEqualTo("사용자 데이터 삭제로 경로 피드백 내용이 삭제되었습니다.");
 	}
 
+	@Test
+	@DisplayName("같은 피드백 식별자는 한 행만 갱신한다")
+	void saveRouteFeedbackUpdatesExistingRow() {
+		repository.saveRouteFeedback(routeFeedback("feedback-1", RouteFeedbackRating.HELPFUL, "도움이 되었습니다."));
+		var updatedFeedback = routeFeedback(
+			"feedback-1",
+			RouteFeedbackRating.NOT_HELPFUL,
+			"실제 이동 상황과 맞지 않았습니다."
+		);
+
+		repository.saveRouteFeedback(updatedFeedback);
+
+		Integer rowCount = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM route_feedbacks WHERE feedback_id = ?",
+			Integer.class,
+			"feedback-1"
+		);
+		assertThat(rowCount).isEqualTo(1);
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT rating FROM route_feedbacks WHERE feedback_id = ?",
+			String.class,
+			"feedback-1"
+		)).isEqualTo(RouteFeedbackRating.NOT_HELPFUL.name());
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT comment FROM route_feedbacks WHERE feedback_id = ?",
+			String.class,
+			"feedback-1"
+		)).isEqualTo("실제 이동 상황과 맞지 않았습니다.");
+	}
+
 	private RouteSearchResult directRouteSearch(
 		String routeSearchId,
 		String originStationName,
@@ -168,6 +198,17 @@ class JdbcRouteSearchRepositoryTest {
 			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS, "일부 구간은 도움을 요청해야 할 수 있습니다.")),
 			List.of("엘리베이터 검증이 필요한 구간이 있습니다."),
 			LocalDateTime.of(2026, 6, 13, 9, 0)
+		);
+	}
+
+	private RouteFeedback routeFeedback(String feedbackId, RouteFeedbackRating rating, String comment) {
+		return new RouteFeedback(
+			feedbackId,
+			"route-search-1",
+			"anonymous-user-1",
+			rating,
+			comment,
+			LocalDateTime.of(2026, 6, 17, 10, 0)
 		);
 	}
 
