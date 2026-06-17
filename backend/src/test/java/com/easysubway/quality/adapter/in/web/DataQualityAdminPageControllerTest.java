@@ -43,6 +43,7 @@ class DataQualityAdminPageControllerTest {
 			.contains("전체 시설")
 			.contains(">3<")
 			.contains("확인 필요한 시설")
+			.contains("갱신 지연 시설")
 			.contains("검수일 없는 역")
 			.contains("Level 1")
 			.contains("기본 정보 확인")
@@ -57,6 +58,9 @@ class DataQualityAdminPageControllerTest {
 			.contains("Level 2")
 			.contains("Level 3")
 			.contains("Level 4")
+			.contains("시설 상태 갱신 지연")
+			.contains("상태")
+			.contains("지연 시설")
 			.doesNotContain("station-sangnoksu")
 			.doesNotContain("exit-sangnoksu")
 			.doesNotContain("facility-sangnoksu");

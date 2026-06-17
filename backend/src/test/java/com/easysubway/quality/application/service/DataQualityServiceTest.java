@@ -16,13 +16,45 @@ import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.math.BigDecimal;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 @DisplayName("데이터 품질 요약 서비스")
 class DataQualityServiceTest {
+
+	private static final Clock FIXED_CLOCK = Clock.fixed(
+		Instant.parse("2026-06-17T00:00:00Z"),
+		ZoneId.of("Asia/Seoul")
+	);
+
+	@Test
+	@DisplayName("시설 상태 갱신 지연은 30일 초과 또는 갱신일 없음 기준으로 상태별 집계한다")
+	void summarizeDataQualityCountsDelayedFacilityStatusByStatus() {
+		var service = new DataQualityService(new StubTransitMasterPort(
+			List.of(station("station-sangnoksu", DataQualityLevel.LEVEL_1)),
+			List.of(),
+			List.of(
+				facility("facility-recent", AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 12)),
+				facility("facility-exact-threshold", AccessibilityFacilityStatus.CLOSED, LocalDate.of(2026, 5, 18)),
+				facility("facility-old-broken", AccessibilityFacilityStatus.BROKEN, LocalDate.of(2026, 5, 17)),
+				facility("facility-missing-date", AccessibilityFacilityStatus.UNKNOWN, null)
+			)
+		), FIXED_CLOCK);
+
+		var summary = service.summarizeDataQuality();
+
+		assertThat(summary.delayedFacilityStatusCount()).isEqualTo(2);
+		assertThat(summary.delayedFacilityStatusCounts())
+			.containsEntry(AccessibilityFacilityStatus.BROKEN, 1L)
+			.containsEntry(AccessibilityFacilityStatus.UNKNOWN, 1L)
+			.containsEntry(AccessibilityFacilityStatus.NORMAL, 0L)
+			.containsEntry(AccessibilityFacilityStatus.CLOSED, 0L);
+	}
 
 	@Test
 	@DisplayName("지역별 역 품질 요약은 전체 데이터 품질 요약과 같은 역 포함 기준을 사용한다")
@@ -132,6 +164,23 @@ class DataQualityServiceTest {
 	}
 
 	private static AccessibilityFacility facility(String id, DataConfidenceLevel confidenceLevel) {
+		return facility(id, AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 12), confidenceLevel);
+	}
+
+	private static AccessibilityFacility facility(
+		String id,
+		AccessibilityFacilityStatus status,
+		LocalDate lastUpdatedAt
+	) {
+		return facility(id, status, lastUpdatedAt, DataConfidenceLevel.HIGH);
+	}
+
+	private static AccessibilityFacility facility(
+		String id,
+		AccessibilityFacilityStatus status,
+		LocalDate lastUpdatedAt,
+		DataConfidenceLevel confidenceLevel
+	) {
 		return new AccessibilityFacility(
 			id,
 			"station-sangnoksu",
@@ -143,10 +192,10 @@ class DataQualityServiceTest {
 			new BigDecimal("37.302200"),
 			new BigDecimal("126.866200"),
 			"교통약자 승강 편의시설",
-			AccessibilityFacilityStatus.NORMAL,
+			status,
 			confidenceLevel,
 			DataSourceType.OFFICIAL_FILE,
-			LocalDate.of(2026, 6, 12)
+			lastUpdatedAt
 		);
 	}
 

@@ -113,6 +113,10 @@
 			<strong th:text="${summary.needsVerificationFacilityCount}">0</strong>
 		</div>
 		<div class="metric">
+			<span>갱신 지연 시설</span>
+			<strong th:text="${summary.delayedFacilityStatusCount}">0</strong>
+		</div>
+		<div class="metric">
 			<span>검수일 없는 역</span>
 			<strong th:text="${summary.missingStationVerificationDateCount}">0</strong>
 		</div>
@@ -198,6 +202,24 @@
 			<tbody>
 			<tr th:each="row : ${summary.facilityConfidenceRows}">
 				<td th:text="${row.label}">높음</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>시설 상태 갱신 지연</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">상태</th>
+				<th scope="col">지연 시설</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.facilityStatusDelayRows}">
+				<td th:text="${row.statusLabel}">정상</td>
 				<td th:text="${row.count}">0</td>
 			</tr>
 			</tbody>
