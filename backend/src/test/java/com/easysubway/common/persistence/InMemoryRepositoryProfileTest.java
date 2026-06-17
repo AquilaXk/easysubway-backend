@@ -13,6 +13,7 @@ import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepos
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportReviewAuditRepository;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.usage.adapter.out.persistence.InMemoryUserActivityRepository;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -38,7 +39,7 @@ class InMemoryRepositoryProfileTest {
 	@Test
 	@DisplayName("검증 대상에는 운영 데이터가 유실될 수 있는 인메모리 저장소를 모두 포함한다")
 	void allStatefulInMemoryRepositoriesAreCovered() {
-		assertThat(inMemoryRepositories()).hasSize(11);
+		assertThat(inMemoryRepositories()).hasSize(12);
 	}
 
 	static Stream<Class<?>> inMemoryRepositories() {
@@ -53,7 +54,8 @@ class InMemoryRepositoryProfileTest {
 			InMemoryNotificationPreferenceRepository.class,
 			InMemoryPushNotificationOutboxRepository.class,
 			InMemoryRouteSearchRepository.class,
-			InMemoryTransitMasterRepository.class
+			InMemoryTransitMasterRepository.class,
+			InMemoryUserActivityRepository.class
 		);
 	}
 }
