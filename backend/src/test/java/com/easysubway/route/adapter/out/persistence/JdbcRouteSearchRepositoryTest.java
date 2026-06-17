@@ -50,7 +50,7 @@ class JdbcRouteSearchRepositoryTest {
 				warnings_json TEXT NOT NULL,
 				blocked_reasons_json TEXT NOT NULL,
 				created_at TIMESTAMP NOT NULL,
-				CONSTRAINT chk_route_search_results_status CHECK (status IN ('FOUND', 'BLOCKED', 'NEEDS_VERIFICATION')),
+				CONSTRAINT chk_route_search_results_status CHECK (status IN ('FOUND', 'BLOCKED')),
 				CONSTRAINT chk_route_search_results_mobility_type CHECK (mobility_type IN ('SENIOR', 'STROLLER', 'WHEELCHAIR', 'PREGNANT', 'TEMPORARY_INJURY', 'LUGGAGE'))
 			)
 			""");
