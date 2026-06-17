@@ -3,7 +3,10 @@ package com.easysubway.route.adapter.out.persistence;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.domain.RouteFeedback;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
+import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
 import java.util.LinkedHashMap;
@@ -15,7 +18,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 @Profile("!prod")
 public class InMemoryRouteSearchRepository
-	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, AnonymizeUserRouteFeedbackPort {
+	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, SummarizeRouteFeedbackPort,
+	AnonymizeUserRouteFeedbackPort {
 
 	static final int MAX_STORED_ROUTE_SEARCHES = 1_000;
 	static final int MAX_STORED_ROUTE_FEEDBACKS = 5_000;
@@ -51,6 +55,21 @@ public class InMemoryRouteSearchRepository
 	}
 
 	@Override
+	public RouteFeedbackDashboardSummary summarizeRouteFeedbacks() {
+		synchronized (routeFeedbacks) {
+			long helpfulCount = countByRating(RouteFeedbackRating.HELPFUL);
+			long notHelpfulCount = countByRating(RouteFeedbackRating.NOT_HELPFUL);
+			long blockedByRealWorldCount = countByRating(RouteFeedbackRating.BLOCKED_BY_REAL_WORLD);
+			return new RouteFeedbackDashboardSummary(
+				routeFeedbacks.size(),
+				helpfulCount,
+				notHelpfulCount,
+				blockedByRealWorldCount
+			);
+		}
+	}
+
+	@Override
 	public int anonymizeRouteFeedbacksByUserId(String userId) {
 		synchronized (routeFeedbacks) {
 			int anonymizedCount = 0;
@@ -75,6 +94,13 @@ public class InMemoryRouteSearchRepository
 			DELETED_COMMENT,
 			feedback.createdAt()
 		);
+	}
+
+	private long countByRating(RouteFeedbackRating rating) {
+		return routeFeedbacks.values()
+			.stream()
+			.filter(feedback -> feedback.rating() == rating)
+			.count();
 	}
 
 	private void evictOldestRouteSearches() {

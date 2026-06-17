@@ -155,6 +155,25 @@ class JdbcRouteSearchRepositoryTest {
 		)).isEqualTo("실제 이동 상황과 맞지 않았습니다.");
 	}
 
+	@Test
+	@DisplayName("경로 피드백을 평점별로 집계한다")
+	void summarizeRouteFeedbacksByRating() {
+		repository.saveRouteFeedback(routeFeedback("feedback-1", RouteFeedbackRating.HELPFUL, "도움이 되었습니다."));
+		repository.saveRouteFeedback(routeFeedback("feedback-2", RouteFeedbackRating.NOT_HELPFUL, "동선 설명이 부족합니다."));
+		repository.saveRouteFeedback(routeFeedback(
+			"feedback-3",
+			RouteFeedbackRating.BLOCKED_BY_REAL_WORLD,
+			"실제로는 엘리베이터가 막혀 있었습니다."
+		));
+
+		var summary = repository.summarizeRouteFeedbacks();
+
+		assertThat(summary.totalCount()).isEqualTo(3);
+		assertThat(summary.helpfulCount()).isEqualTo(1);
+		assertThat(summary.notHelpfulCount()).isEqualTo(1);
+		assertThat(summary.blockedByRealWorldCount()).isEqualTo(1);
+	}
+
 	private RouteSearchResult directRouteSearch(
 		String routeSearchId,
 		String originStationName,
