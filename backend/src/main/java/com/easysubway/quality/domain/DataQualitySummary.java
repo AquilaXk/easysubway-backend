@@ -17,10 +17,12 @@ public record DataQualitySummary(
 	long needsVerificationFacilityCount,
 	long delayedFacilityStatusCount,
 	Map<AccessibilityFacilityStatus, Long> delayedFacilityStatusCounts,
-	long missingStationVerificationDateCount
+	long missingStationVerificationDateCount,
+	List<AccessibilityImprovementPriority> accessibilityImprovementPriorities
 ) {
 
 	public DataQualitySummary {
 		regionSummaries = List.copyOf(regionSummaries);
+		accessibilityImprovementPriorities = List.copyOf(accessibilityImprovementPriorities);
 	}
 }

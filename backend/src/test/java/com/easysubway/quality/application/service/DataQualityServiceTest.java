@@ -57,6 +57,55 @@ class DataQualityServiceTest {
 	}
 
 	@Test
+	@DisplayName("접근성 개선 우선순위는 상태, 신뢰도, 갱신 지연을 점수화해 높은 순서로 반환한다")
+	void summarizeDataQualityRanksAccessibilityImprovementPriorities() {
+		var service = new DataQualityService(new StubTransitMasterPort(
+			List.of(station("station-sangnoksu", DataQualityLevel.LEVEL_1)),
+			List.of(),
+			List.of(
+				facility(
+					"facility-broken-low-old",
+					AccessibilityFacilityStatus.BROKEN,
+					LocalDate.of(2026, 5, 1),
+					DataConfidenceLevel.LOW
+				),
+				facility(
+					"facility-unknown-needs-verification",
+					AccessibilityFacilityStatus.UNKNOWN,
+					LocalDate.of(2026, 6, 12),
+					DataConfidenceLevel.NEEDS_VERIFICATION
+				),
+				facility(
+					"facility-construction-old",
+					AccessibilityFacilityStatus.UNDER_CONSTRUCTION,
+					LocalDate.of(2026, 5, 1),
+					DataConfidenceLevel.HIGH
+				),
+				facility(
+					"facility-normal-recent",
+					AccessibilityFacilityStatus.NORMAL,
+					LocalDate.of(2026, 6, 12),
+					DataConfidenceLevel.HIGH
+				)
+			)
+		), FIXED_CLOCK);
+
+		var summary = service.summarizeDataQuality();
+
+		assertThat(summary.accessibilityImprovementPriorities())
+			.extracting(priority -> priority.facilityId() + ":" + priority.priorityScore())
+			.containsExactly(
+				"facility-broken-low-old:85",
+				"facility-unknown-needs-verification:60",
+				"facility-construction-old:55"
+			);
+		assertThat(summary.accessibilityImprovementPriorities().getFirst().reasons())
+			.containsExactly("고장 상태", "낮은 신뢰도", "갱신 지연");
+		assertThat(summary.accessibilityImprovementPriorities().get(1).reasons())
+			.containsExactly("확인 필요 상태", "신뢰도 확인 필요");
+	}
+
+	@Test
 	@DisplayName("지역별 역 품질 요약은 전체 데이터 품질 요약과 같은 역 포함 기준을 사용한다")
 	void summarizeDataQualityCountsRegionStationQualityWithSameStationSet() {
 		var service = new DataQualityService(new StubTransitMasterPort(

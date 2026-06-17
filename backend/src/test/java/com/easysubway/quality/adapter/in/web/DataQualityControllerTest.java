@@ -42,6 +42,10 @@ class DataQualityControllerTest {
 			.andExpect(jsonPath("$.data.facilityConfidenceCounts.MEDIUM").value(1))
 			.andExpect(jsonPath("$.data.facilityConfidenceCounts.NEEDS_VERIFICATION").value(1))
 			.andExpect(jsonPath("$.data.needsVerificationFacilityCount").value(1))
+			.andExpect(jsonPath("$.data.accessibilityImprovementPriorities[0].facilityId")
+				.value("facility-sangnoksu-accessible-toilet"))
+			.andExpect(jsonPath("$.data.accessibilityImprovementPriorities[0].priorityScore").value(60))
+			.andExpect(jsonPath("$.data.accessibilityImprovementPriorities[0].reasons[0]").value("확인 필요 상태"))
 			.andExpect(jsonPath("$.data.missingStationVerificationDateCount").value(0));
 	}
 
