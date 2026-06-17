@@ -1,6 +1,7 @@
 package com.easysubway.quality.adapter.in.web;
 
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
+import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
@@ -45,6 +46,12 @@ class DataQualityAdminPageController {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
 		Map<FacilityReportStatus, Long> reportStatusCounts = facilityReportUseCase.countReportsByStatus();
+		List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows = summary
+			.accessibilityImprovementPriorities()
+			.stream()
+			.map(this::accessibilityImprovementPriorityRow)
+			.flatMap(Optional::stream)
+			.toList();
 		List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows = facilityReportUseCase
 			.listRepeatedBrokenReportFacilities()
 			.stream()
@@ -53,9 +60,35 @@ class DataQualityAdminPageController {
 			.toList();
 		model.addAttribute(
 			"summary",
-			DataQualityDashboardView.from(summary, regions, reportStatusCounts, repeatedBrokenFacilityRows)
+			DataQualityDashboardView.from(
+				summary,
+				regions,
+				reportStatusCounts,
+				accessibilityImprovementPriorityRows,
+				repeatedBrokenFacilityRows
+			)
 		);
 		return "admin/quality/dashboard";
+	}
+
+	private Optional<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRow(
+		AccessibilityImprovementPriority priority
+	) {
+		try {
+			StationWithLines station = transitMasterQueryUseCase.getStation(priority.stationId());
+			return transitMasterQueryUseCase.listStationFacilities(priority.stationId())
+				.stream()
+				.filter(candidate -> candidate.id().equals(priority.facilityId()))
+				.findFirst()
+				.map(facility -> new AccessibilityImprovementPriorityRow(
+					station.station().nameKo(),
+					facility.name(),
+					priority.priorityScore(),
+					String.join(", ", priority.reasons())
+				));
+		} catch (StationNotFoundException exception) {
+			return Optional.empty();
+		}
 	}
 
 	private Optional<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRow(RepeatedBrokenFacilityReportSummary summary) {
@@ -143,6 +176,7 @@ class DataQualityAdminPageController {
 		long pendingReportCount,
 		int reportVerificationRatePercent,
 		List<ReportStatusCountRow> reportStatusRows,
+		List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows,
 		List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
 	) {
 
@@ -150,6 +184,7 @@ class DataQualityAdminPageController {
 			DataQualitySummary summary,
 			List<TransitRegionSummary> regions,
 			Map<FacilityReportStatus, Long> reportStatusCounts,
+			List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows,
 			List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
 		) {
 			long totalReportCount = reportStatusCounts.values()
@@ -175,6 +210,7 @@ class DataQualityAdminPageController {
 				pendingReportCount,
 				verificationRatePercent(totalReportCount, verifiedReportCount),
 				reportStatusRows(reportStatusCounts),
+				accessibilityImprovementPriorityRows,
 				repeatedBrokenFacilityRows
 			);
 		}
@@ -286,6 +322,14 @@ class DataQualityAdminPageController {
 	}
 
 	record ReportStatusCountRow(String statusLabel, long count) {
+	}
+
+	record AccessibilityImprovementPriorityRow(
+		String stationName,
+		String facilityName,
+		int priorityScore,
+		String reasons
+	) {
 	}
 
 	record RepeatedBrokenFacilityRow(String stationName, String facilityName, String statusLabel, long reportCount) {

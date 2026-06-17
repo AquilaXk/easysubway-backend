@@ -1,6 +1,7 @@
 package com.easysubway.quality.application.service;
 
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
+import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
@@ -12,23 +13,32 @@ import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
 public class DataQualityService implements DataQualityUseCase {
 
 	private static final int FACILITY_STATUS_DELAY_DAYS = 30;
+	private static final int IMPROVEMENT_PRIORITY_LIMIT = 5;
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final Clock clock;
 
 	@Autowired
+	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort, ObjectProvider<Clock> clockProvider) {
+		this(loadTransitMasterPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+	}
+
 	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort) {
 		this(loadTransitMasterPort, Clock.systemDefaultZone());
 	}
@@ -55,7 +65,8 @@ public class DataQualityService implements DataQualityUseCase {
 			countNeedsVerificationFacilities(facilities),
 			countDelayedFacilityStatus(facilities),
 			countDelayedFacilityStatusByStatus(facilities),
-			countMissingStationVerificationDate(stations)
+			countMissingStationVerificationDate(stations),
+			prioritizeAccessibilityImprovements(facilities)
 		);
 	}
 
@@ -155,6 +166,69 @@ public class DataQualityService implements DataQualityUseCase {
 		return stations.stream()
 			.filter(station -> station.lastVerifiedAt() == null)
 			.count();
+	}
+
+	private List<AccessibilityImprovementPriority> prioritizeAccessibilityImprovements(
+		List<AccessibilityFacility> facilities
+	) {
+		return facilities.stream()
+			.map(this::accessibilityImprovementPriority)
+			.flatMap(Optional::stream)
+			.sorted(Comparator.comparingInt(AccessibilityImprovementPriority::priorityScore)
+				.reversed()
+				.thenComparing(AccessibilityImprovementPriority::stationId)
+				.thenComparing(AccessibilityImprovementPriority::facilityId))
+			.limit(IMPROVEMENT_PRIORITY_LIMIT)
+			.toList();
+	}
+
+	private Optional<AccessibilityImprovementPriority> accessibilityImprovementPriority(
+		AccessibilityFacility facility
+	) {
+		List<String> reasons = new ArrayList<>();
+		int priorityScore = statusPriorityScore(facility.status(), reasons)
+			+ confidencePriorityScore(facility.dataConfidence(), reasons)
+			+ delayedPriorityScore(facility, reasons);
+		if (priorityScore == 0) {
+			return Optional.empty();
+		}
+		return Optional.of(new AccessibilityImprovementPriority(
+			facility.stationId(),
+			facility.id(),
+			priorityScore,
+			reasons
+		));
+	}
+
+	private int statusPriorityScore(AccessibilityFacilityStatus status, List<String> reasons) {
+		return switch (status) {
+			case BROKEN -> addReason(reasons, "고장 상태", 50);
+			case CLOSED -> addReason(reasons, "폐쇄 상태", 45);
+			case UNDER_CONSTRUCTION -> addReason(reasons, "공사 중", 40);
+			case UNKNOWN -> addReason(reasons, "확인 필요 상태", 30);
+			case USER_REPORTED -> addReason(reasons, "사용자 제보 상태", 30);
+			case NORMAL, ADMIN_VERIFIED -> 0;
+		};
+	}
+
+	private int confidencePriorityScore(DataConfidenceLevel confidenceLevel, List<String> reasons) {
+		return switch (confidenceLevel) {
+			case NEEDS_VERIFICATION -> addReason(reasons, "신뢰도 확인 필요", 30);
+			case LOW -> addReason(reasons, "낮은 신뢰도", 20);
+			case HIGH, MEDIUM -> 0;
+		};
+	}
+
+	private int delayedPriorityScore(AccessibilityFacility facility, List<String> reasons) {
+		if (!isDelayedFacilityStatus(facility)) {
+			return 0;
+		}
+		return addReason(reasons, "갱신 지연", 15);
+	}
+
+	private int addReason(List<String> reasons, String reason, int score) {
+		reasons.add(reason);
+		return score;
 	}
 
 	private EnumMap<DataQualityLevel, Long> emptyQualityCounts() {

@@ -261,6 +261,28 @@
 	</section>
 
 	<section>
+		<h2>접근성 개선 우선순위</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">역</th>
+				<th scope="col">시설</th>
+				<th scope="col">개선 사유</th>
+				<th scope="col">우선순위 점수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.accessibilityImprovementPriorityRows}">
+				<td th:text="${row.stationName}">상록수</td>
+				<td th:text="${row.facilityName}">장애인 화장실</td>
+				<td th:text="${row.reasons}">확인 필요 상태, 신뢰도 확인 필요</td>
+				<td th:text="${row.priorityScore}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
 		<h2>반복 고장 신고 시설</h2>
 		<table>
 			<thead>
