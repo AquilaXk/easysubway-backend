@@ -2,8 +2,10 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.route.application.port.in.RouteSearchDashboardUseCase;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
+import com.easysubway.route.domain.RouteSearchDashboardSummary.BlockedReasonCount;
 import com.easysubway.route.domain.RouteSearchDashboardSummary.RegionUsageCount;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.Station;
@@ -38,8 +40,30 @@ public class RouteSearchDashboardService implements RouteSearchDashboardUseCase 
 			summary.foundCount(),
 			summary.blockedCount(),
 			summary.mobilityTypeCounts(),
-			regionUsageCounts(summarizeRouteSearchPort.loadRouteSearchStationPairsForDashboard())
+			regionUsageCounts(summarizeRouteSearchPort.loadRouteSearchStationPairsForDashboard()),
+			blockedReasonCounts(summarizeRouteSearchPort.loadRouteSearchBlockedReasonsForDashboard())
 		);
+	}
+
+	private List<BlockedReasonCount> blockedReasonCounts(List<RouteSearchBlockedReasons> blockedReasonsRows) {
+		Map<String, Long> countsByReason = new HashMap<>();
+		for (RouteSearchBlockedReasons blockedReasonsRow : blockedReasonsRows) {
+			for (String reason : blockedReasonsRow.blockedReasons()) {
+				if (reason == null || reason.isBlank()) {
+					continue;
+				}
+				String normalizedReason = reason.trim();
+				countsByReason.merge(normalizedReason, 1L, Long::sum);
+			}
+		}
+		return countsByReason.entrySet()
+			.stream()
+			.map(entry -> new BlockedReasonCount(entry.getKey(), entry.getValue()))
+			.sorted(Comparator
+				.comparingLong(BlockedReasonCount::count)
+				.reversed()
+				.thenComparing(BlockedReasonCount::reason))
+			.toList();
 	}
 
 	private List<RegionUsageCount> regionUsageCounts(List<RouteSearchStationPair> stationPairs) {

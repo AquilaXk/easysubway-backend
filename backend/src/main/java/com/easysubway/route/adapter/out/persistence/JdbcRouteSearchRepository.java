@@ -6,6 +6,7 @@ import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
@@ -165,6 +166,20 @@ public class JdbcRouteSearchRepository
 			(resultSet, rowNumber) -> new RouteSearchStationPair(
 				resultSet.getString("origin_station_id"),
 				resultSet.getString("destination_station_id")
+			)
+		);
+	}
+
+	@Override
+	public List<RouteSearchBlockedReasons> loadRouteSearchBlockedReasonsForDashboard() {
+		return jdbcTemplate.query(
+			"""
+				SELECT blocked_reasons_json
+				FROM route_search_results
+				WHERE status = 'BLOCKED'
+				""",
+			(resultSet, rowNumber) -> new RouteSearchBlockedReasons(
+				readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE)
 			)
 		);
 	}

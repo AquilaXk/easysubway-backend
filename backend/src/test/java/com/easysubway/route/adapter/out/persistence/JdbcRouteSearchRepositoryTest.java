@@ -200,6 +200,9 @@ class JdbcRouteSearchRepositoryTest {
 				tuple("station-origin", "station-destination"),
 				tuple("station-origin", "station-destination")
 			);
+		assertThat(repository.loadRouteSearchBlockedReasonsForDashboard())
+			.flatExtracting("blockedReasons")
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
 	}
 
 	private RouteSearchResult directRouteSearch(

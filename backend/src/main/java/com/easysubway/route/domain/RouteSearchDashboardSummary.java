@@ -8,7 +8,8 @@ public record RouteSearchDashboardSummary(
 	long foundCount,
 	long blockedCount,
 	List<MobilityTypeCount> mobilityTypeCounts,
-	List<RegionUsageCount> regionUsageCounts
+	List<RegionUsageCount> regionUsageCounts,
+	List<BlockedReasonCount> blockedReasonCounts
 ) {
 
 	public RouteSearchDashboardSummary(
@@ -17,7 +18,17 @@ public record RouteSearchDashboardSummary(
 		long blockedCount,
 		List<MobilityTypeCount> mobilityTypeCounts
 	) {
-		this(totalCount, foundCount, blockedCount, mobilityTypeCounts, List.of());
+		this(totalCount, foundCount, blockedCount, mobilityTypeCounts, List.of(), List.of());
+	}
+
+	public RouteSearchDashboardSummary(
+		long totalCount,
+		long foundCount,
+		long blockedCount,
+		List<MobilityTypeCount> mobilityTypeCounts,
+		List<RegionUsageCount> regionUsageCounts
+	) {
+		this(totalCount, foundCount, blockedCount, mobilityTypeCounts, regionUsageCounts, List.of());
 	}
 
 	public RouteSearchDashboardSummary {
@@ -35,6 +46,7 @@ public record RouteSearchDashboardSummary(
 			throw new InvalidRouteSearchException("전체 경로 검색 수와 이동 프로필별 검색 수가 일치하지 않습니다.");
 		}
 		regionUsageCounts = List.copyOf(regionUsageCounts);
+		blockedReasonCounts = List.copyOf(blockedReasonCounts);
 	}
 
 	public record MobilityTypeCount(MobilityType mobilityType, long count) {
@@ -57,6 +69,18 @@ public record RouteSearchDashboardSummary(
 			}
 			if (originCount < 0 || destinationCount < 0) {
 				throw new InvalidRouteSearchException("지역별 경로 검색 수는 0 이상이어야 합니다.");
+			}
+		}
+	}
+
+	public record BlockedReasonCount(String reason, long count) {
+
+		public BlockedReasonCount {
+			if (reason == null || reason.isBlank()) {
+				throw new InvalidRouteSearchException("경로 검색 차단 사유 집계에는 사유가 필요합니다.");
+			}
+			if (count < 0) {
+				throw new InvalidRouteSearchException("경로 검색 차단 사유 수는 0 이상이어야 합니다.");
 			}
 		}
 	}

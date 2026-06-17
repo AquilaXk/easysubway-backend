@@ -29,7 +29,8 @@ class RouteSearchAdminPageController {
 		long foundCount,
 		long blockedCount,
 		List<MobilityTypeCountRow> mobilityTypeRows,
-		List<RegionUsageCountRow> regionUsageRows
+		List<RegionUsageCountRow> regionUsageRows,
+		List<BlockedReasonCountRow> blockedReasonRows
 	) {
 
 		static RouteSearchDashboardView from(RouteSearchDashboardSummary summary) {
@@ -44,6 +45,10 @@ class RouteSearchAdminPageController {
 				summary.regionUsageCounts()
 					.stream()
 					.map(row -> new RegionUsageCountRow(row.region(), row.originCount(), row.destinationCount()))
+					.toList(),
+				summary.blockedReasonCounts()
+					.stream()
+					.map(row -> new BlockedReasonCountRow(row.reason(), row.count()))
 					.toList()
 			);
 		}
@@ -53,6 +58,9 @@ class RouteSearchAdminPageController {
 	}
 
 	record RegionUsageCountRow(String region, long originCount, long destinationCount) {
+	}
+
+	record BlockedReasonCountRow(String reason, long count) {
 	}
 
 	private static String mobilityTypeLabel(MobilityType mobilityType) {

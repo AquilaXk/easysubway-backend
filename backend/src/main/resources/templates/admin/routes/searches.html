@@ -147,6 +147,24 @@
 			</tbody>
 		</table>
 	</section>
+
+	<section>
+		<h2>차단 사유별 현황</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">차단 사유</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.blockedReasonRows}">
+				<td th:text="${row.reason}">계단 없는 역 접근 경로를 확인할 수 없습니다.</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
 </main>
 </body>
 </html>

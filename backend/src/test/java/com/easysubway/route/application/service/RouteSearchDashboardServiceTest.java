@@ -91,6 +91,33 @@ class RouteSearchDashboardServiceTest {
 			);
 	}
 
+	@Test
+	@DisplayName("경로 검색 차단 사유를 빈도순으로 집계한다")
+	void summarizeRouteSearchesByBlockedReason() {
+		var repository = new InMemoryRouteSearchRepository();
+		repository.saveRouteSearch(blockedRouteSearch(
+			"route-search-1",
+			"엘리베이터 없는 출입구만 확인됩니다.",
+			"휠체어로 이동 가능한 환승 동선을 확인할 수 없습니다."
+		));
+		repository.saveRouteSearch(blockedRouteSearch(
+			"route-search-2",
+			"엘리베이터 없는 출입구만 확인됩니다.",
+			" "
+		));
+		repository.saveRouteSearch(routeSearch("route-search-3", MobilityType.SENIOR, RouteSearchStatus.FOUND));
+		var service = new RouteSearchDashboardService(repository, new FakeTransitMasterPort());
+
+		var summary = service.summarizeRouteSearches();
+
+		assertThat(summary.blockedReasonCounts())
+			.extracting("reason", "count")
+			.containsExactly(
+				tuple("엘리베이터 없는 출입구만 확인됩니다.", 2L),
+				tuple("휠체어로 이동 가능한 환승 동선을 확인할 수 없습니다.", 1L)
+			);
+	}
+
 	private RouteSearchResult routeSearch(
 		String routeSearchId,
 		MobilityType mobilityType,
@@ -130,6 +157,25 @@ class RouteSearchDashboardServiceTest {
 			List.of(),
 			List.of(),
 			status == RouteSearchStatus.FOUND ? List.of() : List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
+			LocalDateTime.of(2026, 6, 17, 10, 0)
+		);
+	}
+
+	private RouteSearchResult blockedRouteSearch(String routeSearchId, String... blockedReasons) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-sangnoksu",
+			"상록수",
+			"station-sadang",
+			"사당",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.BLOCKED,
+			"line-4",
+			"수도권 4호선",
+			0,
+			List.of(),
+			List.of(),
+			List.of(blockedReasons),
 			LocalDateTime.of(2026, 6, 17, 10, 0)
 		);
 	}

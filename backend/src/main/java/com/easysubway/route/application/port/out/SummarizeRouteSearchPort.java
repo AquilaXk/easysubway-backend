@@ -9,6 +9,15 @@ public interface SummarizeRouteSearchPort {
 
 	List<RouteSearchStationPair> loadRouteSearchStationPairsForDashboard();
 
+	List<RouteSearchBlockedReasons> loadRouteSearchBlockedReasonsForDashboard();
+
 	record RouteSearchStationPair(String originStationId, String destinationStationId) {
+	}
+
+	record RouteSearchBlockedReasons(List<String> blockedReasons) {
+
+		public RouteSearchBlockedReasons {
+			blockedReasons = List.copyOf(blockedReasons);
+		}
 	}
 }

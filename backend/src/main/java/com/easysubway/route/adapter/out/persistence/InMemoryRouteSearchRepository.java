@@ -6,6 +6,7 @@ import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
@@ -100,6 +101,17 @@ public class InMemoryRouteSearchRepository
 					routeSearch.originStationId(),
 					routeSearch.destinationStationId()
 				))
+				.toList();
+		}
+	}
+
+	@Override
+	public List<RouteSearchBlockedReasons> loadRouteSearchBlockedReasonsForDashboard() {
+		synchronized (routeSearches) {
+			return routeSearches.values()
+				.stream()
+				.filter(routeSearch -> routeSearch.status() == RouteSearchStatus.BLOCKED)
+				.map(routeSearch -> new RouteSearchBlockedReasons(routeSearch.blockedReasons()))
 				.toList();
 		}
 	}
