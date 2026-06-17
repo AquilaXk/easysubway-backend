@@ -48,7 +48,18 @@ class DataQualityAdminPageControllerTest {
 			.contains("기본 정보 확인")
 			.contains("높음")
 			.contains("보통")
-			.contains("확인 필요");
+			.contains("확인 필요")
+			.contains("지역별 데이터 품질")
+			.contains("수도권")
+			.contains("운영기관")
+			.contains("노선")
+			.contains("역")
+			.contains("Level 2")
+			.contains("Level 3")
+			.contains("Level 4")
+			.doesNotContain("station-sangnoksu")
+			.doesNotContain("exit-sangnoksu")
+			.doesNotContain("facility-sangnoksu");
 	}
 
 	@Test

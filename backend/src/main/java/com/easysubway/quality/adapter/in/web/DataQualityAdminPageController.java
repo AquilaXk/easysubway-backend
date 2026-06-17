@@ -2,8 +2,10 @@ package com.easysubway.quality.adapter.in.web;
 
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
+import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.TransitRegionSummary;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -15,15 +17,21 @@ import org.springframework.web.bind.annotation.GetMapping;
 class DataQualityAdminPageController {
 
 	private final DataQualityUseCase dataQualityUseCase;
+	private final TransitMasterQueryUseCase transitMasterQueryUseCase;
 
-	DataQualityAdminPageController(DataQualityUseCase dataQualityUseCase) {
+	DataQualityAdminPageController(
+		DataQualityUseCase dataQualityUseCase,
+		TransitMasterQueryUseCase transitMasterQueryUseCase
+	) {
 		this.dataQualityUseCase = dataQualityUseCase;
+		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 	}
 
 	@GetMapping("/admin/data-quality/page")
 	String dataQualityDashboardPage(Model model) {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
-		model.addAttribute("summary", DataQualityDashboardView.from(summary));
+		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
+		model.addAttribute("summary", DataQualityDashboardView.from(summary, regions));
 		return "admin/quality/dashboard";
 	}
 
@@ -61,11 +69,12 @@ class DataQualityAdminPageController {
 		long needsVerificationFacilityCount,
 		long missingStationVerificationDateCount,
 		List<QualityCountRow> stationQualityRows,
+		List<RegionQualityRow> regionQualityRows,
 		List<ConfidenceCountRow> exitConfidenceRows,
 		List<ConfidenceCountRow> facilityConfidenceRows
 	) {
 
-		static DataQualityDashboardView from(DataQualitySummary summary) {
+		static DataQualityDashboardView from(DataQualitySummary summary, List<TransitRegionSummary> regions) {
 			return new DataQualityDashboardView(
 				summary.totalStations(),
 				summary.totalExits(),
@@ -73,6 +82,7 @@ class DataQualityAdminPageController {
 				summary.needsVerificationFacilityCount(),
 				summary.missingStationVerificationDateCount(),
 				qualityRows(summary.stationQualityCounts()),
+				regionQualityRows(regions),
 				confidenceRows(summary.exitConfidenceCounts()),
 				confidenceRows(summary.facilityConfidenceCounts())
 			);
@@ -88,6 +98,21 @@ class DataQualityAdminPageController {
 				.toList();
 		}
 
+		private static List<RegionQualityRow> regionQualityRows(List<TransitRegionSummary> regions) {
+			return regions.stream()
+				.map(region -> new RegionQualityRow(
+					region.name(),
+					region.operatorCount(),
+					region.lineCount(),
+					region.stationCount(),
+					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_1, 0L),
+					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_2, 0L),
+					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_3, 0L),
+					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_4, 0L)
+				))
+				.toList();
+		}
+
 		private static List<ConfidenceCountRow> confidenceRows(Map<DataConfidenceLevel, Long> counts) {
 			return Arrays.stream(DataConfidenceLevel.values())
 				.map(level -> new ConfidenceCountRow(confidenceLabel(level), counts.getOrDefault(level, 0L)))
@@ -96,6 +121,18 @@ class DataQualityAdminPageController {
 	}
 
 	record QualityCountRow(String label, String description, long count) {
+	}
+
+	record RegionQualityRow(
+		String name,
+		int operatorCount,
+		int lineCount,
+		int stationCount,
+		long level1Count,
+		long level2Count,
+		long level3Count,
+		long level4Count
+	) {
 	}
 
 	record ConfidenceCountRow(String label, long count) {
