@@ -5,10 +5,13 @@ import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.TransitRegionSummary;
 import java.util.Arrays;
 import java.util.List;
@@ -40,8 +43,31 @@ class DataQualityAdminPageController {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
 		Map<FacilityReportStatus, Long> reportStatusCounts = facilityReportUseCase.countReportsByStatus();
-		model.addAttribute("summary", DataQualityDashboardView.from(summary, regions, reportStatusCounts));
+		List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows = facilityReportUseCase
+			.listRepeatedBrokenReportFacilities()
+			.stream()
+			.map(this::repeatedBrokenFacilityRow)
+			.toList();
+		model.addAttribute(
+			"summary",
+			DataQualityDashboardView.from(summary, regions, reportStatusCounts, repeatedBrokenFacilityRows)
+		);
 		return "admin/quality/dashboard";
+	}
+
+	private RepeatedBrokenFacilityRow repeatedBrokenFacilityRow(RepeatedBrokenFacilityReportSummary summary) {
+		StationWithLines station = transitMasterQueryUseCase.getStation(summary.stationId());
+		AccessibilityFacility facility = transitMasterQueryUseCase.listStationFacilities(summary.stationId())
+			.stream()
+			.filter(candidate -> candidate.id().equals(summary.facilityId()))
+			.findFirst()
+			.orElseThrow();
+		return new RepeatedBrokenFacilityRow(
+			station.station().nameKo(),
+			facility.name(),
+			statusLabel(facility.status()),
+			summary.reportCount()
+		);
 	}
 
 	private static String qualityLabel(DataQualityLevel level) {
@@ -110,13 +136,15 @@ class DataQualityAdminPageController {
 		long verifiedReportCount,
 		long pendingReportCount,
 		int reportVerificationRatePercent,
-		List<ReportStatusCountRow> reportStatusRows
+		List<ReportStatusCountRow> reportStatusRows,
+		List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
 	) {
 
 		static DataQualityDashboardView from(
 			DataQualitySummary summary,
 			List<TransitRegionSummary> regions,
-			Map<FacilityReportStatus, Long> reportStatusCounts
+			Map<FacilityReportStatus, Long> reportStatusCounts,
+			List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
 		) {
 			long totalReportCount = reportStatusCounts.values()
 				.stream()
@@ -140,7 +168,8 @@ class DataQualityAdminPageController {
 				verifiedReportCount,
 				pendingReportCount,
 				verificationRatePercent(totalReportCount, verifiedReportCount),
-				reportStatusRows(reportStatusCounts)
+				reportStatusRows(reportStatusCounts),
+				repeatedBrokenFacilityRows
 			);
 		}
 
@@ -251,5 +280,8 @@ class DataQualityAdminPageController {
 	}
 
 	record ReportStatusCountRow(String statusLabel, long count) {
+	}
+
+	record RepeatedBrokenFacilityRow(String stationName, String facilityName, String statusLabel, long reportCount) {
 	}
 }

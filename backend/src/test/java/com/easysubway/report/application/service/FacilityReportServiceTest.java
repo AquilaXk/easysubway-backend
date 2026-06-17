@@ -3,6 +3,7 @@ package com.easysubway.report.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
@@ -362,6 +363,24 @@ class FacilityReportServiceTest {
 		assertThat(serviceWithTickingClock.listReports(FacilityReportStatus.SUBMITTED))
 			.extracting("id")
 			.containsExactly(submitted.id());
+	}
+
+	@Test
+	@DisplayName("반복 고장 신고 시설 집계는 같은 시설의 고장 신고가 2건 이상인 시설만 반환한다")
+	void listRepeatedBrokenReportFacilitiesReturnsRepeatedBrokenFacilityCounts() {
+		FacilityReportService serviceWithTickingClock = serviceWithClock(new TickingClock());
+
+		serviceWithTickingClock.createReport(reportCommand("anonymous-user-broken-1", "첫 번째 고장 신고"));
+		serviceWithTickingClock.createReport(reportCommand("anonymous-user-broken-2", "두 번째 고장 신고"));
+		serviceWithTickingClock.createReport(reportCommand(
+			"anonymous-user-info",
+			FacilityReportType.INFORMATION_WRONG,
+			"정보 오류 신고"
+		));
+
+		assertThat(serviceWithTickingClock.listRepeatedBrokenReportFacilities())
+			.extracting("stationId", "facilityId", "reportCount")
+			.containsExactly(tuple("station-sangnoksu", "facility-sangnoksu-elevator-1", 2L));
 	}
 
 	@Test

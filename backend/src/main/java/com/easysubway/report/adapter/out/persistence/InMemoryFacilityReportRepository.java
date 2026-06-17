@@ -4,8 +4,12 @@ import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.FacilityReportType;
+import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
 import java.util.EnumMap;
+import java.util.Comparator;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -41,6 +45,31 @@ public class InMemoryFacilityReportRepository implements
 			counts.merge(report.status(), 1L, Long::sum);
 		}
 		return Map.copyOf(counts);
+	}
+
+	@Override
+	public List<RepeatedBrokenFacilityReportSummary> loadRepeatedBrokenReportFacilities() {
+		Map<FacilityKey, Long> counts = new HashMap<>();
+		for (FacilityReport report : reports.values()) {
+			if (report.reportType() != FacilityReportType.BROKEN) {
+				continue;
+			}
+			counts.merge(new FacilityKey(report.stationId(), report.facilityId()), 1L, Long::sum);
+		}
+		return counts.entrySet()
+			.stream()
+			.filter(entry -> entry.getValue() >= 2)
+			.map(entry -> new RepeatedBrokenFacilityReportSummary(
+				entry.getKey().stationId(),
+				entry.getKey().facilityId(),
+				entry.getValue()
+			))
+			.sorted(Comparator
+				.comparingLong(RepeatedBrokenFacilityReportSummary::reportCount)
+				.reversed()
+				.thenComparing(RepeatedBrokenFacilityReportSummary::stationId)
+				.thenComparing(RepeatedBrokenFacilityReportSummary::facilityId))
+			.toList();
 	}
 
 	@Override
@@ -82,5 +111,8 @@ public class InMemoryFacilityReportRepository implements
 			report.reviewedAt(),
 			report.reviewedBy()
 		);
+	}
+
+	private record FacilityKey(String stationId, String facilityId) {
 	}
 }
