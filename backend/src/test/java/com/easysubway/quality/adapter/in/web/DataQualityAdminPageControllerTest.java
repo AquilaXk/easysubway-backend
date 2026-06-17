@@ -1,19 +1,40 @@
 package com.easysubway.quality.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.quality.application.port.in.DataQualityUseCase;
+import com.easysubway.quality.domain.DataQualitySummary;
+import com.easysubway.report.application.port.in.FacilityReportUseCase;
+import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
+import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.AccessibilityFacilityType;
+import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationNotFoundException;
+import com.easysubway.transit.domain.StationWithLines;
 import com.jayway.jsonpath.JsonPath;
+import java.math.BigDecimal;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Map;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.ui.ExtendedModelMap;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -92,6 +113,44 @@ class DataQualityAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("반복 고장 신고 시설 중 현재 master data와 맞지 않는 이력은 대시보드 행에서 제외한다")
+	void dashboardSkipsStaleRepeatedBrokenReportTargets() {
+		DataQualityUseCase dataQualityUseCase = mock(DataQualityUseCase.class);
+		TransitMasterQueryUseCase transitMasterQueryUseCase = mock(TransitMasterQueryUseCase.class);
+		FacilityReportUseCase facilityReportUseCase = mock(FacilityReportUseCase.class);
+		DataQualityAdminPageController controller = new DataQualityAdminPageController(
+			dataQualityUseCase,
+			transitMasterQueryUseCase,
+			facilityReportUseCase
+		);
+		when(dataQualityUseCase.summarizeDataQuality()).thenReturn(emptySummary());
+		when(transitMasterQueryUseCase.listRegions()).thenReturn(List.of());
+		when(facilityReportUseCase.countReportsByStatus()).thenReturn(Map.of());
+		when(facilityReportUseCase.listRepeatedBrokenReportFacilities()).thenReturn(List.of(
+			new RepeatedBrokenFacilityReportSummary("station-sangnoksu", "facility-removed", 2),
+			new RepeatedBrokenFacilityReportSummary("station-removed", "facility-old", 3),
+			new RepeatedBrokenFacilityReportSummary("station-sangnoksu", "facility-sangnoksu-elevator-1", 4)
+		));
+		when(transitMasterQueryUseCase.getStation("station-sangnoksu")).thenReturn(station("station-sangnoksu", "상록수"));
+		when(transitMasterQueryUseCase.getStation("station-removed")).thenThrow(new StationNotFoundException());
+		when(transitMasterQueryUseCase.listStationFacilities("station-sangnoksu"))
+			.thenReturn(List.of(facility("facility-sangnoksu-elevator-1", "1번 출구 엘리베이터")));
+
+		ExtendedModelMap model = new ExtendedModelMap();
+		String viewName = controller.dataQualityDashboardPage(model);
+
+		assertThat(viewName).isEqualTo("admin/quality/dashboard");
+		DataQualityAdminPageController.DataQualityDashboardView view =
+			(DataQualityAdminPageController.DataQualityDashboardView) model.getAttribute("summary");
+		assertThat(view.repeatedBrokenFacilityRows()).hasSize(1);
+		DataQualityAdminPageController.RepeatedBrokenFacilityRow row = view.repeatedBrokenFacilityRows().getFirst();
+		assertThat(row.stationName()).isEqualTo("상록수");
+		assertThat(row.facilityName()).isEqualTo("1번 출구 엘리베이터");
+		assertThat(row.statusLabel()).isEqualTo("정상");
+		assertThat(row.reportCount()).isEqualTo(4);
+	}
+
+	@Test
 	@DisplayName("데이터 품질 대시보드는 관리자 인증을 요구한다")
 	void dataQualityDashboardRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/data-quality/page"))
@@ -128,5 +187,58 @@ class DataQualityAdminPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("decision", "ACCEPT"))
 			.andExpect(status().is3xxRedirection());
+	}
+
+	private static DataQualitySummary emptySummary() {
+		return new DataQualitySummary(
+			0,
+			0,
+			0,
+			Map.of(),
+			List.of(),
+			Map.of(),
+			Map.of(),
+			0,
+			0,
+			Map.of(),
+			0
+		);
+	}
+
+	private static StationWithLines station(String id, String nameKo) {
+		return new StationWithLines(
+			new Station(
+				id,
+				nameKo,
+				"Sangnoksu",
+				"수도권",
+				BigDecimal.valueOf(37.302),
+				BigDecimal.valueOf(126.866),
+				DataQualityLevel.LEVEL_1,
+				DataSourceType.ADMIN_VERIFIED,
+				LocalDate.of(2026, 1, 1),
+				true
+			),
+			List.of()
+		);
+	}
+
+	private static AccessibilityFacility facility(String id, String name) {
+		return new AccessibilityFacility(
+			id,
+			"station-sangnoksu",
+			"exit-sangnoksu-1",
+			AccessibilityFacilityType.ELEVATOR,
+			name,
+			"B1",
+			"1F",
+			BigDecimal.valueOf(37.302),
+			BigDecimal.valueOf(126.866),
+			"승강장 연결",
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			LocalDate.of(2026, 1, 1)
+		);
 	}
 }

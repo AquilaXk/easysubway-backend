@@ -11,11 +11,13 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.TransitRegionSummary;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -47,6 +49,7 @@ class DataQualityAdminPageController {
 			.listRepeatedBrokenReportFacilities()
 			.stream()
 			.map(this::repeatedBrokenFacilityRow)
+			.flatMap(Optional::stream)
 			.toList();
 		model.addAttribute(
 			"summary",
@@ -55,19 +58,22 @@ class DataQualityAdminPageController {
 		return "admin/quality/dashboard";
 	}
 
-	private RepeatedBrokenFacilityRow repeatedBrokenFacilityRow(RepeatedBrokenFacilityReportSummary summary) {
-		StationWithLines station = transitMasterQueryUseCase.getStation(summary.stationId());
-		AccessibilityFacility facility = transitMasterQueryUseCase.listStationFacilities(summary.stationId())
-			.stream()
-			.filter(candidate -> candidate.id().equals(summary.facilityId()))
-			.findFirst()
-			.orElseThrow();
-		return new RepeatedBrokenFacilityRow(
-			station.station().nameKo(),
-			facility.name(),
-			statusLabel(facility.status()),
-			summary.reportCount()
-		);
+	private Optional<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRow(RepeatedBrokenFacilityReportSummary summary) {
+		try {
+			StationWithLines station = transitMasterQueryUseCase.getStation(summary.stationId());
+			return transitMasterQueryUseCase.listStationFacilities(summary.stationId())
+				.stream()
+				.filter(candidate -> candidate.id().equals(summary.facilityId()))
+				.findFirst()
+				.map(facility -> new RepeatedBrokenFacilityRow(
+					station.station().nameKo(),
+					facility.name(),
+					statusLabel(facility.status()),
+					summary.reportCount()
+				));
+		} catch (StationNotFoundException exception) {
+			return Optional.empty();
+		}
 	}
 
 	private static String qualityLabel(DataQualityLevel level) {
