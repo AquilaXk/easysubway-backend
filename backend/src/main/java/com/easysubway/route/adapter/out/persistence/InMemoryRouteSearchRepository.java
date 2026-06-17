@@ -1,15 +1,22 @@
 package com.easysubway.route.adapter.out.persistence;
 
+import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
 import com.easysubway.route.domain.RouteFeedbackRating;
+import com.easysubway.route.domain.RouteSearchDashboardSummary;
+import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount;
 import com.easysubway.route.domain.RouteSearchResult;
+import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
+import java.util.Arrays;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import org.springframework.context.annotation.Profile;
@@ -19,7 +26,7 @@ import org.springframework.stereotype.Repository;
 @Profile("!prod")
 public class InMemoryRouteSearchRepository
 	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, SummarizeRouteFeedbackPort,
-	AnonymizeUserRouteFeedbackPort {
+	SummarizeRouteSearchPort, AnonymizeUserRouteFeedbackPort {
 
 	static final int MAX_STORED_ROUTE_SEARCHES = 1_000;
 	static final int MAX_STORED_ROUTE_FEEDBACKS = 5_000;
@@ -70,6 +77,20 @@ public class InMemoryRouteSearchRepository
 	}
 
 	@Override
+	public RouteSearchDashboardSummary summarizeRouteSearches() {
+		synchronized (routeSearches) {
+			long foundCount = countByStatus(RouteSearchStatus.FOUND);
+			long blockedCount = countByStatus(RouteSearchStatus.BLOCKED);
+			return new RouteSearchDashboardSummary(
+				routeSearches.size(),
+				foundCount,
+				blockedCount,
+				mobilityTypeCounts()
+			);
+		}
+	}
+
+	@Override
 	public int anonymizeRouteFeedbacksByUserId(String userId) {
 		synchronized (routeFeedbacks) {
 			int anonymizedCount = 0;
@@ -100,6 +121,27 @@ public class InMemoryRouteSearchRepository
 		return routeFeedbacks.values()
 			.stream()
 			.filter(feedback -> feedback.rating() == rating)
+			.count();
+	}
+
+	private long countByStatus(RouteSearchStatus status) {
+		return routeSearches.values()
+			.stream()
+			.filter(routeSearch -> routeSearch.status() == status)
+			.count();
+	}
+
+	private List<MobilityTypeCount> mobilityTypeCounts() {
+		return Arrays.stream(MobilityType.values())
+			.map(mobilityType -> new MobilityTypeCount(mobilityType, countByMobilityType(mobilityType)))
+			.filter(row -> row.count() > 0)
+			.toList();
+	}
+
+	private long countByMobilityType(MobilityType mobilityType) {
+		return routeSearches.values()
+			.stream()
+			.filter(routeSearch -> routeSearch.mobilityType() == mobilityType)
 			.count();
 	}
 

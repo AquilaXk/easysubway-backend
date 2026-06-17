@@ -5,8 +5,11 @@ import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
+import com.easysubway.route.domain.RouteSearchDashboardSummary;
+import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -31,7 +34,7 @@ import org.springframework.stereotype.Repository;
 @Profile("prod")
 public class JdbcRouteSearchRepository
 	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, SummarizeRouteFeedbackPort,
-	AnonymizeUserRouteFeedbackPort {
+	SummarizeRouteSearchPort, AnonymizeUserRouteFeedbackPort {
 
 	private static final TypeReference<List<RouteStep>> ROUTE_STEPS_TYPE = new TypeReference<>() {
 	};
@@ -119,6 +122,33 @@ public class JdbcRouteSearchRepository
 				resultSet.getLong("not_helpful_count"),
 				resultSet.getLong("blocked_by_real_world_count")
 			)
+		);
+	}
+
+	@Override
+	public RouteSearchDashboardSummary summarizeRouteSearches() {
+		// 상태별 집계와 이동 프로필별 집계가 같은 DB statement snapshot에서 계산되도록 한 번만 읽는다.
+		List<RouteSearchDashboardCountRow> countRows = jdbcTemplate.query(
+			"""
+				SELECT status,
+					mobility_type,
+					COUNT(*) AS count
+				FROM route_search_results
+				GROUP BY status, mobility_type
+				""",
+			(resultSet, rowNumber) -> new RouteSearchDashboardCountRow(
+				RouteSearchStatus.valueOf(resultSet.getString("status")),
+				MobilityType.valueOf(resultSet.getString("mobility_type")),
+				resultSet.getLong("count")
+			)
+		);
+		long foundCount = countByStatus(countRows, RouteSearchStatus.FOUND);
+		long blockedCount = countByStatus(countRows, RouteSearchStatus.BLOCKED);
+		return new RouteSearchDashboardSummary(
+			foundCount + blockedCount,
+			foundCount,
+			blockedCount,
+			sortedMobilityTypeCounts(countRows)
 		);
 	}
 
@@ -317,6 +347,28 @@ public class JdbcRouteSearchRepository
 		);
 	}
 
+	private long countByStatus(List<RouteSearchDashboardCountRow> rows, RouteSearchStatus status) {
+		return rows.stream()
+			.filter(row -> row.status() == status)
+			.mapToLong(RouteSearchDashboardCountRow::count)
+			.sum();
+	}
+
+	private List<MobilityTypeCount> sortedMobilityTypeCounts(List<RouteSearchDashboardCountRow> rows) {
+		return List.of(MobilityType.values())
+			.stream()
+			.map(mobilityType -> new MobilityTypeCount(mobilityType, countByMobilityType(rows, mobilityType)))
+			.filter(row -> row.count() > 0)
+			.toList();
+	}
+
+	private long countByMobilityType(List<RouteSearchDashboardCountRow> rows, MobilityType mobilityType) {
+		return rows.stream()
+			.filter(row -> row.mobilityType() == mobilityType)
+			.mapToLong(RouteSearchDashboardCountRow::count)
+			.sum();
+	}
+
 	private String writeJson(Object value) {
 		try {
 			return objectMapper.writeValueAsString(value);
@@ -344,5 +396,8 @@ public class JdbcRouteSearchRepository
 	private enum DatabaseDialect {
 		POSTGRESQL,
 		H2
+	}
+
+	private record RouteSearchDashboardCountRow(RouteSearchStatus status, MobilityType mobilityType, long count) {
 	}
 }
