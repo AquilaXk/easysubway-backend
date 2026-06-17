@@ -1,6 +1,7 @@
 package com.easysubway.quality.domain;
 
 import com.easysubway.transit.domain.DataConfidenceLevel;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataQualityLevel;
 import java.util.List;
 import java.util.Map;
@@ -14,6 +15,8 @@ public record DataQualitySummary(
 	Map<DataConfidenceLevel, Long> exitConfidenceCounts,
 	Map<DataConfidenceLevel, Long> facilityConfidenceCounts,
 	long needsVerificationFacilityCount,
+	long delayedFacilityStatusCount,
+	Map<AccessibilityFacilityStatus, Long> delayedFacilityStatusCounts,
 	long missingStationVerificationDateCount
 ) {
 

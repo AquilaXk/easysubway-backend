@@ -4,6 +4,7 @@ import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.TransitRegionSummary;
@@ -64,16 +65,30 @@ class DataQualityAdminPageController {
 		};
 	}
 
+	private static String statusLabel(AccessibilityFacilityStatus status) {
+		return switch (status) {
+			case NORMAL -> "정상";
+			case BROKEN -> "고장";
+			case UNDER_CONSTRUCTION -> "공사 중";
+			case CLOSED -> "폐쇄";
+			case UNKNOWN -> "확인 필요";
+			case USER_REPORTED -> "사용자 제보";
+			case ADMIN_VERIFIED -> "관리자 확인";
+		};
+	}
+
 	record DataQualityDashboardView(
 		int totalStations,
 		int totalExits,
 		int totalFacilities,
 		long needsVerificationFacilityCount,
+		long delayedFacilityStatusCount,
 		long missingStationVerificationDateCount,
 		List<QualityCountRow> stationQualityRows,
 		List<RegionQualityRow> regionQualityRows,
 		List<ConfidenceCountRow> exitConfidenceRows,
-		List<ConfidenceCountRow> facilityConfidenceRows
+		List<ConfidenceCountRow> facilityConfidenceRows,
+		List<FacilityStatusDelayRow> facilityStatusDelayRows
 	) {
 
 		static DataQualityDashboardView from(DataQualitySummary summary, List<TransitRegionSummary> regions) {
@@ -82,11 +97,13 @@ class DataQualityAdminPageController {
 					summary.totalExits(),
 					summary.totalFacilities(),
 					summary.needsVerificationFacilityCount(),
+					summary.delayedFacilityStatusCount(),
 					summary.missingStationVerificationDateCount(),
 					qualityRows(summary.stationQualityCounts()),
 					regionQualityRows(summary.regionSummaries(), regions),
 					confidenceRows(summary.exitConfidenceCounts()),
-					confidenceRows(summary.facilityConfidenceCounts())
+					confidenceRows(summary.facilityConfidenceCounts()),
+					facilityStatusDelayRows(summary.delayedFacilityStatusCounts())
 				);
 		}
 
@@ -128,6 +145,14 @@ class DataQualityAdminPageController {
 				.map(level -> new ConfidenceCountRow(confidenceLabel(level), counts.getOrDefault(level, 0L)))
 				.toList();
 		}
+
+		private static List<FacilityStatusDelayRow> facilityStatusDelayRows(
+			Map<AccessibilityFacilityStatus, Long> counts
+		) {
+			return Arrays.stream(AccessibilityFacilityStatus.values())
+				.map(status -> new FacilityStatusDelayRow(statusLabel(status), counts.getOrDefault(status, 0L)))
+				.toList();
+		}
 	}
 
 	record QualityCountRow(String label, String description, long count) {
@@ -146,5 +171,8 @@ class DataQualityAdminPageController {
 	}
 
 	record ConfidenceCountRow(String label, long count) {
+	}
+
+	record FacilityStatusDelayRow(String statusLabel, long count) {
 	}
 }

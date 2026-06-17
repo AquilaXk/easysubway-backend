@@ -10,20 +10,32 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
+import java.time.Clock;
+import java.time.LocalDate;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class DataQualityService implements DataQualityUseCase {
 
-	private final LoadTransitMasterPort loadTransitMasterPort;
+	private static final int FACILITY_STATUS_DELAY_DAYS = 30;
 
+	private final LoadTransitMasterPort loadTransitMasterPort;
+	private final Clock clock;
+
+	@Autowired
 	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort) {
+		this(loadTransitMasterPort, Clock.systemDefaultZone());
+	}
+
+	DataQualityService(LoadTransitMasterPort loadTransitMasterPort, Clock clock) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
+		this.clock = clock;
 	}
 
 	@Override
@@ -41,6 +53,8 @@ public class DataQualityService implements DataQualityUseCase {
 			countExitConfidence(exits),
 			countFacilityConfidence(facilities),
 			countNeedsVerificationFacilities(facilities),
+			countDelayedFacilityStatus(facilities),
+			countDelayedFacilityStatusByStatus(facilities),
 			countMissingStationVerificationDate(stations)
 		);
 	}
@@ -116,6 +130,27 @@ public class DataQualityService implements DataQualityUseCase {
 			.count();
 	}
 
+	private long countDelayedFacilityStatus(List<AccessibilityFacility> facilities) {
+		return facilities.stream()
+			.filter(this::isDelayedFacilityStatus)
+			.count();
+	}
+
+	private Map<AccessibilityFacilityStatus, Long> countDelayedFacilityStatusByStatus(
+		List<AccessibilityFacility> facilities
+	) {
+		var counts = emptyFacilityStatusCounts();
+		facilities.stream()
+			.filter(this::isDelayedFacilityStatus)
+			.forEach(facility -> counts.put(facility.status(), counts.get(facility.status()) + 1));
+		return counts;
+	}
+
+	private boolean isDelayedFacilityStatus(AccessibilityFacility facility) {
+		LocalDate lastUpdatedAt = facility.lastUpdatedAt();
+		return lastUpdatedAt == null || lastUpdatedAt.isBefore(LocalDate.now(clock).minusDays(FACILITY_STATUS_DELAY_DAYS));
+	}
+
 	private long countMissingStationVerificationDate(List<Station> stations) {
 		return stations.stream()
 			.filter(station -> station.lastVerifiedAt() == null)
@@ -134,6 +169,14 @@ public class DataQualityService implements DataQualityUseCase {
 		var counts = new EnumMap<DataConfidenceLevel, Long>(DataConfidenceLevel.class);
 		for (DataConfidenceLevel level : DataConfidenceLevel.values()) {
 			counts.put(level, 0L);
+		}
+		return counts;
+	}
+
+	private EnumMap<AccessibilityFacilityStatus, Long> emptyFacilityStatusCounts() {
+		var counts = new EnumMap<AccessibilityFacilityStatus, Long>(AccessibilityFacilityStatus.class);
+		for (AccessibilityFacilityStatus status : AccessibilityFacilityStatus.values()) {
+			counts.put(status, 0L);
 		}
 		return counts;
 	}

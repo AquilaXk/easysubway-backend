@@ -3,6 +3,7 @@ package com.easysubway.quality.adapter.in.web;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
+import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import java.util.Map;
@@ -31,6 +32,8 @@ class DataQualityController {
 		Map<DataConfidenceLevel, Long> exitConfidenceCounts,
 		Map<DataConfidenceLevel, Long> facilityConfidenceCounts,
 		long needsVerificationFacilityCount,
+		long delayedFacilityStatusCount,
+		Map<AccessibilityFacilityStatus, Long> delayedFacilityStatusCounts,
 		long missingStationVerificationDateCount
 	) {
 
@@ -43,6 +46,8 @@ class DataQualityController {
 				summary.exitConfidenceCounts(),
 				summary.facilityConfidenceCounts(),
 				summary.needsVerificationFacilityCount(),
+				summary.delayedFacilityStatusCount(),
+				summary.delayedFacilityStatusCounts(),
 				summary.missingStationVerificationDateCount()
 			);
 		}
