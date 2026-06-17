@@ -22,6 +22,7 @@ import java.util.Optional;
 import java.util.TreeMap;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -34,6 +35,10 @@ public class DataQualityService implements DataQualityUseCase {
 	private final Clock clock;
 
 	@Autowired
+	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort, ObjectProvider<Clock> clockProvider) {
+		this(loadTransitMasterPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+	}
+
 	public DataQualityService(LoadTransitMasterPort loadTransitMasterPort) {
 		this(loadTransitMasterPort, Clock.systemDefaultZone());
 	}
