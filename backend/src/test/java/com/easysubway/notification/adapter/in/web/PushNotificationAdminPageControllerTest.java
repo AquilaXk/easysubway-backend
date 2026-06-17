@@ -55,6 +55,7 @@ class PushNotificationAdminPageControllerTest {
 			.contains("아직 발송 처리 전")
 			.contains("외부 발송 성공")
 			.contains("발송 어댑터 실패 또는 예외")
+			.contains("최근 실패: 외부 푸시 발송 어댑터가 설정되지 않았습니다.")
 			.doesNotContain("secret-device-token");
 	}
 

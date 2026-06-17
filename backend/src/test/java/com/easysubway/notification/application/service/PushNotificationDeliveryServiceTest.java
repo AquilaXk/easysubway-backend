@@ -52,7 +52,7 @@ class PushNotificationDeliveryServiceTest {
 
 	@Test
 	@DisplayName("sender가 실패한 알림은 실패 상태로 저장한다")
-	void deliverPendingNotificationsMarksFailedWhenSenderFails() {
+	void deliverPendingNotificationsMarksFailedWithFailureReasonWhenSenderFails() {
 		outboxRepository.savePushNotification(notification("push-1", PushNotificationStatus.PENDING));
 		sender.nextResult = PushNotificationSendResult.failed("외부 발송 어댑터가 설정되지 않았습니다.");
 
@@ -62,8 +62,8 @@ class PushNotificationDeliveryServiceTest {
 		assertThat(result.failedCount()).isEqualTo(1);
 		assertThat(result.processedCount()).isEqualTo(1);
 		assertThat(outboxRepository.loadPushNotifications("anonymous-user-1"))
-			.extracting("notificationId", "status")
-			.containsExactly(tuple("push-1", PushNotificationStatus.FAILED));
+			.extracting("notificationId", "status", "failureReason")
+			.containsExactly(tuple("push-1", PushNotificationStatus.FAILED, "외부 발송 어댑터가 설정되지 않았습니다."));
 	}
 
 	@Test
@@ -101,10 +101,10 @@ class PushNotificationDeliveryServiceTest {
 		assertThat(result.processedCount()).isEqualTo(2);
 		assertThat(sender.sentNotifications).extracting("notificationId").containsExactly("push-1", "push-2");
 		assertThat(outboxRepository.loadPushNotifications("anonymous-user-1"))
-			.extracting("notificationId", "status")
+			.extracting("notificationId", "status", "failureReason")
 			.containsExactly(
-				tuple("push-1", PushNotificationStatus.FAILED),
-				tuple("push-2", PushNotificationStatus.SENT)
+				tuple("push-1", PushNotificationStatus.FAILED, "푸시 발송 실패"),
+				tuple("push-2", PushNotificationStatus.SENT, null)
 			);
 	}
 
@@ -130,8 +130,8 @@ class PushNotificationDeliveryServiceTest {
 		);
 	}
 
-	private static org.assertj.core.groups.Tuple tuple(String notificationId, PushNotificationStatus status) {
-		return org.assertj.core.api.Assertions.tuple(notificationId, status);
+	private static org.assertj.core.groups.Tuple tuple(Object... values) {
+		return org.assertj.core.api.Assertions.tuple(values);
 	}
 
 	private static class RecordingPushNotificationSender implements PushNotificationSenderPort {

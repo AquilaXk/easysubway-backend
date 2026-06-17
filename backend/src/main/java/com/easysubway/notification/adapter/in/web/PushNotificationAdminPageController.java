@@ -28,6 +28,7 @@ class PushNotificationAdminPageController {
 		long pendingCount,
 		long sentCount,
 		long failedCount,
+		String latestFailureReason,
 		List<StatusCountRow> statusRows
 	) {
 
@@ -37,12 +38,20 @@ class PushNotificationAdminPageController {
 				summary.pendingCount(),
 				summary.sentCount(),
 				summary.failedCount(),
+				summary.latestFailureReason(),
 				List.of(
 					new StatusCountRow("대기 중", "아직 발송 처리 전", summary.pendingCount()),
 					new StatusCountRow("발송 완료", "외부 발송 성공", summary.sentCount()),
-					new StatusCountRow("발송 실패", "발송 어댑터 실패 또는 예외", summary.failedCount())
+					new StatusCountRow("발송 실패", failedDescription(summary.latestFailureReason()), summary.failedCount())
 				)
 			);
+		}
+
+		private static String failedDescription(String latestFailureReason) {
+			if (latestFailureReason == null || latestFailureReason.isBlank()) {
+				return "발송 어댑터 실패 또는 예외";
+			}
+			return "발송 어댑터 실패 또는 예외 · 최근 실패: " + latestFailureReason;
 		}
 	}
 

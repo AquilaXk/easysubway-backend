@@ -58,6 +58,16 @@
 			line-height: 1.15;
 		}
 
+		.failure-reason {
+			margin: -8px 0 24px;
+			padding: 14px 18px;
+			background: #fff7ed;
+			border: 1px solid #fed7aa;
+			color: #7c2d12;
+			font-weight: 800;
+			line-height: 1.45;
+		}
+
 		section {
 			background: #fff;
 			border: 1px solid #d8e0e0;
@@ -112,6 +122,10 @@
 			<strong th:text="${summary.failedCount}">0</strong>
 		</div>
 	</div>
+
+	<p class="failure-reason"
+	   th:if="${summary.latestFailureReason != null}"
+	   th:text="'최근 실패: ' + ${summary.latestFailureReason}">최근 실패: 외부 푸시 발송 어댑터가 설정되지 않았습니다.</p>
 
 	<section>
 		<h2>상태별 알림</h2>

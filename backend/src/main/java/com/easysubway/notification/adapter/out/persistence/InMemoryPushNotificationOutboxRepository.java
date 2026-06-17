@@ -68,12 +68,21 @@ public class InMemoryPushNotificationOutboxRepository implements
 		long pendingCount = 0;
 		long sentCount = 0;
 		long failedCount = 0;
+		PushNotification latestFailedNotification = null;
 		for (List<PushNotification> notifications : notificationsByUserId.values()) {
 			for (PushNotification notification : notifications) {
 				switch (notification.status()) {
 					case PENDING -> pendingCount++;
 					case SENT -> sentCount++;
-					case FAILED -> failedCount++;
+					case FAILED -> {
+						failedCount++;
+						if (latestFailedNotification == null ||
+							notification.createdAt().isAfter(latestFailedNotification.createdAt()) ||
+							(notification.createdAt().isEqual(latestFailedNotification.createdAt()) &&
+								notification.notificationId().compareTo(latestFailedNotification.notificationId()) > 0)) {
+							latestFailedNotification = notification;
+						}
+					}
 				}
 			}
 		}
@@ -81,7 +90,8 @@ public class InMemoryPushNotificationOutboxRepository implements
 			pendingCount + sentCount + failedCount,
 			pendingCount,
 			sentCount,
-			failedCount
+			failedCount,
+			latestFailedNotification == null ? null : latestFailedNotification.failureReason()
 		);
 	}
 

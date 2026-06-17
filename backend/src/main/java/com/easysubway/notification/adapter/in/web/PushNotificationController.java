@@ -111,6 +111,7 @@ class PushNotificationController {
 		String title,
 		String body,
 		PushNotificationStatus status,
+		String failureReason,
 		LocalDateTime createdAt
 	) {
 
@@ -123,6 +124,7 @@ class PushNotificationController {
 				notification.title(),
 				notification.body(),
 				notification.status(),
+				notification.failureReason(),
 				notification.createdAt()
 			);
 		}

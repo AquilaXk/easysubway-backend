@@ -50,6 +50,7 @@ public class JdbcPushNotificationOutboxRepository implements
 					title,
 					body,
 					status,
+					failure_reason,
 					created_at
 				FROM push_notification_outbox
 				WHERE user_id = ?
@@ -72,6 +73,7 @@ public class JdbcPushNotificationOutboxRepository implements
 					title,
 					body,
 					status,
+					failure_reason,
 					created_at
 				FROM push_notification_outbox
 				WHERE user_id = ?
@@ -113,11 +115,13 @@ public class JdbcPushNotificationOutboxRepository implements
 		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING);
 		long sentCount = countByStatus(statusCounts, PushNotificationStatus.SENT);
 		long failedCount = countByStatus(statusCounts, PushNotificationStatus.FAILED);
+		String latestFailureReason = latestFailureReason();
 		return new PushNotificationDashboardSummary(
 			pendingCount + sentCount + failedCount,
 			pendingCount,
 			sentCount,
-			failedCount
+			failedCount,
+			latestFailureReason
 		);
 	}
 
@@ -150,6 +154,7 @@ public class JdbcPushNotificationOutboxRepository implements
 					title = ?,
 					body = ?,
 					status = ?,
+					failure_reason = ?,
 					created_at = ?
 				WHERE notification_id = ?
 				""",
@@ -160,6 +165,7 @@ public class JdbcPushNotificationOutboxRepository implements
 			notification.title(),
 			notification.body(),
 			notification.status().name(),
+			notification.failureReason(),
 			notification.createdAt(),
 			notification.notificationId()
 		);
@@ -177,9 +183,10 @@ public class JdbcPushNotificationOutboxRepository implements
 					title,
 					body,
 					status,
+					failure_reason,
 					created_at
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			notification.notificationId(),
 			notification.userId(),
@@ -189,6 +196,7 @@ public class JdbcPushNotificationOutboxRepository implements
 			notification.title(),
 			notification.body(),
 			notification.status().name(),
+			notification.failureReason(),
 			notification.createdAt()
 		);
 	}
@@ -203,8 +211,27 @@ public class JdbcPushNotificationOutboxRepository implements
 			resultSet.getString("title"),
 			resultSet.getString("body"),
 			PushNotificationStatus.valueOf(resultSet.getString("status")),
+			resultSet.getString("failure_reason"),
 			resultSet.getTimestamp("created_at").toLocalDateTime()
 		);
+	}
+
+	private String latestFailureReason() {
+		return jdbcTemplate.query(
+				"""
+					SELECT failure_reason
+					FROM push_notification_outbox
+					WHERE status = ?
+						AND failure_reason IS NOT NULL
+					ORDER BY created_at DESC, notification_id DESC
+					LIMIT 1
+					""",
+				(resultSet, rowNumber) -> resultSet.getString("failure_reason"),
+				PushNotificationStatus.FAILED.name()
+			)
+			.stream()
+			.findFirst()
+			.orElse(null);
 	}
 
 	private record StatusCountRow(PushNotificationStatus status, long count) {
