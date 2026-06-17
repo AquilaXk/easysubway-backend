@@ -97,6 +97,9 @@ class DataQualityAdminPageControllerTest {
 			.contains("50%")
 			.contains("접수됨")
 			.contains("반영됨")
+			.contains("역별 접근성 점수")
+			.contains("접근성 점수")
+			.contains("보강 사유")
 			.contains("접근성 개선 우선순위")
 			.contains("우선순위 점수")
 			.contains("개선 사유")
@@ -208,6 +211,7 @@ class DataQualityAdminPageControllerTest {
 			0,
 			Map.of(),
 			0,
+			List.of(),
 			List.of()
 		);
 	}

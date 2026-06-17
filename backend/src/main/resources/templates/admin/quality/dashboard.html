@@ -261,6 +261,28 @@
 	</section>
 
 	<section>
+		<h2>역별 접근성 점수</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">역</th>
+				<th scope="col">지역</th>
+				<th scope="col">보강 사유</th>
+				<th scope="col">접근성 점수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.stationAccessibilityScoreRows}">
+				<td th:text="${row.stationName}">상록수</td>
+				<td th:text="${row.region}">수도권</td>
+				<td th:text="${row.reasons}">기본 정보만 있음</td>
+				<td th:text="${row.score}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
 		<h2>접근성 개선 우선순위</h2>
 		<table>
 			<thead>

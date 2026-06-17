@@ -4,9 +4,11 @@ import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
+import com.easysubway.quality.domain.StationAccessibilityScore;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.Station;
@@ -66,6 +68,7 @@ public class DataQualityService implements DataQualityUseCase {
 			countDelayedFacilityStatus(facilities),
 			countDelayedFacilityStatusByStatus(facilities),
 			countMissingStationVerificationDate(stations),
+			scoreStationAccessibility(stations, exits, facilities),
 			prioritizeAccessibilityImprovements(facilities)
 		);
 	}
@@ -166,6 +169,104 @@ public class DataQualityService implements DataQualityUseCase {
 		return stations.stream()
 			.filter(station -> station.lastVerifiedAt() == null)
 			.count();
+	}
+
+	private List<StationAccessibilityScore> scoreStationAccessibility(
+		List<Station> stations,
+		List<StationExit> exits,
+		List<AccessibilityFacility> facilities
+	) {
+		Map<String, List<StationExit>> exitsByStationId = exits.stream()
+			.collect(Collectors.groupingBy(StationExit::stationId));
+		Map<String, List<AccessibilityFacility>> facilitiesByStationId = facilities.stream()
+			.collect(Collectors.groupingBy(AccessibilityFacility::stationId));
+		return stations.stream()
+			.map(station -> stationAccessibilityScore(
+				station,
+				exitsByStationId.getOrDefault(station.id(), List.of()),
+				facilitiesByStationId.getOrDefault(station.id(), List.of())
+			))
+			.sorted(Comparator.comparingInt(StationAccessibilityScore::score)
+				.thenComparing(StationAccessibilityScore::region)
+				.thenComparing(StationAccessibilityScore::stationName)
+				.thenComparing(StationAccessibilityScore::stationId))
+			.toList();
+	}
+
+	private StationAccessibilityScore stationAccessibilityScore(
+		Station station,
+		List<StationExit> exits,
+		List<AccessibilityFacility> facilities
+	) {
+		List<String> reasons = new ArrayList<>();
+		int score = qualityBaseScore(requireQualityLevel(station), reasons)
+			+ exitAccessibilityAdjustment(exits, reasons)
+			+ facilityAccessibilityAdjustment(facilities, reasons);
+		return new StationAccessibilityScore(
+			station.id(),
+			station.nameKo(),
+			station.region(),
+			Math.max(0, Math.min(100, score)),
+			reasons.isEmpty() ? List.of("주요 접근성 정보 확인됨") : reasons
+		);
+	}
+
+	private int qualityBaseScore(DataQualityLevel level, List<String> reasons) {
+		return switch (level) {
+			case LEVEL_1 -> addReason(reasons, "기본 정보만 있음", 40);
+			case LEVEL_2 -> addReason(reasons, "시설 정보 보강 필요", 60);
+			case LEVEL_3 -> addReason(reasons, "쉬운 경로 검증 필요", 80);
+			case LEVEL_4 -> 100;
+		};
+	}
+
+	private int exitAccessibilityAdjustment(List<StationExit> exits, List<String> reasons) {
+		int adjustment = 0;
+		if (exits.isEmpty() || exits.stream().noneMatch(this::isStepFreeExit)) {
+			adjustment -= addReason(reasons, "계단 없는 출구 부족", 20);
+		}
+		if (exits.stream().anyMatch(exit -> exit.dataConfidence() == DataConfidenceLevel.LOW
+			|| exit.dataConfidence() == DataConfidenceLevel.NEEDS_VERIFICATION)) {
+			adjustment -= addReason(reasons, "출구 신뢰도 보강 필요", 10);
+		}
+		return adjustment;
+	}
+
+	private boolean isStepFreeExit(StationExit exit) {
+		return exit.hasElevatorConnection() && !exit.hasStairOnlyPath();
+	}
+
+	private int facilityAccessibilityAdjustment(List<AccessibilityFacility> facilities, List<String> reasons) {
+		int adjustment = 0;
+		if (facilities.stream().noneMatch(this::isUsableStepFreeFacility)) {
+			adjustment -= addReason(reasons, "정상 접근성 시설 부족", 20);
+		}
+		if (facilities.stream().anyMatch(this::isAttentionNeededFacilityStatus)) {
+			adjustment -= addReason(reasons, "시설 상태 확인 필요", 15);
+		}
+		if (facilities.stream().anyMatch(facility -> facility.dataConfidence() == DataConfidenceLevel.LOW
+			|| facility.dataConfidence() == DataConfidenceLevel.NEEDS_VERIFICATION)) {
+			adjustment -= addReason(reasons, "시설 신뢰도 보강 필요", 10);
+		}
+		if (facilities.stream().anyMatch(this::isDelayedFacilityStatus)) {
+			adjustment -= addReason(reasons, "시설 갱신 지연", 5);
+		}
+		return adjustment;
+	}
+
+	private boolean isUsableStepFreeFacility(AccessibilityFacility facility) {
+		return switch (facility.type()) {
+			case ELEVATOR, WHEELCHAIR_LIFT, RAMP -> facility.status() == AccessibilityFacilityStatus.NORMAL
+				|| facility.status() == AccessibilityFacilityStatus.ADMIN_VERIFIED;
+			case ESCALATOR, ACCESSIBLE_TOILET, TOILET, NURSING_ROOM, CUSTOMER_CENTER -> false;
+		};
+	}
+
+	private boolean isAttentionNeededFacilityStatus(AccessibilityFacility facility) {
+		return switch (facility.status()) {
+			case BROKEN, CLOSED, UNDER_CONSTRUCTION, UNKNOWN, USER_REPORTED -> true;
+			case NORMAL, ADMIN_VERIFIED -> false;
+		};
 	}
 
 	private List<AccessibilityImprovementPriority> prioritizeAccessibilityImprovements(

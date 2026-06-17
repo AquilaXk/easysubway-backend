@@ -106,6 +106,65 @@ class DataQualityServiceTest {
 	}
 
 	@Test
+	@DisplayName("역별 접근성 점수는 데이터 레벨과 출구와 시설 상태를 반영해 낮은 점수부터 반환한다")
+	void summarizeDataQualityRanksStationAccessibilityScores() {
+		var service = new DataQualityService(new StubTransitMasterPort(
+			List.of(
+				station("station-low", "수도권", DataQualityLevel.LEVEL_1, true),
+				station("station-mid", "수도권", DataQualityLevel.LEVEL_2, true),
+				station("station-high", "부산권", DataQualityLevel.LEVEL_4, true)
+			),
+			List.of(
+				exit("exit-low-stair", "station-low", false, true, DataConfidenceLevel.LOW),
+				exit("exit-mid-elevator", "station-mid", true, false, DataConfidenceLevel.HIGH),
+				exit("exit-high-elevator", "station-high", true, false, DataConfidenceLevel.HIGH)
+			),
+			List.of(
+				facility(
+					"facility-low-broken",
+					"station-low",
+					"exit-low-stair",
+					AccessibilityFacilityStatus.BROKEN,
+					LocalDate.of(2026, 5, 1),
+					DataConfidenceLevel.LOW
+				),
+				facility(
+					"facility-mid-elevator",
+					"station-mid",
+					"exit-mid-elevator",
+					AccessibilityFacilityStatus.NORMAL,
+					LocalDate.of(2026, 6, 12),
+					DataConfidenceLevel.HIGH
+				),
+				facility(
+					"facility-high-elevator",
+					"station-high",
+					"exit-high-elevator",
+					AccessibilityFacilityStatus.ADMIN_VERIFIED,
+					LocalDate.of(2026, 6, 12),
+					DataConfidenceLevel.HIGH
+				)
+			)
+		), FIXED_CLOCK);
+
+		var summary = service.summarizeDataQuality();
+
+		assertThat(summary.stationAccessibilityScores())
+			.extracting(score -> score.stationId() + ":" + score.score())
+			.containsExactly("station-low:0", "station-mid:60", "station-high:100");
+		assertThat(summary.stationAccessibilityScores().getFirst().reasons())
+			.containsExactly(
+				"기본 정보만 있음",
+				"계단 없는 출구 부족",
+				"출구 신뢰도 보강 필요",
+				"정상 접근성 시설 부족",
+				"시설 상태 확인 필요",
+				"시설 신뢰도 보강 필요",
+				"시설 갱신 지연"
+			);
+	}
+
+	@Test
 	@DisplayName("지역별 역 품질 요약은 전체 데이터 품질 요약과 같은 역 포함 기준을 사용한다")
 	void summarizeDataQualityCountsRegionStationQualityWithSameStationSet() {
 		var service = new DataQualityService(new StubTransitMasterPort(
@@ -198,15 +257,25 @@ class DataQualityServiceTest {
 	}
 
 	private static StationExit exit(String id, DataConfidenceLevel confidenceLevel) {
+		return exit(id, "station-sangnoksu", true, false, confidenceLevel);
+	}
+
+	private static StationExit exit(
+		String id,
+		String stationId,
+		boolean hasElevatorConnection,
+		boolean hasStairOnlyPath,
+		DataConfidenceLevel confidenceLevel
+	) {
 		return new StationExit(
 			id,
-			"station-sangnoksu",
+			stationId,
 			"1",
 			"1번 출구",
 			new BigDecimal("37.302100"),
 			new BigDecimal("126.866100"),
-			true,
-			false,
+			hasElevatorConnection,
+			hasStairOnlyPath,
 			confidenceLevel,
 			DataSourceType.OFFICIAL_FILE
 		);
@@ -230,10 +299,21 @@ class DataQualityServiceTest {
 		LocalDate lastUpdatedAt,
 		DataConfidenceLevel confidenceLevel
 	) {
+		return facility(id, "station-sangnoksu", "exit-sangnoksu-1", status, lastUpdatedAt, confidenceLevel);
+	}
+
+	private static AccessibilityFacility facility(
+		String id,
+		String stationId,
+		String exitId,
+		AccessibilityFacilityStatus status,
+		LocalDate lastUpdatedAt,
+		DataConfidenceLevel confidenceLevel
+	) {
 		return new AccessibilityFacility(
 			id,
-			"station-sangnoksu",
-			"exit-sangnoksu-1",
+			stationId,
+			exitId,
 			AccessibilityFacilityType.ELEVATOR,
 			"엘리베이터",
 			"B1",

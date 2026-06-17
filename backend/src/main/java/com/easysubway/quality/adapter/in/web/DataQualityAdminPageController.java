@@ -4,6 +4,7 @@ import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
+import com.easysubway.quality.domain.StationAccessibilityScore;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
@@ -46,6 +47,11 @@ class DataQualityAdminPageController {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
 		Map<FacilityReportStatus, Long> reportStatusCounts = facilityReportUseCase.countReportsByStatus();
+		List<StationAccessibilityScoreRow> stationAccessibilityScoreRows = summary
+			.stationAccessibilityScores()
+			.stream()
+			.map(StationAccessibilityScoreRow::from)
+			.toList();
 		List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows = summary
 			.accessibilityImprovementPriorities()
 			.stream()
@@ -64,6 +70,7 @@ class DataQualityAdminPageController {
 				summary,
 				regions,
 				reportStatusCounts,
+				stationAccessibilityScoreRows,
 				accessibilityImprovementPriorityRows,
 				repeatedBrokenFacilityRows
 			)
@@ -176,6 +183,7 @@ class DataQualityAdminPageController {
 		long pendingReportCount,
 		int reportVerificationRatePercent,
 		List<ReportStatusCountRow> reportStatusRows,
+		List<StationAccessibilityScoreRow> stationAccessibilityScoreRows,
 		List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows,
 		List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
 	) {
@@ -184,6 +192,7 @@ class DataQualityAdminPageController {
 			DataQualitySummary summary,
 			List<TransitRegionSummary> regions,
 			Map<FacilityReportStatus, Long> reportStatusCounts,
+			List<StationAccessibilityScoreRow> stationAccessibilityScoreRows,
 			List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows,
 			List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
 		) {
@@ -210,6 +219,7 @@ class DataQualityAdminPageController {
 				pendingReportCount,
 				verificationRatePercent(totalReportCount, verifiedReportCount),
 				reportStatusRows(reportStatusCounts),
+				stationAccessibilityScoreRows,
 				accessibilityImprovementPriorityRows,
 				repeatedBrokenFacilityRows
 			);
@@ -322,6 +332,23 @@ class DataQualityAdminPageController {
 	}
 
 	record ReportStatusCountRow(String statusLabel, long count) {
+	}
+
+	record StationAccessibilityScoreRow(
+		String stationName,
+		String region,
+		int score,
+		String reasons
+	) {
+
+		static StationAccessibilityScoreRow from(StationAccessibilityScore score) {
+			return new StationAccessibilityScoreRow(
+				score.stationName(),
+				score.region(),
+				score.score(),
+				String.join(", ", score.reasons())
+			);
+		}
 	}
 
 	record AccessibilityImprovementPriorityRow(
