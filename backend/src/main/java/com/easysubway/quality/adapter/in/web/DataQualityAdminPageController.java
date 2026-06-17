@@ -2,6 +2,7 @@ package com.easysubway.quality.adapter.in.web;
 
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
+import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
@@ -9,6 +10,7 @@ import com.easysubway.transit.domain.TransitRegionSummary;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import java.util.stream.Collectors;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -75,17 +77,17 @@ class DataQualityAdminPageController {
 	) {
 
 		static DataQualityDashboardView from(DataQualitySummary summary, List<TransitRegionSummary> regions) {
-			return new DataQualityDashboardView(
-				summary.totalStations(),
-				summary.totalExits(),
-				summary.totalFacilities(),
-				summary.needsVerificationFacilityCount(),
-				summary.missingStationVerificationDateCount(),
-				qualityRows(summary.stationQualityCounts()),
-				regionQualityRows(regions),
-				confidenceRows(summary.exitConfidenceCounts()),
-				confidenceRows(summary.facilityConfidenceCounts())
-			);
+				return new DataQualityDashboardView(
+					summary.totalStations(),
+					summary.totalExits(),
+					summary.totalFacilities(),
+					summary.needsVerificationFacilityCount(),
+					summary.missingStationVerificationDateCount(),
+					qualityRows(summary.stationQualityCounts()),
+					regionQualityRows(summary.regionSummaries(), regions),
+					confidenceRows(summary.exitConfidenceCounts()),
+					confidenceRows(summary.facilityConfidenceCounts())
+				);
 		}
 
 		private static List<QualityCountRow> qualityRows(Map<DataQualityLevel, Long> counts) {
@@ -98,18 +100,26 @@ class DataQualityAdminPageController {
 				.toList();
 		}
 
-		private static List<RegionQualityRow> regionQualityRows(List<TransitRegionSummary> regions) {
-			return regions.stream()
-				.map(region -> new RegionQualityRow(
-					region.name(),
-					region.operatorCount(),
-					region.lineCount(),
-					region.stationCount(),
-					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_1, 0L),
-					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_2, 0L),
-					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_3, 0L),
-					region.dataQualityCounts().getOrDefault(DataQualityLevel.LEVEL_4, 0L)
-				))
+		private static List<RegionQualityRow> regionQualityRows(
+			List<RegionDataQualitySummary> regionSummaries,
+			List<TransitRegionSummary> regions
+		) {
+			Map<String, TransitRegionSummary> regionsByName = regions.stream()
+				.collect(Collectors.toMap(TransitRegionSummary::name, region -> region));
+			return regionSummaries.stream()
+				.map(region -> {
+					TransitRegionSummary masterRegion = regionsByName.get(region.name());
+					return new RegionQualityRow(
+						region.name(),
+						masterRegion == null ? 0 : masterRegion.operatorCount(),
+						masterRegion == null ? 0 : masterRegion.lineCount(),
+						region.stationCount(),
+						region.stationQualityCounts().getOrDefault(DataQualityLevel.LEVEL_1, 0L),
+						region.stationQualityCounts().getOrDefault(DataQualityLevel.LEVEL_2, 0L),
+						region.stationQualityCounts().getOrDefault(DataQualityLevel.LEVEL_3, 0L),
+						region.stationQualityCounts().getOrDefault(DataQualityLevel.LEVEL_4, 0L)
+					);
+				})
 				.toList();
 		}
 
