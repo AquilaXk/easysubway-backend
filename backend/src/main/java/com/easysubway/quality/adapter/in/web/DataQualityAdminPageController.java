@@ -4,7 +4,6 @@ import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.quality.domain.RegionDataQualitySummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
-import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -40,8 +39,8 @@ class DataQualityAdminPageController {
 	String dataQualityDashboardPage(Model model) {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
-		List<FacilityReport> reports = facilityReportUseCase.listReports(null);
-		model.addAttribute("summary", DataQualityDashboardView.from(summary, regions, reports));
+		Map<FacilityReportStatus, Long> reportStatusCounts = facilityReportUseCase.countReportsByStatus();
+		model.addAttribute("summary", DataQualityDashboardView.from(summary, regions, reportStatusCounts));
 		return "admin/quality/dashboard";
 	}
 
@@ -117,14 +116,14 @@ class DataQualityAdminPageController {
 		static DataQualityDashboardView from(
 			DataQualitySummary summary,
 			List<TransitRegionSummary> regions,
-			List<FacilityReport> reports
+			Map<FacilityReportStatus, Long> reportStatusCounts
 		) {
-			long verifiedReportCount = reports.stream()
-				.filter(report -> isVerifiedReportStatus(report.status()))
-				.count();
-			long pendingReportCount = reports.stream()
-				.filter(report -> isPendingReportStatus(report.status()))
-				.count();
+			long totalReportCount = reportStatusCounts.values()
+				.stream()
+				.mapToLong(Long::longValue)
+				.sum();
+			long verifiedReportCount = countMatchingReportStatuses(reportStatusCounts, true);
+			long pendingReportCount = countMatchingReportStatuses(reportStatusCounts, false);
 			return new DataQualityDashboardView(
 				summary.totalStations(),
 				summary.totalExits(),
@@ -137,11 +136,11 @@ class DataQualityAdminPageController {
 				confidenceRows(summary.exitConfidenceCounts()),
 				confidenceRows(summary.facilityConfidenceCounts()),
 				facilityStatusDelayRows(summary.delayedFacilityStatusCounts()),
-				reports.size(),
+				totalReportCount,
 				verifiedReportCount,
 				pendingReportCount,
-				verificationRatePercent(reports.size(), verifiedReportCount),
-				reportStatusRows(reports)
+				verificationRatePercent(totalReportCount, verifiedReportCount),
+				reportStatusRows(reportStatusCounts)
 			);
 		}
 
@@ -192,9 +191,17 @@ class DataQualityAdminPageController {
 				.toList();
 		}
 
-		private static List<ReportStatusCountRow> reportStatusRows(List<FacilityReport> reports) {
-			Map<FacilityReportStatus, Long> counts = reports.stream()
-				.collect(Collectors.groupingBy(FacilityReport::status, Collectors.counting()));
+		private static long countMatchingReportStatuses(
+			Map<FacilityReportStatus, Long> counts,
+			boolean verified
+		) {
+			return Arrays.stream(FacilityReportStatus.values())
+				.filter(status -> isVerifiedReportStatus(status) == verified)
+				.mapToLong(status -> counts.getOrDefault(status, 0L))
+				.sum();
+		}
+
+		private static List<ReportStatusCountRow> reportStatusRows(Map<FacilityReportStatus, Long> counts) {
 			return Arrays.stream(FacilityReportStatus.values())
 				.map(status -> new ReportStatusCountRow(statusLabel(status), counts.getOrDefault(status, 0L)))
 				.toList();

@@ -7,6 +7,7 @@ import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.Map;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -79,6 +80,21 @@ class JdbcFacilityReportRepositoryTest {
 
 		assertThat(repository.loadReports())
 			.containsExactly(sameTimeFirstReport, sameTimeSecondReport, olderReport);
+	}
+
+	@Test
+	@DisplayName("시설 신고 상태별 집계는 상태와 개수만 조회한다")
+	void loadReportStatusCountsAggregatesByStatus() {
+		repository.saveReport(submittedReport("report-0", "anonymous-user-0", 8));
+		repository.saveReport(submittedReport("report-1", "anonymous-user-1", 9));
+		repository.saveReport(submittedReport("report-2", "anonymous-user-2", 10));
+		repository.saveReport(reviewedReport("report-3"));
+
+		assertThat(repository.loadReportStatusCounts())
+			.containsExactlyInAnyOrderEntriesOf(Map.of(
+				FacilityReportStatus.SUBMITTED, 3L,
+				FacilityReportStatus.DUPLICATE, 1L
+			));
 	}
 
 	@Test
