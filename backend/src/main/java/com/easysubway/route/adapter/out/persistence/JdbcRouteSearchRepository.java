@@ -127,37 +127,28 @@ public class JdbcRouteSearchRepository
 
 	@Override
 	public RouteSearchDashboardSummary summarizeRouteSearches() {
-		List<StatusCountRow> statusCounts = jdbcTemplate.query(
+		// 상태별 집계와 이동 프로필별 집계가 같은 DB statement snapshot에서 계산되도록 한 번만 읽는다.
+		List<RouteSearchDashboardCountRow> countRows = jdbcTemplate.query(
 			"""
 				SELECT status,
+					mobility_type,
 					COUNT(*) AS count
 				FROM route_search_results
-				GROUP BY status
+				GROUP BY status, mobility_type
 				""",
-			(resultSet, rowNumber) -> new StatusCountRow(
+			(resultSet, rowNumber) -> new RouteSearchDashboardCountRow(
 				RouteSearchStatus.valueOf(resultSet.getString("status")),
-				resultSet.getLong("count")
-			)
-		);
-		List<MobilityTypeCount> mobilityTypeCounts = jdbcTemplate.query(
-			"""
-				SELECT mobility_type,
-					COUNT(*) AS count
-				FROM route_search_results
-				GROUP BY mobility_type
-				""",
-			(resultSet, rowNumber) -> new MobilityTypeCount(
 				MobilityType.valueOf(resultSet.getString("mobility_type")),
 				resultSet.getLong("count")
 			)
 		);
-		long foundCount = countByStatus(statusCounts, RouteSearchStatus.FOUND);
-		long blockedCount = countByStatus(statusCounts, RouteSearchStatus.BLOCKED);
+		long foundCount = countByStatus(countRows, RouteSearchStatus.FOUND);
+		long blockedCount = countByStatus(countRows, RouteSearchStatus.BLOCKED);
 		return new RouteSearchDashboardSummary(
 			foundCount + blockedCount,
 			foundCount,
 			blockedCount,
-			sortedMobilityTypeCounts(mobilityTypeCounts)
+			sortedMobilityTypeCounts(countRows)
 		);
 	}
 
@@ -356,14 +347,14 @@ public class JdbcRouteSearchRepository
 		);
 	}
 
-	private long countByStatus(List<StatusCountRow> rows, RouteSearchStatus status) {
+	private long countByStatus(List<RouteSearchDashboardCountRow> rows, RouteSearchStatus status) {
 		return rows.stream()
 			.filter(row -> row.status() == status)
-			.mapToLong(StatusCountRow::count)
+			.mapToLong(RouteSearchDashboardCountRow::count)
 			.sum();
 	}
 
-	private List<MobilityTypeCount> sortedMobilityTypeCounts(List<MobilityTypeCount> rows) {
+	private List<MobilityTypeCount> sortedMobilityTypeCounts(List<RouteSearchDashboardCountRow> rows) {
 		return List.of(MobilityType.values())
 			.stream()
 			.map(mobilityType -> new MobilityTypeCount(mobilityType, countByMobilityType(rows, mobilityType)))
@@ -371,10 +362,10 @@ public class JdbcRouteSearchRepository
 			.toList();
 	}
 
-	private long countByMobilityType(List<MobilityTypeCount> rows, MobilityType mobilityType) {
+	private long countByMobilityType(List<RouteSearchDashboardCountRow> rows, MobilityType mobilityType) {
 		return rows.stream()
 			.filter(row -> row.mobilityType() == mobilityType)
-			.mapToLong(MobilityTypeCount::count)
+			.mapToLong(RouteSearchDashboardCountRow::count)
 			.sum();
 	}
 
@@ -407,6 +398,6 @@ public class JdbcRouteSearchRepository
 		H2
 	}
 
-	private record StatusCountRow(RouteSearchStatus status, long count) {
+	private record RouteSearchDashboardCountRow(RouteSearchStatus status, MobilityType mobilityType, long count) {
 	}
 }
