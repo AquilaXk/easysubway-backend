@@ -4,7 +4,9 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.domain.RouteFeedback;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -28,7 +30,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 @Profile("prod")
 public class JdbcRouteSearchRepository
-	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, AnonymizeUserRouteFeedbackPort {
+	implements LoadRouteSearchPort, SaveRouteSearchPort, SaveRouteFeedbackPort, SummarizeRouteFeedbackPort,
+	AnonymizeUserRouteFeedbackPort {
 
 	private static final TypeReference<List<RouteStep>> ROUTE_STEPS_TYPE = new TypeReference<>() {
 	};
@@ -98,6 +101,25 @@ public class JdbcRouteSearchRepository
 	public RouteFeedback saveRouteFeedback(RouteFeedback feedback) {
 		upsertRouteFeedback(feedback);
 		return feedback;
+	}
+
+	@Override
+	public RouteFeedbackDashboardSummary summarizeRouteFeedbacks() {
+		return jdbcTemplate.queryForObject(
+			"""
+				SELECT COUNT(*) AS total_count,
+					SUM(CASE WHEN rating = 'HELPFUL' THEN 1 ELSE 0 END) AS helpful_count,
+					SUM(CASE WHEN rating = 'NOT_HELPFUL' THEN 1 ELSE 0 END) AS not_helpful_count,
+					SUM(CASE WHEN rating = 'BLOCKED_BY_REAL_WORLD' THEN 1 ELSE 0 END) AS blocked_by_real_world_count
+				FROM route_feedbacks
+				""",
+			(resultSet, rowNumber) -> new RouteFeedbackDashboardSummary(
+				resultSet.getLong("total_count"),
+				resultSet.getLong("helpful_count"),
+				resultSet.getLong("not_helpful_count"),
+				resultSet.getLong("blocked_by_real_world_count")
+			)
+		);
 	}
 
 	@Override
