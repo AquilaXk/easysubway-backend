@@ -62,6 +62,39 @@
 			line-height: 1.15;
 		}
 
+		.api-error-alert {
+			background: #fff;
+			border: 1px solid #d8e0e0;
+			margin-bottom: 24px;
+			padding: 18px;
+		}
+
+		.api-error-alert.warning {
+			border-color: #d37c75;
+		}
+
+		.api-error-alert.ok {
+			border-color: #82c69b;
+		}
+
+		.api-error-alert strong,
+		.api-error-alert span,
+		.api-error-alert p {
+			display: block;
+			line-height: 1.4;
+		}
+
+		.api-error-alert strong {
+			font-size: 20px;
+		}
+
+		.api-error-alert span,
+		.api-error-alert p {
+			margin: 8px 0 0;
+			color: #40585a;
+			font-weight: 700;
+		}
+
 		table {
 			width: 100%;
 			border-collapse: collapse;
@@ -114,6 +147,12 @@
 			<span>평균 응답 시간</span>
 			<strong th:text="${summary.averageApiResponseTimeLabel}">0ms</strong>
 		</div>
+	</div>
+
+	<div class="api-error-alert" th:classappend="${summary.apiErrorAlertClass}">
+		<strong>API 오류율 상태: <span th:text="${summary.apiErrorAlertLabel}">정상</span></strong>
+		<span>최근 7일 오류율: <b th:text="${summary.apiErrorRatePercent}">0.0%</b></span>
+		<p th:text="${summary.apiErrorAlertDescription}">최근 7일 API 오류율이 기준치 미만입니다.</p>
 	</div>
 
 	<section>
