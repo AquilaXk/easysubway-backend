@@ -61,6 +61,11 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("내부 이동 노드")
 			.contains("1번 출구 엘리베이터")
 			.contains("휠체어 이동 가능")
+			.contains("name=\"displayX\"")
+			.contains("name=\"displayY\"")
+			.contains("name=\"displayLabel\"")
+			.contains("name=\"accessibilityNote\"")
+			.doesNotContain("value=\"접근성 메모 없음\"")
 			.contains("내부 이동 간선")
 			.contains("node-sangnoksu-elevator-1")
 			.contains("node-sangnoksu-faregate")
@@ -97,6 +102,62 @@ class TransitStationLayoutAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역 구조도 화면에서 내부 이동 노드 표시 정보를 변경한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesRouteNodeDisplayMetadataFromPageAndRedirectsToLayoutPage() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("displayX", "132")
+				.param("displayY", "256")
+				.param("displayLabel", "1번 출구 승강기")
+				.param("accessibilityNote", "휠체어와 유모차 이동 가능"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/stations/station-sangnoksu/layouts/page"));
+
+		String html = mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("1번 출구 승강기")
+			.contains("x 132, y 256")
+			.contains("휠체어와 유모차 이동 가능");
+	}
+
+	@Test
+	@DisplayName("관리자는 메모가 없는 내부 이동 노드의 좌표와 라벨만 변경한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesRouteNodeWithoutPersistingEmptyNotePlaceholderFromPage() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-faregate/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("displayX", "288")
+				.param("displayY", "244")
+				.param("displayLabel", "대합실 개찰구"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/stations/station-sangnoksu/layouts/page"));
+
+		String html = mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("대합실 개찰구")
+			.contains("x 288, y 244")
+			.contains("접근성 메모 없음")
+			.doesNotContain("value=\"접근성 메모 없음\"");
+	}
+
+	@Test
 	@DisplayName("관리자 역 구조도 요약 화면은 관리자 인증을 요구한다")
 	void stationLayoutPageRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page"))
@@ -118,6 +179,23 @@ class TransitStationLayoutAdminPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("status", "READY_FOR_REVIEW"))
 			.andExpect(status().isForbidden());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1/page")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("displayX", "132")
+				.param("displayY", "256")
+				.param("displayLabel", "1번 출구 승강기"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1/page")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("displayX", "132")
+				.param("displayY", "256")
+				.param("displayLabel", "1번 출구 승강기"))
+			.andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -129,6 +207,22 @@ class TransitStationLayoutAdminPageControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("역 구조도 노드 변경은 URL 역과 노드 소속이 일치해야 한다")
+	void stationLayoutNodeUpdateRequiresNodeInStation() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sadang/route-nodes/node-sangnoksu-elevator-1/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("displayX", "132")
+				.param("displayY", "256")
+				.param("displayLabel", "1번 출구 승강기"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("내부 이동 노드 정보를 찾을 수 없습니다."));
 	}
 
 	@Test

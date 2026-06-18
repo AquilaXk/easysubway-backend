@@ -2,6 +2,7 @@ package com.easysubway.transit.adapter.out.persistence;
 
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveRouteNodePort;
 import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -36,7 +37,8 @@ import org.springframework.stereotype.Repository;
 public class InMemoryTransitMasterRepository implements
 	LoadTransitMasterPort,
 	SaveAccessibilityFacilityStatusPort,
-	SaveSimplifiedStationLayoutStatusPort {
+	SaveSimplifiedStationLayoutStatusPort,
+	SaveRouteNodePort {
 
 	private static final List<TransitOperator> OPERATORS = List.of(
 		new TransitOperator(
@@ -223,10 +225,12 @@ public class InMemoryTransitMasterRepository implements
 
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 	private final Map<String, SimplifiedStationLayout> simplifiedStationLayouts = new LinkedHashMap<>();
+	private final Map<String, RouteNode> routeNodes = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
 		seedAccessibilityFacilities();
 		seedSimplifiedStationLayouts();
+		seedRouteNodes();
 	}
 
 	@Override
@@ -271,7 +275,7 @@ public class InMemoryTransitMasterRepository implements
 
 	@Override
 	public List<RouteNode> loadRouteNodes() {
-		return ROUTE_NODES;
+		return List.copyOf(routeNodes.values());
 	}
 
 	@Override
@@ -339,6 +343,11 @@ public class InMemoryTransitMasterRepository implements
 		));
 	}
 
+	@Override
+	public void saveRouteNode(RouteNode routeNode) {
+		routeNodes.put(routeNode.id(), routeNode);
+	}
+
 	private void seedAccessibilityFacilities() {
 		saveSeedFacility(new AccessibilityFacility(
 			"facility-sangnoksu-elevator-1",
@@ -396,5 +405,9 @@ public class InMemoryTransitMasterRepository implements
 
 	private void seedSimplifiedStationLayouts() {
 		SIMPLIFIED_STATION_LAYOUTS.forEach(layout -> simplifiedStationLayouts.put(layout.id(), layout));
+	}
+
+	private void seedRouteNodes() {
+		ROUTE_NODES.forEach(routeNode -> routeNodes.put(routeNode.id(), routeNode));
 	}
 }

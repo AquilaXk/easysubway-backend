@@ -214,9 +214,24 @@
 				<td th:text="${node.type}">ELEVATOR</td>
 				<td th:text="${node.floor}">B1</td>
 				<td>
-					<span th:text="${node.displayLabel}">엘리베이터</span>
-					<span class="meta" th:text="${node.positionLabel}">x 120, y 240</span>
-					<span class="meta" th:text="${node.layoutId}">layout-sangnoksu-draft</span>
+					<form th:action="@{/admin/stations/{stationId}/route-nodes/{nodeId}/page(stationId=${station.stationId}, nodeId=${node.id})}"
+					      method="post">
+						<label class="meta" th:for="|display-label-${node.id}|">표시 라벨</label>
+						<input type="text" name="displayLabel" th:id="|display-label-${node.id}|"
+						       th:value="${node.displayLabel}" required>
+						<label class="meta" th:for="|display-x-${node.id}|">x</label>
+						<input type="number" name="displayX" th:id="|display-x-${node.id}|"
+						       th:value="${node.displayX}" min="0" required>
+						<label class="meta" th:for="|display-y-${node.id}|">y</label>
+						<input type="number" name="displayY" th:id="|display-y-${node.id}|"
+						       th:value="${node.displayY}" min="0" required>
+						<label class="meta" th:for="|accessibility-note-${node.id}|">접근성 메모</label>
+						<input type="text" name="accessibilityNote" th:id="|accessibility-note-${node.id}|"
+						       th:value="${node.rawAccessibilityNote}">
+						<button type="submit">저장</button>
+						<span class="meta" th:text="${node.positionLabel}">x 120, y 240</span>
+						<span class="meta" th:text="${node.layoutId}">layout-sangnoksu-draft</span>
+					</form>
 				</td>
 				<td th:text="${node.accessibilityNote}">휠체어 이동 가능</td>
 			</tr>

@@ -9,6 +9,7 @@ import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
+import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
@@ -21,10 +22,12 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.InvalidRouteNodeException;
 import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.RouteNodeNotFoundException;
 import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
@@ -515,6 +518,92 @@ class TransitMasterServiceTest {
 		)))
 			.isInstanceOf(SimplifiedStationLayoutNotFoundException.class)
 			.hasMessage("역 구조도 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 내부 이동 노드의 표시 위치와 안내 문구를 수정한다")
+	void updateRouteNodeDisplayStoresDisplayMetadata() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var updated = service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			"휠체어와 유모차 이동 가능",
+			"admin-user"
+		));
+
+		assertThat(updated.displayX()).isEqualTo(132);
+		assertThat(updated.displayY()).isEqualTo(256);
+		assertThat(updated.displayLabel()).isEqualTo("1번 출구 승강기");
+		assertThat(updated.accessibilityNote()).isEqualTo("휠체어와 유모차 이동 가능");
+		assertThat(service.listRouteNodes("station-sangnoksu").getFirst().displayLabel())
+			.isEqualTo("1번 출구 승강기");
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정은 표시 라벨과 음수가 아닌 좌표와 관리자 식별자를 요구한다")
+	void updateRouteNodeDisplayRequiresValidDisplayInputsAndUpdater() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			-1,
+			256,
+			"1번 출구 승강기",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteNodeException.class)
+			.hasMessage("노드 표시 좌표는 0 이상이어야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			" ",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteNodeException.class)
+			.hasMessage("노드 표시 라벨을 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sangnoksu",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			null,
+			""
+		)))
+			.isInstanceOf(InvalidRouteNodeException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정은 URL 역과 노드 소속이 일치해야 한다")
+	void updateRouteNodeDisplayRequiresNodeInStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			"station-sadang",
+			"node-sangnoksu-elevator-1",
+			132,
+			256,
+			"1번 출구 승강기",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(RouteNodeNotFoundException.class)
+			.hasMessage("내부 이동 노드 정보를 찾을 수 없습니다.");
 	}
 
 	@Test

@@ -1,6 +1,7 @@
 package com.easysubway.transit.application.port.in;
 
 import com.easysubway.transit.domain.AccessibilityFacility;
+import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
 
 public interface TransitMasterAdminUseCase {
@@ -12,4 +13,6 @@ public interface TransitMasterAdminUseCase {
 	AccessibilityFacility updateFacilityStatus(UpdateAccessibilityFacilityStatusCommand command);
 
 	SimplifiedStationLayout updateSimplifiedStationLayoutStatus(UpdateSimplifiedStationLayoutStatusCommand command);
+
+	RouteNode updateRouteNodeDisplay(UpdateRouteNodeDisplayCommand command);
 }

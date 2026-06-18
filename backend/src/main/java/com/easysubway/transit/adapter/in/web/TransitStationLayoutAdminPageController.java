@@ -2,9 +2,11 @@ package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.RouteNodeNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
@@ -64,6 +66,29 @@ class TransitStationLayoutAdminPageController {
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
 	}
 
+	@PostMapping("/admin/stations/{stationId}/route-nodes/{nodeId}/page")
+	String updateRouteNodeDisplayFromPage(
+		@PathVariable String stationId,
+		@PathVariable String nodeId,
+		@RequestParam int displayX,
+		@RequestParam int displayY,
+		@RequestParam String displayLabel,
+		@RequestParam(required = false) String accessibilityNote,
+		Principal principal
+	) {
+		requireRouteNodeInStation(stationId, nodeId);
+		transitMasterAdminUseCase.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+			stationId,
+			nodeId,
+			displayX,
+			displayY,
+			displayLabel,
+			accessibilityNote,
+			principal.getName()
+		));
+		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
+	}
+
 	private void requireLayoutInStation(String stationId, String layoutId) {
 		transitMasterQueryUseCase.getStation(stationId);
 		boolean matched = transitMasterQueryUseCase.listSimplifiedStationLayouts(stationId)
@@ -71,6 +96,16 @@ class TransitStationLayoutAdminPageController {
 			.anyMatch(layout -> layout.id().equals(layoutId));
 		if (!matched) {
 			throw new SimplifiedStationLayoutNotFoundException();
+		}
+	}
+
+	private void requireRouteNodeInStation(String stationId, String nodeId) {
+		transitMasterQueryUseCase.getStation(stationId);
+		boolean matched = transitMasterQueryUseCase.listRouteNodes(stationId)
+			.stream()
+			.anyMatch(node -> node.id().equals(nodeId));
+		if (!matched) {
+			throw new RouteNodeNotFoundException();
 		}
 	}
 
@@ -179,8 +214,11 @@ class TransitStationLayoutAdminPageController {
 		String name,
 		String floor,
 		String layoutId,
+		int displayX,
+		int displayY,
 		String displayLabel,
 		String positionLabel,
+		String rawAccessibilityNote,
 		String accessibilityNote
 	) {
 
@@ -191,8 +229,11 @@ class TransitStationLayoutAdminPageController {
 				node.name(),
 				node.floor(),
 				node.layoutId(),
+				node.displayX(),
+				node.displayY(),
 				node.displayLabel(),
 				"x %d, y %d".formatted(node.displayX(), node.displayY()),
+				node.accessibilityNote(),
 				node.accessibilityNote() == null ? "접근성 메모 없음" : node.accessibilityNote()
 			);
 		}

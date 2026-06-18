@@ -498,6 +498,139 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 내부 이동 노드의 표시 위치와 안내 문구를 수정한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesRouteNodeDisplayMetadataAndListReflectsIt() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayX": 132,
+					  "displayY": 256,
+					  "displayLabel": "1번 출구 승강기",
+					  "accessibilityNote": "휠체어와 유모차 이동 가능"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("node-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data.displayX").value(132))
+			.andExpect(jsonPath("$.data.displayY").value(256))
+			.andExpect(jsonPath("$.data.displayLabel").value("1번 출구 승강기"))
+			.andExpect(jsonPath("$.data.accessibilityNote").value("휠체어와 유모차 이동 가능"));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-nodes")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].displayX").value(132))
+			.andExpect(jsonPath("$.data[0].displayY").value(256))
+			.andExpect(jsonPath("$.data[0].displayLabel").value("1번 출구 승강기"))
+			.andExpect(jsonPath("$.data[0].accessibilityNote").value("휠체어와 유모차 이동 가능"));
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정 API는 관리자 인증을 요구한다")
+	void updateRouteNodeDisplayMetadataRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayX": 132,
+					  "displayY": 256,
+					  "displayLabel": "1번 출구 승강기"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayX": 132,
+					  "displayY": 256,
+					  "displayLabel": "1번 출구 승강기"
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정은 표시 라벨과 음수가 아닌 좌표를 요구한다")
+	void updateRouteNodeDisplayMetadataRequiresValidDisplayInputs() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayX": -1,
+					  "displayY": 256,
+					  "displayLabel": "1번 출구 승강기"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("노드 표시 좌표는 0 이상이어야 합니다."));
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayX": 132,
+					  "displayY": 256,
+					  "displayLabel": " "
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("노드 표시 라벨을 입력해야 합니다."));
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayY": 256,
+					  "displayLabel": "1번 출구 승강기"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("노드 표시 좌표가 필요합니다."));
+	}
+
+	@Test
+	@DisplayName("내부 이동 노드 수정은 URL 역과 노드 소속이 일치해야 한다")
+	void updateRouteNodeDisplayMetadataRequiresNodeInStation() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sadang/route-nodes/node-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "displayX": 132,
+					  "displayY": 256,
+					  "displayLabel": "1번 출구 승강기"
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("내부 이동 노드 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 역의 내부 이동 노드는 공통 404 응답을 반환한다")
 	void missingRouteNodesReturnCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/admin/stations/unknown-station/route-nodes")

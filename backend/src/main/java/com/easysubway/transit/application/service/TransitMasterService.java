@@ -8,11 +8,13 @@ import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveRouteNodePort;
 import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
@@ -22,10 +24,12 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.InvalidRouteNodeException;
 import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.RouteNodeNotFoundException;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
@@ -59,6 +63,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
 	private final SaveSimplifiedStationLayoutStatusPort saveSimplifiedStationLayoutStatusPort;
+	private final SaveRouteNodePort saveRouteNodePort;
 	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final Clock clock;
 
@@ -67,12 +72,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		SaveSimplifiedStationLayoutStatusPort saveSimplifiedStationLayoutStatusPort,
+		SaveRouteNodePort saveRouteNodePort,
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase
 	) {
 		this(
 			loadTransitMasterPort,
 			saveAccessibilityFacilityStatusPort,
 			saveSimplifiedStationLayoutStatusPort,
+			saveRouteNodePort,
 			facilityStatusAlertUseCase,
 			Clock.systemDefaultZone()
 		);
@@ -86,6 +93,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			loadTransitMasterPort,
 			saveAccessibilityFacilityStatusPort,
 			layoutStatusPortOrNoop(loadTransitMasterPort),
+			routeNodePortOrNoop(loadTransitMasterPort),
 			command -> {
 			},
 			Clock.systemDefaultZone()
@@ -101,6 +109,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			loadTransitMasterPort,
 			saveAccessibilityFacilityStatusPort,
 			layoutStatusPortOrNoop(loadTransitMasterPort),
+			routeNodePortOrNoop(loadTransitMasterPort),
 			command -> {
 			},
 			clock
@@ -117,6 +126,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			loadTransitMasterPort,
 			saveAccessibilityFacilityStatusPort,
 			layoutStatusPortOrNoop(loadTransitMasterPort),
+			routeNodePortOrNoop(loadTransitMasterPort),
 			facilityStatusAlertUseCase,
 			clock
 		);
@@ -126,12 +136,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		SaveSimplifiedStationLayoutStatusPort saveSimplifiedStationLayoutStatusPort,
+		SaveRouteNodePort saveRouteNodePort,
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
 		Clock clock
 	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.saveSimplifiedStationLayoutStatusPort = saveSimplifiedStationLayoutStatusPort;
+		this.saveRouteNodePort = saveRouteNodePort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.clock = clock;
 	}
@@ -405,6 +417,20 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return withLayoutStatus(layout, command.status(), command.reviewedBy(), updatedAt);
 	}
 
+	@Override
+	public RouteNode updateRouteNodeDisplay(UpdateRouteNodeDisplayCommand command) {
+		requireRouteNodeDisplay(command);
+		loadActiveStation(command.stationId());
+		RouteNode routeNode = loadRouteNode(command.nodeId());
+		if (!routeNode.stationId().equals(command.stationId())) {
+			throw new RouteNodeNotFoundException();
+		}
+
+		RouteNode updated = withRouteNodeDisplay(routeNode, command);
+		saveRouteNodePort.saveRouteNode(updated);
+		return updated;
+	}
+
 	private TransitRegionSummary summarizeRegion(
 		String region,
 		List<TransitOperator> operators,
@@ -623,6 +649,24 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 	}
 
+	private void requireRouteNodeDisplay(UpdateRouteNodeDisplayCommand command) {
+		if (command.stationId() == null || command.stationId().isBlank()) {
+			throw new InvalidRouteNodeException("역 식별자가 필요합니다.");
+		}
+		if (command.nodeId() == null || command.nodeId().isBlank()) {
+			throw new InvalidRouteNodeException("노드 식별자가 필요합니다.");
+		}
+		if (command.displayX() < 0 || command.displayY() < 0) {
+			throw new InvalidRouteNodeException("노드 표시 좌표는 0 이상이어야 합니다.");
+		}
+		if (command.displayLabel() == null || command.displayLabel().isBlank()) {
+			throw new InvalidRouteNodeException("노드 표시 라벨을 입력해야 합니다.");
+		}
+		if (command.updatedBy() == null || command.updatedBy().isBlank()) {
+			throw new InvalidRouteNodeException("수정자 식별자가 필요합니다.");
+		}
+	}
+
 	private AccessibilityFacility loadAccessibilityFacility(String facilityId) {
 		return loadTransitMasterPort.loadAccessibilityFacilities()
 			.stream()
@@ -637,6 +681,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			.filter(layout -> layout.id().equals(layoutId))
 			.findFirst()
 			.orElseThrow(SimplifiedStationLayoutNotFoundException::new);
+	}
+
+	private RouteNode loadRouteNode(String nodeId) {
+		return loadTransitMasterPort.loadRouteNodes()
+			.stream()
+			.filter(node -> node.id().equals(nodeId))
+			.findFirst()
+			.orElseThrow(RouteNodeNotFoundException::new);
 	}
 
 	private static String blankToNull(String value) {
@@ -692,6 +744,24 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		);
 	}
 
+	private RouteNode withRouteNodeDisplay(RouteNode routeNode, UpdateRouteNodeDisplayCommand command) {
+		return new RouteNode(
+			routeNode.id(),
+			routeNode.stationId(),
+			routeNode.type(),
+			routeNode.name(),
+			routeNode.floor(),
+			routeNode.latitude(),
+			routeNode.longitude(),
+			routeNode.facilityId(),
+			routeNode.layoutId(),
+			command.displayX(),
+			command.displayY(),
+			command.displayLabel(),
+			command.accessibilityNote()
+		);
+	}
+
 	private static SaveSimplifiedStationLayoutStatusPort layoutStatusPortOrNoop(
 		LoadTransitMasterPort loadTransitMasterPort
 	) {
@@ -699,6 +769,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			return port;
 		}
 		return (layoutId, status, reviewedBy, updatedAt) -> {
+		};
+	}
+
+	private static SaveRouteNodePort routeNodePortOrNoop(LoadTransitMasterPort loadTransitMasterPort) {
+		if (loadTransitMasterPort instanceof SaveRouteNodePort port) {
+			return port;
+		}
+		return routeNode -> {
 		};
 	}
 }
