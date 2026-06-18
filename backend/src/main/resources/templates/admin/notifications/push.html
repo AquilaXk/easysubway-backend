@@ -68,6 +68,16 @@
 			line-height: 1.45;
 		}
 
+		.failure-alert {
+			margin: -8px 0 24px;
+			padding: 14px 18px;
+			background: #fef2f2;
+			border: 1px solid #fecaca;
+			color: #7f1d1d;
+			font-weight: 800;
+			line-height: 1.45;
+		}
+
 		section {
 			background: #fff;
 			border: 1px solid #d8e0e0;
@@ -121,7 +131,24 @@
 			<span>발송 실패</span>
 			<strong th:text="${summary.failedCount}">0</strong>
 		</div>
+		<div class="metric">
+			<span>발송 시도</span>
+			<strong th:text="${summary.deliveryAttemptCount}">0</strong>
+		</div>
+		<div class="metric">
+			<span>발송 성공률</span>
+			<strong th:text="${summary.successRateLabel}">0.0%</strong>
+		</div>
+		<div class="metric">
+			<span>발송 실패율</span>
+			<strong th:text="${summary.failureRateLabel}">0.0%</strong>
+		</div>
 	</div>
+
+	<p class="failure-alert"
+	   th:text="${summary.failureAlertLabel} + ': ' + ${summary.failureAlertDescription}">
+		점검 필요: 발송 실패가 있어 푸시 어댑터와 provider 상태를 확인하세요.
+	</p>
 
 	<p class="failure-reason"
 	   th:if="${summary.latestFailureReason != null}"
