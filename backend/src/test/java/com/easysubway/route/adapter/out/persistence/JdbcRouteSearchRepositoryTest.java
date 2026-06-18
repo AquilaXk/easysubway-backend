@@ -176,6 +176,43 @@ class JdbcRouteSearchRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("최근 현장 차단 신고는 경로 검색 정보와 조인해 최신순으로 집계한다")
+	void summarizeRecentBlockedFeedbacksWithRouteSearchContext() {
+		repository.saveRouteSearch(directRouteSearch("route-search-1", "상록수", "사당"));
+		repository.saveRouteSearch(transferRouteSearch("route-search-2"));
+		repository.saveRouteFeedback(routeFeedback(
+			"feedback-1",
+			"route-search-1",
+			RouteFeedbackRating.BLOCKED_BY_REAL_WORLD,
+			"엘리베이터가 막혀 있었습니다.",
+			LocalDateTime.of(2026, 6, 17, 10, 0)
+		));
+		repository.saveRouteFeedback(routeFeedback(
+			"feedback-2",
+			"route-search-2",
+			RouteFeedbackRating.BLOCKED_BY_REAL_WORLD,
+			"공사로 이동할 수 없었습니다.",
+			LocalDateTime.of(2026, 6, 17, 11, 0)
+		));
+		repository.saveRouteFeedback(routeFeedback(
+			"feedback-3",
+			"route-search-1",
+			RouteFeedbackRating.NOT_HELPFUL,
+			"설명이 부족했습니다.",
+			LocalDateTime.of(2026, 6, 17, 12, 0)
+		));
+
+		var summary = repository.summarizeRouteFeedbacks();
+
+		assertThat(summary.recentBlockedFeedbacks())
+			.extracting("originStationName", "destinationStationName", "mobilityType", "createdAt")
+			.containsExactly(
+				tuple("출발역", "도착역", MobilityType.WHEELCHAIR, LocalDateTime.of(2026, 6, 17, 11, 0)),
+				tuple("상록수", "사당", MobilityType.SENIOR, LocalDateTime.of(2026, 6, 17, 10, 0))
+			);
+	}
+
+	@Test
 	@DisplayName("경로 검색 결과를 상태와 이동 프로필별로 집계한다")
 	void summarizeRouteSearchesByStatusAndMobilityType() {
 		repository.saveRouteSearch(directRouteSearch("route-search-1", "상록수", "사당"));
@@ -271,13 +308,29 @@ class JdbcRouteSearchRepositoryTest {
 	}
 
 	private RouteFeedback routeFeedback(String feedbackId, RouteFeedbackRating rating, String comment) {
-		return new RouteFeedback(
+		return routeFeedback(
 			feedbackId,
 			"route-search-1",
-			"anonymous-user-1",
 			rating,
 			comment,
 			LocalDateTime.of(2026, 6, 17, 10, 0)
+		);
+	}
+
+	private RouteFeedback routeFeedback(
+		String feedbackId,
+		String routeSearchId,
+		RouteFeedbackRating rating,
+		String comment,
+		LocalDateTime createdAt
+	) {
+		return new RouteFeedback(
+			feedbackId,
+			routeSearchId,
+			"anonymous-user-1",
+			rating,
+			comment,
+			createdAt
 		);
 	}
 

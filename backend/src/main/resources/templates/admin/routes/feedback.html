@@ -88,6 +88,10 @@
 			text-align: right;
 			font-weight: 800;
 		}
+
+		section + section {
+			margin-top: 24px;
+		}
 	</style>
 </head>
 <body>
@@ -128,6 +132,31 @@
 				<td th:text="${row.label}">도움이 됨</td>
 				<td th:text="${row.description}">경로 안내가 실제 이동에 도움됨</td>
 				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>최근 현장 차단 신고</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">신고 시각</th>
+				<th scope="col">출발역</th>
+				<th scope="col">도착역</th>
+				<th scope="col">이동 프로필</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.recentBlockedFeedbacks}">
+				<td th:text="${row.createdAtLabel}">2026-06-17 10:00</td>
+				<td th:text="${row.originStationName}">상록수</td>
+				<td th:text="${row.destinationStationName}">사당</td>
+				<td th:text="${row.mobilityTypeLabel}">고령자</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.recentBlockedFeedbacks)}">
+				<td colspan="4">최근 현장 차단 신고가 없습니다.</td>
 			</tr>
 			</tbody>
 		</table>

@@ -10,6 +10,7 @@ import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteS
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary.RecentBlockedFeedback;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount;
 import com.easysubway.route.domain.RouteSearchResult;
@@ -110,7 +111,7 @@ public class JdbcRouteSearchRepository
 
 	@Override
 	public RouteFeedbackDashboardSummary summarizeRouteFeedbacks() {
-		return jdbcTemplate.queryForObject(
+		RouteFeedbackDashboardSummary countSummary = jdbcTemplate.queryForObject(
 			"""
 				SELECT COUNT(*) AS total_count,
 					SUM(CASE WHEN rating = 'HELPFUL' THEN 1 ELSE 0 END) AS helpful_count,
@@ -122,7 +123,38 @@ public class JdbcRouteSearchRepository
 				resultSet.getLong("total_count"),
 				resultSet.getLong("helpful_count"),
 				resultSet.getLong("not_helpful_count"),
-				resultSet.getLong("blocked_by_real_world_count")
+				resultSet.getLong("blocked_by_real_world_count"),
+				List.of()
+			)
+		);
+		return new RouteFeedbackDashboardSummary(
+			countSummary.totalCount(),
+			countSummary.helpfulCount(),
+			countSummary.notHelpfulCount(),
+			countSummary.blockedByRealWorldCount(),
+			loadRecentBlockedFeedbacks()
+		);
+	}
+
+	private List<RecentBlockedFeedback> loadRecentBlockedFeedbacks() {
+		return jdbcTemplate.query(
+			"""
+				SELECT route_search_results.origin_station_name,
+					route_search_results.destination_station_name,
+					route_search_results.mobility_type,
+					route_feedbacks.created_at AS feedback_created_at
+				FROM route_feedbacks
+				JOIN route_search_results
+					ON route_feedbacks.route_search_id = route_search_results.route_search_id
+				WHERE route_feedbacks.rating = 'BLOCKED_BY_REAL_WORLD'
+				ORDER BY feedback_created_at DESC, route_feedbacks.feedback_id
+				LIMIT 5
+				""",
+			(resultSet, rowNumber) -> new RecentBlockedFeedback(
+				resultSet.getString("origin_station_name"),
+				resultSet.getString("destination_station_name"),
+				MobilityType.valueOf(resultSet.getString("mobility_type")),
+				resultSet.getTimestamp("feedback_created_at").toLocalDateTime()
 			)
 		);
 	}

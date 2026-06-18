@@ -55,7 +55,12 @@ class RouteFeedbackAdminPageControllerTest {
 			.contains("경로 안내가 실제 이동에 도움됨")
 			.contains("경로 안내가 실제 이동과 맞지 않음")
 			.contains("엘리베이터 고장, 공사, 폐쇄 등으로 이동 불가")
+			.contains("최근 현장 차단 신고")
+			.contains("상록수")
+			.contains("사당")
+			.contains("고령자")
 			.doesNotContain("anonymous-user-1")
+			.doesNotContain(routeSearchId)
 			.doesNotContain("엘리베이터가 막혀 있었어요");
 	}
 

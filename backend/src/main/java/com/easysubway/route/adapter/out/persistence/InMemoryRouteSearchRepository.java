@@ -10,6 +10,7 @@ import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteS
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary.RecentBlockedFeedback;
 import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount;
@@ -17,9 +18,11 @@ import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
@@ -73,7 +76,8 @@ public class InMemoryRouteSearchRepository
 				routeFeedbacks.size(),
 				helpfulCount,
 				notHelpfulCount,
-				blockedByRealWorldCount
+				blockedByRealWorldCount,
+				recentBlockedFeedbacks()
 			);
 		}
 	}
@@ -148,6 +152,32 @@ public class InMemoryRouteSearchRepository
 			.stream()
 			.filter(feedback -> feedback.rating() == rating)
 			.count();
+	}
+
+	private List<RecentBlockedFeedback> recentBlockedFeedbacks() {
+		synchronized (routeSearches) {
+			return routeFeedbacks.values()
+				.stream()
+				.filter(feedback -> feedback.rating() == RouteFeedbackRating.BLOCKED_BY_REAL_WORLD)
+				.map(this::toRecentBlockedFeedback)
+				.filter(Objects::nonNull)
+				.sorted(Comparator.comparing(RecentBlockedFeedback::createdAt).reversed())
+				.limit(5)
+				.toList();
+		}
+	}
+
+	private RecentBlockedFeedback toRecentBlockedFeedback(RouteFeedback feedback) {
+		RouteSearchResult routeSearch = routeSearches.get(feedback.routeSearchId());
+		if (routeSearch == null) {
+			return null;
+		}
+		return new RecentBlockedFeedback(
+			routeSearch.originStationName(),
+			routeSearch.destinationStationName(),
+			routeSearch.mobilityType(),
+			feedback.createdAt()
+		);
 	}
 
 	private long countByStatus(RouteSearchStatus status) {
