@@ -237,7 +237,7 @@ jobs:
         if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
         env:
           EASYSUBWAY_EXPECT_ANDROID_RELEASE_MANIFEST: "true"
-        run: node --test --test-name-pattern "모바일 generic catch|Android 릴리즈 권한|iOS 앱은 개인정보 매니페스트|Android 런처 아이콘" tools/ci/repository-contract.test.mjs
+        run: node --test --test-name-pattern "모바일 generic catch|모바일 스토어 개인정보 인벤토리|Android 릴리즈 권한|iOS 앱은 개인정보 매니페스트|Android 런처 아이콘" tools/ci/repository-contract.test.mjs
 
       - name: Mobile App CI / Run Flutter analyzer and tests
         if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
