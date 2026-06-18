@@ -4,6 +4,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -476,5 +478,140 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("시설 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("관리자는 접근성 시설을 등록하고 공개 시설 목록에서 확인한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminCreatesAccessibilityFacilityAndPublicListReflectsIt() throws Exception {
+		mockMvc.perform(post("/admin/facilities")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "id": "facility-sangnoksu-ramp-1",
+					  "stationId": "station-sangnoksu",
+					  "exitId": "exit-sangnoksu-2",
+					  "type": "RAMP",
+					  "name": "2번 출구 경사로",
+					  "floorFrom": "지상",
+					  "floorTo": "대합실",
+					  "latitude": 37.303041,
+					  "longitude": 126.866768,
+					  "description": "2번 출구와 대합실 사이 경사로입니다.",
+					  "status": "NORMAL",
+					  "dataConfidence": "MEDIUM",
+					  "dataSourceType": "ADMIN_VERIFIED"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("facility-sangnoksu-ramp-1"))
+			.andExpect(jsonPath("$.data.stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data.type").value("RAMP"))
+			.andExpect(jsonPath("$.data.dataSourceType").value("ADMIN_VERIFIED"));
+
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[3].id").value("facility-sangnoksu-ramp-1"))
+			.andExpect(jsonPath("$.data[3].name").value("2번 출구 경사로"));
+	}
+
+	@Test
+	@DisplayName("관리자는 접근성 시설 전체 정보를 수정한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesAccessibilityFacility() throws Exception {
+		mockMvc.perform(put("/admin/facilities/facility-sangnoksu-elevator-1")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "stationId": "station-sangnoksu",
+					  "exitId": "exit-sangnoksu-1",
+					  "type": "ELEVATOR",
+					  "name": "1번 출구 엘리베이터 점검 반영",
+					  "floorFrom": "지상",
+					  "floorTo": "대합실",
+					  "latitude": 37.302430,
+					  "longitude": 126.866230,
+					  "description": "관리자 검수 후 위치와 설명을 보정했습니다.",
+					  "status": "UNDER_CONSTRUCTION",
+					  "dataConfidence": "HIGH",
+					  "dataSourceType": "ADMIN_VERIFIED"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data.name").value("1번 출구 엘리베이터 점검 반영"))
+			.andExpect(jsonPath("$.data.status").value("UNDER_CONSTRUCTION"));
+
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].description").value("관리자 검수 후 위치와 설명을 보정했습니다."));
+	}
+
+	@Test
+	@DisplayName("시설 등록과 전체 수정 API는 관리자 인증을 요구한다")
+	void facilityWriteApisRequireAdminAuthentication() throws Exception {
+		mockMvc.perform(post("/admin/facilities")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "id": "facility-sangnoksu-ramp-1",
+					  "stationId": "station-sangnoksu",
+					  "type": "RAMP",
+					  "name": "2번 출구 경사로",
+					  "status": "NORMAL",
+					  "dataConfidence": "MEDIUM",
+					  "dataSourceType": "ADMIN_VERIFIED"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(put("/admin/facilities/facility-sangnoksu-elevator-1")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "stationId": "station-sangnoksu",
+					  "type": "ELEVATOR",
+					  "name": "1번 출구 엘리베이터",
+					  "status": "NORMAL",
+					  "dataConfidence": "HIGH",
+					  "dataSourceType": "ADMIN_VERIFIED"
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("시설 등록은 중복 식별자를 공통 오류로 반환한다")
+	void createAccessibilityFacilityReturnsCommonErrorForDuplicateId() throws Exception {
+		mockMvc.perform(post("/admin/facilities")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "id": "facility-sangnoksu-elevator-1",
+					  "stationId": "station-sangnoksu",
+					  "exitId": "exit-sangnoksu-1",
+					  "type": "ELEVATOR",
+					  "name": "중복 시설",
+					  "status": "NORMAL",
+					  "dataConfidence": "HIGH",
+					  "dataSourceType": "ADMIN_VERIFIED"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("이미 등록된 시설입니다."));
 	}
 }

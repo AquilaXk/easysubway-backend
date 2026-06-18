@@ -299,6 +299,11 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 		));
 	}
 
+	@Override
+	public void saveAccessibilityFacility(AccessibilityFacility facility) {
+		accessibilityFacilities.put(facility.id(), facility);
+	}
+
 	private void seedAccessibilityFacilities() {
 		saveSeedFacility(new AccessibilityFacility(
 			"facility-sangnoksu-elevator-1",

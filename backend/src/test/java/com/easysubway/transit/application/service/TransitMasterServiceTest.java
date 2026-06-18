@@ -4,9 +4,11 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
@@ -423,6 +425,169 @@ class TransitMasterServiceTest {
 		)))
 			.isInstanceOf(AccessibilityFacilityNotFoundException.class)
 			.hasMessage("시설 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 접근성 시설을 등록하고 역 시설 목록에서 확인한다")
+	void createAccessibilityFacilityStoresFacility() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-15T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var created = service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-ramp-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-2",
+			AccessibilityFacilityType.RAMP,
+			"2번 출구 경사로",
+			"지상",
+			"대합실",
+			new BigDecimal("37.303041"),
+			new BigDecimal("126.866768"),
+			"2번 출구와 대합실 사이 경사로입니다.",
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.MEDIUM,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		));
+
+		assertThat(created.id()).isEqualTo("facility-sangnoksu-ramp-1");
+		assertThat(created.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 15));
+		assertThat(service.listStationFacilities("station-sangnoksu"))
+			.extracting(AccessibilityFacility::id)
+			.contains("facility-sangnoksu-ramp-1");
+	}
+
+	@Test
+	@DisplayName("관리자는 접근성 시설 전체 정보를 수정하고 상태 변경 알림을 요청한다")
+	void updateAccessibilityFacilityReplacesFacilityAndRequestsAlertWhenStatusChanges() {
+		var repository = new InMemoryTransitMasterRepository();
+		var alertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			alertUseCase,
+			Clock.fixed(Instant.parse("2026-06-15T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var updated = service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-1",
+			AccessibilityFacilityType.ELEVATOR,
+			"1번 출구 엘리베이터 점검 반영",
+			"지상",
+			"대합실",
+			new BigDecimal("37.302430"),
+			new BigDecimal("126.866230"),
+			"관리자 검수 후 위치와 설명을 보정했습니다.",
+			AccessibilityFacilityStatus.UNDER_CONSTRUCTION,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		));
+
+		assertThat(updated.name()).isEqualTo("1번 출구 엘리베이터 점검 반영");
+		assertThat(updated.status()).isEqualTo(AccessibilityFacilityStatus.UNDER_CONSTRUCTION);
+		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 15));
+		assertThat(service.listStationFacilities("station-sangnoksu").getFirst().description())
+			.isEqualTo("관리자 검수 후 위치와 설명을 보정했습니다.");
+		assertThat(alertUseCase.commands)
+			.extracting(FacilityStatusChangedAlertCommand::facilityId)
+			.containsExactly("facility-sangnoksu-elevator-1");
+	}
+
+	@Test
+	@DisplayName("시설 등록은 중복 식별자와 다른 역의 출구를 거부한다")
+	void createAccessibilityFacilityRejectsDuplicateIdAndExitFromAnotherStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			"exit-sangnoksu-1",
+			AccessibilityFacilityType.ELEVATOR,
+			"중복 시설",
+			"지상",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("이미 등록된 시설입니다.");
+
+		assertThatThrownBy(() -> service.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+			"facility-sangnoksu-ramp-1",
+			"station-sangnoksu",
+			"exit-sadang-2",
+			AccessibilityFacilityType.RAMP,
+			"2번 출구 경사로",
+			"지상",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.MEDIUM,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("시설 출구가 역에 포함되어 있지 않습니다.");
+	}
+
+	@Test
+	@DisplayName("시설 전체 수정은 기존 시설과 필수값을 요구한다")
+	void updateAccessibilityFacilityRequiresExistingFacilityAndRequiredFields() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"missing-facility",
+			"station-sangnoksu",
+			null,
+			AccessibilityFacilityType.TOILET,
+			"화장실",
+			"대합실",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(AccessibilityFacilityNotFoundException.class)
+			.hasMessage("시설 정보를 찾을 수 없습니다.");
+
+		assertThatThrownBy(() -> service.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+			"facility-sangnoksu-elevator-1",
+			"station-sangnoksu",
+			null,
+			null,
+			"",
+			"지상",
+			"대합실",
+			null,
+			null,
+			null,
+			AccessibilityFacilityStatus.NORMAL,
+			DataConfidenceLevel.HIGH,
+			DataSourceType.ADMIN_VERIFIED,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidAccessibilityFacilityException.class)
+			.hasMessage("시설 유형을 선택해야 합니다.");
 	}
 
 	private static class TransitMasterPortWithInactiveLine implements LoadTransitMasterPort {

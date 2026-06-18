@@ -1,10 +1,12 @@
 package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -37,6 +39,8 @@ import java.util.Map;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
@@ -181,6 +185,29 @@ class TransitMasterController {
 			.toList();
 
 		return ApiResponse.ok(response);
+	}
+
+	@PostMapping("/admin/facilities")
+	ApiResponse<AccessibilityFacilityResponse> createAccessibilityFacility(
+		@RequestBody SaveAccessibilityFacilityRequest request,
+		Principal principal
+	) {
+		AccessibilityFacility facility = transitMasterAdminUseCase.createAccessibilityFacility(
+			request.toCreateCommand(principal.getName())
+		);
+		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
+	}
+
+	@PutMapping("/admin/facilities/{facilityId}")
+	ApiResponse<AccessibilityFacilityResponse> updateAccessibilityFacility(
+		@PathVariable String facilityId,
+		@RequestBody SaveAccessibilityFacilityRequest request,
+		Principal principal
+	) {
+		AccessibilityFacility facility = transitMasterAdminUseCase.updateAccessibilityFacility(
+			request.toUpdateCommand(facilityId, principal.getName())
+		);
+		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
 	}
 
 	@PatchMapping("/admin/facilities/{facilityId}/status")
@@ -585,6 +612,61 @@ class TransitMasterController {
 
 		UpdateAccessibilityFacilityStatusCommand toCommand(String facilityId, String updatedBy) {
 			return new UpdateAccessibilityFacilityStatusCommand(facilityId, status, updatedBy);
+		}
+	}
+
+	record SaveAccessibilityFacilityRequest(
+		String id,
+		String stationId,
+		String exitId,
+		AccessibilityFacilityType type,
+		String name,
+		String floorFrom,
+		String floorTo,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		String description,
+		AccessibilityFacilityStatus status,
+		DataConfidenceLevel dataConfidence,
+		DataSourceType dataSourceType
+	) {
+
+		CreateAccessibilityFacilityCommand toCreateCommand(String updatedBy) {
+			return new CreateAccessibilityFacilityCommand(
+				id,
+				stationId,
+				exitId,
+				type,
+				name,
+				floorFrom,
+				floorTo,
+				latitude,
+				longitude,
+				description,
+				status,
+				dataConfidence,
+				dataSourceType,
+				updatedBy
+			);
+		}
+
+		UpdateAccessibilityFacilityCommand toUpdateCommand(String facilityId, String updatedBy) {
+			return new UpdateAccessibilityFacilityCommand(
+				facilityId,
+				stationId,
+				exitId,
+				type,
+				name,
+				floorFrom,
+				floorTo,
+				latitude,
+				longitude,
+				description,
+				status,
+				dataConfidence,
+				dataSourceType,
+				updatedBy
+			);
 		}
 	}
 }

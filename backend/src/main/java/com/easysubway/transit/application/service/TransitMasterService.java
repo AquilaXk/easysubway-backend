@@ -1,9 +1,11 @@
 package com.easysubway.transit.application.service;
 
+import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
@@ -12,7 +14,10 @@ import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStat
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.AccessibilityFacilityType;
+import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
+import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.RouteEdge;
@@ -210,6 +215,87 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	@Override
+	public AccessibilityFacility createAccessibilityFacility(CreateAccessibilityFacilityCommand command) {
+		requireFacilityId(command.id());
+		requireFacilityDetails(
+			command.stationId(),
+			command.exitId(),
+			command.type(),
+			command.name(),
+			command.status(),
+			command.dataConfidence(),
+			command.dataSourceType(),
+			command.updatedBy()
+		);
+		loadActiveStation(command.stationId());
+		requireExitInStation(command.stationId(), command.exitId());
+		if (loadTransitMasterPort.loadAccessibilityFacility(command.id()).isPresent()) {
+			throw new InvalidAccessibilityFacilityException("이미 등록된 시설입니다.");
+		}
+
+		AccessibilityFacility facility = new AccessibilityFacility(
+			command.id(),
+			command.stationId(),
+			blankToNull(command.exitId()),
+			command.type(),
+			command.name(),
+			command.floorFrom(),
+			command.floorTo(),
+			command.latitude(),
+			command.longitude(),
+			command.description(),
+			command.status(),
+			command.dataConfidence(),
+			command.dataSourceType(),
+			LocalDate.now(clock)
+		);
+		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility);
+		return facility;
+	}
+
+	@Override
+	public AccessibilityFacility updateAccessibilityFacility(UpdateAccessibilityFacilityCommand command) {
+		requireFacilityId(command.id());
+		AccessibilityFacility existing = loadAccessibilityFacility(command.id());
+		requireFacilityDetails(
+			command.stationId(),
+			command.exitId(),
+			command.type(),
+			command.name(),
+			command.status(),
+			command.dataConfidence(),
+			command.dataSourceType(),
+			command.updatedBy()
+		);
+		loadActiveStation(command.stationId());
+		requireExitInStation(command.stationId(), command.exitId());
+
+		AccessibilityFacility facility = new AccessibilityFacility(
+			existing.id(),
+			command.stationId(),
+			blankToNull(command.exitId()),
+			command.type(),
+			command.name(),
+			command.floorFrom(),
+			command.floorTo(),
+			command.latitude(),
+			command.longitude(),
+			command.description(),
+			command.status(),
+			command.dataConfidence(),
+			command.dataSourceType(),
+			LocalDate.now(clock)
+		);
+		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility);
+		if (existing.status() != command.status()) {
+			facilityStatusAlertUseCase.alertFacilityStatusChanged(
+				new FacilityStatusChangedAlertCommand(facility.id(), facility.status())
+			);
+		}
+		return facility;
+	}
+
+	@Override
 	public AccessibilityFacility updateFacilityStatus(UpdateAccessibilityFacilityStatusCommand command) {
 		requireFacilityStatus(command);
 		requireUpdater(command);
@@ -365,6 +451,57 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 	}
 
+	private void requireFacilityId(String facilityId) {
+		if (facilityId == null || facilityId.isBlank()) {
+			throw new InvalidAccessibilityFacilityException("시설 식별자가 필요합니다.");
+		}
+	}
+
+	private void requireFacilityDetails(
+		String stationId,
+		String exitId,
+		AccessibilityFacilityType type,
+		String name,
+		AccessibilityFacilityStatus status,
+		DataConfidenceLevel dataConfidence,
+		DataSourceType dataSourceType,
+		String updatedBy
+	) {
+		if (stationId == null || stationId.isBlank()) {
+			throw new InvalidAccessibilityFacilityException("역 식별자가 필요합니다.");
+		}
+		if (type == null) {
+			throw new InvalidAccessibilityFacilityException("시설 유형을 선택해야 합니다.");
+		}
+		if (name == null || name.isBlank()) {
+			throw new InvalidAccessibilityFacilityException("시설 이름을 입력해야 합니다.");
+		}
+		if (status == null) {
+			throw new InvalidAccessibilityFacilityException("시설 상태를 선택해야 합니다.");
+		}
+		if (dataConfidence == null) {
+			throw new InvalidAccessibilityFacilityException("시설 정보 신뢰도를 선택해야 합니다.");
+		}
+		if (dataSourceType == null) {
+			throw new InvalidAccessibilityFacilityException("시설 데이터 출처를 선택해야 합니다.");
+		}
+		if (updatedBy == null || updatedBy.isBlank()) {
+			throw new InvalidAccessibilityFacilityException("수정자 식별자가 필요합니다.");
+		}
+	}
+
+	private void requireExitInStation(String stationId, String exitId) {
+		if (exitId == null || exitId.isBlank()) {
+			return;
+		}
+		boolean matched = loadTransitMasterPort.loadStationExits()
+			.stream()
+			.anyMatch(exit -> exit.id().equals(exitId) && exit.stationId().equals(stationId));
+		if (!matched) {
+			throw new InvalidAccessibilityFacilityException("시설 출구가 역에 포함되어 있지 않습니다.");
+		}
+	}
+
 	private void requireUpdater(UpdateAccessibilityFacilityStatusCommand command) {
 		if (command.updatedBy() == null || command.updatedBy().isBlank()) {
 			throw new InvalidAccessibilityFacilityException("수정자 식별자가 필요합니다.");
@@ -377,6 +514,13 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			.filter(facility -> facility.id().equals(facilityId))
 			.findFirst()
 			.orElseThrow(AccessibilityFacilityNotFoundException::new);
+	}
+
+	private static String blankToNull(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		return value;
 	}
 
 	private AccessibilityFacility withStatus(
