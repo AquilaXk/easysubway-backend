@@ -1,0 +1,224 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>역 구조도 요약</title>
+	<style>
+		body {
+			margin: 0;
+			background: #f6f8f8;
+			color: #102a2c;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		}
+
+		main {
+			max-width: 1180px;
+			margin: 0 auto;
+			padding: 32px 24px 48px;
+		}
+
+		h1 {
+			margin: 0 0 8px;
+			font-size: 32px;
+			line-height: 1.2;
+		}
+
+		p {
+			margin: 0 0 20px;
+			color: #29484b;
+			font-size: 17px;
+			font-weight: 700;
+			line-height: 1.45;
+		}
+
+		section {
+			margin-top: 24px;
+			background: #fff;
+			border: 1px solid #d8e0e0;
+		}
+
+		h2 {
+			margin: 0;
+			padding: 16px 18px;
+			background: #eaf0f0;
+			font-size: 20px;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		th,
+		td {
+			padding: 14px 12px;
+			border-top: 1px solid #d8e0e0;
+			text-align: left;
+			vertical-align: top;
+			line-height: 1.45;
+		}
+
+		th {
+			background: #f8fbfb;
+			font-weight: 900;
+		}
+
+		td {
+			font-weight: 650;
+		}
+
+		.meta {
+			display: block;
+			margin-top: 4px;
+			color: #406164;
+			font-size: 14px;
+			font-weight: 700;
+		}
+
+		.empty {
+			padding: 18px;
+			border-top: 1px solid #d8e0e0;
+			font-weight: 800;
+		}
+	</style>
+</head>
+<body>
+<main>
+	<h1>역 구조도 요약</h1>
+	<p>
+		<span th:text="${station.stationName}">상록수</span>
+		<span class="meta" th:text="${station.lineNames}">수도권 4호선</span>
+	</p>
+
+	<section>
+		<h2>구조도 기준 자료</h2>
+		<p class="empty" th:if="${layoutSources.isEmpty()}">등록된 구조도 기준 자료가 없습니다.</p>
+		<table th:if="${!layoutSources.isEmpty()}">
+			<thead>
+			<tr>
+				<th scope="col">자료</th>
+				<th scope="col">유형</th>
+				<th scope="col">라이선스</th>
+				<th scope="col">이용 조건</th>
+				<th scope="col">수집/검수일</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="source : ${layoutSources}">
+				<td th:text="${source.sourceName}">상록수역 역사 안내도</td>
+				<td th:text="${source.sourceType}">OPERATOR_DIAGRAM</td>
+				<td th:text="${source.license}">운영기관 안내도 확인용</td>
+				<td>
+					<span th:text="${source.commercialUseLabel}">상업적 사용 불가</span>
+					<span class="meta" th:text="${source.attributionLabel}">출처 표시 필요</span>
+				</td>
+				<td>
+					<span th:text="${source.capturedAt}">2026-06-12</span>
+					<span class="meta" th:text="${source.reviewedAt}">2026-06-12</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>쉬운 내부 구조도</h2>
+		<p class="empty" th:if="${layouts.isEmpty()}">등록된 쉬운 내부 구조도가 없습니다.</p>
+		<table th:if="${!layouts.isEmpty()}">
+			<thead>
+			<tr>
+				<th scope="col">구조도</th>
+				<th scope="col">상태</th>
+				<th scope="col">신뢰도</th>
+				<th scope="col">기준층</th>
+				<th scope="col">기준 자료</th>
+				<th scope="col">마지막 검증일</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="layout : ${layouts}">
+				<td>
+					<span th:text="${layout.id}">layout-sangnoksu-draft</span>
+					<span class="meta" th:text="|v${layout.version}|">v1</span>
+				</td>
+				<td th:text="${layout.status}">DRAFT</td>
+				<td th:text="${layout.confidenceLevel}">OFFICIAL_DIAGRAM_REFERENCED</td>
+				<td th:text="${layout.baseFloor}">B1</td>
+				<td th:text="${layout.sourceIds}">layout-source-sangnoksu-station-map</td>
+				<td th:text="${layout.lastVerifiedAt}">2026-06-12</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>내부 이동 노드</h2>
+		<p class="empty" th:if="${routeNodes.isEmpty()}">등록된 내부 이동 노드가 없습니다.</p>
+		<table th:if="${!routeNodes.isEmpty()}">
+			<thead>
+			<tr>
+				<th scope="col">노드</th>
+				<th scope="col">유형</th>
+				<th scope="col">층</th>
+				<th scope="col">표시</th>
+				<th scope="col">접근성 메모</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="node : ${routeNodes}">
+				<td>
+					<span th:text="${node.name}">1번 출구 엘리베이터</span>
+					<span class="meta" th:text="${node.id}">node-sangnoksu-elevator-1</span>
+				</td>
+				<td th:text="${node.type}">ELEVATOR</td>
+				<td th:text="${node.floor}">B1</td>
+				<td>
+					<span th:text="${node.displayLabel}">엘리베이터</span>
+					<span class="meta" th:text="${node.positionLabel}">x 120, y 240</span>
+					<span class="meta" th:text="${node.layoutId}">layout-sangnoksu-draft</span>
+				</td>
+				<td th:text="${node.accessibilityNote}">휠체어 이동 가능</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>내부 이동 간선</h2>
+		<p class="empty" th:if="${routeEdges.isEmpty()}">등록된 내부 이동 간선이 없습니다.</p>
+		<table th:if="${!routeEdges.isEmpty()}">
+			<thead>
+			<tr>
+				<th scope="col">간선</th>
+				<th scope="col">유형</th>
+				<th scope="col">거리/시간</th>
+				<th scope="col">접근성 제약</th>
+				<th scope="col">신뢰도</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="edge : ${routeEdges}">
+				<td>
+					<span th:text="${edge.id}">edge-sangnoksu-elevator-to-faregate</span>
+					<span class="meta" th:text="${edge.fromNodeId}">node-sangnoksu-elevator-1</span>
+					<span class="meta" th:text="${edge.toNodeId}">node-sangnoksu-faregate</span>
+				</td>
+				<td th:text="${edge.type}">WALK</td>
+				<td>
+					<span th:text="${edge.distanceLabel}">28m</span>
+					<span class="meta" th:text="${edge.estimatedSecondsLabel}">75초</span>
+				</td>
+				<td>
+					<span th:text="${edge.stairsLabel}">계단 없음</span>
+					<span class="meta" th:text="${edge.elevatorLabel}">엘리베이터 필요</span>
+					<span class="meta" th:text="${edge.escalatorLabel}">에스컬레이터 불필요</span>
+				</td>
+				<td th:text="${edge.reliabilityLabel}">신뢰도 92</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</body>
+</html>
