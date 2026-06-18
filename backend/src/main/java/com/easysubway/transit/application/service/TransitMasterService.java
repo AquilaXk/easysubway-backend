@@ -129,6 +129,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			.filter(station -> station.matches(command.query()))
 			.map(station -> withLines(station, linesById, stationLinesByStationId))
 			.filter(station -> hasLine(station, command.lineId()))
+			.sorted(stationSearchResultComparator())
 			.toList();
 	}
 
@@ -250,6 +251,17 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			counts.merge(station.dataQualityLevel(), 1L, Long::sum);
 		}
 		return counts;
+	}
+
+	private static Comparator<StationWithLines> stationSearchResultComparator() {
+		return Comparator
+			.comparingInt((StationWithLines station) -> dataQualityPriority(station.station().dataQualityLevel()))
+			.thenComparing(station -> station.station().nameKo())
+			.thenComparing(station -> station.station().id());
+	}
+
+	private static int dataQualityPriority(DataQualityLevel dataQualityLevel) {
+		return -dataQualityLevel.ordinal();
 	}
 
 	private List<TransitOperator> activeOperators() {

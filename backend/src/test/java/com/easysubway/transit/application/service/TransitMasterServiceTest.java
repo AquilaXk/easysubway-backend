@@ -92,6 +92,38 @@ class TransitMasterServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 검색은 접근성 정보 품질이 높은 역을 먼저 반환한다")
+	void searchStationsPrioritizesHighQualityAccessibilityData() {
+		var qualityService = new TransitMasterService(
+			new QualityPriorityTransitMasterPort(),
+			(facilityId, status, updatedAt) -> {
+			}
+		);
+
+		var stations = qualityService.searchStations(new StationSearchCommand("중앙", null));
+
+		assertThat(stations)
+			.extracting(station -> station.station().id())
+			.containsExactly("station-central-level-4", "station-central-level-3", "station-central-level-2", "station-central-level-1");
+	}
+
+	@Test
+	@DisplayName("노선 필터 역 검색도 접근성 정보 품질이 높은 역을 먼저 반환한다")
+	void searchStationsOnLinePrioritizesHighQualityAccessibilityData() {
+		var qualityService = new TransitMasterService(
+			new QualityPriorityTransitMasterPort(),
+			(facilityId, status, updatedAt) -> {
+			}
+		);
+
+		var stations = qualityService.searchStations(new StationSearchCommand("중앙", "quality-line-a"));
+
+		assertThat(stations)
+			.extracting(station -> station.station().id())
+			.containsExactly("station-central-level-4", "station-central-level-2");
+	}
+
+	@Test
 	@DisplayName("역 검색은 한글 초성만 입력해도 역을 찾는다")
 	void searchStationsMatchesKoreanInitialConsonants() {
 		var stations = service.searchStations(new StationSearchCommand("ㅅㄹㅅ", null));
@@ -452,6 +484,77 @@ class TransitMasterServiceTest {
 		@Override
 		public List<AccessibilityFacility> loadAccessibilityFacilities() {
 			return List.of();
+		}
+	}
+
+	private static class QualityPriorityTransitMasterPort implements LoadTransitMasterPort {
+
+		@Override
+		public List<TransitOperator> loadOperators() {
+			return List.of(
+				new TransitOperator(
+					"quality-operator",
+					"품질 운영기관",
+					"수도권",
+					"https://operator.easysubway.example",
+					"https://operator.easysubway.example/help",
+					DataSourceType.OFFICIAL_FILE,
+					true
+				)
+			);
+		}
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("quality-line-a", "quality-operator", "품질 A선", "#006D77", "수도권", "A", true),
+				new SubwayLine("quality-line-b", "quality-operator", "품질 B선", "#83C5BE", "수도권", "B", true)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-central-level-1", "중앙역", DataQualityLevel.LEVEL_1),
+				station("station-central-level-3", "중앙역", DataQualityLevel.LEVEL_3),
+				station("station-central-level-2", "중앙역", DataQualityLevel.LEVEL_2),
+				station("station-central-level-4", "중앙역", DataQualityLevel.LEVEL_4)
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-central-level-1", "quality-line-b", "101", 101, "상행 / 하행"),
+				new StationLine("station-central-level-2", "quality-line-a", "102", 102, "상행 / 하행"),
+				new StationLine("station-central-level-3", "quality-line-b", "103", 103, "상행 / 하행"),
+				new StationLine("station-central-level-4", "quality-line-a", "104", 104, "상행 / 하행")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of();
+		}
+
+		private Station station(String id, String nameKo, DataQualityLevel dataQualityLevel) {
+			return new Station(
+				id,
+				nameKo,
+				"Central",
+				"수도권",
+				new BigDecimal("37.300000"),
+				new BigDecimal("126.800000"),
+				dataQualityLevel,
+				DataSourceType.OFFICIAL_FILE,
+				LocalDate.of(2026, 6, 12),
+				true
+			);
 		}
 	}
 
