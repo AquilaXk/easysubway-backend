@@ -63,6 +63,21 @@ jobs:
           git diff --name-only "${base_sha}" "${head_sha}" > changed-files.txt
           bash tools/ci/detect-changed-paths.sh changed-files.txt
 
+  dependency-vulnerability-scan:
+    name: Dependency Vulnerability Scan
+    needs: changes
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.docs_only != 'true' }}
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2
+    with:
+      scan-args: |-
+        --lockfile=apps/mobile/pubspec.lock
+        --lockfile=apps/mobile/android/app/gradle.lockfile
+        --lockfile=backend/gradle.lockfile
+
   repository-contracts:
     name: Repository CI
     runs-on: ubuntu-latest

@@ -1,0 +1,155 @@
+# Existing vulnerable backend Gradle lockfile advisories surfaced when the
+# dependency gate was first enabled. Keep these exceptions vulnerability-id
+# scoped and adjacent to this lockfile so new advisories still fail the PR gate.
+
+[[IgnoredVulns]]
+id = "GHSA-3pxv-7cmr-fjr4"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-3qp7-7mw8-wx86"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-445c-vh5m-36rj"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-4773-3jfm-qmx3"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-563x-q5rq-57qp"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-5m62-pw8w-7w9f"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-5mp6-jrq3-r938"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-6hcq-hmm3-jj3c"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-6hg6-v5c8-fphq"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-6p4f-wcwh-5vvm"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-72hv-8253-57qq"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-8hfc-fq58-r658"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-98qh-xjc8-98pq"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-9m3c-qcxr-9x87"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-9m89-8frq-c98c"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-c653-97m9-rcg9"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-c9ph-gxww-7744"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-fpj8-gq4v-p354"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-fv25-8xcx-gqjc"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-gx5v-xp9w-j4cg"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-h6fc-48rj-7qqh"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-hgrr-935x-pq79"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-mf92-479x-3373"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-mgp5-rv84-w37q"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-mgvc-8q2h-5pgc"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-mj4r-2hfc-f8p6"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-qq5r-98hh-rxc9"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-r29c-68gh-xp6x"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-r4v4-5mwr-2fwr"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-rqfh-9r24-8c9r"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-rv64-5gf8-9qq8"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-vxf7-qj7q-83fh"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-wg35-8jpf-2xv3"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-wwpq-f5c3-7hvx"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-x2wq-9x2f-fhj7"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-x4gw-5cx5-pgmh"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-x4m4-345f-5h5g"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+
+[[IgnoredVulns]]
+id = "GHSA-xjw8-8c5c-9r79"
+reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."

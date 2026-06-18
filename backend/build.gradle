@@ -45,6 +45,10 @@ dependencyManagement {
 	}
 }
 
+dependencyLocking {
+	lockAllConfigurations()
+}
+
 dependencies {
 	implementation 'org.egovframe.rte:egovframe-rte-ptl-mvc'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
