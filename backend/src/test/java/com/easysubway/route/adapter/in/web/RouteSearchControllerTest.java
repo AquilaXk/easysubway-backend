@@ -80,6 +80,32 @@ class RouteSearchControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 내부 이동 경로는 노드 간 이동 단계를 반환한다")
+	void postInternalRouteSearchReturnsNodeSteps() throws Exception {
+		mockMvc.perform(post("/api/v1/routes/internal")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "stationId": "station-sangnoksu",
+					  "fromNodeId": "node-sangnoksu-elevator-1",
+					  "toNodeId": "node-sangnoksu-faregate",
+					  "mobilityType": "WHEELCHAIR"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.status").value("FOUND"))
+			.andExpect(jsonPath("$.data.stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data.totalDistanceMeters").value(28))
+			.andExpect(jsonPath("$.data.totalEstimatedSeconds").value(75))
+			.andExpect(jsonPath("$.data.steps[0].edgeId").value("edge-sangnoksu-elevator-to-faregate"))
+			.andExpect(jsonPath("$.data.steps[0].fromNodeName").value("1번 출구 엘리베이터"))
+			.andExpect(jsonPath("$.data.steps[0].toNodeName").value("개찰구"))
+			.andExpect(jsonPath("$.data.steps[0].includesStairs").value(false))
+			.andExpect(jsonPath("$.data.steps[0].requiresElevator").value(true));
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 역으로 경로 검색을 요청하면 공통 404 응답을 반환한다")
 	void postRouteSearchRejectsUnknownStation() throws Exception {
 		mockMvc.perform(post("/api/v1/routes/search")

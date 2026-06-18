@@ -1,11 +1,15 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.domain.InternalRouteResult;
+import com.easysubway.route.domain.InternalRouteStep;
 import com.easysubway.route.domain.InvalidRouteFeedbackException;
 import com.easysubway.route.domain.InvalidRouteSearchException;
 import com.easysubway.route.domain.RouteFeedback;
@@ -24,6 +28,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeType;
+import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
@@ -38,6 +43,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.PriorityQueue;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -164,6 +170,53 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	@Override
+	public InternalRouteResult searchInternalRoute(SearchInternalRouteCommand command) {
+		requireInternalRouteCommand(command);
+		Station station = loadActiveStation(command.stationId());
+		Map<String, RouteNode> nodesById = stationRouteNodes(station.id())
+			.stream()
+			.collect(Collectors.toMap(RouteNode::id, Function.identity()));
+		RouteNode fromNode = loadStationRouteNode(nodesById, command.fromNodeId());
+		RouteNode toNode = loadStationRouteNode(nodesById, command.toNodeId());
+		if (fromNode.id().equals(toNode.id())) {
+			throw new InvalidRouteSearchException("출발 노드와 도착 노드가 달라야 합니다.");
+		}
+
+		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
+		List<RouteEdge> edges = stationInternalRouteEdges(station.id(), nodesById);
+		Optional<List<RouteEdge>> path = findInternalRoutePath(
+			edges,
+			fromNode.id(),
+			toNode.id(),
+			edge -> isAllowedInternalEdge(station.id(), edge, profileWeight, nodesById)
+		);
+		if (path.isEmpty()) {
+			if (profileWeight.blocksStairOnlyAccess() && hasAnyInternalPath(edges, fromNode.id(), toNode.id())) {
+				return blockedInternalRoute(station, fromNode, toNode, command.mobilityType());
+			}
+			throw new RouteNotFoundException();
+		}
+
+		List<InternalRouteStep> steps = internalRouteSteps(path.get(), nodesById);
+		List<RouteWarning> warnings = internalRouteWarnings(steps);
+		return new InternalRouteResult(
+			station.id(),
+			station.nameKo(),
+			fromNode.id(),
+			fromNode.name(),
+			toNode.id(),
+			toNode.name(),
+			command.mobilityType(),
+			RouteSearchStatus.FOUND,
+			steps.stream().mapToInt(InternalRouteStep::distanceMeters).sum(),
+			steps.stream().mapToInt(InternalRouteStep::estimatedSeconds).sum(),
+			steps,
+			warnings,
+			List.of()
+		);
+	}
+
+	@Override
 	public RouteSearchResult getRouteSearch(String routeSearchId) {
 		if (routeSearchId == null || routeSearchId.isBlank()) {
 			throw new RouteSearchNotFoundException();
@@ -195,6 +248,21 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 		if (command.destinationStationId() == null || command.destinationStationId().isBlank()) {
 			throw new InvalidRouteSearchException("도착역을 선택해야 합니다.");
+		}
+		if (command.mobilityType() == null) {
+			throw new InvalidRouteSearchException("이동 유형을 선택해야 합니다.");
+		}
+	}
+
+	private void requireInternalRouteCommand(SearchInternalRouteCommand command) {
+		if (command.stationId() == null || command.stationId().isBlank()) {
+			throw new InvalidRouteSearchException("역을 선택해야 합니다.");
+		}
+		if (command.fromNodeId() == null || command.fromNodeId().isBlank()) {
+			throw new InvalidRouteSearchException("출발 노드를 선택해야 합니다.");
+		}
+		if (command.toNodeId() == null || command.toNodeId().isBlank()) {
+			throw new InvalidRouteSearchException("도착 노드를 선택해야 합니다.");
 		}
 		if (command.mobilityType() == null) {
 			throw new InvalidRouteSearchException("이동 유형을 선택해야 합니다.");
@@ -382,13 +450,37 @@ public class RouteSearchService implements RouteSearchUseCase {
 		if (activeStationEdges.isEmpty()) {
 			return Optional.empty();
 		}
+		Optional<Map<String, RouteNode>> nodesById = stationRouteNodesByIdIfSupported(stationId);
+		if (nodesById.isEmpty()) {
+			return Optional.empty();
+		}
+		List<RouteEdge> edgesWithNodes = activeStationEdges.stream()
+			.filter(edge -> nodesById.get().containsKey(edge.fromNodeId()) && nodesById.get().containsKey(edge.toNodeId()))
+			.toList();
+		if (edgesWithNodes.isEmpty()) {
+			return Optional.empty();
+		}
 		// 내부 이동 간선 데이터가 있으면 출구 요약보다 실제 승강장 연결 동선을 우선한다.
-		boolean hasUsableStepFreeInternalEdge = activeStationEdges.stream()
-			.anyMatch(edge -> isUsableStepFreeInternalEdge(stationId, edge));
+		boolean hasUsableStepFreeInternalEdge = edgesWithNodes.stream()
+			.anyMatch(edge -> isUsableStepFreeInternalEdge(stationId, edge, nodesById.get()));
 		return Optional.of(!hasUsableStepFreeInternalEdge);
 	}
 
-	private boolean isUsableStepFreeInternalEdge(String stationId, RouteEdge edge) {
+	private Optional<Map<String, RouteNode>> stationRouteNodesByIdIfSupported(String stationId) {
+		try {
+			return Optional.of(stationRouteNodes(stationId)
+				.stream()
+				.collect(Collectors.toMap(RouteNode::id, Function.identity())));
+		} catch (UnsupportedOperationException ignored) {
+			return Optional.empty();
+		}
+	}
+
+	private boolean isUsableStepFreeInternalEdge(
+		String stationId,
+		RouteEdge edge,
+		Map<String, RouteNode> nodesById
+	) {
 		if (edge.hasStairs()) {
 			return false;
 		}
@@ -396,7 +488,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return false;
 		}
 		if (edge.requiresElevator()) {
-			return hasUsableStepFreeFacility(stationId);
+			return hasUsableStepFreeFacilityForInternalEdge(stationId, edge, nodesById);
 		}
 		return true;
 	}
@@ -467,6 +559,211 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.stream()
 			.filter(facility -> facility.stationId().equals(stationId))
 			.toList();
+	}
+
+	private List<RouteNode> stationRouteNodes(String stationId) {
+		return loadTransitMasterPort.loadRouteNodes()
+			.stream()
+			.filter(node -> node.stationId().equals(stationId))
+			.toList();
+	}
+
+	private RouteNode loadStationRouteNode(Map<String, RouteNode> nodesById, String nodeId) {
+		RouteNode node = nodesById.get(nodeId);
+		if (node == null) {
+			throw new RouteNotFoundException();
+		}
+		return node;
+	}
+
+	private List<RouteEdge> stationInternalRouteEdges(String stationId, Map<String, RouteNode> nodesById) {
+		return loadTransitMasterPort.loadRouteEdges()
+			.stream()
+			.filter(RouteEdge::active)
+			.filter(edge -> edge.stationId().equals(stationId))
+			.filter(this::isInternalMovementEdge)
+			.filter(edge -> nodesById.containsKey(edge.fromNodeId()) && nodesById.containsKey(edge.toNodeId()))
+			.toList();
+	}
+
+	private boolean isAllowedInternalEdge(
+		String stationId,
+		RouteEdge edge,
+		RouteProfileWeight profileWeight,
+		Map<String, RouteNode> nodesById
+	) {
+		if (!profileWeight.blocksStairOnlyAccess()) {
+			return true;
+		}
+		if (edge.hasStairs() || edge.requiresEscalator()) {
+			return false;
+		}
+		return !edge.requiresElevator() || hasUsableStepFreeFacilityForInternalEdge(stationId, edge, nodesById);
+	}
+
+	private boolean hasUsableStepFreeFacilityForInternalEdge(
+		String stationId,
+		RouteEdge edge,
+		Map<String, RouteNode> nodesById
+	) {
+		List<String> facilityIds = internalEdgeFacilityIds(edge, nodesById);
+		if (facilityIds.isEmpty()) {
+			return false;
+		}
+		return stationFacilities(stationId).stream()
+			.filter(facility -> facilityIds.contains(facility.id()))
+			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
+			.filter(this::isStepFreeFacility)
+			.anyMatch(this::hasUsableStatus);
+	}
+
+	private List<String> internalEdgeFacilityIds(RouteEdge edge, Map<String, RouteNode> nodesById) {
+		List<String> facilityIds = new ArrayList<>();
+		addFacilityId(facilityIds, nodesById.get(edge.fromNodeId()));
+		addFacilityId(facilityIds, nodesById.get(edge.toNodeId()));
+		return List.copyOf(facilityIds);
+	}
+
+	private void addFacilityId(List<String> facilityIds, RouteNode node) {
+		if (node != null && node.facilityId() != null) {
+			facilityIds.add(node.facilityId());
+		}
+	}
+
+	private Optional<List<RouteEdge>> findInternalRoutePath(
+		List<RouteEdge> edges,
+		String fromNodeId,
+		String toNodeId,
+		Predicate<RouteEdge> edgeFilter
+	) {
+		Map<String, List<RouteEdge>> edgesByFromNode = edges.stream()
+			.filter(edgeFilter)
+			.collect(Collectors.groupingBy(RouteEdge::fromNodeId));
+		PriorityQueue<InternalRouteCandidate> queue = new PriorityQueue<>(
+			Comparator.comparingInt(InternalRouteCandidate::cost)
+		);
+		Map<String, Integer> bestCostByNodeId = new HashMap<>();
+		queue.add(new InternalRouteCandidate(fromNodeId, 0, List.of()));
+		bestCostByNodeId.put(fromNodeId, 0);
+
+		while (!queue.isEmpty()) {
+			InternalRouteCandidate current = queue.poll();
+			if (current.cost() > bestCostByNodeId.getOrDefault(current.nodeId(), Integer.MAX_VALUE)) {
+				continue;
+			}
+			if (current.nodeId().equals(toNodeId)) {
+				return Optional.of(current.path());
+			}
+			for (RouteEdge edge : edgesByFromNode.getOrDefault(current.nodeId(), List.of())) {
+				int nextCost = current.cost() + internalEdgeCost(edge);
+				if (nextCost >= bestCostByNodeId.getOrDefault(edge.toNodeId(), Integer.MAX_VALUE)) {
+					continue;
+				}
+				List<RouteEdge> nextPath = new ArrayList<>(current.path());
+				nextPath.add(edge);
+				bestCostByNodeId.put(edge.toNodeId(), nextCost);
+				queue.add(new InternalRouteCandidate(edge.toNodeId(), nextCost, List.copyOf(nextPath)));
+			}
+		}
+		return Optional.empty();
+	}
+
+	private boolean hasAnyInternalPath(List<RouteEdge> edges, String fromNodeId, String toNodeId) {
+		return findInternalRoutePath(edges, fromNodeId, toNodeId, edge -> true).isPresent();
+	}
+
+	private int internalEdgeCost(RouteEdge edge) {
+		int stairPenalty = edge.hasStairs() ? 120 : 0;
+		int elevatorPenalty = edge.requiresElevator() ? 20 : 0;
+		int escalatorPenalty = edge.requiresEscalator() ? 35 : 0;
+		int slopePenalty = edge.slopeLevel() * 8;
+		int widthPenalty = (6 - edge.widthLevel()) * 4;
+		return edge.distanceMeters() + edge.estimatedSeconds() + stairPenalty + elevatorPenalty + escalatorPenalty
+			+ slopePenalty + widthPenalty;
+	}
+
+	private List<InternalRouteStep> internalRouteSteps(List<RouteEdge> path, Map<String, RouteNode> nodesById) {
+		List<InternalRouteStep> steps = new ArrayList<>();
+		for (int index = 0; index < path.size(); index++) {
+			RouteEdge edge = path.get(index);
+			RouteNode fromNode = nodesById.get(edge.fromNodeId());
+			RouteNode toNode = nodesById.get(edge.toNodeId());
+			steps.add(new InternalRouteStep(
+				index + 1,
+				edge.id(),
+				fromNode.id(),
+				fromNode.name(),
+				toNode.id(),
+				toNode.name(),
+				edge.type(),
+				edge.distanceMeters(),
+				edge.estimatedSeconds(),
+				edge.hasStairs(),
+				edge.requiresElevator(),
+				edge.requiresEscalator(),
+				edge.slopeLevel(),
+				edge.widthLevel(),
+				edge.reliabilityScore(),
+				internalRouteGuidance(edge, fromNode, toNode)
+			));
+		}
+		return List.copyOf(steps);
+	}
+
+	private String internalRouteGuidance(RouteEdge edge, RouteNode fromNode, RouteNode toNode) {
+		if (edge.hasStairs()) {
+			return fromNode.displayLabel() + "에서 " + toNode.displayLabel() + "까지 계단 포함 구간입니다.";
+		}
+		if (edge.requiresElevator()) {
+			return fromNode.displayLabel() + "에서 " + toNode.displayLabel() + "까지 엘리베이터 연결을 이용합니다.";
+		}
+		if (edge.requiresEscalator()) {
+			return fromNode.displayLabel() + "에서 " + toNode.displayLabel() + "까지 에스컬레이터 연결을 확인합니다.";
+		}
+		return fromNode.displayLabel() + "에서 " + toNode.displayLabel() + "까지 이동합니다.";
+	}
+
+	private List<RouteWarning> internalRouteWarnings(List<InternalRouteStep> steps) {
+		List<RouteWarning> warnings = new ArrayList<>();
+		if (steps.stream().anyMatch(InternalRouteStep::includesStairs)) {
+			warnings.add(new RouteWarning(
+				RouteWarningCode.STAIR_ONLY_ACCESS,
+				"역 내부 이동 경로에 계단 포함 구간이 있습니다."
+			));
+		}
+		if (steps.stream().anyMatch(step -> step.reliabilityScore() < 80)) {
+			warnings.add(new RouteWarning(
+				RouteWarningCode.LOW_DATA_CONFIDENCE,
+				"역 내부 이동 경로의 일부 구간은 추가 검증이 필요합니다."
+			));
+		}
+		return List.copyOf(warnings);
+	}
+
+	private InternalRouteResult blockedInternalRoute(
+		Station station,
+		RouteNode fromNode,
+		RouteNode toNode,
+		MobilityType mobilityType
+	) {
+		return new InternalRouteResult(
+			station.id(),
+			station.nameKo(),
+			fromNode.id(),
+			fromNode.name(),
+			toNode.id(),
+			toNode.name(),
+			mobilityType,
+			RouteSearchStatus.BLOCKED,
+			0,
+			0,
+			List.of(),
+			List.of(new RouteWarning(
+				RouteWarningCode.STAIR_ONLY_ACCESS,
+				"역 내부 이동 경로에 계단 포함 구간이 있습니다."
+			)),
+			List.of("계단 없는 내부 이동 경로를 찾을 수 없습니다.")
+		);
 	}
 
 	private int routeScore(RouteProfileWeight profileWeight, RoutePlan routePlan, List<RouteWarning> warnings) {
@@ -650,6 +947,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private String newRouteFeedbackId() {
 		return "route-feedback-" + UUID.randomUUID();
+	}
+
+	private record InternalRouteCandidate(
+		String nodeId,
+		int cost,
+		List<RouteEdge> path
+	) {
 	}
 
 	private record DirectLine(
