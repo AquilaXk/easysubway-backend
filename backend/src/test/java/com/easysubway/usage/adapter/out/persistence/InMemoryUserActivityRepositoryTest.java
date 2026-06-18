@@ -25,9 +25,30 @@ class InMemoryUserActivityRepositoryTest {
 		var summary = repository.summarizeUserActivity(LocalDate.of(2026, 6, 17), 2);
 
 		assertThat(summary.totalActiveUsers()).isEqualTo(2);
+		assertThat(summary.totalApiRequests()).isZero();
+		assertThat(summary.totalApiErrors()).isZero();
+		assertThat(summary.apiErrorRatePercent()).isEqualTo("0.0%");
 		assertThat(summary.dailyActivities())
 			.extracting(row -> row.date() + ":" + row.activeUserCount())
 			.containsExactly("2026-06-17:1", "2026-06-16:1");
+	}
+
+	@Test
+	@DisplayName("최근 기간의 API 요청 수와 오류율을 일별로 집계한다")
+	void summarizeUserActivityIncludesApiTrafficErrorRate() {
+		repository.recordApiTraffic(200, LocalDateTime.of(2026, 6, 17, 9, 0));
+		repository.recordApiTraffic(404, LocalDateTime.of(2026, 6, 17, 9, 5));
+		repository.recordApiTraffic(500, LocalDateTime.of(2026, 6, 16, 11, 0));
+		repository.recordApiTraffic(200, LocalDateTime.of(2026, 6, 15, 11, 0));
+
+		var summary = repository.summarizeUserActivity(LocalDate.of(2026, 6, 17), 2);
+
+		assertThat(summary.totalApiRequests()).isEqualTo(3);
+		assertThat(summary.totalApiErrors()).isEqualTo(2);
+		assertThat(summary.apiErrorRatePercent()).isEqualTo("66.7%");
+		assertThat(summary.dailyActivities())
+			.extracting(row -> row.date() + ":" + row.apiRequestCount() + ":" + row.apiErrorCount() + ":" + row.apiErrorRatePercent())
+			.containsExactly("2026-06-17:2:1:50.0%", "2026-06-16:1:1:100.0%");
 	}
 
 	@Test
@@ -36,5 +57,13 @@ class InMemoryUserActivityRepositoryTest {
 		assertThatThrownBy(() -> repository.recordUserActivity(" ", LocalDateTime.of(2026, 6, 17, 9, 0)))
 			.isInstanceOf(InvalidUserActivityException.class)
 			.hasMessage("사용자 활동 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("잘못된 API 상태 코드는 운영 지표로 저장하지 않는다")
+	void recordApiTrafficRejectsInvalidStatusCode() {
+		assertThatThrownBy(() -> repository.recordApiTraffic(99, LocalDateTime.of(2026, 6, 17, 9, 0)))
+			.isInstanceOf(InvalidUserActivityException.class)
+			.hasMessage("API 응답 상태 코드는 100부터 599 사이여야 합니다.");
 	}
 }

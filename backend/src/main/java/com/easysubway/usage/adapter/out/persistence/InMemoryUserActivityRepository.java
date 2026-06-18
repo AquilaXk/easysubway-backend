@@ -1,5 +1,6 @@
 package com.easysubway.usage.adapter.out.persistence;
 
+import com.easysubway.usage.application.port.out.RecordApiTrafficPort;
 import com.easysubway.usage.application.port.out.RecordUserActivityPort;
 import com.easysubway.usage.application.port.out.SummarizeUserActivityPort;
 import com.easysubway.usage.domain.InvalidUserActivityException;
@@ -18,9 +19,10 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 @Profile("!prod")
-public class InMemoryUserActivityRepository implements RecordUserActivityPort, SummarizeUserActivityPort {
+public class InMemoryUserActivityRepository implements RecordUserActivityPort, RecordApiTrafficPort, SummarizeUserActivityPort {
 
 	private final Map<LocalDate, Set<String>> userIdsByDate = new HashMap<>();
+	private final Map<LocalDate, ApiTrafficCount> apiTrafficByDate = new HashMap<>();
 
 	@Override
 	public synchronized void recordUserActivity(String userId, LocalDateTime occurredAt) {
@@ -32,6 +34,19 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, S
 		}
 
 		userIdsByDate.computeIfAbsent(occurredAt.toLocalDate(), ignored -> new HashSet<>()).add(userId.trim());
+	}
+
+	@Override
+	public synchronized void recordApiTraffic(int statusCode, LocalDateTime occurredAt) {
+		if (statusCode < 100 || statusCode > 599) {
+			throw new InvalidUserActivityException("API 응답 상태 코드는 100부터 599 사이여야 합니다.");
+		}
+		if (occurredAt == null) {
+			throw new InvalidUserActivityException("API 요청 시간이 필요합니다.");
+		}
+
+		apiTrafficByDate.computeIfAbsent(occurredAt.toLocalDate(), ignored -> new ApiTrafficCount())
+			.add(statusCode);
 	}
 
 	@Override
@@ -48,10 +63,43 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, S
 		List<DailyUserActivity> rows = today.datesUntil(startDate.minusDays(1), java.time.Period.ofDays(-1))
 			.map(date -> {
 				Set<String> userIds = userIdsByDate.getOrDefault(date, Set.of());
+				ApiTrafficCount apiTrafficCount = apiTrafficByDate.getOrDefault(date, ApiTrafficCount.empty());
 				activeUserIds.addAll(userIds);
-				return new DailyUserActivity(date, userIds.size());
+				return new DailyUserActivity(
+					date,
+					userIds.size(),
+					apiTrafficCount.requestCount(),
+					apiTrafficCount.errorCount()
+				);
 			})
 			.toList();
-		return new UserActivityDashboardSummary(activeUserIds.size(), rows);
+		long totalApiRequests = rows.stream().mapToLong(DailyUserActivity::apiRequestCount).sum();
+		long totalApiErrors = rows.stream().mapToLong(DailyUserActivity::apiErrorCount).sum();
+		return new UserActivityDashboardSummary(activeUserIds.size(), totalApiRequests, totalApiErrors, rows);
+	}
+
+	private static final class ApiTrafficCount {
+
+		private long requestCount;
+		private long errorCount;
+
+		static ApiTrafficCount empty() {
+			return new ApiTrafficCount();
+		}
+
+		void add(int statusCode) {
+			requestCount++;
+			if (statusCode >= 400) {
+				errorCount++;
+			}
+		}
+
+		long requestCount() {
+			return requestCount;
+		}
+
+		long errorCount() {
+			return errorCount;
+		}
 	}
 }

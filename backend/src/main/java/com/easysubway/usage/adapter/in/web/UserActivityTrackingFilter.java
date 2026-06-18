@@ -1,5 +1,6 @@
 package com.easysubway.usage.adapter.in.web;
 
+import com.easysubway.usage.application.port.out.RecordApiTrafficPort;
 import com.easysubway.usage.application.port.out.RecordUserActivityPort;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
@@ -24,16 +25,26 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 	private static final String ANONYMOUS_AUTH_PATH = "/api/v1/auth/anonymous";
 
 	private final RecordUserActivityPort recordUserActivityPort;
+	private final RecordApiTrafficPort recordApiTrafficPort;
 	private final Clock clock;
 	private final AuthenticationTrustResolver authenticationTrustResolver;
 
 	@Autowired
-	UserActivityTrackingFilter(RecordUserActivityPort recordUserActivityPort, ObjectProvider<Clock> clockProvider) {
-		this(recordUserActivityPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+	UserActivityTrackingFilter(
+		RecordUserActivityPort recordUserActivityPort,
+		RecordApiTrafficPort recordApiTrafficPort,
+		ObjectProvider<Clock> clockProvider
+	) {
+		this(recordUserActivityPort, recordApiTrafficPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
 	}
 
-	UserActivityTrackingFilter(RecordUserActivityPort recordUserActivityPort, Clock clock) {
+	UserActivityTrackingFilter(
+		RecordUserActivityPort recordUserActivityPort,
+		RecordApiTrafficPort recordApiTrafficPort,
+		Clock clock
+	) {
 		this.recordUserActivityPort = recordUserActivityPort;
+		this.recordApiTrafficPort = recordApiTrafficPort;
 		this.clock = clock;
 		this.authenticationTrustResolver = new AuthenticationTrustResolverImpl();
 	}
@@ -45,12 +56,20 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 		FilterChain filterChain
 	) throws ServletException, IOException {
 		filterChain.doFilter(request, response);
+		if (shouldRecordApiTraffic(request)) {
+			recordApiTrafficPort.recordApiTraffic(response.getStatus(), LocalDateTime.now(clock));
+		}
 		if (shouldRecord(request, response)) {
 			recordUserActivityPort.recordUserActivity(
 				request.getUserPrincipal().getName(),
 				LocalDateTime.now(clock)
 			);
 		}
+	}
+
+	private boolean shouldRecordApiTraffic(HttpServletRequest request) {
+		String path = request.getRequestURI();
+		return path.startsWith(API_PREFIX) && !path.equals(ANONYMOUS_AUTH_PATH);
 	}
 
 	private boolean shouldRecord(HttpServletRequest request, HttpServletResponse response) {

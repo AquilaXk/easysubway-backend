@@ -24,20 +24,38 @@ class UserActivityAdminPageController {
 
 	record UserActivityDashboardView(
 		long totalActiveUsers,
+		long totalApiRequests,
+		long totalApiErrors,
+		String apiErrorRatePercent,
 		List<DailyUserActivityRow> dailyActivityRows
 	) {
 
 		static UserActivityDashboardView from(UserActivityDashboardSummary summary) {
 			return new UserActivityDashboardView(
 				summary.totalActiveUsers(),
+				summary.totalApiRequests(),
+				summary.totalApiErrors(),
+				summary.apiErrorRatePercent(),
 				summary.dailyActivities()
 					.stream()
-					.map(row -> new DailyUserActivityRow(row.date().toString(), row.activeUserCount()))
+					.map(row -> new DailyUserActivityRow(
+						row.date().toString(),
+						row.activeUserCount(),
+						row.apiRequestCount(),
+						row.apiErrorCount(),
+						row.apiErrorRatePercent()
+					))
 					.toList()
 			);
 		}
 	}
 
-	record DailyUserActivityRow(String dateLabel, long activeUserCount) {
+	record DailyUserActivityRow(
+		String dateLabel,
+		long activeUserCount,
+		long apiRequestCount,
+		long apiErrorCount,
+		String apiErrorRatePercent
+	) {
 	}
 }

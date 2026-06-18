@@ -22,9 +22,11 @@ class UserActivityAdminPageControllerTest {
 		UserActivityDashboardUseCase useCase = mock(UserActivityDashboardUseCase.class);
 		when(useCase.summarizeUserActivity()).thenReturn(new UserActivityDashboardSummary(
 			3,
+			12,
+			2,
 			List.of(
-				new DailyUserActivity(LocalDate.of(2026, 6, 17), 2),
-				new DailyUserActivity(LocalDate.of(2026, 6, 16), 1)
+				new DailyUserActivity(LocalDate.of(2026, 6, 17), 2, 7, 1),
+				new DailyUserActivity(LocalDate.of(2026, 6, 16), 1, 5, 1)
 			)
 		));
 		var controller = new UserActivityAdminPageController(useCase);
@@ -36,9 +38,12 @@ class UserActivityAdminPageControllerTest {
 		UserActivityAdminPageController.UserActivityDashboardView view =
 			(UserActivityAdminPageController.UserActivityDashboardView) model.getAttribute("summary");
 		assertThat(view.totalActiveUsers()).isEqualTo(3);
+		assertThat(view.totalApiRequests()).isEqualTo(12);
+		assertThat(view.totalApiErrors()).isEqualTo(2);
+		assertThat(view.apiErrorRatePercent()).isEqualTo("16.7%");
 		assertThat(view.dailyActivityRows())
-			.extracting(row -> row.dateLabel() + ":" + row.activeUserCount())
-			.containsExactly("2026-06-17:2", "2026-06-16:1");
+			.extracting(row -> row.dateLabel() + ":" + row.activeUserCount() + ":" + row.apiRequestCount() + ":" + row.apiErrorCount() + ":" + row.apiErrorRatePercent())
+			.containsExactly("2026-06-17:2:7:1:14.3%", "2026-06-16:1:5:1:20.0%");
 		assertThat(view.toString()).doesNotContain("anonymous-user");
 	}
 }

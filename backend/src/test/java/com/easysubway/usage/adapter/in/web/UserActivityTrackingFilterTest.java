@@ -3,6 +3,7 @@ package com.easysubway.usage.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.usage.application.port.out.RecordUserActivityPort;
+import com.easysubway.usage.application.port.out.RecordApiTrafficPort;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import java.io.IOException;
@@ -29,7 +30,7 @@ class UserActivityTrackingFilterTest {
 	);
 
 	private final RecordingUserActivityPort port = new RecordingUserActivityPort();
-	private final UserActivityTrackingFilter filter = new UserActivityTrackingFilter(port, FIXED_CLOCK);
+	private final UserActivityTrackingFilter filter = new UserActivityTrackingFilter(port, port, FIXED_CLOCK);
 
 	@Test
 	@DisplayName("성공한 인증 사용자 API 요청은 활동으로 기록한다")
@@ -42,17 +43,33 @@ class UserActivityTrackingFilterTest {
 		assertThat(port.records)
 			.extracting(record -> record.userId() + ":" + record.occurredAt())
 			.containsExactly("anonymous-user-1:2026-06-17T09:00");
+		assertThat(port.apiTrafficRecords)
+			.extracting(record -> record.statusCode() + ":" + record.occurredAt())
+			.containsExactly("200:2026-06-17T09:00");
 	}
 
 	@Test
-	@DisplayName("실패 응답과 인증 발급 요청과 관리자 요청은 활성 사용자 지표에서 제외한다")
-	void failedAuthAndAdminRequestsAreIgnored() throws Exception {
+	@DisplayName("실패 응답은 API 오류율에 기록하고 활성 사용자 지표에서는 제외한다")
+	void failedApiRequestsRecordTrafficAndSkipActiveUserMetric() throws Exception {
 		filter.doFilter(apiRequest("/api/v1/routes/search", "anonymous-user-1"), new MockHttpServletResponse(), failingChain());
+
+		assertThat(port.records).isEmpty();
+		assertThat(port.apiTrafficRecords)
+			.extracting(record -> record.statusCode() + ":" + record.occurredAt())
+			.containsExactly("500:2026-06-17T09:00");
+	}
+
+	@Test
+	@DisplayName("인증 발급과 관리자 요청은 제외하고 일반 API 요청은 오류율에 기록한다")
+	void authAndAdminRequestsAreIgnoredFromTrafficMetric() throws Exception {
 		filter.doFilter(apiRequest("/api/v1/auth/anonymous", "anonymous-user-1"), new MockHttpServletResponse(), successfulChain());
 		filter.doFilter(apiRequest("/admin/routes/searches/page", "admin-user"), new MockHttpServletResponse(), successfulChain());
 		filter.doFilter(apiRequest("/api/v1/routes/search", null), new MockHttpServletResponse(), successfulChain());
 
 		assertThat(port.records).isEmpty();
+		assertThat(port.apiTrafficRecords)
+			.extracting(record -> record.statusCode() + ":" + record.occurredAt())
+			.containsExactly("200:2026-06-17T09:00");
 	}
 
 	@Test
@@ -87,16 +104,25 @@ class UserActivityTrackingFilterTest {
 		return (request, response) -> ((MockHttpServletResponse) response).setStatus(500);
 	}
 
-	private static final class RecordingUserActivityPort implements RecordUserActivityPort {
+	private static final class RecordingUserActivityPort implements RecordUserActivityPort, RecordApiTrafficPort {
 
 		private final List<Record> records = new ArrayList<>();
+		private final List<ApiTrafficRecord> apiTrafficRecords = new ArrayList<>();
 
 		@Override
 		public void recordUserActivity(String userId, LocalDateTime occurredAt) {
 			records.add(new Record(userId, occurredAt));
 		}
+
+		@Override
+		public void recordApiTraffic(int statusCode, LocalDateTime occurredAt) {
+			apiTrafficRecords.add(new ApiTrafficRecord(statusCode, occurredAt));
+		}
 	}
 
 	private record Record(String userId, LocalDateTime occurredAt) {
+	}
+
+	private record ApiTrafficRecord(int statusCode, LocalDateTime occurredAt) {
 	}
 }

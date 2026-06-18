@@ -98,6 +98,18 @@
 			<span>최근 7일 활성 사용자</span>
 			<strong th:text="${summary.totalActiveUsers}">0</strong>
 		</div>
+		<div class="metric">
+			<span>API 요청</span>
+			<strong th:text="${summary.totalApiRequests}">0</strong>
+		</div>
+		<div class="metric">
+			<span>오류 응답</span>
+			<strong th:text="${summary.totalApiErrors}">0</strong>
+		</div>
+		<div class="metric">
+			<span>API 오류율</span>
+			<strong th:text="${summary.apiErrorRatePercent}">0.0%</strong>
+		</div>
 	</div>
 
 	<section>
@@ -107,12 +119,18 @@
 			<tr>
 				<th scope="col">날짜</th>
 				<th scope="col">고유 사용자</th>
+				<th scope="col">API 요청</th>
+				<th scope="col">오류 응답</th>
+				<th scope="col">API 오류율</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:each="row : ${summary.dailyActivityRows}">
 				<td th:text="${row.dateLabel}">2026-06-17</td>
 				<td th:text="${row.activeUserCount}">0</td>
+				<td th:text="${row.apiRequestCount}">0</td>
+				<td th:text="${row.apiErrorCount}">0</td>
+				<td th:text="${row.apiErrorRatePercent}">0.0%</td>
 			</tr>
 			</tbody>
 		</table>
