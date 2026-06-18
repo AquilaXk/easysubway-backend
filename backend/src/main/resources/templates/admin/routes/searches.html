@@ -58,6 +58,47 @@
 			line-height: 1.15;
 		}
 
+		.metric em {
+			display: block;
+			margin-top: 8px;
+			color: #536b6d;
+			font-style: normal;
+			font-weight: 700;
+			line-height: 1.45;
+		}
+
+		.alert {
+			border: 1px solid #d8e0e0;
+			background: #fff;
+			margin-bottom: 24px;
+			padding: 18px;
+		}
+
+		.alert strong {
+			display: block;
+			font-size: 20px;
+			line-height: 1.3;
+		}
+
+		.alert p {
+			margin: 8px 0 0;
+			color: #536b6d;
+			font-weight: 700;
+			line-height: 1.5;
+		}
+
+		.alert.ok {
+			border-color: #82c69b;
+		}
+
+		.alert.warning {
+			border-color: #d6b25e;
+		}
+
+		.alert.failure {
+			border-color: #d37c75;
+		}
+
 		section {
 			background: #fff;
 			border: 1px solid #d8e0e0;
@@ -108,6 +149,16 @@
 			<span>경로 차단</span>
 			<strong th:text="${summary.blockedCount}">0</strong>
 		</div>
+		<div class="metric">
+			<span>경로 차단율</span>
+			<strong th:text="${summary.blockedRateLabel}">0.0%</strong>
+			<em>전체 검색 중 차단 비율</em>
+		</div>
+	</div>
+
+	<div class="alert" th:classappend="${summary.blockedAlertClass}">
+		<strong>운영 상태: <span th:text="${summary.blockedAlertLabel}">정상</span></strong>
+		<p th:text="${summary.blockedAlertDescription}">차단된 경로 검색 없이 처리되고 있습니다.</p>
 	</div>
 
 	<section>
