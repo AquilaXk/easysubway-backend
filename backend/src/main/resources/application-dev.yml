@@ -3,6 +3,10 @@ logging:
     com.easysubway: DEBUG
 
 management:
+  endpoints:
+    web:
+      exposure:
+        include: "health,info,prometheus"
   health:
     redis:
       # 로컬 단위 테스트는 Redis 서버 없이 실행하므로 Actuator 전체 상태가 DOWN이 되지 않게 한다.
