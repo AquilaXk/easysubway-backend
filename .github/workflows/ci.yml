@@ -63,32 +63,15 @@ jobs:
           git diff --name-only "${base_sha}" "${head_sha}" > changed-files.txt
           bash tools/ci/detect-changed-paths.sh changed-files.txt
 
-  dependency-review:
-    name: Dependency Review
-    runs-on: ubuntu-latest
+  dependency-vulnerability-scan:
+    name: Dependency Vulnerability Scan
     needs: changes
-
-    steps:
-      - name: Dependency Review / Skip non-PR or docs-only changes
-        if: ${{ github.event_name != 'pull_request' || needs.changes.outputs.docs_only == 'true' }}
-        run: echo "Dependency Review runs only for pull requests with non-docs changes."
-
-      - name: Dependency Review / Checkout repository
-        if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.docs_only != 'true' }}
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-
-      - name: Dependency Review / Block vulnerable dependency changes
-        if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.docs_only != 'true' }}
-        uses: actions/dependency-review-action@a1d282b36b6f3519aa1f3fc636f609c47dddb294
-        with:
-          fail-on-severity: moderate
-          fail-on-scopes: runtime, development, unknown
-          vulnerability-check: true
-          license-check: false
-          comment-summary-in-pr: never
+    if: ${{ github.event_name == 'pull_request' && needs.changes.outputs.docs_only != 'true' }}
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2
 
   repository-contracts:
     name: Repository CI
