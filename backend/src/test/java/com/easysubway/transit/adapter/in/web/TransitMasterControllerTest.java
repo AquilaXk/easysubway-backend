@@ -232,6 +232,77 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역 목록에서 운영 데이터 구축 현황을 집계로 확인한다")
+	void adminListsStationsWithMasterDataCounts() throws Exception {
+		mockMvc.perform(get("/admin/stations")
+				.param("query", "상록수")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].nameKo").value("상록수"))
+			.andExpect(jsonPath("$.data[0].lines[0].id").value("seoul-4"))
+			.andExpect(jsonPath("$.data[0].exitCount").value(2))
+			.andExpect(jsonPath("$.data[0].facilityCount").value(3))
+			.andExpect(jsonPath("$.data[0].layoutSourceCount").value(1))
+			.andExpect(jsonPath("$.data[0].simplifiedLayoutCount").value(1))
+			.andExpect(jsonPath("$.data[0].routeNodeCount").value(2))
+			.andExpect(jsonPath("$.data[0].routeEdgeCount").value(1));
+	}
+
+	@Test
+	@DisplayName("관리자 역 목록은 노선 식별자로 필터링할 수 있다")
+	void adminStationsCanBeFilteredByLine() throws Exception {
+		mockMvc.perform(get("/admin/stations")
+				.param("lineId", "seoul-4")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.length()").value(2))
+			.andExpect(jsonPath("$.data[0].id").value("station-sadang"))
+			.andExpect(jsonPath("$.data[1].id").value("station-sangnoksu"));
+	}
+
+	@Test
+	@DisplayName("관리자는 역 상세에서 운영 데이터 묶음을 함께 조회한다")
+	void adminGetsStationDetailWithMasterData() throws Exception {
+		mockMvc.perform(get("/admin/stations/station-sangnoksu")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.station.id").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data.station.lines[0].stationCode").value("448"))
+			.andExpect(jsonPath("$.data.exits[0].id").value("exit-sangnoksu-1"))
+			.andExpect(jsonPath("$.data.facilities[0].id").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data.layoutSources[0].id").value("layout-source-sangnoksu-station-map"))
+			.andExpect(jsonPath("$.data.simplifiedLayouts[0].id").value("layout-sangnoksu-draft"))
+			.andExpect(jsonPath("$.data.routeNodes[0].id").value("node-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data.routeEdges[0].id").value("edge-sangnoksu-elevator-to-faregate"));
+	}
+
+	@Test
+	@DisplayName("관리자 역 조회 API는 관리자 인증을 요구한다")
+	void adminStationApisRequireAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/stations"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 관리자 상세는 공통 404 응답을 반환한다")
+	void missingAdminStationDetailReturnsCommonErrorResponse() throws Exception {
+		mockMvc.perform(get("/admin/stations/unknown-station")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 역 내부 구조도 기준 자료의 출처와 검수일을 조회한다")
 	void adminListsStationLayoutSourcesWithLicenseAndReviewMetadata() throws Exception {
 		mockMvc.perform(get("/admin/stations/station-sangnoksu/layout-sources")

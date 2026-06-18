@@ -146,45 +146,59 @@ class TransitMasterController {
 		return ApiResponse.ok(response);
 	}
 
-	@GetMapping("/admin/stations/{stationId}/layout-sources")
-	ApiResponse<List<StationLayoutSourceResponse>> stationLayoutSources(@PathVariable String stationId) {
-		List<StationLayoutSourceResponse> response = transitMasterQueryUseCase.listStationLayoutSources(stationId)
+	@GetMapping("/admin/stations")
+	ApiResponse<List<AdminStationSummaryResponse>> adminStations(
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String lineId
+	) {
+		List<AdminStationSummaryResponse> response = transitMasterQueryUseCase
+			.searchStations(new StationSearchCommand(query, lineId))
 			.stream()
-			.map(StationLayoutSourceResponse::from)
+			.map(this::adminStationSummaryResponse)
 			.toList();
 
 		return ApiResponse.ok(response);
+	}
+
+	@GetMapping("/admin/stations/{stationId}")
+	ApiResponse<AdminStationDetailResponse> adminStation(@PathVariable String stationId) {
+		StationDetailResponse station = StationDetailResponse.from(transitMasterQueryUseCase.getStation(stationId));
+		List<StationExitResponse> exits = stationExitResponses(stationId);
+		List<AccessibilityFacilityResponse> facilities = accessibilityFacilityResponses(stationId);
+		List<StationLayoutSourceResponse> layoutSources = stationLayoutSourceResponses(stationId);
+		List<SimplifiedStationLayoutResponse> simplifiedLayouts = simplifiedStationLayoutResponses(stationId);
+		List<RouteNodeResponse> routeNodes = routeNodeResponses(stationId);
+		List<RouteEdgeResponse> routeEdges = routeEdgeResponses(stationId);
+
+		return ApiResponse.ok(new AdminStationDetailResponse(
+			station,
+			exits,
+			facilities,
+			layoutSources,
+			simplifiedLayouts,
+			routeNodes,
+			routeEdges
+		));
+	}
+
+	@GetMapping("/admin/stations/{stationId}/layout-sources")
+	ApiResponse<List<StationLayoutSourceResponse>> stationLayoutSources(@PathVariable String stationId) {
+		return ApiResponse.ok(stationLayoutSourceResponses(stationId));
 	}
 
 	@GetMapping("/admin/stations/{stationId}/layouts")
 	ApiResponse<List<SimplifiedStationLayoutResponse>> simplifiedStationLayouts(@PathVariable String stationId) {
-		List<SimplifiedStationLayoutResponse> response = transitMasterQueryUseCase
-			.listSimplifiedStationLayouts(stationId)
-			.stream()
-			.map(SimplifiedStationLayoutResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
+		return ApiResponse.ok(simplifiedStationLayoutResponses(stationId));
 	}
 
 	@GetMapping("/admin/stations/{stationId}/route-nodes")
 	ApiResponse<List<RouteNodeResponse>> routeNodes(@PathVariable String stationId) {
-		List<RouteNodeResponse> response = transitMasterQueryUseCase.listRouteNodes(stationId)
-			.stream()
-			.map(RouteNodeResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
+		return ApiResponse.ok(routeNodeResponses(stationId));
 	}
 
 	@GetMapping("/admin/stations/{stationId}/route-edges")
 	ApiResponse<List<RouteEdgeResponse>> routeEdges(@PathVariable String stationId) {
-		List<RouteEdgeResponse> response = transitMasterQueryUseCase.listRouteEdges(stationId)
-			.stream()
-			.map(RouteEdgeResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
+		return ApiResponse.ok(routeEdgeResponses(stationId));
 	}
 
 	@PostMapping("/admin/facilities")
@@ -220,6 +234,75 @@ class TransitMasterController {
 			request.toCommand(facilityId, principal.getName())
 		);
 		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
+	}
+
+	private AdminStationSummaryResponse adminStationSummaryResponse(StationWithLines stationWithLines) {
+		Station station = stationWithLines.station();
+		String stationId = station.id();
+		return new AdminStationSummaryResponse(
+			station.id(),
+			station.nameKo(),
+			station.nameEn(),
+			station.region(),
+			station.dataQualityLevel(),
+			station.dataSourceType(),
+			station.lastVerifiedAt(),
+			stationLineResponses(stationWithLines.lines()),
+			transitMasterQueryUseCase.listStationExits(stationId).size(),
+			transitMasterQueryUseCase.listStationFacilities(stationId).size(),
+			transitMasterQueryUseCase.listStationLayoutSources(stationId).size(),
+			transitMasterQueryUseCase.listSimplifiedStationLayouts(stationId).size(),
+			transitMasterQueryUseCase.listRouteNodes(stationId).size(),
+			transitMasterQueryUseCase.listRouteEdges(stationId).size()
+		);
+	}
+
+	private List<StationLineResponse> stationLineResponses(List<StationLineSummary> lines) {
+		return lines.stream()
+			.map(StationLineResponse::from)
+			.toList();
+	}
+
+	private List<StationExitResponse> stationExitResponses(String stationId) {
+		return transitMasterQueryUseCase.listStationExits(stationId)
+			.stream()
+			.map(StationExitResponse::from)
+			.toList();
+	}
+
+	private List<AccessibilityFacilityResponse> accessibilityFacilityResponses(String stationId) {
+		return transitMasterQueryUseCase.listStationFacilities(stationId)
+			.stream()
+			.map(AccessibilityFacilityResponse::from)
+			.toList();
+	}
+
+	private List<StationLayoutSourceResponse> stationLayoutSourceResponses(String stationId) {
+		return transitMasterQueryUseCase.listStationLayoutSources(stationId)
+			.stream()
+			.map(StationLayoutSourceResponse::from)
+			.toList();
+	}
+
+	private List<SimplifiedStationLayoutResponse> simplifiedStationLayoutResponses(String stationId) {
+		return transitMasterQueryUseCase.listSimplifiedStationLayouts(stationId)
+			.stream()
+			.map(SimplifiedStationLayoutResponse::from)
+			.toList();
+	}
+
+	private List<RouteNodeResponse> routeNodeResponses(String stationId) {
+		return transitMasterQueryUseCase.listRouteNodes(stationId)
+			.stream()
+			.map(RouteNodeResponse::from)
+			.toList();
+	}
+
+	private List<RouteEdgeResponse> routeEdgeResponses(String stationId) {
+		return transitMasterQueryUseCase.listRouteEdges(stationId)
+			.stream()
+			.map(RouteEdgeResponse::from)
+			.toList();
 	}
 
 	record TransitRegionResponse(
@@ -379,6 +462,35 @@ class TransitMasterController {
 					.toList()
 			);
 		}
+	}
+
+	record AdminStationSummaryResponse(
+		String id,
+		String nameKo,
+		String nameEn,
+		String region,
+		DataQualityLevel dataQualityLevel,
+		DataSourceType dataSourceType,
+		LocalDate lastVerifiedAt,
+		List<StationLineResponse> lines,
+		int exitCount,
+		int facilityCount,
+		int layoutSourceCount,
+		int simplifiedLayoutCount,
+		int routeNodeCount,
+		int routeEdgeCount
+	) {
+	}
+
+	record AdminStationDetailResponse(
+		StationDetailResponse station,
+		List<StationExitResponse> exits,
+		List<AccessibilityFacilityResponse> facilities,
+		List<StationLayoutSourceResponse> layoutSources,
+		List<SimplifiedStationLayoutResponse> simplifiedLayouts,
+		List<RouteNodeResponse> routeNodes,
+		List<RouteEdgeResponse> routeEdges
+	) {
 	}
 
 	record StationLineResponse(
