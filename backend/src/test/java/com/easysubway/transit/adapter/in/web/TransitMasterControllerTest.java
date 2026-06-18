@@ -202,6 +202,22 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 내부 경로 노드 목록은 사용자가 볼 수 있는 이름과 시설 연결 정보를 포함한다")
+	void stationRouteNodesIncludeDisplayAndFacilityMetadata() throws Exception {
+		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/route-nodes"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].id").value("node-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].type").value("ELEVATOR"))
+			.andExpect(jsonPath("$.data[0].name").value("1번 출구 엘리베이터"))
+			.andExpect(jsonPath("$.data[0].facilityId").value("facility-sangnoksu-elevator-1"))
+			.andExpect(jsonPath("$.data[0].displayLabel").value("엘리베이터"))
+			.andExpect(jsonPath("$.data[1].id").value("node-sangnoksu-faregate"))
+			.andExpect(jsonPath("$.data[1].type").value("FAREGATE"));
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 역 상세는 공통 404 응답을 반환한다")
 	void missingStationReturnsCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/api/v1/stations/unknown-station"))

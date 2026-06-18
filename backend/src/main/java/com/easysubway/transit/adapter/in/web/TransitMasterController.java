@@ -154,6 +154,11 @@ class TransitMasterController {
 		return ApiResponse.ok(response);
 	}
 
+	@GetMapping("/api/v1/stations/{stationId}/route-nodes")
+	ApiResponse<List<RouteNodeResponse>> stationRouteNodes(@PathVariable String stationId) {
+		return ApiResponse.ok(routeNodeResponses(stationId));
+	}
+
 	@GetMapping("/admin/stations")
 	ApiResponse<List<AdminStationSummaryResponse>> adminStations(
 		@RequestParam(required = false) String query,
