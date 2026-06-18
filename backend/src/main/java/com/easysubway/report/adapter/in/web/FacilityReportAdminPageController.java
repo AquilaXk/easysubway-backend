@@ -9,9 +9,12 @@ import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.security.Principal;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -22,10 +25,20 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Controller
 class FacilityReportAdminPageController {
 
-	private final FacilityReportUseCase facilityReportUseCase;
+	private static final int REPORT_SURGE_ALERT_THRESHOLD = 10;
+	private static final long REPORT_SURGE_LOOKBACK_HOURS = 24;
 
-	FacilityReportAdminPageController(FacilityReportUseCase facilityReportUseCase) {
+	private final FacilityReportUseCase facilityReportUseCase;
+	private final Clock clock;
+
+	@Autowired
+	FacilityReportAdminPageController(FacilityReportUseCase facilityReportUseCase, ObjectProvider<Clock> clockProvider) {
+		this(facilityReportUseCase, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+	}
+
+	FacilityReportAdminPageController(FacilityReportUseCase facilityReportUseCase, Clock clock) {
 		this.facilityReportUseCase = facilityReportUseCase;
+		this.clock = clock;
 	}
 
 	@GetMapping("/admin/reports/page")
@@ -33,7 +46,11 @@ class FacilityReportAdminPageController {
 		@RequestParam(required = false) FacilityReportStatus status,
 		Model model
 	) {
-		List<FacilityReportListPageRow> reports = facilityReportUseCase.listReports(status)
+		List<FacilityReport> allReports = facilityReportUseCase.listReports(null);
+		List<FacilityReport> filteredReports = allReports.stream()
+			.filter(report -> status == null || report.status() == status)
+			.toList();
+		List<FacilityReportListPageRow> reports = filteredReports
 			.stream()
 			.map(FacilityReportListPageRow::from)
 			.toList();
@@ -41,6 +58,7 @@ class FacilityReportAdminPageController {
 		model.addAttribute("reports", reports);
 		model.addAttribute("selectedStatus", status);
 		model.addAttribute("statusOptions", statusOptions());
+		model.addAttribute("reportSurgeAlert", ReportSurgeAlertView.from(allReports, clock));
 		return "admin/reports/list";
 	}
 
@@ -205,6 +223,36 @@ class FacilityReportAdminPageController {
 	}
 
 	record StatusOption(FacilityReportStatus value, String label) {
+	}
+
+	record ReportSurgeAlertView(
+		String title,
+		String label,
+		String description,
+		String alertClass
+	) {
+
+		static ReportSurgeAlertView from(List<FacilityReport> reports, Clock clock) {
+			LocalDateTime cutoff = LocalDateTime.now(clock).minusHours(REPORT_SURGE_LOOKBACK_HOURS);
+			long recentReportCount = reports.stream()
+				.filter(report -> !report.createdAt().isBefore(cutoff))
+				.count();
+
+			if (recentReportCount >= REPORT_SURGE_ALERT_THRESHOLD) {
+				return new ReportSurgeAlertView(
+					"신고 급증",
+					"점검 필요",
+					"최근 24시간 신고 %d건입니다. 신고가 평소보다 많습니다.".formatted(recentReportCount),
+					"warning"
+				);
+			}
+			return new ReportSurgeAlertView(
+				"신고 급증",
+				"정상",
+				"최근 24시간 신고 %d건입니다. 접수량은 정상 범위입니다.".formatted(recentReportCount),
+				"normal"
+			);
+		}
 	}
 
 	record ReviewAction(FacilityReportReviewDecision value, String label) {

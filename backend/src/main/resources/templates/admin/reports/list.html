@@ -24,6 +24,51 @@
 			line-height: 1.2;
 		}
 
+		.surge-alert {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 12px;
+			align-items: center;
+			margin-bottom: 20px;
+			padding: 16px 18px;
+			border: 1px solid #c9d6d7;
+			border-left: 6px solid #006d6f;
+			background: #fff;
+		}
+
+		.surge-alert.warning {
+			border-left-color: #c84a12;
+			background: #fff8f3;
+		}
+
+		.surge-alert h2 {
+			margin: 0 0 6px;
+			font-size: 18px;
+			line-height: 1.3;
+		}
+
+		.surge-alert p {
+			margin: 0;
+			color: #3f5658;
+			font-size: 15px;
+			line-height: 1.45;
+		}
+
+		.surge-alert .status-label {
+			justify-self: end;
+			padding: 6px 10px;
+			border-radius: 6px;
+			background: #e3f2ef;
+			color: #003d40;
+			font-weight: 800;
+			white-space: nowrap;
+		}
+
+		.surge-alert.warning .status-label {
+			background: #ffe8d9;
+			color: #8f2d00;
+		}
+
 		.status-filter {
 			display: flex;
 			flex-wrap: wrap;
@@ -88,6 +133,16 @@
 <body>
 <main>
 	<h1>시설 신고 검수</h1>
+
+	<section class="surge-alert"
+	         th:classappend="${reportSurgeAlert.alertClass}"
+	         aria-label="신고 급증 알림">
+		<div>
+			<h2 th:text="${reportSurgeAlert.title}">신고 급증</h2>
+			<p th:text="${reportSurgeAlert.description}">최근 24시간 신고 0건입니다. 접수량은 정상 범위입니다.</p>
+		</div>
+		<strong class="status-label" th:text="${reportSurgeAlert.label}">정상</strong>
+	</section>
 
 	<nav class="status-filter" aria-label="신고 상태 필터">
 		<a th:href="@{/admin/reports/page}" th:attr="aria-current=${selectedStatus == null ? 'page' : null}">전체</a>

@@ -51,6 +51,27 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 신고 목록 화면에서 최근 24시간 신고 급증 경고를 확인한다")
+	void adminReportListPageShowsRecentReportSurgeAlert() throws Exception {
+		for (int index = 1; index <= 10; index++) {
+			createReport("최근 급증 신고 %02d".formatted(index));
+		}
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("신고 급증")
+			.contains("점검 필요")
+			.contains("신고가 평소보다 많습니다")
+			.containsPattern("최근 24시간 신고 \\d+건");
+	}
+
+	@Test
 	@DisplayName("관리자는 신고 상세 화면에서 사진과 위치와 검수 버튼을 확인한다")
 	void adminReportDetailPageShowsPhotoLocationAndReviewActions() throws Exception {
 		String reportId = createReportWithPhotoAndLocation("상세에서 확인할 신고");
