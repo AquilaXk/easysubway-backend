@@ -2,6 +2,7 @@ package com.easysubway.transit.application.service;
 
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
+import com.easysubway.transit.application.port.in.StationMasterDataCounts;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
@@ -153,6 +154,39 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			.sorted(Comparator.comparingInt(NearbyStation::distanceMeters))
 			.limit(command.limit())
 			.toList();
+	}
+
+	@Override
+	public Map<String, StationMasterDataCounts> countStationMasterDataByStationId() {
+		Map<String, Long> exitCounts = countByStationId(loadTransitMasterPort.loadStationExits(), StationExit::stationId);
+		Map<String, Long> facilityCounts = countByStationId(
+			loadTransitMasterPort.loadAccessibilityFacilities(),
+			AccessibilityFacility::stationId
+		);
+		Map<String, Long> layoutSourceCounts = countByStationId(
+			loadTransitMasterPort.loadStationLayoutSources(),
+			StationLayoutSource::stationId
+		);
+		Map<String, Long> simplifiedLayoutCounts = countByStationId(
+			loadTransitMasterPort.loadSimplifiedStationLayouts(),
+			SimplifiedStationLayout::stationId
+		);
+		Map<String, Long> routeNodeCounts = countByStationId(loadTransitMasterPort.loadRouteNodes(), RouteNode::stationId);
+		Map<String, Long> routeEdgeCounts = countByStationId(loadTransitMasterPort.loadRouteEdges(), RouteEdge::stationId);
+
+		return activeStations()
+			.stream()
+			.collect(Collectors.toMap(
+				Station::id,
+				station -> new StationMasterDataCounts(
+					countFor(exitCounts, station.id()),
+					countFor(facilityCounts, station.id()),
+					countFor(layoutSourceCounts, station.id()),
+					countFor(simplifiedLayoutCounts, station.id()),
+					countFor(routeNodeCounts, station.id()),
+					countFor(routeEdgeCounts, station.id())
+				)
+			));
 	}
 
 	@Override
@@ -399,6 +433,16 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			.stream()
 			.filter(stationLine -> linesById.containsKey(stationLine.lineId()))
 			.collect(Collectors.groupingBy(StationLine::stationId));
+	}
+
+	private static <T> Map<String, Long> countByStationId(List<T> values, Function<T, String> stationIdExtractor) {
+		return values
+			.stream()
+			.collect(Collectors.groupingBy(stationIdExtractor, Collectors.counting()));
+	}
+
+	private static int countFor(Map<String, Long> counts, String stationId) {
+		return Math.toIntExact(counts.getOrDefault(stationId, 0L));
 	}
 
 	private StationWithLines withLines(

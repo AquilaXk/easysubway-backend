@@ -12,6 +12,7 @@ import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
 import java.util.List;
+import java.util.Map;
 
 public interface TransitMasterQueryUseCase {
 
@@ -24,6 +25,8 @@ public interface TransitMasterQueryUseCase {
 	List<StationWithLines> searchStations(StationSearchCommand command);
 
 	List<NearbyStation> searchNearbyStations(NearbyStationSearchCommand command);
+
+	Map<String, StationMasterDataCounts> countStationMasterDataByStationId();
 
 	StationWithLines getStation(String stationId);
 
