@@ -20,13 +20,17 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeType;
+import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.RouteNodeType;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationNotFoundException;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutConfidence;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
@@ -181,6 +185,28 @@ class TransitMasterServiceTest {
 		));
 
 		assertThat(repository.stationLineLoadCount).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("역 운영 데이터 수 집계는 하위 컬렉션을 한 번씩만 불러온다")
+	void countStationMasterDataLoadsEachCollectionOnce() {
+		var repository = new CountingTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var counts = service.countStationMasterDataByStationId();
+
+		assertThat(counts.get("station-sangnoksu").exitCount()).isEqualTo(2);
+		assertThat(counts.get("station-sangnoksu").facilityCount()).isEqualTo(3);
+		assertThat(counts.get("station-sangnoksu").layoutSourceCount()).isEqualTo(1);
+		assertThat(counts.get("station-sangnoksu").simplifiedLayoutCount()).isEqualTo(1);
+		assertThat(counts.get("station-sangnoksu").routeNodeCount()).isEqualTo(2);
+		assertThat(counts.get("station-sangnoksu").routeEdgeCount()).isEqualTo(1);
+		assertThat(repository.stationExitLoadCount).isEqualTo(1);
+		assertThat(repository.facilityLoadCount).isEqualTo(1);
+		assertThat(repository.layoutSourceLoadCount).isEqualTo(1);
+		assertThat(repository.simplifiedLayoutLoadCount).isEqualTo(1);
+		assertThat(repository.routeNodeLoadCount).isEqualTo(1);
+		assertThat(repository.routeEdgeLoadCount).isEqualTo(1);
 	}
 
 	@Test
@@ -736,11 +762,53 @@ class TransitMasterServiceTest {
 	private static class CountingTransitMasterRepository extends InMemoryTransitMasterRepository {
 
 		private int stationLineLoadCount;
+		private int stationExitLoadCount;
+		private int facilityLoadCount;
+		private int layoutSourceLoadCount;
+		private int simplifiedLayoutLoadCount;
+		private int routeNodeLoadCount;
+		private int routeEdgeLoadCount;
 
 		@Override
 		public List<StationLine> loadStationLines() {
 			stationLineLoadCount++;
 			return super.loadStationLines();
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			stationExitLoadCount++;
+			return super.loadStationExits();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			facilityLoadCount++;
+			return super.loadAccessibilityFacilities();
+		}
+
+		@Override
+		public List<StationLayoutSource> loadStationLayoutSources() {
+			layoutSourceLoadCount++;
+			return super.loadStationLayoutSources();
+		}
+
+		@Override
+		public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
+			simplifiedLayoutLoadCount++;
+			return super.loadSimplifiedStationLayouts();
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			routeNodeLoadCount++;
+			return super.loadRouteNodes();
+		}
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			routeEdgeLoadCount++;
+			return super.loadRouteEdges();
 		}
 	}
 }

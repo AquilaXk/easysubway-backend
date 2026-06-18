@@ -3,6 +3,7 @@ package com.easysubway.transit.adapter.in.web;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
+import com.easysubway.transit.application.port.in.StationMasterDataCounts;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
@@ -151,10 +152,15 @@ class TransitMasterController {
 		@RequestParam(required = false) String query,
 		@RequestParam(required = false) String lineId
 	) {
+		Map<String, StationMasterDataCounts> countsByStationId = transitMasterQueryUseCase
+			.countStationMasterDataByStationId();
 		List<AdminStationSummaryResponse> response = transitMasterQueryUseCase
 			.searchStations(new StationSearchCommand(query, lineId))
 			.stream()
-			.map(this::adminStationSummaryResponse)
+			.map(station -> adminStationSummaryResponse(
+				station,
+				countsByStationId.getOrDefault(station.station().id(), StationMasterDataCounts.empty())
+			))
 			.toList();
 
 		return ApiResponse.ok(response);
@@ -236,9 +242,11 @@ class TransitMasterController {
 		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
 	}
 
-	private AdminStationSummaryResponse adminStationSummaryResponse(StationWithLines stationWithLines) {
+	private AdminStationSummaryResponse adminStationSummaryResponse(
+		StationWithLines stationWithLines,
+		StationMasterDataCounts counts
+	) {
 		Station station = stationWithLines.station();
-		String stationId = station.id();
 		return new AdminStationSummaryResponse(
 			station.id(),
 			station.nameKo(),
@@ -248,12 +256,12 @@ class TransitMasterController {
 			station.dataSourceType(),
 			station.lastVerifiedAt(),
 			stationLineResponses(stationWithLines.lines()),
-			transitMasterQueryUseCase.listStationExits(stationId).size(),
-			transitMasterQueryUseCase.listStationFacilities(stationId).size(),
-			transitMasterQueryUseCase.listStationLayoutSources(stationId).size(),
-			transitMasterQueryUseCase.listSimplifiedStationLayouts(stationId).size(),
-			transitMasterQueryUseCase.listRouteNodes(stationId).size(),
-			transitMasterQueryUseCase.listRouteEdges(stationId).size()
+			counts.exitCount(),
+			counts.facilityCount(),
+			counts.layoutSourceCount(),
+			counts.simplifiedLayoutCount(),
+			counts.routeNodeCount(),
+			counts.routeEdgeCount()
 		);
 	}
 
