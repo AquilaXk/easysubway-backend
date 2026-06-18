@@ -5,6 +5,7 @@ import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateStationLayoutSourceCommand;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeNotFoundException;
 import com.easysubway.transit.domain.RouteNode;
@@ -13,9 +14,12 @@ import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLayoutSourceNotFoundException;
+import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
 import java.security.Principal;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.stream.Collectors;
@@ -45,6 +49,7 @@ class TransitStationLayoutAdminPageController {
 		StationWithLines station = transitMasterQueryUseCase.getStation(stationId);
 		model.addAttribute("station", StationLayoutPageStation.from(station));
 		model.addAttribute("layoutSources", layoutSourceRows(stationId));
+		model.addAttribute("sourceTypeOptions", sourceTypeOptions());
 		model.addAttribute("layouts", layoutRows(stationId));
 		model.addAttribute("layoutStatusOptions", layoutStatusOptions());
 		model.addAttribute("routeNodes", routeNodeRows(stationId));
@@ -63,6 +68,37 @@ class TransitStationLayoutAdminPageController {
 		transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
 			layoutId,
 			status,
+			principal.getName()
+		));
+		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
+	}
+
+	@PostMapping("/admin/stations/{stationId}/layout-sources/{sourceId}/page")
+	String updateStationLayoutSourceFromPage(
+		@PathVariable String stationId,
+		@PathVariable String sourceId,
+		@RequestParam StationLayoutSourceType sourceType,
+		@RequestParam String sourceName,
+		@RequestParam String sourceUrl,
+		@RequestParam String license,
+		@RequestParam boolean commercialUseAllowed,
+		@RequestParam boolean attributionRequired,
+		@RequestParam LocalDate capturedAt,
+		@RequestParam(required = false) LocalDate reviewedAt,
+		Principal principal
+	) {
+		requireStationLayoutSourceInStation(stationId, sourceId);
+		transitMasterAdminUseCase.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			stationId,
+			sourceId,
+			sourceType,
+			sourceName,
+			sourceUrl,
+			license,
+			commercialUseAllowed,
+			attributionRequired,
+			capturedAt,
+			reviewedAt,
 			principal.getName()
 		));
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
@@ -134,6 +170,16 @@ class TransitStationLayoutAdminPageController {
 		}
 	}
 
+	private void requireStationLayoutSourceInStation(String stationId, String sourceId) {
+		transitMasterQueryUseCase.getStation(stationId);
+		boolean matched = transitMasterQueryUseCase.listStationLayoutSources(stationId)
+			.stream()
+			.anyMatch(source -> source.id().equals(sourceId));
+		if (!matched) {
+			throw new StationLayoutSourceNotFoundException();
+		}
+	}
+
 	private void requireRouteNodeInStation(String stationId, String nodeId) {
 		transitMasterQueryUseCase.getStation(stationId);
 		boolean matched = transitMasterQueryUseCase.listRouteNodes(stationId)
@@ -188,6 +234,12 @@ class TransitStationLayoutAdminPageController {
 			.toList();
 	}
 
+	private static List<SourceTypeOption> sourceTypeOptions() {
+		return Arrays.stream(StationLayoutSourceType.values())
+			.map(type -> new SourceTypeOption(type, type.name()))
+			.toList();
+	}
+
 	record StationLayoutPageStation(String stationId, String stationName, String lineNames) {
 
 		static StationLayoutPageStation from(StationWithLines stationWithLines) {
@@ -203,23 +255,35 @@ class TransitStationLayoutAdminPageController {
 	}
 
 	record StationLayoutSourceRow(
+		String id,
+		StationLayoutSourceType sourceTypeValue,
 		String sourceName,
 		String sourceType,
+		String sourceUrl,
 		String license,
+		boolean commercialUseAllowed,
 		String commercialUseLabel,
+		boolean attributionRequired,
 		String attributionLabel,
 		String capturedAt,
+		String rawReviewedAt,
 		String reviewedAt
 	) {
 
 		static StationLayoutSourceRow from(StationLayoutSource source) {
 			return new StationLayoutSourceRow(
+				source.id(),
+				source.sourceType(),
 				source.sourceName(),
 				source.sourceType().name(),
+				source.sourceUrl(),
 				source.license(),
+				source.commercialUseAllowed(),
 				source.commercialUseAllowed() ? "상업적 사용 가능" : "상업적 사용 불가",
+				source.attributionRequired(),
 				source.attributionRequired() ? "출처 표시 필요" : "출처 표시 불필요",
 				source.capturedAt().toString(),
+				source.reviewedAt() == null ? "" : source.reviewedAt().toString(),
 				source.reviewedAt() == null ? "검수 전" : source.reviewedAt().toString()
 			);
 		}
@@ -251,6 +315,9 @@ class TransitStationLayoutAdminPageController {
 	}
 
 	record LayoutStatusOption(SimplifiedStationLayoutStatus value, String label) {
+	}
+
+	record SourceTypeOption(StationLayoutSourceType value, String label) {
 	}
 
 	record RouteNodeRow(

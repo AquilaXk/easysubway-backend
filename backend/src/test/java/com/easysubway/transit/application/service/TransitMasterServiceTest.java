@@ -11,6 +11,7 @@ import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilitySta
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
+import com.easysubway.transit.application.port.in.UpdateStationLayoutSourceCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
@@ -25,6 +26,7 @@ import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
 import com.easysubway.transit.domain.InvalidRouteEdgeException;
 import com.easysubway.transit.domain.InvalidRouteNodeException;
+import com.easysubway.transit.domain.InvalidStationLayoutSourceException;
 import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeNotFoundException;
@@ -36,6 +38,7 @@ import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLayoutSourceNotFoundException;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
@@ -267,6 +270,116 @@ class TransitMasterServiceTest {
 		assertThat(sources.getFirst().commercialUseAllowed()).isFalse();
 		assertThat(sources.getFirst().attributionRequired()).isTrue();
 		assertThat(sources.getFirst().reviewedAt()).isEqualTo(LocalDate.of(2026, 6, 12));
+	}
+
+	@Test
+	@DisplayName("관리자는 구조도 기준 자료의 출처와 이용 조건과 검수일을 수정한다")
+	void updateStationLayoutSourceStoresSourceMetadata() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var updated = service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"admin-user"
+		));
+
+		assertThat(updated.sourceType()).isEqualTo(StationLayoutSourceType.OPERATOR_PAGE);
+		assertThat(updated.sourceName()).isEqualTo("상록수역 운영기관 안내 페이지");
+		assertThat(updated.sourceUrl()).isEqualTo("https://www.seoulmetro.co.kr/station/sangnoksu");
+		assertThat(updated.license()).isEqualTo("운영기관 페이지 확인용");
+		assertThat(updated.commercialUseAllowed()).isTrue();
+		assertThat(updated.attributionRequired()).isFalse();
+		assertThat(updated.capturedAt()).isEqualTo(LocalDate.of(2026, 6, 13));
+		assertThat(updated.reviewedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
+		assertThat(service.listStationLayoutSources("station-sangnoksu").getFirst().sourceName())
+			.isEqualTo("상록수역 운영기관 안내 페이지");
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정은 필수 값과 검수일 범위와 관리자 식별자를 요구한다")
+	void updateStationLayoutSourceRequiresValidInputsAndUpdater() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			" ",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidStationLayoutSourceException.class)
+			.hasMessage("기준 자료 이름을 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 12),
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidStationLayoutSourceException.class)
+			.hasMessage("기준 자료 검수일은 수집일보다 빠를 수 없습니다.");
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sangnoksu",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			""
+		)))
+			.isInstanceOf(InvalidStationLayoutSourceException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정은 URL 역과 기준 자료 소속이 일치해야 한다")
+	void updateStationLayoutSourceRequiresSourceInStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+			"station-sadang",
+			"layout-source-sangnoksu-station-map",
+			StationLayoutSourceType.OPERATOR_PAGE,
+			"상록수역 운영기관 안내 페이지",
+			"https://www.seoulmetro.co.kr/station/sangnoksu",
+			"운영기관 페이지 확인용",
+			true,
+			false,
+			LocalDate.of(2026, 6, 13),
+			LocalDate.of(2026, 6, 14),
+			"admin-user"
+		)))
+			.isInstanceOf(StationLayoutSourceNotFoundException.class)
+			.hasMessage("구조도 기준 자료 정보를 찾을 수 없습니다.");
 	}
 
 	@Test

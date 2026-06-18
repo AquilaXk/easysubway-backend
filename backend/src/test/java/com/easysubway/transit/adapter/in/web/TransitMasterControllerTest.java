@@ -332,6 +332,157 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 구조도 기준 자료의 출처와 이용 조건과 검수일을 수정한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesStationLayoutSourceMetadataAndListReflectsIt() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "sourceType": "OPERATOR_PAGE",
+					  "sourceName": "상록수역 운영기관 안내 페이지",
+					  "sourceUrl": "https://www.seoulmetro.co.kr/station/sangnoksu",
+					  "license": "운영기관 페이지 확인용",
+					  "commercialUseAllowed": true,
+					  "attributionRequired": false,
+					  "capturedAt": "2026-06-13",
+					  "reviewedAt": "2026-06-14"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("layout-source-sangnoksu-station-map"))
+			.andExpect(jsonPath("$.data.sourceType").value("OPERATOR_PAGE"))
+			.andExpect(jsonPath("$.data.sourceName").value("상록수역 운영기관 안내 페이지"))
+			.andExpect(jsonPath("$.data.sourceUrl").value("https://www.seoulmetro.co.kr/station/sangnoksu"))
+			.andExpect(jsonPath("$.data.license").value("운영기관 페이지 확인용"))
+			.andExpect(jsonPath("$.data.commercialUseAllowed").value(true))
+			.andExpect(jsonPath("$.data.attributionRequired").value(false))
+			.andExpect(jsonPath("$.data.capturedAt").value("2026-06-13"))
+			.andExpect(jsonPath("$.data.reviewedAt").value("2026-06-14"));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layout-sources")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].sourceName").value("상록수역 운영기관 안내 페이지"))
+			.andExpect(jsonPath("$.data[0].commercialUseAllowed").value(true))
+			.andExpect(jsonPath("$.data[0].attributionRequired").value(false))
+			.andExpect(jsonPath("$.data[0].reviewedAt").value("2026-06-14"));
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정 API는 관리자 인증을 요구한다")
+	void updateStationLayoutSourceMetadataRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "sourceType": "OPERATOR_PAGE",
+					  "sourceName": "상록수역 운영기관 안내 페이지",
+					  "sourceUrl": "https://www.seoulmetro.co.kr/station/sangnoksu",
+					  "license": "운영기관 페이지 확인용",
+					  "commercialUseAllowed": true,
+					  "attributionRequired": false,
+					  "capturedAt": "2026-06-13",
+					  "reviewedAt": "2026-06-14"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "sourceType": "OPERATOR_PAGE",
+					  "sourceName": "상록수역 운영기관 안내 페이지",
+					  "sourceUrl": "https://www.seoulmetro.co.kr/station/sangnoksu",
+					  "license": "운영기관 페이지 확인용",
+					  "commercialUseAllowed": true,
+					  "attributionRequired": false,
+					  "capturedAt": "2026-06-13",
+					  "reviewedAt": "2026-06-14"
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정은 필수 값과 검수일 범위를 요구한다")
+	void updateStationLayoutSourceMetadataRequiresValidInputs() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "sourceType": "OPERATOR_PAGE",
+					  "sourceName": " ",
+					  "sourceUrl": "https://www.seoulmetro.co.kr/station/sangnoksu",
+					  "license": "운영기관 페이지 확인용",
+					  "commercialUseAllowed": true,
+					  "attributionRequired": false,
+					  "capturedAt": "2026-06-13",
+					  "reviewedAt": "2026-06-14"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("기준 자료 이름을 입력해야 합니다."));
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "sourceType": "OPERATOR_PAGE",
+					  "sourceName": "상록수역 운영기관 안내 페이지",
+					  "sourceUrl": "https://www.seoulmetro.co.kr/station/sangnoksu",
+					  "license": "운영기관 페이지 확인용",
+					  "commercialUseAllowed": true,
+					  "attributionRequired": false,
+					  "capturedAt": "2026-06-13",
+					  "reviewedAt": "2026-06-12"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("기준 자료 검수일은 수집일보다 빠를 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("구조도 기준 자료 수정은 URL 역과 기준 자료 소속이 일치해야 한다")
+	void updateStationLayoutSourceMetadataRequiresSourceInStation() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sadang/layout-sources/layout-source-sangnoksu-station-map")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "sourceType": "OPERATOR_PAGE",
+					  "sourceName": "상록수역 운영기관 안내 페이지",
+					  "sourceUrl": "https://www.seoulmetro.co.kr/station/sangnoksu",
+					  "license": "운영기관 페이지 확인용",
+					  "commercialUseAllowed": true,
+					  "attributionRequired": false,
+					  "capturedAt": "2026-06-13",
+					  "reviewedAt": "2026-06-14"
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("구조도 기준 자료 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 역의 구조도 기준 자료는 공통 404 응답을 반환한다")
 	void missingStationLayoutSourcesReturnCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/admin/stations/unknown-station/layout-sources")

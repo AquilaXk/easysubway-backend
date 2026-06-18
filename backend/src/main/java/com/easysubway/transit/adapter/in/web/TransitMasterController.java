@@ -12,6 +12,7 @@ import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilitySta
 import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateStationLayoutSourceCommand;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
@@ -20,6 +21,7 @@ import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidRouteEdgeException;
 import com.easysubway.transit.domain.InvalidRouteNodeException;
+import com.easysubway.transit.domain.InvalidStationLayoutSourceException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeType;
@@ -195,6 +197,19 @@ class TransitMasterController {
 	@GetMapping("/admin/stations/{stationId}/layout-sources")
 	ApiResponse<List<StationLayoutSourceResponse>> stationLayoutSources(@PathVariable String stationId) {
 		return ApiResponse.ok(stationLayoutSourceResponses(stationId));
+	}
+
+	@PatchMapping("/admin/stations/{stationId}/layout-sources/{sourceId}")
+	ApiResponse<StationLayoutSourceResponse> updateStationLayoutSource(
+		@PathVariable String stationId,
+		@PathVariable String sourceId,
+		@RequestBody UpdateStationLayoutSourceRequest request,
+		Principal principal
+	) {
+		StationLayoutSource source = transitMasterAdminUseCase.updateStationLayoutSource(
+			request.toCommand(stationId, sourceId, principal.getName())
+		);
+		return ApiResponse.ok(StationLayoutSourceResponse.from(source));
 	}
 
 	@GetMapping("/admin/stations/{stationId}/layouts")
@@ -847,6 +862,37 @@ class TransitMasterController {
 				widthLevel,
 				reliabilityScore,
 				active,
+				updatedBy
+			);
+		}
+	}
+
+	record UpdateStationLayoutSourceRequest(
+		StationLayoutSourceType sourceType,
+		String sourceName,
+		String sourceUrl,
+		String license,
+		Boolean commercialUseAllowed,
+		Boolean attributionRequired,
+		LocalDate capturedAt,
+		LocalDate reviewedAt
+	) {
+
+		UpdateStationLayoutSourceCommand toCommand(String stationId, String sourceId, String updatedBy) {
+			if (commercialUseAllowed == null || attributionRequired == null) {
+				throw new InvalidStationLayoutSourceException("기준 자료 이용 조건을 선택해야 합니다.");
+			}
+			return new UpdateStationLayoutSourceCommand(
+				stationId,
+				sourceId,
+				sourceType,
+				sourceName,
+				sourceUrl,
+				license,
+				commercialUseAllowed,
+				attributionRequired,
+				capturedAt,
+				reviewedAt,
 				updatedBy
 			);
 		}

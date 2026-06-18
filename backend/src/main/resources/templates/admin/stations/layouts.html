@@ -140,7 +140,46 @@
 			</thead>
 			<tbody>
 			<tr th:each="source : ${layoutSources}">
-				<td th:text="${source.sourceName}">상록수역 역사 안내도</td>
+				<td>
+					<form th:action="@{/admin/stations/{stationId}/layout-sources/{sourceId}/page(stationId=${station.stationId}, sourceId=${source.id})}"
+					      method="post">
+						<label class="meta" th:for="|source-type-${source.id}|">자료 유형</label>
+						<select name="sourceType" th:id="|source-type-${source.id}|">
+							<option th:each="option : ${sourceTypeOptions}"
+							        th:value="${option.value}"
+							        th:text="${option.label}"
+							        th:selected="${option.value == source.sourceTypeValue}">OPERATOR_DIAGRAM</option>
+						</select>
+						<label class="meta" th:for="|source-name-${source.id}|">자료 이름</label>
+						<input type="text" name="sourceName" th:id="|source-name-${source.id}|"
+						       th:value="${source.sourceName}" required>
+						<label class="meta" th:for="|source-url-${source.id}|">자료 URL</label>
+						<input type="url" name="sourceUrl" th:id="|source-url-${source.id}|"
+						       th:value="${source.sourceUrl}" required>
+						<label class="meta" th:for="|source-license-${source.id}|">라이선스</label>
+						<input type="text" name="license" th:id="|source-license-${source.id}|"
+						       th:value="${source.license}" required>
+						<label class="meta" th:for="|commercial-use-${source.id}|">상업적 이용</label>
+						<select name="commercialUseAllowed" th:id="|commercial-use-${source.id}|">
+							<option value="false" th:selected="${!source.commercialUseAllowed}">불가</option>
+							<option value="true" th:selected="${source.commercialUseAllowed}">가능</option>
+						</select>
+						<label class="meta" th:for="|attribution-${source.id}|">출처 표시</label>
+						<select name="attributionRequired" th:id="|attribution-${source.id}|">
+							<option value="true" th:selected="${source.attributionRequired}">필요</option>
+							<option value="false" th:selected="${!source.attributionRequired}">불필요</option>
+						</select>
+						<label class="meta" th:for="|captured-at-${source.id}|">수집일</label>
+						<input type="date" name="capturedAt" th:id="|captured-at-${source.id}|"
+						       th:value="${source.capturedAt}" required>
+						<label class="meta" th:for="|reviewed-at-${source.id}|">검수일</label>
+						<input type="date" name="reviewedAt" th:id="|reviewed-at-${source.id}|"
+						       th:value="${source.rawReviewedAt}">
+						<button type="submit">저장</button>
+					</form>
+					<span class="meta" th:text="${source.sourceName}">상록수역 역사 안내도</span>
+					<span class="meta" th:text="${source.sourceUrl}">https://www.seoulmetro.co.kr</span>
+				</td>
 				<td th:text="${source.sourceType}">OPERATOR_DIAGRAM</td>
 				<td th:text="${source.license}">운영기관 안내도 확인용</td>
 				<td>

@@ -4,6 +4,7 @@ import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
 import com.easysubway.transit.application.port.out.SaveRouteNodePort;
+import com.easysubway.transit.application.port.out.SaveStationLayoutSourcePort;
 import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -38,6 +39,7 @@ import org.springframework.stereotype.Repository;
 public class InMemoryTransitMasterRepository implements
 	LoadTransitMasterPort,
 	SaveAccessibilityFacilityStatusPort,
+	SaveStationLayoutSourcePort,
 	SaveSimplifiedStationLayoutStatusPort,
 	SaveRouteNodePort,
 	SaveRouteEdgePort {
@@ -226,12 +228,14 @@ public class InMemoryTransitMasterRepository implements
 	);
 
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
+	private final Map<String, StationLayoutSource> stationLayoutSources = new LinkedHashMap<>();
 	private final Map<String, SimplifiedStationLayout> simplifiedStationLayouts = new LinkedHashMap<>();
 	private final Map<String, RouteNode> routeNodes = new LinkedHashMap<>();
 	private final Map<String, RouteEdge> routeEdges = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
 		seedAccessibilityFacilities();
+		seedStationLayoutSources();
 		seedSimplifiedStationLayouts();
 		seedRouteNodes();
 		seedRouteEdges();
@@ -269,7 +273,7 @@ public class InMemoryTransitMasterRepository implements
 
 	@Override
 	public List<StationLayoutSource> loadStationLayoutSources() {
-		return STATION_LAYOUT_SOURCES;
+		return List.copyOf(stationLayoutSources.values());
 	}
 
 	@Override
@@ -316,6 +320,11 @@ public class InMemoryTransitMasterRepository implements
 	@Override
 	public void saveAccessibilityFacility(AccessibilityFacility facility) {
 		accessibilityFacilities.put(facility.id(), facility);
+	}
+
+	@Override
+	public void saveStationLayoutSource(StationLayoutSource source) {
+		stationLayoutSources.put(source.id(), source);
 	}
 
 	@Override
@@ -414,6 +423,10 @@ public class InMemoryTransitMasterRepository implements
 
 	private void seedSimplifiedStationLayouts() {
 		SIMPLIFIED_STATION_LAYOUTS.forEach(layout -> simplifiedStationLayouts.put(layout.id(), layout));
+	}
+
+	private void seedStationLayoutSources() {
+		STATION_LAYOUT_SOURCES.forEach(source -> stationLayoutSources.put(source.id(), source));
 	}
 
 	private void seedRouteNodes() {

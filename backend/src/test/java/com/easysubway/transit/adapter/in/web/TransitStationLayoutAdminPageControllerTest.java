@@ -50,6 +50,14 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("운영기관 안내도 확인용")
 			.contains("상업적 사용 불가")
 			.contains("출처 표시 필요")
+			.contains("name=\"sourceType\"")
+			.contains("name=\"sourceName\"")
+			.contains("name=\"sourceUrl\"")
+			.contains("name=\"license\"")
+			.contains("name=\"commercialUseAllowed\"")
+			.contains("name=\"attributionRequired\"")
+			.contains("name=\"capturedAt\"")
+			.contains("name=\"reviewedAt\"")
 			.contains("쉬운 내부 구조도")
 			.contains("DRAFT")
 			.contains("OFFICIAL_DIAGRAM_REFERENCED")
@@ -108,6 +116,40 @@ class TransitStationLayoutAdminPageControllerTest {
 		assertThat(html)
 			.contains("layout-sangnoksu-draft")
 			.contains("READY_FOR_REVIEW");
+	}
+
+	@Test
+	@DisplayName("관리자는 역 구조도 화면에서 기준 자료 정보를 변경한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesStationLayoutSourceMetadataFromPageAndRedirectsToLayoutPage() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("sourceType", "OPERATOR_PAGE")
+				.param("sourceName", "상록수역 운영기관 안내 페이지")
+				.param("sourceUrl", "https://www.seoulmetro.co.kr/station/sangnoksu")
+				.param("license", "운영기관 페이지 확인용")
+				.param("commercialUseAllowed", "true")
+				.param("attributionRequired", "false")
+				.param("capturedAt", "2026-06-13")
+				.param("reviewedAt", "2026-06-14"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/stations/station-sangnoksu/layouts/page"));
+
+		String html = mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("상록수역 운영기관 안내 페이지")
+			.contains("운영기관 페이지 확인용")
+			.contains("상업적 사용 가능")
+			.contains("출처 표시 불필요")
+			.contains("2026-06-14");
 	}
 
 	@Test
@@ -226,6 +268,33 @@ class TransitStationLayoutAdminPageControllerTest {
 				.param("status", "READY_FOR_REVIEW"))
 			.andExpect(status().isForbidden());
 
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map/page")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("sourceType", "OPERATOR_PAGE")
+				.param("sourceName", "상록수역 운영기관 안내 페이지")
+				.param("sourceUrl", "https://www.seoulmetro.co.kr/station/sangnoksu")
+				.param("license", "운영기관 페이지 확인용")
+				.param("commercialUseAllowed", "true")
+				.param("attributionRequired", "false")
+				.param("capturedAt", "2026-06-13")
+				.param("reviewedAt", "2026-06-14"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map/page")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("sourceType", "OPERATOR_PAGE")
+				.param("sourceName", "상록수역 운영기관 안내 페이지")
+				.param("sourceUrl", "https://www.seoulmetro.co.kr/station/sangnoksu")
+				.param("license", "운영기관 페이지 확인용")
+				.param("commercialUseAllowed", "true")
+				.param("attributionRequired", "false")
+				.param("capturedAt", "2026-06-13")
+				.param("reviewedAt", "2026-06-14"))
+			.andExpect(status().isForbidden());
+
 		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1/page")
 				.with(csrf())
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
@@ -298,6 +367,27 @@ class TransitStationLayoutAdminPageControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("내부 이동 노드 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("역 구조도 기준 자료 변경은 URL 역과 기준 자료 소속이 일치해야 한다")
+	void stationLayoutSourceUpdateRequiresSourceInStation() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sadang/layout-sources/layout-source-sangnoksu-station-map/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("sourceType", "OPERATOR_PAGE")
+				.param("sourceName", "상록수역 운영기관 안내 페이지")
+				.param("sourceUrl", "https://www.seoulmetro.co.kr/station/sangnoksu")
+				.param("license", "운영기관 페이지 확인용")
+				.param("commercialUseAllowed", "true")
+				.param("attributionRequired", "false")
+				.param("capturedAt", "2026-06-13")
+				.param("reviewedAt", "2026-06-14"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("구조도 기준 자료 정보를 찾을 수 없습니다."));
 	}
 
 	@Test
