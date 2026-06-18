@@ -273,6 +273,72 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 작성자는 처리 결과를 확인 완료 상태로 바꿀 수 있다")
+	void reporterConfirmsReviewedReportResult() throws Exception {
+		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "처리 결과를 확인할 신고");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "REJECT"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+		mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", reportId)
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf()))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.status").value("RESOLVED"))
+			.andExpect(jsonPath("$.data.reviewedBy").value("admin-test"));
+	}
+
+	@Test
+	@DisplayName("다른 사용자의 신고 처리 결과 확인은 공통 404 응답을 반환한다")
+	void confirmReportResultRequiresOwner() throws Exception {
+		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "다른 사용자가 확인하면 안 되는 신고");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "REJECT"
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf()))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("신고 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("검수 전 신고 처리 결과 확인은 공통 400 응답을 반환한다")
+	void confirmReportResultRequiresReviewedStatus() throws Exception {
+		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "아직 검수되지 않은 신고");
+
+		mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", reportId)
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf()))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("검수 완료된 신고만 확인할 수 있습니다."));
+	}
+
+	@Test
 	@DisplayName("신고 검수는 관리자 인증을 요구한다")
 	void reviewReportRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(post("/admin/reports/report-1/review")
