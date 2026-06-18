@@ -8,6 +8,8 @@ import org.springframework.stereotype.Component;
 @Component
 class OperatorPushNotificationReportAssembler {
 
+	private static final String OPERATOR_SAFE_FAILURE_REASON = "푸시 발송 처리 중 오류가 발생했습니다. 관리자 점검이 필요합니다.";
+
 	private final PushNotificationDashboardUseCase pushNotificationDashboardUseCase;
 
 	OperatorPushNotificationReportAssembler(PushNotificationDashboardUseCase pushNotificationDashboardUseCase) {
@@ -21,7 +23,7 @@ class OperatorPushNotificationReportAssembler {
 			summary.pendingCount(),
 			summary.sentCount(),
 			summary.failedCount(),
-			summary.latestFailureReason(),
+			safeFailureReason(summary.failedCount()),
 			List.of(
 				new OperatorPushNotificationReportView.StatusCountRow(
 					"대기 중",
@@ -35,17 +37,21 @@ class OperatorPushNotificationReportAssembler {
 				),
 				new OperatorPushNotificationReportView.StatusCountRow(
 					"발송 실패",
-					failedDescription(summary.latestFailureReason()),
+					failedDescription(summary.failedCount()),
 					summary.failedCount()
 				)
 			)
 		);
 	}
 
-	private static String failedDescription(String latestFailureReason) {
-		if (latestFailureReason == null || latestFailureReason.isBlank()) {
-			return "발송 어댑터 실패 또는 예외";
+	private static String safeFailureReason(long failedCount) {
+		return failedCount == 0 ? null : OPERATOR_SAFE_FAILURE_REASON;
+	}
+
+	private static String failedDescription(long failedCount) {
+		if (failedCount == 0) {
+			return "최근 실패 없음";
 		}
-		return "발송 어댑터 실패 또는 예외 · 최근 실패: " + latestFailureReason;
+		return OPERATOR_SAFE_FAILURE_REASON;
 	}
 }

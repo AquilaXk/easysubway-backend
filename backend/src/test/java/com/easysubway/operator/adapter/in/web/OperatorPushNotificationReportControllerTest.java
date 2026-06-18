@@ -1,9 +1,12 @@
 package com.easysubway.operator.adapter.in.web;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -49,7 +52,7 @@ class OperatorPushNotificationReportControllerTest {
 			.andExpect(jsonPath("$.data.sentCount").value(0))
 			.andExpect(jsonPath("$.data.failedCount").value(1))
 			.andExpect(jsonPath("$.data.latestFailureReason")
-				.value("외부 푸시 발송 어댑터가 설정되지 않았습니다."))
+				.value("푸시 발송 처리 중 오류가 발생했습니다. 관리자 점검이 필요합니다."))
 			.andExpect(jsonPath("$.data.statusRows[0].label").value("대기 중"))
 			.andExpect(jsonPath("$.data.statusRows[0].description").value("아직 발송 처리 전"))
 			.andExpect(jsonPath("$.data.statusRows[0].count").value(1))
@@ -57,11 +60,12 @@ class OperatorPushNotificationReportControllerTest {
 			.andExpect(jsonPath("$.data.statusRows[1].count").value(0))
 			.andExpect(jsonPath("$.data.statusRows[2].label").value("발송 실패"))
 			.andExpect(jsonPath("$.data.statusRows[2].description")
-				.value("발송 어댑터 실패 또는 예외 · 최근 실패: 외부 푸시 발송 어댑터가 설정되지 않았습니다."))
+				.value("푸시 발송 처리 중 오류가 발생했습니다. 관리자 점검이 필요합니다."))
 			.andExpect(jsonPath("$.data.statusRows[2].count").value(1))
 			.andExpect(jsonPath("$.data.notificationId").doesNotExist())
 			.andExpect(jsonPath("$.data.userId").doesNotExist())
-			.andExpect(jsonPath("$.data.deviceToken").doesNotExist());
+			.andExpect(jsonPath("$.data.deviceToken").doesNotExist())
+			.andExpect(content().string(not(containsString("외부 푸시 발송 어댑터가 설정되지 않았습니다."))));
 	}
 
 	@Test
