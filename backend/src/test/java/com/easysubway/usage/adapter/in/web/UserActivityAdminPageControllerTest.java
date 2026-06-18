@@ -36,8 +36,7 @@ class UserActivityAdminPageControllerTest {
 		String viewName = controller.userActivityDashboardPage(model);
 
 		assertThat(viewName).isEqualTo("admin/usage/activity");
-		UserActivityAdminPageController.UserActivityDashboardView view =
-			(UserActivityAdminPageController.UserActivityDashboardView) model.getAttribute("summary");
+		UserActivityDashboardView view = (UserActivityDashboardView) model.getAttribute("summary");
 		assertThat(view.totalActiveUsers()).isEqualTo(3);
 		assertThat(view.totalApiRequests()).isEqualTo(12);
 		assertThat(view.totalApiErrors()).isEqualTo(2);
