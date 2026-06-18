@@ -34,6 +34,7 @@ class PushNotificationAdminPageController {
 		String failureRateLabel,
 		String failureAlertLabel,
 		String failureAlertDescription,
+		String failureAlertClass,
 		String latestFailureReason,
 		List<StatusCountRow> statusRows
 	) {
@@ -50,6 +51,7 @@ class PushNotificationAdminPageController {
 				percentageLabel(summary.failedCount(), deliveryAttemptCount),
 				failureAlertLabel(summary.failedCount(), deliveryAttemptCount),
 				failureAlertDescription(summary.failedCount(), deliveryAttemptCount),
+				failureAlertClass(summary.failedCount(), deliveryAttemptCount),
 				summary.latestFailureReason(),
 				List.of(
 					new StatusCountRow("대기 중", "아직 발송 처리 전", summary.pendingCount()),
@@ -81,6 +83,13 @@ class PushNotificationAdminPageController {
 				return "발송 실패 없이 처리되고 있습니다.";
 			}
 			return "발송 실패가 있어 푸시 어댑터와 provider 상태를 확인하세요.";
+		}
+
+		private static String failureAlertClass(long failedCount, long deliveryAttemptCount) {
+			if (deliveryAttemptCount == 0) {
+				return "pending";
+			}
+			return failedCount == 0 ? "ok" : "failure";
 		}
 
 		private static String failedDescription(String latestFailureReason) {

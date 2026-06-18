@@ -68,14 +68,29 @@
 			line-height: 1.45;
 		}
 
-		.failure-alert {
+		.delivery-alert {
 			margin: -8px 0 24px;
 			padding: 14px 18px;
+			font-weight: 800;
+			line-height: 1.45;
+		}
+
+		.delivery-alert.failure {
 			background: #fef2f2;
 			border: 1px solid #fecaca;
 			color: #7f1d1d;
-			font-weight: 800;
-			line-height: 1.45;
+		}
+
+		.delivery-alert.ok {
+			background: #ecfdf5;
+			border: 1px solid #bbf7d0;
+			color: #14532d;
+		}
+
+		.delivery-alert.pending {
+			background: #f8fafc;
+			border: 1px solid #cbd5e1;
+			color: #334155;
 		}
 
 		section {
@@ -145,7 +160,7 @@
 		</div>
 	</div>
 
-	<p class="failure-alert"
+	<p th:class="'delivery-alert ' + ${summary.failureAlertClass}"
 	   th:text="${summary.failureAlertLabel} + ': ' + ${summary.failureAlertDescription}">
 		점검 필요: 발송 실패가 있어 푸시 어댑터와 provider 상태를 확인하세요.
 	</p>
