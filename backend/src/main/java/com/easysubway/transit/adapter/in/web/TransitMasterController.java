@@ -9,6 +9,7 @@ import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
@@ -240,6 +241,18 @@ class TransitMasterController {
 			request.toCommand(facilityId, principal.getName())
 		);
 		return ApiResponse.ok(AccessibilityFacilityResponse.from(facility));
+	}
+
+	@PatchMapping("/admin/stations/layouts/{layoutId}/status")
+	ApiResponse<SimplifiedStationLayoutResponse> updateSimplifiedStationLayoutStatus(
+		@PathVariable String layoutId,
+		@RequestBody UpdateSimplifiedStationLayoutStatusRequest request,
+		Principal principal
+	) {
+		SimplifiedStationLayout layout = transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(
+			request.toCommand(layoutId, principal.getName())
+		);
+		return ApiResponse.ok(SimplifiedStationLayoutResponse.from(layout));
 	}
 
 	private AdminStationSummaryResponse adminStationSummaryResponse(
@@ -732,6 +745,15 @@ class TransitMasterController {
 
 		UpdateAccessibilityFacilityStatusCommand toCommand(String facilityId, String updatedBy) {
 			return new UpdateAccessibilityFacilityStatusCommand(facilityId, status, updatedBy);
+		}
+	}
+
+	record UpdateSimplifiedStationLayoutStatusRequest(
+		SimplifiedStationLayoutStatus status
+	) {
+
+		UpdateSimplifiedStationLayoutStatusCommand toCommand(String layoutId, String reviewedBy) {
+			return new UpdateSimplifiedStationLayoutStatusCommand(layoutId, status, reviewedBy);
 		}
 	}
 

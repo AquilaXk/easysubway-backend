@@ -76,6 +76,34 @@
 			font-weight: 700;
 		}
 
+		form {
+			display: flex;
+			gap: 8px;
+			align-items: center;
+		}
+
+		select,
+		button {
+			min-height: 44px;
+			border: 1px solid #7b9396;
+			background: #fff;
+			color: #102a2c;
+			font-size: 15px;
+			font-weight: 800;
+		}
+
+		select {
+			min-width: 180px;
+			padding: 0 10px;
+		}
+
+		button {
+			padding: 0 14px;
+			background: #104f55;
+			color: #fff;
+			cursor: pointer;
+		}
+
 		.empty {
 			padding: 18px;
 			border-top: 1px solid #d8e0e0;
@@ -142,7 +170,19 @@
 					<span th:text="${layout.id}">layout-sangnoksu-draft</span>
 					<span class="meta" th:text="|v${layout.version}|">v1</span>
 				</td>
-				<td th:text="${layout.status}">DRAFT</td>
+				<td>
+					<form th:action="@{/admin/stations/{stationId}/layouts/{layoutId}/page/status(stationId=${station.stationId}, layoutId=${layout.id})}"
+					      method="post">
+						<label class="meta" th:for="|status-${layout.id}|">검수 상태</label>
+						<select name="status" th:id="|status-${layout.id}|">
+							<option th:each="option : ${layoutStatusOptions}"
+							        th:value="${option.value}"
+							        th:text="${option.label}"
+							        th:selected="${option.value == layout.statusValue}">DRAFT</option>
+						</select>
+						<button type="submit">변경</button>
+					</form>
+				</td>
 				<td th:text="${layout.confidenceLevel}">OFFICIAL_DIAGRAM_REFERENCED</td>
 				<td th:text="${layout.baseFloor}">B1</td>
 				<td th:text="${layout.sourceIds}">layout-source-sangnoksu-station-map</td>

@@ -2,6 +2,7 @@ package com.easysubway.transit.adapter.out.persistence;
 
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityType;
@@ -32,7 +33,10 @@ import org.springframework.stereotype.Repository;
 
 @Repository
 @Profile("!prod")
-public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, SaveAccessibilityFacilityStatusPort {
+public class InMemoryTransitMasterRepository implements
+	LoadTransitMasterPort,
+	SaveAccessibilityFacilityStatusPort,
+	SaveSimplifiedStationLayoutStatusPort {
 
 	private static final List<TransitOperator> OPERATORS = List.of(
 		new TransitOperator(
@@ -218,9 +222,11 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 	);
 
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
+	private final Map<String, SimplifiedStationLayout> simplifiedStationLayouts = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
 		seedAccessibilityFacilities();
+		seedSimplifiedStationLayouts();
 	}
 
 	@Override
@@ -260,7 +266,7 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 
 	@Override
 	public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
-		return SIMPLIFIED_STATION_LAYOUTS;
+		return List.copyOf(simplifiedStationLayouts.values());
 	}
 
 	@Override
@@ -302,6 +308,35 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 	@Override
 	public void saveAccessibilityFacility(AccessibilityFacility facility) {
 		accessibilityFacilities.put(facility.id(), facility);
+	}
+
+	@Override
+	public void saveSimplifiedStationLayoutStatus(
+		String layoutId,
+		SimplifiedStationLayoutStatus status,
+		String reviewedBy,
+		LocalDate updatedAt
+	) {
+		SimplifiedStationLayout layout = simplifiedStationLayouts.get(layoutId);
+		if (layout == null) {
+			return;
+		}
+
+		simplifiedStationLayouts.put(layoutId, new SimplifiedStationLayout(
+			layout.id(),
+			layout.stationId(),
+			layout.version(),
+			status,
+			layout.sourceIds(),
+			layout.confidenceLevel(),
+			layout.baseFloor(),
+			layout.layoutJson(),
+			layout.renderedPreviewUrl(),
+			layout.createdBy(),
+			reviewedBy,
+			status == SimplifiedStationLayoutStatus.PUBLISHED ? updatedAt : layout.publishedAt(),
+			updatedAt
+		));
 	}
 
 	private void seedAccessibilityFacilities() {
@@ -357,5 +392,9 @@ public class InMemoryTransitMasterRepository implements LoadTransitMasterPort, S
 
 	private void saveSeedFacility(AccessibilityFacility facility) {
 		accessibilityFacilities.put(facility.id(), facility);
+	}
+
+	private void seedSimplifiedStationLayouts() {
+		SIMPLIFIED_STATION_LAYOUTS.forEach(layout -> simplifiedStationLayouts.put(layout.id(), layout));
 	}
 }

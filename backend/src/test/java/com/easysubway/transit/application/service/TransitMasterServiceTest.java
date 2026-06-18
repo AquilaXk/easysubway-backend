@@ -9,6 +9,7 @@ import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
+import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
@@ -20,6 +21,7 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.RouteNode;
@@ -32,6 +34,7 @@ import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutConfidence;
+import com.easysubway.transit.domain.SimplifiedStationLayoutNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
@@ -451,6 +454,67 @@ class TransitMasterServiceTest {
 		)))
 			.isInstanceOf(AccessibilityFacilityNotFoundException.class)
 			.hasMessage("시설 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 쉬운 내부 구조도 검수 상태를 수정하고 검수자를 기록한다")
+	void updateSimplifiedStationLayoutStatusStoresStatusAndReviewer() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-16T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var updated = service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"layout-sangnoksu-draft",
+			SimplifiedStationLayoutStatus.READY_FOR_REVIEW,
+			"admin-user"
+		));
+
+		assertThat(updated.status()).isEqualTo(SimplifiedStationLayoutStatus.READY_FOR_REVIEW);
+		assertThat(updated.reviewedBy()).isEqualTo("admin-user");
+		assertThat(updated.lastVerifiedAt()).isEqualTo(LocalDate.of(2026, 6, 16));
+		assertThat(service.listSimplifiedStationLayouts("station-sangnoksu").getFirst().status())
+			.isEqualTo(SimplifiedStationLayoutStatus.READY_FOR_REVIEW);
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 검수 상태 수정은 상태값과 관리자 식별자를 요구한다")
+	void updateSimplifiedStationLayoutStatusRequiresStatusAndReviewer() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"layout-sangnoksu-draft",
+			null,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidSimplifiedStationLayoutException.class)
+			.hasMessage("구조도 상태를 선택해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"layout-sangnoksu-draft",
+			SimplifiedStationLayoutStatus.PUBLISHED,
+			""
+		)))
+			.isInstanceOf(InvalidSimplifiedStationLayoutException.class)
+			.hasMessage("검수자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 쉬운 내부 구조도 상태는 수정할 수 없다")
+	void updateSimplifiedStationLayoutStatusRequiresExistingLayout() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+			"missing-layout",
+			SimplifiedStationLayoutStatus.PUBLISHED,
+			"admin-user"
+		)))
+			.isInstanceOf(SimplifiedStationLayoutNotFoundException.class)
+			.hasMessage("역 구조도 정보를 찾을 수 없습니다.");
 	}
 
 	@Test

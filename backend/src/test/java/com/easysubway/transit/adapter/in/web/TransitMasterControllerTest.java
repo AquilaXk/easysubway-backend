@@ -384,6 +384,89 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 쉬운 내부 구조도 검수 상태를 수정하고 관리자 조회에서 확인한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesSimplifiedStationLayoutStatusAndListReflectsIt() throws Exception {
+		mockMvc.perform(patch("/admin/stations/layouts/layout-sangnoksu-draft/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "READY_FOR_REVIEW"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("layout-sangnoksu-draft"))
+			.andExpect(jsonPath("$.data.status").value("READY_FOR_REVIEW"))
+			.andExpect(jsonPath("$.data.reviewedBy").value("admin-user"));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].status").value("READY_FOR_REVIEW"))
+			.andExpect(jsonPath("$.data[0].reviewedBy").value("admin-user"));
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 상태 수정 API는 관리자 인증을 요구한다")
+	void updateSimplifiedStationLayoutStatusRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(patch("/admin/stations/layouts/layout-sangnoksu-draft/status")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "READY_FOR_REVIEW"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(patch("/admin/stations/layouts/layout-sangnoksu-draft/status")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "READY_FOR_REVIEW"
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 상태 수정 요청은 상태값을 요구한다")
+	void updateSimplifiedStationLayoutStatusRequiresStatus() throws Exception {
+		mockMvc.perform(patch("/admin/stations/layouts/layout-sangnoksu-draft/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("구조도 상태를 선택해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 쉬운 내부 구조도 상태 수정은 공통 404 응답을 반환한다")
+	void updateSimplifiedStationLayoutStatusReturnsCommonErrorForMissingLayout() throws Exception {
+		mockMvc.perform(patch("/admin/stations/layouts/missing-layout/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "PUBLISHED"
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 구조도 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 역별 내부 이동 노드의 유형과 표시 정보를 조회한다")
 	void adminListsRouteNodesWithDisplayMetadata() throws Exception {
 		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-nodes")

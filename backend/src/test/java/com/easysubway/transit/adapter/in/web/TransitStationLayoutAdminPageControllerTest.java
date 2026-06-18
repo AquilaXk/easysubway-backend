@@ -1,8 +1,11 @@
 package com.easysubway.transit.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -11,6 +14,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.http.MediaType;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -49,6 +54,10 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("DRAFT")
 			.contains("OFFICIAL_DIAGRAM_REFERENCED")
 			.contains("B1")
+			.contains("name=\"status\"")
+			.contains("READY_FOR_REVIEW")
+			.contains("PUBLISHED")
+			.contains("name=\"_csrf\"")
 			.contains("내부 이동 노드")
 			.contains("1번 출구 엘리베이터")
 			.contains("휠체어 이동 가능")
@@ -60,9 +69,31 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("75초")
 			.contains("신뢰도 92")
 			.doesNotContain("{\"nodes\":[],\"edges\":[]}")
-			.doesNotContain("<form")
-			.doesNotContain("name=\"_csrf\"")
 			.doesNotContain("<img");
+	}
+
+	@Test
+	@DisplayName("관리자는 역 구조도 화면에서 쉬운 내부 구조도 상태를 변경한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesStationLayoutStatusFromPageAndRedirectsToLayoutPage() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/layouts/layout-sangnoksu-draft/page/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("status", "READY_FOR_REVIEW"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/stations/station-sangnoksu/layouts/page"));
+
+		String html = mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("layout-sangnoksu-draft")
+			.contains("READY_FOR_REVIEW");
 	}
 
 	@Test
@@ -73,6 +104,19 @@ class TransitStationLayoutAdminPageControllerTest {
 
 		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page")
 				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/layouts/layout-sangnoksu-draft/page/status")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("status", "READY_FOR_REVIEW"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/layouts/layout-sangnoksu-draft/page/status")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("status", "READY_FOR_REVIEW"))
 			.andExpect(status().isForbidden());
 	}
 
@@ -85,5 +129,25 @@ class TransitStationLayoutAdminPageControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("역 구조도 상태 변경은 URL 역과 구조도 소속이 일치해야 한다")
+	void stationLayoutStatusUpdateRequiresLayoutInStation() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sadang/layouts/layout-sangnoksu-draft/page/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("status", "READY_FOR_REVIEW"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("역 구조도 정보를 찾을 수 없습니다."));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].id").value("layout-sangnoksu-draft"))
+			.andExpect(jsonPath("$.data[0].status").value("DRAFT"));
 	}
 }

@@ -8,10 +8,12 @@ import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -20,6 +22,7 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
@@ -31,6 +34,8 @@ import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
+import com.easysubway.transit.domain.SimplifiedStationLayoutNotFoundException;
+import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
@@ -53,6 +58,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
+	private final SaveSimplifiedStationLayoutStatusPort saveSimplifiedStationLayoutStatusPort;
 	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final Clock clock;
 
@@ -60,17 +66,30 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	public TransitMasterService(
 		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		SaveSimplifiedStationLayoutStatusPort saveSimplifiedStationLayoutStatusPort,
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase
 	) {
-		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, facilityStatusAlertUseCase, Clock.systemDefaultZone());
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			saveSimplifiedStationLayoutStatusPort,
+			facilityStatusAlertUseCase,
+			Clock.systemDefaultZone()
+		);
 	}
 
 	public TransitMasterService(
 		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort
 	) {
-		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, command -> {
-		}, Clock.systemDefaultZone());
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			layoutStatusPortOrNoop(loadTransitMasterPort),
+			command -> {
+			},
+			Clock.systemDefaultZone()
+		);
 	}
 
 	public TransitMasterService(
@@ -78,8 +97,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		Clock clock
 	) {
-		this(loadTransitMasterPort, saveAccessibilityFacilityStatusPort, command -> {
-		}, clock);
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			layoutStatusPortOrNoop(loadTransitMasterPort),
+			command -> {
+			},
+			clock
+		);
 	}
 
 	public TransitMasterService(
@@ -88,8 +113,25 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
 		Clock clock
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			layoutStatusPortOrNoop(loadTransitMasterPort),
+			facilityStatusAlertUseCase,
+			clock
+		);
+	}
+
+	public TransitMasterService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		SaveSimplifiedStationLayoutStatusPort saveSimplifiedStationLayoutStatusPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		Clock clock
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
+		this.saveSimplifiedStationLayoutStatusPort = saveSimplifiedStationLayoutStatusPort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.clock = clock;
 	}
@@ -346,6 +388,23 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return withStatus(facility, command.status(), updatedAt);
 	}
 
+	@Override
+	public SimplifiedStationLayout updateSimplifiedStationLayoutStatus(UpdateSimplifiedStationLayoutStatusCommand command) {
+		requireLayoutStatus(command);
+		requireReviewer(command);
+
+		SimplifiedStationLayout layout = loadSimplifiedStationLayout(command.layoutId());
+		LocalDate updatedAt = LocalDate.now(clock);
+		// 검수 상태는 앱 렌더링 데이터가 아니라 운영자가 배포 가능성을 판단하는 메타데이터만 갱신한다.
+		saveSimplifiedStationLayoutStatusPort.saveSimplifiedStationLayoutStatus(
+			layout.id(),
+			command.status(),
+			command.reviewedBy(),
+			updatedAt
+		);
+		return withLayoutStatus(layout, command.status(), command.reviewedBy(), updatedAt);
+	}
+
 	private TransitRegionSummary summarizeRegion(
 		String region,
 		List<TransitOperator> operators,
@@ -552,12 +611,32 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 	}
 
+	private void requireLayoutStatus(UpdateSimplifiedStationLayoutStatusCommand command) {
+		if (command.status() == null) {
+			throw new InvalidSimplifiedStationLayoutException("구조도 상태를 선택해야 합니다.");
+		}
+	}
+
+	private void requireReviewer(UpdateSimplifiedStationLayoutStatusCommand command) {
+		if (command.reviewedBy() == null || command.reviewedBy().isBlank()) {
+			throw new InvalidSimplifiedStationLayoutException("검수자 식별자가 필요합니다.");
+		}
+	}
+
 	private AccessibilityFacility loadAccessibilityFacility(String facilityId) {
 		return loadTransitMasterPort.loadAccessibilityFacilities()
 			.stream()
 			.filter(facility -> facility.id().equals(facilityId))
 			.findFirst()
 			.orElseThrow(AccessibilityFacilityNotFoundException::new);
+	}
+
+	private SimplifiedStationLayout loadSimplifiedStationLayout(String layoutId) {
+		return loadTransitMasterPort.loadSimplifiedStationLayouts()
+			.stream()
+			.filter(layout -> layout.id().equals(layoutId))
+			.findFirst()
+			.orElseThrow(SimplifiedStationLayoutNotFoundException::new);
 	}
 
 	private static String blankToNull(String value) {
@@ -588,5 +667,38 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			facility.dataSourceType(),
 			updatedAt
 		);
+	}
+
+	private SimplifiedStationLayout withLayoutStatus(
+		SimplifiedStationLayout layout,
+		SimplifiedStationLayoutStatus status,
+		String reviewedBy,
+		LocalDate updatedAt
+	) {
+		return new SimplifiedStationLayout(
+			layout.id(),
+			layout.stationId(),
+			layout.version(),
+			status,
+			layout.sourceIds(),
+			layout.confidenceLevel(),
+			layout.baseFloor(),
+			layout.layoutJson(),
+			layout.renderedPreviewUrl(),
+			layout.createdBy(),
+			reviewedBy,
+			status == SimplifiedStationLayoutStatus.PUBLISHED ? updatedAt : layout.publishedAt(),
+			updatedAt
+		);
+	}
+
+	private static SaveSimplifiedStationLayoutStatusPort layoutStatusPortOrNoop(
+		LoadTransitMasterPort loadTransitMasterPort
+	) {
+		if (loadTransitMasterPort instanceof SaveSimplifiedStationLayoutStatusPort port) {
+			return port;
+		}
+		return (layoutId, status, reviewedBy, updatedAt) -> {
+		};
 	}
 }
