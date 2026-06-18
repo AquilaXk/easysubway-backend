@@ -1,6 +1,6 @@
 plugins {
 	id 'java'
-	id 'org.springframework.boot' version '3.5.6'
+	id 'org.springframework.boot' version '3.5.15'
 	id 'io.spring.dependency-management' version '1.1.7'
 }
 
@@ -42,6 +42,15 @@ repositories {
 dependencyManagement {
 	imports {
 		mavenBom 'org.egovframe.boot:egovframe-boot-starter-parent:5.0.0'
+		mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+	}
+	dependencies {
+		// Spring Boot BOM이 더 낮게 고정하는 공통 라이브러리는 기존 eGovFrame 기준 보안 패치 버전을 유지한다.
+		dependency 'org.apache.commons:commons-lang3:3.18.0'
+		dependency 'org.apache.logging.log4j:log4j-api:2.25.3'
+		dependency 'org.apache.logging.log4j:log4j-core:2.25.3'
+		dependency 'org.apache.logging.log4j:log4j-jul:2.25.3'
+		dependency 'org.apache.logging.log4j:log4j-slf4j2-impl:2.25.3'
 	}
 }
 
