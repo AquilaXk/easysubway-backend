@@ -37,16 +37,19 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, R
 	}
 
 	@Override
-	public synchronized void recordApiTraffic(int statusCode, LocalDateTime occurredAt) {
+	public synchronized void recordApiTraffic(int statusCode, long durationMillis, LocalDateTime occurredAt) {
 		if (statusCode < 100 || statusCode > 599) {
 			throw new InvalidUserActivityException("API 응답 상태 코드는 100부터 599 사이여야 합니다.");
+		}
+		if (durationMillis < 0) {
+			throw new InvalidUserActivityException("API 응답 시간은 0 이상이어야 합니다.");
 		}
 		if (occurredAt == null) {
 			throw new InvalidUserActivityException("API 요청 시간이 필요합니다.");
 		}
 
 		apiTrafficByDate.computeIfAbsent(occurredAt.toLocalDate(), ignored -> new ApiTrafficCount())
-			.add(statusCode);
+			.add(statusCode, durationMillis);
 	}
 
 	@Override
@@ -69,26 +72,36 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, R
 					date,
 					userIds.size(),
 					apiTrafficCount.requestCount(),
-					apiTrafficCount.errorCount()
+					apiTrafficCount.errorCount(),
+					apiTrafficCount.responseMillis()
 				);
 			})
 			.toList();
 		long totalApiRequests = rows.stream().mapToLong(DailyUserActivity::apiRequestCount).sum();
 		long totalApiErrors = rows.stream().mapToLong(DailyUserActivity::apiErrorCount).sum();
-		return new UserActivityDashboardSummary(activeUserIds.size(), totalApiRequests, totalApiErrors, rows);
+		long totalApiResponseMillis = rows.stream().mapToLong(DailyUserActivity::apiResponseMillis).sum();
+		return new UserActivityDashboardSummary(
+			activeUserIds.size(),
+			totalApiRequests,
+			totalApiErrors,
+			totalApiResponseMillis,
+			rows
+		);
 	}
 
 	private static final class ApiTrafficCount {
 
 		private long requestCount;
 		private long errorCount;
+		private long responseMillis;
 
 		static ApiTrafficCount empty() {
 			return new ApiTrafficCount();
 		}
 
-		void add(int statusCode) {
+		void add(int statusCode, long durationMillis) {
 			requestCount++;
+			responseMillis += durationMillis;
 			if (statusCode >= 400) {
 				errorCount++;
 			}
@@ -100,6 +113,10 @@ public class InMemoryUserActivityRepository implements RecordUserActivityPort, R
 
 		long errorCount() {
 			return errorCount;
+		}
+
+		long responseMillis() {
+			return responseMillis;
 		}
 	}
 }

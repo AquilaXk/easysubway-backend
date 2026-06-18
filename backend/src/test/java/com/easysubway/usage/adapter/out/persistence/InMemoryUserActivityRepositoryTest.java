@@ -36,19 +36,21 @@ class InMemoryUserActivityRepositoryTest {
 	@Test
 	@DisplayName("최근 기간의 API 요청 수와 오류율을 일별로 집계한다")
 	void summarizeUserActivityIncludesApiTrafficErrorRate() {
-		repository.recordApiTraffic(200, LocalDateTime.of(2026, 6, 17, 9, 0));
-		repository.recordApiTraffic(404, LocalDateTime.of(2026, 6, 17, 9, 5));
-		repository.recordApiTraffic(500, LocalDateTime.of(2026, 6, 16, 11, 0));
-		repository.recordApiTraffic(200, LocalDateTime.of(2026, 6, 15, 11, 0));
+		repository.recordApiTraffic(200, 120, LocalDateTime.of(2026, 6, 17, 9, 0));
+		repository.recordApiTraffic(404, 280, LocalDateTime.of(2026, 6, 17, 9, 5));
+		repository.recordApiTraffic(500, 900, LocalDateTime.of(2026, 6, 16, 11, 0));
+		repository.recordApiTraffic(200, 50, LocalDateTime.of(2026, 6, 15, 11, 0));
 
 		var summary = repository.summarizeUserActivity(LocalDate.of(2026, 6, 17), 2);
 
 		assertThat(summary.totalApiRequests()).isEqualTo(3);
 		assertThat(summary.totalApiErrors()).isEqualTo(2);
 		assertThat(summary.apiErrorRatePercent()).isEqualTo("66.7%");
+		assertThat(summary.averageApiResponseMillis()).isEqualTo(433);
+		assertThat(summary.averageApiResponseTimeLabel()).isEqualTo("433ms");
 		assertThat(summary.dailyActivities())
-			.extracting(row -> row.date() + ":" + row.apiRequestCount() + ":" + row.apiErrorCount() + ":" + row.apiErrorRatePercent())
-			.containsExactly("2026-06-17:2:1:50.0%", "2026-06-16:1:1:100.0%");
+			.extracting(row -> row.date() + ":" + row.apiRequestCount() + ":" + row.apiErrorCount() + ":" + row.apiErrorRatePercent() + ":" + row.averageApiResponseMillis() + ":" + row.averageApiResponseTimeLabel())
+			.containsExactly("2026-06-17:2:1:50.0%:200:200ms", "2026-06-16:1:1:100.0%:900:900ms");
 	}
 
 	@Test
@@ -62,8 +64,16 @@ class InMemoryUserActivityRepositoryTest {
 	@Test
 	@DisplayName("잘못된 API 상태 코드는 운영 지표로 저장하지 않는다")
 	void recordApiTrafficRejectsInvalidStatusCode() {
-		assertThatThrownBy(() -> repository.recordApiTraffic(99, LocalDateTime.of(2026, 6, 17, 9, 0)))
+		assertThatThrownBy(() -> repository.recordApiTraffic(99, 120, LocalDateTime.of(2026, 6, 17, 9, 0)))
 			.isInstanceOf(InvalidUserActivityException.class)
 			.hasMessage("API 응답 상태 코드는 100부터 599 사이여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("음수 API 응답 시간은 운영 지표로 저장하지 않는다")
+	void recordApiTrafficRejectsNegativeDuration() {
+		assertThatThrownBy(() -> repository.recordApiTraffic(200, -1, LocalDateTime.of(2026, 6, 17, 9, 0)))
+			.isInstanceOf(InvalidUserActivityException.class)
+			.hasMessage("API 응답 시간은 0 이상이어야 합니다.");
 	}
 }

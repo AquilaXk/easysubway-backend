@@ -110,6 +110,10 @@
 			<span>API 오류율</span>
 			<strong th:text="${summary.apiErrorRatePercent}">0.0%</strong>
 		</div>
+		<div class="metric">
+			<span>평균 응답 시간</span>
+			<strong th:text="${summary.averageApiResponseTimeLabel}">0ms</strong>
+		</div>
 	</div>
 
 	<section>
@@ -122,6 +126,7 @@
 				<th scope="col">API 요청</th>
 				<th scope="col">오류 응답</th>
 				<th scope="col">API 오류율</th>
+				<th scope="col">평균 응답 시간</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -131,6 +136,7 @@
 				<td th:text="${row.apiRequestCount}">0</td>
 				<td th:text="${row.apiErrorCount}">0</td>
 				<td th:text="${row.apiErrorRatePercent}">0.0%</td>
+				<td th:text="${row.averageApiResponseTimeLabel}">0ms</td>
 			</tr>
 			</tbody>
 		</table>

@@ -12,6 +12,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -30,7 +31,9 @@ class UserActivityTrackingFilterTest {
 	);
 
 	private final RecordingUserActivityPort port = new RecordingUserActivityPort();
-	private final UserActivityTrackingFilter filter = new UserActivityTrackingFilter(port, port, FIXED_CLOCK);
+	private final MutableClock clock = new MutableClock(FIXED_CLOCK.instant(), FIXED_CLOCK.getZone());
+	private final TestTicker ticker = new TestTicker();
+	private final UserActivityTrackingFilter filter = new UserActivityTrackingFilter(port, port, clock, ticker::nanoTime);
 
 	@Test
 	@DisplayName("성공한 인증 사용자 API 요청은 활동으로 기록한다")
@@ -38,38 +41,42 @@ class UserActivityTrackingFilterTest {
 		MockHttpServletRequest request = apiRequest("/api/v1/routes/search", "anonymous-user-1");
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
-		filter.doFilter(request, response, successfulChain());
+		filter.doFilter(request, response, successfulChain(Duration.ofMillis(125)));
 
 		assertThat(port.records)
 			.extracting(record -> record.userId() + ":" + record.occurredAt())
 			.containsExactly("anonymous-user-1:2026-06-17T09:00");
 		assertThat(port.apiTrafficRecords)
-			.extracting(record -> record.statusCode() + ":" + record.occurredAt())
-			.containsExactly("200:2026-06-17T09:00");
+			.extracting(record -> record.statusCode() + ":" + record.durationMillis() + ":" + record.occurredAt())
+			.containsExactly("200:125:2026-06-17T09:00");
 	}
 
 	@Test
 	@DisplayName("실패 응답은 API 오류율에 기록하고 활성 사용자 지표에서는 제외한다")
 	void failedApiRequestsRecordTrafficAndSkipActiveUserMetric() throws Exception {
-		filter.doFilter(apiRequest("/api/v1/routes/search", "anonymous-user-1"), new MockHttpServletResponse(), failingChain());
+		filter.doFilter(
+			apiRequest("/api/v1/routes/search", "anonymous-user-1"),
+			new MockHttpServletResponse(),
+			failingChain(Duration.ofMillis(480))
+		);
 
 		assertThat(port.records).isEmpty();
 		assertThat(port.apiTrafficRecords)
-			.extracting(record -> record.statusCode() + ":" + record.occurredAt())
-			.containsExactly("500:2026-06-17T09:00");
+			.extracting(record -> record.statusCode() + ":" + record.durationMillis() + ":" + record.occurredAt())
+			.containsExactly("500:480:2026-06-17T09:00");
 	}
 
 	@Test
 	@DisplayName("인증 발급과 관리자 요청은 제외하고 일반 API 요청은 오류율에 기록한다")
 	void authAndAdminRequestsAreIgnoredFromTrafficMetric() throws Exception {
-		filter.doFilter(apiRequest("/api/v1/auth/anonymous", "anonymous-user-1"), new MockHttpServletResponse(), successfulChain());
-		filter.doFilter(apiRequest("/admin/routes/searches/page", "admin-user"), new MockHttpServletResponse(), successfulChain());
-		filter.doFilter(apiRequest("/api/v1/routes/search", null), new MockHttpServletResponse(), successfulChain());
+		filter.doFilter(apiRequest("/api/v1/auth/anonymous", "anonymous-user-1"), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(90)));
+		filter.doFilter(apiRequest("/admin/routes/searches/page", "admin-user"), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(95)));
+		filter.doFilter(apiRequest("/api/v1/routes/search", null), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(110)));
 
 		assertThat(port.records).isEmpty();
 		assertThat(port.apiTrafficRecords)
-			.extracting(record -> record.statusCode() + ":" + record.occurredAt())
-			.containsExactly("200:2026-06-17T09:00");
+			.extracting(record -> record.statusCode() + ":" + record.durationMillis() + ":" + record.occurredAt())
+			.containsExactly("200:110:2026-06-17T09:00");
 	}
 
 	@Test
@@ -82,7 +89,7 @@ class UserActivityTrackingFilterTest {
 			AuthorityUtils.createAuthorityList("ROLE_ANONYMOUS")
 		));
 
-		filter.doFilter(request, new MockHttpServletResponse(), successfulChain());
+		filter.doFilter(request, new MockHttpServletResponse(), successfulChain(Duration.ofMillis(100)));
 
 		assertThat(port.records).isEmpty();
 	}
@@ -95,13 +102,17 @@ class UserActivityTrackingFilterTest {
 		return request;
 	}
 
-	private static FilterChain successfulChain() {
+	private FilterChain successfulChain(Duration duration) {
 		return (request, response) -> {
+			ticker.advance(duration);
 		};
 	}
 
-	private static FilterChain failingChain() {
-		return (request, response) -> ((MockHttpServletResponse) response).setStatus(500);
+	private FilterChain failingChain(Duration duration) {
+		return (request, response) -> {
+			ticker.advance(duration);
+			((MockHttpServletResponse) response).setStatus(500);
+		};
 	}
 
 	private static final class RecordingUserActivityPort implements RecordUserActivityPort, RecordApiTrafficPort {
@@ -115,14 +126,57 @@ class UserActivityTrackingFilterTest {
 		}
 
 		@Override
-		public void recordApiTraffic(int statusCode, LocalDateTime occurredAt) {
-			apiTrafficRecords.add(new ApiTrafficRecord(statusCode, occurredAt));
+		public void recordApiTraffic(int statusCode, long durationMillis, LocalDateTime occurredAt) {
+			apiTrafficRecords.add(new ApiTrafficRecord(statusCode, durationMillis, occurredAt));
+		}
+	}
+
+	private static final class MutableClock extends Clock {
+
+		private Instant instant;
+		private final ZoneId zone;
+
+		private MutableClock(Instant instant, ZoneId zone) {
+			this.instant = instant;
+			this.zone = zone;
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return zone;
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return new MutableClock(instant, zone);
+		}
+
+		@Override
+		public Instant instant() {
+			return instant;
+		}
+
+		private void advance(Duration duration) {
+			instant = instant.plus(duration);
+		}
+	}
+
+	private static final class TestTicker {
+
+		private long nanos;
+
+		private long nanoTime() {
+			return nanos;
+		}
+
+		private void advance(Duration duration) {
+			nanos += duration.toNanos();
 		}
 	}
 
 	private record Record(String userId, LocalDateTime occurredAt) {
 	}
 
-	private record ApiTrafficRecord(int statusCode, LocalDateTime occurredAt) {
+	private record ApiTrafficRecord(int statusCode, long durationMillis, LocalDateTime occurredAt) {
 	}
 }

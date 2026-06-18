@@ -24,9 +24,10 @@ class UserActivityAdminPageControllerTest {
 			3,
 			12,
 			2,
+			3_240,
 			List.of(
-				new DailyUserActivity(LocalDate.of(2026, 6, 17), 2, 7, 1),
-				new DailyUserActivity(LocalDate.of(2026, 6, 16), 1, 5, 1)
+				new DailyUserActivity(LocalDate.of(2026, 6, 17), 2, 7, 1, 1_400),
+				new DailyUserActivity(LocalDate.of(2026, 6, 16), 1, 5, 1, 1_840)
 			)
 		));
 		var controller = new UserActivityAdminPageController(useCase);
@@ -41,9 +42,11 @@ class UserActivityAdminPageControllerTest {
 		assertThat(view.totalApiRequests()).isEqualTo(12);
 		assertThat(view.totalApiErrors()).isEqualTo(2);
 		assertThat(view.apiErrorRatePercent()).isEqualTo("16.7%");
+		assertThat(view.averageApiResponseMillis()).isEqualTo(270);
+		assertThat(view.averageApiResponseTimeLabel()).isEqualTo("270ms");
 		assertThat(view.dailyActivityRows())
-			.extracting(row -> row.dateLabel() + ":" + row.activeUserCount() + ":" + row.apiRequestCount() + ":" + row.apiErrorCount() + ":" + row.apiErrorRatePercent())
-			.containsExactly("2026-06-17:2:7:1:14.3%", "2026-06-16:1:5:1:20.0%");
+			.extracting(row -> row.dateLabel() + ":" + row.activeUserCount() + ":" + row.apiRequestCount() + ":" + row.apiErrorCount() + ":" + row.apiErrorRatePercent() + ":" + row.averageApiResponseTimeLabel())
+			.containsExactly("2026-06-17:2:7:1:14.3%:200ms", "2026-06-16:1:5:1:20.0%:368ms");
 		assertThat(view.toString()).doesNotContain("anonymous-user");
 	}
 }

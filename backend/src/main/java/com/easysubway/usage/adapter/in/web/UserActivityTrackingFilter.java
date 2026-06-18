@@ -9,7 +9,9 @@ import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
 import java.security.Principal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.function.LongSupplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.security.authentication.AuthenticationTrustResolver;
@@ -27,6 +29,7 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 	private final RecordUserActivityPort recordUserActivityPort;
 	private final RecordApiTrafficPort recordApiTrafficPort;
 	private final Clock clock;
+	private final LongSupplier nanoTimeSupplier;
 	private final AuthenticationTrustResolver authenticationTrustResolver;
 
 	@Autowired
@@ -35,7 +38,12 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 		RecordApiTrafficPort recordApiTrafficPort,
 		ObjectProvider<Clock> clockProvider
 	) {
-		this(recordUserActivityPort, recordApiTrafficPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+		this(
+			recordUserActivityPort,
+			recordApiTrafficPort,
+			clockProvider.getIfAvailable(Clock::systemDefaultZone),
+			System::nanoTime
+		);
 	}
 
 	UserActivityTrackingFilter(
@@ -43,9 +51,19 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 		RecordApiTrafficPort recordApiTrafficPort,
 		Clock clock
 	) {
+		this(recordUserActivityPort, recordApiTrafficPort, clock, System::nanoTime);
+	}
+
+	UserActivityTrackingFilter(
+		RecordUserActivityPort recordUserActivityPort,
+		RecordApiTrafficPort recordApiTrafficPort,
+		Clock clock,
+		LongSupplier nanoTimeSupplier
+	) {
 		this.recordUserActivityPort = recordUserActivityPort;
 		this.recordApiTrafficPort = recordApiTrafficPort;
 		this.clock = clock;
+		this.nanoTimeSupplier = nanoTimeSupplier;
 		this.authenticationTrustResolver = new AuthenticationTrustResolverImpl();
 	}
 
@@ -55,14 +73,17 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 		HttpServletResponse response,
 		FilterChain filterChain
 	) throws ServletException, IOException {
+		long startedAtNanos = nanoTimeSupplier.getAsLong();
+		LocalDateTime requestedAt = LocalDateTime.now(clock);
 		filterChain.doFilter(request, response);
+		long durationMillis = Duration.ofNanos(Math.max(0, nanoTimeSupplier.getAsLong() - startedAtNanos)).toMillis();
 		if (shouldRecordApiTraffic(request)) {
-			recordApiTrafficPort.recordApiTraffic(response.getStatus(), LocalDateTime.now(clock));
+			recordApiTrafficPort.recordApiTraffic(response.getStatus(), durationMillis, LocalDateTime.now(clock));
 		}
 		if (shouldRecord(request, response)) {
 			recordUserActivityPort.recordUserActivity(
 				request.getUserPrincipal().getName(),
-				LocalDateTime.now(clock)
+				requestedAt
 			);
 		}
 	}

@@ -27,6 +27,8 @@ class UserActivityAdminPageController {
 		long totalApiRequests,
 		long totalApiErrors,
 		String apiErrorRatePercent,
+		long averageApiResponseMillis,
+		String averageApiResponseTimeLabel,
 		List<DailyUserActivityRow> dailyActivityRows
 	) {
 
@@ -36,6 +38,8 @@ class UserActivityAdminPageController {
 				summary.totalApiRequests(),
 				summary.totalApiErrors(),
 				summary.apiErrorRatePercent(),
+				summary.averageApiResponseMillis(),
+				summary.averageApiResponseTimeLabel(),
 				summary.dailyActivities()
 					.stream()
 					.map(row -> new DailyUserActivityRow(
@@ -43,7 +47,9 @@ class UserActivityAdminPageController {
 						row.activeUserCount(),
 						row.apiRequestCount(),
 						row.apiErrorCount(),
-						row.apiErrorRatePercent()
+						row.apiErrorRatePercent(),
+						row.averageApiResponseMillis(),
+						row.averageApiResponseTimeLabel()
 					))
 					.toList()
 			);
@@ -55,7 +61,9 @@ class UserActivityAdminPageController {
 		long activeUserCount,
 		long apiRequestCount,
 		long apiErrorCount,
-		String apiErrorRatePercent
+		String apiErrorRatePercent,
+		long averageApiResponseMillis,
+		String averageApiResponseTimeLabel
 	) {
 	}
 }
