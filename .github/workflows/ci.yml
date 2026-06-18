@@ -74,8 +74,9 @@ jobs:
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9a498708959aeaef5ef730655706c5a1df1edbc2
     with:
       scan-args: |-
-        --config=.github/osv-scanner-release-baseline.toml
-        -r ./
+        --lockfile=apps/mobile/pubspec.lock
+        --lockfile=apps/mobile/android/app/gradle.lockfile
+        --lockfile=backend/gradle.lockfile
 
   repository-contracts:
     name: Repository CI
