@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>운영기관 반복 고장 시설 통계</title>
+	<style>
+		body {
+			margin: 0;
+			background: #f5f7f8;
+			color: #102a2c;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		}
+
+		main {
+			max-width: 960px;
+			margin: 0 auto;
+			padding: 32px 24px 48px;
+		}
+
+		h1 {
+			margin: 0 0 10px;
+			font-size: 32px;
+			line-height: 1.2;
+		}
+
+		p {
+			margin: 0 0 24px;
+			color: #40585a;
+			font-size: 17px;
+			line-height: 1.55;
+		}
+
+		h2 {
+			margin: 0;
+			padding: 16px 18px;
+			background: #e8f1ef;
+			font-size: 20px;
+		}
+
+		.metric-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+			gap: 12px;
+			margin-bottom: 24px;
+		}
+
+		.metric {
+			background: #fff;
+			border: 1px solid #d6e0df;
+			padding: 18px;
+		}
+
+		.metric span {
+			display: block;
+			color: #536b6d;
+			font-weight: 800;
+			line-height: 1.4;
+		}
+
+		.metric strong {
+			display: block;
+			margin-top: 8px;
+			font-size: 30px;
+			line-height: 1.15;
+		}
+
+		section {
+			background: #fff;
+			border: 1px solid #d6e0df;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		th,
+		td {
+			padding: 14px 18px;
+			border-top: 1px solid #d6e0df;
+			text-align: left;
+			vertical-align: top;
+			font-size: 15px;
+			line-height: 1.45;
+		}
+
+		th {
+			background: #f8fbfb;
+			font-weight: 800;
+		}
+
+		td:last-child,
+		th:last-child {
+			text-align: right;
+			font-weight: 800;
+		}
+	</style>
+</head>
+<body>
+<main>
+	<h1>운영기관 반복 고장 시설 통계</h1>
+	<p>운영기관 담당자가 반복 신고된 시설과 현재 상태를 확인하는 읽기 전용 리포트입니다.</p>
+
+	<div class="metric-grid" aria-label="반복 고장 시설 통계 요약">
+		<div class="metric">
+			<span>반복 고장 시설</span>
+			<strong th:text="${report.totalRepeatedFacilityCount}">0</strong>
+		</div>
+	</div>
+
+	<section>
+		<h2>시설별 반복 신고</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">역</th>
+				<th scope="col">시설</th>
+				<th scope="col">현재 상태</th>
+				<th scope="col">신고 건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${report.rows}">
+				<td th:text="${row.stationName}">상록수</td>
+				<td th:text="${row.facilityName}">1번 출구 엘리베이터</td>
+				<td th:text="${row.statusLabel}">정상</td>
+				<td th:text="${row.reportCount}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(report.rows)}">
+				<td colspan="4">반복 고장으로 집계된 시설이 없습니다.</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</body>
+</html>
