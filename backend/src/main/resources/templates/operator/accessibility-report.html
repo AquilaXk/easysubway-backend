@@ -191,7 +191,7 @@
 			<tr th:each="row : ${report.stationAccessibilityScoreRows}">
 				<td th:text="${row.stationName}">상록수</td>
 				<td th:text="${row.region}">수도권</td>
-				<td th:text="${row.reasons}">기본 정보만 있음</td>
+				<td th:text="${row.reasonText}">기본 정보만 있음</td>
 				<td th:text="${row.score}">0</td>
 			</tr>
 			</tbody>
@@ -213,7 +213,7 @@
 			<tr th:each="row : ${report.accessibilityImprovementPriorityRows}">
 				<td th:text="${row.stationName}">상록수</td>
 				<td th:text="${row.facilityName}">장애인 화장실</td>
-				<td th:text="${row.reasons}">확인 필요 상태, 신뢰도 확인 필요</td>
+				<td th:text="${row.reasonText}">확인 필요 상태, 신뢰도 확인 필요</td>
 				<td th:text="${row.priorityScore}">0</td>
 			</tr>
 			</tbody>
