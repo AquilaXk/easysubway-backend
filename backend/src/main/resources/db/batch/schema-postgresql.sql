@@ -318,3 +318,6 @@ ALTER TABLE push_notification_outbox
 
 CREATE INDEX IF NOT EXISTS idx_push_notification_outbox_user_created
 	ON push_notification_outbox (user_id, created_at ASC, notification_id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_push_notification_outbox_status_user_created
+	ON push_notification_outbox (status, user_id, created_at ASC, notification_id ASC);

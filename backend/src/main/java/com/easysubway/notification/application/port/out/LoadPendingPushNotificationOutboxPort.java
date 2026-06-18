@@ -6,4 +6,6 @@ import java.util.List;
 public interface LoadPendingPushNotificationOutboxPort {
 
 	List<PushNotification> loadPendingPushNotifications(String userId);
+
+	List<String> loadPendingPushNotificationUserIds();
 }

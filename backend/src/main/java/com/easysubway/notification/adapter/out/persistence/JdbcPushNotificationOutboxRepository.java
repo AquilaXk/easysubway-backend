@@ -87,6 +87,21 @@ public class JdbcPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public List<String> loadPendingPushNotificationUserIds() {
+		return jdbcTemplate.query(
+			"""
+				SELECT user_id
+				FROM push_notification_outbox
+				WHERE status = ?
+				GROUP BY user_id
+				ORDER BY MIN(created_at) ASC, user_id ASC
+				""",
+			(resultSet, rowNumber) -> resultSet.getString("user_id"),
+			PushNotificationStatus.PENDING.name()
+		);
+	}
+
+	@Override
 	public PushNotification savePushNotification(PushNotification notification) {
 		if (updatePushNotification(notification) == 0) {
 			try {

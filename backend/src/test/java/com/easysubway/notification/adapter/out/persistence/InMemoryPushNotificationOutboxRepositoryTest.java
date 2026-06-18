@@ -27,7 +27,42 @@ class InMemoryPushNotificationOutboxRepositoryTest {
 		assertThat(repository.loadPushNotifications("anonymous-user-2")).containsExactly(movedNotification);
 	}
 
+	@Test
+	@DisplayName("대기 중인 알림이 있는 사용자만 가장 오래된 대기 알림 순서로 조회한다")
+	void loadPendingPushNotificationUserIdsReturnsUsersByOldestPendingNotification() {
+		repository.savePushNotification(notification(
+			"push-1",
+			"anonymous-user-2",
+			PushNotificationStatus.PENDING,
+			LocalDateTime.of(2026, 6, 17, 10, 0)
+		));
+		repository.savePushNotification(notification(
+			"push-2",
+			"anonymous-user-1",
+			PushNotificationStatus.PENDING,
+			LocalDateTime.of(2026, 6, 17, 9, 0)
+		));
+		repository.savePushNotification(notification(
+			"push-3",
+			"anonymous-user-3",
+			PushNotificationStatus.SENT,
+			LocalDateTime.of(2026, 6, 17, 8, 0)
+		));
+
+		assertThat(repository.loadPendingPushNotificationUserIds())
+			.containsExactly("anonymous-user-1", "anonymous-user-2");
+	}
+
 	private PushNotification notification(String notificationId, String userId, PushNotificationStatus status) {
+		return notification(notificationId, userId, status, LocalDateTime.of(2026, 6, 17, 10, 0));
+	}
+
+	private PushNotification notification(
+		String notificationId,
+		String userId,
+		PushNotificationStatus status,
+		LocalDateTime createdAt
+	) {
 		return new PushNotification(
 			notificationId,
 			userId,
@@ -37,7 +72,7 @@ class InMemoryPushNotificationOutboxRepositoryTest {
 			"신고 처리 알림",
 			"제보한 내용이 확인되었습니다.",
 			status,
-			LocalDateTime.of(2026, 6, 17, 10, 0)
+			createdAt
 		);
 	}
 }

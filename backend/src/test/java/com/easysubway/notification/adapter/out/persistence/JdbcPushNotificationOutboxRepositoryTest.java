@@ -120,6 +120,24 @@ class JdbcPushNotificationOutboxRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("대기 중인 알림이 있는 사용자만 가장 오래된 대기 알림 순서로 조회한다")
+	void loadPendingPushNotificationUserIdsReturnsUsersByOldestPendingNotification() {
+		repository.savePushNotification(notification("push-1", "anonymous-user-2", PushNotificationType.REPORT_STATUS, 10));
+		repository.savePushNotification(notification("push-2", "anonymous-user-1", PushNotificationType.DATA_QUALITY, 9));
+		repository.savePushNotification(notification(
+			"push-3",
+			"anonymous-user-3",
+			PushNotificationType.FAVORITE_ROUTE_FACILITY,
+			PushNotificationStatus.SENT,
+			8
+		));
+		repository.savePushNotification(notification("push-4", "anonymous-user-2", PushNotificationType.DATA_QUALITY, 11));
+
+		assertThat(repository.loadPendingPushNotificationUserIds())
+			.containsExactly("anonymous-user-1", "anonymous-user-2");
+	}
+
+	@Test
 	@DisplayName("전체 outbox를 상태별로 집계한다")
 	void summarizePushNotificationOutboxByStatus() {
 		repository.savePushNotification(notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9));

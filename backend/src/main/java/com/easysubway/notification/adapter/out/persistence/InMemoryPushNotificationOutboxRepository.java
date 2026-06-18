@@ -8,8 +8,11 @@ import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
+import java.time.LocalDateTime;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import org.springframework.context.annotation.Profile;
@@ -64,6 +67,19 @@ public class InMemoryPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public List<String> loadPendingPushNotificationUserIds() {
+		return notificationsByUserId.entrySet().stream()
+			.flatMap(entry -> oldestPendingCreatedAt(entry.getValue())
+				.map(createdAt -> new PendingUser(entry.getKey(), createdAt))
+				.stream())
+			.sorted(Comparator
+				.comparing(PendingUser::oldestPendingCreatedAt)
+				.thenComparing(PendingUser::userId))
+			.map(PendingUser::userId)
+			.toList();
+	}
+
+	@Override
 	public PushNotificationDashboardSummary summarizePushNotificationOutbox() {
 		long pendingCount = 0;
 		long sentCount = 0;
@@ -99,5 +115,15 @@ public class InMemoryPushNotificationOutboxRepository implements
 	public int deletePushNotifications(String userId) {
 		List<PushNotification> removed = notificationsByUserId.remove(userId);
 		return removed == null ? 0 : removed.size();
+	}
+
+	private Optional<LocalDateTime> oldestPendingCreatedAt(List<PushNotification> notifications) {
+		return notifications.stream()
+			.filter(notification -> notification.status() == PushNotificationStatus.PENDING)
+			.map(PushNotification::createdAt)
+			.min(Comparator.naturalOrder());
+	}
+
+	private record PendingUser(String userId, LocalDateTime oldestPendingCreatedAt) {
 	}
 }
