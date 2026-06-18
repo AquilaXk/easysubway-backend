@@ -23,5 +23,7 @@ public interface FacilityReportUseCase {
 
 	FacilityReport reviewReport(ReviewFacilityReportCommand command);
 
+	FacilityReport confirmReportResult(String reportId, String userId);
+
 	List<FacilityReportReviewAudit> listReviewAudits(String reportId);
 }

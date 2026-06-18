@@ -140,6 +140,35 @@ class JdbcFacilityReportRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("이미 저장된 시설 신고는 처리 결과 확인 완료 상태로 갱신된다")
+	void saveReportUpdatesExistingReportToResolvedStatus() {
+		var submittedReport = submittedReport("report-1", "anonymous-user-1", 9);
+		var confirmedReport = new FacilityReport(
+			"report-1",
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-elevator-1",
+			FacilityReportType.BROKEN,
+			"엘리베이터가 멈춰 있습니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			"aW1hZ2UtYnl0ZXM=",
+			new BigDecimal("37.3123450"),
+			new BigDecimal("126.9876540"),
+			null,
+			FacilityReportStatus.RESOLVED,
+			LocalDateTime.of(2026, 6, 17, 9, 0),
+			LocalDateTime.of(2026, 6, 17, 10, 0),
+			"admin-user"
+		);
+		repository.saveReport(submittedReport);
+
+		repository.saveReport(confirmedReport);
+
+		assertThat(repository.loadReport("report-1")).contains(confirmedReport);
+	}
+
+	@Test
 	@DisplayName("이미 저장된 시설 신고 갱신은 최초 생성 시각을 유지한다")
 	void saveReportKeepsOriginalCreatedAtWhenUpdatingExistingReport() {
 		var originalReport = submittedReport("report-1", "anonymous-user-1", 9);

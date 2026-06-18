@@ -54,6 +54,16 @@ class FacilityReportController {
 		return ApiResponse.ok(reports);
 	}
 
+	@PostMapping("/api/v1/reports/{reportId}/confirm")
+	ApiResponse<FacilityReportStatusResponse> confirmReportResult(
+		@PathVariable String reportId,
+		Principal principal
+	) {
+		return ApiResponse.ok(FacilityReportStatusResponse.from(
+			facilityReportUseCase.confirmReportResult(reportId, principal.getName())
+		));
+	}
+
 	@GetMapping("/admin/reports")
 	ApiResponse<List<FacilityReportListResponse>> adminReports(@RequestParam(required = false) FacilityReportStatus status) {
 		List<FacilityReportListResponse> reports = facilityReportUseCase.listReports(status)

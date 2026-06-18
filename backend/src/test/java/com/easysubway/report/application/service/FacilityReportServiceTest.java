@@ -815,6 +815,72 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("신고 작성자는 처리 결과 확인으로 검수 완료 신고를 완료 상태로 바꾼다")
+	void reporterConfirmsReviewedReportResult() {
+		var report = service.createReport(reportCommand(
+			"anonymous-user-confirm",
+			FacilityReportType.INFORMATION_WRONG,
+			"처리 결과를 확인할 신고입니다."
+		));
+		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
+
+		var confirmed = service.confirmReportResult(report.id(), "anonymous-user-confirm");
+
+		assertThat(confirmed.status()).isEqualTo(FacilityReportStatus.RESOLVED);
+		assertThat(confirmed.reviewedAt()).isEqualTo(LocalDateTime.of(2026, 6, 12, 9, 0));
+		assertThat(confirmed.reviewedBy()).isEqualTo("admin-1");
+		assertThat(service.getReport(report.id()).status()).isEqualTo(FacilityReportStatus.RESOLVED);
+	}
+
+	@Test
+	@DisplayName("다른 사용자의 신고 처리 결과는 확인할 수 없다")
+	void confirmReportResultRequiresReportOwner() {
+		var report = service.createReport(reportCommand(
+			"anonymous-user-owner",
+			FacilityReportType.INFORMATION_WRONG,
+			"다른 사용자가 확인하면 안 되는 신고입니다."
+		));
+		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
+
+		assertThatThrownBy(() -> service.confirmReportResult(report.id(), "anonymous-user-other"))
+			.isInstanceOf(FacilityReportNotFoundException.class)
+			.hasMessage("신고 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("검수 완료 전이나 중복 처리된 신고는 처리 결과를 확인할 수 없다")
+	void confirmReportResultRequiresReviewedReport() {
+		var submitted = service.createReport(reportCommand(
+			"anonymous-user-submitted-confirm",
+			FacilityReportType.BROKEN,
+			"아직 검수되지 않은 신고입니다."
+		));
+		var original = service.createReport(reportCommand(
+			"anonymous-user-original-confirm",
+			FacilityReportType.BROKEN,
+			"중복 기준 신고입니다."
+		));
+		var duplicated = service.createReport(reportCommand(
+			"anonymous-user-duplicate-confirm",
+			FacilityReportType.BROKEN,
+			"중복 처리된 신고입니다."
+		));
+		service.reviewReport(new ReviewFacilityReportCommand(
+			duplicated.id(),
+			FacilityReportReviewDecision.MARK_DUPLICATE,
+			"admin-1",
+			original.id()
+		));
+
+		assertThatThrownBy(() -> service.confirmReportResult(submitted.id(), "anonymous-user-submitted-confirm"))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("검수 완료된 신고만 확인할 수 있습니다.");
+		assertThatThrownBy(() -> service.confirmReportResult(duplicated.id(), "anonymous-user-duplicate-confirm"))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("검수 완료된 신고만 확인할 수 있습니다.");
+	}
+
+	@Test
 	@DisplayName("중복 처리된 신고는 기준 신고 식별자를 함께 저장한다")
 	void duplicateReportStoresMergedReportId() {
 		var original = service.createReport(reportCommand(

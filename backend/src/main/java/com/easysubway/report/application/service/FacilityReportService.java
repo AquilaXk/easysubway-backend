@@ -333,6 +333,34 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	@Override
+	public FacilityReport confirmReportResult(String reportId, String userId) {
+		FacilityReport report = getReport(reportId);
+		requireReportOwner(report, userId);
+		requireConfirmableStatus(report);
+		if (report.status() == FacilityReportStatus.RESOLVED) {
+			return report;
+		}
+		return saveFacilityReportPort.saveReport(new FacilityReport(
+			report.id(),
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType(),
+			report.description(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoDataBase64(),
+			report.latitude(),
+			report.longitude(),
+			report.duplicateOfReportId(),
+			FacilityReportStatus.RESOLVED,
+			report.createdAt(),
+			report.reviewedAt(),
+			report.reviewedBy()
+		));
+	}
+
+	@Override
 	public List<FacilityReportReviewAudit> listReviewAudits(String reportId) {
 		getReport(reportId);
 		return loadFacilityReportReviewAuditPort.loadAuditsByReportId(reportId)
@@ -436,6 +464,21 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (command.reviewedBy() == null || command.reviewedBy().isBlank()) {
 			throw new InvalidFacilityReportException("검수자 식별자가 필요합니다.");
 		}
+	}
+
+	private void requireReportOwner(FacilityReport report, String userId) {
+		if (userId == null || userId.isBlank() || !userId.equals(report.userId())) {
+			throw new FacilityReportNotFoundException();
+		}
+	}
+
+	private void requireConfirmableStatus(FacilityReport report) {
+		if (report.status() == FacilityReportStatus.ACCEPTED
+			|| report.status() == FacilityReportStatus.REJECTED
+			|| report.status() == FacilityReportStatus.RESOLVED) {
+			return;
+		}
+		throw new InvalidFacilityReportException("검수 완료된 신고만 확인할 수 있습니다.");
 	}
 
 	private String resolveDuplicateOfReportId(ReviewFacilityReportCommand command, FacilityReport report) {
