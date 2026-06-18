@@ -9,12 +9,17 @@ import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
+import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -37,16 +42,25 @@ class OperatorDataCollectionFailuresPageControllerTest {
 	@Autowired
 	private SaveDataCollectionRunPort saveDataCollectionRunPort;
 
+	@TestConfiguration
+	static class FixedClockConfiguration {
+
+		@Bean
+		Clock operatorDataCollectionFailuresPageTestClock() {
+			return Clock.fixed(Instant.parse("2026-06-18T03:00:00Z"), ZoneId.of("Asia/Seoul"));
+		}
+	}
+
 	@Test
-	@DisplayName("운영기관 계정은 읽기 전용 데이터 수집 실패 현황을 확인한다")
+	@DisplayName("운영기관 계정은 읽기 전용 데이터 수집 실패와 미갱신 경고를 확인한다")
 	void operatorGetsDataCollectionFailuresPage() throws Exception {
 		saveRun(new DataCollectionRun(
 			"collection-completed",
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.COMPLETED,
 			"admin-user",
-			LocalDateTime.parse("2026-06-18T09:00:00"),
-			LocalDateTime.parse("2026-06-18T09:01:00"),
+			LocalDateTime.parse("2026-06-17T09:00:00"),
+			LocalDateTime.parse("2026-06-17T09:01:00"),
 			14,
 			null,
 			false,
@@ -78,6 +92,11 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			.contains("전체 수집 실행")
 			.contains("실패 실행")
 			.contains("재시도 가능")
+			.contains("데이터 갱신 상태")
+			.contains("점검 필요")
+			.contains("최신 완료 수집")
+			.contains("2026-06-17T09:01")
+			.contains("도시철도 마스터 수집 완료 기록이 24시간 이상 갱신되지 않았습니다.")
 			.contains("최근 수집 실행")
 			.contains("수집 원천")
 			.contains("상태")

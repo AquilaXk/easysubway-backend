@@ -7,6 +7,7 @@ import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecutionException;
@@ -42,6 +43,11 @@ public class DataCollectionService implements DataCollectionUseCase {
 	@Override
 	public List<DataCollectionRun> listRecentRuns(int limit) {
 		return loadDataCollectionRunPort.loadRecentRuns(limit);
+	}
+
+	@Override
+	public Optional<DataCollectionRun> getLatestCompletedRun(DataCollectionSource source) {
+		return loadDataCollectionRunPort.loadLatestCompletedRun(source);
 	}
 
 	private DataCollectionRun launchTransitMasterCollection(String requestedBy) {

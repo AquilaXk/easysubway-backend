@@ -79,6 +79,20 @@ class JdbcDataCollectionRunRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("최신 완료 수집 실행 기록은 실패 기록보다 완료 시간이 늦은 완료 기록을 반환한다")
+	void loadLatestCompletedRunReturnsLatestCompletedRunByCompletedAt() {
+		repository.saveRun(completedRun("collection-old-completed", LocalDateTime.of(2026, 6, 16, 9, 0)));
+		repository.saveRun(completedRun("collection-new-completed", LocalDateTime.of(2026, 6, 16, 10, 0)));
+		repository.saveRun(failedRun("collection-newer-failed", LocalDateTime.of(2026, 6, 16, 11, 0)));
+
+		var latestCompletedRun = repository.loadLatestCompletedRun(DataCollectionSource.TRANSIT_MASTER);
+
+		assertThat(latestCompletedRun)
+			.map(DataCollectionRun::runId)
+			.contains("collection-new-completed");
+	}
+
+	@Test
 	@DisplayName("실패한 수집 실행 기록도 실패 사유와 함께 저장한다")
 	void saveFailedRunWithFailureMessage() {
 		var run = failedRun("collection-failed", LocalDateTime.of(2026, 6, 16, 10, 0));

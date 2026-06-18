@@ -6,6 +6,10 @@ record OperatorDataCollectionFailuresView(
 	int totalRunCount,
 	long failedRunCount,
 	long retryableRunCount,
+	String latestCompletedAtLabel,
+	String freshnessAlertLabel,
+	String freshnessAlertDescription,
+	String freshnessAlertClass,
 	List<DataCollectionRunRow> rows
 ) {
 

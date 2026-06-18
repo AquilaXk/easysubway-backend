@@ -81,6 +81,29 @@ public class JdbcDataCollectionRunRepository implements
 	}
 
 	@Override
+	public Optional<DataCollectionRun> loadLatestCompletedRun(DataCollectionSource source) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject(
+				"""
+					SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
+						failure_message, retryable, operator_action
+					FROM data_collection_runs
+					WHERE source = ?
+						AND status = ?
+						AND completed_at IS NOT NULL
+					ORDER BY completed_at DESC, run_id DESC
+					LIMIT 1
+					""",
+				this::mapRun,
+				source.name(),
+				DataCollectionStatus.COMPLETED.name()
+			));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	@Override
 	public List<DataCollectionRun> loadRecentRuns(int limit) {
 		if (limit <= 0) {
 			return List.of();

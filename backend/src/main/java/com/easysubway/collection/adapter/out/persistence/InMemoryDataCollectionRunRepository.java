@@ -3,8 +3,11 @@ package com.easysubway.collection.adapter.out.persistence;
 import com.easysubway.collection.application.port.out.LoadDataCollectionRunPort;
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStatus;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.CopyOnWriteArrayList;
@@ -30,6 +33,17 @@ public class InMemoryDataCollectionRunRepository implements
 		return runs.stream()
 			.filter(run -> run.runId().equals(runId))
 			.findFirst();
+	}
+
+	@Override
+	public Optional<DataCollectionRun> loadLatestCompletedRun(DataCollectionSource source) {
+		return runs.stream()
+			.filter(run -> run.source() == source)
+			.filter(run -> run.status() == DataCollectionStatus.COMPLETED)
+			.filter(run -> run.completedAt() != null)
+			.max(Comparator
+				.comparing(DataCollectionRun::completedAt)
+				.thenComparing(DataCollectionRun::runId));
 	}
 
 	@Override

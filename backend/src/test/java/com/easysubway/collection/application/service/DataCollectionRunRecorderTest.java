@@ -68,6 +68,20 @@ class DataCollectionRunRecorderTest {
 	}
 
 	@Test
+	@DisplayName("최신 완료 실행 기록은 실패 기록과 별도로 완료 시간이 가장 늦은 기록을 조회한다")
+	void loadLatestCompletedRunReturnsLatestCompletedRun() {
+		repository.saveRun(completedRun("collection-old-completed", LocalDateTime.of(2026, 6, 14, 9, 0)));
+		repository.saveRun(completedRun("collection-new-completed", LocalDateTime.of(2026, 6, 14, 10, 0)));
+		repository.saveRun(failedRun("collection-newer-failed", LocalDateTime.of(2026, 6, 14, 11, 0)));
+
+		var latestCompletedRun = repository.loadLatestCompletedRun(DataCollectionSource.TRANSIT_MASTER);
+
+		assertThat(latestCompletedRun)
+			.map(DataCollectionRun::runId)
+			.contains("collection-new-completed");
+	}
+
+	@Test
 	@DisplayName("도시철도 마스터 데이터 로딩 실패도 실행 기록에 실패 상태로 남긴다")
 	void recordTransitMasterRunStoresFailedRunWhenLoadingFails() {
 		LoadTransitMasterPort failingTransitMasterPort = mock(LoadTransitMasterPort.class);
@@ -191,5 +205,35 @@ class DataCollectionRunRecorderTest {
 		))
 			.isInstanceOf(InvalidDataCollectionException.class)
 			.hasMessage("실패한 실행은 실패 사유가 필요합니다.");
+	}
+
+	private DataCollectionRun completedRun(String runId, LocalDateTime startedAt) {
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.COMPLETED,
+			"admin-user",
+			startedAt,
+			startedAt.plusMinutes(1),
+			14,
+			null,
+			false,
+			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."
+		);
+	}
+
+	private DataCollectionRun failedRun(String runId, LocalDateTime startedAt) {
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.FAILED,
+			"admin-user",
+			startedAt,
+			startedAt.plusMinutes(1),
+			0,
+			"loader down",
+			true,
+			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
+		);
 	}
 }
