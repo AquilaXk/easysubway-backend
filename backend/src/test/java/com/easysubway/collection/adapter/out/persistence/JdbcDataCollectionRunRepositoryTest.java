@@ -35,7 +35,9 @@ class JdbcDataCollectionRunRepositoryTest {
 				started_at TIMESTAMP NOT NULL,
 				completed_at TIMESTAMP NULL,
 				collected_count INTEGER NOT NULL,
-				failure_message VARCHAR(1000) NULL
+				failure_message VARCHAR(1000) NULL,
+				retryable BOOLEAN NOT NULL,
+				operator_action VARCHAR(500) NOT NULL
 			)
 			""");
 		repository = new JdbcDataCollectionRunRepository(jdbcTemplate);
@@ -52,7 +54,9 @@ class JdbcDataCollectionRunRepositoryTest {
 			LocalDateTime.of(2026, 6, 16, 10, 0),
 			LocalDateTime.of(2026, 6, 16, 10, 1),
 			13,
-			null
+			null,
+			false,
+			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."
 		);
 
 		repository.saveRun(run);
@@ -93,7 +97,9 @@ class JdbcDataCollectionRunRepositoryTest {
 			startedAt,
 			startedAt.plusMinutes(1),
 			13,
-			null
+			null,
+			false,
+			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."
 		);
 	}
 
@@ -106,7 +112,9 @@ class JdbcDataCollectionRunRepositoryTest {
 			startedAt,
 			startedAt.plusMinutes(1),
 			0,
-			"loader down"
+			"loader down",
+			true,
+			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
 		);
 	}
 }

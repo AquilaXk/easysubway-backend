@@ -46,7 +46,10 @@ class DataCollectionControllerTest {
 			.andExpect(jsonPath("$.data.source").value("TRANSIT_MASTER"))
 			.andExpect(jsonPath("$.data.status").value("COMPLETED"))
 			.andExpect(jsonPath("$.data.requestedBy").value("admin-user"))
-			.andExpect(jsonPath("$.data.collectedCount").value(14));
+			.andExpect(jsonPath("$.data.collectedCount").value(14))
+			.andExpect(jsonPath("$.data.retryable").value(false))
+			.andExpect(jsonPath("$.data.operatorAction")
+				.value("수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."));
 
 		mockMvc.perform(get("/admin/data-collections/runs")
 				.with(httpBasic("admin-user", "admin-test-password")))
@@ -54,7 +57,10 @@ class DataCollectionControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data[0].source").value("TRANSIT_MASTER"))
 			.andExpect(jsonPath("$.data[0].status").value("COMPLETED"))
-			.andExpect(jsonPath("$.data[0].requestedBy").value("admin-user"));
+			.andExpect(jsonPath("$.data[0].requestedBy").value("admin-user"))
+			.andExpect(jsonPath("$.data[0].retryable").value(false))
+			.andExpect(jsonPath("$.data[0].operatorAction")
+				.value("수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."));
 	}
 
 	@Test

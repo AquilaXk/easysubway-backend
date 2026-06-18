@@ -49,6 +49,8 @@ class DataCollectionRunRecorderTest {
 		assertThat(run.startedAt()).isEqualTo(LocalDateTime.of(2026, 6, 14, 11, 0));
 		assertThat(run.completedAt()).isEqualTo(LocalDateTime.of(2026, 6, 14, 11, 0));
 		assertThat(run.collectedCount()).isEqualTo(14);
+		assertThat(run.retryable()).isFalse();
+		assertThat(run.operatorAction()).isEqualTo("수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.");
 		assertThat(repository.loadRun("collection-test")).contains(run);
 	}
 
@@ -82,6 +84,8 @@ class DataCollectionRunRecorderTest {
 		assertThat(run.requestedBy()).isEqualTo("admin-user");
 		assertThat(run.completedAt()).isEqualTo(LocalDateTime.of(2026, 6, 14, 11, 0));
 		assertThat(run.failureMessage()).isEqualTo("loader down");
+		assertThat(run.retryable()).isTrue();
+		assertThat(run.operatorAction()).isEqualTo("일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요.");
 	}
 
 	@Test
@@ -124,7 +128,9 @@ class DataCollectionRunRecorderTest {
 			LocalDateTime.of(2026, 6, 14, 11, 0),
 			LocalDateTime.of(2026, 6, 14, 11, 1),
 			0,
-			null
+			null,
+			false,
+			"실행 중"
 		))
 			.isInstanceOf(InvalidDataCollectionException.class)
 			.hasMessage("실행 중인 실행은 완료 시간을 포함할 수 없습니다.");
@@ -141,7 +147,9 @@ class DataCollectionRunRecorderTest {
 			LocalDateTime.of(2026, 6, 14, 11, 0),
 			null,
 			13,
-			null
+			null,
+			false,
+			"완료"
 		))
 			.isInstanceOf(InvalidDataCollectionException.class)
 			.hasMessage("완료된 실행은 완료 시간이 필요합니다.");
@@ -158,7 +166,9 @@ class DataCollectionRunRecorderTest {
 			LocalDateTime.of(2026, 6, 14, 11, 0),
 			LocalDateTime.of(2026, 6, 14, 11, 1),
 			13,
-			"failed"
+			"failed",
+			false,
+			"완료"
 		))
 			.isInstanceOf(InvalidDataCollectionException.class)
 			.hasMessage("완료된 실행은 실패 사유를 포함할 수 없습니다.");
@@ -175,7 +185,9 @@ class DataCollectionRunRecorderTest {
 			LocalDateTime.of(2026, 6, 14, 11, 0),
 			null,
 			0,
-			" "
+			" ",
+			true,
+			"재시도"
 		))
 			.isInstanceOf(InvalidDataCollectionException.class)
 			.hasMessage("실패한 실행은 실패 사유가 필요합니다.");

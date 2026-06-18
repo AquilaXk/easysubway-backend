@@ -10,7 +10,9 @@ public record DataCollectionRun(
 	LocalDateTime startedAt,
 	LocalDateTime completedAt,
 	int collectedCount,
-	String failureMessage
+	String failureMessage,
+	boolean retryable,
+	String operatorAction
 ) {
 
 	public DataCollectionRun {
@@ -32,6 +34,9 @@ public record DataCollectionRun(
 		if (collectedCount < 0) {
 			throw new InvalidDataCollectionException("수집 건수는 0 이상이어야 합니다.");
 		}
+		if (operatorAction == null || operatorAction.isBlank()) {
+			throw new InvalidDataCollectionException("운영자 다음 행동 안내가 필요합니다.");
+		}
 		if (status == DataCollectionStatus.RUNNING && completedAt != null) {
 			throw new InvalidDataCollectionException("실행 중인 실행은 완료 시간을 포함할 수 없습니다.");
 		}
@@ -43,11 +48,15 @@ public record DataCollectionRun(
 		if (failureMessage != null) {
 			failureMessage = failureMessage.trim();
 		}
+		operatorAction = operatorAction.trim();
 		if (status == DataCollectionStatus.COMPLETED && failureMessage != null && !failureMessage.isBlank()) {
 			throw new InvalidDataCollectionException("완료된 실행은 실패 사유를 포함할 수 없습니다.");
 		}
 		if (status == DataCollectionStatus.FAILED && (failureMessage == null || failureMessage.isBlank())) {
 			throw new InvalidDataCollectionException("실패한 실행은 실패 사유가 필요합니다.");
+		}
+		if (status != DataCollectionStatus.FAILED && retryable) {
+			throw new InvalidDataCollectionException("실패하지 않은 실행은 재시도 대상으로 표시할 수 없습니다.");
 		}
 	}
 }

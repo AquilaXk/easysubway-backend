@@ -59,7 +59,9 @@ class DataCollectionController {
 		LocalDateTime startedAt,
 		LocalDateTime completedAt,
 		int collectedCount,
-		String failureMessage
+		String failureMessage,
+		boolean retryable,
+		String operatorAction
 	) {
 
 		static DataCollectionRunResponse from(DataCollectionRun run) {
@@ -71,7 +73,9 @@ class DataCollectionController {
 				run.startedAt(),
 				run.completedAt(),
 				run.collectedCount(),
-				run.failureMessage()
+				run.failureMessage(),
+				run.retryable(),
+				run.operatorAction()
 			);
 		}
 	}

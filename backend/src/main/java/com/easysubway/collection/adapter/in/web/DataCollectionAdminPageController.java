@@ -77,7 +77,9 @@ class DataCollectionAdminPageController {
 		LocalDateTime startedAt,
 		LocalDateTime completedAt,
 		int collectedCount,
-		String failureMessage
+		String failureMessage,
+		boolean retryable,
+		String operatorAction
 	) {
 
 		static DataCollectionRunRow from(DataCollectionRun run) {
@@ -89,7 +91,9 @@ class DataCollectionAdminPageController {
 				run.startedAt(),
 				run.completedAt(),
 				run.collectedCount(),
-				run.failureMessage()
+				run.failureMessage(),
+				run.retryable(),
+				run.operatorAction()
 			);
 		}
 
@@ -105,6 +109,10 @@ class DataCollectionAdminPageController {
 				return "-";
 			}
 			return completedAt.toString();
+		}
+
+		public String retryableLabel() {
+			return retryable ? "가능" : "불필요";
 		}
 	}
 

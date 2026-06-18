@@ -16,6 +16,8 @@ public class DataCollectionRunRecorder {
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveDataCollectionRunPort saveDataCollectionRunPort;
 	private final Clock clock;
+	private static final String COMPLETED_OPERATOR_ACTION = "수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.";
+	private static final String FAILED_OPERATOR_ACTION = "일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요.";
 
 	@Autowired
 	public DataCollectionRunRecorder(
@@ -48,7 +50,9 @@ public class DataCollectionRunRecorder {
 				startedAt,
 				completedAt,
 				collectedCount,
-				null
+				null,
+				false,
+				COMPLETED_OPERATOR_ACTION
 			);
 			return saveDataCollectionRunPort.saveRun(run);
 		} catch (RuntimeException exception) {
@@ -77,7 +81,9 @@ public class DataCollectionRunRecorder {
 			startedAt,
 			LocalDateTime.now(clock),
 			0,
-			failureMessageOf(exception)
+			failureMessageOf(exception),
+			true,
+			FAILED_OPERATOR_ACTION
 		));
 	}
 

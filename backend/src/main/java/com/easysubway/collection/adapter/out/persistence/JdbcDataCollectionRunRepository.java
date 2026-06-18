@@ -42,9 +42,11 @@ public class JdbcDataCollectionRunRepository implements
 				started_at,
 				completed_at,
 				collected_count,
-				failure_message
+				failure_message,
+				retryable,
+				operator_action
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
 			run.runId(),
 			run.source().name(),
@@ -53,7 +55,9 @@ public class JdbcDataCollectionRunRepository implements
 			run.startedAt(),
 			run.completedAt(),
 			run.collectedCount(),
-			run.failureMessage()
+			run.failureMessage(),
+			run.retryable(),
+			run.operatorAction()
 		);
 		return run;
 	}
@@ -63,7 +67,8 @@ public class JdbcDataCollectionRunRepository implements
 		try {
 			return Optional.ofNullable(jdbcTemplate.queryForObject(
 				"""
-					SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count, failure_message
+					SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
+						failure_message, retryable, operator_action
 					FROM data_collection_runs
 					WHERE run_id = ?
 					""",
@@ -82,7 +87,8 @@ public class JdbcDataCollectionRunRepository implements
 		}
 		return jdbcTemplate.query(
 			"""
-				SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count, failure_message
+				SELECT run_id, source, status, requested_by, started_at, completed_at, collected_count,
+					failure_message, retryable, operator_action
 				FROM data_collection_runs
 				ORDER BY started_at DESC, run_id DESC
 				LIMIT ?
@@ -102,7 +108,9 @@ public class JdbcDataCollectionRunRepository implements
 			resultSet.getTimestamp("started_at").toLocalDateTime(),
 			completedAt == null ? null : completedAt.toLocalDateTime(),
 			resultSet.getInt("collected_count"),
-			resultSet.getString("failure_message")
+			resultSet.getString("failure_message"),
+			resultSet.getBoolean("retryable"),
+			resultSet.getString("operator_action")
 		);
 	}
 }
