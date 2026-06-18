@@ -1,0 +1,152 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>운영기관 데이터 수집 실패 현황</title>
+	<style>
+		body {
+			margin: 0;
+			background: #f5f7f8;
+			color: #102a2c;
+			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+		}
+
+		main {
+			max-width: 1120px;
+			margin: 0 auto;
+			padding: 32px 24px 48px;
+		}
+
+		h1 {
+			margin: 0 0 10px;
+			font-size: 32px;
+			line-height: 1.2;
+		}
+
+		p {
+			margin: 0 0 24px;
+			color: #40585a;
+			font-size: 17px;
+			line-height: 1.55;
+		}
+
+		h2 {
+			margin: 0;
+			padding: 16px 18px;
+			background: #e8f1ef;
+			font-size: 20px;
+		}
+
+		.metric-grid {
+			display: grid;
+			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+			gap: 12px;
+			margin-bottom: 24px;
+		}
+
+		.metric {
+			background: #fff;
+			border: 1px solid #d6e0df;
+			padding: 18px;
+		}
+
+		.metric span {
+			display: block;
+			color: #536b6d;
+			font-weight: 800;
+			line-height: 1.4;
+		}
+
+		.metric strong {
+			display: block;
+			margin-top: 8px;
+			font-size: 30px;
+			line-height: 1.15;
+		}
+
+		section {
+			background: #fff;
+			border: 1px solid #d6e0df;
+		}
+
+		table {
+			width: 100%;
+			border-collapse: collapse;
+		}
+
+		th,
+		td {
+			padding: 14px 18px;
+			border-top: 1px solid #d6e0df;
+			text-align: left;
+			vertical-align: top;
+			font-size: 15px;
+			line-height: 1.45;
+		}
+
+		th {
+			background: #f8fbfb;
+			font-weight: 800;
+		}
+
+		td:nth-child(5),
+		th:nth-child(5) {
+			text-align: right;
+			font-weight: 800;
+		}
+	</style>
+</head>
+<body>
+<main>
+	<h1>운영기관 데이터 수집 실패 현황</h1>
+	<p>운영기관 담당자가 최근 데이터 수집 상태와 재시도 필요 여부를 확인하는 읽기 전용 리포트입니다.</p>
+
+	<div class="metric-grid" aria-label="데이터 수집 실패 현황 요약">
+		<div class="metric">
+			<span>전체 수집 실행</span>
+			<strong th:text="${report.totalRunCount}">0</strong>
+		</div>
+		<div class="metric">
+			<span>실패 실행</span>
+			<strong th:text="${report.failedRunCount}">0</strong>
+		</div>
+		<div class="metric">
+			<span>재시도 가능</span>
+			<strong th:text="${report.retryableRunCount}">0</strong>
+		</div>
+	</div>
+
+	<section>
+		<h2>최근 수집 실행</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">수집 원천</th>
+				<th scope="col">상태</th>
+				<th scope="col">시작 시각</th>
+				<th scope="col">종료 시각</th>
+				<th scope="col">수집 건수</th>
+				<th scope="col">실패 사유</th>
+				<th scope="col">운영 조치</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${report.rows}">
+				<td th:text="${row.sourceLabel}">도시철도 마스터</td>
+				<td th:text="${row.statusLabel}">실패</td>
+				<td th:text="${row.startedAtLabel}">2026-06-18T10:00</td>
+				<td th:text="${row.completedAtLabel}">2026-06-18T10:00:30</td>
+				<td th:text="${row.collectedCount}">0</td>
+				<td th:text="${row.failureMessage}">공공데이터 응답 지연</td>
+				<td th:text="${row.operatorAction}">재시도하세요.</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(report.rows)}">
+				<td colspan="7">최근 데이터 수집 실행 기록이 없습니다.</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</body>
+</html>
