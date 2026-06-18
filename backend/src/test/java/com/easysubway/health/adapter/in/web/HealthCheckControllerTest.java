@@ -1,5 +1,6 @@
 package com.easysubway.health.adapter.in.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -7,17 +8,24 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.actuate.endpoint.web.WebEndpointsSupplier;
+import org.springframework.boot.test.autoconfigure.actuate.observability.AutoConfigureObservability;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+@SpringBootTest(webEnvironment = WebEnvironment.RANDOM_PORT)
+@AutoConfigureObservability
 @AutoConfigureMockMvc
 @DisplayName("헬스체크 API")
 class HealthCheckControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private WebEndpointsSupplier webEndpointsSupplier;
 
 	@Test
 	@DisplayName("공통 응답 형식으로 API 헬스체크를 반환한다")
@@ -35,5 +43,13 @@ class HealthCheckControllerTest {
 		mockMvc.perform(get("/actuator/health"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.status").value("UP"));
+	}
+
+	@Test
+	@DisplayName("Prometheus 스크랩용 액추에이터 지표 엔드포인트를 노출한다")
+	void actuatorPrometheusIsAvailable() throws Exception {
+		assertThat(webEndpointsSupplier.getEndpoints())
+			.extracting(endpoint -> endpoint.getEndpointId().toString())
+			.contains("prometheus");
 	}
 }
