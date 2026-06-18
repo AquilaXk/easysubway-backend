@@ -73,6 +73,15 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("엘리베이터 필요")
 			.contains("75초")
 			.contains("신뢰도 92")
+			.contains("name=\"distanceMeters\"")
+			.contains("name=\"estimatedSeconds\"")
+			.contains("name=\"hasStairs\"")
+			.contains("name=\"requiresElevator\"")
+			.contains("name=\"requiresEscalator\"")
+			.contains("name=\"slopeLevel\"")
+			.contains("name=\"widthLevel\"")
+			.contains("name=\"reliabilityScore\"")
+			.contains("name=\"active\"")
 			.doesNotContain("{\"nodes\":[],\"edges\":[]}")
 			.doesNotContain("<img");
 	}
@@ -158,6 +167,43 @@ class TransitStationLayoutAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 역 구조도 화면에서 내부 이동 간선 정보를 변경한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesRouteEdgeMetadataFromPageAndRedirectsToLayoutPage() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("distanceMeters", "34")
+				.param("estimatedSeconds", "90")
+				.param("hasStairs", "true")
+				.param("requiresElevator", "false")
+				.param("requiresEscalator", "true")
+				.param("slopeLevel", "2")
+				.param("widthLevel", "3")
+				.param("reliabilityScore", "76")
+				.param("active", "false"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/stations/station-sangnoksu/layouts/page"));
+
+		String html = mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("34m")
+			.contains("90초")
+			.contains("계단 포함")
+			.contains("엘리베이터 불필요")
+			.contains("에스컬레이터 필요")
+			.contains("신뢰도 76")
+			.contains("비활성");
+	}
+
+	@Test
 	@DisplayName("관리자 역 구조도 요약 화면은 관리자 인증을 요구한다")
 	void stationLayoutPageRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts/page"))
@@ -196,6 +242,35 @@ class TransitStationLayoutAdminPageControllerTest {
 				.param("displayY", "256")
 				.param("displayLabel", "1번 출구 승강기"))
 			.andExpect(status().isForbidden());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate/page")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("distanceMeters", "34")
+				.param("estimatedSeconds", "90")
+				.param("hasStairs", "false")
+				.param("requiresElevator", "true")
+				.param("requiresEscalator", "false")
+				.param("slopeLevel", "1")
+				.param("widthLevel", "2")
+				.param("reliabilityScore", "92")
+				.param("active", "true"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(post("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate/page")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("distanceMeters", "34")
+				.param("estimatedSeconds", "90")
+				.param("hasStairs", "false")
+				.param("requiresElevator", "true")
+				.param("requiresEscalator", "false")
+				.param("slopeLevel", "1")
+				.param("widthLevel", "2")
+				.param("reliabilityScore", "92")
+				.param("active", "true"))
+			.andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -223,6 +298,28 @@ class TransitStationLayoutAdminPageControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("내부 이동 노드 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("역 구조도 간선 변경은 URL 역과 간선 소속이 일치해야 한다")
+	void stationLayoutEdgeUpdateRequiresEdgeInStation() throws Exception {
+		mockMvc.perform(post("/admin/stations/station-sadang/route-edges/edge-sangnoksu-elevator-to-faregate/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("distanceMeters", "34")
+				.param("estimatedSeconds", "90")
+				.param("hasStairs", "false")
+				.param("requiresElevator", "true")
+				.param("requiresEscalator", "false")
+				.param("slopeLevel", "1")
+				.param("widthLevel", "2")
+				.param("reliabilityScore", "92")
+				.param("active", "true"))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("내부 이동 간선 정보를 찾을 수 없습니다."));
 	}
 
 	@Test

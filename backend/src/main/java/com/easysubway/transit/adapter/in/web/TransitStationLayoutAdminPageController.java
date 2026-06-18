@@ -2,9 +2,11 @@ package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
+import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeNotFoundException;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.RouteNodeNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
@@ -89,6 +91,39 @@ class TransitStationLayoutAdminPageController {
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
 	}
 
+	@PostMapping("/admin/stations/{stationId}/route-edges/{edgeId}/page")
+	String updateRouteEdgeFromPage(
+		@PathVariable String stationId,
+		@PathVariable String edgeId,
+		@RequestParam int distanceMeters,
+		@RequestParam int estimatedSeconds,
+		@RequestParam boolean hasStairs,
+		@RequestParam boolean requiresElevator,
+		@RequestParam boolean requiresEscalator,
+		@RequestParam int slopeLevel,
+		@RequestParam int widthLevel,
+		@RequestParam int reliabilityScore,
+		@RequestParam boolean active,
+		Principal principal
+	) {
+		requireRouteEdgeInStation(stationId, edgeId);
+		transitMasterAdminUseCase.updateRouteEdge(new UpdateRouteEdgeCommand(
+			stationId,
+			edgeId,
+			distanceMeters,
+			estimatedSeconds,
+			hasStairs,
+			requiresElevator,
+			requiresEscalator,
+			slopeLevel,
+			widthLevel,
+			reliabilityScore,
+			active,
+			principal.getName()
+		));
+		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
+	}
+
 	private void requireLayoutInStation(String stationId, String layoutId) {
 		transitMasterQueryUseCase.getStation(stationId);
 		boolean matched = transitMasterQueryUseCase.listSimplifiedStationLayouts(stationId)
@@ -106,6 +141,16 @@ class TransitStationLayoutAdminPageController {
 			.anyMatch(node -> node.id().equals(nodeId));
 		if (!matched) {
 			throw new RouteNodeNotFoundException();
+		}
+	}
+
+	private void requireRouteEdgeInStation(String stationId, String edgeId) {
+		transitMasterQueryUseCase.getStation(stationId);
+		boolean matched = transitMasterQueryUseCase.listRouteEdges(stationId)
+			.stream()
+			.anyMatch(edge -> edge.id().equals(edgeId));
+		if (!matched) {
+			throw new RouteEdgeNotFoundException();
 		}
 	}
 
@@ -244,11 +289,21 @@ class TransitStationLayoutAdminPageController {
 		String fromNodeId,
 		String toNodeId,
 		String type,
+		int distanceMeters,
 		String distanceLabel,
+		int estimatedSeconds,
 		String estimatedSecondsLabel,
+		boolean hasStairs,
 		String stairsLabel,
+		boolean requiresElevator,
 		String elevatorLabel,
+		boolean requiresEscalator,
 		String escalatorLabel,
+		int slopeLevel,
+		int widthLevel,
+		int reliabilityScore,
+		boolean active,
+		String activeLabel,
 		String reliabilityLabel
 	) {
 
@@ -258,11 +313,21 @@ class TransitStationLayoutAdminPageController {
 				edge.fromNodeId(),
 				edge.toNodeId(),
 				edge.type().name(),
+				edge.distanceMeters(),
 				edge.distanceMeters() + "m",
+				edge.estimatedSeconds(),
 				edge.estimatedSeconds() + "초",
+				edge.hasStairs(),
 				edge.hasStairs() ? "계단 포함" : "계단 없음",
+				edge.requiresElevator(),
 				edge.requiresElevator() ? "엘리베이터 필요" : "엘리베이터 불필요",
+				edge.requiresEscalator(),
 				edge.requiresEscalator() ? "에스컬레이터 필요" : "에스컬레이터 불필요",
+				edge.slopeLevel(),
+				edge.widthLevel(),
+				edge.reliabilityScore(),
+				edge.active(),
+				edge.active() ? "활성" : "비활성",
 				"신뢰도 " + edge.reliabilityScore()
 			);
 		}

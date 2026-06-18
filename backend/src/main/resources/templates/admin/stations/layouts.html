@@ -83,6 +83,7 @@
 		}
 
 		select,
+		input,
 		button {
 			min-height: 44px;
 			border: 1px solid #7b9396;
@@ -94,6 +95,11 @@
 
 		select {
 			min-width: 180px;
+			padding: 0 10px;
+		}
+
+		input {
+			max-width: 160px;
 			padding: 0 10px;
 		}
 
@@ -261,7 +267,46 @@
 				</td>
 				<td th:text="${edge.type}">WALK</td>
 				<td>
-					<span th:text="${edge.distanceLabel}">28m</span>
+					<form th:action="@{/admin/stations/{stationId}/route-edges/{edgeId}/page(stationId=${station.stationId}, edgeId=${edge.id})}"
+					      method="post">
+						<label class="meta" th:for="|distance-meters-${edge.id}|">거리 m</label>
+						<input type="number" name="distanceMeters" th:id="|distance-meters-${edge.id}|"
+						       th:value="${edge.distanceMeters}" min="0" required>
+						<label class="meta" th:for="|estimated-seconds-${edge.id}|">예상 초</label>
+						<input type="number" name="estimatedSeconds" th:id="|estimated-seconds-${edge.id}|"
+						       th:value="${edge.estimatedSeconds}" min="0" required>
+						<label class="meta" th:for="|slope-level-${edge.id}|">경사</label>
+						<input type="number" name="slopeLevel" th:id="|slope-level-${edge.id}|"
+						       th:value="${edge.slopeLevel}" min="1" max="5" required>
+						<label class="meta" th:for="|width-level-${edge.id}|">폭</label>
+						<input type="number" name="widthLevel" th:id="|width-level-${edge.id}|"
+						       th:value="${edge.widthLevel}" min="1" max="5" required>
+						<label class="meta" th:for="|reliability-score-${edge.id}|">신뢰도</label>
+						<input type="number" name="reliabilityScore" th:id="|reliability-score-${edge.id}|"
+						       th:value="${edge.reliabilityScore}" min="0" max="100" required>
+						<label class="meta" th:for="|has-stairs-${edge.id}|">계단</label>
+						<select name="hasStairs" th:id="|has-stairs-${edge.id}|">
+							<option value="false" th:selected="${!edge.hasStairs}">없음</option>
+							<option value="true" th:selected="${edge.hasStairs}">포함</option>
+						</select>
+						<label class="meta" th:for="|requires-elevator-${edge.id}|">엘리베이터</label>
+						<select name="requiresElevator" th:id="|requires-elevator-${edge.id}|">
+							<option value="false" th:selected="${!edge.requiresElevator}">불필요</option>
+							<option value="true" th:selected="${edge.requiresElevator}">필요</option>
+						</select>
+						<label class="meta" th:for="|requires-escalator-${edge.id}|">에스컬레이터</label>
+						<select name="requiresEscalator" th:id="|requires-escalator-${edge.id}|">
+							<option value="false" th:selected="${!edge.requiresEscalator}">불필요</option>
+							<option value="true" th:selected="${edge.requiresEscalator}">필요</option>
+						</select>
+						<label class="meta" th:for="|active-${edge.id}|">활성</label>
+						<select name="active" th:id="|active-${edge.id}|">
+							<option value="true" th:selected="${edge.active}">활성</option>
+							<option value="false" th:selected="${!edge.active}">비활성</option>
+						</select>
+						<button type="submit">저장</button>
+					</form>
+					<span class="meta" th:text="${edge.distanceLabel}">28m</span>
 					<span class="meta" th:text="${edge.estimatedSecondsLabel}">75초</span>
 				</td>
 				<td>
@@ -269,7 +314,10 @@
 					<span class="meta" th:text="${edge.elevatorLabel}">엘리베이터 필요</span>
 					<span class="meta" th:text="${edge.escalatorLabel}">에스컬레이터 불필요</span>
 				</td>
-				<td th:text="${edge.reliabilityLabel}">신뢰도 92</td>
+				<td>
+					<span th:text="${edge.reliabilityLabel}">신뢰도 92</span>
+					<span class="meta" th:text="${edge.activeLabel}">활성</span>
+				</td>
 			</tr>
 			</tbody>
 		</table>

@@ -9,6 +9,7 @@ import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
+import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.domain.AccessibilityFacility;
@@ -17,6 +18,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.InvalidRouteEdgeException;
 import com.easysubway.transit.domain.InvalidRouteNodeException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.RouteEdge;
@@ -221,6 +223,19 @@ class TransitMasterController {
 	@GetMapping("/admin/stations/{stationId}/route-edges")
 	ApiResponse<List<RouteEdgeResponse>> routeEdges(@PathVariable String stationId) {
 		return ApiResponse.ok(routeEdgeResponses(stationId));
+	}
+
+	@PatchMapping("/admin/stations/{stationId}/route-edges/{edgeId}")
+	ApiResponse<RouteEdgeResponse> updateRouteEdge(
+		@PathVariable String stationId,
+		@PathVariable String edgeId,
+		@RequestBody UpdateRouteEdgeRequest request,
+		Principal principal
+	) {
+		RouteEdge routeEdge = transitMasterAdminUseCase.updateRouteEdge(
+			request.toCommand(stationId, edgeId, principal.getName())
+		);
+		return ApiResponse.ok(RouteEdgeResponse.from(routeEdge));
 	}
 
 	@PostMapping("/admin/facilities")
@@ -790,6 +805,48 @@ class TransitMasterController {
 				displayY,
 				displayLabel,
 				accessibilityNote,
+				updatedBy
+			);
+		}
+	}
+
+	record UpdateRouteEdgeRequest(
+		Integer distanceMeters,
+		Integer estimatedSeconds,
+		Boolean hasStairs,
+		Boolean requiresElevator,
+		Boolean requiresEscalator,
+		Integer slopeLevel,
+		Integer widthLevel,
+		Integer reliabilityScore,
+		Boolean active
+	) {
+
+		UpdateRouteEdgeCommand toCommand(String stationId, String edgeId, String updatedBy) {
+			if (distanceMeters == null || estimatedSeconds == null) {
+				throw new InvalidRouteEdgeException("간선 거리와 예상 시간이 필요합니다.");
+			}
+			if (slopeLevel == null || widthLevel == null) {
+				throw new InvalidRouteEdgeException("간선 경사와 폭 레벨이 필요합니다.");
+			}
+			if (reliabilityScore == null) {
+				throw new InvalidRouteEdgeException("간선 신뢰도가 필요합니다.");
+			}
+			if (hasStairs == null || requiresElevator == null || requiresEscalator == null || active == null) {
+				throw new InvalidRouteEdgeException("간선 접근성 제약 상태가 필요합니다.");
+			}
+			return new UpdateRouteEdgeCommand(
+				stationId,
+				edgeId,
+				distanceMeters,
+				estimatedSeconds,
+				hasStairs,
+				requiresElevator,
+				requiresEscalator,
+				slopeLevel,
+				widthLevel,
+				reliabilityScore,
+				active,
 				updatedBy
 			);
 		}

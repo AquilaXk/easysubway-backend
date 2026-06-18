@@ -676,6 +676,168 @@ class TransitMasterControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 내부 이동 간선의 이동 난이도와 접근성 제약을 수정한다")
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
+	void adminUpdatesRouteEdgeMetadataAndListReflectsIt() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "distanceMeters": 34,
+					  "estimatedSeconds": 90,
+					  "hasStairs": true,
+					  "requiresElevator": false,
+					  "requiresEscalator": true,
+					  "slopeLevel": 2,
+					  "widthLevel": 3,
+					  "reliabilityScore": 76,
+					  "active": false
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value("edge-sangnoksu-elevator-to-faregate"))
+			.andExpect(jsonPath("$.data.distanceMeters").value(34))
+			.andExpect(jsonPath("$.data.estimatedSeconds").value(90))
+			.andExpect(jsonPath("$.data.hasStairs").value(true))
+			.andExpect(jsonPath("$.data.requiresElevator").value(false))
+			.andExpect(jsonPath("$.data.requiresEscalator").value(true))
+			.andExpect(jsonPath("$.data.slopeLevel").value(2))
+			.andExpect(jsonPath("$.data.widthLevel").value(3))
+			.andExpect(jsonPath("$.data.reliabilityScore").value(76))
+			.andExpect(jsonPath("$.data.active").value(false));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-edges")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].distanceMeters").value(34))
+			.andExpect(jsonPath("$.data[0].estimatedSeconds").value(90))
+			.andExpect(jsonPath("$.data[0].hasStairs").value(true))
+			.andExpect(jsonPath("$.data[0].requiresElevator").value(false))
+			.andExpect(jsonPath("$.data[0].requiresEscalator").value(true))
+			.andExpect(jsonPath("$.data[0].slopeLevel").value(2))
+			.andExpect(jsonPath("$.data[0].widthLevel").value(3))
+			.andExpect(jsonPath("$.data[0].reliabilityScore").value(76))
+			.andExpect(jsonPath("$.data[0].active").value(false));
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정 API는 관리자 인증을 요구한다")
+	void updateRouteEdgeMetadataRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "distanceMeters": 34,
+					  "estimatedSeconds": 90,
+					  "hasStairs": false,
+					  "requiresElevator": true,
+					  "requiresEscalator": false,
+					  "slopeLevel": 1,
+					  "widthLevel": 2,
+					  "reliabilityScore": 92,
+					  "active": true
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "distanceMeters": 34,
+					  "estimatedSeconds": 90,
+					  "hasStairs": false,
+					  "requiresElevator": true,
+					  "requiresEscalator": false,
+					  "slopeLevel": 1,
+					  "widthLevel": 2,
+					  "reliabilityScore": 92,
+					  "active": true
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정은 필수 숫자와 유효 범위를 요구한다")
+	void updateRouteEdgeMetadataRequiresValidInputs() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "estimatedSeconds": 90,
+					  "hasStairs": false,
+					  "requiresElevator": true,
+					  "requiresEscalator": false,
+					  "slopeLevel": 1,
+					  "widthLevel": 2,
+					  "reliabilityScore": 92,
+					  "active": true
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("간선 거리와 예상 시간이 필요합니다."));
+
+		mockMvc.perform(patch("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "distanceMeters": 34,
+					  "estimatedSeconds": 90,
+					  "hasStairs": false,
+					  "requiresElevator": true,
+					  "requiresEscalator": false,
+					  "slopeLevel": 1,
+					  "widthLevel": 2,
+					  "reliabilityScore": 101,
+					  "active": true
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("간선 신뢰도는 0부터 100까지 입력해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정은 URL 역과 간선 소속이 일치해야 한다")
+	void updateRouteEdgeMetadataRequiresEdgeInStation() throws Exception {
+		mockMvc.perform(patch("/admin/stations/station-sadang/route-edges/edge-sangnoksu-elevator-to-faregate")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "distanceMeters": 34,
+					  "estimatedSeconds": 90,
+					  "hasStairs": false,
+					  "requiresElevator": true,
+					  "requiresEscalator": false,
+					  "slopeLevel": 1,
+					  "widthLevel": 2,
+					  "reliabilityScore": 92,
+					  "active": true
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("내부 이동 간선 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 역의 내부 이동 간선은 공통 404 응답을 반환한다")
 	void missingRouteEdgesReturnCommonErrorResponse() throws Exception {
 		mockMvc.perform(get("/admin/stations/unknown-station/route-edges")

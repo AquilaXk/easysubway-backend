@@ -2,6 +2,7 @@ package com.easysubway.transit.adapter.out.persistence;
 
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
 import com.easysubway.transit.application.port.out.SaveRouteNodePort;
 import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
@@ -38,7 +39,8 @@ public class InMemoryTransitMasterRepository implements
 	LoadTransitMasterPort,
 	SaveAccessibilityFacilityStatusPort,
 	SaveSimplifiedStationLayoutStatusPort,
-	SaveRouteNodePort {
+	SaveRouteNodePort,
+	SaveRouteEdgePort {
 
 	private static final List<TransitOperator> OPERATORS = List.of(
 		new TransitOperator(
@@ -226,11 +228,13 @@ public class InMemoryTransitMasterRepository implements
 	private final Map<String, AccessibilityFacility> accessibilityFacilities = new LinkedHashMap<>();
 	private final Map<String, SimplifiedStationLayout> simplifiedStationLayouts = new LinkedHashMap<>();
 	private final Map<String, RouteNode> routeNodes = new LinkedHashMap<>();
+	private final Map<String, RouteEdge> routeEdges = new LinkedHashMap<>();
 
 	public InMemoryTransitMasterRepository() {
 		seedAccessibilityFacilities();
 		seedSimplifiedStationLayouts();
 		seedRouteNodes();
+		seedRouteEdges();
 	}
 
 	@Override
@@ -280,7 +284,7 @@ public class InMemoryTransitMasterRepository implements
 
 	@Override
 	public List<RouteEdge> loadRouteEdges() {
-		return ROUTE_EDGES;
+		return List.copyOf(routeEdges.values());
 	}
 
 	@Override
@@ -348,6 +352,11 @@ public class InMemoryTransitMasterRepository implements
 		routeNodes.put(routeNode.id(), routeNode);
 	}
 
+	@Override
+	public void saveRouteEdge(RouteEdge routeEdge) {
+		routeEdges.put(routeEdge.id(), routeEdge);
+	}
+
 	private void seedAccessibilityFacilities() {
 		saveSeedFacility(new AccessibilityFacility(
 			"facility-sangnoksu-elevator-1",
@@ -409,5 +418,9 @@ public class InMemoryTransitMasterRepository implements
 
 	private void seedRouteNodes() {
 		ROUTE_NODES.forEach(routeNode -> routeNodes.put(routeNode.id(), routeNode));
+	}
+
+	private void seedRouteEdges() {
+		ROUTE_EDGES.forEach(routeEdge -> routeEdges.put(routeEdge.id(), routeEdge));
 	}
 }

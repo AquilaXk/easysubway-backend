@@ -9,6 +9,7 @@ import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityCommand;
+import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
 import com.easysubway.transit.application.port.in.UpdateRouteNodeDisplayCommand;
 import com.easysubway.transit.application.port.in.UpdateSimplifiedStationLayoutStatusCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
@@ -22,9 +23,11 @@ import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
 import com.easysubway.transit.domain.InvalidAccessibilityFacilityException;
+import com.easysubway.transit.domain.InvalidRouteEdgeException;
 import com.easysubway.transit.domain.InvalidRouteNodeException;
 import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.RouteEdge;
+import com.easysubway.transit.domain.RouteEdgeNotFoundException;
 import com.easysubway.transit.domain.RouteEdgeType;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.RouteNodeNotFoundException;
@@ -604,6 +607,139 @@ class TransitMasterServiceTest {
 		)))
 			.isInstanceOf(RouteNodeNotFoundException.class)
 			.hasMessage("내부 이동 노드 정보를 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자는 내부 이동 간선의 이동 난이도와 접근성 제약을 수정한다")
+	void updateRouteEdgeStoresDifficultyAndAccessibilityMetadata() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		var updated = service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			true,
+			false,
+			true,
+			2,
+			3,
+			76,
+			false,
+			"admin-user"
+		));
+
+		assertThat(updated.distanceMeters()).isEqualTo(34);
+		assertThat(updated.estimatedSeconds()).isEqualTo(90);
+		assertThat(updated.hasStairs()).isTrue();
+		assertThat(updated.requiresElevator()).isFalse();
+		assertThat(updated.requiresEscalator()).isTrue();
+		assertThat(updated.slopeLevel()).isEqualTo(2);
+		assertThat(updated.widthLevel()).isEqualTo(3);
+		assertThat(updated.reliabilityScore()).isEqualTo(76);
+		assertThat(updated.active()).isFalse();
+		assertThat(service.listRouteEdges("station-sangnoksu").getFirst().reliabilityScore())
+			.isEqualTo(76);
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정은 범위 안의 숫자와 관리자 식별자를 요구한다")
+	void updateRouteEdgeRequiresValidInputsAndUpdater() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			-1,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("간선 거리와 예상 시간은 0 이상이어야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			0,
+			2,
+			92,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("간선 경사와 폭 레벨은 1부터 5까지 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			101,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("간선 신뢰도는 0부터 100까지 입력해야 합니다.");
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sangnoksu",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true,
+			""
+		)))
+			.isInstanceOf(InvalidRouteEdgeException.class)
+			.hasMessage("수정자 식별자가 필요합니다.");
+	}
+
+	@Test
+	@DisplayName("내부 이동 간선 수정은 URL 역과 간선 소속이 일치해야 한다")
+	void updateRouteEdgeRequiresEdgeInStation() {
+		var repository = new InMemoryTransitMasterRepository();
+		var service = new TransitMasterService(repository, repository);
+
+		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
+			"station-sadang",
+			"edge-sangnoksu-elevator-to-faregate",
+			34,
+			90,
+			false,
+			true,
+			false,
+			1,
+			2,
+			92,
+			true,
+			"admin-user"
+		)))
+			.isInstanceOf(RouteEdgeNotFoundException.class)
+			.hasMessage("내부 이동 간선 정보를 찾을 수 없습니다.");
 	}
 
 	@Test
