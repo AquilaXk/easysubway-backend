@@ -3,6 +3,7 @@ package com.easysubway.field.application.service;
 import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
+import com.easysubway.field.application.port.out.FieldVerificationChangeHistoryRepository;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
@@ -10,7 +11,6 @@ import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -54,13 +54,12 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 		)
 	);
 	private final Map<String, FieldVerificationSession> sessionsByStationId = new LinkedHashMap<>();
-	private final Map<String, List<FieldVerificationChangeHistory>> historiesByStationId = new LinkedHashMap<>();
+	private final FieldVerificationChangeHistoryRepository historyRepository;
 
-	public FieldVerificationService() {
+	public FieldVerificationService(FieldVerificationChangeHistoryRepository historyRepository) {
+		this.historyRepository = historyRepository;
 		sessionsByStationId.put(SANGNOKSU_STATION_ID, SANGNOKSU_BASELINE);
 		sessionsByStationId.put(SADANG_STATION_ID, SADANG_BASELINE);
-		historiesByStationId.put(SANGNOKSU_STATION_ID, new ArrayList<>());
-		historiesByStationId.put(SADANG_STATION_ID, new ArrayList<>());
 	}
 
 	@Override
@@ -104,7 +103,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 	@Override
 	public synchronized List<FieldVerificationChangeHistory> listStationChangeHistory(String stationId) {
 		findSession(stationId);
-		return List.copyOf(historiesByStationId.getOrDefault(stationId, List.of()));
+		return historyRepository.listByStationId(stationId);
 	}
 
 	private FieldVerificationSession findSession(String stationId) {
@@ -136,12 +135,9 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 		FieldVerificationItem previousItem,
 		UpdateFieldVerificationItemStatusCommand command
 	) {
-		List<FieldVerificationChangeHistory> histories = historiesByStationId.computeIfAbsent(
-			session.stationId(),
-			ignored -> new ArrayList<>()
-		);
-		histories.add(0, new FieldVerificationChangeHistory(
-			"field-verification-history-" + (histories.size() + 1),
+		int nextSequence = historyRepository.listByStationId(session.stationId()).size() + 1;
+		historyRepository.save(new FieldVerificationChangeHistory(
+			"field-verification-history-" + session.stationId() + "-" + nextSequence,
 			session.id(),
 			session.stationId(),
 			previousItem.id(),

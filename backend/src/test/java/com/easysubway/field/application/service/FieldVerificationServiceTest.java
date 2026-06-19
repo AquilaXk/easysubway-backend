@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.common.error.ResourceNotFoundException;
+import com.easysubway.field.adapter.out.persistence.InMemoryFieldVerificationChangeHistoryRepository;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItemType;
@@ -15,7 +16,9 @@ import org.junit.jupiter.api.Test;
 @DisplayName("현장 검증 기준선")
 class FieldVerificationServiceTest {
 
-	private final FieldVerificationService service = new FieldVerificationService();
+	private final InMemoryFieldVerificationChangeHistoryRepository historyRepository =
+		new InMemoryFieldVerificationChangeHistoryRepository();
+	private final FieldVerificationService service = new FieldVerificationService(historyRepository);
 
 	@Test
 	@DisplayName("상록수역 필수 현장 검증 항목을 조회한다")
@@ -147,6 +150,30 @@ class FieldVerificationServiceTest {
 		assertThatThrownBy(() -> service.listStationChangeHistory("missing-station"))
 			.isInstanceOf(ResourceNotFoundException.class)
 			.hasMessage("현장 검증 기준선을 찾을 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("서로 다른 역의 첫 변경 이력도 고유한 식별자를 가진다")
+	void changeHistoryIdsAreUniqueAcrossStations() {
+		service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sadang",
+			"field-verification-sadang-elevator",
+			FieldVerificationStatus.VERIFIED,
+			"사당역 엘리베이터 확인 완료",
+			"admin-user"
+		));
+		service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sangnoksu",
+			"field-verification-sangnoksu-restroom",
+			FieldVerificationStatus.NEEDS_RECHECK,
+			"상록수역 화장실 위치 재확인 필요",
+			"admin-user"
+		));
+
+		String sadangHistoryId = service.listStationChangeHistory("station-sadang").get(0).id();
+		String sangnoksuHistoryId = service.listStationChangeHistory("station-sangnoksu").get(0).id();
+
+		assertThat(sadangHistoryId).isNotEqualTo(sangnoksuHistoryId);
 	}
 
 	@Test
