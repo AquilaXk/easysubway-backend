@@ -201,6 +201,29 @@ CREATE TABLE IF NOT EXISTS mobility_profiles (
 CREATE INDEX IF NOT EXISTS idx_mobility_profiles_updated_at
 	ON mobility_profiles (updated_at DESC);
 
+CREATE TABLE IF NOT EXISTS user_activity_events (
+	user_id VARCHAR(120) NOT NULL,
+	occurred_at TIMESTAMP NOT NULL,
+	CONSTRAINT chk_user_activity_events_user_id
+		CHECK (char_length(trim(user_id)) > 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_user_activity_events_occurred
+	ON user_activity_events (occurred_at DESC, user_id ASC);
+
+CREATE TABLE IF NOT EXISTS api_traffic_events (
+	status_code INTEGER NOT NULL,
+	duration_millis BIGINT NOT NULL,
+	occurred_at TIMESTAMP NOT NULL,
+	CONSTRAINT chk_api_traffic_events_status_code
+		CHECK (status_code BETWEEN 100 AND 599),
+	CONSTRAINT chk_api_traffic_events_duration
+		CHECK (duration_millis >= 0)
+);
+
+CREATE INDEX IF NOT EXISTS idx_api_traffic_events_occurred
+	ON api_traffic_events (occurred_at DESC, status_code ASC);
+
 CREATE TABLE IF NOT EXISTS favorite_stations (
 	user_id VARCHAR(120) NOT NULL,
 	station_id VARCHAR(120) NOT NULL,
