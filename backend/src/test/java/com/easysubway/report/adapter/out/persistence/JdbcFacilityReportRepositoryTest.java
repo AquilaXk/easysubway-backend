@@ -54,6 +54,7 @@ class JdbcFacilityReportRepositoryTest {
 				reviewed_by VARCHAR(120),
 				client_submission_id VARCHAR(120),
 				receipt_token_hash CHAR(64),
+				CONSTRAINT ux_facility_reports_client_submission UNIQUE (client_submission_id),
 				CONSTRAINT fk_facility_reports_duplicate
 					FOREIGN KEY (duplicate_of_report_id) REFERENCES facility_reports(report_id)
 					ON DELETE SET NULL ON UPDATE CASCADE,

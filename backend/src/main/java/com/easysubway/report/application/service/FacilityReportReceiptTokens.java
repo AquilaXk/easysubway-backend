@@ -27,7 +27,10 @@ class FacilityReportReceiptTokens {
 	}
 
 	boolean matches(String token, String expectedHash) {
-		return expectedHash != null && MessageDigest.isEqual(
+		if (token == null || token.isBlank() || expectedHash == null) {
+			return false;
+		}
+		return MessageDigest.isEqual(
 			hash(token).getBytes(StandardCharsets.UTF_8),
 			expectedHash.getBytes(StandardCharsets.UTF_8)
 		);
