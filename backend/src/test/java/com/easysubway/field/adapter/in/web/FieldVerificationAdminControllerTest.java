@@ -54,6 +54,22 @@ class FieldVerificationAdminControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 사당역 현장 검증 세션과 항목을 조회한다")
+	void adminGetsSadangFieldVerification() throws Exception {
+		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.sessionId").value("field-verification-sadang-2026-06"))
+			.andExpect(jsonPath("$.data.stationId").value("station-sadang"))
+			.andExpect(jsonPath("$.data.stationName").value("사당역"))
+			.andExpect(jsonPath("$.data.status").value("PLANNED"))
+			.andExpect(jsonPath("$.data.note").value("주요 환승역 현장 검증 확대 기준선"))
+			.andExpect(jsonPath("$.data.items[0].targetName").value("2호선/4호선 출구 연결"))
+			.andExpect(jsonPath("$.data.items[4].targetName").value("2호선과 4호선 환승 접근 동선"));
+	}
+
+	@Test
 	@DisplayName("관리자는 역별 현장 검증 결과를 CSV로 내려받는다")
 	void adminDownloadsStationFieldVerificationCsv() throws Exception {
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sangnoksu/export.csv")
@@ -71,6 +87,27 @@ class FieldVerificationAdminControllerTest {
 					.contains("field-verification-sangnoksu-2026-06,station-sangnoksu,상록수역,")
 					.contains("EXIT,출구,주요 출구 연결,VERIFIED,")
 					.contains("PLATFORM_TRANSFER,승강장/환승 동선,승강장과 환승 접근 동선,PLANNED,");
+			});
+	}
+
+	@Test
+	@DisplayName("관리자는 사당역 현장 검증 결과를 CSV로 내려받는다")
+	void adminDownloadsSadangFieldVerificationCsv() throws Exception {
+		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang/export.csv")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(header().string(
+				HttpHeaders.CONTENT_DISPOSITION,
+				"attachment; filename=\"easysubway-field-verification-station-sadang.csv\""
+			))
+			.andExpect(header().string(HttpHeaders.CONTENT_TYPE, "text/csv;charset=UTF-8"))
+			.andExpect(result -> {
+				String csv = result.getResponse().getContentAsString();
+				assertThat(csv)
+					.startsWith("sessionId,stationId,stationName,verifiedAt,verifiedBy,sessionStatus,itemType,itemLabel,targetName,itemStatus,note\n")
+					.contains("field-verification-sadang-2026-06,station-sadang,사당역,")
+					.contains("EXIT,출구,2호선/4호선 출구 연결,PLANNED,")
+					.contains("PLATFORM_TRANSFER,승강장/환승 동선,2호선과 4호선 환승 접근 동선,PLANNED,");
 			});
 	}
 

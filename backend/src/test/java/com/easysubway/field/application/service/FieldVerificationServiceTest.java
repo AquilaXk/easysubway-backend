@@ -37,4 +37,30 @@ class FieldVerificationServiceTest {
 			.extracting(item -> item.status())
 			.containsOnly(FieldVerificationStatus.PLANNED, FieldVerificationStatus.VERIFIED);
 	}
+
+	@Test
+	@DisplayName("사당역 필수 현장 검증 항목을 조회한다")
+	void getsSadangFieldVerificationBaseline() {
+		var session = service.getStationVerification("station-sadang");
+
+		assertThat(session.id()).isEqualTo("field-verification-sadang-2026-06");
+		assertThat(session.stationId()).isEqualTo("station-sadang");
+		assertThat(session.stationName()).isEqualTo("사당역");
+		assertThat(session.verifiedAt()).isEqualTo(LocalDate.of(2026, 6, 19));
+		assertThat(session.verifiedBy()).isEqualTo("field-team");
+		assertThat(session.status()).isEqualTo(FieldVerificationStatus.PLANNED);
+		assertThat(session.note()).isEqualTo("주요 환승역 현장 검증 확대 기준선");
+		assertThat(session.items())
+			.extracting(item -> item.type())
+			.containsExactly(
+				FieldVerificationItemType.EXIT,
+				FieldVerificationItemType.ELEVATOR,
+				FieldVerificationItemType.ESCALATOR,
+				FieldVerificationItemType.RESTROOM,
+				FieldVerificationItemType.PLATFORM_TRANSFER
+			);
+		assertThat(session.items())
+			.extracting(item -> item.status())
+			.containsOnly(FieldVerificationStatus.PLANNED);
+	}
 }
