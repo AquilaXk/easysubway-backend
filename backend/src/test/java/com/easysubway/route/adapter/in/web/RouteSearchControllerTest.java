@@ -15,7 +15,10 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+	"easysubway.user.username=basic-user",
+	"easysubway.user.password=user-test-password"
+})
 @AutoConfigureMockMvc
 @DisplayName("경로 검색 API")
 class RouteSearchControllerTest {
@@ -148,10 +151,11 @@ class RouteSearchControllerTest {
 		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");
 
 		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
-					  "userId": "anonymous-user-1",
+					  "userId": "spoofed-user",
 					  "rating": "HELPFUL",
 					  "comment": "엘리베이터 안내가 실제 이동에 맞았어요"
 					}
@@ -160,19 +164,48 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.feedbackId").exists())
 			.andExpect(jsonPath("$.data.routeSearchId").value(routeSearchId))
-			.andExpect(jsonPath("$.data.userId").value("anonymous-user-1"))
+			.andExpect(jsonPath("$.data.userId").value("basic-user"))
 			.andExpect(jsonPath("$.data.rating").value("HELPFUL"))
 			.andExpect(jsonPath("$.data.comment").value("엘리베이터 안내가 실제 이동에 맞았어요"));
+	}
+
+	@Test
+	@DisplayName("경로 피드백은 인증된 사용자만 제출할 수 있다")
+	void postRouteFeedbackRequiresAuthentication() throws Exception {
+		var result = mockMvc.perform(post("/api/v1/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "mobilityType": "SENIOR"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andReturn();
+		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");
+
+		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "spoofed-user",
+					  "rating": "HELPFUL",
+					  "comment": "안내가 도움이 됐어요"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
 	}
 
 	@Test
 	@DisplayName("알 수 없는 경로 검색 결과에는 피드백을 저장하지 않는다")
 	void postRouteFeedbackRejectsUnknownRouteSearchId() throws Exception {
 		mockMvc.perform(post("/api/v1/routes/route-missing/feedback")
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
-					  "userId": "anonymous-user-1",
+					  "userId": "spoofed-user",
 					  "rating": "HELPFUL",
 					  "comment": "안내가 도움이 됐어요"
 					}
@@ -199,6 +232,7 @@ class RouteSearchControllerTest {
 		String routeSearchId = JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");
 
 		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -209,9 +243,10 @@ class RouteSearchControllerTest {
 					"""))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.message").value("피드백 작성자를 확인해야 합니다."));
+			.andExpect(jsonPath("$.message").value("피드백 평가를 선택해야 합니다."));
 
 		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

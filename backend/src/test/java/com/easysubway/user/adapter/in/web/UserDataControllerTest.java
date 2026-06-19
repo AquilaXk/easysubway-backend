@@ -112,6 +112,7 @@ class UserDataControllerTest {
 					""".formatted(routeSearchId)))
 			.andExpect(status().isOk());
 		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.with(httpBasic("configured-user", "configured-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

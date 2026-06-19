@@ -55,7 +55,9 @@ public class SecurityConfig {
 				"/api/v1/me/reports",
 				"/api/v1/me/favorites/**",
 				"/api/v1/reports",
+				"/api/v1/reports/*",
 				"/api/v1/reports/*/confirm",
+				"/api/v1/routes/*/feedback",
 				"/api/v1/devices",
 				"/api/v1/me/notification-settings"
 			)

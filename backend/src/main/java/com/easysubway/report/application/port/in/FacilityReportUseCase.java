@@ -13,6 +13,8 @@ public interface FacilityReportUseCase {
 
 	FacilityReport getReport(String reportId);
 
+	FacilityReport getUserReport(String reportId, String userId);
+
 	List<FacilityReport> listUserReports(String userId);
 
 	List<FacilityReport> listReports(FacilityReportStatus status);

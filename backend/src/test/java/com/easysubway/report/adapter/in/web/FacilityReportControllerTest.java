@@ -56,18 +56,25 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.data.facilityId").value("facility-sangnoksu-elevator-1"))
 			.andExpect(jsonPath("$.data.reportType").value("BROKEN"))
 			.andExpect(jsonPath("$.data.status").value("SUBMITTED"))
-			.andExpect(jsonPath("$.data.userId").value("basic-user"))
+			.andExpect(jsonPath("$.data.userId").doesNotExist())
+			.andExpect(jsonPath("$.data.latitude").doesNotExist())
+			.andExpect(jsonPath("$.data.longitude").doesNotExist())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
 		String reportId = JsonPath.read(response, "$.data.id");
 
-		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.id").value(reportId))
-			.andExpect(jsonPath("$.data.description").value("엘리베이터 문이 열리지 않습니다."));
+			.andExpect(jsonPath("$.data.status").value("SUBMITTED"))
+			.andExpect(jsonPath("$.data.userId").doesNotExist())
+			.andExpect(jsonPath("$.data.latitude").doesNotExist())
+			.andExpect(jsonPath("$.data.longitude").doesNotExist())
+			.andExpect(jsonPath("$.data.reviewedBy").doesNotExist());
 	}
 
 	@Test
@@ -152,7 +159,24 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("존재하지 않는 신고 조회는 공통 404 응답을 반환한다")
 	void missingReportReturnsCommonErrorResponse() throws Exception {
-		mockMvc.perform(get("/api/v1/reports/missing-report"))
+		mockMvc.perform(get("/api/v1/reports/missing-report")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("신고 정보를 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("신고 상세 조회는 인증된 신고 소유자만 사용할 수 있다")
+	void reportDetailRequiresAuthenticationAndOwner() throws Exception {
+		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "소유자만 볼 수 있는 신고");
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
@@ -184,23 +208,34 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
-	@DisplayName("신고 목록은 사진 본문을 제외하고 메타데이터만 반환한다")
-	void reportListsReturnPhotoMetadataWithoutPayload() throws Exception {
-		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
+	@DisplayName("내 신고 이력은 내부 사용자 식별자와 위치 메타데이터를 반환하지 않는다")
+	void myReportListDoesNotReturnInternalUserOrLocationMetadata() throws Exception {
+		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 내 신고");
 
-		String myReportsResponse = mockMvc.perform(get("/api/v1/me/reports")
+		String response = mockMvc.perform(get("/api/v1/me/reports")
 				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].userId").doesNotExist())
+			.andExpect(jsonPath("$.data[0].photoFileName").doesNotExist())
+			.andExpect(jsonPath("$.data[0].photoContentType").doesNotExist())
+			.andExpect(jsonPath("$.data[0].latitude").doesNotExist())
+			.andExpect(jsonPath("$.data[0].longitude").doesNotExist())
+			.andExpect(jsonPath("$.data[0].reviewedBy").doesNotExist())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
-		// 목록 화면에서는 사진 존재만 알면 충분하므로 실제 이미지 본문은 상세에서만 내려준다.
-		Assertions.assertThat(myReportsResponse)
-			.contains("photoFileName")
-			.contains("photoContentType")
-			.doesNotContain("photoDataBase64");
+		Assertions.assertThat(response)
+			.doesNotContain("basic-user")
+			.doesNotContain("elevator-notice.jpg")
+			.doesNotContain("image/jpeg");
+	}
+
+	@Test
+	@DisplayName("관리자 신고 목록은 사진 본문을 제외하고 메타데이터만 반환한다")
+	void reportListsReturnPhotoMetadataWithoutPayload() throws Exception {
+		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
 
 		String adminReportsResponse = mockMvc.perform(get("/admin/reports")
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -261,10 +296,11 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.data.reviewedAt").isNotEmpty())
 			.andExpect(jsonPath("$.data.reviewedBy").value("admin-test"));
 
-		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.status").value("ACCEPTED"))
-			.andExpect(jsonPath("$.data.reviewedBy").value("admin-test"));
+			.andExpect(jsonPath("$.data.reviewedBy").doesNotExist());
 
 		mockMvc.perform(get("/api/v1/stations/station-sangnoksu/facilities"))
 			.andExpect(status().isOk())
@@ -296,7 +332,7 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.id").value(reportId))
 			.andExpect(jsonPath("$.data.status").value("RESOLVED"))
-			.andExpect(jsonPath("$.data.reviewedBy").value("admin-test"));
+			.andExpect(jsonPath("$.data.reviewedBy").doesNotExist());
 	}
 
 	@Test
@@ -550,20 +586,26 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
-	@DisplayName("공개 신고 조회는 사진 본문을 반환하지 않는다")
-	void publicReportDetailDoesNotReturnPhotoPayload() throws Exception {
+	@DisplayName("사용자 신고 상세는 사진과 위치 메타데이터를 반환하지 않는다")
+	void userReportDetailDoesNotReturnPhotoOrLocationMetadata() throws Exception {
 		String reportId = createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
 
-		String response = mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
+		String response = mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data.photoFileName").value("elevator-notice.jpg"))
-			.andExpect(jsonPath("$.data.photoContentType").value("image/jpeg"))
+			.andExpect(jsonPath("$.data.photoFileName").doesNotExist())
+			.andExpect(jsonPath("$.data.photoContentType").doesNotExist())
+			.andExpect(jsonPath("$.data.latitude").doesNotExist())
+			.andExpect(jsonPath("$.data.longitude").doesNotExist())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
 		Assertions.assertThat(response)
+			.doesNotContain("basic-user")
+			.doesNotContain("elevator-notice.jpg")
+			.doesNotContain("image/jpeg")
 			.doesNotContain("photoDataBase64")
 			.doesNotContain("aW1hZ2UtYnl0ZXM=");
 	}

@@ -41,15 +41,20 @@ class FacilityReportController {
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")
-	ApiResponse<FacilityReportStatusResponse> report(@PathVariable String reportId) {
-		return ApiResponse.ok(FacilityReportStatusResponse.from(facilityReportUseCase.getReport(reportId)));
+	ApiResponse<FacilityReportStatusResponse> report(
+		@PathVariable String reportId,
+		Principal principal
+	) {
+		return ApiResponse.ok(FacilityReportStatusResponse.from(
+			facilityReportUseCase.getUserReport(reportId, principal.getName())
+		));
 	}
 
 	@GetMapping("/api/v1/me/reports")
-	ApiResponse<List<FacilityReportListResponse>> myReports(Principal principal) {
-		List<FacilityReportListResponse> reports = facilityReportUseCase.listUserReports(principal.getName())
+	ApiResponse<List<FacilityReportStatusResponse>> myReports(Principal principal) {
+		List<FacilityReportStatusResponse> reports = facilityReportUseCase.listUserReports(principal.getName())
 			.stream()
-			.map(FacilityReportListResponse::from)
+			.map(FacilityReportStatusResponse::from)
 			.toList();
 		return ApiResponse.ok(reports);
 	}
@@ -168,40 +173,28 @@ class FacilityReportController {
 
 	record FacilityReportStatusResponse(
 		String id,
-		String userId,
 		String stationId,
 		String facilityId,
 		FacilityReportType reportType,
 		String description,
-		String photoFileName,
-		String photoContentType,
-		BigDecimal latitude,
-		BigDecimal longitude,
 		String duplicateOfReportId,
 		FacilityReportStatus status,
 		LocalDateTime createdAt,
-		LocalDateTime reviewedAt,
-		String reviewedBy
+		LocalDateTime reviewedAt
 	) {
 
 		static FacilityReportStatusResponse from(FacilityReport report) {
-			// 공개 상태 조회는 모바일 진행 상태 확인용이므로 첨부 사진 본문은 관리자 상세에서만 내려준다.
+			// 사용자용 상태 조회는 소유자에게도 내부 식별자와 정확한 위치 메타데이터를 숨긴다.
 			return new FacilityReportStatusResponse(
 				report.id(),
-				report.userId(),
 				report.stationId(),
 				report.facilityId(),
 				report.reportType(),
 				report.description(),
-				report.photoFileName(),
-				report.photoContentType(),
-				report.latitude(),
-				report.longitude(),
 				report.duplicateOfReportId(),
 				report.status(),
 				report.createdAt(),
-				report.reviewedAt(),
-				report.reviewedBy()
+				report.reviewedAt()
 			);
 		}
 	}

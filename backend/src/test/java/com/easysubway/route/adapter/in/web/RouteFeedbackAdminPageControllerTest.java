@@ -92,6 +92,7 @@ class RouteFeedbackAdminPageControllerTest {
 
 	private void submitRouteFeedback(String routeSearchId, String rating, String comment) throws Exception {
 		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
+				.with(httpBasic("anonymous-user-1", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{

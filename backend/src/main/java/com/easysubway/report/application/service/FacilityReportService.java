@@ -259,6 +259,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	@Override
+	public FacilityReport getUserReport(String reportId, String userId) {
+		FacilityReport report = getReport(reportId);
+		requireReportOwner(report, userId);
+		return report;
+	}
+
+	@Override
 	public List<FacilityReport> listUserReports(String userId) {
 		return sortedReports()
 			.stream()
