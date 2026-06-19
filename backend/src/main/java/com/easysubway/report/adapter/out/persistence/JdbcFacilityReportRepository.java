@@ -1,15 +1,21 @@
 package com.easysubway.report.adapter.out.persistence;
 
+import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
+import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Map;
@@ -123,6 +129,91 @@ public class JdbcFacilityReportRepository implements
 	}
 
 	@Override
+	public PageResult<FacilityReportSummary> loadUserReportSummaries(
+		String userId,
+		FacilityReportPageRequest pageRequest
+	) {
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				WHERE user_id = ?
+					AND user_id <> ?
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ? OFFSET ?
+				""",
+			this::mapFacilityReportSummary,
+			userId,
+			FacilityReport.ANONYMIZED_USER_ID,
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		return page(summaries, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadReportSummaries(
+		FacilityReportStatus status,
+		FacilityReportPageRequest pageRequest
+	) {
+		if (status == null) {
+			return loadAllReportSummaries(pageRequest);
+		}
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				WHERE status = ?
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ? OFFSET ?
+				""",
+			this::mapFacilityReportSummary,
+			status.name(),
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		return page(summaries, pageRequest);
+	}
+
+	@Override
 	public Map<FacilityReportStatus, Long> loadReportStatusCounts() {
 		return jdbcTemplate.query(
 			"""
@@ -142,6 +233,45 @@ public class JdbcFacilityReportRepository implements
 				return Map.copyOf(counts);
 			}
 		);
+	}
+
+	@Override
+	public long countReportsCreatedSince(LocalDateTime cutoff) {
+		Long count = jdbcTemplate.queryForObject(
+			"""
+				SELECT COUNT(*)
+				FROM facility_reports
+				WHERE created_at >= ?
+				""",
+			Long.class,
+			cutoff
+		);
+		return count == null ? 0 : count;
+	}
+
+	@Override
+	public ReportProcessingTimeSummary loadReportProcessingTimeSummary() {
+		List<Long> processingMinutes = jdbcTemplate.query(
+			"""
+				SELECT created_at,
+					reviewed_at
+				FROM facility_reports
+				WHERE reviewed_at IS NOT NULL
+				""",
+			(resultSet, rowNumber) -> Duration.between(
+				resultSet.getTimestamp("created_at").toLocalDateTime(),
+				resultSet.getTimestamp("reviewed_at").toLocalDateTime()
+			).toMinutes()
+		).stream()
+			.filter(minutes -> minutes >= 0)
+			.toList();
+		if (processingMinutes.isEmpty()) {
+			return ReportProcessingTimeSummary.empty();
+		}
+		long averageMinutes = processingMinutes.stream()
+			.mapToLong(Long::longValue)
+			.sum() / processingMinutes.size();
+		return new ReportProcessingTimeSummary(processingMinutes.size(), averageMinutes);
 	}
 
 	@Override
@@ -415,6 +545,51 @@ public class JdbcFacilityReportRepository implements
 		);
 	}
 
+	private PageResult<FacilityReportSummary> loadAllReportSummaries(FacilityReportPageRequest pageRequest) {
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				ORDER BY created_at DESC, report_id ASC
+				LIMIT ? OFFSET ?
+				""",
+			this::mapFacilityReportSummary,
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		return page(summaries, pageRequest);
+	}
+
+	private PageResult<FacilityReportSummary> page(
+		List<FacilityReportSummary> summaries,
+		FacilityReportPageRequest pageRequest
+	) {
+		boolean hasNext = summaries.size() > pageRequest.size();
+		List<FacilityReportSummary> items = hasNext
+			? summaries.subList(0, pageRequest.size())
+			: summaries;
+		return new PageResult<>(items, pageRequest.page(), pageRequest.size(), hasNext);
+	}
+
 	private Object[] reportParameters(FacilityReport report) {
 		return new Object[] {
 			report.id(),
@@ -439,6 +614,25 @@ public class JdbcFacilityReportRepository implements
 		};
 	}
 
+	private FacilityReportSummary mapFacilityReportSummary(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new FacilityReportSummary(
+			resultSet.getString("report_id"),
+			resultSet.getString("user_id"),
+			resultSet.getString("station_id"),
+			resultSet.getString("facility_id"),
+			FacilityReportType.valueOf(resultSet.getString("report_type")),
+			resultSet.getString("description"),
+			resultSet.getBoolean("has_photo"),
+			resultSet.getBigDecimal("latitude"),
+			resultSet.getBigDecimal("longitude"),
+			resultSet.getString("duplicate_of_report_id"),
+			FacilityReportStatus.valueOf(resultSet.getString("status")),
+			resultSet.getTimestamp("created_at").toLocalDateTime(),
+			timestampOrNull(resultSet, "reviewed_at"),
+			resultSet.getString("reviewed_by")
+		);
+	}
+
 	private FacilityReport mapFacilityReport(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new FacilityReport(
 			resultSet.getString("report_id"),
@@ -458,9 +652,14 @@ public class JdbcFacilityReportRepository implements
 			resultSet.getString("duplicate_of_report_id"),
 			FacilityReportStatus.valueOf(resultSet.getString("status")),
 			resultSet.getTimestamp("created_at").toLocalDateTime(),
-			resultSet.getTimestamp("reviewed_at") == null ? null : resultSet.getTimestamp("reviewed_at").toLocalDateTime(),
+			timestampOrNull(resultSet, "reviewed_at"),
 			resultSet.getString("reviewed_by")
 		);
+	}
+
+	private LocalDateTime timestampOrNull(ResultSet resultSet, String columnLabel) throws SQLException {
+		var timestamp = resultSet.getTimestamp(columnLabel);
+		return timestamp == null ? null : timestamp.toLocalDateTime();
 	}
 
 	private Long photoSizeBytes(ResultSet resultSet) throws SQLException {

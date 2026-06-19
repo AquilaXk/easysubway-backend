@@ -1,17 +1,20 @@
 package com.easysubway.report.adapter.in.web;
 
+import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
+import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
+import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.Clock;
-import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -62,22 +65,28 @@ class FacilityReportAdminPageController {
 	@GetMapping("/admin/reports/page")
 	String reportListPage(
 		@RequestParam(required = false) FacilityReportStatus status,
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
 		Model model
 	) {
-		List<FacilityReport> allReports = facilityReportUseCase.listReports(null);
-		List<FacilityReport> filteredReports = allReports.stream()
-			.filter(report -> status == null || report.status() == status)
-			.toList();
-		List<FacilityReportListPageRow> reports = filteredReports
+		FacilityReportPageRequest pageRequest = FacilityReportPageRequest.of(page, size);
+		PageResult<FacilityReportSummary> reportPage = facilityReportUseCase.listReportSummaries(status, pageRequest);
+		List<FacilityReportListPageRow> reports = reportPage.items()
 			.stream()
 			.map(FacilityReportListPageRow::from)
 			.toList();
+		LocalDateTime surgeCutoff = LocalDateTime.now(clock).minusHours(REPORT_SURGE_LOOKBACK_HOURS);
 
 		model.addAttribute("reports", reports);
+		model.addAttribute("page", PageView.from(reportPage));
 		model.addAttribute("selectedStatus", status);
 		model.addAttribute("statusOptions", statusOptions());
-		model.addAttribute("reportSurgeAlert", ReportSurgeAlertView.from(allReports, clock));
-		model.addAttribute("processingTime", ReportProcessingTimeView.from(allReports));
+		model.addAttribute("reportSurgeAlert", ReportSurgeAlertView.from(
+			facilityReportUseCase.countReportsCreatedSince(surgeCutoff)
+		));
+		model.addAttribute("processingTime", ReportProcessingTimeView.from(
+			facilityReportUseCase.summarizeReportProcessingTime()
+		));
 		return "admin/reports/list";
 	}
 
@@ -172,6 +181,10 @@ class FacilityReportAdminPageController {
 		return report.hasPhoto();
 	}
 
+	private static boolean hasCompletePhoto(FacilityReportSummary report) {
+		return report.hasPhoto();
+	}
+
 	private static boolean hasText(String value) {
 		return value != null && !value.isBlank();
 	}
@@ -188,7 +201,7 @@ class FacilityReportAdminPageController {
 		String coordinateLabel
 	) {
 
-		static FacilityReportListPageRow from(FacilityReport report) {
+		static FacilityReportListPageRow from(FacilityReportSummary report) {
 			return new FacilityReportListPageRow(
 				report.id(),
 				report.stationId(),
@@ -199,6 +212,27 @@ class FacilityReportAdminPageController {
 				report.createdAt(),
 				FacilityReportAdminPageController.hasCompletePhoto(report),
 				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
+			);
+		}
+	}
+
+	record PageView(
+		int page,
+		int size,
+		boolean hasPrevious,
+		boolean hasNext,
+		int previousPage,
+		int nextPage
+	) {
+
+		static PageView from(PageResult<?> page) {
+			return new PageView(
+				page.page(),
+				page.size(),
+				page.page() > 0,
+				page.hasNext(),
+				Math.max(page.page() - 1, 0),
+				page.page() + 1
 			);
 		}
 	}
@@ -268,12 +302,7 @@ class FacilityReportAdminPageController {
 		String alertClass
 	) {
 
-		static ReportSurgeAlertView from(List<FacilityReport> reports, Clock clock) {
-			LocalDateTime cutoff = LocalDateTime.now(clock).minusHours(REPORT_SURGE_LOOKBACK_HOURS);
-			long recentReportCount = reports.stream()
-				.filter(report -> !report.createdAt().isBefore(cutoff))
-				.count();
-
+		static ReportSurgeAlertView from(long recentReportCount) {
 			if (recentReportCount >= REPORT_SURGE_ALERT_THRESHOLD) {
 				return new ReportSurgeAlertView(
 					"신고 급증",
@@ -298,13 +327,8 @@ class FacilityReportAdminPageController {
 		String metricClass
 	) {
 
-		static ReportProcessingTimeView from(List<FacilityReport> reports) {
-			List<Long> processingMinutes = reports.stream()
-				.filter(report -> report.reviewedAt() != null)
-				.map(report -> Duration.between(report.createdAt(), report.reviewedAt()).toMinutes())
-				.filter(minutes -> minutes >= 0)
-				.toList();
-			if (processingMinutes.isEmpty()) {
+		static ReportProcessingTimeView from(ReportProcessingTimeSummary summary) {
+			if (summary.reviewedReportCount() == 0) {
 				return new ReportProcessingTimeView(
 					"신고 처리 시간",
 					"처리 완료 신고 없음",
@@ -313,13 +337,10 @@ class FacilityReportAdminPageController {
 				);
 			}
 
-			long averageMinutes = processingMinutes.stream()
-				.mapToLong(Long::longValue)
-				.sum() / processingMinutes.size();
 			return new ReportProcessingTimeView(
 				"신고 처리 시간",
-				"평균 " + durationLabel(averageMinutes),
-				"처리 완료 신고 %d건 기준입니다.".formatted(processingMinutes.size()),
+				"평균 " + durationLabel(summary.averageProcessingMinutes()),
+				"처리 완료 신고 %d건 기준입니다.".formatted(summary.reviewedReportCount()),
 				"ok"
 			);
 		}

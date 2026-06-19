@@ -197,12 +197,14 @@ class FacilityReportControllerTest {
 				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data").isArray())
+			.andExpect(jsonPath("$.data.items").isArray())
+			.andExpect(jsonPath("$.data.page").value(0))
+			.andExpect(jsonPath("$.data.size").value(20))
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
-		List<String> reportIds = JsonPath.read(response, "$.data[*].id");
+		List<String> reportIds = JsonPath.read(response, "$.data.items[*].id");
 		Assertions.assertThat(reportIds)
 			.contains(newerReportId, olderReportId)
 			.doesNotContain(otherUserReportId);
@@ -211,20 +213,45 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("내 신고 이력은 page와 size로 제한된 목록과 다음 페이지 여부를 반환한다")
+	void myReportListReturnsPagedSummaries() throws Exception {
+		String oldestReportId = createReport("basic-user", "user-test-password", "spoofed-user", "가장 오래된 신고");
+		String middleReportId = createReport("basic-user", "user-test-password", "spoofed-user", "중간 신고");
+		String newestReportId = createReport("basic-user", "user-test-password", "spoofed-user", "가장 최근 신고");
+
+		String firstPageResponse = mockMvc.perform(get("/api/v1/me/reports")
+				.queryParam("page", "0")
+				.queryParam("size", "2")
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.page").value(0))
+			.andExpect(jsonPath("$.data.size").value(2))
+			.andExpect(jsonPath("$.data.hasNext").value(true))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		List<String> firstPageIds = JsonPath.read(firstPageResponse, "$.data.items[*].id");
+		Assertions.assertThat(firstPageIds).containsExactly(newestReportId, middleReportId);
+
+		Assertions.assertThat(firstPageIds).doesNotContain(oldestReportId);
+	}
+
+	@Test
 	@DisplayName("내 신고 이력은 내부 사용자 식별자와 위치 메타데이터를 반환하지 않는다")
 	void myReportListDoesNotReturnInternalUserOrLocationMetadata() throws Exception {
 		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 내 신고");
 
 		String response = mockMvc.perform(get("/api/v1/me/reports")
-				.with(httpBasic("basic-user", "user-test-password")))
+			.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data[0].userId").doesNotExist())
-			.andExpect(jsonPath("$.data[0].photoFileName").doesNotExist())
-			.andExpect(jsonPath("$.data[0].photoContentType").doesNotExist())
-			.andExpect(jsonPath("$.data[0].latitude").doesNotExist())
-			.andExpect(jsonPath("$.data[0].longitude").doesNotExist())
-			.andExpect(jsonPath("$.data[0].reviewedBy").doesNotExist())
+			.andExpect(jsonPath("$.data.items[0].userId").doesNotExist())
+			.andExpect(jsonPath("$.data.items[0].photoFileName").doesNotExist())
+			.andExpect(jsonPath("$.data.items[0].photoContentType").doesNotExist())
+			.andExpect(jsonPath("$.data.items[0].latitude").doesNotExist())
+			.andExpect(jsonPath("$.data.items[0].longitude").doesNotExist())
+			.andExpect(jsonPath("$.data.items[0].reviewedBy").doesNotExist())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
@@ -236,8 +263,8 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
-	@DisplayName("관리자 신고 목록은 사진 본문을 제외하고 메타데이터만 반환한다")
-	void reportListsReturnPhotoMetadataWithoutPayload() throws Exception {
+	@DisplayName("관리자 신고 목록은 상세 사진 메타데이터 없이 첨부 여부만 반환한다")
+	void reportListsReturnPhotoSummaryWithoutDetailMetadata() throws Exception {
 		createReportWithPhoto("basic-user", "user-test-password", "spoofed-user", "사진이 있는 신고");
 
 		String adminReportsResponse = mockMvc.perform(get("/admin/reports")
@@ -249,8 +276,12 @@ class FacilityReportControllerTest {
 			.getContentAsString();
 
 		Assertions.assertThat(adminReportsResponse)
-			.contains("photoFileName")
-			.contains("photoContentType")
+			.contains("hasPhoto")
+			.doesNotContain("photoFileName")
+			.doesNotContain("photoContentType")
+			.doesNotContain("photoObjectKey")
+			.doesNotContain("photoSha256")
+			.doesNotContain("photoSizeBytes")
 			.doesNotContain("photoDataBase64");
 	}
 
@@ -524,12 +555,12 @@ class FacilityReportControllerTest {
 				.with(httpBasic("admin-test", "admin-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data").isArray())
+			.andExpect(jsonPath("$.data.items").isArray())
 			.andReturn()
 			.getResponse()
 			.getContentAsString();
 
-		List<String> reportIds = JsonPath.read(listResponse, "$.data[*].id");
+		List<String> reportIds = JsonPath.read(listResponse, "$.data.items[*].id");
 		Assertions.assertThat(reportIds)
 			.contains(acceptedReportId, submittedReportId);
 		Assertions.assertThat(reportIds.indexOf(acceptedReportId))
@@ -544,9 +575,30 @@ class FacilityReportControllerTest {
 			.getResponse()
 			.getContentAsString();
 
-		List<String> submittedIds = JsonPath.read(submittedOnlyResponse, "$.data[*].id");
+		List<String> submittedIds = JsonPath.read(submittedOnlyResponse, "$.data.items[*].id");
 		Assertions.assertThat(submittedIds).contains(submittedReportId);
 		Assertions.assertThat(submittedIds).doesNotContain(acceptedReportId);
+	}
+
+	@Test
+	@DisplayName("관리자 신고 목록은 page size를 상한으로 제한한다")
+	void adminReportListCapsRequestedPageSize() throws Exception {
+		for (int index = 0; index < 55; index++) {
+			createReport("anonymous-user-cap-" + index, "상한 검증 신고 " + index);
+		}
+
+		String response = mockMvc.perform(get("/admin/reports")
+				.queryParam("size", "500")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.size").value(50))
+			.andExpect(jsonPath("$.data.hasNext").value(true))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		List<String> reportIds = JsonPath.read(response, "$.data.items[*].id");
+		Assertions.assertThat(reportIds).hasSize(50);
 	}
 
 	@Test

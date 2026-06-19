@@ -1,6 +1,8 @@
 package com.easysubway.report.application.service;
 
+import com.easysubway.common.domain.PageResult;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
@@ -15,11 +17,13 @@ import com.easysubway.report.domain.FacilityReportNotFoundException;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewConflictException;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
+import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
 import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
+import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.notification.application.port.in.ReportStatusAlertUseCase;
@@ -311,6 +315,14 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	@Override
+	public PageResult<FacilityReportSummary> listUserReportSummaries(
+		String userId,
+		FacilityReportPageRequest pageRequest
+	) {
+		return loadFacilityReportPort.loadUserReportSummaries(userId, pageRequest);
+	}
+
+	@Override
 	public List<FacilityReport> listReports(FacilityReportStatus status) {
 		return sortedReports()
 			.stream()
@@ -319,8 +331,26 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	@Override
+	public PageResult<FacilityReportSummary> listReportSummaries(
+		FacilityReportStatus status,
+		FacilityReportPageRequest pageRequest
+	) {
+		return loadFacilityReportPort.loadReportSummaries(status, pageRequest);
+	}
+
+	@Override
 	public Map<FacilityReportStatus, Long> countReportsByStatus() {
 		return loadFacilityReportPort.loadReportStatusCounts();
+	}
+
+	@Override
+	public long countReportsCreatedSince(LocalDateTime cutoff) {
+		return loadFacilityReportPort.countReportsCreatedSince(cutoff);
+	}
+
+	@Override
+	public ReportProcessingTimeSummary summarizeReportProcessingTime() {
+		return loadFacilityReportPort.loadReportProcessingTimeSummary();
 	}
 
 	@Override

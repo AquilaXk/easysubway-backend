@@ -51,8 +51,29 @@ class FacilityReportAdminPageControllerTest {
 			.contains("관리자 목록에서 볼 신고")
 			.contains("/admin/reports/%s/page".formatted(reportId))
 			.contains("status=SUBMITTED")
-			.contains("신고 처리 시간")
-			.contains("처리 완료 신고 없음");
+			.contains("신고 처리 시간");
+	}
+
+	@Test
+	@DisplayName("관리자는 신고 목록 화면에서 다음 페이지로 이동한다")
+	void adminReportListPageShowsNextPageLink() throws Exception {
+		createReport("페이지 이동 신고 1");
+		createReport("페이지 이동 신고 2");
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("size", "1")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("신고 목록 페이지")
+			.contains("1페이지")
+			.contains("다음")
+			.contains("page=1")
+			.contains("size=1");
 	}
 
 	@Test

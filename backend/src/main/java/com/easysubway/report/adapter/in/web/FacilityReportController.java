@@ -1,11 +1,14 @@
 package com.easysubway.report.adapter.in.web;
 
+import com.easysubway.common.domain.PageResult;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
+import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
@@ -51,12 +54,16 @@ class FacilityReportController {
 	}
 
 	@GetMapping("/api/v1/me/reports")
-	ApiResponse<List<FacilityReportStatusResponse>> myReports(Principal principal) {
-		List<FacilityReportStatusResponse> reports = facilityReportUseCase.listUserReports(principal.getName())
-			.stream()
-			.map(FacilityReportStatusResponse::from)
-			.toList();
-		return ApiResponse.ok(reports);
+	ApiResponse<PageResponse<FacilityReportStatusResponse>> myReports(
+		Principal principal,
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size
+	) {
+		PageResult<FacilityReportSummary> reports = facilityReportUseCase.listUserReportSummaries(
+			principal.getName(),
+			FacilityReportPageRequest.of(page, size)
+		);
+		return ApiResponse.ok(PageResponse.from(reports, FacilityReportStatusResponse::from));
 	}
 
 	@PostMapping("/api/v1/reports/{reportId}/confirm")
@@ -70,12 +77,16 @@ class FacilityReportController {
 	}
 
 	@GetMapping("/admin/reports")
-	ApiResponse<List<FacilityReportListResponse>> adminReports(@RequestParam(required = false) FacilityReportStatus status) {
-		List<FacilityReportListResponse> reports = facilityReportUseCase.listReports(status)
-			.stream()
-			.map(FacilityReportListResponse::from)
-			.toList();
-		return ApiResponse.ok(reports);
+	ApiResponse<PageResponse<FacilityReportListResponse>> adminReports(
+		@RequestParam(required = false) FacilityReportStatus status,
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size
+	) {
+		PageResult<FacilityReportSummary> reports = facilityReportUseCase.listReportSummaries(
+			status,
+			FacilityReportPageRequest.of(page, size)
+		);
+		return ApiResponse.ok(PageResponse.from(reports, FacilityReportListResponse::from));
 	}
 
 	@GetMapping("/admin/reports/{reportId}")
@@ -139,8 +150,7 @@ class FacilityReportController {
 		String facilityId,
 		FacilityReportType reportType,
 		String description,
-		String photoFileName,
-		String photoContentType,
+		boolean hasPhoto,
 		BigDecimal latitude,
 		BigDecimal longitude,
 		String duplicateOfReportId,
@@ -150,7 +160,7 @@ class FacilityReportController {
 		String reviewedBy
 	) {
 
-		static FacilityReportListResponse from(FacilityReport report) {
+		static FacilityReportListResponse from(FacilityReportSummary report) {
 			return new FacilityReportListResponse(
 				report.id(),
 				report.userId(),
@@ -158,8 +168,7 @@ class FacilityReportController {
 				report.facilityId(),
 				report.reportType(),
 				report.description(),
-				report.photoFileName(),
-				report.photoContentType(),
+				report.hasPhoto(),
 				report.latitude(),
 				report.longitude(),
 				report.duplicateOfReportId(),
@@ -183,6 +192,20 @@ class FacilityReportController {
 		LocalDateTime reviewedAt
 	) {
 
+		static FacilityReportStatusResponse from(FacilityReportSummary report) {
+			return new FacilityReportStatusResponse(
+				report.id(),
+				report.stationId(),
+				report.facilityId(),
+				report.reportType(),
+				report.description(),
+				report.duplicateOfReportId(),
+				report.status(),
+				report.createdAt(),
+				report.reviewedAt()
+			);
+		}
+
 		static FacilityReportStatusResponse from(FacilityReport report) {
 			// 사용자용 상태 조회는 소유자에게도 내부 식별자와 정확한 위치 메타데이터를 숨긴다.
 			return new FacilityReportStatusResponse(
@@ -195,6 +218,26 @@ class FacilityReportController {
 				report.status(),
 				report.createdAt(),
 				report.reviewedAt()
+			);
+		}
+	}
+
+	record PageResponse<T>(
+		List<T> items,
+		int page,
+		int size,
+		boolean hasNext
+	) {
+
+		static <T, R> PageResponse<R> from(PageResult<T> page, java.util.function.Function<T, R> mapper) {
+			return new PageResponse<>(
+				page.items()
+					.stream()
+					.map(mapper)
+					.toList(),
+				page.page(),
+				page.size(),
+				page.hasNext()
 			);
 		}
 	}

@@ -3,6 +3,7 @@ package com.easysubway.report.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
@@ -86,6 +87,53 @@ class JdbcFacilityReportRepositoryTest {
 
 		assertThat(repository.loadReports())
 			.containsExactly(sameTimeFirstReport, sameTimeSecondReport, olderReport);
+	}
+
+	@Test
+	@DisplayName("사용자 신고 summary 목록은 사용자와 page 범위로 제한한다")
+	void loadUserReportSummariesReturnsRequestedUserPage() {
+		var olderReport = submittedReport("report-1", "anonymous-user-1", 8);
+		var middleReport = submittedReport("report-2", "anonymous-user-1", 9);
+		var newerReport = submittedReport("report-3", "anonymous-user-1", 10);
+		var otherUserReport = submittedReport("report-4", "anonymous-user-2", 11);
+		repository.saveReport(olderReport);
+		repository.saveReport(middleReport);
+		repository.saveReport(newerReport);
+		repository.saveReport(otherUserReport);
+
+		var page = repository.loadUserReportSummaries(
+			"anonymous-user-1",
+			new FacilityReportPageRequest(0, 2)
+		);
+
+		assertThat(page.items())
+			.extracting("id")
+			.containsExactly(newerReport.id(), middleReport.id());
+		assertThat(page.hasNext()).isTrue();
+	}
+
+	@Test
+	@DisplayName("관리자 신고 summary 목록은 상태와 page 범위로 제한한다")
+	void loadReportSummariesReturnsStatusPage() {
+		var originalReport = submittedReport("report-0", "anonymous-user-0", 7);
+		var firstSubmittedReport = submittedReport("report-1", "anonymous-user-1", 8);
+		var secondSubmittedReport = submittedReport("report-2", "anonymous-user-2", 9);
+		var reviewedReport = reviewedReport("report-3");
+		repository.saveReport(originalReport);
+		repository.saveReport(firstSubmittedReport);
+		repository.saveReport(secondSubmittedReport);
+		repository.saveReport(reviewedReport);
+
+		var page = repository.loadReportSummaries(
+			FacilityReportStatus.SUBMITTED,
+			new FacilityReportPageRequest(0, 1)
+		);
+
+		assertThat(page.items())
+			.extracting("id")
+			.containsExactly(secondSubmittedReport.id());
+		assertThat(page.hasNext()).isTrue();
+		assertThat(page.items().getFirst().hasPhoto()).isTrue();
 	}
 
 	@Test

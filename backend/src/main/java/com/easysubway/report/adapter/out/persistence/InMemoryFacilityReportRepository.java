@@ -1,14 +1,20 @@
 package com.easysubway.report.adapter.out.persistence;
 
+import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.RepeatedBrokenFacilityReportSummary;
+import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
-import java.util.EnumMap;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -39,12 +45,66 @@ public class InMemoryFacilityReportRepository implements
 	}
 
 	@Override
+	public PageResult<FacilityReportSummary> loadUserReportSummaries(
+		String userId,
+		FacilityReportPageRequest pageRequest
+	) {
+		List<FacilityReportSummary> summaries = reports.values()
+			.stream()
+			.filter(report -> !report.isAnonymizedUserData())
+			.filter(report -> userId.equals(report.userId()))
+			.sorted(reportOrder())
+			.map(FacilityReportSummary::from)
+			.toList();
+		return page(summaries, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadReportSummaries(
+		FacilityReportStatus status,
+		FacilityReportPageRequest pageRequest
+	) {
+		List<FacilityReportSummary> summaries = reports.values()
+			.stream()
+			.filter(report -> status == null || report.status() == status)
+			.sorted(reportOrder())
+			.map(FacilityReportSummary::from)
+			.toList();
+		return page(summaries, pageRequest);
+	}
+
+	@Override
 	public Map<FacilityReportStatus, Long> loadReportStatusCounts() {
 		Map<FacilityReportStatus, Long> counts = new EnumMap<>(FacilityReportStatus.class);
 		for (FacilityReport report : reports.values()) {
 			counts.merge(report.status(), 1L, Long::sum);
 		}
 		return Map.copyOf(counts);
+	}
+
+	@Override
+	public long countReportsCreatedSince(LocalDateTime cutoff) {
+		return reports.values()
+			.stream()
+			.filter(report -> !report.createdAt().isBefore(cutoff))
+			.count();
+	}
+
+	@Override
+	public ReportProcessingTimeSummary loadReportProcessingTimeSummary() {
+		List<Long> processingMinutes = reports.values()
+			.stream()
+			.filter(report -> report.reviewedAt() != null)
+			.map(report -> Duration.between(report.createdAt(), report.reviewedAt()).toMinutes())
+			.filter(minutes -> minutes >= 0)
+			.toList();
+		if (processingMinutes.isEmpty()) {
+			return ReportProcessingTimeSummary.empty();
+		}
+		long averageMinutes = processingMinutes.stream()
+			.mapToLong(Long::longValue)
+			.sum() / processingMinutes.size();
+		return new ReportProcessingTimeSummary(processingMinutes.size(), averageMinutes);
 	}
 
 	@Override
@@ -124,6 +184,23 @@ public class InMemoryFacilityReportRepository implements
 			report.reviewedAt(),
 			report.reviewedBy()
 		);
+	}
+
+	private Comparator<FacilityReport> reportOrder() {
+		return Comparator
+			.comparing(FacilityReport::createdAt)
+			.reversed()
+			.thenComparing(FacilityReport::id);
+	}
+
+	private PageResult<FacilityReportSummary> page(
+		List<FacilityReportSummary> summaries,
+		FacilityReportPageRequest pageRequest
+	) {
+		int fromIndex = Math.min(pageRequest.offset(), summaries.size());
+		int toIndex = Math.min(fromIndex + pageRequest.size(), summaries.size());
+		boolean hasNext = toIndex < summaries.size();
+		return new PageResult<>(summaries.subList(fromIndex, toIndex), pageRequest.page(), pageRequest.size(), hasNext);
 	}
 
 	private record FacilityKey(String stationId, String facilityId) {

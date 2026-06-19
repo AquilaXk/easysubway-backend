@@ -172,6 +172,32 @@
 			color: #005e68;
 			font-weight: 800;
 		}
+
+		.pagination {
+			display: flex;
+			align-items: center;
+			justify-content: flex-end;
+			gap: 12px;
+			margin-top: 18px;
+		}
+
+		.pagination a,
+		.pagination span {
+			display: inline-flex;
+			align-items: center;
+			min-height: 40px;
+			padding: 0 14px;
+			border: 1px solid #7b9294;
+			border-radius: 6px;
+			background: #fff;
+			color: #102a2c;
+			font-weight: 800;
+			text-decoration: none;
+		}
+
+		.pagination span {
+			background: #eaf0f0;
+		}
 	</style>
 </head>
 <body>
@@ -238,6 +264,14 @@
 		</tr>
 		</tbody>
 	</table>
+
+	<nav class="pagination" aria-label="신고 목록 페이지">
+		<a th:if="${page.hasPrevious}"
+		   th:href="@{/admin/reports/page(status=${selectedStatus},page=${page.previousPage},size=${page.size})}">이전</a>
+		<span th:text="${page.page + 1} + '페이지'">1페이지</span>
+		<a th:if="${page.hasNext}"
+		   th:href="@{/admin/reports/page(status=${selectedStatus},page=${page.nextPage},size=${page.size})}">다음</a>
+	</nav>
 </main>
 </body>
 </html>

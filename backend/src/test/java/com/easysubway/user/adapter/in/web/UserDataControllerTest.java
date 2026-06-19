@@ -71,10 +71,10 @@ class UserDataControllerTest {
 				.with(httpBasic("configured-user", "configured-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data").isEmpty());
-		mockMvc.perform(get("/api/v1/me/reports")
-				.with(httpBasic("configured-user", "configured-password")))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.data").isEmpty());
+			mockMvc.perform(get("/api/v1/me/reports")
+					.with(httpBasic("configured-user", "configured-password")))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.data.items").isEmpty());
 		mockMvc.perform(get("/api/v1/me/mobility-profile")
 				.param("userId", "configured-user"))
 			.andExpect(status().isOk())
