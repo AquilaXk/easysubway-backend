@@ -10,6 +10,7 @@ import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
@@ -59,6 +60,7 @@ class FacilityReportAdminPageController {
 		model.addAttribute("selectedStatus", status);
 		model.addAttribute("statusOptions", statusOptions());
 		model.addAttribute("reportSurgeAlert", ReportSurgeAlertView.from(allReports, clock));
+		model.addAttribute("processingTime", ReportProcessingTimeView.from(allReports));
 		return "admin/reports/list";
 	}
 
@@ -252,6 +254,52 @@ class FacilityReportAdminPageController {
 				"최근 24시간 신고 %d건입니다. 접수량은 정상 범위입니다.".formatted(recentReportCount),
 				"normal"
 			);
+		}
+	}
+
+	record ReportProcessingTimeView(
+		String title,
+		String label,
+		String description,
+		String metricClass
+	) {
+
+		static ReportProcessingTimeView from(List<FacilityReport> reports) {
+			List<Long> processingMinutes = reports.stream()
+				.filter(report -> report.reviewedAt() != null)
+				.map(report -> Duration.between(report.createdAt(), report.reviewedAt()).toMinutes())
+				.filter(minutes -> minutes >= 0)
+				.toList();
+			if (processingMinutes.isEmpty()) {
+				return new ReportProcessingTimeView(
+					"신고 처리 시간",
+					"처리 완료 신고 없음",
+					"검수 완료 후 평균 처리 시간을 표시합니다.",
+					"empty"
+				);
+			}
+
+			long averageMinutes = processingMinutes.stream()
+				.mapToLong(Long::longValue)
+				.sum() / processingMinutes.size();
+			return new ReportProcessingTimeView(
+				"신고 처리 시간",
+				"평균 " + durationLabel(averageMinutes),
+				"처리 완료 신고 %d건 기준입니다.".formatted(processingMinutes.size()),
+				"ok"
+			);
+		}
+
+		private static String durationLabel(long minutes) {
+			if (minutes < 60) {
+				return minutes + "분";
+			}
+			long hours = minutes / 60;
+			long remainingMinutes = minutes % 60;
+			if (remainingMinutes == 0) {
+				return hours + "시간";
+			}
+			return "%d시간 %d분".formatted(hours, remainingMinutes);
 		}
 	}
 

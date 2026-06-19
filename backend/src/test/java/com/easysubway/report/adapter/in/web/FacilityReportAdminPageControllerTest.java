@@ -47,7 +47,9 @@ class FacilityReportAdminPageControllerTest {
 			.contains("접수됨")
 			.contains("관리자 목록에서 볼 신고")
 			.contains("/admin/reports/%s/page".formatted(reportId))
-			.contains("status=SUBMITTED");
+			.contains("status=SUBMITTED")
+			.contains("신고 처리 시간")
+			.contains("처리 완료 신고 없음");
 	}
 
 	@Test

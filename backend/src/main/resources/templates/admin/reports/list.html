@@ -69,6 +69,50 @@
 			color: #8f2d00;
 		}
 
+		.processing-time {
+			display: grid;
+			grid-template-columns: minmax(0, 1fr) auto;
+			gap: 12px;
+			align-items: center;
+			margin-bottom: 20px;
+			padding: 16px 18px;
+			border: 1px solid #c9d6d7;
+			border-left: 6px solid #005e68;
+			background: #fff;
+		}
+
+		.processing-time.empty {
+			border-left-color: #7b9294;
+		}
+
+		.processing-time h2 {
+			margin: 0 0 6px;
+			font-size: 18px;
+			line-height: 1.3;
+		}
+
+		.processing-time p {
+			margin: 0;
+			color: #3f5658;
+			font-size: 15px;
+			line-height: 1.45;
+		}
+
+		.processing-time .metric-label {
+			justify-self: end;
+			padding: 6px 10px;
+			border-radius: 6px;
+			background: #e4f0ff;
+			color: #06436f;
+			font-weight: 800;
+			white-space: nowrap;
+		}
+
+		.processing-time.empty .metric-label {
+			background: #eef2f2;
+			color: #465f61;
+		}
+
 		.status-filter {
 			display: flex;
 			flex-wrap: wrap;
@@ -142,6 +186,16 @@
 			<p th:text="${reportSurgeAlert.description}">최근 24시간 신고 0건입니다. 접수량은 정상 범위입니다.</p>
 		</div>
 		<strong class="status-label" th:text="${reportSurgeAlert.label}">정상</strong>
+	</section>
+
+	<section class="processing-time"
+	         th:classappend="${processingTime.metricClass}"
+	         aria-label="신고 처리 시간 지표">
+		<div>
+			<h2 th:text="${processingTime.title}">신고 처리 시간</h2>
+			<p th:text="${processingTime.description}">검수 완료 후 평균 처리 시간을 표시합니다.</p>
+		</div>
+		<strong class="metric-label" th:text="${processingTime.label}">처리 완료 신고 없음</strong>
 	</section>
 
 	<nav class="status-filter" aria-label="신고 상태 필터">
