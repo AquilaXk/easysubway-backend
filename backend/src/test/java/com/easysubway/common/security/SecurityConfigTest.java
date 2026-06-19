@@ -2,12 +2,16 @@ package com.easysubway.common.security;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.auth.adapter.out.security.InMemoryAnonymousAuthTokenStore;
+import com.easysubway.auth.application.port.out.AnonymousAuthTokenPort;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
 import org.springframework.boot.test.context.runner.WebApplicationContextRunner;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
 
@@ -19,7 +23,10 @@ class SecurityConfigTest {
 			SecurityAutoConfiguration.class,
 			WebMvcAutoConfiguration.class
 		))
-		.withUserConfiguration(SecurityConfig.class);
+		.withUserConfiguration(
+			SecurityConfig.class,
+			AnonymousAuthTokenTestConfiguration.class
+		);
 
 	@Test
 	@DisplayName("운영 프로필은 관리자 계정 설정이 없으면 시작하지 않는다")
@@ -89,5 +96,14 @@ class SecurityConfigTest {
 				assertThat(context.getStartupFailure())
 					.hasMessageContaining("운영기관 관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
 			});
+	}
+
+	@TestConfiguration
+	static class AnonymousAuthTokenTestConfiguration {
+
+		@Bean
+		AnonymousAuthTokenPort anonymousAuthTokenPort() {
+			return new InMemoryAnonymousAuthTokenStore();
+		}
 	}
 }

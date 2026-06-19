@@ -2,17 +2,22 @@ package com.easysubway.auth.adapter.in.web;
 
 import com.easysubway.auth.application.port.in.AnonymousAuthRateLimitUseCase;
 import com.easysubway.auth.application.port.in.AnonymousAuthUseCase;
+import com.easysubway.auth.adapter.out.security.AnonymousBearerPrincipal;
+import com.easysubway.auth.domain.AnonymousAuthTokenSession;
 import com.easysubway.auth.domain.AnonymousAuthRateLimitExceededException;
-import com.easysubway.auth.domain.AnonymousUserCredentials;
 import com.easysubway.auth.domain.AuthenticatedUser;
+import com.easysubway.auth.domain.InvalidAnonymousAuthException;
 import com.easysubway.common.web.ApiResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
 import jakarta.servlet.http.HttpServletRequest;
-import java.security.Principal;
 import java.time.LocalDateTime;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -39,9 +44,17 @@ class AnonymousAuthController {
 		return ApiResponse.ok(AnonymousAuthResponse.from(anonymousAuthUseCase.issueAnonymousUser()));
 	}
 
+	@PostMapping("/api/v1/auth/anonymous/refresh")
+	ApiResponse<AnonymousAuthResponse> refreshAnonymousUser(@Valid @RequestBody AnonymousAuthRefreshRequest request) {
+		return ApiResponse.ok(AnonymousAuthResponse.from(anonymousAuthUseCase.refreshAnonymousUser(request.refreshToken())));
+	}
+
 	@GetMapping("/api/v1/me")
-	ApiResponse<AuthenticatedUserResponse> currentUser(Principal principal) {
-		return ApiResponse.ok(AuthenticatedUserResponse.from(anonymousAuthUseCase.currentUser(principal.getName())));
+	ApiResponse<AuthenticatedUserResponse> currentUser(Authentication authentication) {
+		return ApiResponse.ok(AuthenticatedUserResponse.from(anonymousAuthUseCase.currentUser(
+			userIdFrom(authentication),
+			authTypeFrom(authentication)
+		)));
 	}
 
 	@ExceptionHandler(AnonymousAuthRateLimitExceededException.class)
@@ -50,27 +63,49 @@ class AnonymousAuthController {
 		return ApiResponse.fail(exception.getMessage());
 	}
 
+	@ExceptionHandler(InvalidAnonymousAuthException.class)
+	@ResponseStatus(HttpStatus.UNAUTHORIZED)
+	ApiResponse<Void> handleInvalidAnonymousAuth(InvalidAnonymousAuthException exception) {
+		return ApiResponse.fail(exception.getMessage());
+	}
+
 	private String clientKeyFrom(HttpServletRequest request) {
 		return anonymousAuthClientIpResolver.resolve(request);
 	}
 
+	private String userIdFrom(Authentication authentication) {
+		if (authentication.getPrincipal() instanceof AnonymousBearerPrincipal principal) {
+			return principal.getName();
+		}
+		return authentication.getName();
+	}
+
+	private String authTypeFrom(Authentication authentication) {
+		return authentication.getPrincipal() instanceof AnonymousBearerPrincipal ? "BEARER" : "BASIC";
+	}
+
 	record AnonymousAuthResponse(
 		String userId,
-		String password,
+		String accessToken,
+		String refreshToken,
 		String authType,
 		boolean anonymous,
 		LocalDateTime createdAt
 	) {
 
-		static AnonymousAuthResponse from(AnonymousUserCredentials credentials) {
+		static AnonymousAuthResponse from(AnonymousAuthTokenSession session) {
 			return new AnonymousAuthResponse(
-				credentials.userId(),
-				credentials.password(),
-				"BASIC",
+				session.userId(),
+				session.accessToken(),
+				session.refreshToken(),
+				"BEARER",
 				true,
-				credentials.createdAt()
+				session.createdAt()
 			);
 		}
+	}
+
+	record AnonymousAuthRefreshRequest(@NotBlank String refreshToken) {
 	}
 
 	record AuthenticatedUserResponse(

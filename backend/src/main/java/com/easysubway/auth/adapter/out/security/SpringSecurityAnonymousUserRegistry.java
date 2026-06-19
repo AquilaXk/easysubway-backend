@@ -10,9 +10,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.provisioning.UserDetailsManager;
-import org.springframework.stereotype.Component;
 
-@Component
 public class SpringSecurityAnonymousUserRegistry implements RegisterAnonymousUserPort {
 
 	static final int MAX_ANONYMOUS_USERS = 10_000;

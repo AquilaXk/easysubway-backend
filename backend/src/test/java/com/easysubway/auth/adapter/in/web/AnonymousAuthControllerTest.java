@@ -48,30 +48,32 @@ class AnonymousAuthControllerTest {
 	}
 
 	@Test
-	@DisplayName("익명 사용자를 발급하고 같은 Basic 인증 정보로 현재 사용자를 조회한다")
+	@DisplayName("익명 사용자를 발급하고 Bearer token으로 현재 사용자를 조회한다")
 	void issueAnonymousUserAndReadCurrentUser() throws Exception {
 		var result = mockMvc.perform(post("/api/v1/auth/anonymous"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.userId").isNotEmpty())
-			.andExpect(jsonPath("$.data.password").isNotEmpty())
-			.andExpect(jsonPath("$.data.authType").value("BASIC"))
+			.andExpect(jsonPath("$.data.password").doesNotExist())
+			.andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+			.andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
+			.andExpect(jsonPath("$.data.authType").value("BEARER"))
 			.andExpect(jsonPath("$.data.anonymous").value(true))
 			.andExpect(jsonPath("$.data.createdAt").isNotEmpty())
 			.andReturn();
 
 		String body = result.getResponse().getContentAsString();
 		String userId = JsonPath.read(body, "$.data.userId");
-		String password = JsonPath.read(body, "$.data.password");
+		String accessToken = JsonPath.read(body, "$.data.accessToken");
 
 		assertThat(userId).startsWith("anonymous-");
 
 		mockMvc.perform(get("/api/v1/me")
-				.with(httpBasic(userId, password)))
+				.header("Authorization", "Bearer " + accessToken))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.userId").value(userId))
-			.andExpect(jsonPath("$.data.authType").value("BASIC"))
+			.andExpect(jsonPath("$.data.authType").value("BEARER"))
 			.andExpect(jsonPath("$.data.anonymous").value(true));
 	}
 
@@ -88,6 +90,64 @@ class AnonymousAuthControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("잠시 후 다시 시도해 주세요."));
+	}
+
+	@Test
+	@DisplayName("refresh token 갱신은 새 Bearer token을 발급하고 같은 refresh token 재사용을 거부한다")
+	void refreshAnonymousUserRotatesTokensAndRejectsReuse() throws Exception {
+		var issueResult = mockMvc.perform(post("/api/v1/auth/anonymous")
+				.with(remoteAddr("198.51.100.11")))
+			.andExpect(status().isOk())
+			.andReturn();
+		String issueBody = issueResult.getResponse().getContentAsString();
+		String userId = JsonPath.read(issueBody, "$.data.userId");
+		String accessToken = JsonPath.read(issueBody, "$.data.accessToken");
+		String refreshToken = JsonPath.read(issueBody, "$.data.refreshToken");
+
+		var refreshResult = mockMvc.perform(post("/api/v1/auth/anonymous/refresh")
+				.contentType("application/json")
+				.content("""
+					{"refreshToken":"%s"}
+					""".formatted(refreshToken)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.userId").value(userId))
+			.andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+			.andExpect(jsonPath("$.data.refreshToken").isNotEmpty())
+			.andExpect(jsonPath("$.data.authType").value("BEARER"))
+			.andReturn();
+		String refreshBody = refreshResult.getResponse().getContentAsString();
+		String rotatedAccessToken = JsonPath.read(refreshBody, "$.data.accessToken");
+		String rotatedRefreshToken = JsonPath.read(refreshBody, "$.data.refreshToken");
+
+		assertThat(rotatedAccessToken).isNotEqualTo(accessToken);
+		assertThat(rotatedRefreshToken).isNotEqualTo(refreshToken);
+
+		mockMvc.perform(get("/api/v1/me")
+				.header("Authorization", "Bearer " + rotatedAccessToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.userId").value(userId))
+			.andExpect(jsonPath("$.data.authType").value("BEARER"));
+
+		mockMvc.perform(post("/api/v1/auth/anonymous/refresh")
+				.contentType("application/json")
+				.content("""
+					{"refreshToken":"%s"}
+					""".formatted(refreshToken)))
+			.andExpect(status().isUnauthorized())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("익명 인증 세션을 갱신할 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("refresh token 갱신은 빈 토큰 요청을 거부한다")
+	void refreshAnonymousUserRejectsBlankToken() throws Exception {
+		mockMvc.perform(post("/api/v1/auth/anonymous/refresh")
+				.contentType("application/json")
+				.content("""
+					{"refreshToken":" "}
+					"""))
+			.andExpect(status().isBadRequest());
 	}
 
 	@Test
@@ -164,17 +224,17 @@ class AnonymousAuthControllerTest {
 			.andReturn();
 		String body = result.getResponse().getContentAsString();
 		String userId = JsonPath.read(body, "$.data.userId");
-		String password = JsonPath.read(body, "$.data.password");
+		String accessToken = JsonPath.read(body, "$.data.accessToken");
 
 		mockMvc.perform(delete("/api/v1/me")
-				.with(httpBasic(userId, password)))
+				.header("Authorization", "Bearer " + accessToken))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.userId").value(userId))
 			.andExpect(jsonPath("$.data.anonymousCredentialsDeleted").value(true));
 
 		mockMvc.perform(get("/api/v1/me")
-				.with(httpBasic(userId, password)))
+				.header("Authorization", "Bearer " + accessToken))
 			.andExpect(status().isUnauthorized());
 	}
 

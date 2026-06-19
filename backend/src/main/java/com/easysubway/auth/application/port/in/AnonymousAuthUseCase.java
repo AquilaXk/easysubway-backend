@@ -1,11 +1,13 @@
 package com.easysubway.auth.application.port.in;
 
-import com.easysubway.auth.domain.AnonymousUserCredentials;
+import com.easysubway.auth.domain.AnonymousAuthTokenSession;
 import com.easysubway.auth.domain.AuthenticatedUser;
 
 public interface AnonymousAuthUseCase {
 
-	AnonymousUserCredentials issueAnonymousUser();
+	AnonymousAuthTokenSession issueAnonymousUser();
 
-	AuthenticatedUser currentUser(String userId);
+	AnonymousAuthTokenSession refreshAnonymousUser(String refreshToken);
+
+	AuthenticatedUser currentUser(String userId, String authType);
 }
