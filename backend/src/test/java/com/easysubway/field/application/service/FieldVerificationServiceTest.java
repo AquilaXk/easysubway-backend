@@ -1,7 +1,10 @@
 package com.easysubway.field.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.common.error.ResourceNotFoundException;
+import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.time.LocalDate;
@@ -75,5 +78,39 @@ class FieldVerificationServiceTest {
 		assertThat(sessions)
 			.extracting(session -> session.status())
 			.containsExactly(FieldVerificationStatus.IN_PROGRESS, FieldVerificationStatus.PLANNED);
+	}
+
+	@Test
+	@DisplayName("현장 검증 항목 상태와 비고를 변경한다")
+	void updatesFieldVerificationItemStatus() {
+		var session = service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sadang",
+			"field-verification-sadang-elevator",
+			FieldVerificationStatus.NEEDS_RECHECK,
+			"엘리베이터 운행 중지 안내문 확인 필요"
+		));
+
+		assertThat(session.stationId()).isEqualTo("station-sadang");
+		assertThat(session.status()).isEqualTo(FieldVerificationStatus.NEEDS_RECHECK);
+		assertThat(session.items())
+			.filteredOn(item -> item.id().equals("field-verification-sadang-elevator"))
+			.singleElement()
+			.satisfies(item -> {
+				assertThat(item.status()).isEqualTo(FieldVerificationStatus.NEEDS_RECHECK);
+				assertThat(item.note()).isEqualTo("엘리베이터 운행 중지 안내문 확인 필요");
+			});
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 현장 검증 항목 상태 변경은 실패한다")
+	void updateMissingFieldVerificationItemStatusFails() {
+		assertThatThrownBy(() -> service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sadang",
+			"missing-item",
+			FieldVerificationStatus.VERIFIED,
+			"확인 완료"
+		)))
+			.isInstanceOf(ResourceNotFoundException.class)
+			.hasMessage("현장 검증 항목을 찾을 수 없습니다.");
 	}
 }

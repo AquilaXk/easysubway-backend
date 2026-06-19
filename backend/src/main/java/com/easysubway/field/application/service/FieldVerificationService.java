@@ -2,12 +2,15 @@ package com.easysubway.field.application.service;
 
 import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
+import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.time.LocalDate;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -47,21 +50,81 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 			item("field-verification-sadang-platform-transfer", FieldVerificationItemType.PLATFORM_TRANSFER, "2호선과 4호선 환승 접근 동선", FieldVerificationStatus.PLANNED)
 		)
 	);
+	private final Map<String, FieldVerificationSession> sessionsByStationId = new LinkedHashMap<>();
 
-	@Override
-	public List<FieldVerificationSession> listStationVerifications() {
-		return List.of(SANGNOKSU_BASELINE, SADANG_BASELINE);
+	public FieldVerificationService() {
+		sessionsByStationId.put(SANGNOKSU_STATION_ID, SANGNOKSU_BASELINE);
+		sessionsByStationId.put(SADANG_STATION_ID, SADANG_BASELINE);
 	}
 
 	@Override
-	public FieldVerificationSession getStationVerification(String stationId) {
-		if (SANGNOKSU_STATION_ID.equals(stationId)) {
-			return SANGNOKSU_BASELINE;
+	public synchronized List<FieldVerificationSession> listStationVerifications() {
+		return List.copyOf(sessionsByStationId.values());
+	}
+
+	@Override
+	public synchronized FieldVerificationSession getStationVerification(String stationId) {
+		return findSession(stationId);
+	}
+
+	@Override
+	public synchronized FieldVerificationSession updateItemStatus(UpdateFieldVerificationItemStatusCommand command) {
+		FieldVerificationSession session = findSession(command.stationId());
+		if (session.items().stream().noneMatch(item -> item.id().equals(command.itemId()))) {
+			throw new ResourceNotFoundException("현장 검증 항목을 찾을 수 없습니다.");
 		}
-		if (SADANG_STATION_ID.equals(stationId)) {
-			return SADANG_BASELINE;
+		List<FieldVerificationItem> items = session.items().stream()
+			.map(item -> updateItem(command, item))
+			.toList();
+		FieldVerificationSession updated = new FieldVerificationSession(
+			session.id(),
+			session.stationId(),
+			session.stationName(),
+			session.verifiedAt(),
+			session.verifiedBy(),
+			sessionStatus(items),
+			session.note(),
+			items
+		);
+		sessionsByStationId.put(session.stationId(), updated);
+		return updated;
+	}
+
+	private FieldVerificationSession findSession(String stationId) {
+		FieldVerificationSession session = sessionsByStationId.get(stationId);
+		if (session == null) {
+			throw new ResourceNotFoundException("현장 검증 기준선을 찾을 수 없습니다.");
 		}
-		throw new ResourceNotFoundException("현장 검증 기준선을 찾을 수 없습니다.");
+		return session;
+	}
+
+	private FieldVerificationItem updateItem(
+		UpdateFieldVerificationItemStatusCommand command,
+		FieldVerificationItem item
+	) {
+		if (!item.id().equals(command.itemId())) {
+			return item;
+		}
+		return new FieldVerificationItem(
+			item.id(),
+			item.type(),
+			item.targetName(),
+			command.status(),
+			command.note()
+		);
+	}
+
+	private FieldVerificationStatus sessionStatus(List<FieldVerificationItem> items) {
+		if (items.stream().allMatch(item -> item.status() == FieldVerificationStatus.VERIFIED)) {
+			return FieldVerificationStatus.VERIFIED;
+		}
+		if (items.stream().anyMatch(item -> item.status() == FieldVerificationStatus.NEEDS_RECHECK)) {
+			return FieldVerificationStatus.NEEDS_RECHECK;
+		}
+		if (items.stream().allMatch(item -> item.status() == FieldVerificationStatus.PLANNED)) {
+			return FieldVerificationStatus.PLANNED;
+		}
+		return FieldVerificationStatus.IN_PROGRESS;
 	}
 
 	private static FieldVerificationItem item(

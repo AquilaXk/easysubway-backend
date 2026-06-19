@@ -1,7 +1,9 @@
 package com.easysubway.field.adapter.in.web;
 
+import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
+import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
@@ -12,7 +14,9 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
@@ -37,6 +41,16 @@ class FieldVerificationAdminController {
 	@GetMapping("/admin/field-verifications/stations/{stationId}")
 	ApiResponse<FieldVerificationView> stationFieldVerification(@PathVariable String stationId) {
 		return ApiResponse.ok(FieldVerificationView.from(fieldVerificationUseCase.getStationVerification(stationId)));
+	}
+
+	@PatchMapping("/admin/field-verifications/stations/{stationId}/items/{itemId}/status")
+	ApiResponse<FieldVerificationView> updateFieldVerificationItemStatus(
+		@PathVariable String stationId,
+		@PathVariable String itemId,
+		@RequestBody UpdateFieldVerificationItemStatusRequest request
+	) {
+		FieldVerificationSession session = fieldVerificationUseCase.updateItemStatus(request.toCommand(stationId, itemId));
+		return ApiResponse.ok(FieldVerificationView.from(session));
 	}
 
 	@GetMapping("/admin/field-verifications/stations/{stationId}/export.csv")
@@ -153,6 +167,23 @@ class FieldVerificationAdminController {
 				item.status(),
 				item.note()
 			);
+		}
+	}
+
+	record UpdateFieldVerificationItemStatusRequest(
+		FieldVerificationStatus status,
+		String note
+	) {
+
+		UpdateFieldVerificationItemStatusCommand toCommand(String stationId, String itemId) {
+			if (status == null) {
+				throw new InvalidRequestException("현장 검증 상태를 선택해야 합니다.");
+			}
+			if (status != FieldVerificationStatus.VERIFIED
+				&& status != FieldVerificationStatus.NEEDS_RECHECK) {
+				throw new InvalidRequestException("현장 검증 상태는 VERIFIED 또는 NEEDS_RECHECK만 허용됩니다.");
+			}
+			return new UpdateFieldVerificationItemStatusCommand(stationId, itemId, status, note);
 		}
 	}
 }

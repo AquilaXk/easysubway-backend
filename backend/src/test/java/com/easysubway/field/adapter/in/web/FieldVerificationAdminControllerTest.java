@@ -2,12 +2,15 @@ package com.easysubway.field.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
+import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
@@ -20,6 +23,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -137,6 +141,11 @@ class FieldVerificationAdminControllerTest {
 			}
 
 			@Override
+			public FieldVerificationSession updateItemStatus(UpdateFieldVerificationItemStatusCommand command) {
+				throw new UnsupportedOperationException("not used in csv escaping test");
+			}
+
+			@Override
 			public FieldVerificationSession getStationVerification(String stationId) {
 				return new FieldVerificationSession(
 					"session-formula",
@@ -181,6 +190,103 @@ class FieldVerificationAdminControllerTest {
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sangnoksu")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("관리자는 현장 검증 항목 상태와 비고를 변경한다")
+	void adminUpdatesFieldVerificationItemStatus() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "NEEDS_RECHECK",
+					  "note": "엘리베이터 운행 중지 안내문 확인 필요"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.stationId").value("station-sadang"))
+			.andExpect(jsonPath("$.data.status").value("NEEDS_RECHECK"))
+			.andExpect(jsonPath("$.data.items[1].itemId").value("field-verification-sadang-elevator"))
+			.andExpect(jsonPath("$.data.items[1].status").value("NEEDS_RECHECK"))
+			.andExpect(jsonPath("$.data.items[1].note").value("엘리베이터 운행 중지 안내문 확인 필요"));
+	}
+
+	@Test
+	@DisplayName("현장 검증 항목 상태 변경 API는 관리자 인증을 요구한다")
+	void updateFieldVerificationItemStatusRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "VERIFIED"
+					}
+					"""))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(httpBasic("anonymous-user-1", "user-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "VERIFIED"
+					}
+					"""))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 현장 검증 항목 상태 변경은 공통 404 응답을 반환한다")
+	void updateMissingFieldVerificationItemStatusReturnsCommonError() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/missing-item/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "VERIFIED"
+					}
+					"""))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("현장 검증 항목을 찾을 수 없습니다."));
+	}
+
+	@Test
+	@DisplayName("현장 검증 항목 상태 변경 요청은 상태값을 요구한다")
+	void updateFieldVerificationItemStatusRequiresStatus() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("{}"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("현장 검증 상태를 선택해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("현장 검증 항목 상태 변경 요청은 완료 또는 재확인 필요 상태만 허용한다")
+	void updateFieldVerificationItemStatusRejectsWorkflowStatus() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "PLANNED"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("현장 검증 상태는 VERIFIED 또는 NEEDS_RECHECK만 허용됩니다."));
 	}
 
 	@Test

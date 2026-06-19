@@ -8,4 +8,6 @@ public interface FieldVerificationUseCase {
 	List<FieldVerificationSession> listStationVerifications();
 
 	FieldVerificationSession getStationVerification(String stationId);
+
+	FieldVerificationSession updateItemStatus(UpdateFieldVerificationItemStatusCommand command);
 }
