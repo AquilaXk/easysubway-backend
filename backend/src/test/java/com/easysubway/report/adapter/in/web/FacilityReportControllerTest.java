@@ -91,12 +91,7 @@ class FacilityReportControllerTest {
 					  "stationId": "station-sangnoksu",
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
-					  "description": "엘리베이터 문이 열리지 않습니다.",
-					  "photoFileName": "elevator-door.jpg",
-					  "photoContentType": "image/jpeg",
-					  "photoObjectKey": "facility-reports/client-submission-1/photo.jpg",
-					  "photoSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-					  "photoSizeBytes": 4096
+					  "description": "엘리베이터 문이 열리지 않습니다."
 					}
 					"""))
 			.andExpect(status().isCreated())

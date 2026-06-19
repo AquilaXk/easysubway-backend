@@ -22,3 +22,5 @@ ALTER TABLE facility_reports
 
 CREATE INDEX IF NOT EXISTS idx_facility_reports_photo_object
 	ON facility_reports (photo_object_key);
+
+-- Keep photo_data_base64 until object backfill/export has copied legacy payloads into object storage.

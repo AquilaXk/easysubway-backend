@@ -7,6 +7,8 @@ import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
@@ -38,6 +40,7 @@ import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -59,6 +62,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
 	private final StoreFacilityReportPhotoPort storeFacilityReportPhotoPort;
+	private final LoadFacilityReportPhotoPort loadFacilityReportPhotoPort;
 	private final LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort;
 	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final ReportStatusAlertUseCase reportStatusAlertUseCase;
@@ -78,6 +82,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		ReportStatusAlertUseCase reportStatusAlertUseCase,
 		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
 		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
 		@Value("${easysubway.report.receipt-token-pepper:local-dev-report-receipt-pepper}") String receiptTokenPepper
 	) {
 		this(
@@ -90,6 +95,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			reportStatusAlertUseCase,
 			saveFacilityReportReviewAuditPort,
 			loadFacilityReportReviewAuditPort,
+			loadFacilityReportPhotoPort,
 			Clock.systemDefaultZone(),
 			receiptTokenPepper
 		);
@@ -257,6 +263,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			reportStatusAlertUseCase,
 			saveFacilityReportReviewAuditPort,
 			loadFacilityReportReviewAuditPort,
+			defaultUploadedPhotoLoader(),
 			clock,
 			"local-dev-report-receipt-pepper"
 		);
@@ -275,11 +282,42 @@ public class FacilityReportService implements FacilityReportUseCase {
 		Clock clock,
 		String receiptTokenPepper
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			defaultUploadedPhotoLoader(),
+			clock,
+			receiptTokenPepper
+		);
+	}
+
+	FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		Clock clock,
+		String receiptTokenPepper
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
 		this.storeFacilityReportPhotoPort = storeFacilityReportPhotoPort;
+		this.loadFacilityReportPhotoPort = loadFacilityReportPhotoPort;
 		this.loadFacilityReportReviewAuditPort = loadFacilityReportReviewAuditPort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.reportStatusAlertUseCase = reportStatusAlertUseCase;
@@ -575,6 +613,25 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (command.photoSizeBytes() < 1 || command.photoSizeBytes() > 900L * 1024L) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
+		LoadedFacilityReportPhoto uploadedPhoto = loadFacilityReportPhotoPort.loadFacilityReportPhoto(command.photoObjectKey().trim())
+			.orElseThrow(() -> new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다."));
+		if (!command.photoContentType().trim().equals(uploadedPhoto.contentType())) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (uploadedPhoto.bytes().length != command.photoSizeBytes()) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (!command.photoSha256().trim().equals(sha256Hex(uploadedPhoto.bytes()))) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+	}
+
+	private String sha256Hex(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (java.security.NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
+		}
 	}
 
 	private StoredFacilityReportPhoto storePhoto(String reportId, FacilityReportPhotoAttachment photo) {
@@ -745,5 +802,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			"facility-reports/%s/%s".formatted(command.reportId(), command.sha256()),
 			"facility-reports/%s/%s-thumbnail".formatted(command.reportId(), command.sha256())
 		);
+	}
+
+	private static LoadFacilityReportPhotoPort defaultUploadedPhotoLoader() {
+		return objectKey -> Optional.empty();
 	}
 }
