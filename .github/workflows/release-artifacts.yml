@@ -1,0 +1,226 @@
+name: Release Artifacts
+
+on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-artifacts-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  android-release:
+    name: Android Release Artifact
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Android Release Artifact / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Android Release Artifact / Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Android Release Artifact / Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          cache: true
+
+      - name: Android Release Artifact / Create CI release keystore
+        shell: bash
+        env:
+          EASYSUBWAY_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/easysubway-ci-release.jks
+          EASYSUBWAY_ANDROID_STORE_PASSWORD: ci-release-password
+          EASYSUBWAY_ANDROID_KEY_ALIAS: ci-release
+          EASYSUBWAY_ANDROID_KEY_PASSWORD: ci-release-password
+        run: |
+          set -euo pipefail
+          keytool -genkeypair \
+            -storetype PKCS12 \
+            -keystore "${EASYSUBWAY_ANDROID_KEYSTORE_PATH}" \
+            -storepass "${EASYSUBWAY_ANDROID_STORE_PASSWORD}" \
+            -keypass "${EASYSUBWAY_ANDROID_KEY_PASSWORD}" \
+            -alias "${EASYSUBWAY_ANDROID_KEY_ALIAS}" \
+            -keyalg RSA \
+            -keysize 2048 \
+            -validity 3650 \
+            -dname "CN=EasySubway CI,O=EasySubway,C=KR"
+
+      - name: Android Release Artifact / Build Flutter app bundle
+        working-directory: apps/mobile
+        shell: bash
+        env:
+          EASYSUBWAY_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/easysubway-ci-release.jks
+          EASYSUBWAY_ANDROID_STORE_PASSWORD: ci-release-password
+          EASYSUBWAY_ANDROID_KEY_ALIAS: ci-release
+          EASYSUBWAY_ANDROID_KEY_PASSWORD: ci-release-password
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build appbundle --release \
+            --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL=https://easysubway.local/privacy \
+            --dart-define=EASYSUBWAY_SUPPORT_EMAIL=support@easysubway.local \
+            --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL=privacy@easysubway.local \
+            --dart-define=EASYSUBWAY_SECURITY_EMAIL=security@easysubway.local \
+            --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
+
+      - name: Android Release Artifact / Collect release outputs
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/android
+          cp build/app/outputs/bundle/release/app-release.aab release-artifacts/android/app-release.aab
+          if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
+            cp build/app/outputs/mapping/release/mapping.txt release-artifacts/android/mapping.txt
+          else
+            printf 'mapping=not-generated\n' > release-artifacts/android/mapping.txt
+          fi
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "artifact=app-release.aab"
+            echo "mapping=build/app/outputs/mapping/release/mapping.txt"
+          } > release-artifacts/android/release-metadata.txt
+
+      - name: Android Release Artifact / Upload app bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-android-release-${{ github.sha }}
+          path: apps/mobile/release-artifacts/android
+          if-no-files-found: error
+          retention-days: 14
+
+  ios-release:
+    name: iOS Release Artifact
+    runs-on: macos-latest
+
+    steps:
+      - name: iOS Release Artifact / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: iOS Release Artifact / Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          cache: true
+
+      - name: iOS Release Artifact / Build no-codesign release app
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build ios --release --no-codesign \
+            --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL=https://easysubway.local/privacy \
+            --dart-define=EASYSUBWAY_SUPPORT_EMAIL=support@easysubway.local \
+            --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL=privacy@easysubway.local \
+            --dart-define=EASYSUBWAY_SECURITY_EMAIL=security@easysubway.local \
+            --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
+
+      - name: iOS Release Artifact / Collect release outputs
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/ios
+          test -d build/ios/iphoneos/Runner.app
+          ditto -c -k --keepParent build/ios/iphoneos/Runner.app release-artifacts/ios/Runner.app.zip
+          dsym_count=0
+          mkdir -p release-artifacts/ios/dSYMs
+          while IFS= read -r -d '' dsym_path; do
+            target_path="release-artifacts/ios/dSYMs/${dsym_path#build/ios/}"
+            mkdir -p "$(dirname "${target_path}")"
+            cp -R "${dsym_path}" "${target_path}"
+            dsym_count=$((dsym_count + 1))
+          done < <(find build/ios -name "*.dSYM" -print0)
+          if (( dsym_count > 0 )); then
+            ditto -c -k release-artifacts/ios/dSYMs release-artifacts/ios/dsym.zip
+          else
+            printf 'dsym=not-generated\n' > release-artifacts/ios/dsym.txt
+          fi
+          cp ios/Runner/PrivacyInfo.xcprivacy release-artifacts/ios/PrivacyInfo.xcprivacy
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "artifact=Runner.app.zip"
+            echo "dsym_count=${dsym_count}"
+            echo "privacy_manifest=ios/Runner/PrivacyInfo.xcprivacy"
+          } > release-artifacts/ios/release-metadata.txt
+
+      - name: iOS Release Artifact / Upload no-codesign app
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-ios-release-${{ github.sha }}
+          path: apps/mobile/release-artifacts/ios
+          if-no-files-found: error
+          retention-days: 14
+
+  backend-release:
+    name: Backend Release Image
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Backend Release Image / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Backend Release Image / Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Backend Release Image / Build bootJar
+        working-directory: backend
+        run: ./gradlew bootJar --no-daemon
+
+      - name: Backend Release Image / Build and inspect image
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker build -f backend/Dockerfile -t easysubway-backend:${{ github.sha }} backend
+          docker image inspect easysubway-backend:${{ github.sha }}
+
+      - name: Backend Release Image / Validate deployment dry-run
+        shell: bash
+        run: |
+          set -euo pipefail
+          docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
+
+      - name: Backend Release Image / Collect release metadata
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/backend
+          docker image inspect easysubway-backend:${{ github.sha }} > release-artifacts/backend/image-inspect.json
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "image=easysubway-backend:${GITHUB_SHA}"
+            echo "dockerfile=backend/Dockerfile"
+            echo "compose=infra/docker-compose.yml"
+          } > release-artifacts/backend/release-metadata.txt
+
+      - name: Backend Release Image / Upload image metadata
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-backend-release-${{ github.sha }}
+          path: release-artifacts/backend
+          if-no-files-found: error
+          retention-days: 14
