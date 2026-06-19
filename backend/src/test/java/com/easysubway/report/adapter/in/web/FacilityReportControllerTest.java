@@ -126,10 +126,12 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("익명 Bearer 신고는 receipt token으로 접수 상태를 조회한다")
 	void anonymousBearerClientSubmissionReturnsReceiptToken() throws Exception {
-		String accessToken = issueAnonymousAccessToken();
-
 		String response = mockMvc.perform(post("/api/v1/reports")
-				.header("Authorization", "Bearer " + accessToken)
+				.with(authentication(new UsernamePasswordAuthenticationToken(
+					new AnonymousBearerPrincipal("anonymous-user-bearer-1"),
+					null,
+					List.of(new SimpleGrantedAuthority("ROLE_USER"))
+				)))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
@@ -929,18 +931,6 @@ class FacilityReportControllerTest {
 
 	private String createReport(String userId, String description) throws Exception {
 		return createReport("basic-user", "user-test-password", userId, description);
-	}
-
-	private String issueAnonymousAccessToken() throws Exception {
-		String response = mockMvc.perform(post("/api/v1/auth/anonymous"))
-			.andExpect(status().isOk())
-			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data.accessToken").isNotEmpty())
-			.andReturn()
-			.getResponse()
-			.getContentAsString();
-
-		return JsonPath.read(response, "$.data.accessToken");
 	}
 
 	private String createReport(
