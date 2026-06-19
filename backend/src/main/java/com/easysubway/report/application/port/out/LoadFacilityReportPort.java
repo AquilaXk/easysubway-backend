@@ -16,6 +16,8 @@ public interface LoadFacilityReportPort {
 
 	Optional<FacilityReport> loadReport(String reportId);
 
+	Optional<FacilityReport> loadReportByClientSubmissionId(String clientSubmissionId);
+
 	List<FacilityReport> loadReports();
 
 	PageResult<FacilityReportSummary> loadUserReportSummaries(String userId, FacilityReportPageRequest pageRequest);

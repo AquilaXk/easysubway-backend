@@ -8,6 +8,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
 import com.easysubway.report.domain.FacilityReport;
@@ -30,12 +31,18 @@ import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Base64;
+import java.util.HexFormat;
+import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -204,6 +211,62 @@ class FacilityReportServiceTest {
 			"broken.jpg",
 			"image/jpeg",
 			"not-base64"
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진은 업로드된 객체를 요구한다")
+	void createReportRequiresUploadedPhotoObject() {
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+			11L
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진은 업로드 객체 무결성을 검증한다")
+	void createReportVerifiesUploadedPhotoObjectMetadata() {
+		byte[] jpegBytes = validJpegBytes();
+		FacilityReportService service = serviceWithUploadedPhoto(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"image/jpeg",
+			jpegBytes
+		);
+
+		assertThatNoException().isThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		)));
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"client-submission-2",
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+			(long) jpegBytes.length
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진은 이미지가 아닌 업로드 객체를 거부한다")
+	void createReportRejectsNonImageUploadedPhotoObject() {
+		byte[] invalidBytes = "image-bytes".getBytes(StandardCharsets.UTF_8);
+		FacilityReportService service = serviceWithUploadedPhoto(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"image/jpeg",
+			invalidBytes
+		);
+
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			sha256Hex(invalidBytes),
+			(long) invalidBytes.length
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
@@ -1045,6 +1108,64 @@ class FacilityReportServiceTest {
 		);
 	}
 
+	private CreateFacilityReportCommand objectPhotoReportCommand(
+		String photoObjectKey,
+		String photoSha256,
+		Long photoSizeBytes
+	) {
+		return objectPhotoReportCommand("client-submission-1", photoObjectKey, photoSha256, photoSizeBytes);
+	}
+
+	private CreateFacilityReportCommand objectPhotoReportCommand(
+		String clientSubmissionId,
+		String photoObjectKey,
+		String photoSha256,
+		Long photoSizeBytes
+	) {
+		return new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			clientSubmissionId,
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator-door.jpg",
+			"image/jpeg",
+			null,
+			photoObjectKey,
+			photoSha256,
+			photoSizeBytes,
+			null,
+			null,
+			null
+		);
+	}
+
+	private FacilityReportService serviceWithUploadedPhoto(String objectKey, String contentType, byte[] bytes) {
+		var repository = new InMemoryFacilityReportRepository();
+		return new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			repository,
+			repository,
+			command -> new com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto(
+				"facility-reports/%s/%s".formatted(command.reportId(), command.sha256()),
+				"facility-reports/%s/%s-thumbnail".formatted(command.reportId(), command.sha256())
+			),
+			command -> {
+			},
+			command -> {
+			},
+			audit -> audit,
+			reportId -> List.of(),
+			candidateObjectKey -> objectKey.equals(candidateObjectKey)
+				? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
+				: Optional.empty(),
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul")),
+			"local-dev-report-receipt-pepper"
+		);
+	}
+
 	private String validJpegBase64() {
 		return Base64.getEncoder().encodeToString(validJpegBytes());
 	}
@@ -1057,6 +1178,14 @@ class FacilityReportServiceTest {
 			return output.toByteArray();
 		} catch (IOException exception) {
 			throw new IllegalStateException("Failed to create test JPEG", exception);
+		}
+	}
+
+	private String sha256Hex(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
 		}
 	}
 

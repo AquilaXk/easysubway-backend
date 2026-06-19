@@ -2,10 +2,13 @@ package com.easysubway.report.application.service;
 
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
@@ -36,7 +39,9 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.Comparator;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -44,6 +49,7 @@ import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,12 +63,14 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
 	private final StoreFacilityReportPhotoPort storeFacilityReportPhotoPort;
+	private final LoadFacilityReportPhotoPort loadFacilityReportPhotoPort;
 	private final LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort;
 	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final ReportStatusAlertUseCase reportStatusAlertUseCase;
 	private final SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort;
 	private final FacilityReportPhotoProcessor photoProcessor;
 	private final Clock clock;
+	private final FacilityReportReceiptTokens receiptTokens;
 
 	@Autowired
 	public FacilityReportService(
@@ -74,7 +82,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
 		ReportStatusAlertUseCase reportStatusAlertUseCase,
 		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
-		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		@Value("${easysubway.report.receipt-token-pepper:local-dev-report-receipt-pepper}") String receiptTokenPepper
 	) {
 		this(
 			loadTransitMasterPort,
@@ -86,7 +96,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			reportStatusAlertUseCase,
 			saveFacilityReportReviewAuditPort,
 			loadFacilityReportReviewAuditPort,
-			Clock.systemDefaultZone()
+			loadFacilityReportPhotoPort,
+			Clock.systemDefaultZone(),
+			receiptTokenPepper
 		);
 	}
 
@@ -242,22 +254,104 @@ public class FacilityReportService implements FacilityReportUseCase {
 		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
 		Clock clock
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			defaultUploadedPhotoLoader(),
+			clock,
+			"local-dev-report-receipt-pepper"
+		);
+	}
+
+	FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		Clock clock,
+		String receiptTokenPepper
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			defaultUploadedPhotoLoader(),
+			clock,
+			receiptTokenPepper
+		);
+	}
+
+	FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		Clock clock,
+		String receiptTokenPepper
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
 		this.storeFacilityReportPhotoPort = storeFacilityReportPhotoPort;
+		this.loadFacilityReportPhotoPort = loadFacilityReportPhotoPort;
 		this.loadFacilityReportReviewAuditPort = loadFacilityReportReviewAuditPort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.reportStatusAlertUseCase = reportStatusAlertUseCase;
 		this.saveFacilityReportReviewAuditPort = saveFacilityReportReviewAuditPort;
 		this.photoProcessor = new FacilityReportPhotoProcessor();
 		this.clock = clock;
+		this.receiptTokens = new FacilityReportReceiptTokens(receiptTokenPepper);
 	}
 
 	@Override
 	public FacilityReport createReport(CreateFacilityReportCommand command) {
-		requireReporter(command);
+		Optional<FacilityReport> existing = existingClientSubmission(command);
+		if (existing.isPresent()) {
+			return existing.get();
+		}
+		return createReport(command, null);
+	}
+
+	@Override
+	public CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command) {
+		requireClientSubmissionId(command.clientSubmissionId());
+		FacilityReportReceiptTokens.IssuedReceiptToken receiptToken = receiptTokens.issue(command.clientSubmissionId());
+		Optional<FacilityReport> existing = loadFacilityReportPort.loadReportByClientSubmissionId(
+			command.clientSubmissionId().trim()
+		);
+		if (existing.isPresent()) {
+			return new CreatedFacilityReport(existing.get(), receiptToken.token());
+		}
+		return new CreatedFacilityReport(createReport(command, receiptToken.hash()), receiptToken.token());
+	}
+
+	private FacilityReport createReport(CreateFacilityReportCommand command, String receiptTokenHash) {
+		requireReporter(command, receiptTokenHash);
 		requireReportType(command);
 		requireActiveStation(command.stationId());
 		// 신고 대상 시설이 요청한 역에 속해야 다른 역 시설 상태가 잘못 갱신되는 일을 막을 수 있다.
@@ -265,30 +359,68 @@ public class FacilityReportService implements FacilityReportUseCase {
 		String reportId = "report-" + UUID.randomUUID();
 		FacilityReportPhotoAttachment photo = preparePhoto(command);
 		StoredFacilityReportPhoto storedPhoto = photo == null ? null : storePhoto(reportId, photo);
+		String storedUserId = hasText(command.userId())
+			? command.userId()
+			: "receipt:" + receiptTokenHash.substring(0, 16);
+		String photoObjectKey = storedPhoto == null
+			? hasText(command.photoObjectKey()) ? command.photoObjectKey().trim() : null
+			: storedPhoto.objectKey();
+		String photoSha256 = photo == null
+			? hasText(command.photoSha256()) ? command.photoSha256().trim() : null
+			: photo.sha256();
+		Long photoSizeBytes = command.photoSizeBytes();
+		if (photo != null) {
+			photoSizeBytes = photo.sizeBytes();
+		}
+		String photoFileName = photo == null
+			? hasText(command.photoFileName()) ? command.photoFileName().trim() : null
+			: photo.fileName();
+		String photoContentType = photo == null
+			? hasText(command.photoContentType()) ? command.photoContentType().trim() : null
+			: photo.contentType();
 
 		FacilityReport report = new FacilityReport(
 			reportId,
-			command.userId(),
+			storedUserId,
 			command.stationId(),
 			command.facilityId(),
 			command.reportType(),
 			command.description(),
-			photo == null ? null : photo.fileName(),
-			photo == null ? null : photo.contentType(),
-			storedPhoto == null ? null : storedPhoto.objectKey(),
+			photoFileName,
+			photoContentType,
+			photoObjectKey,
 			storedPhoto == null ? null : storedPhoto.thumbnailObjectKey(),
-			photo == null ? null : photo.sha256(),
-			photo == null ? null : photo.sizeBytes(),
+			photoSha256,
+			photoSizeBytes,
 			command.latitude(),
 			command.longitude(),
 			null,
 			FacilityReportStatus.SUBMITTED,
 			LocalDateTime.now(clock),
 			null,
-			null
+			null,
+			hasText(command.clientSubmissionId()) ? command.clientSubmissionId().trim() : null,
+			receiptTokenHash
 		);
 
 		return saveFacilityReportPort.saveReport(report);
+	}
+
+	private Optional<FacilityReport> existingClientSubmission(CreateFacilityReportCommand command) {
+		if (!hasText(command.clientSubmissionId())) {
+			return Optional.empty();
+		}
+		Optional<FacilityReport> existing = loadFacilityReportPort.loadReportByClientSubmissionId(
+			command.clientSubmissionId().trim()
+		);
+		if (existing.isEmpty()) {
+			return Optional.empty();
+		}
+		FacilityReport report = existing.get();
+		if (hasText(command.userId()) && command.userId().trim().equals(report.userId())) {
+			return existing;
+		}
+		throw new InvalidFacilityReportException("신고 제출 식별자를 확인해야 합니다.");
 	}
 
 	@Override
@@ -301,6 +433,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public FacilityReport getUserReport(String reportId, String userId) {
 		FacilityReport report = getReport(reportId);
 		requireReportOwner(report, userId);
+		return report;
+	}
+
+	@Override
+	public FacilityReport getReportByReceiptToken(String reportId, String receiptToken) {
+		FacilityReport report = getReport(reportId);
+		if (!receiptTokens.matches(receiptToken, report.receiptTokenHash())) {
+			throw new FacilityReportNotFoundException();
+		}
 		return report;
 	}
 
@@ -386,7 +527,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			toStatus(command.decision()),
 			report.createdAt(),
 			LocalDateTime.now(clock),
-			command.reviewedBy()
+			command.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash()
 		);
 
 		// 감사 로그 저장 실패가 신고 상태 변경을 남기지 않도록 같은 트랜잭션에서 먼저 기록한다.
@@ -438,7 +581,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			FacilityReportStatus.RESOLVED,
 			report.createdAt(),
 			report.reviewedAt(),
-			report.reviewedBy()
+			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash()
 		));
 	}
 
@@ -451,9 +596,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 			.toList();
 	}
 
-	private void requireReporter(CreateFacilityReportCommand command) {
-		if (command.userId() == null || command.userId().isBlank()) {
+	private void requireReporter(CreateFacilityReportCommand command, String receiptTokenHash) {
+		if ((command.userId() == null || command.userId().isBlank()) && !hasText(receiptTokenHash)) {
 			throw new InvalidFacilityReportException("사용자 식별자가 필요합니다.");
+		}
+	}
+
+	private void requireClientSubmissionId(String clientSubmissionId) {
+		if (!hasText(clientSubmissionId)) {
+			throw new InvalidFacilityReportException("신고 제출 식별자가 필요합니다.");
 		}
 	}
 
@@ -462,10 +613,52 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private FacilityReportPhotoAttachment preparePhoto(CreateFacilityReportCommand command) {
+		if (hasText(command.photoObjectKey())) {
+			return processObjectPhoto(command);
+		}
 		if (!photoProcessor.hasAnyPhotoField(command.photoFileName(), command.photoContentType(), command.photoDataBase64())) {
 			return null;
 		}
 		return photoProcessor.process(command.photoFileName(), command.photoContentType(), command.photoDataBase64());
+	}
+
+	private FacilityReportPhotoAttachment processObjectPhoto(CreateFacilityReportCommand command) {
+		if (!hasText(command.photoFileName())
+			|| !hasText(command.photoContentType())
+			|| !hasText(command.photoSha256())
+			|| command.photoSizeBytes() == null) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (!command.photoSha256().trim().matches("[0-9a-f]{64}")) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (command.photoSizeBytes() < 1 || command.photoSizeBytes() > 900L * 1024L) {
+			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+		}
+		LoadedFacilityReportPhoto uploadedPhoto = loadFacilityReportPhotoPort.loadFacilityReportPhoto(command.photoObjectKey().trim())
+			.orElseThrow(() -> new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다."));
+		if (!command.photoContentType().trim().equals(uploadedPhoto.contentType())) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (uploadedPhoto.bytes().length != command.photoSizeBytes()) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (!command.photoSha256().trim().equals(sha256Hex(uploadedPhoto.bytes()))) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		return photoProcessor.process(
+			command.photoFileName(),
+			command.photoContentType(),
+			Base64.getEncoder().encodeToString(uploadedPhoto.bytes())
+		);
+	}
+
+	private String sha256Hex(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (java.security.NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
+		}
 	}
 
 	private StoredFacilityReportPhoto storePhoto(String reportId, FacilityReportPhotoAttachment photo) {
@@ -636,5 +829,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			"facility-reports/%s/%s".formatted(command.reportId(), command.sha256()),
 			"facility-reports/%s/%s-thumbnail".formatted(command.reportId(), command.sha256())
 		);
+	}
+
+	private static LoadFacilityReportPhotoPort defaultUploadedPhotoLoader() {
+		return objectKey -> Optional.empty();
 	}
 }

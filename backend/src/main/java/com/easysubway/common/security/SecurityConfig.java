@@ -55,6 +55,30 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(3)
+	SecurityFilterChain reportSecurityFilterChain(
+		HttpSecurity http,
+		AnonymousBearerAuthenticationFilter anonymousBearerAuthenticationFilter
+	) throws Exception {
+		// 신고 접수는 receipt token 흐름을 허용하되 기존 인증 사용자 신고도 같은 엔드포인트에서 유지한다.
+		return http
+			.securityMatcher(
+				"/api/v1/report-uploads",
+				"/api/v1/report-uploads/*",
+				"/api/v1/reports",
+				"/api/v1/reports/*",
+				"/api/v1/reports/*/confirm"
+			)
+			.csrf(AbstractHttpConfigurer::disable)
+			.authorizeHttpRequests(authorize -> authorize
+				.anyRequest().permitAll()
+			)
+			.addFilterBefore(anonymousBearerAuthenticationFilter, BasicAuthenticationFilter.class)
+			.httpBasic(Customizer.withDefaults())
+			.build();
+	}
+
+	@Bean
+	@Order(4)
 	SecurityFilterChain userSecurityFilterChain(
 		HttpSecurity http,
 		AnonymousBearerAuthenticationFilter anonymousBearerAuthenticationFilter
@@ -65,9 +89,6 @@ public class SecurityConfig {
 				"/api/v1/me",
 				"/api/v1/me/reports",
 				"/api/v1/me/favorites/**",
-				"/api/v1/reports",
-				"/api/v1/reports/*",
-				"/api/v1/reports/*/confirm",
 				"/api/v1/routes/*/feedback",
 				"/api/v1/devices",
 				"/api/v1/me/notification-settings"
@@ -82,7 +103,7 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	@Order(4)
+	@Order(5)
 	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
 		// 역 검색과 경로 검색은 로그인 전 이동 계획에 필요한 공개 조회 기능이다.
 		return http

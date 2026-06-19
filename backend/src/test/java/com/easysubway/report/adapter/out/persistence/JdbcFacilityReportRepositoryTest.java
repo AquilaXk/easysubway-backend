@@ -45,7 +45,6 @@ class JdbcFacilityReportRepositoryTest {
 				photo_thumbnail_object_key VARCHAR(255),
 				photo_sha256 CHAR(64),
 				photo_size_bytes BIGINT,
-				photo_data_base64 TEXT,
 				latitude DECIMAL(10, 7),
 				longitude DECIMAL(10, 7),
 				duplicate_of_report_id VARCHAR(120),
@@ -53,6 +52,9 @@ class JdbcFacilityReportRepositoryTest {
 				created_at TIMESTAMP NOT NULL,
 				reviewed_at TIMESTAMP,
 				reviewed_by VARCHAR(120),
+				client_submission_id VARCHAR(120),
+				receipt_token_hash CHAR(64),
+				CONSTRAINT ux_facility_reports_client_submission UNIQUE (client_submission_id),
 				CONSTRAINT fk_facility_reports_duplicate
 					FOREIGN KEY (duplicate_of_report_id) REFERENCES facility_reports(report_id)
 					ON DELETE SET NULL ON UPDATE CASCADE,
@@ -292,11 +294,6 @@ class JdbcFacilityReportRepositoryTest {
 		var otherUserReport = submittedReport("report-2", "anonymous-user-2", 10);
 		repository.saveReport(targetReport);
 		repository.saveReport(otherUserReport);
-		jdbcTemplate.update(
-			"UPDATE facility_reports SET photo_data_base64 = ? WHERE report_id = ?",
-			"legacy-base64",
-			"report-1"
-		);
 
 		int anonymizedCount = repository.anonymizeFacilityReportsByUserId("anonymous-user-1");
 		int anonymizedAgainCount = repository.anonymizeFacilityReportsByUserId("anonymous-user-1");
@@ -321,11 +318,6 @@ class JdbcFacilityReportRepositoryTest {
 			targetReport.reviewedAt(),
 			targetReport.reviewedBy()
 		));
-		assertThat(jdbcTemplate.queryForObject(
-			"SELECT photo_data_base64 FROM facility_reports WHERE report_id = ?",
-			String.class,
-			"report-1"
-		)).isNull();
 		assertThat(repository.loadReport("report-2")).contains(otherUserReport);
 	}
 

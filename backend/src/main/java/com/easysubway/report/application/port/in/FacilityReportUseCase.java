@@ -15,9 +15,13 @@ public interface FacilityReportUseCase {
 
 	FacilityReport createReport(CreateFacilityReportCommand command);
 
+	CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command);
+
 	FacilityReport getReport(String reportId);
 
 	FacilityReport getUserReport(String reportId, String userId);
+
+	FacilityReport getReportByReceiptToken(String reportId, String receiptToken);
 
 	List<FacilityReport> listUserReports(String userId);
 

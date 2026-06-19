@@ -86,12 +86,54 @@ public class JdbcFacilityReportRepository implements
 						status,
 						created_at,
 						reviewed_at,
-						reviewed_by
+						reviewed_by,
+						client_submission_id,
+						receipt_token_hash
 					FROM facility_reports
 					WHERE report_id = ?
 					""",
 				this::mapFacilityReport,
 				reportId
+			));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	@Override
+	public Optional<FacilityReport> loadReportByClientSubmissionId(String clientSubmissionId) {
+		if (clientSubmissionId == null || clientSubmissionId.isBlank()) {
+			return Optional.empty();
+		}
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject(
+				"""
+					SELECT report_id,
+						user_id,
+						station_id,
+						facility_id,
+						report_type,
+						description,
+						photo_file_name,
+						photo_content_type,
+						photo_object_key,
+						photo_thumbnail_object_key,
+						photo_sha256,
+						photo_size_bytes,
+						latitude,
+						longitude,
+						duplicate_of_report_id,
+						status,
+						created_at,
+						reviewed_at,
+						reviewed_by,
+						client_submission_id,
+						receipt_token_hash
+					FROM facility_reports
+					WHERE client_submission_id = ?
+					""",
+				this::mapFacilityReport,
+				clientSubmissionId.trim()
 			));
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
@@ -120,7 +162,9 @@ public class JdbcFacilityReportRepository implements
 					status,
 					created_at,
 					reviewed_at,
-					reviewed_by
+					reviewed_by,
+					client_submission_id,
+					receipt_token_hash
 				FROM facility_reports
 				ORDER BY created_at DESC, report_id ASC
 				""",
@@ -326,7 +370,9 @@ public class JdbcFacilityReportRepository implements
 					duplicate_of_report_id = ?,
 					status = ?,
 					reviewed_at = ?,
-					reviewed_by = ?
+					reviewed_by = ?,
+					client_submission_id = ?,
+					receipt_token_hash = ?
 				WHERE report_id = ?
 					AND status = ?
 				""",
@@ -347,6 +393,8 @@ public class JdbcFacilityReportRepository implements
 			report.status().name(),
 			report.reviewedAt(),
 			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash(),
 			report.id(),
 			expectedStatus.name()
 		);
@@ -370,9 +418,10 @@ public class JdbcFacilityReportRepository implements
 					photo_thumbnail_object_key = NULL,
 					photo_sha256 = NULL,
 					photo_size_bytes = NULL,
-					photo_data_base64 = NULL,
 					latitude = NULL,
-					longitude = NULL
+					longitude = NULL,
+					client_submission_id = NULL,
+					receipt_token_hash = NULL
 				WHERE user_id = ?
 				""",
 			FacilityReport.ANONYMIZED_USER_ID,
@@ -445,9 +494,11 @@ public class JdbcFacilityReportRepository implements
 					status,
 					created_at,
 					reviewed_at,
-					reviewed_by
+					reviewed_by,
+					client_submission_id,
+					receipt_token_hash
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (report_id) DO UPDATE
 				SET user_id = EXCLUDED.user_id,
 					station_id = EXCLUDED.station_id,
@@ -465,7 +516,9 @@ public class JdbcFacilityReportRepository implements
 					duplicate_of_report_id = EXCLUDED.duplicate_of_report_id,
 					status = EXCLUDED.status,
 					reviewed_at = EXCLUDED.reviewed_at,
-					reviewed_by = EXCLUDED.reviewed_by
+					reviewed_by = EXCLUDED.reviewed_by,
+					client_submission_id = EXCLUDED.client_submission_id,
+					receipt_token_hash = EXCLUDED.receipt_token_hash
 				""",
 			reportParameters(report)
 		);
@@ -491,7 +544,9 @@ public class JdbcFacilityReportRepository implements
 					duplicate_of_report_id = ?,
 					status = ?,
 					reviewed_at = ?,
-					reviewed_by = ?
+					reviewed_by = ?,
+					client_submission_id = ?,
+					receipt_token_hash = ?
 				WHERE report_id = ?
 				""",
 			report.userId(),
@@ -511,6 +566,8 @@ public class JdbcFacilityReportRepository implements
 			report.status().name(),
 			report.reviewedAt(),
 			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash(),
 			report.id()
 		);
 	}
@@ -537,9 +594,11 @@ public class JdbcFacilityReportRepository implements
 					status,
 					created_at,
 					reviewed_at,
-					reviewed_by
+					reviewed_by,
+					client_submission_id,
+					receipt_token_hash
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			reportParameters(report)
 		);
@@ -610,7 +669,9 @@ public class JdbcFacilityReportRepository implements
 			report.status().name(),
 			report.createdAt(),
 			report.reviewedAt(),
-			report.reviewedBy()
+			report.reviewedBy(),
+			report.clientSubmissionId(),
+			report.receiptTokenHash()
 		};
 	}
 
@@ -653,7 +714,9 @@ public class JdbcFacilityReportRepository implements
 			FacilityReportStatus.valueOf(resultSet.getString("status")),
 			resultSet.getTimestamp("created_at").toLocalDateTime(),
 			timestampOrNull(resultSet, "reviewed_at"),
-			resultSet.getString("reviewed_by")
+			resultSet.getString("reviewed_by"),
+			resultSet.getString("client_submission_id"),
+			resultSet.getString("receipt_token_hash")
 		);
 	}
 
