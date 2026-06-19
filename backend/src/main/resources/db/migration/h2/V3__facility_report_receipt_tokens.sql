@@ -1,0 +1,14 @@
+-- Allow receipt-token based report status lookup without keeping photo payloads in the report row.
+
+ALTER TABLE facility_reports
+	ADD COLUMN IF NOT EXISTS client_submission_id VARCHAR(120);
+
+ALTER TABLE facility_reports
+	ADD COLUMN IF NOT EXISTS receipt_token_hash CHAR(64);
+
+ALTER TABLE facility_reports
+	ADD CONSTRAINT chk_facility_reports_receipt_token_hash
+		CHECK (receipt_token_hash IS NULL OR char_length(receipt_token_hash) = 64);
+
+CREATE UNIQUE INDEX IF NOT EXISTS ux_facility_reports_client_submission
+	ON facility_reports (client_submission_id);

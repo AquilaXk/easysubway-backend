@@ -372,7 +372,6 @@ CREATE TABLE IF NOT EXISTS facility_reports (
 	description VARCHAR(1000),
 	photo_file_name VARCHAR(255),
 	photo_content_type VARCHAR(80),
-	photo_data_base64 TEXT,
 	latitude DECIMAL(10, 7),
 	longitude DECIMAL(10, 7),
 	duplicate_of_report_id VARCHAR(120),

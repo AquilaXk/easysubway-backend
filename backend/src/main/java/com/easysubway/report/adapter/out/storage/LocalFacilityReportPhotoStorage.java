@@ -4,6 +4,8 @@ import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
 import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort;
+import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
@@ -16,7 +18,8 @@ import org.springframework.stereotype.Component;
 public class LocalFacilityReportPhotoStorage implements
 	StoreFacilityReportPhotoPort,
 	LoadFacilityReportPhotoPort,
-	DeleteFacilityReportPhotoPort {
+	DeleteFacilityReportPhotoPort,
+	StoreFacilityReportUploadedPhotoPort {
 
 	private final Path storageRoot;
 
@@ -38,6 +41,11 @@ public class LocalFacilityReportPhotoStorage implements
 		writeObject(objectKey, command.storedBytes());
 		writeObject(thumbnailObjectKey, command.thumbnailBytes());
 		return new StoredFacilityReportPhoto(objectKey, thumbnailObjectKey);
+	}
+
+	@Override
+	public void storeUploadedReportPhoto(StoreUploadedReportPhotoCommand command) {
+		writeObject(command.objectKey(), command.bytes());
 	}
 
 	@Override

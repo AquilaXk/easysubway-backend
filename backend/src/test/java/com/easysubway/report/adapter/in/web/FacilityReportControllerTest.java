@@ -81,6 +81,50 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고는 receipt token으로 접수 상태 조회를 보호한다")
+	void createReportReturnsReceiptTokenAndStatusRequiresReceiptToken() throws Exception {
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-1",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "엘리베이터 문이 열리지 않습니다.",
+					  "photoFileName": "elevator-door.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoObjectKey": "facility-reports/client-submission-1/photo.jpg",
+					  "photoSha256": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+					  "photoSizeBytes": 4096
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").isNotEmpty())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andExpect(jsonPath("$.data.userId").doesNotExist())
+			.andExpect(jsonPath("$.data.photoDataBase64").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+		String receiptToken = JsonPath.read(response, "$.data.receiptToken");
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
+			.andExpect(status().isNotFound());
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.header("X-Easysubway-Report-Receipt-Token", receiptToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist())
+			.andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+	}
+
+	@Test
 	@DisplayName("시설 신고 생성은 인증된 사용자만 사용할 수 있다")
 	void createReportRequiresAuthentication() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")
@@ -176,7 +220,7 @@ class FacilityReportControllerTest {
 		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "소유자만 볼 수 있는 신고");
 
 		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().isNotFound());
 
 		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
 				.with(httpBasic("admin-test", "admin-test-password")))

@@ -3,10 +3,14 @@ package com.easysubway.report.adapter.in.web;
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
+import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort;
+import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import com.easysubway.report.domain.FacilityReport;
+import com.easysubway.report.domain.InvalidFacilityReportException;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
@@ -18,36 +22,89 @@ import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PutMapping;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RequestBody;
+import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.ResponseStatus;
 import org.springframework.web.bind.annotation.RestController;
+import org.springframework.web.server.ResponseStatusException;
 
 @RestController
 class FacilityReportController {
 
 	private final FacilityReportUseCase facilityReportUseCase;
+	private final StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort;
 
-	FacilityReportController(FacilityReportUseCase facilityReportUseCase) {
+	FacilityReportController(
+		FacilityReportUseCase facilityReportUseCase,
+		StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort
+	) {
 		this.facilityReportUseCase = facilityReportUseCase;
+		this.storeFacilityReportUploadedPhotoPort = storeFacilityReportUploadedPhotoPort;
+	}
+
+	@PostMapping("/api/v1/report-uploads")
+	@ResponseStatus(HttpStatus.CREATED)
+	ApiResponse<FacilityReportUploadIntentResponse> createReportUploadIntent(
+		@RequestBody FacilityReportUploadIntentRequest request
+	) {
+		String uploadId = request.uploadId();
+		String objectKey = "facility-reports/uploads/" + uploadId;
+		return ApiResponse.ok(new FacilityReportUploadIntentResponse(
+			objectKey,
+			"/api/v1/report-uploads/" + uploadId,
+			"PUT"
+		));
+	}
+
+	@PutMapping("/api/v1/report-uploads/{uploadId}")
+	@ResponseStatus(HttpStatus.NO_CONTENT)
+	void uploadReportPhoto(
+		@PathVariable String uploadId,
+		@RequestBody byte[] body
+	) {
+		if (body == null || body.length < 1 || body.length > 900 * 1024) {
+			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+		}
+		storeFacilityReportUploadedPhotoPort.storeUploadedReportPhoto(new StoreUploadedReportPhotoCommand(
+			"facility-reports/uploads/" + requireSafeUploadId(uploadId),
+			body
+		));
 	}
 
 	@PostMapping("/api/v1/reports")
 	@ResponseStatus(HttpStatus.CREATED)
-	ApiResponse<FacilityReportStatusResponse> createReport(
+	ApiResponse<FacilityReportCreatedResponse> createReport(
 		@RequestBody CreateFacilityReportRequest request,
 		Principal principal
 	) {
+		if (request.hasReceiptSubmission()) {
+			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
+			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
+		}
+		if (principal == null) {
+			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+		}
 		FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
-		return ApiResponse.ok(FacilityReportStatusResponse.from(report));
+		return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")
 	ApiResponse<FacilityReportStatusResponse> report(
 		@PathVariable String reportId,
-		Principal principal
+		Principal principal,
+		@RequestHeader(name = "X-Easysubway-Report-Receipt-Token", required = false) String receiptToken
 	) {
+		if (receiptToken != null && !receiptToken.isBlank()) {
+			return ApiResponse.ok(FacilityReportStatusResponse.from(
+				facilityReportUseCase.getReportByReceiptToken(reportId, receiptToken)
+			));
+		}
+		if (principal == null) {
+			throw new com.easysubway.report.domain.FacilityReportNotFoundException();
+		}
 		return ApiResponse.ok(FacilityReportStatusResponse.from(
 			facilityReportUseCase.getUserReport(reportId, principal.getName())
 		));
@@ -71,6 +128,9 @@ class FacilityReportController {
 		@PathVariable String reportId,
 		Principal principal
 	) {
+		if (principal == null) {
+			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+		}
 		return ApiResponse.ok(FacilityReportStatusResponse.from(
 			facilityReportUseCase.confirmReportResult(reportId, principal.getName())
 		));
@@ -106,6 +166,7 @@ class FacilityReportController {
 
 	record CreateFacilityReportRequest(
 		String userId,
+		String clientSubmissionId,
 		String stationId,
 		String facilityId,
 		FacilityReportType reportType,
@@ -113,9 +174,16 @@ class FacilityReportController {
 		String photoFileName,
 		String photoContentType,
 		String photoDataBase64,
+		String photoObjectKey,
+		String photoSha256,
+		Long photoSizeBytes,
 		BigDecimal latitude,
 		BigDecimal longitude
 	) {
+
+		boolean hasReceiptSubmission() {
+			return clientSubmissionId != null && !clientSubmissionId.isBlank();
+		}
 
 		CreateFacilityReportCommand toCommand(String authenticatedUserId) {
 			return new CreateFacilityReportCommand(
@@ -131,6 +199,73 @@ class FacilityReportController {
 				longitude
 			);
 		}
+
+		CreateFacilityReportCommand toReceiptCommand() {
+			return new CreateFacilityReportCommand(
+				null,
+				clientSubmissionId,
+				stationId,
+				facilityId,
+				reportType,
+				description,
+				photoFileName,
+				photoContentType,
+				null,
+				photoObjectKey,
+				photoSha256,
+				photoSizeBytes,
+				null,
+				latitude,
+				longitude
+			);
+		}
+	}
+
+	record FacilityReportUploadIntentRequest(
+		String clientSubmissionId,
+		String photoFileName,
+		String photoContentType,
+		String photoSha256,
+		Long photoSizeBytes
+	) {
+
+		String uploadId() {
+			String normalizedClientSubmissionId = requireSafeValue(clientSubmissionId, "신고 제출 식별자가 필요합니다.");
+			if (photoSha256 == null || !photoSha256.trim().matches("[0-9a-f]{64}")) {
+				throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+			}
+			if (photoSizeBytes == null || photoSizeBytes < 1 || photoSizeBytes > 900L * 1024L) {
+				throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+			}
+			return normalizedClientSubmissionId + "-" + photoSha256.substring(0, 16) + extensionFor(photoContentType);
+		}
+	}
+
+	record FacilityReportUploadIntentResponse(
+		String objectKey,
+		String uploadUrl,
+		String uploadMethod
+	) {
+	}
+
+	private static String requireSafeValue(String value, String message) {
+		if (value == null || !value.trim().matches("[A-Za-z0-9._-]{8,120}")) {
+			throw new InvalidFacilityReportException(message);
+		}
+		return value.trim();
+	}
+
+	private static String requireSafeUploadId(String uploadId) {
+		return requireSafeValue(uploadId, "사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	private static String extensionFor(String contentType) {
+		return switch (contentType == null ? "" : contentType.trim().toLowerCase()) {
+			case "image/png" -> ".png";
+			case "image/webp" -> ".webp";
+			case "image/jpeg" -> ".jpg";
+			default -> throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
+		};
 	}
 
 	record ReviewFacilityReportRequest(
@@ -218,6 +353,35 @@ class FacilityReportController {
 				report.status(),
 				report.createdAt(),
 				report.reviewedAt()
+			);
+		}
+	}
+
+	record FacilityReportCreatedResponse(
+		String id,
+		String stationId,
+		String facilityId,
+		FacilityReportType reportType,
+		String description,
+		String duplicateOfReportId,
+		FacilityReportStatus status,
+		LocalDateTime createdAt,
+		LocalDateTime reviewedAt,
+		String receiptToken
+	) {
+
+		static FacilityReportCreatedResponse from(FacilityReport report, String receiptToken) {
+			return new FacilityReportCreatedResponse(
+				report.id(),
+				report.stationId(),
+				report.facilityId(),
+				report.reportType(),
+				report.description(),
+				report.duplicateOfReportId(),
+				report.status(),
+				report.createdAt(),
+				report.reviewedAt(),
+				receiptToken
 			);
 		}
 	}

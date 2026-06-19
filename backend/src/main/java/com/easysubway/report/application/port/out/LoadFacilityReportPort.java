@@ -16,6 +16,10 @@ public interface LoadFacilityReportPort {
 
 	Optional<FacilityReport> loadReport(String reportId);
 
+	default Optional<FacilityReport> loadReportByClientSubmissionId(String clientSubmissionId) {
+		return Optional.empty();
+	}
+
 	List<FacilityReport> loadReports();
 
 	PageResult<FacilityReportSummary> loadUserReportSummaries(String userId, FacilityReportPageRequest pageRequest);

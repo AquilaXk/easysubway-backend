@@ -40,6 +40,17 @@ public class InMemoryFacilityReportRepository implements
 	}
 
 	@Override
+	public Optional<FacilityReport> loadReportByClientSubmissionId(String clientSubmissionId) {
+		if (clientSubmissionId == null || clientSubmissionId.isBlank()) {
+			return Optional.empty();
+		}
+		return reports.values()
+			.stream()
+			.filter(report -> clientSubmissionId.trim().equals(report.clientSubmissionId()))
+			.findFirst();
+	}
+
+	@Override
 	public List<FacilityReport> loadReports() {
 		return List.copyOf(reports.values());
 	}
