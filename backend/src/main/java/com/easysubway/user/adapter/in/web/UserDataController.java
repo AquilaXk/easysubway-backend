@@ -33,8 +33,7 @@ class UserDataController {
 		int deletedRegisteredDeviceCount,
 		int deletedPushNotificationCount,
 		boolean mobilityProfileDeleted,
-		int anonymizedReportCount,
-		boolean anonymousCredentialsDeleted
+		int anonymizedReportCount
 	) {
 
 		static UserDataDeletionResponse from(UserDataDeletionResult result) {
@@ -48,8 +47,7 @@ class UserDataController {
 				result.deletedRegisteredDeviceCount(),
 				result.deletedPushNotificationCount(),
 				result.mobilityProfileDeleted(),
-				result.anonymizedReportCount(),
-				result.anonymousCredentialsDeleted()
+				result.anonymizedReportCount()
 			);
 		}
 	}

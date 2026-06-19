@@ -10,8 +10,7 @@ public record UserDataDeletionResult(
 	int deletedRegisteredDeviceCount,
 	int deletedPushNotificationCount,
 	boolean mobilityProfileDeleted,
-	int anonymizedReportCount,
-	boolean anonymousCredentialsDeleted
+	int anonymizedReportCount
 ) {
 
 	public UserDataDeletionResult {

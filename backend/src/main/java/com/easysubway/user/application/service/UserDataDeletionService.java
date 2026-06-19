@@ -1,6 +1,5 @@
 package com.easysubway.user.application.service;
 
-import com.easysubway.auth.application.port.out.RegisterAnonymousUserPort;
 import com.easysubway.user.application.port.in.UserDataDeletionUseCase;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
@@ -17,7 +16,6 @@ import org.springframework.stereotype.Service;
 @Service
 public class UserDataDeletionService implements UserDataDeletionUseCase {
 
-	private final RegisterAnonymousUserPort registerAnonymousUserPort;
 	private final DeleteUserFavoriteStationPort deleteUserFavoriteStationPort;
 	private final DeleteUserFavoriteFacilityPort deleteUserFavoriteFacilityPort;
 	private final DeleteUserFavoriteRoutePort deleteUserFavoriteRoutePort;
@@ -28,7 +26,6 @@ public class UserDataDeletionService implements UserDataDeletionUseCase {
 	private final AnonymizeUserFacilityReportPort anonymizeUserFacilityReportPort;
 
 	public UserDataDeletionService(
-		RegisterAnonymousUserPort registerAnonymousUserPort,
 		DeleteUserFavoriteStationPort deleteUserFavoriteStationPort,
 		DeleteUserFavoriteFacilityPort deleteUserFavoriteFacilityPort,
 		DeleteUserFavoriteRoutePort deleteUserFavoriteRoutePort,
@@ -38,7 +35,6 @@ public class UserDataDeletionService implements UserDataDeletionUseCase {
 		DeleteUserMobilityProfilePort deleteUserMobilityProfilePort,
 		AnonymizeUserFacilityReportPort anonymizeUserFacilityReportPort
 	) {
-		this.registerAnonymousUserPort = registerAnonymousUserPort;
 		this.deleteUserFavoriteStationPort = deleteUserFavoriteStationPort;
 		this.deleteUserFavoriteFacilityPort = deleteUserFavoriteFacilityPort;
 		this.deleteUserFavoriteRoutePort = deleteUserFavoriteRoutePort;
@@ -63,8 +59,6 @@ public class UserDataDeletionService implements UserDataDeletionUseCase {
 		int deletedPushNotificationCount = deleteUserPushNotificationPort.deletePushNotifications(normalizedUserId);
 		boolean mobilityProfileDeleted = deleteUserMobilityProfilePort.deleteMobilityProfile(normalizedUserId);
 		int anonymizedReportCount = anonymizeUserFacilityReportPort.anonymizeFacilityReportsByUserId(normalizedUserId);
-		// 인증 정보는 마지막에 제거해 앞선 저장소 정리가 실패하면 사용자가 같은 세션으로 재시도할 수 있게 한다.
-		boolean anonymousCredentialsDeleted = registerAnonymousUserPort.deleteAnonymousUser(normalizedUserId);
 		return new UserDataDeletionResult(
 			normalizedUserId,
 			deletedFavoriteStationCount,
@@ -75,8 +69,7 @@ public class UserDataDeletionService implements UserDataDeletionUseCase {
 			deletedRegisteredDeviceCount,
 			deletedPushNotificationCount,
 			mobilityProfileDeleted,
-			anonymizedReportCount,
-			anonymousCredentialsDeleted
+			anonymizedReportCount
 		);
 	}
 

@@ -24,7 +24,6 @@ import org.springframework.web.filter.OncePerRequestFilter;
 class UserActivityTrackingFilter extends OncePerRequestFilter {
 
 	private static final String API_PREFIX = "/api/v1/";
-	private static final String ANONYMOUS_AUTH_PATH = "/api/v1/auth/anonymous";
 
 	private final RecordUserActivityPort recordUserActivityPort;
 	private final RecordApiTrafficPort recordApiTrafficPort;
@@ -90,7 +89,7 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 
 	private boolean shouldRecordApiTraffic(HttpServletRequest request) {
 		String path = request.getRequestURI();
-		return path.startsWith(API_PREFIX) && !path.equals(ANONYMOUS_AUTH_PATH);
+		return path.startsWith(API_PREFIX);
 	}
 
 	private boolean shouldRecord(HttpServletRequest request, HttpServletResponse response) {
@@ -99,8 +98,7 @@ class UserActivityTrackingFilter extends OncePerRequestFilter {
 		return principal != null
 			&& isAuthenticatedUser(principal)
 			&& response.getStatus() < 400
-			&& path.startsWith(API_PREFIX)
-			&& !path.equals(ANONYMOUS_AUTH_PATH);
+			&& path.startsWith(API_PREFIX);
 	}
 
 	private boolean isAuthenticatedUser(Principal principal) {

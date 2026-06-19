@@ -3,8 +3,6 @@ package com.easysubway.user.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.easysubway.auth.application.port.out.RegisterAnonymousUserPort;
-import com.easysubway.auth.domain.AnonymousUserCredentials;
 import com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
 import com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort;
@@ -23,7 +21,6 @@ class UserDataDeletionServiceTest {
 	@Test
 	@DisplayName("사용자 연결 데이터를 삭제하고 신고 기록은 익명화한다")
 	void deleteUserDataClearsLinkedDataAndAnonymizesReports() {
-		var anonymousUsers = new RecordingAnonymousUserRegistry(true);
 		var favoriteStations = new RecordingDeleteUserFavoriteStationPort(2);
 		var favoriteFacilities = new RecordingDeleteUserFavoriteFacilityPort(1);
 		var favoriteRoutes = new RecordingDeleteUserFavoriteRoutePort(3);
@@ -33,7 +30,6 @@ class UserDataDeletionServiceTest {
 		var mobilityProfile = new RecordingDeleteUserMobilityProfilePort(true);
 		var reports = new RecordingAnonymizeUserFacilityReportPort(5);
 		var service = new UserDataDeletionService(
-			anonymousUsers,
 			favoriteStations,
 			favoriteFacilities,
 			favoriteRoutes,
@@ -56,7 +52,6 @@ class UserDataDeletionServiceTest {
 		assertThat(result.deletedPushNotificationCount()).isEqualTo(4);
 		assertThat(result.mobilityProfileDeleted()).isTrue();
 		assertThat(result.anonymizedReportCount()).isEqualTo(5);
-		assertThat(result.anonymousCredentialsDeleted()).isTrue();
 		assertThat(favoriteStations.requestedUserId).isEqualTo("anonymous-user-1");
 		assertThat(routeFeedbacks.requestedUserId).isEqualTo("anonymous-user-1");
 		assertThat(reports.requestedUserId).isEqualTo("anonymous-user-1");
@@ -66,7 +61,6 @@ class UserDataDeletionServiceTest {
 	@DisplayName("사용자 데이터 삭제는 사용자 식별자를 요구한다")
 	void deleteUserDataRequiresUserId() {
 		var service = new UserDataDeletionService(
-			new RecordingAnonymousUserRegistry(false),
 			new RecordingDeleteUserFavoriteStationPort(0),
 			new RecordingDeleteUserFavoriteFacilityPort(0),
 			new RecordingDeleteUserFavoriteRoutePort(0),
@@ -83,34 +77,6 @@ class UserDataDeletionServiceTest {
 		assertThatThrownBy(() -> service.deleteUserData(null))
 			.isInstanceOf(InvalidUserDataDeletionException.class)
 			.hasMessage("사용자 식별자가 필요합니다.");
-	}
-
-	private static final class RecordingAnonymousUserRegistry implements RegisterAnonymousUserPort {
-
-		private final boolean deleted;
-
-		private RecordingAnonymousUserRegistry(boolean deleted) {
-			this.deleted = deleted;
-		}
-
-		@Override
-		public boolean existsByUserId(String userId) {
-			return false;
-		}
-
-		@Override
-		public boolean isAnonymousUser(String userId) {
-			return deleted;
-		}
-
-		@Override
-		public void registerAnonymousUser(AnonymousUserCredentials credentials) {
-		}
-
-		@Override
-		public boolean deleteAnonymousUser(String userId) {
-			return deleted;
-		}
 	}
 
 	private static final class RecordingDeleteUserFavoriteStationPort implements DeleteUserFavoriteStationPort {

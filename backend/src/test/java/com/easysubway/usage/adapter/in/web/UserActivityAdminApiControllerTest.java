@@ -45,7 +45,7 @@ class UserActivityAdminApiControllerTest {
 	@Test
 	@DisplayName("관리자는 사용자 활동 요약을 JSON으로 조회한다")
 	void adminGetsUserActivitySummary() throws Exception {
-		mockMvc.perform(get("/api/v1/me")
+		mockMvc.perform(get("/api/v1/me/favorites/stations")
 				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk());
 

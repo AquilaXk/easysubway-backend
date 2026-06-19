@@ -1,6 +1,5 @@
 package com.easysubway.report.adapter.in.web;
 
-import com.easysubway.auth.adapter.out.security.AnonymousBearerPrincipal;
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
@@ -21,7 +20,6 @@ import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.http.HttpStatus;
-import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PutMapping;
@@ -82,7 +80,7 @@ class FacilityReportController {
 		@RequestBody CreateFacilityReportRequest request,
 		Principal principal
 	) {
-		if (request.hasReceiptSubmission() && (principal == null || isAnonymousBearer(principal))) {
+		if (request.hasReceiptSubmission() && principal == null) {
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
 		}
@@ -91,14 +89,6 @@ class FacilityReportController {
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
 		}
 		throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-	}
-
-	private boolean isAnonymousBearer(Principal principal) {
-		if (principal instanceof AnonymousBearerPrincipal) {
-			return true;
-		}
-		return principal instanceof Authentication authentication
-			&& authentication.getPrincipal() instanceof AnonymousBearerPrincipal;
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")

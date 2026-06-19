@@ -42,7 +42,7 @@ class UserActivityTrackingIntegrationTest {
 	@Test
 	@DisplayName("인증 사용자 API 요청은 관리자 활동 현황에 일별 고유 사용자로 반영된다")
 	void authenticatedApiRequestAppearsOnAdminActivityDashboard() throws Exception {
-		mockMvc.perform(get("/api/v1/me")
+		mockMvc.perform(get("/api/v1/me/favorites/stations")
 				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isOk());
 

@@ -56,8 +56,8 @@ class UserDataControllerTest {
 			.andExpect(jsonPath("$.data.deletedRegisteredDeviceCount").value(1))
 			.andExpect(jsonPath("$.data.deletedPushNotificationCount").value(1))
 			.andExpect(jsonPath("$.data.mobilityProfileDeleted").value(true))
-			.andExpect(jsonPath("$.data.anonymizedReportCount").value(1))
-			.andExpect(jsonPath("$.data.anonymousCredentialsDeleted").value(false));
+			.andExpect(jsonPath("$.data.anonymousCredentialsDeleted").doesNotExist())
+			.andExpect(jsonPath("$.data.anonymizedReportCount").value(1));
 
 		mockMvc.perform(get("/api/v1/me/favorites/stations")
 				.with(httpBasic("configured-user", "configured-password")))

@@ -67,9 +67,8 @@ class UserActivityTrackingFilterTest {
 	}
 
 	@Test
-	@DisplayName("인증 발급과 관리자 요청은 제외하고 일반 API 요청은 오류율에 기록한다")
-	void authAndAdminRequestsAreIgnoredFromTrafficMetric() throws Exception {
-		filter.doFilter(apiRequest("/api/v1/auth/anonymous", "anonymous-user-1"), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(90)));
+	@DisplayName("관리자 요청은 제외하고 일반 API 요청은 오류율에 기록한다")
+	void adminRequestsAreIgnoredFromTrafficMetric() throws Exception {
 		filter.doFilter(apiRequest("/admin/routes/searches/page", "admin-user"), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(95)));
 		filter.doFilter(apiRequest("/api/v1/routes/search", null), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(110)));
 
@@ -80,7 +79,7 @@ class UserActivityTrackingFilterTest {
 	}
 
 	@Test
-	@DisplayName("Spring Security 익명 인증 사용자의 공개 API 요청은 기록하지 않는다")
+	@DisplayName("Spring Security anonymous 사용자의 공개 API 요청은 기록하지 않는다")
 	void anonymousAuthenticationIsIgnored() throws Exception {
 		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/routes/search");
 		request.setUserPrincipal(new AnonymousAuthenticationToken(

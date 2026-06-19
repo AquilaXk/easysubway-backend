@@ -42,14 +42,12 @@ class DatabaseMigrationContainerTest {
 			.contains(
 				"flyway_schema_history",
 				"batch_job_instance",
-				"guest_accounts",
-				"anonymous_auth_tokens",
 				"facility_reports",
 				"push_notification_outbox"
 			);
 		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1");
 		assertThat(foreignKeyNames(jdbcTemplate))
-			.contains("fk_anonymous_auth_tokens_user", "fk_facility_report_review_audits_report");
+			.contains("fk_facility_report_review_audits_report");
 	}
 
 	private List<String> tableNames(JdbcTemplate jdbcTemplate) {

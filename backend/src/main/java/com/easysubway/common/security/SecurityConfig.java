@@ -1,7 +1,5 @@
 package com.easysubway.common.security;
 
-import com.easysubway.auth.adapter.out.security.AnonymousBearerAuthenticationFilter;
-import com.easysubway.auth.application.port.out.AnonymousAuthTokenPort;
 import java.util.Arrays;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
@@ -15,7 +13,6 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
-import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
@@ -49,17 +46,9 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	AnonymousBearerAuthenticationFilter anonymousBearerAuthenticationFilter(AnonymousAuthTokenPort anonymousAuthTokenPort) {
-		return new AnonymousBearerAuthenticationFilter(anonymousAuthTokenPort);
-	}
-
-	@Bean
 	@Order(3)
-	SecurityFilterChain reportSecurityFilterChain(
-		HttpSecurity http,
-		AnonymousBearerAuthenticationFilter anonymousBearerAuthenticationFilter
-	) throws Exception {
-		// 신고 접수는 receipt token 흐름을 허용하되 기존 인증 사용자 신고도 같은 엔드포인트에서 유지한다.
+	SecurityFilterChain reportSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 신고 접수와 상태 조회는 신고별 receipt token 흐름을 사용한다.
 		return http
 			.securityMatcher(
 				"/api/v1/report-uploads",
@@ -72,18 +61,14 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().permitAll()
 			)
-			.addFilterBefore(anonymousBearerAuthenticationFilter, BasicAuthenticationFilter.class)
 			.httpBasic(Customizer.withDefaults())
 			.build();
 	}
 
 	@Bean
 	@Order(4)
-	SecurityFilterChain userSecurityFilterChain(
-		HttpSecurity http,
-		AnonymousBearerAuthenticationFilter anonymousBearerAuthenticationFilter
-	) throws Exception {
-		// 사용자별 데이터는 URL이나 본문 userId가 아니라 인증 계정을 기준으로 다룬다.
+	SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
+		// 사용자별 관리 API는 임시 운영 검증용 Basic 인증만 허용하고 앱 기본 경로에서는 호출하지 않는다.
 		return http
 			.securityMatcher(
 				"/api/v1/me",
@@ -97,7 +82,6 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.anyRequest().authenticated()
 			)
-			.addFilterBefore(anonymousBearerAuthenticationFilter, BasicAuthenticationFilter.class)
 			.httpBasic(Customizer.withDefaults())
 			.build();
 	}

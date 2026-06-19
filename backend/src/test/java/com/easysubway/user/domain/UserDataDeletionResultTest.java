@@ -29,8 +29,7 @@ class UserDataDeletionResultTest {
 			0,
 			0,
 			false,
-			0,
-			false
+			0
 		))
 			.isInstanceOf(InvalidUserDataDeletionException.class)
 			.hasMessage("삭제 결과 건수는 음수일 수 없습니다.");
@@ -47,8 +46,7 @@ class UserDataDeletionResultTest {
 			0,
 			0,
 			false,
-			0,
-			false
+			0
 		);
 	}
 }
