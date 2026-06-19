@@ -100,6 +100,30 @@ ALTER TABLE data_collection_runs
 CREATE INDEX IF NOT EXISTS idx_data_collection_runs_started_at
 	ON data_collection_runs (started_at DESC);
 
+CREATE TABLE IF NOT EXISTS data_source_raw_archives (
+	archive_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	run_id VARCHAR(80) NOT NULL,
+	source VARCHAR(40) NOT NULL,
+	source_url VARCHAR(1000) NOT NULL,
+	storage_uri VARCHAR(1000) NOT NULL,
+	payload_sha256 VARCHAR(64) NOT NULL,
+	content_type VARCHAR(120),
+	captured_at TIMESTAMP NOT NULL,
+	CONSTRAINT fk_data_source_raw_archives_run
+		FOREIGN KEY (run_id) REFERENCES data_collection_runs(run_id)
+		ON DELETE RESTRICT ON UPDATE CASCADE,
+	CONSTRAINT chk_data_source_raw_archives_source
+		CHECK (source IN ('TRANSIT_MASTER')),
+	CONSTRAINT chk_data_source_raw_archives_sha256
+		CHECK (payload_sha256 ~ '^[0-9a-f]{64}$')
+);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_raw_archives_run
+	ON data_source_raw_archives (run_id, archive_id ASC);
+
+CREATE INDEX IF NOT EXISTS idx_data_source_raw_archives_source_captured
+	ON data_source_raw_archives (source, captured_at DESC, archive_id ASC);
+
 CREATE TABLE IF NOT EXISTS mobility_profiles (
 	user_id VARCHAR(120) NOT NULL PRIMARY KEY,
 	mobility_type VARCHAR(40) NOT NULL,
