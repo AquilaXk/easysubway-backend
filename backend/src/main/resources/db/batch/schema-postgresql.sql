@@ -359,6 +359,28 @@ CREATE INDEX IF NOT EXISTS idx_facility_reports_user
 CREATE INDEX IF NOT EXISTS idx_facility_reports_status_created
 	ON facility_reports (status, created_at DESC, report_id ASC);
 
+CREATE TABLE IF NOT EXISTS facility_report_review_audits (
+	audit_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	report_id VARCHAR(120) NOT NULL,
+	reviewer_id VARCHAR(120) NOT NULL,
+	decision VARCHAR(40) NOT NULL,
+	previous_status VARCHAR(40) NOT NULL,
+	next_status VARCHAR(40) NOT NULL,
+	created_at TIMESTAMP NOT NULL,
+	CONSTRAINT fk_facility_report_review_audits_report
+		FOREIGN KEY (report_id) REFERENCES facility_reports(report_id)
+		ON DELETE RESTRICT ON UPDATE CASCADE,
+	CONSTRAINT chk_facility_report_review_audits_decision
+		CHECK (decision IN ('ACCEPT', 'REJECT', 'MARK_DUPLICATE')),
+	CONSTRAINT chk_facility_report_review_audits_previous_status
+		CHECK (previous_status IN ('SUBMITTED', 'DUPLICATE', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'RESOLVED')),
+	CONSTRAINT chk_facility_report_review_audits_next_status
+		CHECK (next_status IN ('SUBMITTED', 'DUPLICATE', 'UNDER_REVIEW', 'ACCEPTED', 'REJECTED', 'RESOLVED'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_facility_report_review_audits_report
+	ON facility_report_review_audits (report_id, created_at ASC, audit_id ASC);
+
 CREATE TABLE IF NOT EXISTS notification_settings (
 	user_id VARCHAR(120) NOT NULL PRIMARY KEY,
 	favorite_station_facility_alerts BOOLEAN NOT NULL,
