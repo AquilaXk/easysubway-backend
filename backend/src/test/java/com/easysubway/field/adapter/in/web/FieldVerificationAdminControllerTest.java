@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
@@ -35,6 +36,21 @@ class FieldVerificationAdminControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Test
+	@DisplayName("관리자는 현장 검증 대상 목록을 조회한다")
+	void adminListsStationFieldVerifications() throws Exception {
+		mockMvc.perform(get("/admin/field-verifications/stations")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].sessionId").value("field-verification-sangnoksu-2026-06"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sangnoksu"))
+			.andExpect(jsonPath("$.data[0].status").value("IN_PROGRESS"))
+			.andExpect(jsonPath("$.data[1].sessionId").value("field-verification-sadang-2026-06"))
+			.andExpect(jsonPath("$.data[1].stationId").value("station-sadang"))
+			.andExpect(jsonPath("$.data[1].status").value("PLANNED"));
+	}
 
 	@Test
 	@DisplayName("관리자는 역별 현장 검증 세션과 항목을 조회한다")
@@ -114,22 +130,32 @@ class FieldVerificationAdminControllerTest {
 	@Test
 	@DisplayName("현장 검증 CSV는 파일명과 CSV 값을 안전하게 escape한다")
 	void fieldVerificationCsvEscapesFilenameAndCsvValues() {
-		FieldVerificationAdminController controller = new FieldVerificationAdminController(stationId -> new FieldVerificationSession(
-			"session-formula",
-			"station\r\nid",
-			"상록수,검증",
-			LocalDate.of(2026, 6, 19),
-			"field\"team",
-			FieldVerificationStatus.IN_PROGRESS,
-			"세션 비고",
-			List.of(new FieldVerificationItem(
-				"item-1",
-				FieldVerificationItemType.EXIT,
-				"=cmd",
-				FieldVerificationStatus.VERIFIED,
-				"쉼표, 따옴표\" 개행\n수식 +1"
-			))
-		));
+		FieldVerificationAdminController controller = new FieldVerificationAdminController(new FieldVerificationUseCase() {
+			@Override
+			public List<FieldVerificationSession> listStationVerifications() {
+				return List.of();
+			}
+
+			@Override
+			public FieldVerificationSession getStationVerification(String stationId) {
+				return new FieldVerificationSession(
+					"session-formula",
+					"station\r\nid",
+					"상록수,검증",
+					LocalDate.of(2026, 6, 19),
+					"field\"team",
+					FieldVerificationStatus.IN_PROGRESS,
+					"세션 비고",
+					List.of(new FieldVerificationItem(
+						"item-1",
+						FieldVerificationItemType.EXIT,
+						"=cmd",
+						FieldVerificationStatus.VERIFIED,
+						"쉼표, 따옴표\" 개행\n수식 +1"
+					))
+				);
+			}
+		});
 
 		var response = controller.stationFieldVerificationCsv("station\r\nid");
 
@@ -142,6 +168,13 @@ class FieldVerificationAdminControllerTest {
 	@Test
 	@DisplayName("현장 검증 API는 관리자 인증을 요구한다")
 	void fieldVerificationRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/field-verifications/stations"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/field-verifications/stations")
+				.with(httpBasic("anonymous-user-1", "user-test-password")))
+			.andExpect(status().isForbidden());
+
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sangnoksu"))
 			.andExpect(status().isUnauthorized());
 

@@ -63,4 +63,17 @@ class FieldVerificationServiceTest {
 			.extracting(item -> item.status())
 			.containsOnly(FieldVerificationStatus.PLANNED);
 	}
+
+	@Test
+	@DisplayName("현장 검증 대상 세션 목록을 조회한다")
+	void listsFieldVerificationBaselines() {
+		var sessions = service.listStationVerifications();
+
+		assertThat(sessions)
+			.extracting(session -> session.stationId())
+			.containsExactly("station-sangnoksu", "station-sadang");
+		assertThat(sessions)
+			.extracting(session -> session.status())
+			.containsExactly(FieldVerificationStatus.IN_PROGRESS, FieldVerificationStatus.PLANNED);
+	}
 }

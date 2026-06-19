@@ -49,6 +49,11 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 	);
 
 	@Override
+	public List<FieldVerificationSession> listStationVerifications() {
+		return List.of(SANGNOKSU_BASELINE, SADANG_BASELINE);
+	}
+
+	@Override
 	public FieldVerificationSession getStationVerification(String stationId) {
 		if (SANGNOKSU_STATION_ID.equals(stationId)) {
 			return SANGNOKSU_BASELINE;

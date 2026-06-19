@@ -27,6 +27,13 @@ class FieldVerificationAdminController {
 		this.fieldVerificationUseCase = fieldVerificationUseCase;
 	}
 
+	@GetMapping("/admin/field-verifications/stations")
+	ApiResponse<List<FieldVerificationView>> stationFieldVerifications() {
+		return ApiResponse.ok(fieldVerificationUseCase.listStationVerifications().stream()
+			.map(FieldVerificationView::from)
+			.toList());
+	}
+
 	@GetMapping("/admin/field-verifications/stations/{stationId}")
 	ApiResponse<FieldVerificationView> stationFieldVerification(@PathVariable String stationId) {
 		return ApiResponse.ok(FieldVerificationView.from(fieldVerificationUseCase.getStationVerification(stationId)));
