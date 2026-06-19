@@ -4,6 +4,7 @@ import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.application.port.out.FieldVerificationChangeHistoryRepository;
+import com.easysubway.field.application.port.out.FieldVerificationSessionRepository;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
@@ -11,10 +12,9 @@ import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.LinkedHashMap;
 import java.util.List;
-import java.util.Map;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class FieldVerificationService implements FieldVerificationUseCase {
@@ -53,18 +53,22 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 			item("field-verification-sadang-platform-transfer", FieldVerificationItemType.PLATFORM_TRANSFER, "2호선과 4호선 환승 접근 동선", FieldVerificationStatus.PLANNED)
 		)
 	);
-	private final Map<String, FieldVerificationSession> sessionsByStationId = new LinkedHashMap<>();
+	private final FieldVerificationSessionRepository sessionRepository;
 	private final FieldVerificationChangeHistoryRepository historyRepository;
 
-	public FieldVerificationService(FieldVerificationChangeHistoryRepository historyRepository) {
+	public FieldVerificationService(
+		FieldVerificationSessionRepository sessionRepository,
+		FieldVerificationChangeHistoryRepository historyRepository
+	) {
+		this.sessionRepository = sessionRepository;
 		this.historyRepository = historyRepository;
-		sessionsByStationId.put(SANGNOKSU_STATION_ID, SANGNOKSU_BASELINE);
-		sessionsByStationId.put(SADANG_STATION_ID, SADANG_BASELINE);
+		seedBaselineSession(SANGNOKSU_BASELINE);
+		seedBaselineSession(SADANG_BASELINE);
 	}
 
 	@Override
 	public synchronized List<FieldVerificationSession> listStationVerifications() {
-		return List.copyOf(sessionsByStationId.values());
+		return sessionRepository.listAll();
 	}
 
 	@Override
@@ -73,6 +77,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 	}
 
 	@Override
+	@Transactional
 	public synchronized FieldVerificationSession updateItemStatus(UpdateFieldVerificationItemStatusCommand command) {
 		FieldVerificationSession session = findSession(command.stationId());
 		FieldVerificationItem previousItem = session.items().stream()
@@ -95,7 +100,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 			session.note(),
 			items
 		);
-		sessionsByStationId.put(session.stationId(), updated);
+		sessionRepository.save(updated);
 		addHistory(session, previousItem, command);
 		return updated;
 	}
@@ -107,11 +112,14 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 	}
 
 	private FieldVerificationSession findSession(String stationId) {
-		FieldVerificationSession session = sessionsByStationId.get(stationId);
-		if (session == null) {
-			throw new ResourceNotFoundException("현장 검증 기준선을 찾을 수 없습니다.");
+		return sessionRepository.findByStationId(stationId)
+			.orElseThrow(() -> new ResourceNotFoundException("현장 검증 기준선을 찾을 수 없습니다."));
+	}
+
+	private void seedBaselineSession(FieldVerificationSession session) {
+		if (sessionRepository.findByStationId(session.stationId()).isEmpty()) {
+			sessionRepository.save(session);
 		}
-		return session;
 	}
 
 	private FieldVerificationItem updateItem(

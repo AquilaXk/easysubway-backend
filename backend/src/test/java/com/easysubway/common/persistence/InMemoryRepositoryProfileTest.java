@@ -7,6 +7,7 @@ import com.easysubway.favorite.adapter.out.persistence.InMemoryFavoriteFacilityR
 import com.easysubway.favorite.adapter.out.persistence.InMemoryFavoriteRouteRepository;
 import com.easysubway.favorite.adapter.out.persistence.InMemoryFavoriteStationRepository;
 import com.easysubway.field.adapter.out.persistence.InMemoryFieldVerificationChangeHistoryRepository;
+import com.easysubway.field.adapter.out.persistence.InMemoryFieldVerificationSessionRepository;
 import com.easysubway.notification.adapter.out.persistence.InMemoryNotificationPreferenceRepository;
 import com.easysubway.notification.adapter.out.persistence.InMemoryPushNotificationOutboxRepository;
 import com.easysubway.profile.adapter.out.persistence.InMemoryMobilityProfileRepository;
@@ -40,7 +41,7 @@ class InMemoryRepositoryProfileTest {
 	@Test
 	@DisplayName("검증 대상에는 운영 데이터가 유실될 수 있는 인메모리 저장소를 모두 포함한다")
 	void allStatefulInMemoryRepositoriesAreCovered() {
-		assertThat(inMemoryRepositories()).hasSize(13);
+		assertThat(inMemoryRepositories()).hasSize(14);
 	}
 
 	static Stream<Class<?>> inMemoryRepositories() {
@@ -50,6 +51,7 @@ class InMemoryRepositoryProfileTest {
 			InMemoryFavoriteRouteRepository.class,
 			InMemoryFavoriteStationRepository.class,
 			InMemoryFieldVerificationChangeHistoryRepository.class,
+			InMemoryFieldVerificationSessionRepository.class,
 			InMemoryFacilityReportRepository.class,
 			InMemoryFacilityReportReviewAuditRepository.class,
 			InMemoryMobilityProfileRepository.class,

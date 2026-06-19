@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.field.adapter.out.persistence.InMemoryFieldVerificationChangeHistoryRepository;
+import com.easysubway.field.adapter.out.persistence.InMemoryFieldVerificationSessionRepository;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItemType;
@@ -18,7 +19,9 @@ class FieldVerificationServiceTest {
 
 	private final InMemoryFieldVerificationChangeHistoryRepository historyRepository =
 		new InMemoryFieldVerificationChangeHistoryRepository();
-	private final FieldVerificationService service = new FieldVerificationService(historyRepository);
+	private final InMemoryFieldVerificationSessionRepository sessionRepository =
+		new InMemoryFieldVerificationSessionRepository();
+	private final FieldVerificationService service = new FieldVerificationService(sessionRepository, historyRepository);
 
 	@Test
 	@DisplayName("상록수역 필수 현장 검증 항목을 조회한다")
@@ -104,6 +107,10 @@ class FieldVerificationServiceTest {
 				assertThat(item.status()).isEqualTo(FieldVerificationStatus.NEEDS_RECHECK);
 				assertThat(item.note()).isEqualTo("엘리베이터 운행 중지 안내문 확인 필요");
 			});
+		assertThat(sessionRepository.findByStationId("station-sadang"))
+			.get()
+			.extracting(stored -> stored.status())
+			.isEqualTo(FieldVerificationStatus.NEEDS_RECHECK);
 	}
 
 	@Test
