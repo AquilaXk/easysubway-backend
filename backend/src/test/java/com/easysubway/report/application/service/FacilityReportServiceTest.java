@@ -240,6 +240,7 @@ class FacilityReportServiceTest {
 			11L
 		)));
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"client-submission-2",
 			"facility-reports/uploads/client-submission-1-photo.jpg",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			11L
@@ -1089,9 +1090,18 @@ class FacilityReportServiceTest {
 		String photoSha256,
 		Long photoSizeBytes
 	) {
+		return objectPhotoReportCommand("client-submission-1", photoObjectKey, photoSha256, photoSizeBytes);
+	}
+
+	private CreateFacilityReportCommand objectPhotoReportCommand(
+		String clientSubmissionId,
+		String photoObjectKey,
+		String photoSha256,
+		Long photoSizeBytes
+	) {
 		return new CreateFacilityReportCommand(
 			"anonymous-user-photo",
-			"client-submission-1",
+			clientSubmissionId,
 			"station-sangnoksu",
 			"facility-sangnoksu-elevator-1",
 			FacilityReportType.BROKEN,

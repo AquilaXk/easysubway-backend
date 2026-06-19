@@ -80,15 +80,15 @@ class FacilityReportController {
 		@RequestBody CreateFacilityReportRequest request,
 		Principal principal
 	) {
+		if (principal != null) {
+			FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
+			return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
+		}
 		if (request.hasReceiptSubmission()) {
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
 		}
-		if (principal == null) {
-			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
-		}
-		FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
-		return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
+		throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")
@@ -188,6 +188,7 @@ class FacilityReportController {
 		CreateFacilityReportCommand toCommand(String authenticatedUserId) {
 			return new CreateFacilityReportCommand(
 				authenticatedUserId,
+				clientSubmissionId,
 				stationId,
 				facilityId,
 				reportType,
@@ -195,6 +196,10 @@ class FacilityReportController {
 				photoFileName,
 				photoContentType,
 				photoDataBase64,
+				photoObjectKey,
+				photoSha256,
+				photoSizeBytes,
+				null,
 				latitude,
 				longitude
 			);

@@ -120,6 +120,48 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("인증 사용자의 제출 식별자 신고는 내 신고로 유지된다")
+	void authenticatedClientSubmissionRemainsUserReport() throws Exception {
+		String requestBody = """
+			{
+			  "clientSubmissionId": "client-submission-auth-1",
+			  "userId": "spoofed-user",
+			  "stationId": "station-sangnoksu",
+			  "facilityId": "facility-sangnoksu-elevator-1",
+			  "reportType": "BROKEN",
+			  "description": "엘리베이터 문이 열리지 않습니다."
+			}
+			""";
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(requestBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").isNotEmpty())
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(requestBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist());
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId));
+	}
+
+	@Test
 	@DisplayName("시설 신고 생성은 인증된 사용자만 사용할 수 있다")
 	void createReportRequiresAuthentication() throws Exception {
 		mockMvc.perform(post("/api/v1/reports")

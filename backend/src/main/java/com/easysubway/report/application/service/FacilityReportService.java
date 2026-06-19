@@ -329,6 +329,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 
 	@Override
 	public FacilityReport createReport(CreateFacilityReportCommand command) {
+		Optional<FacilityReport> existing = existingClientSubmission(command);
+		if (existing.isPresent()) {
+			return existing.get();
+		}
 		return createReport(command, null);
 	}
 
@@ -398,6 +402,23 @@ public class FacilityReportService implements FacilityReportUseCase {
 		);
 
 		return saveFacilityReportPort.saveReport(report);
+	}
+
+	private Optional<FacilityReport> existingClientSubmission(CreateFacilityReportCommand command) {
+		if (!hasText(command.clientSubmissionId())) {
+			return Optional.empty();
+		}
+		Optional<FacilityReport> existing = loadFacilityReportPort.loadReportByClientSubmissionId(
+			command.clientSubmissionId().trim()
+		);
+		if (existing.isEmpty()) {
+			return Optional.empty();
+		}
+		FacilityReport report = existing.get();
+		if (hasText(command.userId()) && command.userId().trim().equals(report.userId())) {
+			return existing;
+		}
+		throw new InvalidFacilityReportException("신고 제출 식별자를 확인해야 합니다.");
 	}
 
 	@Override
