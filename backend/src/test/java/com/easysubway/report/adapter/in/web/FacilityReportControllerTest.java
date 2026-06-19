@@ -1,12 +1,14 @@
 package com.easysubway.report.adapter.in.web;
 
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.authentication;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.auth.adapter.out.security.AnonymousBearerPrincipal;
 import com.jayway.jsonpath.JsonPath;
 import java.util.Base64;
 import java.util.List;
@@ -17,6 +19,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -117,6 +121,79 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.data.id").value(reportId))
 			.andExpect(jsonPath("$.data.receiptToken").doesNotExist())
 			.andExpect(jsonPath("$.data.status").value("SUBMITTED"));
+	}
+
+	@Test
+	@DisplayName("익명 Bearer 신고는 receipt token으로 접수 상태를 조회한다")
+	void anonymousBearerClientSubmissionReturnsReceiptToken() throws Exception {
+		String accessToken = issueAnonymousAccessToken();
+
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.header("Authorization", "Bearer " + accessToken)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-bearer-1",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "엘리베이터 문이 열리지 않습니다."
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").isNotEmpty())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andExpect(jsonPath("$.data.userId").doesNotExist())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+		String receiptToken = JsonPath.read(response, "$.data.receiptToken");
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.header("X-Easysubway-Report-Receipt-Token", receiptToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId));
+	}
+
+	@Test
+	@DisplayName("익명 인증 신고도 제출 식별자가 있으면 receipt token을 발급한다")
+	void anonymousPrincipalReceiptSubmissionReturnsReceiptToken() throws Exception {
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.with(authentication(new UsernamePasswordAuthenticationToken(
+					new AnonymousBearerPrincipal("anonymous-user-1"),
+					null,
+					List.of(new SimpleGrantedAuthority("ROLE_USER"))
+				)))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-anonymous-1",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "엘리베이터 문이 열리지 않습니다."
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").isNotEmpty())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+		String receiptToken = JsonPath.read(response, "$.data.receiptToken");
+
+		mockMvc.perform(get("/api/v1/reports/{reportId}", reportId)
+				.header("X-Easysubway-Report-Receipt-Token", receiptToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId));
 	}
 
 	@Test
@@ -852,6 +929,18 @@ class FacilityReportControllerTest {
 
 	private String createReport(String userId, String description) throws Exception {
 		return createReport("basic-user", "user-test-password", userId, description);
+	}
+
+	private String issueAnonymousAccessToken() throws Exception {
+		String response = mockMvc.perform(post("/api/v1/auth/anonymous"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.accessToken").isNotEmpty())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		return JsonPath.read(response, "$.data.accessToken");
 	}
 
 	private String createReport(

@@ -32,11 +32,14 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -228,22 +231,42 @@ class FacilityReportServiceTest {
 	@Test
 	@DisplayName("시설 신고 object 사진은 업로드 객체 무결성을 검증한다")
 	void createReportVerifiesUploadedPhotoObjectMetadata() {
+		byte[] jpegBytes = validJpegBytes();
 		FacilityReportService service = serviceWithUploadedPhoto(
 			"facility-reports/uploads/client-submission-1-photo.jpg",
 			"image/jpeg",
-			"image-bytes".getBytes(StandardCharsets.UTF_8)
+			jpegBytes
 		);
 
 		assertThatNoException().isThrownBy(() -> service.createReport(objectPhotoReportCommand(
 			"facility-reports/uploads/client-submission-1-photo.jpg",
-			"2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
-			11L
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
 		)));
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
 			"client-submission-2",
 			"facility-reports/uploads/client-submission-1-photo.jpg",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
-			11L
+			(long) jpegBytes.length
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진은 이미지가 아닌 업로드 객체를 거부한다")
+	void createReportRejectsNonImageUploadedPhotoObject() {
+		byte[] invalidBytes = "image-bytes".getBytes(StandardCharsets.UTF_8);
+		FacilityReportService service = serviceWithUploadedPhoto(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"image/jpeg",
+			invalidBytes
+		);
+
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"facility-reports/uploads/client-submission-1-photo.jpg",
+			sha256Hex(invalidBytes),
+			(long) invalidBytes.length
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
@@ -1155,6 +1178,14 @@ class FacilityReportServiceTest {
 			return output.toByteArray();
 		} catch (IOException exception) {
 			throw new IllegalStateException("Failed to create test JPEG", exception);
+		}
+	}
+
+	private String sha256Hex(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
 		}
 	}
 

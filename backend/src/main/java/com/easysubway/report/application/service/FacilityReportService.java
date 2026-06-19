@@ -39,6 +39,7 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Base64;
 import java.util.Comparator;
 import java.util.HexFormat;
 import java.util.List;
@@ -361,15 +362,16 @@ public class FacilityReportService implements FacilityReportUseCase {
 		String storedUserId = hasText(command.userId())
 			? command.userId()
 			: "receipt:" + receiptTokenHash.substring(0, 16);
-		String photoObjectKey = hasText(command.photoObjectKey())
-			? command.photoObjectKey().trim()
-			: storedPhoto == null ? null : storedPhoto.objectKey();
-		String photoSha256 = hasText(command.photoSha256())
-			? command.photoSha256().trim()
-			: photo == null ? null : photo.sha256();
-		Long photoSizeBytes = command.photoSizeBytes() == null
-			? photo == null ? null : photo.sizeBytes()
-			: command.photoSizeBytes();
+		String photoObjectKey = storedPhoto == null
+			? hasText(command.photoObjectKey()) ? command.photoObjectKey().trim() : null
+			: storedPhoto.objectKey();
+		String photoSha256 = photo == null
+			? hasText(command.photoSha256()) ? command.photoSha256().trim() : null
+			: photo.sha256();
+		Long photoSizeBytes = command.photoSizeBytes();
+		if (photo != null) {
+			photoSizeBytes = photo.sizeBytes();
+		}
 		String photoFileName = photo == null
 			? hasText(command.photoFileName()) ? command.photoFileName().trim() : null
 			: photo.fileName();
@@ -612,8 +614,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 
 	private FacilityReportPhotoAttachment preparePhoto(CreateFacilityReportCommand command) {
 		if (hasText(command.photoObjectKey())) {
-			requireObjectPhotoMetadata(command);
-			return null;
+			return processObjectPhoto(command);
 		}
 		if (!photoProcessor.hasAnyPhotoField(command.photoFileName(), command.photoContentType(), command.photoDataBase64())) {
 			return null;
@@ -621,7 +622,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		return photoProcessor.process(command.photoFileName(), command.photoContentType(), command.photoDataBase64());
 	}
 
-	private void requireObjectPhotoMetadata(CreateFacilityReportCommand command) {
+	private FacilityReportPhotoAttachment processObjectPhoto(CreateFacilityReportCommand command) {
 		if (!hasText(command.photoFileName())
 			|| !hasText(command.photoContentType())
 			|| !hasText(command.photoSha256())
@@ -645,6 +646,11 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (!command.photoSha256().trim().equals(sha256Hex(uploadedPhoto.bytes()))) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
+		return photoProcessor.process(
+			command.photoFileName(),
+			command.photoContentType(),
+			Base64.getEncoder().encodeToString(uploadedPhoto.bytes())
+		);
 	}
 
 	private String sha256Hex(byte[] bytes) {
