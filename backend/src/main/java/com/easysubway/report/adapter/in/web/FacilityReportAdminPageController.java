@@ -1,5 +1,6 @@
 package com.easysubway.report.adapter.in.web;
 
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.domain.FacilityReport;
@@ -16,6 +17,8 @@ import java.util.Arrays;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -30,15 +33,29 @@ class FacilityReportAdminPageController {
 	private static final long REPORT_SURGE_LOOKBACK_HOURS = 24;
 
 	private final FacilityReportUseCase facilityReportUseCase;
+	private final LoadFacilityReportPhotoPort loadFacilityReportPhotoPort;
 	private final Clock clock;
 
 	@Autowired
-	FacilityReportAdminPageController(FacilityReportUseCase facilityReportUseCase, ObjectProvider<Clock> clockProvider) {
-		this(facilityReportUseCase, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+	FacilityReportAdminPageController(
+		FacilityReportUseCase facilityReportUseCase,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		ObjectProvider<Clock> clockProvider
+	) {
+		this(facilityReportUseCase, loadFacilityReportPhotoPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
 	}
 
 	FacilityReportAdminPageController(FacilityReportUseCase facilityReportUseCase, Clock clock) {
+		this(facilityReportUseCase, objectKey -> java.util.Optional.empty(), clock);
+	}
+
+	FacilityReportAdminPageController(
+		FacilityReportUseCase facilityReportUseCase,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		Clock clock
+	) {
 		this.facilityReportUseCase = facilityReportUseCase;
+		this.loadFacilityReportPhotoPort = loadFacilityReportPhotoPort;
 		this.clock = clock;
 	}
 
@@ -76,6 +93,15 @@ class FacilityReportAdminPageController {
 		);
 		model.addAttribute("reviewActions", reviewActions());
 		return "admin/reports/detail";
+	}
+
+	@GetMapping("/admin/reports/photos")
+	ResponseEntity<byte[]> reportPhoto(@RequestParam String objectKey) {
+		return loadFacilityReportPhotoPort.loadFacilityReportPhoto(objectKey)
+			.map(photo -> ResponseEntity.ok()
+				.contentType(MediaType.parseMediaType(photo.contentType()))
+				.body(photo.bytes()))
+			.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 
 	@PostMapping("/admin/reports/{reportId}/page/review")
@@ -143,9 +169,7 @@ class FacilityReportAdminPageController {
 	}
 
 	private static boolean hasCompletePhoto(FacilityReport report) {
-		return hasText(report.photoFileName())
-			&& hasText(report.photoContentType())
-			&& hasText(report.photoDataBase64());
+		return report.hasPhoto();
 	}
 
 	private static boolean hasText(String value) {
@@ -192,7 +216,10 @@ class FacilityReportAdminPageController {
 		String reviewedBy,
 		String photoFileName,
 		String photoContentType,
-		String photoDataBase64,
+		String photoObjectKey,
+		String photoThumbnailObjectKey,
+		String photoSha256,
+		Long photoSizeBytes,
 		String duplicateOfReportId,
 		String coordinateLabel
 	) {
@@ -211,7 +238,10 @@ class FacilityReportAdminPageController {
 				report.reviewedBy(),
 				report.photoFileName(),
 				report.photoContentType(),
-				report.photoDataBase64(),
+				report.photoObjectKey(),
+				report.photoThumbnailObjectKey(),
+				report.photoSha256(),
+				report.photoSizeBytes(),
 				report.duplicateOfReportId(),
 				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
 			);
@@ -220,7 +250,11 @@ class FacilityReportAdminPageController {
 		public boolean hasPhoto() {
 			return FacilityReportAdminPageController.hasText(photoFileName)
 				&& FacilityReportAdminPageController.hasText(photoContentType)
-				&& FacilityReportAdminPageController.hasText(photoDataBase64);
+				&& FacilityReportAdminPageController.hasText(photoObjectKey);
+		}
+
+		public String photoPreviewPath() {
+			return hasPhoto() ? "/admin/reports/photos/" + photoObjectKey : null;
 		}
 	}
 

@@ -29,6 +29,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("사용자 데이터 삭제 API")
 class UserDataControllerTest {
 
+	private static final String VALID_PNG_BASE64 =
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -82,6 +85,10 @@ class UserDataControllerTest {
 			.andExpect(jsonPath("$.data.userId").value("__easysubway_deleted_facility_report__"))
 			.andExpect(jsonPath("$.data.description").value("사용자 데이터 삭제로 신고 내용이 삭제되었습니다."))
 			.andExpect(jsonPath("$.data.photoFileName").doesNotExist())
+			.andExpect(jsonPath("$.data.photoObjectKey").doesNotExist())
+			.andExpect(jsonPath("$.data.photoThumbnailObjectKey").doesNotExist())
+			.andExpect(jsonPath("$.data.photoSha256").doesNotExist())
+			.andExpect(jsonPath("$.data.photoSizeBytes").doesNotExist())
 			.andExpect(jsonPath("$.data.photoDataBase64").doesNotExist())
 			.andExpect(jsonPath("$.data.latitude").doesNotExist())
 			.andExpect(jsonPath("$.data.longitude").doesNotExist());
@@ -188,13 +195,13 @@ class UserDataControllerTest {
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
 					  "description": "전화번호 010-0000-0000이 사진에 보입니다.",
-					  "photoFileName": "personal-photo.jpg",
-					  "photoContentType": "image/jpeg",
-					  "photoDataBase64": "cGVyc29uYWw=",
+					  "photoFileName": "personal-photo.png",
+					  "photoContentType": "image/png",
+					  "photoDataBase64": "%s",
 					  "latitude": 37.302421,
 					  "longitude": 126.866221
 					}
-					"""))
+					""".formatted(VALID_PNG_BASE64)))
 			.andExpect(status().isCreated())
 			.andReturn();
 		return JsonPath.read(result.getResponse().getContentAsString(), "$.data.id");

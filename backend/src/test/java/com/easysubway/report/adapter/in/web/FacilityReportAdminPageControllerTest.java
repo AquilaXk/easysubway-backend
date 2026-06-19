@@ -27,6 +27,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("관리자 시설 신고 화면")
 class FacilityReportAdminPageControllerTest {
 
+	private static final String VALID_PNG_BASE64 =
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -88,7 +91,9 @@ class FacilityReportAdminPageControllerTest {
 		assertThat(html)
 			.contains("신고 상세")
 			.contains("상세에서 확인할 신고")
-			.contains("elevator-notice.jpg")
+			.contains("elevator-notice.png")
+			.contains("객체 키")
+			.contains("/admin/reports/photos?objectKey=facility-reports/")
 			.contains("37.302421")
 			.contains("126.866221")
 			.contains("name=\"decision\" value=\"ACCEPT\"")
@@ -218,13 +223,14 @@ class FacilityReportAdminPageControllerTest {
 			description,
 			"""
 				,
-					  "photoFileName": "elevator-notice.jpg",
-					  "photoContentType": "image/jpeg",
-					  "photoDataBase64": "aW1hZ2UtYnl0ZXM=",
-					  "latitude": 37.302421,
-					  "longitude": 126.866221
-				"""
-		);
+						  "photoFileName": "elevator-notice.png",
+						  "photoContentType": "image/png",
+						  "photoDataBase64": "%s",
+						  "latitude": 37.302421,
+						  "longitude": 126.866221
+					"""
+					.formatted(VALID_PNG_BASE64)
+			);
 	}
 
 	private String createReport(String description, String optionalJson) throws Exception {

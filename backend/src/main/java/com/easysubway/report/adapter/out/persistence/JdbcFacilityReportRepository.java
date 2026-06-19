@@ -1,5 +1,6 @@
 package com.easysubway.report.adapter.out.persistence;
 
+import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
@@ -32,15 +33,28 @@ public class JdbcFacilityReportRepository implements
 
 	private final JdbcTemplate jdbcTemplate;
 	private final DatabaseDialect databaseDialect;
+	private final DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort;
 
 	@Autowired
-	public JdbcFacilityReportRepository(DataSource dataSource) {
-		this(new JdbcTemplate(dataSource));
+	public JdbcFacilityReportRepository(
+		DataSource dataSource,
+		DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort
+	) {
+		this(new JdbcTemplate(dataSource), deleteFacilityReportPhotoPort);
 	}
 
 	JdbcFacilityReportRepository(JdbcTemplate jdbcTemplate) {
+		this(jdbcTemplate, objectKey -> {
+		});
+	}
+
+	JdbcFacilityReportRepository(
+		JdbcTemplate jdbcTemplate,
+		DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort
+	) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
+		this.deleteFacilityReportPhotoPort = deleteFacilityReportPhotoPort;
 	}
 
 	@Override
@@ -56,7 +70,10 @@ public class JdbcFacilityReportRepository implements
 						description,
 						photo_file_name,
 						photo_content_type,
-						photo_data_base64,
+						photo_object_key,
+						photo_thumbnail_object_key,
+						photo_sha256,
+						photo_size_bytes,
 						latitude,
 						longitude,
 						duplicate_of_report_id,
@@ -87,7 +104,10 @@ public class JdbcFacilityReportRepository implements
 					description,
 					photo_file_name,
 					photo_content_type,
-					photo_data_base64,
+					photo_object_key,
+					photo_thumbnail_object_key,
+					photo_sha256,
+					photo_size_bytes,
 					latitude,
 					longitude,
 					duplicate_of_report_id,
@@ -154,13 +174,18 @@ public class JdbcFacilityReportRepository implements
 
 	@Override
 	public int anonymizeFacilityReportsByUserId(String userId) {
-		return jdbcTemplate.update(
+		List<String> photoObjectKeys = loadPhotoObjectKeysByUserId(userId);
+		int anonymizedCount = jdbcTemplate.update(
 			"""
 				UPDATE facility_reports
 				SET user_id = ?,
 					description = ?,
 					photo_file_name = NULL,
 					photo_content_type = NULL,
+					photo_object_key = NULL,
+					photo_thumbnail_object_key = NULL,
+					photo_sha256 = NULL,
+					photo_size_bytes = NULL,
 					photo_data_base64 = NULL,
 					latitude = NULL,
 					longitude = NULL
@@ -170,6 +195,37 @@ public class JdbcFacilityReportRepository implements
 			DELETED_DESCRIPTION,
 			userId
 		);
+		if (anonymizedCount > 0) {
+			photoObjectKeys.forEach(deleteFacilityReportPhotoPort::deleteFacilityReportPhoto);
+		}
+		return anonymizedCount;
+	}
+
+	private List<String> loadPhotoObjectKeysByUserId(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT photo_object_key,
+					photo_thumbnail_object_key
+				FROM facility_reports
+				WHERE user_id = ?
+					AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+				""",
+			resultSet -> {
+				java.util.ArrayList<String> objectKeys = new java.util.ArrayList<>();
+				while (resultSet.next()) {
+					addObjectKey(objectKeys, resultSet.getString("photo_object_key"));
+					addObjectKey(objectKeys, resultSet.getString("photo_thumbnail_object_key"));
+				}
+				return List.copyOf(objectKeys);
+			},
+			userId
+		);
+	}
+
+	private void addObjectKey(List<String> objectKeys, String objectKey) {
+		if (objectKey != null && !objectKey.isBlank()) {
+			objectKeys.add(objectKey);
+		}
 	}
 
 	private void upsertReport(FacilityReport report) {
@@ -195,7 +251,10 @@ public class JdbcFacilityReportRepository implements
 					description,
 					photo_file_name,
 					photo_content_type,
-					photo_data_base64,
+					photo_object_key,
+					photo_thumbnail_object_key,
+					photo_sha256,
+					photo_size_bytes,
 					latitude,
 					longitude,
 					duplicate_of_report_id,
@@ -204,7 +263,7 @@ public class JdbcFacilityReportRepository implements
 					reviewed_at,
 					reviewed_by
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (report_id) DO UPDATE
 				SET user_id = EXCLUDED.user_id,
 					station_id = EXCLUDED.station_id,
@@ -213,7 +272,10 @@ public class JdbcFacilityReportRepository implements
 					description = EXCLUDED.description,
 					photo_file_name = EXCLUDED.photo_file_name,
 					photo_content_type = EXCLUDED.photo_content_type,
-					photo_data_base64 = EXCLUDED.photo_data_base64,
+					photo_object_key = EXCLUDED.photo_object_key,
+					photo_thumbnail_object_key = EXCLUDED.photo_thumbnail_object_key,
+					photo_sha256 = EXCLUDED.photo_sha256,
+					photo_size_bytes = EXCLUDED.photo_size_bytes,
 					latitude = EXCLUDED.latitude,
 					longitude = EXCLUDED.longitude,
 					duplicate_of_report_id = EXCLUDED.duplicate_of_report_id,
@@ -236,7 +298,10 @@ public class JdbcFacilityReportRepository implements
 					description = ?,
 					photo_file_name = ?,
 					photo_content_type = ?,
-					photo_data_base64 = ?,
+					photo_object_key = ?,
+					photo_thumbnail_object_key = ?,
+					photo_sha256 = ?,
+					photo_size_bytes = ?,
 					latitude = ?,
 					longitude = ?,
 					duplicate_of_report_id = ?,
@@ -252,7 +317,10 @@ public class JdbcFacilityReportRepository implements
 			report.description(),
 			report.photoFileName(),
 			report.photoContentType(),
-			report.photoDataBase64(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
 			report.latitude(),
 			report.longitude(),
 			report.duplicateOfReportId(),
@@ -275,7 +343,10 @@ public class JdbcFacilityReportRepository implements
 					description,
 					photo_file_name,
 					photo_content_type,
-					photo_data_base64,
+					photo_object_key,
+					photo_thumbnail_object_key,
+					photo_sha256,
+					photo_size_bytes,
 					latitude,
 					longitude,
 					duplicate_of_report_id,
@@ -284,7 +355,7 @@ public class JdbcFacilityReportRepository implements
 					reviewed_at,
 					reviewed_by
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			reportParameters(report)
 		);
@@ -300,7 +371,10 @@ public class JdbcFacilityReportRepository implements
 			report.description(),
 			report.photoFileName(),
 			report.photoContentType(),
-			report.photoDataBase64(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
 			report.latitude(),
 			report.longitude(),
 			report.duplicateOfReportId(),
@@ -321,7 +395,10 @@ public class JdbcFacilityReportRepository implements
 			resultSet.getString("description"),
 			resultSet.getString("photo_file_name"),
 			resultSet.getString("photo_content_type"),
-			resultSet.getString("photo_data_base64"),
+			resultSet.getString("photo_object_key"),
+			resultSet.getString("photo_thumbnail_object_key"),
+			resultSet.getString("photo_sha256"),
+			photoSizeBytes(resultSet),
 			resultSet.getBigDecimal("latitude"),
 			resultSet.getBigDecimal("longitude"),
 			resultSet.getString("duplicate_of_report_id"),
@@ -330,6 +407,11 @@ public class JdbcFacilityReportRepository implements
 			resultSet.getTimestamp("reviewed_at") == null ? null : resultSet.getTimestamp("reviewed_at").toLocalDateTime(),
 			resultSet.getString("reviewed_by")
 		);
+	}
+
+	private Long photoSizeBytes(ResultSet resultSet) throws SQLException {
+		Number sizeBytes = (Number) resultSet.getObject("photo_size_bytes");
+		return sizeBytes == null ? null : sizeBytes.longValue();
 	}
 
 	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {

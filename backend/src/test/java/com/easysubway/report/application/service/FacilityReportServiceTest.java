@@ -25,6 +25,9 @@ import com.easysubway.notification.application.port.in.ReportStatusChangedAlertC
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.StationNotFoundException;
+import java.awt.image.BufferedImage;
+import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.math.BigDecimal;
 import java.time.Clock;
 import java.time.Instant;
@@ -32,6 +35,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.Base64;
 import java.util.Map;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -167,12 +171,15 @@ class FacilityReportServiceTest {
 		FacilityReport report = service.createReport(photoReportCommand(
 			" elevator.jpg ",
 			" IMAGE/JPEG ",
-			" aW1hZ2UtYnl0ZXM= "
+			" " + validJpegBase64() + " "
 		));
 
 		assertThat(report.photoFileName()).isEqualTo("elevator.jpg");
 		assertThat(report.photoContentType()).isEqualTo("image/jpeg");
-		assertThat(report.photoDataBase64()).isEqualTo("aW1hZ2UtYnl0ZXM=");
+		assertThat(report.photoObjectKey()).startsWith("facility-reports/" + report.id() + "/");
+		assertThat(report.photoThumbnailObjectKey()).startsWith("facility-reports/" + report.id() + "/");
+		assertThat(report.photoSha256()).matches("[0-9a-f]{64}");
+		assertThat(report.photoSizeBytes()).isPositive();
 	}
 
 	@Test
@@ -998,6 +1005,21 @@ class FacilityReportServiceTest {
 			null,
 			null
 		);
+	}
+
+	private String validJpegBase64() {
+		return Base64.getEncoder().encodeToString(validJpegBytes());
+	}
+
+	private byte[] validJpegBytes() {
+		try {
+			BufferedImage image = new BufferedImage(1, 1, BufferedImage.TYPE_INT_RGB);
+			ByteArrayOutputStream output = new ByteArrayOutputStream();
+			ImageIO.write(image, "jpg", output);
+			return output.toByteArray();
+		} catch (IOException exception) {
+			throw new IllegalStateException("Failed to create test JPEG", exception);
+		}
 	}
 
 	private CreateFacilityReportCommand reportCommand(

@@ -29,6 +29,9 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("시설 신고 API")
 class FacilityReportControllerTest {
 
+	private static final String VALID_PNG_BASE64 =
+		"iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII=";
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -228,8 +231,8 @@ class FacilityReportControllerTest {
 
 		Assertions.assertThat(response)
 			.doesNotContain("basic-user")
-			.doesNotContain("elevator-notice.jpg")
-			.doesNotContain("image/jpeg");
+				.doesNotContain("elevator-notice.png")
+				.doesNotContain("image/png");
 	}
 
 	@Test
@@ -552,13 +555,13 @@ class FacilityReportControllerTest {
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
 					  "description": "엘리베이터 앞 안내문이 떨어져 있습니다.",
-					  "photoFileName": "elevator-notice.jpg",
-					  "photoContentType": "image/jpeg",
-					  "photoDataBase64": "aW1hZ2UtYnl0ZXM=",
+						  "photoFileName": "elevator-notice.png",
+						  "photoContentType": "image/png",
+						  "photoDataBase64": "%s",
 					  "latitude": 37.302421,
 					  "longitude": 126.866221
-					}
-					"""))
+						}
+						""".formatted(VALID_PNG_BASE64)))
 			.andExpect(status().isCreated())
 			.andReturn()
 			.getResponse()
@@ -576,9 +579,13 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.data.id").value(reportId))
 			.andExpect(jsonPath("$.data.userId").value("basic-user"))
 			.andExpect(jsonPath("$.data.description").value("엘리베이터 앞 안내문이 떨어져 있습니다."))
-			.andExpect(jsonPath("$.data.photoFileName").value("elevator-notice.jpg"))
-			.andExpect(jsonPath("$.data.photoContentType").value("image/jpeg"))
-			.andExpect(jsonPath("$.data.photoDataBase64").value("aW1hZ2UtYnl0ZXM="))
+			.andExpect(jsonPath("$.data.photoFileName").value("elevator-notice.png"))
+			.andExpect(jsonPath("$.data.photoContentType").value("image/png"))
+			.andExpect(jsonPath("$.data.photoObjectKey").isNotEmpty())
+			.andExpect(jsonPath("$.data.photoThumbnailObjectKey").isNotEmpty())
+			.andExpect(jsonPath("$.data.photoSha256").isNotEmpty())
+			.andExpect(jsonPath("$.data.photoSizeBytes").isNumber())
+			.andExpect(jsonPath("$.data.photoDataBase64").doesNotExist())
 			.andExpect(jsonPath("$.data.photoUrl").doesNotExist())
 			.andExpect(jsonPath("$.data.latitude").value(37.302421))
 			.andExpect(jsonPath("$.data.longitude").value(126.866221))
@@ -604,10 +611,10 @@ class FacilityReportControllerTest {
 
 		Assertions.assertThat(response)
 			.doesNotContain("basic-user")
-			.doesNotContain("elevator-notice.jpg")
-			.doesNotContain("image/jpeg")
-			.doesNotContain("photoDataBase64")
-			.doesNotContain("aW1hZ2UtYnl0ZXM=");
+				.doesNotContain("elevator-notice.png")
+				.doesNotContain("image/png")
+				.doesNotContain("photoDataBase64")
+				.doesNotContain(VALID_PNG_BASE64);
 	}
 
 	@Test
@@ -706,11 +713,12 @@ class FacilityReportControllerTest {
 			description,
 			"""
 				,
-					  "photoFileName": "elevator-notice.jpg",
-					  "photoContentType": "image/jpeg",
-					  "photoDataBase64": "aW1hZ2UtYnl0ZXM="
-				"""
-		);
+						  "photoFileName": "elevator-notice.png",
+						  "photoContentType": "image/png",
+						  "photoDataBase64": "%s"
+					"""
+					.formatted(VALID_PNG_BASE64)
+			);
 	}
 
 	private String createReport(

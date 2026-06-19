@@ -7,6 +7,9 @@ import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
+import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoreFacilityReportPhotoCommand;
+import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoredFacilityReportPhoto;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
@@ -28,12 +31,10 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.util.Base64;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -44,22 +45,17 @@ import org.springframework.stereotype.Service;
 public class FacilityReportService implements FacilityReportUseCase {
 
 	private static final Logger log = LoggerFactory.getLogger(FacilityReportService.class);
-	private static final int MAX_PHOTO_BYTES = 900 * 1024;
-	private static final int MAX_PHOTO_BASE64_CHARS = ((MAX_PHOTO_BYTES + 2) / 3) * 4;
-	private static final Set<String> ALLOWED_PHOTO_CONTENT_TYPES = Set.of(
-		"image/jpeg",
-		"image/png",
-		"image/webp"
-	);
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
 	private final LoadFacilityReportPort loadFacilityReportPort;
 	private final SaveFacilityReportPort saveFacilityReportPort;
+	private final StoreFacilityReportPhotoPort storeFacilityReportPhotoPort;
 	private final LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort;
 	private final FacilityStatusAlertUseCase facilityStatusAlertUseCase;
 	private final ReportStatusAlertUseCase reportStatusAlertUseCase;
 	private final SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort;
+	private final FacilityReportPhotoProcessor photoProcessor;
 	private final Clock clock;
 
 	@Autowired
@@ -68,6 +64,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		LoadFacilityReportPort loadFacilityReportPort,
 		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
 		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
 		ReportStatusAlertUseCase reportStatusAlertUseCase,
 		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
@@ -78,6 +75,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			saveAccessibilityFacilityStatusPort,
 			loadFacilityReportPort,
 			saveFacilityReportPort,
+			storeFacilityReportPhotoPort,
 			facilityStatusAlertUseCase,
 			reportStatusAlertUseCase,
 			saveFacilityReportReviewAuditPort,
@@ -98,6 +96,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			saveAccessibilityFacilityStatusPort,
 			loadFacilityReportPort,
 			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
 			facilityStatusAlertUseCase,
 			command -> {
 			},
@@ -119,78 +118,12 @@ public class FacilityReportService implements FacilityReportUseCase {
 			saveAccessibilityFacilityStatusPort,
 			loadFacilityReportPort,
 			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
 			command -> {
 			},
 			command -> {
 			},
 			audit -> audit,
-			reportId -> List.of(),
-			clock
-		);
-	}
-
-	public FacilityReportService(
-		LoadTransitMasterPort loadTransitMasterPort,
-		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
-		LoadFacilityReportPort loadFacilityReportPort,
-		SaveFacilityReportPort saveFacilityReportPort,
-		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
-		Clock clock
-	) {
-		this(
-			loadTransitMasterPort,
-			saveAccessibilityFacilityStatusPort,
-			loadFacilityReportPort,
-			saveFacilityReportPort,
-			facilityStatusAlertUseCase,
-			command -> {
-			},
-			audit -> audit,
-			reportId -> List.of(),
-			clock
-		);
-	}
-
-	public FacilityReportService(
-		LoadTransitMasterPort loadTransitMasterPort,
-		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
-		LoadFacilityReportPort loadFacilityReportPort,
-		SaveFacilityReportPort saveFacilityReportPort,
-		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
-		ReportStatusAlertUseCase reportStatusAlertUseCase,
-		Clock clock
-	) {
-		this(
-			loadTransitMasterPort,
-			saveAccessibilityFacilityStatusPort,
-			loadFacilityReportPort,
-			saveFacilityReportPort,
-			facilityStatusAlertUseCase,
-			reportStatusAlertUseCase,
-			audit -> audit,
-			reportId -> List.of(),
-			clock
-		);
-	}
-
-	public FacilityReportService(
-		LoadTransitMasterPort loadTransitMasterPort,
-		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
-		LoadFacilityReportPort loadFacilityReportPort,
-		SaveFacilityReportPort saveFacilityReportPort,
-		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
-		ReportStatusAlertUseCase reportStatusAlertUseCase,
-		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
-		Clock clock
-	) {
-		this(
-			loadTransitMasterPort,
-			saveAccessibilityFacilityStatusPort,
-			loadFacilityReportPort,
-			saveFacilityReportPort,
-			facilityStatusAlertUseCase,
-			reportStatusAlertUseCase,
-			saveFacilityReportReviewAuditPort,
 			reportId -> List.of(),
 			clock
 		);
@@ -207,14 +140,112 @@ public class FacilityReportService implements FacilityReportUseCase {
 		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
 		Clock clock
 	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			loadFacilityReportReviewAuditPort,
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		Clock clock
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
+			facilityStatusAlertUseCase,
+			command -> {
+			},
+			audit -> audit,
+			reportId -> List.of(),
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		Clock clock
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			audit -> audit,
+			reportId -> List.of(),
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		Clock clock
+	) {
+		this(
+			loadTransitMasterPort,
+			saveAccessibilityFacilityStatusPort,
+			loadFacilityReportPort,
+			saveFacilityReportPort,
+			defaultPhotoStoragePort(),
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			saveFacilityReportReviewAuditPort,
+			reportId -> List.of(),
+			clock
+		);
+	}
+
+	public FacilityReportService(
+		LoadTransitMasterPort loadTransitMasterPort,
+		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
+		LoadFacilityReportPort loadFacilityReportPort,
+		SaveFacilityReportPort saveFacilityReportPort,
+		StoreFacilityReportPhotoPort storeFacilityReportPhotoPort,
+		FacilityStatusAlertUseCase facilityStatusAlertUseCase,
+		ReportStatusAlertUseCase reportStatusAlertUseCase,
+		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
+		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
+		Clock clock
+	) {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.loadFacilityReportPort = loadFacilityReportPort;
 		this.saveFacilityReportPort = saveFacilityReportPort;
+		this.storeFacilityReportPhotoPort = storeFacilityReportPhotoPort;
 		this.loadFacilityReportReviewAuditPort = loadFacilityReportReviewAuditPort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.reportStatusAlertUseCase = reportStatusAlertUseCase;
 		this.saveFacilityReportReviewAuditPort = saveFacilityReportReviewAuditPort;
+		this.photoProcessor = new FacilityReportPhotoProcessor();
 		this.clock = clock;
 	}
 
@@ -225,21 +256,23 @@ public class FacilityReportService implements FacilityReportUseCase {
 		requireActiveStation(command.stationId());
 		// 신고 대상 시설이 요청한 역에 속해야 다른 역 시설 상태가 잘못 갱신되는 일을 막을 수 있다.
 		requireFacilityInStation(command.stationId(), command.facilityId());
-		validatePhotoAttachment(command);
-		String photoFileName = normalizePhotoFileName(command.photoFileName());
-		String photoContentType = normalizePhotoContentType(command.photoContentType());
-		String photoDataBase64 = normalizePhotoDataBase64(command.photoDataBase64());
+		String reportId = "report-" + UUID.randomUUID();
+		FacilityReportPhotoAttachment photo = preparePhoto(command);
+		StoredFacilityReportPhoto storedPhoto = photo == null ? null : storePhoto(reportId, photo);
 
 		FacilityReport report = new FacilityReport(
-			"report-" + UUID.randomUUID(),
+			reportId,
 			command.userId(),
 			command.stationId(),
 			command.facilityId(),
 			command.reportType(),
 			command.description(),
-			photoFileName,
-			photoContentType,
-			photoDataBase64,
+			photo == null ? null : photo.fileName(),
+			photo == null ? null : photo.contentType(),
+			storedPhoto == null ? null : storedPhoto.objectKey(),
+			storedPhoto == null ? null : storedPhoto.thumbnailObjectKey(),
+			photo == null ? null : photo.sha256(),
+			photo == null ? null : photo.sizeBytes(),
 			command.latitude(),
 			command.longitude(),
 			null,
@@ -309,7 +342,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 			report.description(),
 			report.photoFileName(),
 			report.photoContentType(),
-			report.photoDataBase64(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
 			report.latitude(),
 			report.longitude(),
 			duplicateOfReportId,
@@ -356,7 +392,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 			report.description(),
 			report.photoFileName(),
 			report.photoContentType(),
-			report.photoDataBase64(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
 			report.latitude(),
 			report.longitude(),
 			report.duplicateOfReportId(),
@@ -382,52 +421,27 @@ public class FacilityReportService implements FacilityReportUseCase {
 		}
 	}
 
-	private void validatePhotoAttachment(CreateFacilityReportCommand command) {
-		boolean hasAnyPhotoField = hasText(command.photoFileName())
-			|| hasText(command.photoContentType())
-			|| hasText(command.photoDataBase64());
-		if (!hasAnyPhotoField) {
-			return;
-		}
-		if (!hasText(command.photoFileName())
-			|| !hasText(command.photoContentType())
-			|| !hasText(command.photoDataBase64())) {
-			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
-		}
-
-		String contentType = command.photoContentType().trim().toLowerCase();
-		if (!ALLOWED_PHOTO_CONTENT_TYPES.contains(contentType)) {
-			throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
-		}
-
-		String photoDataBase64 = command.photoDataBase64().trim();
-		if (photoDataBase64.length() > MAX_PHOTO_BASE64_CHARS) {
-			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
-		}
-		try {
-			byte[] photoBytes = Base64.getDecoder().decode(photoDataBase64);
-			if (photoBytes.length > MAX_PHOTO_BYTES) {
-				throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
-			}
-		} catch (IllegalArgumentException exception) {
-			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
-		}
-	}
-
 	private boolean hasText(String value) {
 		return value != null && !value.isBlank();
 	}
 
-	private String normalizePhotoFileName(String value) {
-		return hasText(value) ? value.trim() : null;
+	private FacilityReportPhotoAttachment preparePhoto(CreateFacilityReportCommand command) {
+		if (!photoProcessor.hasAnyPhotoField(command.photoFileName(), command.photoContentType(), command.photoDataBase64())) {
+			return null;
+		}
+		return photoProcessor.process(command.photoFileName(), command.photoContentType(), command.photoDataBase64());
 	}
 
-	private String normalizePhotoContentType(String value) {
-		return hasText(value) ? value.trim().toLowerCase() : null;
-	}
-
-	private String normalizePhotoDataBase64(String value) {
-		return hasText(value) ? value.trim() : null;
+	private StoredFacilityReportPhoto storePhoto(String reportId, FacilityReportPhotoAttachment photo) {
+		return storeFacilityReportPhotoPort.storeFacilityReportPhoto(new StoreFacilityReportPhotoCommand(
+			reportId,
+			photo.fileName(),
+			photo.contentType(),
+			photo.storedBytes(),
+			photo.thumbnailBytes(),
+			photo.sha256(),
+			photo.sizeBytes()
+		));
 	}
 
 	private List<FacilityReport> sortedReports() {
@@ -572,5 +586,12 @@ public class FacilityReportService implements FacilityReportUseCase {
 			case RECOVERED -> Optional.of(AccessibilityFacilityStatus.NORMAL);
 			case LOCATION_WRONG, INFORMATION_WRONG -> Optional.empty();
 		};
+	}
+
+	private static StoreFacilityReportPhotoPort defaultPhotoStoragePort() {
+		return command -> new StoredFacilityReportPhoto(
+			"facility-reports/%s/%s".formatted(command.reportId(), command.sha256()),
+			"facility-reports/%s/%s-thumbnail".formatted(command.reportId(), command.sha256())
+		);
 	}
 }
