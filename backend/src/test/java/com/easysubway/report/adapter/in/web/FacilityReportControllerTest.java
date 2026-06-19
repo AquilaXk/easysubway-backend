@@ -312,6 +312,36 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("이미 검수된 신고 재검수는 공통 409 응답을 반환한다")
+	void repeatedReviewReportReturnsCommonConflictError() throws Exception {
+		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "이미 검수된 신고");
+		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "REJECT"
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "REJECT"
+					}
+					"""))
+			.andExpect(status().isConflict())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("이미 검수 처리된 신고입니다."));
+	}
+
+	@Test
 	@DisplayName("신고 작성자는 처리 결과를 확인 완료 상태로 바꿀 수 있다")
 	void reporterConfirmsReviewedReportResult() throws Exception {
 		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "처리 결과를 확인할 신고");

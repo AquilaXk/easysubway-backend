@@ -106,6 +106,35 @@ class PushNotificationDispatchServiceTest {
 	}
 
 	@Test
+	@DisplayName("같은 idempotency key 발송은 outbox 후보를 중복 생성하지 않는다")
+	void dispatchWithSameIdempotencyKeyDoesNotDuplicateOutboxMessage() {
+		registerDevice("anonymous-user-idempotent", DevicePlatform.ANDROID, "android-token-idempotent");
+
+		dispatchService.dispatch(new DispatchPushNotificationCommand(
+			"anonymous-user-idempotent",
+			PushNotificationType.REPORT_STATUS,
+			"신고 처리 결과",
+			"제보해 주신 신고가 확인되어 시설 정보에 반영되었습니다.",
+			"report-status:report-1:ACCEPTED"
+		));
+		var sentNotification = outboxRepository.loadPushNotifications("anonymous-user-idempotent").getFirst()
+			.withStatus(PushNotificationStatus.SENT);
+		outboxRepository.savePushNotification(sentNotification);
+		dispatchService.dispatch(new DispatchPushNotificationCommand(
+			"anonymous-user-idempotent",
+			PushNotificationType.REPORT_STATUS,
+			"신고 처리 결과",
+			"제보해 주신 신고가 확인되어 시설 정보에 반영되었습니다.",
+			"report-status:report-1:ACCEPTED"
+		));
+
+		assertThat(outboxRepository.loadPushNotifications("anonymous-user-idempotent"))
+			.hasSize(1)
+			.extracting("type", "status")
+			.containsExactly(tuple(PushNotificationType.REPORT_STATUS, PushNotificationStatus.SENT));
+	}
+
+	@Test
 	@DisplayName("발송 명령은 사용자, 알림 종류, 제목, 본문을 요구한다")
 	void dispatchCommandRequiresUserTypeTitleAndBody() {
 		assertThatThrownBy(() -> new DispatchPushNotificationCommand(
@@ -147,5 +176,9 @@ class PushNotificationDispatchServiceTest {
 
 	private void registerDevice(String userId, DevicePlatform platform, String deviceToken) {
 		preferenceService.registerDevice(new RegisterDeviceCommand(userId, platform, deviceToken));
+	}
+
+	private static org.assertj.core.groups.Tuple tuple(Object... values) {
+		return org.assertj.core.api.Assertions.tuple(values);
 	}
 }

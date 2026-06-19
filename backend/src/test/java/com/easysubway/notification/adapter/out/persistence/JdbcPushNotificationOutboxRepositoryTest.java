@@ -79,6 +79,26 @@ class JdbcPushNotificationOutboxRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("idempotent 대기 알림 저장은 이미 처리된 알림 상태를 되돌리지 않는다")
+	void savePendingPushNotificationIfAbsentKeepsProcessedNotification() {
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9);
+		var sentNotification = notification(
+			"push-1",
+			"anonymous-user-1",
+			PushNotificationType.REPORT_STATUS,
+			PushNotificationStatus.SENT,
+			10
+		);
+		repository.savePushNotification(pendingNotification);
+		repository.savePushNotification(sentNotification);
+
+		var savedNotification = repository.savePendingPushNotificationIfAbsent(pendingNotification);
+
+		assertThat(savedNotification).isEqualTo(sentNotification);
+		assertThat(repository.loadPushNotifications("anonymous-user-1")).containsExactly(sentNotification);
+	}
+
+	@Test
 	@DisplayName("실패한 푸시 알림은 실패 사유를 저장하고 조회한다")
 	void savePushNotificationStoresFailureReasonForFailedNotification() {
 		var failedNotification = failedNotification(

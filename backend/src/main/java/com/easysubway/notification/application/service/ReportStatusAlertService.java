@@ -23,7 +23,8 @@ public class ReportStatusAlertService implements ReportStatusAlertUseCase {
 			command.userId(),
 			PushNotificationType.REPORT_STATUS,
 			"신고 처리 결과",
-			body(command.status())
+			body(command.status()),
+			"report-status:%s:%s".formatted(command.reportId(), command.status().name())
 		));
 	}
 

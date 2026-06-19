@@ -13,6 +13,7 @@ import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.S
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
+import com.easysubway.report.domain.FacilityReportReviewConflictException;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
@@ -40,6 +41,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 @Service
 public class FacilityReportService implements FacilityReportUseCase {
@@ -327,11 +329,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	@Override
+	@Transactional
 	public FacilityReport reviewReport(ReviewFacilityReportCommand command) {
 		requireReviewDecision(command);
 		requireReviewer(command);
 
 		FacilityReport report = getReport(command.reportId());
+		requireReviewableStatus(report);
 		String duplicateOfReportId = resolveDuplicateOfReportId(command, report);
 		FacilityReport reviewed = new FacilityReport(
 			report.id(),
@@ -355,17 +359,19 @@ public class FacilityReportService implements FacilityReportUseCase {
 			command.reviewedBy()
 		);
 
-		FacilityReport saved = saveFacilityReportPort.saveReport(reviewed);
-		// 신고 상태 변경과 별개로 관리자 검수 행동 자체를 추적할 수 있게 별도 감사 로그를 남긴다.
+		// 감사 로그 저장 실패가 신고 상태 변경을 남기지 않도록 같은 트랜잭션에서 먼저 기록한다.
 		saveFacilityReportReviewAuditPort.saveAudit(new FacilityReportReviewAudit(
 			"audit-" + UUID.randomUUID(),
-			saved.id(),
+			reviewed.id(),
 			command.reviewedBy(),
 			command.decision(),
 			report.status(),
-			saved.status(),
-			saved.reviewedAt()
+			reviewed.status(),
+			reviewed.reviewedAt()
 		));
+		FacilityReport saved = saveFacilityReportPort
+			.saveReviewedReportIfStatus(reviewed, FacilityReportStatus.SUBMITTED)
+			.orElseThrow(FacilityReportReviewConflictException::new);
 		// 같은 결과로 재검수한 경우 사용자가 중복 처리 알림을 받지 않도록 상태 변경만 알린다.
 		if (report.status() != saved.status()) {
 			alertReportStatusChanged(saved);
@@ -500,6 +506,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 			return;
 		}
 		throw new InvalidFacilityReportException("검수 완료된 신고만 확인할 수 있습니다.");
+	}
+
+	private void requireReviewableStatus(FacilityReport report) {
+		if (report.status() == FacilityReportStatus.SUBMITTED) {
+			return;
+		}
+		throw new FacilityReportReviewConflictException();
 	}
 
 	private String resolveDuplicateOfReportId(ReviewFacilityReportCommand command, FacilityReport report) {

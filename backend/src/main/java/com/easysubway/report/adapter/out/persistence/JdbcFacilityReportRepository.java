@@ -173,6 +173,60 @@ public class JdbcFacilityReportRepository implements
 	}
 
 	@Override
+	public Optional<FacilityReport> saveReviewedReportIfStatus(
+		FacilityReport report,
+		FacilityReportStatus expectedStatus
+	) {
+		int updatedCount = jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET user_id = ?,
+					station_id = ?,
+					facility_id = ?,
+					report_type = ?,
+					description = ?,
+					photo_file_name = ?,
+					photo_content_type = ?,
+					photo_object_key = ?,
+					photo_thumbnail_object_key = ?,
+					photo_sha256 = ?,
+					photo_size_bytes = ?,
+					latitude = ?,
+					longitude = ?,
+					duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?
+				WHERE report_id = ?
+					AND status = ?
+				""",
+			report.userId(),
+			report.stationId(),
+			report.facilityId(),
+			report.reportType().name(),
+			report.description(),
+			report.photoFileName(),
+			report.photoContentType(),
+			report.photoObjectKey(),
+			report.photoThumbnailObjectKey(),
+			report.photoSha256(),
+			report.photoSizeBytes(),
+			report.latitude(),
+			report.longitude(),
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.id(),
+			expectedStatus.name()
+		);
+		if (updatedCount == 0) {
+			return Optional.empty();
+		}
+		return loadReport(report.id());
+	}
+
+	@Override
 	public int anonymizeFacilityReportsByUserId(String userId) {
 		List<String> photoObjectKeys = loadPhotoObjectKeysByUserId(userId);
 		int anonymizedCount = jdbcTemplate.update(

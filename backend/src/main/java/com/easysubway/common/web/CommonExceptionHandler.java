@@ -1,5 +1,6 @@
 package com.easysubway.common.web;
 
+import com.easysubway.common.error.ConflictException;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.error.ResourceNotFoundException;
 import org.springframework.http.HttpStatus;
@@ -39,6 +40,12 @@ class CommonExceptionHandler {
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	ApiResponse<Void> handleInvalidRequestParameter() {
 		return ApiResponse.fail("요청 값을 확인해야 합니다.");
+	}
+
+	@ExceptionHandler(ConflictException.class)
+	@ResponseStatus(HttpStatus.CONFLICT)
+	ApiResponse<Void> handleConflict(ConflictException exception) {
+		return ApiResponse.fail(exception.getMessage());
 	}
 
 	@ExceptionHandler(ResourceNotFoundException.class)

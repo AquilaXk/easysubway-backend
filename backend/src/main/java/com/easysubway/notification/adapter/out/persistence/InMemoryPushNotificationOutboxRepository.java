@@ -55,6 +55,12 @@ public class InMemoryPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public PushNotification savePendingPushNotificationIfAbsent(PushNotification notification) {
+		return findNotification(notification.notificationId())
+			.orElseGet(() -> savePushNotification(notification));
+	}
+
+	@Override
 	public List<PushNotification> loadPushNotifications(String userId) {
 		return List.copyOf(notificationsByUserId.getOrDefault(userId, List.of()));
 	}
@@ -122,6 +128,14 @@ public class InMemoryPushNotificationOutboxRepository implements
 			.filter(notification -> notification.status() == PushNotificationStatus.PENDING)
 			.map(PushNotification::createdAt)
 			.min(Comparator.naturalOrder());
+	}
+
+	private Optional<PushNotification> findNotification(String notificationId) {
+		return notificationsByUserId.values()
+			.stream()
+			.flatMap(List::stream)
+			.filter(notification -> notification.notificationId().equals(notificationId))
+			.findFirst();
 	}
 
 	private record PendingUser(String userId, LocalDateTime oldestPendingCreatedAt) {

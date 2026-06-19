@@ -7,8 +7,18 @@ public record DispatchPushNotificationCommand(
 	String userId,
 	PushNotificationType type,
 	String title,
-	String body
+	String body,
+	String idempotencyKey
 ) {
+
+	public DispatchPushNotificationCommand(
+		String userId,
+		PushNotificationType type,
+		String title,
+		String body
+	) {
+		this(userId, type, title, body, null);
+	}
 
 	public DispatchPushNotificationCommand {
 		if (userId == null || userId.isBlank()) {
@@ -26,5 +36,8 @@ public record DispatchPushNotificationCommand(
 		userId = userId.trim();
 		title = title.trim();
 		body = body.trim();
+		idempotencyKey = idempotencyKey == null || idempotencyKey.isBlank()
+			? null
+			: idempotencyKey.trim();
 	}
 }

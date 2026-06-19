@@ -9,6 +9,8 @@ import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationDispatchResult;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
+import com.easysubway.notification.domain.RegisteredDevice;
+import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -53,7 +55,7 @@ public class PushNotificationDispatchService implements PushNotificationDispatch
 		List<PushNotification> savedNotifications = new ArrayList<>();
 		for (var device : loadNotificationPreferencePort.loadDevices(command.userId())) {
 			var notification = new PushNotification(
-				"push-" + UUID.randomUUID(),
+				notificationId(command, device),
 				command.userId(),
 				device.platform(),
 				device.deviceToken(),
@@ -63,7 +65,7 @@ public class PushNotificationDispatchService implements PushNotificationDispatch
 				PushNotificationStatus.PENDING,
 				LocalDateTime.now(clock)
 			);
-			savedNotifications.add(savePushNotificationOutboxPort.savePushNotification(notification));
+			savedNotifications.add(savePushNotificationOutboxPort.savePendingPushNotificationIfAbsent(notification));
 		}
 
 		return new PushNotificationDispatchResult(
@@ -72,6 +74,14 @@ public class PushNotificationDispatchService implements PushNotificationDispatch
 			savedNotifications.size(),
 			savedNotifications
 		);
+	}
+
+	private String notificationId(DispatchPushNotificationCommand command, RegisteredDevice device) {
+		if (command.idempotencyKey() == null) {
+			return "push-" + UUID.randomUUID();
+		}
+		String key = "%s|%s|%s".formatted(command.idempotencyKey(), device.platform(), device.deviceToken());
+		return "push-" + UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
 	}
 
 	private PushNotificationDispatchResult emptyResult(DispatchPushNotificationCommand command) {

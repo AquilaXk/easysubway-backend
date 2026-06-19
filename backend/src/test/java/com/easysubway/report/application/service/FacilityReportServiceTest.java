@@ -13,6 +13,7 @@ import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditP
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportNotFoundException;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
+import com.easysubway.report.domain.FacilityReportReviewConflictException;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.FacilityReportTargetNotFoundException;
@@ -458,8 +459,40 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
-	@DisplayName("같은 신고를 다시 검수해도 관리자 행동은 감사 로그로 남긴다")
-	void repeatedReviewStoresAuditLogForEachReviewerAction() {
+	@DisplayName("감사 로그 저장 실패는 신고 상태 변경을 남기지 않는다")
+	void reviewReportKeepsSubmittedStatusWhenAuditSaveFails() {
+		var auditPort = new FailingFacilityReportReviewAuditPort();
+		var reportStatusAlertUseCase = new RecordingReportStatusAlertUseCase();
+		var facilityStatusAlertUseCase = new RecordingFacilityStatusAlertUseCase();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			new InMemoryTransitMasterRepository(),
+			new InMemoryTransitMasterRepository(),
+			repository,
+			repository,
+			facilityStatusAlertUseCase,
+			reportStatusAlertUseCase,
+			auditPort,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+		var report = service.createReport(reportCommand(
+			"anonymous-user-audit-failure",
+			FacilityReportType.BROKEN,
+			"감사 로그 저장 실패 시 상태가 바뀌면 안 되는 신고입니다."
+		));
+
+		assertThatThrownBy(() -> service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.ACCEPT)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("감사 로그 저장 실패");
+
+		assertThat(service.getReport(report.id()).status()).isEqualTo(FacilityReportStatus.SUBMITTED);
+		assertThat(reportStatusAlertUseCase.commands).isEmpty();
+		assertThat(facilityStatusAlertUseCase.commands).isEmpty();
+	}
+
+	@Test
+	@DisplayName("이미 검수된 신고는 다시 검수할 수 없다")
+	void reviewedReportCannotBeReviewedAgain() {
 		var auditPort = new RecordingFacilityReportReviewAuditPort();
 		var repository = new InMemoryFacilityReportRepository();
 		var service = new FacilityReportService(
@@ -481,14 +514,17 @@ class FacilityReportServiceTest {
 		));
 
 		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
-		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
+
+		assertThatThrownBy(() -> service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT)))
+			.isInstanceOf(FacilityReportReviewConflictException.class)
+			.hasMessage("이미 검수 처리된 신고입니다.");
 
 		assertThat(auditPort.savedAudits)
 			.extracting(FacilityReportReviewAudit::previousStatus)
-			.containsExactly(FacilityReportStatus.SUBMITTED, FacilityReportStatus.REJECTED);
+			.containsExactly(FacilityReportStatus.SUBMITTED);
 		assertThat(auditPort.savedAudits)
 			.extracting(FacilityReportReviewAudit::nextStatus)
-			.containsExactly(FacilityReportStatus.REJECTED, FacilityReportStatus.REJECTED);
+			.containsExactly(FacilityReportStatus.REJECTED);
 	}
 
 	@Test
@@ -563,8 +599,8 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
-	@DisplayName("이미 같은 상태인 신고 재검수는 처리 알림을 다시 요청하지 않는다")
-	void repeatedSameReportReviewDoesNotRequestReportStatusAlertAgain() {
+	@DisplayName("이미 검수된 신고 재검수는 처리 알림을 다시 요청하지 않는다")
+	void repeatedReportReviewDoesNotRequestReportStatusAlertAgain() {
 		var reportStatusAlertUseCase = new RecordingReportStatusAlertUseCase();
 		var repository = new InMemoryFacilityReportRepository();
 		var service = new FacilityReportService(
@@ -584,7 +620,9 @@ class FacilityReportServiceTest {
 		));
 
 		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
-		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
+		assertThatThrownBy(() -> service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT)))
+			.isInstanceOf(FacilityReportReviewConflictException.class)
+			.hasMessage("이미 검수 처리된 신고입니다.");
 
 		assertThat(reportStatusAlertUseCase.commands)
 			.extracting(ReportStatusChangedAlertCommand::status)
@@ -1131,6 +1169,14 @@ class FacilityReportServiceTest {
 			return savedAudits.stream()
 				.filter(audit -> audit.reportId().equals(reportId))
 				.toList();
+		}
+	}
+
+	private static class FailingFacilityReportReviewAuditPort implements SaveFacilityReportReviewAuditPort {
+
+		@Override
+		public FacilityReportReviewAudit saveAudit(FacilityReportReviewAudit audit) {
+			throw new IllegalStateException("감사 로그 저장 실패");
 		}
 	}
 

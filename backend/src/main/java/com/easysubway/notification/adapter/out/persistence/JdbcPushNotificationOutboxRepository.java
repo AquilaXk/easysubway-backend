@@ -13,10 +13,12 @@ import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -30,6 +32,7 @@ public class JdbcPushNotificationOutboxRepository implements
 	DeleteUserPushNotificationPort {
 
 	private final JdbcTemplate jdbcTemplate;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcPushNotificationOutboxRepository(DataSource dataSource) {
@@ -38,6 +41,7 @@ public class JdbcPushNotificationOutboxRepository implements
 
 	JdbcPushNotificationOutboxRepository(JdbcTemplate jdbcTemplate) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
@@ -113,6 +117,15 @@ public class JdbcPushNotificationOutboxRepository implements
 			}
 		}
 		return notification;
+	}
+
+	@Override
+	public PushNotification savePendingPushNotificationIfAbsent(PushNotification notification) {
+		if (insertPendingPushNotificationIfAbsent(notification) > 0) {
+			return notification;
+		}
+		return loadPushNotification(notification.notificationId())
+			.orElse(notification);
 	}
 
 	@Override
@@ -218,6 +231,82 @@ public class JdbcPushNotificationOutboxRepository implements
 		);
 	}
 
+	private int insertPendingPushNotificationIfAbsent(PushNotification notification) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			return insertPendingPushNotificationIfAbsentWithH2(notification);
+		}
+		return jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				ON CONFLICT (notification_id) DO NOTHING
+				""",
+			pushNotificationParameters(notification)
+		);
+	}
+
+	private int insertPendingPushNotificationIfAbsentWithH2(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				INSERT INTO push_notification_outbox (
+					notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				)
+				SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+				WHERE NOT EXISTS (
+					SELECT 1
+					FROM push_notification_outbox
+					WHERE notification_id = ?
+				)
+				""",
+			notification.notificationId(),
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.failureReason(),
+			notification.createdAt(),
+			notification.notificationId()
+		);
+	}
+
+	private Object[] pushNotificationParameters(PushNotification notification) {
+		return new Object[] {
+			notification.notificationId(),
+			notification.userId(),
+			notification.platform().name(),
+			notification.deviceToken(),
+			notification.type().name(),
+			notification.title(),
+			notification.body(),
+			notification.status().name(),
+			notification.failureReason(),
+			notification.createdAt()
+		};
+	}
+
 	private PushNotification mapPushNotification(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new PushNotification(
 			resultSet.getString("notification_id"),
@@ -231,6 +320,29 @@ public class JdbcPushNotificationOutboxRepository implements
 			resultSet.getString("failure_reason"),
 			resultSet.getTimestamp("created_at").toLocalDateTime()
 		);
+	}
+
+	private Optional<PushNotification> loadPushNotification(String notificationId) {
+		return jdbcTemplate.query(
+				"""
+					SELECT notification_id,
+						user_id,
+						platform,
+						device_token,
+						notification_type,
+						title,
+						body,
+						status,
+						failure_reason,
+						created_at
+					FROM push_notification_outbox
+					WHERE notification_id = ?
+					""",
+				this::mapPushNotification,
+				notificationId
+			)
+			.stream()
+			.findFirst();
 	}
 
 	private String latestFailureReason() {
@@ -251,6 +363,19 @@ public class JdbcPushNotificationOutboxRepository implements
 			.orElse(null);
 	}
 
+	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
 	private record StatusCountRow(PushNotificationStatus status, long count) {
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

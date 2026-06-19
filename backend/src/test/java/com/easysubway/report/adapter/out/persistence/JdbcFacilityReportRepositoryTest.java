@@ -206,6 +206,38 @@ class JdbcFacilityReportRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("검수 저장은 기대 상태와 일치할 때만 신고 상태를 바꾼다")
+	void saveReviewedReportIfStatusUpdatesOnlyWhenExpectedStatusMatches() {
+		var submittedReport = submittedReport("report-1", "anonymous-user-1", 9);
+		var reviewedReport = new FacilityReport(
+			"report-1",
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-elevator-1",
+			FacilityReportType.BROKEN,
+			"엘리베이터가 멈춰 있습니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			"aW1hZ2UtYnl0ZXM=",
+			new BigDecimal("37.3123450"),
+			new BigDecimal("126.9876540"),
+			null,
+			FacilityReportStatus.ACCEPTED,
+			LocalDateTime.of(2026, 6, 17, 9, 0),
+			LocalDateTime.of(2026, 6, 17, 10, 0),
+			"admin-user"
+		);
+		repository.saveReport(submittedReport);
+
+		var savedReport = repository.saveReviewedReportIfStatus(reviewedReport, FacilityReportStatus.SUBMITTED);
+		var repeatedSave = repository.saveReviewedReportIfStatus(reviewedReport, FacilityReportStatus.SUBMITTED);
+
+		assertThat(savedReport).contains(reviewedReport);
+		assertThat(repeatedSave).isEmpty();
+		assertThat(repository.loadReport("report-1")).contains(reviewedReport);
+	}
+
+	@Test
 	@DisplayName("사용자 데이터 삭제 요청은 미검수 신고 본문과 사진과 위치를 익명화한다")
 	void anonymizeFacilityReportsByUserIdClearsSubmittedReportPersonalData() {
 		var targetReport = submittedReport("report-1", "anonymous-user-1", 9);

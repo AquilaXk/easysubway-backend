@@ -79,6 +79,19 @@ public class InMemoryFacilityReportRepository implements
 	}
 
 	@Override
+	public synchronized Optional<FacilityReport> saveReviewedReportIfStatus(
+		FacilityReport report,
+		FacilityReportStatus expectedStatus
+	) {
+		FacilityReport currentReport = reports.get(report.id());
+		if (currentReport == null || currentReport.status() != expectedStatus) {
+			return Optional.empty();
+		}
+		reports.put(report.id(), report);
+		return Optional.of(report);
+	}
+
+	@Override
 	public int anonymizeFacilityReportsByUserId(String userId) {
 		int anonymizedCount = 0;
 		for (FacilityReport report : loadReports()) {
