@@ -7,6 +7,7 @@ import com.easysubway.auth.application.service.AnonymousAuthTokenHasher;
 import com.easysubway.auth.domain.AnonymousUserCredentials;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.data.redis.connection.lettuce.LettuceConnectionFactory;
@@ -40,7 +41,11 @@ class AnonymousAuthInfrastructureContainerTest {
 			POSTGRES.getUsername(),
 			POSTGRES.getPassword()
 		));
-		new AnonymousAuthSchemaInitializer(jdbcTemplate).initialize();
+		Flyway.configure()
+			.dataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword())
+			.locations("classpath:db/migration/postgresql")
+			.load()
+			.migrate();
 		var repository = new JdbcAnonymousAuthRepository(jdbcTemplate);
 		var issuedAt = LocalDateTime.of(2026, 6, 19, 10, 0);
 		String accessTokenHash = AnonymousAuthTokenHasher.sha256("container-access-token");

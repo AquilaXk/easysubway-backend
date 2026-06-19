@@ -1,5 +1,5 @@
--- Spring Batch 5 PostgreSQL metadata schema.
--- 운영 재기동 때 같은 DDL이 반복되어도 실패하지 않도록 IF NOT EXISTS를 사용한다.
+-- EasySubway H2 baseline schema managed by Flyway.
+-- SpringBootTest와 로컬 dev context가 운영 schema 계약을 migration으로 부트스트랩하게 한다.
 
 CREATE TABLE IF NOT EXISTS BATCH_JOB_INSTANCE (
 	JOB_INSTANCE_ID BIGINT NOT NULL PRIMARY KEY,
@@ -115,7 +115,7 @@ CREATE TABLE IF NOT EXISTS data_source_raw_archives (
 	CONSTRAINT chk_data_source_raw_archives_source
 		CHECK (source IN ('TRANSIT_MASTER')),
 	CONSTRAINT chk_data_source_raw_archives_sha256
-		CHECK (payload_sha256 ~ '^[0-9a-f]{64}$')
+		CHECK (char_length(payload_sha256) = 64)
 );
 
 CREATE INDEX IF NOT EXISTS idx_data_source_raw_archives_run
@@ -220,8 +220,7 @@ CREATE TABLE IF NOT EXISTS guest_accounts (
 );
 
 CREATE INDEX IF NOT EXISTS idx_guest_accounts_created
-	ON guest_accounts (created_at DESC, user_id ASC)
-	WHERE revoked_at IS NULL;
+	ON guest_accounts (created_at DESC, user_id ASC);
 
 CREATE TABLE IF NOT EXISTS anonymous_auth_tokens (
 	token_hash VARCHAR(64) NOT NULL PRIMARY KEY,
@@ -235,7 +234,7 @@ CREATE TABLE IF NOT EXISTS anonymous_auth_tokens (
 	CONSTRAINT chk_anonymous_auth_tokens_type
 		CHECK (token_type IN ('ACCESS', 'REFRESH')),
 	CONSTRAINT chk_anonymous_auth_tokens_hash
-		CHECK (token_hash ~ '^[0-9a-f]{64}$')
+		CHECK (char_length(token_hash) = 64)
 );
 
 CREATE INDEX IF NOT EXISTS idx_anonymous_auth_tokens_user_type

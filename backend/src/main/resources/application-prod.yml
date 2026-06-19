@@ -21,12 +21,16 @@ spring:
       port: ${EASYSUBWAY_REDIS_PORT:6379}
   sql:
     init:
-      # 운영 schema는 배포 파이프라인에서 아래 스크립트를 명시 실행한다.
       mode: never
-      schema-locations: classpath:db/batch/schema-postgresql.sql
+  flyway:
+    enabled: true
+    locations: classpath:db/migration/postgresql
+    # 기존 운영 DB는 schema만 있고 Flyway 이력이 없을 수 있어 최초 전환 시 baseline으로 수렴시킨다.
+    baseline-on-migrate: true
+    baseline-version: 1
   batch:
     jdbc:
-      # Boot 기본 Batch 스크립트는 반복 실행에 취약하므로 운영은 별도 멱등 스크립트로 관리한다.
+      # Batch metadata table은 Flyway baseline migration에서 운영 schema와 함께 관리한다.
       initialize-schema: never
 
 easysubway:
