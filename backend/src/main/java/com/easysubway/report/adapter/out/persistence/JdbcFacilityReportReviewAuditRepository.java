@@ -9,6 +9,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -21,6 +22,7 @@ public class JdbcFacilityReportReviewAuditRepository implements
 
 	private final JdbcTemplate jdbcTemplate;
 
+	@Autowired
 	public JdbcFacilityReportReviewAuditRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource));
 	}

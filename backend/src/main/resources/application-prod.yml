@@ -2,6 +2,13 @@ logging:
   level:
     com.easysubway: INFO
 
+management:
+  endpoint:
+    health:
+      group:
+        readiness:
+          include: "readinessState,db,redis,productionReadiness"
+
 spring:
   datasource:
     url: ${EASYSUBWAY_DATASOURCE_URL}
@@ -29,3 +36,6 @@ easysubway:
   auth:
     client-ip:
       trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS}
+  notifications:
+    push:
+      external-enabled: ${EASYSUBWAY_PUSH_EXTERNAL_ENABLED:false}

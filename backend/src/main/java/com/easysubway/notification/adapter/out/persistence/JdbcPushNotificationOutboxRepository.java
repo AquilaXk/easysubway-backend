@@ -14,6 +14,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -30,6 +31,7 @@ public class JdbcPushNotificationOutboxRepository implements
 
 	private final JdbcTemplate jdbcTemplate;
 
+	@Autowired
 	public JdbcPushNotificationOutboxRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource));
 	}

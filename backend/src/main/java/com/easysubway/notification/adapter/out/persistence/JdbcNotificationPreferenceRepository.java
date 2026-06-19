@@ -12,6 +12,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -31,6 +32,7 @@ public class JdbcNotificationPreferenceRepository implements
 	private final JdbcTemplate jdbcTemplate;
 	private final DatabaseDialect databaseDialect;
 
+	@Autowired
 	public JdbcNotificationPreferenceRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource));
 	}

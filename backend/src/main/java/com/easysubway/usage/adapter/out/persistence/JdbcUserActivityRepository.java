@@ -12,6 +12,7 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -24,6 +25,7 @@ public class JdbcUserActivityRepository implements RecordUserActivityPort, Recor
 
 	private final JdbcTemplate jdbcTemplate;
 
+	@Autowired
 	public JdbcUserActivityRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource));
 	}

@@ -10,6 +10,7 @@ import java.sql.SQLException;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -23,6 +24,7 @@ public class JdbcFieldVerificationSessionRepository implements FieldVerification
 	private final JdbcTemplate jdbcTemplate;
 	private final DatabaseDialect databaseDialect;
 
+	@Autowired
 	public JdbcFieldVerificationSessionRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource));
 	}

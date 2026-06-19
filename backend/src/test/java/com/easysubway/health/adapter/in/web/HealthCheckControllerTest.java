@@ -46,6 +46,14 @@ class HealthCheckControllerTest {
 	}
 
 	@Test
+	@DisplayName("액추에이터 readiness 엔드포인트가 트래픽 수신 가능 상태를 반환한다")
+	void actuatorReadinessIsAvailable() throws Exception {
+		mockMvc.perform(get("/actuator/health/readiness"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.status").value("UP"));
+	}
+
+	@Test
 	@DisplayName("Prometheus 스크랩용 액추에이터 지표 엔드포인트를 노출한다")
 	void actuatorPrometheusIsAvailable() throws Exception {
 		assertThat(webEndpointsSupplier.getEndpoints())
