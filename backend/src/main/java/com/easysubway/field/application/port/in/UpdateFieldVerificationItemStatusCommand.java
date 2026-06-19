@@ -6,6 +6,7 @@ public record UpdateFieldVerificationItemStatusCommand(
 	String stationId,
 	String itemId,
 	FieldVerificationStatus status,
-	String note
+	String note,
+	String changedBy
 ) {
 }

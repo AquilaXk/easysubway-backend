@@ -4,11 +4,14 @@ import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
+import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import java.security.Principal;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -43,13 +46,25 @@ class FieldVerificationAdminController {
 		return ApiResponse.ok(FieldVerificationView.from(fieldVerificationUseCase.getStationVerification(stationId)));
 	}
 
+	@GetMapping("/admin/field-verifications/stations/{stationId}/history")
+	ApiResponse<List<FieldVerificationChangeHistoryView>> stationFieldVerificationChangeHistory(
+		@PathVariable String stationId
+	) {
+		return ApiResponse.ok(fieldVerificationUseCase.listStationChangeHistory(stationId).stream()
+			.map(FieldVerificationChangeHistoryView::from)
+			.toList());
+	}
+
 	@PatchMapping("/admin/field-verifications/stations/{stationId}/items/{itemId}/status")
 	ApiResponse<FieldVerificationView> updateFieldVerificationItemStatus(
 		@PathVariable String stationId,
 		@PathVariable String itemId,
-		@RequestBody UpdateFieldVerificationItemStatusRequest request
+		@RequestBody UpdateFieldVerificationItemStatusRequest request,
+		Principal principal
 	) {
-		FieldVerificationSession session = fieldVerificationUseCase.updateItemStatus(request.toCommand(stationId, itemId));
+		FieldVerificationSession session = fieldVerificationUseCase.updateItemStatus(
+			request.toCommand(stationId, itemId, principal.getName())
+		);
 		return ApiResponse.ok(FieldVerificationView.from(session));
 	}
 
@@ -170,12 +185,41 @@ class FieldVerificationAdminController {
 		}
 	}
 
+	record FieldVerificationChangeHistoryView(
+		String historyId,
+		String sessionId,
+		String stationId,
+		String itemId,
+		FieldVerificationStatus previousStatus,
+		FieldVerificationStatus newStatus,
+		String previousNote,
+		String newNote,
+		String changedBy,
+		LocalDateTime changedAt
+	) {
+
+		static FieldVerificationChangeHistoryView from(FieldVerificationChangeHistory history) {
+			return new FieldVerificationChangeHistoryView(
+				history.id(),
+				history.sessionId(),
+				history.stationId(),
+				history.itemId(),
+				history.previousStatus(),
+				history.newStatus(),
+				history.previousNote(),
+				history.newNote(),
+				history.changedBy(),
+				history.changedAt()
+			);
+		}
+	}
+
 	record UpdateFieldVerificationItemStatusRequest(
 		FieldVerificationStatus status,
 		String note
 	) {
 
-		UpdateFieldVerificationItemStatusCommand toCommand(String stationId, String itemId) {
+		UpdateFieldVerificationItemStatusCommand toCommand(String stationId, String itemId, String changedBy) {
 			if (status == null) {
 				throw new InvalidRequestException("현장 검증 상태를 선택해야 합니다.");
 			}
@@ -183,7 +227,7 @@ class FieldVerificationAdminController {
 				&& status != FieldVerificationStatus.NEEDS_RECHECK) {
 				throw new InvalidRequestException("현장 검증 상태는 VERIFIED 또는 NEEDS_RECHECK만 허용됩니다.");
 			}
-			return new UpdateFieldVerificationItemStatusCommand(stationId, itemId, status, note);
+			return new UpdateFieldVerificationItemStatusCommand(stationId, itemId, status, note, changedBy);
 		}
 	}
 }

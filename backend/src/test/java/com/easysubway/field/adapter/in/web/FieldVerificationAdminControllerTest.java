@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
+import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
@@ -146,6 +147,11 @@ class FieldVerificationAdminControllerTest {
 			}
 
 			@Override
+			public List<FieldVerificationChangeHistory> listStationChangeHistory(String stationId) {
+				return List.of();
+			}
+
+			@Override
 			public FieldVerificationSession getStationVerification(String stationId) {
 				return new FieldVerificationSession(
 					"session-formula",
@@ -212,6 +218,47 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(jsonPath("$.data.items[1].itemId").value("field-verification-sadang-elevator"))
 			.andExpect(jsonPath("$.data.items[1].status").value("NEEDS_RECHECK"))
 			.andExpect(jsonPath("$.data.items[1].note").value("엘리베이터 운행 중지 안내문 확인 필요"));
+	}
+
+	@Test
+	@DisplayName("관리자는 역별 현장 검증 변경 이력을 조회한다")
+	void adminListsStationFieldVerificationChangeHistory() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "NEEDS_RECHECK",
+					  "note": "엘리베이터 운행 중지 안내문 확인 필요"
+					}
+					"""))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang/history")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data[0].sessionId").value("field-verification-sadang-2026-06"))
+			.andExpect(jsonPath("$.data[0].stationId").value("station-sadang"))
+			.andExpect(jsonPath("$.data[0].itemId").value("field-verification-sadang-elevator"))
+			.andExpect(jsonPath("$.data[0].previousStatus").value("PLANNED"))
+			.andExpect(jsonPath("$.data[0].newStatus").value("NEEDS_RECHECK"))
+			.andExpect(jsonPath("$.data[0].previousNote").doesNotExist())
+			.andExpect(jsonPath("$.data[0].newNote").value("엘리베이터 운행 중지 안내문 확인 필요"))
+			.andExpect(jsonPath("$.data[0].changedBy").value("admin-user"))
+			.andExpect(jsonPath("$.data[0].changedAt").isNotEmpty());
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 현장 검증 변경 이력 조회는 공통 404 응답을 반환한다")
+	void listMissingStationFieldVerificationChangeHistoryReturnsCommonError() throws Exception {
+		mockMvc.perform(get("/admin/field-verifications/stations/missing-station/history")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("현장 검증 기준선을 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -296,6 +343,17 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(status().isUnauthorized());
 
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sangnoksu/export.csv")
+				.with(httpBasic("anonymous-user-1", "user-test-password")))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("현장 검증 변경 이력 API는 관리자 인증을 요구한다")
+	void fieldVerificationChangeHistoryRequiresAdminAuthentication() throws Exception {
+		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang/history"))
+			.andExpect(status().isUnauthorized());
+
+		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang/history")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))
 			.andExpect(status().isForbidden());
 	}

@@ -1,5 +1,6 @@
 package com.easysubway.field.application.port.in;
 
+import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationSession;
 import java.util.List;
 
@@ -10,4 +11,6 @@ public interface FieldVerificationUseCase {
 	FieldVerificationSession getStationVerification(String stationId);
 
 	FieldVerificationSession updateItemStatus(UpdateFieldVerificationItemStatusCommand command);
+
+	List<FieldVerificationChangeHistory> listStationChangeHistory(String stationId);
 }

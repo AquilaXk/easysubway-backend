@@ -158,6 +158,32 @@ CREATE TABLE IF NOT EXISTS field_verification_items (
 CREATE INDEX IF NOT EXISTS idx_field_verification_items_session
 	ON field_verification_items (session_id, item_type ASC, item_id ASC);
 
+CREATE TABLE IF NOT EXISTS field_verification_change_history (
+	history_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	session_id VARCHAR(120) NOT NULL,
+	station_id VARCHAR(120) NOT NULL,
+	item_id VARCHAR(120) NOT NULL,
+	previous_status VARCHAR(40) NOT NULL,
+	new_status VARCHAR(40) NOT NULL,
+	previous_note VARCHAR(1000),
+	new_note VARCHAR(1000),
+	changed_by VARCHAR(120) NOT NULL,
+	changed_at TIMESTAMP NOT NULL,
+	CONSTRAINT fk_field_verification_change_history_session
+		FOREIGN KEY (session_id) REFERENCES field_verification_sessions(session_id)
+		ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT fk_field_verification_change_history_item
+		FOREIGN KEY (item_id) REFERENCES field_verification_items(item_id)
+		ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT chk_field_verification_change_history_previous_status
+		CHECK (previous_status IN ('PLANNED', 'IN_PROGRESS', 'VERIFIED', 'NEEDS_RECHECK')),
+	CONSTRAINT chk_field_verification_change_history_new_status
+		CHECK (new_status IN ('PLANNED', 'IN_PROGRESS', 'VERIFIED', 'NEEDS_RECHECK'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_field_verification_change_history_station
+	ON field_verification_change_history (station_id, changed_at DESC, history_id ASC);
+
 CREATE TABLE IF NOT EXISTS mobility_profiles (
 	user_id VARCHAR(120) NOT NULL PRIMARY KEY,
 	mobility_type VARCHAR(40) NOT NULL,

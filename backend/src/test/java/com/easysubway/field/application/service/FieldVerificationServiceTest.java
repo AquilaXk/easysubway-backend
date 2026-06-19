@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
+import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import java.time.LocalDate;
@@ -87,7 +88,8 @@ class FieldVerificationServiceTest {
 			"station-sadang",
 			"field-verification-sadang-elevator",
 			FieldVerificationStatus.NEEDS_RECHECK,
-			"엘리베이터 운행 중지 안내문 확인 필요"
+			"엘리베이터 운행 중지 안내문 확인 필요",
+			"admin-user"
 		));
 
 		assertThat(session.stationId()).isEqualTo("station-sadang");
@@ -102,13 +104,60 @@ class FieldVerificationServiceTest {
 	}
 
 	@Test
+	@DisplayName("현장 검증 항목 상태 변경 이력을 최신순으로 조회한다")
+	void listsFieldVerificationItemChangeHistory() {
+		service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sadang",
+			"field-verification-sadang-elevator",
+			FieldVerificationStatus.NEEDS_RECHECK,
+			"엘리베이터 운행 중지 안내문 확인 필요",
+			"admin-user"
+		));
+		service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
+			"station-sadang",
+			"field-verification-sadang-restroom",
+			FieldVerificationStatus.VERIFIED,
+			"화장실 위치 확인 완료",
+			"second-admin"
+		));
+
+		var histories = service.listStationChangeHistory("station-sadang");
+
+		assertThat(histories)
+			.extracting(FieldVerificationChangeHistory::itemId)
+			.containsExactly(
+				"field-verification-sadang-restroom",
+				"field-verification-sadang-elevator"
+			);
+		assertThat(histories.get(0)).satisfies(history -> {
+			assertThat(history.sessionId()).isEqualTo("field-verification-sadang-2026-06");
+			assertThat(history.stationId()).isEqualTo("station-sadang");
+			assertThat(history.previousStatus()).isEqualTo(FieldVerificationStatus.PLANNED);
+			assertThat(history.newStatus()).isEqualTo(FieldVerificationStatus.VERIFIED);
+			assertThat(history.previousNote()).isNull();
+			assertThat(history.newNote()).isEqualTo("화장실 위치 확인 완료");
+			assertThat(history.changedBy()).isEqualTo("second-admin");
+			assertThat(history.changedAt()).isNotNull();
+		});
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 역의 현장 검증 변경 이력 조회는 실패한다")
+	void listMissingStationChangeHistoryFails() {
+		assertThatThrownBy(() -> service.listStationChangeHistory("missing-station"))
+			.isInstanceOf(ResourceNotFoundException.class)
+			.hasMessage("현장 검증 기준선을 찾을 수 없습니다.");
+	}
+
+	@Test
 	@DisplayName("존재하지 않는 현장 검증 항목 상태 변경은 실패한다")
 	void updateMissingFieldVerificationItemStatusFails() {
 		assertThatThrownBy(() -> service.updateItemStatus(new UpdateFieldVerificationItemStatusCommand(
 			"station-sadang",
 			"missing-item",
 			FieldVerificationStatus.VERIFIED,
-			"확인 완료"
+			"확인 완료",
+			"admin-user"
 		)))
 			.isInstanceOf(ResourceNotFoundException.class)
 			.hasMessage("현장 검증 항목을 찾을 수 없습니다.");
