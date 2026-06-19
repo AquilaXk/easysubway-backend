@@ -124,6 +124,40 @@ CREATE INDEX IF NOT EXISTS idx_data_source_raw_archives_run
 CREATE INDEX IF NOT EXISTS idx_data_source_raw_archives_source_captured
 	ON data_source_raw_archives (source, captured_at DESC, archive_id ASC);
 
+CREATE TABLE IF NOT EXISTS field_verification_sessions (
+	session_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	station_id VARCHAR(120) NOT NULL,
+	station_name VARCHAR(120) NOT NULL,
+	verified_at DATE NOT NULL,
+	verified_by VARCHAR(120) NOT NULL,
+	status VARCHAR(40) NOT NULL,
+	note VARCHAR(1000),
+	CONSTRAINT chk_field_verification_sessions_status
+		CHECK (status IN ('PLANNED', 'IN_PROGRESS', 'VERIFIED', 'NEEDS_RECHECK'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_field_verification_sessions_station
+	ON field_verification_sessions (station_id, verified_at DESC, session_id ASC);
+
+CREATE TABLE IF NOT EXISTS field_verification_items (
+	item_id VARCHAR(120) NOT NULL PRIMARY KEY,
+	session_id VARCHAR(120) NOT NULL,
+	item_type VARCHAR(40) NOT NULL,
+	target_name VARCHAR(200) NOT NULL,
+	status VARCHAR(40) NOT NULL,
+	note VARCHAR(1000),
+	CONSTRAINT fk_field_verification_items_session
+		FOREIGN KEY (session_id) REFERENCES field_verification_sessions(session_id)
+		ON DELETE CASCADE ON UPDATE CASCADE,
+	CONSTRAINT chk_field_verification_items_type
+		CHECK (item_type IN ('EXIT', 'ELEVATOR', 'ESCALATOR', 'RESTROOM', 'PLATFORM_TRANSFER')),
+	CONSTRAINT chk_field_verification_items_status
+		CHECK (status IN ('PLANNED', 'IN_PROGRESS', 'VERIFIED', 'NEEDS_RECHECK'))
+);
+
+CREATE INDEX IF NOT EXISTS idx_field_verification_items_session
+	ON field_verification_items (session_id, item_type ASC, item_id ASC);
+
 CREATE TABLE IF NOT EXISTS mobility_profiles (
 	user_id VARCHAR(120) NOT NULL PRIMARY KEY,
 	mobility_type VARCHAR(40) NOT NULL,
