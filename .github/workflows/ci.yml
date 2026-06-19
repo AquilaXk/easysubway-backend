@@ -114,7 +114,15 @@ jobs:
 
       - name: Repository CI / Run contract tests
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
         run: node --test tools/ci/*.test.mjs
+
+      - name: Repository CI / Run data pack tool tests
+        if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: node --test tools/datapack/*.test.mjs
 
       - name: Repository CI / Validate Docker Compose config
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
