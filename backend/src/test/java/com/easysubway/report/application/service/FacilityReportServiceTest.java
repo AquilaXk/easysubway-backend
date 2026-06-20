@@ -6,9 +6,14 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
+import com.easysubway.report.adapter.out.storage.LocalFacilityReportPhotoStorage;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
+import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
+import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
 import com.easysubway.report.domain.FacilityReport;
@@ -32,6 +37,7 @@ import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.math.BigDecimal;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Clock;
@@ -46,6 +52,7 @@ import java.util.Optional;
 import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 @DisplayName("시설 신고 서비스")
 class FacilityReportServiceTest {
@@ -162,6 +169,51 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("receipt token은 제출 식별자가 아니라 안전한 난수에서 생성한다")
+	void receiptTokenUsesRandomEntropyInsteadOfClientSubmissionId() {
+		FacilityReportReceiptTokens receiptTokens = new FacilityReportReceiptTokens(
+			"test-receipt-token-pepper-with-enough-entropy"
+		);
+
+		var first = receiptTokens.issue("client-submission-random-1");
+		var second = receiptTokens.issue("client-submission-random-1");
+
+		assertThat(first.token()).isNotEqualTo(second.token());
+		assertThat(first.hash()).isNotEqualTo(second.hash());
+		assertThat(receiptTokens.matches(first.token(), first.hash())).isTrue();
+		assertThat(receiptTokens.matches(second.token(), second.hash())).isTrue();
+	}
+
+	@Test
+	@DisplayName("receipt token 검증은 기존 SHA-256 hash를 유지 호환한다")
+	void receiptTokenMatchesLegacySha256Hash() {
+		FacilityReportReceiptTokens receiptTokens = new FacilityReportReceiptTokens(
+			"test-receipt-token-pepper-with-enough-entropy"
+		);
+		String token = "legacy-receipt-token";
+		String legacyHash = sha256Hex(
+			"receipt-token-hash:test-receipt-token-pepper-with-enough-entropy:legacy-receipt-token"
+				.getBytes(StandardCharsets.UTF_8)
+		);
+
+		assertThat(receiptTokens.matches(token, legacyHash)).isTrue();
+		assertThat(receiptTokens.hash(token)).isNotEqualTo(legacyHash);
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 강한 receipt token pepper가 없으면 시작하지 않는다")
+	void prodProfileFailsWithoutStrongReceiptTokenPepper() {
+		new ApplicationContextRunner()
+			.withUserConfiguration(ProductionReportReceiptTokenPepperValidator.class)
+			.withPropertyValues("spring.profiles.active=prod")
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasRootCauseMessage("운영 receipt token pepper 설정이 필요합니다.");
+			});
+	}
+
+	@Test
 	@DisplayName("시설 신고 사진은 허용된 이미지 형식만 저장한다")
 	void createReportRequiresAllowedPhotoContentType() {
 		assertThatThrownBy(() -> service.createReport(photoReportCommand(
@@ -220,7 +272,7 @@ class FacilityReportServiceTest {
 	@DisplayName("시설 신고 object 사진은 업로드된 객체를 요구한다")
 	void createReportRequiresUploadedPhotoObject() {
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
 			11L
 		)))
@@ -233,19 +285,19 @@ class FacilityReportServiceTest {
 	void createReportVerifiesUploadedPhotoObjectMetadata() {
 		byte[] jpegBytes = validJpegBytes();
 		FacilityReportService service = serviceWithUploadedPhoto(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"image/jpeg",
 			jpegBytes
 		);
 
 		assertThatNoException().isThrownBy(() -> service.createReport(objectPhotoReportCommand(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			sha256Hex(jpegBytes),
 			(long) jpegBytes.length
 		)));
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
 			"client-submission-2",
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			(long) jpegBytes.length
 		)))
@@ -254,17 +306,88 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고 object 사진은 신고 생성 성공 후 같은 업로드 객체를 다시 사용할 수 없다")
+	void createReportClaimsUploadedPhotoObjectOnce() throws IOException {
+		byte[] jpegBytes = validJpegBytes();
+		String objectKey = "facility-reports/unclaimed/client-submission-once-photo.jpg";
+		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(
+			Files.createTempDirectory("facility-report-photo-once-")
+		);
+		storage.storeUploadedReportPhoto(new StoreUploadedReportPhotoCommand(objectKey, jpegBytes));
+		FacilityReportService service = serviceWithPhotoStorage(storage);
+
+		assertThatNoException().isThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"client-submission-once-1",
+			objectKey,
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		)));
+
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"client-submission-once-2",
+			objectKey,
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진 원본 삭제 실패는 receipt token 응답을 막지 않는다")
+	void createReportWithReceiptReturnsTokenWhenClaimCleanupFails() {
+		byte[] jpegBytes = validJpegBytes();
+		String objectKey = "facility-reports/unclaimed/client-submission-cleanup-fails-photo.jpg";
+		ThrowingDeletePhotoLoader photoLoader = new ThrowingDeletePhotoLoader(objectKey, "image/jpeg", jpegBytes);
+		FacilityReportService service = serviceWithPhotoLoader(photoLoader);
+
+		CreatedFacilityReport created = service.createReportWithReceipt(objectPhotoReportCommand(
+			"client-submission-cleanup-fails",
+			objectKey,
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		));
+
+		assertThat(created.report().id()).isNotBlank();
+		assertThat(created.receiptToken()).isNotBlank();
+		assertThat(created.report().photoObjectKey()).startsWith("facility-reports/" + created.report().id() + "/");
+		assertThat(photoLoader.deleteAttempted).isTrue();
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진은 최종 저장 경로의 객체를 재사용하거나 삭제하지 않는다")
+	void createReportRejectsFinalStoredPhotoObjectKey() throws IOException {
+		byte[] jpegBytes = validJpegBytes();
+		String objectKey = "facility-reports/report-existing/final-photo.jpg";
+		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(
+			Files.createTempDirectory("facility-report-final-photo-")
+		);
+		storage.storeUploadedReportPhoto(new StoreUploadedReportPhotoCommand(objectKey, jpegBytes));
+		FacilityReportService service = serviceWithPhotoStorage(storage);
+
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"client-submission-final-key-1",
+			objectKey,
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		assertThat(storage.loadFacilityReportPhoto(objectKey)).isPresent();
+	}
+
+	@Test
 	@DisplayName("시설 신고 object 사진은 이미지가 아닌 업로드 객체를 거부한다")
 	void createReportRejectsNonImageUploadedPhotoObject() {
 		byte[] invalidBytes = "image-bytes".getBytes(StandardCharsets.UTF_8);
 		FacilityReportService service = serviceWithUploadedPhoto(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"image/jpeg",
 			invalidBytes
 		);
 
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			sha256Hex(invalidBytes),
 			(long) invalidBytes.length
 		)))
@@ -1142,6 +1265,12 @@ class FacilityReportServiceTest {
 	}
 
 	private FacilityReportService serviceWithUploadedPhoto(String objectKey, String contentType, byte[] bytes) {
+		return serviceWithPhotoLoader(candidateObjectKey -> objectKey.equals(candidateObjectKey)
+			? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
+			: Optional.empty());
+	}
+
+	private FacilityReportService serviceWithPhotoLoader(LoadFacilityReportPhotoPort photoLoader) {
 		var repository = new InMemoryFacilityReportRepository();
 		return new FacilityReportService(
 			transitRepository,
@@ -1158,12 +1287,57 @@ class FacilityReportServiceTest {
 			},
 			audit -> audit,
 			reportId -> List.of(),
-			candidateObjectKey -> objectKey.equals(candidateObjectKey)
-				? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
-				: Optional.empty(),
+			photoLoader,
 			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul")),
 			"local-dev-report-receipt-pepper"
 		);
+	}
+
+	private FacilityReportService serviceWithPhotoStorage(LocalFacilityReportPhotoStorage storage) {
+		var repository = new InMemoryFacilityReportRepository();
+		return new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			repository,
+			repository,
+			storage,
+			command -> {
+			},
+			command -> {
+			},
+			audit -> audit,
+			reportId -> List.of(),
+			storage,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul")),
+			"local-dev-report-receipt-pepper"
+		);
+	}
+
+	private static final class ThrowingDeletePhotoLoader implements LoadFacilityReportPhotoPort, DeleteFacilityReportPhotoPort {
+
+		private final String objectKey;
+		private final String contentType;
+		private final byte[] bytes;
+		private boolean deleteAttempted;
+
+		private ThrowingDeletePhotoLoader(String objectKey, String contentType, byte[] bytes) {
+			this.objectKey = objectKey;
+			this.contentType = contentType;
+			this.bytes = bytes;
+		}
+
+		@Override
+		public Optional<LoadedFacilityReportPhoto> loadFacilityReportPhoto(String candidateObjectKey) {
+			return objectKey.equals(candidateObjectKey)
+				? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
+				: Optional.empty();
+		}
+
+		@Override
+		public void deleteFacilityReportPhoto(String candidateObjectKey) {
+			deleteAttempted = true;
+			throw new IllegalStateException("object delete failed");
+		}
 	}
 
 	private String validJpegBase64() {

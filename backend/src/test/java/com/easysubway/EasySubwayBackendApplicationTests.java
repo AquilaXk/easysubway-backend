@@ -36,6 +36,13 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.admin.password=admin-password",
 			"easysubway.auth.client-ip.trusted-proxies=",
 			"easysubway.notifications.push.external-enabled=false",
+			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
+			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
+			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
+			"easysubway.report.upload.bucket=easysubway-report-uploads",
+			"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",
+			"easysubway.report.upload.object-storage-secret-key=prod-object-storage-secret-key-with-enough-entropy",
+			"easysubway.report.upload.object-storage-region=ap-northeast-2",
 			"management.endpoint.health.show-details=always"
 		}
 	)

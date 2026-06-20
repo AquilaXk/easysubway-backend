@@ -2,20 +2,32 @@ package com.easysubway.report.application.service;
 
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
+import java.security.SecureRandom;
 import java.util.Base64;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 
 class FacilityReportReceiptTokens {
 
+	private static final int TOKEN_BYTES = 32;
+	private static final String HMAC_ALGORITHM = "HmacSHA256";
+
 	private final String pepper;
+	private final SecureRandom secureRandom;
 
 	FacilityReportReceiptTokens(String pepper) {
+		this(pepper, new SecureRandom());
+	}
+
+	FacilityReportReceiptTokens(String pepper, SecureRandom secureRandom) {
 		this.pepper = pepper;
+		this.secureRandom = secureRandom;
 	}
 
 	IssuedReceiptToken issue(String clientSubmissionId) {
-		String normalizedClientSubmissionId = normalize(clientSubmissionId);
-		byte[] tokenBytes = sha256("receipt-token:%s:%s".formatted(pepper, normalizedClientSubmissionId));
+		normalize(clientSubmissionId);
+		byte[] tokenBytes = new byte[TOKEN_BYTES];
+		secureRandom.nextBytes(tokenBytes);
 		String token = Base64.getUrlEncoder()
 			.withoutPadding()
 			.encodeToString(tokenBytes);
@@ -23,17 +35,16 @@ class FacilityReportReceiptTokens {
 	}
 
 	String hash(String token) {
-		return hex(sha256("receipt-token-hash:%s:%s".formatted(pepper, normalize(token))));
+		return hex(hmac(normalize(token)));
 	}
 
 	boolean matches(String token, String expectedHash) {
 		if (token == null || token.isBlank() || expectedHash == null) {
 			return false;
 		}
-		return MessageDigest.isEqual(
-			hash(token).getBytes(StandardCharsets.UTF_8),
-			expectedHash.getBytes(StandardCharsets.UTF_8)
-		);
+		byte[] expectedHashBytes = expectedHash.getBytes(StandardCharsets.UTF_8);
+		return MessageDigest.isEqual(hash(token).getBytes(StandardCharsets.UTF_8), expectedHashBytes)
+			|| MessageDigest.isEqual(legacyHash(token).getBytes(StandardCharsets.UTF_8), expectedHashBytes);
 	}
 
 	private String normalize(String value) {
@@ -43,11 +54,24 @@ class FacilityReportReceiptTokens {
 		return value.trim();
 	}
 
+	private byte[] hmac(String value) {
+		try {
+			Mac mac = Mac.getInstance(HMAC_ALGORITHM);
+			mac.init(new SecretKeySpec(pepper.getBytes(StandardCharsets.UTF_8), HMAC_ALGORITHM));
+			return mac.doFinal(value.getBytes(StandardCharsets.UTF_8));
+		} catch (java.security.GeneralSecurityException exception) {
+			throw new IllegalStateException("HMAC-SHA256 is required", exception);
+		}
+	}
+
+	private String legacyHash(String token) {
+		return hex(sha256("receipt-token-hash:%s:%s".formatted(pepper, normalize(token))));
+	}
+
 	private byte[] sha256(String value) {
 		try {
-			return MessageDigest.getInstance("SHA-256")
-				.digest(value.getBytes(StandardCharsets.UTF_8));
-		} catch (NoSuchAlgorithmException exception) {
+			return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+		} catch (java.security.GeneralSecurityException exception) {
 			throw new IllegalStateException("SHA-256 is required", exception);
 		}
 	}
