@@ -38,6 +38,7 @@ class JdbcPushNotificationOutboxRepositoryTest {
 				body VARCHAR(1000) NOT NULL,
 				status VARCHAR(40) NOT NULL,
 				failure_reason VARCHAR(1000),
+				processing_claimed_at TIMESTAMP,
 				created_at TIMESTAMP NOT NULL,
 				CONSTRAINT chk_push_notification_outbox_platform CHECK (platform IN ('ANDROID', 'IOS')),
 				CONSTRAINT chk_push_notification_outbox_type CHECK (notification_type IN ('FAVORITE_STATION_FACILITY', 'FAVORITE_ROUTE_FACILITY', 'REPORT_STATUS', 'DATA_QUALITY')),
@@ -150,6 +151,33 @@ class JdbcPushNotificationOutboxRepositoryTest {
 		assertThat(repository.loadPushNotifications("anonymous-user-1"))
 			.extracting("notificationId", "status")
 			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+	}
+
+	@Test
+	@DisplayName("오래된 processing claim은 다시 발송 대상으로 조회하고 재선점한다")
+	void staleProcessingClaimCanBeClaimedAgain() {
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9);
+		repository.savePushNotification(pendingNotification);
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isTrue();
+		new JdbcTemplate(new DriverManagerDataSource(
+			"jdbc:h2:mem:push-notification-outbox;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		)).update(
+			"""
+				UPDATE push_notification_outbox
+				SET processing_claimed_at = ?
+				WHERE notification_id = ?
+				""",
+			LocalDateTime.of(2026, 6, 17, 8, 0),
+			"push-1"
+		);
+
+		assertThat(repository.loadPendingPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+		assertThat(repository.claimPendingPushNotification(pendingNotification.withStatus(PushNotificationStatus.PROCESSING)))
+			.isTrue();
 	}
 
 	@Test

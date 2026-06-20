@@ -12,7 +12,8 @@ public interface SavePushNotificationOutboxPort {
 	}
 
 	default boolean claimPendingPushNotification(PushNotification notification) {
-		if (notification.status() != PushNotificationStatus.PENDING) {
+		if (notification.status() != PushNotificationStatus.PENDING &&
+			notification.status() != PushNotificationStatus.PROCESSING) {
 			return false;
 		}
 		savePushNotification(notification.withStatus(PushNotificationStatus.PROCESSING));

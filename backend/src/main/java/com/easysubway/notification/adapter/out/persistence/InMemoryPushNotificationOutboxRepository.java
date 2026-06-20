@@ -8,6 +8,8 @@ import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
+import java.time.Clock;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.List;
@@ -27,7 +29,21 @@ public class InMemoryPushNotificationOutboxRepository implements
 	SummarizePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
 
+	private static final Duration DEFAULT_PROCESSING_CLAIM_TIMEOUT = Duration.ofMinutes(5);
+
 	private final Map<String, List<PushNotification>> notificationsByUserId = new ConcurrentHashMap<>();
+	private final Map<String, LocalDateTime> processingClaimedAtByNotificationId = new ConcurrentHashMap<>();
+	private final Clock clock;
+	private final Duration processingClaimTimeout;
+
+	public InMemoryPushNotificationOutboxRepository() {
+		this(Clock.systemUTC(), DEFAULT_PROCESSING_CLAIM_TIMEOUT);
+	}
+
+	InMemoryPushNotificationOutboxRepository(Clock clock, Duration processingClaimTimeout) {
+		this.clock = clock;
+		this.processingClaimTimeout = processingClaimTimeout;
+	}
 
 	@Override
 	public PushNotification savePushNotification(PushNotification notification) {
@@ -40,6 +56,7 @@ public class InMemoryPushNotificationOutboxRepository implements
 				}
 				if (entry.getKey().equals(notification.userId())) {
 					notifications.set(index, notification);
+					recordProcessingClaim(notification);
 					return notification;
 				}
 				notifications.remove(index);
@@ -51,6 +68,7 @@ public class InMemoryPushNotificationOutboxRepository implements
 			ignored -> new CopyOnWriteArrayList<>()
 		);
 		targetNotifications.add(notification);
+		recordProcessingClaim(notification);
 		return notification;
 	}
 
@@ -71,10 +89,11 @@ public class InMemoryPushNotificationOutboxRepository implements
 			if (!storedNotification.notificationId().equals(notification.notificationId())) {
 				continue;
 			}
-			if (storedNotification.status() != PushNotificationStatus.PENDING) {
+			if (!canClaim(storedNotification)) {
 				return false;
 			}
 			notifications.set(index, storedNotification.withStatus(PushNotificationStatus.PROCESSING));
+			processingClaimedAtByNotificationId.put(storedNotification.notificationId(), now());
 			return true;
 		}
 		return false;
@@ -88,7 +107,7 @@ public class InMemoryPushNotificationOutboxRepository implements
 	@Override
 	public List<PushNotification> loadPendingPushNotifications(String userId) {
 		return notificationsByUserId.getOrDefault(userId, List.of()).stream()
-			.filter(notification -> notification.status() == PushNotificationStatus.PENDING)
+			.filter(this::canClaim)
 			.toList();
 	}
 
@@ -140,14 +159,41 @@ public class InMemoryPushNotificationOutboxRepository implements
 	@Override
 	public int deletePushNotifications(String userId) {
 		List<PushNotification> removed = notificationsByUserId.remove(userId);
+		if (removed != null) {
+			for (PushNotification notification : removed) {
+				processingClaimedAtByNotificationId.remove(notification.notificationId());
+			}
+		}
 		return removed == null ? 0 : removed.size();
 	}
 
 	private Optional<LocalDateTime> oldestPendingCreatedAt(List<PushNotification> notifications) {
 		return notifications.stream()
-			.filter(notification -> notification.status() == PushNotificationStatus.PENDING)
+			.filter(this::canClaim)
 			.map(PushNotification::createdAt)
 			.min(Comparator.naturalOrder());
+	}
+
+	private boolean canClaim(PushNotification notification) {
+		return notification.status() == PushNotificationStatus.PENDING ||
+			(notification.status() == PushNotificationStatus.PROCESSING && isStaleProcessingClaim(notification));
+	}
+
+	private boolean isStaleProcessingClaim(PushNotification notification) {
+		LocalDateTime claimedAt = processingClaimedAtByNotificationId.get(notification.notificationId());
+		return claimedAt != null && claimedAt.isBefore(now().minus(processingClaimTimeout));
+	}
+
+	private void recordProcessingClaim(PushNotification notification) {
+		if (notification.status() == PushNotificationStatus.PROCESSING) {
+			processingClaimedAtByNotificationId.put(notification.notificationId(), now());
+			return;
+		}
+		processingClaimedAtByNotificationId.remove(notification.notificationId());
+	}
+
+	private LocalDateTime now() {
+		return LocalDateTime.now(clock);
 	}
 
 	private Optional<PushNotification> findNotification(String notificationId) {
