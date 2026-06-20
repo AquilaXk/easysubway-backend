@@ -6,7 +6,11 @@ import com.easysubway.notification.domain.DevicePlatform;
 import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -51,6 +55,68 @@ class InMemoryPushNotificationOutboxRepositoryTest {
 
 		assertThat(repository.loadPendingPushNotificationUserIds())
 			.containsExactly("anonymous-user-1", "anonymous-user-2");
+	}
+
+	@Test
+	@DisplayName("대기 알림 선점은 pending 행만 처리 중으로 전환한다")
+	void claimPendingPushNotificationUpdatesPendingOnly() {
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationStatus.PENDING);
+		repository.savePushNotification(pendingNotification);
+
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isTrue();
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isFalse();
+		assertThat(repository.loadPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+	}
+
+	@Test
+	@DisplayName("오래된 processing claim은 다시 발송 대상으로 조회하고 재선점한다")
+	void staleProcessingClaimCanBeClaimedAgain() {
+		var clock = new MutableClock(Instant.parse("2026-06-17T10:00:00Z"));
+		var repository = new InMemoryPushNotificationOutboxRepository(clock, Duration.ofMinutes(5));
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationStatus.PENDING);
+		repository.savePushNotification(pendingNotification);
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isTrue();
+		clock.advance(Duration.ofMinutes(6));
+
+		assertThat(repository.loadPendingPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+		assertThat(repository.claimPendingPushNotification(pendingNotification.withStatus(PushNotificationStatus.PROCESSING)))
+			.isTrue();
+	}
+
+	private static org.assertj.core.groups.Tuple tuple(Object... values) {
+		return org.assertj.core.api.Assertions.tuple(values);
+	}
+
+	private static class MutableClock extends Clock {
+
+		private Instant instant;
+
+		MutableClock(Instant instant) {
+			this.instant = instant;
+		}
+
+		void advance(Duration duration) {
+			instant = instant.plus(duration);
+		}
+
+		@Override
+		public ZoneId getZone() {
+			return ZoneId.of("UTC");
+		}
+
+		@Override
+		public Clock withZone(ZoneId zone) {
+			return Clock.fixed(instant, zone);
+		}
+
+		@Override
+		public Instant instant() {
+			return instant;
+		}
 	}
 
 	private PushNotification notification(String notificationId, String userId, PushNotificationStatus status) {

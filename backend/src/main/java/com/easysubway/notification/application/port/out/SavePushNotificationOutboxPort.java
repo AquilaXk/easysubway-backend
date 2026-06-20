@@ -9,4 +9,6 @@ public interface SavePushNotificationOutboxPort {
 	default PushNotification savePendingPushNotificationIfAbsent(PushNotification notification) {
 		return savePushNotification(notification);
 	}
+
+	boolean claimPendingPushNotification(PushNotification notification);
 }

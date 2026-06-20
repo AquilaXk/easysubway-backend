@@ -27,4 +27,3 @@ easysubway:
         enabled: ${EASYSUBWAY_PUSH_DELIVERY_ENABLED:false}
         initial-delay-ms: ${EASYSUBWAY_PUSH_DELIVERY_INITIAL_DELAY_MS:10000}
         fixed-delay-ms: ${EASYSUBWAY_PUSH_DELIVERY_FIXED_DELAY_MS:60000}
-        lock-ttl-ms: ${EASYSUBWAY_PUSH_DELIVERY_LOCK_TTL_MS:300000}

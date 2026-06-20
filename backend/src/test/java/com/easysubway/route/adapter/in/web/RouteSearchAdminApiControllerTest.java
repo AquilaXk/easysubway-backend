@@ -3,7 +3,6 @@ package com.easysubway.route.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -18,7 +17,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -42,8 +40,8 @@ class RouteSearchAdminApiControllerTest {
 	@Test
 	@DisplayName("관리자는 경로 검색 요약을 JSON으로 조회한다")
 	void adminGetsRouteSearchSummary() throws Exception {
-		createRouteSearch("SENIOR");
-		createRouteSearch("WHEELCHAIR");
+		saveRouteSearchPort.saveRouteSearch(foundRouteSearch("route-search-found-1", MobilityType.SENIOR));
+		saveRouteSearchPort.saveRouteSearch(foundRouteSearch("route-search-found-2", MobilityType.WHEELCHAIR));
 		saveRouteSearchPort.saveRouteSearch(blockedRouteSearch(
 			"route-search-blocked-1",
 			"계단 없는 역 접근 경로를 확인할 수 없습니다."
@@ -84,17 +82,23 @@ class RouteSearchAdminApiControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
-	private void createRouteSearch(String mobilityType) throws Exception {
-		mockMvc.perform(post("/api/v1/routes/search")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-					  "originStationId": "station-sangnoksu",
-					  "destinationStationId": "station-sadang",
-					  "mobilityType": "%s"
-					}
-					""".formatted(mobilityType)))
-			.andExpect(status().isOk());
+	private RouteSearchResult foundRouteSearch(String routeSearchId, MobilityType mobilityType) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-sangnoksu",
+			"상록수",
+			"station-sadang",
+			"사당",
+			mobilityType,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			18,
+			List.of(),
+			List.of(),
+			List.of(),
+			LocalDateTime.of(2026, 6, 17, 9, 0)
+		);
 	}
 
 	private RouteSearchResult blockedRouteSearch(String routeSearchId, String blockedReason) {

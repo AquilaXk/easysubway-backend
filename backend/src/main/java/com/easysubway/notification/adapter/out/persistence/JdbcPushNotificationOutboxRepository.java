@@ -12,6 +12,8 @@ import com.easysubway.notification.domain.PushNotificationType;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Duration;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -30,6 +32,8 @@ public class JdbcPushNotificationOutboxRepository implements
 	SavePushNotificationOutboxPort,
 	SummarizePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
+
+	private static final Duration PROCESSING_CLAIM_TIMEOUT = Duration.ofMinutes(5);
 
 	private final JdbcTemplate jdbcTemplate;
 	private final DatabaseDialect databaseDialect;
@@ -83,12 +87,20 @@ public class JdbcPushNotificationOutboxRepository implements
 					created_at
 				FROM push_notification_outbox
 				WHERE user_id = ?
-					AND status = ?
+					AND (
+						status = ?
+						OR (
+							status = ?
+							AND processing_claimed_at < ?
+						)
+					)
 				ORDER BY created_at ASC, notification_id ASC
 				""",
 			this::mapPushNotification,
 			userId,
-			PushNotificationStatus.PENDING.name()
+			PushNotificationStatus.PENDING.name(),
+			PushNotificationStatus.PROCESSING.name(),
+			processingClaimExpiresBefore()
 		);
 	}
 
@@ -99,11 +111,17 @@ public class JdbcPushNotificationOutboxRepository implements
 				SELECT user_id
 				FROM push_notification_outbox
 				WHERE status = ?
+					OR (
+						status = ?
+						AND processing_claimed_at < ?
+					)
 				GROUP BY user_id
 				ORDER BY MIN(created_at) ASC, user_id ASC
 				""",
 			(resultSet, rowNumber) -> resultSet.getString("user_id"),
-			PushNotificationStatus.PENDING.name()
+			PushNotificationStatus.PENDING.name(),
+			PushNotificationStatus.PROCESSING.name(),
+			processingClaimExpiresBefore()
 		);
 	}
 
@@ -129,6 +147,32 @@ public class JdbcPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public boolean claimPendingPushNotification(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE push_notification_outbox
+				SET status = ?,
+					failure_reason = NULL,
+					processing_claimed_at = ?
+				WHERE notification_id = ?
+					AND (
+						status = ?
+						OR (
+							status = ?
+							AND processing_claimed_at < ?
+						)
+					)
+				""",
+			PushNotificationStatus.PROCESSING.name(),
+			LocalDateTime.now(),
+			notification.notificationId(),
+			PushNotificationStatus.PENDING.name(),
+			PushNotificationStatus.PROCESSING.name(),
+			processingClaimExpiresBefore()
+		) == 1;
+	}
+
+	@Override
 	public PushNotificationDashboardSummary summarizePushNotificationOutbox() {
 		List<StatusCountRow> statusCounts = jdbcTemplate.query(
 			"""
@@ -142,7 +186,8 @@ public class JdbcPushNotificationOutboxRepository implements
 				resultSet.getLong("count")
 			)
 		);
-		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING);
+		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING) +
+			countByStatus(statusCounts, PushNotificationStatus.PROCESSING);
 		long sentCount = countByStatus(statusCounts, PushNotificationStatus.SENT);
 		long failedCount = countByStatus(statusCounts, PushNotificationStatus.FAILED);
 		String latestFailureReason = latestFailureReason();
@@ -185,6 +230,7 @@ public class JdbcPushNotificationOutboxRepository implements
 					body = ?,
 					status = ?,
 					failure_reason = ?,
+					processing_claimed_at = ?,
 					created_at = ?
 				WHERE notification_id = ?
 				""",
@@ -196,6 +242,7 @@ public class JdbcPushNotificationOutboxRepository implements
 			notification.body(),
 			notification.status().name(),
 			notification.failureReason(),
+			null,
 			notification.createdAt(),
 			notification.notificationId()
 		);
@@ -214,9 +261,10 @@ public class JdbcPushNotificationOutboxRepository implements
 					body,
 					status,
 					failure_reason,
+					processing_claimed_at,
 					created_at
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			notification.notificationId(),
 			notification.userId(),
@@ -227,6 +275,7 @@ public class JdbcPushNotificationOutboxRepository implements
 			notification.body(),
 			notification.status().name(),
 			notification.failureReason(),
+			null,
 			notification.createdAt()
 		);
 	}
@@ -247,9 +296,10 @@ public class JdbcPushNotificationOutboxRepository implements
 					body,
 					status,
 					failure_reason,
+					processing_claimed_at,
 					created_at
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (notification_id) DO NOTHING
 				""",
 			pushNotificationParameters(notification)
@@ -269,9 +319,10 @@ public class JdbcPushNotificationOutboxRepository implements
 					body,
 					status,
 					failure_reason,
+					processing_claimed_at,
 					created_at
 				)
-				SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
+				SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
 				WHERE NOT EXISTS (
 					SELECT 1
 					FROM push_notification_outbox
@@ -287,6 +338,7 @@ public class JdbcPushNotificationOutboxRepository implements
 			notification.body(),
 			notification.status().name(),
 			notification.failureReason(),
+			null,
 			notification.createdAt(),
 			notification.notificationId()
 		);
@@ -303,8 +355,13 @@ public class JdbcPushNotificationOutboxRepository implements
 			notification.body(),
 			notification.status().name(),
 			notification.failureReason(),
+			null,
 			notification.createdAt()
 		};
+	}
+
+	private LocalDateTime processingClaimExpiresBefore() {
+		return LocalDateTime.now().minus(PROCESSING_CLAIM_TIMEOUT);
 	}
 
 	private PushNotification mapPushNotification(ResultSet resultSet, int rowNumber) throws SQLException {

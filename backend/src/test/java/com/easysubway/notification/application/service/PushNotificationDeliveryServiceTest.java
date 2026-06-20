@@ -87,6 +87,24 @@ class PushNotificationDeliveryServiceTest {
 	}
 
 	@Test
+	@DisplayName("다른 실행자가 먼저 선점한 알림은 중복 발송하지 않는다")
+	void deliverPendingNotificationsSkipsNotificationsClaimedByAnotherWorker() {
+		outboxRepository.savePushNotification(notification("push-1", PushNotificationStatus.PENDING));
+		assertThat(outboxRepository.claimPendingPushNotification(notification("push-1", PushNotificationStatus.PENDING)))
+			.isTrue();
+
+		var result = deliveryService.deliverPending(new DeliverPushNotificationsCommand("anonymous-user-1"));
+
+		assertThat(result.sentCount()).isZero();
+		assertThat(result.failedCount()).isZero();
+		assertThat(result.processedCount()).isZero();
+		assertThat(sender.sentNotifications).isEmpty();
+		assertThat(outboxRepository.loadPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+	}
+
+	@Test
 	@DisplayName("sender 예외는 실패 상태로 저장하고 다음 알림 처리를 계속한다")
 	void deliverPendingNotificationsContinuesWhenSenderThrowsException() {
 		outboxRepository.savePushNotification(notification("push-1", PushNotificationStatus.PENDING));

@@ -1,7 +1,5 @@
 package com.easysubway;
 
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -11,11 +9,6 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.test.context.TestConfiguration;
-import org.springframework.context.annotation.Bean;
-import org.springframework.context.annotation.Primary;
-import org.springframework.data.redis.connection.RedisConnection;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -63,18 +56,5 @@ class EasySubwayBackendApplicationTests {
 				.andExpect(jsonPath("$.components.productionReadiness.status").value("DOWN"));
 		}
 
-		@TestConfiguration
-		static class RedisTestConfiguration {
-
-			@Bean
-			@Primary
-			RedisConnectionFactory redisConnectionFactory() {
-				RedisConnectionFactory factory = mock(RedisConnectionFactory.class);
-				RedisConnection connection = mock(RedisConnection.class);
-				when(factory.getConnection()).thenReturn(connection);
-				when(connection.ping()).thenReturn("PONG");
-				return factory;
-			}
-		}
 	}
 }

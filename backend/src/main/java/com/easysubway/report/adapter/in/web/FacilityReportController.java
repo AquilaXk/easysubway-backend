@@ -110,19 +110,6 @@ class FacilityReportController {
 		));
 	}
 
-	@GetMapping("/api/v1/me/reports")
-	ApiResponse<PageResponse<FacilityReportStatusResponse>> myReports(
-		Principal principal,
-		@RequestParam(required = false) Integer page,
-		@RequestParam(required = false) Integer size
-	) {
-		PageResult<FacilityReportSummary> reports = facilityReportUseCase.listUserReportSummaries(
-			principal.getName(),
-			FacilityReportPageRequest.of(page, size)
-		);
-		return ApiResponse.ok(PageResponse.from(reports, FacilityReportStatusResponse::from));
-	}
-
 	@PostMapping("/api/v1/reports/{reportId}/confirm")
 	ApiResponse<FacilityReportStatusResponse> confirmReportResult(
 		@PathVariable String reportId,

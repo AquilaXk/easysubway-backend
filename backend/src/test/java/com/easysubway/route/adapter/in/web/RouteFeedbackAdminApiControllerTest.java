@@ -3,17 +3,19 @@ package com.easysubway.route.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.jayway.jsonpath.JsonPath;
+import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
+import com.easysubway.route.domain.RouteFeedbackRating;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.MediaType;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -30,6 +32,9 @@ class RouteFeedbackAdminApiControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private RouteSearchUseCase routeSearchUseCase;
 
 	@Test
 	@DisplayName("관리자는 경로 피드백 요약을 JSON으로 조회한다")
@@ -74,32 +79,20 @@ class RouteFeedbackAdminApiControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
-	private String createRouteSearch() throws Exception {
-		var result = mockMvc.perform(post("/api/v1/routes/search")
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-					  "originStationId": "station-sangnoksu",
-					  "destinationStationId": "station-sadang",
-					  "mobilityType": "SENIOR"
-					}
-					"""))
-			.andExpect(status().isOk())
-			.andReturn();
-		return JsonPath.read(result.getResponse().getContentAsString(), "$.data.routeSearchId");
+	private String createRouteSearch() {
+		return routeSearchUseCase.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.SENIOR
+		)).routeSearchId();
 	}
 
-	private void submitRouteFeedback(String routeSearchId, String rating, String comment) throws Exception {
-		mockMvc.perform(post("/api/v1/routes/{routeSearchId}/feedback", routeSearchId)
-				.with(httpBasic("anonymous-user-1", "user-test-password"))
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-					  "userId": "anonymous-user-1",
-					  "rating": "%s",
-					  "comment": "%s"
-					}
-					""".formatted(rating, comment)))
-			.andExpect(status().isOk());
+	private void submitRouteFeedback(String routeSearchId, String rating, String comment) {
+		routeSearchUseCase.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			routeSearchId,
+			"anonymous-user-1",
+			RouteFeedbackRating.valueOf(rating),
+			comment
+		));
 	}
 }
