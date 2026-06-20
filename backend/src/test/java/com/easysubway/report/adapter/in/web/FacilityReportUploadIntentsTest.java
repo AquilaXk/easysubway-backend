@@ -101,6 +101,32 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("업로드 intent 생성은 만료된 미청구 object를 실제 삭제 callback에 넘긴다")
+	void createIntentDeletesExpiredObjectsThroughCallback() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			10,
+			10L * 900L * 1024L
+		);
+		var expired = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		List<String> deletedObjectKeys = new ArrayList<>();
+
+		clock.advance(Duration.ofMinutes(16));
+		var fresh = intents.create(
+			"client-submission-2",
+			"image/jpeg",
+			"b".repeat(64),
+			11L,
+			deletedObjectKeys::add
+		);
+
+		assertThat(deletedObjectKeys).containsExactly(expired.objectKey());
+		assertThat(fresh.objectKey()).startsWith("facility-reports/unclaimed/");
+	}
+
+	@Test
 	@DisplayName("업로드 intent는 신고 생성에서 청구되면 pending quota에서 빠진다")
 	void consumeObjectKeyReleasesPendingQuota() {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(

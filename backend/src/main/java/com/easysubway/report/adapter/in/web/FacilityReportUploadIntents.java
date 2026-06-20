@@ -59,8 +59,18 @@ class FacilityReportUploadIntents {
 		String sha256,
 		long sizeBytes
 	) {
-		cleanupExpired(objectKey -> {
+		return create(clientSubmissionId, contentType, sha256, sizeBytes, objectKey -> {
 		});
+	}
+
+	CreatedUploadIntent create(
+		String clientSubmissionId,
+		String contentType,
+		String sha256,
+		long sizeBytes,
+		Consumer<String> deleteExpiredObject
+	) {
+		cleanupExpired(deleteExpiredObject);
 		requireCreateAllowed(clientSubmissionId, contentType, sha256, sizeBytes);
 		String uploadId = newUploadId();
 		String objectKey = OBJECT_KEY_PREFIX + uploadId + extensionFor(contentType);

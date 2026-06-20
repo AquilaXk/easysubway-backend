@@ -1,9 +1,11 @@
 package com.easysubway.report.adapter.out.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoreFacilityReportPhotoCommand;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
+import com.easysubway.report.domain.InvalidFacilityReportException;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
 import java.io.IOException;
@@ -35,6 +37,7 @@ class ObjectStorageFacilityReportPhotoStorageTest {
 		ObjectStorageFacilityReportPhotoStorage storage = new ObjectStorageFacilityReportPhotoStorage(
 			"http://127.0.0.1:" + server.getAddress().getPort(),
 			"easysubway-report-uploads",
+			900L * 1024L,
 			"prod-object-storage-access-key",
 			"prod-object-storage-secret-key-with-enough-entropy",
 			"ap-northeast-2",
@@ -72,6 +75,29 @@ class ObjectStorageFacilityReportPhotoStorageTest {
 		storage.deleteFacilityReportPhoto(storedPhoto.objectKey());
 
 		assertThat(storage.loadFacilityReportPhoto(storedPhoto.objectKey())).isEmpty();
+	}
+
+	@Test
+	void rejectsOversizedObjectBeforeReturningBufferedBytes() throws Exception {
+		startObjectStorageServer();
+		ObjectStorageFacilityReportPhotoStorage storage = new ObjectStorageFacilityReportPhotoStorage(
+			"http://127.0.0.1:" + server.getAddress().getPort(),
+			"easysubway-report-uploads",
+			2L,
+			"prod-object-storage-access-key",
+			"prod-object-storage-secret-key-with-enough-entropy",
+			"ap-northeast-2",
+			HttpClient.newHttpClient(),
+			Clock.fixed(Instant.parse("2026-06-20T00:00:00Z"), ZoneOffset.UTC)
+		);
+		objects.put(
+			"/easysubway-report-uploads/facility-reports/unclaimed/oversized.jpg",
+			new StoredObject("image/jpeg", new byte[] {1, 2, 3})
+		);
+
+		assertThatThrownBy(() -> storage.loadFacilityReportPhoto("facility-reports/unclaimed/oversized.jpg"))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
 	}
 
 	private void startObjectStorageServer() throws IOException {

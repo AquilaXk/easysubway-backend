@@ -6,7 +6,10 @@ import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.Lo
 import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
+import com.easysubway.report.domain.InvalidFacilityReportException;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.UncheckedIOException;
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -51,6 +54,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	private final String accessKey;
 	private final String secretKey;
 	private final String region;
+	private final long maxBytes;
 	private final HttpClient httpClient;
 	private final Clock clock;
 
@@ -58,16 +62,18 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	public ObjectStorageFacilityReportPhotoStorage(
 		@Value("${easysubway.report.upload.object-storage-endpoint:}") String endpoint,
 		@Value("${easysubway.report.upload.bucket:}") String bucket,
+		@Value("${easysubway.report.upload.max-bytes:921600}") long maxBytes,
 		@Value("${easysubway.report.upload.object-storage-access-key:}") String accessKey,
 		@Value("${easysubway.report.upload.object-storage-secret-key:}") String secretKey,
 		@Value("${easysubway.report.upload.object-storage-region:us-east-1}") String region
 	) {
-		this(endpoint, bucket, accessKey, secretKey, region, HttpClient.newHttpClient(), Clock.systemUTC());
+		this(endpoint, bucket, maxBytes, accessKey, secretKey, region, HttpClient.newHttpClient(), Clock.systemUTC());
 	}
 
 	ObjectStorageFacilityReportPhotoStorage(
 		String endpoint,
 		String bucket,
+		long maxBytes,
 		String accessKey,
 		String secretKey,
 		String region,
@@ -76,6 +82,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	) {
 		this.endpoint = requireText(endpoint, "운영 object storage endpoint 설정이 필요합니다.");
 		this.bucket = requireText(bucket, "운영 report upload bucket 설정이 필요합니다.");
+		this.maxBytes = maxBytes;
 		this.accessKey = requireText(accessKey, "운영 object storage access key 설정이 필요합니다.");
 		this.secretKey = requireText(secretKey, "운영 object storage secret 설정이 필요합니다.");
 		this.region = requireText(region, "운영 object storage region 설정이 필요합니다.");
@@ -107,17 +114,26 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		if (objectKey == null || objectKey.isBlank()) {
 			return Optional.empty();
 		}
-		HttpResponse<byte[]> response = send(signedRequest("GET", objectKey.trim(), null, null));
-		if (response.statusCode() == 404) {
-			return Optional.empty();
+		HttpResponse<InputStream> response = sendStream(signedRequest("GET", objectKey.trim(), null, null));
+		try (InputStream responseBody = response.body()) {
+			if (response.statusCode() == 404) {
+				return Optional.empty();
+			}
+			requireSuccess(response.statusCode(), "Failed to load facility report photo object");
+			long contentLength = response.headers().firstValueAsLong("content-length").orElse(-1L);
+			if (contentLength > maxBytes) {
+				throw oversizedPhoto();
+			}
+			byte[] bytes = readBounded(responseBody);
+			String contentType = response.headers()
+				.firstValue("content-type")
+				.map(value -> value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT))
+				.filter(value -> !value.isBlank())
+				.orElseGet(() -> contentTypeFor(objectKey));
+			return Optional.of(new LoadedFacilityReportPhoto(contentType, bytes));
+		} catch (IOException exception) {
+			throw new UncheckedIOException("Failed to read facility report photo object", exception);
 		}
-		requireSuccess(response.statusCode(), "Failed to load facility report photo object");
-		String contentType = response.headers()
-			.firstValue("content-type")
-			.map(value -> value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT))
-			.filter(value -> !value.isBlank())
-			.orElseGet(() -> contentTypeFor(objectKey));
-		return Optional.of(new LoadedFacilityReportPhoto(contentType, response.body()));
 	}
 
 	@Override
@@ -125,7 +141,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		if (objectKey == null || objectKey.isBlank()) {
 			return;
 		}
-		HttpResponse<byte[]> response = send(signedRequest("DELETE", objectKey.trim(), null, null));
+		HttpResponse<byte[]> response = sendBytes(signedRequest("DELETE", objectKey.trim(), null, null));
 		if (response.statusCode() == 404) {
 			return;
 		}
@@ -133,7 +149,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	}
 
 	private void putObject(String objectKey, String contentType, byte[] bytes) {
-		HttpResponse<byte[]> response = send(signedRequest("PUT", objectKey, contentType, bytes));
+		HttpResponse<byte[]> response = sendBytes(signedRequest("PUT", objectKey, contentType, bytes));
 		requireSuccess(response.statusCode(), "Failed to store facility report photo object");
 	}
 
@@ -192,7 +208,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		return builder.GET().build();
 	}
 
-	private HttpResponse<byte[]> send(HttpRequest request) {
+	private HttpResponse<byte[]> sendBytes(HttpRequest request) {
 		try {
 			return httpClient.send(request, BodyHandlers.ofByteArray());
 		} catch (IOException exception) {
@@ -201,6 +217,36 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 			Thread.currentThread().interrupt();
 			throw new IllegalStateException("Interrupted while calling facility report object storage", exception);
 		}
+	}
+
+	private HttpResponse<InputStream> sendStream(HttpRequest request) {
+		try {
+			return httpClient.send(request, BodyHandlers.ofInputStream());
+		} catch (IOException exception) {
+			throw new UncheckedIOException("Failed to call facility report object storage", exception);
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			throw new IllegalStateException("Interrupted while calling facility report object storage", exception);
+		}
+	}
+
+	private byte[] readBounded(InputStream inputStream) throws IOException {
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		byte[] buffer = new byte[8192];
+		long totalBytes = 0L;
+		int readBytes;
+		while ((readBytes = inputStream.read(buffer)) != -1) {
+			totalBytes += readBytes;
+			if (totalBytes > maxBytes) {
+				throw oversizedPhoto();
+			}
+			output.write(buffer, 0, readBytes);
+		}
+		return output.toByteArray();
+	}
+
+	private InvalidFacilityReportException oversizedPhoto() {
+		return new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 	}
 
 	private void requireSuccess(int statusCode, String message) {

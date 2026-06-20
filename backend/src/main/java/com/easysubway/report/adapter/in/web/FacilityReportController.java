@@ -7,6 +7,7 @@ import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
+import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort;
 import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import com.easysubway.report.domain.FacilityReport;
@@ -41,6 +42,7 @@ class FacilityReportController {
 
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort;
+	private final DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort;
 	private final FacilityReportUploadIntents uploadIntents;
 	private final FacilityReportUploadUrlSigner uploadUrlSigner;
 	private final Environment environment;
@@ -48,12 +50,14 @@ class FacilityReportController {
 	FacilityReportController(
 		FacilityReportUseCase facilityReportUseCase,
 		StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort,
+		DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort,
 		FacilityReportUploadIntents uploadIntents,
 		FacilityReportUploadUrlSigner uploadUrlSigner,
 		Environment environment
 	) {
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.storeFacilityReportUploadedPhotoPort = storeFacilityReportUploadedPhotoPort;
+		this.deleteFacilityReportPhotoPort = deleteFacilityReportPhotoPort;
 		this.uploadIntents = uploadIntents;
 		this.uploadUrlSigner = uploadUrlSigner;
 		this.environment = environment;
@@ -68,7 +72,8 @@ class FacilityReportController {
 			request.clientSubmissionId(),
 			request.normalizedPhotoContentType(),
 			request.normalizedPhotoSha256(),
-			request.requiredPhotoSizeBytes()
+			request.requiredPhotoSizeBytes(),
+			deleteFacilityReportPhotoPort::deleteFacilityReportPhoto
 		);
 		FacilityReportUploadUrlSigner.SignedUploadUrl signedUploadUrl = uploadUrlSigner.sign(intent);
 		Map<String, String> uploadHeaders = new LinkedHashMap<>(signedUploadUrl.uploadHeaders());
