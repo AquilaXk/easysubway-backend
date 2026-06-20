@@ -66,7 +66,7 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
-	@DisplayName("업로드 intent는 pending 개수와 byte quota를 넘길 수 없다")
+	@DisplayName("업로드 intent는 같은 제출 식별자의 pending 개수와 byte quota를 넘길 수 없다")
 	void createIntentRejectsPendingQuotaExceeded() {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
 			clock,
@@ -78,9 +78,26 @@ class FacilityReportUploadIntentsTest {
 
 		intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
 
-		assertThatThrownBy(() -> intents.create("client-submission-2", "image/jpeg", "b".repeat(64), 1L))
+		assertThatThrownBy(() -> intents.create("client-submission-1", "image/jpeg", "b".repeat(64), 1L))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+	}
+
+	@Test
+	@DisplayName("업로드 intent quota는 서로 다른 제출 식별자 사이에서 공유하지 않는다")
+	void createIntentAppliesPendingQuotaPerClientSubmission() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			1,
+			11L
+		);
+
+		var first = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		var second = intents.create("client-submission-2", "image/jpeg", "b".repeat(64), 11L);
+
+		assertThat(first.objectKey()).isNotEqualTo(second.objectKey());
 	}
 
 	@Test

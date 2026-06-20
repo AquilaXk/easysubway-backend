@@ -66,7 +66,16 @@ class FacilityReportUploadIntents {
 		String objectKey = OBJECT_KEY_PREFIX + uploadId + extensionFor(contentType);
 		Instant issuedAt = clock.instant();
 		Instant expiresAt = issuedAt.plus(ttl);
-		UploadIntent intent = new UploadIntent(uploadId, objectKey, contentType, sha256.trim(), sizeBytes, expiresAt);
+		String normalizedClientSubmissionId = clientSubmissionId.trim();
+		UploadIntent intent = new UploadIntent(
+			uploadId,
+			normalizedClientSubmissionId,
+			objectKey,
+			contentType,
+			sha256.trim(),
+			sizeBytes,
+			expiresAt
+		);
 		intents.put(uploadId, intent);
 		return new CreatedUploadIntent(uploadId, objectKey, contentType, sha256.trim(), sizeBytes, issuedAt, expiresAt);
 	}
@@ -116,14 +125,24 @@ class FacilityReportUploadIntents {
 		if (sizeBytes < 1 || sizeBytes > maxBytes) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
-		if (intents.size() >= maxPendingCount || pendingBytes() + sizeBytes > maxPendingBytes) {
+		String normalizedClientSubmissionId = clientSubmissionId.trim();
+		if (pendingCount(normalizedClientSubmissionId) >= maxPendingCount
+			|| pendingBytes(normalizedClientSubmissionId) + sizeBytes > maxPendingBytes) {
 			throw new InvalidFacilityReportException("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 		}
 	}
 
-	private long pendingBytes() {
+	private long pendingCount(String clientSubmissionId) {
 		return intents.values()
 			.stream()
+			.filter(intent -> intent.clientSubmissionId().equals(clientSubmissionId))
+			.count();
+	}
+
+	private long pendingBytes(String clientSubmissionId) {
+		return intents.values()
+			.stream()
+			.filter(intent -> intent.clientSubmissionId().equals(clientSubmissionId))
 			.mapToLong(UploadIntent::sizeBytes)
 			.sum();
 	}
@@ -157,6 +176,14 @@ class FacilityReportUploadIntents {
 	) {
 	}
 
-	record UploadIntent(String uploadId, String objectKey, String contentType, String sha256, long sizeBytes, Instant expiresAt) {
+	record UploadIntent(
+		String uploadId,
+		String clientSubmissionId,
+		String objectKey,
+		String contentType,
+		String sha256,
+		long sizeBytes,
+		Instant expiresAt
+	) {
 	}
 }
