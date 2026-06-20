@@ -60,6 +60,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 
 	private static final Logger log = LoggerFactory.getLogger(FacilityReportService.class);
 	private static final String LOCAL_DEV_RECEIPT_TOKEN_PEPPER = "local-dev-report-receipt-pepper";
+	private static final String UNCLAIMED_UPLOAD_OBJECT_PREFIX = "facility-reports/unclaimed/";
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
@@ -661,6 +662,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private FacilityReportPhotoAttachment processObjectPhoto(CreateFacilityReportCommand command) {
+		String photoObjectKey = command.photoObjectKey().trim();
+		if (!photoObjectKey.startsWith(UNCLAIMED_UPLOAD_OBJECT_PREFIX)) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
 		if (!hasText(command.photoFileName())
 			|| !hasText(command.photoContentType())
 			|| !hasText(command.photoSha256())
@@ -673,7 +678,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (command.photoSizeBytes() < 1 || command.photoSizeBytes() > 900L * 1024L) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
-		LoadedFacilityReportPhoto uploadedPhoto = loadFacilityReportPhotoPort.loadFacilityReportPhoto(command.photoObjectKey().trim())
+		LoadedFacilityReportPhoto uploadedPhoto = loadFacilityReportPhotoPort.loadFacilityReportPhoto(photoObjectKey)
 			.orElseThrow(() -> new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다."));
 		if (!command.photoContentType().trim().equals(uploadedPhoto.contentType())) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");

@@ -898,6 +898,31 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("사진 object key 신고 생성은 발급된 pending upload intent를 요구한다")
+	void createReportRequiresPendingUploadIntentForPhotoObjectKey() throws Exception {
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "spoofed-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "발급되지 않은 사진 객체 신고입니다.",
+					  "photoFileName": "elevator.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoObjectKey": "facility-reports/report-existing/final-photo.jpg",
+					  "photoSha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+					  "photoSizeBytes": 11
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
+	}
+
+	@Test
 	@DisplayName("사진 크기가 큰 신고 생성은 공통 400 응답을 반환한다")
 	void createReportRejectsLargePhotoPayload() throws Exception {
 		String largePhotoBase64 = Base64.getEncoder().encodeToString(new byte[(900 * 1024) + 1]);

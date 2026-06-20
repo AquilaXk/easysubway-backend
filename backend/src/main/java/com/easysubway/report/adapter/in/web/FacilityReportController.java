@@ -124,11 +124,13 @@ class FacilityReportController {
 		Principal principal
 	) {
 		if (request.hasReceiptSubmission() && principal == null) {
+			uploadIntents.requirePendingObjectKey(request.photoObjectKey());
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
 			uploadIntents.consumeObjectKey(request.photoObjectKey());
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
 		}
 		if (principal != null) {
+			uploadIntents.requirePendingObjectKey(request.photoObjectKey());
 			FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
 			uploadIntents.consumeObjectKey(request.photoObjectKey());
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));

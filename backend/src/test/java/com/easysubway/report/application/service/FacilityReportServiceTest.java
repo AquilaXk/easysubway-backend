@@ -253,7 +253,7 @@ class FacilityReportServiceTest {
 	@DisplayName("시설 신고 object 사진은 업로드된 객체를 요구한다")
 	void createReportRequiresUploadedPhotoObject() {
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
 			11L
 		)))
@@ -266,19 +266,19 @@ class FacilityReportServiceTest {
 	void createReportVerifiesUploadedPhotoObjectMetadata() {
 		byte[] jpegBytes = validJpegBytes();
 		FacilityReportService service = serviceWithUploadedPhoto(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"image/jpeg",
 			jpegBytes
 		);
 
 		assertThatNoException().isThrownBy(() -> service.createReport(objectPhotoReportCommand(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			sha256Hex(jpegBytes),
 			(long) jpegBytes.length
 		)));
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
 			"client-submission-2",
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			(long) jpegBytes.length
 		)))
@@ -290,7 +290,7 @@ class FacilityReportServiceTest {
 	@DisplayName("시설 신고 object 사진은 신고 생성 성공 후 같은 업로드 객체를 다시 사용할 수 없다")
 	void createReportClaimsUploadedPhotoObjectOnce() throws IOException {
 		byte[] jpegBytes = validJpegBytes();
-		String objectKey = "facility-reports/uploads/client-submission-once-photo.jpg";
+		String objectKey = "facility-reports/unclaimed/client-submission-once-photo.jpg";
 		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(
 			Files.createTempDirectory("facility-report-photo-once-")
 		);
@@ -315,17 +315,39 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("시설 신고 object 사진은 최종 저장 경로의 객체를 재사용하거나 삭제하지 않는다")
+	void createReportRejectsFinalStoredPhotoObjectKey() throws IOException {
+		byte[] jpegBytes = validJpegBytes();
+		String objectKey = "facility-reports/report-existing/final-photo.jpg";
+		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(
+			Files.createTempDirectory("facility-report-final-photo-")
+		);
+		storage.storeUploadedReportPhoto(new StoreUploadedReportPhotoCommand(objectKey, jpegBytes));
+		FacilityReportService service = serviceWithPhotoStorage(storage);
+
+		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
+			"client-submission-final-key-1",
+			objectKey,
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		assertThat(storage.loadFacilityReportPhoto(objectKey)).isPresent();
+	}
+
+	@Test
 	@DisplayName("시설 신고 object 사진은 이미지가 아닌 업로드 객체를 거부한다")
 	void createReportRejectsNonImageUploadedPhotoObject() {
 		byte[] invalidBytes = "image-bytes".getBytes(StandardCharsets.UTF_8);
 		FacilityReportService service = serviceWithUploadedPhoto(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"image/jpeg",
 			invalidBytes
 		);
 
 		assertThatThrownBy(() -> service.createReport(objectPhotoReportCommand(
-			"facility-reports/uploads/client-submission-1-photo.jpg",
+			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			sha256Hex(invalidBytes),
 			(long) invalidBytes.length
 		)))

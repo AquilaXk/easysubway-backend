@@ -111,6 +111,21 @@ class FacilityReportUploadIntents {
 		intents.values().removeIf(intent -> intent.objectKey().equals(objectKey.trim()));
 	}
 
+	void requirePendingObjectKey(String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		String normalizedObjectKey = objectKey.trim();
+		if (!isUnclaimedObjectKey(normalizedObjectKey)
+			|| intents.values().stream().noneMatch(intent -> intent.objectKey().equals(normalizedObjectKey))) {
+			throw invalidUpload();
+		}
+	}
+
+	static boolean isUnclaimedObjectKey(String objectKey) {
+		return objectKey != null && objectKey.trim().startsWith(OBJECT_KEY_PREFIX);
+	}
+
 	void cleanupExpired(Consumer<String> deleteObject) {
 		Instant now = clock.instant();
 		intents.values().removeIf(intent -> {
