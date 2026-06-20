@@ -129,7 +129,7 @@ class FacilityReportController {
 				requirePendingUploadObject(request);
 			}
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
-			completeUploadIntent(request.photoObjectKey(), duplicateSubmission);
+			completeUploadIntent(request, duplicateSubmission);
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
 		}
 		if (principal != null) {
@@ -138,7 +138,7 @@ class FacilityReportController {
 				requirePendingUploadObject(request);
 			}
 			FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
-			completeUploadIntent(request.photoObjectKey(), duplicateSubmission);
+			completeUploadIntent(request, duplicateSubmission);
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
 		}
 		throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
@@ -159,12 +159,19 @@ class FacilityReportController {
 		);
 	}
 
-	private void completeUploadIntent(String photoObjectKey, boolean duplicateSubmission) {
+	private void completeUploadIntent(CreateFacilityReportRequest request, boolean duplicateSubmission) {
 		if (duplicateSubmission) {
-			uploadIntents.discardPendingObjectKey(photoObjectKey, deleteFacilityReportPhotoPort::deleteFacilityReportPhoto);
+			uploadIntents.discardPendingObjectKey(
+				request.clientSubmissionId(),
+				request.photoObjectKey(),
+				request.photoContentType(),
+				request.photoSha256(),
+				request.photoSizeBytes(),
+				deleteFacilityReportPhotoPort::deleteFacilityReportPhoto
+			);
 			return;
 		}
-		uploadIntents.consumeObjectKey(photoObjectKey);
+		uploadIntents.consumeObjectKey(request.photoObjectKey());
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")

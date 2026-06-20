@@ -170,6 +170,26 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("업로드 intent는 제출 식별자의 길이와 문자를 제한한다")
+	void createIntentRejectsInvalidClientSubmissionId() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			10,
+			10L * 900L * 1024L
+		);
+
+		assertThatThrownBy(() -> intents.create("a".repeat(121), "image/jpeg", "a".repeat(64), 11L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("신고 제출 식별자를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> intents.create("client/submission/1", "image/jpeg", "a".repeat(64), 11L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("신고 제출 식별자를 확인해야 합니다.");
+	}
+
+	@Test
 	@DisplayName("업로드 intent quota는 동시 요청에서도 check-insert 경계를 보장한다")
 	void createIntentKeepsPendingQuotaUnderConcurrentRequests() throws Exception {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
@@ -345,7 +365,11 @@ class FacilityReportUploadIntentsTest {
 		List<String> deletedObjectKeys = new ArrayList<>();
 
 		assertThatNoException().isThrownBy(() -> intents.discardPendingObjectKey(
+			"client-submission-1",
 			intent.objectKey(),
+			"image/jpeg",
+			"a".repeat(64),
+			11L,
 			objectKey -> {
 				throw new IllegalStateException("object storage unavailable");
 			}
@@ -353,6 +377,26 @@ class FacilityReportUploadIntentsTest {
 
 		clock.advance(Duration.ofMinutes(16));
 		intents.cleanupExpired(deletedObjectKeys::add);
+
+		assertThat(deletedObjectKeys).containsExactly(intent.objectKey());
+	}
+
+	@Test
+	@DisplayName("중복 제출 pending object는 local intent가 없어도 서명 검증 후 삭제한다")
+	void discardPendingObjectKeyDeletesSignedObjectKeyWithoutLocalIntent() {
+		FacilityReportUploadIntents issuer = signedIntents();
+		var intent = issuer.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		FacilityReportUploadIntents verifier = signedIntents();
+		List<String> deletedObjectKeys = new ArrayList<>();
+
+		verifier.discardPendingObjectKey(
+			"client-submission-1",
+			intent.objectKey(),
+			"image/jpeg",
+			"a".repeat(64),
+			11L,
+			deletedObjectKeys::add
+		);
 
 		assertThat(deletedObjectKeys).containsExactly(intent.objectKey());
 	}

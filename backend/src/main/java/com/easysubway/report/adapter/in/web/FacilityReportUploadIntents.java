@@ -145,11 +145,10 @@ class FacilityReportUploadIntents {
 	) {
 		cleanupExpired(deleteExpiredObject);
 		synchronized (intentLock) {
-			requireCreateAllowed(clientSubmissionId, contentType, sha256, sizeBytes);
+			String normalizedClientSubmissionId = requireCreateAllowed(clientSubmissionId, contentType, sha256, sizeBytes);
 			Instant issuedAt = clock.instant();
 			Instant expiresAt = issuedAt.plus(ttl);
 			String uploadId = newUploadId();
-			String normalizedClientSubmissionId = clientSubmissionId.trim();
 			String normalizedSha256 = sha256.trim();
 			String objectKey = objectKeyFor(
 				normalizedClientSubmissionId,
@@ -196,23 +195,32 @@ class FacilityReportUploadIntents {
 		}
 	}
 
-	void discardPendingObjectKey(String objectKey, Consumer<String> deleteObject) {
+	void discardPendingObjectKey(
+		String clientSubmissionId,
+		String objectKey,
+		String contentType,
+		String sha256,
+		Long sizeBytes,
+		Consumer<String> deleteObject
+	) {
 		if (objectKey == null || objectKey.isBlank()) {
 			return;
 		}
 		String normalizedObjectKey = objectKey.trim();
 		UploadIntent intent = pendingObjectKey(normalizedObjectKey);
-		if (intent == null) {
+		if (intent == null && !isValidSignedObjectKey(clientSubmissionId, normalizedObjectKey, contentType, sha256, sizeBytes)) {
 			return;
 		}
 		try {
-			deleteObject.accept(intent.objectKey());
+			deleteObject.accept(normalizedObjectKey);
 		} catch (RuntimeException exception) {
-			log.warn("Failed to discard duplicate facility report upload object {}", intent.objectKey(), exception);
+			log.warn("Failed to discard duplicate facility report upload object {}", normalizedObjectKey, exception);
 			return;
 		}
-		synchronized (intentLock) {
-			intents.remove(intent.uploadId(), intent);
+		if (intent != null) {
+			synchronized (intentLock) {
+				intents.remove(intent.uploadId(), intent);
+			}
 		}
 	}
 
@@ -282,9 +290,13 @@ class FacilityReportUploadIntents {
 		}
 	}
 
-	private void requireCreateAllowed(String clientSubmissionId, String contentType, String sha256, long sizeBytes) {
+	private String requireCreateAllowed(String clientSubmissionId, String contentType, String sha256, long sizeBytes) {
 		if (clientSubmissionId == null || clientSubmissionId.isBlank()) {
 			throw new InvalidFacilityReportException("신고 제출 식별자가 필요합니다.");
+		}
+		String normalizedClientSubmissionId = clientSubmissionId.trim();
+		if (!isClientSubmissionId(normalizedClientSubmissionId)) {
+			throw new InvalidFacilityReportException("신고 제출 식별자를 확인해야 합니다.");
 		}
 		if (!isUploadContentType(contentType)) {
 			throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
@@ -295,13 +307,13 @@ class FacilityReportUploadIntents {
 		if (sizeBytes < 1 || sizeBytes > maxBytes) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
-		String normalizedClientSubmissionId = clientSubmissionId.trim();
 		if (pendingCount(normalizedClientSubmissionId) >= maxPendingCount
 			|| pendingBytes(normalizedClientSubmissionId) + sizeBytes > maxPendingBytes
 			|| intents.size() >= maxTotalPendingCount
 			|| totalPendingBytes() + sizeBytes > maxTotalPendingBytes) {
 			throw new InvalidFacilityReportException("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 		}
+		return normalizedClientSubmissionId;
 	}
 
 	private long pendingCount(String clientSubmissionId) {
@@ -333,6 +345,32 @@ class FacilityReportUploadIntents {
 				.filter(intent -> intent.objectKey().equals(objectKey))
 				.findFirst()
 				.orElse(null);
+		}
+	}
+
+	private boolean isValidSignedObjectKey(
+		String clientSubmissionId,
+		String objectKey,
+		String contentType,
+		String sha256,
+		Long sizeBytes
+	) {
+		try {
+			String normalizedClientSubmissionId = requireClientSubmissionId(clientSubmissionId);
+			String normalizedContentType = normalizedContentType(contentType);
+			if (!isUploadContentType(normalizedContentType)) {
+				return false;
+			}
+			requireSignedObjectKey(
+				normalizedClientSubmissionId,
+				objectKey,
+				normalizedContentType,
+				requireSha256(sha256),
+				requireSizeBytes(sizeBytes)
+			);
+			return true;
+		} catch (InvalidFacilityReportException exception) {
+			return false;
 		}
 	}
 
@@ -457,7 +495,11 @@ class FacilityReportUploadIntents {
 		if (clientSubmissionId == null || clientSubmissionId.isBlank()) {
 			throw invalidUpload();
 		}
-		return clientSubmissionId.trim();
+		String normalizedClientSubmissionId = clientSubmissionId.trim();
+		if (!isClientSubmissionId(normalizedClientSubmissionId)) {
+			throw invalidUpload();
+		}
+		return normalizedClientSubmissionId;
 	}
 
 	private String requireSha256(String sha256) {
@@ -497,6 +539,10 @@ class FacilityReportUploadIntents {
 
 	private boolean isUploadContentType(String contentType) {
 		return "image/jpeg".equals(contentType) || "image/png".equals(contentType) || "image/webp".equals(contentType);
+	}
+
+	private boolean isClientSubmissionId(String clientSubmissionId) {
+		return clientSubmissionId.length() <= 120 && clientSubmissionId.matches("[A-Za-z0-9_-]+");
 	}
 
 	private InvalidFacilityReportException invalidUpload() {
