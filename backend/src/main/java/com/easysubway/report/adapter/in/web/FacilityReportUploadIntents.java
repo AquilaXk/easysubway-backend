@@ -15,6 +15,8 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -22,6 +24,7 @@ import org.springframework.stereotype.Component;
 @Component
 class FacilityReportUploadIntents {
 
+	private static final Logger log = LoggerFactory.getLogger(FacilityReportUploadIntents.class);
 	private static final int UPLOAD_ID_BYTES = 24;
 	private static final String OBJECT_KEY_PREFIX = "facility-reports/unclaimed/";
 	private static final String DEFAULT_INTENT_SIGNING_KEY = "local-dev-report-upload-intent-signing-key";
@@ -195,8 +198,13 @@ class FacilityReportUploadIntents {
 			if (!intent.objectKey().equals(normalizedObjectKey)) {
 				return false;
 			}
-			deleteObject.accept(intent.objectKey());
-			return true;
+			try {
+				deleteObject.accept(intent.objectKey());
+				return true;
+			} catch (RuntimeException exception) {
+				log.warn("Failed to discard duplicate facility report upload object {}", intent.objectKey(), exception);
+				return false;
+			}
 		});
 	}
 

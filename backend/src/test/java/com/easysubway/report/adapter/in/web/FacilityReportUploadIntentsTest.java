@@ -230,6 +230,32 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("중복 제출 pending object 정리 실패는 응답 경로를 막지 않고 만료 정리 대상으로 남긴다")
+	void discardPendingObjectKeyKeepsResponsePathWhenDeleteFails() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			10,
+			10L * 900L * 1024L
+		);
+		var intent = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		List<String> deletedObjectKeys = new ArrayList<>();
+
+		assertThatNoException().isThrownBy(() -> intents.discardPendingObjectKey(
+			intent.objectKey(),
+			objectKey -> {
+				throw new IllegalStateException("object storage unavailable");
+			}
+		));
+
+		clock.advance(Duration.ofMinutes(16));
+		intents.cleanupExpired(deletedObjectKeys::add);
+
+		assertThat(deletedObjectKeys).containsExactly(intent.objectKey());
+	}
+
+	@Test
 	@DisplayName("업로드 intent는 만료된 미청구 object를 정리한다")
 	void cleanupExpiredDeletesOrphanObjects() {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
