@@ -4,6 +4,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -149,6 +150,38 @@ class FacilityReportControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.id").value(reportId));
+	}
+
+	@Test
+	@DisplayName("receipt token은 같은 제출 식별자 재시도 응답에서 다시 반환하지 않는다")
+	void repeatedReceiptSubmissionDoesNotReturnPlainReceiptTokenAgain() throws Exception {
+		String requestBody = """
+			{
+			  "clientSubmissionId": "client-submission-retry-1",
+			  "stationId": "station-sangnoksu",
+			  "facilityId": "facility-sangnoksu-elevator-1",
+			  "reportType": "BROKEN",
+			  "description": "재시도에서 token을 다시 받으면 안 되는 신고입니다."
+			}
+			""";
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(requestBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.id").isNotEmpty())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+
+		mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(requestBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist());
 	}
 
 	@Test
@@ -427,6 +460,52 @@ class FacilityReportControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.id").value(reportId))
 			.andExpect(jsonPath("$.data.status").value("RESOLVED"))
+			.andExpect(jsonPath("$.data.reviewedBy").doesNotExist());
+	}
+
+	@Test
+	@DisplayName("receipt token 신고는 계정 없이 처리 결과를 확인 완료 상태로 바꾼다")
+	void receiptTokenConfirmsReviewedReportResultWithoutAccount() throws Exception {
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-confirm-1",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "receipt token으로 확인할 신고입니다."
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String reportId = JsonPath.read(response, "$.data.id");
+		String receiptToken = JsonPath.read(response, "$.data.receiptToken");
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "REJECT"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+		mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", reportId)
+				.with(csrf())
+				.header("X-Easysubway-Report-Receipt-Token", receiptToken))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.status").value("RESOLVED"))
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist())
 			.andExpect(jsonPath("$.data.reviewedBy").doesNotExist());
 	}
 
@@ -751,6 +830,71 @@ class FacilityReportControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("사진 파일 형식을 확인해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("신고 사진 업로드는 intent 검증 header가 없으면 거부한다")
+	void uploadReportPhotoRequiresIntentValidationHeaders() throws Exception {
+		String intentResponse = mockMvc.perform(post("/api/v1/report-uploads")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-upload-headers-1",
+					  "photoFileName": "elevator.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoSha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+					  "photoSizeBytes": 11
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.uploadHeaders['x-easysubway-upload-sha256']").value(
+				"2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c"
+			))
+			.andExpect(jsonPath("$.data.uploadHeaders['x-easysubway-upload-size']").value("11"))
+			.andExpect(jsonPath("$.data.uploadHeaders['content-type']").value("image/jpeg"))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String uploadUrl = JsonPath.read(intentResponse, "$.data.uploadUrl");
+
+		mockMvc.perform(put(uploadUrl)
+				.contentType(MediaType.IMAGE_JPEG)
+				.content("image-bytes"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("신고 사진 업로드는 intent의 사진 형식과 다른 Content-Type을 거부한다")
+	void uploadReportPhotoRejectsMismatchedIntentContentType() throws Exception {
+		String intentResponse = mockMvc.perform(post("/api/v1/report-uploads")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-upload-content-type-1",
+					  "photoFileName": "elevator.jpg",
+					  "photoContentType": "image/jpeg",
+					  "photoSha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+					  "photoSizeBytes": 11
+					}
+					"""))
+			.andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String uploadUrl = JsonPath.read(intentResponse, "$.data.uploadUrl");
+
+		mockMvc.perform(put(uploadUrl)
+				.contentType(MediaType.IMAGE_PNG)
+				.header("x-easysubway-upload-sha256", "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c")
+				.header("x-easysubway-upload-size", "11")
+				.content("image-bytes"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
 	}
 
 	@Test

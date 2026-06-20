@@ -49,5 +49,7 @@ public interface FacilityReportUseCase {
 
 	FacilityReport confirmReportResult(String reportId, String userId);
 
+	FacilityReport confirmReportResultByReceiptToken(String reportId, String receiptToken);
+
 	List<FacilityReportReviewAudit> listReviewAudits(String reportId);
 }

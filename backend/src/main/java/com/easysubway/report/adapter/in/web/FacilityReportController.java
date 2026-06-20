@@ -18,7 +18,11 @@ import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Locale;
+import java.util.Map;
+import org.springframework.core.env.Environment;
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -36,13 +40,22 @@ class FacilityReportController {
 
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort;
+	private final FacilityReportUploadIntents uploadIntents;
+	private final FacilityReportUploadUrlSigner uploadUrlSigner;
+	private final Environment environment;
 
 	FacilityReportController(
 		FacilityReportUseCase facilityReportUseCase,
-		StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort
+		StoreFacilityReportUploadedPhotoPort storeFacilityReportUploadedPhotoPort,
+		FacilityReportUploadIntents uploadIntents,
+		FacilityReportUploadUrlSigner uploadUrlSigner,
+		Environment environment
 	) {
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.storeFacilityReportUploadedPhotoPort = storeFacilityReportUploadedPhotoPort;
+		this.uploadIntents = uploadIntents;
+		this.uploadUrlSigner = uploadUrlSigner;
+		this.environment = environment;
 	}
 
 	@PostMapping("/api/v1/report-uploads")
@@ -50,12 +63,23 @@ class FacilityReportController {
 	ApiResponse<FacilityReportUploadIntentResponse> createReportUploadIntent(
 		@RequestBody FacilityReportUploadIntentRequest request
 	) {
-		String uploadId = request.uploadId();
-		String objectKey = "facility-reports/uploads/" + uploadId;
+		var intent = uploadIntents.create(
+			request.clientSubmissionId(),
+			request.normalizedPhotoContentType(),
+			request.normalizedPhotoSha256(),
+			request.requiredPhotoSizeBytes()
+		);
+		FacilityReportUploadUrlSigner.SignedUploadUrl signedUploadUrl = uploadUrlSigner.sign(intent);
 		return ApiResponse.ok(new FacilityReportUploadIntentResponse(
-			objectKey,
-			"/api/v1/report-uploads/" + uploadId,
-			"PUT"
+			intent.objectKey(),
+			signedUploadUrl.uploadUrl(),
+			signedUploadUrl.uploadMethod(),
+			Map.of(
+				"content-type", request.normalizedPhotoContentType(),
+				"x-easysubway-upload-sha256", request.normalizedPhotoSha256(),
+				"x-easysubway-upload-size", String.valueOf(request.requiredPhotoSizeBytes())
+			),
+			intent.expiresAt().toString()
 		));
 	}
 
@@ -63,13 +87,26 @@ class FacilityReportController {
 	@ResponseStatus(HttpStatus.NO_CONTENT)
 	void uploadReportPhoto(
 		@PathVariable String uploadId,
+		@RequestHeader(name = "Content-Type", required = false) String contentType,
+		@RequestHeader(name = "x-easysubway-upload-sha256", required = false) String uploadSha256,
+		@RequestHeader(name = "x-easysubway-upload-size", required = false) String uploadSizeBytes,
 		@RequestBody byte[] body
 	) {
 		if (body == null || body.length < 1 || body.length > 900 * 1024) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
+		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		FacilityReportUploadIntents.UploadIntent intent = uploadIntents.requireUpload(
+			uploadId,
+			contentType,
+			uploadSha256,
+			requiredUploadSize(uploadSizeBytes),
+			body.length
+		);
 		storeFacilityReportUploadedPhotoPort.storeUploadedReportPhoto(new StoreUploadedReportPhotoCommand(
-			"facility-reports/uploads/" + requireSafeUploadId(uploadId),
+			intent.objectKey(),
 			body
 		));
 	}
@@ -113,8 +150,14 @@ class FacilityReportController {
 	@PostMapping("/api/v1/reports/{reportId}/confirm")
 	ApiResponse<FacilityReportStatusResponse> confirmReportResult(
 		@PathVariable String reportId,
-		Principal principal
+		Principal principal,
+		@RequestHeader(name = "X-Easysubway-Report-Receipt-Token", required = false) String receiptToken
 	) {
+		if (receiptToken != null && !receiptToken.isBlank()) {
+			return ApiResponse.ok(FacilityReportStatusResponse.from(
+				facilityReportUseCase.confirmReportResultByReceiptToken(reportId, receiptToken)
+			));
+		}
 		if (principal == null) {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
 		}
@@ -221,43 +264,48 @@ class FacilityReportController {
 		Long photoSizeBytes
 	) {
 
-		String uploadId() {
-			String normalizedClientSubmissionId = requireSafeValue(clientSubmissionId, "신고 제출 식별자가 필요합니다.");
-			if (photoSha256 == null || !photoSha256.trim().matches("[0-9a-f]{64}")) {
-				throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
-			}
+		Long requiredPhotoSizeBytes() {
 			if (photoSizeBytes == null || photoSizeBytes < 1 || photoSizeBytes > 900L * 1024L) {
 				throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 			}
-			return normalizedClientSubmissionId + "-" + photoSha256.substring(0, 16) + extensionFor(photoContentType);
+			return photoSizeBytes;
+		}
+
+		String normalizedPhotoSha256() {
+			if (photoSha256 == null || !photoSha256.trim().matches("[0-9a-f]{64}")) {
+				throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+			}
+			return photoSha256.trim();
+		}
+
+		String normalizedPhotoContentType() {
+			return switch (photoContentType == null ? "" : photoContentType.trim().toLowerCase(Locale.ROOT)) {
+				case "image/png" -> "image/png";
+				case "image/webp" -> "image/webp";
+				case "image/jpeg" -> "image/jpeg";
+				default -> throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
+			};
 		}
 	}
 
 	record FacilityReportUploadIntentResponse(
 		String objectKey,
 		String uploadUrl,
-		String uploadMethod
+		String uploadMethod,
+		Map<String, String> uploadHeaders,
+		String expiresAt
 	) {
 	}
 
-	private static String requireSafeValue(String value, String message) {
-		if (value == null || !value.trim().matches("[A-Za-z0-9._-]{8,120}")) {
-			throw new InvalidFacilityReportException(message);
+	private static long requiredUploadSize(String uploadSizeBytes) {
+		try {
+			if (uploadSizeBytes == null) {
+				throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+			}
+			return Long.parseLong(uploadSizeBytes.trim());
+		} catch (NumberFormatException exception) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
-		return value.trim();
-	}
-
-	private static String requireSafeUploadId(String uploadId) {
-		return requireSafeValue(uploadId, "사진 첨부 정보를 확인해야 합니다.");
-	}
-
-	private static String extensionFor(String contentType) {
-		return switch (contentType == null ? "" : contentType.trim().toLowerCase()) {
-			case "image/png" -> ".png";
-			case "image/webp" -> ".webp";
-			case "image/jpeg" -> ".jpg";
-			default -> throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
-		};
 	}
 
 	record ReviewFacilityReportRequest(

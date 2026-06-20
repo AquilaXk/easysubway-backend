@@ -30,6 +30,14 @@ spring:
       initialize-schema: never
 
 easysubway:
+  report:
+    receipt-token-pepper: ${EASYSUBWAY_REPORT_RECEIPT_PEPPER:}
+    upload:
+      bucket: ${EASYSUBWAY_REPORT_UPLOAD_BUCKET:}
+      max-bytes: ${EASYSUBWAY_REPORT_UPLOAD_MAX_BYTES:921600}
+      url-ttl-seconds: ${EASYSUBWAY_REPORT_UPLOAD_URL_TTL_SECONDS:900}
+      object-storage-endpoint: ${EASYSUBWAY_OBJECT_STORAGE_ENDPOINT:}
+      object-storage-secret-key: ${EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY:}
   admin:
     username: ${EASYSUBWAY_ADMIN_USERNAME}
     password: ${EASYSUBWAY_ADMIN_PASSWORD}

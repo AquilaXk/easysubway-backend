@@ -6,6 +6,7 @@ import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
+import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
@@ -50,6 +51,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -57,6 +59,7 @@ import org.springframework.transaction.annotation.Transactional;
 public class FacilityReportService implements FacilityReportUseCase {
 
 	private static final Logger log = LoggerFactory.getLogger(FacilityReportService.class);
+	private static final String LOCAL_DEV_RECEIPT_TOKEN_PEPPER = "local-dev-report-receipt-pepper";
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
@@ -84,7 +87,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 		SaveFacilityReportReviewAuditPort saveFacilityReportReviewAuditPort,
 		LoadFacilityReportReviewAuditPort loadFacilityReportReviewAuditPort,
 		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
-		@Value("${easysubway.report.receipt-token-pepper:local-dev-report-receipt-pepper}") String receiptTokenPepper
+		@Value("${easysubway.report.receipt-token-pepper:local-dev-report-receipt-pepper}") String receiptTokenPepper,
+		Environment environment
 	) {
 		this(
 			loadTransitMasterPort,
@@ -98,7 +102,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			loadFacilityReportReviewAuditPort,
 			loadFacilityReportPhotoPort,
 			Clock.systemDefaultZone(),
-			receiptTokenPepper
+			validateReceiptTokenPepper(receiptTokenPepper, environment)
 		);
 	}
 
@@ -266,8 +270,21 @@ public class FacilityReportService implements FacilityReportUseCase {
 			loadFacilityReportReviewAuditPort,
 			defaultUploadedPhotoLoader(),
 			clock,
-			"local-dev-report-receipt-pepper"
+			LOCAL_DEV_RECEIPT_TOKEN_PEPPER
 		);
+	}
+
+	private static String validateReceiptTokenPepper(String receiptTokenPepper, Environment environment) {
+		if (!java.util.Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
+			return receiptTokenPepper;
+		}
+		if (receiptTokenPepper == null
+			|| receiptTokenPepper.isBlank()
+			|| LOCAL_DEV_RECEIPT_TOKEN_PEPPER.equals(receiptTokenPepper.trim())
+			|| receiptTokenPepper.trim().length() < 32) {
+			throw new IllegalStateException("운영 receipt token pepper 설정이 필요합니다.");
+		}
+		return receiptTokenPepper.trim();
 	}
 
 	FacilityReportService(
@@ -345,7 +362,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			command.clientSubmissionId().trim()
 		);
 		if (existing.isPresent()) {
-			return new CreatedFacilityReport(existing.get(), receiptToken.token());
+			return new CreatedFacilityReport(existing.get(), null);
 		}
 		return new CreatedFacilityReport(createReport(command, receiptToken.hash()), receiptToken.token());
 	}
@@ -403,7 +420,18 @@ public class FacilityReportService implements FacilityReportUseCase {
 			receiptTokenHash
 		);
 
-		return saveFacilityReportPort.saveReport(report);
+		FacilityReport saved = saveFacilityReportPort.saveReport(report);
+		claimUploadedPhotoObject(command, storedPhoto);
+		return saved;
+	}
+
+	private void claimUploadedPhotoObject(CreateFacilityReportCommand command, StoredFacilityReportPhoto storedPhoto) {
+		if (storedPhoto == null || !hasText(command.photoObjectKey())) {
+			return;
+		}
+		if (loadFacilityReportPhotoPort instanceof DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort) {
+			deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(command.photoObjectKey().trim());
+		}
 	}
 
 	private Optional<FacilityReport> existingClientSubmission(CreateFacilityReportCommand command) {
@@ -558,6 +586,16 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public FacilityReport confirmReportResult(String reportId, String userId) {
 		FacilityReport report = getReport(reportId);
 		requireReportOwner(report, userId);
+		return confirmReportResult(report);
+	}
+
+	@Override
+	public FacilityReport confirmReportResultByReceiptToken(String reportId, String receiptToken) {
+		FacilityReport report = getReportByReceiptToken(reportId, receiptToken);
+		return confirmReportResult(report);
+	}
+
+	private FacilityReport confirmReportResult(FacilityReport report) {
 		requireConfirmableStatus(report);
 		if (report.status() == FacilityReportStatus.RESOLVED) {
 			return report;
