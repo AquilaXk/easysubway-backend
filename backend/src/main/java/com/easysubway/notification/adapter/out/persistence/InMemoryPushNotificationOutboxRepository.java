@@ -61,6 +61,26 @@ public class InMemoryPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public synchronized boolean claimPendingPushNotification(PushNotification notification) {
+		List<PushNotification> notifications = notificationsByUserId.get(notification.userId());
+		if (notifications == null) {
+			return false;
+		}
+		for (int index = 0; index < notifications.size(); index++) {
+			PushNotification storedNotification = notifications.get(index);
+			if (!storedNotification.notificationId().equals(notification.notificationId())) {
+				continue;
+			}
+			if (storedNotification.status() != PushNotificationStatus.PENDING) {
+				return false;
+			}
+			notifications.set(index, storedNotification.withStatus(PushNotificationStatus.PROCESSING));
+			return true;
+		}
+		return false;
+	}
+
+	@Override
 	public List<PushNotification> loadPushNotifications(String userId) {
 		return List.copyOf(notificationsByUserId.getOrDefault(userId, List.of()));
 	}
@@ -94,7 +114,7 @@ public class InMemoryPushNotificationOutboxRepository implements
 		for (List<PushNotification> notifications : notificationsByUserId.values()) {
 			for (PushNotification notification : notifications) {
 				switch (notification.status()) {
-					case PENDING -> pendingCount++;
+					case PENDING, PROCESSING -> pendingCount++;
 					case SENT -> sentCount++;
 					case FAILED -> {
 						failedCount++;

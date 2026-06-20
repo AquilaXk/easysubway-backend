@@ -8,6 +8,7 @@ import com.easysubway.notification.application.port.out.SavePushNotificationOutb
 import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationDeliveryResult;
 import com.easysubway.notification.domain.PushNotificationSendResult;
+import com.easysubway.notification.domain.PushNotificationStatus;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.stereotype.Service;
@@ -40,9 +41,13 @@ public class PushNotificationDeliveryService implements PushNotificationDelivery
 		for (PushNotification notification : loadPendingPushNotificationOutboxPort.loadPendingPushNotifications(
 			command.userId()
 		)) {
-			var sendResult = safeSend(notification);
+			if (!savePushNotificationOutboxPort.claimPendingPushNotification(notification)) {
+				continue;
+			}
+			var claimedNotification = notification.withStatus(PushNotificationStatus.PROCESSING);
+			var sendResult = safeSend(claimedNotification);
 			PushNotification savedNotification = savePushNotificationOutboxPort.savePushNotification(
-				notification.withSendResult(sendResult)
+				claimedNotification.withSendResult(sendResult)
 			);
 			deliveredNotifications.add(savedNotification);
 			if (sendResult.successful()) {

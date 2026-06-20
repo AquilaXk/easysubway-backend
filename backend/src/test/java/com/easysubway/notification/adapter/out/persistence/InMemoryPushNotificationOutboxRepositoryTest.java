@@ -53,6 +53,23 @@ class InMemoryPushNotificationOutboxRepositoryTest {
 			.containsExactly("anonymous-user-1", "anonymous-user-2");
 	}
 
+	@Test
+	@DisplayName("대기 알림 선점은 pending 행만 처리 중으로 전환한다")
+	void claimPendingPushNotificationUpdatesPendingOnly() {
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationStatus.PENDING);
+		repository.savePushNotification(pendingNotification);
+
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isTrue();
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isFalse();
+		assertThat(repository.loadPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+	}
+
+	private static org.assertj.core.groups.Tuple tuple(Object... values) {
+		return org.assertj.core.api.Assertions.tuple(values);
+	}
+
 	private PushNotification notification(String notificationId, String userId, PushNotificationStatus status) {
 		return notification(notificationId, userId, status, LocalDateTime.of(2026, 6, 17, 10, 0));
 	}

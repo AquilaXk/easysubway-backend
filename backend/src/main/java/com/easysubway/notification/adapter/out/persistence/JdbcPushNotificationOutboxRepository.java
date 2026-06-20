@@ -129,6 +129,22 @@ public class JdbcPushNotificationOutboxRepository implements
 	}
 
 	@Override
+	public boolean claimPendingPushNotification(PushNotification notification) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE push_notification_outbox
+				SET status = ?,
+					failure_reason = NULL
+				WHERE notification_id = ?
+					AND status = ?
+				""",
+			PushNotificationStatus.PROCESSING.name(),
+			notification.notificationId(),
+			PushNotificationStatus.PENDING.name()
+		) == 1;
+	}
+
+	@Override
 	public PushNotificationDashboardSummary summarizePushNotificationOutbox() {
 		List<StatusCountRow> statusCounts = jdbcTemplate.query(
 			"""
@@ -142,7 +158,8 @@ public class JdbcPushNotificationOutboxRepository implements
 				resultSet.getLong("count")
 			)
 		);
-		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING);
+		long pendingCount = countByStatus(statusCounts, PushNotificationStatus.PENDING) +
+			countByStatus(statusCounts, PushNotificationStatus.PROCESSING);
 		long sentCount = countByStatus(statusCounts, PushNotificationStatus.SENT);
 		long failedCount = countByStatus(statusCounts, PushNotificationStatus.FAILED);
 		String latestFailureReason = latestFailureReason();

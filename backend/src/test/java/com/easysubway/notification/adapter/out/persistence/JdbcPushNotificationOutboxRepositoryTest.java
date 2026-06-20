@@ -41,7 +41,7 @@ class JdbcPushNotificationOutboxRepositoryTest {
 				created_at TIMESTAMP NOT NULL,
 				CONSTRAINT chk_push_notification_outbox_platform CHECK (platform IN ('ANDROID', 'IOS')),
 				CONSTRAINT chk_push_notification_outbox_type CHECK (notification_type IN ('FAVORITE_STATION_FACILITY', 'FAVORITE_ROUTE_FACILITY', 'REPORT_STATUS', 'DATA_QUALITY')),
-				CONSTRAINT chk_push_notification_outbox_status CHECK (status IN ('PENDING', 'SENT', 'FAILED')),
+				CONSTRAINT chk_push_notification_outbox_status CHECK (status IN ('PENDING', 'PROCESSING', 'SENT', 'FAILED')),
 				CONSTRAINT chk_push_notification_outbox_failure_reason CHECK (failure_reason IS NULL OR status = 'FAILED')
 			)
 			""");
@@ -140,6 +140,19 @@ class JdbcPushNotificationOutboxRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("대기 알림 선점은 pending 행만 처리 중으로 전환한다")
+	void claimPendingPushNotificationUpdatesPendingOnly() {
+		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9);
+		repository.savePushNotification(pendingNotification);
+
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isTrue();
+		assertThat(repository.claimPendingPushNotification(pendingNotification)).isFalse();
+		assertThat(repository.loadPushNotifications("anonymous-user-1"))
+			.extracting("notificationId", "status")
+			.containsExactly(tuple("push-1", PushNotificationStatus.PROCESSING));
+	}
+
+	@Test
 	@DisplayName("대기 중인 알림이 있는 사용자만 가장 오래된 대기 알림 순서로 조회한다")
 	void loadPendingPushNotificationUserIdsReturnsUsersByOldestPendingNotification() {
 		repository.savePushNotification(notification("push-1", "anonymous-user-2", PushNotificationType.REPORT_STATUS, 10));
@@ -155,6 +168,10 @@ class JdbcPushNotificationOutboxRepositoryTest {
 
 		assertThat(repository.loadPendingPushNotificationUserIds())
 			.containsExactly("anonymous-user-1", "anonymous-user-2");
+	}
+
+	private static org.assertj.core.groups.Tuple tuple(Object... values) {
+		return org.assertj.core.api.Assertions.tuple(values);
 	}
 
 	@Test
