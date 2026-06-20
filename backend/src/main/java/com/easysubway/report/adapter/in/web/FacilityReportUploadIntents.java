@@ -260,7 +260,11 @@ class FacilityReportUploadIntents {
 			if (intent.expiresAt().isAfter(now)) {
 				return false;
 			}
-			deleteObject.accept(intent.objectKey());
+			try {
+				deleteObject.accept(intent.objectKey());
+			} catch (RuntimeException exception) {
+				log.warn("Failed to delete expired facility report upload object {}", intent.objectKey(), exception);
+			}
 			return true;
 		});
 	}

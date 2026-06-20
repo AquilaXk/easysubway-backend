@@ -212,6 +212,37 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("만료 object 삭제 실패는 새 upload intent 발급을 막지 않는다")
+	void createIntentIgnoresExpiredObjectDeleteFailure() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			10,
+			10L * 900L * 1024L,
+			1,
+			11L
+		);
+		var expired = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		List<String> deleteAttempts = new ArrayList<>();
+
+		clock.advance(Duration.ofMinutes(16));
+		var fresh = intents.create(
+			"client-submission-2",
+			"image/jpeg",
+			"b".repeat(64),
+			11L,
+			objectKey -> {
+				deleteAttempts.add(objectKey);
+				throw new IllegalStateException("object storage unavailable");
+			}
+		);
+
+		assertThat(deleteAttempts).containsExactly(expired.objectKey());
+		assertThat(fresh.objectKey()).startsWith("facility-reports/unclaimed/");
+	}
+
+	@Test
 	@DisplayName("업로드 intent는 신고 생성에서 청구되면 pending quota에서 빠진다")
 	void consumeObjectKeyReleasesPendingQuota() {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
