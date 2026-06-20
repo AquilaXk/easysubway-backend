@@ -126,7 +126,7 @@ class FacilityReportController {
 		if (request.hasReceiptSubmission() && principal == null) {
 			boolean duplicateSubmission = hasExistingClientSubmission(request);
 			if (!duplicateSubmission) {
-				uploadIntents.requirePendingObjectKey(request.photoObjectKey());
+				requirePendingUploadObject(request);
 			}
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
 			completeUploadIntent(request.photoObjectKey(), duplicateSubmission);
@@ -135,7 +135,7 @@ class FacilityReportController {
 		if (principal != null) {
 			boolean duplicateSubmission = hasExistingClientSubmission(request);
 			if (!duplicateSubmission) {
-				uploadIntents.requirePendingObjectKey(request.photoObjectKey());
+				requirePendingUploadObject(request);
 			}
 			FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
 			completeUploadIntent(request.photoObjectKey(), duplicateSubmission);
@@ -147,6 +147,16 @@ class FacilityReportController {
 	private boolean hasExistingClientSubmission(CreateFacilityReportRequest request) {
 		return request.hasReceiptSubmission()
 			&& facilityReportUseCase.findReportByClientSubmissionId(request.clientSubmissionId()).isPresent();
+	}
+
+	private void requirePendingUploadObject(CreateFacilityReportRequest request) {
+		uploadIntents.requirePendingObjectKey(
+			request.clientSubmissionId(),
+			request.photoObjectKey(),
+			request.photoContentType(),
+			request.photoSha256(),
+			request.photoSizeBytes()
+		);
 	}
 
 	private void completeUploadIntent(String photoObjectKey, boolean duplicateSubmission) {

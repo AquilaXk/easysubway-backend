@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatNoException;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.report.domain.InvalidFacilityReportException;
@@ -61,6 +62,69 @@ class FacilityReportUploadIntentsTest {
 		clock.advance(Duration.ofMinutes(16));
 
 		assertThatThrownBy(() -> intents.requireUpload(intent.uploadId(), "image/jpeg", "a".repeat(64), 11L, 11L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("업로드 intent object key는 다른 backend instance에서도 서명으로 검증된다")
+	void requirePendingObjectKeyAcceptsSignedObjectKeyWithoutLocalIntent() {
+		FacilityReportUploadIntents issuer = signedIntents();
+		var intent = issuer.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		FacilityReportUploadIntents verifier = signedIntents();
+
+		assertThatNoException().isThrownBy(() -> verifier.requirePendingObjectKey(
+			"client-submission-1",
+			intent.objectKey(),
+			"image/jpeg",
+			"a".repeat(64),
+			11L
+		));
+	}
+
+	@Test
+	@DisplayName("업로드 intent object key 서명은 제출 식별자와 metadata가 다르면 거부한다")
+	void requirePendingObjectKeyRejectsSignedObjectKeyMetadataMismatch() {
+		FacilityReportUploadIntents issuer = signedIntents();
+		var intent = issuer.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		FacilityReportUploadIntents verifier = signedIntents();
+
+		assertThatThrownBy(() -> verifier.requirePendingObjectKey(
+			"client-submission-2",
+			intent.objectKey(),
+			"image/jpeg",
+			"a".repeat(64),
+			11L
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> verifier.requirePendingObjectKey(
+			"client-submission-1",
+			intent.objectKey(),
+			"image/jpeg",
+			"b".repeat(64),
+			11L
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("업로드 intent object key 서명은 만료 시간이 지나면 거부한다")
+	void requirePendingObjectKeyRejectsExpiredSignedObjectKey() {
+		FacilityReportUploadIntents issuer = signedIntents();
+		var intent = issuer.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		clock.advance(Duration.ofMinutes(16));
+		FacilityReportUploadIntents verifier = signedIntents();
+
+		assertThatThrownBy(() -> verifier.requirePendingObjectKey(
+			"client-submission-1",
+			intent.objectKey(),
+			"image/jpeg",
+			"a".repeat(64),
+			11L
+		))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
 	}
@@ -246,6 +310,19 @@ class FacilityReportUploadIntentsTest {
 
 		assertThat(signedUrl.uploadUrl()).isEqualTo("/api/v1/report-uploads/upload-id-1");
 		assertThat(signedUrl.uploadMethod()).isEqualTo("PUT");
+	}
+
+	private FacilityReportUploadIntents signedIntents() {
+		return new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			10,
+			10L * 900L * 1024L,
+			100,
+			100L * 900L * 1024L,
+			"test-upload-intent-signing-key-with-enough-entropy"
+		);
 	}
 
 	private static final class MutableClock extends Clock {

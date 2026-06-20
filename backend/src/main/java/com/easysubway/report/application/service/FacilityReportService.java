@@ -437,7 +437,12 @@ public class FacilityReportService implements FacilityReportUseCase {
 			return;
 		}
 		if (loadFacilityReportPhotoPort instanceof DeleteFacilityReportPhotoPort deleteFacilityReportPhotoPort) {
-			deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(command.photoObjectKey().trim());
+			String uploadedObjectKey = command.photoObjectKey().trim();
+			try {
+				deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(uploadedObjectKey);
+			} catch (RuntimeException exception) {
+				log.warn("Failed to delete claimed facility report upload object: {}", uploadedObjectKey, exception);
+			}
 		}
 	}
 

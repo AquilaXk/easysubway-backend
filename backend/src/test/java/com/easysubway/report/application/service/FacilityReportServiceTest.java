@@ -8,9 +8,12 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
 import com.easysubway.report.adapter.out.storage.LocalFacilityReportPhotoStorage;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
+import com.easysubway.report.application.port.in.CreatedFacilityReport;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
-import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
+import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
+import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort.LoadedFacilityReportPhoto;
+import com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand;
 import com.easysubway.report.application.port.out.LoadFacilityReportReviewAuditPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportReviewAuditPort;
 import com.easysubway.report.domain.FacilityReport;
@@ -328,6 +331,27 @@ class FacilityReportServiceTest {
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진 원본 삭제 실패는 receipt token 응답을 막지 않는다")
+	void createReportWithReceiptReturnsTokenWhenClaimCleanupFails() {
+		byte[] jpegBytes = validJpegBytes();
+		String objectKey = "facility-reports/unclaimed/client-submission-cleanup-fails-photo.jpg";
+		ThrowingDeletePhotoLoader photoLoader = new ThrowingDeletePhotoLoader(objectKey, "image/jpeg", jpegBytes);
+		FacilityReportService service = serviceWithPhotoLoader(photoLoader);
+
+		CreatedFacilityReport created = service.createReportWithReceipt(objectPhotoReportCommand(
+			"client-submission-cleanup-fails",
+			objectKey,
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length
+		));
+
+		assertThat(created.report().id()).isNotBlank();
+		assertThat(created.receiptToken()).isNotBlank();
+		assertThat(created.report().photoObjectKey()).startsWith("facility-reports/" + created.report().id() + "/");
+		assertThat(photoLoader.deleteAttempted).isTrue();
 	}
 
 	@Test
@@ -1241,6 +1265,12 @@ class FacilityReportServiceTest {
 	}
 
 	private FacilityReportService serviceWithUploadedPhoto(String objectKey, String contentType, byte[] bytes) {
+		return serviceWithPhotoLoader(candidateObjectKey -> objectKey.equals(candidateObjectKey)
+			? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
+			: Optional.empty());
+	}
+
+	private FacilityReportService serviceWithPhotoLoader(LoadFacilityReportPhotoPort photoLoader) {
 		var repository = new InMemoryFacilityReportRepository();
 		return new FacilityReportService(
 			transitRepository,
@@ -1257,9 +1287,7 @@ class FacilityReportServiceTest {
 			},
 			audit -> audit,
 			reportId -> List.of(),
-			candidateObjectKey -> objectKey.equals(candidateObjectKey)
-				? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
-				: Optional.empty(),
+			photoLoader,
 			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul")),
 			"local-dev-report-receipt-pepper"
 		);
@@ -1283,6 +1311,33 @@ class FacilityReportServiceTest {
 			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul")),
 			"local-dev-report-receipt-pepper"
 		);
+	}
+
+	private static final class ThrowingDeletePhotoLoader implements LoadFacilityReportPhotoPort, DeleteFacilityReportPhotoPort {
+
+		private final String objectKey;
+		private final String contentType;
+		private final byte[] bytes;
+		private boolean deleteAttempted;
+
+		private ThrowingDeletePhotoLoader(String objectKey, String contentType, byte[] bytes) {
+			this.objectKey = objectKey;
+			this.contentType = contentType;
+			this.bytes = bytes;
+		}
+
+		@Override
+		public Optional<LoadedFacilityReportPhoto> loadFacilityReportPhoto(String candidateObjectKey) {
+			return objectKey.equals(candidateObjectKey)
+				? Optional.of(new LoadedFacilityReportPhoto(contentType, bytes))
+				: Optional.empty();
+		}
+
+		@Override
+		public void deleteFacilityReportPhoto(String candidateObjectKey) {
+			deleteAttempted = true;
+			throw new IllegalStateException("object delete failed");
+		}
 	}
 
 	private String validJpegBase64() {

@@ -37,6 +37,7 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.auth.client-ip.trusted-proxies=",
 			"easysubway.notifications.push.external-enabled=false",
 			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
+			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
 			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
 			"easysubway.report.upload.bucket=easysubway-report-uploads",
 			"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",

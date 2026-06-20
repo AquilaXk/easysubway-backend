@@ -1,15 +1,20 @@
 package com.easysubway.report.adapter.in.web;
 
 import com.easysubway.report.domain.InvalidFacilityReportException;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.Locale;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.function.Consumer;
+import javax.crypto.Mac;
+import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -19,6 +24,7 @@ class FacilityReportUploadIntents {
 
 	private static final int UPLOAD_ID_BYTES = 24;
 	private static final String OBJECT_KEY_PREFIX = "facility-reports/unclaimed/";
+	private static final String DEFAULT_INTENT_SIGNING_KEY = "local-dev-report-upload-intent-signing-key";
 
 	private final Map<String, UploadIntent> intents = new ConcurrentHashMap<>();
 	private final Clock clock;
@@ -29,6 +35,7 @@ class FacilityReportUploadIntents {
 	private final int maxTotalPendingCount;
 	private final long maxTotalPendingBytes;
 	private final SecureRandom secureRandom;
+	private final String intentSigningKey;
 
 	@Autowired
 	FacilityReportUploadIntents(
@@ -37,7 +44,8 @@ class FacilityReportUploadIntents {
 		@Value("${easysubway.report.upload.max-pending-count:20}") int maxPendingCount,
 		@Value("${easysubway.report.upload.max-pending-bytes:18432000}") long maxPendingBytes,
 		@Value("${easysubway.report.upload.max-total-pending-count:200}") int maxTotalPendingCount,
-		@Value("${easysubway.report.upload.max-total-pending-bytes:184320000}") long maxTotalPendingBytes
+		@Value("${easysubway.report.upload.max-total-pending-bytes:184320000}") long maxTotalPendingBytes,
+		@Value("${easysubway.report.upload.intent-signing-key:${easysubway.report.receipt-token-pepper:local-dev-report-upload-intent-signing-key}}") String intentSigningKey
 	) {
 		this(
 			Clock.systemUTC(),
@@ -46,7 +54,8 @@ class FacilityReportUploadIntents {
 			maxPendingCount,
 			maxPendingBytes,
 			maxTotalPendingCount,
-			maxTotalPendingBytes
+			maxTotalPendingBytes,
+			intentSigningKey
 		);
 	}
 
@@ -57,7 +66,16 @@ class FacilityReportUploadIntents {
 		int maxPendingCount,
 		long maxPendingBytes
 	) {
-		this(clock, ttl, maxBytes, maxPendingCount, maxPendingBytes, maxPendingCount * 10, maxPendingBytes * 10);
+		this(
+			clock,
+			ttl,
+			maxBytes,
+			maxPendingCount,
+			maxPendingBytes,
+			maxPendingCount * 10,
+			maxPendingBytes * 10,
+			DEFAULT_INTENT_SIGNING_KEY
+		);
 	}
 
 	FacilityReportUploadIntents(
@@ -69,6 +87,28 @@ class FacilityReportUploadIntents {
 		int maxTotalPendingCount,
 		long maxTotalPendingBytes
 	) {
+		this(
+			clock,
+			ttl,
+			maxBytes,
+			maxPendingCount,
+			maxPendingBytes,
+			maxTotalPendingCount,
+			maxTotalPendingBytes,
+			DEFAULT_INTENT_SIGNING_KEY
+		);
+	}
+
+	FacilityReportUploadIntents(
+		Clock clock,
+		Duration ttl,
+		long maxBytes,
+		int maxPendingCount,
+		long maxPendingBytes,
+		int maxTotalPendingCount,
+		long maxTotalPendingBytes,
+		String intentSigningKey
+	) {
 		this.clock = clock;
 		this.ttl = ttl;
 		this.maxBytes = maxBytes;
@@ -77,6 +117,7 @@ class FacilityReportUploadIntents {
 		this.maxTotalPendingCount = maxTotalPendingCount;
 		this.maxTotalPendingBytes = maxTotalPendingBytes;
 		this.secureRandom = new SecureRandom();
+		this.intentSigningKey = requireSigningKey(intentSigningKey);
 	}
 
 	CreatedUploadIntent create(
@@ -98,17 +139,25 @@ class FacilityReportUploadIntents {
 	) {
 		cleanupExpired(deleteExpiredObject);
 		requireCreateAllowed(clientSubmissionId, contentType, sha256, sizeBytes);
-		String uploadId = newUploadId();
-		String objectKey = OBJECT_KEY_PREFIX + uploadId + extensionFor(contentType);
 		Instant issuedAt = clock.instant();
 		Instant expiresAt = issuedAt.plus(ttl);
+		String uploadId = newUploadId();
 		String normalizedClientSubmissionId = clientSubmissionId.trim();
+		String normalizedSha256 = sha256.trim();
+		String objectKey = objectKeyFor(
+			normalizedClientSubmissionId,
+			uploadId,
+			contentType,
+			normalizedSha256,
+			sizeBytes,
+			expiresAt
+		);
 		UploadIntent intent = new UploadIntent(
 			uploadId,
 			normalizedClientSubmissionId,
 			objectKey,
 			contentType,
-			sha256.trim(),
+			normalizedSha256,
 			sizeBytes,
 			expiresAt
 		);
@@ -151,15 +200,46 @@ class FacilityReportUploadIntents {
 		});
 	}
 
-	void requirePendingObjectKey(String objectKey) {
+	void requirePendingObjectKey(
+		String clientSubmissionId,
+		String objectKey,
+		String contentType,
+		String sha256,
+		Long sizeBytes
+	) {
 		if (objectKey == null || objectKey.isBlank()) {
 			return;
 		}
 		String normalizedObjectKey = objectKey.trim();
-		if (!isUnclaimedObjectKey(normalizedObjectKey)
-			|| intents.values().stream().noneMatch(intent -> intent.objectKey().equals(normalizedObjectKey))) {
+		String normalizedClientSubmissionId = requireClientSubmissionId(clientSubmissionId);
+		String normalizedContentType = normalizedContentType(contentType);
+		String normalizedSha256 = requireSha256(sha256);
+		long normalizedSizeBytes = requireSizeBytes(sizeBytes);
+		if (!isUnclaimedObjectKey(normalizedObjectKey)) {
 			throw invalidUpload();
 		}
+		UploadIntent localIntent = intents.values()
+			.stream()
+			.filter(intent -> intent.objectKey().equals(normalizedObjectKey))
+			.findFirst()
+			.orElse(null);
+		if (localIntent != null) {
+			requireMatchingIntent(
+				localIntent,
+				normalizedClientSubmissionId,
+				normalizedContentType,
+				normalizedSha256,
+				normalizedSizeBytes
+			);
+			return;
+		}
+		requireSignedObjectKey(
+			normalizedClientSubmissionId,
+			normalizedObjectKey,
+			normalizedContentType,
+			normalizedSha256,
+			normalizedSizeBytes
+		);
 	}
 
 	static boolean isUnclaimedObjectKey(String objectKey) {
@@ -221,6 +301,144 @@ class FacilityReportUploadIntents {
 			.sum();
 	}
 
+	private String objectKeyFor(
+		String clientSubmissionId,
+		String uploadId,
+		String contentType,
+		String sha256,
+		long sizeBytes,
+		Instant expiresAt
+	) {
+		long expiresEpochSecond = expiresAt.getEpochSecond();
+		String signature = signature(clientSubmissionId, uploadId, contentType, sha256, sizeBytes, expiresEpochSecond);
+		return OBJECT_KEY_PREFIX + expiresEpochSecond + "/" + uploadId + "/" + signature + extensionFor(contentType);
+	}
+
+	private void requireMatchingIntent(
+		UploadIntent intent,
+		String clientSubmissionId,
+		String contentType,
+		String sha256,
+		long sizeBytes
+	) {
+		if (intent.expiresAt().isBefore(clock.instant())
+			|| !intent.clientSubmissionId().equals(clientSubmissionId)
+			|| !intent.contentType().equals(contentType)
+			|| !intent.sha256().equals(sha256)
+			|| intent.sizeBytes() != sizeBytes) {
+			throw invalidUpload();
+		}
+	}
+
+	private void requireSignedObjectKey(
+		String clientSubmissionId,
+		String objectKey,
+		String contentType,
+		String sha256,
+		long sizeBytes
+	) {
+		SignedObjectKey signedObjectKey = parseSignedObjectKey(objectKey, contentType);
+		if (signedObjectKey.expiresAt().isBefore(clock.instant())) {
+			throw invalidUpload();
+		}
+		String expectedSignature = signature(
+			clientSubmissionId,
+			signedObjectKey.uploadId(),
+			contentType,
+			sha256,
+			sizeBytes,
+			signedObjectKey.expiresAt().getEpochSecond()
+		);
+		if (!MessageDigest.isEqual(
+			expectedSignature.getBytes(StandardCharsets.US_ASCII),
+			signedObjectKey.signature().getBytes(StandardCharsets.US_ASCII)
+		)) {
+			throw invalidUpload();
+		}
+	}
+
+	private SignedObjectKey parseSignedObjectKey(String objectKey, String contentType) {
+		if (!objectKey.startsWith(OBJECT_KEY_PREFIX)) {
+			throw invalidUpload();
+		}
+		String suffix = objectKey.substring(OBJECT_KEY_PREFIX.length());
+		String[] parts = suffix.split("/", 3);
+		if (parts.length != 3 || parts[0].isBlank() || parts[1].isBlank() || parts[2].isBlank()) {
+			throw invalidUpload();
+		}
+		String expectedExtension = extensionFor(contentType);
+		String signedFileName = parts[2];
+		if (!signedFileName.endsWith(expectedExtension)) {
+			throw invalidUpload();
+		}
+		String signature = signedFileName.substring(0, signedFileName.length() - expectedExtension.length());
+		if (!signature.matches("[0-9a-f]{64}")) {
+			throw invalidUpload();
+		}
+		try {
+			return new SignedObjectKey(parts[1], Instant.ofEpochSecond(Long.parseLong(parts[0])), signature);
+		} catch (NumberFormatException exception) {
+			throw invalidUpload();
+		}
+	}
+
+	private String signature(
+		String clientSubmissionId,
+		String uploadId,
+		String contentType,
+		String sha256,
+		long sizeBytes,
+		long expiresEpochSecond
+	) {
+		String payload = String.join(
+			"\n",
+			clientSubmissionId,
+			uploadId,
+			contentType,
+			sha256,
+			Long.toString(sizeBytes),
+			Long.toString(expiresEpochSecond)
+		);
+		try {
+			Mac mac = Mac.getInstance("HmacSHA256");
+			mac.init(new SecretKeySpec(
+				("facility-report-upload-intent:" + intentSigningKey).getBytes(StandardCharsets.UTF_8),
+				"HmacSHA256"
+			));
+			return HexFormat.of().formatHex(mac.doFinal(payload.getBytes(StandardCharsets.UTF_8)));
+		} catch (java.security.GeneralSecurityException exception) {
+			throw new IllegalStateException("HmacSHA256 algorithm is unavailable", exception);
+		}
+	}
+
+	private String requireSigningKey(String signingKey) {
+		if (signingKey == null || signingKey.isBlank()) {
+			throw new IllegalStateException("upload intent signing key is required");
+		}
+		return signingKey.trim();
+	}
+
+	private String requireClientSubmissionId(String clientSubmissionId) {
+		if (clientSubmissionId == null || clientSubmissionId.isBlank()) {
+			throw invalidUpload();
+		}
+		return clientSubmissionId.trim();
+	}
+
+	private String requireSha256(String sha256) {
+		if (sha256 == null || !sha256.trim().matches("[0-9a-f]{64}")) {
+			throw invalidUpload();
+		}
+		return sha256.trim();
+	}
+
+	private long requireSizeBytes(Long sizeBytes) {
+		if (sizeBytes == null || sizeBytes < 1 || sizeBytes > maxBytes) {
+			throw invalidUpload();
+		}
+		return sizeBytes;
+	}
+
 	private String newUploadId() {
 		byte[] bytes = new byte[UPLOAD_ID_BYTES];
 		secureRandom.nextBytes(bytes);
@@ -265,6 +483,13 @@ class FacilityReportUploadIntents {
 		String sha256,
 		long sizeBytes,
 		Instant expiresAt
+	) {
+	}
+
+	private record SignedObjectKey(
+		String uploadId,
+		Instant expiresAt,
+		String signature
 	) {
 	}
 }
