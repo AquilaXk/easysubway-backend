@@ -37,7 +37,9 @@ easysubway:
       max-bytes: ${EASYSUBWAY_REPORT_UPLOAD_MAX_BYTES:921600}
       url-ttl-seconds: ${EASYSUBWAY_REPORT_UPLOAD_URL_TTL_SECONDS:900}
       object-storage-endpoint: ${EASYSUBWAY_OBJECT_STORAGE_ENDPOINT:}
+      object-storage-access-key: ${EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY:}
       object-storage-secret-key: ${EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY:}
+      object-storage-region: ${EASYSUBWAY_OBJECT_STORAGE_REGION:us-east-1}
   admin:
     username: ${EASYSUBWAY_ADMIN_USERNAME}
     password: ${EASYSUBWAY_ADMIN_PASSWORD}

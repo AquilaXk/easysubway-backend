@@ -64,10 +64,11 @@ class FacilityReportUploadIntents {
 		requireCreateAllowed(clientSubmissionId, contentType, sha256, sizeBytes);
 		String uploadId = newUploadId();
 		String objectKey = OBJECT_KEY_PREFIX + uploadId + extensionFor(contentType);
-		Instant expiresAt = clock.instant().plus(ttl);
+		Instant issuedAt = clock.instant();
+		Instant expiresAt = issuedAt.plus(ttl);
 		UploadIntent intent = new UploadIntent(uploadId, objectKey, contentType, sha256.trim(), sizeBytes, expiresAt);
 		intents.put(uploadId, intent);
-		return new CreatedUploadIntent(uploadId, objectKey, expiresAt);
+		return new CreatedUploadIntent(uploadId, objectKey, contentType, sha256.trim(), sizeBytes, issuedAt, expiresAt);
 	}
 
 	UploadIntent requireUpload(String uploadId, String contentType, String sha256, long sizeBytes, long actualSizeBytes) {
@@ -82,6 +83,13 @@ class FacilityReportUploadIntents {
 			throw invalidUpload();
 		}
 		return intent;
+	}
+
+	void consumeObjectKey(String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		intents.values().removeIf(intent -> intent.objectKey().equals(objectKey.trim()));
 	}
 
 	void cleanupExpired(Consumer<String> deleteObject) {
@@ -138,7 +146,15 @@ class FacilityReportUploadIntents {
 		return new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 	}
 
-	record CreatedUploadIntent(String uploadId, String objectKey, Instant expiresAt) {
+	record CreatedUploadIntent(
+		String uploadId,
+		String objectKey,
+		String contentType,
+		String sha256,
+		long sizeBytes,
+		Instant issuedAt,
+		Instant expiresAt
+	) {
 	}
 
 	record UploadIntent(String uploadId, String objectKey, String contentType, String sha256, long sizeBytes, Instant expiresAt) {

@@ -19,6 +19,7 @@ import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -70,15 +71,15 @@ class FacilityReportController {
 			request.requiredPhotoSizeBytes()
 		);
 		FacilityReportUploadUrlSigner.SignedUploadUrl signedUploadUrl = uploadUrlSigner.sign(intent);
+		Map<String, String> uploadHeaders = new LinkedHashMap<>(signedUploadUrl.uploadHeaders());
+		uploadHeaders.put("content-type", request.normalizedPhotoContentType());
+		uploadHeaders.put("x-easysubway-upload-sha256", request.normalizedPhotoSha256());
+		uploadHeaders.put("x-easysubway-upload-size", String.valueOf(request.requiredPhotoSizeBytes()));
 		return ApiResponse.ok(new FacilityReportUploadIntentResponse(
 			intent.objectKey(),
 			signedUploadUrl.uploadUrl(),
 			signedUploadUrl.uploadMethod(),
-			Map.of(
-				"content-type", request.normalizedPhotoContentType(),
-				"x-easysubway-upload-sha256", request.normalizedPhotoSha256(),
-				"x-easysubway-upload-size", String.valueOf(request.requiredPhotoSizeBytes())
-			),
+			uploadHeaders,
 			intent.expiresAt().toString()
 		));
 	}
@@ -119,10 +120,12 @@ class FacilityReportController {
 	) {
 		if (request.hasReceiptSubmission() && principal == null) {
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
+			uploadIntents.consumeObjectKey(request.photoObjectKey());
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
 		}
 		if (principal != null) {
 			FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
+			uploadIntents.consumeObjectKey(request.photoObjectKey());
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
 		}
 		throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);

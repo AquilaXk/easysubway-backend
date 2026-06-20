@@ -84,6 +84,24 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("업로드 intent는 신고 생성에서 청구되면 pending quota에서 빠진다")
+	void consumeObjectKeyReleasesPendingQuota() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			1,
+			11L
+		);
+
+		var first = intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		intents.consumeObjectKey(first.objectKey());
+		var second = intents.create("client-submission-2", "image/jpeg", "b".repeat(64), 11L);
+
+		assertThat(second.objectKey()).startsWith("facility-reports/unclaimed/");
+	}
+
+	@Test
 	@DisplayName("업로드 intent는 만료된 미청구 object를 정리한다")
 	void cleanupExpiredDeletesOrphanObjects() {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
@@ -111,11 +129,17 @@ class FacilityReportUploadIntentsTest {
 		var signer = new ObjectStorageFacilityReportUploadUrlSigner(
 			"https://object-storage.example.com",
 			"easysubway-report-uploads",
-			"prod-object-storage-secret-key-with-enough-entropy"
+			"prod-object-storage-access-key",
+			"prod-object-storage-secret-key-with-enough-entropy",
+			"ap-northeast-2"
 		);
 		var intent = new FacilityReportUploadIntents.CreatedUploadIntent(
 			"upload-id-1",
 			"facility-reports/unclaimed/object-1.jpg",
+			"image/jpeg",
+			"a".repeat(64),
+			11L,
+			Instant.parse("2026-06-20T00:00:00Z"),
 			Instant.parse("2026-06-20T00:15:00Z")
 		);
 
@@ -123,10 +147,17 @@ class FacilityReportUploadIntentsTest {
 
 		assertThat(signedUrl.uploadMethod()).isEqualTo("PUT");
 		assertThat(signedUrl.uploadUrl()).startsWith(
-			"https://object-storage.example.com/easysubway-report-uploads/facility-reports%2Funclaimed%2Fobject-1.jpg"
+			"https://object-storage.example.com/easysubway-report-uploads/facility-reports/unclaimed/object-1.jpg"
 		);
-		assertThat(signedUrl.uploadUrl()).contains("expiresAt=2026-06-20T00%3A15%3A00Z");
-		assertThat(signedUrl.uploadUrl()).containsPattern("signature=[0-9a-f]{64}");
+		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Algorithm=AWS4-HMAC-SHA256");
+		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Credential=prod-object-storage-access-key%2F20260620%2Fap-northeast-2%2Fs3%2Faws4_request");
+		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Date=20260620T000000Z");
+		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Expires=900");
+		assertThat(signedUrl.uploadUrl()).contains("X-Amz-SignedHeaders=content-type%3Bhost%3Bx-amz-meta-easysubway-sha256%3Bx-amz-meta-easysubway-size");
+		assertThat(signedUrl.uploadUrl()).containsPattern("X-Amz-Signature=[0-9a-f]{64}");
+		assertThat(signedUrl.uploadHeaders()).containsEntry("content-type", "image/jpeg");
+		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-meta-easysubway-sha256", "a".repeat(64));
+		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-meta-easysubway-size", "11");
 	}
 
 	@Test
@@ -136,6 +167,10 @@ class FacilityReportUploadIntentsTest {
 		var intent = new FacilityReportUploadIntents.CreatedUploadIntent(
 			"upload-id-1",
 			"facility-reports/unclaimed/object-1.jpg",
+			"image/jpeg",
+			"a".repeat(64),
+			11L,
+			Instant.parse("2026-06-20T00:00:00Z"),
 			Instant.parse("2026-06-20T00:15:00Z")
 		);
 
