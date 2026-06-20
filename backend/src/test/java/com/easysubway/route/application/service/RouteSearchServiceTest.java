@@ -73,10 +73,11 @@ class RouteSearchServiceTest {
 		assertThat(result.score()).isGreaterThan(0);
 		assertThat(result.recommendationReasons())
 			.containsExactly(
-				"엘리베이터 동선을 우선했어요",
-				"계단 없는 출구를 확인했어요",
-				"유모차 이동에 맞춰 넓은 동선을 확인했어요"
+				"선택된 경로에서 접근성 확인이 필요한 구간을 표시합니다.",
+				"출구와 시설 상태는 현장 안내를 함께 확인해 주세요.",
+				"유모차 이동 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다."
 			);
+		assertThat(String.join("\n", result.recommendationReasons())).doesNotContain("확인했어요");
 		assertThat(result.steps())
 			.extracting("title")
 			.containsExactly(

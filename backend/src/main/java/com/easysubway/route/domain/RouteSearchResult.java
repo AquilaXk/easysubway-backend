@@ -30,8 +30,8 @@ public record RouteSearchResult(
 		}
 		List<String> reasons = new ArrayList<>();
 		if (hasStepFreeAccessibilityStep()) {
-			reasons.add("엘리베이터 동선을 우선했어요");
-			reasons.add("계단 없는 출구를 확인했어요");
+			reasons.add("선택된 경로에서 접근성 확인이 필요한 구간을 표시합니다.");
+			reasons.add("출구와 시설 상태는 현장 안내를 함께 확인해 주세요.");
 		}
 		if (hasStairWarning()) {
 			reasons.add("계단 포함 구간을 미리 표시했어요");
@@ -53,12 +53,12 @@ public record RouteSearchResult(
 
 	private String mobilityReason() {
 		return switch (mobilityType) {
-			case WHEELCHAIR -> "휠체어 이동에 맞춰 계단을 피했어요";
-			case STROLLER -> "유모차 이동에 맞춰 넓은 동선을 확인했어요";
-			case SENIOR -> "천천히 이동하기 쉬운 동선을 확인했어요";
+			case WHEELCHAIR -> "휠체어 이동 조건을 반영해 계단 부담이 낮은 경로를 우선했습니다.";
+			case STROLLER -> "유모차 이동 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
+			case SENIOR -> "천천히 이동하기 쉬운 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
 			case PREGNANT -> "짧게 걷는 동선을 우선했어요";
-			case TEMPORARY_INJURY -> "계단 부담이 적은 동선을 확인했어요";
-			case LUGGAGE -> "큰 짐을 들고 이동하기 쉬운 동선을 확인했어요";
+			case TEMPORARY_INJURY -> "계단 부담이 적은 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
+			case LUGGAGE -> "큰 짐을 들고 이동하기 쉬운 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다.";
 		};
 	}
 }
