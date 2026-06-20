@@ -26,6 +26,8 @@ class FacilityReportUploadIntents {
 	private final long maxBytes;
 	private final int maxPendingCount;
 	private final long maxPendingBytes;
+	private final int maxTotalPendingCount;
+	private final long maxTotalPendingBytes;
 	private final SecureRandom secureRandom;
 
 	@Autowired
@@ -33,9 +35,19 @@ class FacilityReportUploadIntents {
 		@Value("${easysubway.report.upload.url-ttl-seconds:900}") long ttlSeconds,
 		@Value("${easysubway.report.upload.max-bytes:921600}") long maxBytes,
 		@Value("${easysubway.report.upload.max-pending-count:20}") int maxPendingCount,
-		@Value("${easysubway.report.upload.max-pending-bytes:18432000}") long maxPendingBytes
+		@Value("${easysubway.report.upload.max-pending-bytes:18432000}") long maxPendingBytes,
+		@Value("${easysubway.report.upload.max-total-pending-count:200}") int maxTotalPendingCount,
+		@Value("${easysubway.report.upload.max-total-pending-bytes:184320000}") long maxTotalPendingBytes
 	) {
-		this(Clock.systemUTC(), Duration.ofSeconds(ttlSeconds), maxBytes, maxPendingCount, maxPendingBytes);
+		this(
+			Clock.systemUTC(),
+			Duration.ofSeconds(ttlSeconds),
+			maxBytes,
+			maxPendingCount,
+			maxPendingBytes,
+			maxTotalPendingCount,
+			maxTotalPendingBytes
+		);
 	}
 
 	FacilityReportUploadIntents(
@@ -45,11 +57,25 @@ class FacilityReportUploadIntents {
 		int maxPendingCount,
 		long maxPendingBytes
 	) {
+		this(clock, ttl, maxBytes, maxPendingCount, maxPendingBytes, maxPendingCount * 10, maxPendingBytes * 10);
+	}
+
+	FacilityReportUploadIntents(
+		Clock clock,
+		Duration ttl,
+		long maxBytes,
+		int maxPendingCount,
+		long maxPendingBytes,
+		int maxTotalPendingCount,
+		long maxTotalPendingBytes
+	) {
 		this.clock = clock;
 		this.ttl = ttl;
 		this.maxBytes = maxBytes;
 		this.maxPendingCount = maxPendingCount;
 		this.maxPendingBytes = maxPendingBytes;
+		this.maxTotalPendingCount = maxTotalPendingCount;
+		this.maxTotalPendingBytes = maxTotalPendingBytes;
 		this.secureRandom = new SecureRandom();
 	}
 
@@ -95,7 +121,7 @@ class FacilityReportUploadIntents {
 		if (intent == null || intent.expiresAt().isBefore(clock.instant())) {
 			throw invalidUpload();
 		}
-		if (!intent.contentType().equals(contentType == null ? null : contentType.trim().toLowerCase(Locale.ROOT))
+		if (!intent.contentType().equals(normalizedContentType(contentType))
 			|| !intent.sha256().equals(sha256 == null ? null : sha256.trim())
 			|| intent.sizeBytes() != sizeBytes
 			|| intent.sizeBytes() != actualSizeBytes) {
@@ -109,6 +135,20 @@ class FacilityReportUploadIntents {
 			return;
 		}
 		intents.values().removeIf(intent -> intent.objectKey().equals(objectKey.trim()));
+	}
+
+	void discardPendingObjectKey(String objectKey, Consumer<String> deleteObject) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		String normalizedObjectKey = objectKey.trim();
+		intents.values().removeIf(intent -> {
+			if (!intent.objectKey().equals(normalizedObjectKey)) {
+				return false;
+			}
+			deleteObject.accept(intent.objectKey());
+			return true;
+		});
 	}
 
 	void requirePendingObjectKey(String objectKey) {
@@ -152,7 +192,9 @@ class FacilityReportUploadIntents {
 		}
 		String normalizedClientSubmissionId = clientSubmissionId.trim();
 		if (pendingCount(normalizedClientSubmissionId) >= maxPendingCount
-			|| pendingBytes(normalizedClientSubmissionId) + sizeBytes > maxPendingBytes) {
+			|| pendingBytes(normalizedClientSubmissionId) + sizeBytes > maxPendingBytes
+			|| intents.size() >= maxTotalPendingCount
+			|| totalPendingBytes() + sizeBytes > maxTotalPendingBytes) {
 			throw new InvalidFacilityReportException("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
 		}
 	}
@@ -172,6 +214,13 @@ class FacilityReportUploadIntents {
 			.sum();
 	}
 
+	private long totalPendingBytes() {
+		return intents.values()
+			.stream()
+			.mapToLong(UploadIntent::sizeBytes)
+			.sum();
+	}
+
 	private String newUploadId() {
 		byte[] bytes = new byte[UPLOAD_ID_BYTES];
 		secureRandom.nextBytes(bytes);
@@ -184,6 +233,13 @@ class FacilityReportUploadIntents {
 			case "image/webp" -> ".webp";
 			default -> ".jpg";
 		};
+	}
+
+	private String normalizedContentType(String contentType) {
+		if (contentType == null) {
+			return null;
+		}
+		return contentType.split(";", 2)[0].trim().toLowerCase(Locale.ROOT);
 	}
 
 	private InvalidFacilityReportException invalidUpload() {

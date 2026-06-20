@@ -101,6 +101,27 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("업로드 intent는 제출 식별자를 바꿔도 전체 pending quota를 넘길 수 없다")
+	void createIntentRejectsGlobalPendingQuotaExceeded() {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			10,
+			10L * 900L * 1024L,
+			2,
+			22L
+		);
+
+		intents.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		intents.create("client-submission-2", "image/jpeg", "b".repeat(64), 11L);
+
+		assertThatThrownBy(() -> intents.create("client-submission-3", "image/jpeg", "c".repeat(64), 1L))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+	}
+
+	@Test
 	@DisplayName("업로드 intent 생성은 만료된 미청구 object를 실제 삭제 callback에 넘긴다")
 	void createIntentDeletesExpiredObjectsThroughCallback() {
 		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(

@@ -10,12 +10,15 @@ import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 public interface FacilityReportUseCase {
 
 	FacilityReport createReport(CreateFacilityReportCommand command);
 
 	CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command);
+
+	Optional<FacilityReport> findReportByClientSubmissionId(String clientSubmissionId);
 
 	FacilityReport getReport(String reportId);
 

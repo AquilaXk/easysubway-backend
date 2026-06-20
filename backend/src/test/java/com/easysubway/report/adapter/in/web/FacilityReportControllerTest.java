@@ -9,7 +9,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.util.Base64;
+import java.util.HexFormat;
 import java.util.List;
 import org.assertj.core.api.Assertions;
 import org.junit.jupiter.api.DisplayName;
@@ -182,6 +185,69 @@ class FacilityReportControllerTest {
 			.andExpect(status().isCreated())
 			.andExpect(jsonPath("$.data.id").value(reportId))
 			.andExpect(jsonPath("$.data.receiptToken").doesNotExist());
+	}
+
+	@Test
+	@DisplayName("사진이 포함된 같은 제출 식별자 재시도는 기존 신고를 반환하고 새 pending object를 버린다")
+	void repeatedPhotoReceiptSubmissionReturnsExistingReportAndDiscardsNewUpload() throws Exception {
+		byte[] pngBytes = Base64.getDecoder().decode(VALID_PNG_BASE64);
+		UploadedObject firstUpload = uploadReportPhotoObject(
+			"client-submission-photo-retry-1",
+			"image/png",
+			pngBytes
+		);
+		String firstRequestBody = photoReceiptRequestBody(
+			"client-submission-photo-retry-1",
+			firstUpload.objectKey(),
+			firstUpload.sha256(),
+			pngBytes.length
+		);
+		String firstResponse = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(firstRequestBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.id").isNotEmpty())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		String reportId = JsonPath.read(firstResponse, "$.data.id");
+
+		mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(firstRequestBody))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist());
+
+		UploadedObject secondUpload = uploadReportPhotoObject(
+			"client-submission-photo-retry-1",
+			"image/png",
+			pngBytes
+		);
+		mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(photoReceiptRequestBody(
+					"client-submission-photo-retry-1",
+					secondUpload.objectKey(),
+					secondUpload.sha256(),
+					pngBytes.length
+				)))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.id").value(reportId))
+			.andExpect(jsonPath("$.data.receiptToken").doesNotExist());
+
+		mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(photoReceiptRequestBody(
+					"client-submission-photo-new-1",
+					secondUpload.objectKey(),
+					secondUpload.sha256(),
+					pngBytes.length
+				)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
 	}
 
 	@Test
@@ -1029,5 +1095,72 @@ class FacilityReportControllerTest {
 			.getContentAsString();
 
 		return JsonPath.read(response, "$.data.id");
+	}
+
+	private UploadedObject uploadReportPhotoObject(
+		String clientSubmissionId,
+		String contentType,
+		byte[] bytes
+	) throws Exception {
+		String sha256 = sha256Hex(bytes);
+		String intentResponse = mockMvc.perform(post("/api/v1/report-uploads")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "%s",
+					  "photoFileName": "elevator.png",
+					  "photoContentType": "%s",
+					  "photoSha256": "%s",
+					  "photoSizeBytes": %d
+					}
+					""".formatted(clientSubmissionId, contentType, sha256, bytes.length)))
+			.andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		String uploadUrl = JsonPath.read(intentResponse, "$.data.uploadUrl");
+		String objectKey = JsonPath.read(intentResponse, "$.data.objectKey");
+
+		mockMvc.perform(put(uploadUrl)
+				.header("Content-Type", contentType)
+				.header("x-easysubway-upload-sha256", sha256)
+				.header("x-easysubway-upload-size", String.valueOf(bytes.length))
+				.content(bytes))
+			.andExpect(status().isNoContent());
+
+		return new UploadedObject(objectKey, sha256);
+	}
+
+	private String photoReceiptRequestBody(
+		String clientSubmissionId,
+		String objectKey,
+		String sha256,
+		int sizeBytes
+	) {
+		return """
+			{
+			  "clientSubmissionId": "%s",
+			  "stationId": "station-sangnoksu",
+			  "facilityId": "facility-sangnoksu-elevator-1",
+			  "reportType": "BROKEN",
+			  "description": "사진이 포함된 재시도 신고입니다.",
+			  "photoFileName": "elevator.png",
+			  "photoContentType": "image/png",
+			  "photoObjectKey": "%s",
+			  "photoSha256": "%s",
+			  "photoSizeBytes": %d
+			}
+			""".formatted(clientSubmissionId, objectKey, sha256, sizeBytes);
+	}
+
+	private String sha256Hex(byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
+		}
+	}
+
+	private record UploadedObject(String objectKey, String sha256) {
 	}
 }

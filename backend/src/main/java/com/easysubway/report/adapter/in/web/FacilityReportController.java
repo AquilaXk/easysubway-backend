@@ -124,18 +124,37 @@ class FacilityReportController {
 		Principal principal
 	) {
 		if (request.hasReceiptSubmission() && principal == null) {
-			uploadIntents.requirePendingObjectKey(request.photoObjectKey());
+			boolean duplicateSubmission = hasExistingClientSubmission(request);
+			if (!duplicateSubmission) {
+				uploadIntents.requirePendingObjectKey(request.photoObjectKey());
+			}
 			CreatedFacilityReport created = facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand());
-			uploadIntents.consumeObjectKey(request.photoObjectKey());
+			completeUploadIntent(request.photoObjectKey(), duplicateSubmission);
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(created.report(), created.receiptToken()));
 		}
 		if (principal != null) {
-			uploadIntents.requirePendingObjectKey(request.photoObjectKey());
+			boolean duplicateSubmission = hasExistingClientSubmission(request);
+			if (!duplicateSubmission) {
+				uploadIntents.requirePendingObjectKey(request.photoObjectKey());
+			}
 			FacilityReport report = facilityReportUseCase.createReport(request.toCommand(principal.getName()));
-			uploadIntents.consumeObjectKey(request.photoObjectKey());
+			completeUploadIntent(request.photoObjectKey(), duplicateSubmission);
 			return ApiResponse.ok(FacilityReportCreatedResponse.from(report, null));
 		}
 		throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
+	}
+
+	private boolean hasExistingClientSubmission(CreateFacilityReportRequest request) {
+		return request.hasReceiptSubmission()
+			&& facilityReportUseCase.findReportByClientSubmissionId(request.clientSubmissionId()).isPresent();
+	}
+
+	private void completeUploadIntent(String photoObjectKey, boolean duplicateSubmission) {
+		if (duplicateSubmission) {
+			uploadIntents.discardPendingObjectKey(photoObjectKey, deleteFacilityReportPhotoPort::deleteFacilityReportPhoto);
+			return;
+		}
+		uploadIntents.consumeObjectKey(photoObjectKey);
 	}
 
 	@GetMapping("/api/v1/reports/{reportId}")

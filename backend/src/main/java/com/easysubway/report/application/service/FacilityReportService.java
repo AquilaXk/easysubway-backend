@@ -359,13 +359,19 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command) {
 		requireClientSubmissionId(command.clientSubmissionId());
 		FacilityReportReceiptTokens.IssuedReceiptToken receiptToken = receiptTokens.issue(command.clientSubmissionId());
-		Optional<FacilityReport> existing = loadFacilityReportPort.loadReportByClientSubmissionId(
-			command.clientSubmissionId().trim()
-		);
+		Optional<FacilityReport> existing = findReportByClientSubmissionId(command.clientSubmissionId());
 		if (existing.isPresent()) {
 			return new CreatedFacilityReport(existing.get(), null);
 		}
 		return new CreatedFacilityReport(createReport(command, receiptToken.hash()), receiptToken.token());
+	}
+
+	@Override
+	public Optional<FacilityReport> findReportByClientSubmissionId(String clientSubmissionId) {
+		if (!hasText(clientSubmissionId)) {
+			return Optional.empty();
+		}
+		return loadFacilityReportPort.loadReportByClientSubmissionId(clientSubmissionId.trim());
 	}
 
 	private FacilityReport createReport(CreateFacilityReportCommand command, String receiptTokenHash) {
