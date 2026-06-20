@@ -11,6 +11,10 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -111,6 +115,24 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
+	@DisplayName("업로드 intent object key 서명 검증은 content type 누락을 400 경계 예외로 거부한다")
+	void requirePendingObjectKeyRejectsMissingContentTypeBeforeSignedKeyParsing() {
+		FacilityReportUploadIntents issuer = signedIntents();
+		var intent = issuer.create("client-submission-1", "image/jpeg", "a".repeat(64), 11L);
+		FacilityReportUploadIntents verifier = signedIntents();
+
+		assertThatThrownBy(() -> verifier.requirePendingObjectKey(
+			"client-submission-1",
+			intent.objectKey(),
+			null,
+			"a".repeat(64),
+			11L
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
 	@DisplayName("업로드 intent object key 서명은 만료 시간이 지나면 거부한다")
 	void requirePendingObjectKeyRejectsExpiredSignedObjectKey() {
 		FacilityReportUploadIntents issuer = signedIntents();
@@ -145,6 +167,55 @@ class FacilityReportUploadIntentsTest {
 		assertThatThrownBy(() -> intents.create("client-submission-1", "image/jpeg", "b".repeat(64), 1L))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+	}
+
+	@Test
+	@DisplayName("업로드 intent quota는 동시 요청에서도 check-insert 경계를 보장한다")
+	void createIntentKeepsPendingQuotaUnderConcurrentRequests() throws Exception {
+		FacilityReportUploadIntents intents = new FacilityReportUploadIntents(
+			clock,
+			Duration.ofMinutes(15),
+			900L * 1024L,
+			1,
+			11L
+		);
+		int requestCount = 8;
+		var executor = Executors.newFixedThreadPool(requestCount);
+		CountDownLatch ready = new CountDownLatch(requestCount);
+		CountDownLatch start = new CountDownLatch(1);
+		AtomicInteger created = new AtomicInteger();
+		AtomicInteger rejected = new AtomicInteger();
+		List<java.util.concurrent.Future<?>> futures = new ArrayList<>();
+
+		for (int index = 0; index < requestCount; index++) {
+			int requestIndex = index;
+			futures.add(executor.submit(() -> {
+				ready.countDown();
+				try {
+					assertThat(start.await(1, TimeUnit.SECONDS)).isTrue();
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError(exception);
+				}
+				try {
+					intents.create("client-submission-1", "image/jpeg", Integer.toHexString(requestIndex).repeat(64), 11L);
+					created.incrementAndGet();
+				} catch (InvalidFacilityReportException exception) {
+					assertThat(exception).hasMessage("사진 첨부 요청이 많습니다. 잠시 후 다시 시도해 주세요.");
+					rejected.incrementAndGet();
+				}
+			}));
+		}
+
+		assertThat(ready.await(1, TimeUnit.SECONDS)).isTrue();
+		start.countDown();
+		for (var future : futures) {
+			future.get(2, TimeUnit.SECONDS);
+		}
+		executor.shutdownNow();
+
+		assertThat(created).hasValue(1);
+		assertThat(rejected).hasValue(requestCount - 1);
 	}
 
 	@Test
