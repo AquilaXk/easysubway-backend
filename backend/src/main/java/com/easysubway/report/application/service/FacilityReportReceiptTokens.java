@@ -42,10 +42,9 @@ class FacilityReportReceiptTokens {
 		if (token == null || token.isBlank() || expectedHash == null) {
 			return false;
 		}
-		return MessageDigest.isEqual(
-			hash(token).getBytes(StandardCharsets.UTF_8),
-			expectedHash.getBytes(StandardCharsets.UTF_8)
-		);
+		byte[] expectedHashBytes = expectedHash.getBytes(StandardCharsets.UTF_8);
+		return MessageDigest.isEqual(hash(token).getBytes(StandardCharsets.UTF_8), expectedHashBytes)
+			|| MessageDigest.isEqual(legacyHash(token).getBytes(StandardCharsets.UTF_8), expectedHashBytes);
 	}
 
 	private String normalize(String value) {
@@ -62,6 +61,18 @@ class FacilityReportReceiptTokens {
 			return mac.doFinal(value.getBytes(StandardCharsets.UTF_8));
 		} catch (java.security.GeneralSecurityException exception) {
 			throw new IllegalStateException("HMAC-SHA256 is required", exception);
+		}
+	}
+
+	private String legacyHash(String token) {
+		return hex(sha256("receipt-token-hash:%s:%s".formatted(pepper, normalize(token))));
+	}
+
+	private byte[] sha256(String value) {
+		try {
+			return MessageDigest.getInstance("SHA-256").digest(value.getBytes(StandardCharsets.UTF_8));
+		} catch (java.security.GeneralSecurityException exception) {
+			throw new IllegalStateException("SHA-256 is required", exception);
 		}
 	}
 

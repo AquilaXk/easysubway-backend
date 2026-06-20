@@ -217,9 +217,13 @@ class FacilityReportUploadIntentsTest {
 		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Credential=prod-object-storage-access-key%2F20260620%2Fap-northeast-2%2Fs3%2Faws4_request");
 		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Date=20260620T000000Z");
 		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Expires=900");
-		assertThat(signedUrl.uploadUrl()).contains("X-Amz-SignedHeaders=content-type%3Bhost%3Bx-amz-meta-easysubway-sha256%3Bx-amz-meta-easysubway-size");
+		assertThat(signedUrl.uploadUrl()).contains(
+			"X-Amz-SignedHeaders=content-length%3Bcontent-type%3Bhost%3Bx-amz-content-sha256%3Bx-amz-meta-easysubway-sha256%3Bx-amz-meta-easysubway-size"
+		);
 		assertThat(signedUrl.uploadUrl()).containsPattern("X-Amz-Signature=[0-9a-f]{64}");
+		assertThat(signedUrl.uploadHeaders()).containsEntry("content-length", "11");
 		assertThat(signedUrl.uploadHeaders()).containsEntry("content-type", "image/jpeg");
+		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-content-sha256", "a".repeat(64));
 		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-meta-easysubway-sha256", "a".repeat(64));
 		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-meta-easysubway-size", "11");
 	}

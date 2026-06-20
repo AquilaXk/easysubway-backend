@@ -92,7 +92,7 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 			canonicalQuery,
 			canonicalHeaders(host, uploadHeaders),
 			signedHeaders,
-			"UNSIGNED-PAYLOAD"
+			intent.sha256()
 		);
 		String stringToSign = String.join("\n",
 			SIGNING_ALGORITHM,
@@ -107,7 +107,9 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 
 	private Map<String, String> storageUploadHeaders(FacilityReportUploadIntents.CreatedUploadIntent intent) {
 		Map<String, String> headers = new LinkedHashMap<>();
+		headers.put("content-length", String.valueOf(intent.sizeBytes()));
 		headers.put("content-type", intent.contentType());
+		headers.put("x-amz-content-sha256", intent.sha256());
 		headers.put("x-amz-meta-easysubway-sha256", intent.sha256());
 		headers.put("x-amz-meta-easysubway-size", String.valueOf(intent.sizeBytes()));
 		return headers;
@@ -161,6 +163,7 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 
 	private static String canonicalHeaders(String host, Map<String, String> uploadHeaders) {
 		StringBuilder builder = new StringBuilder();
+		builder.append("content-length:").append(uploadHeaders.getOrDefault("content-length", "")).append('\n');
 		builder.append("content-type:").append(uploadHeaders.getOrDefault("content-type", "")).append('\n');
 		builder.append("host:").append(host).append('\n');
 		uploadHeaders.entrySet()
@@ -176,7 +179,7 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 			.stream()
 			.filter(key -> key.startsWith("x-amz-"))
 			.sorted()
-			.reduce("content-type;host", (left, right) -> left + ";" + right);
+			.reduce("content-length;content-type;host", (left, right) -> left + ";" + right);
 	}
 
 	private static String requireText(String value, String message) {

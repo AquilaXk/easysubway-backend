@@ -182,6 +182,22 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("receipt token 검증은 기존 SHA-256 hash를 유지 호환한다")
+	void receiptTokenMatchesLegacySha256Hash() {
+		FacilityReportReceiptTokens receiptTokens = new FacilityReportReceiptTokens(
+			"test-receipt-token-pepper-with-enough-entropy"
+		);
+		String token = "legacy-receipt-token";
+		String legacyHash = sha256Hex(
+			"receipt-token-hash:test-receipt-token-pepper-with-enough-entropy:legacy-receipt-token"
+				.getBytes(StandardCharsets.UTF_8)
+		);
+
+		assertThat(receiptTokens.matches(token, legacyHash)).isTrue();
+		assertThat(receiptTokens.hash(token)).isNotEqualTo(legacyHash);
+	}
+
+	@Test
 	@DisplayName("운영 프로필은 강한 receipt token pepper가 없으면 시작하지 않는다")
 	void prodProfileFailsWithoutStrongReceiptTokenPepper() {
 		new ApplicationContextRunner()
