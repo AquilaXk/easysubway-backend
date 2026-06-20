@@ -17,6 +17,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JdbcPushNotificationOutboxRepositoryTest {
 
 	private JdbcPushNotificationOutboxRepository repository;
+	private JdbcTemplate jdbcTemplate;
 
 	@BeforeEach
 	void setUp() {
@@ -25,7 +26,7 @@ class JdbcPushNotificationOutboxRepositoryTest {
 			"sa",
 			""
 		);
-		var jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.execute("DROP TABLE IF EXISTS push_notification_outbox");
 		jdbcTemplate.execute("""
 			CREATE TABLE push_notification_outbox (
@@ -159,11 +160,7 @@ class JdbcPushNotificationOutboxRepositoryTest {
 		var pendingNotification = notification("push-1", "anonymous-user-1", PushNotificationType.REPORT_STATUS, 9);
 		repository.savePushNotification(pendingNotification);
 		assertThat(repository.claimPendingPushNotification(pendingNotification)).isTrue();
-		new JdbcTemplate(new DriverManagerDataSource(
-			"jdbc:h2:mem:push-notification-outbox;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
-			"sa",
-			""
-		)).update(
+		jdbcTemplate.update(
 			"""
 				UPDATE push_notification_outbox
 				SET processing_claimed_at = ?
