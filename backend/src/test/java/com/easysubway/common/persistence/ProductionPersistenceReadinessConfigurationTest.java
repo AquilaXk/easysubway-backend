@@ -1,9 +1,6 @@
 package com.easysubway.common.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
-
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.DataQualityLevel;
@@ -29,8 +26,6 @@ import org.springframework.boot.actuate.health.Status;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
-import org.springframework.data.redis.connection.RedisConnection;
-import org.springframework.data.redis.connection.RedisConnectionFactory;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 
 @DisplayName("운영 영속 저장소 준비 상태")
@@ -41,8 +36,7 @@ class ProductionPersistenceReadinessConfigurationTest {
 	void prodProfileStartsAndPublishesReadinessHealthIndicator() {
 		productionContext(ReadyDependencyTestConfiguration.class)
 			.withPropertyValues(
-				"spring.profiles.active=prod",
-				"easysubway.notifications.push.external-enabled=true"
+				"spring.profiles.active=prod"
 			)
 			.run(context -> {
 				assertThat(context).hasNotFailed();
@@ -52,9 +46,9 @@ class ProductionPersistenceReadinessConfigurationTest {
 
 				assertThat(health.getStatus()).isEqualTo(Status.UP);
 				assertThat(health.getDetails()).containsEntry("database", "ready");
-				assertThat(health.getDetails()).containsEntry("redis", "ready");
 				assertThat(health.getDetails()).containsEntry("masterData", "ready");
-				assertThat(health.getDetails()).containsEntry("push", "ready");
+				assertThat(health.getDetails()).doesNotContainKey("redis");
+				assertThat(health.getDetails()).doesNotContainKey("push");
 			});
 	}
 
@@ -70,9 +64,9 @@ class ProductionPersistenceReadinessConfigurationTest {
 
 				assertThat(health.getStatus()).isEqualTo(Status.DOWN);
 				assertThat(health.getDetails()).containsEntry("database", "down");
-				assertThat(health.getDetails()).containsEntry("redis", "down");
 				assertThat(health.getDetails()).containsEntry("masterData", "empty");
-				assertThat(health.getDetails()).containsEntry("push", "unconfigured");
+				assertThat(health.getDetails()).doesNotContainKey("redis");
+				assertThat(health.getDetails()).doesNotContainKey("push");
 			});
 	}
 
@@ -102,15 +96,6 @@ class ProductionPersistenceReadinessConfigurationTest {
 				"sa",
 				""
 			);
-		}
-
-		@Bean
-		RedisConnectionFactory redisConnectionFactory() {
-			RedisConnectionFactory factory = mock(RedisConnectionFactory.class);
-			RedisConnection connection = mock(RedisConnection.class);
-			when(factory.getConnection()).thenReturn(connection);
-			when(connection.ping()).thenReturn("PONG");
-			return factory;
 		}
 
 		@Bean
@@ -152,13 +137,6 @@ class ProductionPersistenceReadinessConfigurationTest {
 				"sa",
 				""
 			);
-		}
-
-		@Bean
-		RedisConnectionFactory redisConnectionFactory() {
-			RedisConnectionFactory factory = mock(RedisConnectionFactory.class);
-			when(factory.getConnection()).thenThrow(new IllegalStateException("redis unavailable"));
-			return factory;
 		}
 
 		@Bean

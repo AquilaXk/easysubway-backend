@@ -3,6 +3,7 @@ package com.easysubway.usage.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Clock;
@@ -15,6 +16,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
+import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -42,9 +44,18 @@ class UserActivityTrackingIntegrationTest {
 	@Test
 	@DisplayName("인증 사용자 API 요청은 관리자 활동 현황에 일별 고유 사용자로 반영된다")
 	void authenticatedApiRequestAppearsOnAdminActivityDashboard() throws Exception {
-		mockMvc.perform(get("/api/v1/me/favorites/stations")
-				.with(httpBasic("basic-user", "user-test-password")))
-			.andExpect(status().isOk());
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "엘리베이터가 멈춰 있습니다."
+					}
+					"""))
+			.andExpect(status().isCreated());
 
 		String html = mockMvc.perform(get("/admin/usage/activity/page")
 				.with(httpBasic("admin-user", "admin-test-password")))

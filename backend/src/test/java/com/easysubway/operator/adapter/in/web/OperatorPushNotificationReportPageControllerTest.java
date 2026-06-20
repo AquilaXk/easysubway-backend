@@ -7,6 +7,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.notification.application.port.in.NotificationPreferenceUseCase;
+import com.easysubway.notification.application.port.in.RegisterDeviceCommand;
+import com.easysubway.notification.domain.DevicePlatform;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +34,9 @@ class OperatorPushNotificationReportPageControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private NotificationPreferenceUseCase notificationPreferenceUseCase;
 
 	@Test
 	@DisplayName("운영기관 계정은 읽기 전용 알림 발송 현황을 확인한다")
@@ -83,17 +89,12 @@ class OperatorPushNotificationReportPageControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
-	private void registerAndroidDevice() throws Exception {
-		mockMvc.perform(post("/api/v1/devices")
-				.with(httpBasic("anonymous-user-1", "user-test-password"))
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-					  "platform": "ANDROID",
-					  "deviceToken": "secret-device-token"
-					}
-					"""))
-			.andExpect(status().isOk());
+	private void registerAndroidDevice() {
+		notificationPreferenceUseCase.registerDevice(new RegisterDeviceCommand(
+			"anonymous-user-1",
+			DevicePlatform.ANDROID,
+			"secret-device-token"
+		));
 	}
 
 	private void dispatchReportStatusNotification() throws Exception {

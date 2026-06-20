@@ -38,7 +38,7 @@ class UserActivityTrackingFilterTest {
 	@Test
 	@DisplayName("성공한 인증 사용자 API 요청은 활동으로 기록한다")
 	void successfulAuthenticatedApiRequestRecordsActivity() throws Exception {
-		MockHttpServletRequest request = apiRequest("/api/v1/routes/search", "anonymous-user-1");
+		MockHttpServletRequest request = apiRequest("/api/v1/reports", "anonymous-user-1");
 		MockHttpServletResponse response = new MockHttpServletResponse();
 
 		filter.doFilter(request, response, successfulChain(Duration.ofMillis(125)));
@@ -55,7 +55,7 @@ class UserActivityTrackingFilterTest {
 	@DisplayName("실패 응답은 API 오류율에 기록하고 활성 사용자 지표에서는 제외한다")
 	void failedApiRequestsRecordTrafficAndSkipActiveUserMetric() throws Exception {
 		filter.doFilter(
-			apiRequest("/api/v1/routes/search", "anonymous-user-1"),
+			apiRequest("/api/v1/reports", "anonymous-user-1"),
 			new MockHttpServletResponse(),
 			failingChain(Duration.ofMillis(480))
 		);
@@ -70,7 +70,7 @@ class UserActivityTrackingFilterTest {
 	@DisplayName("관리자 요청은 제외하고 일반 API 요청은 오류율에 기록한다")
 	void adminRequestsAreIgnoredFromTrafficMetric() throws Exception {
 		filter.doFilter(apiRequest("/admin/routes/searches/page", "admin-user"), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(95)));
-		filter.doFilter(apiRequest("/api/v1/routes/search", null), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(110)));
+		filter.doFilter(apiRequest("/api/v1/reports", null), new MockHttpServletResponse(), successfulChain(Duration.ofMillis(110)));
 
 		assertThat(port.records).isEmpty();
 		assertThat(port.apiTrafficRecords)
@@ -79,9 +79,9 @@ class UserActivityTrackingFilterTest {
 	}
 
 	@Test
-	@DisplayName("Spring Security anonymous 사용자의 공개 API 요청은 기록하지 않는다")
+	@DisplayName("Spring Security anonymous 사용자의 API 요청은 기록하지 않는다")
 	void anonymousAuthenticationIsIgnored() throws Exception {
-		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/routes/search");
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/v1/reports");
 		request.setUserPrincipal(new AnonymousAuthenticationToken(
 			"anonymous-key",
 			"anonymousUser",

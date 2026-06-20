@@ -6,6 +6,9 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.notification.application.port.in.NotificationPreferenceUseCase;
+import com.easysubway.notification.application.port.in.RegisterDeviceCommand;
+import com.easysubway.notification.domain.DevicePlatform;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -29,19 +32,13 @@ class PushNotificationControllerTest {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private NotificationPreferenceUseCase notificationPreferenceUseCase;
+
 	@Test
 	@DisplayName("관리자는 사용자 기기에 푸시 알림 발송 후보를 만들고 토큰은 응답하지 않는다")
 	void adminDispatchesPushNotificationWithoutExposingDeviceToken() throws Exception {
-		mockMvc.perform(post("/api/v1/devices")
-				.with(httpBasic("anonymous-user-1", "user-test-password"))
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-					  "platform": "ANDROID",
-					  "deviceToken": "secret-device-token"
-					}
-					"""))
-			.andExpect(status().isOk());
+		registerDevice();
 
 		mockMvc.perform(post("/admin/notifications/push")
 				.with(httpBasic("admin-user", "admin-test-password"))
@@ -86,16 +83,7 @@ class PushNotificationControllerTest {
 	@Test
 	@DisplayName("관리자는 대기 중인 푸시 알림 발송 처리를 실행할 수 있다")
 	void adminDeliversPendingPushNotifications() throws Exception {
-		mockMvc.perform(post("/api/v1/devices")
-				.with(httpBasic("anonymous-user-1", "user-test-password"))
-				.contentType(MediaType.APPLICATION_JSON)
-				.content("""
-					{
-					  "platform": "ANDROID",
-					  "deviceToken": "secret-device-token"
-					}
-					"""))
-			.andExpect(status().isOk());
+		registerDevice();
 
 		mockMvc.perform(post("/admin/notifications/push")
 				.with(httpBasic("admin-user", "admin-test-password"))
@@ -128,5 +116,13 @@ class PushNotificationControllerTest {
 			.andExpect(jsonPath("$.data.failedCount").value(1))
 			.andExpect(jsonPath("$.data.notifications[0].status").value("FAILED"))
 			.andExpect(jsonPath("$.data.notifications[0].deviceToken").doesNotExist());
+	}
+
+	private void registerDevice() {
+		notificationPreferenceUseCase.registerDevice(new RegisterDeviceCommand(
+			"anonymous-user-1",
+			DevicePlatform.ANDROID,
+			"secret-device-token"
+		));
 	}
 }

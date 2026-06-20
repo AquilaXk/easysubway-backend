@@ -2,7 +2,6 @@ package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
-import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationMasterDataCounts;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
@@ -65,98 +64,6 @@ class TransitMasterController {
 	) {
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
-	}
-
-	@GetMapping("/api/v1/regions")
-	ApiResponse<List<TransitRegionResponse>> regions() {
-		List<TransitRegionResponse> response = transitMasterQueryUseCase.listRegions()
-			.stream()
-			.map(TransitRegionResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/operators")
-	ApiResponse<List<TransitOperatorResponse>> operators() {
-		List<TransitOperatorResponse> response = transitMasterQueryUseCase.listOperators()
-			.stream()
-			.map(TransitOperatorResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/lines")
-	ApiResponse<List<SubwayLineResponse>> lines(
-		@RequestParam(required = false) String operatorId
-	) {
-		List<SubwayLineResponse> response = transitMasterQueryUseCase.listLines(operatorId)
-			.stream()
-			.map(SubwayLineResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/stations")
-	ApiResponse<List<StationSummaryResponse>> stations(
-		@RequestParam(required = false) String query,
-		@RequestParam(required = false) String lineId
-	) {
-		List<StationSummaryResponse> response = transitMasterQueryUseCase
-			.searchStations(new StationSearchCommand(query, lineId))
-			.stream()
-			.map(StationSummaryResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/stations/nearby")
-	ApiResponse<List<NearbyStationResponse>> nearbyStations(
-		@RequestParam(required = false) BigDecimal lat,
-		@RequestParam(required = false) BigDecimal lng,
-		@RequestParam(required = false) Integer radiusMeters,
-		@RequestParam(required = false) Integer limit
-	) {
-		List<NearbyStationResponse> response = transitMasterQueryUseCase
-			.searchNearbyStations(NearbyStationSearchCommand.of(lat, lng, radiusMeters, limit))
-			.stream()
-			.map(NearbyStationResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/stations/{stationId}")
-	ApiResponse<StationDetailResponse> station(@PathVariable String stationId) {
-		return ApiResponse.ok(StationDetailResponse.from(transitMasterQueryUseCase.getStation(stationId)));
-	}
-
-	@GetMapping("/api/v1/stations/{stationId}/exits")
-	ApiResponse<List<StationExitResponse>> stationExits(@PathVariable String stationId) {
-		List<StationExitResponse> response = transitMasterQueryUseCase.listStationExits(stationId)
-			.stream()
-			.map(StationExitResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/stations/{stationId}/facilities")
-	ApiResponse<List<AccessibilityFacilityResponse>> stationFacilities(@PathVariable String stationId) {
-		List<AccessibilityFacilityResponse> response = transitMasterQueryUseCase.listStationFacilities(stationId)
-			.stream()
-			.map(AccessibilityFacilityResponse::from)
-			.toList();
-
-		return ApiResponse.ok(response);
-	}
-
-	@GetMapping("/api/v1/stations/{stationId}/route-nodes")
-	ApiResponse<List<RouteNodeResponse>> stationRouteNodes(@PathVariable String stationId) {
-		return ApiResponse.ok(routeNodeResponses(stationId));
 	}
 
 	@GetMapping("/admin/stations")

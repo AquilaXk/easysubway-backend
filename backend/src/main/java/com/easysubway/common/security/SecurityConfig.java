@@ -67,29 +67,8 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(4)
-	SecurityFilterChain userSecurityFilterChain(HttpSecurity http) throws Exception {
-		// 사용자별 관리 API는 임시 운영 검증용 Basic 인증만 허용하고 앱 기본 경로에서는 호출하지 않는다.
-		return http
-			.securityMatcher(
-				"/api/v1/me",
-				"/api/v1/me/reports",
-				"/api/v1/me/favorites/**",
-				"/api/v1/routes/*/feedback",
-				"/api/v1/devices",
-				"/api/v1/me/notification-settings"
-			)
-			.csrf(AbstractHttpConfigurer::disable)
-			.authorizeHttpRequests(authorize -> authorize
-				.anyRequest().authenticated()
-			)
-			.httpBasic(Customizer.withDefaults())
-			.build();
-	}
-
-	@Bean
-	@Order(5)
 	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
-		// 역 검색과 경로 검색은 로그인 전 이동 계획에 필요한 공개 조회 기능이다.
+		// 앱 기본 데이터는 로컬 데이터팩이 담당하고, 백엔드는 신고 접수와 운영 화면만 남긴다.
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
