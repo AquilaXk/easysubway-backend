@@ -12,6 +12,11 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+/**
+ * The receipt-token report boundary is the only unauthenticated report status and
+ * confirmation path. A plain receipt token must never be logged or returned after issuance.
+ * Callers receive it once from {@link #createReportWithReceipt}.
+ */
 public interface FacilityReportUseCase {
 
 	FacilityReport createReport(CreateFacilityReportCommand command);
