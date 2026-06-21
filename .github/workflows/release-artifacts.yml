@@ -120,6 +120,7 @@ jobs:
           set -euo pipefail
           flutter pub get
           flutter build appbundle --release \
+            --dart-define=EASYSUBWAY_API_BASE_URL=https://api.easysubway.local \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL=https://easysubway.local/privacy \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL=support@easysubway.local \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL=privacy@easysubway.local \
@@ -177,6 +178,7 @@ jobs:
           set -euo pipefail
           flutter pub get
           flutter build ios --release --no-codesign \
+            --dart-define=EASYSUBWAY_API_BASE_URL=https://api.easysubway.local \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL=https://easysubway.local/privacy \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL=support@easysubway.local \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL=privacy@easysubway.local \
