@@ -13,6 +13,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
+import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration
@@ -21,7 +22,7 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(1)
-	SecurityFilterChain adminSecurityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain adminSecurityFilterChain(HttpSecurity http, AdminOperatorAuditFilter auditFilter) throws Exception {
 		// 관리자 검수 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
 		return http
 			.securityMatcher("/admin/**")
@@ -29,12 +30,13 @@ public class SecurityConfig {
 				.anyRequest().hasRole("ADMIN")
 			)
 			.httpBasic(Customizer.withDefaults())
+			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class)
 			.build();
 	}
 
 	@Bean
 	@Order(2)
-	SecurityFilterChain operatorSecurityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain operatorSecurityFilterChain(HttpSecurity http, AdminOperatorAuditFilter auditFilter) throws Exception {
 		// 운영기관 전용 화면은 전역 관리자와 별도 역할로 분리해 이후 기관별 범위 제한을 붙일 수 있게 한다.
 		return http
 			.securityMatcher("/operator/**")
@@ -42,6 +44,7 @@ public class SecurityConfig {
 				.anyRequest().hasRole("OPERATOR_ADMIN")
 			)
 			.httpBasic(Customizer.withDefaults())
+			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class)
 			.build();
 	}
 
@@ -126,6 +129,11 @@ public class SecurityConfig {
 	@Bean
 	PasswordEncoder passwordEncoder() {
 		return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+	}
+
+	@Bean
+	AdminOperatorAuditFilter adminOperatorAuditFilter() {
+		return new AdminOperatorAuditFilter();
 	}
 
 	private void validateProdAdminCredentials(String adminUsername, String adminPassword, Environment environment) {
