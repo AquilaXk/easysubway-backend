@@ -59,6 +59,9 @@ class HealthCheckControllerTest {
 		assertThat(webEndpointsSupplier.getEndpoints())
 			.extracting(endpoint -> endpoint.getEndpointId().toString())
 			.contains("prometheus");
+
+		mockMvc.perform(get("/actuator/prometheus"))
+			.andExpect(status().isOk());
 	}
 
 	@Test

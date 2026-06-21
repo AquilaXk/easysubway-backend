@@ -76,6 +76,7 @@ public class SecurityConfig {
 					"/api/health",
 					"/actuator/health",
 					"/actuator/health/**",
+					"/actuator/prometheus",
 					"/favicon.ico",
 					"/css/**",
 					"/js/**",
