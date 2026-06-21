@@ -68,11 +68,21 @@ public class SecurityConfig {
 	@Bean
 	@Order(4)
 	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
-		// 앱 기본 데이터는 로컬 데이터팩이 담당하고, 백엔드는 신고 접수와 운영 화면만 남긴다.
+		// 신고/관리자/운영 matcher 밖의 새 경로가 실수로 공개되지 않도록 기본 차단한다.
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
-				.anyRequest().permitAll()
+				.requestMatchers(
+					"/api/health",
+					"/actuator/health",
+					"/actuator/health/**",
+					"/favicon.ico",
+					"/css/**",
+					"/js/**",
+					"/images/**",
+					"/webjars/**"
+				).permitAll()
+				.anyRequest().denyAll()
 			)
 			.build();
 	}

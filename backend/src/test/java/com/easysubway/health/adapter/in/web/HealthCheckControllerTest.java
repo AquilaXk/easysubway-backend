@@ -60,4 +60,11 @@ class HealthCheckControllerTest {
 			.extracting(endpoint -> endpoint.getEndpointId().toString())
 			.contains("prometheus");
 	}
+
+	@Test
+	@DisplayName("명시적으로 허용되지 않은 백엔드 경로는 기본 차단된다")
+	void unknownBackendPathIsDeniedByDefault() throws Exception {
+		mockMvc.perform(get("/api/v1/internal-unlisted-resource"))
+			.andExpect(status().isForbidden());
+	}
 }
