@@ -1,0 +1,67 @@
+{
+  "schemaVersion": 1,
+  "gateId": "backend-static-analysis-feasibility",
+  "defaultPolicy": "contract-only-before-enforcement",
+  "enforcementStatus": "deferred_until_p0_release_contracts_stabilize",
+  "ciRuntimeBudgetMinutes": {
+    "maxAdditionalMinutes": 3,
+    "measurementRequiredBeforeEnforcement": true
+  },
+  "tools": [
+    {
+      "id": "checkstyle",
+      "enforcement": "not_enabled_in_this_slice",
+      "firstAllowedGate": "style_baseline_after_contract_comments",
+      "requires": [
+        "documented rule set",
+        "baseline violation count",
+        "CI runtime measurement"
+      ]
+    },
+    {
+      "id": "spotbugs",
+      "enforcement": "not_enabled_in_this_slice",
+      "firstAllowedGate": "bug_pattern_baseline_after_security_tests",
+      "requires": [
+        "suppression justification policy",
+        "baseline violation count",
+        "CI runtime measurement"
+      ]
+    },
+    {
+      "id": "errorprone",
+      "enforcement": "not_enabled_in_this_slice",
+      "firstAllowedGate": "compiler_plugin_baseline_after_gradle_cost_check",
+      "requires": [
+        "Java 21 compatibility check",
+        "Gradle cache impact measurement",
+        "CI runtime measurement"
+      ]
+    },
+    {
+      "id": "archunit",
+      "enforcement": "not_enabled_in_this_slice",
+      "firstAllowedGate": "public_mobile_api_absence",
+      "requires": [
+        "current hexagonal boundary inventory",
+        "public mobile API absence contract",
+        "CI runtime measurement"
+      ]
+    },
+    {
+      "id": "jacoco",
+      "enforcement": "not_enabled_in_this_slice",
+      "firstAllowedGate": "coverage_baseline_after_p0_tests_stabilize",
+      "requires": [
+        "P0 security and route test baseline",
+        "coverage exclusion policy",
+        "CI runtime measurement"
+      ]
+    }
+  ],
+  "mustNotDo": [
+    "enable_style_or_coverage_plugins_without_runtime_budget_evidence",
+    "reformat_unrelated_backend_sources",
+    "weaken_security_route_or_release_contract_tests"
+  ]
+}
