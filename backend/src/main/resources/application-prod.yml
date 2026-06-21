@@ -32,6 +32,14 @@ spring:
 easysubway:
   report:
     receipt-token-pepper: ${EASYSUBWAY_REPORT_RECEIPT_PEPPER:${EASYSUBWAY_REPORT_RECEIPT_TOKEN_PEPPER:}}
+    abuse-control:
+      window-seconds: ${EASYSUBWAY_REPORT_ABUSE_WINDOW_SECONDS:60}
+      upload-intent-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_INTENT_LIMIT:60}
+      upload-claim-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_CLAIM_LIMIT:120}
+      report-submit-limit: ${EASYSUBWAY_REPORT_ABUSE_REPORT_SUBMIT_LIMIT:30}
+      status-limit: ${EASYSUBWAY_REPORT_ABUSE_STATUS_LIMIT:120}
+      confirm-limit: ${EASYSUBWAY_REPORT_ABUSE_CONFIRM_LIMIT:30}
+      max-counter-keys: ${EASYSUBWAY_REPORT_ABUSE_MAX_COUNTER_KEYS:4096}
     upload:
       bucket: ${EASYSUBWAY_REPORT_UPLOAD_BUCKET:}
       max-bytes: ${EASYSUBWAY_REPORT_UPLOAD_MAX_BYTES:921600}
