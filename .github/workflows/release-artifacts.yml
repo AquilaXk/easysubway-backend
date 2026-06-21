@@ -148,6 +148,7 @@ jobs:
             echo "store_ready=false"
             echo "artifact=skipped"
             echo "reason=EASYSUBWAY_ENV missing required store privacy release values for PR context"
+            echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: Android Release Artifact / Build Flutter app bundle
@@ -177,6 +178,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-artifacts/android
           cp build/app/outputs/bundle/release/app-release.aab release-artifacts/android/app-release.aab
+          cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
             cp build/app/outputs/mapping/release/mapping.txt release-artifacts/android/mapping.txt
           else
@@ -185,8 +187,12 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "artifact=app-release.aab"
+            echo "store_ready=false"
+            echo "signing_key_type=temporary-self-signed"
             echo "mapping=build/app/outputs/mapping/release/mapping.txt"
             echo "mapping_retention_days=90"
+            echo "play_submission_evidence=blocked_missing_internal_track_or_prelaunch_report"
+            echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } > release-artifacts/android/release-metadata.txt
 
       - name: Android Release Artifact / Upload app bundle
@@ -256,6 +262,7 @@ jobs:
             echo "store_ready=false"
             echo "artifact=skipped"
             echo "reason=EASYSUBWAY_ENV missing required store privacy release values for PR context"
+            echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } >> "${GITHUB_STEP_SUMMARY}"
 
       - name: iOS Release Artifact / Build no-codesign release app
@@ -281,6 +288,7 @@ jobs:
           mkdir -p release-artifacts/ios
           test -d build/ios/iphoneos/Runner.app
           ditto -c -k --keepParent build/ios/iphoneos/Runner.app release-artifacts/ios/Runner.app.zip
+          cp release/signed-release-artifact-gate.json release-artifacts/ios/signed-release-artifact-gate.json
           dsym_count=0
           mkdir -p release-artifacts/ios/dSYMs
           while IFS= read -r -d '' dsym_path; do
@@ -298,9 +306,13 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "artifact=Runner.app.zip"
+            echo "store_ready=false"
+            echo "signing_key_type=no-codesign"
             echo "dsym_count=${dsym_count}"
             echo "dsym_retention_days=90"
+            echo "testflight_evidence=blocked_missing_testflight_or_signed_device_install"
             echo "privacy_manifest=ios/Runner/PrivacyInfo.xcprivacy"
+            echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } > release-artifacts/ios/release-metadata.txt
 
       - name: iOS Release Artifact / Upload no-codesign app
