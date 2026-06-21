@@ -142,6 +142,7 @@ jobs:
             echo "commit=${GITHUB_SHA}"
             echo "artifact=app-release.aab"
             echo "mapping=build/app/outputs/mapping/release/mapping.txt"
+            echo "mapping_retention_days=90"
           } > release-artifacts/android/release-metadata.txt
 
       - name: Android Release Artifact / Upload app bundle
@@ -150,7 +151,7 @@ jobs:
           name: easysubway-android-release-${{ github.sha }}
           path: apps/mobile/release-artifacts/android
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
 
   ios-release:
     name: iOS Release Artifact
@@ -209,6 +210,7 @@ jobs:
             echo "commit=${GITHUB_SHA}"
             echo "artifact=Runner.app.zip"
             echo "dsym_count=${dsym_count}"
+            echo "dsym_retention_days=90"
             echo "privacy_manifest=ios/Runner/PrivacyInfo.xcprivacy"
           } > release-artifacts/ios/release-metadata.txt
 
@@ -218,7 +220,7 @@ jobs:
           name: easysubway-ios-release-${{ github.sha }}
           path: apps/mobile/release-artifacts/ios
           if-no-files-found: error
-          retention-days: 14
+          retention-days: 90
 
   backend-release:
     name: Backend Release Image
