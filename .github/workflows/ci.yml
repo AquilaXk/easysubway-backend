@@ -8,6 +8,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      include_ios:
+        description: Run iOS CI on macOS only when explicitly requested
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -329,6 +335,7 @@ jobs:
     name: iOS CI
     runs-on: macos-latest
     needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_ios == true && needs.changes.outputs.ios == 'true' }}
 
     steps:
       - name: iOS CI / Skip unchanged area

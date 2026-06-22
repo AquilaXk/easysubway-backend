@@ -8,6 +8,12 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      include_ios:
+        description: Build iOS release artifact only when explicitly requested
+        required: false
+        default: false
+        type: boolean
 
 permissions:
   contents: read
@@ -208,7 +214,7 @@ jobs:
     name: iOS Release Artifact
     runs-on: macos-latest
     needs: changes
-    if: ${{ needs.changes.outputs.ios == 'true' || needs.changes.outputs.mobile == 'true' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && inputs.include_ios == true && (needs.changes.outputs.ios == 'true' || needs.changes.outputs.mobile == 'true') }}
 
     steps:
       - name: iOS Release Artifact / Checkout repository
