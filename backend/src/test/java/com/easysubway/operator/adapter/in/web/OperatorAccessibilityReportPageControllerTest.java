@@ -39,7 +39,7 @@ class OperatorAccessibilityReportPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("접근성 현황 보고서")
+			.contains("운영기관 접근성 시설 현황")
 			.contains("운영기관 포털")
 			.contains("협력 제안서 CSV")
 			.contains("전체 역")
@@ -51,10 +51,10 @@ class OperatorAccessibilityReportPageControllerTest {
 			.contains("운영기관")
 			.contains("노선")
 			.contains("역")
-			.contains("역 접근성 점수")
+			.contains("역별 접근성 점수")
 			.contains("접근성 점수")
 			.contains("보강 사유")
-			.contains("개선 우선순위")
+			.contains("접근성 개선 우선순위")
 			.contains("우선순위 점수")
 			.contains("개선 사유")
 			.contains("상록수")
