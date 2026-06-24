@@ -54,13 +54,13 @@ class OperatorRouteFeedbackReportPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("현장 차단 피드백")
+			.contains("운영기관 이동 불편 신고 분석")
 			.contains("운영기관 포털")
 			.contains("전체 피드백")
 			.contains("도움이 됨")
 			.contains("도움이 안 됨")
 			.contains("현장 차단")
-			.contains("피드백 구성")
+			.contains("평점별 피드백")
 			.contains("최근 현장 차단 사례")
 			.contains("상록수")
 			.contains("사당")
