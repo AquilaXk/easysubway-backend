@@ -10,6 +10,7 @@ import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
+import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationExit;
@@ -32,34 +33,57 @@ public class UnavailableTransitMasterRepository implements
 	SaveRouteNodePort,
 	SaveRouteEdgePort {
 
+	// ponytail: reuse the existing static seed until a real data-pack adapter exists.
+	private final InMemoryTransitMasterRepository seedRepository = new InMemoryTransitMasterRepository();
+
 	@Override
 	public List<TransitOperator> loadOperators() {
-		return List.of();
+		return seedRepository.loadOperators();
 	}
 
 	@Override
 	public List<SubwayLine> loadLines() {
-		return List.of();
+		return seedRepository.loadLines();
 	}
 
 	@Override
 	public List<Station> loadStations() {
-		return List.of();
+		return seedRepository.loadStations();
 	}
 
 	@Override
 	public List<StationLine> loadStationLines() {
-		return List.of();
+		return seedRepository.loadStationLines();
 	}
 
 	@Override
 	public List<StationExit> loadStationExits() {
-		return List.of();
+		return seedRepository.loadStationExits();
 	}
 
 	@Override
 	public List<AccessibilityFacility> loadAccessibilityFacilities() {
-		return List.of();
+		return seedRepository.loadAccessibilityFacilities();
+	}
+
+	@Override
+	public List<StationLayoutSource> loadStationLayoutSources() {
+		return seedRepository.loadStationLayoutSources();
+	}
+
+	@Override
+	public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
+		return seedRepository.loadSimplifiedStationLayouts();
+	}
+
+	@Override
+	public List<RouteNode> loadRouteNodes() {
+		return seedRepository.loadRouteNodes();
+	}
+
+	@Override
+	public List<RouteEdge> loadRouteEdges() {
+		return seedRepository.loadRouteEdges();
 	}
 
 	@Override

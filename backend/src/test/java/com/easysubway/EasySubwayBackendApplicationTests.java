@@ -55,12 +55,12 @@ class EasySubwayBackendApplicationTests {
 		private MockMvc mockMvc;
 
 		@Test
-		@DisplayName("운영 프로필은 readiness DOWN 응답까지 기동된다")
+		@DisplayName("운영 프로필은 readiness UP 응답까지 기동된다")
 		void prodProfileStartsUntilReadinessEndpoint() throws Exception {
 			mockMvc.perform(get("/actuator/health/readiness"))
-				.andExpect(status().isServiceUnavailable())
-				.andExpect(jsonPath("$.status").value("DOWN"))
-				.andExpect(jsonPath("$.components.productionReadiness.status").value("DOWN"));
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.status").value("UP"))
+				.andExpect(jsonPath("$.components.productionReadiness.status").value("UP"));
 		}
 
 	}
