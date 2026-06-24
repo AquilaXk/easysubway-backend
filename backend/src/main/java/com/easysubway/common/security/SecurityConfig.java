@@ -9,6 +9,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
@@ -35,7 +36,26 @@ public class SecurityConfig {
 		return http
 			.securityMatcher("/admin/**")
 			.authorizeHttpRequests(authorize -> authorize
+				.requestMatchers("/admin/login").permitAll()
 				.anyRequest().hasRole("ADMIN")
+			)
+			.exceptionHandling(exception -> exception
+				.defaultAuthenticationEntryPointFor(
+					new LoginUrlAuthenticationEntryPoint("/admin/login"),
+					request -> {
+						String accept = request.getHeader("Accept");
+						return accept != null && accept.contains("text/html");
+					}
+				)
+				.defaultAuthenticationEntryPointFor(
+					new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
+					new AntPathRequestMatcher("/admin/**")
+				)
+			)
+			.formLogin(form -> form
+				.loginPage("/admin/login")
+				.defaultSuccessUrl("/admin/dashboard/page", true)
+				.permitAll()
 			)
 			.httpBasic(Customizer.withDefaults())
 			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class)

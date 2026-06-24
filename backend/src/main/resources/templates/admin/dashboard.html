@@ -1,0 +1,50 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>통합 대시보드</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-dashboard')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1>통합 대시보드</h1>
+			<p>신고·시설·데이터·경로·알림·시스템 이상을 한 화면에 모읍니다.</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/reports/page}">긴급 작업 보기</a>
+		</div>
+	</header>
+
+	<div class="metric-grid">
+		<div class="metric"><span>미검수 제보</span><strong th:text="${dashboard.pendingReports}">0</strong><em th:text="|최근 24시간 ${dashboard.recentReports}건|">최근 24시간 0건</em></div>
+		<div class="metric"><span>확인 필요 시설</span><strong th:text="${dashboard.needsVerificationFacilities}">0</strong><em th:text="|갱신 지연 ${dashboard.delayedFacilities}건|">갱신 지연 0건</em></div>
+		<div class="metric"><span>경로 차단률</span><strong th:text="${dashboard.blockedRate}">0.0%</strong><em th:text="|차단 ${dashboard.blockedRoutes} / 검색 ${dashboard.routeSearches}|">0 / 0</em></div>
+		<div class="metric"><span>서비스 상태</span><strong th:text="${dashboard.healthStatus}">UP</strong><em th:text="${dashboard.serviceName}">easysubway</em></div>
+	</div>
+
+	<div class="admin-grid-2">
+		<section class="admin-panel">
+			<h2>우선 검수 제보</h2>
+			<p class="summary">미검수 제보는 제보 검수 큐에서 상태·사진·위치를 함께 확인합니다.</p>
+			<a class="admin-btn" th:href="@{/admin/reports/page}">제보 검수 큐 열기</a>
+		</section>
+		<section class="admin-panel">
+			<h2>운영 이상 신호</h2>
+			<table>
+				<tbody>
+				<tr><th scope="row">푸시 실패</th><td th:text="${dashboard.failedPushes}">0</td></tr>
+				<tr><th scope="row">7일 활성 사용자</th><td th:text="${dashboard.activeUsers}">0</td></tr>
+				<tr><th scope="row">API 오류율</th><td th:text="${dashboard.apiErrorRate}">0.0%</td></tr>
+				</tbody>
+			</table>
+		</section>
+	</div>
+</main>
+</div>
+</body>
+</html>
