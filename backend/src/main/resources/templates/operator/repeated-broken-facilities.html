@@ -3,136 +3,92 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>운영기관 반복 고장 시설 통계</title>
-	<style>
-		body {
-			margin: 0;
-			background: #f5f7f8;
-			color: #102a2c;
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-		}
-
-		main {
-			max-width: 960px;
-			margin: 0 auto;
-			padding: 32px 24px 48px;
-		}
-
-		h1 {
-			margin: 0 0 10px;
-			font-size: 32px;
-			line-height: 1.2;
-		}
-
-		p {
-			margin: 0 0 24px;
-			color: #40585a;
-			font-size: 17px;
-			line-height: 1.55;
-		}
-
-		h2 {
-			margin: 0;
-			padding: 16px 18px;
-			background: #e8f1ef;
-			font-size: 20px;
-		}
-
-		.metric-grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-			gap: 12px;
-			margin-bottom: 24px;
-		}
-
-		.metric {
-			background: #fff;
-			border: 1px solid #d6e0df;
-			padding: 18px;
-		}
-
-		.metric span {
-			display: block;
-			color: #536b6d;
-			font-weight: 800;
-			line-height: 1.4;
-		}
-
-		.metric strong {
-			display: block;
-			margin-top: 8px;
-			font-size: 30px;
-			line-height: 1.15;
-		}
-
-		section {
-			background: #fff;
-			border: 1px solid #d6e0df;
-		}
-
-		table {
-			width: 100%;
-			border-collapse: collapse;
-		}
-
-		th,
-		td {
-			padding: 14px 18px;
-			border-top: 1px solid #d6e0df;
-			text-align: left;
-			vertical-align: top;
-			font-size: 15px;
-			line-height: 1.45;
-		}
-
-		th {
-			background: #f8fbfb;
-			font-weight: 800;
-		}
-
-		td:last-child,
-		th:last-child {
-			text-align: right;
-			font-weight: 800;
-		}
-	</style>
+	<title>운영기관 반복 고장 시설</title>
+	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
-<main>
-	<h1>운영기관 반복 고장 시설 통계</h1>
-	<p>운영기관 담당자가 반복 신고된 시설과 현재 상태를 확인하는 읽기 전용 리포트입니다.</p>
-
-	<div class="metric-grid" aria-label="반복 고장 시설 통계 요약">
-		<div class="metric">
-			<span>반복 고장 시설</span>
-			<strong th:text="${report.totalRepeatedFacilityCount}">0</strong>
+<div class="desktop-frame">
+	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
+		<div class="desktop-brand">
+			<div class="logo-mark">길</div>
+			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
 		</div>
-	</div>
+		<nav class="desktop-nav">
+			<div class="nav-group">보고서</div>
+			<a class="nav-link" href="/operator/accessibility-report/page">접근성 현황</a>
+			<a class="nav-link active" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
+			<a class="nav-link" href="/operator/data-collection-failures/page">수집 실패</a>
+			<a class="nav-link" href="/operator/route-feedback-report/page">현장 피드백</a>
+			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
+		</nav>
+		<div class="desktop-user">
+			<div class="avatar">MO</div>
+			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
+		</div>
+	</aside>
 
-	<section>
-		<h2>시설별 반복 신고</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">역</th>
-				<th scope="col">시설</th>
-				<th scope="col">현재 상태</th>
-				<th scope="col">신고 건수</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${report.rows}">
-				<td th:text="${row.stationName}">상록수</td>
-				<td th:text="${row.facilityName}">1번 출구 엘리베이터</td>
-				<td th:text="${row.statusLabel}">정상</td>
-				<td th:text="${row.reportCount}">0</td>
-			</tr>
-			<tr th:if="${#lists.isEmpty(report.rows)}">
-				<td colspan="4">반복 고장으로 집계된 시설이 없습니다.</td>
-			</tr>
-			</tbody>
-		</table>
+	<section class="desktop-workspace">
+		<header class="desktop-topbar">
+			<div>
+				<div class="desktop-breadcrumb">운영기관 보고서</div>
+				<div class="desktop-page-name">반복 고장 시설</div>
+			</div>
+			<div class="topbar-note">읽기 전용 · 현장 조치 우선순위</div>
+		</header>
+
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>반복 고장 시설</h1>
+					<p>동일 시설에 반복 접수된 고장 제보를 현장 조치 우선순위로 봅니다.</p>
+				</div>
+			</div>
+
+			<div class="alert-banner bad" th:if="${report.totalRepeatedFacilityCount > 0}">
+				<strong>반복 확인 대상</strong>
+				<span th:text="|총 ${report.totalRepeatedFacilityCount}개 시설이 반복 고장으로 집계되었습니다.|">총 0개 시설</span>
+			</div>
+
+			<div class="metric-grid" aria-label="반복 고장 시설 통계 요약">
+				<div class="metric"><span>반복 제보 시설</span><strong th:text="${report.totalRepeatedFacilityCount}">0</strong></div>
+				<div class="metric"><span>운영 상태</span><strong>읽기 전용</strong></div>
+				<div class="metric"><span>판정 기준</span><strong>2건+</strong></div>
+				<div class="metric"><span>조치 연결</span><strong>관리자 요청</strong></div>
+			</div>
+
+			<section class="panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>시설별 반복 신고</h2>
+						<p>제보 건수 내림차순으로 현재 시설 상태를 함께 표시합니다.</p>
+					</div>
+				</div>
+				<table class="data-table">
+					<thead>
+					<tr>
+						<th scope="col">역</th>
+						<th scope="col">시설</th>
+						<th scope="col">현재 상태</th>
+						<th scope="col">신고 건수</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="row : ${report.rows}">
+						<td th:text="${row.stationName}">상록수</td>
+						<td th:text="${row.facilityName}">1번 출구 엘리베이터</td>
+						<td><span class="status" th:text="${row.statusLabel}">정상</span></td>
+						<td th:text="${row.reportCount}">0</td>
+					</tr>
+					<tr th:if="${#lists.isEmpty(report.rows)}">
+						<td colspan="4">반복 고장으로 집계된 시설이 없습니다.</td>
+					</tr>
+					</tbody>
+				</table>
+			</section>
+
+			<div class="source-note">이 보고서는 읽기 전용입니다. 상태 수정과 제보 판정은 통합 관리자에게 요청해 주세요.</div>
+		</main>
 	</section>
-</main>
+</div>
 </body>
 </html>

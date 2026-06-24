@@ -3,172 +3,117 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>운영기관 이동 불편 신고 분석</title>
-	<style>
-		body {
-			margin: 0;
-			background: #f5f7f8;
-			color: #102a2c;
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-		}
-
-		main {
-			max-width: 960px;
-			margin: 0 auto;
-			padding: 32px 24px 48px;
-		}
-
-		h1 {
-			margin: 0 0 10px;
-			font-size: 32px;
-			line-height: 1.2;
-		}
-
-		p {
-			margin: 0 0 24px;
-			color: #40585a;
-			font-size: 17px;
-			line-height: 1.55;
-		}
-
-		h2 {
-			margin: 0;
-			padding: 16px 18px;
-			background: #e8f1ef;
-			font-size: 20px;
-		}
-
-		.metric-grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-			gap: 12px;
-			margin-bottom: 24px;
-		}
-
-		.metric {
-			background: #fff;
-			border: 1px solid #d6e0df;
-			padding: 18px;
-		}
-
-		.metric span {
-			display: block;
-			color: #536b6d;
-			font-weight: 800;
-			line-height: 1.4;
-		}
-
-		.metric strong {
-			display: block;
-			margin-top: 8px;
-			font-size: 30px;
-			line-height: 1.15;
-		}
-
-		section {
-			background: #fff;
-			border: 1px solid #d6e0df;
-		}
-
-		section + section {
-			margin-top: 24px;
-		}
-
-		table {
-			width: 100%;
-			border-collapse: collapse;
-		}
-
-		th,
-		td {
-			padding: 14px 18px;
-			border-top: 1px solid #d6e0df;
-			text-align: left;
-			vertical-align: top;
-			font-size: 15px;
-			line-height: 1.45;
-		}
-
-		th {
-			background: #f8fbfb;
-			font-weight: 800;
-		}
-
-		td:last-child,
-		th:last-child {
-			text-align: right;
-			font-weight: 800;
-		}
-	</style>
+	<title>운영기관 현장 차단 피드백</title>
+	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
-<main>
-	<h1>운영기관 이동 불편 신고 분석</h1>
-	<p>운영기관 담당자가 경로 안내 만족도와 현장 차단 신고 흐름을 확인하는 읽기 전용 리포트입니다.</p>
+<div class="desktop-frame">
+	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
+		<div class="desktop-brand">
+			<div class="logo-mark">길</div>
+			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
+		</div>
+		<nav class="desktop-nav">
+			<div class="nav-group">보고서</div>
+			<a class="nav-link" href="/operator/accessibility-report/page">접근성 현황</a>
+			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
+			<a class="nav-link" href="/operator/data-collection-failures/page">수집 실패</a>
+			<a class="nav-link active" href="/operator/route-feedback-report/page">현장 피드백</a>
+			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
+		</nav>
+		<div class="desktop-user">
+			<div class="avatar">MO</div>
+			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
+		</div>
+	</aside>
 
-	<div class="metric-grid" aria-label="이동 불편 신고 분석 요약">
-		<div class="metric">
-			<span>전체 피드백</span>
-			<strong th:text="${summary.totalCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>도움이 됨</span>
-			<strong th:text="${summary.helpfulCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>도움이 안 됨</span>
-			<strong th:text="${summary.notHelpfulCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>현장 차단</span>
-			<strong th:text="${summary.blockedByRealWorldCount}">0</strong>
-		</div>
-	</div>
+	<section class="desktop-workspace">
+		<header class="desktop-topbar">
+			<div>
+				<div class="desktop-breadcrumb">운영기관 보고서</div>
+				<div class="desktop-page-name">현장 차단 피드백</div>
+			</div>
+			<div class="topbar-note">최근 사례 · 이동 유형별 확인</div>
+		</header>
 
-	<section>
-		<h2>평점별 피드백</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">평점</th>
-				<th scope="col">설명</th>
-				<th scope="col">건수</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${summary.ratingRows}">
-				<td th:text="${row.label}">도움이 됨</td>
-				<td th:text="${row.description}">경로 안내가 실제 이동에 도움됨</td>
-				<td th:text="${row.count}">0</td>
-			</tr>
-			</tbody>
-		</table>
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>현장 차단 피드백</h1>
+					<p>실제 이동 중 막힌 최근 사례를 역·이동 유형별로 확인합니다.</p>
+				</div>
+			</div>
+
+			<div class="metric-grid" aria-label="이동 불편 신고 분석 요약">
+				<div class="metric"><span>전체 피드백</span><strong th:text="${summary.totalCount}">0</strong></div>
+				<div class="metric"><span>도움이 됨</span><strong th:text="${summary.helpfulCount}">0</strong></div>
+				<div class="metric"><span>도움이 안 됨</span><strong th:text="${summary.notHelpfulCount}">0</strong></div>
+				<div class="metric"><span>현장 차단</span><strong th:text="${summary.blockedByRealWorldCount}">0</strong></div>
+			</div>
+
+			<div class="alert-banner bad" th:if="${summary.blockedByRealWorldCount > 0}">
+				<strong>현장 차단 확인 대상</strong>
+				<span th:text="|총 ${summary.blockedByRealWorldCount}건 · 시설 고장·공사·통로 적치 가능성을 확인하세요.|">총 0건</span>
+			</div>
+
+			<div class="desktop-grid-2">
+				<section class="panel">
+					<div class="panel-head">
+						<div class="panel-title">
+							<h2>피드백 구성</h2>
+							<p>도움됨·도움 안 됨·현장 차단 분포입니다.</p>
+						</div>
+					</div>
+					<table class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">평점</th>
+							<th scope="col">설명</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${summary.ratingRows}">
+							<td th:text="${row.label}">도움이 됨</td>
+							<td th:text="${row.description}">경로 안내가 실제 이동에 도움됨</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</section>
+
+				<section class="panel">
+					<div class="panel-head">
+						<div class="panel-title">
+							<h2>최근 현장 차단 사례</h2>
+							<p>운영기관 현장 확인이 필요한 피드백입니다.</p>
+						</div>
+					</div>
+					<table class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">신고 시각</th>
+							<th scope="col">출발역</th>
+							<th scope="col">도착역</th>
+							<th scope="col">이동 프로필</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${summary.recentBlockedFeedbacks}">
+							<td th:text="${row.createdAtLabel}">2026-06-17 10:00</td>
+							<td th:text="${row.originStationName}">상록수</td>
+							<td th:text="${row.destinationStationName}">사당</td>
+							<td th:text="${row.mobilityTypeLabel}">고령자</td>
+						</tr>
+						<tr th:if="${#lists.isEmpty(summary.recentBlockedFeedbacks)}">
+							<td colspan="4">최근 현장 차단 신고가 없습니다.</td>
+						</tr>
+						</tbody>
+					</table>
+				</section>
+			</div>
+		</main>
 	</section>
-
-	<section>
-		<h2>최근 현장 차단 신고</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">신고 시각</th>
-				<th scope="col">출발역</th>
-				<th scope="col">도착역</th>
-				<th scope="col">이동 프로필</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${summary.recentBlockedFeedbacks}">
-				<td th:text="${row.createdAtLabel}">2026-06-17 10:00</td>
-				<td th:text="${row.originStationName}">상록수</td>
-				<td th:text="${row.destinationStationName}">사당</td>
-				<td th:text="${row.mobilityTypeLabel}">고령자</td>
-			</tr>
-			<tr th:if="${#lists.isEmpty(summary.recentBlockedFeedbacks)}">
-				<td colspan="4">최근 현장 차단 신고가 없습니다.</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
-</main>
+</div>
 </body>
 </html>

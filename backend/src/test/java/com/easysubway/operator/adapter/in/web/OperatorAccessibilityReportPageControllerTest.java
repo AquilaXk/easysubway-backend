@@ -3,6 +3,7 @@ package com.easysubway.operator.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.DisplayName;
@@ -38,20 +39,22 @@ class OperatorAccessibilityReportPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("운영기관 접근성 시설 현황")
+			.contains("접근성 현황 보고서")
+			.contains("운영기관 포털")
+			.contains("협력 제안서 CSV")
 			.contains("전체 역")
-			.contains("전체 시설")
-			.contains("확인 필요한 시설")
-			.contains("갱신 지연 시설")
+			.contains("접근성 시설")
+			.contains("확인 필요 시설")
+			.contains("검증일 누락 역")
 			.contains("지역별 데이터 품질")
 			.contains("수도권")
 			.contains("운영기관")
 			.contains("노선")
 			.contains("역")
-			.contains("역별 접근성 점수")
+			.contains("역 접근성 점수")
 			.contains("접근성 점수")
 			.contains("보강 사유")
-			.contains("접근성 개선 우선순위")
+			.contains("개선 우선순위")
 			.contains("우선순위 점수")
 			.contains("개선 사유")
 			.contains("상록수")
@@ -68,7 +71,8 @@ class OperatorAccessibilityReportPageControllerTest {
 	@DisplayName("운영기관 접근성 리포트는 운영기관 계정 인증을 요구한다")
 	void accessibilityReportRequiresOperatorAuthentication() throws Exception {
 		mockMvc.perform(get("/operator/accessibility-report/page"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
 
 		mockMvc.perform(get("/operator/accessibility-report/page")
 				.with(httpBasic("basic-user", "user-test-password")))

@@ -3,6 +3,7 @@ package com.easysubway.operator.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.profile.domain.MobilityType;
@@ -53,14 +54,14 @@ class OperatorRouteFeedbackReportPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("운영기관 이동 불편 신고 분석")
-			.contains("읽기 전용 리포트")
+			.contains("현장 차단 피드백")
+			.contains("운영기관 포털")
 			.contains("전체 피드백")
 			.contains("도움이 됨")
 			.contains("도움이 안 됨")
 			.contains("현장 차단")
-			.contains("평점별 피드백")
-			.contains("최근 현장 차단 신고")
+			.contains("피드백 구성")
+			.contains("최근 현장 차단 사례")
 			.contains("상록수")
 			.contains("사당")
 			.contains("고령자")
@@ -76,7 +77,8 @@ class OperatorRouteFeedbackReportPageControllerTest {
 	@DisplayName("운영기관 이동 불편 신고 분석 화면은 운영기관 계정 인증을 요구한다")
 	void routeFeedbackReportPageRequiresOperatorAuthentication() throws Exception {
 		mockMvc.perform(get("/operator/route-feedback-report/page"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
 
 		mockMvc.perform(get("/operator/route-feedback-report/page")
 				.with(httpBasic("basic-user", "user-test-password")))

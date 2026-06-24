@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import org.junit.jupiter.api.DisplayName;
@@ -47,8 +48,8 @@ class OperatorRepeatedBrokenFacilitiesPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("운영기관 반복 고장 시설 통계")
-			.contains("읽기 전용 리포트")
+			.contains("반복 고장 시설")
+			.contains("운영기관 포털")
 			.contains("반복 고장 시설")
 			.contains("시설별 반복 신고")
 			.contains("역")
@@ -75,7 +76,8 @@ class OperatorRepeatedBrokenFacilitiesPageControllerTest {
 	@DisplayName("운영기관 반복 고장 시설 통계 화면은 운영기관 계정 인증을 요구한다")
 	void repeatedBrokenFacilitiesPageRequiresOperatorAuthentication() throws Exception {
 		mockMvc.perform(get("/operator/repeated-broken-facilities/page"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
 
 		mockMvc.perform(get("/operator/repeated-broken-facilities/page")
 				.with(httpBasic("basic-user", "user-test-password")))

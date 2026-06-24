@@ -3,6 +3,7 @@ package com.easysubway.operator.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
@@ -87,8 +88,8 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("운영기관 데이터 수집 실패 현황")
-			.contains("읽기 전용 리포트")
+			.contains("데이터 수집 실패 보고서")
+			.contains("운영기관 포털")
 			.contains("전체 수집 실행")
 			.contains("실패 실행")
 			.contains("재시도 가능")
@@ -124,7 +125,8 @@ class OperatorDataCollectionFailuresPageControllerTest {
 	@DisplayName("운영기관 데이터 수집 실패 현황 화면은 운영기관 계정 인증을 요구한다")
 	void dataCollectionFailuresPageRequiresOperatorAuthentication() throws Exception {
 		mockMvc.perform(get("/operator/data-collection-failures/page"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
 
 		mockMvc.perform(get("/operator/data-collection-failures/page")
 				.with(httpBasic("basic-user", "user-test-password")))

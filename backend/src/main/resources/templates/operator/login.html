@@ -1,0 +1,32 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>운영기관 로그인</title>
+	<link rel="stylesheet" href="/css/operator-v3.css">
+</head>
+<body>
+<main class="login-screen">
+	<form class="login-card" method="post" action="/operator/login">
+		<div class="desktop-brand">
+			<div class="logo-mark">길</div>
+			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
+		</div>
+		<h1>운영기관 로그인</h1>
+		<p>기관 담당자에게 발급된 계정으로 접근성 보고서를 확인하세요.</p>
+		<input th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+		<div class="login-field">
+			<label for="username">아이디</label>
+			<input id="username" name="username" autocomplete="username" required>
+		</div>
+		<div class="login-field">
+			<label for="password">비밀번호</label>
+			<input id="password" name="password" type="password" autocomplete="current-password" required>
+		</div>
+		<button class="login-submit" type="submit">안전하게 로그인</button>
+		<div class="login-note">로그인 실패가 반복되면 15분 동안 접속이 제한됩니다. 계정 공유 없이 개인 계정을 사용해 주세요.</div>
+	</form>
+</main>
+</body>
+</html>

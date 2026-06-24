@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.notification.application.port.in.NotificationPreferenceUseCase;
@@ -54,13 +55,13 @@ class OperatorPushNotificationReportPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("운영기관 알림 발송 현황")
-			.contains("읽기 전용 리포트")
+			.contains("알림 발송 보고서")
+			.contains("운영기관 포털")
 			.contains("전체 알림")
 			.contains("대기 중")
 			.contains("발송 완료")
 			.contains("발송 실패")
-			.contains("상태별 발송 현황")
+			.contains("전달 상태")
 			.contains("아직 발송 처리 전")
 			.contains("외부 발송 성공")
 			.contains("푸시 발송 처리 중 오류가 발생했습니다. 관리자 점검이 필요합니다.")
@@ -78,7 +79,8 @@ class OperatorPushNotificationReportPageControllerTest {
 	@DisplayName("운영기관 알림 발송 현황 화면은 운영기관 계정 인증을 요구한다")
 	void pushNotificationReportPageRequiresOperatorAuthentication() throws Exception {
 		mockMvc.perform(get("/operator/push-notification-report/page"))
-			.andExpect(status().isUnauthorized());
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("http://localhost/operator/login"));
 
 		mockMvc.perform(get("/operator/push-notification-report/page")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))

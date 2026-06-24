@@ -3,192 +3,99 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>운영기관 데이터 수집 실패 현황</title>
-	<style>
-		body {
-			margin: 0;
-			background: #f5f7f8;
-			color: #102a2c;
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-		}
-
-		main {
-			max-width: 1120px;
-			margin: 0 auto;
-			padding: 32px 24px 48px;
-		}
-
-		h1 {
-			margin: 0 0 10px;
-			font-size: 32px;
-			line-height: 1.2;
-		}
-
-		p {
-			margin: 0 0 24px;
-			color: #40585a;
-			font-size: 17px;
-			line-height: 1.55;
-		}
-
-		h2 {
-			margin: 0;
-			padding: 16px 18px;
-			background: #e8f1ef;
-			font-size: 20px;
-		}
-
-		.metric-grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
-			gap: 12px;
-			margin-bottom: 24px;
-		}
-
-		.metric {
-			background: #fff;
-			border: 1px solid #d6e0df;
-			padding: 18px;
-		}
-
-		.metric span {
-			display: block;
-			color: #536b6d;
-			font-weight: 800;
-			line-height: 1.4;
-		}
-
-		.metric strong {
-			display: block;
-			margin-top: 8px;
-			font-size: 30px;
-			line-height: 1.15;
-		}
-
-		.freshness-alert {
-			background: #fff;
-			border: 1px solid #d6e0df;
-			margin-bottom: 24px;
-			padding: 18px;
-		}
-
-		.freshness-alert strong {
-			display: block;
-			font-size: 20px;
-			line-height: 1.3;
-		}
-
-		.freshness-alert span {
-			display: block;
-			margin-top: 8px;
-			color: #536b6d;
-			font-weight: 800;
-			line-height: 1.4;
-		}
-
-		.freshness-alert p {
-			margin: 8px 0 0;
-			color: #40585a;
-			font-weight: 700;
-			line-height: 1.5;
-		}
-
-		.freshness-alert.ok {
-			border-color: #82c69b;
-		}
-
-		.freshness-alert.stale {
-			border-color: #d37c75;
-		}
-
-		section {
-			background: #fff;
-			border: 1px solid #d6e0df;
-		}
-
-		table {
-			width: 100%;
-			border-collapse: collapse;
-		}
-
-		th,
-		td {
-			padding: 14px 18px;
-			border-top: 1px solid #d6e0df;
-			text-align: left;
-			vertical-align: top;
-			font-size: 15px;
-			line-height: 1.45;
-		}
-
-		th {
-			background: #f8fbfb;
-			font-weight: 800;
-		}
-
-		td:nth-child(5),
-		th:nth-child(5) {
-			text-align: right;
-			font-weight: 800;
-		}
-	</style>
+	<title>운영기관 데이터 수집 실패 보고서</title>
+	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
-<main>
-	<h1>운영기관 데이터 수집 실패 현황</h1>
-	<p>운영기관 담당자가 최근 데이터 수집 상태와 재시도 필요 여부를 확인하는 읽기 전용 리포트입니다.</p>
-
-	<div class="metric-grid" aria-label="데이터 수집 실패 현황 요약">
-		<div class="metric">
-			<span>전체 수집 실행</span>
-			<strong th:text="${report.totalRunCount}">0</strong>
+<div class="desktop-frame">
+	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
+		<div class="desktop-brand">
+			<div class="logo-mark">길</div>
+			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
 		</div>
-		<div class="metric">
-			<span>실패 실행</span>
-			<strong th:text="${report.failedRunCount}">0</strong>
+		<nav class="desktop-nav">
+			<div class="nav-group">보고서</div>
+			<a class="nav-link" href="/operator/accessibility-report/page">접근성 현황</a>
+			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
+			<a class="nav-link active" href="/operator/data-collection-failures/page">수집 실패</a>
+			<a class="nav-link" href="/operator/route-feedback-report/page">현장 피드백</a>
+			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
+		</nav>
+		<div class="desktop-user">
+			<div class="avatar">MO</div>
+			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
 		</div>
-		<div class="metric">
-			<span>재시도 가능</span>
-			<strong th:text="${report.retryableRunCount}">0</strong>
-		</div>
-	</div>
+	</aside>
 
-	<div class="freshness-alert" th:classappend="${report.freshnessAlertClass}">
-		<strong>데이터 갱신 상태: <span th:text="${report.freshnessAlertLabel}">점검 필요</span></strong>
-		<span>최신 완료 수집: <b th:text="${report.latestCompletedAtLabel}">-</b></span>
-		<p th:text="${report.freshnessAlertDescription}">데이터 수집 완료 기록이 없습니다.</p>
-	</div>
+	<section class="desktop-workspace">
+		<header class="desktop-topbar">
+			<div>
+				<div class="desktop-breadcrumb">운영기관 보고서</div>
+				<div class="desktop-page-name">데이터 수집 실패</div>
+			</div>
+			<div class="topbar-note">최근 20회 · 재시도 가능 여부</div>
+		</header>
 
-	<section>
-		<h2>최근 수집 실행</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">수집 원천</th>
-				<th scope="col">상태</th>
-				<th scope="col">시작 시각</th>
-				<th scope="col">종료 시각</th>
-				<th scope="col">수집 건수</th>
-				<th scope="col">실패 사유</th>
-				<th scope="col">운영 조치</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${report.rows}">
-				<td th:text="${row.sourceLabel}">도시철도 마스터</td>
-				<td th:text="${row.statusLabel}">실패</td>
-				<td th:text="${row.startedAtLabel}">2026-06-18T10:00</td>
-				<td th:text="${row.completedAtLabel}">2026-06-18T10:00:30</td>
-				<td th:text="${row.collectedCount}">0</td>
-				<td th:text="${row.failureMessage}">공공데이터 응답 지연</td>
-				<td th:text="${row.operatorAction}">재시도하세요.</td>
-			</tr>
-			<tr th:if="${#lists.isEmpty(report.rows)}">
-				<td colspan="7">최근 데이터 수집 실행 기록이 없습니다.</td>
-			</tr>
-			</tbody>
-		</table>
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>데이터 수집 실패 보고서</h1>
+					<p>최근 수집 이력과 실패 원인, 재시도 가능 여부를 확인합니다.</p>
+				</div>
+			</div>
+
+			<div class="alert-banner" th:classappend="${report.freshnessAlertClass}">
+				<strong>데이터 갱신 상태: <span th:text="${report.freshnessAlertLabel}">점검 필요</span></strong>
+				<span>최신 완료 수집: <b th:text="${report.latestCompletedAtLabel}">-</b></span>
+				<p th:text="${report.freshnessAlertDescription}">데이터 수집 완료 기록이 없습니다.</p>
+			</div>
+
+			<div class="metric-grid" aria-label="데이터 수집 실패 현황 요약">
+				<div class="metric"><span>전체 수집 실행</span><strong th:text="${report.totalRunCount}">0</strong></div>
+				<div class="metric"><span>실패 실행</span><strong th:text="${report.failedRunCount}">0</strong></div>
+				<div class="metric"><span>재시도 가능</span><strong th:text="${report.retryableRunCount}">0</strong></div>
+				<div class="metric"><span>최신 완료</span><strong th:text="${report.latestCompletedAtLabel}">-</strong></div>
+			</div>
+
+			<section class="panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>최근 수집 실행</h2>
+						<p>운영 행동 문구까지 함께 제공합니다.</p>
+					</div>
+				</div>
+				<table class="data-table">
+					<thead>
+					<tr>
+						<th scope="col">수집 원천</th>
+						<th scope="col">상태</th>
+						<th scope="col">시작 시각</th>
+						<th scope="col">종료 시각</th>
+						<th scope="col">수집 건수</th>
+						<th scope="col">실패 사유</th>
+						<th scope="col">운영 조치</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="row : ${report.rows}">
+						<td th:text="${row.sourceLabel}">도시철도 마스터</td>
+						<td><span class="status" th:text="${row.statusLabel}">실패</span></td>
+						<td th:text="${row.startedAtLabel}">2026-06-18T10:00</td>
+						<td th:text="${row.completedAtLabel}">2026-06-18T10:00:30</td>
+						<td th:text="${row.collectedCount}">0</td>
+						<td th:text="${row.failureMessage}">공공데이터 응답 지연</td>
+						<td th:text="${row.operatorAction}">재시도하세요.</td>
+					</tr>
+					<tr th:if="${#lists.isEmpty(report.rows)}">
+						<td colspan="7">최근 데이터 수집 실행 기록이 없습니다.</td>
+					</tr>
+					</tbody>
+				</table>
+			</section>
+
+			<div class="source-note">완료 기록이 24시간 이상 갱신되지 않으면 점검 필요 경고로 전환됩니다.</div>
+		</main>
 	</section>
-</main>
+</div>
 </body>
 </html>

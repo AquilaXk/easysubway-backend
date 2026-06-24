@@ -3,222 +3,177 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
-	<title>운영기관 접근성 시설 현황</title>
-	<style>
-		body {
-			margin: 0;
-			background: #f5f7f8;
-			color: #102a2c;
-			font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-		}
-
-		main {
-			max-width: 1120px;
-			margin: 0 auto;
-			padding: 32px 24px 48px;
-		}
-
-		h1 {
-			margin: 0 0 10px;
-			font-size: 32px;
-			line-height: 1.2;
-		}
-
-		p {
-			margin: 0 0 24px;
-			color: #40585a;
-			font-size: 17px;
-			line-height: 1.55;
-		}
-
-		h2 {
-			margin: 0;
-			padding: 16px 18px;
-			background: #e8f1ef;
-			font-size: 20px;
-		}
-
-		.metric-grid {
-			display: grid;
-			grid-template-columns: repeat(auto-fit, minmax(190px, 1fr));
-			gap: 12px;
-			margin-bottom: 24px;
-		}
-
-		.metric {
-			background: #fff;
-			border: 1px solid #d6e0df;
-			padding: 18px;
-		}
-
-		.metric span {
-			display: block;
-			color: #536b6d;
-			font-weight: 800;
-			line-height: 1.4;
-		}
-
-		.metric strong {
-			display: block;
-			margin-top: 8px;
-			font-size: 30px;
-			line-height: 1.15;
-		}
-
-		section {
-			margin-bottom: 24px;
-			background: #fff;
-			border: 1px solid #d6e0df;
-		}
-
-		table {
-			width: 100%;
-			border-collapse: collapse;
-		}
-
-		th,
-		td {
-			padding: 14px 18px;
-			border-top: 1px solid #d6e0df;
-			text-align: left;
-			vertical-align: top;
-			font-size: 15px;
-			line-height: 1.45;
-		}
-
-		th {
-			background: #f8fbfb;
-			font-weight: 800;
-		}
-
-		td:last-child,
-		th:last-child {
-			text-align: right;
-			font-weight: 800;
-		}
-	</style>
+	<title>운영기관 접근성 현황 보고서</title>
+	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
-<main>
-	<h1>운영기관 접근성 시설 현황</h1>
-	<p>운영기관 담당자가 접근성 데이터 품질과 시설 보강 대상을 확인하는 읽기 전용 리포트입니다.</p>
+<div class="desktop-frame">
+	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
+		<div class="desktop-brand">
+			<div class="logo-mark">길</div>
+			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
+		</div>
+		<nav class="desktop-nav">
+			<div class="nav-group">보고서</div>
+			<a class="nav-link active" href="/operator/accessibility-report/page">접근성 현황</a>
+			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
+			<a class="nav-link" href="/operator/data-collection-failures/page">수집 실패</a>
+			<a class="nav-link" href="/operator/route-feedback-report/page">현장 피드백</a>
+			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
+		</nav>
+		<div class="desktop-user">
+			<div class="avatar">MO</div>
+			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
+		</div>
+	</aside>
 
-	<div class="metric-grid" aria-label="접근성 시설 현황 요약">
-		<div class="metric">
-			<span>전체 역</span>
-			<strong th:text="${report.totalStations}">0</strong>
-		</div>
-		<div class="metric">
-			<span>전체 시설</span>
-			<strong th:text="${report.totalFacilities}">0</strong>
-		</div>
-		<div class="metric">
-			<span>확인 필요한 시설</span>
-			<strong th:text="${report.needsVerificationFacilityCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>갱신 지연 시설</span>
-			<strong th:text="${report.delayedFacilityStatusCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>검수일 없는 역</span>
-			<strong th:text="${report.missingStationVerificationDateCount}">0</strong>
-		</div>
-	</div>
+	<section class="desktop-workspace">
+		<header class="desktop-topbar">
+			<div>
+				<div class="desktop-breadcrumb">운영기관 보고서</div>
+				<div class="desktop-page-name">접근성 현황</div>
+			</div>
+			<div class="topbar-note">읽기 전용 · 실제 운영 데이터 연동</div>
+		</header>
 
-	<section>
-		<h2>역 품질 등급</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">등급</th>
-				<th scope="col">상태</th>
-				<th scope="col">역 수</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${report.stationQualityRows}">
-				<td th:text="${row.label}">Level 1</td>
-				<td th:text="${row.description}">기본 정보 확인</td>
-				<td th:text="${row.count}">0</td>
-			</tr>
-			</tbody>
-		</table>
+		<main class="desktop-content">
+			<div class="page-head">
+				<div>
+					<h1>접근성 현황 보고서</h1>
+					<p>기관 담당 노선의 역·시설 품질과 개선 우선순위를 확인합니다.</p>
+				</div>
+				<a class="desk-btn primary" href="/operator/api/accessibility-report/proposal.csv">협력 제안서 CSV</a>
+			</div>
+
+			<div class="metric-grid" aria-label="접근성 시설 현황 요약">
+				<div class="metric"><span>전체 역</span><strong th:text="${report.totalStations}">0</strong></div>
+				<div class="metric"><span>접근성 시설</span><strong th:text="${report.totalFacilities}">0</strong></div>
+				<div class="metric"><span>확인 필요 시설</span><strong th:text="${report.needsVerificationFacilityCount}">0</strong></div>
+				<div class="metric"><span>갱신 지연 시설</span><strong th:text="${report.delayedFacilityStatusCount}">0</strong></div>
+				<div class="metric"><span>검증일 누락 역</span><strong th:text="${report.missingStationVerificationDateCount}">0</strong></div>
+			</div>
+
+			<div class="desktop-grid-2">
+				<div>
+					<section class="panel">
+						<div class="panel-head">
+							<div class="panel-title">
+								<h2>지역별 데이터 품질</h2>
+								<p>Level 1-4 역 개수와 운영기관·노선 범위를 함께 봅니다.</p>
+							</div>
+						</div>
+						<table class="data-table">
+							<thead>
+							<tr>
+								<th scope="col">지역</th>
+								<th scope="col">운영기관</th>
+								<th scope="col">노선</th>
+								<th scope="col">역</th>
+								<th scope="col">Level 1</th>
+								<th scope="col">Level 2</th>
+								<th scope="col">Level 3</th>
+								<th scope="col">Level 4</th>
+							</tr>
+							</thead>
+							<tbody>
+							<tr th:each="row : ${report.regionQualityRows}">
+								<td th:text="${row.name}">수도권</td>
+								<td th:text="${row.operatorCount}">0</td>
+								<td th:text="${row.lineCount}">0</td>
+								<td th:text="${row.stationCount}">0</td>
+								<td th:text="${row.level1Count}">0</td>
+								<td th:text="${row.level2Count}">0</td>
+								<td th:text="${row.level3Count}">0</td>
+								<td th:text="${row.level4Count}">0</td>
+							</tr>
+							</tbody>
+						</table>
+					</section>
+
+					<section class="panel stack-gap">
+						<div class="panel-head">
+							<div class="panel-title">
+								<h2>역 접근성 점수</h2>
+								<p>낮은 점수부터 개선 검토합니다.</p>
+							</div>
+						</div>
+						<table class="data-table">
+							<thead>
+							<tr>
+								<th scope="col">역</th>
+								<th scope="col">지역</th>
+								<th scope="col">보강 사유</th>
+								<th scope="col">접근성 점수</th>
+							</tr>
+							</thead>
+							<tbody>
+							<tr th:each="row : ${report.stationAccessibilityScoreRows}">
+								<td th:text="${row.stationName}">상록수</td>
+								<td th:text="${row.region}">수도권</td>
+								<td th:text="${row.reasonText}">기본 정보만 있음</td>
+								<td th:text="${row.score}">0</td>
+							</tr>
+							</tbody>
+						</table>
+					</section>
+				</div>
+
+				<div>
+					<section class="panel">
+						<div class="panel-head">
+							<div class="panel-title">
+								<h2>역 품질 등급</h2>
+								<p>기관 보고용 품질 분포입니다.</p>
+							</div>
+						</div>
+						<table class="data-table">
+							<thead>
+							<tr>
+								<th scope="col">등급</th>
+								<th scope="col">상태</th>
+								<th scope="col">역 수</th>
+							</tr>
+							</thead>
+							<tbody>
+							<tr th:each="row : ${report.stationQualityRows}">
+								<td th:text="${row.label}">Level 1</td>
+								<td th:text="${row.description}">기본 정보 확인</td>
+								<td th:text="${row.count}">0</td>
+							</tr>
+							</tbody>
+						</table>
+					</section>
+
+					<section class="panel stack-gap">
+						<div class="panel-head">
+							<div class="panel-title">
+								<h2>개선 우선순위</h2>
+								<p>점수와 구체적인 이유를 함께 제공합니다.</p>
+							</div>
+						</div>
+						<table class="data-table">
+							<thead>
+							<tr>
+								<th scope="col">역</th>
+								<th scope="col">시설</th>
+								<th scope="col">개선 사유</th>
+								<th scope="col">우선순위 점수</th>
+							</tr>
+							</thead>
+							<tbody>
+							<tr th:each="row : ${report.accessibilityImprovementPriorityRows}">
+								<td th:text="${row.stationName}">상록수</td>
+								<td th:text="${row.facilityName}">장애인 화장실</td>
+								<td th:text="${row.reasonText}">확인 필요 상태, 신뢰도 확인 필요</td>
+								<td th:text="${row.priorityScore}">0</td>
+							</tr>
+							</tbody>
+						</table>
+					</section>
+				</div>
+			</div>
+		</main>
 	</section>
-
-	<section>
-		<h2>지역별 데이터 품질</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">지역</th>
-				<th scope="col">운영기관</th>
-				<th scope="col">노선</th>
-				<th scope="col">역</th>
-				<th scope="col">Level 1</th>
-				<th scope="col">Level 2</th>
-				<th scope="col">Level 3</th>
-				<th scope="col">Level 4</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${report.regionQualityRows}">
-				<td th:text="${row.name}">수도권</td>
-				<td th:text="${row.operatorCount}">0</td>
-				<td th:text="${row.lineCount}">0</td>
-				<td th:text="${row.stationCount}">0</td>
-				<td th:text="${row.level1Count}">0</td>
-				<td th:text="${row.level2Count}">0</td>
-				<td th:text="${row.level3Count}">0</td>
-				<td th:text="${row.level4Count}">0</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
-
-	<section>
-		<h2>역별 접근성 점수</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">역</th>
-				<th scope="col">지역</th>
-				<th scope="col">보강 사유</th>
-				<th scope="col">접근성 점수</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${report.stationAccessibilityScoreRows}">
-				<td th:text="${row.stationName}">상록수</td>
-				<td th:text="${row.region}">수도권</td>
-				<td th:text="${row.reasonText}">기본 정보만 있음</td>
-				<td th:text="${row.score}">0</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
-
-	<section>
-		<h2>접근성 개선 우선순위</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">역</th>
-				<th scope="col">시설</th>
-				<th scope="col">개선 사유</th>
-				<th scope="col">우선순위 점수</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${report.accessibilityImprovementPriorityRows}">
-				<td th:text="${row.stationName}">상록수</td>
-				<td th:text="${row.facilityName}">장애인 화장실</td>
-				<td th:text="${row.reasonText}">확인 필요 상태, 신뢰도 확인 필요</td>
-				<td th:text="${row.priorityScore}">0</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
-</main>
+</div>
 </body>
 </html>
