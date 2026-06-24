@@ -116,14 +116,24 @@
 			font-weight: 800;
 		}
 	</style>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
-<body>
-<main>
-	<h1>역 구조도 요약</h1>
-	<p>
-		<span th:text="${station.stationName}">상록수</span>
-		<span class="meta" th:text="${station.lineNames}">수도권 4호선</span>
-	</p>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-layout-editor')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1>역 구조·동선 편집</h1>
+			<p>
+				<span th:text="${station.stationName}">상록수</span>
+				<span class="meta" th:text="${station.lineNames}">수도권 4호선</span>
+			</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/stations/{stationId}/page(stationId=${station.stationId})}">역 상세</a>
+		</div>
+	</header>
 
 	<section>
 		<h2>구조도 기준 자료</h2>
@@ -362,5 +372,6 @@
 		</table>
 	</section>
 </main>
+</div>
 </body>
 </html>

@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>현장 검증 상세</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-field-verifications')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1>현장 검증 상세</h1>
+			<p>
+				<span th:text="${verification.stationName}">상록수</span>
+				<span> · </span>
+				<span th:text="${verification.sessionId}">session-id</span>
+			</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/field-verifications/stations/{stationId}/export.csv(stationId=${verification.stationId})}">CSV 내보내기</a>
+			<a class="admin-btn" th:href="@{/admin/field-verifications/page}">목록</a>
+		</div>
+	</header>
+
+	<div class="metric-grid">
+		<div class="metric"><span>전체 항목</span><strong th:text="${verification.itemCount}">0</strong></div>
+		<div class="metric"><span>확인 완료</span><strong th:text="${verification.verifiedCount}">0</strong></div>
+		<div class="metric"><span>재확인 필요</span><strong th:text="${verification.recheckCount}">0</strong></div>
+		<div class="metric"><span>검증자</span><strong th:text="${verification.verifiedBy}">field-worker</strong></div>
+	</div>
+
+	<div class="admin-grid-2">
+		<section class="admin-panel">
+			<h2>검증 항목</h2>
+			<table>
+				<thead>
+				<tr>
+					<th scope="col">항목</th>
+					<th scope="col">대상</th>
+					<th scope="col">상태</th>
+					<th scope="col">메모</th>
+					<th scope="col">상태 변경</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="item : ${items}">
+					<td th:text="${item.typeLabel}">시설</td>
+					<td>
+						<strong th:text="${item.targetName}">엘리베이터</strong>
+						<span class="meta" th:text="${item.itemId}">item-id</span>
+					</td>
+					<td th:text="${item.statusLabel}">검증 완료</td>
+					<td th:text="${item.note}">메모</td>
+					<td>
+						<form th:action="@{/admin/field-verifications/{stationId}/items/{itemId}/page/status(stationId=${verification.stationId},itemId=${item.itemId})}"
+						      method="post">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<label>
+								<span class="meta">검증 상태</span>
+								<select name="status">
+									<option value=""
+									        th:if="${item.status != T(com.easysubway.field.domain.FieldVerificationStatus).VERIFIED && item.status != T(com.easysubway.field.domain.FieldVerificationStatus).NEEDS_RECHECK}"
+									        selected
+									        disabled>변경할 상태 선택</option>
+									<option th:each="status : ${statusOptions}"
+									        th:value="${status}"
+									        th:selected="${status == item.status}"
+									        th:text="${status}">VERIFIED</option>
+								</select>
+							</label>
+							<label>
+								<span class="meta">현장 메모</span>
+								<textarea name="note" th:text="${item.note}">메모</textarea>
+							</label>
+							<button type="submit">상태 저장</button>
+						</form>
+					</td>
+				</tr>
+				</tbody>
+			</table>
+		</section>
+	</div>
+
+	<section>
+		<h2>변경 이력</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">항목</th>
+				<th scope="col">이전</th>
+				<th scope="col">변경</th>
+				<th scope="col">변경자</th>
+				<th scope="col">시각</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${history}">
+				<td th:text="${row.itemId}">item-id</td>
+				<td th:text="${row.previousStatus}">진행 중</td>
+				<td th:text="${row.newStatus}">검증 완료</td>
+				<td th:text="${row.changedBy}">worker</td>
+				<td th:text="${row.changedAt}">2026-06-20</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>

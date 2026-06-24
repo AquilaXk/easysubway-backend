@@ -90,10 +90,18 @@
 			font-weight: 800;
 		}
 	</style>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
-<body>
-<main>
-	<h1>데이터 품질 대시보드</h1>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-quality')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1>데이터 품질</h1>
+			<p>지역·역·출구·시설 신뢰도와 개선 우선순위를 한눈에 봅니다.</p>
+		</div>
+	</header>
 
 	<div class="metric-grid" aria-label="전체 데이터 품질 요약">
 		<div class="metric">
@@ -326,5 +334,6 @@
 		</table>
 	</section>
 </main>
+</div>
 </body>
 </html>

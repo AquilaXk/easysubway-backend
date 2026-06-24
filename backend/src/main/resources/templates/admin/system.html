@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>시스템 상태</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-system')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1>시스템 상태</h1>
+			<p>애플리케이션·DB·수집·푸시·데이터 최신성을 한 화면에서 점검합니다.</p>
+		</div>
+	</header>
+
+	<div class="metric-grid">
+		<div class="metric"><span>애플리케이션</span><strong th:text="${health.status}">UP</strong><em th:text="${health.service}">service</em></div>
+		<div class="metric"><span>푸시 대기</span><strong th:text="${push.pendingCount}">0</strong><em th:text="|실패 ${push.failedCount}건|">실패 0건</em></div>
+		<div class="metric"><span>API 요청</span><strong th:text="${usage.totalApiRequests}">0</strong><em th:text="|오류율 ${usage.apiErrorRatePercent()}|">오류율 0.0%</em></div>
+		<div class="metric"><span>평균 응답</span><strong th:text="${usage.averageApiResponseTimeLabel()}">0ms</strong><em>최근 활동 집계 기준</em></div>
+	</div>
+
+	<section>
+		<h2>최근 데이터 수집</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">실행 ID</th>
+				<th scope="col">소스</th>
+				<th scope="col">상태</th>
+				<th scope="col">요청자</th>
+				<th scope="col">시작</th>
+				<th scope="col">완료</th>
+				<th scope="col">수집</th>
+				<th scope="col">실패</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${runs.isEmpty()}">
+				<td colspan="8">최근 데이터 수집 실행이 없습니다.</td>
+			</tr>
+			<tr th:each="run : ${runs}">
+				<td th:text="${run.runId}">run-id</td>
+				<td th:text="${run.source}">TRANSIT_MASTER</td>
+				<td th:text="${run.status}">COMPLETED</td>
+				<td th:text="${run.requestedBy}">admin</td>
+				<td th:text="${run.startedAt}">2026-06-20</td>
+				<td th:text="${run.completedAt}">2026-06-20</td>
+				<td th:text="${run.collectedCount}">0</td>
+				<td th:text="${run.failureMessage ?: '-'}">-</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>

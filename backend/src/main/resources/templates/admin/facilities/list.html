@@ -103,10 +103,21 @@
 			font-weight: 800;
 		}
 	</style>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
-<body>
-<main>
-	<h1>시설 상태 관리</h1>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-facilities')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1>시설 상태판</h1>
+			<p>모든 접근성 시설의 상태·신뢰도·갱신일을 필터링하고 즉시 변경합니다.</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/facilities/editor/page}">시설 등록·수정</a>
+		</div>
+	</header>
 	<p class="summary">역 상세와 경로 안내에 쓰는 시설 상태를 확인하고 수정합니다.</p>
 
 	<p class="empty" th:if="${facilities.isEmpty()}">등록된 시설이 없습니다.</p>
@@ -155,5 +166,6 @@
 		</tbody>
 	</table>
 </main>
+</div>
 </body>
 </html>
