@@ -14,10 +14,16 @@ import org.springframework.web.method.annotation.MethodArgumentTypeMismatchExcep
 @RestControllerAdvice
 class CommonExceptionHandler {
 
+	private final WebMessageResolver messages;
+
+	CommonExceptionHandler(WebMessageResolver messages) {
+		this.messages = messages;
+	}
+
 	@ExceptionHandler(HttpMessageNotReadableException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	ApiResponse<Void> handleUnreadableMessage() {
-		return ApiResponse.fail("요청 본문을 확인해야 합니다.");
+		return ApiResponse.fail(messages.message("common.error.unreadable-body"));
 	}
 
 	@ExceptionHandler(InvalidRequestException.class)
@@ -32,14 +38,14 @@ class CommonExceptionHandler {
 		String message = exception.getBindingResult().getFieldErrors().stream()
 			.findFirst()
 			.map(error -> error.getDefaultMessage())
-			.orElse("요청 값을 확인해야 합니다.");
+			.orElseGet(() -> messages.message("common.error.invalid-body"));
 		return ApiResponse.fail(message);
 	}
 
 	@ExceptionHandler(MethodArgumentTypeMismatchException.class)
 	@ResponseStatus(HttpStatus.BAD_REQUEST)
 	ApiResponse<Void> handleInvalidRequestParameter() {
-		return ApiResponse.fail("요청 값을 확인해야 합니다.");
+		return ApiResponse.fail(messages.message("common.error.invalid-parameter"));
 	}
 
 	@ExceptionHandler(ConflictException.class)

@@ -9,6 +9,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.common.web.WebMessageResolver;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.DataQualitySummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
@@ -130,7 +131,8 @@ class DataQualityAdminPageControllerTest {
 		DataQualityAdminPageController controller = new DataQualityAdminPageController(
 			dataQualityUseCase,
 			transitMasterQueryUseCase,
-			facilityReportUseCase
+			facilityReportUseCase,
+			WebMessageResolver.defaultMessages()
 		);
 		when(dataQualityUseCase.summarizeDataQuality()).thenReturn(emptySummary());
 		when(transitMasterQueryUseCase.listRegions()).thenReturn(List.of());

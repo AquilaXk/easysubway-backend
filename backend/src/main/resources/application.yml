@@ -1,6 +1,8 @@
 spring:
   application:
     name: easysubway-backend
+  messages:
+    fallback-to-system-locale: false
   profiles:
     default: dev
   batch:
