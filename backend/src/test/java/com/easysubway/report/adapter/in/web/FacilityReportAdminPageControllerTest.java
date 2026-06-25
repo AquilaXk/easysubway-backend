@@ -70,10 +70,62 @@ class FacilityReportAdminPageControllerTest {
 
 		assertThat(html)
 			.contains("신고 목록 페이지")
-			.contains("1페이지")
+			.contains(">1</a>")
 			.contains("다음")
 			.contains("page=1")
 			.contains("size=1");
+	}
+
+	@Test
+	@DisplayName("관리자는 번호 페이지 링크에서 상태와 크기를 유지한다")
+	void adminReportListPageShowsNumberedPageLinks() throws Exception {
+		createReport("번호 페이지 신고 1");
+		createReport("번호 페이지 신고 2");
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("status", "SUBMITTED")
+				.param("size", "1")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("신고 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("status=SUBMITTED")
+			.contains("size=1")
+			.contains(">1</a>")
+			.contains(">2</a>");
+	}
+
+	@Test
+	@DisplayName("관리자 신고 목록은 빈 결과에서 의미 없는 번호 링크를 숨긴다")
+	void adminReportListPageHidesPaginationForEmptyResult() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("status", "RESOLVED")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("확인할 신고가 없습니다.")
+			.doesNotContain("신고 목록 페이지");
+	}
+
+	@Test
+	@DisplayName("관리자 신고 목록은 범위를 벗어난 page를 보정 URL로 돌려보낸다")
+	void adminReportListPageRedirectsOutOfRangePage() throws Exception {
+		mockMvc.perform(get("/admin/reports/page")
+				.param("status", "RESOLVED")
+				.param("page", "99")
+				.param("size", "1")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/reports/page?status=RESOLVED&page=0&size=1"));
 	}
 
 	@Test
