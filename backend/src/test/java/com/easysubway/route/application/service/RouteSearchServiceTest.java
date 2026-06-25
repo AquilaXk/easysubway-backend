@@ -85,6 +85,9 @@ class RouteSearchServiceTest {
 				"수도권 4호선으로 사당역까지 이동",
 				"사당역에서 출구 접근성 정보를 확인"
 			);
+		assertThat(result.steps())
+			.extracting("stepType")
+			.containsExactly("entry", "ride", "exit");
 		assertThat(result.steps().get(0).estimatedMinutes()).isEqualTo(4);
 		assertThat(result.steps().get(0).distanceMeters()).isEqualTo(180);
 		assertThat(result.steps().get(0).includesStairs()).isFalse();

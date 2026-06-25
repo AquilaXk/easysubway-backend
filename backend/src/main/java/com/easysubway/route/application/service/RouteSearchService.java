@@ -805,6 +805,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return List.of(
 			new RouteStep(
 				1,
+				"entry",
 				origin.nameKo() + "역에서 " + displayLine + " 승강장으로 이동",
 				profileWeight.entryGuidance(),
 				directLine.line().id(),
@@ -818,6 +819,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			),
 			new RouteStep(
 				2,
+				"ride",
 				directLine.line().name() + "으로 " + destination.nameKo() + "역까지 이동",
 				directLine.stopCount() + "개 역을 이동합니다. 환승은 없습니다.",
 				directLine.line().id(),
@@ -831,6 +833,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			),
 			new RouteStep(
 				3,
+				"exit",
 				destination.nameKo() + "역에서 출구 접근성 정보를 확인",
 				exitGuidance(destination.id(), profileWeight.exitGuidance()),
 				directLine.line().id(),
@@ -859,6 +862,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return List.of(
 			new RouteStep(
 				1,
+				"entry",
 				origin.nameKo() + "역에서 " + firstDisplayLine + " 승강장으로 이동",
 				profileWeight.entryGuidance(),
 				route.firstLine().id(),
@@ -872,6 +876,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			),
 			new RouteStep(
 				2,
+				"ride",
 				route.firstLine().name() + "으로 " + route.transferStation().nameKo() + "역까지 이동",
 				route.firstSegmentStopCount() + "개 역을 이동한 뒤 환승합니다.",
 				route.firstLine().id(),
@@ -885,6 +890,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			),
 			new RouteStep(
 				3,
+				"transfer",
 				route.transferStation().nameKo() + "역에서 " + secondDisplayLine + " 승강장으로 환승",
 				route.transferStation().nameKo() + "의 엘리베이터와 계단 없는 연결 동선을 먼저 확인합니다.",
 				route.secondLine().id(),
@@ -898,6 +904,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			),
 			new RouteStep(
 				4,
+				"ride",
 				route.secondLine().name() + "으로 " + destination.nameKo() + "역까지 이동",
 				route.secondSegmentStopCount() + "개 역을 이동합니다.",
 				route.secondLine().id(),
@@ -911,6 +918,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			),
 			new RouteStep(
 				5,
+				"exit",
 				destination.nameKo() + "역에서 출구 접근성 정보를 확인",
 				exitGuidance(destination.id(), profileWeight.exitGuidance()),
 				route.secondLine().id(),
