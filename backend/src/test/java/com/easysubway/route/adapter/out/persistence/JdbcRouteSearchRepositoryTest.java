@@ -259,7 +259,7 @@ class JdbcRouteSearchRepositoryTest {
 			"수도권 4호선",
 			90,
 			List.of(new RouteStep(1, "4호선 이동", "열차로 이동합니다.", "line-4", "수도권 4호선", originStationId(originStationName), destinationStationId(destinationStationName), 12, 5200, false, false)),
-			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE, "시설 정보를 한 번 확인해 주세요.")),
+			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE)),
 			List.of(),
 			LocalDateTime.of(2026, 6, 13, 9, 0)
 		);
@@ -282,7 +282,7 @@ class JdbcRouteSearchRepositoryTest {
 				new RouteStep(2, "A 노선으로 환승역까지 이동", "2개 역을 이동한 뒤 환승합니다.", "line-a", "A 노선", "station-origin", "station-transfer", 4, 1800, false, false),
 				new RouteStep(3, "환승역에서 B 노선 승강장으로 환승", "환승역의 엘리베이터를 확인합니다.", "line-b", "B 노선", "station-transfer", "station-transfer", 6, 260, false, true)
 			),
-			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS, "일부 구간은 도움을 요청해야 할 수 있습니다.")),
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)),
 			List.of("엘리베이터 검증이 필요한 구간이 있습니다."),
 			LocalDateTime.of(2026, 6, 13, 9, 0)
 		);
@@ -301,7 +301,7 @@ class JdbcRouteSearchRepositoryTest {
 			"수도권 4호선",
 			0,
 			List.of(),
-			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS, "계단 없는 접근 경로가 확인되지 않았습니다.")),
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)),
 			List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
 			LocalDateTime.of(2026, 6, 17, 10, 0)
 		);

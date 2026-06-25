@@ -369,22 +369,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 		// 출구 데이터가 없거나 신뢰도가 낮으면 사용자가 이동 전 확인할 수 있게 경고를 남긴다.
 		List<RouteWarning> warnings = new ArrayList<>();
 		if (stationIds.stream().anyMatch(this::hasLowAccessibilityData)) {
-			warnings.add(new RouteWarning(
-				RouteWarningCode.LOW_DATA_CONFIDENCE,
-				"이동 경로 중 일부 역의 접근성 정보가 부족합니다. 이동 전 역 상세 정보를 확인하세요."
-			));
+			warnings.add(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE));
 		}
 		if (stairOnlyAccess) {
-			warnings.add(new RouteWarning(
-				RouteWarningCode.STAIR_ONLY_ACCESS,
-				"이동 경로 중 일부 역에 계단 없는 접근 경로가 확인되지 않았습니다."
-			));
+			warnings.add(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS));
 		}
 		if (stationIds.stream().anyMatch(this::hasStaleAccessibilityData)) {
-			warnings.add(new RouteWarning(
-				RouteWarningCode.STALE_ACCESSIBILITY_DATA,
-				"접근성 시설 정보가 최근 30일 이내 확인되지 않았습니다. 이동 전 역 상세 정보를 확인하세요."
-			));
+			warnings.add(new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA));
 		}
 		return List.copyOf(warnings);
 	}
@@ -726,16 +717,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private List<RouteWarning> internalRouteWarnings(List<InternalRouteStep> steps) {
 		List<RouteWarning> warnings = new ArrayList<>();
 		if (steps.stream().anyMatch(InternalRouteStep::includesStairs)) {
-			warnings.add(new RouteWarning(
-				RouteWarningCode.STAIR_ONLY_ACCESS,
-				"역 내부 이동 경로에 계단 포함 구간이 있습니다."
-			));
+			warnings.add(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS));
 		}
 		if (steps.stream().anyMatch(step -> step.reliabilityScore() < 80)) {
-			warnings.add(new RouteWarning(
-				RouteWarningCode.LOW_DATA_CONFIDENCE,
-				"역 내부 이동 경로의 일부 구간은 추가 검증이 필요합니다."
-			));
+			warnings.add(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE));
 		}
 		return List.copyOf(warnings);
 	}
@@ -758,10 +743,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			0,
 			0,
 			List.of(),
-			List.of(new RouteWarning(
-				RouteWarningCode.STAIR_ONLY_ACCESS,
-				"역 내부 이동 경로에 계단 포함 구간이 있습니다."
-			)),
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)),
 			List.of("계단 없는 내부 이동 경로를 찾을 수 없습니다.")
 		);
 	}
