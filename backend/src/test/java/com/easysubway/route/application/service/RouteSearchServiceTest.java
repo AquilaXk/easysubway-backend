@@ -3,6 +3,7 @@ package com.easysubway.route.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
@@ -98,6 +99,22 @@ class RouteSearchServiceTest {
 		assertThat(result.warnings())
 			.extracting("code")
 			.contains(RouteWarningCode.LOW_DATA_CONFIDENCE);
+	}
+
+	@Test
+	@DisplayName("경로 warning API 계약은 사용자 문장 없이 code만 직렬화한다")
+	void routeWarningSerializesCodeOnly() throws Exception {
+		var result = service.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.STROLLER
+		));
+
+		String warningJson = new ObjectMapper().writeValueAsString(result.warnings().get(0));
+
+		assertThat(warningJson).contains("\"code\":\"LOW_DATA_CONFIDENCE\"");
+		assertThat(warningJson).doesNotContain("message");
+		assertThat(warningJson).doesNotContain("이동 경로");
 	}
 
 	@Test
@@ -550,8 +567,7 @@ class RouteSearchServiceTest {
 			.extracting("code")
 			.contains(RouteWarningCode.STALE_ACCESSIBILITY_DATA);
 		assertThat(result.warnings())
-			.extracting("message")
-			.contains("접근성 시설 정보가 최근 30일 이내 확인되지 않았습니다. 이동 전 역 상세 정보를 확인하세요.");
+			.allSatisfy(warning -> assertThat(warning.toString()).doesNotContain("접근성 시설 정보"));
 	}
 
 	@Test
