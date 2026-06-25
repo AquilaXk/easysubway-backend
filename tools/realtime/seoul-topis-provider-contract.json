@@ -1,0 +1,187 @@
+{
+  "schemaVersion": 1,
+  "providerId": "seoul-topis",
+  "displayName": "서울 TOPIS 지하철 실시간 provider",
+  "contractStatus": "spike-contract",
+  "retrievedAt": "2026-06-25",
+  "officialSources": [
+    {
+      "capability": "ARRIVALS",
+      "sourceId": "seoul-topis-realtime-station-arrival",
+      "datasetUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
+      "datasetName": "서울시 지하철 실시간 도착정보",
+      "observedDataUpdatedAt": "2026-06-25",
+      "license": "KOGL-1",
+      "notes": [
+        "서울시 이외 역구간은 미제공",
+        "recptnDt는 provider 도착정보 생성 시각이며 앱 수신 시각과 분리한다",
+        "현재 시각과 recptnDt 차이만큼 도착 정보 지연 보정이 필요하다",
+        "과거 실시간 데이터는 제공하지 않는다"
+      ]
+    },
+    {
+      "capability": "TRAIN_POSITIONS",
+      "sourceId": "seoul-topis-realtime-train-position",
+      "datasetUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do",
+      "datasetName": "서울시 지하철 실시간 열차 위치정보",
+      "observedDataUpdatedAt": "2026-06-25",
+      "license": "KOGL-1",
+      "sourceInventoryStatus": "candidate-only",
+      "gap": "production source inventory에는 아직 train position sourceDomain이 없으므로 provider adapter 구현 전에 source inventory entry 또는 coverage gap을 별도 확정한다",
+      "notes": [
+        "열차 위치는 정밀 GPS 좌표가 아니라 노선/역 기반 운영 상태 snapshot으로 취급한다",
+        "과거 실시간 데이터는 제공하지 않는다"
+      ]
+    }
+  ],
+  "secretBoundary": {
+    "serviceKeyHandling": "backend_env_only",
+    "backendEnv": "EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY",
+    "mobileBundleAllowed": false,
+    "fixtureAllowed": false,
+    "placeholder": "[서비스키값]"
+  },
+  "transport": {
+    "officialHost": "swopenapi.seoul.go.kr",
+    "officialScheme": "http",
+    "httpsSupported": false,
+    "outboundPolicy": "backend-only allowlist for http://swopenapi.seoul.go.kr/api/subway after security review",
+    "mobileDirectCallAllowed": false
+  },
+  "gatewayPolicy": {
+    "providerTimeoutMs": 1500,
+    "requestCoalescing": true,
+    "cacheTtlSeconds": 20,
+    "staleCacheTtlSeconds": 120,
+    "quotaExceededCircuitOpenSeconds": 60,
+    "quotaCostPerProviderCall": 1,
+    "serveStaleOn": [
+      "PROVIDER_TIMEOUT",
+      "PROVIDER_QUOTA_EXCEEDED",
+      "PROVIDER_5XX"
+    ]
+  },
+  "fallbackCodes": [
+    "UNSUPPORTED_REGION",
+    "UNSUPPORTED_CAPABILITY",
+    "MAPPING_MISSING",
+    "MAPPING_LOW_CONFIDENCE",
+    "PROVIDER_TIMEOUT",
+    "PROVIDER_QUOTA_EXCEEDED",
+    "PROVIDER_ERROR",
+    "STALE_CACHE",
+    "EMPTY_PROVIDER_RESULT"
+  ],
+  "mappingRequirements": {
+    "lineMappingTable": "realtime_provider_line_mappings",
+    "stationMappingTable": "realtime_provider_station_mappings",
+    "minimumConfidenceForLiveCall": "HIGH",
+    "lowConfidenceFallbackCode": "MAPPING_LOW_CONFIDENCE",
+    "requiredFields": [
+      "provider_id",
+      "provider_line_id",
+      "source_id",
+      "supports_arrivals",
+      "supports_train_positions",
+      "mapping_confidence"
+    ]
+  },
+  "capabilities": [
+    {
+      "id": "ARRIVALS",
+      "providerEndpoint": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimeStationArrival/{startIndex}/{endIndex}/{stationQueryName}",
+      "backendPath": "/api/v1/realtime/arrivals",
+      "requestKey": [
+        "providerId",
+        "stationId",
+        "lineId",
+        "providerLineId",
+        "providerStationId",
+        "stationQueryName",
+        "mobilityContext"
+      ],
+      "cacheKey": [
+        "ARRIVALS",
+        "providerId",
+        "providerLineId",
+        "providerStationId",
+        "stationQueryName"
+      ],
+      "freshness": {
+        "providerTimestampField": "recptnDt",
+        "appReceivedAtField": "receivedAt",
+        "staleAfterSeconds": 90,
+        "delayCorrection": "arrival ETA must subtract max(0, receivedAt - recptnDt)"
+      },
+      "responseDto": {
+        "itemsField": "arrivals",
+        "requiredItemFields": [
+          "subwayId",
+          "statnId",
+          "statnNm",
+          "trainLineNm",
+          "updnLine",
+          "btrainNo",
+          "barvlDt",
+          "arvlCd",
+          "arvlMsg2",
+          "arvlMsg3",
+          "recptnDt"
+        ]
+      },
+      "unsupportedReasons": [
+        "서울시 이외 역구간",
+        "station mapping 없음",
+        "supports_arrivals=false",
+        "mapping_confidence가 HIGH 미만"
+      ]
+    },
+    {
+      "id": "TRAIN_POSITIONS",
+      "providerEndpoint": "http://swopenapi.seoul.go.kr/api/subway/{serviceKey}/json/realtimePosition/{startIndex}/{endIndex}/{lineName}",
+      "backendPath": "/api/v1/realtime/train-positions",
+      "requestKey": [
+        "providerId",
+        "lineId",
+        "providerLineId",
+        "lineName"
+      ],
+      "cacheKey": [
+        "TRAIN_POSITIONS",
+        "providerId",
+        "providerLineId",
+        "lineName"
+      ],
+      "freshness": {
+        "providerTimestampField": "recptnDt",
+        "secondaryProviderTimestampField": "lastRecptnDt",
+        "appReceivedAtField": "receivedAt",
+        "staleAfterSeconds": 90,
+        "delayCorrection": "train position must be marked stale when receivedAt - provider timestamp exceeds staleAfterSeconds"
+      },
+      "responseDto": {
+        "itemsField": "trainPositions",
+        "requiredItemFields": [
+          "subwayId",
+          "subwayNm",
+          "statnId",
+          "statnNm",
+          "statnTid",
+          "statnTnm",
+          "trainNo",
+          "trainSttus",
+          "updnLine",
+          "directAt",
+          "lastRecptnDt",
+          "recptnDt"
+        ]
+      },
+      "unsupportedReasons": [
+        "서울 TOPIS 제공 범위 밖",
+        "line mapping 없음",
+        "supports_train_positions=false",
+        "mapping_confidence가 HIGH 미만"
+      ]
+    }
+  ]
+}
