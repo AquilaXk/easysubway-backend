@@ -34,6 +34,7 @@ class JdbcFacilityReportRepositoryTest {
 		jdbcTemplate.execute("""
 			CREATE TABLE facility_reports (
 				report_id VARCHAR(120) NOT NULL PRIMARY KEY,
+				public_receipt_code VARCHAR(16) NOT NULL UNIQUE,
 				user_id VARCHAR(120) NOT NULL,
 				station_id VARCHAR(120) NOT NULL,
 				facility_id VARCHAR(120) NOT NULL,

@@ -5,6 +5,7 @@ import java.time.LocalDateTime;
 
 public record FacilityReportSummary(
 	String id,
+	String publicReceiptCode,
 	String userId,
 	String stationId,
 	String facilityId,
@@ -23,6 +24,7 @@ public record FacilityReportSummary(
 	public static FacilityReportSummary from(FacilityReport report) {
 		return new FacilityReportSummary(
 			report.id(),
+			report.publicReceiptCode(),
 			report.userId(),
 			report.stationId(),
 			report.facilityId(),

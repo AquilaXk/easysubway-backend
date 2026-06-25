@@ -44,6 +44,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -53,6 +54,7 @@ import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.dao.DuplicateKeyException;
 
 @DisplayName("시설 신고 서비스")
 class FacilityReportServiceTest {
@@ -87,9 +89,44 @@ class FacilityReportServiceTest {
 		assertThat(report.stationId()).isEqualTo("station-sangnoksu");
 		assertThat(report.facilityId()).isEqualTo("facility-sangnoksu-elevator-1");
 		assertThat(report.reportType()).isEqualTo(FacilityReportType.BROKEN);
+		assertThat(report.publicReceiptCode()).startsWith("ES-");
+		assertThat(report.publicReceiptCode()).matches("^ES-[0-9A-F]{12}$");
+		assertThat(report.publicReceiptCode()).doesNotContain("report-");
+		assertThat(report.publicReceiptCode()).isNotEqualTo(report.id());
 		assertThat(report.status()).isEqualTo(FacilityReportStatus.SUBMITTED);
 		assertThat(report.createdAt()).isEqualTo(LocalDateTime.of(2026, 6, 12, 9, 0));
 		assertThat(service.getReport(report.id())).isEqualTo(report);
+	}
+
+	@Test
+	@DisplayName("시설 신고는 공개 제보 번호 중복 저장을 새 번호로 다시 시도한다")
+	void createReportRetriesPublicReceiptCodeDuplicate() {
+		var retryingRepository = new DuplicateOnceFacilityReportRepository();
+		var retryingService = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			retryingRepository,
+			retryingRepository,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		var report = retryingService.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"엘리베이터 문이 열리지 않습니다.",
+			null,
+			null,
+			null,
+			new BigDecimal("37.302421"),
+			new BigDecimal("126.866221")
+		));
+
+		assertThat(retryingRepository.saveAttempts).isEqualTo(2);
+		assertThat(retryingRepository.attemptedPublicReceiptCodes).hasSize(2);
+		assertThat(report.publicReceiptCode()).matches("^ES-[0-9A-F]{12}$");
+		assertThat(retryingService.getReport(report.id())).isEqualTo(report);
 	}
 
 	@Test
@@ -1490,6 +1527,22 @@ class FacilityReportServiceTest {
 		@Override
 		public void alertReportStatusChanged(ReportStatusChangedAlertCommand command) {
 			commands.add(command);
+		}
+	}
+
+	private static class DuplicateOnceFacilityReportRepository extends InMemoryFacilityReportRepository {
+
+		private int saveAttempts;
+		private final List<String> attemptedPublicReceiptCodes = new ArrayList<>();
+
+		@Override
+		public FacilityReport saveReport(FacilityReport report) {
+			saveAttempts++;
+			attemptedPublicReceiptCodes.add(report.publicReceiptCode());
+			if (saveAttempts == 1) {
+				throw new DuplicateKeyException("duplicate public_receipt_code");
+			}
+			return super.saveReport(report);
 		}
 	}
 }

@@ -69,6 +69,7 @@ public class JdbcFacilityReportRepository implements
 			return Optional.ofNullable(jdbcTemplate.queryForObject(
 				"""
 					SELECT report_id,
+						public_receipt_code,
 						user_id,
 						station_id,
 						facility_id,
@@ -109,6 +110,7 @@ public class JdbcFacilityReportRepository implements
 			return Optional.ofNullable(jdbcTemplate.queryForObject(
 				"""
 					SELECT report_id,
+						public_receipt_code,
 						user_id,
 						station_id,
 						facility_id,
@@ -145,6 +147,7 @@ public class JdbcFacilityReportRepository implements
 		return jdbcTemplate.query(
 			"""
 				SELECT report_id,
+					public_receipt_code,
 					user_id,
 					station_id,
 					facility_id,
@@ -180,6 +183,7 @@ public class JdbcFacilityReportRepository implements
 		List<FacilityReportSummary> summaries = jdbcTemplate.query(
 			"""
 				SELECT report_id,
+					public_receipt_code,
 					user_id,
 					station_id,
 					facility_id,
@@ -225,6 +229,7 @@ public class JdbcFacilityReportRepository implements
 		List<FacilityReportSummary> summaries = jdbcTemplate.query(
 			"""
 				SELECT report_id,
+					public_receipt_code,
 					user_id,
 					station_id,
 					facility_id,
@@ -354,7 +359,8 @@ public class JdbcFacilityReportRepository implements
 		int updatedCount = jdbcTemplate.update(
 			"""
 				UPDATE facility_reports
-				SET user_id = ?,
+				SET public_receipt_code = ?,
+					user_id = ?,
 					station_id = ?,
 					facility_id = ?,
 					report_type = ?,
@@ -376,6 +382,7 @@ public class JdbcFacilityReportRepository implements
 				WHERE report_id = ?
 					AND status = ?
 				""",
+			report.publicReceiptCode(),
 			report.userId(),
 			report.stationId(),
 			report.facilityId(),
@@ -477,6 +484,7 @@ public class JdbcFacilityReportRepository implements
 			"""
 				INSERT INTO facility_reports (
 					report_id,
+					public_receipt_code,
 					user_id,
 					station_id,
 					facility_id,
@@ -498,9 +506,10 @@ public class JdbcFacilityReportRepository implements
 					client_submission_id,
 					receipt_token_hash
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (report_id) DO UPDATE
-				SET user_id = EXCLUDED.user_id,
+				SET public_receipt_code = EXCLUDED.public_receipt_code,
+					user_id = EXCLUDED.user_id,
 					station_id = EXCLUDED.station_id,
 					facility_id = EXCLUDED.facility_id,
 					report_type = EXCLUDED.report_type,
@@ -528,7 +537,8 @@ public class JdbcFacilityReportRepository implements
 		return jdbcTemplate.update(
 			"""
 				UPDATE facility_reports
-				SET user_id = ?,
+				SET public_receipt_code = ?,
+					user_id = ?,
 					station_id = ?,
 					facility_id = ?,
 					report_type = ?,
@@ -549,6 +559,7 @@ public class JdbcFacilityReportRepository implements
 					receipt_token_hash = ?
 				WHERE report_id = ?
 				""",
+			report.publicReceiptCode(),
 			report.userId(),
 			report.stationId(),
 			report.facilityId(),
@@ -577,6 +588,7 @@ public class JdbcFacilityReportRepository implements
 			"""
 				INSERT INTO facility_reports (
 					report_id,
+					public_receipt_code,
 					user_id,
 					station_id,
 					facility_id,
@@ -598,7 +610,7 @@ public class JdbcFacilityReportRepository implements
 					client_submission_id,
 					receipt_token_hash
 				)
-				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			reportParameters(report)
 		);
@@ -608,6 +620,7 @@ public class JdbcFacilityReportRepository implements
 		List<FacilityReportSummary> summaries = jdbcTemplate.query(
 			"""
 				SELECT report_id,
+					public_receipt_code,
 					user_id,
 					station_id,
 					facility_id,
@@ -652,6 +665,7 @@ public class JdbcFacilityReportRepository implements
 	private Object[] reportParameters(FacilityReport report) {
 		return new Object[] {
 			report.id(),
+			report.publicReceiptCode(),
 			report.userId(),
 			report.stationId(),
 			report.facilityId(),
@@ -678,6 +692,7 @@ public class JdbcFacilityReportRepository implements
 	private FacilityReportSummary mapFacilityReportSummary(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new FacilityReportSummary(
 			resultSet.getString("report_id"),
+			resultSet.getString("public_receipt_code"),
 			resultSet.getString("user_id"),
 			resultSet.getString("station_id"),
 			resultSet.getString("facility_id"),
@@ -697,6 +712,7 @@ public class JdbcFacilityReportRepository implements
 	private FacilityReport mapFacilityReport(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new FacilityReport(
 			resultSet.getString("report_id"),
+			resultSet.getString("public_receipt_code"),
 			resultSet.getString("user_id"),
 			resultSet.getString("station_id"),
 			resultSet.getString("facility_id"),
