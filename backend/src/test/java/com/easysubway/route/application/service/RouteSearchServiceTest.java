@@ -118,6 +118,32 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("경로 검색 API 계약은 비용과 요약 사실값을 score와 분리해 직렬화한다")
+	void routeSearchSerializesBurdenCostAndSummaryFacts() throws Exception {
+		var result = service.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.STROLLER
+		));
+
+		var mapper = new ObjectMapper().findAndRegisterModules();
+		Map<?, ?> payload = mapper.readValue(mapper.writeValueAsString(result), Map.class);
+		int stepDurationSeconds = result.steps()
+			.stream()
+			.mapToInt(step -> step.estimatedMinutes() * 60)
+			.sum();
+
+		assertThat(payload.get("score")).isEqualTo(result.score());
+		assertThat(payload.get("burdenCost")).isEqualTo(result.score());
+		assertThat(payload.get("estimatedDurationSeconds")).isEqualTo(stepDurationSeconds);
+		assertThat(payload.get("walkingDistanceMeters")).isEqualTo(result.walkingDistanceMeters());
+		assertThat(payload.get("transferCount")).isEqualTo(0);
+		assertThat(payload.get("evidenceSummary"))
+			.asList()
+			.contains("ACCESSIBILITY_CHECK_REQUIRED", "DURATION_ESTIMATED", "DISTANCE_MEASURED");
+	}
+
+	@Test
 	@DisplayName("생성된 경로 검색 결과는 식별자로 다시 조회할 수 있다")
 	void getRouteSearchReturnsStoredResult() {
 		var created = service.searchRoute(new SearchRouteCommand(
