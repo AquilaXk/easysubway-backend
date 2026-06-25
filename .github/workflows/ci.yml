@@ -124,10 +124,19 @@ jobs:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
         run: node --test tools/datapack/*.test.mjs
 
+      - name: Repository CI / Set up Chrome for route map tests
+        if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
+        id: setup-chrome
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          install-dependencies: true
+
       - name: Repository CI / Run route map tool tests
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
         env:
+          CHROME_PATH: ${{ steps.setup-chrome.outputs.chrome-path }}
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
+          ROUTE_MAP_CHROME_NO_SANDBOX: "1"
         run: node --test tools/route-map/*.test.mjs
 
       - name: Repository CI / Run realtime provider contract tests
