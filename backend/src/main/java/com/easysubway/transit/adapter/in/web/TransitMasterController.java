@@ -38,6 +38,8 @@ import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.LocalDate;
@@ -138,7 +140,7 @@ class TransitMasterController {
 	ApiResponse<RouteNodeResponse> updateRouteNodeDisplay(
 		@PathVariable String stationId,
 		@PathVariable String nodeId,
-		@RequestBody UpdateRouteNodeDisplayRequest request,
+		@Valid @RequestBody UpdateRouteNodeDisplayRequest request,
 		Principal principal
 	) {
 		RouteNode routeNode = transitMasterAdminUseCase.updateRouteNodeDisplay(
@@ -191,7 +193,7 @@ class TransitMasterController {
 	@PatchMapping("/admin/facilities/{facilityId}/status")
 	ApiResponse<AccessibilityFacilityResponse> updateFacilityStatus(
 		@PathVariable String facilityId,
-		@RequestBody UpdateAccessibilityFacilityStatusRequest request,
+		@Valid @RequestBody UpdateAccessibilityFacilityStatusRequest request,
 		Principal principal
 	) {
 		AccessibilityFacility facility = transitMasterAdminUseCase.updateFacilityStatus(
@@ -203,7 +205,7 @@ class TransitMasterController {
 	@PatchMapping("/admin/stations/layouts/{layoutId}/status")
 	ApiResponse<SimplifiedStationLayoutResponse> updateSimplifiedStationLayoutStatus(
 		@PathVariable String layoutId,
-		@RequestBody UpdateSimplifiedStationLayoutStatusRequest request,
+		@Valid @RequestBody UpdateSimplifiedStationLayoutStatusRequest request,
 		Principal principal
 	) {
 		SimplifiedStationLayout layout = transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(
@@ -697,6 +699,7 @@ class TransitMasterController {
 	}
 
 	record UpdateAccessibilityFacilityStatusRequest(
+		@NotNull(message = "{validation.transit.facility-status.required}")
 		AccessibilityFacilityStatus status
 	) {
 
@@ -706,6 +709,7 @@ class TransitMasterController {
 	}
 
 	record UpdateSimplifiedStationLayoutStatusRequest(
+		@NotNull(message = "{validation.transit.layout-status.required}")
 		SimplifiedStationLayoutStatus status
 	) {
 
@@ -715,7 +719,9 @@ class TransitMasterController {
 	}
 
 	record UpdateRouteNodeDisplayRequest(
+		@NotNull(message = "{validation.transit.route-node-display-coordinate.required}")
 		Integer displayX,
+		@NotNull(message = "{validation.transit.route-node-display-coordinate.required}")
 		Integer displayY,
 		String displayLabel,
 		String accessibilityNote

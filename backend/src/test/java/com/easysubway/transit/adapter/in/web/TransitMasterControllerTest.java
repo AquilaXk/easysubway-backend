@@ -397,6 +397,29 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("구조도 상태를 선택해야 합니다."));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].status").value("DRAFT"));
+	}
+
+	@Test
+	@DisplayName("쉬운 내부 구조도 상태 수정 요청의 알 수 없는 enum은 요청 본문 오류로 응답한다")
+	void updateSimplifiedStationLayoutStatusRejectsUnknownStatusAsUnreadableBody() throws Exception {
+		mockMvc.perform(patch("/admin/stations/layouts/layout-sangnoksu-draft/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "NOT_A_STATUS"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("요청 본문을 확인해야 합니다."));
 	}
 
 	@Test
@@ -559,6 +582,12 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("노드 표시 좌표가 필요합니다."));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu/route-nodes")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data[0].displayX").value(120))
+			.andExpect(jsonPath("$.data[0].displayY").value(240));
 	}
 
 	@Test
@@ -861,6 +890,29 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("시설 상태를 선택해야 합니다."));
+
+		mockMvc.perform(get("/admin/stations/station-sangnoksu")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.facilities[0].status").value("NORMAL"));
+	}
+
+	@Test
+	@DisplayName("시설 상태 수정 요청의 알 수 없는 enum은 요청 본문 오류로 응답한다")
+	void updateFacilityStatusRejectsUnknownStatusAsUnreadableBody() throws Exception {
+		mockMvc.perform(patch("/admin/facilities/facility-sangnoksu-elevator-1/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "NOT_A_STATUS"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("요청 본문을 확인해야 합니다."));
 	}
 
 	@Test

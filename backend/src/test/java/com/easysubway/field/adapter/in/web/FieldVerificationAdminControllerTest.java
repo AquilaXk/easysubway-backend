@@ -316,6 +316,29 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
 			.andExpect(jsonPath("$.message").value("현장 검증 상태를 선택해야 합니다."));
+
+		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.items[1].status").value("PLANNED"));
+	}
+
+	@Test
+	@DisplayName("현장 검증 항목 상태 변경 요청의 알 수 없는 enum은 요청 본문 오류로 응답한다")
+	void updateFieldVerificationItemStatusRejectsUnknownStatusAsUnreadableBody() throws Exception {
+		mockMvc.perform(patch("/admin/field-verifications/stations/station-sadang/items/field-verification-sadang-elevator/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "status": "UNKNOWN"
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("요청 본문을 확인해야 합니다."));
 	}
 
 	@Test

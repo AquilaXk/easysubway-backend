@@ -9,6 +9,8 @@ import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -59,7 +61,7 @@ class FieldVerificationAdminController {
 	ApiResponse<FieldVerificationView> updateFieldVerificationItemStatus(
 		@PathVariable String stationId,
 		@PathVariable String itemId,
-		@RequestBody UpdateFieldVerificationItemStatusRequest request,
+		@Valid @RequestBody UpdateFieldVerificationItemStatusRequest request,
 		Principal principal
 	) {
 		FieldVerificationSession session = fieldVerificationUseCase.updateItemStatus(
@@ -215,6 +217,7 @@ class FieldVerificationAdminController {
 	}
 
 	record UpdateFieldVerificationItemStatusRequest(
+		@NotNull(message = "{validation.field-verification.status.required}")
 		FieldVerificationStatus status,
 		String note
 	) {
