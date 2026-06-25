@@ -91,6 +91,7 @@ class RouteSearchServiceTest {
 		assertThat(result.steps().get(0).estimatedMinutes()).isEqualTo(4);
 		assertThat(result.steps().get(0).distanceMeters()).isEqualTo(180);
 		assertThat(result.steps().get(0).includesStairs()).isFalse();
+		assertThat(result.steps().get(0).stairAccessState()).isEqualTo("UNKNOWN");
 		assertThat(result.steps().get(0).requiresAccessibilityCheck()).isTrue();
 		assertThat(result.steps().get(1).estimatedMinutes()).isGreaterThan(0);
 		assertThat(result.steps().get(1).requiresAccessibilityCheck()).isFalse();
@@ -359,6 +360,9 @@ class RouteSearchServiceTest {
 		assertThat(stairOnlyResult.steps().get(0).includesStairs()).isTrue();
 		assertThat(stairOnlyResult.steps().get(1).includesStairs()).isFalse();
 		assertThat(stairOnlyResult.steps().get(2).includesStairs()).isTrue();
+		assertThat(stairOnlyResult.steps())
+			.extracting("stairAccessState")
+			.containsExactly("STAIR_ONLY", "UNKNOWN", "STAIR_ONLY");
 		assertThat(stairOnlyResult.score()).isGreaterThan(accessibleResult.score());
 	}
 
