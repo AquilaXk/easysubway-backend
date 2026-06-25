@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.in.web;
 
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
@@ -18,6 +19,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
 import java.util.List;
+import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
@@ -28,6 +30,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.util.UriComponentsBuilder;
 
 @Controller
 class FacilityReportAdminPageController {
@@ -70,6 +73,16 @@ class FacilityReportAdminPageController {
 		Model model
 	) {
 		FacilityReportPageRequest pageRequest = FacilityReportPageRequest.of(page, size);
+		Map<FacilityReportStatus, Long> statusCounts = facilityReportUseCase.countReportsByStatus();
+		EgovPaginationView pageView = EgovPaginationView.from(
+			pageRequest.page(),
+			pageRequest.size(),
+			totalCountForStatus(status, statusCounts)
+		);
+		if (pageView.page() != pageRequest.page() || pageView.size() != pageRequest.size()) {
+			return redirectToReportList(status, pageView);
+		}
+
 		PageResult<FacilityReportSummary> reportPage = facilityReportUseCase.listReportSummaries(status, pageRequest);
 		List<FacilityReportListPageRow> reports = reportPage.items()
 			.stream()
@@ -78,7 +91,7 @@ class FacilityReportAdminPageController {
 		LocalDateTime surgeCutoff = LocalDateTime.now(clock).minusHours(REPORT_SURGE_LOOKBACK_HOURS);
 
 		model.addAttribute("reports", reports);
-		model.addAttribute("page", PageView.from(reportPage));
+		model.addAttribute("page", pageView);
 		model.addAttribute("selectedStatus", status);
 		model.addAttribute("statusOptions", statusOptions());
 		model.addAttribute("reportSurgeAlert", ReportSurgeAlertView.from(
@@ -88,6 +101,23 @@ class FacilityReportAdminPageController {
 			facilityReportUseCase.summarizeReportProcessingTime()
 		));
 		return "admin/reports/list";
+	}
+
+	private static long totalCountForStatus(FacilityReportStatus status, Map<FacilityReportStatus, Long> statusCounts) {
+		if (status != null) {
+			return statusCounts.getOrDefault(status, 0L);
+		}
+		return statusCounts.values().stream().mapToLong(Long::longValue).sum();
+	}
+
+	private static String redirectToReportList(FacilityReportStatus status, EgovPaginationView pageView) {
+		UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/admin/reports/page");
+		if (status != null) {
+			builder.queryParam("status", status);
+		}
+		builder.queryParam("page", pageView.page());
+		builder.queryParam("size", pageView.size());
+		return "redirect:" + builder.build().toUriString();
 	}
 
 	@GetMapping("/admin/reports/{reportId}/page")
@@ -212,27 +242,6 @@ class FacilityReportAdminPageController {
 				report.createdAt(),
 				FacilityReportAdminPageController.hasCompletePhoto(report),
 				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
-			);
-		}
-	}
-
-	record PageView(
-		int page,
-		int size,
-		boolean hasPrevious,
-		boolean hasNext,
-		int previousPage,
-		int nextPage
-	) {
-
-		static PageView from(PageResult<?> page) {
-			return new PageView(
-				page.page(),
-				page.size(),
-				page.page() > 0,
-				page.hasNext(),
-				Math.max(page.page() - 1, 0),
-				page.page() + 1
 			);
 		}
 	}
