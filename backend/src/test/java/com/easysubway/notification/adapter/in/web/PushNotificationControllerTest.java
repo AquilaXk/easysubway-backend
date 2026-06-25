@@ -81,6 +81,79 @@ class PushNotificationControllerTest {
 	}
 
 	@Test
+	@DisplayName("푸시 알림 발송 요청은 필수 값을 Bean Validation으로 검증한다")
+	void pushNotificationDispatchRequiresValidRequestFields() throws Exception {
+		registerDevice();
+
+		mockMvc.perform(post("/admin/notifications/push")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": " ",
+					  "type": "REPORT_STATUS",
+					  "title": "신고 처리 알림",
+					  "body": "제보한 내용이 확인되었습니다."
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("사용자 식별자가 필요합니다."));
+
+		mockMvc.perform(post("/admin/notifications/push")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "title": "신고 처리 알림",
+					  "body": "제보한 내용이 확인되었습니다."
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("알림 종류를 선택해야 합니다."));
+
+		mockMvc.perform(post("/admin/notifications/push/deliveries")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.processedCount").value(0));
+	}
+
+	@Test
+	@DisplayName("푸시 알림 발송 요청의 알 수 없는 enum은 요청 본문 오류로 응답한다")
+	void pushNotificationDispatchRejectsUnknownTypeAsUnreadableBody() throws Exception {
+		mockMvc.perform(post("/admin/notifications/push")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "anonymous-user-1",
+					  "type": "UNKNOWN",
+					  "title": "신고 처리 알림",
+					  "body": "제보한 내용이 확인되었습니다."
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("요청 본문을 확인해야 합니다."));
+	}
+
+	@Test
 	@DisplayName("관리자는 대기 중인 푸시 알림 발송 처리를 실행할 수 있다")
 	void adminDeliversPendingPushNotifications() throws Exception {
 		registerDevice();
@@ -116,6 +189,24 @@ class PushNotificationControllerTest {
 			.andExpect(jsonPath("$.data.failedCount").value(1))
 			.andExpect(jsonPath("$.data.notifications[0].status").value("FAILED"))
 			.andExpect(jsonPath("$.data.notifications[0].deviceToken").doesNotExist());
+	}
+
+	@Test
+	@DisplayName("푸시 알림 발송 처리 요청은 사용자 식별자를 요구한다")
+	void pushNotificationDeliveryRequiresUserId() throws Exception {
+		mockMvc.perform(post("/admin/notifications/push/deliveries")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": " "
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.data").doesNotExist())
+			.andExpect(jsonPath("$.message").value("사용자 식별자가 필요합니다."));
 	}
 
 	private void registerDevice() {

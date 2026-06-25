@@ -11,6 +11,9 @@ import com.easysubway.notification.domain.PushNotificationDeliveryResult;
 import com.easysubway.notification.domain.PushNotificationDispatchResult;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -32,7 +35,7 @@ class PushNotificationController {
 	}
 
 	@PostMapping("/admin/notifications/push")
-	ApiResponse<PushNotificationDispatchResponse> dispatch(@RequestBody PushNotificationDispatchRequest request) {
+	ApiResponse<PushNotificationDispatchResponse> dispatch(@Valid @RequestBody PushNotificationDispatchRequest request) {
 		PushNotificationDispatchResult result = pushNotificationDispatchUseCase.dispatch(
 			new DispatchPushNotificationCommand(
 				request.userId(),
@@ -45,7 +48,7 @@ class PushNotificationController {
 	}
 
 	@PostMapping("/admin/notifications/push/deliveries")
-	ApiResponse<PushNotificationDeliveryResponse> deliver(@RequestBody PushNotificationDeliveryRequest request) {
+	ApiResponse<PushNotificationDeliveryResponse> deliver(@Valid @RequestBody PushNotificationDeliveryRequest request) {
 		PushNotificationDeliveryResult result = pushNotificationDeliveryUseCase.deliverPending(
 			new DeliverPushNotificationsCommand(request.userId())
 		);
@@ -53,14 +56,21 @@ class PushNotificationController {
 	}
 
 	record PushNotificationDispatchRequest(
+		@NotBlank(message = "{validation.notification.user-id.required}")
 		String userId,
+		@NotNull(message = "{validation.notification.type.required}")
 		PushNotificationType type,
+		@NotBlank(message = "{validation.notification.title.required}")
 		String title,
+		@NotBlank(message = "{validation.notification.body.required}")
 		String body
 	) {
 	}
 
-	record PushNotificationDeliveryRequest(String userId) {
+	record PushNotificationDeliveryRequest(
+		@NotBlank(message = "{validation.notification.user-id.required}")
+		String userId
+	) {
 	}
 
 	record PushNotificationDispatchResponse(
