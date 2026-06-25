@@ -1,5 +1,6 @@
 package com.easysubway.quality.adapter.in.web;
 
+import com.easysubway.common.web.WebMessageResolver;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
@@ -31,15 +32,18 @@ class DataQualityAdminPageController {
 	private final DataQualityUseCase dataQualityUseCase;
 	private final TransitMasterQueryUseCase transitMasterQueryUseCase;
 	private final FacilityReportUseCase facilityReportUseCase;
+	private final WebMessageResolver messages;
 
 	DataQualityAdminPageController(
 		DataQualityUseCase dataQualityUseCase,
 		TransitMasterQueryUseCase transitMasterQueryUseCase,
-		FacilityReportUseCase facilityReportUseCase
+		FacilityReportUseCase facilityReportUseCase,
+		WebMessageResolver messages
 	) {
 		this.dataQualityUseCase = dataQualityUseCase;
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 		this.facilityReportUseCase = facilityReportUseCase;
+		this.messages = messages;
 	}
 
 	@GetMapping("/admin/data-quality/page")
@@ -72,7 +76,8 @@ class DataQualityAdminPageController {
 				reportStatusCounts,
 				stationAccessibilityScoreRows,
 				accessibilityImprovementPriorityRows,
-				repeatedBrokenFacilityRows
+				repeatedBrokenFacilityRows,
+				messages
 			)
 		);
 		return "admin/quality/dashboard";
@@ -108,7 +113,7 @@ class DataQualityAdminPageController {
 				.map(facility -> new RepeatedBrokenFacilityRow(
 					station.station().nameKo(),
 					facility.name(),
-					statusLabel(facility.status()),
+					messages.enumLabel("admin.facility.status", facility.status()),
 					summary.reportCount()
 				));
 		} catch (StationNotFoundException exception) {
@@ -143,29 +148,6 @@ class DataQualityAdminPageController {
 		};
 	}
 
-	private static String statusLabel(AccessibilityFacilityStatus status) {
-		return switch (status) {
-			case NORMAL -> "정상";
-			case BROKEN -> "고장";
-			case UNDER_CONSTRUCTION -> "공사 중";
-			case CLOSED -> "폐쇄";
-			case UNKNOWN -> "확인 필요";
-			case USER_REPORTED -> "사용자 제보";
-			case ADMIN_VERIFIED -> "관리자 확인";
-		};
-	}
-
-	private static String statusLabel(FacilityReportStatus status) {
-		return switch (status) {
-			case SUBMITTED -> "접수됨";
-			case UNDER_REVIEW -> "검수 중";
-			case ACCEPTED -> "반영됨";
-			case REJECTED -> "반려됨";
-			case DUPLICATE -> "중복";
-			case RESOLVED -> "완료";
-		};
-	}
-
 	record DataQualityDashboardView(
 		int totalStations,
 		int totalExits,
@@ -194,7 +176,8 @@ class DataQualityAdminPageController {
 			Map<FacilityReportStatus, Long> reportStatusCounts,
 			List<StationAccessibilityScoreRow> stationAccessibilityScoreRows,
 			List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows,
-			List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows
+			List<RepeatedBrokenFacilityRow> repeatedBrokenFacilityRows,
+			WebMessageResolver messages
 		) {
 			long totalReportCount = reportStatusCounts.values()
 				.stream()
@@ -213,12 +196,12 @@ class DataQualityAdminPageController {
 				regionQualityRows(summary.regionSummaries(), regions),
 				confidenceRows(summary.exitConfidenceCounts()),
 				confidenceRows(summary.facilityConfidenceCounts()),
-				facilityStatusDelayRows(summary.delayedFacilityStatusCounts()),
+				facilityStatusDelayRows(summary.delayedFacilityStatusCounts(), messages),
 				totalReportCount,
 				verifiedReportCount,
 				pendingReportCount,
 				verificationRatePercent(totalReportCount, verifiedReportCount),
-				reportStatusRows(reportStatusCounts),
+				reportStatusRows(reportStatusCounts, messages),
 				stationAccessibilityScoreRows,
 				accessibilityImprovementPriorityRows,
 				repeatedBrokenFacilityRows
@@ -265,10 +248,14 @@ class DataQualityAdminPageController {
 		}
 
 		private static List<FacilityStatusDelayRow> facilityStatusDelayRows(
-			Map<AccessibilityFacilityStatus, Long> counts
+			Map<AccessibilityFacilityStatus, Long> counts,
+			WebMessageResolver messages
 		) {
 			return Arrays.stream(AccessibilityFacilityStatus.values())
-				.map(status -> new FacilityStatusDelayRow(statusLabel(status), counts.getOrDefault(status, 0L)))
+				.map(status -> new FacilityStatusDelayRow(
+					messages.enumLabel("admin.facility.status", status),
+					counts.getOrDefault(status, 0L)
+				))
 				.toList();
 		}
 
@@ -282,9 +269,15 @@ class DataQualityAdminPageController {
 				.sum();
 		}
 
-		private static List<ReportStatusCountRow> reportStatusRows(Map<FacilityReportStatus, Long> counts) {
+		private static List<ReportStatusCountRow> reportStatusRows(
+			Map<FacilityReportStatus, Long> counts,
+			WebMessageResolver messages
+		) {
 			return Arrays.stream(FacilityReportStatus.values())
-				.map(status -> new ReportStatusCountRow(statusLabel(status), counts.getOrDefault(status, 0L)))
+				.map(status -> new ReportStatusCountRow(
+					messages.enumLabel("admin.report.status", status),
+					counts.getOrDefault(status, 0L)
+				))
 				.toList();
 		}
 

@@ -82,7 +82,7 @@ class DataCollectionController {
 	}
 
 	record RunDataCollectionRequest(
-		@NotNull(message = "수집 대상을 선택해야 합니다.")
+		@NotNull(message = "{validation.collection.source.required}")
 		DataCollectionSource source
 	) {
 	}

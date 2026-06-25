@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.in.web;
 
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.common.web.WebMessageResolver;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.LoadFacilityReportPhotoPort;
@@ -11,7 +12,6 @@ import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
-import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import java.math.BigDecimal;
 import java.security.Principal;
@@ -40,28 +40,37 @@ class FacilityReportAdminPageController {
 
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final LoadFacilityReportPhotoPort loadFacilityReportPhotoPort;
+	private final WebMessageResolver messages;
 	private final Clock clock;
 
 	@Autowired
 	FacilityReportAdminPageController(
 		FacilityReportUseCase facilityReportUseCase,
 		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		WebMessageResolver messages,
 		ObjectProvider<Clock> clockProvider
 	) {
-		this(facilityReportUseCase, loadFacilityReportPhotoPort, clockProvider.getIfAvailable(Clock::systemDefaultZone));
+		this(
+			facilityReportUseCase,
+			loadFacilityReportPhotoPort,
+			messages,
+			clockProvider.getIfAvailable(Clock::systemDefaultZone)
+		);
 	}
 
 	FacilityReportAdminPageController(FacilityReportUseCase facilityReportUseCase, Clock clock) {
-		this(facilityReportUseCase, objectKey -> java.util.Optional.empty(), clock);
+		this(facilityReportUseCase, objectKey -> java.util.Optional.empty(), WebMessageResolver.defaultMessages(), clock);
 	}
 
 	FacilityReportAdminPageController(
 		FacilityReportUseCase facilityReportUseCase,
 		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		WebMessageResolver messages,
 		Clock clock
 	) {
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.loadFacilityReportPhotoPort = loadFacilityReportPhotoPort;
+		this.messages = messages;
 		this.clock = clock;
 	}
 
@@ -86,7 +95,7 @@ class FacilityReportAdminPageController {
 		PageResult<FacilityReportSummary> reportPage = facilityReportUseCase.listReportSummaries(status, pageRequest);
 		List<FacilityReportListPageRow> reports = reportPage.items()
 			.stream()
-			.map(FacilityReportListPageRow::from)
+			.map(report -> FacilityReportListPageRow.from(report, messages))
 			.toList();
 		LocalDateTime surgeCutoff = LocalDateTime.now(clock).minusHours(REPORT_SURGE_LOOKBACK_HOURS);
 
@@ -122,12 +131,12 @@ class FacilityReportAdminPageController {
 
 	@GetMapping("/admin/reports/{reportId}/page")
 	String reportDetailPage(@PathVariable String reportId, Model model) {
-		model.addAttribute("report", FacilityReportDetailPageView.from(facilityReportUseCase.getReport(reportId)));
+		model.addAttribute("report", FacilityReportDetailPageView.from(facilityReportUseCase.getReport(reportId), messages));
 		model.addAttribute(
 			"reviewAudits",
 			facilityReportUseCase.listReviewAudits(reportId)
 				.stream()
-				.map(FacilityReportReviewAuditPageRow::from)
+				.map(audit -> FacilityReportReviewAuditPageRow.from(audit, messages))
 				.toList()
 		);
 		model.addAttribute("reviewActions", reviewActions());
@@ -156,48 +165,27 @@ class FacilityReportAdminPageController {
 		return "redirect:/admin/reports/%s/page".formatted(reportId);
 	}
 
-	private static List<StatusOption> statusOptions() {
-		return Arrays.stream(FacilityReportStatus.values())
-			.map(status -> new StatusOption(status, statusLabel(status)))
-			.toList();
-	}
-
-	private static List<ReviewAction> reviewActions() {
+	private List<ReviewAction> reviewActions() {
 		return List.of(
-			new ReviewAction(FacilityReportReviewDecision.ACCEPT, "승인"),
-			new ReviewAction(FacilityReportReviewDecision.REJECT, "반려"),
-			new ReviewAction(FacilityReportReviewDecision.MARK_DUPLICATE, "중복 처리")
+			new ReviewAction(
+				FacilityReportReviewDecision.ACCEPT,
+				messages.enumLabel("admin.report.review-decision", FacilityReportReviewDecision.ACCEPT)
+			),
+			new ReviewAction(
+				FacilityReportReviewDecision.REJECT,
+				messages.enumLabel("admin.report.review-decision", FacilityReportReviewDecision.REJECT)
+			),
+			new ReviewAction(
+				FacilityReportReviewDecision.MARK_DUPLICATE,
+				messages.enumLabel("admin.report.review-decision", FacilityReportReviewDecision.MARK_DUPLICATE)
+			)
 		);
 	}
 
-	private static String reportTypeLabel(FacilityReportType reportType) {
-		return switch (reportType) {
-			case BROKEN -> "고장";
-			case UNDER_CONSTRUCTION -> "공사 중";
-			case CLOSED -> "폐쇄";
-			case LOCATION_WRONG -> "위치가 달라요";
-			case INFORMATION_WRONG -> "정보가 달라요";
-			case RECOVERED -> "다시 정상";
-		};
-	}
-
-	private static String statusLabel(FacilityReportStatus status) {
-		return switch (status) {
-			case SUBMITTED -> "접수됨";
-			case UNDER_REVIEW -> "검수 중";
-			case ACCEPTED -> "반영됨";
-			case REJECTED -> "반려됨";
-			case DUPLICATE -> "중복";
-			case RESOLVED -> "완료";
-		};
-	}
-
-	private static String reviewDecisionLabel(FacilityReportReviewDecision decision) {
-		return switch (decision) {
-			case ACCEPT -> "승인";
-			case REJECT -> "반려";
-			case MARK_DUPLICATE -> "중복 처리";
-		};
+	private List<StatusOption> statusOptions() {
+		return Arrays.stream(FacilityReportStatus.values())
+			.map(status -> new StatusOption(status, messages.enumLabel("admin.report.status", status)))
+			.toList();
 	}
 
 	private static String coordinateLabel(BigDecimal latitude, BigDecimal longitude) {
@@ -231,14 +219,14 @@ class FacilityReportAdminPageController {
 		String coordinateLabel
 	) {
 
-		static FacilityReportListPageRow from(FacilityReportSummary report) {
+		static FacilityReportListPageRow from(FacilityReportSummary report, WebMessageResolver messages) {
 			return new FacilityReportListPageRow(
 				report.id(),
 				report.stationId(),
 				report.facilityId(),
-				FacilityReportAdminPageController.reportTypeLabel(report.reportType()),
+				messages.enumLabel("admin.report.type", report.reportType()),
 				report.description(),
-				FacilityReportAdminPageController.statusLabel(report.status()),
+				messages.enumLabel("admin.report.status", report.status()),
 				report.createdAt(),
 				FacilityReportAdminPageController.hasCompletePhoto(report),
 				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
@@ -267,15 +255,15 @@ class FacilityReportAdminPageController {
 		String coordinateLabel
 	) {
 
-		static FacilityReportDetailPageView from(FacilityReport report) {
+		static FacilityReportDetailPageView from(FacilityReport report, WebMessageResolver messages) {
 			return new FacilityReportDetailPageView(
 				report.id(),
 				report.userId(),
 				report.stationId(),
 				report.facilityId(),
-				FacilityReportAdminPageController.reportTypeLabel(report.reportType()),
+				messages.enumLabel("admin.report.type", report.reportType()),
 				report.description(),
-				FacilityReportAdminPageController.statusLabel(report.status()),
+				messages.enumLabel("admin.report.status", report.status()),
 				report.createdAt(),
 				report.reviewedAt(),
 				report.reviewedBy(),
@@ -378,12 +366,12 @@ class FacilityReportAdminPageController {
 		LocalDateTime createdAt
 	) {
 
-		static FacilityReportReviewAuditPageRow from(FacilityReportReviewAudit audit) {
+		static FacilityReportReviewAuditPageRow from(FacilityReportReviewAudit audit, WebMessageResolver messages) {
 			return new FacilityReportReviewAuditPageRow(
 				audit.reviewerId(),
-				FacilityReportAdminPageController.reviewDecisionLabel(audit.decision()),
-				FacilityReportAdminPageController.statusLabel(audit.previousStatus()),
-				FacilityReportAdminPageController.statusLabel(audit.nextStatus()),
+				messages.enumLabel("admin.report.review-decision", audit.decision()),
+				messages.enumLabel("admin.report.status", audit.previousStatus()),
+				messages.enumLabel("admin.report.status", audit.nextStatus()),
 				audit.createdAt()
 			);
 		}
