@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionRunStep;
@@ -95,6 +96,29 @@ class AdminBatchPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자 재처리 거부도 실패 audit을 남긴다")
+	void rejectedRetryWritesFailureAudit() throws Exception {
+		saveDataCollectionRunPort.saveRun(completedRun("completed-run"));
+
+		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/completed-run/retry")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED))
+			.andExpect(status().isBadRequest());
+
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.actor()).isEqualTo("admin-user");
+				assertThat(event.targetType()).isEqualTo("BATCH_JOB");
+				assertThat(event.targetId()).isEqualTo("transit-master-collection");
+				assertThat(event.action()).isEqualTo("RETRY_BATCH_RUN");
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.reason()).contains("completed-run", "재처리할 수 없는 배치 실행");
+			});
+	}
+
+	@Test
 	@DisplayName("BATCH_RETRY 권한이 없으면 재처리 entrypoint에 접근할 수 없다")
 	void retryRequiresBatchRetryPermission() throws Exception {
 		saveDataCollectionRunPort.saveRun(failedRun("failed-run"));
@@ -119,6 +143,23 @@ class AdminBatchPageControllerTest {
 			true,
 			"원인 확인 후 재처리하세요.",
 			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.FAILED, null, null, null, 0, "source timeout"))
+		);
+	}
+
+	private DataCollectionRun completedRun(String runId) {
+		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.COMPLETED,
+			"batch-test",
+			now,
+			now.plusMinutes(1),
+			1,
+			null,
+			false,
+			"수집 완료",
+			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.COMPLETED, null, null, null, 1, null))
 		);
 	}
 }

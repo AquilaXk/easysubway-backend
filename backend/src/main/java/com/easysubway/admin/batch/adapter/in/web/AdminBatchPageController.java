@@ -12,6 +12,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Optional;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -38,7 +39,7 @@ class AdminBatchPageController {
 		model.addAttribute("jobs", batchOperationService.listJobs().stream().map(BatchJobRow::from).toList());
 		model.addAttribute("runs", batchOperationService.listExecutions(DEFAULT_RECENT_RUN_LIMIT)
 			.stream()
-			.map(BatchRunRow::from)
+			.flatMap(run -> BatchRunRow.from(run).stream())
 			.toList());
 		return "admin/batches/list";
 	}
@@ -52,16 +53,29 @@ class AdminBatchPageController {
 		Authentication authentication,
 		HttpServletRequest request
 	) {
-		DataCollectionRun retried = batchOperationService.retry(jobId, runId, principal.getName());
-		auditWriter.batchOperation(
-			authentication,
-			request,
-			"BATCH_JOB",
-			jobId,
-			"RETRY_BATCH_RUN",
-			AdminAuditOutcome.SUCCESS,
-			"runId=%s retriedRunId=%s".formatted(runId, retried.runId())
-		);
+		try {
+			DataCollectionRun retried = batchOperationService.retry(jobId, runId, principal.getName());
+			auditWriter.batchOperation(
+				authentication,
+				request,
+				"BATCH_JOB",
+				jobId,
+				"RETRY_BATCH_RUN",
+				AdminAuditOutcome.SUCCESS,
+				"runId=%s retriedRunId=%s".formatted(runId, retried.runId())
+			);
+		} catch (RuntimeException exception) {
+			auditWriter.batchOperation(
+				authentication,
+				request,
+				"BATCH_JOB",
+				jobId,
+				"RETRY_BATCH_RUN",
+				AdminAuditOutcome.FAILURE,
+				"runId=%s error=%s".formatted(runId, exception.getMessage())
+			);
+			throw exception;
+		}
 		return "redirect:/admin/batches/page";
 	}
 
@@ -87,26 +101,25 @@ class AdminBatchPageController {
 		List<BatchStepRow> steps
 	) {
 
-		static BatchRunRow from(DataCollectionRun run) {
-			AdminBatchJob job = AdminBatchJob.all()
+		static Optional<BatchRunRow> from(DataCollectionRun run) {
+			return AdminBatchJob.all()
 				.stream()
 				.filter(candidate -> candidate.source() == run.source())
 				.findFirst()
-				.orElseThrow();
-			return new BatchRunRow(
-				run.runId(),
-				job.id(),
-				job.label(),
-				statusLabel(run.status()),
-				run.requestedBy(),
-				run.startedAt(),
-				run.completedAt(),
-				run.collectedCount(),
-				valueOrDash(run.failureMessage()),
-				run.retryable(),
-				run.operatorAction(),
-				run.steps().stream().map(BatchStepRow::from).toList()
-			);
+				.map(job -> new BatchRunRow(
+					run.runId(),
+					job.id(),
+					job.label(),
+					statusLabel(run.status()),
+					run.requestedBy(),
+					run.startedAt(),
+					run.completedAt(),
+					run.collectedCount(),
+					valueOrDash(run.failureMessage()),
+					run.retryable(),
+					run.operatorAction(),
+					run.steps().stream().map(BatchStepRow::from).toList()
+				));
 		}
 
 		public String completedAtLabel() {
