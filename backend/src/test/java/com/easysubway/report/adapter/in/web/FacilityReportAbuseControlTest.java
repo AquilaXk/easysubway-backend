@@ -136,7 +136,7 @@ class FacilityReportAbuseControlTest {
 	@DisplayName("limiter는 현재 window 신규 client key 증가를 상한에서 차단한다")
 	void limiterRejectsNewClientIdentityWhenCurrentWindowKeyCapIsReached() {
 		var limiter = new FacilityReportAbuseControlLimiter(
-			new FacilityReportAbuseControlPolicy(60, 2, completeLimits(100)),
+			new FacilityReportAbuseControlPolicy(60, 2, "local", completeLimits(100)),
 			Clock.fixed(Instant.parse("2026-06-22T00:00:00Z"), ZoneOffset.UTC)
 		);
 
@@ -152,6 +152,7 @@ class FacilityReportAbuseControlTest {
 		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(
 			60,
 			10,
+			"local",
 			Map.of(ReportAbuseGroup.STATUS, 1)
 		)).isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("UPLOAD_INTENT");
@@ -159,6 +160,7 @@ class FacilityReportAbuseControlTest {
 		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(
 			60,
 			10,
+			"local",
 			Map.of(
 				ReportAbuseGroup.UPLOAD_INTENT, 1,
 				ReportAbuseGroup.UPLOAD_CLAIM, 1,
@@ -168,6 +170,25 @@ class FacilityReportAbuseControlTest {
 			)
 		)).isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("STATUS");
+	}
+
+	@Test
+	@DisplayName("local abuse store mode는 운영 release blocker로 식별된다")
+	void localStoreModeIsReleaseBlockingUntilDistributedStoreIsSelected() {
+		var policy = new FacilityReportAbuseControlPolicy(60, 10, "local", completeLimits(1));
+
+		assertThat(policy.usesReleaseBlockingLocalStore()).isTrue();
+	}
+
+	@Test
+	@DisplayName("abuse control policy는 실제 분산 store 구현 전까지 local mode만 허용한다")
+	void policyRejectsNonLocalStoreMode() {
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(60, 10, "memory", completeLimits(1)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("store mode");
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(60, 10, "distributed", completeLimits(1)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("distributed store");
 	}
 
 	@Test

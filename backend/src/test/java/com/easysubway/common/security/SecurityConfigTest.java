@@ -54,7 +54,40 @@ class SecurityConfigTest {
 			.withPropertyValues(
 				"spring.profiles.active=prod",
 				"easysubway.admin.username=admin-user",
-				"easysubway.admin.password=admin-password"
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.basic-auth.enabled=false"
+			)
+			.run(context -> assertThat(context).hasNotFailed());
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 Basic auth 예외 owner와 만료일 없이 Basic auth를 켤 수 없다")
+	void prodProfileRejectsBasicAuthWithoutReleaseException() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.basic-auth.enabled=true"
+			)
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasMessageContaining("운영 Basic auth 예외는 owner와 만료일이 필요합니다.");
+			});
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 만료일 있는 Basic auth 예외를 명시하면 시작한다")
+	void prodProfileAllowsBasicAuthWithReleaseException() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.basic-auth.enabled=true",
+				"easysubway.admin.basic-auth.exception-owner=security-owner",
+				"easysubway.admin.basic-auth.exception-expires-at=2099-12-31"
 			)
 			.run(context -> assertThat(context).hasNotFailed());
 	}

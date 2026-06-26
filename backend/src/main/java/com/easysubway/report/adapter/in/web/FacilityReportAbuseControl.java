@@ -35,12 +35,14 @@ class FacilityReportAbuseControl extends OncePerRequestFilter {
 		@Value("${easysubway.report.abuse-control.status-limit:1000}") int statusLimit,
 		@Value("${easysubway.report.abuse-control.confirm-limit:1000}") int confirmLimit,
 		@Value("${easysubway.report.abuse-control.max-counter-keys:4096}") int maxCounterKeys,
+		@Value("${easysubway.report.abuse-control.store-mode:local}") String storeMode,
 		@Value("${easysubway.auth.client-ip.trusted-proxies:}") String trustedProxies,
 		ObjectProvider<Clock> clockProvider
 	) {
 		FacilityReportAbuseControlPolicy policy = new FacilityReportAbuseControlPolicy(
 			windowSeconds,
 			maxCounterKeys,
+			storeMode,
 			Map.of(
 				ReportAbuseGroup.UPLOAD_INTENT, uploadIntentLimit,
 				ReportAbuseGroup.UPLOAD_CLAIM, uploadClaimLimit,
@@ -110,6 +112,7 @@ enum ReportAbuseGroup {
 record FacilityReportAbuseControlPolicy(
 	long windowSeconds,
 	int maxCounterKeys,
+	String storeMode,
 	Map<ReportAbuseGroup, Integer> limits
 ) {
 
@@ -119,6 +122,9 @@ record FacilityReportAbuseControlPolicy(
 		}
 		if (maxCounterKeys < 1) {
 			throw new IllegalArgumentException("report abuse control max counter keys must be positive");
+		}
+		if (!"local".equals(storeMode)) {
+			throw new IllegalArgumentException("report abuse control store mode must be local until distributed store is implemented");
 		}
 		for (ReportAbuseGroup group : ReportAbuseGroup.values()) {
 			Integer limit = limits.get(group);
@@ -130,6 +136,10 @@ record FacilityReportAbuseControlPolicy(
 
 	int limit(ReportAbuseGroup group) {
 		return limits.get(group);
+	}
+
+	boolean usesReleaseBlockingLocalStore() {
+		return "local".equals(storeMode);
 	}
 }
 

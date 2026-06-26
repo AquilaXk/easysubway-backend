@@ -55,12 +55,15 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 		Exception failure
 	) {
 		log.info(
-			"admin_operator_state_change_audit method={} path={} principal={} roles={} status={}",
+			"admin_operator_state_change_audit method={} path={} principal={} roles={} tenant={} status={} outcome={} correlation_id={}",
 			request.getMethod(),
 			normalizedPath(request),
 			authentication.getName(),
 			roles(authentication),
-			status(response, failure)
+			tenant(authentication),
+			status(response, failure),
+			outcome(response, failure),
+			correlationId(request)
 		);
 	}
 
@@ -91,5 +94,29 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 			.map(authority -> authority.getAuthority())
 			.sorted(Comparator.naturalOrder())
 			.collect(Collectors.joining(","));
+	}
+
+	private static String tenant(Authentication authentication) {
+		String roles = roles(authentication);
+		if (roles.contains("ROLE_OPERATOR_ADMIN")) {
+			return "operator-global";
+		}
+		return "admin-global";
+	}
+
+	private static String outcome(HttpServletResponse response, Exception failure) {
+		return failure == null && response.getStatus() < HttpServletResponse.SC_BAD_REQUEST ? "SUCCESS" : "FAILURE";
+	}
+
+	private static String correlationId(HttpServletRequest request) {
+		String value = request.getHeader("X-Correlation-Id");
+		if (value == null || value.isBlank()) {
+			return "missing";
+		}
+		String trimmed = value.trim();
+		if (!trimmed.matches("[A-Za-z0-9._-]{1,64}")) {
+			return "invalid";
+		}
+		return trimmed;
 	}
 }

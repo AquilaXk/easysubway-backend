@@ -23,6 +23,10 @@ easysubway:
       status-limit: ${EASYSUBWAY_REPORT_ABUSE_STATUS_LIMIT:1000}
       confirm-limit: ${EASYSUBWAY_REPORT_ABUSE_CONFIRM_LIMIT:1000}
       max-counter-keys: ${EASYSUBWAY_REPORT_ABUSE_MAX_COUNTER_KEYS:4096}
+      store-mode: ${EASYSUBWAY_REPORT_ABUSE_STORE_MODE:local}
+  admin:
+    basic-auth:
+      enabled: ${EASYSUBWAY_ADMIN_BASIC_AUTH_ENABLED:true}
   auth:
     client-ip:
       trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS:}
