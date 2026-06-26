@@ -9,7 +9,8 @@ public enum AdminPermission {
 	SECURITY_AUDIT("admin.security.audit"),
 	SECURITY_ADMIN("admin.security.admin"),
 	AUDIT_READ("admin.audit.read"),
-	PRIVACY_LOG_READ("admin.privacy-log.read");
+	PRIVACY_LOG_READ("admin.privacy-log.read"),
+	BATCH_RETRY("admin.batch.retry");
 
 	private final String authority;
 

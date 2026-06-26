@@ -15,6 +15,7 @@ public enum AdminProgram {
 	QUALITY("a-quality", "제보·품질·검증", "데이터 품질", "/admin/data-quality/page", AdminPermission.ADMIN_VIEW),
 	FIELD("a-field-verifications", "제보·품질·검증", "현장 검증", "/admin/field-verifications/page", AdminPermission.FIELD_OPERATE),
 	COLLECTIONS("a-collections", "운영·분석", "데이터 수집", "/admin/data-collections/page", AdminPermission.DATA_OPERATE),
+	BATCHES("a-batches", "운영·분석", "배치 운영", "/admin/batches/page", AdminPermission.DATA_OPERATE),
 	ROUTE_SEARCHES("a-route-searches", "운영·분석", "경로 검색 분석", "/admin/routes/searches/page", AdminPermission.ADMIN_VIEW),
 	ROUTE_FEEDBACK("a-route-feedback", "운영·분석", "경로 피드백 분석", "/admin/routes/feedback/page", AdminPermission.ADMIN_VIEW),
 	PUSH("a-push", "운영·분석", "푸시 알림", "/admin/notifications/push/page", AdminPermission.DATA_OPERATE),

@@ -48,12 +48,55 @@ public class AdminAuditWriter {
 		String action,
 		String reason
 	) {
+		writeAudit(
+			authentication,
+			request,
+			AdminAuditEventType.PRIVACY_READ,
+			targetType,
+			targetId,
+			action,
+			AdminAuditOutcome.SUCCESS,
+			reason
+		);
+	}
+
+	public void batchOperation(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetType,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(
+			authentication,
+			request,
+			AdminAuditEventType.BATCH_OPERATION,
+			targetType,
+			targetId,
+			action,
+			outcome,
+			reason
+		);
+	}
+
+	private void writeAudit(
+		Authentication authentication,
+		HttpServletRequest request,
+		AdminAuditEventType eventType,
+		String targetType,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
 		if (!enabled || !isAuthenticated(authentication)) {
 			return;
 		}
 		auditEventRepository.save(new AdminAuditEvent(
 			null,
-			AdminAuditEventType.PRIVACY_READ,
+			eventType,
 			authentication.getName(),
 			authorities(authentication),
 			correlationId(request),
@@ -62,7 +105,7 @@ public class AdminAuditWriter {
 			targetType,
 			targetId,
 			action,
-			AdminAuditOutcome.SUCCESS,
+			outcome,
 			reason,
 			LocalDateTime.now(clock)
 		));

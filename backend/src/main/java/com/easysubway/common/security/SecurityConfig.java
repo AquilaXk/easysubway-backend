@@ -99,6 +99,10 @@ public class SecurityConfig {
 					"/admin/notifications/**"
 				)
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/batches/**")
+				.hasAuthority(AdminPermission.BATCH_RETRY.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/batches/**")
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers("/admin/audits/privacy/**")
 				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())
 				.requestMatchers("/admin/audits/**")
