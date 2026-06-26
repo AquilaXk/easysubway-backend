@@ -29,12 +29,16 @@ env:
 
 jobs:
   automatic-analysis:
+    name: SonarCloud CI scanner disabled
     if: vars.SONARCLOUD_CI_ENABLED != 'true'
     runs-on: ubuntu-latest
     permissions: {}
     steps:
-      - name: Keep SonarCloud automatic analysis
-        run: echo "SonarCloud CI scanner is skipped because SONARCLOUD_CI_ENABLED is not true."
+      - name: Explain SonarCloud analysis method
+        run: |
+          echo "SonarCloud CI scanner is disabled because SONARCLOUD_CI_ENABLED is not true."
+          echo "SonarQube Cloud Automatic Analysis is expected to provide the actual code-analysis check."
+          echo "Do not enable the CI scanner unless Automatic Analysis is disabled in SonarQube Cloud."
 
   sonarcloud:
     if: vars.SONARCLOUD_CI_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
