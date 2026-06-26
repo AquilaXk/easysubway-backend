@@ -1,5 +1,7 @@
 package com.easysubway.common.security;
 
+import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
 import com.easysubway.admin.identity.domain.AdminIdentity;
@@ -21,11 +23,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -39,6 +43,7 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
 	@Bean
@@ -53,7 +58,49 @@ public class SecurityConfig {
 			.securityMatcher("/admin/**")
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/admin/login").permitAll()
-				.anyRequest().hasRole("ADMIN")
+				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
+				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
+				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
+				.requestMatchers(
+					HttpMethod.GET,
+					"/admin/facilities/editor/page",
+					"/admin/stations/*/layouts/page",
+					"/admin/stations/*/layout-sources",
+					"/admin/stations/*/layouts",
+					"/admin/stations/*/route-nodes",
+					"/admin/stations/*/route-edges"
+				)
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/facilities/**", "/admin/stations/**")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.PUT, "/admin/facilities/**", "/admin/stations/**")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.PATCH, "/admin/facilities/**", "/admin/stations/**")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/field-verifications/**")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
+				.requestMatchers(HttpMethod.PATCH, "/admin/field-verifications/**")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
+				.requestMatchers(HttpMethod.GET, "/admin/field-verifications/**")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
+				.requestMatchers(
+					HttpMethod.POST,
+					"/admin/data-collections/**",
+					"/admin/data-sources/**",
+					"/admin/notifications/**"
+				)
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers(
+					HttpMethod.GET,
+					"/admin/data-collections/**",
+					"/admin/data-sources/**",
+					"/admin/notifications/**"
+				)
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers("/admin/system/**", "/admin/usage/**")
+				.hasAuthority(AdminPermission.SECURITY_AUDIT.authority())
+				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())
 			)
 			.exceptionHandling(exception -> exception
 				.defaultAuthenticationEntryPointFor(
@@ -171,6 +218,7 @@ public class SecurityConfig {
 		@Value("${easysubway.admin.basic-auth.exception-owner:}") String basicAuthExceptionOwner,
 		@Value("${easysubway.admin.basic-auth.exception-expires-at:}") String basicAuthExceptionExpiresAt,
 		AdminIdentityRepository adminIdentityRepository,
+		AdminRbacAuthorityRepository adminRbacAuthorityRepository,
 		PasswordEncoder passwordEncoder,
 		Environment environment
 	) {
@@ -225,7 +273,49 @@ public class SecurityConfig {
 				.roles("USER")
 				.build());
 		}
-		return new AdminIdentityUserDetailsService(adminIdentityRepository, users, Clock.systemUTC());
+		return new AdminIdentityUserDetailsService(
+			adminIdentityRepository,
+			adminRbacAuthorityRepository,
+			users,
+			Clock.systemUTC()
+		);
+	}
+
+	UserDetailsService userDetailsService(
+		String adminUsername,
+		String adminPassword,
+		String breakGlassUsername,
+		String breakGlassPassword,
+		String breakGlassReason,
+		String operatorUsername,
+		String operatorPassword,
+		String userUsername,
+		String userPassword,
+		boolean basicAuthEnabled,
+		String basicAuthExceptionOwner,
+		String basicAuthExceptionExpiresAt,
+		AdminIdentityRepository adminIdentityRepository,
+		PasswordEncoder passwordEncoder,
+		Environment environment
+	) {
+		return userDetailsService(
+			adminUsername,
+			adminPassword,
+			breakGlassUsername,
+			breakGlassPassword,
+			breakGlassReason,
+			operatorUsername,
+			operatorPassword,
+			userUsername,
+			userPassword,
+			basicAuthEnabled,
+			basicAuthExceptionOwner,
+			basicAuthExceptionExpiresAt,
+			adminIdentityRepository,
+			loginId -> Set.of(),
+			passwordEncoder,
+			environment
+		);
 	}
 
 	@Bean

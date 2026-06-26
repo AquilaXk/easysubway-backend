@@ -16,7 +16,7 @@
 			<p>신고·시설·데이터·경로·알림·시스템 이상을 한 화면에 모읍니다.</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/reports/page}">긴급 작업 보기</a>
+			<a th:if="${adminProgramIds.contains('a-reports')}" class="admin-btn" th:href="@{/admin/reports/page}">긴급 작업 보기</a>
 		</div>
 	</header>
 
@@ -28,7 +28,7 @@
 	</div>
 
 	<div class="admin-grid-2">
-		<section class="admin-panel">
+		<section class="admin-panel" th:if="${adminProgramIds.contains('a-reports')}">
 			<h2>우선 검수 제보</h2>
 			<p class="summary">미검수 제보는 제보 검수 큐에서 상태·사진·위치를 함께 확인합니다.</p>
 			<a class="admin-btn" th:href="@{/admin/reports/page}">제보 검수 큐 열기</a>
