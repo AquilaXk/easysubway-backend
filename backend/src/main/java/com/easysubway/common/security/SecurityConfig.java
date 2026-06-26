@@ -1,6 +1,7 @@
 package com.easysubway.common.security;
 
 import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
 import com.easysubway.admin.identity.domain.AdminIdentity;
@@ -59,6 +60,18 @@ public class SecurityConfig {
 				.requestMatchers("/admin/login").permitAll()
 				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
 				.hasAnyAuthority(AdminPermission.REPORT_REVIEW.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
+				.hasAnyAuthority(AdminPermission.REPORT_REVIEW.authority(), "ROLE_ADMIN")
+				.requestMatchers(
+					HttpMethod.GET,
+					"/admin/facilities/editor/page",
+					"/admin/stations/*/layouts/page",
+					"/admin/stations/*/layout-sources",
+					"/admin/stations/*/layouts",
+					"/admin/stations/*/route-nodes",
+					"/admin/stations/*/route-edges"
+				)
+				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
 				.requestMatchers(HttpMethod.POST, "/admin/facilities/**", "/admin/stations/**")
 				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
 				.requestMatchers(HttpMethod.PUT, "/admin/facilities/**", "/admin/stations/**")
@@ -69,8 +82,17 @@ public class SecurityConfig {
 				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
 				.requestMatchers(HttpMethod.PATCH, "/admin/field-verifications/**")
 				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.GET, "/admin/field-verifications/**")
+				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
 				.requestMatchers(
 					HttpMethod.POST,
+					"/admin/data-collections/**",
+					"/admin/data-sources/**",
+					"/admin/notifications/**"
+				)
+				.hasAnyAuthority(AdminPermission.DATA_OPERATE.authority(), "ROLE_ADMIN")
+				.requestMatchers(
+					HttpMethod.GET,
 					"/admin/data-collections/**",
 					"/admin/data-sources/**",
 					"/admin/notifications/**"
@@ -196,6 +218,7 @@ public class SecurityConfig {
 		@Value("${easysubway.admin.basic-auth.exception-owner:}") String basicAuthExceptionOwner,
 		@Value("${easysubway.admin.basic-auth.exception-expires-at:}") String basicAuthExceptionExpiresAt,
 		AdminIdentityRepository adminIdentityRepository,
+		AdminRbacAuthorityRepository adminRbacAuthorityRepository,
 		PasswordEncoder passwordEncoder,
 		Environment environment
 	) {
@@ -250,7 +273,49 @@ public class SecurityConfig {
 				.roles("USER")
 				.build());
 		}
-		return new AdminIdentityUserDetailsService(adminIdentityRepository, users, Clock.systemUTC());
+		return new AdminIdentityUserDetailsService(
+			adminIdentityRepository,
+			adminRbacAuthorityRepository,
+			users,
+			Clock.systemUTC()
+		);
+	}
+
+	UserDetailsService userDetailsService(
+		String adminUsername,
+		String adminPassword,
+		String breakGlassUsername,
+		String breakGlassPassword,
+		String breakGlassReason,
+		String operatorUsername,
+		String operatorPassword,
+		String userUsername,
+		String userPassword,
+		boolean basicAuthEnabled,
+		String basicAuthExceptionOwner,
+		String basicAuthExceptionExpiresAt,
+		AdminIdentityRepository adminIdentityRepository,
+		PasswordEncoder passwordEncoder,
+		Environment environment
+	) {
+		return userDetailsService(
+			adminUsername,
+			adminPassword,
+			breakGlassUsername,
+			breakGlassPassword,
+			breakGlassReason,
+			operatorUsername,
+			operatorPassword,
+			userUsername,
+			userPassword,
+			basicAuthEnabled,
+			basicAuthExceptionOwner,
+			basicAuthExceptionExpiresAt,
+			adminIdentityRepository,
+			loginId -> Set.of(),
+			passwordEncoder,
+			environment
+		);
 	}
 
 	@Bean

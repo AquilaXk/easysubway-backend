@@ -3,12 +3,14 @@ package com.easysubway.common.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.admin.authorization.adapter.out.persistence.InMemoryAdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.adapter.out.persistence.InMemoryAdminIdentityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import java.time.LocalDateTime;
+import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -148,6 +150,28 @@ class SecurityConfigTest {
 						"admin.security.audit",
 						"admin.security.admin"
 					);
+			});
+	}
+
+	@Test
+	@DisplayName("관리자 RBAC role 할당이 있으면 할당 permission만 authority로 가진다")
+	void adminCredentialsUseAssignedRbacAuthorities() {
+		contextRunner
+			.withPropertyValues(
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password"
+			)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				InMemoryAdminRbacAuthorityRepository rbacRepository =
+					context.getBean(InMemoryAdminRbacAuthorityRepository.class);
+				rbacRepository.replacePermissionAuthorities("admin-user", Set.of("admin.view", "admin.report.review"));
+				UserDetailsService userDetailsService = context.getBean(UserDetailsService.class);
+
+				assertThat(userDetailsService.loadUserByUsername("admin-user").getAuthorities())
+					.extracting(GrantedAuthority::getAuthority)
+					.contains("ROLE_ADMIN", "admin.view", "admin.report.review")
+					.doesNotContain("admin.data.operate", "admin.master.edit", "admin.security.admin");
 			});
 	}
 
@@ -718,6 +742,11 @@ class SecurityConfigTest {
 		@Bean
 		InMemoryAdminIdentityRepository adminIdentityRepository() {
 			return new InMemoryAdminIdentityRepository();
+		}
+
+		@Bean
+		InMemoryAdminRbacAuthorityRepository adminRbacAuthorityRepository() {
+			return new InMemoryAdminRbacAuthorityRepository();
 		}
 	}
 

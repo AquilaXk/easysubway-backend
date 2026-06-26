@@ -1,6 +1,7 @@
 package com.easysubway.admin.identity.application.service;
 
 import com.easysubway.admin.authorization.AdminAuthorization;
+import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.domain.AdminIdentity;
 import java.time.Clock;
@@ -16,6 +17,7 @@ import org.springframework.security.core.userdetails.UsernameNotFoundException;
 public class AdminIdentityUserDetailsService implements UserDetailsService, UserDetailsPasswordService {
 
 	private final AdminIdentityRepository adminIdentityRepository;
+	private final AdminRbacAuthorityRepository adminRbacAuthorityRepository;
 	private final UserDetailsService fallbackUserDetailsService;
 	private final Clock clock;
 
@@ -24,7 +26,17 @@ public class AdminIdentityUserDetailsService implements UserDetailsService, User
 		UserDetailsService fallbackUserDetailsService,
 		Clock clock
 	) {
+		this(adminIdentityRepository, loginId -> java.util.Set.of(), fallbackUserDetailsService, clock);
+	}
+
+	public AdminIdentityUserDetailsService(
+		AdminIdentityRepository adminIdentityRepository,
+		AdminRbacAuthorityRepository adminRbacAuthorityRepository,
+		UserDetailsService fallbackUserDetailsService,
+		Clock clock
+	) {
 		this.adminIdentityRepository = adminIdentityRepository;
+		this.adminRbacAuthorityRepository = adminRbacAuthorityRepository;
 		this.fallbackUserDetailsService = fallbackUserDetailsService;
 		this.clock = clock;
 	}
@@ -45,7 +57,10 @@ public class AdminIdentityUserDetailsService implements UserDetailsService, User
 		LocalDateTime now = LocalDateTime.now(clock);
 		var authorities = new ArrayList<String>();
 		authorities.add("ROLE_" + identity.role().name().toUpperCase(Locale.ROOT));
-		authorities.addAll(AdminAuthorization.authoritiesFor(identity.role()));
+		authorities.addAll(AdminAuthorization.authoritiesFor(
+			identity.role(),
+			adminRbacAuthorityRepository.findPermissionAuthorities(identity.loginId())
+		));
 		return User.withUsername(identity.loginId())
 			.password(identity.passwordHash())
 			.authorities(authorities.toArray(String[]::new))

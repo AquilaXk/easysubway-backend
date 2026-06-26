@@ -105,6 +105,28 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
+	@DisplayName("권한이 없는 관리자는 제한된 읽기 화면에 직접 접근할 수 없다")
+	void adminPermissionBlocksRestrictedReadPages() throws Exception {
+		mockMvc.perform(get("/admin/reports/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isForbidden());
+		mockMvc.perform(get("/admin/notifications/push/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("업무 permission이 있는 관리자는 제한된 읽기 화면에 접근할 수 있다")
+	void adminPermissionAllowsRestrictedReadPages() throws Exception {
+		mockMvc.perform(get("/admin/reports/page")
+				.with(user("reporter").authorities(new SimpleGrantedAuthority("admin.report.review"))))
+			.andExpect(status().isOk());
+		mockMvc.perform(get("/admin/notifications/push/page")
+				.with(user("operator").authorities(new SimpleGrantedAuthority("admin.data.operate"))))
+			.andExpect(status().isOk());
+	}
+
+	@Test
 	@DisplayName("권한이 없는 관리자는 푸시 발송 entrypoint에 접근할 수 없다")
 	void adminPermissionBlocksPushEntrypoint() throws Exception {
 		mockMvc.perform(post("/admin/notifications/push")

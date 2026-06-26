@@ -13,8 +13,15 @@ public final class AdminAuthorization {
 	}
 
 	public static Set<String> authoritiesFor(AdminIdentityRole identityRole) {
+		return authoritiesFor(identityRole, Set.of());
+	}
+
+	public static Set<String> authoritiesFor(AdminIdentityRole identityRole, Set<String> assignedAuthorities) {
 		if (identityRole == AdminIdentityRole.OPERATOR_ADMIN) {
 			return Set.of();
+		}
+		if (assignedAuthorities != null && !assignedAuthorities.isEmpty()) {
+			return Set.copyOf(assignedAuthorities);
 		}
 		AdminRbacRole role = AdminRbacRole.SUPER_ADMIN;
 		return role.permissions().stream()
