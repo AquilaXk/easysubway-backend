@@ -11,6 +11,7 @@ import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
 import java.util.TreeMap;
 import javax.crypto.Mac;
@@ -48,20 +49,20 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 	private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
 		.withZone(ZoneOffset.UTC);
 
-	private final String endpoint;
+	private final String publicBaseUrl;
 	private final String bucket;
 	private final String accessKey;
 	private final String secretKey;
 	private final String region;
 
 	ObjectStorageFacilityReportUploadUrlSigner(
-		@Value("${easysubway.report.upload.object-storage-endpoint:}") String endpoint,
+		@Value("${easysubway.report.upload.public-base-url:}") String publicBaseUrl,
 		@Value("${easysubway.report.upload.bucket:}") String bucket,
 		@Value("${easysubway.report.upload.object-storage-access-key:}") String accessKey,
 		@Value("${easysubway.report.upload.object-storage-secret-key:}") String secretKey,
 		@Value("${easysubway.report.upload.object-storage-region:us-east-1}") String region
 	) {
-		this.endpoint = requireText(endpoint, "운영 object storage endpoint 설정이 필요합니다.");
+		this.publicBaseUrl = requireText(publicBaseUrl, "운영 report upload public base URL 설정이 필요합니다.");
 		this.bucket = requireText(bucket, "운영 report upload bucket 설정이 필요합니다.");
 		this.accessKey = requireText(accessKey, "운영 object storage access key 설정이 필요합니다.");
 		this.secretKey = requireText(secretKey, "운영 object storage secret 설정이 필요합니다.");
@@ -70,8 +71,8 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 
 	@Override
 	public SignedUploadUrl sign(FacilityReportUploadIntents.CreatedUploadIntent intent) {
-		URI endpointUri = requireAbsoluteEndpoint(endpoint);
-		String host = endpointUri.getRawAuthority().toLowerCase();
+		URI publicBaseUri = requireHttpsOrigin(publicBaseUrl);
+		String host = publicBaseUri.getRawAuthority().toLowerCase(Locale.ROOT);
 		String date = DATE_FORMAT.format(intent.issuedAt());
 		String dateTime = DATE_TIME_FORMAT.format(intent.issuedAt());
 		String credentialScope = "%s/%s/s3/aws4_request".formatted(date, region);
@@ -101,7 +102,7 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 			sha256Hex(canonicalRequest)
 		);
 		query.put("X-Amz-Signature", signature(date, stringToSign));
-		String uploadUrl = endpoint.replaceAll("/+$", "") + canonicalUri + "?" + canonicalQuery(query);
+		String uploadUrl = publicBaseUri.toString().replaceAll("/+$", "") + canonicalUri + "?" + canonicalQuery(query);
 		return new SignedUploadUrl(uploadUrl, "PUT", uploadHeaders);
 	}
 
@@ -141,12 +142,30 @@ class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUpload
 		}
 	}
 
-	private static URI requireAbsoluteEndpoint(String endpoint) {
-		URI uri = URI.create(endpoint);
-		if (uri.getScheme() == null || uri.getRawAuthority() == null) {
-			throw new InvalidFacilityReportException("운영 object storage endpoint 설정이 필요합니다.");
+	private static URI requireHttpsOrigin(String publicBaseUrl) {
+		URI uri = URI.create(publicBaseUrl);
+		String host = uri.getHost();
+		if (!"https".equals(uri.getScheme()) || host == null || uri.getRawUserInfo() != null
+			|| uri.getRawQuery() != null || uri.getRawFragment() != null) {
+			throw invalidPublicBaseUrl();
+		}
+		String path = uri.getRawPath();
+		if (path != null && !path.isBlank() && !"/".equals(path)) {
+			throw invalidPublicBaseUrl();
+		}
+		String normalizedHost = host.toLowerCase(Locale.ROOT);
+		if (normalizedHost.startsWith("[") && normalizedHost.endsWith("]")) {
+			normalizedHost = normalizedHost.substring(1, normalizedHost.length() - 1);
+		}
+		if ("localhost".equals(normalizedHost) || "object-storage".equals(normalizedHost)
+			|| normalizedHost.startsWith("127.") || "::1".equals(normalizedHost)) {
+			throw invalidPublicBaseUrl();
 		}
 		return uri;
+	}
+
+	private static InvalidFacilityReportException invalidPublicBaseUrl() {
+		return new InvalidFacilityReportException("운영 report upload public base URL은 HTTPS origin이어야 합니다.");
 	}
 
 	private static String canonicalUri(String bucket, String objectKey) {

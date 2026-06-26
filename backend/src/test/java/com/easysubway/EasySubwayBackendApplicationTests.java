@@ -39,6 +39,7 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
 			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
 			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
+			"easysubway.report.upload.public-base-url=https://uploads.easysubway.example",
 			"easysubway.report.upload.bucket=easysubway-report-uploads",
 			"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",
 			"easysubway.report.upload.object-storage-secret-key=prod-object-storage-secret-key-with-enough-entropy",

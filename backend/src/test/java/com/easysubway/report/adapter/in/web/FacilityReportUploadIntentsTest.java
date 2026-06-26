@@ -424,10 +424,10 @@ class FacilityReportUploadIntentsTest {
 	}
 
 	@Test
-	@DisplayName("운영 upload signer는 object storage absolute URL에 만료와 서명을 붙인다")
+	@DisplayName("운영 upload signer는 공개 HTTPS origin에 만료와 서명을 붙인다")
 	void prodUploadSignerReturnsSignedAbsoluteObjectStorageUrl() {
 		var signer = new ObjectStorageFacilityReportUploadUrlSigner(
-			"https://object-storage.example.com",
+			"https://uploads.easysubway.example",
 			"easysubway-report-uploads",
 			"prod-object-storage-access-key",
 			"prod-object-storage-secret-key-with-enough-entropy",
@@ -447,8 +447,9 @@ class FacilityReportUploadIntentsTest {
 
 		assertThat(signedUrl.uploadMethod()).isEqualTo("PUT");
 		assertThat(signedUrl.uploadUrl()).startsWith(
-			"https://object-storage.example.com/easysubway-report-uploads/facility-reports/unclaimed/object-1.jpg"
+			"https://uploads.easysubway.example/easysubway-report-uploads/facility-reports/unclaimed/object-1.jpg"
 		);
+		assertThat(signedUrl.uploadUrl()).doesNotContain("object-storage:9000");
 		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Algorithm=AWS4-HMAC-SHA256");
 		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Credential=prod-object-storage-access-key%2F20260620%2Fap-northeast-2%2Fs3%2Faws4_request");
 		assertThat(signedUrl.uploadUrl()).contains("X-Amz-Date=20260620T000000Z");
@@ -462,6 +463,46 @@ class FacilityReportUploadIntentsTest {
 		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-content-sha256", "a".repeat(64));
 		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-meta-easysubway-sha256", "a".repeat(64));
 		assertThat(signedUrl.uploadHeaders()).containsEntry("x-amz-meta-easysubway-size", "11");
+	}
+
+	@Test
+	@DisplayName("운영 upload signer는 내부 Docker hostname을 공개 origin으로 쓰지 않는다")
+	void prodUploadSignerRejectsInternalPublicOrigin() {
+		assertThatThrownBy(() -> new ObjectStorageFacilityReportUploadUrlSigner(
+			"http://object-storage:9000",
+			"easysubway-report-uploads",
+			"prod-object-storage-access-key",
+			"prod-object-storage-secret-key-with-enough-entropy",
+			"ap-northeast-2"
+		).sign(new FacilityReportUploadIntents.CreatedUploadIntent(
+			"upload-id-1",
+			"facility-reports/unclaimed/object-1.jpg",
+			"image/jpeg",
+			"a".repeat(64),
+			11L,
+			Instant.parse("2026-06-20T00:00:00Z"),
+			Instant.parse("2026-06-20T00:15:00Z")
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("운영 report upload public base URL은 HTTPS origin이어야 합니다.");
+
+		assertThatThrownBy(() -> new ObjectStorageFacilityReportUploadUrlSigner(
+			"https://[::1]",
+			"easysubway-report-uploads",
+			"prod-object-storage-access-key",
+			"prod-object-storage-secret-key-with-enough-entropy",
+			"ap-northeast-2"
+		).sign(new FacilityReportUploadIntents.CreatedUploadIntent(
+			"upload-id-1",
+			"facility-reports/unclaimed/object-1.jpg",
+			"image/jpeg",
+			"a".repeat(64),
+			11L,
+			Instant.parse("2026-06-20T00:00:00Z"),
+			Instant.parse("2026-06-20T00:15:00Z")
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("운영 report upload public base URL은 HTTPS origin이어야 합니다.");
 	}
 
 	@Test
