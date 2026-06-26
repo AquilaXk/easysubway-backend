@@ -187,6 +187,7 @@ jobs:
           cp release/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
           cp release/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
           cp release/abuse-penetration-rehearsal-gate.json release-artifacts/android/abuse-penetration-rehearsal-gate.json
+          cp release/rc-evidence-manifest-contract.json release-artifacts/android/rc-evidence-manifest-contract.json
           cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
           cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
@@ -199,6 +200,7 @@ jobs:
             echo "artifact=app-release.aab"
             echo "store_ready=false"
             echo "signing_key_type=temporary-self-signed"
+            echo "rc_evidence_manifest=easysubway-rc-evidence-manifest-${GITHUB_SHA}"
             echo "mapping=build/app/outputs/mapping/release/mapping.txt"
             echo "mapping_retention_days=90"
             echo "play_submission_evidence=blocked_missing_internal_track_or_prelaunch_report"
@@ -277,3 +279,73 @@ jobs:
           path: release-artifacts/backend
           if-no-files-found: error
           retention-days: 14
+
+  rc-evidence-manifest:
+    name: RC Evidence Manifest
+    runs-on: ubuntu-latest
+    needs:
+      - changes
+      - android-release
+      - backend-release
+    if: ${{ always() && (needs.android-release.result == 'success' || needs.backend-release.result == 'success') }}
+
+    steps:
+      - name: RC Evidence Manifest / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: RC Evidence Manifest / Download Android artifact
+        if: ${{ needs.android-release.result == 'success' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: easysubway-android-release-${{ github.sha }}
+          path: release-artifacts/downloaded/android
+
+      - name: RC Evidence Manifest / Download backend artifact
+        if: ${{ needs.backend-release.result == 'success' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: easysubway-backend-release-${{ github.sha }}
+          path: release-artifacts/downloaded/backend
+
+      - name: RC Evidence Manifest / Generate manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/rc
+          generator_args=(
+            --repo-root .
+            --app-root apps/mobile
+            --data-pack-manifest apps/mobile/assets/datapacks/metro_map_pack/manifest.json
+            --output release-artifacts/rc/rc-evidence-manifest.json
+            --evidence-root ".codex/evidence/release/rc-evidence-manifest/${GITHUB_SHA}/"
+            --device local_android_emulator
+            --android-version android-15-or-16
+            --gate-status androidRcEvidence=BLOCKED_EXTERNAL
+            --gate-status playGeneratedApkDeviceMatrix=BLOCKED_EXTERNAL
+            --gate-status androidReleaseQuality=BLOCKED_EXTERNAL
+            --gate-status abusePenetrationRehearsal=BLOCKED_EXTERNAL
+          )
+          if [[ -f release-artifacts/downloaded/android/app-release.aab ]]; then
+            generator_args+=(--aab release-artifacts/downloaded/android/app-release.aab)
+          fi
+          if [[ -f release-artifacts/downloaded/backend/image-inspect.json ]]; then
+            generator_args+=(--backend-image-inspect release-artifacts/downloaded/backend/image-inspect.json)
+          fi
+          node tools/release/generate-rc-evidence-manifest.mjs "${generator_args[@]}"
+          cp apps/mobile/release/rc-evidence-manifest-contract.json release-artifacts/rc/rc-evidence-manifest-contract.json
+          {
+            echo "commit=${GITHUB_SHA}"
+            echo "manifest=rc-evidence-manifest.json"
+            echo "android_artifact_source=easysubway-android-release-${GITHUB_SHA}"
+            echo "backend_artifact_source=easysubway-backend-release-${GITHUB_SHA}"
+          } > release-artifacts/rc/release-metadata.txt
+
+      - name: RC Evidence Manifest / Upload manifest
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-rc-evidence-manifest-${{ github.sha }}
+          path: release-artifacts/rc
+          if-no-files-found: error
+          retention-days: 90
