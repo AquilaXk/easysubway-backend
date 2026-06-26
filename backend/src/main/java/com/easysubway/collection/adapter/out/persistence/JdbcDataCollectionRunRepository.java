@@ -3,7 +3,9 @@ package com.easysubway.collection.adapter.out.persistence;
 import com.easysubway.collection.application.port.out.LoadDataCollectionRunPort;
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import java.sql.ResultSet;
 import java.sql.SQLException;
@@ -35,22 +37,19 @@ public class JdbcDataCollectionRunRepository implements
 
 	@Override
 	public DataCollectionRun saveRun(DataCollectionRun run) {
-		jdbcTemplate.update("""
-			INSERT INTO data_collection_runs (
-				run_id,
-				source,
-				status,
-				requested_by,
-				started_at,
-				completed_at,
-				collected_count,
-				failure_message,
-				retryable,
-				operator_action
-			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+		int updated = jdbcTemplate.update("""
+			UPDATE data_collection_runs
+			SET source = ?,
+				status = ?,
+				requested_by = ?,
+				started_at = ?,
+				completed_at = ?,
+				collected_count = ?,
+				failure_message = ?,
+				retryable = ?,
+				operator_action = ?
+			WHERE run_id = ?
 			""",
-			run.runId(),
 			run.source().name(),
 			run.status().name(),
 			run.requestedBy(),
@@ -59,8 +58,65 @@ public class JdbcDataCollectionRunRepository implements
 			run.collectedCount(),
 			run.failureMessage(),
 			run.retryable(),
-			run.operatorAction()
+			run.operatorAction(),
+			run.runId()
 		);
+		if (updated == 0) {
+			jdbcTemplate.update("""
+				INSERT INTO data_collection_runs (
+					run_id,
+					source,
+					status,
+					requested_by,
+					started_at,
+					completed_at,
+					collected_count,
+					failure_message,
+					retryable,
+					operator_action
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+				run.runId(),
+				run.source().name(),
+				run.status().name(),
+				run.requestedBy(),
+				run.startedAt(),
+				run.completedAt(),
+				run.collectedCount(),
+				run.failureMessage(),
+				run.retryable(),
+				run.operatorAction()
+			);
+		}
+		jdbcTemplate.update("DELETE FROM data_collection_run_steps WHERE run_id = ?", run.runId());
+		for (int index = 0; index < run.steps().size(); index++) {
+			DataCollectionRunStep step = run.steps().get(index);
+			jdbcTemplate.update("""
+				INSERT INTO data_collection_run_steps (
+					run_id,
+					step_order,
+					step_name,
+					status,
+					input_source,
+					artifact_reference,
+					checksum,
+					record_count,
+					failure_message
+				)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+				""",
+				run.runId(),
+				index,
+				step.name(),
+				step.status().name(),
+				step.inputSource(),
+				step.artifactReference(),
+				step.checksum(),
+				step.recordCount(),
+				step.failureMessage()
+			);
+		}
 		return run;
 	}
 
@@ -125,8 +181,9 @@ public class JdbcDataCollectionRunRepository implements
 
 	private DataCollectionRun mapRun(ResultSet resultSet, int rowNumber) throws SQLException {
 		var completedAt = resultSet.getTimestamp("completed_at");
+		String runId = resultSet.getString("run_id");
 		return new DataCollectionRun(
-			resultSet.getString("run_id"),
+			runId,
 			DataCollectionSource.valueOf(resultSet.getString("source")),
 			DataCollectionStatus.valueOf(resultSet.getString("status")),
 			resultSet.getString("requested_by"),
@@ -135,7 +192,29 @@ public class JdbcDataCollectionRunRepository implements
 			resultSet.getInt("collected_count"),
 			resultSet.getString("failure_message"),
 			resultSet.getBoolean("retryable"),
-			resultSet.getString("operator_action")
+			resultSet.getString("operator_action"),
+			loadSteps(runId)
+		);
+	}
+
+	private List<DataCollectionRunStep> loadSteps(String runId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT step_name, status, input_source, artifact_reference, checksum, record_count, failure_message
+				FROM data_collection_run_steps
+				WHERE run_id = ?
+				ORDER BY step_order ASC
+				""",
+			(resultSet, rowNumber) -> new DataCollectionRunStep(
+				resultSet.getString("step_name"),
+				DataCollectionStepStatus.valueOf(resultSet.getString("status")),
+				resultSet.getString("input_source"),
+				resultSet.getString("artifact_reference"),
+				resultSet.getString("checksum"),
+				resultSet.getInt("record_count"),
+				resultSet.getString("failure_message")
+			),
+			runId
 		);
 	}
 }

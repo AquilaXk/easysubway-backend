@@ -129,6 +129,7 @@
 				<th scope="col">시작</th>
 				<th scope="col">완료</th>
 				<th scope="col">수집 건수</th>
+				<th scope="col">단계</th>
 				<th scope="col">실패 사유</th>
 				<th scope="col">재시도</th>
 				<th scope="col">다음 행동</th>
@@ -136,7 +137,7 @@
 			</thead>
 			<tbody>
 			<tr th:if="${runs.isEmpty()}">
-				<td class="empty" colspan="9">최근 실행 기록이 없습니다.</td>
+				<td class="empty" colspan="10">최근 실행 기록이 없습니다.</td>
 			</tr>
 			<tr th:each="run : ${runs}">
 				<td th:text="${run.sourceLabel}">도시철도 마스터</td>
@@ -145,6 +146,16 @@
 				<td th:text="${run.startedAt}">2026-06-15T10:00:00</td>
 				<td th:text="${run.completedAtLabel()}">2026-06-15T10:01:00</td>
 				<td th:text="${run.collectedCount}">13</td>
+				<td>
+					<ul>
+						<li th:each="step : ${run.steps}">
+							<strong th:text="${step.name}">FETCH</strong>
+							<span th:text="${step.statusLabel}">완료</span>
+							<span th:text="${'건수 ' + step.recordCount}">건수 14</span>
+							<span th:text="${step.failureMessage}">-</span>
+						</li>
+					</ul>
+				</td>
 				<td th:text="${run.failureLabel()}">-</td>
 				<td th:text="${run.retryableLabel()}">불필요</td>
 				<td th:text="${run.operatorAction}">수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.</td>

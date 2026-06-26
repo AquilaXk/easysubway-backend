@@ -3,7 +3,9 @@ package com.easysubway.collection.adapter.in.web;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.application.port.in.RunDataCollectionCommand;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import com.easysubway.common.web.ApiResponse;
@@ -126,7 +128,8 @@ class DataCollectionController {
 		int collectedCount,
 		String failureMessage,
 		boolean retryable,
-		String operatorAction
+		String operatorAction,
+		List<DataCollectionRunStepResponse> steps
 	) {
 
 		static DataCollectionRunResponse from(DataCollectionRun run) {
@@ -140,7 +143,33 @@ class DataCollectionController {
 				run.collectedCount(),
 				run.failureMessage(),
 				run.retryable(),
-				run.operatorAction()
+				run.operatorAction(),
+				run.steps().stream()
+					.map(DataCollectionRunStepResponse::from)
+					.toList()
+			);
+		}
+	}
+
+	record DataCollectionRunStepResponse(
+		String name,
+		DataCollectionStepStatus status,
+		String inputSource,
+		String artifactReference,
+		String checksum,
+		int recordCount,
+		String failureMessage
+	) {
+
+		static DataCollectionRunStepResponse from(DataCollectionRunStep step) {
+			return new DataCollectionRunStepResponse(
+				step.name(),
+				step.status(),
+				step.inputSource(),
+				step.artifactReference(),
+				step.checksum(),
+				step.recordCount(),
+				step.failureMessage()
 			);
 		}
 	}

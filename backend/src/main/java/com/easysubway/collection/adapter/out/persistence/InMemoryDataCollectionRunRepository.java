@@ -24,6 +24,7 @@ public class InMemoryDataCollectionRunRepository implements
 
 	@Override
 	public DataCollectionRun saveRun(DataCollectionRun run) {
+		runs.removeIf(savedRun -> savedRun.runId().equals(run.runId()));
 		runs.add(run);
 		return run;
 	}

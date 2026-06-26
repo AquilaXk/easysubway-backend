@@ -1,19 +1,24 @@
 package com.easysubway.collection.application.service;
 
+import com.easysubway.collection.application.port.out.FetchTransitMasterCollectionSourcePort;
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
+import com.easysubway.collection.application.port.out.TransitMasterCollectionSnapshot;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
-import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class DataCollectionRunRecorder {
 
-	private final LoadTransitMasterPort loadTransitMasterPort;
+	private final FetchTransitMasterCollectionSourcePort fetchTransitMasterCollectionSourcePort;
 	private final SaveDataCollectionRunPort saveDataCollectionRunPort;
 	private final Clock clock;
 	private static final String COMPLETED_OPERATOR_ACTION = "수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.";
@@ -21,26 +26,35 @@ public class DataCollectionRunRecorder {
 
 	@Autowired
 	public DataCollectionRunRecorder(
-		LoadTransitMasterPort loadTransitMasterPort,
+		FetchTransitMasterCollectionSourcePort fetchTransitMasterCollectionSourcePort,
 		SaveDataCollectionRunPort saveDataCollectionRunPort
 	) {
-		this(loadTransitMasterPort, saveDataCollectionRunPort, Clock.systemDefaultZone());
+		this(fetchTransitMasterCollectionSourcePort, saveDataCollectionRunPort, Clock.systemDefaultZone());
 	}
 
 	public DataCollectionRunRecorder(
-		LoadTransitMasterPort loadTransitMasterPort,
+		FetchTransitMasterCollectionSourcePort fetchTransitMasterCollectionSourcePort,
 		SaveDataCollectionRunPort saveDataCollectionRunPort,
 		Clock clock
 	) {
-		this.loadTransitMasterPort = loadTransitMasterPort;
+		this.fetchTransitMasterCollectionSourcePort = fetchTransitMasterCollectionSourcePort;
 		this.saveDataCollectionRunPort = saveDataCollectionRunPort;
 		this.clock = clock;
 	}
 
 	public DataCollectionRun recordTransitMasterRun(String runId, String requestedBy) {
 		LocalDateTime startedAt = LocalDateTime.now(clock);
+		var steps = new ArrayList<DataCollectionRunStep>();
 		try {
-			int collectedCount = countTransitMasterRecords();
+			TransitMasterCollectionSnapshot snapshot = fetchTransitMasterCollectionSourcePort.fetch();
+			steps.add(completedStep("FETCH", snapshot.inputSource(), snapshot.artifactReference(), snapshot.checksum(), snapshot.recordCount()));
+			steps.add(skippedStep("ARCHIVE", snapshot.artifactReference(), snapshot.checksum()));
+			validate(snapshot, steps);
+			steps.add(skippedStep("PARSE", snapshot.artifactReference(), snapshot.checksum()));
+			steps.add(skippedStep("DIFF", snapshot.artifactReference(), snapshot.checksum()));
+			steps.add(skippedStep("STAGE", snapshot.artifactReference(), snapshot.checksum()));
+			steps.add(manualStep("PUBLISH", snapshot.artifactReference(), snapshot.checksum()));
+			steps.add(manualStep("ACTIVATE", snapshot.artifactReference(), snapshot.checksum()));
 			LocalDateTime completedAt = LocalDateTime.now(clock);
 			var run = new DataCollectionRun(
 				runId,
@@ -49,15 +63,16 @@ public class DataCollectionRunRecorder {
 				requestedBy,
 				startedAt,
 				completedAt,
-				collectedCount,
+				snapshot.recordCount(),
 				null,
 				false,
-				COMPLETED_OPERATOR_ACTION
+				COMPLETED_OPERATOR_ACTION,
+				steps
 			);
 			return saveDataCollectionRunPort.saveRun(run);
 		} catch (RuntimeException exception) {
 			try {
-				saveFailedRun(runId, requestedBy, startedAt, exception);
+				saveFailedRun(runId, requestedBy, startedAt, exception, steps);
 			} catch (RuntimeException saveException) {
 				// 실패 기록 저장까지 실패하더라도 실제 수집 실패 원인을 호출자에게 보존한다.
 				exception.addSuppressed(saveException);
@@ -70,8 +85,12 @@ public class DataCollectionRunRecorder {
 		String runId,
 		String requestedBy,
 		LocalDateTime startedAt,
-		RuntimeException exception
+		RuntimeException exception,
+		List<DataCollectionRunStep> steps
 	) {
+		if (steps.isEmpty()) {
+			steps.add(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.FAILED, null, null, null, 0, failureMessageOf(exception)));
+		}
 		// Batch가 FAILED로 끝나도 관리자 실행 이력에서 원인을 확인할 수 있게 실패 기록을 먼저 남긴다.
 		saveDataCollectionRunPort.saveRun(new DataCollectionRun(
 			runId,
@@ -83,7 +102,8 @@ public class DataCollectionRunRecorder {
 			0,
 			failureMessageOf(exception),
 			true,
-			FAILED_OPERATOR_ACTION
+			FAILED_OPERATOR_ACTION,
+			steps
 		));
 	}
 
@@ -94,13 +114,62 @@ public class DataCollectionRunRecorder {
 		return exception.getMessage();
 	}
 
-	private int countTransitMasterRecords() {
-		// 외부 수집기를 붙이기 전에는 현재 마스터 데이터 로딩 경로가 읽히는지 실행 기록으로 검증한다.
-		return loadTransitMasterPort.loadOperators().size()
-			+ loadTransitMasterPort.loadLines().size()
-			+ loadTransitMasterPort.loadStations().size()
-			+ loadTransitMasterPort.loadStationLines().size()
-			+ loadTransitMasterPort.loadStationExits().size()
-			+ loadTransitMasterPort.loadAccessibilityFacilities().size();
+	private static void validate(TransitMasterCollectionSnapshot snapshot, List<DataCollectionRunStep> steps) {
+		if (snapshot.recordCount() <= 0) {
+			var failureMessage = "공식 출처 수집 결과가 비어 있습니다.";
+			steps.add(new DataCollectionRunStep(
+				"VALIDATE",
+				DataCollectionStepStatus.FAILED,
+				snapshot.artifactReference(),
+				null,
+				snapshot.checksum(),
+				0,
+				failureMessage
+			));
+			throw new IllegalStateException(failureMessage);
+		}
+		steps.add(completedStep("VALIDATE", snapshot.artifactReference(), "validation://transit-master", snapshot.checksum(), snapshot.recordCount()));
+	}
+
+	private static DataCollectionRunStep completedStep(
+		String name,
+		String inputSource,
+		String artifactReference,
+		String checksum,
+		int recordCount
+	) {
+		return new DataCollectionRunStep(
+			name,
+			DataCollectionStepStatus.COMPLETED,
+			inputSource,
+			artifactReference,
+			checksum,
+			recordCount,
+			null
+		);
+	}
+
+	private static DataCollectionRunStep manualStep(String name, String inputSource, String checksum) {
+		return new DataCollectionRunStep(
+			name,
+			DataCollectionStepStatus.MANUAL_REQUIRED,
+			inputSource,
+			"manual-required://%s".formatted(name.toLowerCase()),
+			checksum,
+			0,
+			null
+		);
+	}
+
+	private static DataCollectionRunStep skippedStep(String name, String inputSource, String checksum) {
+		return new DataCollectionRunStep(
+			name,
+			DataCollectionStepStatus.SKIPPED,
+			inputSource,
+			null,
+			checksum,
+			0,
+			null
+		);
 	}
 }

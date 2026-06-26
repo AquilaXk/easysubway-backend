@@ -1,6 +1,7 @@
 package com.easysubway.collection.domain;
 
 import java.time.LocalDateTime;
+import java.util.List;
 
 public record DataCollectionRun(
 	String runId,
@@ -12,8 +13,36 @@ public record DataCollectionRun(
 	int collectedCount,
 	String failureMessage,
 	boolean retryable,
-	String operatorAction
+	String operatorAction,
+	List<DataCollectionRunStep> steps
 ) {
+
+	public DataCollectionRun(
+		String runId,
+		DataCollectionSource source,
+		DataCollectionStatus status,
+		String requestedBy,
+		LocalDateTime startedAt,
+		LocalDateTime completedAt,
+		int collectedCount,
+		String failureMessage,
+		boolean retryable,
+		String operatorAction
+	) {
+		this(
+			runId,
+			source,
+			status,
+			requestedBy,
+			startedAt,
+			completedAt,
+			collectedCount,
+			failureMessage,
+			retryable,
+			operatorAction,
+			List.of()
+		);
+	}
 
 	public DataCollectionRun {
 		if (runId == null || runId.isBlank()) {
@@ -37,6 +66,9 @@ public record DataCollectionRun(
 		if (operatorAction == null || operatorAction.isBlank()) {
 			throw new InvalidDataCollectionException("운영자 다음 행동 안내가 필요합니다.");
 		}
+		if (steps == null) {
+			throw new InvalidDataCollectionException("수집 단계 이력이 필요합니다.");
+		}
 		if (status == DataCollectionStatus.RUNNING && completedAt != null) {
 			throw new InvalidDataCollectionException("실행 중인 실행은 완료 시간을 포함할 수 없습니다.");
 		}
@@ -49,6 +81,7 @@ public record DataCollectionRun(
 			failureMessage = failureMessage.trim();
 		}
 		operatorAction = operatorAction.trim();
+		steps = List.copyOf(steps);
 		if (status == DataCollectionStatus.COMPLETED && failureMessage != null && !failureMessage.isBlank()) {
 			throw new InvalidDataCollectionException("완료된 실행은 실패 사유를 포함할 수 없습니다.");
 		}

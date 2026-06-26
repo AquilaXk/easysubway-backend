@@ -3,9 +3,12 @@ package com.easysubway.collection.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,6 +29,7 @@ class JdbcDataCollectionRunRepositoryTest {
 		);
 		var jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.execute("DROP TABLE IF EXISTS data_collection_runs");
+		jdbcTemplate.execute("DROP TABLE IF EXISTS data_collection_run_steps");
 		jdbcTemplate.execute("""
 			CREATE TABLE data_collection_runs (
 				run_id VARCHAR(80) PRIMARY KEY,
@@ -38,6 +42,20 @@ class JdbcDataCollectionRunRepositoryTest {
 				failure_message VARCHAR(1000) NULL,
 				retryable BOOLEAN NOT NULL,
 				operator_action VARCHAR(500) NOT NULL
+			)
+			""");
+		jdbcTemplate.execute("""
+			CREATE TABLE data_collection_run_steps (
+				run_id VARCHAR(80) NOT NULL,
+				step_order INTEGER NOT NULL,
+				step_name VARCHAR(40) NOT NULL,
+				status VARCHAR(30) NOT NULL,
+				input_source VARCHAR(1000),
+				artifact_reference VARCHAR(1000),
+				checksum VARCHAR(64),
+				record_count INTEGER NOT NULL,
+				failure_message VARCHAR(1000),
+				PRIMARY KEY (run_id, step_order)
 			)
 			""");
 		repository = new JdbcDataCollectionRunRepository(jdbcTemplate);
@@ -56,7 +74,16 @@ class JdbcDataCollectionRunRepositoryTest {
 			13,
 			null,
 			false,
-			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."
+			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.",
+			List.of(new DataCollectionRunStep(
+				"FETCH",
+				DataCollectionStepStatus.COMPLETED,
+				"fixture://source",
+				"fixture://artifact",
+				"0".repeat(64),
+				13,
+				null
+			))
 		);
 
 		repository.saveRun(run);

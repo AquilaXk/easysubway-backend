@@ -2,6 +2,7 @@ package com.easysubway.collection.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -9,12 +10,12 @@ import static org.mockito.Mockito.when;
 import com.easysubway.collection.adapter.out.persistence.InMemoryDataCollectionRunRepository;
 import com.easysubway.collection.application.port.in.RunDataCollectionCommand;
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
+import com.easysubway.collection.application.port.out.TransitMasterCollectionSnapshot;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
-import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
-import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDateTime;
@@ -32,7 +33,7 @@ class DataCollectionRunRecorderTest {
 
 	private final InMemoryDataCollectionRunRepository repository = new InMemoryDataCollectionRunRepository();
 	private final DataCollectionRunRecorder recorder = new DataCollectionRunRecorder(
-		new InMemoryTransitMasterRepository(),
+		() -> snapshot(14),
 		repository,
 		CLOCK
 	);
@@ -51,6 +52,22 @@ class DataCollectionRunRecorderTest {
 		assertThat(run.collectedCount()).isEqualTo(14);
 		assertThat(run.retryable()).isFalse();
 		assertThat(run.operatorAction()).isEqualTo("수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.");
+		assertThat(run.steps())
+			.extracting("name")
+			.containsExactly("FETCH", "ARCHIVE", "VALIDATE", "PARSE", "DIFF", "STAGE", "PUBLISH", "ACTIVATE");
+		assertThat(run.steps())
+			.extracting("status")
+			.containsExactly(
+				DataCollectionStepStatus.COMPLETED,
+				DataCollectionStepStatus.SKIPPED,
+				DataCollectionStepStatus.COMPLETED,
+				DataCollectionStepStatus.SKIPPED,
+				DataCollectionStepStatus.SKIPPED,
+				DataCollectionStepStatus.SKIPPED,
+				DataCollectionStepStatus.MANUAL_REQUIRED,
+				DataCollectionStepStatus.MANUAL_REQUIRED
+			);
+		assertThat(run.steps().getFirst().checksum()).hasSize(64);
 		assertThat(repository.loadRun("collection-test")).contains(run);
 	}
 
@@ -65,6 +82,19 @@ class DataCollectionRunRecorderTest {
 		assertThat(recentRuns)
 			.extracting("requestedBy")
 			.containsExactly("admin-b");
+	}
+
+	@Test
+	@DisplayName("같은 실행 식별자를 다시 저장해도 단계 이력은 중복되지 않는다")
+	void saveRunReplacesSameRunId() {
+		recorder.recordTransitMasterRun("collection-retry", "admin-a");
+		recorder.recordTransitMasterRun("collection-retry", "admin-b");
+
+		assertThat(repository.loadRecentRuns(10))
+			.extracting(DataCollectionRun::runId)
+			.containsExactly("collection-retry");
+		assertThat(repository.loadRun("collection-retry").orElseThrow().requestedBy()).isEqualTo("admin-b");
+		assertThat(repository.loadRun("collection-retry").orElseThrow().steps()).hasSize(8);
 	}
 
 	@Test
@@ -84,10 +114,14 @@ class DataCollectionRunRecorderTest {
 	@Test
 	@DisplayName("도시철도 마스터 데이터 로딩 실패도 실행 기록에 실패 상태로 남긴다")
 	void recordTransitMasterRunStoresFailedRunWhenLoadingFails() {
-		LoadTransitMasterPort failingTransitMasterPort = mock(LoadTransitMasterPort.class);
-		when(failingTransitMasterPort.loadOperators()).thenThrow(new IllegalStateException("loader down"));
 		var failingRepository = new InMemoryDataCollectionRunRepository();
-		var failingRecorder = new DataCollectionRunRecorder(failingTransitMasterPort, failingRepository, CLOCK);
+		var failingRecorder = new DataCollectionRunRecorder(
+			() -> {
+				throw new IllegalStateException("loader down");
+			},
+			failingRepository,
+			CLOCK
+		);
 
 		assertThatThrownBy(() -> failingRecorder.recordTransitMasterRun("collection-failed-run", "admin-user"))
 			.isInstanceOf(IllegalStateException.class)
@@ -100,16 +134,44 @@ class DataCollectionRunRecorderTest {
 		assertThat(run.failureMessage()).isEqualTo("loader down");
 		assertThat(run.retryable()).isTrue();
 		assertThat(run.operatorAction()).isEqualTo("일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요.");
+		assertThat(run.steps())
+			.extracting("name", "status", "failureMessage")
+			.containsExactly(tuple("FETCH", DataCollectionStepStatus.FAILED, "loader down"));
+	}
+
+	@Test
+	@DisplayName("검증 실패도 실패 단계와 원인을 실행 기록에 남긴다")
+	void recordTransitMasterRunStoresFailedValidationStep() {
+		var failingRepository = new InMemoryDataCollectionRunRepository();
+		var failingRecorder = new DataCollectionRunRecorder(() -> snapshot(0), failingRepository, CLOCK);
+
+		assertThatThrownBy(() -> failingRecorder.recordTransitMasterRun("collection-empty-run", "admin-user"))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("공식 출처 수집 결과가 비어 있습니다.");
+
+		var run = failingRepository.loadRun("collection-empty-run").orElseThrow();
+		assertThat(run.status()).isEqualTo(DataCollectionStatus.FAILED);
+		assertThat(run.steps())
+			.extracting("name", "status", "failureMessage")
+			.containsExactly(
+				tuple("FETCH", DataCollectionStepStatus.COMPLETED, null),
+				tuple("ARCHIVE", DataCollectionStepStatus.SKIPPED, null),
+				tuple("VALIDATE", DataCollectionStepStatus.FAILED, "공식 출처 수집 결과가 비어 있습니다.")
+			);
 	}
 
 	@Test
 	@DisplayName("실패 기록 저장이 실패해도 원래 수집 실패 예외를 보존한다")
 	void recordTransitMasterRunPreservesOriginalFailureWhenFailedRunSaveFails() {
-		LoadTransitMasterPort failingTransitMasterPort = mock(LoadTransitMasterPort.class);
-		when(failingTransitMasterPort.loadOperators()).thenThrow(new IllegalStateException("loader down"));
 		SaveDataCollectionRunPort failingSavePort = mock(SaveDataCollectionRunPort.class);
 		when(failingSavePort.saveRun(any(DataCollectionRun.class))).thenThrow(new IllegalStateException("save down"));
-		var failingRecorder = new DataCollectionRunRecorder(failingTransitMasterPort, failingSavePort, CLOCK);
+		var failingRecorder = new DataCollectionRunRecorder(
+			() -> {
+				throw new IllegalStateException("loader down");
+			},
+			failingSavePort,
+			CLOCK
+		);
 
 		assertThatThrownBy(() -> failingRecorder.recordTransitMasterRun("collection-failed-run", "admin-user"))
 			.isInstanceOf(IllegalStateException.class)
@@ -234,6 +296,15 @@ class DataCollectionRunRecorderTest {
 			"loader down",
 			true,
 			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
+		);
+	}
+
+	private static TransitMasterCollectionSnapshot snapshot(int recordCount) {
+		return new TransitMasterCollectionSnapshot(
+			"fixture://transit-master",
+			"fixture://transit-master.json",
+			"0".repeat(64),
+			recordCount
 		);
 	}
 }

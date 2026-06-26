@@ -61,6 +61,13 @@ class DataCollectionControllerTest {
 			.andExpect(jsonPath("$.data.requestedBy").value("admin-user"))
 			.andExpect(jsonPath("$.data.collectedCount").value(14))
 			.andExpect(jsonPath("$.data.retryable").value(false))
+			.andExpect(jsonPath("$.data.steps[0].name").value("FETCH"))
+			.andExpect(jsonPath("$.data.steps[0].status").value("COMPLETED"))
+			.andExpect(jsonPath("$.data.steps[1].name").value("ARCHIVE"))
+			.andExpect(jsonPath("$.data.steps[1].status").value("SKIPPED"))
+			.andExpect(jsonPath("$.data.steps[5].name").value("STAGE"))
+			.andExpect(jsonPath("$.data.steps[5].status").value("SKIPPED"))
+			.andExpect(jsonPath("$.data.steps[6].status").value("MANUAL_REQUIRED"))
 			.andExpect(jsonPath("$.data.operatorAction")
 				.value("수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."));
 
@@ -72,6 +79,8 @@ class DataCollectionControllerTest {
 			.andExpect(jsonPath("$.data[0].status").value("COMPLETED"))
 			.andExpect(jsonPath("$.data[0].requestedBy").value("admin-user"))
 			.andExpect(jsonPath("$.data[0].retryable").value(false))
+			.andExpect(jsonPath("$.data[0].steps[0].name").value("FETCH"))
+			.andExpect(jsonPath("$.data[0].steps[1].status").value("SKIPPED"))
 			.andExpect(jsonPath("$.data[0].operatorAction")
 				.value("수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."));
 	}

@@ -3,7 +3,9 @@ package com.easysubway.collection.adapter.in.web;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.application.port.in.RunDataCollectionCommand;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import java.security.Principal;
 import java.time.LocalDateTime;
@@ -79,7 +81,8 @@ class DataCollectionAdminPageController {
 		int collectedCount,
 		String failureMessage,
 		boolean retryable,
-		String operatorAction
+		String operatorAction,
+		List<DataCollectionRunStepRow> steps
 	) {
 
 		static DataCollectionRunRow from(DataCollectionRun run) {
@@ -93,7 +96,10 @@ class DataCollectionAdminPageController {
 				run.collectedCount(),
 				run.failureMessage(),
 				run.retryable(),
-				run.operatorAction()
+				run.operatorAction(),
+				run.steps().stream()
+					.map(DataCollectionRunStepRow::from)
+					.toList()
 			);
 		}
 
@@ -113,6 +119,45 @@ class DataCollectionAdminPageController {
 
 		public String retryableLabel() {
 			return retryable ? "가능" : "불필요";
+		}
+	}
+
+	record DataCollectionRunStepRow(
+		String name,
+		String statusLabel,
+		String inputSource,
+		String artifactReference,
+		String checksum,
+		int recordCount,
+		String failureMessage
+	) {
+
+		static DataCollectionRunStepRow from(DataCollectionRunStep step) {
+			return new DataCollectionRunStepRow(
+				step.name(),
+				stepStatusLabel(step.status()),
+				valueOrDash(step.inputSource()),
+				valueOrDash(step.artifactReference()),
+				valueOrDash(step.checksum()),
+				step.recordCount(),
+				valueOrDash(step.failureMessage())
+			);
+		}
+
+		private static String stepStatusLabel(DataCollectionStepStatus status) {
+			return switch (status) {
+				case COMPLETED -> "완료";
+				case FAILED -> "실패";
+				case SKIPPED -> "건너뜀";
+				case MANUAL_REQUIRED -> "수동 필요";
+			};
+		}
+
+		private static String valueOrDash(String value) {
+			if (value == null || value.isBlank()) {
+				return "-";
+			}
+			return value;
 		}
 	}
 

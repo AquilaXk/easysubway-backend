@@ -20,7 +20,10 @@ class TransitMasterCollectionBatchConfig {
 	static final String STEP_NAME = "recordTransitMasterCollectionStep";
 
 	@Bean
-	Job transitMasterCollectionJob(JobRepository jobRepository, Step recordTransitMasterCollectionStep) {
+	Job transitMasterCollectionJob(
+		JobRepository jobRepository,
+		Step recordTransitMasterCollectionStep
+	) {
 		return new JobBuilder(JOB_NAME, jobRepository)
 			.start(recordTransitMasterCollectionStep)
 			.build();
