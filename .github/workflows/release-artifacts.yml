@@ -181,6 +181,7 @@ jobs:
           cp build/app/outputs/bundle/release/app-release.aab release-artifacts/android/app-release.aab
           cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
           cp release/android-16kb-page-size-gate.json release-artifacts/android/android-16kb-page-size-gate.json
+          cp release/play-production-access-gate.json release-artifacts/android/play-production-access-gate.json
           cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
           cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
@@ -197,6 +198,7 @@ jobs:
             echo "mapping_retention_days=90"
             echo "play_submission_evidence=blocked_missing_internal_track_or_prelaunch_report"
             echo "page_size_16kb_evidence=blocked_until_tools_mobile_check_android_aab_16kb_page_size_passes_and_runtime_PAGE_SIZE_16384_smoke_passes"
+            echo "play_production_access_evidence=blocked_until_play_production_access_gate_console_summary_is_satisfied"
             echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } > release-artifacts/android/release-metadata.txt
 
