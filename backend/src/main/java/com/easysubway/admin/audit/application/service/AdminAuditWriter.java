@@ -68,6 +68,35 @@ public class AdminAuditWriter {
 		));
 	}
 
+	public void batchOperation(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetType,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		if (!enabled || !isAuthenticated(authentication)) {
+			return;
+		}
+		auditEventRepository.save(new AdminAuditEvent(
+			null,
+			AdminAuditEventType.BATCH_OPERATION,
+			authentication.getName(),
+			authorities(authentication),
+			correlationId(request),
+			clientIp(request),
+			userAgent(request),
+			targetType,
+			targetId,
+			action,
+			outcome,
+			reason,
+			LocalDateTime.now(clock)
+		));
+	}
+
 	public String sha256TargetId(String value) {
 		try {
 			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
