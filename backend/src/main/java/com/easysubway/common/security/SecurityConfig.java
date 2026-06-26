@@ -1,11 +1,21 @@
 package com.easysubway.common.security;
 
+import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
+import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
+import com.easysubway.admin.identity.domain.AdminIdentity;
+import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
+import com.easysubway.admin.identity.domain.AdminIdentityRole;
+import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
+import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
-import java.util.List;
+import java.util.LinkedHashSet;
+import java.util.Locale;
+import java.util.Objects;
+import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
@@ -18,6 +28,7 @@ import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.User;
+import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
@@ -146,9 +157,12 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	ConcurrentUserDetailsManager userDetailsService(
+	UserDetailsService userDetailsService(
 		@Value("${easysubway.admin.username:}") String adminUsername,
 		@Value("${easysubway.admin.password:}") String adminPassword,
+		@Value("${easysubway.admin.break-glass.username:}") String breakGlassUsername,
+		@Value("${easysubway.admin.break-glass.password:}") String breakGlassPassword,
+		@Value("${easysubway.admin.break-glass.reason:}") String breakGlassReason,
 		@Value("${easysubway.operator.username:}") String operatorUsername,
 		@Value("${easysubway.operator.password:}") String operatorPassword,
 		@Value("${easysubway.user.username:}") String userUsername,
@@ -156,10 +170,12 @@ public class SecurityConfig {
 		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled,
 		@Value("${easysubway.admin.basic-auth.exception-owner:}") String basicAuthExceptionOwner,
 		@Value("${easysubway.admin.basic-auth.exception-expires-at:}") String basicAuthExceptionExpiresAt,
+		AdminIdentityRepository adminIdentityRepository,
 		PasswordEncoder passwordEncoder,
 		Environment environment
 	) {
 		validateProdAdminCredentials(adminUsername, adminPassword, environment);
+		validateAdminCredentials(adminUsername, adminPassword);
 		validateProdBasicAuthPolicy(
 			basicAuthEnabled,
 			basicAuthExceptionOwner,
@@ -167,41 +183,63 @@ public class SecurityConfig {
 			environment
 		);
 		validateOperatorCredentials(operatorUsername, operatorPassword);
-		var users = new ConcurrentUserDetailsManager();
+		validateBreakGlassCredentials(breakGlassUsername, breakGlassPassword, breakGlassReason);
+		validateDistinctAdminLoginIds(adminUsername, operatorUsername, breakGlassUsername, userUsername);
+
+		LocalDateTime now = LocalDateTime.now(Clock.systemUTC());
+		Set<String> activeBootstrapLoginIds = new LinkedHashSet<>();
 		if (!adminUsername.isBlank() && !adminPassword.isBlank()) {
-			users.createUser(User.withUsername(adminUsername)
-				.password(passwordEncoder.encode(adminPassword))
-				.roles("ADMIN")
-				.build());
+			activeBootstrapLoginIds.add(normalizeLoginId(adminUsername));
+			bootstrapIdentity(adminIdentityRepository, passwordEncoder, adminPassword, localIdentity(
+				adminUsername,
+				"관리자",
+				passwordEncoder.encode(adminPassword),
+				AdminIdentityRole.ADMIN,
+				now
+			), now);
 		}
 		if (!operatorUsername.isBlank() && !operatorPassword.isBlank()) {
-			users.createUser(User.withUsername(operatorUsername)
-				.password(passwordEncoder.encode(operatorPassword))
-				.roles("OPERATOR_ADMIN")
-				.build());
+			activeBootstrapLoginIds.add(normalizeLoginId(operatorUsername));
+			bootstrapIdentity(adminIdentityRepository, passwordEncoder, operatorPassword, localIdentity(
+				operatorUsername,
+				"운영기관 관리자",
+				passwordEncoder.encode(operatorPassword),
+				AdminIdentityRole.OPERATOR_ADMIN,
+				now
+			), now);
 		}
+		if (!breakGlassUsername.isBlank() && !breakGlassPassword.isBlank()) {
+			activeBootstrapLoginIds.add(normalizeLoginId(breakGlassUsername));
+			bootstrapIdentity(adminIdentityRepository, passwordEncoder, breakGlassPassword, breakGlassIdentity(
+				breakGlassUsername,
+				passwordEncoder.encode(breakGlassPassword),
+				breakGlassReason,
+				now
+			), now);
+		}
+		adminIdentityRepository.disableStaleBootstrapIdentities(activeBootstrapLoginIds, now);
+		var users = new ConcurrentUserDetailsManager();
 		if (!userUsername.isBlank() && !userPassword.isBlank()) {
 			users.createUser(User.withUsername(userUsername)
 				.password(passwordEncoder.encode(userPassword))
 				.roles("USER")
 				.build());
 		}
-		return users;
+		return new AdminIdentityUserDetailsService(adminIdentityRepository, users, Clock.systemUTC());
 	}
 
 	@Bean
 	AuthenticationProvider adminOperatorLockoutAuthenticationProvider(
-		ConcurrentUserDetailsManager userDetailsService,
+		UserDetailsService userDetailsService,
 		PasswordEncoder passwordEncoder,
-		@Value("${easysubway.admin.username:}") String adminUsername,
-		@Value("${easysubway.operator.username:}") String operatorUsername,
+		AdminIdentityRepository adminIdentityRepository,
 		@Value("${easysubway.admin.lockout.max-failures:5}") int maxFailures,
 		@Value("${easysubway.admin.lockout.duration:PT15M}") String lockoutDuration
 	) {
 		return new AdminOperatorLockoutAuthenticationProvider(
 			userDetailsService,
 			passwordEncoder,
-			List.of(adminUsername, operatorUsername),
+			adminIdentityRepository,
 			maxFailures,
 			Duration.parse(lockoutDuration),
 			Clock.systemUTC()
@@ -226,6 +264,107 @@ public class SecurityConfig {
 		http.httpBasic(AbstractHttpConfigurer::disable);
 	}
 
+	private void bootstrapIdentity(
+		AdminIdentityRepository adminIdentityRepository,
+		PasswordEncoder passwordEncoder,
+		String rawPassword,
+		AdminIdentity bootstrap,
+		LocalDateTime now
+	) {
+		var current = adminIdentityRepository.findByLoginId(bootstrap.loginId());
+		if (current.isEmpty()) {
+			adminIdentityRepository.upsertBootstrap(bootstrap);
+			return;
+		}
+		AdminIdentity existing = current.orElseThrow();
+		if (breakGlassRotationRequiredWithSamePassword(existing, rawPassword, passwordEncoder)) {
+			return;
+		}
+		if (sameBootstrapSecret(existing, bootstrap, rawPassword, passwordEncoder)) {
+			return;
+		}
+		adminIdentityRepository.save(existing.refreshBootstrap(bootstrap, now));
+	}
+
+	private boolean sameBootstrapSecret(
+		AdminIdentity existing,
+		AdminIdentity bootstrap,
+		String rawPassword,
+		PasswordEncoder passwordEncoder
+	) {
+		return existing.authMethod() == bootstrap.authMethod()
+			&& existing.role() == bootstrap.role()
+			&& existing.status() == bootstrap.status()
+			&& Objects.equals(existing.displayName(), bootstrap.displayName())
+			&& Objects.equals(existing.email(), bootstrap.email())
+			&& Objects.equals(existing.breakGlassReason(), bootstrap.breakGlassReason())
+			&& existing.bootstrapManaged() == bootstrap.bootstrapManaged()
+			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
+	}
+
+	private boolean breakGlassRotationRequiredWithSamePassword(
+		AdminIdentity existing,
+		String rawPassword,
+		PasswordEncoder passwordEncoder
+	) {
+		return existing.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS
+			&& existing.credentialRotationRequired()
+			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
+	}
+
+	private AdminIdentity localIdentity(
+		String loginId,
+		String displayName,
+		String passwordHash,
+		AdminIdentityRole role,
+		LocalDateTime now
+	) {
+		return new AdminIdentity(
+			loginId,
+			displayName,
+			null,
+			passwordHash,
+			AdminIdentityAuthMethod.LOCAL,
+			role,
+			AdminIdentityStatus.ACTIVE,
+			0,
+			null,
+			now,
+			null,
+			false,
+			null,
+			true,
+			now,
+			now
+		);
+	}
+
+	private AdminIdentity breakGlassIdentity(
+		String loginId,
+		String passwordHash,
+		String reason,
+		LocalDateTime now
+	) {
+		return new AdminIdentity(
+			loginId,
+			"break-glass 관리자",
+			null,
+			passwordHash,
+			AdminIdentityAuthMethod.BREAK_GLASS,
+			AdminIdentityRole.ADMIN,
+			AdminIdentityStatus.ACTIVE,
+			0,
+			null,
+			now,
+			null,
+			false,
+			reason,
+			true,
+			now,
+			now
+		);
+	}
+
 	private void validateProdAdminCredentials(String adminUsername, String adminPassword, Environment environment) {
 		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")
 			&& (adminUsername.isBlank() || adminPassword.isBlank())) {
@@ -233,10 +372,48 @@ public class SecurityConfig {
 		}
 	}
 
+	private void validateAdminCredentials(String adminUsername, String adminPassword) {
+		if (adminUsername.isBlank() != adminPassword.isBlank()) {
+			throw new IllegalStateException("관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
+		}
+	}
+
 	private void validateOperatorCredentials(String operatorUsername, String operatorPassword) {
 		if (operatorUsername.isBlank() != operatorPassword.isBlank()) {
 			throw new IllegalStateException("운영기관 관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
 		}
+	}
+
+	private void validateBreakGlassCredentials(String username, String password, String reason) {
+		boolean anyConfigured = !username.isBlank() || !password.isBlank() || !reason.isBlank();
+		boolean partiallyConfigured = username.isBlank() || password.isBlank() || reason.isBlank();
+		if (anyConfigured && partiallyConfigured) {
+			throw new IllegalStateException("break-glass 계정 설정은 아이디, 비밀번호, 사유를 함께 입력해야 합니다.");
+		}
+	}
+
+	private void validateDistinctAdminLoginIds(
+		String adminUsername,
+		String operatorUsername,
+		String breakGlassUsername,
+		String userUsername
+	) {
+		String admin = normalizeLoginId(adminUsername);
+		String operator = normalizeLoginId(operatorUsername);
+		String breakGlass = normalizeLoginId(breakGlassUsername);
+		String user = normalizeLoginId(userUsername);
+		if ((!admin.isBlank() && admin.equals(operator))
+			|| (!admin.isBlank() && admin.equals(breakGlass))
+			|| (!admin.isBlank() && admin.equals(user))
+			|| (!operator.isBlank() && operator.equals(breakGlass))
+			|| (!operator.isBlank() && operator.equals(user))
+			|| (!breakGlass.isBlank() && breakGlass.equals(user))) {
+			throw new IllegalStateException("관리자, 운영기관, break-glass, 일반 사용자 계정 ID는 서로 달라야 합니다.");
+		}
+	}
+
+	private String normalizeLoginId(String loginId) {
+		return loginId.trim().toLowerCase(Locale.ROOT);
 	}
 
 	private void validateProdBasicAuthPolicy(

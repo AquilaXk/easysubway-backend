@@ -54,10 +54,17 @@ easysubway:
   admin:
     username: ${EASYSUBWAY_ADMIN_USERNAME}
     password: ${EASYSUBWAY_ADMIN_PASSWORD}
+    break-glass:
+      username: ${EASYSUBWAY_ADMIN_BREAK_GLASS_USERNAME:}
+      password: ${EASYSUBWAY_ADMIN_BREAK_GLASS_PASSWORD:}
+      reason: ${EASYSUBWAY_ADMIN_BREAK_GLASS_REASON:}
     basic-auth:
       enabled: ${EASYSUBWAY_ADMIN_BASIC_AUTH_ENABLED:false}
       exception-owner: ${EASYSUBWAY_ADMIN_BASIC_AUTH_EXCEPTION_OWNER:}
       exception-expires-at: ${EASYSUBWAY_ADMIN_BASIC_AUTH_EXCEPTION_EXPIRES_AT:}
+  operator:
+    username: ${EASYSUBWAY_OPERATOR_USERNAME:}
+    password: ${EASYSUBWAY_OPERATOR_PASSWORD:}
   auth:
     client-ip:
       trusted-proxies: ${EASYSUBWAY_TRUSTED_PROXY_CIDRS}

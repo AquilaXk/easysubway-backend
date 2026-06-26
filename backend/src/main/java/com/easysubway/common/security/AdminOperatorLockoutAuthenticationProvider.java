@@ -1,14 +1,14 @@
 package com.easysubway.common.security;
 
+import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
+import com.easysubway.admin.identity.domain.AdminIdentity;
+import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
+import com.easysubway.admin.identity.domain.AdminLoginAudit;
 import java.time.Clock;
 import java.time.Duration;
-import java.time.Instant;
-import java.util.Collection;
+import java.time.LocalDateTime;
 import java.util.Locale;
-import java.util.Set;
-import java.util.concurrent.ConcurrentHashMap;
-import java.util.concurrent.ConcurrentMap;
-import java.util.stream.Collectors;
+import org.springframework.security.authentication.AccountStatusException;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.authentication.BadCredentialsException;
 import org.springframework.security.authentication.LockedException;
@@ -22,16 +22,15 @@ import org.springframework.util.Assert;
 public class AdminOperatorLockoutAuthenticationProvider implements AuthenticationProvider {
 
 	private final DaoAuthenticationProvider delegate = new DaoAuthenticationProvider();
-	private final Set<String> protectedUsernames;
+	private final AdminIdentityRepository adminIdentityRepository;
 	private final int maxFailures;
 	private final Duration lockoutDuration;
 	private final Clock clock;
-	private final ConcurrentMap<String, AttemptState> attemptsByUsername = new ConcurrentHashMap<>();
 
 	public AdminOperatorLockoutAuthenticationProvider(
 		UserDetailsService userDetailsService,
 		PasswordEncoder passwordEncoder,
-		Collection<String> protectedUsernames,
+		AdminIdentityRepository adminIdentityRepository,
 		int maxFailures,
 		Duration lockoutDuration,
 		Clock clock
@@ -40,10 +39,7 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 		Assert.isTrue(!lockoutDuration.isNegative() && !lockoutDuration.isZero(), "lockoutDuration must be positive");
 		this.delegate.setUserDetailsService(userDetailsService);
 		this.delegate.setPasswordEncoder(passwordEncoder);
-		this.protectedUsernames = protectedUsernames.stream()
-			.filter(username -> username != null && !username.isBlank())
-			.map(AdminOperatorLockoutAuthenticationProvider::normalize)
-			.collect(Collectors.toUnmodifiableSet());
+		this.adminIdentityRepository = adminIdentityRepository;
 		this.maxFailures = maxFailures;
 		this.lockoutDuration = lockoutDuration;
 		this.clock = clock;
@@ -52,17 +48,21 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 	@Override
 	public Authentication authenticate(Authentication authentication) throws AuthenticationException {
 		String username = normalize(authentication.getName());
-		if (!protectedUsernames.contains(username)) {
+		var identity = adminIdentityRepository.findByLoginId(username);
+		if (identity.isEmpty()) {
 			return delegate.authenticate(authentication);
 		}
 
-		rejectIfLocked(username);
 		try {
+			rejectIfLocked(identity.get());
 			Authentication result = delegate.authenticate(authentication);
-			attemptsByUsername.remove(username);
+			recordSuccess(identity.get());
 			return result;
+		} catch (AccountStatusException exception) {
+			recordBlocked(identity.get(), exception);
+			throw exception;
 		} catch (BadCredentialsException exception) {
-			recordFailure(username);
+			recordFailure(identity.get());
 			throw exception;
 		}
 	}
@@ -72,24 +72,66 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 		return delegate.supports(authentication);
 	}
 
-	private void rejectIfLocked(String username) {
-		AttemptState state = attemptsByUsername.get(username);
-		if (state == null || state.lockedUntil == null) {
-			return;
-		}
-		if (state.lockedUntil.isAfter(clock.instant())) {
+	private void rejectIfLocked(AdminIdentity identity) {
+		if (identity.lockedAt(LocalDateTime.now(clock))) {
 			throw new LockedException("관리자 인증 실패 횟수가 초과되었습니다.");
 		}
-		attemptsByUsername.remove(username, state);
 	}
 
-	private void recordFailure(String username) {
-		Instant now = clock.instant();
-		attemptsByUsername.compute(username, (key, current) -> {
-			int failures = current == null ? 1 : current.failures + 1;
-			Instant lockedUntil = failures >= maxFailures ? now.plus(lockoutDuration) : null;
-			return new AttemptState(failures, lockedUntil);
-		});
+	private void recordFailure(AdminIdentity identity) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		AdminIdentity saved = adminIdentityRepository.recordLoginFailure(
+			identity.loginId(),
+			now,
+			maxFailures,
+			lockoutDuration
+		);
+		adminIdentityRepository.recordLoginAudit(new AdminLoginAudit(
+			saved.loginId(),
+			saved.authMethod(),
+			saved.lockedAt(now) ? "LOCKED" : "FAILED",
+			null,
+			now
+		));
+	}
+
+	private void recordSuccess(AdminIdentity identity) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		AdminIdentity saved = adminIdentityRepository.recordLoginSuccess(identity.loginId(), now);
+		adminIdentityRepository.recordLoginAudit(new AdminLoginAudit(
+			saved.loginId(),
+			saved.authMethod(),
+			"SUCCESS",
+			saved.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS ? saved.breakGlassReason() : null,
+			now
+		));
+	}
+
+	private void recordBlocked(AdminIdentity identity, AccountStatusException exception) {
+		LocalDateTime now = LocalDateTime.now(clock);
+		adminIdentityRepository.recordLoginAudit(new AdminLoginAudit(
+			identity.loginId(),
+			identity.authMethod(),
+			blockedOutcome(identity, now),
+			exception.getClass().getSimpleName(),
+			now
+		));
+	}
+
+	private String blockedOutcome(AdminIdentity identity, LocalDateTime now) {
+		if (identity.lockedAt(now)) {
+			return "LOCKED";
+		}
+		if (identity.credentialRotationRequired()) {
+			return "CREDENTIAL_ROTATION_REQUIRED";
+		}
+		return switch (identity.status()) {
+			case DISABLED -> "DISABLED";
+			case PASSWORD_EXPIRED -> "PASSWORD_EXPIRED";
+			case CREDENTIAL_ROTATION_REQUIRED -> "CREDENTIAL_ROTATION_REQUIRED";
+			case LOCKED -> "LOCKED";
+			case ACTIVE -> identity.credentialsExpiredAt(now) ? "PASSWORD_EXPIRED" : "DISABLED";
+		};
 	}
 
 	private static String normalize(String username) {
@@ -97,8 +139,5 @@ public class AdminOperatorLockoutAuthenticationProvider implements Authenticatio
 			return "";
 		}
 		return username.toLowerCase(Locale.ROOT);
-	}
-
-	private record AttemptState(int failures, Instant lockedUntil) {
 	}
 }
