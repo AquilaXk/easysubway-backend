@@ -1,6 +1,7 @@
 package com.easysubway.collection.adapter.out.batch;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.collection.adapter.out.persistence.InMemoryDataCollectionRunRepository;
 import com.easysubway.collection.domain.DataCollectionSource;
@@ -11,6 +12,7 @@ import org.springframework.batch.core.BatchStatus;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobParametersBuilder;
 import org.springframework.batch.core.launch.JobLauncher;
+import org.springframework.batch.core.repository.JobInstanceAlreadyCompleteException;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.boot.test.context.SpringBootTest;
@@ -45,6 +47,22 @@ class TransitMasterCollectionBatchConfigTest {
 		assertThat(run.source()).isEqualTo(DataCollectionSource.TRANSIT_MASTER);
 		assertThat(run.status()).isEqualTo(DataCollectionStatus.COMPLETED);
 		assertThat(run.requestedBy()).isEqualTo("admin-batch");
+	}
+
+	@Test
+	@DisplayName("완료된 배치 Job은 같은 파라미터로 중복 실행되지 않는다")
+	void transitMasterCollectionJobIsIdempotentForCompletedParameters() throws Exception {
+		var parameters = new JobParametersBuilder()
+			.addString("runId", "collection-batch-idempotent")
+			.addString("requestedBy", "admin-batch")
+			.toJobParameters();
+
+		var firstExecution = jobLauncher.run(job, parameters);
+
+		assertThat(firstExecution.getStatus()).isEqualTo(BatchStatus.COMPLETED);
+		assertThatThrownBy(() -> jobLauncher.run(job, parameters))
+			.isInstanceOf(JobInstanceAlreadyCompleteException.class);
+		assertThat(repository.loadRun("collection-batch-idempotent")).isPresent();
 	}
 
 	@Test

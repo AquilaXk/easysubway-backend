@@ -15,4 +15,12 @@ class EgovFrameRuntimeTest {
 
 		assertThat(paginationInfo.getPackageName()).isEqualTo("org.egovframe.rte.ptl.mvc.tags.ui.pagination");
 	}
+
+	@Test
+	@DisplayName("전자정부프레임워크 FDL logging은 control-plane 검증용 클래스패스에만 존재한다")
+	void egovFrameFdlLoggingRuntimeIsOnClasspathForControlPlaneOnly() throws ClassNotFoundException {
+		Class<?> loggingUtility = Class.forName("org.egovframe.rte.fdl.logging.util.EgovResourceReleaser");
+
+		assertThat(loggingUtility.getPackageName()).isEqualTo("org.egovframe.rte.fdl.logging.util");
+	}
 }
