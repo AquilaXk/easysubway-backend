@@ -3,6 +3,7 @@ package com.easysubway.common.security;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
 import com.easysubway.admin.authorization.adapter.out.persistence.InMemoryAdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.adapter.out.persistence.InMemoryAdminIdentityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
@@ -796,6 +797,11 @@ class SecurityConfigTest {
 		@Bean
 		InMemoryAdminRbacAuthorityRepository adminRbacAuthorityRepository() {
 			return new InMemoryAdminRbacAuthorityRepository();
+		}
+
+		@Bean
+		InMemoryAdminAuditEventRepository adminAuditEventRepository() {
+			return new InMemoryAdminAuditEventRepository();
 		}
 	}
 

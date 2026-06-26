@@ -7,6 +7,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,6 +38,9 @@ class AdminOperatorAuditFilterTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private InMemoryAdminAuditEventRepository auditEventRepository;
 
 	@TestConfiguration
 	static class FailingAdminMutationConfiguration {
@@ -81,6 +86,18 @@ class AdminOperatorAuditFilterTest {
 			.doesNotContain("37.302421")
 			.doesNotContain("do-not-log-private-note")
 			.doesNotContain("https://storage.example/upload");
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.actor()).isEqualTo("admin-test");
+				assertThat(event.targetType()).isEqualTo("/admin/reports/{reportId}/page/review");
+				assertThat(event.action()).isEqualTo("POST /admin/reports/{reportId}/page/review");
+				assertThat(event.outcome().name()).isEqualTo("SUCCESS");
+				assertThat(event.toString())
+					.doesNotContain("plain-receipt-token")
+					.doesNotContain("do-not-log-private-note")
+					.doesNotContain("https://storage.example/upload");
+			});
 	}
 
 	@Test

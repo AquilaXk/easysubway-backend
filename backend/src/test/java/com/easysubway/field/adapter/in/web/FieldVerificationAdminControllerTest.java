@@ -9,6 +9,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
@@ -41,6 +43,9 @@ class FieldVerificationAdminControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private InMemoryAdminAuditEventRepository auditEventRepository;
 
 	@Test
 	@DisplayName("관리자는 현장 검증 대상 목록을 조회한다")
@@ -109,6 +114,14 @@ class FieldVerificationAdminControllerTest {
 					.contains("EXIT,출구,주요 출구 연결,VERIFIED,")
 					.contains("PLATFORM_TRANSFER,승강장/환승 동선,승강장과 환승 접근 동선,PLANNED,");
 			});
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.actor()).isEqualTo("admin-user");
+				assertThat(event.targetType()).isEqualTo("FIELD_VERIFICATION_SESSION");
+				assertThat(event.targetId()).isEqualTo("field-verification-sangnoksu-2026-06");
+				assertThat(event.action()).isEqualTo("EXPORT_FIELD_VERIFICATION_CSV");
+			});
 	}
 
 	@Test
@@ -172,7 +185,7 @@ class FieldVerificationAdminControllerTest {
 			}
 		});
 
-		var response = controller.stationFieldVerificationCsv("station\r\nid");
+		var response = controller.stationFieldVerificationCsv("station\r\nid", null, null);
 
 		assertThat(response.getHeaders().getFirst(HttpHeaders.CONTENT_DISPOSITION))
 			.isEqualTo("attachment; filename=\"easysubway-field-verification-station__id.csv\"");

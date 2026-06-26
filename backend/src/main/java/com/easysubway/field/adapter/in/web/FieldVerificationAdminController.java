@@ -1,5 +1,6 @@
 package com.easysubway.field.adapter.in.web;
 
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.web.ApiResponse;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
@@ -9,6 +10,7 @@ import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import jakarta.servlet.http.HttpServletRequest;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
@@ -18,6 +20,8 @@ import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.core.Authentication;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -31,9 +35,16 @@ class FieldVerificationAdminController {
 	private static final String CSV_HEADER = "sessionId,stationId,stationName,verifiedAt,verifiedBy,sessionStatus,itemType,itemLabel,targetName,itemStatus,note";
 
 	private final FieldVerificationUseCase fieldVerificationUseCase;
+	private final AdminAuditWriter auditWriter;
 
 	FieldVerificationAdminController(FieldVerificationUseCase fieldVerificationUseCase) {
+		this(fieldVerificationUseCase, AdminAuditWriter.noop());
+	}
+
+	@Autowired
+	FieldVerificationAdminController(FieldVerificationUseCase fieldVerificationUseCase, AdminAuditWriter auditWriter) {
 		this.fieldVerificationUseCase = fieldVerificationUseCase;
+		this.auditWriter = auditWriter;
 	}
 
 	@GetMapping("/admin/field-verifications/stations")
@@ -71,8 +82,20 @@ class FieldVerificationAdminController {
 	}
 
 	@GetMapping("/admin/field-verifications/stations/{stationId}/export.csv")
-	ResponseEntity<String> stationFieldVerificationCsv(@PathVariable String stationId) {
+	ResponseEntity<String> stationFieldVerificationCsv(
+		@PathVariable String stationId,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
 		FieldVerificationSession session = fieldVerificationUseCase.getStationVerification(stationId);
+		auditWriter.privacyRead(
+			authentication,
+			request,
+			"FIELD_VERIFICATION_SESSION",
+			session.id(),
+			"EXPORT_FIELD_VERIFICATION_CSV",
+			"업무 맥락: 현장 검증 CSV export"
+		);
 		HttpHeaders headers = new HttpHeaders();
 		headers.add(HttpHeaders.CONTENT_TYPE, TEXT_CSV_UTF8);
 		headers.add(

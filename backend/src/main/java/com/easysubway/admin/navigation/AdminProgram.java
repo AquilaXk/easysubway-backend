@@ -19,7 +19,9 @@ public enum AdminProgram {
 	ROUTE_FEEDBACK("a-route-feedback", "운영·분석", "경로 피드백 분석", "/admin/routes/feedback/page", AdminPermission.ADMIN_VIEW),
 	PUSH("a-push", "운영·분석", "푸시 알림", "/admin/notifications/push/page", AdminPermission.DATA_OPERATE),
 	USAGE("a-usage", "운영·분석", "사용 현황", "/admin/usage/activity/page", AdminPermission.SECURITY_AUDIT),
-	SYSTEM("a-system", "운영·분석", "시스템 상태", "/admin/system/page", AdminPermission.SECURITY_AUDIT);
+	SYSTEM("a-system", "운영·분석", "시스템 상태", "/admin/system/page", AdminPermission.SECURITY_AUDIT),
+	AUDITS("a-audits", "보안·감사", "관리자 감사", "/admin/audits/page", AdminPermission.AUDIT_READ),
+	PRIVACY_AUDITS("a-privacy-audits", "보안·감사", "개인정보 조회 로그", "/admin/audits/privacy/page", AdminPermission.PRIVACY_LOG_READ);
 
 	private final String id;
 	private final String groupLabel;
