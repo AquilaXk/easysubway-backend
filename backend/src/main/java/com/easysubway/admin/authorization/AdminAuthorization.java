@@ -18,11 +18,11 @@ public final class AdminAuthorization {
 		if (identityRole == AdminIdentityRole.OPERATOR_ADMIN) {
 			return Set.of();
 		}
-		if (assignedAuthorities != null && !assignedAuthorities.isEmpty()) {
-			return Set.copyOf(assignedAuthorities);
-		}
-		AdminRbacRole role = AdminRbacRole.SUPER_ADMIN;
-		return role.permissions().stream()
+		return assignedAuthorities == null ? Set.of() : Set.copyOf(assignedAuthorities);
+	}
+
+	public static Set<String> superAdminAuthorities() {
+		return AdminRbacRole.SUPER_ADMIN.permissions().stream()
 			.map(AdminPermission::authority)
 			.collect(Collectors.toUnmodifiableSet());
 	}

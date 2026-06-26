@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.admin.authorization.adapter.out.persistence.InMemoryAdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.adapter.out.persistence.InMemoryAdminIdentityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
+import com.easysubway.admin.identity.domain.AdminIdentity;
 import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
@@ -172,6 +173,41 @@ class SecurityConfigTest {
 					.extracting(GrantedAuthority::getAuthority)
 					.contains("ROLE_ADMIN", "admin.view", "admin.report.review")
 					.doesNotContain("admin.data.operate", "admin.master.edit", "admin.security.admin");
+			});
+	}
+
+	@Test
+	@DisplayName("영속 관리자 계정은 RBAC role 미할당만으로 full permission을 얻지 않는다")
+	void persistentAdminWithoutRbacAssignmentDoesNotReceiveFullPermissions() {
+		contextRunner
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				var passwordEncoder = context.getBean(org.springframework.security.crypto.password.PasswordEncoder.class);
+				AdminIdentityRepository repository = context.getBean(AdminIdentityRepository.class);
+				LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+				repository.save(new AdminIdentity(
+					"persistent-admin",
+					"영속 관리자",
+					null,
+					passwordEncoder.encode("admin-password"),
+					AdminIdentityAuthMethod.LOCAL,
+					AdminIdentityRole.ADMIN,
+					AdminIdentityStatus.ACTIVE,
+					0,
+					null,
+					now,
+					null,
+					false,
+					null,
+					false,
+					now,
+					now
+				));
+				UserDetailsService userDetailsService = context.getBean(UserDetailsService.class);
+
+				assertThat(userDetailsService.loadUserByUsername("persistent-admin").getAuthorities())
+					.extracting(GrantedAuthority::getAuthority)
+					.containsExactly("ROLE_ADMIN");
 			});
 	}
 

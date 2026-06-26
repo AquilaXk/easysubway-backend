@@ -4,6 +4,7 @@ import com.easysubway.admin.authorization.AdminAuthorization;
 import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.domain.AdminIdentity;
+import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
@@ -57,10 +58,14 @@ public class AdminIdentityUserDetailsService implements UserDetailsService, User
 		LocalDateTime now = LocalDateTime.now(clock);
 		var authorities = new ArrayList<String>();
 		authorities.add("ROLE_" + identity.role().name().toUpperCase(Locale.ROOT));
+		var assignedAuthorities = adminRbacAuthorityRepository.findPermissionAuthorities(identity.loginId());
 		authorities.addAll(AdminAuthorization.authoritiesFor(
 			identity.role(),
-			adminRbacAuthorityRepository.findPermissionAuthorities(identity.loginId())
+			assignedAuthorities
 		));
+		if (identity.role() == AdminIdentityRole.ADMIN && identity.bootstrapManaged() && assignedAuthorities.isEmpty()) {
+			authorities.addAll(AdminAuthorization.superAdminAuthorities());
+		}
 		return User.withUsername(identity.loginId())
 			.password(identity.passwordHash())
 			.authorities(authorities.toArray(String[]::new))
