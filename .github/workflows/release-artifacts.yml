@@ -186,6 +186,7 @@ jobs:
           cp release/play-generated-apk-device-matrix-gate.json release-artifacts/android/play-generated-apk-device-matrix-gate.json
           cp release/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
           cp release/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
+          cp release/abuse-penetration-rehearsal-gate.json release-artifacts/android/abuse-penetration-rehearsal-gate.json
           cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
           cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
@@ -207,6 +208,7 @@ jobs:
             echo "play_generated_apk_device_matrix_evidence=blocked_until_play_generated_apk_device_matrix_gate_is_satisfied"
             echo "post_launch_operations_review_evidence=blocked_until_post_launch_operations_review_gate_is_satisfied"
             echo "support_incident_response_evidence=blocked_until_support_incident_response_gate_is_satisfied"
+            echo "abuse_penetration_rehearsal_evidence=blocked_until_abuse_penetration_rehearsal_gate_is_satisfied"
             echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } > release-artifacts/android/release-metadata.txt
 
