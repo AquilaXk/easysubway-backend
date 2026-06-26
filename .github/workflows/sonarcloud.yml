@@ -1,0 +1,67 @@
+name: SonarCloud
+
+on:
+  pull_request:
+    branches:
+      - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+    paths:
+      - "backend/**"
+      - "apps/mobile/**"
+      - "tools/**"
+      - "sonar-project.properties"
+      - ".github/workflows/sonarcloud.yml"
+  push:
+    branches:
+      - main
+    paths:
+      - "backend/**"
+      - "apps/mobile/**"
+      - "tools/**"
+      - "sonar-project.properties"
+      - ".github/workflows/sonarcloud.yml"
+
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+jobs:
+  automatic-analysis:
+    if: vars.SONARCLOUD_CI_ENABLED != 'true'
+    runs-on: ubuntu-latest
+    permissions: {}
+    steps:
+      - name: Keep SonarCloud automatic analysis
+        run: echo "SonarCloud CI scanner is skipped because SONARCLOUD_CI_ENABLED is not true."
+
+  sonarcloud:
+    if: vars.SONARCLOUD_CI_ENABLED == 'true' && (github.event_name != 'pull_request' || github.event.pull_request.head.repo.full_name == github.repository)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - name: Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Build backend classes
+        working-directory: backend
+        run: ./gradlew check --no-daemon
+
+      - name: SonarCloud scan
+        uses: SonarSource/sonarqube-scan-action@713881670b6b3676cda39549040e2d88c70d582e
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
