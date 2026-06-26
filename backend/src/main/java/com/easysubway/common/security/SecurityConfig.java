@@ -59,9 +59,9 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/admin/login").permitAll()
 				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
-				.hasAnyAuthority(AdminPermission.REPORT_REVIEW.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
-				.hasAnyAuthority(AdminPermission.REPORT_REVIEW.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
 				.requestMatchers(
 					HttpMethod.GET,
 					"/admin/facilities/editor/page",
@@ -71,36 +71,36 @@ public class SecurityConfig {
 					"/admin/stations/*/route-nodes",
 					"/admin/stations/*/route-edges"
 				)
-				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/facilities/**", "/admin/stations/**")
-				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
 				.requestMatchers(HttpMethod.PUT, "/admin/facilities/**", "/admin/stations/**")
-				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
 				.requestMatchers(HttpMethod.PATCH, "/admin/facilities/**", "/admin/stations/**")
-				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.MASTER_EDIT.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/field-verifications/**")
-				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
 				.requestMatchers(HttpMethod.PATCH, "/admin/field-verifications/**")
-				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/field-verifications/**")
-				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.FIELD_OPERATE.authority())
 				.requestMatchers(
 					HttpMethod.POST,
 					"/admin/data-collections/**",
 					"/admin/data-sources/**",
 					"/admin/notifications/**"
 				)
-				.hasAnyAuthority(AdminPermission.DATA_OPERATE.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers(
 					HttpMethod.GET,
 					"/admin/data-collections/**",
 					"/admin/data-sources/**",
 					"/admin/notifications/**"
 				)
-				.hasAnyAuthority(AdminPermission.DATA_OPERATE.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers("/admin/system/**", "/admin/usage/**")
-				.hasAnyAuthority(AdminPermission.SECURITY_AUDIT.authority(), "ROLE_ADMIN")
-				.anyRequest().hasAnyAuthority(AdminPermission.ADMIN_VIEW.authority(), "ROLE_ADMIN")
+				.hasAuthority(AdminPermission.SECURITY_AUDIT.authority())
+				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())
 			)
 			.exceptionHandling(exception -> exception
 				.defaultAuthenticationEntryPointFor(

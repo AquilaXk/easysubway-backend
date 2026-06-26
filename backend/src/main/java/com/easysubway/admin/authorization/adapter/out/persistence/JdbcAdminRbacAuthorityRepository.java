@@ -5,6 +5,7 @@ import java.util.Locale;
 import java.util.Set;
 import java.util.stream.Collectors;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -15,6 +16,7 @@ public class JdbcAdminRbacAuthorityRepository implements AdminRbacAuthorityRepos
 
 	private final JdbcTemplate jdbcTemplate;
 
+	@Autowired
 	public JdbcAdminRbacAuthorityRepository(DataSource dataSource) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
 	}

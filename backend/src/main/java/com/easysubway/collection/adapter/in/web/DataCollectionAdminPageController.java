@@ -37,7 +37,7 @@ class DataCollectionAdminPageController {
 	}
 
 	@PostMapping("/admin/data-collections/page/run")
-	@PreAuthorize("hasAuthority('admin.data.operate') or hasRole('ADMIN')")
+	@PreAuthorize("hasAuthority('admin.data.operate')")
 	String runCollectionFromPage(
 		@RequestParam DataCollectionSource source,
 		Principal principal

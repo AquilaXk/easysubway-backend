@@ -111,7 +111,7 @@ class TransitStationAdminPageController {
 	}
 
 	@PostMapping("/admin/facilities/editor/page")
-	@PreAuthorize("hasAuthority('admin.master.edit') or hasRole('ADMIN')")
+	@PreAuthorize("hasAuthority('admin.master.edit')")
 	String saveFacilityFromPage(
 		@RequestParam(required = false) String facilityId,
 		@RequestParam String stationId,

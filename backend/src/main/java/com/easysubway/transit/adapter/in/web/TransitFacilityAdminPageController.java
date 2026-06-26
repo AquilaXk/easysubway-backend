@@ -39,7 +39,7 @@ class TransitFacilityAdminPageController {
 	}
 
 	@PostMapping("/admin/facilities/{facilityId}/page/status")
-	@PreAuthorize("hasAuthority('admin.master.edit') or hasRole('ADMIN')")
+	@PreAuthorize("hasAuthority('admin.master.edit')")
 	String updateFacilityStatusFromPage(
 		@PathVariable String facilityId,
 		@RequestParam AccessibilityFacilityStatus status,

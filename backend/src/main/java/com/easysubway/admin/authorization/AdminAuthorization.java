@@ -7,8 +7,6 @@ import org.springframework.security.core.Authentication;
 
 public final class AdminAuthorization {
 
-	private static final String ADMIN_ROLE_AUTHORITY = "ROLE_ADMIN";
-
 	private AdminAuthorization() {
 	}
 
@@ -34,7 +32,6 @@ public final class AdminAuthorization {
 			return false;
 		}
 		return authentication.getAuthorities().stream()
-			.anyMatch(authority -> permission.authority().equals(authority.getAuthority())
-				|| ADMIN_ROLE_AUTHORITY.equals(authority.getAuthority()));
+			.anyMatch(authority -> permission.authority().equals(authority.getAuthority()));
 	}
 }

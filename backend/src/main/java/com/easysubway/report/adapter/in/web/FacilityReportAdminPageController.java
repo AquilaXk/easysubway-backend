@@ -156,7 +156,7 @@ class FacilityReportAdminPageController {
 	}
 
 	@PostMapping("/admin/reports/{reportId}/page/review")
-	@PreAuthorize("hasAuthority('admin.report.review') or hasRole('ADMIN')")
+	@PreAuthorize("hasAuthority('admin.report.review')")
 	String reviewReportFromPage(
 		@PathVariable String reportId,
 		@RequestParam FacilityReportReviewDecision decision,

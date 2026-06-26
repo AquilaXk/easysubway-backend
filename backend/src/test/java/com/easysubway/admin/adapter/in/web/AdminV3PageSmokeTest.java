@@ -79,10 +79,18 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
-	@DisplayName("기존 ADMIN role 관리자는 전체 관리자 program을 볼 수 있다")
-	void adminRoleKeepsFullProgramVisibility() throws Exception {
+	@DisplayName("전체 permission 관리자는 모든 관리자 program을 볼 수 있다")
+	void fullPermissionAdminSeesAllPrograms() throws Exception {
 		String html = mockMvc.perform(get("/admin/dashboard/page")
-				.with(user("admin").roles("ADMIN")))
+				.with(user("admin").authorities(
+					new SimpleGrantedAuthority("admin.view"),
+					new SimpleGrantedAuthority("admin.report.review"),
+					new SimpleGrantedAuthority("admin.master.edit"),
+					new SimpleGrantedAuthority("admin.field.operate"),
+					new SimpleGrantedAuthority("admin.data.operate"),
+					new SimpleGrantedAuthority("admin.security.audit"),
+					new SimpleGrantedAuthority("admin.security.admin")
+				)))
 			.andExpect(status().isOk())
 			.andReturn()
 			.getResponse()
