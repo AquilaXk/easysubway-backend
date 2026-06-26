@@ -1,5 +1,5 @@
 import assert from "node:assert/strict";
-import { readFile } from "node:fs/promises";
+import { readFile, readdir } from "node:fs/promises";
 import path from "node:path";
 import test from "node:test";
 import { fileURLToPath } from "node:url";
@@ -77,8 +77,38 @@ test("서울 TOPIS source 후보는 실시간 provider key를 backend 전용으�
   }
 });
 
+test("모바일 소스는 서울 TOPIS host와 service key env를 직접 포함하지 않는다", async () => {
+  const mobileFiles = await listFiles(path.join(root, "apps/mobile"));
+  const sourceFiles = mobileFiles.filter((filePath) => /\.(dart|kt|swift|xml|gradle|plist)$/.test(filePath));
+
+  assert.ok(sourceFiles.length > 0, "mobile source files must be scanned");
+  for (const filePath of sourceFiles) {
+    const source = await readFile(filePath, "utf8");
+    const relativePath = path.relative(root, filePath);
+    assert.doesNotMatch(source, /EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY/, `${relativePath} must not embed TOPIS service key env`);
+    assert.doesNotMatch(source, /swopenapi\.seoul\.go\.kr/, `${relativePath} must not call TOPIS directly`);
+  }
+});
+
 async function readJson(filePath) {
   return JSON.parse(await readFile(filePath, "utf8"));
+}
+
+async function listFiles(directoryPath) {
+  const entries = await readdir(directoryPath, { withFileTypes: true });
+  const files = [];
+  for (const entry of entries) {
+    if (entry.name === ".dart_tool" || entry.name === "build") {
+      continue;
+    }
+    const entryPath = path.join(directoryPath, entry.name);
+    if (entry.isDirectory()) {
+      files.push(...await listFiles(entryPath));
+    } else if (entry.isFile()) {
+      files.push(entryPath);
+    }
+  }
+  return files;
 }
 
 function capabilityById(contract, capabilityId) {
