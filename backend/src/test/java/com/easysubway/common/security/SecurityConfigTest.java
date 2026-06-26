@@ -177,6 +177,19 @@ class SecurityConfigTest {
 	}
 
 	@Test
+	@DisplayName("인메모리 RBAC 저장소는 선언되지 않은 permission authority를 거절한다")
+	void inMemoryAdminRbacRejectsUnknownAuthority() {
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+
+		assertThatThrownBy(() -> rbacRepository.replacePermissionAuthorities(
+			"admin-user",
+			Set.of("admin.view", "admin.unknown")
+		))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("선언되지 않은 관리자 permission authority");
+	}
+
+	@Test
 	@DisplayName("영속 관리자 계정은 RBAC role 미할당만으로 full permission을 얻지 않는다")
 	void persistentAdminWithoutRbacAssignmentDoesNotReceiveFullPermissions() {
 		contextRunner

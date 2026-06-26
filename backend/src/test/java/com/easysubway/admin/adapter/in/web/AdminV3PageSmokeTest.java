@@ -99,6 +99,7 @@ class AdminV3PageSmokeTest {
 		assertThat(html)
 			.contains("제보 검수 큐")
 			.contains("역 구조·동선 편집")
+			.contains("href=\"/admin/facilities/editor/page\"")
 			.contains("데이터 수집");
 	}
 

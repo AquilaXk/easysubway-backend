@@ -9,30 +9,12 @@
 			<span>통합 관리자</span>
 		</div>
 	</div>
-	<div class="admin-nav-group">
-		<p>접속·개요</p>
-		<a th:if="${adminProgramIds.contains('a-dashboard')}" th:classappend="${active == 'a-dashboard'} ? ' is-active'" th:href="@{/admin/dashboard/page}">통합 대시보드</a>
-	</div>
-	<div class="admin-nav-group">
-		<p>역·시설 마스터</p>
-		<a th:if="${adminProgramIds.contains('a-stations')}" th:classappend="${active == 'a-stations'} ? ' is-active'" th:href="@{/admin/stations/page}">역 목록</a>
-		<a th:if="${adminProgramIds.contains('a-facilities')}" th:classappend="${active == 'a-facilities'} ? ' is-active'" th:href="@{/admin/facilities/page}">시설 상태판</a>
-		<a th:if="${adminProgramIds.contains('a-layout-editor')}" th:classappend="${active == 'a-layout-editor'} ? ' is-active'" th:href="@{/admin/stations/page}">역 구조·동선 편집</a>
-	</div>
-	<div class="admin-nav-group">
-		<p>제보·품질·검증</p>
-		<a th:if="${adminProgramIds.contains('a-reports')}" th:classappend="${active == 'a-reports'} ? ' is-active'" th:href="@{/admin/reports/page}">제보 검수 큐</a>
-		<a th:if="${adminProgramIds.contains('a-quality')}" th:classappend="${active == 'a-quality'} ? ' is-active'" th:href="@{/admin/data-quality/page}">데이터 품질</a>
-		<a th:if="${adminProgramIds.contains('a-field-verifications')}" th:classappend="${active == 'a-field-verifications'} ? ' is-active'" th:href="@{/admin/field-verifications/page}">현장 검증</a>
-	</div>
-	<div class="admin-nav-group">
-		<p>운영·분석</p>
-		<a th:if="${adminProgramIds.contains('a-collections')}" th:classappend="${active == 'a-collections'} ? ' is-active'" th:href="@{/admin/data-collections/page}">데이터 수집</a>
-		<a th:if="${adminProgramIds.contains('a-route-searches')}" th:classappend="${active == 'a-route-searches'} ? ' is-active'" th:href="@{/admin/routes/searches/page}">경로 검색 분석</a>
-		<a th:if="${adminProgramIds.contains('a-route-feedback')}" th:classappend="${active == 'a-route-feedback'} ? ' is-active'" th:href="@{/admin/routes/feedback/page}">경로 피드백 분석</a>
-		<a th:if="${adminProgramIds.contains('a-push')}" th:classappend="${active == 'a-push'} ? ' is-active'" th:href="@{/admin/notifications/push/page}">푸시 알림</a>
-		<a th:if="${adminProgramIds.contains('a-usage')}" th:classappend="${active == 'a-usage'} ? ' is-active'" th:href="@{/admin/usage/activity/page}">사용 현황</a>
-		<a th:if="${adminProgramIds.contains('a-system')}" th:classappend="${active == 'a-system'} ? ' is-active'" th:href="@{/admin/system/page}">시스템 상태</a>
+	<div class="admin-nav-group" th:each="group : ${adminProgramGroups}">
+		<p th:text="${group.label}">메뉴 그룹</p>
+		<a th:each="program : ${group.programs}"
+		   th:classappend="${active == program.id} ? ' is-active'"
+		   th:href="@{${program.path}}"
+		   th:text="${program.label}">메뉴</a>
 	</div>
 </nav>
 </body>

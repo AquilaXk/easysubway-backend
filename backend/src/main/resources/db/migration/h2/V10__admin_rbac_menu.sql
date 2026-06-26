@@ -21,6 +21,9 @@ CREATE TABLE admin_user_roles (
 ALTER TABLE admin_user_roles ADD CONSTRAINT ck_h2_admin_user_roles_role
     CHECK (role_code IN ('ADMIN_VIEWER', 'REPORT_REVIEWER', 'MASTER_EDITOR', 'FIELD_OPERATOR', 'DATA_OPERATOR', 'SECURITY_ADMIN', 'SUPER_ADMIN'));
 
+ALTER TABLE admin_user_roles ADD CONSTRAINT ck_h2_admin_user_roles_login_id_canonical
+    CHECK (login_id = LOWER(TRIM(login_id)));
+
 CREATE TABLE admin_menu_items (
     hidden BOOLEAN DEFAULT FALSE NOT NULL,
     display_order INTEGER DEFAULT 0 NOT NULL,
@@ -31,6 +34,9 @@ CREATE TABLE admin_menu_items (
 
 ALTER TABLE admin_menu_items ADD CONSTRAINT ck_h2_admin_menu_items_order
     CHECK (display_order >= 0);
+
+ALTER TABLE admin_menu_items ADD CONSTRAINT fk_h2_admin_menu_items_parent
+    FOREIGN KEY (parent_program_code) REFERENCES admin_menu_items(program_code);
 
 INSERT INTO admin_role_permissions (created_at, permission_code, role_code)
 VALUES

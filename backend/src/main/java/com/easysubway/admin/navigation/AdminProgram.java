@@ -10,7 +10,7 @@ public enum AdminProgram {
 	DASHBOARD("a-dashboard", "접속·개요", "통합 대시보드", "/admin/dashboard/page", AdminPermission.ADMIN_VIEW),
 	STATIONS("a-stations", "역·시설 마스터", "역 목록", "/admin/stations/page", AdminPermission.ADMIN_VIEW),
 	FACILITIES("a-facilities", "역·시설 마스터", "시설 상태판", "/admin/facilities/page", AdminPermission.ADMIN_VIEW),
-	LAYOUT_EDITOR("a-layout-editor", "역·시설 마스터", "역 구조·동선 편집", "/admin/stations/page", AdminPermission.MASTER_EDIT),
+	LAYOUT_EDITOR("a-layout-editor", "역·시설 마스터", "역 구조·동선 편집", "/admin/facilities/editor/page", AdminPermission.MASTER_EDIT),
 	REPORTS("a-reports", "제보·품질·검증", "제보 검수 큐", "/admin/reports/page", AdminPermission.REPORT_REVIEW),
 	QUALITY("a-quality", "제보·품질·검증", "데이터 품질", "/admin/data-quality/page", AdminPermission.ADMIN_VIEW),
 	FIELD("a-field-verifications", "제보·품질·검증", "현장 검증", "/admin/field-verifications/page", AdminPermission.FIELD_OPERATE),

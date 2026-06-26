@@ -12,7 +12,8 @@ CREATE TABLE admin_user_roles (
     role_code VARCHAR(60) NOT NULL,
     created_at TIMESTAMP NOT NULL,
     PRIMARY KEY (login_id, role_code),
-    CHECK (role_code IN ('ADMIN_VIEWER', 'REPORT_REVIEWER', 'MASTER_EDITOR', 'FIELD_OPERATOR', 'DATA_OPERATOR', 'SECURITY_ADMIN', 'SUPER_ADMIN'))
+    CHECK (role_code IN ('ADMIN_VIEWER', 'REPORT_REVIEWER', 'MASTER_EDITOR', 'FIELD_OPERATOR', 'DATA_OPERATOR', 'SECURITY_ADMIN', 'SUPER_ADMIN')),
+    CHECK (login_id = LOWER(TRIM(login_id)))
 );
 
 CREATE TABLE admin_menu_items (
@@ -20,7 +21,8 @@ CREATE TABLE admin_menu_items (
     parent_program_code VARCHAR(80),
     display_name VARCHAR(120) NOT NULL,
     display_order INTEGER NOT NULL DEFAULT 0 CHECK (display_order >= 0),
-    hidden BOOLEAN NOT NULL DEFAULT FALSE
+    hidden BOOLEAN NOT NULL DEFAULT FALSE,
+    FOREIGN KEY (parent_program_code) REFERENCES admin_menu_items(program_code)
 );
 
 INSERT INTO admin_role_permissions (role_code, permission_code, created_at)
