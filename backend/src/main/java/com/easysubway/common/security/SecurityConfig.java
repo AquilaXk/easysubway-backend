@@ -1,5 +1,6 @@
 package com.easysubway.common.security;
 
+import com.easysubway.admin.authorization.AdminPermission;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
 import com.easysubway.admin.identity.domain.AdminIdentity;
@@ -21,11 +22,13 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
+import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationProvider;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
+import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetailsService;
@@ -39,6 +42,7 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 
 @Configuration
 @EnableWebSecurity
+@EnableMethodSecurity
 public class SecurityConfig {
 
 	@Bean
@@ -53,7 +57,28 @@ public class SecurityConfig {
 			.securityMatcher("/admin/**")
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/admin/login").permitAll()
-				.anyRequest().hasRole("ADMIN")
+				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
+				.hasAnyAuthority(AdminPermission.REPORT_REVIEW.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.POST, "/admin/facilities/**", "/admin/stations/**")
+				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.PUT, "/admin/facilities/**", "/admin/stations/**")
+				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.PATCH, "/admin/facilities/**", "/admin/stations/**")
+				.hasAnyAuthority(AdminPermission.MASTER_EDIT.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.POST, "/admin/field-verifications/**")
+				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
+				.requestMatchers(HttpMethod.PATCH, "/admin/field-verifications/**")
+				.hasAnyAuthority(AdminPermission.FIELD_OPERATE.authority(), "ROLE_ADMIN")
+				.requestMatchers(
+					HttpMethod.POST,
+					"/admin/data-collections/**",
+					"/admin/data-sources/**",
+					"/admin/notifications/**"
+				)
+				.hasAnyAuthority(AdminPermission.DATA_OPERATE.authority(), "ROLE_ADMIN")
+				.requestMatchers("/admin/system/**", "/admin/usage/**")
+				.hasAnyAuthority(AdminPermission.SECURITY_AUDIT.authority(), "ROLE_ADMIN")
+				.anyRequest().hasAnyAuthority(AdminPermission.ADMIN_VIEW.authority(), "ROLE_ADMIN")
 			)
 			.exceptionHandling(exception -> exception
 				.defaultAuthenticationEntryPointFor(

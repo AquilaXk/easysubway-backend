@@ -1,9 +1,11 @@
 package com.easysubway.admin.identity.application.service;
 
+import com.easysubway.admin.authorization.AdminAuthorization;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.domain.AdminIdentity;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Locale;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
@@ -41,9 +43,12 @@ public class AdminIdentityUserDetailsService implements UserDetailsService, User
 
 	private UserDetails toUserDetails(AdminIdentity identity) {
 		LocalDateTime now = LocalDateTime.now(clock);
+		var authorities = new ArrayList<String>();
+		authorities.add("ROLE_" + identity.role().name().toUpperCase(Locale.ROOT));
+		authorities.addAll(AdminAuthorization.authoritiesFor(identity.role()));
 		return User.withUsername(identity.loginId())
 			.password(identity.passwordHash())
-			.authorities("ROLE_" + identity.role().name().toUpperCase(Locale.ROOT))
+			.authorities(authorities.toArray(String[]::new))
 			.disabled(identity.disabled())
 			.accountLocked(identity.lockedAt(now))
 			.accountExpired(false)

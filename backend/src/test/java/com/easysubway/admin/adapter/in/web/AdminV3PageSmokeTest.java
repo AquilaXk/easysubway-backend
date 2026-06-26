@@ -3,6 +3,7 @@ package com.easysubway.admin.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
@@ -14,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -57,6 +59,58 @@ class AdminV3PageSmokeTest {
 			.contains("마스터 데이터")
 			.contains("데이터베이스")
 			.doesNotContain("prod-object-storage-secret-key");
+	}
+
+	@Test
+	@DisplayName("관리자 sidebar는 permission이 있는 program만 표시한다")
+	void adminSidebarShowsOnlyPermittedPrograms() throws Exception {
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("통합 대시보드")
+			.doesNotContain("제보 검수 큐")
+			.doesNotContain("역 구조·동선 편집")
+			.doesNotContain("데이터 수집");
+	}
+
+	@Test
+	@DisplayName("기존 ADMIN role 관리자는 전체 관리자 program을 볼 수 있다")
+	void adminRoleKeepsFullProgramVisibility() throws Exception {
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(user("admin").roles("ADMIN")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("제보 검수 큐")
+			.contains("역 구조·동선 편집")
+			.contains("데이터 수집");
+	}
+
+	@Test
+	@DisplayName("권한이 없는 관리자는 쓰기 entrypoint에 접근할 수 없다")
+	void adminPermissionBlocksMutatingEntrypoint() throws Exception {
+		mockMvc.perform(post("/admin/reports/report-1/page/review")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view")))
+				.with(csrf())
+				.param("decision", "REJECT"))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("권한이 없는 관리자는 푸시 발송 entrypoint에 접근할 수 없다")
+	void adminPermissionBlocksPushEntrypoint() throws Exception {
+		mockMvc.perform(post("/admin/notifications/push")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view")))
+				.with(csrf()))
+			.andExpect(status().isForbidden());
 	}
 
 	@Test

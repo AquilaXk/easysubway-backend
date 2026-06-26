@@ -125,6 +125,33 @@ class SecurityConfigTest {
 	}
 
 	@Test
+	@DisplayName("관리자 계정은 RBAC permission authority를 함께 가진다")
+	void adminCredentialsRegisterPermissionAuthorities() {
+		contextRunner
+			.withPropertyValues(
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password"
+			)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				UserDetailsService userDetailsService = context.getBean(UserDetailsService.class);
+
+				assertThat(userDetailsService.loadUserByUsername("admin-user").getAuthorities())
+					.extracting(GrantedAuthority::getAuthority)
+					.contains(
+						"ROLE_ADMIN",
+						"admin.view",
+						"admin.report.review",
+						"admin.master.edit",
+						"admin.field.operate",
+						"admin.data.operate",
+						"admin.security.audit",
+						"admin.security.admin"
+					);
+			});
+	}
+
+	@Test
 	@DisplayName("관리자 계정 설정이 있으면 영속 identity 저장소에 bootstrap한다")
 	void adminCredentialsBootstrapPersistentIdentity() {
 		contextRunner
