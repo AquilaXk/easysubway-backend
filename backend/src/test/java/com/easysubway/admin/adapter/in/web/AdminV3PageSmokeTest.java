@@ -42,6 +42,24 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
+	@DisplayName("관리자 시스템 화면은 health component 표를 표시한다")
+	void adminSystemPageShowsHealthComponents() throws Exception {
+		String html = mockMvc.perform(get("/admin/system/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("컴포넌트 상태")
+			.contains("애플리케이션")
+			.contains("마스터 데이터")
+			.contains("데이터베이스")
+			.doesNotContain("prod-object-storage-secret-key");
+	}
+
+	@Test
 	@DisplayName("관리자 로그인 화면은 Spring Security form login으로 대시보드에 진입한다")
 	void adminLoginUsesSecurityFormLogin() throws Exception {
 		mockMvc.perform(get("/admin/dashboard/page")

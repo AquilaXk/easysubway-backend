@@ -21,6 +21,8 @@ management:
     health:
       probes:
         enabled: true
+      status:
+        order: "down,out-of-service,degraded,stale,up,unknown"
 
 easysubway:
   notifications:

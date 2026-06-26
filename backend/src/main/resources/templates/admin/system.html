@@ -25,6 +25,29 @@
 	</div>
 
 	<section>
+		<h2>컴포넌트 상태</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">컴포넌트</th>
+				<th scope="col">상태</th>
+				<th scope="col">원인</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="component : ${healthComponents}">
+				<td>
+					<span th:text="${component.label}">애플리케이션</span>
+					<span class="meta" th:text="${component.name}">application</span>
+				</td>
+				<td th:text="${component.status}">UP</td>
+				<td th:text="${component.reason}">서비스 프로세스가 요청을 처리할 수 있습니다.</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
 		<h2>최근 데이터 수집</h2>
 		<table>
 			<thead>

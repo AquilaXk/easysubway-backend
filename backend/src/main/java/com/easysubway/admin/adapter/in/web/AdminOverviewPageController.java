@@ -3,6 +3,7 @@ package com.easysubway.admin.adapter.in.web;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.health.application.port.in.CheckHealthUseCase;
+import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
 import com.easysubway.notification.application.port.in.PushNotificationDashboardUseCase;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
@@ -82,6 +83,7 @@ class AdminOverviewPageController {
 		PushNotificationDashboardSummary push = pushNotificationDashboardUseCase.summarizePushNotifications();
 		UserActivityDashboardSummary usage = userActivityDashboardUseCase.summarizeUserActivity();
 		model.addAttribute("health", health);
+		model.addAttribute("healthComponents", health.components().stream().map(HealthComponentRow::from).toList());
 		model.addAttribute("runs", runs.stream().map(CollectionRunRow::from).toList());
 		model.addAttribute("push", push);
 		model.addAttribute("usage", usage);
@@ -136,6 +138,23 @@ class AdminOverviewPageController {
 				String.valueOf(run.completedAt()),
 				run.collectedCount(),
 				run.failureMessage()
+			);
+		}
+	}
+
+	record HealthComponentRow(
+		String name,
+		String status,
+		String label,
+		String reason
+	) {
+
+		static HealthComponentRow from(HealthComponent component) {
+			return new HealthComponentRow(
+				component.name(),
+				component.status(),
+				component.label(),
+				component.reason()
 			);
 		}
 	}

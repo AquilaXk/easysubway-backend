@@ -23,7 +23,10 @@ class HealthCheckController {
 	record HealthCheckResponse(String status, String service) {
 
 		static HealthCheckResponse from(HealthStatus status) {
-			return new HealthCheckResponse(status.status(), status.service());
+			return new HealthCheckResponse(
+				status.status(),
+				status.service()
+			);
 		}
 	}
 }
