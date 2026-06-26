@@ -53,7 +53,13 @@ class UserDataDeletionServiceTest {
 		assertThat(result.mobilityProfileDeleted()).isTrue();
 		assertThat(result.anonymizedReportCount()).isEqualTo(5);
 		assertThat(favoriteStations.requestedUserId).isEqualTo("anonymous-user-1");
+		assertThat(favoriteFacilities.requestedUserId).isEqualTo("anonymous-user-1");
+		assertThat(favoriteRoutes.requestedUserId).isEqualTo("anonymous-user-1");
 		assertThat(routeFeedbacks.requestedUserId).isEqualTo("anonymous-user-1");
+		assertThat(notificationPreferences.settingsRequestedUserId).isEqualTo("anonymous-user-1");
+		assertThat(notificationPreferences.devicesRequestedUserId).isEqualTo("anonymous-user-1");
+		assertThat(pushNotifications.requestedUserId).isEqualTo("anonymous-user-1");
+		assertThat(mobilityProfile.requestedUserId).isEqualTo("anonymous-user-1");
 		assertThat(reports.requestedUserId).isEqualTo("anonymous-user-1");
 	}
 
@@ -98,6 +104,7 @@ class UserDataDeletionServiceTest {
 	private static final class RecordingDeleteUserFavoriteFacilityPort implements DeleteUserFavoriteFacilityPort {
 
 		private final int count;
+		private String requestedUserId;
 
 		private RecordingDeleteUserFavoriteFacilityPort(int count) {
 			this.count = count;
@@ -105,6 +112,7 @@ class UserDataDeletionServiceTest {
 
 		@Override
 		public int deleteFavoriteFacilitiesByUserId(String userId) {
+			requestedUserId = userId;
 			return count;
 		}
 	}
@@ -112,6 +120,7 @@ class UserDataDeletionServiceTest {
 	private static final class RecordingDeleteUserFavoriteRoutePort implements DeleteUserFavoriteRoutePort {
 
 		private final int count;
+		private String requestedUserId;
 
 		private RecordingDeleteUserFavoriteRoutePort(int count) {
 			this.count = count;
@@ -119,6 +128,7 @@ class UserDataDeletionServiceTest {
 
 		@Override
 		public int deleteFavoriteRoutesByUserId(String userId) {
+			requestedUserId = userId;
 			return count;
 		}
 	}
@@ -144,6 +154,8 @@ class UserDataDeletionServiceTest {
 
 		private final boolean settingsDeleted;
 		private final int deviceCount;
+		private String settingsRequestedUserId;
+		private String devicesRequestedUserId;
 
 		private RecordingDeleteUserNotificationPreferencePort(boolean settingsDeleted, int deviceCount) {
 			this.settingsDeleted = settingsDeleted;
@@ -152,11 +164,13 @@ class UserDataDeletionServiceTest {
 
 		@Override
 		public boolean deleteNotificationSettings(String userId) {
+			settingsRequestedUserId = userId;
 			return settingsDeleted;
 		}
 
 		@Override
 		public int deleteRegisteredDevices(String userId) {
+			devicesRequestedUserId = userId;
 			return deviceCount;
 		}
 	}
@@ -164,6 +178,7 @@ class UserDataDeletionServiceTest {
 	private static final class RecordingDeleteUserPushNotificationPort implements DeleteUserPushNotificationPort {
 
 		private final int count;
+		private String requestedUserId;
 
 		private RecordingDeleteUserPushNotificationPort(int count) {
 			this.count = count;
@@ -171,6 +186,7 @@ class UserDataDeletionServiceTest {
 
 		@Override
 		public int deletePushNotifications(String userId) {
+			requestedUserId = userId;
 			return count;
 		}
 	}
@@ -178,6 +194,7 @@ class UserDataDeletionServiceTest {
 	private static final class RecordingDeleteUserMobilityProfilePort implements DeleteUserMobilityProfilePort {
 
 		private final boolean deleted;
+		private String requestedUserId;
 
 		private RecordingDeleteUserMobilityProfilePort(boolean deleted) {
 			this.deleted = deleted;
@@ -185,6 +202,7 @@ class UserDataDeletionServiceTest {
 
 		@Override
 		public boolean deleteMobilityProfile(String userId) {
+			requestedUserId = userId;
 			return deleted;
 		}
 	}

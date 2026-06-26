@@ -4,9 +4,13 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.report.domain.InvalidFacilityReportException;
+import java.awt.Color;
+import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
+import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
+import javax.imageio.ImageIO;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -17,6 +21,26 @@ class FacilityReportPhotoProcessorTest {
 		.decode("UklGRiIAAABXRUJQVlA4IBYAAAAwAQCdASoBAAEADsD+JaQAA3AAAAAA");
 
 	private final FacilityReportPhotoProcessor processor = new FacilityReportPhotoProcessor();
+
+	@Test
+	@DisplayName("JPEG 신고 사진은 원본을 재작성하고 checksum과 thumbnail을 생성한다")
+	void processJpegPhotoAndCreateChecksumAndThumbnail() throws IOException {
+		byte[] jpegBytes = encodedImage("jpg", 640, 360);
+
+		FacilityReportPhotoAttachment attachment = processor.process(
+			"elevator.jpg",
+			"image/jpeg",
+			Base64.getEncoder().encodeToString(jpegBytes)
+		);
+
+		assertThat(attachment.fileName()).isEqualTo("elevator.jpg");
+		assertThat(attachment.contentType()).isEqualTo("image/jpeg");
+		assertThat(attachment.storedBytes()).isNotEmpty();
+		assertThat(attachment.thumbnailBytes()).isNotEmpty();
+		assertThat(attachment.thumbnailBytes().length).isLessThan(attachment.storedBytes().length);
+		assertThat(attachment.sha256()).matches("[0-9a-f]{64}");
+		assertThat(attachment.sizeBytes()).isEqualTo(attachment.storedBytes().length);
+	}
 
 	@Test
 	@DisplayName("WebP 신고 사진은 기존 모바일 호환성을 위해 허용하고 metadata chunk를 제거한다")
@@ -48,6 +72,59 @@ class FacilityReportPhotoProcessorTest {
 		))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 이미지 크기를 줄여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("MIME type과 파일 확장자가 맞지 않는 사진은 거부한다")
+	void rejectMismatchedExtension() {
+		assertThatThrownBy(() -> processor.process(
+			"restored-photo.jpg",
+			"image/webp",
+			Base64.getEncoder().encodeToString(VALID_WEBP_BYTES)
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 형식을 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("선언된 MIME type과 magic bytes가 맞지 않는 사진은 거부한다")
+	void rejectMismatchedMagicBytes() {
+		assertThatThrownBy(() -> processor.process(
+			"restored-photo.png",
+			"image/png",
+			Base64.getEncoder().encodeToString(VALID_WEBP_BYTES)
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("magic bytes만 맞고 image decode가 실패하는 사진은 거부한다")
+	void rejectCorruptImageAfterMagicBytes() {
+		byte[] corruptPng = new byte[] {
+			(byte) 0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a,
+			0, 0, 0, 0
+		};
+
+		assertThatThrownBy(() -> processor.process(
+			"corrupt.png",
+			"image/png",
+			Base64.getEncoder().encodeToString(corruptPng)
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	private byte[] encodedImage(String formatName, int width, int height) throws IOException {
+		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+		for (int y = 0; y < height; y++) {
+			for (int x = 0; x < width; x++) {
+				image.setRGB(x, y, (x + y) % 2 == 0 ? Color.WHITE.getRGB() : Color.LIGHT_GRAY.getRGB());
+			}
+		}
+		ByteArrayOutputStream output = new ByteArrayOutputStream();
+		ImageIO.write(image, formatName, output);
+		return output.toByteArray();
 	}
 
 	private byte[] appendChunk(byte[] webpBytes, String chunkType, byte[] chunkData) {
