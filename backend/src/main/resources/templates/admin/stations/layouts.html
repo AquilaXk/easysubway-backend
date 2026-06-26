@@ -135,6 +135,15 @@
 		</div>
 	</header>
 
+	<div class="alert warning" th:if="${!masterDataWritable}">
+		<strong>읽기 전용 마스터 데이터</strong>
+		<p>현재 운영 데이터는 저장할 수 없어 구조도와 내부 이동 정보 수정 요청이 차단됩니다.</p>
+	</div>
+	<div class="alert warning" th:if="${masterDataError}">
+		<strong>저장 요청 차단</strong>
+		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
+	</div>
+
 	<section>
 		<h2>구조도 기준 자료</h2>
 		<p class="empty" th:if="${layoutSources.isEmpty()}">등록된 구조도 기준 자료가 없습니다.</p>
@@ -185,7 +194,7 @@
 						<label class="meta" th:for="|reviewed-at-${source.id}|">검수일</label>
 						<input type="date" name="reviewedAt" th:id="|reviewed-at-${source.id}|"
 						       th:value="${source.rawReviewedAt}">
-						<button type="submit">저장</button>
+						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
 					</form>
 					<span class="meta" th:text="${source.sourceName}">상록수역 역사 안내도</span>
 					<span class="meta" th:text="${source.sourceUrl}">https://www.seoulmetro.co.kr</span>
@@ -235,7 +244,7 @@
 							        th:text="${option.label}"
 							        th:selected="${option.value == layout.statusValue}">DRAFT</option>
 						</select>
-						<button type="submit">변경</button>
+						<button type="submit" th:disabled="${!masterDataWritable}">변경</button>
 					</form>
 				</td>
 				<td th:text="${layout.confidenceLevel}">OFFICIAL_DIAGRAM_REFERENCED</td>
@@ -283,7 +292,7 @@
 						<label class="meta" th:for="|accessibility-note-${node.id}|">접근성 메모</label>
 						<input type="text" name="accessibilityNote" th:id="|accessibility-note-${node.id}|"
 						       th:value="${node.rawAccessibilityNote}">
-						<button type="submit">저장</button>
+						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
 						<span class="meta" th:text="${node.positionLabel}">x 120, y 240</span>
 						<span class="meta" th:text="${node.layoutId}">layout-sangnoksu-draft</span>
 					</form>
@@ -353,7 +362,7 @@
 							<option value="true" th:selected="${edge.active}">활성</option>
 							<option value="false" th:selected="${!edge.active}">비활성</option>
 						</select>
-						<button type="submit">저장</button>
+						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
 					</form>
 					<span class="meta" th:text="${edge.distanceLabel}">28m</span>
 					<span class="meta" th:text="${edge.estimatedSecondsLabel}">75초</span>

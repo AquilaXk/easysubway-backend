@@ -30,7 +30,9 @@ import com.easysubway.notification.application.port.in.FacilityStatusChangedAler
 import com.easysubway.notification.application.port.in.ReportStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.ReportStatusChangedAlertCommand;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
@@ -920,6 +922,31 @@ class FacilityReportServiceTest {
 		serviceWithFacilityStatus.reviewReport(reviewCommand(recovered.id(), FacilityReportReviewDecision.ACCEPT));
 		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
 			.isEqualTo(AccessibilityFacilityStatus.NORMAL);
+	}
+
+	@Test
+	@DisplayName("읽기 전용 마스터 데이터에서는 시설 상태 신고 승인을 저장 전에 거부한다")
+	void acceptedReportRejectsReadOnlyMasterDataBeforeReviewSave() {
+		var transitRepository = new UnavailableTransitMasterRepository();
+		var repository = new InMemoryFacilityReportRepository();
+		var service = new FacilityReportService(
+			transitRepository,
+			transitRepository,
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-12T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+		var report = service.createReport(reportCommand(
+			"anonymous-user-read-only",
+			FacilityReportType.BROKEN,
+			"읽기 전용 마스터 데이터에서 승인할 수 없는 신고입니다."
+		));
+
+		assertThatThrownBy(() -> service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.ACCEPT)))
+			.isInstanceOf(MasterDataWriteNotAllowedException.class)
+			.hasMessage("운영 마스터 데이터가 읽기 전용입니다.");
+
+		assertThat(service.getReport(report.id()).status()).isEqualTo(FacilityReportStatus.SUBMITTED);
 	}
 
 	@Test

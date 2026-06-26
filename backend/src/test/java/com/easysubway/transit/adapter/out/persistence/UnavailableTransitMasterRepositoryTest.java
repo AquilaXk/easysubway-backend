@@ -3,6 +3,7 @@ package com.easysubway.transit.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import java.time.LocalDate;
@@ -21,6 +22,18 @@ class UnavailableTransitMasterRepositoryTest {
 		assertThat(repository.loadOperators()).isNotEmpty();
 		assertThat(repository.loadLines()).isNotEmpty();
 		assertThat(repository.loadStations()).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("운영 seed 저장소는 읽기 가능하지만 쓰기 불가 capability를 노출한다")
+	void exposesReadOnlyCapability() {
+		var capability = repository.masterDataCapability();
+
+		assertThat(capability.status()).isEqualTo(MasterDataCapabilityStatus.READ_ONLY);
+		assertThat(capability.readable()).isTrue();
+		assertThat(capability.writable()).isFalse();
+		assertThat(capability.artifactVersion()).isEqualTo("static-seed");
+		assertThat(capability.sha256()).isEqualTo("unavailable");
 	}
 
 	@Test

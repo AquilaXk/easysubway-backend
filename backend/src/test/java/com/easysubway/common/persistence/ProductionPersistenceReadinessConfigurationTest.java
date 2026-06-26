@@ -1,7 +1,11 @@
 package com.easysubway.common.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.MasterDataCapability;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
@@ -49,6 +53,22 @@ class ProductionPersistenceReadinessConfigurationTest {
 				assertThat(health.getDetails()).containsEntry("masterData", "ready");
 				assertThat(health.getDetails()).doesNotContainKey("redis");
 				assertThat(health.getDetails()).doesNotContainKey("push");
+			});
+	}
+
+	@Test
+	@DisplayName("운영 readiness는 마스터 데이터가 읽기 전용이면 read_only 상태를 노출한다")
+	void prodReadinessReportsReadOnlyMasterDataCapability() {
+		productionContext(ReadOnlyDependencyTestConfiguration.class)
+			.withPropertyValues("spring.profiles.active=prod")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+
+				Health health = context.getBean(HealthIndicator.class).health();
+
+				assertThat(health.getStatus()).isEqualTo(Status.UP);
+				assertThat(health.getDetails()).containsEntry("database", "ready");
+				assertThat(health.getDetails()).containsEntry("masterData", "read_only");
 			});
 	}
 
@@ -145,6 +165,39 @@ class ProductionPersistenceReadinessConfigurationTest {
 		}
 	}
 
+	@TestConfiguration
+	static class ReadOnlyDependencyTestConfiguration extends ReadyDependencyTestConfiguration {
+
+		@Bean
+		@Override
+		LoadTransitMasterPort loadTransitMasterPort() {
+			return new ReadOnlyStaticTransitMasterPort(
+				List.of(new TransitOperator(
+					"seoul-metro",
+					"서울교통공사",
+					"수도권",
+					"https://www.seoulmetro.co.kr",
+					"https://www.seoulmetro.co.kr",
+					DataSourceType.OFFICIAL_API,
+					true
+				)),
+				List.of(new SubwayLine("line-1", "seoul-metro", "1호선", "#0052A4", "수도권", "1", true)),
+				List.of(new Station(
+					"station-1",
+					"서울역",
+					"Seoul Station",
+					"수도권",
+					BigDecimal.valueOf(37.5547),
+					BigDecimal.valueOf(126.9706),
+					DataQualityLevel.LEVEL_1,
+					DataSourceType.OFFICIAL_API,
+					LocalDate.of(2026, 1, 1),
+					true
+				))
+			);
+		}
+	}
+
 	private record StaticTransitMasterPort(
 		List<TransitOperator> operators,
 		List<SubwayLine> lines,
@@ -198,6 +251,55 @@ class ProductionPersistenceReadinessConfigurationTest {
 
 		@Override
 		public List<RouteEdge> loadRouteEdges() {
+			return List.of();
+		}
+	}
+
+	private record ReadOnlyStaticTransitMasterPort(
+		List<TransitOperator> operators,
+		List<SubwayLine> lines,
+		List<Station> stations
+	) implements LoadTransitMasterPort, MasterDataCapabilityPort {
+
+		@Override
+		public MasterDataCapability masterDataCapability() {
+			return new MasterDataCapability(
+				MasterDataCapabilityStatus.READ_ONLY,
+				true,
+				false,
+				"fixture",
+				"sha256",
+				null
+			);
+		}
+
+		@Override
+		public List<TransitOperator> loadOperators() {
+			return operators;
+		}
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return lines;
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return stations;
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of();
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of();
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
 			return List.of();
 		}
 	}

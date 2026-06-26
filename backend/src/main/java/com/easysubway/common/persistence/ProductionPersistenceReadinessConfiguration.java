@@ -1,6 +1,7 @@
 package com.easysubway.common.persistence;
 
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
 import java.sql.SQLException;
 import java.util.LinkedHashMap;
 import java.util.Map;
@@ -19,6 +20,7 @@ class ProductionPersistenceReadinessConfiguration {
 	private static final String READY = "ready";
 	private static final String DOWN = "down";
 	private static final String EMPTY = "empty";
+	private static final String READ_ONLY = "read_only";
 
 	@Bean
 	HealthIndicator productionReadinessHealthIndicator(
@@ -29,9 +31,10 @@ class ProductionPersistenceReadinessConfiguration {
 			Map<String, Object> details = new LinkedHashMap<>();
 			boolean databaseReady = databaseReady(dataSource);
 			boolean masterDataReady = masterDataReady(loadTransitMasterPort);
+			boolean masterDataWritable = masterDataWritable(loadTransitMasterPort);
 
 			details.put("database", databaseReady ? READY : DOWN);
-			details.put("masterData", masterDataReady ? READY : EMPTY);
+			details.put("masterData", masterDataReady ? (masterDataWritable ? READY : READ_ONLY) : EMPTY);
 
 			boolean ready = databaseReady && masterDataReady;
 			return health(ready).withDetails(details).build();
@@ -58,5 +61,12 @@ class ProductionPersistenceReadinessConfiguration {
 		} catch (RuntimeException exception) {
 			return false;
 		}
+	}
+
+	private boolean masterDataWritable(LoadTransitMasterPort loadTransitMasterPort) {
+		if (loadTransitMasterPort instanceof MasterDataCapabilityPort capabilityPort) {
+			return capabilityPort.masterDataCapability().writable();
+		}
+		return true;
 	}
 }

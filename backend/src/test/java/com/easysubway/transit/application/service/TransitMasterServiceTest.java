@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
+import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.NearbyStationSearchCommand;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
@@ -28,6 +29,7 @@ import com.easysubway.transit.domain.InvalidRouteEdgeException;
 import com.easysubway.transit.domain.InvalidRouteNodeException;
 import com.easysubway.transit.domain.InvalidStationLayoutSourceException;
 import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeNotFoundException;
 import com.easysubway.transit.domain.RouteEdgeType;
@@ -480,6 +482,25 @@ class TransitMasterServiceTest {
 		assertThat(updated.lastUpdatedAt()).isEqualTo(LocalDate.of(2026, 6, 14));
 		assertThat(service.listStationFacilities("station-sangnoksu").getFirst().status())
 			.isEqualTo(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("마스터 데이터가 읽기 전용이면 서비스 직접 호출도 저장소 예외 전에 차단한다")
+	void updateFacilityStatusRejectsReadOnlyMasterDataBeforeSavePortException() {
+		var repository = new UnavailableTransitMasterRepository();
+		var readOnlyService = new TransitMasterService(
+			repository,
+			repository,
+			Clock.fixed(Instant.parse("2026-06-14T00:00:00Z"), ZoneId.of("Asia/Seoul"))
+		);
+
+		assertThatThrownBy(() -> readOnlyService.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			"admin-user"
+		)))
+			.isInstanceOf(MasterDataWriteNotAllowedException.class)
+			.hasMessage("운영 마스터 데이터가 읽기 전용입니다.");
 	}
 
 	@Test

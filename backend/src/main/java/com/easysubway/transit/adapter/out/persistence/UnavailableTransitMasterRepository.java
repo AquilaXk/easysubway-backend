@@ -1,6 +1,9 @@
 package com.easysubway.transit.adapter.out.persistence;
 
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.MasterDataCapability;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
 import com.easysubway.transit.application.port.out.SaveRouteNodePort;
@@ -27,6 +30,7 @@ import org.springframework.stereotype.Repository;
 @Profile("prod")
 public class UnavailableTransitMasterRepository implements
 	LoadTransitMasterPort,
+	MasterDataCapabilityPort,
 	SaveAccessibilityFacilityStatusPort,
 	SaveStationLayoutSourcePort,
 	SaveSimplifiedStationLayoutStatusPort,
@@ -35,6 +39,11 @@ public class UnavailableTransitMasterRepository implements
 
 	// ponytail: reuse the existing static seed until a real data-pack adapter exists.
 	private final InMemoryTransitMasterRepository seedRepository = new InMemoryTransitMasterRepository();
+
+	@Override
+	public MasterDataCapability masterDataCapability() {
+		return new MasterDataCapability(MasterDataCapabilityStatus.READ_ONLY, true, false, "static-seed", "unavailable", null);
+	}
 
 	@Override
 	public List<TransitOperator> loadOperators() {

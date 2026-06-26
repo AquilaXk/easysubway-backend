@@ -18,6 +18,7 @@ import com.easysubway.transit.domain.StationLayoutSourceNotFoundException;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -29,6 +30,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 class TransitStationLayoutAdminPageController {
@@ -54,6 +56,7 @@ class TransitStationLayoutAdminPageController {
 		model.addAttribute("layoutStatusOptions", layoutStatusOptions());
 		model.addAttribute("routeNodes", routeNodeRows(stationId));
 		model.addAttribute("routeEdges", routeEdgeRows(stationId));
+		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
 		return "admin/stations/layouts";
 	}
 
@@ -62,14 +65,19 @@ class TransitStationLayoutAdminPageController {
 		@PathVariable String stationId,
 		@PathVariable String layoutId,
 		@RequestParam SimplifiedStationLayoutStatus status,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
 		requireLayoutInStation(stationId, layoutId);
-		transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
-			layoutId,
-			status,
-			principal.getName()
-		));
+		try {
+			transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
+				layoutId,
+				status,
+				principal.getName()
+			));
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
+		}
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
 	}
 
@@ -85,22 +93,27 @@ class TransitStationLayoutAdminPageController {
 		@RequestParam boolean attributionRequired,
 		@RequestParam LocalDate capturedAt,
 		@RequestParam(required = false) LocalDate reviewedAt,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
 		requireStationLayoutSourceInStation(stationId, sourceId);
-		transitMasterAdminUseCase.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
-			stationId,
-			sourceId,
-			sourceType,
-			sourceName,
-			sourceUrl,
-			license,
-			commercialUseAllowed,
-			attributionRequired,
-			capturedAt,
-			reviewedAt,
-			principal.getName()
-		));
+		try {
+			transitMasterAdminUseCase.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
+				stationId,
+				sourceId,
+				sourceType,
+				sourceName,
+				sourceUrl,
+				license,
+				commercialUseAllowed,
+				attributionRequired,
+				capturedAt,
+				reviewedAt,
+				principal.getName()
+			));
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
+		}
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
 	}
 
@@ -112,18 +125,23 @@ class TransitStationLayoutAdminPageController {
 		@RequestParam int displayY,
 		@RequestParam String displayLabel,
 		@RequestParam(required = false) String accessibilityNote,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
 		requireRouteNodeInStation(stationId, nodeId);
-		transitMasterAdminUseCase.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
-			stationId,
-			nodeId,
-			displayX,
-			displayY,
-			displayLabel,
-			accessibilityNote,
-			principal.getName()
-		));
+		try {
+			transitMasterAdminUseCase.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
+				stationId,
+				nodeId,
+				displayX,
+				displayY,
+				displayLabel,
+				accessibilityNote,
+				principal.getName()
+			));
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
+		}
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
 	}
 
@@ -140,23 +158,28 @@ class TransitStationLayoutAdminPageController {
 		@RequestParam int widthLevel,
 		@RequestParam int reliabilityScore,
 		@RequestParam boolean active,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
 		requireRouteEdgeInStation(stationId, edgeId);
-		transitMasterAdminUseCase.updateRouteEdge(new UpdateRouteEdgeCommand(
-			stationId,
-			edgeId,
-			distanceMeters,
-			estimatedSeconds,
-			hasStairs,
-			requiresElevator,
-			requiresEscalator,
-			slopeLevel,
-			widthLevel,
-			reliabilityScore,
-			active,
-			principal.getName()
-		));
+		try {
+			transitMasterAdminUseCase.updateRouteEdge(new UpdateRouteEdgeCommand(
+				stationId,
+				edgeId,
+				distanceMeters,
+				estimatedSeconds,
+				hasStairs,
+				requiresElevator,
+				requiresEscalator,
+				slopeLevel,
+				widthLevel,
+				reliabilityScore,
+				active,
+				principal.getName()
+			));
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
+		}
 		return "redirect:/admin/stations/%s/layouts/page".formatted(stationId);
 	}
 

@@ -12,6 +12,7 @@ import com.easysubway.transit.domain.AccessibilityFacilityType;
 import com.easysubway.transit.domain.DataConfidenceLevel;
 import com.easysubway.transit.domain.DataQualityLevel;
 import com.easysubway.transit.domain.DataSourceType;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.StationExit;
@@ -28,6 +29,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 class TransitStationAdminPageController {
@@ -103,6 +105,7 @@ class TransitStationAdminPageController {
 		model.addAttribute("statusOptions", Arrays.asList(AccessibilityFacilityStatus.values()));
 		model.addAttribute("confidenceOptions", Arrays.asList(DataConfidenceLevel.values()));
 		model.addAttribute("sourceTypeOptions", Arrays.asList(DataSourceType.values()));
+		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
 		return "admin/facilities/editor";
 	}
 
@@ -121,12 +124,32 @@ class TransitStationAdminPageController {
 		@RequestParam AccessibilityFacilityStatus status,
 		@RequestParam DataConfidenceLevel dataConfidence,
 		@RequestParam DataSourceType dataSourceType,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
-		if (facilityId == null || facilityId.isBlank()) {
-			String newFacilityId = "facility-" + stationId + "-" + type.name().toLowerCase() + "-" + System.currentTimeMillis();
-			transitMasterAdminUseCase.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
-				newFacilityId,
+		try {
+			if (facilityId == null || facilityId.isBlank()) {
+				String newFacilityId = "facility-" + stationId + "-" + type.name().toLowerCase() + "-" + System.currentTimeMillis();
+				transitMasterAdminUseCase.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
+					newFacilityId,
+					stationId,
+					blankToNull(exitId),
+					type,
+					name,
+					blankToNull(floorFrom),
+					blankToNull(floorTo),
+					latitude,
+					longitude,
+					blankToNull(description),
+					status,
+					dataConfidence,
+					dataSourceType,
+					principal.getName()
+				));
+				return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(stationId, newFacilityId);
+			}
+			transitMasterAdminUseCase.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
+				facilityId,
 				stationId,
 				blankToNull(exitId),
 				type,
@@ -141,24 +164,9 @@ class TransitStationAdminPageController {
 				dataSourceType,
 				principal.getName()
 			));
-			return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(stationId, newFacilityId);
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
 		}
-		transitMasterAdminUseCase.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
-			facilityId,
-			stationId,
-			blankToNull(exitId),
-			type,
-			name,
-			blankToNull(floorFrom),
-			blankToNull(floorTo),
-			latitude,
-			longitude,
-			blankToNull(description),
-			status,
-			dataConfidence,
-			dataSourceType,
-			principal.getName()
-		));
 		return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(stationId, facilityId);
 	}
 

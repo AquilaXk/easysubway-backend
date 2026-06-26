@@ -20,6 +20,14 @@
 			<a class="admin-btn" th:href="@{/admin/facilities/page}">상태판</a>
 		</div>
 	</header>
+	<div class="alert warning" th:if="${!masterDataWritable}">
+		<strong>읽기 전용 마스터 데이터</strong>
+		<p>현재 운영 데이터는 저장할 수 없어 시설 등록과 수정 요청이 차단됩니다.</p>
+	</div>
+	<div class="alert warning" th:if="${masterDataError}">
+		<strong>저장 요청 차단</strong>
+		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
+	</div>
 
 	<div class="admin-grid-2">
 		<section class="admin-panel">
@@ -136,7 +144,7 @@
 					<span class="meta">사용자 위치 설명</span>
 					<textarea name="description" th:text="${selectedFacility == null ? '' : selectedFacility.description}"></textarea>
 				</label>
-				<button type="submit" th:text="${selectedFacility == null ? '등록' : '저장'}">저장</button>
+				<button type="submit" th:disabled="${!masterDataWritable}" th:text="${selectedFacility == null ? '등록' : '저장'}">저장</button>
 			</form>
 		</section>
 	</div>

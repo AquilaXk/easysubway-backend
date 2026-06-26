@@ -13,6 +13,7 @@ import com.easysubway.report.domain.FacilityReportReviewDecision;
 import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.ReportProcessingTimeSummary;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.Clock;
@@ -30,6 +31,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 import org.springframework.web.util.UriComponentsBuilder;
 
 @Controller
@@ -157,11 +159,16 @@ class FacilityReportAdminPageController {
 		@PathVariable String reportId,
 		@RequestParam FacilityReportReviewDecision decision,
 		@RequestParam(required = false) String duplicateOfReportId,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
-		facilityReportUseCase.reviewReport(
-			new ReviewFacilityReportCommand(reportId, decision, principal.getName(), duplicateOfReportId)
-		);
+		try {
+			facilityReportUseCase.reviewReport(
+				new ReviewFacilityReportCommand(reportId, decision, principal.getName(), duplicateOfReportId)
+			);
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
+		}
 		return "redirect:/admin/reports/%s/page".formatted(reportId);
 	}
 

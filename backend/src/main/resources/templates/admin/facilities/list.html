@@ -119,6 +119,14 @@
 		</div>
 	</header>
 	<p class="summary">역 상세와 경로 안내에 쓰는 시설 상태를 확인하고 수정합니다.</p>
+	<div class="alert warning" th:if="${!masterDataWritable}">
+		<strong>읽기 전용 마스터 데이터</strong>
+		<p>현재 운영 데이터는 저장할 수 없어 상태 변경 요청이 차단됩니다.</p>
+	</div>
+	<div class="alert warning" th:if="${masterDataError}">
+		<strong>저장 요청 차단</strong>
+		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
+	</div>
 
 	<p class="empty" th:if="${facilities.isEmpty()}">등록된 시설이 없습니다.</p>
 	<table th:if="${!facilities.isEmpty()}">
@@ -159,7 +167,7 @@
 							        th:text="${option.label}">정상</option>
 						</select>
 					</label>
-					<button type="submit">저장</button>
+					<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
 				</form>
 			</td>
 		</tr>

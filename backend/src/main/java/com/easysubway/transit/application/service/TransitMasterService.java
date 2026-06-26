@@ -15,6 +15,9 @@ import com.easysubway.transit.application.port.in.UpdateStationLayoutSourceComma
 import com.easysubway.notification.application.port.in.FacilityStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.FacilityStatusChangedAlertCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.MasterDataCapability;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
 import com.easysubway.transit.application.port.out.SaveRouteNodePort;
@@ -32,6 +35,7 @@ import com.easysubway.transit.domain.InvalidRouteEdgeException;
 import com.easysubway.transit.domain.InvalidRouteNodeException;
 import com.easysubway.transit.domain.InvalidSimplifiedStationLayoutException;
 import com.easysubway.transit.domain.InvalidStationLayoutSourceException;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.NearbyStation;
 import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteEdgeNotFoundException;
@@ -170,6 +174,14 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		this.saveRouteEdgePort = saveRouteEdgePort;
 		this.facilityStatusAlertUseCase = facilityStatusAlertUseCase;
 		this.clock = clock;
+	}
+
+	@Override
+	public MasterDataCapability masterDataCapability() {
+		if (loadTransitMasterPort instanceof MasterDataCapabilityPort capabilityPort) {
+			return capabilityPort.masterDataCapability();
+		}
+		return new MasterDataCapability(MasterDataCapabilityStatus.UP, true, true, "unknown", "unknown", null);
 	}
 
 	@Override
@@ -345,6 +357,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			throw new InvalidAccessibilityFacilityException("이미 등록된 시설입니다.");
 		}
 
+		requireWritableMasterData();
 		AccessibilityFacility facility = new AccessibilityFacility(
 			command.id(),
 			command.stationId(),
@@ -382,6 +395,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		loadActiveStation(command.stationId());
 		requireExitInStation(command.stationId(), command.exitId());
 
+		requireWritableMasterData();
 		AccessibilityFacility facility = new AccessibilityFacility(
 			existing.id(),
 			command.stationId(),
@@ -415,6 +429,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		AccessibilityFacility facility = loadAccessibilityFacility(command.facilityId());
 		LocalDate updatedAt = LocalDate.now(clock);
 		// 관리자 직접 수정은 역 상세와 경로 추천이 함께 사용하는 운영 상태의 기준값을 바꾼다.
+		requireWritableMasterData();
 		saveAccessibilityFacilityStatusPort.saveFacilityStatus(facility.id(), command.status(), updatedAt);
 		if (facility.status() != command.status()) {
 			facilityStatusAlertUseCase.alertFacilityStatusChanged(
@@ -434,6 +449,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 
 		StationLayoutSource updated = withStationLayoutSource(source, command);
+		requireWritableMasterData();
 		saveStationLayoutSourcePort.saveStationLayoutSource(updated);
 		return updated;
 	}
@@ -446,6 +462,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		SimplifiedStationLayout layout = loadSimplifiedStationLayout(command.layoutId());
 		LocalDate updatedAt = LocalDate.now(clock);
 		// 검수 상태는 앱 렌더링 데이터가 아니라 운영자가 배포 가능성을 판단하는 메타데이터만 갱신한다.
+		requireWritableMasterData();
 		saveSimplifiedStationLayoutStatusPort.saveSimplifiedStationLayoutStatus(
 			layout.id(),
 			command.status(),
@@ -465,6 +482,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 
 		RouteNode updated = withRouteNodeDisplay(routeNode, command);
+		requireWritableMasterData();
 		saveRouteNodePort.saveRouteNode(updated);
 		return updated;
 	}
@@ -479,6 +497,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 
 		RouteEdge updated = withRouteEdge(routeEdge, command);
+		requireWritableMasterData();
 		saveRouteEdgePort.saveRouteEdge(updated);
 		return updated;
 	}
@@ -499,6 +518,12 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			stationsInRegion.size(),
 			dataQualityCounts(stationsInRegion)
 		);
+	}
+
+	private void requireWritableMasterData() {
+		if (!masterDataCapability().writable()) {
+			throw new MasterDataWriteNotAllowedException();
+		}
 	}
 
 	private Map<DataQualityLevel, Long> dataQualityCounts(List<Station> stations) {

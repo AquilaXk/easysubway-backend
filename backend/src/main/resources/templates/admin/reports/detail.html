@@ -119,6 +119,10 @@
 		</div>
 	</header>
 	<h1 class="sr-only">신고 상세</h1>
+	<div class="alert warning" th:if="${masterDataError}">
+		<strong>검수 요청 차단</strong>
+		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
+	</div>
 
 	<section>
 		<h2>신고 내용</h2>

@@ -33,8 +33,10 @@ import com.easysubway.notification.application.port.in.FacilityStatusChangedAler
 import com.easysubway.notification.application.port.in.ReportStatusAlertUseCase;
 import com.easysubway.notification.application.port.in.ReportStatusChangedAlertCommand;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationNotFoundException;
 import java.math.BigDecimal;
@@ -624,6 +626,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 			report.receiptTokenHash()
 		);
 
+		if (command.decision() == FacilityReportReviewDecision.ACCEPT && toFacilityStatus(report.reportType()).isPresent()) {
+			requireWritableMasterData();
+		}
 		// 감사 로그 저장 실패가 신고 상태 변경을 남기지 않도록 같은 트랜잭션에서 먼저 기록한다.
 		saveFacilityReportReviewAuditPort.saveAudit(new FacilityReportReviewAudit(
 			"audit-" + UUID.randomUUID(),
@@ -904,6 +909,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 
 		toFacilityStatus(report.reportType()).ifPresent(status -> {
 			boolean statusChanged = isFacilityStatusChanged(report.facilityId(), status);
+			requireWritableMasterData();
 			saveAccessibilityFacilityStatusPort.saveFacilityStatus(
 				report.facilityId(),
 				status,
@@ -927,6 +933,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 			.findFirst()
 			.map(facility -> facility.status() != status)
 			.orElseThrow(FacilityReportTargetNotFoundException::new);
+	}
+
+	private void requireWritableMasterData() {
+		if (loadTransitMasterPort instanceof MasterDataCapabilityPort capabilityPort
+			&& !capabilityPort.masterDataCapability().writable()) {
+			throw new MasterDataWriteNotAllowedException();
+		}
 	}
 
 	private Optional<AccessibilityFacilityStatus> toFacilityStatus(FacilityReportType reportType) {

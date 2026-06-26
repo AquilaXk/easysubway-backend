@@ -3,6 +3,7 @@ package com.easysubway.transit.adapter.in.web;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.UpdateAccessibilityFacilityStatusCommand;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
+import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import java.security.Principal;
 import java.util.Arrays;
 import java.util.List;
@@ -12,6 +13,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
+import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
 class TransitFacilityAdminPageController {
@@ -31,6 +33,7 @@ class TransitFacilityAdminPageController {
 	String facilitiesPage(Model model) {
 		model.addAttribute("facilities", facilityStatusAssembler.assemble());
 		model.addAttribute("statusOptions", statusOptions());
+		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
 		return "admin/facilities/list";
 	}
 
@@ -38,13 +41,18 @@ class TransitFacilityAdminPageController {
 	String updateFacilityStatusFromPage(
 		@PathVariable String facilityId,
 		@RequestParam AccessibilityFacilityStatus status,
-		Principal principal
+		Principal principal,
+		RedirectAttributes redirectAttributes
 	) {
-		transitMasterAdminUseCase.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
-			facilityId,
-			status,
-			principal.getName()
-		));
+		try {
+			transitMasterAdminUseCase.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand(
+				facilityId,
+				status,
+				principal.getName()
+			));
+		} catch (MasterDataWriteNotAllowedException exception) {
+			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
+		}
 		return "redirect:/admin/facilities/page";
 	}
 
