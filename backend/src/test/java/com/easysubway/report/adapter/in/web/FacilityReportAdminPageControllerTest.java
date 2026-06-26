@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -32,6 +34,9 @@ class FacilityReportAdminPageControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private InMemoryAdminAuditEventRepository auditEventRepository;
 
 	@Test
 	@DisplayName("관리자는 신고 목록 화면에서 접수 상태와 상세 링크를 확인한다")
@@ -172,6 +177,15 @@ class FacilityReportAdminPageControllerTest {
 			.contains("name=\"decision\" value=\"ACCEPT\"")
 			.contains("name=\"decision\" value=\"REJECT\"")
 			.contains("name=\"decision\" value=\"MARK_DUPLICATE\"");
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.actor()).isEqualTo("admin-test");
+				assertThat(event.targetType()).isEqualTo("FACILITY_REPORT");
+				assertThat(event.targetId()).isEqualTo(reportId);
+				assertThat(event.action()).isEqualTo("VIEW_REPORT_DETAIL");
+				assertThat(event.reason()).contains("신고 상세 조회");
+			});
 	}
 
 	@Test

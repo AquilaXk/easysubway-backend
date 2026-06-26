@@ -1,6 +1,7 @@
 package com.easysubway.common.security;
 
 import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
 import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
@@ -98,6 +99,10 @@ public class SecurityConfig {
 					"/admin/notifications/**"
 				)
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers("/admin/audits/privacy/**")
+				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())
+				.requestMatchers("/admin/audits/**")
+				.hasAuthority(AdminPermission.AUDIT_READ.authority())
 				.requestMatchers("/admin/system/**", "/admin/usage/**")
 				.hasAuthority(AdminPermission.SECURITY_AUDIT.authority())
 				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())
@@ -342,8 +347,8 @@ public class SecurityConfig {
 	}
 
 	@Bean
-	AdminOperatorAuditFilter adminOperatorAuditFilter() {
-		return new AdminOperatorAuditFilter();
+	AdminOperatorAuditFilter adminOperatorAuditFilter(AdminAuditEventRepository auditEventRepository) {
+		return new AdminOperatorAuditFilter(auditEventRepository);
 	}
 
 	private void configureBasicAuth(HttpSecurity http, boolean basicAuthEnabled) throws Exception {

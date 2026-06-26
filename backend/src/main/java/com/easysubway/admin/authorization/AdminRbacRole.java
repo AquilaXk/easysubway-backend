@@ -10,7 +10,13 @@ public enum AdminRbacRole {
 	MASTER_EDITOR(AdminPermission.ADMIN_VIEW, AdminPermission.MASTER_EDIT),
 	FIELD_OPERATOR(AdminPermission.ADMIN_VIEW, AdminPermission.FIELD_OPERATE),
 	DATA_OPERATOR(AdminPermission.ADMIN_VIEW, AdminPermission.DATA_OPERATE),
-	SECURITY_ADMIN(AdminPermission.ADMIN_VIEW, AdminPermission.SECURITY_AUDIT, AdminPermission.SECURITY_ADMIN),
+	SECURITY_ADMIN(
+		AdminPermission.ADMIN_VIEW,
+		AdminPermission.SECURITY_AUDIT,
+		AdminPermission.SECURITY_ADMIN,
+		AdminPermission.AUDIT_READ,
+		AdminPermission.PRIVACY_LOG_READ
+	),
 	SUPER_ADMIN(AdminPermission.values());
 
 	private final Set<AdminPermission> permissions;

@@ -1,5 +1,6 @@
 package com.easysubway.report.adapter.in.web;
 
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.common.web.WebMessageResolver;
 import com.easysubway.common.web.pagination.EgovPaginationView;
@@ -14,6 +15,7 @@ import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
+import jakarta.servlet.http.HttpServletRequest;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.time.Clock;
@@ -26,6 +28,7 @@ import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -44,6 +47,7 @@ class FacilityReportAdminPageController {
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final LoadFacilityReportPhotoPort loadFacilityReportPhotoPort;
 	private final WebMessageResolver messages;
+	private final AdminAuditWriter auditWriter;
 	private final Clock clock;
 
 	@Autowired
@@ -51,12 +55,14 @@ class FacilityReportAdminPageController {
 		FacilityReportUseCase facilityReportUseCase,
 		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
 		WebMessageResolver messages,
+		AdminAuditWriter auditWriter,
 		ObjectProvider<Clock> clockProvider
 	) {
 		this(
 			facilityReportUseCase,
 			loadFacilityReportPhotoPort,
 			messages,
+			auditWriter,
 			clockProvider.getIfAvailable(Clock::systemDefaultZone)
 		);
 	}
@@ -71,9 +77,20 @@ class FacilityReportAdminPageController {
 		WebMessageResolver messages,
 		Clock clock
 	) {
+		this(facilityReportUseCase, loadFacilityReportPhotoPort, messages, AdminAuditWriter.noop(), clock);
+	}
+
+	FacilityReportAdminPageController(
+		FacilityReportUseCase facilityReportUseCase,
+		LoadFacilityReportPhotoPort loadFacilityReportPhotoPort,
+		WebMessageResolver messages,
+		AdminAuditWriter auditWriter,
+		Clock clock
+	) {
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.loadFacilityReportPhotoPort = loadFacilityReportPhotoPort;
 		this.messages = messages;
+		this.auditWriter = auditWriter;
 		this.clock = clock;
 	}
 
@@ -133,7 +150,12 @@ class FacilityReportAdminPageController {
 	}
 
 	@GetMapping("/admin/reports/{reportId}/page")
-	String reportDetailPage(@PathVariable String reportId, Model model) {
+	String reportDetailPage(
+		@PathVariable String reportId,
+		Model model,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
 		model.addAttribute("report", FacilityReportDetailPageView.from(facilityReportUseCase.getReport(reportId), messages));
 		model.addAttribute(
 			"reviewAudits",
@@ -143,15 +165,37 @@ class FacilityReportAdminPageController {
 				.toList()
 		);
 		model.addAttribute("reviewActions", reviewActions());
+		auditWriter.privacyRead(
+			authentication,
+			request,
+			"FACILITY_REPORT",
+			reportId,
+			"VIEW_REPORT_DETAIL",
+			"업무 맥락: 신고 상세 조회"
+		);
 		return "admin/reports/detail";
 	}
 
 	@GetMapping("/admin/reports/photos")
-	ResponseEntity<byte[]> reportPhoto(@RequestParam String objectKey) {
+	ResponseEntity<byte[]> reportPhoto(
+		@RequestParam String objectKey,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
 		return loadFacilityReportPhotoPort.loadFacilityReportPhoto(objectKey)
-			.map(photo -> ResponseEntity.ok()
-				.contentType(MediaType.parseMediaType(photo.contentType()))
-				.body(photo.bytes()))
+			.map(photo -> {
+				auditWriter.privacyRead(
+					authentication,
+					request,
+					"FACILITY_REPORT_PHOTO",
+					auditWriter.sha256TargetId(objectKey),
+					"VIEW_REPORT_PHOTO",
+					"업무 맥락: 신고 사진 조회"
+				);
+				return ResponseEntity.ok()
+					.contentType(MediaType.parseMediaType(photo.contentType()))
+					.body(photo.bytes());
+			})
 			.orElseGet(() -> ResponseEntity.notFound().build());
 	}
 

@@ -1,10 +1,16 @@
 package com.easysubway.common.security;
 
+import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEvent;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.time.Clock;
+import java.time.LocalDateTime;
 import java.util.Comparator;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -20,6 +26,17 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 
 	private static final Logger log = LoggerFactory.getLogger(AdminOperatorAuditFilter.class);
 	private static final Set<String> MUTATING_METHODS = Set.of("POST", "PUT", "PATCH", "DELETE");
+	private final AdminAuditEventRepository auditEventRepository;
+	private final Clock clock;
+
+	AdminOperatorAuditFilter(AdminAuditEventRepository auditEventRepository) {
+		this(auditEventRepository, Clock.systemUTC());
+	}
+
+	AdminOperatorAuditFilter(AdminAuditEventRepository auditEventRepository, Clock clock) {
+		this.auditEventRepository = auditEventRepository;
+		this.clock = clock;
+	}
 
 	@Override
 	protected boolean shouldNotFilter(HttpServletRequest request) {
@@ -65,6 +82,21 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 			outcome(response, failure),
 			correlationId(request)
 		);
+		auditEventRepository.save(new AdminAuditEvent(
+			null,
+			AdminAuditEventType.ADMIN_ACTION,
+			authentication.getName(),
+			roles(authentication),
+			correlationId(request),
+			clientIp(request),
+			userAgent(request),
+			normalizedPath(request),
+			null,
+			request.getMethod() + " " + normalizedPath(request),
+			auditOutcome(response, failure),
+			null,
+			LocalDateTime.now(clock)
+		));
 	}
 
 	private static int status(HttpServletResponse response, Exception failure) {
@@ -118,5 +150,25 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 			return "invalid";
 		}
 		return trimmed;
+	}
+
+	private static String clientIp(HttpServletRequest request) {
+		String forwardedFor = request.getHeader("X-Forwarded-For");
+		if (forwardedFor != null && !forwardedFor.isBlank()) {
+			return forwardedFor.split(",", 2)[0].trim();
+		}
+		return request.getRemoteAddr();
+	}
+
+	private static String userAgent(HttpServletRequest request) {
+		String value = request.getHeader("User-Agent");
+		if (value == null || value.isBlank()) {
+			return "missing";
+		}
+		return value.length() > 300 ? value.substring(0, 300) : value;
+	}
+
+	private static AdminAuditOutcome auditOutcome(HttpServletResponse response, Exception failure) {
+		return "SUCCESS".equals(outcome(response, failure)) ? AdminAuditOutcome.SUCCESS : AdminAuditOutcome.FAILURE;
 	}
 }
