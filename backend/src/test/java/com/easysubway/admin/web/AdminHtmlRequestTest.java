@@ -28,4 +28,24 @@ class AdminHtmlRequestTest {
 
 		assertThat(AdminHtmlRequest.matches(request)).isTrue();
 	}
+
+	@Test
+	@DisplayName("context path가 붙은 관리자 page 요청도 내부 admin HTML 경로로 분류한다")
+	void adminPageRequestWithContextPathMatchesHtml() {
+		MockHttpServletRequest request = new MockHttpServletRequest("GET", "/subway/admin/facilities/page");
+		request.setContextPath("/subway");
+
+		assertThat(AdminHtmlRequest.pathWithinApplication(request)).isEqualTo("/admin/facilities/page");
+		assertThat(AdminHtmlRequest.matches(request)).isTrue();
+	}
+
+	@Test
+	@DisplayName("form content type은 대소문자와 charset 파라미터가 달라도 인식한다")
+	void formContentTypeMatchesWithParametersAndCaseDifferences() {
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", "/admin/incidents");
+		request.setContentType("Application/X-WWW-Form-Urlencoded; charset=UTF-8");
+
+		assertThat(AdminHtmlRequest.isFormUrlEncoded(request)).isTrue();
+		assertThat(AdminHtmlRequest.matches(request)).isTrue();
+	}
 }

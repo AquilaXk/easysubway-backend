@@ -163,6 +163,7 @@
 				<td>
 					<form th:action="@{/admin/stations/{stationId}/layout-sources/{sourceId}/page(stationId=${station.stationId}, sourceId=${source.id})}"
 					      method="post">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label class="meta" th:for="|source-type-${source.id}|">자료 유형</label>
 						<select name="sourceType" th:id="|source-type-${source.id}|">
 							<option th:each="option : ${sourceTypeOptions}"
@@ -238,6 +239,8 @@
 				<td>
 					<form th:action="@{/admin/stations/{stationId}/layouts/{layoutId}/page/status(stationId=${station.stationId}, layoutId=${layout.id})}"
 					      method="post">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="expectedVersion" th:value="${layout.version}">
 						<label class="meta" th:for="|status-${layout.id}|">검수 상태</label>
 						<select name="status" th:id="|status-${layout.id}|">
 							<option th:each="option : ${layoutStatusOptions}"
@@ -281,6 +284,7 @@
 				<td>
 					<form th:action="@{/admin/stations/{stationId}/route-nodes/{nodeId}/page(stationId=${station.stationId}, nodeId=${node.id})}"
 					      method="post">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label class="meta" th:for="|display-label-${node.id}|">표시 라벨</label>
 						<input type="text" name="displayLabel" th:id="|display-label-${node.id}|"
 						       th:value="${node.displayLabel}" required>
@@ -328,6 +332,7 @@
 				<td>
 					<form th:action="@{/admin/stations/{stationId}/route-edges/{edgeId}/page(stationId=${station.stationId}, edgeId=${edge.id})}"
 					      method="post">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label class="meta" th:for="|distance-meters-${edge.id}|">거리 m</label>
 						<input type="number" name="distanceMeters" th:id="|distance-meters-${edge.id}|"
 						       th:value="${edge.distanceMeters}" min="0" required>

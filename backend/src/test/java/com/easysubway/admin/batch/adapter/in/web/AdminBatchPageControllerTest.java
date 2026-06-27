@@ -18,17 +18,23 @@ import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.collection.domain.DataCollectionStepStatus;
+import jakarta.servlet.http.HttpSession;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -101,6 +107,7 @@ class AdminBatchPageControllerTest {
 		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/failed-run/retry")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/incidents/page"))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("retryRequested", "true"))
 			.andExpect(status().is3xxRedirection())
@@ -118,6 +125,51 @@ class AdminBatchPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("배치 재처리 폼은 같은 command token 재전송을 409로 차단한다")
+	void retryRejectsRepeatedCommandToken() throws Exception {
+		saveDataCollectionRunPort.saveRun(failedRun("failed-run"));
+		MockHttpSession session = new MockHttpSession();
+		String token = commandTokenFrom(getAdminHtml("/admin/batches/page", session));
+
+		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/failed-run/retry")
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token)
+				.param("retryRequested", "true"))
+			.andExpect(status().is3xxRedirection());
+
+		String conflictHtml = mockMvc.perform(post("/admin/batches/transit-master-collection/runs/failed-run/retry")
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token)
+				.param("retryRequested", "true"))
+			.andExpect(status().isConflict())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(conflictHtml)
+			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 2))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.SUCCESS);
+				assertThat(event.reason()).contains("failed-run");
+			});
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.action()).isEqualTo("POST /admin/batches/{jobId}/runs/{runId}/retry");
+			});
+	}
+
+	@Test
 	@DisplayName("관리자 재처리 거부도 실패 audit을 남긴다")
 	void rejectedRetryWritesFailureAudit() throws Exception {
 		saveDataCollectionRunPort.saveRun(completedRun("completed-run"));
@@ -125,6 +177,7 @@ class AdminBatchPageControllerTest {
 		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/completed-run/retry")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/incidents/page"))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("retryRequested", "true"))
 			.andExpect(status().isBadRequest());
@@ -148,7 +201,8 @@ class AdminBatchPageControllerTest {
 
 		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/failed-run/retry")
 				.with(user("operator").authorities(new SimpleGrantedAuthority("admin.data.operate")))
-				.with(csrf()))
+				.with(csrf())
+				.with(commandToken("/admin/batches/page")))
 			.andExpect(status().isForbidden());
 	}
 
@@ -238,5 +292,42 @@ class AdminBatchPageControllerTest {
 			"수집 완료",
 			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.COMPLETED, null, null, null, 1, null))
 		);
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) throws Exception {
+		return mockMvc.perform(get(path)
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = sessionFrom(request);
+			try {
+				request.setSession(session);
+				request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+				return request;
+			} catch (Exception exception) {
+				throw new AssertionError(exception);
+			}
+		};
+	}
+
+	private static MockHttpSession sessionFrom(MockHttpServletRequest request) {
+		HttpSession session = request.getSession(false);
+		if (session instanceof MockHttpSession mockHttpSession) {
+			return mockHttpSession;
+		}
+		return new MockHttpSession();
 	}
 }

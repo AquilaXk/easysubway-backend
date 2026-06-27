@@ -159,6 +159,7 @@
 				<form th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
 				      method="post">
 					<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+					<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 					<label>
 						<span class="meta">변경할 상태</span>
 						<select name="status">

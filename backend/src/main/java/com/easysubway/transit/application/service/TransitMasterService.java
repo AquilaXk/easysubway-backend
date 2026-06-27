@@ -52,6 +52,7 @@ import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutNotFoundException;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
+import com.easysubway.transit.domain.SimplifiedStationLayoutVersionConflictException;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import com.easysubway.transit.domain.TransitRegionSummary;
@@ -455,11 +456,12 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	@Override
-	public SimplifiedStationLayout updateSimplifiedStationLayoutStatus(UpdateSimplifiedStationLayoutStatusCommand command) {
+	public synchronized SimplifiedStationLayout updateSimplifiedStationLayoutStatus(UpdateSimplifiedStationLayoutStatusCommand command) {
 		requireLayoutStatus(command);
 		requireReviewer(command);
 
 		SimplifiedStationLayout layout = loadSimplifiedStationLayout(command.layoutId());
+		requireExpectedLayoutVersion(command, layout);
 		LocalDate updatedAt = LocalDate.now(clock);
 		// 검수 상태는 앱 렌더링 데이터가 아니라 운영자가 배포 가능성을 판단하는 메타데이터만 갱신한다.
 		requireWritableMasterData();
@@ -720,6 +722,15 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		}
 	}
 
+	private void requireExpectedLayoutVersion(
+		UpdateSimplifiedStationLayoutStatusCommand command,
+		SimplifiedStationLayout layout
+	) {
+		if (command.expectedVersion() != null && command.expectedVersion() != layout.version()) {
+			throw new SimplifiedStationLayoutVersionConflictException();
+		}
+	}
+
 	private void requireStationLayoutSource(UpdateStationLayoutSourceCommand command) {
 		if (command.stationId() == null || command.stationId().isBlank()) {
 			throw new InvalidStationLayoutSourceException("역 식별자가 필요합니다.");
@@ -875,7 +886,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		return new SimplifiedStationLayout(
 			layout.id(),
 			layout.stationId(),
-			layout.version(),
+			layout.version() + 1,
 			status,
 			layout.sourceIds(),
 			layout.confidenceLevel(),

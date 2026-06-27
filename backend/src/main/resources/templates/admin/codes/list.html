@@ -54,6 +54,7 @@
 				<td>
 					<form th:if="${code.enabled and !code.requiredIncidentCode}" th:action="@{'/admin/codes/' + ${code.groupCode} + '/' + ${code.code} + '/disable'}" method="post">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<button type="submit">비활성화</button>
 					</form>
 				</td>
@@ -67,6 +68,7 @@
 		<h2>Code 추가·수정</h2>
 		<form method="post" th:action="@{/admin/codes}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<input type="hidden" name="groupCode" th:value="${selectedGroup}">
 			<label>Code <input name="code" required></label>
 			<label>이름 <input name="displayName" required></label>

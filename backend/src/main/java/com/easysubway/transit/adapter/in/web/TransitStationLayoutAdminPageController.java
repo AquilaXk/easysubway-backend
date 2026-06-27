@@ -96,7 +96,8 @@ class TransitStationLayoutAdminPageController {
 			transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
 				layoutId,
 				form.status(),
-				principal.getName()
+				principal.getName(),
+				form.expectedVersion()
 			));
 		} catch (MasterDataWriteNotAllowedException exception) {
 			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
@@ -288,8 +289,13 @@ class TransitStationLayoutAdminPageController {
 
 	record LayoutStatusForm(
 		@NotNull(message = "{validation.transit.layout-status.required}")
-		SimplifiedStationLayoutStatus status
+		SimplifiedStationLayoutStatus status,
+		Integer expectedVersion
 	) {
+
+		LayoutStatusForm(SimplifiedStationLayoutStatus status) {
+			this(status, null);
+		}
 	}
 
 	record LayoutSourceForm(

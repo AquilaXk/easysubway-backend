@@ -208,6 +208,7 @@
 	      th:action="@{/admin/reports/{reportId}/page/review(reportId=${report.id})}"
 	      method="post">
 		<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+		<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 		<label>
 			기준 신고 ID
 			<input name="duplicateOfReportId" type="text" autocomplete="off" placeholder="중복 처리할 때 입력" th:value="${reviewForm.duplicateOfReportId}">

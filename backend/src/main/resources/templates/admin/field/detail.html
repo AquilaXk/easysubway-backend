@@ -59,6 +59,7 @@
 						<form th:action="@{/admin/field-verifications/{stationId}/items/{itemId}/page/status(stationId=${verification.stationId},itemId=${item.itemId})}"
 						      method="post">
 							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 							<label>
 								<span class="meta">검증 상태</span>
 								<select name="status">

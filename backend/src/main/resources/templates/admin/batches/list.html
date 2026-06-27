@@ -83,6 +83,7 @@
 					      th:action="@{'/admin/batches/' + ${run.jobId} + '/runs/' + ${run.runId} + '/retry'}"
 					      method="post">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="retryRequested" value="true">
 						<button type="submit">재처리</button>
 					</form>

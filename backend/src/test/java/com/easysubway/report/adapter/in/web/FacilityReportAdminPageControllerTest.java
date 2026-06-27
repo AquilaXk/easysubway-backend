@@ -9,15 +9,22 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.jayway.jsonpath.JsonPath;
+import jakarta.servlet.http.HttpSession;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-test",
@@ -196,6 +203,7 @@ class FacilityReportAdminPageControllerTest {
 		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/reports/%s/page".formatted(reportId)))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("decision", "ACCEPT"))
 			.andExpect(status().is3xxRedirection())
@@ -214,6 +222,50 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 검수 폼은 같은 command token 재전송을 409로 차단한다")
+	void reportReviewRejectsRepeatedCommandToken() throws Exception {
+		String reportId = createReport("중복 제출을 막을 신고");
+		MockHttpSession session = new MockHttpSession();
+		String token = commandTokenFrom(getAdminHtml("/admin/reports/%s/page".formatted(reportId), session));
+
+		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+				.session(session)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token)
+				.param("decision", "ACCEPT"))
+			.andExpect(status().is3xxRedirection());
+
+		String conflictHtml = mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+				.session(session)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token)
+				.param("decision", "REJECT"))
+			.andExpect(status().isConflict())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		String detailHtml = getAdminHtml("/admin/reports/%s/page".formatted(reportId), session);
+
+		assertThat(conflictHtml)
+			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("이미 처리되었거나 만료된 관리자 요청입니다");
+		assertThat(detailHtml)
+			.contains("반영됨")
+			.doesNotContain("반려됨");
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.action()).isEqualTo("POST /admin/reports/{reportId}/page/review");
+			});
+	}
+
+	@Test
 	@DisplayName("신고 검수 폼은 판정 누락 오류와 입력값을 상세 화면에 표시한다")
 	void reportReviewValidationErrorRendersAdminHtml() throws Exception {
 		String originalReportId = createReport("기준 신고");
@@ -222,6 +274,7 @@ class FacilityReportAdminPageControllerTest {
 		String html = mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/reports/%s/page".formatted(reportId)))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("duplicateOfReportId", originalReportId))
 			.andExpect(status().isBadRequest())
@@ -253,6 +306,7 @@ class FacilityReportAdminPageControllerTest {
 		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/reports/%s/page".formatted(reportId)))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("decision", "REJECT"))
 			.andExpect(status().is3xxRedirection());
@@ -281,6 +335,7 @@ class FacilityReportAdminPageControllerTest {
 		mockMvc.perform(post("/admin/reports/{reportId}/page/review", duplicatedReportId)
 				.with(httpBasic("admin-test", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/reports/%s/page".formatted(duplicatedReportId)))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("decision", "MARK_DUPLICATE")
 				.param("duplicateOfReportId", originalReportId))
@@ -335,6 +390,43 @@ class FacilityReportAdminPageControllerTest {
 
 	private String createReport(String description) throws Exception {
 		return createReport(description, "");
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) throws Exception {
+		return mockMvc.perform(get(path)
+				.session(session)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = sessionFrom(request);
+			try {
+				request.setSession(session);
+				request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+				return request;
+			} catch (Exception exception) {
+				throw new AssertionError(exception);
+			}
+		};
+	}
+
+	private static MockHttpSession sessionFrom(MockHttpServletRequest request) {
+		HttpSession session = request.getSession(false);
+		if (session instanceof MockHttpSession mockHttpSession) {
+			return mockHttpSession;
+		}
+		return new MockHttpSession();
 	}
 
 	private String createReportWithPhotoAndLocation(String description) throws Exception {

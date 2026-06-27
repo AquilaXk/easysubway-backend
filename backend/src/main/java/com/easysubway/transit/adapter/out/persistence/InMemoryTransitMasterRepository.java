@@ -342,7 +342,7 @@ public class InMemoryTransitMasterRepository implements
 		simplifiedStationLayouts.put(layoutId, new SimplifiedStationLayout(
 			layout.id(),
 			layout.stationId(),
-			layout.version(),
+			layout.version() + 1,
 			status,
 			layout.sourceIds(),
 			layout.confidenceLevel(),

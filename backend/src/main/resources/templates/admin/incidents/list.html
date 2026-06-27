@@ -22,6 +22,7 @@
 		<p th:text="${'현재 health: ' + healthStatus}">현재 health: UP</p>
 		<form th:if="${healthStatus != 'UP'}" method="post" th:action="@{/admin/incidents/health}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<button type="submit">Health incident 생성</button>
 		</form>
 	</section>
@@ -30,6 +31,7 @@
 		<h2>Incident 생성</h2>
 		<form method="post" th:action="@{/admin/incidents}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<label>심각도
 				<select name="severity">
 					<option th:each="option : ${severityOptions}" th:value="${option.code}" th:text="${option.displayName}">Major</option>
@@ -84,6 +86,7 @@
 				<td>
 					<form th:if="${incident.open}" th:action="@{'/admin/incidents/' + ${incident.incidentId} + '/resolve'}" method="post">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label for="incident-resolution" th:for="${'incident-resolution-' + incident.incidentId}">해결 기록</label>
 						<input id="incident-resolution" th:id="${'incident-resolution-' + incident.incidentId}" name="resolution" required placeholder="해결 기록">
 						<button type="submit">해결</button>

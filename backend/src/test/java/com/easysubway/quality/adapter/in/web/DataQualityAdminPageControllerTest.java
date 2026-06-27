@@ -25,18 +25,24 @@ import com.easysubway.transit.domain.Station;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
 import com.jayway.jsonpath.JsonPath;
+import jakarta.servlet.http.HttpSession;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Map;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.ui.ExtendedModelMap;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -195,9 +201,47 @@ class DataQualityAdminPageControllerTest {
 		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/reports/%s/page".formatted(reportId)))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("decision", "ACCEPT"))
 			.andExpect(status().is3xxRedirection());
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) throws Exception {
+		return mockMvc.perform(get(path)
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = sessionFrom(request);
+			try {
+				request.setSession(session);
+				request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+				return request;
+			} catch (Exception exception) {
+				throw new AssertionError(exception);
+			}
+		};
+	}
+
+	private static MockHttpSession sessionFrom(MockHttpServletRequest request) {
+		HttpSession session = request.getSession(false);
+		if (session instanceof MockHttpSession mockHttpSession) {
+			return mockHttpSession;
+		}
+		return new MockHttpSession();
 	}
 
 	private static DataQualitySummary emptySummary() {

@@ -71,6 +71,7 @@
 			<h2 th:text="${selectedFacility == null ? '시설 등록' : '시설 수정'}">시설 수정</h2>
 			<form class="admin-form" th:action="@{/admin/facilities/editor/page}" method="post">
 				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 				<input type="hidden" name="facilityId" th:value="${facilityForm.facilityId}">
 				<label>
 					<span class="meta">역</span>

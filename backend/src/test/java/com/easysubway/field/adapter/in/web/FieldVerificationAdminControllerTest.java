@@ -19,8 +19,11 @@ import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import jakarta.servlet.http.HttpSession;
 import java.time.LocalDate;
 import java.util.List;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -28,8 +31,11 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -258,6 +264,7 @@ class FieldVerificationAdminControllerTest {
 		String html = mockMvc.perform(post("/admin/field-verifications/station-sadang/items/field-verification-sadang-elevator/page/status")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/field-verifications/station-sadang/page"))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("note", "상태 누락 현장 메모"))
 			.andExpect(status().isBadRequest())
@@ -279,6 +286,7 @@ class FieldVerificationAdminControllerTest {
 		String html = mockMvc.perform(post("/admin/field-verifications/station-sadang/items/field-verification-sadang-elevator/page/status")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
+				.with(commandToken("/admin/field-verifications/station-sadang/page"))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("status", "PLANNED")
 				.param("note", "허용되지 않는 상태"))
@@ -452,5 +460,42 @@ class FieldVerificationAdminControllerTest {
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang/history")
 				.with(httpBasic("anonymous-user-1", "user-test-password")))
 			.andExpect(status().isForbidden());
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) throws Exception {
+		return mockMvc.perform(get(path)
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = sessionFrom(request);
+			try {
+				request.setSession(session);
+				request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+				return request;
+			} catch (Exception exception) {
+				throw new AssertionError(exception);
+			}
+		};
+	}
+
+	private static MockHttpSession sessionFrom(MockHttpServletRequest request) {
+		HttpSession session = request.getSession(false);
+		if (session instanceof MockHttpSession mockHttpSession) {
+			return mockHttpSession;
+		}
+		return new MockHttpSession();
 	}
 }
