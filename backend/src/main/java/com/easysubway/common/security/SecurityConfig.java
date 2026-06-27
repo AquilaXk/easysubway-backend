@@ -221,7 +221,8 @@ public class SecurityConfig {
 				.requestMatchers(
 					"/api/health",
 					"/actuator/health",
-					"/actuator/health/**",
+					"/actuator/health/liveness",
+					"/actuator/health/readiness",
 					"/actuator/prometheus",
 					"/api/v1/realtime/**",
 					"/favicon.ico",
