@@ -177,8 +177,9 @@ class FacilityReportAdminPageControllerTest {
 			.contains("신고 상세")
 			.contains("상세에서 확인할 신고")
 			.contains("elevator-notice.png")
-			.contains("객체 키")
-			.contains("/admin/reports/photos?objectKey=facility-reports/")
+			.contains("/admin/reports/%s/photo/thumbnail".formatted(reportId))
+			.doesNotContain("객체 키")
+			.doesNotContain("facility-reports/")
 			.contains("37.302421")
 			.contains("126.866221")
 			.contains("name=\"decision\" value=\"ACCEPT\"")
@@ -193,6 +194,42 @@ class FacilityReportAdminPageControllerTest {
 				assertThat(event.action()).isEqualTo("VIEW_REPORT_DETAIL");
 				assertThat(event.reason()).contains("신고 상세 조회");
 			});
+	}
+
+	@Test
+	@DisplayName("관리자는 신고 번호 기준 endpoint로 신고 사진 thumbnail과 원본을 조회한다")
+	void adminReportPhotoEndpointsLoadReportBoundPhotoAndWritePrivacyAudit() throws Exception {
+		String reportId = createReportWithPhotoAndLocation("사진 endpoint로 확인할 신고");
+
+		mockMvc.perform(get("/admin/reports/{reportId}/photo/thumbnail", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(header().string("Cache-Control", "no-store, private"))
+			.andExpect(header().string("Content-Type", "image/png"));
+
+		mockMvc.perform(get("/admin/reports/{reportId}/photo/original", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(header().string("Cache-Control", "no-store, private"))
+			.andExpect(header().string("Content-Type", "image/png"));
+
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 2))
+			.extracting(event -> event.action() + ":" + event.targetType() + ":" + event.targetId() + ":" + event.reason())
+			.containsExactly(
+				"VIEW_REPORT_PHOTO_ORIGINAL:FACILITY_REPORT_PHOTO:" + reportId + ":업무 맥락: 신고 원본 사진 조회",
+				"VIEW_REPORT_PHOTO_THUMBNAIL:FACILITY_REPORT_PHOTO:" + reportId + ":업무 맥락: 신고 사진 미리보기 조회"
+			);
+	}
+
+	@Test
+	@DisplayName("관리자 신고 사진 조회는 object key query endpoint를 열지 않는다")
+	void adminReportPhotoQueryEndpointIsNotExposed() throws Exception {
+		createReportWithPhotoAndLocation("object key 조회를 막을 신고");
+
+		mockMvc.perform(get("/admin/reports/photos")
+				.param("objectKey", "facility-reports/other-report/original.png")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isNotFound());
 	}
 
 	@Test
@@ -371,6 +408,10 @@ class FacilityReportAdminPageControllerTest {
 			.andExpect(status().isUnauthorized());
 
 		mockMvc.perform(get("/admin/reports/{reportId}/page", reportId)
+				.with(httpBasic("basic-user", "user-test-password")))
+			.andExpect(status().isForbidden());
+
+		mockMvc.perform(get("/admin/reports/{reportId}/photo/thumbnail", reportId)
 				.with(httpBasic("basic-user", "user-test-password")))
 			.andExpect(status().isForbidden());
 

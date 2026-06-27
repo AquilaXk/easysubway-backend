@@ -154,14 +154,12 @@
 		<dl>
 			<dt>파일명</dt>
 			<dd th:text="${report.hasPhoto() ? report.photoFileName : '없음'}">없음</dd>
-			<dt>객체 키</dt>
-			<dd th:text="${report.hasPhoto() ? report.photoObjectKey : '없음'}">없음</dd>
 			<dt>미리보기</dt>
 			<dd>
 				<span th:if="${!report.hasPhoto()}">없음</span>
 				<img th:if="${report.hasPhoto()}"
 				     class="photo-preview"
-				     th:src="@{/admin/reports/photos(objectKey=${report.photoObjectKey})}"
+				     th:src="@{/admin/reports/{reportId}/photo/thumbnail(reportId=${report.id})}"
 				     alt="첨부 사진">
 			</dd>
 		</dl>

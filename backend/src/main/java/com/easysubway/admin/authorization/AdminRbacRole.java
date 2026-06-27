@@ -6,7 +6,7 @@ import java.util.Set;
 
 public enum AdminRbacRole {
 	ADMIN_VIEWER(AdminPermission.ADMIN_VIEW),
-	REPORT_REVIEWER(AdminPermission.ADMIN_VIEW, AdminPermission.REPORT_REVIEW),
+	REPORT_REVIEWER(AdminPermission.ADMIN_VIEW, AdminPermission.REPORT_REVIEW, AdminPermission.REPORT_PHOTO_READ),
 	MASTER_EDITOR(AdminPermission.ADMIN_VIEW, AdminPermission.MASTER_EDIT),
 	FIELD_OPERATOR(AdminPermission.ADMIN_VIEW, AdminPermission.FIELD_OPERATE),
 	DATA_OPERATOR(

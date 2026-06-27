@@ -69,6 +69,12 @@ public class SecurityConfig {
 				.requestMatchers("/admin/error/page").permitAll()
 				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
 				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
+				.requestMatchers(
+					HttpMethod.GET,
+					"/admin/reports/*/photo/thumbnail",
+					"/admin/reports/*/photo/original"
+				)
+				.hasAuthority(AdminPermission.REPORT_PHOTO_READ.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
 				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
 				.requestMatchers(

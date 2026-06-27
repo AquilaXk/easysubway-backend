@@ -28,6 +28,8 @@ import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.function.Function;
+import org.springframework.http.CacheControl;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.http.MediaType;
@@ -185,23 +187,50 @@ class FacilityReportAdminPageController {
 		model.addAttribute("reviewForm", submittedForm == null ? new ReviewReportForm(null, "") : submittedForm);
 	}
 
-	@GetMapping("/admin/reports/photos")
-	ResponseEntity<byte[]> reportPhoto(
-		@RequestParam String objectKey,
+	@GetMapping("/admin/reports/{reportId}/photo/thumbnail")
+	@PreAuthorize("hasAuthority('admin.report.photo.read')")
+	ResponseEntity<byte[]> reportPhotoThumbnail(
+		@PathVariable String reportId,
 		Authentication authentication,
 		HttpServletRequest request
 	) {
-		return loadFacilityReportPhotoPort.loadFacilityReportPhoto(objectKey)
+		return reportPhoto(reportId, FacilityReport::photoThumbnailObjectKey, "VIEW_REPORT_PHOTO_THUMBNAIL", "업무 맥락: 신고 사진 미리보기 조회", authentication, request);
+	}
+
+	@GetMapping("/admin/reports/{reportId}/photo/original")
+	@PreAuthorize("hasAuthority('admin.report.photo.read')")
+	ResponseEntity<byte[]> reportPhotoOriginal(
+		@PathVariable String reportId,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		return reportPhoto(reportId, FacilityReport::photoObjectKey, "VIEW_REPORT_PHOTO_ORIGINAL", "업무 맥락: 신고 원본 사진 조회", authentication, request);
+	}
+
+	private ResponseEntity<byte[]> reportPhoto(
+		String reportId,
+		Function<FacilityReport, String> objectKey,
+		String action,
+		String reason,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		String key = objectKey.apply(facilityReportUseCase.getReport(reportId));
+		if (!hasText(key)) {
+			return ResponseEntity.notFound().build();
+		}
+		return loadFacilityReportPhotoPort.loadFacilityReportPhoto(key)
 			.map(photo -> {
 				auditWriter.privacyRead(
 					authentication,
 					request,
 					"FACILITY_REPORT_PHOTO",
-					auditWriter.sha256TargetId(objectKey),
-					"VIEW_REPORT_PHOTO",
-					"업무 맥락: 신고 사진 조회"
+					reportId,
+					action,
+					reason
 				);
 				return ResponseEntity.ok()
+					.cacheControl(CacheControl.noStore().cachePrivate())
 					.contentType(MediaType.parseMediaType(photo.contentType()))
 					.body(photo.bytes());
 			})
@@ -366,10 +395,6 @@ class FacilityReportAdminPageController {
 			return FacilityReportAdminPageController.hasText(photoFileName)
 				&& FacilityReportAdminPageController.hasText(photoContentType)
 				&& FacilityReportAdminPageController.hasText(photoObjectKey);
-		}
-
-		public String photoPreviewPath() {
-			return hasPhoto() ? "/admin/reports/photos/" + photoObjectKey : null;
 		}
 	}
 

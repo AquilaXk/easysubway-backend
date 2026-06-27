@@ -3,6 +3,7 @@ package com.easysubway.admin.authorization;
 public enum AdminPermission {
 	ADMIN_VIEW("admin.view"),
 	REPORT_REVIEW("admin.report.review"),
+	REPORT_PHOTO_READ("admin.report.photo.read"),
 	MASTER_EDIT("admin.master.edit"),
 	FIELD_OPERATE("admin.field.operate"),
 	DATA_OPERATE("admin.data.operate"),
