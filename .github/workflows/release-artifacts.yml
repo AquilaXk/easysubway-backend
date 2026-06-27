@@ -8,6 +8,15 @@ on:
     branches:
       - main
   workflow_dispatch:
+    inputs:
+      android_rc_signing_mode:
+        description: Android RC signing mode
+        type: choice
+        required: true
+        default: ci-self-signed
+        options:
+          - ci-self-signed
+          - production-upload-key
 
 permissions:
   contents: read
@@ -223,6 +232,179 @@ jobs:
           if-no-files-found: error
           retention-days: 90
 
+      - name: Android Release Artifact / Cleanup sensitive files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f "${RUNNER_TEMP}/easysubway-ci-release.jks" "${RUNNER_TEMP}/easysubway-upload-key.jks" "${RUNNER_TEMP}/easysubway-release.env"
+
+  android-production-rc-release:
+    name: Android Production RC Artifact
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.android_rc_signing_mode == 'production-upload-key' }}
+    environment:
+      name: android-production-rc
+
+    steps:
+      - name: Android Production RC Artifact / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Android Production RC Artifact / Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Android Production RC Artifact / Set up Flutter
+        uses: subosito/flutter-action@1a449444c387b1966244ae4d4f8c696479add0b2
+        with:
+          channel: stable
+          flutter-version: "3.44.0"
+          cache: true
+
+      - name: Android Production RC Artifact / Restore release environment
+        shell: bash
+        env:
+          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
+            printf 'EASYSUBWAY_ENV secret is required for Android production RC builds.\n' >&2
+            exit 1
+          fi
+          env_file="${RUNNER_TEMP}/easysubway-release.env"
+          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${env_file}"
+          node tools/ci/validate-store-privacy-env.mjs \
+            --env-file "${env_file}" \
+            --github-env "${GITHUB_ENV}" \
+            --require-android-rc-production
+
+      - name: Android Production RC Artifact / Restore production upload key
+        shell: bash
+        env:
+          EASYSUBWAY_ANDROID_KEYSTORE_PATH: ${{ runner.temp }}/easysubway-upload-key.jks
+          EASYSUBWAY_ANDROID_UPLOAD_KEYSTORE_BASE64: ${{ secrets.EASYSUBWAY_ANDROID_UPLOAD_KEYSTORE_BASE64 }}
+          EASYSUBWAY_ANDROID_STORE_PASSWORD: ${{ secrets.EASYSUBWAY_ANDROID_STORE_PASSWORD }}
+          EASYSUBWAY_ANDROID_KEY_ALIAS: ${{ secrets.EASYSUBWAY_ANDROID_KEY_ALIAS }}
+          EASYSUBWAY_ANDROID_KEY_PASSWORD: ${{ secrets.EASYSUBWAY_ANDROID_KEY_PASSWORD }}
+        run: |
+          set -euo pipefail
+          for required_secret in \
+            EASYSUBWAY_ANDROID_UPLOAD_KEYSTORE_BASE64 \
+            EASYSUBWAY_ANDROID_STORE_PASSWORD \
+            EASYSUBWAY_ANDROID_KEY_ALIAS \
+            EASYSUBWAY_ANDROID_KEY_PASSWORD; do
+            if [[ -z "${!required_secret}" ]]; then
+              printf '%s is required for Android production RC builds.\n' "${required_secret}" >&2
+              exit 1
+            fi
+          done
+          echo "::add-mask::${EASYSUBWAY_ANDROID_UPLOAD_KEYSTORE_BASE64}"
+          echo "::add-mask::${EASYSUBWAY_ANDROID_STORE_PASSWORD}"
+          echo "::add-mask::${EASYSUBWAY_ANDROID_KEY_ALIAS}"
+          echo "::add-mask::${EASYSUBWAY_ANDROID_KEY_PASSWORD}"
+          umask 077
+          printf '%s' "${EASYSUBWAY_ANDROID_UPLOAD_KEYSTORE_BASE64}" | base64 --decode > "${EASYSUBWAY_ANDROID_KEYSTORE_PATH}"
+          upload_key_sha256="$(
+            keytool -list -v \
+              -keystore "${EASYSUBWAY_ANDROID_KEYSTORE_PATH}" \
+              -storepass "${EASYSUBWAY_ANDROID_STORE_PASSWORD}" \
+              -alias "${EASYSUBWAY_ANDROID_KEY_ALIAS}" |
+              awk -F': ' '/SHA256:/{print $2; exit}'
+          )"
+          if [[ -z "${upload_key_sha256}" ]]; then
+            printf 'Upload key SHA-256 fingerprint could not be read from keystore.\n' >&2
+            exit 1
+          fi
+          {
+            echo "EASYSUBWAY_ANDROID_KEYSTORE_PATH=${EASYSUBWAY_ANDROID_KEYSTORE_PATH}"
+            echo "EASYSUBWAY_ANDROID_STORE_PASSWORD=${EASYSUBWAY_ANDROID_STORE_PASSWORD}"
+            echo "EASYSUBWAY_ANDROID_KEY_ALIAS=${EASYSUBWAY_ANDROID_KEY_ALIAS}"
+            echo "EASYSUBWAY_ANDROID_KEY_PASSWORD=${EASYSUBWAY_ANDROID_KEY_PASSWORD}"
+            echo "EASYSUBWAY_ANDROID_UPLOAD_KEY_SHA256=${upload_key_sha256}"
+          } >> "${GITHUB_ENV}"
+
+      - name: Android Production RC Artifact / Build production signed app bundle
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          flutter pub get
+          flutter build appbundle --release \
+            --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
+            --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
+            --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_DATA_PACK_BASE_URL="${EASYSUBWAY_DATA_PACK_BASE_URL}" \
+            --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N}" \
+            --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E}" \
+            --dart-define=EASYSUBWAY_DATAPACK_SIGNING_KEY_ID="${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}" \
+            --dart-define=EASYSUBWAY_DATAPACK_CHANNEL="${EASYSUBWAY_DATAPACK_CHANNEL}" \
+            --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
+
+      - name: Android Production RC Artifact / Collect production metadata
+        working-directory: apps/mobile
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p release-artifacts/android
+          cp build/app/outputs/bundle/release/app-release.aab release-artifacts/android/app-release.aab
+          cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
+          cp release/android-16kb-page-size-gate.json release-artifacts/android/android-16kb-page-size-gate.json
+          cp release/android-rc-store-evidence.json release-artifacts/android/android-rc-store-evidence.json
+          cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
+          cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
+          if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
+            cp build/app/outputs/mapping/release/mapping.txt release-artifacts/android/mapping.txt
+          else
+            printf 'mapping=not-generated\n' > release-artifacts/android/mapping.txt
+          fi
+          version_line="$(awk '/^version:/{print $2; exit}' pubspec.yaml)"
+          version_name="${version_line%%+*}"
+          version_code="${version_line##*+}"
+          aab_sha256="$(sha256sum release-artifacts/android/app-release.aab | awk '{print $1}')"
+          data_pack_manifest_sha256="$(sha256sum assets/datapacks/metro_map_pack/manifest.json | awk '{print $1}')"
+          {
+            echo "gitSha=${GITHUB_SHA}"
+            echo "artifact=app-release.aab"
+            echo "storeReadyCandidate=true"
+            echo "signingKeyType=production-upload-key"
+            echo "uploadKeySha256Fingerprint=${EASYSUBWAY_ANDROID_UPLOAD_KEY_SHA256}"
+            echo "appSigningKeySha256Fingerprint=${EASYSUBWAY_PLAY_APP_SIGNING_KEY_SHA256}"
+            echo "versionName=${version_name}"
+            echo "versionCode=${version_code}"
+            echo "packageId=com.easysubway.app"
+            echo "aabSha256=${aab_sha256}"
+            echo "dataPackManifestSha256=${data_pack_manifest_sha256}"
+            echo "dataPackChannel=${EASYSUBWAY_DATAPACK_CHANNEL}"
+            echo "routeContractVersion=route-map-contract-v1"
+            echo "realtimeContractVersion=seoul-topis-schema-v1"
+            echo "mapping=build/app/outputs/mapping/release/mapping.txt"
+            echo "mappingRetentionDays=90"
+            echo "versionCodeMonotonicPolicy=must_be_greater_than_latest_play_uploaded_artifact"
+            echo "failedRcVersionCodeReusePolicy=forbidden_without_1020_waiver"
+            echo "pageSize16kbEvidence=blocked_until_tools_mobile_check_android_aab_16kb_page_size_passes_and_runtime_PAGE_SIZE_16384_smoke_passes"
+            echo "toolchainPolicy=apps/mobile/release/signed-release-artifact-gate.json"
+          } > release-artifacts/android/release-metadata.txt
+
+      - name: Android Production RC Artifact / Upload app bundle
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-android-production-rc-${{ github.sha }}
+          path: apps/mobile/release-artifacts/android
+          if-no-files-found: error
+          retention-days: 90
+
+      - name: Android Production RC Artifact / Cleanup sensitive files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f "${RUNNER_TEMP}/easysubway-ci-release.jks" "${RUNNER_TEMP}/easysubway-upload-key.jks" "${RUNNER_TEMP}/easysubway-release.env"
+
   backend-release:
     name: Backend Release Image
     runs-on: ubuntu-latest
@@ -286,8 +468,9 @@ jobs:
     needs:
       - changes
       - android-release
+      - android-production-rc-release
       - backend-release
-    if: ${{ always() && (needs.android-release.result == 'success' || needs.backend-release.result == 'success') }}
+    if: ${{ always() && (needs.android-release.result == 'success' || needs.android-production-rc-release.result == 'success' || needs.backend-release.result == 'success') }}
 
     steps:
       - name: RC Evidence Manifest / Checkout repository
@@ -301,6 +484,13 @@ jobs:
         with:
           name: easysubway-android-release-${{ github.sha }}
           path: release-artifacts/downloaded/android
+
+      - name: RC Evidence Manifest / Download Android production RC artifact
+        if: ${{ needs.android-production-rc-release.result == 'success' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: easysubway-android-production-rc-${{ github.sha }}
+          path: release-artifacts/downloaded/android-production-rc
 
       - name: RC Evidence Manifest / Download backend artifact
         if: ${{ needs.backend-release.result == 'success' }}
@@ -327,8 +517,13 @@ jobs:
             --gate-status androidReleaseQuality=BLOCKED_EXTERNAL
             --gate-status abusePenetrationRehearsal=BLOCKED_EXTERNAL
           )
-          if [[ -f release-artifacts/downloaded/android/app-release.aab ]]; then
+          android_artifact_source="none"
+          if [[ -f release-artifacts/downloaded/android-production-rc/app-release.aab ]]; then
+            generator_args+=(--aab release-artifacts/downloaded/android-production-rc/app-release.aab)
+            android_artifact_source="easysubway-android-production-rc-${GITHUB_SHA}"
+          elif [[ -f release-artifacts/downloaded/android/app-release.aab ]]; then
             generator_args+=(--aab release-artifacts/downloaded/android/app-release.aab)
+            android_artifact_source="easysubway-android-release-${GITHUB_SHA}"
           fi
           if [[ -f release-artifacts/downloaded/backend/image-inspect.json ]]; then
             generator_args+=(--backend-image-inspect release-artifacts/downloaded/backend/image-inspect.json)
@@ -338,7 +533,7 @@ jobs:
           {
             echo "commit=${GITHUB_SHA}"
             echo "manifest=rc-evidence-manifest.json"
-            echo "android_artifact_source=easysubway-android-release-${GITHUB_SHA}"
+            echo "android_artifact_source=${android_artifact_source}"
             echo "backend_artifact_source=easysubway-backend-release-${GITHUB_SHA}"
           } > release-artifacts/rc/release-metadata.txt
 
