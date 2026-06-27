@@ -146,6 +146,12 @@ public class SecurityConfig {
 				.defaultSuccessUrl("/admin/dashboard/page", true)
 				.permitAll()
 			)
+			.logout(logout -> logout
+				.logoutUrl("/admin/logout")
+				.logoutSuccessHandler((request, response, authentication) ->
+					response.sendRedirect(request.getContextPath() + "/admin/login?logout"))
+				.permitAll()
+			)
 			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class);
 		configureBasicAuth(configured, basicAuthEnabled);
 		return configured.build();

@@ -30,6 +30,13 @@
 		<div class="admin-topbar-meta">
 			<span>revision <strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong></span>
 			<span>master data <strong th:text="${adminShell != null ? adminShell.masterDataVersion : 'unknown'}">unknown</strong></span>
+			<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
+			      th:action="@{/admin/logout}"
+			      method="post"
+			      aria-label="관리자 로그아웃">
+				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+				<button type="submit">로그아웃</button>
+			</form>
 		</div>
 	</div>
 </div>

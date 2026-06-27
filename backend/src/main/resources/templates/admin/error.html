@@ -22,8 +22,8 @@
 			<a class="admin-btn" th:href="@{/admin/dashboard/page}">대시보드</a>
 		</div>
 	</header>
-	<section class="admin-panel">
-		<h2 th:text="${message}">관리자 요청 처리 중 오류가 발생했습니다.</h2>
+	<section class="admin-panel" role="alert" aria-labelledby="admin-error-title">
+		<h2 id="admin-error-title" th:text="${message}">관리자 요청 처리 중 오류가 발생했습니다.</h2>
 		<p th:text="${detail}">잠시 후 다시 시도해 주세요.</p>
 	</section>
 </main>
