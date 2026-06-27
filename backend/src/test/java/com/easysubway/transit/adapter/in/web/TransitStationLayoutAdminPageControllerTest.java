@@ -148,8 +148,31 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("상록수역 운영기관 안내 페이지")
 			.contains("운영기관 페이지 확인용")
 			.contains("상업적 사용 가능")
-			.contains("출처 표시 불필요")
-			.contains("2026-06-14");
+				.contains("출처 표시 불필요")
+				.contains("2026-06-14");
+	}
+
+	@Test
+	@DisplayName("역 구조도 기준 자료 validation 실패는 boolean 선택 오류를 표시한다")
+	void stationLayoutSourceValidationErrorRendersBooleanMessage() throws Exception {
+		String html = mockMvc.perform(post("/admin/stations/station-sangnoksu/layout-sources/layout-source-sangnoksu-station-map/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("sourceType", "OPERATOR_PAGE")
+				.param("sourceName", "상록수역 운영기관 안내 페이지")
+				.param("sourceUrl", "https://www.seoulmetro.co.kr/station/sangnoksu")
+				.param("license", "운영기관 페이지 확인용")
+				.param("capturedAt", "2026-06-13"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("입력값을 확인해 주세요")
+			.contains("상업적 이용 가능 여부를 선택해야 합니다.")
+			.contains("출처 표시 필요 여부를 선택해야 합니다.");
 	}
 
 	@Test
@@ -209,6 +232,28 @@ class TransitStationLayoutAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("역 구조도 노드 form validation 실패는 관리자 shell 안에서 표시된다")
+	void routeNodeValidationErrorRendersAdminHtml() throws Exception {
+		String html = mockMvc.perform(post("/admin/stations/station-sangnoksu/route-nodes/node-sangnoksu-elevator-1/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("displayX", "132")
+				.param("displayY", "256")
+				.param("accessibilityNote", "메모는 유지"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("입력값을 확인해 주세요")
+			.contains("노드 표시 라벨을 입력해야 합니다.")
+			.contains("상록수")
+			.contains("node-sangnoksu-elevator-1");
+	}
+
+	@Test
 	@DisplayName("관리자는 역 구조도 화면에서 내부 이동 간선 정보를 변경한다")
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
 	void adminUpdatesRouteEdgeMetadataFromPageAndRedirectsToLayoutPage() throws Exception {
@@ -241,8 +286,33 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("계단 포함")
 			.contains("엘리베이터 불필요")
 			.contains("에스컬레이터 필요")
-			.contains("신뢰도 76")
-			.contains("비활성");
+				.contains("신뢰도 76")
+				.contains("비활성");
+	}
+
+	@Test
+	@DisplayName("역 구조도 간선 validation 실패는 boolean 선택 오류를 표시한다")
+	void routeEdgeValidationErrorRendersBooleanMessage() throws Exception {
+		String html = mockMvc.perform(post("/admin/stations/station-sangnoksu/route-edges/edge-sangnoksu-elevator-to-faregate/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("distanceMeters", "34")
+				.param("estimatedSeconds", "90")
+				.param("slopeLevel", "1")
+				.param("widthLevel", "2")
+				.param("reliabilityScore", "92"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("입력값을 확인해 주세요")
+			.contains("계단 포함 여부를 선택해야 합니다.")
+			.contains("엘리베이터 필요 여부를 선택해야 합니다.")
+			.contains("에스컬레이터 필요 여부를 선택해야 합니다.")
+			.contains("간선 활성 여부를 선택해야 합니다.");
 	}
 
 	@Test
@@ -343,14 +413,19 @@ class TransitStationLayoutAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("존재하지 않는 역의 구조도 요약 화면은 공통 404 응답을 반환한다")
-	void missingStationLayoutPageReturnsCommonErrorResponse() throws Exception {
-		mockMvc.perform(get("/admin/stations/unknown-station/layouts/page")
+	@DisplayName("존재하지 않는 역의 구조도 요약 화면은 관리자 shell 404를 표시한다")
+	void missingStationLayoutPageReturnsAdminHtmlErrorResponse() throws Exception {
+		String html = mockMvc.perform(get("/admin/stations/unknown-station/layouts/page")
 				.with(httpBasic("admin-user", "admin-test-password")))
 			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("역 정보를 찾을 수 없습니다."));
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("통합 관리자")
+			.contains("대상을 찾을 수 없습니다")
+			.contains("역 정보를 찾을 수 없습니다.");
 	}
 
 	@Test
@@ -364,9 +439,8 @@ class TransitStationLayoutAdminPageControllerTest {
 				.param("displayY", "256")
 				.param("displayLabel", "1번 출구 승강기"))
 			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("내부 이동 노드 정보를 찾을 수 없습니다."));
+			.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+				.contains("대상을 찾을 수 없습니다", "내부 이동 노드 정보를 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -385,9 +459,8 @@ class TransitStationLayoutAdminPageControllerTest {
 				.param("capturedAt", "2026-06-13")
 				.param("reviewedAt", "2026-06-14"))
 			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("구조도 기준 자료 정보를 찾을 수 없습니다."));
+			.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+				.contains("대상을 찾을 수 없습니다", "구조도 기준 자료 정보를 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -407,9 +480,8 @@ class TransitStationLayoutAdminPageControllerTest {
 				.param("reliabilityScore", "92")
 				.param("active", "true"))
 			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("내부 이동 간선 정보를 찾을 수 없습니다."));
+			.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+				.contains("대상을 찾을 수 없습니다", "내부 이동 간선 정보를 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -421,9 +493,8 @@ class TransitStationLayoutAdminPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("status", "READY_FOR_REVIEW"))
 			.andExpect(status().isNotFound())
-			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("역 구조도 정보를 찾을 수 없습니다."));
+			.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+				.contains("대상을 찾을 수 없습니다", "역 구조도 정보를 찾을 수 없습니다."));
 
 		mockMvc.perform(get("/admin/stations/station-sangnoksu/layouts")
 				.with(httpBasic("admin-user", "admin-test-password")))

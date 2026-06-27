@@ -127,6 +127,7 @@
 		<strong>저장 요청 차단</strong>
 		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
 	</div>
+	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
 	<p class="empty" th:if="${facilities.isEmpty()}">등록된 시설이 없습니다.</p>
 	<table th:if="${!facilities.isEmpty()}">

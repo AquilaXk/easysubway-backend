@@ -214,6 +214,38 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 검수 폼은 판정 누락 오류와 입력값을 상세 화면에 표시한다")
+	void reportReviewValidationErrorRendersAdminHtml() throws Exception {
+		String originalReportId = createReport("기준 신고");
+		String reportId = createReport("판정 누락 신고");
+
+		String html = mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("duplicateOfReportId", originalReportId))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("신고 상세")
+			.contains("입력값을 확인해 주세요")
+			.contains("신고 판정 값을 선택해야 합니다.")
+			.contains("판정 누락 신고")
+			.contains("value=\"%s\"".formatted(originalReportId));
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.actor()).isEqualTo("admin-test");
+				assertThat(event.targetType()).isEqualTo("FACILITY_REPORT");
+				assertThat(event.targetId()).isEqualTo(reportId);
+				assertThat(event.action()).isEqualTo("VIEW_REPORT_DETAIL");
+			});
+	}
+
+	@Test
 	@DisplayName("관리자는 신고 상세 화면에서 검수 감사 이력을 확인한다")
 	void adminReportDetailPageShowsReviewAuditHistory() throws Exception {
 		String reportId = createReport("감사 이력을 확인할 신고");

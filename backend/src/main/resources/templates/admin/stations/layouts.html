@@ -143,6 +143,7 @@
 		<strong>저장 요청 차단</strong>
 		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
 	</div>
+	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
 	<section>
 		<h2>구조도 기준 자료</h2>

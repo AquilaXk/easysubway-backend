@@ -1,5 +1,6 @@
 package com.easysubway.admin.batch.adapter.in.web;
 
+import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService;
@@ -9,6 +10,9 @@ import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import jakarta.servlet.http.HttpServletRequest;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.List;
@@ -17,7 +21,9 @@ import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 
@@ -49,10 +55,20 @@ class AdminBatchPageController {
 	String retry(
 		@PathVariable String jobId,
 		@PathVariable String runId,
+		@Valid @ModelAttribute("retryBatchRunForm") RetryBatchRunForm form,
+		BindingResult bindingResult,
 		Principal principal,
 		Authentication authentication,
-		HttpServletRequest request
+		HttpServletRequest request,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			batchPage(model);
+			AdminFormErrorView.expose(model, bindingResult);
+			return "admin/batches/list";
+		}
 		try {
 			DataCollectionRun retried = batchOperationService.retry(jobId, runId, principal.getName());
 			auditWriter.batchOperation(
@@ -84,6 +100,12 @@ class AdminBatchPageController {
 		static BatchJobRow from(AdminBatchJob job) {
 			return new BatchJobRow(job.id(), job.jobName(), job.label(), job.retryEnabled());
 		}
+	}
+
+	record RetryBatchRunForm(
+		@AssertTrue(message = "배치 재처리 요청을 확인해야 합니다.")
+		boolean retryRequested
+	) {
 	}
 
 	record BatchRunRow(

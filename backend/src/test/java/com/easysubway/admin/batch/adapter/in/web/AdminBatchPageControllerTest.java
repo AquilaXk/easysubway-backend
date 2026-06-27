@@ -80,7 +80,8 @@ class AdminBatchPageControllerTest {
 		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/failed-run/retry")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
-				.contentType(MediaType.APPLICATION_FORM_URLENCODED))
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("retryRequested", "true"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(header().string("Location", "/admin/batches/page"));
 
@@ -103,7 +104,8 @@ class AdminBatchPageControllerTest {
 		mockMvc.perform(post("/admin/batches/transit-master-collection/runs/completed-run/retry")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf())
-				.contentType(MediaType.APPLICATION_FORM_URLENCODED))
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("retryRequested", "true"))
 			.andExpect(status().isBadRequest());
 
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 1))
@@ -127,6 +129,60 @@ class AdminBatchPageControllerTest {
 				.with(user("operator").authorities(new SimpleGrantedAuthority("admin.data.operate")))
 				.with(csrf()))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("관리자 HTML 예외 페이지는 지원하지 않는 method를 405로 표시한다")
+	void retryGetRendersMethodNotAllowedAdminHtml() throws Exception {
+		String html = mockMvc.perform(get("/admin/batches/transit-master-collection/runs/failed-run/retry")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isMethodNotAllowed())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("통합 관리자")
+			.contains("허용되지 않는 요청입니다")
+			.contains("상태 코드 405");
+	}
+
+	@Test
+	@DisplayName("관리자 HTML 예외 페이지는 POST forward도 렌더링한다")
+	void adminErrorPageRendersForwardedPost() throws Exception {
+		String html = mockMvc.perform(post("/admin/error/page")
+				.with(csrf())
+				.requestAttr("adminErrorStatus", 403)
+				.requestAttr("adminErrorTitle", "권한이 없습니다")
+				.requestAttr("adminErrorMessage", "이 관리자 기능을 사용할 권한이 없습니다.")
+				.requestAttr("adminErrorDetail", "필요한 역할과 권한을 확인해 주세요."))
+			.andExpect(status().isForbidden())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("통합 관리자")
+			.contains("권한이 없습니다")
+			.contains("상태 코드 403")
+			.contains("이 관리자 기능을 사용할 권한이 없습니다.");
+	}
+
+	@Test
+	@DisplayName("관리자 HTML 예외 페이지는 속성이 없어도 기본 오류 화면을 표시한다")
+	void adminErrorPageRendersSafeDefaults() throws Exception {
+		String html = mockMvc.perform(get("/admin/error/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isInternalServerError())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("통합 관리자")
+			.contains("요청을 처리하지 못했습니다")
+			.contains("상태 코드 500")
+			.contains("관리자 요청 처리 중 오류가 발생했습니다.");
 	}
 
 	private DataCollectionRun failedRun(String runId) {

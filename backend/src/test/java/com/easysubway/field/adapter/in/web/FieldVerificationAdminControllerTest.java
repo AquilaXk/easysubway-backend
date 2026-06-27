@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -231,6 +232,47 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(jsonPath("$.data.items[1].itemId").value("field-verification-sadang-elevator"))
 			.andExpect(jsonPath("$.data.items[1].status").value("NEEDS_RECHECK"))
 			.andExpect(jsonPath("$.data.items[1].note").value("엘리베이터 운행 중지 안내문 확인 필요"));
+	}
+
+	@Test
+	@DisplayName("현장 검증 HTML 폼은 상태 누락 오류와 입력값을 상세 화면에 표시한다")
+	void fieldVerificationPageStatusValidationErrorRendersAdminHtml() throws Exception {
+		String html = mockMvc.perform(post("/admin/field-verifications/station-sadang/items/field-verification-sadang-elevator/page/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("note", "상태 누락 현장 메모"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("현장 검증 상세")
+			.contains("입력값을 확인해 주세요")
+			.contains("현장 검증 상태를 선택해야 합니다.")
+			.contains("사당역")
+			.contains("상태 누락 현장 메모");
+	}
+
+	@Test
+	@DisplayName("현장 검증 HTML 폼은 완료/재확인 외 상태를 허용하지 않는다")
+	void fieldVerificationPageStatusRejectsNonReviewStatus() throws Exception {
+		String html = mockMvc.perform(post("/admin/field-verifications/station-sadang/items/field-verification-sadang-elevator/page/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("status", "PLANNED")
+				.param("note", "허용되지 않는 상태"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("입력값을 확인해 주세요")
+			.contains("현장 검증 상태는 검증 완료 또는 재확인 필요만 선택할 수 있습니다.")
+			.contains("허용되지 않는 상태");
 	}
 
 	@Test

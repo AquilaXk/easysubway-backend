@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title th:text="${status + ' · ' + title}">관리자 오류</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('')}"></div>
+<main class="admin-main">
+	<header class="admin-page-head">
+		<div>
+			<h1 th:text="${title}">요청을 처리하지 못했습니다</h1>
+			<p th:text="${'상태 코드 ' + status}">상태 코드 500</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/dashboard/page}">대시보드</a>
+		</div>
+	</header>
+	<section class="admin-panel">
+		<h2 th:text="${message}">관리자 요청 처리 중 오류가 발생했습니다.</h2>
+		<p th:text="${detail}">잠시 후 다시 시도해 주세요.</p>
+	</section>
+</main>
+</div>
+</body>
+</html>

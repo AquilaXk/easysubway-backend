@@ -24,6 +24,7 @@
 			<a class="admin-btn" th:href="@{/admin/field-verifications/page}">목록</a>
 		</div>
 	</header>
+	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
 	<div class="metric-grid">
 		<div class="metric"><span>전체 항목</span><strong th:text="${verification.itemCount}">0</strong></div>
@@ -67,13 +68,14 @@
 									        disabled>변경할 상태 선택</option>
 									<option th:each="status : ${statusOptions}"
 									        th:value="${status}"
-									        th:selected="${status == item.status}"
+									        th:selected="${fieldVerificationFailedItemId == item.itemId ? status == fieldVerificationForm.status : status == item.status}"
 									        th:text="${status}">VERIFIED</option>
 								</select>
 							</label>
 							<label>
 								<span class="meta">현장 메모</span>
-								<textarea name="note" th:text="${item.note}">메모</textarea>
+								<textarea name="note"
+								          th:text="${fieldVerificationFailedItemId == item.itemId ? fieldVerificationForm.note : item.note}">메모</textarea>
 							</label>
 							<button type="submit">상태 저장</button>
 						</form>

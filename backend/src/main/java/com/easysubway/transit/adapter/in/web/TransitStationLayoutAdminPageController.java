@@ -1,5 +1,6 @@
 package com.easysubway.transit.adapter.in.web;
 
+import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.transit.application.port.in.TransitMasterAdminUseCase;
 import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.application.port.in.UpdateRouteEdgeCommand;
@@ -19,6 +20,10 @@ import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.easysubway.transit.domain.StationLineSummary;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.util.Arrays;
@@ -26,10 +31,11 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.servlet.mvc.support.RedirectAttributes;
 
 @Controller
@@ -48,6 +54,11 @@ class TransitStationLayoutAdminPageController {
 
 	@GetMapping("/admin/stations/{stationId}/layouts/page")
 	String stationLayoutsPage(@PathVariable String stationId, Model model) {
+		populateStationLayoutsModel(stationId, model);
+		return "admin/stations/layouts";
+	}
+
+	private void populateStationLayoutsModel(String stationId, Model model) {
 		StationWithLines station = transitMasterQueryUseCase.getStation(stationId);
 		model.addAttribute("station", StationLayoutPageStation.from(station));
 		model.addAttribute("layoutSources", layoutSourceRows(stationId));
@@ -57,6 +68,12 @@ class TransitStationLayoutAdminPageController {
 		model.addAttribute("routeNodes", routeNodeRows(stationId));
 		model.addAttribute("routeEdges", routeEdgeRows(stationId));
 		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
+	}
+
+	private String stationLayoutsValidationError(String stationId, Model model, BindingResult bindingResult, HttpServletResponse response) {
+		response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+		populateStationLayoutsModel(stationId, model);
+		AdminFormErrorView.expose(model, bindingResult);
 		return "admin/stations/layouts";
 	}
 
@@ -64,15 +81,21 @@ class TransitStationLayoutAdminPageController {
 	String updateLayoutStatusFromPage(
 		@PathVariable String stationId,
 		@PathVariable String layoutId,
-		@RequestParam SimplifiedStationLayoutStatus status,
+		@Valid @ModelAttribute("layoutStatusForm") LayoutStatusForm form,
+		BindingResult bindingResult,
 		Principal principal,
-		RedirectAttributes redirectAttributes
+		RedirectAttributes redirectAttributes,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			return stationLayoutsValidationError(stationId, model, bindingResult, response);
+		}
 		requireLayoutInStation(stationId, layoutId);
 		try {
 			transitMasterAdminUseCase.updateSimplifiedStationLayoutStatus(new UpdateSimplifiedStationLayoutStatusCommand(
 				layoutId,
-				status,
+				form.status(),
 				principal.getName()
 			));
 		} catch (MasterDataWriteNotAllowedException exception) {
@@ -85,30 +108,29 @@ class TransitStationLayoutAdminPageController {
 	String updateStationLayoutSourceFromPage(
 		@PathVariable String stationId,
 		@PathVariable String sourceId,
-		@RequestParam StationLayoutSourceType sourceType,
-		@RequestParam String sourceName,
-		@RequestParam String sourceUrl,
-		@RequestParam String license,
-		@RequestParam boolean commercialUseAllowed,
-		@RequestParam boolean attributionRequired,
-		@RequestParam LocalDate capturedAt,
-		@RequestParam(required = false) LocalDate reviewedAt,
+		@Valid @ModelAttribute("layoutSourceForm") LayoutSourceForm form,
+		BindingResult bindingResult,
 		Principal principal,
-		RedirectAttributes redirectAttributes
+		RedirectAttributes redirectAttributes,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			return stationLayoutsValidationError(stationId, model, bindingResult, response);
+		}
 		requireStationLayoutSourceInStation(stationId, sourceId);
 		try {
 			transitMasterAdminUseCase.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
 				stationId,
 				sourceId,
-				sourceType,
-				sourceName,
-				sourceUrl,
-				license,
-				commercialUseAllowed,
-				attributionRequired,
-				capturedAt,
-				reviewedAt,
+				form.sourceType(),
+				form.sourceName(),
+				form.sourceUrl(),
+				form.license(),
+				form.commercialUseAllowed(),
+				form.attributionRequired(),
+				form.capturedAt(),
+				form.reviewedAt(),
 				principal.getName()
 			));
 		} catch (MasterDataWriteNotAllowedException exception) {
@@ -121,22 +143,25 @@ class TransitStationLayoutAdminPageController {
 	String updateRouteNodeDisplayFromPage(
 		@PathVariable String stationId,
 		@PathVariable String nodeId,
-		@RequestParam int displayX,
-		@RequestParam int displayY,
-		@RequestParam String displayLabel,
-		@RequestParam(required = false) String accessibilityNote,
+		@Valid @ModelAttribute("routeNodeForm") RouteNodeForm form,
+		BindingResult bindingResult,
 		Principal principal,
-		RedirectAttributes redirectAttributes
+		RedirectAttributes redirectAttributes,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			return stationLayoutsValidationError(stationId, model, bindingResult, response);
+		}
 		requireRouteNodeInStation(stationId, nodeId);
 		try {
 			transitMasterAdminUseCase.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand(
 				stationId,
 				nodeId,
-				displayX,
-				displayY,
-				displayLabel,
-				accessibilityNote,
+				form.displayX(),
+				form.displayY(),
+				form.displayLabel(),
+				form.accessibilityNote(),
 				principal.getName()
 			));
 		} catch (MasterDataWriteNotAllowedException exception) {
@@ -149,32 +174,30 @@ class TransitStationLayoutAdminPageController {
 	String updateRouteEdgeFromPage(
 		@PathVariable String stationId,
 		@PathVariable String edgeId,
-		@RequestParam int distanceMeters,
-		@RequestParam int estimatedSeconds,
-		@RequestParam boolean hasStairs,
-		@RequestParam boolean requiresElevator,
-		@RequestParam boolean requiresEscalator,
-		@RequestParam int slopeLevel,
-		@RequestParam int widthLevel,
-		@RequestParam int reliabilityScore,
-		@RequestParam boolean active,
+		@Valid @ModelAttribute("routeEdgeForm") RouteEdgeForm form,
+		BindingResult bindingResult,
 		Principal principal,
-		RedirectAttributes redirectAttributes
+		RedirectAttributes redirectAttributes,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			return stationLayoutsValidationError(stationId, model, bindingResult, response);
+		}
 		requireRouteEdgeInStation(stationId, edgeId);
 		try {
 			transitMasterAdminUseCase.updateRouteEdge(new UpdateRouteEdgeCommand(
 				stationId,
 				edgeId,
-				distanceMeters,
-				estimatedSeconds,
-				hasStairs,
-				requiresElevator,
-				requiresEscalator,
-				slopeLevel,
-				widthLevel,
-				reliabilityScore,
-				active,
+				form.distanceMeters(),
+				form.estimatedSeconds(),
+				form.hasStairs(),
+				form.requiresElevator(),
+				form.requiresEscalator(),
+				form.slopeLevel(),
+				form.widthLevel(),
+				form.reliabilityScore(),
+				form.active(),
 				principal.getName()
 			));
 		} catch (MasterDataWriteNotAllowedException exception) {
@@ -261,6 +284,64 @@ class TransitStationLayoutAdminPageController {
 		return Arrays.stream(StationLayoutSourceType.values())
 			.map(type -> new SourceTypeOption(type, type.name()))
 			.toList();
+	}
+
+	record LayoutStatusForm(
+		@NotNull(message = "{validation.transit.layout-status.required}")
+		SimplifiedStationLayoutStatus status
+	) {
+	}
+
+	record LayoutSourceForm(
+		@NotNull(message = "{validation.transit.layout-source-type.required}")
+		StationLayoutSourceType sourceType,
+		@NotBlank(message = "{validation.transit.layout-source-name.required}")
+		String sourceName,
+		@NotBlank(message = "{validation.transit.layout-source-url.required}")
+		String sourceUrl,
+		@NotBlank(message = "{validation.transit.layout-source-license.required}")
+		String license,
+		@NotNull(message = "{validation.transit.layout-source-commercial-use.required}")
+		Boolean commercialUseAllowed,
+		@NotNull(message = "{validation.transit.layout-source-attribution.required}")
+		Boolean attributionRequired,
+		@NotNull(message = "{validation.transit.layout-source-captured-at.required}")
+		LocalDate capturedAt,
+		LocalDate reviewedAt
+	) {
+	}
+
+	record RouteNodeForm(
+		@NotNull(message = "{validation.transit.route-node-display-coordinate.required}")
+		Integer displayX,
+		@NotNull(message = "{validation.transit.route-node-display-coordinate.required}")
+		Integer displayY,
+		@NotBlank(message = "{validation.transit.route-node-label.required}")
+		String displayLabel,
+		String accessibilityNote
+	) {
+	}
+
+	record RouteEdgeForm(
+		@NotNull(message = "{validation.transit.route-edge-distance.required}")
+		Integer distanceMeters,
+		@NotNull(message = "{validation.transit.route-edge-estimated-seconds.required}")
+		Integer estimatedSeconds,
+		@NotNull(message = "{validation.transit.route-edge-stairs.required}")
+		Boolean hasStairs,
+		@NotNull(message = "{validation.transit.route-edge-elevator.required}")
+		Boolean requiresElevator,
+		@NotNull(message = "{validation.transit.route-edge-escalator.required}")
+		Boolean requiresEscalator,
+		@NotNull(message = "{validation.transit.route-edge-slope.required}")
+		Integer slopeLevel,
+		@NotNull(message = "{validation.transit.route-edge-width.required}")
+		Integer widthLevel,
+		@NotNull(message = "{validation.transit.route-edge-reliability.required}")
+		Integer reliabilityScore,
+		@NotNull(message = "{validation.transit.route-edge-active.required}")
+		Boolean active
+	) {
 	}
 
 	record StationLayoutPageStation(String stationId, String stationName, String lineNames) {

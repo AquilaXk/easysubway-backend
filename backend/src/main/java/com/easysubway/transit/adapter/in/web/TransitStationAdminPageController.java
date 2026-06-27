@@ -1,5 +1,6 @@
 package com.easysubway.transit.adapter.in.web;
 
+import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.StationMasterDataCounts;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
@@ -23,10 +24,16 @@ import java.security.Principal;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.NotBlank;
+import jakarta.validation.constraints.NotNull;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
@@ -87,6 +94,16 @@ class TransitStationAdminPageController {
 		@RequestParam(required = false) String facilityId,
 		Model model
 	) {
+		populateFacilityEditorModel(model, stationId, facilityId, null);
+		return "admin/facilities/editor";
+	}
+
+	private void populateFacilityEditorModel(
+		Model model,
+		String stationId,
+		String facilityId,
+		FacilityEditorForm submittedForm
+	) {
 		List<StationWithLines> stations = transitMasterQueryUseCase.searchStations(new StationSearchCommand(null, null));
 		String selectedStationId = stationId == null && !stations.isEmpty() ? stations.getFirst().station().id() : stationId;
 		List<FacilityRow> facilities = selectedStationId == null ? List.of() : transitMasterQueryUseCase
@@ -107,69 +124,70 @@ class TransitStationAdminPageController {
 		model.addAttribute("confidenceOptions", Arrays.asList(DataConfidenceLevel.values()));
 		model.addAttribute("sourceTypeOptions", Arrays.asList(DataSourceType.values()));
 		model.addAttribute("masterDataWritable", transitMasterAdminUseCase.masterDataCapability().writable());
-		return "admin/facilities/editor";
+		model.addAttribute("facilityForm", submittedForm == null
+			? FacilityEditorForm.from(selectedStationId, selectedFacility)
+			: submittedForm);
 	}
 
 	@PostMapping("/admin/facilities/editor/page")
 	@PreAuthorize("hasAuthority('admin.master.edit')")
 	String saveFacilityFromPage(
-		@RequestParam(required = false) String facilityId,
-		@RequestParam String stationId,
-		@RequestParam(required = false) String exitId,
-		@RequestParam AccessibilityFacilityType type,
-		@RequestParam String name,
-		@RequestParam(required = false) String floorFrom,
-		@RequestParam(required = false) String floorTo,
-		@RequestParam(required = false) BigDecimal latitude,
-		@RequestParam(required = false) BigDecimal longitude,
-		@RequestParam(required = false) String description,
-		@RequestParam AccessibilityFacilityStatus status,
-		@RequestParam DataConfidenceLevel dataConfidence,
-		@RequestParam DataSourceType dataSourceType,
+		@Valid @ModelAttribute("facilityForm") FacilityEditorForm form,
+		BindingResult bindingResult,
 		Principal principal,
-		RedirectAttributes redirectAttributes
+		RedirectAttributes redirectAttributes,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			populateFacilityEditorModel(model, form.stationId(), form.facilityId(), form);
+			model.addAttribute("facilityLatitudeValue", bindingResult.getFieldValue("latitude"));
+			model.addAttribute("facilityLongitudeValue", bindingResult.getFieldValue("longitude"));
+			AdminFormErrorView.expose(model, bindingResult);
+			return "admin/facilities/editor";
+		}
 		try {
-			if (facilityId == null || facilityId.isBlank()) {
-				String newFacilityId = "facility-" + stationId + "-" + type.name().toLowerCase() + "-" + System.currentTimeMillis();
+			if (form.facilityId() == null || form.facilityId().isBlank()) {
+				String newFacilityId = "facility-" + form.stationId() + "-" + form.type().name().toLowerCase() + "-" + System.currentTimeMillis();
 				transitMasterAdminUseCase.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(
 					newFacilityId,
-					stationId,
-					blankToNull(exitId),
-					type,
-					name,
-					blankToNull(floorFrom),
-					blankToNull(floorTo),
-					latitude,
-					longitude,
-					blankToNull(description),
-					status,
-					dataConfidence,
-					dataSourceType,
+					form.stationId(),
+					blankToNull(form.exitId()),
+					form.type(),
+					form.name(),
+					blankToNull(form.floorFrom()),
+					blankToNull(form.floorTo()),
+					form.latitude(),
+					form.longitude(),
+					blankToNull(form.description()),
+					form.status(),
+					form.dataConfidence(),
+					form.dataSourceType(),
 					principal.getName()
 				));
-				return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(stationId, newFacilityId);
+				return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(form.stationId(), newFacilityId);
 			}
 			transitMasterAdminUseCase.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand(
-				facilityId,
-				stationId,
-				blankToNull(exitId),
-				type,
-				name,
-				blankToNull(floorFrom),
-				blankToNull(floorTo),
-				latitude,
-				longitude,
-				blankToNull(description),
-				status,
-				dataConfidence,
-				dataSourceType,
+				form.facilityId(),
+				form.stationId(),
+				blankToNull(form.exitId()),
+				form.type(),
+				form.name(),
+				blankToNull(form.floorFrom()),
+				blankToNull(form.floorTo()),
+				form.latitude(),
+				form.longitude(),
+				blankToNull(form.description()),
+				form.status(),
+				form.dataConfidence(),
+				form.dataSourceType(),
 				principal.getName()
 			));
 		} catch (MasterDataWriteNotAllowedException exception) {
 			redirectAttributes.addFlashAttribute("masterDataError", exception.getMessage());
 		}
-		return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(stationId, facilityId);
+		return "redirect:/admin/facilities/editor/page?stationId=%s&facilityId=%s".formatted(form.stationId(), form.facilityId());
 	}
 
 	private static String qualityLabel(DataQualityLevel level) {
@@ -259,6 +277,64 @@ class TransitStationAdminPageController {
 		}
 	}
 
+	record FacilityEditorForm(
+		String facilityId,
+		@NotBlank(message = "{validation.transit.station-id.required}")
+		String stationId,
+		String exitId,
+		@NotNull(message = "{validation.transit.facility-type.required}")
+		AccessibilityFacilityType type,
+		@NotBlank(message = "{validation.transit.facility-name.required}")
+		String name,
+		String floorFrom,
+		String floorTo,
+		BigDecimal latitude,
+		BigDecimal longitude,
+		String description,
+		@NotNull(message = "{validation.transit.facility-status.required}")
+		AccessibilityFacilityStatus status,
+		@NotNull(message = "{validation.transit.facility-confidence.required}")
+		DataConfidenceLevel dataConfidence,
+		@NotNull(message = "{validation.transit.facility-source-type.required}")
+		DataSourceType dataSourceType
+	) {
+
+		static FacilityEditorForm from(String selectedStationId, FacilityRow facility) {
+			if (facility == null) {
+				return new FacilityEditorForm(
+					"",
+					selectedStationId,
+					"",
+					null,
+					"",
+					"",
+					"",
+					null,
+					null,
+					"",
+					null,
+					null,
+					null
+				);
+			}
+			return new FacilityEditorForm(
+				facility.facilityId(),
+				selectedStationId,
+				facility.exitId(),
+				facility.type(),
+				facility.facilityName(),
+				facility.floorFrom(),
+				facility.floorTo(),
+				blankToBigDecimal(facility.latitude()),
+				blankToBigDecimal(facility.longitude()),
+				facility.description(),
+				facility.status(),
+				facility.dataConfidence(),
+				facility.dataSourceType()
+			);
+		}
+	}
+
 	record ExitRow(String exitNumber, String name, String elevatorLabel, String stairOnlyLabel, String confidenceLabel) {
 
 		static ExitRow from(StationExit exit) {
@@ -321,6 +397,10 @@ class TransitStationAdminPageController {
 
 	private static String blankToNull(String value) {
 		return value == null || value.isBlank() ? null : value;
+	}
+
+	private static BigDecimal blankToBigDecimal(String value) {
+		return value == null || value.isBlank() ? null : new BigDecimal(value);
 	}
 
 	record LayoutSourceRow(String sourceName, String sourceType, String license) {

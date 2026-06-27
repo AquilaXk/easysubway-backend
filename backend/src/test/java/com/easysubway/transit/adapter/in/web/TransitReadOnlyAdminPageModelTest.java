@@ -18,6 +18,8 @@ import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.ui.ExtendedModelMap;
+import org.springframework.validation.BeanPropertyBindingResult;
+import org.springframework.mock.web.MockHttpServletResponse;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 
 @DisplayName("읽기 전용 마스터 데이터 관리자 화면 모델")
@@ -58,9 +60,12 @@ class TransitReadOnlyAdminPageModelTest {
 
 		String viewName = controller.updateFacilityStatusFromPage(
 			"facility-sangnoksu-elevator-1",
-			AccessibilityFacilityStatus.BROKEN,
+			new TransitFacilityAdminPageController.FacilityStatusForm(AccessibilityFacilityStatus.BROKEN),
+			new BeanPropertyBindingResult(new TransitFacilityAdminPageController.FacilityStatusForm(AccessibilityFacilityStatus.BROKEN), "facilityStatusForm"),
 			ADMIN,
-			redirectAttributes
+			redirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse()
 		);
 
 		assertThat(viewName).isEqualTo("redirect:/admin/facilities/page");
@@ -86,21 +91,40 @@ class TransitReadOnlyAdminPageModelTest {
 		var redirectAttributes = new RedirectAttributesModelMap();
 
 		String viewName = controller.saveFacilityFromPage(
-			"facility-sangnoksu-elevator-1",
-			"station-sangnoksu",
-			null,
-			AccessibilityFacilityType.ELEVATOR,
-			"1번 출구 엘리베이터",
-			"B1",
-			"1F",
-			null,
-			null,
-			"휠체어 이동 가능",
-			AccessibilityFacilityStatus.BROKEN,
-			DataConfidenceLevel.HIGH,
-			DataSourceType.OFFICIAL_API,
+			new TransitStationAdminPageController.FacilityEditorForm(
+				"facility-sangnoksu-elevator-1",
+				"station-sangnoksu",
+				null,
+				AccessibilityFacilityType.ELEVATOR,
+				"1번 출구 엘리베이터",
+				"B1",
+				"1F",
+				null,
+				null,
+				"휠체어 이동 가능",
+				AccessibilityFacilityStatus.BROKEN,
+				DataConfidenceLevel.HIGH,
+				DataSourceType.OFFICIAL_API
+			),
+			new BeanPropertyBindingResult(new TransitStationAdminPageController.FacilityEditorForm(
+				"facility-sangnoksu-elevator-1",
+				"station-sangnoksu",
+				null,
+				AccessibilityFacilityType.ELEVATOR,
+				"1번 출구 엘리베이터",
+				"B1",
+				"1F",
+				null,
+				null,
+				"휠체어 이동 가능",
+				AccessibilityFacilityStatus.BROKEN,
+				DataConfidenceLevel.HIGH,
+				DataSourceType.OFFICIAL_API
+			), "facilityForm"),
 			ADMIN,
-			redirectAttributes
+			redirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse()
 		);
 
 		assertThat(viewName)
@@ -132,48 +156,90 @@ class TransitReadOnlyAdminPageModelTest {
 		assertStationLayoutReadOnlyRedirect(controller.updateLayoutStatusFromPage(
 			"station-sangnoksu",
 			"layout-sangnoksu-draft",
-			SimplifiedStationLayoutStatus.READY_FOR_REVIEW,
+			new TransitStationLayoutAdminPageController.LayoutStatusForm(SimplifiedStationLayoutStatus.READY_FOR_REVIEW),
+			new BeanPropertyBindingResult(new TransitStationLayoutAdminPageController.LayoutStatusForm(SimplifiedStationLayoutStatus.READY_FOR_REVIEW), "layoutStatusForm"),
 			ADMIN,
-			layoutStatusRedirectAttributes
+			layoutStatusRedirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse()
 		), layoutStatusRedirectAttributes);
 		assertStationLayoutReadOnlyRedirect(controller.updateStationLayoutSourceFromPage(
 			"station-sangnoksu",
 			"layout-source-sangnoksu-station-map",
-			StationLayoutSourceType.OPERATOR_PAGE,
-			"상록수역 운영기관 안내 페이지",
-			"https://www.seoulmetro.co.kr/station/sangnoksu",
-			"운영기관 페이지 확인용",
-			true,
-			false,
-			LocalDate.of(2026, 6, 13),
-			LocalDate.of(2026, 6, 14),
+			new TransitStationLayoutAdminPageController.LayoutSourceForm(
+				StationLayoutSourceType.OPERATOR_PAGE,
+				"상록수역 운영기관 안내 페이지",
+				"https://www.seoulmetro.co.kr/station/sangnoksu",
+				"운영기관 페이지 확인용",
+				true,
+				false,
+				LocalDate.of(2026, 6, 13),
+				LocalDate.of(2026, 6, 14)
+			),
+			new BeanPropertyBindingResult(new TransitStationLayoutAdminPageController.LayoutSourceForm(
+				StationLayoutSourceType.OPERATOR_PAGE,
+				"상록수역 운영기관 안내 페이지",
+				"https://www.seoulmetro.co.kr/station/sangnoksu",
+				"운영기관 페이지 확인용",
+				true,
+				false,
+				LocalDate.of(2026, 6, 13),
+				LocalDate.of(2026, 6, 14)
+			), "layoutSourceForm"),
 			ADMIN,
-			sourceRedirectAttributes
+			sourceRedirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse()
 		), sourceRedirectAttributes);
 		assertStationLayoutReadOnlyRedirect(controller.updateRouteNodeDisplayFromPage(
 			"station-sangnoksu",
 			"node-sangnoksu-elevator-1",
-			132,
-			256,
-			"1번 출구 승강기",
-			"휠체어와 유모차 이동 가능",
+			new TransitStationLayoutAdminPageController.RouteNodeForm(
+				132,
+				256,
+				"1번 출구 승강기",
+				"휠체어와 유모차 이동 가능"
+			),
+			new BeanPropertyBindingResult(new TransitStationLayoutAdminPageController.RouteNodeForm(
+				132,
+				256,
+				"1번 출구 승강기",
+				"휠체어와 유모차 이동 가능"
+			), "routeNodeForm"),
 			ADMIN,
-			nodeRedirectAttributes
+			nodeRedirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse()
 		), nodeRedirectAttributes);
 		assertStationLayoutReadOnlyRedirect(controller.updateRouteEdgeFromPage(
 			"station-sangnoksu",
 			"edge-sangnoksu-elevator-to-faregate",
-			34,
-			90,
-			false,
-			true,
-			false,
-			1,
-			5,
-			88,
-			true,
+			new TransitStationLayoutAdminPageController.RouteEdgeForm(
+				34,
+				90,
+				false,
+				true,
+				false,
+				1,
+				5,
+				88,
+				true
+			),
+			new BeanPropertyBindingResult(new TransitStationLayoutAdminPageController.RouteEdgeForm(
+				34,
+				90,
+				false,
+				true,
+				false,
+				1,
+				5,
+				88,
+				true
+			), "routeEdgeForm"),
 			ADMIN,
-			edgeRedirectAttributes
+			edgeRedirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse()
 		), edgeRedirectAttributes);
 	}
 

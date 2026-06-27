@@ -1,21 +1,27 @@
 package com.easysubway.field.adapter.in.web;
 
+import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
 import com.easysubway.field.domain.FieldVerificationItem;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
+import jakarta.servlet.http.HttpServletResponse;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.AssertTrue;
+import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
+import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class FieldVerificationAdminPageController {
@@ -36,6 +42,11 @@ class FieldVerificationAdminPageController {
 
 	@GetMapping("/admin/field-verifications/{stationId}/page")
 	String fieldVerificationDetailPage(@PathVariable String stationId, Model model) {
+		populateDetailModel(stationId, model);
+		return "admin/field/detail";
+	}
+
+	private void populateDetailModel(String stationId, Model model) {
 		FieldVerificationSession session = fieldVerificationUseCase.getStationVerification(stationId);
 		model.addAttribute("verification", SessionRow.from(session));
 		model.addAttribute("items", session.items().stream().map(ItemRow::from).toList());
@@ -43,19 +54,27 @@ class FieldVerificationAdminPageController {
 			.map(HistoryRow::from)
 			.toList());
 		model.addAttribute("statusOptions", List.of(FieldVerificationStatus.VERIFIED, FieldVerificationStatus.NEEDS_RECHECK));
-		return "admin/field/detail";
 	}
 
 	@PostMapping("/admin/field-verifications/{stationId}/items/{itemId}/page/status")
 	String updateFieldVerificationItemStatusFromPage(
 		@PathVariable String stationId,
 		@PathVariable String itemId,
-		@RequestParam FieldVerificationStatus status,
-		@RequestParam(required = false) String note,
-		Principal principal
+		@Valid @ModelAttribute("fieldVerificationForm") FieldVerificationStatusForm form,
+		BindingResult bindingResult,
+		Principal principal,
+		Model model,
+		HttpServletResponse response
 	) {
+		if (bindingResult.hasErrors()) {
+			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
+			populateDetailModel(stationId, model);
+			model.addAttribute("fieldVerificationFailedItemId", itemId);
+			AdminFormErrorView.expose(model, bindingResult);
+			return "admin/field/detail";
+		}
 		fieldVerificationUseCase.updateItemStatus(
-			new UpdateFieldVerificationItemStatusCommand(stationId, itemId, status, note, principal.getName())
+			new UpdateFieldVerificationItemStatusCommand(stationId, itemId, form.status(), form.note(), principal.getName())
 		);
 		return "redirect:/admin/field-verifications/%s/page".formatted(stationId);
 	}
@@ -147,6 +166,20 @@ class FieldVerificationAdminPageController {
 				history.changedBy(),
 				history.changedAt()
 			);
+		}
+	}
+
+	record FieldVerificationStatusForm(
+		@NotNull(message = "{validation.field-verification.status.required}")
+		FieldVerificationStatus status,
+		String note
+	) {
+
+		@AssertTrue(message = "{validation.field-verification.status.allowed}")
+		public boolean isStatusAllowed() {
+			return status == null
+				|| status == FieldVerificationStatus.VERIFIED
+				|| status == FieldVerificationStatus.NEEDS_RECHECK;
 		}
 	}
 }

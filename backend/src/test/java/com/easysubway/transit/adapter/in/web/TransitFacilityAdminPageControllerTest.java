@@ -5,6 +5,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.forwardedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -78,6 +79,82 @@ class TransitFacilityAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("시설 상태 변경 validation 실패는 관리자 shell 안에서 field error를 보여준다")
+	void facilityStatusValidationErrorRendersAdminHtml() throws Exception {
+		String html = mockMvc.perform(post("/admin/facilities/facility-sangnoksu-elevator-1/page/status")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("통합 관리자")
+			.contains("입력값을 확인해 주세요")
+			.contains("시설 상태를 선택해야 합니다.")
+			.contains("1번 출구 엘리베이터");
+	}
+
+	@Test
+	@DisplayName("시설 편집 validation 실패는 입력값과 선택 상태를 보존한다")
+	void facilityEditorValidationErrorPreservesInput() throws Exception {
+		String html = mockMvc.perform(post("/admin/facilities/editor/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("stationId", "station-sangnoksu")
+				.param("type", "ELEVATOR")
+				.param("floorFrom", "B1")
+				.param("floorTo", "1F")
+				.param("status", "BROKEN")
+				.param("dataConfidence", "HIGH")
+				.param("dataSourceType", "OFFICIAL_API")
+				.param("description", "입력값 보존 메모"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("시설명을 입력해야 합니다.")
+			.contains("value=\"B1\"")
+			.contains("value=\"1F\"")
+			.contains("입력값 보존 메모");
+	}
+
+	@Test
+	@DisplayName("시설 편집 숫자 변환 실패는 위도 원본 입력값을 보존한다")
+	void facilityEditorTypeMismatchPreservesRejectedLatitude() throws Exception {
+		String html = mockMvc.perform(post("/admin/facilities/editor/page")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("stationId", "station-sangnoksu")
+				.param("type", "ELEVATOR")
+				.param("name", "1번 출구 엘리베이터")
+				.param("floorFrom", "B1")
+				.param("floorTo", "1F")
+				.param("latitude", "not-a-number")
+				.param("longitude", "126.866768")
+				.param("status", "BROKEN")
+				.param("dataConfidence", "HIGH")
+				.param("dataSourceType", "OFFICIAL_API")
+				.param("description", "숫자 변환 실패 메모"))
+			.andExpect(status().isBadRequest())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("입력값을 확인해 주세요")
+			.contains("value=\"not-a-number\"")
+			.contains("value=\"126.866768\"")
+			.contains("숫자 변환 실패 메모");
+	}
+
+	@Test
 	@DisplayName("관리자 시설 상태 화면은 관리자 인증을 요구한다")
 	void facilityStatusPagesRequireAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/facilities/page"))
@@ -93,11 +170,12 @@ class TransitFacilityAdminPageControllerTest {
 				.param("status", "BROKEN"))
 			.andExpect(status().isUnauthorized());
 
-		mockMvc.perform(post("/admin/facilities/facility-sangnoksu-elevator-1/page/status")
-				.with(httpBasic("basic-user", "user-test-password"))
-				.with(csrf())
-				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
-				.param("status", "BROKEN"))
-			.andExpect(status().isForbidden());
+			mockMvc.perform(post("/admin/facilities/facility-sangnoksu-elevator-1/page/status")
+					.with(httpBasic("basic-user", "user-test-password"))
+					.with(csrf())
+					.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+					.param("status", "BROKEN"))
+				.andExpect(status().isForbidden())
+				.andExpect(forwardedUrl("/admin/error/page"));
+		}
 	}
-}

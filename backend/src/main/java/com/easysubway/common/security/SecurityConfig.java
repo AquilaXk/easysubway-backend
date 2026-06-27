@@ -9,6 +9,7 @@ import com.easysubway.admin.identity.domain.AdminIdentity;
 import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
+import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -48,10 +49,16 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 public class SecurityConfig {
 
 	@Bean
+	AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler() {
+		return new AdminHtmlAccessDeniedHandler();
+	}
+
+	@Bean
 	@Order(1)
 	SecurityFilterChain adminSecurityFilterChain(
 		HttpSecurity http,
 		AdminOperatorAuditFilter auditFilter,
+		AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler,
 		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
 	) throws Exception {
 		// 관리자 검수 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
@@ -59,6 +66,7 @@ public class SecurityConfig {
 			.securityMatcher("/admin/**")
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/admin/login").permitAll()
+				.requestMatchers("/admin/error/page").permitAll()
 				.requestMatchers(HttpMethod.POST, "/admin/reports/**")
 				.hasAuthority(AdminPermission.REPORT_REVIEW.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/reports/**")
@@ -114,6 +122,7 @@ public class SecurityConfig {
 				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())
 			)
 			.exceptionHandling(exception -> exception
+				.accessDeniedHandler(adminHtmlAccessDeniedHandler)
 				.defaultAuthenticationEntryPointFor(
 					new LoginUrlAuthenticationEntryPoint("/admin/login"),
 					request -> {

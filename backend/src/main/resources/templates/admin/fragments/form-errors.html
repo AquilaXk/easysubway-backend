@@ -1,0 +1,14 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<title>폼 오류 요약</title>
+</head>
+<body>
+<div th:fragment="summary" class="alert failure" th:if="${formErrorSummary != null && !formErrorSummary.isEmpty()}">
+	<strong>입력값을 확인해 주세요</strong>
+	<ul>
+		<li th:each="error : ${formErrorSummary}" th:text="${error}">오류 메시지</li>
+	</ul>
+</div>
+</body>
+</html>

@@ -208,6 +208,16 @@ body.admin-v3 {
 	font-size: 28px;
 }
 
+.admin-v3 .alert.warning {
+	border-color: #e3c26f;
+	background: #fff8e4;
+}
+
+.admin-v3 .alert.failure {
+	border-color: #e6a197;
+	background: #fff0ee;
+}
+
 .admin-status {
 	display: inline-flex;
 	align-items: center;

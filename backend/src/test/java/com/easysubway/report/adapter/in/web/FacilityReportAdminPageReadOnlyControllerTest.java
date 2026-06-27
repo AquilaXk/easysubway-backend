@@ -15,6 +15,9 @@ import java.time.Instant;
 import java.time.ZoneId;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.mock.web.MockHttpServletResponse;
+import org.springframework.ui.ExtendedModelMap;
+import org.springframework.validation.BeanPropertyBindingResult;
 import org.springframework.web.servlet.mvc.support.RedirectAttributesModelMap;
 
 @DisplayName("읽기 전용 마스터 데이터 신고 검수 화면")
@@ -56,10 +59,17 @@ class FacilityReportAdminPageReadOnlyControllerTest {
 
 		String viewName = controller.reviewReportFromPage(
 			report.id(),
-			FacilityReportReviewDecision.ACCEPT,
-			null,
+			new FacilityReportAdminPageController.ReviewReportForm(FacilityReportReviewDecision.ACCEPT, null),
+			new BeanPropertyBindingResult(
+				new FacilityReportAdminPageController.ReviewReportForm(FacilityReportReviewDecision.ACCEPT, null),
+				"reviewForm"
+			),
 			ADMIN,
-			redirectAttributes
+			redirectAttributes,
+			new ExtendedModelMap(),
+			new MockHttpServletResponse(),
+			null,
+			null
 		);
 
 		assertThat(viewName).isEqualTo("redirect:/admin/reports/%s/page".formatted(report.id()));
