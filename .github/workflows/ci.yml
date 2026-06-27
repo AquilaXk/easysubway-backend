@@ -78,6 +78,27 @@ jobs:
         --lockfile=apps/mobile/android/app/gradle.lockfile
         --lockfile=backend/gradle.lockfile
 
+  release-gate-consistency:
+    name: Release Gate Consistency
+    runs-on: ubuntu-latest
+    needs: changes
+
+    steps:
+      - name: Release Gate Consistency / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Release Gate Consistency / Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Release Gate Consistency / Run release gate contract tests
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: node --test tools/ci/repository-contract.test.mjs
+
   repository-contracts:
     name: Repository CI
     runs-on: ubuntu-latest
