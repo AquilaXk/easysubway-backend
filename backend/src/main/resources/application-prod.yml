@@ -54,6 +54,10 @@ easysubway:
   admin:
     username: ${EASYSUBWAY_ADMIN_USERNAME}
     password: ${EASYSUBWAY_ADMIN_PASSWORD}
+    platform-transition:
+      stage: ${EASYSUBWAY_ADMIN_PLATFORM_TRANSITION_STAGE:shadow}
+      release-gate:
+        blocker-mode: ${EASYSUBWAY_ADMIN_PLATFORM_RELEASE_BLOCKER_MODE:fail}
     break-glass:
       username: ${EASYSUBWAY_ADMIN_BREAK_GLASS_USERNAME:}
       password: ${EASYSUBWAY_ADMIN_BREAK_GLASS_PASSWORD:}
