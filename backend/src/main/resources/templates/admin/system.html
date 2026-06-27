@@ -7,9 +7,12 @@
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
 <div class="admin-shell">
 <div th:replace="~{admin/fragments/shell :: sidebar('a-system')}"></div>
 <main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
 			<h1>시스템 상태</h1>

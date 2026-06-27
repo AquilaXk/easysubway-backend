@@ -284,6 +284,21 @@ class AdminV3PageSmokeTest {
 		assertThat(html)
 			.contains("통합 관리자")
 			.contains("admin-v3")
+			.contains("class=\"admin-shell\"")
+			.contains("class=\"admin-topbar-row\"")
+			.contains("href=\"#admin-content\"")
+			.contains("id=\"admin-content\"")
+			.doesNotContain("<main id=\"admin-content\"")
+			.contains("DEV")
+			.contains("관리자 <strong>")
+			.contains("revision <strong>local</strong>")
+			.contains("master data <strong>unknown</strong>")
 			.contains(expectedText);
+		assertThat(html.indexOf("href=\"#admin-content\""))
+			.isLessThan(html.indexOf("class=\"admin-shell\""));
+		assertThat(html.indexOf("class=\"admin-topbar-row\""))
+			.isLessThan(html.indexOf("id=\"admin-content\""));
+		assertThat(html.indexOf("id=\"admin-content\""))
+			.isLessThan(html.indexOf("<header class=\"admin-page-head\">"));
 	}
 }

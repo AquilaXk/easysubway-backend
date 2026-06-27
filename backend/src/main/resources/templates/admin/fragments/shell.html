@@ -17,5 +17,29 @@
 		   th:text="${program.label}">메뉴</a>
 	</div>
 </nav>
+<a th:fragment="skipLink" class="skip-link" href="#admin-content">본문으로 건너뛰기</a>
+<div th:fragment="topbar" class="admin-topbar">
+	<div class="admin-topbar-row" aria-label="관리자 실행 환경">
+		<div class="admin-topbar-meta">
+			<span class="admin-env-badge"
+			      th:classappend="${' is-' + (adminShell != null ? adminShell.environmentTone : 'development')}"
+			      th:text="${adminShell != null ? adminShell.environmentLabel : 'DEV'}">DEV</span>
+			<span>관리자 <strong th:text="${adminShell != null ? adminShell.username : 'anonymous'}">admin</strong></span>
+			<span>권한 <strong th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</strong></span>
+		</div>
+		<div class="admin-topbar-meta">
+			<span>revision <strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong></span>
+			<span>master data <strong th:text="${adminShell != null ? adminShell.masterDataVersion : 'unknown'}">unknown</strong></span>
+		</div>
+	</div>
+</div>
+<div th:fragment="contentStart" id="admin-content" class="admin-content-anchor" tabindex="-1"></div>
+<output th:fragment="flash" class="alert"
+        th:if="${flashMessage != null && !flashMessage.isBlank()}"
+        th:classappend="${flashTone == 'failure'} ? ' failure' : (${flashTone == 'warning'} ? ' warning' : ' good')"
+        th:text="${flashMessage}">처리되었습니다.</output>
+<span th:fragment="status(text, tone)" class="admin-status"
+      th:classappend="${tone == 'good'} ? ' good' : (${tone == 'bad'} ? ' bad' : (${tone == 'warn'} ? ' warn' : ''))"
+      th:text="${text}">상태</span>
 </body>
 </html>

@@ -15,6 +15,33 @@ body.admin-v3 {
 	min-height: 100vh;
 }
 
+.admin-v3 a:focus-visible,
+.admin-v3 button:focus-visible,
+.admin-v3 input:focus-visible,
+.admin-v3 select:focus-visible,
+.admin-v3 textarea:focus-visible {
+	outline: 3px solid #ffbf47;
+	outline-offset: 3px;
+}
+
+.skip-link {
+	position: absolute;
+	top: 12px;
+	left: 12px;
+	z-index: 10;
+	transform: translateY(-140%);
+	padding: 10px 14px;
+	border-radius: 8px;
+	background: #102a2c;
+	color: #fff;
+	font-weight: 900;
+	text-decoration: none;
+}
+
+.skip-link:focus-visible {
+	transform: translateY(0);
+}
+
 .admin-sidebar {
 	position: sticky;
 	top: 0;
@@ -91,10 +118,74 @@ body.admin-v3 {
 }
 
 .admin-main {
+	min-width: 0;
 	width: 100%;
 	max-width: none;
 	margin: 0;
 	padding: 28px 30px 48px;
+	overflow-x: auto;
+}
+
+.admin-topbar {
+	margin-bottom: 16px;
+}
+
+.admin-content-anchor {
+	scroll-margin-top: 16px;
+}
+
+.admin-topbar-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 16px;
+	align-items: center;
+	justify-content: space-between;
+	padding: 11px 14px;
+	border: 1px solid #d7e2df;
+	border-radius: 10px;
+	background: #fff;
+	box-shadow: 0 8px 24px rgba(22, 55, 59, 0.05);
+}
+
+.admin-topbar-meta {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px 14px;
+	align-items: center;
+	color: #4a6669;
+	font-size: 13px;
+	font-weight: 800;
+}
+
+.admin-topbar-meta strong {
+	color: #102a2c;
+}
+
+.admin-env-badge {
+	display: inline-flex;
+	align-items: center;
+	min-height: 26px;
+	padding: 0 9px;
+	border-radius: 999px;
+	background: #eef3f0;
+	color: #244548;
+	font-size: 12px;
+	font-weight: 950;
+}
+
+.admin-env-badge.is-production {
+	background: #ffe2dc;
+	color: #9d2c1b;
+}
+
+.admin-env-badge.is-staging {
+	background: #fff2d6;
+	color: #8b5500;
+}
+
+.admin-env-badge.is-development {
+	background: #ddf7eb;
+	color: #0c6441;
 }
 
 .admin-page-head {
@@ -187,6 +278,14 @@ body.admin-v3 {
 
 .admin-v3 table {
 	overflow: hidden;
+	width: 100%;
+	min-width: 620px;
+	border-collapse: collapse;
+}
+
+.admin-v3 section,
+.admin-card {
+	overflow-x: auto;
 }
 
 .admin-v3 th {
@@ -211,6 +310,11 @@ body.admin-v3 {
 .admin-v3 .alert.warning {
 	border-color: #e3c26f;
 	background: #fff8e4;
+}
+
+.admin-v3 .alert.good {
+	border-color: #93d6b6;
+	background: #ecfbf3;
 }
 
 .admin-v3 .alert.failure {
@@ -366,10 +470,16 @@ body.admin-v3 {
 	.admin-sidebar {
 		position: static;
 		min-height: auto;
+		max-height: 44vh;
+		overflow-y: auto;
 	}
 
 	.admin-main {
 		padding: 22px 16px 36px;
+	}
+
+	.admin-topbar-row {
+		display: grid;
 	}
 
 	.admin-grid-2,
