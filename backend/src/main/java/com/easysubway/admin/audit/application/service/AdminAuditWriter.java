@@ -81,6 +81,28 @@ public class AdminAuditWriter {
 		);
 	}
 
+	public void commonCodeChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.COMMON_CODE_CHANGE, "COMMON_CODE", targetId, action, outcome, reason);
+	}
+
+	public void incidentChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.INCIDENT_CHANGE, "INCIDENT", targetId, action, outcome, reason);
+	}
+
 	private void writeAudit(
 		Authentication authentication,
 		HttpServletRequest request,
