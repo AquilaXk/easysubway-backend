@@ -1,6 +1,8 @@
 package com.easysubway.transit.adapter.in.web;
 
 import com.easysubway.admin.web.AdminFormErrorView;
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.StationMasterDataCounts;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
@@ -22,6 +24,7 @@ import com.easysubway.transit.domain.StationWithLines;
 import java.math.BigDecimal;
 import java.security.Principal;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import jakarta.servlet.http.HttpServletResponse;
@@ -56,8 +59,11 @@ class TransitStationAdminPageController {
 	@GetMapping("/admin/stations/page")
 	String stationsPage(
 		@RequestParam(required = false) String query,
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
 		Model model
 	) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
 		Map<String, StationMasterDataCounts> counts = transitMasterQueryUseCase.countStationMasterDataByStationId();
 		List<StationRow> stations = transitMasterQueryUseCase.searchStations(new StationSearchCommand(query, null))
 			.stream()
@@ -66,7 +72,13 @@ class TransitStationAdminPageController {
 				StationMasterDataCounts.empty()
 			)))
 			.toList();
-		model.addAttribute("stations", stations);
+		EgovPaginationView pageView = EgovPaginationView.from(pageRequest.page(), pageRequest.size(), stations.size());
+		model.addAttribute("stations", pageView.pageItems(stations));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links(
+			"/admin/stations/page",
+			Collections.singletonMap("query", query)
+		));
 		model.addAttribute("query", query);
 		return "admin/stations/list";
 	}

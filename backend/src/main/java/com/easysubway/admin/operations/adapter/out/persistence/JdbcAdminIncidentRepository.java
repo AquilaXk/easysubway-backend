@@ -26,12 +26,17 @@ public class JdbcAdminIncidentRepository implements AdminIncidentRepository {
 
 	@Override
 	public List<AdminIncident> findRecent(int limit) {
+		return findRecent(limit, 0);
+	}
+
+	@Override
+	public List<AdminIncident> findRecent(int limit, int offset) {
 		return jdbcTemplate.query("""
 			SELECT incident_id, severity, status, source, summary, owner, opened_at, resolved_at, resolution
 			FROM admin_incidents
 			ORDER BY opened_at DESC, incident_id DESC
-			LIMIT ?
-			""", this::mapIncident, Math.max(0, limit));
+			LIMIT ? OFFSET ?
+			""", this::mapIncident, Math.max(0, limit), Math.max(offset, 0));
 	}
 
 	@Override

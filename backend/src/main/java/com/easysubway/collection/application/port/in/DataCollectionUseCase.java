@@ -12,4 +12,8 @@ public interface DataCollectionUseCase {
 	Optional<DataCollectionRun> getLatestCompletedRun(DataCollectionSource source);
 
 	List<DataCollectionRun> listRecentRuns(int limit);
+
+	default List<DataCollectionRun> listRecentRuns(int limit, int offset) {
+		return offset <= 0 ? listRecentRuns(limit) : List.of();
+	}
 }

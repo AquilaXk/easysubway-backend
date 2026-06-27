@@ -85,6 +85,19 @@ class DataCollectionRunRecorderTest {
 	}
 
 	@Test
+	@DisplayName("최근 실행 기록은 offset 이후 기록부터 조회한다")
+	void listRecentRunsSupportsOffset() {
+		recorder.recordTransitMasterRun("collection-a", "admin-a");
+		recorder.recordTransitMasterRun("collection-b", "admin-b");
+
+		var recentRuns = repository.loadRecentRuns(1, 1);
+
+		assertThat(recentRuns)
+			.extracting("requestedBy")
+			.containsExactly("admin-a");
+	}
+
+	@Test
 	@DisplayName("같은 실행 식별자를 다시 저장해도 단계 이력은 중복되지 않는다")
 	void saveRunReplacesSameRunId() {
 		recorder.recordTransitMasterRun("collection-retry", "admin-a");

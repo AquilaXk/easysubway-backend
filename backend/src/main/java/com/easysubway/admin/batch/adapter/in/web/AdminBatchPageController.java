@@ -5,6 +5,8 @@ import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService;
 import com.easysubway.admin.batch.domain.AdminBatchJob;
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionStepStatus;
@@ -15,6 +17,7 @@ import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -26,11 +29,10 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class AdminBatchPageController {
-
-	private static final int DEFAULT_RECENT_RUN_LIMIT = 20;
 
 	private final AdminBatchOperationService batchOperationService;
 	private final AdminAuditWriter auditWriter;
@@ -41,12 +43,24 @@ class AdminBatchPageController {
 	}
 
 	@GetMapping("/admin/batches/page")
-	String batchPage(Model model) {
-		model.addAttribute("jobs", batchOperationService.listJobs().stream().map(BatchJobRow::from).toList());
-		model.addAttribute("runs", batchOperationService.listExecutions(DEFAULT_RECENT_RUN_LIMIT)
+	String batchPage(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		List<BatchRunRow> runs = batchOperationService.listExecutions(
+				pageRequest.limitForHasNext(),
+				pageRequest.offset()
+			)
 			.stream()
 			.flatMap(run -> BatchRunRow.from(run).stream())
-			.toList());
+			.toList();
+		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), runs.size());
+		model.addAttribute("jobs", batchOperationService.listJobs().stream().map(BatchJobRow::from).toList());
+		model.addAttribute("runs", pageView.visibleItems(runs));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links("/admin/batches/page", Collections.emptyMap()));
 		return "admin/batches/list";
 	}
 
@@ -65,7 +79,7 @@ class AdminBatchPageController {
 	) {
 		if (bindingResult.hasErrors()) {
 			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			batchPage(model);
+			batchPage(null, null, model);
 			AdminFormErrorView.expose(model, bindingResult);
 			return "admin/batches/list";
 		}

@@ -1,6 +1,8 @@
 package com.easysubway.field.adapter.in.web;
 
 import com.easysubway.admin.web.AdminFormErrorView;
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
@@ -14,6 +16,7 @@ import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Collections;
 import java.util.List;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -22,6 +25,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class FieldVerificationAdminPageController {
@@ -33,10 +37,19 @@ class FieldVerificationAdminPageController {
 	}
 
 	@GetMapping("/admin/field-verifications/page")
-	String fieldVerificationsPage(Model model) {
-		model.addAttribute("verifications", fieldVerificationUseCase.listStationVerifications().stream()
+	String fieldVerificationsPage(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		List<SessionRow> verifications = fieldVerificationUseCase.listStationVerifications().stream()
 			.map(SessionRow::from)
-			.toList());
+			.toList();
+		EgovPaginationView pageView = EgovPaginationView.from(pageRequest.page(), pageRequest.size(), verifications.size());
+		model.addAttribute("verifications", pageView.pageItems(verifications));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links("/admin/field-verifications/page", Collections.emptyMap()));
 		return "admin/field/list";
 	}
 

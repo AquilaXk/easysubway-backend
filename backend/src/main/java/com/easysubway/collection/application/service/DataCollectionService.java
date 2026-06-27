@@ -46,6 +46,11 @@ public class DataCollectionService implements DataCollectionUseCase {
 	}
 
 	@Override
+	public List<DataCollectionRun> listRecentRuns(int limit, int offset) {
+		return loadDataCollectionRunPort.loadRecentRuns(limit, offset);
+	}
+
+	@Override
 	public Optional<DataCollectionRun> getLatestCompletedRun(DataCollectionSource source) {
 		return loadDataCollectionRunPort.loadLatestCompletedRun(source);
 	}

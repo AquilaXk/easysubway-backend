@@ -55,6 +55,24 @@ class TransitFacilityAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("시설 상태 화면은 page size와 현재 페이지를 링크에 표시한다")
+	void facilityStatusPageShowsPaginationLinks() throws Exception {
+		String html = mockMvc.perform(get("/admin/facilities/page")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("시설 상태 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
+	}
+
+	@Test
 	@DisplayName("관리자는 시설 상태 화면에서 상태를 변경한 뒤 목록으로 돌아온다")
 	@DirtiesContext(methodMode = DirtiesContext.MethodMode.AFTER_METHOD)
 	void adminUpdatesFacilityStatusFromPageAndRedirectsToList() throws Exception {

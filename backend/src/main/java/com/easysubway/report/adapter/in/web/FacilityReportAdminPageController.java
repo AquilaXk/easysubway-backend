@@ -25,6 +25,7 @@ import java.security.Principal;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -127,6 +128,10 @@ class FacilityReportAdminPageController {
 
 		model.addAttribute("reports", reports);
 		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links(
+			"/admin/reports/page",
+			Collections.singletonMap("status", status)
+		));
 		model.addAttribute("selectedStatus", status);
 		model.addAttribute("statusOptions", statusOptions());
 		model.addAttribute("reportSurgeAlert", ReportSurgeAlertView.from(

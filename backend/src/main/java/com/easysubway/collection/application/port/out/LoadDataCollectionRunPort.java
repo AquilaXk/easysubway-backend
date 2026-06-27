@@ -12,4 +12,6 @@ public interface LoadDataCollectionRunPort {
 	Optional<DataCollectionRun> loadLatestCompletedRun(DataCollectionSource source);
 
 	List<DataCollectionRun> loadRecentRuns(int limit);
+
+	List<DataCollectionRun> loadRecentRuns(int limit, int offset);
 }

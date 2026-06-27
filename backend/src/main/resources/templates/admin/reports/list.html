@@ -273,16 +273,7 @@
 		</tbody>
 	</table>
 
-	<nav class="pagination" aria-label="신고 목록 페이지" th:if="${page.hasPages}">
-		<a th:if="${page.hasPrevious}"
-		   th:href="@{/admin/reports/page(status=${selectedStatus},page=${page.previousPage},size=${page.size})}">이전</a>
-		<a th:each="pageLink : ${page.pageLinks}"
-		   th:href="@{/admin/reports/page(status=${selectedStatus},page=${pageLink.page},size=${page.size})}"
-		   th:attr="aria-current=${pageLink.current ? 'page' : null}"
-		   th:text="${pageLink.label}">1</a>
-		<a th:if="${page.hasNext}"
-		   th:href="@{/admin/reports/page(status=${selectedStatus},page=${page.nextPage},size=${page.size})}">다음</a>
-	</nav>
+	<div th:replace="~{admin/fragments/pagination :: pager('신고 목록 페이지', ${page}, ${paginationLinks})}"></div>
 </main>
 </div>
 </body>

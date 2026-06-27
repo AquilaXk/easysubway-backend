@@ -32,6 +32,10 @@ public class AdminBatchOperationService {
 		return loadDataCollectionRunPort.loadRecentRuns(limit);
 	}
 
+	public List<DataCollectionRun> listExecutions(int limit, int offset) {
+		return loadDataCollectionRunPort.loadRecentRuns(limit, offset);
+	}
+
 	public DataCollectionRun retry(String jobId, String runId, String requestedBy) {
 		AdminBatchJob job = AdminBatchJob.require(jobId);
 		DataCollectionRun failedRun = loadDataCollectionRunPort.loadRun(runId)

@@ -37,10 +37,19 @@ public class InMemoryAdminAuditEventRepository implements AdminAuditEventReposit
 
 	@Override
 	public synchronized List<AdminAuditEvent> findRecent(AdminAuditEventType eventType, int limit) {
+		return findRecent(eventType, limit, 0);
+	}
+
+	@Override
+	public synchronized List<AdminAuditEvent> findRecent(AdminAuditEventType eventType, int limit, int offset) {
 		List<AdminAuditEvent> recent = new ArrayList<>();
+		int skipped = 0;
 		for (int index = events.size() - 1; index >= 0 && recent.size() < Math.max(0, limit); index--) {
 			AdminAuditEvent event = events.get(index);
 			if (eventType == null || event.eventType() == eventType) {
+				if (skipped++ < Math.max(offset, 0)) {
+					continue;
+				}
 				recent.add(event);
 			}
 		}

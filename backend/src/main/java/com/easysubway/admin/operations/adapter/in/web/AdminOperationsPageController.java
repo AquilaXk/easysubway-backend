@@ -10,10 +10,13 @@ import com.easysubway.admin.code.domain.AdminCommonCodeGroups;
 import com.easysubway.admin.operations.application.service.AdminIncidentService;
 import com.easysubway.admin.operations.application.service.AdminIncidentService.OpenAdminIncidentCommand;
 import com.easysubway.admin.operations.domain.AdminIncident;
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.health.application.port.in.CheckHealthUseCase;
 import com.easysubway.health.domain.HealthStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.Principal;
+import java.util.Collections;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -26,8 +29,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class AdminOperationsPageController {
-
-	private static final int INCIDENT_LIMIT = 30;
 
 	private final AdminCommonCodeService commonCodeService;
 	private final AdminIncidentService incidentService;
@@ -47,12 +48,25 @@ class AdminOperationsPageController {
 	}
 
 	@GetMapping("/admin/codes/page")
-	String codesPage(@RequestParam(required = false) String groupCode, Model model) {
+	String codesPage(
+		@RequestParam(required = false) String groupCode,
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
 		List<AdminCommonCodeGroup> groups = commonCodeService.listGroups();
 		String selectedGroup = selectedGroup(groupCode, groups);
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		List<CodeRow> codes = commonCodeService.listCodes(selectedGroup, true).stream().map(CodeRow::from).toList();
+		EgovPaginationView pageView = EgovPaginationView.from(pageRequest.page(), pageRequest.size(), codes.size());
 		model.addAttribute("groups", groups.stream().map(CodeGroupRow::from).toList());
 		model.addAttribute("selectedGroup", selectedGroup);
-		model.addAttribute("codes", commonCodeService.listCodes(selectedGroup, true).stream().map(CodeRow::from).toList());
+		model.addAttribute("codes", pageView.pageItems(codes));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links(
+			"/admin/codes/page",
+			Collections.singletonMap("groupCode", selectedGroup)
+		));
 		return "admin/codes/list";
 	}
 
@@ -108,9 +122,22 @@ class AdminOperationsPageController {
 	}
 
 	@GetMapping("/admin/incidents/page")
-	String incidentsPage(Model model) {
+	String incidentsPage(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		List<IncidentRow> incidents = incidentService
+			.listRecent(pageRequest.limitForHasNext(), pageRequest.offset())
+			.stream()
+			.map(IncidentRow::from)
+			.toList();
+		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), incidents.size());
 		HealthStatus health = checkHealthUseCase.checkHealth();
-		model.addAttribute("incidents", incidentService.listRecent(INCIDENT_LIMIT).stream().map(IncidentRow::from).toList());
+		model.addAttribute("incidents", pageView.visibleItems(incidents));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links("/admin/incidents/page", Collections.emptyMap()));
 		model.addAttribute("severityOptions", optionRows(AdminCommonCodeGroups.INCIDENT_SEVERITY));
 		model.addAttribute("statusOptions", optionRows(AdminCommonCodeGroups.INCIDENT_STATUS)
 			.stream()

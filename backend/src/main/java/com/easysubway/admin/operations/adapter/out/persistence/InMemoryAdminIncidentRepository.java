@@ -18,11 +18,17 @@ public class InMemoryAdminIncidentRepository implements AdminIncidentRepository 
 
 	@Override
 	public synchronized List<AdminIncident> findRecent(int limit) {
+		return findRecent(limit, 0);
+	}
+
+	@Override
+	public synchronized List<AdminIncident> findRecent(int limit, int offset) {
 		return incidents.values()
 			.stream()
 			.sorted(Comparator.comparing(AdminIncident::openedAt)
 				.reversed()
 				.thenComparing(AdminIncident::incidentId, Comparator.reverseOrder()))
+			.skip(Math.max(offset, 0))
 			.limit(Math.max(0, limit))
 			.toList();
 	}

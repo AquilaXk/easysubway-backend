@@ -49,9 +49,15 @@ public class InMemoryDataCollectionRunRepository implements
 
 	@Override
 	public List<DataCollectionRun> loadRecentRuns(int limit) {
+		return loadRecentRuns(limit, 0);
+	}
+
+	@Override
+	public List<DataCollectionRun> loadRecentRuns(int limit, int offset) {
 		var recentRuns = new ArrayList<>(runs);
 		Collections.reverse(recentRuns);
 		return recentRuns.stream()
+			.skip(Math.max(offset, 0))
 			.limit(Math.max(limit, 0))
 			.toList();
 	}

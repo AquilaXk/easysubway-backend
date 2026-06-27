@@ -38,6 +38,10 @@ public class AdminIncidentService {
 		return repository.findRecent(limit);
 	}
 
+	public List<AdminIncident> listRecent(int limit, int offset) {
+		return repository.findRecent(limit, offset);
+	}
+
 	public AdminIncident open(OpenAdminIncidentCommand command) {
 		requireEnabled(AdminCommonCodeGroups.INCIDENT_SEVERITY, command.severity());
 		requireEnabled(AdminCommonCodeGroups.INCIDENT_STATUS, command.status());

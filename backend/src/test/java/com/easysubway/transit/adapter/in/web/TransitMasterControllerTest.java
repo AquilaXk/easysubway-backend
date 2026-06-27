@@ -1,5 +1,6 @@
 package com.easysubway.transit.adapter.in.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -48,6 +49,24 @@ class TransitMasterControllerTest {
 			.andExpect(jsonPath("$.data[0].simplifiedLayoutCount").value(1))
 			.andExpect(jsonPath("$.data[0].routeNodeCount").value(2))
 			.andExpect(jsonPath("$.data[0].routeEdgeCount").value(1));
+	}
+
+	@Test
+	@DisplayName("관리자 역 목록 화면은 page size와 현재 페이지를 링크에 표시한다")
+	void adminStationPageShowsPaginationLinks() throws Exception {
+		String html = mockMvc.perform(get("/admin/stations/page")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("역 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
 	}
 
 	@Test

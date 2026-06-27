@@ -50,14 +50,19 @@ public class JdbcAdminAuditEventRepository implements AdminAuditEventRepository 
 
 	@Override
 	public List<AdminAuditEvent> findRecent(AdminAuditEventType eventType, int limit) {
+		return findRecent(eventType, limit, 0);
+	}
+
+	@Override
+	public List<AdminAuditEvent> findRecent(AdminAuditEventType eventType, int limit, int offset) {
 		if (eventType == null) {
 			return jdbcTemplate.query("""
 				SELECT audit_id, event_type, actor, role_permission, request_id, client_ip, user_agent,
 					target_type, target_id, action, outcome, reason, occurred_at
 				FROM admin_audit_events
 				ORDER BY occurred_at DESC, audit_id DESC
-				LIMIT ?
-				""", this::mapEvent, limit);
+				LIMIT ? OFFSET ?
+				""", this::mapEvent, limit, Math.max(offset, 0));
 		}
 		return jdbcTemplate.query("""
 			SELECT audit_id, event_type, actor, role_permission, request_id, client_ip, user_agent,
@@ -65,8 +70,8 @@ public class JdbcAdminAuditEventRepository implements AdminAuditEventRepository 
 			FROM admin_audit_events
 			WHERE event_type = ?
 			ORDER BY occurred_at DESC, audit_id DESC
-			LIMIT ?
-			""", this::mapEvent, eventType.name(), limit);
+			LIMIT ? OFFSET ?
+			""", this::mapEvent, eventType.name(), limit, Math.max(offset, 0));
 	}
 
 	private AdminAuditEvent mapEvent(ResultSet resultSet, int rowNumber) throws SQLException {

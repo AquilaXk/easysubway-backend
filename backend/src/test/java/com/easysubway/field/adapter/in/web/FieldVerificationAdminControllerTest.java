@@ -64,6 +64,24 @@ class FieldVerificationAdminControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자 현장 검증 목록 화면은 page size와 현재 페이지를 링크에 표시한다")
+	void fieldVerificationPageShowsPaginationLinks() throws Exception {
+		String html = mockMvc.perform(get("/admin/field-verifications/page")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("현장 검증 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
+	}
+
+	@Test
 	@DisplayName("관리자는 역별 현장 검증 세션과 항목을 조회한다")
 	void adminGetsStationFieldVerification() throws Exception {
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sangnoksu")

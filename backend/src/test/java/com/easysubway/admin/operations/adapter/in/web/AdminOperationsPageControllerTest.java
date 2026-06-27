@@ -53,6 +53,25 @@ class AdminOperationsPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("공통코드 화면은 group filter와 page size를 링크에 표시한다")
+	void codesPageShowsPaginationLinks() throws Exception {
+		String html = mockMvc.perform(get("/admin/codes/page")
+				.param("groupCode", "REPORT_REJECTION_REASON")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("공통코드 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("groupCode=REPORT_REJECTION_REASON&amp;page=1&amp;size=1")
+			.contains("다음");
+	}
+
+	@Test
 	@DisplayName("공통코드 화면은 필수 incident code 비활성화 버튼을 숨긴다")
 	void codesPageHidesRequiredIncidentDisableAction() throws Exception {
 		String html = mockMvc.perform(get("/admin/codes/page")
@@ -143,6 +162,27 @@ class AdminOperationsPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("장애관리 목록은 page size와 현재 페이지를 링크에 표시한다")
+	void incidentsPageShowsPaginationLinks() throws Exception {
+		openIncident("database DOWN");
+		openIncident("redis DOWN");
+
+		String html = mockMvc.perform(get("/admin/incidents/page")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("Incident 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
+	}
+
+	@Test
 	@DisplayName("공통코드 audit target은 hashCode 충돌 code도 구분한다")
 	void commonCodeAuditTargetAvoidsHashCodeCollision() throws Exception {
 		saveCode("AAO");
@@ -216,5 +256,18 @@ class AdminOperationsPageControllerTest {
 				.param("enabled", "true"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(header().string("Location", "/admin/codes/page?groupCode=REPORT_REJECTION_REASON"));
+	}
+
+	private void openIncident(String summary) throws Exception {
+		mockMvc.perform(post("/admin/incidents")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("severity", "MAJOR")
+				.param("status", "OPEN")
+				.param("source", "HEALTH")
+				.param("summary", summary)
+				.param("owner", "ops"))
+			.andExpect(status().is3xxRedirection());
 	}
 }

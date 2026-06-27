@@ -1,5 +1,7 @@
 package com.easysubway.collection.adapter.in.web;
 
+import com.easysubway.common.web.pagination.AdminPageRequest;
+import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.application.port.in.RunDataCollectionCommand;
 import com.easysubway.collection.domain.DataCollectionRun;
@@ -10,6 +12,7 @@ import com.easysubway.collection.domain.DataCollectionStatus;
 import java.security.Principal;
 import java.time.LocalDateTime;
 import java.util.Arrays;
+import java.util.Collections;
 import java.util.List;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
@@ -21,8 +24,6 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Controller
 class DataCollectionAdminPageController {
 
-	private static final int DEFAULT_RECENT_RUN_LIMIT = 20;
-
 	private final DataCollectionUseCase dataCollectionUseCase;
 
 	DataCollectionAdminPageController(DataCollectionUseCase dataCollectionUseCase) {
@@ -30,9 +31,18 @@ class DataCollectionAdminPageController {
 	}
 
 	@GetMapping("/admin/data-collections/page")
-	String dataCollectionPage(Model model) {
+	String dataCollectionPage(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		List<DataCollectionRunRow> runs = recentRunRows(pageRequest);
+		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), runs.size());
 		model.addAttribute("sourceOptions", sourceOptions());
-		model.addAttribute("runs", recentRunRows());
+		model.addAttribute("runs", pageView.visibleItems(runs));
+		model.addAttribute("page", pageView);
+		model.addAttribute("paginationLinks", pageView.links("/admin/data-collections/page", Collections.emptyMap()));
 		return "admin/collections/list";
 	}
 
@@ -46,8 +56,8 @@ class DataCollectionAdminPageController {
 		return "redirect:/admin/data-collections/page";
 	}
 
-	private List<DataCollectionRunRow> recentRunRows() {
-		return dataCollectionUseCase.listRecentRuns(DEFAULT_RECENT_RUN_LIMIT)
+	private List<DataCollectionRunRow> recentRunRows(AdminPageRequest pageRequest) {
+		return dataCollectionUseCase.listRecentRuns(pageRequest.limitForHasNext(), pageRequest.offset())
 			.stream()
 			.map(DataCollectionRunRow::from)
 			.toList();

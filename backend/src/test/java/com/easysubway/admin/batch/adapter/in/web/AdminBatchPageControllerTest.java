@@ -73,6 +73,27 @@ class AdminBatchPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("배치 실행 목록은 page size와 현재 페이지를 링크에 표시한다")
+	void batchPageShowsPaginationLinks() throws Exception {
+		saveDataCollectionRunPort.saveRun(failedRun("failed-run-1"));
+		saveDataCollectionRunPort.saveRun(failedRun("failed-run-2"));
+
+		String html = mockMvc.perform(get("/admin/batches/page")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("배치 실행 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
+	}
+
+	@Test
 	@DisplayName("BATCH_RETRY 권한이 있는 관리자는 실패 실행을 재처리하고 audit을 남긴다")
 	void adminRetriesFailedRunAndWritesAudit() throws Exception {
 		saveDataCollectionRunPort.saveRun(failedRun("failed-run"));

@@ -1,0 +1,16 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<title>관리자 페이지네이션</title>
+</head>
+<body>
+<nav class="pagination" th:fragment="pager(label, page, links)" th:aria-label="${label}" th:if="${page.hasPages}">
+	<a th:if="${page.hasPrevious}" th:href="${links.previousHref}">이전</a>
+	<a th:each="pageLink : ${links.pages}"
+	   th:href="${pageLink.href}"
+	   th:attr="aria-current=${pageLink.current ? 'page' : null}"
+	   th:text="${pageLink.label}">1</a>
+	<a th:if="${page.hasNext}" th:href="${links.nextHref}">다음</a>
+</nav>
+</body>
+</html>

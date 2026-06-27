@@ -71,6 +71,27 @@ class AdminAuditPageControllerTest {
 			.doesNotContain("POST /admin/reports/{reportId}/page/review");
 	}
 
+	@Test
+	@DisplayName("감사 조회 화면은 page size와 현재 페이지를 링크에 표시한다")
+	void auditPageShowsPaginationLinks() throws Exception {
+		auditEventRepository.save(event(AdminAuditEventType.ADMIN_ACTION, "FIRST_ACTION"));
+		auditEventRepository.save(event(AdminAuditEventType.ADMIN_ACTION, "SECOND_ACTION"));
+
+		String html = mockMvc.perform(get("/admin/audits/page")
+				.param("size", "1")
+				.with(user("auditor").authorities(new SimpleGrantedAuthority("admin.audit.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("관리자 감사 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
+	}
+
 	private AdminAuditEvent event(AdminAuditEventType type, String action) {
 		return new AdminAuditEvent(
 			null,

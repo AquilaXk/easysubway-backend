@@ -88,6 +88,27 @@ class DataCollectionAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("데이터 수집 실행 목록은 page size와 현재 페이지를 링크에 표시한다")
+	void dataCollectionPageShowsPaginationLinks() throws Exception {
+		runTransitMasterCollection();
+		runTransitMasterCollection();
+
+		String html = mockMvc.perform(get("/admin/data-collections/page")
+				.param("size", "1")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("데이터 수집 실행 목록 페이지")
+			.contains("aria-current=\"page\"")
+			.contains("page=1&amp;size=1")
+			.contains("다음");
+	}
+
+	@Test
 	@DisplayName("관리자 데이터 수집 화면은 관리자 인증을 요구한다")
 	void dataCollectionPagesRequireAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/data-collections/page"))

@@ -163,6 +163,11 @@ public class JdbcDataCollectionRunRepository implements
 
 	@Override
 	public List<DataCollectionRun> loadRecentRuns(int limit) {
+		return loadRecentRuns(limit, 0);
+	}
+
+	@Override
+	public List<DataCollectionRun> loadRecentRuns(int limit, int offset) {
 		if (limit <= 0) {
 			return List.of();
 		}
@@ -172,10 +177,11 @@ public class JdbcDataCollectionRunRepository implements
 					failure_message, retryable, operator_action
 				FROM data_collection_runs
 				ORDER BY started_at DESC, run_id DESC
-				LIMIT ?
+				LIMIT ? OFFSET ?
 				""",
 			this::mapRun,
-			limit
+			limit,
+			Math.max(offset, 0)
 		);
 	}
 

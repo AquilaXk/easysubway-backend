@@ -106,6 +106,20 @@ class JdbcDataCollectionRunRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("최근 수집 실행 기록은 offset 이후 기록부터 조회한다")
+	void loadRecentRunsSupportsOffset() {
+		repository.saveRun(completedRun("collection-old", LocalDateTime.of(2026, 6, 16, 9, 0)));
+		repository.saveRun(completedRun("collection-new", LocalDateTime.of(2026, 6, 16, 11, 0)));
+		repository.saveRun(failedRun("collection-failed", LocalDateTime.of(2026, 6, 16, 10, 0)));
+
+		var recentRuns = repository.loadRecentRuns(1, 1);
+
+		assertThat(recentRuns)
+			.extracting(DataCollectionRun::runId)
+			.containsExactly("collection-failed");
+	}
+
+	@Test
 	@DisplayName("최신 완료 수집 실행 기록은 실패 기록보다 완료 시간이 늦은 완료 기록을 반환한다")
 	void loadLatestCompletedRunReturnsLatestCompletedRunByCompletedAt() {
 		repository.saveRun(completedRun("collection-old-completed", LocalDateTime.of(2026, 6, 16, 9, 0)));
