@@ -16,6 +16,7 @@ record FacilityStatusRow(
 	AccessibilityFacilityStatus status,
 	String statusLabel,
 	String confidenceLabel,
+	String sourceLabel,
 	LocalDate lastUpdatedAt
 ) {
 
@@ -29,6 +30,7 @@ record FacilityStatusRow(
 			facility.status(),
 			statusLabel(facility.status()),
 			confidenceLabel(facility.dataConfidence()),
+			sourceLabel(facility.dataSourceType()),
 			facility.lastUpdatedAt()
 		);
 	}
@@ -64,6 +66,15 @@ record FacilityStatusRow(
 			case MEDIUM -> "정보 신뢰도 보통";
 			case LOW -> "정보 신뢰도 낮음";
 			case NEEDS_VERIFICATION -> "정보 확인 필요";
+		};
+	}
+
+	private static String sourceLabel(com.easysubway.transit.domain.DataSourceType sourceType) {
+		return switch (sourceType) {
+			case ADMIN_VERIFIED -> "운영 override";
+			case OFFICIAL_API, OFFICIAL_FILE, OPERATOR_PAGE -> "catalog 원본";
+			case USER_REPORT -> "사용자 제보";
+			case PARTNER_FEED -> "제휴 feed";
 		};
 	}
 }

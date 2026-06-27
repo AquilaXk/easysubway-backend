@@ -23,11 +23,7 @@ import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
 import java.time.LocalDate;
 import java.util.List;
-import org.springframework.context.annotation.Profile;
-import org.springframework.stereotype.Repository;
 
-@Repository
-@Profile("prod")
 public class UnavailableTransitMasterRepository implements
 	LoadTransitMasterPort,
 	MasterDataCapabilityPort,

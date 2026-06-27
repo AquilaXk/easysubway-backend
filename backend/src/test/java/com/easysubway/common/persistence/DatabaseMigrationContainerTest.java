@@ -43,9 +43,11 @@ class DatabaseMigrationContainerTest {
 				"flyway_schema_history",
 				"batch_job_instance",
 				"facility_reports",
-				"push_notification_outbox"
+				"push_notification_outbox",
+				"transit_master_overrides",
+				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains("fk_facility_report_review_audits_report");
 	}

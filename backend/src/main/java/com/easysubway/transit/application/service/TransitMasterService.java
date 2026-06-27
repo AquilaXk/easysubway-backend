@@ -18,11 +18,13 @@ import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.MasterDataCapability;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
+import com.easysubway.transit.application.port.out.RollbackTransitMasterOverridePort;
 import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
 import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
 import com.easysubway.transit.application.port.out.SaveRouteNodePort;
 import com.easysubway.transit.application.port.out.SaveStationLayoutSourcePort;
 import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
+import com.easysubway.transit.application.port.out.TransitMasterOverrideAudit;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityNotFoundException;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -375,7 +377,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			command.dataSourceType(),
 			LocalDate.now(clock)
 		);
-		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility);
+		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility, command.updatedBy());
 		return facility;
 	}
 
@@ -413,7 +415,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			command.dataSourceType(),
 			LocalDate.now(clock)
 		);
-		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility);
+		saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility, command.updatedBy());
 		if (existing.status() != command.status()) {
 			facilityStatusAlertUseCase.alertFacilityStatusChanged(
 				new FacilityStatusChangedAlertCommand(facility.id(), facility.status())
@@ -431,7 +433,12 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		LocalDate updatedAt = LocalDate.now(clock);
 		// 관리자 직접 수정은 역 상세와 경로 추천이 함께 사용하는 운영 상태의 기준값을 바꾼다.
 		requireWritableMasterData();
-		saveAccessibilityFacilityStatusPort.saveFacilityStatus(facility.id(), command.status(), updatedAt);
+		saveAccessibilityFacilityStatusPort.saveFacilityStatus(
+			facility.id(),
+			command.status(),
+			updatedAt,
+			command.updatedBy()
+		);
 		if (facility.status() != command.status()) {
 			facilityStatusAlertUseCase.alertFacilityStatusChanged(
 				new FacilityStatusChangedAlertCommand(facility.id(), command.status())
@@ -451,7 +458,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 		StationLayoutSource updated = withStationLayoutSource(source, command);
 		requireWritableMasterData();
-		saveStationLayoutSourcePort.saveStationLayoutSource(updated);
+		saveStationLayoutSourcePort.saveStationLayoutSource(updated, command.updatedBy());
 		return updated;
 	}
 
@@ -485,7 +492,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 		RouteNode updated = withRouteNodeDisplay(routeNode, command);
 		requireWritableMasterData();
-		saveRouteNodePort.saveRouteNode(updated);
+		saveRouteNodePort.saveRouteNode(updated, command.updatedBy());
 		return updated;
 	}
 
@@ -500,8 +507,25 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 		RouteEdge updated = withRouteEdge(routeEdge, command);
 		requireWritableMasterData();
-		saveRouteEdgePort.saveRouteEdge(updated);
+		saveRouteEdgePort.saveRouteEdge(updated, command.updatedBy());
 		return updated;
+	}
+
+	@Override
+	public void rollbackMasterDataOverride(String entityType, String entityId, String updatedBy) {
+		requireMasterDataOverrideMutation(entityType, entityId, updatedBy);
+		if (loadTransitMasterPort instanceof RollbackTransitMasterOverridePort rollbackPort) {
+			requireWritableMasterData();
+			rollbackPort.rollbackMasterDataOverride(entityType, entityId, updatedBy);
+		}
+	}
+
+	@Override
+	public List<TransitMasterOverrideAudit> listMasterDataOverrideAudits(String entityType, String entityId) {
+		if (loadTransitMasterPort instanceof RollbackTransitMasterOverridePort rollbackPort) {
+			return rollbackPort.listMasterDataOverrideAudits(entityType, entityId);
+		}
+		return List.of();
 	}
 
 	private TransitRegionSummary summarizeRegion(
@@ -713,6 +737,15 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	private void requireUpdater(UpdateAccessibilityFacilityStatusCommand command) {
 		if (command.updatedBy() == null || command.updatedBy().isBlank()) {
 			throw new InvalidAccessibilityFacilityException("수정자 식별자가 필요합니다.");
+		}
+	}
+
+	private void requireMasterDataOverrideMutation(String entityType, String entityId, String updatedBy) {
+		if (entityType == null || entityType.isBlank() || entityId == null || entityId.isBlank()) {
+			throw new IllegalArgumentException("롤백 대상 식별자가 필요합니다.");
+		}
+		if (updatedBy == null || updatedBy.isBlank()) {
+			throw new IllegalArgumentException("수정자 식별자가 필요합니다.");
 		}
 	}
 
