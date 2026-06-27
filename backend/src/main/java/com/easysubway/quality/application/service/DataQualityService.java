@@ -212,12 +212,10 @@ public class DataQualityService implements DataQualityUseCase {
 	}
 
 	private int qualityBaseScore(DataQualityLevel level, List<String> reasons) {
-		return switch (level) {
-			case LEVEL_1 -> addReason(reasons, "기본 정보만 있음", 40);
-			case LEVEL_2 -> addReason(reasons, "시설 정보 보강 필요", 60);
-			case LEVEL_3 -> addReason(reasons, "쉬운 경로 검증 필요", 80);
-			case LEVEL_4 -> 100;
-		};
+		if (!level.scoreReason().isBlank()) {
+			return addReason(reasons, level.scoreReason(), level.accessibilityScore());
+		}
+		return level.accessibilityScore();
 	}
 
 	private int exitAccessibilityAdjustment(List<StationExit> exits, List<String> reasons) {

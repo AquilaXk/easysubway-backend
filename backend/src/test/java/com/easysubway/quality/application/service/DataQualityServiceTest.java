@@ -33,6 +33,24 @@ class DataQualityServiceTest {
 	);
 
 	@Test
+	@DisplayName("데이터 품질 level 정책은 표시 문구와 접근성 점수 방향을 한 곳에서 고정한다")
+	void dataQualityLevelDefinesSharedPolicy() {
+		assertThat(DataQualityLevel.values())
+			.extracting(level -> level.name()
+				+ ":" + level.label()
+				+ ":" + level.description()
+				+ ":" + level.severity()
+				+ ":" + level.accessibilityScore()
+				+ ":" + level.scoreReason())
+			.containsExactly(
+				"LEVEL_1:Level 1:기본 정보만 있음:NEEDS_BASE_DATA:40:기본 정보만 있음",
+				"LEVEL_2:Level 2:시설 정보 확인됨:NEEDS_ROUTE_VERIFICATION:60:쉬운 경로 검증 필요",
+				"LEVEL_3:Level 3:쉬운 길 안내 가능:NEEDS_LIVE_STATUS:80:고장·공사 반영 필요",
+				"LEVEL_4:Level 4:고장·공사 반영됨:VERIFIED:100:"
+			);
+	}
+
+	@Test
 	@DisplayName("시설 상태 갱신 지연은 30일 초과 또는 갱신일 없음 기준으로 상태별 집계한다")
 	void summarizeDataQualityCountsDelayedFacilityStatusByStatus() {
 		var service = new DataQualityService(new StubTransitMasterPort(
@@ -162,6 +180,8 @@ class DataQualityServiceTest {
 				"시설 신뢰도 보강 필요",
 				"시설 갱신 지연"
 			);
+		assertThat(summary.stationAccessibilityScores().get(1).reasons())
+			.containsExactly("쉬운 경로 검증 필요");
 	}
 
 	@Test

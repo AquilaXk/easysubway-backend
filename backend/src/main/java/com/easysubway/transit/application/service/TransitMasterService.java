@@ -569,7 +569,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	private static int dataQualityPriority(DataQualityLevel dataQualityLevel) {
-		return -dataQualityLevel.ordinal();
+		return dataQualityLevel.searchSortPriority();
 	}
 
 	private List<TransitOperator> activeOperators() {

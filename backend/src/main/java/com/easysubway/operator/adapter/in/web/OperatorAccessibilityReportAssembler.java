@@ -52,8 +52,8 @@ class OperatorAccessibilityReportAssembler {
 	) {
 		return Arrays.stream(DataQualityLevel.values())
 			.map(level -> new OperatorAccessibilityReportView.QualityCountRow(
-				qualityLabel(level),
-				qualityDescription(level),
+				level.label(),
+				level.description(),
 				counts.getOrDefault(level, 0L)
 			))
 			.toList();
@@ -124,21 +124,4 @@ class OperatorAccessibilityReportAssembler {
 		}
 	}
 
-	private static String qualityLabel(DataQualityLevel level) {
-		return switch (level) {
-			case LEVEL_1 -> "Level 1";
-			case LEVEL_2 -> "Level 2";
-			case LEVEL_3 -> "Level 3";
-			case LEVEL_4 -> "Level 4";
-		};
-	}
-
-	private static String qualityDescription(DataQualityLevel level) {
-		return switch (level) {
-			case LEVEL_1 -> "기본 정보 확인";
-			case LEVEL_2 -> "일부 정보 확인";
-			case LEVEL_3 -> "정보 보강 필요";
-			case LEVEL_4 -> "제보 필요";
-		};
-	}
 }

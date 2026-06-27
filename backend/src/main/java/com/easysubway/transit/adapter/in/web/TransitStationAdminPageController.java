@@ -203,12 +203,7 @@ class TransitStationAdminPageController {
 	}
 
 	private static String qualityLabel(DataQualityLevel level) {
-		return switch (level) {
-			case LEVEL_1 -> "Level 1";
-			case LEVEL_2 -> "Level 2";
-			case LEVEL_3 -> "Level 3";
-			case LEVEL_4 -> "Level 4";
-		};
+		return level.label();
 	}
 
 	private static String confidenceLabel(DataConfidenceLevel level) {
