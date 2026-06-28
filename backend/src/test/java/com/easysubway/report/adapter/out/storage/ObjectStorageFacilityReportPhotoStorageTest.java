@@ -100,6 +100,37 @@ class ObjectStorageFacilityReportPhotoStorageTest {
 			.hasMessage("사진 파일 크기를 줄여야 합니다.");
 	}
 
+	@Test
+	void rejectsObjectKeysOutsideFacilityReportPrefixBeforeSigningRequests() {
+		ObjectStorageFacilityReportPhotoStorage storage = new ObjectStorageFacilityReportPhotoStorage(
+			"http://127.0.0.1:1",
+			"easysubway-report-uploads",
+			900L * 1024L,
+			"prod-object-storage-access-key",
+			"prod-object-storage-secret-key-with-enough-entropy",
+			"ap-northeast-2",
+			HttpClient.newHttpClient(),
+			Clock.fixed(Instant.parse("2026-06-20T00:00:00Z"), ZoneOffset.UTC)
+		);
+
+		for (String objectKey : new String[] {
+			"other-prefix/object.jpg",
+			"/facility-reports/unclaimed/object.jpg",
+			"facility-reports/../object.jpg",
+			"facility-reports//object.jpg",
+			"facility-reports\\unclaimed\\object.jpg"
+		}) {
+			assertThat(storage.loadFacilityReportPhoto(objectKey)).isEmpty();
+			storage.deleteFacilityReportPhoto(objectKey);
+			assertThatThrownBy(() -> storage.storeUploadedReportPhoto(new StoreUploadedReportPhotoCommand(
+				objectKey,
+				new byte[] {1, 2, 3}
+			)))
+				.isInstanceOf(InvalidFacilityReportException.class)
+				.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		}
+	}
+
 	private void startObjectStorageServer() throws IOException {
 		server = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
 		server.createContext("/", this::handleObjectRequest);

@@ -44,6 +44,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 
 	private static final String HMAC_ALGORITHM = "HmacSHA256";
 	private static final String SIGNING_ALGORITHM = "AWS4-HMAC-SHA256";
+	private static final String OBJECT_KEY_PREFIX = "facility-reports/";
 	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd")
 		.withZone(ZoneOffset.UTC);
 	private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
@@ -106,15 +107,17 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 
 	@Override
 	public void storeUploadedReportPhoto(StoreUploadedReportPhotoCommand command) {
-		putObject(command.objectKey(), contentTypeFor(command.objectKey()), command.bytes());
+		String objectKey = requireFacilityReportObjectKey(command.objectKey());
+		putObject(objectKey, contentTypeFor(objectKey), command.bytes());
 	}
 
 	@Override
 	public Optional<LoadedFacilityReportPhoto> loadFacilityReportPhoto(String objectKey) {
-		if (objectKey == null || objectKey.isBlank()) {
+		String normalizedObjectKey = normalizeFacilityReportObjectKey(objectKey);
+		if (normalizedObjectKey == null) {
 			return Optional.empty();
 		}
-		HttpResponse<InputStream> response = sendStream(signedRequest("GET", objectKey.trim(), null, null));
+		HttpResponse<InputStream> response = sendStream(signedRequest("GET", normalizedObjectKey, null, null));
 		try (InputStream responseBody = response.body()) {
 			if (response.statusCode() == 404) {
 				return Optional.empty();
@@ -129,7 +132,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 				.firstValue("content-type")
 				.map(value -> value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT))
 				.filter(value -> !value.isBlank())
-				.orElseGet(() -> contentTypeFor(objectKey));
+				.orElseGet(() -> contentTypeFor(normalizedObjectKey));
 			return Optional.of(new LoadedFacilityReportPhoto(contentType, bytes));
 		} catch (IOException exception) {
 			throw new UncheckedIOException("Failed to read facility report photo object", exception);
@@ -138,10 +141,11 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 
 	@Override
 	public void deleteFacilityReportPhoto(String objectKey) {
-		if (objectKey == null || objectKey.isBlank()) {
+		String normalizedObjectKey = normalizeFacilityReportObjectKey(objectKey);
+		if (normalizedObjectKey == null) {
 			return;
 		}
-		HttpResponse<byte[]> response = sendBytes(signedRequest("DELETE", objectKey.trim(), null, null));
+		HttpResponse<byte[]> response = sendBytes(signedRequest("DELETE", normalizedObjectKey, null, null));
 		if (response.statusCode() == 404) {
 			return;
 		}
@@ -149,7 +153,12 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	}
 
 	private void putObject(String objectKey, String contentType, byte[] bytes) {
-		HttpResponse<byte[]> response = sendBytes(signedRequest("PUT", objectKey, contentType, bytes));
+		HttpResponse<byte[]> response = sendBytes(signedRequest(
+			"PUT",
+			requireFacilityReportObjectKey(objectKey),
+			contentType,
+			bytes
+		));
 		requireSuccess(response.statusCode(), "Failed to store facility report photo object");
 	}
 
@@ -301,6 +310,33 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 
 	private static String canonicalUri(String bucket, String objectKey) {
 		return "/" + ObjectStorageUrlEncoding.encodePathSegment(bucket) + "/" + ObjectStorageUrlEncoding.encodePath(objectKey);
+	}
+
+	private static String requireFacilityReportObjectKey(String objectKey) {
+		String normalizedObjectKey = normalizeFacilityReportObjectKey(objectKey);
+		if (normalizedObjectKey == null) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		return normalizedObjectKey;
+	}
+
+	private static String normalizeFacilityReportObjectKey(String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return null;
+		}
+		String normalizedObjectKey = objectKey.trim();
+		if (!normalizedObjectKey.startsWith(OBJECT_KEY_PREFIX)
+			|| normalizedObjectKey.startsWith("/")
+			|| normalizedObjectKey.contains("\\")
+			|| normalizedObjectKey.contains("//")) {
+			return null;
+		}
+		for (String segment : normalizedObjectKey.split("/", -1)) {
+			if (segment.isBlank() || ".".equals(segment) || "..".equals(segment)) {
+				return null;
+			}
+		}
+		return normalizedObjectKey;
 	}
 
 	private static String requireText(String value, String message) {
