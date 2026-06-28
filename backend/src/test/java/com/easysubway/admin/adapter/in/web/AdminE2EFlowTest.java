@@ -192,6 +192,26 @@ class AdminE2EFlowTest {
 	}
 
 	@Test
+	@DisplayName("관리자 mutation은 유효한 세션과 command token이 있어도 CSRF 없이는 거부된다")
+	void adminMutationRequiresCsrfToken() throws Exception {
+		RequestPostProcessor admin = fullAdmin();
+		String reportId = createReport("CSRF 없이 검수하면 안 되는 신고");
+		MockHttpSession session = new MockHttpSession();
+		String commandToken = commandTokenFrom(getAdminHtml("/admin/reports/%s/page".formatted(reportId), session, admin));
+
+		mockMvc.perform(post("/admin/reports/{reportId}/page/review", reportId)
+				.session(session)
+				.with(admin)
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", commandToken)
+				.param("decision", "ACCEPT"))
+			.andExpect(status().isForbidden());
+
+		assertThat(getAdminHtml("/admin/reports/%s/page".formatted(reportId), session, admin))
+			.doesNotContain("반영됨");
+	}
+
+	@Test
 	@DisplayName("관리자 오류 shell은 403, 409, validation 실패를 같은 화면 기준으로 표시한다")
 	void adminErrorShellCoversForbiddenConflictAndValidation() throws Exception {
 		RequestPostProcessor admin = fullAdmin();
