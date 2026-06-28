@@ -123,6 +123,18 @@ class FacilityReportAbuseControlTest {
 	}
 
 	@Test
+	@DisplayName("trusted proxy가 아닌 요청은 X-Forwarded-For로 client identity를 바꾸지 못한다")
+	void untrustedRemoteCannotSpoofForwardedForIdentity() throws Exception {
+		getUnknownStatusFromUntrustedForwardedClient("198.51.100.210", "203.0.113.30")
+			.andExpect(status().isNotFound());
+		getUnknownStatusFromUntrustedForwardedClient("198.51.100.210", "203.0.113.31")
+			.andExpect(status().isNotFound());
+
+		getUnknownStatusFromUntrustedForwardedClient("198.51.100.210", "203.0.113.32")
+			.andExpect(status().isTooManyRequests());
+	}
+
+	@Test
 	@DisplayName("trusted proxy 요청은 invalid X-Forwarded-For 값을 unknown client identity로 묶는다")
 	void trustedProxyInvalidForwardedForUsesUnknownIdentity() throws Exception {
 		getUnknownStatusFromForwardedChain("not-an-ip-1").andExpect(status().isNotFound());
@@ -265,6 +277,17 @@ class FacilityReportAbuseControlTest {
 		throws Exception {
 		return mockMvc.perform(get("/api/v1/reports/unknown-forwarded-report")
 			.with(remoteAddr("10.0.0.10"))
+			.header("X-Forwarded-For", forwardedFor)
+			.header("X-Easysubway-Report-Receipt-Token", "receipt-token-for-rate-limit"));
+	}
+
+	private org.springframework.test.web.servlet.ResultActions getUnknownStatusFromUntrustedForwardedClient(
+		String remoteAddr,
+		String forwardedFor
+	)
+		throws Exception {
+		return mockMvc.perform(get("/api/v1/reports/unknown-untrusted-forwarded-report")
+			.with(remoteAddr(remoteAddr))
 			.header("X-Forwarded-For", forwardedFor)
 			.header("X-Easysubway-Report-Receipt-Token", "receipt-token-for-rate-limit"));
 	}
