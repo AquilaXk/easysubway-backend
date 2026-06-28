@@ -513,7 +513,10 @@ jobs:
             --device local_android_emulator
             --android-version android-15-or-16
             --gate-status androidRcEvidence=BLOCKED_EXTERNAL
+            --gate-status productionDatapack=BLOCKED_EXTERNAL
             --gate-status playGeneratedApkDeviceMatrix=BLOCKED_EXTERNAL
+            --gate-status backendOperations=BLOCKED_EXTERNAL
+            --gate-status postLaunchOperations=BLOCKED_EXTERNAL
             --gate-status androidReleaseQuality=BLOCKED_EXTERNAL
             --gate-status abusePenetrationRehearsal=BLOCKED_EXTERNAL
           )
