@@ -95,6 +95,22 @@ class HealthCheckControllerTest {
 	}
 
 	@Test
+	@DisplayName("개인정보처리방침 공개 페이지를 인증 없이 노출한다")
+	void privacyPolicyPageIsPublic() throws Exception {
+		mockMvc.perform(get("/easysubway/privacy"))
+			.andExpect(status().isOk())
+			.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+				.contains(
+					"쉬운 지하철 개인정보처리방침",
+					"처리하는 개인정보 항목과 목적",
+					"제3자 제공, 처리 위탁, 추적",
+					"권리 행사와 삭제 요청",
+					"개인정보 보호책임자",
+					"privacy@aquilaxk.site"
+				));
+	}
+
+	@Test
 	@DisplayName("명시적으로 허용되지 않은 백엔드 경로는 기본 차단된다")
 	void unknownBackendPathIsDeniedByDefault() throws Exception {
 		mockMvc.perform(get("/api/v1/internal-unlisted-resource"))

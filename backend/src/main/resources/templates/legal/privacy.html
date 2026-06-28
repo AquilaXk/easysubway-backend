@@ -1,0 +1,207 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>쉬운 지하철 개인정보처리방침</title>
+	<meta name="description" content="쉬운 지하철 앱의 개인정보 수집 항목, 이용 목적, 보관 기간, 삭제 요청 방법을 안내합니다.">
+	<style>
+		body {
+			margin: 0;
+			background: #f7f8fb;
+			color: #162033;
+			font-family: system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+			line-height: 1.65;
+		}
+		main {
+			max-width: 860px;
+			margin: 0 auto;
+			padding: 48px 20px 72px;
+		}
+		h1 {
+			margin: 0 0 8px;
+			font-size: clamp(2rem, 5vw, 3rem);
+			line-height: 1.15;
+		}
+		h2 {
+			margin-top: 40px;
+			font-size: 1.35rem;
+		}
+		.meta,
+		footer {
+			color: #526071;
+		}
+		section {
+			margin-top: 28px;
+			padding-top: 4px;
+		}
+		ul {
+			padding-left: 1.25rem;
+		}
+		table {
+			width: 100%;
+			border-collapse: collapse;
+			background: #ffffff;
+		}
+		th,
+		td {
+			border: 1px solid #d8dee9;
+			padding: 12px;
+			text-align: left;
+			vertical-align: top;
+		}
+		th {
+			background: #edf2f7;
+		}
+		a {
+			color: #0b5cad;
+		}
+		@media (max-width: 640px) {
+			table,
+			thead,
+			tbody,
+			tr,
+			th,
+			td {
+				display: block;
+			}
+			thead {
+				position: absolute;
+				width: 1px;
+				height: 1px;
+				overflow: hidden;
+			}
+			tr {
+				border: 1px solid #d8dee9;
+				margin-bottom: 12px;
+				background: #ffffff;
+			}
+			th,
+			td {
+				border: 0;
+			}
+		}
+	</style>
+</head>
+<body>
+<main>
+	<header>
+		<h1>쉬운 지하철 개인정보처리방침</h1>
+		<p class="meta">시행일: 2026년 6월 28일</p>
+		<p>
+			쉬운 지하철(easysubway)은 교통약자가 도시철도를 더 쉽게 이용할 수 있도록 역, 시설, 경로, 신고 기능을 제공합니다.
+			이 문서는 앱에서 처리하는 개인정보, 보관 기준, 삭제 요청 방법, 문의 창구를 설명합니다.
+		</p>
+	</header>
+
+	<section>
+		<h2>처리하는 개인정보 항목과 목적</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">항목</th>
+				<th scope="col">처리 목적</th>
+				<th scope="col">보관 기준</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr>
+				<td>현재 위치</td>
+				<td>가까운 역 검색, 시설 신고 위치 확인</td>
+				<td>주변 역 검색 위치는 저장하지 않고, 신고 위치는 신고 처리와 운영 검수에 필요한 기간 동안 보관</td>
+			</tr>
+			<tr>
+				<td>역·경로 검색어, 최근 검색, 즐겨찾기</td>
+				<td>역 검색, 경로 안내, 자주 보는 역·시설·경로 표시</td>
+				<td>기기 또는 서버에 저장된 값은 사용자가 삭제하거나 데이터 삭제를 요청할 때까지 보관</td>
+			</tr>
+			<tr>
+				<td>이동 조건 선택값</td>
+				<td>계단 회피, 엘리베이터 우선 등 접근성 경로 안내</td>
+				<td>사용자가 변경, 초기화, 삭제 요청할 때까지 보관</td>
+			</tr>
+			<tr>
+				<td>시설 신고 내용, 사진, 접수 식별 정보</td>
+				<td>시설 고장, 공사, 위치 오류 신고 검토와 처리 상태 안내</td>
+				<td>신고 처리, 중복·악용 방지, 운영 검수에 필요한 기간 동안 보관 후 삭제 또는 익명화</td>
+			</tr>
+			<tr>
+				<td>충돌, ANR, 성능 진단 정보</td>
+				<td>앱 오류 분석, 서비스 안정성 개선, 보안·악용 대응</td>
+				<td>운영 장애 분석에 필요한 최소 기간 동안 보관 후 삭제 또는 익명화</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>민감한 상태 정보</h2>
+		<p>
+			쉬운 지하철은 장애, 임신, 질병, 부상 여부를 증명하는 서류나 진단정보를 요구하지 않습니다.
+			앱은 사용자가 직접 선택한 이동 조건을 경로 안내에만 사용하며, 광고나 추적 목적으로 사용하지 않습니다.
+		</p>
+	</section>
+
+	<section>
+		<h2>보관, 전송, 파기</h2>
+		<p>
+			즐겨찾기, 최근 검색, 앱 설정, 신고 초안, 설치된 데이터팩 기록은 기본적으로 사용자 기기에 보관됩니다.
+			신고 제출이나 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
+			보관 목적이 끝나거나 삭제 요청 처리가 완료된 개인정보는 복구하기 어렵게 삭제하거나 식별 가능성을 줄입니다.
+		</p>
+	</section>
+
+	<section>
+		<h2>제3자 제공, 처리 위탁, 추적</h2>
+		<p>
+			쉬운 지하철은 개인정보나 민감정보를 판매하지 않습니다.
+			광고 목적의 tracking을 하지 않으며, 신고 사진과 위치 정보는 앱 기능 제공과 신고 검토 목적에만 사용합니다.
+			서비스 운영에 필요한 범위에서만 Cloudflare, Oracle Cloud Infrastructure, Google Play Console 같은 인프라와 스토어 운영 도구를 사용할 수 있으며,
+			이 경우 해당 사업자는 서비스 제공, 보안, 저장, 배포, 진단 목적의 처리만 수행합니다.
+		</p>
+	</section>
+
+	<section>
+		<h2>권리 행사와 삭제 요청</h2>
+		<p>
+			사용자는 개인정보 열람, 정정, 삭제, 처리 정지를 요청할 수 있습니다.
+			신고 데이터 삭제, 개인정보 문의, 보안 신고는 아래 주소로 요청할 수 있으며, 요청 확인에 필요한 최소 정보만 확인한 뒤 처리합니다.
+		</p>
+		<ul>
+			<li>개인정보 및 삭제 요청: <a href="mailto:privacy@aquilaxk.site">privacy@aquilaxk.site</a></li>
+			<li>고객지원: <a href="mailto:support@aquilaxk.site">support@aquilaxk.site</a></li>
+			<li>보안 문의: <a href="mailto:security@aquilaxk.site">security@aquilaxk.site</a></li>
+		</ul>
+	</section>
+
+	<section>
+		<h2>아동의 개인정보</h2>
+		<p>
+			쉬운 지하철은 만 14세 미만 아동을 주 대상으로 하지 않습니다.
+			만 14세 미만 아동의 개인정보 처리 요청이 확인되면 법정대리인 확인 등 필요한 절차에 따라 처리합니다.
+		</p>
+	</section>
+
+	<section>
+		<h2>안전성 확보 조치</h2>
+		<p>
+			개인정보는 접근 권한을 제한하고, 운영 로그에는 신고 receipt token, 사진 원본, 서명된 업로드 URL, 저장소 자격 증명을 남기지 않도록 관리합니다.
+			관리자 화면은 인증된 운영자만 접근할 수 있으며, 네트워크 전송에는 HTTPS를 사용합니다.
+		</p>
+	</section>
+
+	<section>
+		<h2>변경 안내</h2>
+		<p>
+			개인정보 처리 내용이 바뀌면 이 페이지의 시행일과 내용을 갱신합니다.
+			중요한 변경은 앱 또는 스토어 안내에 반영합니다.
+		</p>
+	</section>
+
+	<footer>
+		<p>서비스명: 쉬운 지하철(easysubway)</p>
+		<p>개인정보 보호책임자 및 처리자: AquilaXk, <a href="mailto:privacy@aquilaxk.site">privacy@aquilaxk.site</a></p>
+	</footer>
+</main>
+</body>
+</html>
