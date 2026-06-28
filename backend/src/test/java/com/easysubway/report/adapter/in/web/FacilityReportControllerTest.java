@@ -580,6 +580,56 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
+	@DisplayName("receipt token은 다른 신고의 상태 조회와 확인 요청에 재사용할 수 없다")
+	void receiptTokenCannotBeReusedAcrossReportsForStatusOrConfirm() throws Exception {
+		ReceiptReport firstReport = createAnonymousReceiptReport(
+			"client-submission-token-abuse-1",
+			"첫 번째 receipt token abuse 검증 신고"
+		);
+		ReceiptReport secondReport = createAnonymousReceiptReport(
+			"client-submission-token-abuse-2",
+			"두 번째 receipt token abuse 검증 신고"
+		);
+
+		mockMvc.perform(post("/admin/reports/{reportId}/review", firstReport.reportId())
+				.with(httpBasic("admin-test", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "decision": "REJECT"
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.status").value("REJECTED"));
+
+		String statusResponse = mockMvc.perform(get("/api/v1/reports/{reportId}", firstReport.reportId())
+				.header("X-Easysubway-Report-Receipt-Token", secondReport.receiptToken()))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("신고 정보를 찾을 수 없습니다."))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		Assertions.assertThat(statusResponse)
+			.doesNotContain(firstReport.receiptToken())
+			.doesNotContain(secondReport.receiptToken());
+
+		String confirmResponse = mockMvc.perform(post("/api/v1/reports/{reportId}/confirm", firstReport.reportId())
+				.with(csrf())
+				.header("X-Easysubway-Report-Receipt-Token", secondReport.receiptToken()))
+			.andExpect(status().isNotFound())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("신고 정보를 찾을 수 없습니다."))
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		Assertions.assertThat(confirmResponse)
+			.doesNotContain(firstReport.receiptToken())
+			.doesNotContain(secondReport.receiptToken());
+	}
+
+	@Test
 	@DisplayName("다른 사용자의 신고 처리 결과 확인은 공통 404 응답을 반환한다")
 	void confirmReportResultRequiresOwner() throws Exception {
 		String reportId = createReport("basic-user", "user-test-password", "spoofed-user", "다른 사용자가 확인하면 안 되는 신고");
@@ -1103,6 +1153,30 @@ class FacilityReportControllerTest {
 		return JsonPath.read(response, "$.data.id");
 	}
 
+	private ReceiptReport createAnonymousReceiptReport(String clientSubmissionId, String description) throws Exception {
+		String response = mockMvc.perform(post("/api/v1/reports")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "%s",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "%s"
+					}
+					""".formatted(clientSubmissionId, description)))
+			.andExpect(status().isCreated())
+			.andExpect(jsonPath("$.data.receiptToken").isNotEmpty())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		return new ReceiptReport(
+			JsonPath.read(response, "$.data.id"),
+			JsonPath.read(response, "$.data.receiptToken")
+		);
+	}
+
 	private UploadedObject uploadReportPhotoObject(
 		String clientSubmissionId,
 		String contentType,
@@ -1168,5 +1242,8 @@ class FacilityReportControllerTest {
 	}
 
 	private record UploadedObject(String objectKey, String sha256) {
+	}
+
+	private record ReceiptReport(String reportId, String receiptToken) {
 	}
 }
