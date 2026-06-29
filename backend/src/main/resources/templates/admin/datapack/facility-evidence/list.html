@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Facility Evidence Matrix</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-facility-evidence')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>Facility Evidence Matrix</h1>
+			<p>station x facility type별 source evidence, 상태 의미, strict route 사용 가능 여부를 읽기 전용으로 확인합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">station</th>
+				<th scope="col">line</th>
+				<th scope="col">facility</th>
+				<th scope="col">evidence</th>
+				<th scope="col">installation</th>
+				<th scope="col">operation</th>
+				<th scope="col">meaning</th>
+				<th scope="col">source</th>
+				<th scope="col">verified</th>
+				<th scope="col">freshness</th>
+				<th scope="col">confidence</th>
+				<th scope="col">strict</th>
+				<th scope="col">conflict</th>
+				<th scope="col">override</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${evidenceRows.isEmpty()}">
+				<td colspan="14">facility evidence row가 없습니다.</td>
+			</tr>
+			<tr th:each="row : ${evidenceRows}">
+				<td th:text="${row.stationId}">station-id</td>
+				<td th:text="${row.lineId}">line-id</td>
+				<td th:text="${row.facilityType}">ELEVATOR</td>
+				<td th:text="${row.evidenceKind}">EXISTS</td>
+				<td th:text="${row.installationStatus}">INSTALLED</td>
+				<td th:text="${row.operationalStatus}">AVAILABLE</td>
+				<td th:text="${row.statusMeaning}">OPERATOR_CONFIRMED</td>
+				<td>
+					<span th:text="${row.sourceId}">source-id</span>
+					<span th:text="${row.sourceSnapshotId}">snapshot-id</span>
+					<span th:text="${row.providerRecordHash}">sha256</span>
+				</td>
+				<td>
+					<span th:text="${row.verifiedAt}">2026-06-29T03:00</span>
+					<span th:text="${row.retrievedAt}">2026-06-29T03:00</span>
+				</td>
+				<td th:text="${row.freshnessExpiresAt}">2026-07-06T03:00</td>
+				<td th:text="${row.confidence}">95</td>
+				<td>
+					<strong th:text="${row.strictRouteLabel}">strict 가능</strong>
+					<span th:text="${row.strictRouteReason}">-</span>
+				</td>
+				<td th:text="${row.conflictStatus}">NONE</td>
+				<td th:text="${row.manualOverrideId}">-</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>

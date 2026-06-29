@@ -22,6 +22,7 @@ public enum AdminProgram {
 	ROUTE_FEEDBACK("a-route-feedback", "운영·분석", "경로 피드백 분석", "/admin/routes/feedback/page", AdminPermission.ADMIN_VIEW),
 	DATAPACK_SOURCE_SNAPSHOTS("a-datapack-source-snapshots", "데이터팩", "Source Snapshots", "/admin/datapack/source-snapshots/page", AdminPermission.DATAPACK_READ),
 	DATAPACK_ALIAS_QUARANTINE("a-datapack-alias-quarantine", "데이터팩", "Alias / Quarantine", "/admin/datapack/alias-quarantine/page", AdminPermission.DATAPACK_READ),
+	DATAPACK_FACILITY_EVIDENCE("a-datapack-facility-evidence", "데이터팩", "Facility Evidence", "/admin/datapack/facility-evidence/page", AdminPermission.DATAPACK_READ),
 	PUSH("a-push", "운영·분석", "푸시 알림", "/admin/notifications/push/page", AdminPermission.DATA_OPERATE),
 	USAGE("a-usage", "운영·분석", "사용 현황", "/admin/usage/activity/page", AdminPermission.SECURITY_AUDIT),
 	SYSTEM("a-system", "운영·분석", "시스템 상태", "/admin/system/page", AdminPermission.SECURITY_AUDIT),
