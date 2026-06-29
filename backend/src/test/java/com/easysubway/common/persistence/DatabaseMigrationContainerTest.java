@@ -44,12 +44,13 @@ class DatabaseMigrationContainerTest {
 				"batch_job_instance",
 				"facility_reports",
 				"push_notification_outbox",
+				"data_source_snapshots",
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16");
 		assertThat(foreignKeyNames(jdbcTemplate))
-			.contains("fk_facility_report_review_audits_report");
+			.contains("fk_facility_report_review_audits_report", "fk_data_source_snapshots_previous");
 	}
 
 	private List<String> tableNames(JdbcTemplate jdbcTemplate) {
