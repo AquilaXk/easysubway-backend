@@ -1,5 +1,7 @@
 package com.easysubway.datapack.domain;
 
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.regex.Pattern;
@@ -23,7 +25,8 @@ public record DataSourceSnapshot(
 	boolean credentialRedacted,
 	String previousSnapshotId,
 	String diffSummary,
-	LocalDateTime freshnessExpiresAt
+	LocalDateTime freshnessExpiresAt,
+	LocalDateTime rawRetentionExpiresAt
 ) {
 
 	private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
@@ -54,6 +57,20 @@ public record DataSourceSnapshot(
 			throw new InvalidDataSourceSnapshotException("freshnessExpiresAt is required.");
 		}
 		freshnessExpiresAt = normalizeTimestamp(freshnessExpiresAt);
+		if (rawRetentionExpiresAt == null) {
+			throw new InvalidDataSourceSnapshotException("rawRetentionExpiresAt is required.");
+		}
+		rawRetentionExpiresAt = normalizeTimestamp(rawRetentionExpiresAt);
+	}
+
+	public void requireRawEvidenceWritePolicy() {
+		if (!credentialRedacted) {
+			throw new InvalidDataSourceSnapshotException("credentialRedacted must be true before storing raw evidence.");
+		}
+		requireCredentialFreeRawObjectUri(rawObjectUri);
+		if (!rawRetentionExpiresAt.isAfter(retrievedAt)) {
+			throw new InvalidDataSourceSnapshotException("rawRetentionExpiresAt must be after retrievedAt.");
+		}
 	}
 
 	private static String requireText(String value, String field) {
@@ -69,6 +86,29 @@ public record DataSourceSnapshot(
 			throw new InvalidDataSourceSnapshotException(field + " must be a lowercase SHA-256 hex value.");
 		}
 		return trimmed;
+	}
+
+	private static void requireCredentialFreeRawObjectUri(String value) {
+		String trimmed = requireText(value, "rawObjectUri");
+		URI uri;
+		try {
+			uri = new URI(trimmed);
+		} catch (URISyntaxException exception) {
+			throw new InvalidDataSourceSnapshotException("rawObjectUri must be a credential-free object storage URI.");
+		}
+		var objectStorageScheme = "s3".equals(uri.getScheme()) || "oci".equals(uri.getScheme());
+		if (!objectStorageScheme
+			|| uri.getRawAuthority() == null
+			|| uri.getRawAuthority().isBlank()
+			|| uri.getRawPath() == null
+			|| uri.getRawPath().isBlank()
+			|| "/".equals(uri.getRawPath())
+			|| trimmed.contains("@")
+			|| uri.getRawQuery() != null
+			|| uri.getRawUserInfo() != null
+			|| uri.getRawFragment() != null) {
+			throw new InvalidDataSourceSnapshotException("rawObjectUri must be a credential-free object storage URI.");
+		}
 	}
 
 	private static String trimToNull(String value) {

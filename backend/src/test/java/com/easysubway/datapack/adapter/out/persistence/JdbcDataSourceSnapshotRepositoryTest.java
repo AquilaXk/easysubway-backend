@@ -16,6 +16,7 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class JdbcDataSourceSnapshotRepositoryTest {
 
 	private JdbcDataSourceSnapshotRepository repository;
+	private JdbcTemplate jdbcTemplate;
 
 	@BeforeEach
 	void setUp() {
@@ -24,7 +25,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"sa",
 			""
 		);
-		var jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.execute("DROP TABLE IF EXISTS data_source_snapshots");
 		jdbcTemplate.execute("""
 			CREATE TABLE data_source_snapshots (
@@ -46,7 +47,8 @@ class JdbcDataSourceSnapshotRepositoryTest {
 				credential_redacted BOOLEAN NOT NULL,
 				previous_snapshot_id VARCHAR(120),
 				diff_summary VARCHAR(1000),
-				freshness_expires_at TIMESTAMP NOT NULL
+				freshness_expires_at TIMESTAMP NOT NULL,
+				raw_retention_expires_at TIMESTAMP NOT NULL
 			)
 			""");
 		repository = new JdbcDataSourceSnapshotRepository(jdbcTemplate);
@@ -83,7 +85,124 @@ class JdbcDataSourceSnapshotRepositoryTest {
 		assertThat(repository.saveSnapshot(snapshot)).isEqualTo(snapshot);
 	}
 
+	@Test
+	@DisplayName("raw evidence는 credential redaction과 credential 없는 object URI가 필요하다")
+	void rawEvidenceRequiresRedactedCredentialAndObjectUri() {
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-unredacted",
+			"a".repeat(64),
+			13,
+			"s3://easysubway-datapack-sources/kric-station-elevator/snapshot-unredacted.json",
+			false
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("credentialRedacted");
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-secret",
+			"a".repeat(64),
+			13,
+			"s3://easysubway-datapack-sources/kric-station-elevator/snapshot-uri-secret.json?serviceKey=secret",
+			true
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("rawObjectUri");
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-userinfo",
+			"a".repeat(64),
+			13,
+			"s3://access:secret@easysubway-datapack-sources/kric-station-elevator/snapshot-uri-userinfo.json",
+			true
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("rawObjectUri");
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-object-key-at",
+			"a".repeat(64),
+			13,
+			"s3://easysubway-datapack-sources/kric-station-elevator/provider@example.json",
+			true
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("rawObjectUri");
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-fragment",
+			"a".repeat(64),
+			13,
+			"oci://easysubway-datapack-sources/kric-station-elevator/snapshot-uri-fragment.json#token=secret",
+			true
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("rawObjectUri");
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-empty-bucket",
+			"a".repeat(64),
+			13,
+			"s3:///kric-station-elevator/snapshot-uri-empty-bucket.json",
+			true
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("rawObjectUri");
+		assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-bucket-only",
+			"a".repeat(64),
+			13,
+			"s3://easysubway-datapack-sources",
+			true
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("rawObjectUri");
+	}
+
+	@Test
+	@DisplayName("staged constraint cleanup 전 legacy snapshot row도 조회할 수 있다")
+	void loadSnapshotAllowsLegacyRowsBeforeConstraintValidation() {
+		insertLegacyUnsafeSnapshot();
+
+		var snapshot = repository.loadSnapshot("snapshot-legacy-unsafe");
+
+		assertThat(snapshot).isPresent();
+		assertThat(snapshot.get().credentialRedacted()).isFalse();
+		assertThat(snapshot.get().rawObjectUri()).isEqualTo("s3:///legacy-unsafe.json");
+		assertThat(snapshot.get().rawRetentionExpiresAt()).isEqualTo(snapshot.get().retrievedAt());
+	}
+
+	private void insertLegacyUnsafeSnapshot() {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
+				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
+				raw_retention_expires_at
+			)
+			VALUES ('snapshot-legacy-unsafe', 'kric-station-elevator', '국가철도공단',
+				'2026-06-29 03:00:00', NULL, 13, ?, 's3:///legacy-unsafe.json', ?, ?,
+				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, FALSE, NULL, 'legacy unsafe row',
+				'2026-07-06 03:00:00', '2026-06-29 03:00:00')
+			""",
+			"a".repeat(64),
+			"c".repeat(64),
+			"d".repeat(64)
+		);
+	}
+
 	private DataSourceSnapshot lockedSnapshot(String snapshotId, String rawSha256, int rowCount) {
+		return lockedSnapshot(
+			snapshotId,
+			rawSha256,
+			rowCount,
+			"s3://easysubway-datapack-sources/kric-station-elevator/%s.json".formatted(snapshotId),
+			true
+		);
+	}
+
+	private DataSourceSnapshot lockedSnapshot(
+		String snapshotId,
+		String rawSha256,
+		int rowCount,
+		String rawObjectUri,
+		boolean credentialRedacted
+	) {
 		return new DataSourceSnapshot(
 			snapshotId,
 			"kric-station-elevator",
@@ -92,7 +211,7 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			LocalDateTime.of(2026, 6, 28, 0, 0, 0, 987654321),
 			rowCount,
 			rawSha256,
-			"s3://easysubway-datapack-sources/kric-station-elevator/%s.json".formatted(snapshotId),
+			rawObjectUri,
 			"c".repeat(64),
 			"d".repeat(64),
 			"LOCKED",
@@ -100,10 +219,11 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"PASS",
 			"SUCCESS",
 			true,
-			true,
+			credentialRedacted,
 			null,
 			"initial snapshot",
-			LocalDateTime.of(2026, 7, 6, 3, 0, 0, 555555555)
+			LocalDateTime.of(2026, 7, 6, 3, 0, 0, 555555555),
+			LocalDateTime.of(2026, 9, 29, 3, 0, 0, 555555555)
 		);
 	}
 }

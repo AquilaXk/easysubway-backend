@@ -29,6 +29,7 @@ public class JdbcDataSourceSnapshotRepository {
 	}
 
 	public DataSourceSnapshot saveSnapshot(DataSourceSnapshot snapshot) {
+		snapshot.requireRawEvidenceWritePolicy();
 		try {
 			insert(snapshot);
 			return snapshot;
@@ -48,7 +49,8 @@ public class JdbcDataSourceSnapshotRepository {
 				SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
 					raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 					snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-					credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at
+					credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
+					raw_retention_expires_at
 				FROM data_source_snapshots
 				WHERE snapshot_id = ?
 				""", this::mapSnapshot, snapshotId));
@@ -63,9 +65,10 @@ public class JdbcDataSourceSnapshotRepository {
 				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at
+				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
+				raw_retention_expires_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
 			snapshot.snapshotId(),
 			snapshot.sourceId(),
@@ -85,7 +88,8 @@ public class JdbcDataSourceSnapshotRepository {
 			snapshot.credentialRedacted(),
 			snapshot.previousSnapshotId(),
 			snapshot.diffSummary(),
-			snapshot.freshnessExpiresAt()
+			snapshot.freshnessExpiresAt(),
+			snapshot.rawRetentionExpiresAt()
 		);
 	}
 
@@ -110,7 +114,8 @@ public class JdbcDataSourceSnapshotRepository {
 			resultSet.getBoolean("credential_redacted"),
 			resultSet.getString("previous_snapshot_id"),
 			resultSet.getString("diff_summary"),
-			resultSet.getTimestamp("freshness_expires_at").toLocalDateTime()
+			resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
+			resultSet.getTimestamp("raw_retention_expires_at").toLocalDateTime()
 		);
 	}
 }

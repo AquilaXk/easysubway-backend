@@ -59,7 +59,7 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -84,6 +84,9 @@ class DatabaseMigrationContainerTest {
 				"chk_external_alias_approvals_approved_state",
 				"chk_source_quarantine_records_resolution_state",
 				"chk_source_quarantine_resolutions_status",
+				"chk_data_source_snapshots_credential_redacted",
+				"chk_data_source_snapshots_raw_object_uri",
+				"chk_data_source_snapshots_raw_retention",
 				"chk_facility_evidence_strict_route",
 				"chk_manual_overrides_approval_state",
 				"chk_manual_overrides_effective_window",
@@ -92,6 +95,8 @@ class DatabaseMigrationContainerTest {
 			);
 		assertNormalizationRunGuards(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
+		assertSnapshotRawEvidencePolicyGuards(jdbcTemplate);
+		assertPostgresqlSnapshotRawEvidenceConstraintsAreStaged(jdbcTemplate);
 		assertFacilityEvidenceStrictRouteGuards(jdbcTemplate);
 		assertManualOverrideProductionGuards(jdbcTemplate);
 		assertRouteEdgeEvidenceStrictRouteGuards(jdbcTemplate);
@@ -113,6 +118,23 @@ class DatabaseMigrationContainerTest {
 			.migrate();
 
 		assertSnapshotSourceForeignKeysRejectMismatch(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration도 source snapshot raw evidence policy를 차단한다")
+	void h2MigrationRejectsUnsafeSourceSnapshotEvidence() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:datapack-source-snapshot-evidence;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		Flyway.configure()
+			.dataSource(dataSource)
+			.locations("classpath:db/migration/h2")
+			.load()
+			.migrate();
+
+		assertSnapshotRawEvidencePolicyGuards(new JdbcTemplate(dataSource));
 	}
 
 	@Test
@@ -221,6 +243,25 @@ class DatabaseMigrationContainerTest {
 			""", String.class);
 	}
 
+	private void assertPostgresqlSnapshotRawEvidenceConstraintsAreStaged(JdbcTemplate jdbcTemplate) {
+		assertThat(jdbcTemplate.queryForList("""
+			SELECT conname
+			FROM pg_constraint
+			WHERE conname IN (
+				'chk_data_source_snapshots_credential_redacted',
+				'chk_data_source_snapshots_raw_object_uri',
+				'chk_data_source_snapshots_raw_retention'
+			)
+				AND convalidated = false
+			ORDER BY conname
+			""", String.class))
+			.containsExactly(
+				"chk_data_source_snapshots_credential_redacted",
+				"chk_data_source_snapshots_raw_object_uri",
+				"chk_data_source_snapshots_raw_retention"
+			);
+	}
+
 	private void assertDatapackPermissionMatrix(JdbcTemplate jdbcTemplate) {
 		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "ADMIN_VIEWER"))
 			.contains("admin.datapack.read");
@@ -305,10 +346,11 @@ class DatabaseMigrationContainerTest {
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status,
 				redistribution_allowed, credential_redacted, previous_snapshot_id,
-				diff_summary, freshness_expires_at
+				diff_summary, freshness_expires_at, raw_retention_expires_at
 			)
 			VALUES (?, ?, 'KRIC', '2026-06-29 00:00:00', NULL, 1, ?, ?, ?, ?,
-				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL, NULL, '2026-07-06 00:00:00')
+				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL, NULL,
+				'2026-07-06 00:00:00', '2026-09-29 00:00:00')
 			""",
 			snapshotId,
 			sourceId,
@@ -316,6 +358,104 @@ class DatabaseMigrationContainerTest {
 			"s3://evidence/" + snapshotId,
 			"b".repeat(64),
 			"c".repeat(64)
+		);
+	}
+
+	private void assertSnapshotRawEvidencePolicyGuards(JdbcTemplate jdbcTemplate) {
+		insertSnapshot(jdbcTemplate, "snapshot-raw-policy-ok", "source-raw-policy");
+
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-unredacted",
+			"s3://evidence/snapshot-raw-policy-unredacted.json",
+			false,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-secret-uri",
+			"s3://evidence/snapshot-raw-policy-secret-uri.json?serviceKey=secret",
+			true,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-userinfo-uri",
+			"s3://access:secret@evidence/snapshot-raw-policy-userinfo-uri.json",
+			true,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-object-key-at-uri",
+			"s3://evidence/raw/provider@example.json",
+			true,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-fragment-uri",
+			"oci://evidence/snapshot-raw-policy-fragment-uri.json#token=secret",
+			true,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-empty-bucket-uri",
+			"s3:///snapshot-raw-policy-empty-bucket-uri.json",
+			true,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-bucket-only-uri",
+			"s3://evidence",
+			true,
+			"2026-07-06 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotEvidencePolicyCase(
+			jdbcTemplate,
+			"snapshot-raw-policy-expired-retention",
+			"s3://evidence/snapshot-raw-policy-expired-retention.json",
+			true,
+			"2026-06-28 00:00:00"
+		))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertSnapshotEvidencePolicyCase(
+		JdbcTemplate jdbcTemplate,
+		String snapshotId,
+		String rawObjectUri,
+		boolean credentialRedacted,
+		String rawRetentionExpiresAt
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status,
+				redistribution_allowed, credential_redacted, previous_snapshot_id,
+				diff_summary, freshness_expires_at, raw_retention_expires_at
+			)
+			VALUES (?, 'source-raw-policy', 'KRIC', '2026-06-29 00:00:00', NULL, 1,
+				?, ?, ?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS',
+				TRUE, ?, NULL, NULL, '2026-07-06 00:00:00', ?)
+			""",
+			snapshotId,
+			"a".repeat(64),
+			rawObjectUri,
+			"b".repeat(64),
+			"c".repeat(64),
+			credentialRedacted,
+			Timestamp.valueOf(rawRetentionExpiresAt)
 		);
 	}
 
