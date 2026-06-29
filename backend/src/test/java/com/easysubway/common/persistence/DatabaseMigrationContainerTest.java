@@ -53,6 +53,8 @@ class DatabaseMigrationContainerTest {
 				"datapack_candidates",
 				"datapack_candidate_inputs",
 				"datapack_release_evidence_bundles",
+				"datapack_release_channels",
+				"datapack_release_channel_events",
 				"external_alias_approvals",
 				"source_quarantine_records",
 				"source_quarantine_resolutions",
@@ -62,7 +64,7 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -78,7 +80,11 @@ class DatabaseMigrationContainerTest {
 				"fk_manual_overrides_superseded",
 				"fk_route_edge_evidence_snapshot_source",
 				"fk_datapack_candidate_inputs_candidate",
-				"fk_datapack_release_evidence_candidate"
+				"fk_datapack_release_evidence_candidate",
+				"fk_datapack_release_channels_candidate",
+				"fk_datapack_release_channels_previous_candidate",
+				"fk_datapack_release_channel_events_channel",
+				"fk_datapack_release_channel_events_next_candidate"
 			);
 		assertThat(checkConstraintNames(jdbcTemplate))
 			.contains(
@@ -99,7 +105,10 @@ class DatabaseMigrationContainerTest {
 				"chk_route_edge_evidence_strict_route",
 				"chk_datapack_candidates_gate_status",
 				"chk_datapack_candidates_approval_status",
-				"chk_datapack_release_evidence_status"
+				"chk_datapack_release_evidence_status",
+				"chk_datapack_release_channels_operation",
+				"chk_datapack_release_channels_rollback_target",
+				"chk_datapack_release_channel_events_operation"
 			);
 		assertNormalizationRunGuards(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);

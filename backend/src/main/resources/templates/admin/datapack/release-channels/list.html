@@ -1,0 +1,118 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Release Channels</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-release-channels')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>Release Channels</h1>
+			<p>앱이 채택할 데이터팩 manifest pointer와 rollback 가능 상태를 읽기 전용으로 확인합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">channel</th>
+				<th scope="col">current</th>
+				<th scope="col">manifest</th>
+				<th scope="col">rollback target</th>
+				<th scope="col">rollback</th>
+				<th scope="col">last operation</th>
+				<th scope="col">approval</th>
+				<th scope="col">updated</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${channels.isEmpty()}">
+				<td colspan="8">release channel row가 없습니다.</td>
+			</tr>
+			<tr th:each="channel : ${channels}">
+				<td th:text="${channel.channel}">production</td>
+				<td>
+					<span th:text="${channel.candidateId}">candidate</span>
+					<span th:text="${channel.candidateVersion}">version</span>
+				</td>
+				<td>
+					<span th:text="${channel.manifestUrl}">manifest</span>
+					<span th:text="${channel.manifestSha256}">sha</span>
+				</td>
+				<td>
+					<span th:text="${channel.previousStableCandidateId}">previous candidate</span>
+					<span th:text="${channel.previousStableCandidateVersion}">previous version</span>
+					<span th:text="${channel.previousManifestSha256}">previous sha</span>
+				</td>
+				<td th:text="${channel.rollbackLabel}">rollback 가능</td>
+				<td>
+					<span th:text="${channel.lastOperationType}">PROMOTE</span>
+					<span th:text="${channel.lastOperationStatus}">PASS</span>
+					<span th:text="${channel.idempotencyKey}">idempotency</span>
+				</td>
+				<td>
+					<span th:text="${channel.requestedBy}">requested</span>
+					<span th:text="${channel.approvedBy}">approved</span>
+					<span th:text="${channel.reason}">reason</span>
+				</td>
+				<td th:text="${channel.updatedAt}">2026-06-29T03:10</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section class="admin-panel">
+		<h2>Channel Events</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">event</th>
+				<th scope="col">channel</th>
+				<th scope="col">candidate</th>
+				<th scope="col">operation</th>
+				<th scope="col">approval</th>
+				<th scope="col">workflow</th>
+				<th scope="col">created</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${events.isEmpty()}">
+				<td colspan="7">release channel event row가 없습니다.</td>
+			</tr>
+			<tr th:each="event : ${events}">
+				<td th:text="${event.id}">event</td>
+				<td th:text="${event.channel}">production</td>
+				<td>
+					<span th:text="${event.previousCandidateId}">previous</span>
+					<span th:text="${event.nextCandidateId}">next</span>
+					<span th:text="${event.nextManifestSha256}">sha</span>
+				</td>
+				<td>
+					<span th:text="${event.operationType}">PROMOTE</span>
+					<span th:text="${event.operationStatus}">PASS</span>
+					<span th:text="${event.idempotencyKey}">idempotency</span>
+				</td>
+				<td>
+					<span th:text="${event.requestedBy}">requested</span>
+					<span th:text="${event.approvedBy}">approved</span>
+					<span th:text="${event.reason}">reason</span>
+				</td>
+				<td th:text="${event.workflowRunUrl}">workflow</td>
+				<td th:text="${event.createdAt}">2026-06-29T03:10</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>
