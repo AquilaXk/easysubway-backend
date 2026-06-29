@@ -50,10 +50,11 @@ class DatabaseMigrationContainerTest {
 				"external_alias_approvals",
 				"source_quarantine_records",
 				"source_quarantine_resolutions",
+				"manual_overrides",
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -61,16 +62,21 @@ class DatabaseMigrationContainerTest {
 				"fk_external_alias_approvals_snapshot_source",
 				"fk_external_alias_approvals_superseded",
 				"fk_source_quarantine_records_snapshot_source",
-				"fk_source_quarantine_resolutions_record"
+				"fk_source_quarantine_resolutions_record",
+				"fk_manual_overrides_superseded"
 			);
 		assertThat(checkConstraintNames(jdbcTemplate))
 			.contains(
 				"chk_external_alias_approvals_confidence",
 				"chk_external_alias_approvals_approved_state",
 				"chk_source_quarantine_records_resolution_state",
-				"chk_source_quarantine_resolutions_status"
+				"chk_source_quarantine_resolutions_status",
+				"chk_manual_overrides_approval_state",
+				"chk_manual_overrides_effective_window",
+				"chk_manual_overrides_route_safety"
 			);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
+		assertManualOverrideProductionGuards(jdbcTemplate);
 	}
 
 	@Test
@@ -88,6 +94,23 @@ class DatabaseMigrationContainerTest {
 			.migrate();
 
 		assertSnapshotSourceForeignKeysRejectMismatch(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration도 production manual override guard를 차단한다")
+	void h2MigrationRejectsUnsafeManualOverrides() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:datapack-manual-overrides;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		Flyway.configure()
+			.dataSource(dataSource)
+			.locations("classpath:db/migration/h2")
+			.load()
+			.migrate();
+
+		assertManualOverrideProductionGuards(new JdbcTemplate(dataSource));
 	}
 
 	private List<String> tableNames(JdbcTemplate jdbcTemplate) {
@@ -183,5 +206,56 @@ class DatabaseMigrationContainerTest {
 			VALUES ('quarantine-mismatch', ?, ?, ?, 'ALIAS_CONFLICT',
 				'P1', NULL, 'OPEN', NULL, NULL, '2026-06-29 00:00:00')
 			""", sourceId, sourceSnapshotId, "e".repeat(64));
+	}
+
+	private void assertManualOverrideProductionGuards(JdbcTemplate jdbcTemplate) {
+		insertManualOverride(jdbcTemplate, "override-ok", "facility-1", "APPROVED", "qa", "reviewer", false, null, null);
+		insertManualOverride(jdbcTemplate, "override-strict-pending", "facility-pending", "PENDING", "qa", null, true, null, null);
+
+		assertThatThrownBy(() ->
+			insertManualOverride(jdbcTemplate, "override-self-approved", "facility-self", "APPROVED", "qa", "qa", false, null, null))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() ->
+			insertManualOverride(jdbcTemplate, "override-strict-unsafe", "facility-strict", "APPROVED", "qa", "reviewer", true, null, null))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() ->
+			insertManualOverride(jdbcTemplate, "override-duplicate", "facility-1", "APPROVED", "qa2", "reviewer2", false, null, null))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertManualOverride(
+		JdbcTemplate jdbcTemplate,
+		String overrideId,
+		String entityId,
+		String approvalStatus,
+		String requestedBy,
+		String approvedBy,
+		boolean strictRouteEligible,
+		String routeSafetyApprovedBy,
+		String supersededBy
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO manual_overrides (
+				id, entity_type, entity_id, field_name, before_value, after_value,
+				reason_code, reason, evidence_uri, evidence_hash, requested_by,
+				approved_by, approved_at, route_safety_approved_by, approval_status,
+				conflict_status, strict_route_eligible, effective_from, expires_at,
+				superseded_by, created_at
+			)
+			VALUES (?, 'FACILITY', ?, 'operational_status', 'UNKNOWN', 'AVAILABLE',
+				'FIELD_VERIFIED', '현장 검증 결과 반영', 's3://evidence/manual/1.json', ?,
+				?, ?, '2026-06-29 01:00:00', ?, ?, 'NONE', ?,
+				'2026-06-29 00:00:00', '2026-07-29 00:00:00', ?, '2026-06-29 00:00:00')
+			""",
+			overrideId,
+			entityId,
+			"f".repeat(64),
+			requestedBy,
+			approvedBy,
+			routeSafetyApprovedBy,
+			approvalStatus,
+			strictRouteEligible,
+			supersededBy
+		);
 	}
 }

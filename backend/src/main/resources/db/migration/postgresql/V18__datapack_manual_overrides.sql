@@ -1,0 +1,60 @@
+CREATE TABLE IF NOT EXISTS manual_overrides (
+	id VARCHAR(120) NOT NULL PRIMARY KEY,
+	entity_type VARCHAR(80) NOT NULL,
+	entity_id VARCHAR(200) NOT NULL,
+	field_name VARCHAR(120) NOT NULL,
+	before_value TEXT,
+	after_value TEXT NOT NULL,
+	reason_code VARCHAR(80) NOT NULL,
+	reason VARCHAR(1000) NOT NULL,
+	evidence_uri VARCHAR(1000) NOT NULL,
+	evidence_hash datapack_sha256 NOT NULL,
+	requested_by VARCHAR(120) NOT NULL,
+	approved_by VARCHAR(120),
+	approved_at TIMESTAMP,
+	route_safety_approved_by VARCHAR(120),
+	approval_status VARCHAR(30) NOT NULL,
+	conflict_status VARCHAR(30) NOT NULL,
+	strict_route_eligible BOOLEAN NOT NULL,
+	effective_from TIMESTAMP NOT NULL,
+	expires_at TIMESTAMP NOT NULL,
+	superseded_by VARCHAR(120),
+	created_at TIMESTAMP NOT NULL,
+	CONSTRAINT fk_manual_overrides_superseded
+		FOREIGN KEY (superseded_by) REFERENCES manual_overrides(id)
+		ON DELETE RESTRICT ON UPDATE RESTRICT,
+	CONSTRAINT chk_manual_overrides_status
+		CHECK (approval_status IN ('PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'SUPERSEDED')),
+	CONSTRAINT chk_manual_overrides_conflict_status
+		CHECK (conflict_status IN ('NONE', 'RESOLVED', 'UNRESOLVED')),
+	CONSTRAINT chk_manual_overrides_effective_window
+		CHECK (expires_at > effective_from),
+	CONSTRAINT chk_manual_overrides_approval_state
+		CHECK (
+			approval_status <> 'APPROVED'
+			OR (
+				approved_by IS NOT NULL
+				AND approved_at IS NOT NULL
+				AND approved_by <> requested_by
+				AND conflict_status <> 'UNRESOLVED'
+				AND superseded_by IS NULL
+			)
+		),
+	CONSTRAINT chk_manual_overrides_route_safety
+		CHECK (
+			strict_route_eligible = FALSE
+			OR approval_status <> 'APPROVED'
+			OR (
+				approval_status = 'APPROVED'
+				AND route_safety_approved_by IS NOT NULL
+				AND route_safety_approved_by <> requested_by
+			)
+		)
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS uq_manual_overrides_active_entity_field
+	ON manual_overrides (entity_type, entity_id, field_name)
+	WHERE approval_status = 'APPROVED' AND superseded_by IS NULL;
+
+CREATE INDEX IF NOT EXISTS idx_manual_overrides_entity_status
+	ON manual_overrides (entity_type ASC, entity_id ASC, approval_status ASC, created_at DESC);
