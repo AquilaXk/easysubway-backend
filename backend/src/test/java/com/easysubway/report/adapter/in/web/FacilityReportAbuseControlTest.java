@@ -18,6 +18,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
@@ -40,6 +42,16 @@ class FacilityReportAbuseControlTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@TestConfiguration
+	static class FixedClockConfiguration {
+
+		@Bean
+		Clock facilityReportAbuseControlClock() {
+			return Clock.fixed(Instant.parse("2026-06-22T00:00:00Z"), ZoneOffset.UTC);
+		}
+
+	}
 
 	@Test
 	@DisplayName("업로드 intent 생성은 client별 fixed window 한도를 넘으면 429를 반환한다")
