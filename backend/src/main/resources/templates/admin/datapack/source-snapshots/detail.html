@@ -1,0 +1,71 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title th:text="${snapshot.snapshotId + ' Source Snapshot'}">Source Snapshot</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-source-snapshots')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1 th:text="${snapshot.snapshotId}">snapshot-id</h1>
+			<p>raw 전문은 노출하지 않고 source snapshot metadata와 evidence 위치만 표시합니다.</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/datapack/source-snapshots/page}">목록</a>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<h2>기본 정보</h2>
+		<table>
+			<tbody>
+			<tr><th scope="row">source id</th><td th:text="${snapshot.sourceId}">source-id</td></tr>
+			<tr><th scope="row">provider</th><td th:text="${snapshot.provider}">provider</td></tr>
+			<tr><th scope="row">retrieved at</th><td th:text="${snapshot.retrievedAt}">2026-06-29T03:00</td></tr>
+			<tr><th scope="row">source updated at</th><td th:text="${snapshot.sourceUpdatedAt}">2026-06-28T00:00</td></tr>
+			<tr><th scope="row">row count</th><td th:text="${snapshot.rowCount}">0</td></tr>
+			<tr><th scope="row">previous snapshot</th><td th:text="${snapshot.previousSnapshotId}">-</td></tr>
+			<tr><th scope="row">diff summary</th><td th:text="${snapshot.diffSummary}">-</td></tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section class="admin-panel">
+		<h2>상태</h2>
+		<table>
+			<tbody>
+			<tr><th scope="row">snapshot status</th><td th:text="${snapshot.snapshotStatus}">LOCKED</td></tr>
+			<tr><th scope="row">schema status</th><td th:text="${snapshot.schemaStatus}">PASS</td></tr>
+			<tr><th scope="row">license status</th><td th:text="${snapshot.licenseStatus}">PASS</td></tr>
+			<tr><th scope="row">fetch status</th><td th:text="${snapshot.fetchStatus}">SUCCESS</td></tr>
+			<tr><th scope="row">redistribution</th><td th:text="${snapshot.redistributionLabel()}">허용</td></tr>
+			<tr><th scope="row">credential redacted</th><td th:text="${snapshot.credentialRedactedLabel()}">credential redacted</td></tr>
+			<tr><th scope="row">freshness expires</th><td th:text="${snapshot.freshnessExpiresAt}">2026-07-06T03:00</td></tr>
+			<tr><th scope="row">raw retention</th><td th:text="${snapshot.rawRetentionExpiresAt}">2026-09-29T03:00</td></tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section class="admin-panel">
+		<h2>Evidence</h2>
+		<table>
+			<tbody>
+			<tr><th scope="row">raw sha256</th><td th:text="${snapshot.rawSha256}">sha256</td></tr>
+			<tr><th scope="row">raw object uri</th><td th:text="${snapshot.rawObjectUri}">s3://bucket/object.json</td></tr>
+			<tr><th scope="row">request fingerprint</th><td th:text="${snapshot.redactedRequestFingerprint}">sha256</td></tr>
+			<tr><th scope="row">schema fingerprint</th><td th:text="${snapshot.schemaFingerprint}">sha256</td></tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>

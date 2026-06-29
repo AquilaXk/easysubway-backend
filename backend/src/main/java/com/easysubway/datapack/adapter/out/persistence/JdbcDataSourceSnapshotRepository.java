@@ -4,17 +4,16 @@ import com.easysubway.datapack.domain.DataSourceSnapshot;
 import com.easysubway.datapack.domain.InvalidDataSourceSnapshotException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-@Profile("prod")
 public class JdbcDataSourceSnapshotRepository {
 
 	private final JdbcTemplate jdbcTemplate;
@@ -57,6 +56,19 @@ public class JdbcDataSourceSnapshotRepository {
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
+	}
+
+	public List<DataSourceSnapshot> listRecentSnapshots(int limit, int offset) {
+		return jdbcTemplate.query("""
+			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
+				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
+				raw_retention_expires_at
+			FROM data_source_snapshots
+			ORDER BY retrieved_at DESC, snapshot_id ASC
+			LIMIT ? OFFSET ?
+			""", this::mapSnapshot, limit, offset);
 	}
 
 	private void insert(DataSourceSnapshot snapshot) {

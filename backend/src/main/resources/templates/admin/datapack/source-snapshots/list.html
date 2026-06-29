@@ -1,0 +1,68 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Source Snapshots</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-source-snapshots')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>Source Snapshots</h1>
+			<p>데이터팩 candidate 입력으로 쓰는 공식 source snapshot의 고정 상태와 evidence hash를 확인합니다.</p>
+		</div>
+	</header>
+
+	<section>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">snapshot</th>
+				<th scope="col">source</th>
+				<th scope="col">provider</th>
+				<th scope="col">retrieved</th>
+				<th scope="col">rows</th>
+				<th scope="col">status</th>
+				<th scope="col">raw sha256</th>
+				<th scope="col">diff</th>
+				<th scope="col">상세</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${snapshots.isEmpty()}">
+				<td colspan="9">source snapshot이 없습니다.</td>
+			</tr>
+			<tr th:each="snapshot : ${snapshots}">
+				<td th:text="${snapshot.snapshotId}">snapshot-id</td>
+				<td th:text="${snapshot.sourceId}">source-id</td>
+				<td th:text="${snapshot.provider}">provider</td>
+				<td th:text="${snapshot.retrievedAt}">2026-06-29T03:00</td>
+				<td th:text="${snapshot.rowCount}">0</td>
+				<td>
+					<span th:text="${snapshot.snapshotStatus}">LOCKED</span>
+					<span th:text="${snapshot.schemaStatus}">PASS</span>
+					<span th:text="${snapshot.licenseStatus}">PASS</span>
+					<span th:text="${snapshot.fetchStatus}">SUCCESS</span>
+				</td>
+				<td th:text="${snapshot.rawSha256}">sha256</td>
+				<td th:text="${snapshot.diffSummary}">-</td>
+				<td>
+					<a class="detail-link"
+					   th:href="@{/admin/datapack/source-snapshots/{snapshotId}/page(snapshotId=${snapshot.snapshotId})}">보기</a>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		<div th:replace="~{admin/fragments/pagination :: pager('Source snapshot 목록 페이지', ${page}, ${paginationLinks})}"></div>
+	</section>
+</main>
+</div>
+</body>
+</html>
