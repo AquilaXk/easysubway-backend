@@ -31,11 +31,13 @@ class AliasQuarantineAdminPageControllerTest {
 
 	@BeforeEach
 	void setUp() {
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
 		jdbcTemplate.update("DELETE FROM facility_evidence");
 		jdbcTemplate.update("DELETE FROM manual_overrides");
 		jdbcTemplate.update("DELETE FROM source_quarantine_resolutions");
 		jdbcTemplate.update("DELETE FROM source_quarantine_records");
 		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM datapack_normalization_runs");
 		jdbcTemplate.update("DELETE FROM data_source_snapshots");
 		insertSnapshot();
 		insertAliasApproval();
