@@ -51,10 +51,11 @@ class DatabaseMigrationContainerTest {
 				"source_quarantine_records",
 				"source_quarantine_resolutions",
 				"manual_overrides",
+				"route_edge_evidence",
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -63,7 +64,8 @@ class DatabaseMigrationContainerTest {
 				"fk_external_alias_approvals_superseded",
 				"fk_source_quarantine_records_snapshot_source",
 				"fk_source_quarantine_resolutions_record",
-				"fk_manual_overrides_superseded"
+				"fk_manual_overrides_superseded",
+				"fk_route_edge_evidence_snapshot_source"
 			);
 		assertThat(checkConstraintNames(jdbcTemplate))
 			.contains(
@@ -73,10 +75,12 @@ class DatabaseMigrationContainerTest {
 				"chk_source_quarantine_resolutions_status",
 				"chk_manual_overrides_approval_state",
 				"chk_manual_overrides_effective_window",
-				"chk_manual_overrides_route_safety"
+				"chk_manual_overrides_route_safety",
+				"chk_route_edge_evidence_strict_route"
 			);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
 		assertManualOverrideProductionGuards(jdbcTemplate);
+		assertRouteEdgeEvidenceStrictRouteGuards(jdbcTemplate);
 	}
 
 	@Test
@@ -111,6 +115,23 @@ class DatabaseMigrationContainerTest {
 			.migrate();
 
 		assertManualOverrideProductionGuards(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration도 route edge evidence의 strict route guard를 차단한다")
+	void h2MigrationRejectsUnsafeRouteEdgeEvidence() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:datapack-route-edge-evidence;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		Flyway.configure()
+			.dataSource(dataSource)
+			.locations("classpath:db/migration/h2")
+			.load()
+			.migrate();
+
+		assertRouteEdgeEvidenceStrictRouteGuards(new JdbcTemplate(dataSource));
 	}
 
 	private List<String> tableNames(JdbcTemplate jdbcTemplate) {
@@ -256,6 +277,58 @@ class DatabaseMigrationContainerTest {
 			approvalStatus,
 			strictRouteEligible,
 			supersededBy
+		);
+	}
+
+	private void assertRouteEdgeEvidenceStrictRouteGuards(JdbcTemplate jdbcTemplate) {
+		insertSnapshot(jdbcTemplate, "route-snapshot-a", "route-source-a");
+		insertSnapshot(jdbcTemplate, "route-snapshot-b", "route-source-b");
+		insertRouteEdgeEvidence(jdbcTemplate, "route-edge-ok", "route-source-a", "route-snapshot-a",
+			"ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null);
+		insertRouteEdgeEvidence(jdbcTemplate, "route-edge-generated-visible", "route-source-a", "route-snapshot-a",
+			"GENERATED_CONNECTOR", "GENERATED", "GENERATED", false, "GENERATED_CONNECTOR_BLOCKED");
+
+		assertThatThrownBy(() -> insertRouteEdgeEvidence(jdbcTemplate, "route-edge-source-mismatch", "route-source-b", "route-snapshot-a",
+			"ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteEdgeEvidence(jdbcTemplate, "route-edge-unknown-strict", "route-source-a", "route-snapshot-a",
+			"EXIT", "OFFICIAL_SOURCE", "UNKNOWN", true, "UNKNOWN_PENDING_REVIEW"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteEdgeEvidence(jdbcTemplate, "route-edge-generated-strict", "route-source-a", "route-snapshot-a",
+			"GENERATED_CONNECTOR", "GENERATED", "GENERATED", true, "GENERATED_CONNECTOR_BLOCKED"))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertRouteEdgeEvidence(
+		JdbcTemplate jdbcTemplate,
+		String evidenceId,
+		String sourceId,
+		String sourceSnapshotId,
+		String edgeType,
+		String provenanceKind,
+		String verificationStatus,
+		boolean strictRouteEligible,
+		String blockerReason
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO route_edge_evidence (
+				id, station_id, line_id, edge_id, edge_type, source_id, source_snapshot_id,
+				provenance_kind, verification_status, last_verified_at, evidence_hash,
+				strict_route_eligible, blocker_reason, created_at
+			)
+			VALUES (?, 'station-1', 'line-1', ?, ?, ?, ?, ?, ?,
+				'2026-06-29 00:00:00', ?, ?, ?, '2026-06-29 00:00:00')
+			""",
+			evidenceId,
+			"edge-" + evidenceId,
+			edgeType,
+			sourceId,
+			sourceSnapshotId,
+			provenanceKind,
+			verificationStatus,
+			"9".repeat(64),
+			strictRouteEligible,
+			blockerReason
 		);
 	}
 }
