@@ -12,7 +12,19 @@ public enum AdminPermission {
 	AUDIT_READ("admin.audit.read"),
 	PRIVACY_LOG_READ("admin.privacy-log.read"),
 	BATCH_RETRY("admin.batch.retry"),
-	OPERATIONS_MANAGE("admin.operations.manage");
+	OPERATIONS_MANAGE("admin.operations.manage"),
+	DATAPACK_READ("admin.datapack.read"),
+	DATAPACK_SOURCE_RUN("admin.datapack.source.run"),
+	DATAPACK_ALIAS_REVIEW("admin.datapack.alias.review"),
+	DATAPACK_QUARANTINE_REVIEW("admin.datapack.quarantine.review"),
+	DATAPACK_EVIDENCE_REVIEW("admin.datapack.evidence.review"),
+	DATAPACK_OVERRIDE_REQUEST("admin.datapack.override.request"),
+	DATAPACK_OVERRIDE_APPROVE("admin.datapack.override.approve"),
+	DATAPACK_CANDIDATE_BUILD("admin.datapack.candidate.build"),
+	DATAPACK_STAGING_PROMOTE("admin.datapack.staging.promote"),
+	DATAPACK_PRODUCTION_APPROVE("admin.datapack.production.approve"),
+	DATAPACK_ROLLBACK("admin.datapack.rollback"),
+	DATAPACK_AUDIT_READ("admin.datapack.audit.read");
 
 	private final String authority;
 

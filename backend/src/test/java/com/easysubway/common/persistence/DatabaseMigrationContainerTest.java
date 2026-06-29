@@ -59,7 +59,7 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -95,6 +95,7 @@ class DatabaseMigrationContainerTest {
 		assertFacilityEvidenceStrictRouteGuards(jdbcTemplate);
 		assertManualOverrideProductionGuards(jdbcTemplate);
 		assertRouteEdgeEvidenceStrictRouteGuards(jdbcTemplate);
+		assertDatapackPermissionMatrix(jdbcTemplate);
 	}
 
 	@Test
@@ -218,6 +219,73 @@ class DatabaseMigrationContainerTest {
 				AND constraint_type = 'CHECK'
 			ORDER BY constraint_name
 			""", String.class);
+	}
+
+	private void assertDatapackPermissionMatrix(JdbcTemplate jdbcTemplate) {
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "ADMIN_VIEWER"))
+			.contains("admin.datapack.read");
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "REPORT_REVIEWER"))
+			.doesNotContain("admin.datapack.read");
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "DATA_OPERATOR"))
+			.contains(
+				"admin.datapack.read",
+				"admin.datapack.source.run",
+				"admin.datapack.candidate.build",
+				"admin.datapack.staging.promote"
+			)
+			.doesNotContain(
+				"admin.datapack.override.approve",
+				"admin.datapack.production.approve",
+				"admin.datapack.rollback"
+			);
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "MASTER_EDITOR"))
+			.contains(
+				"admin.datapack.read",
+				"admin.datapack.alias.review",
+				"admin.datapack.quarantine.review",
+				"admin.datapack.evidence.review",
+				"admin.datapack.override.request"
+			)
+			.doesNotContain("admin.datapack.production.approve", "admin.datapack.rollback");
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "FIELD_OPERATOR"))
+			.contains(
+				"admin.datapack.read",
+				"admin.datapack.evidence.review",
+				"admin.datapack.override.request"
+			)
+			.doesNotContain("admin.datapack.production.approve", "admin.datapack.rollback");
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "SECURITY_ADMIN"))
+			.contains("admin.datapack.audit.read")
+			.doesNotContain("admin.datapack.production.approve");
+		assertThat(permissionAuthoritiesForRole(jdbcTemplate, "SUPER_ADMIN"))
+			.contains(
+				"admin.datapack.read",
+				"admin.datapack.source.run",
+				"admin.datapack.alias.review",
+				"admin.datapack.quarantine.review",
+				"admin.datapack.evidence.review",
+				"admin.datapack.override.request",
+				"admin.datapack.override.approve",
+				"admin.datapack.candidate.build",
+				"admin.datapack.staging.promote",
+				"admin.datapack.production.approve",
+				"admin.datapack.rollback",
+				"admin.datapack.audit.read"
+			);
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			INSERT INTO admin_role_permissions (role_code, permission_code, created_at)
+			VALUES ('DATA_OPERATOR', 'admin.datapack.unlisted', CURRENT_TIMESTAMP)
+			"""))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private List<String> permissionAuthoritiesForRole(JdbcTemplate jdbcTemplate, String roleCode) {
+		return jdbcTemplate.queryForList("""
+			SELECT permission_code
+			FROM admin_role_permissions
+			WHERE role_code = ?
+			ORDER BY permission_code
+			""", String.class, roleCode);
 	}
 
 	private void assertSnapshotSourceForeignKeysRejectMismatch(JdbcTemplate jdbcTemplate) {
