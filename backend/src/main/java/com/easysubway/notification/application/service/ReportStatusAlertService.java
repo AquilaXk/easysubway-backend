@@ -35,7 +35,7 @@ public class ReportStatusAlertService implements ReportStatusAlertUseCase {
 			case DUPLICATE -> "제보해 주신 신고는 이미 접수된 내용과 같아 중복으로 정리되었습니다.";
 			case UNDER_REVIEW -> "제보해 주신 신고를 검토하고 있습니다.";
 			case RESOLVED -> "제보해 주신 신고 처리가 완료되었습니다.";
-			case SUBMITTED -> "제보해 주신 신고가 접수되어 검수를 기다리고 있습니다.";
+			case SUBMITTED -> "제보해 주신 신고가 접수되어 확인을 기다리고 있습니다.";
 		};
 	}
 }

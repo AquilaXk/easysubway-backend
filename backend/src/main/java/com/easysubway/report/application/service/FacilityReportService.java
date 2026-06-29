@@ -542,7 +542,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	public List<FacilityReport> listUserReports(String userId) {
 		return sortedReports()
 			.stream()
-			// 익명화된 신고는 운영 검수 이력만 보존하므로 어떤 사용자 계정의 내역에도 다시 연결하지 않는다.
+			// 익명화된 신고는 운영 확인 이력만 보존하므로 어떤 사용자 계정의 내역에도 다시 연결하지 않는다.
 			.filter(report -> !report.isAnonymizedUserData())
 			.filter(report -> userId.equals(report.userId()))
 			.toList();
@@ -642,7 +642,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 		FacilityReport saved = saveFacilityReportPort
 			.saveReviewedReportIfStatus(reviewed, FacilityReportStatus.SUBMITTED)
 			.orElseThrow(FacilityReportReviewConflictException::new);
-		// 같은 결과로 재검수한 경우 사용자가 중복 처리 알림을 받지 않도록 상태 변경만 알린다.
+		// 같은 결과로 다시 확인한 경우 사용자가 중복 처리 알림을 받지 않도록 상태 변경만 알린다.
 		if (report.status() != saved.status()) {
 			alertReportStatusChanged(saved);
 		}
@@ -807,7 +807,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 				new ReportStatusChangedAlertCommand(saved.userId(), saved.id(), saved.status())
 			);
 		} catch (RuntimeException exception) {
-			// 알림은 저장 이후 부수 효과이므로 실패해도 검수 결과 응답과 시설 상태 반영을 막지 않는다.
+			// 알림은 저장 이후 부수 효과이므로 실패해도 확인 결과 응답과 시설 상태 반영을 막지 않는다.
 			log.warn(
 				"신고 처리 결과 알림 발송에 실패했습니다. reportId={}, userId={}, status={}",
 				saved.id(),
@@ -826,13 +826,13 @@ public class FacilityReportService implements FacilityReportUseCase {
 
 	private void requireReviewDecision(ReviewFacilityReportCommand command) {
 		if (command.decision() == null) {
-			throw new InvalidFacilityReportException("검수 결과를 선택해야 합니다.");
+			throw new InvalidFacilityReportException("확인 결과를 선택해야 합니다.");
 		}
 	}
 
 	private void requireReviewer(ReviewFacilityReportCommand command) {
 		if (command.reviewedBy() == null || command.reviewedBy().isBlank()) {
-			throw new InvalidFacilityReportException("검수자 식별자가 필요합니다.");
+			throw new InvalidFacilityReportException("확인 담당자 식별자가 필요합니다.");
 		}
 	}
 
@@ -848,7 +848,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 			|| report.status() == FacilityReportStatus.RESOLVED) {
 			return;
 		}
-		throw new InvalidFacilityReportException("검수 완료된 신고만 확인할 수 있습니다.");
+		throw new InvalidFacilityReportException("처리가 끝난 신고만 확인할 수 있습니다.");
 	}
 
 	private void requireReviewableStatus(FacilityReport report) {
@@ -894,7 +894,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private FacilityReportStatus toStatus(FacilityReportReviewDecision decision) {
-		// 외부 요청의 검수 결정값을 내부 신고 상태로 한 곳에서만 변환한다.
+		// 외부 요청의 확인 결정값을 내부 신고 상태로 한 곳에서만 변환한다.
 		return switch (decision) {
 			case ACCEPT -> FacilityReportStatus.ACCEPTED;
 			case REJECT -> FacilityReportStatus.REJECTED;

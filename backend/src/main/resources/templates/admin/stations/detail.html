@@ -31,7 +31,7 @@
 	</header>
 
 	<div class="metric-grid">
-		<div class="metric"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">Level 1</strong></div>
+		<div class="metric"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">정보 확인 중</strong></div>
 		<div class="metric"><span>접근성 시설</span><strong th:text="${facilities.size()}">0</strong></div>
 		<div class="metric"><span>구조 자료</span><strong th:text="${layoutSourceCount}">0</strong></div>
 		<div class="metric"><span>노드 / 간선</span><strong th:text="|${routeNodeCount} / ${routeEdgeCount}|">0 / 0</strong></div>
@@ -39,7 +39,7 @@
 
 	<div class="admin-grid-2">
 		<section class="admin-panel">
-			<h2>역 기본정보</h2>
+				<h2>역 주요 정보</h2>
 			<table>
 				<tbody>
 				<tr><th scope="row">한글 역명</th><td th:text="${station.stationName}">상록수</td></tr>
@@ -47,14 +47,14 @@
 				<tr><th scope="row">위도</th><td th:text="${station.latitude}">0</td></tr>
 				<tr><th scope="row">경도</th><td th:text="${station.longitude}">0</td></tr>
 				<tr><th scope="row">출처 유형</th><td th:text="${station.sourceType}">OPERATOR</td></tr>
-				<tr><th scope="row">마지막 검증</th><td th:text="${station.lastVerifiedAt}">2026-06-20</td></tr>
+				<tr><th scope="row">마지막 확인</th><td th:text="${station.lastVerifiedAt}">2026-06-20</td></tr>
 				</tbody>
 			</table>
 		</section>
 
 		<section class="admin-panel">
 			<h2>사용자 화면 미리보기</h2>
-			<p class="summary">현재 시설 상태와 검증일을 사용자가 읽을 수 있는 형태로 확인합니다.</p>
+			<p class="summary">현재 시설 상태와 확인일을 사용자가 읽을 수 있는 형태로 확인합니다.</p>
 			<div class="admin-status warn" th:if="${!facilities.isEmpty()}" th:text="|시설 ${facilities.size()}개 연결됨|">시설 0개</div>
 		</section>
 	</div>
@@ -68,7 +68,7 @@
 				<th scope="col">이름</th>
 				<th scope="col">엘리베이터</th>
 				<th scope="col">계단 경로</th>
-				<th scope="col">신뢰도</th>
+					<th scope="col">확인 상태</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -91,7 +91,7 @@
 				<th scope="col">시설</th>
 				<th scope="col">위치</th>
 				<th scope="col">상태</th>
-				<th scope="col">신뢰도</th>
+					<th scope="col">확인 상태</th>
 				<th scope="col">수정</th>
 			</tr>
 			</thead>

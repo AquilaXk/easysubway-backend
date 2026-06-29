@@ -61,7 +61,7 @@ class FacilityReportAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("시설 신고 검수")
+			.contains("시설 신고 확인")
 			.contains("접수됨")
 			.contains("관리자 목록에서 볼 신고")
 			.contains("/admin/reports/%s/page".formatted(reportId))

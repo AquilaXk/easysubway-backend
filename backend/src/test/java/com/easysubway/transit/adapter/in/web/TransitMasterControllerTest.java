@@ -273,7 +273,7 @@ class TransitMasterControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("기준 자료 검수일은 수집일보다 빠를 수 없습니다."));
+			.andExpect(jsonPath("$.message").value("기준 자료 확인일은 수집일보다 빠를 수 없습니다."));
 	}
 
 	@Test
@@ -807,7 +807,7 @@ class TransitMasterControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("간선 신뢰도는 0부터 100까지 입력해야 합니다."));
+			.andExpect(jsonPath("$.message").value("내부 이동로 확인 정도는 0부터 100까지 입력해야 합니다."));
 	}
 
 	@Test

@@ -86,7 +86,7 @@ class JdbcFieldVerificationSessionRepositoryTest {
 			LocalDate.of(2026, 6, 19),
 			"field-team",
 			FieldVerificationStatus.NEEDS_RECHECK,
-			"주요 환승역 현장 검증 확대 기준선",
+			"주요 환승역 현장 확인 확대 기준선",
 			List.of(
 				new FieldVerificationItem(
 					"field-verification-sadang-elevator",
@@ -179,7 +179,7 @@ class JdbcFieldVerificationSessionRepositoryTest {
 			LocalDate.of(2026, 6, 19),
 			"field-team",
 			FieldVerificationStatus.IN_PROGRESS,
-			"주요 환승역 현장 검증 확대 기준선",
+			"주요 환승역 현장 확인 확대 기준선",
 			List.of(
 				item("field-verification-sadang-elevator", FieldVerificationItemType.ELEVATOR),
 				item("field-verification-sadang-platform-transfer", FieldVerificationItemType.PLATFORM_TRANSFER),
@@ -219,7 +219,7 @@ class JdbcFieldVerificationSessionRepositoryTest {
 			verifiedAt,
 			"field-team",
 			status,
-			stationId.equals("station-sadang") ? "주요 환승역 현장 검증 확대 기준선" : "첫 현장 검증 지역 기준선",
+			stationId.equals("station-sadang") ? "주요 환승역 현장 확인 확대 기준선" : "첫 현장 확인 지역 기준선",
 			List.of(
 				new FieldVerificationItem(
 					"field-verification-" + stationId.replace("station-", "") + "-elevator",

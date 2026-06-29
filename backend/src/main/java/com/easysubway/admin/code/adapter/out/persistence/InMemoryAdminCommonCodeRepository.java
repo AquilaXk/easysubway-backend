@@ -23,7 +23,7 @@ public class InMemoryAdminCommonCodeRepository implements AdminCommonCodeReposit
 
 	public InMemoryAdminCommonCodeRepository() {
 		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
-		seedGroup(AdminCommonCodeGroups.REPORT_REJECTION_REASON, "신고 반려 사유", "제보 검수에서 반복 선택하는 반려 사유", 10, now);
+		seedGroup(AdminCommonCodeGroups.REPORT_REJECTION_REASON, "신고 반려 사유", "제보 확인에서 반복 선택하는 반려 사유", 10, now);
 		seedGroup(AdminCommonCodeGroups.FACILITY_STATUS_REASON, "시설 변경 사유", "시설 상태 변경 사유", 20, now);
 		seedGroup(AdminCommonCodeGroups.BATCH_FAILURE_CATEGORY, "배치 실패 분류", "수집 배치 실패 원인 분류", 30, now);
 		seedGroup(AdminCommonCodeGroups.INCIDENT_SEVERITY, "장애 심각도", "운영 incident 심각도", 40, now);
@@ -32,9 +32,9 @@ public class InMemoryAdminCommonCodeRepository implements AdminCommonCodeReposit
 		seedCode(AdminCommonCodeGroups.REPORT_REJECTION_REASON, "DUPLICATE", "중복 제보", "이미 처리 중인 동일 제보", 10, true, now);
 		seedCode(AdminCommonCodeGroups.REPORT_REJECTION_REASON, "INSUFFICIENT", "정보 부족", "역·시설·사진 정보 부족", 20, true, now);
 		seedCode(AdminCommonCodeGroups.FACILITY_STATUS_REASON, "INSPECTION", "정기 점검", "운영기관 정기 점검", 10, true, now);
-		seedCode(AdminCommonCodeGroups.FACILITY_STATUS_REASON, "REPORT_CONFIRMED", "제보 확인", "제보 검수 후 상태 변경", 20, true, now);
+		seedCode(AdminCommonCodeGroups.FACILITY_STATUS_REASON, "REPORT_CONFIRMED", "제보 확인", "제보 확인 후 상태 변경", 20, true, now);
 		seedCode(AdminCommonCodeGroups.BATCH_FAILURE_CATEGORY, "SOURCE_TIMEOUT", "원천 응답 지연", "원천 데이터 응답 시간 초과", 10, true, now);
-		seedCode(AdminCommonCodeGroups.BATCH_FAILURE_CATEGORY, "VALIDATION_ERROR", "검증 실패", "수집 산출물 검증 실패", 20, true, now);
+		seedCode(AdminCommonCodeGroups.BATCH_FAILURE_CATEGORY, "VALIDATION_ERROR", "확인 실패", "수집 산출물 확인 실패", 20, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SEVERITY, "MAJOR", "Major", "사용자 기능 영향", 10, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SEVERITY, "MINOR", "Minor", "운영 확인 필요", 20, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "OPEN", "Open", "처리 전", 10, true, now);

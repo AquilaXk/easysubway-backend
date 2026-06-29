@@ -63,7 +63,7 @@ class AdminAccessibilitySmokeTest {
 		RequestPostProcessor admin = fullAdmin();
 
 		assertAdminShell("/admin/dashboard/page", "통합 대시보드", admin);
-		assertAdminShell("/admin/reports/page", "시설 신고 검수", admin);
+		assertAdminShell("/admin/reports/page", "시설 신고 확인", admin);
 		assertAdminShell("/admin/facilities/page", "시설 상태판", admin);
 		assertAdminShell("/admin/batches/page", "배치 운영", admin);
 		assertAdminShell("/admin/audits/privacy/page", "개인정보 조회 로그", admin);

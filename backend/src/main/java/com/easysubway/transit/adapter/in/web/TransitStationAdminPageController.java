@@ -208,9 +208,9 @@ class TransitStationAdminPageController {
 
 	private static String confidenceLabel(DataConfidenceLevel level) {
 		return switch (level) {
-			case HIGH -> "높음";
-			case MEDIUM -> "보통";
-			case LOW -> "낮음";
+			case HIGH -> "확인된 정보";
+			case MEDIUM -> "일부 확인된 정보";
+			case LOW -> "확인이 더 필요한 정보";
 			case NEEDS_VERIFICATION -> "확인 필요";
 		};
 	}

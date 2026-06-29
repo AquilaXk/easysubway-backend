@@ -43,10 +43,10 @@ class DataQualityServiceTest {
 				+ ":" + level.accessibilityScore()
 				+ ":" + level.scoreReason())
 			.containsExactly(
-				"LEVEL_1:Level 1:일부 정보는 확인 중이에요:NEEDS_BASE_DATA:40:일부 정보는 확인 중이에요",
-				"LEVEL_2:Level 2:시설 정보를 함께 볼 수 있어요:NEEDS_ROUTE_VERIFICATION:60:쉬운 길 확인이 더 필요해요",
-				"LEVEL_3:Level 3:쉬운 길 안내를 볼 수 있어요:NEEDS_LIVE_STATUS:80:고장·공사 소식 확인이 필요해요",
-				"LEVEL_4:Level 4:고장·공사 소식이 반영됐어요:VERIFIED:100:"
+					"LEVEL_1:정보 확인 중:일부 정보는 확인 중이에요:NEEDS_BASE_DATA:40:일부 정보는 확인 중이에요",
+					"LEVEL_2:시설 정보 있음:시설 정보를 함께 볼 수 있어요:NEEDS_ROUTE_VERIFICATION:60:쉬운 길 확인이 더 필요해요",
+					"LEVEL_3:쉬운 길 안내 가능:쉬운 길 안내를 볼 수 있어요:NEEDS_LIVE_STATUS:80:고장·공사 소식 확인이 필요해요",
+					"LEVEL_4:고장·공사 반영:고장·공사 소식이 반영됐어요:VERIFIED:100:"
 			);
 	}
 
@@ -118,9 +118,9 @@ class DataQualityServiceTest {
 				"facility-construction-old:55"
 			);
 		assertThat(summary.accessibilityImprovementPriorities().getFirst().reasons())
-			.containsExactly("고장 상태", "낮은 신뢰도", "갱신 지연");
+				.containsExactly("고장 상태", "확인이 더 필요한 정보", "갱신 지연");
 		assertThat(summary.accessibilityImprovementPriorities().get(1).reasons())
-			.containsExactly("확인 필요 상태", "신뢰도 확인 필요");
+				.containsExactly("확인 필요 상태", "정보 확인 필요");
 	}
 
 	@Test
@@ -174,10 +174,10 @@ class DataQualityServiceTest {
 			.containsExactly(
 				"일부 정보는 확인 중이에요",
 				"계단 없는 출구 부족",
-				"출구 신뢰도 보강 필요",
+					"출구 정보 확인 필요",
 				"정상 접근성 시설 부족",
 				"시설 상태를 다시 확인해야 해요",
-				"시설 신뢰도 보강 필요",
+					"시설 정보 확인 필요",
 				"시설 갱신 지연"
 			);
 		assertThat(summary.stationAccessibilityScores().get(1).reasons())

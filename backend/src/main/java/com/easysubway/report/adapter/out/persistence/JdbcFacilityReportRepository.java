@@ -479,7 +479,7 @@ public class JdbcFacilityReportRepository implements
 	}
 
 	private void upsertReportWithPostgresql(FacilityReport report) {
-		// 검수 상태 갱신과 재저장을 같은 SQL 경로로 처리해 운영 저장소의 행 단위 일관성을 유지한다.
+		// 확인 상태 갱신과 재저장을 같은 SQL 경로로 처리해 운영 저장소의 행 단위 일관성을 유지한다.
 		jdbcTemplate.update(
 			"""
 				INSERT INTO facility_reports (

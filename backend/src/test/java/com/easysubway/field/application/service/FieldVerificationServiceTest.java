@@ -59,7 +59,7 @@ class FieldVerificationServiceTest {
 		assertThat(session.verifiedAt()).isEqualTo(LocalDate.of(2026, 6, 19));
 		assertThat(session.verifiedBy()).isEqualTo("field-team");
 		assertThat(session.status()).isEqualTo(FieldVerificationStatus.PLANNED);
-		assertThat(session.note()).isEqualTo("주요 환승역 현장 검증 확대 기준선");
+		assertThat(session.note()).isEqualTo("주요 환승역 현장 확인 확대 기준선");
 		assertThat(session.items())
 			.extracting(item -> item.type())
 			.containsExactly(
@@ -156,7 +156,7 @@ class FieldVerificationServiceTest {
 	void listMissingStationChangeHistoryFails() {
 		assertThatThrownBy(() -> service.listStationChangeHistory("missing-station"))
 			.isInstanceOf(ResourceNotFoundException.class)
-			.hasMessage("현장 검증 기준선을 찾을 수 없습니다.");
+			.hasMessage("현장 확인 기준선을 찾을 수 없습니다.");
 	}
 
 	@Test
@@ -194,6 +194,6 @@ class FieldVerificationServiceTest {
 			"admin-user"
 		)))
 			.isInstanceOf(ResourceNotFoundException.class)
-			.hasMessage("현장 검증 항목을 찾을 수 없습니다.");
+			.hasMessage("현장 확인 항목을 찾을 수 없습니다.");
 	}
 }

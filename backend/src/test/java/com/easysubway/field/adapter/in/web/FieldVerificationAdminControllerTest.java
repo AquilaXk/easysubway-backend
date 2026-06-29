@@ -81,7 +81,7 @@ class FieldVerificationAdminControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("현장 검증 목록 페이지")
+				.contains("현장 확인 목록 페이지")
 			.contains("aria-current=\"page\"")
 			.contains("page=1&amp;size=1")
 			.contains("다음");
@@ -115,7 +115,7 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(jsonPath("$.data.stationId").value("station-sadang"))
 			.andExpect(jsonPath("$.data.stationName").value("사당역"))
 			.andExpect(jsonPath("$.data.status").value("PLANNED"))
-			.andExpect(jsonPath("$.data.note").value("주요 환승역 현장 검증 확대 기준선"))
+			.andExpect(jsonPath("$.data.note").value("주요 환승역 현장 확인 확대 기준선"))
 			.andExpect(jsonPath("$.data.items[0].targetName").value("2호선/4호선 출구 연결"))
 			.andExpect(jsonPath("$.data.items[4].targetName").value("2호선과 4호선 환승 접근 동선"));
 	}
@@ -273,9 +273,9 @@ class FieldVerificationAdminControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("현장 검증 상세")
+				.contains("현장 확인 상세")
 			.contains("입력값을 확인해 주세요")
-			.contains("현장 검증 상태를 선택해야 합니다.")
+				.contains("현장 확인 상태를 선택해야 합니다.")
 			.contains("사당역")
 			.contains("상태 누락 현장 메모");
 	}
@@ -297,7 +297,7 @@ class FieldVerificationAdminControllerTest {
 
 		assertThat(html)
 			.contains("입력값을 확인해 주세요")
-			.contains("현장 검증 상태는 검증 완료 또는 재확인 필요만 선택할 수 있습니다.")
+				.contains("현장 확인 상태는 확인 완료 또는 다시 확인 필요만 선택할 수 있습니다.")
 			.contains("허용되지 않는 상태");
 	}
 
@@ -339,7 +339,7 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("현장 검증 기준선을 찾을 수 없습니다."));
+			.andExpect(jsonPath("$.message").value("현장 확인 기준선을 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -382,7 +382,7 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(status().isNotFound())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("현장 검증 항목을 찾을 수 없습니다."));
+			.andExpect(jsonPath("$.message").value("현장 확인 항목을 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -396,7 +396,7 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("현장 검증 상태를 선택해야 합니다."));
+			.andExpect(jsonPath("$.message").value("현장 확인 상태를 선택해야 합니다."));
 
 		mockMvc.perform(get("/admin/field-verifications/stations/station-sadang")
 				.with(httpBasic("admin-user", "admin-test-password")))
@@ -437,7 +437,7 @@ class FieldVerificationAdminControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("현장 검증 상태는 VERIFIED 또는 NEEDS_RECHECK만 허용됩니다."));
+			.andExpect(jsonPath("$.message").value("현장 확인 상태는 확인 완료 또는 다시 확인 필요만 선택할 수 있습니다."));
 	}
 
 	@Test

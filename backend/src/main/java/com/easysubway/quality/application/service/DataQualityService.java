@@ -225,7 +225,7 @@ public class DataQualityService implements DataQualityUseCase {
 		}
 		if (exits.stream().anyMatch(exit -> exit.dataConfidence() == DataConfidenceLevel.LOW
 			|| exit.dataConfidence() == DataConfidenceLevel.NEEDS_VERIFICATION)) {
-			adjustment -= addReason(reasons, "출구 신뢰도 보강 필요", 10);
+				adjustment -= addReason(reasons, "출구 정보 확인 필요", 10);
 		}
 		return adjustment;
 	}
@@ -244,7 +244,7 @@ public class DataQualityService implements DataQualityUseCase {
 		}
 		if (facilities.stream().anyMatch(facility -> facility.dataConfidence() == DataConfidenceLevel.LOW
 			|| facility.dataConfidence() == DataConfidenceLevel.NEEDS_VERIFICATION)) {
-			adjustment -= addReason(reasons, "시설 신뢰도 보강 필요", 10);
+				adjustment -= addReason(reasons, "시설 정보 확인 필요", 10);
 		}
 		if (facilities.stream().anyMatch(this::isDelayedFacilityStatus)) {
 			adjustment -= addReason(reasons, "시설 갱신 지연", 5);
@@ -312,8 +312,8 @@ public class DataQualityService implements DataQualityUseCase {
 
 	private int confidencePriorityScore(DataConfidenceLevel confidenceLevel, List<String> reasons) {
 		return switch (confidenceLevel) {
-			case NEEDS_VERIFICATION -> addReason(reasons, "신뢰도 확인 필요", 30);
-			case LOW -> addReason(reasons, "낮은 신뢰도", 20);
+			case NEEDS_VERIFICATION -> addReason(reasons, "정보 확인 필요", 30);
+			case LOW -> addReason(reasons, "확인이 더 필요한 정보", 20);
 			case HIGH, MEDIUM -> 0;
 		};
 	}

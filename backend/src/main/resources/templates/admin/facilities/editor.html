@@ -16,7 +16,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>시설 등록·수정</h1>
-			<p>시설 종류, 출구, 층, 좌표, 설명, 상태, 신뢰도, 출처를 확인합니다.</p>
+			<p>시설 종류, 출구, 층, 좌표, 설명, 상태, 확인 상태, 출처를 확인합니다.</p>
 		</div>
 		<div class="admin-actions">
 			<a class="admin-btn" th:href="@{/admin/facilities/editor/page(stationId=${selectedStationId},facilityId='__new')}">새 시설</a>
@@ -130,7 +130,7 @@
 					</select>
 				</label>
 				<label>
-					<span class="meta">신뢰도</span>
+					<span class="meta">확인 상태</span>
 					<select name="dataConfidence" required>
 						<option th:each="option : ${confidenceOptions}"
 						        th:value="${option}"

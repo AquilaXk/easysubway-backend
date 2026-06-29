@@ -470,7 +470,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 		SimplifiedStationLayout layout = loadSimplifiedStationLayout(command.layoutId());
 		requireExpectedLayoutVersion(command, layout);
 		LocalDate updatedAt = LocalDate.now(clock);
-		// 검수 상태는 앱 렌더링 데이터가 아니라 운영자가 배포 가능성을 판단하는 메타데이터만 갱신한다.
+		// 확인 상태는 앱 렌더링 데이터가 아니라 운영자가 배포 가능성을 판단하는 메타데이터만 갱신한다.
 		requireWritableMasterData();
 		saveSimplifiedStationLayoutStatusPort.saveSimplifiedStationLayoutStatus(
 			layout.id(),
@@ -787,7 +787,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			throw new InvalidStationLayoutSourceException("기준 자료 수집일을 입력해야 합니다.");
 		}
 		if (command.reviewedAt() != null && command.reviewedAt().isBefore(command.capturedAt())) {
-			throw new InvalidStationLayoutSourceException("기준 자료 검수일은 수집일보다 빠를 수 없습니다.");
+			throw new InvalidStationLayoutSourceException("기준 자료 확인일은 수집일보다 빠를 수 없습니다.");
 		}
 		if (command.updatedBy() == null || command.updatedBy().isBlank()) {
 			throw new InvalidStationLayoutSourceException("수정자 식별자가 필요합니다.");
@@ -796,7 +796,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 
 	private void requireReviewer(UpdateSimplifiedStationLayoutStatusCommand command) {
 		if (command.reviewedBy() == null || command.reviewedBy().isBlank()) {
-			throw new InvalidSimplifiedStationLayoutException("검수자 식별자가 필요합니다.");
+			throw new InvalidSimplifiedStationLayoutException("확인 담당자 식별자가 필요합니다.");
 		}
 	}
 
@@ -833,7 +833,7 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			throw new InvalidRouteEdgeException("간선 경사와 폭 레벨은 1부터 5까지 입력해야 합니다.");
 		}
 		if (command.reliabilityScore() < 0 || command.reliabilityScore() > 100) {
-			throw new InvalidRouteEdgeException("간선 신뢰도는 0부터 100까지 입력해야 합니다.");
+			throw new InvalidRouteEdgeException("내부 이동로 확인 정도는 0부터 100까지 입력해야 합니다.");
 		}
 		if (command.updatedBy() == null || command.updatedBy().isBlank()) {
 			throw new InvalidRouteEdgeException("수정자 식별자가 필요합니다.");

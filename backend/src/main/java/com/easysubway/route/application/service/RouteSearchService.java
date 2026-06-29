@@ -366,7 +366,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	private List<RouteWarning> routeWarnings(List<String> stationIds, boolean stairOnlyAccess) {
-		// 출구 데이터가 없거나 신뢰도가 낮으면 사용자가 이동 전 확인할 수 있게 경고를 남긴다.
+		// 출구 데이터가 없거나 확인 정도가 낮으면 사용자가 이동 전 확인할 수 있게 경고를 남긴다.
 		List<RouteWarning> warnings = new ArrayList<>();
 		if (stationIds.stream().anyMatch(this::hasLowAccessibilityData)) {
 			warnings.add(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE));
@@ -419,7 +419,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		if (highConfidenceExits.isEmpty()) {
 			return false;
 		}
-		// 차단 판단은 신뢰도 높은 실제 무단차 시설만 사용하고, 낮은 신뢰도 데이터는 경고로만 노출한다.
+		// 차단 판단은 확인된 실제 무단차 시설만 사용하고, 확인이 더 필요한 데이터는 경고로만 노출한다.
 		List<AccessibilityFacility> highConfidenceStepFreeFacilities = stationFacilities(stationId).stream()
 			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
 			.filter(this::isStepFreeFacility)

@@ -503,7 +503,7 @@ class FacilityReportControllerTest {
 			.andExpect(status().isConflict())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("이미 검수 처리된 신고입니다."));
+			.andExpect(jsonPath("$.message").value("이미 확인 처리된 신고입니다."));
 	}
 
 	@Test
@@ -665,7 +665,7 @@ class FacilityReportControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("검수 완료된 신고만 확인할 수 있습니다."));
+			.andExpect(jsonPath("$.message").value("처리가 끝난 신고만 확인할 수 있습니다."));
 	}
 
 	@Test
@@ -695,7 +695,7 @@ class FacilityReportControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.data").doesNotExist())
-			.andExpect(jsonPath("$.message").value("검수 결과를 선택해야 합니다."));
+			.andExpect(jsonPath("$.message").value("확인 결과를 선택해야 합니다."));
 	}
 
 	@Test

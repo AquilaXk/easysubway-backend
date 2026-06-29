@@ -61,7 +61,7 @@ public class SecurityConfig {
 		AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler,
 		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
 	) throws Exception {
-		// 관리자 검수 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
+		// 관리자 확인 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
 		HttpSecurity configured = http
 			.securityMatcher("/admin/**")
 			.authorizeHttpRequests(authorize -> authorize

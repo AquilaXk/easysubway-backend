@@ -742,7 +742,7 @@ class FacilityReportServiceTest {
 
 		assertThatThrownBy(() -> service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT)))
 			.isInstanceOf(FacilityReportReviewConflictException.class)
-			.hasMessage("이미 검수 처리된 신고입니다.");
+			.hasMessage("이미 확인 처리된 신고입니다.");
 
 		assertThat(auditPort.savedAudits)
 			.extracting(FacilityReportReviewAudit::previousStatus)
@@ -847,7 +847,7 @@ class FacilityReportServiceTest {
 		service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT));
 		assertThatThrownBy(() -> service.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.REJECT)))
 			.isInstanceOf(FacilityReportReviewConflictException.class)
-			.hasMessage("이미 검수 처리된 신고입니다.");
+			.hasMessage("이미 확인 처리된 신고입니다.");
 
 		assertThat(reportStatusAlertUseCase.commands)
 			.extracting(ReportStatusChangedAlertCommand::status)
@@ -1169,10 +1169,10 @@ class FacilityReportServiceTest {
 
 		assertThatThrownBy(() -> service.confirmReportResult(submitted.id(), "anonymous-user-submitted-confirm"))
 			.isInstanceOf(InvalidFacilityReportException.class)
-			.hasMessage("검수 완료된 신고만 확인할 수 있습니다.");
+			.hasMessage("처리가 끝난 신고만 확인할 수 있습니다.");
 		assertThatThrownBy(() -> service.confirmReportResult(duplicated.id(), "anonymous-user-duplicate-confirm"))
 			.isInstanceOf(InvalidFacilityReportException.class)
-			.hasMessage("검수 완료된 신고만 확인할 수 있습니다.");
+			.hasMessage("처리가 끝난 신고만 확인할 수 있습니다.");
 	}
 
 	@Test
@@ -1229,7 +1229,7 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
-	@DisplayName("신고 검수는 결정값과 검수자 식별자를 요구한다")
+	@DisplayName("신고 확인은 결정값과 확인 담당자 식별자를 요구한다")
 	void reviewReportRequiresDecisionAndReviewer() {
 		var report = service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-1",
@@ -1250,14 +1250,14 @@ class FacilityReportServiceTest {
 			"admin-1"
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
-			.hasMessage("검수 결과를 선택해야 합니다.");
+			.hasMessage("확인 결과를 선택해야 합니다.");
 		assertThatThrownBy(() -> service.reviewReport(new ReviewFacilityReportCommand(
 			report.id(),
 			FacilityReportReviewDecision.ACCEPT,
 			""
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
-			.hasMessage("검수자 식별자가 필요합니다.");
+			.hasMessage("확인 담당자 식별자가 필요합니다.");
 	}
 
 	@Test

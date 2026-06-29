@@ -88,7 +88,7 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("계단 없음")
 			.contains("엘리베이터 필요")
 			.contains("75초")
-			.contains("신뢰도 92")
+			.contains("확인 정도 92")
 			.contains("name=\"distanceMeters\"")
 			.contains("name=\"estimatedSeconds\"")
 			.contains("name=\"hasStairs\"")
@@ -405,7 +405,7 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("계단 포함")
 			.contains("엘리베이터 불필요")
 			.contains("에스컬레이터 필요")
-				.contains("신뢰도 76")
+				.contains("확인 정도 76")
 				.contains("비활성");
 	}
 

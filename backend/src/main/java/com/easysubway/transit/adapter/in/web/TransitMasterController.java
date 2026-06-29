@@ -763,7 +763,7 @@ class TransitMasterController {
 				throw new InvalidRouteEdgeException("간선 경사와 폭 레벨이 필요합니다.");
 			}
 			if (reliabilityScore == null) {
-				throw new InvalidRouteEdgeException("간선 신뢰도가 필요합니다.");
+				throw new InvalidRouteEdgeException("내부 이동로 확인 정도가 필요합니다.");
 			}
 			if (hasStairs == null || requiresElevator == null || requiresEscalator == null || active == null) {
 				throw new InvalidRouteEdgeException("간선 접근성 제약 상태가 필요합니다.");

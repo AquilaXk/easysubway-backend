@@ -176,7 +176,7 @@ public class InMemoryFacilityReportRepository implements
 	}
 
 	private FacilityReport anonymized(FacilityReport report) {
-		// 삭제 요청 이후에는 운영 검수 이력만 남기고 사용자가 남긴 본문, 사진, 위치는 제거한다.
+		// 삭제 요청 이후에는 운영 확인 이력만 남기고 사용자가 남긴 본문, 사진, 위치는 제거한다.
 		return new FacilityReport(
 			report.id(),
 			report.publicReceiptCode(),

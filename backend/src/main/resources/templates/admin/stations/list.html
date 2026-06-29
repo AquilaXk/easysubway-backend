@@ -33,7 +33,7 @@
 			<th scope="col">품질</th>
 			<th scope="col">출구 / 시설 / 자료</th>
 			<th scope="col">노드 / 간선</th>
-			<th scope="col">마지막 검증</th>
+			<th scope="col">마지막 확인</th>
 			<th scope="col">작업</th>
 		</tr>
 		</thead>
@@ -48,7 +48,7 @@
 			</td>
 			<td th:text="${station.lineNames}">4호선</td>
 			<td th:text="${station.region}">수도권</td>
-			<td><span class="admin-status" th:text="${station.qualityLabel}">Level 1</span></td>
+			<td><span class="admin-status" th:text="${station.qualityLabel}">정보 확인 중</span></td>
 			<td th:text="|${station.exitCount} / ${station.facilityCount} / ${station.layoutSourceCount}|">0 / 0 / 0</td>
 			<td th:text="|${station.routeNodeCount} / ${station.routeEdgeCount}|">0 / 0</td>
 			<td th:text="${station.lastVerifiedAt}">2026-06-20</td>

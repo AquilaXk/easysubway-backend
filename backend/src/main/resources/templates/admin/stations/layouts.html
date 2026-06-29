@@ -158,7 +158,7 @@
 				<th scope="col">유형</th>
 				<th scope="col">라이선스</th>
 				<th scope="col">이용 조건</th>
-				<th scope="col">수집/검수일</th>
+				<th scope="col">수집/확인일</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -196,7 +196,7 @@
 						<label class="meta" th:for="|captured-at-${source.id}|">수집일</label>
 						<input type="date" name="capturedAt" th:id="|captured-at-${source.id}|"
 						       th:value="${source.capturedAt}" required>
-						<label class="meta" th:for="|reviewed-at-${source.id}|">검수일</label>
+						<label class="meta" th:for="|reviewed-at-${source.id}|">확인일</label>
 						<input type="date" name="reviewedAt" th:id="|reviewed-at-${source.id}|"
 						       th:value="${source.rawReviewedAt}">
 						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
@@ -227,10 +227,10 @@
 			<tr>
 				<th scope="col">구조도</th>
 				<th scope="col">상태</th>
-				<th scope="col">신뢰도</th>
+					<th scope="col">확인 상태</th>
 				<th scope="col">기준층</th>
 				<th scope="col">기준 자료</th>
-				<th scope="col">마지막 검증일</th>
+				<th scope="col">마지막 확인일</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -244,7 +244,7 @@
 					      method="post">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="expectedVersion" th:value="${layout.version}">
-						<label class="meta" th:for="|status-${layout.id}|">검수 상태</label>
+							<label class="meta" th:for="|status-${layout.id}|">확인 상태</label>
 						<select name="status" th:id="|status-${layout.id}|">
 							<option th:each="option : ${layoutStatusOptions}"
 							        th:value="${option.value}"
@@ -321,7 +321,7 @@
 				<th scope="col">유형</th>
 				<th scope="col">거리/시간</th>
 				<th scope="col">접근성 제약</th>
-				<th scope="col">신뢰도</th>
+					<th scope="col">확인 정도</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -348,7 +348,7 @@
 						<label class="meta" th:for="|width-level-${edge.id}|">폭</label>
 						<input type="number" name="widthLevel" th:id="|width-level-${edge.id}|"
 						       th:value="${edge.widthLevel}" min="1" max="5" required>
-						<label class="meta" th:for="|reliability-score-${edge.id}|">신뢰도</label>
+							<label class="meta" th:for="|reliability-score-${edge.id}|">확인 정도</label>
 						<input type="number" name="reliabilityScore" th:id="|reliability-score-${edge.id}|"
 						       th:value="${edge.reliabilityScore}" min="0" max="100" required>
 						<label class="meta" th:for="|has-stairs-${edge.id}|">계단</label>
@@ -382,7 +382,7 @@
 					<span class="meta" th:text="${edge.escalatorLabel}">에스컬레이터 불필요</span>
 				</td>
 				<td>
-					<span th:text="${edge.reliabilityLabel}">신뢰도 92</span>
+						<span th:text="${edge.reliabilityLabel}">확인 정도 92</span>
 					<span class="meta" th:text="${edge.activeLabel}">활성</span>
 				</td>
 			</tr>

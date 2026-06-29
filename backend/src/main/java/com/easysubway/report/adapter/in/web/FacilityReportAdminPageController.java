@@ -438,7 +438,7 @@ class FacilityReportAdminPageController {
 				return new ReportProcessingTimeView(
 					"신고 처리 시간",
 					"처리 완료 신고 없음",
-					"검수 완료 후 평균 처리 시간을 표시합니다.",
+					"처리 완료 후 평균 시간을 표시합니다.",
 					"empty"
 				);
 			}

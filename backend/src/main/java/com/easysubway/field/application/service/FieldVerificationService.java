@@ -28,7 +28,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 		LocalDate.of(2026, 6, 19),
 		"field-team",
 		FieldVerificationStatus.IN_PROGRESS,
-		"첫 현장 검증 지역 기준선",
+		"첫 현장 확인 지역 기준선",
 		List.of(
 			item("field-verification-sangnoksu-exit", FieldVerificationItemType.EXIT, "주요 출구 연결", FieldVerificationStatus.VERIFIED),
 			item("field-verification-sangnoksu-elevator", FieldVerificationItemType.ELEVATOR, "엘리베이터 위치와 운행 상태", FieldVerificationStatus.VERIFIED),
@@ -44,7 +44,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 		LocalDate.of(2026, 6, 19),
 		"field-team",
 		FieldVerificationStatus.PLANNED,
-		"주요 환승역 현장 검증 확대 기준선",
+		"주요 환승역 현장 확인 확대 기준선",
 		List.of(
 			item("field-verification-sadang-exit", FieldVerificationItemType.EXIT, "2호선/4호선 출구 연결", FieldVerificationStatus.PLANNED),
 			item("field-verification-sadang-elevator", FieldVerificationItemType.ELEVATOR, "환승 구간 엘리베이터 위치와 운행 상태", FieldVerificationStatus.PLANNED),
@@ -85,7 +85,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 			.findFirst()
 			.orElse(null);
 		if (previousItem == null) {
-			throw new ResourceNotFoundException("현장 검증 항목을 찾을 수 없습니다.");
+			throw new ResourceNotFoundException("현장 확인 항목을 찾을 수 없습니다.");
 		}
 		List<FieldVerificationItem> items = session.items().stream()
 			.map(item -> updateItem(command, item))
@@ -113,7 +113,7 @@ public class FieldVerificationService implements FieldVerificationUseCase {
 
 	private FieldVerificationSession findSession(String stationId) {
 		return sessionRepository.findByStationId(stationId)
-			.orElseThrow(() -> new ResourceNotFoundException("현장 검증 기준선을 찾을 수 없습니다."));
+			.orElseThrow(() -> new ResourceNotFoundException("현장 확인 기준선을 찾을 수 없습니다."));
 	}
 
 	private void seedBaselineSession(FieldVerificationSession session) {

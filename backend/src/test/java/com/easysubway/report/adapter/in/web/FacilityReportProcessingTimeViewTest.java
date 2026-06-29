@@ -29,7 +29,7 @@ class FacilityReportProcessingTimeViewTest {
 
 		assertThat(view.title()).isEqualTo("신고 처리 시간");
 		assertThat(view.label()).isEqualTo("처리 완료 신고 없음");
-		assertThat(view.description()).isEqualTo("검수 완료 후 평균 처리 시간을 표시합니다.");
+		assertThat(view.description()).isEqualTo("처리 완료 후 평균 시간을 표시합니다.");
 		assertThat(view.metricClass()).isEqualTo("empty");
 	}
 }

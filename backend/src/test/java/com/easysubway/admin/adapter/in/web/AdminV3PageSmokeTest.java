@@ -38,8 +38,8 @@ class AdminV3PageSmokeTest {
 		assertPage("/admin/stations/page", "역 목록");
 		assertPage("/admin/stations/station-sangnoksu/page", "상록수");
 		assertPage("/admin/facilities/editor/page", "시설 등록·수정");
-		assertPage("/admin/field-verifications/page", "현장 검증 목록");
-		assertPage("/admin/field-verifications/station-sangnoksu/page", "현장 검증 상세");
+		assertPage("/admin/field-verifications/page", "현장 확인 목록");
+		assertPage("/admin/field-verifications/station-sangnoksu/page", "현장 확인 상세");
 		assertPage("/admin/system/page", "시스템 상태");
 	}
 
@@ -73,7 +73,7 @@ class AdminV3PageSmokeTest {
 
 		assertThat(html)
 			.contains("통합 대시보드")
-			.doesNotContain("제보 검수 큐")
+			.doesNotContain("제보 확인 대기열")
 			.doesNotContain("역 구조·동선 편집")
 			.doesNotContain("데이터 수집");
 	}
@@ -97,7 +97,7 @@ class AdminV3PageSmokeTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("제보 검수 큐")
+			.contains("제보 확인 대기열")
 			.contains("역 구조·동선 편집")
 			.contains("href=\"/admin/facilities/editor/page\"")
 			.contains("데이터 수집");

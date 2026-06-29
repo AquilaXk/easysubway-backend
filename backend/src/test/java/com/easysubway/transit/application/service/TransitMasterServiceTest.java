@@ -342,7 +342,7 @@ class TransitMasterServiceTest {
 			"admin-user"
 		)))
 			.isInstanceOf(InvalidStationLayoutSourceException.class)
-			.hasMessage("기준 자료 검수일은 수집일보다 빠를 수 없습니다.");
+			.hasMessage("기준 자료 확인일은 수집일보다 빠를 수 없습니다.");
 
 		assertThatThrownBy(() -> service.updateStationLayoutSource(new UpdateStationLayoutSourceCommand(
 			"station-sangnoksu",
@@ -741,7 +741,7 @@ class TransitMasterServiceTest {
 			""
 		)))
 			.isInstanceOf(InvalidSimplifiedStationLayoutException.class)
-			.hasMessage("검수자 식별자가 필요합니다.");
+			.hasMessage("확인 담당자 식별자가 필요합니다.");
 	}
 
 	@Test
@@ -934,7 +934,7 @@ class TransitMasterServiceTest {
 			"admin-user"
 		)))
 			.isInstanceOf(InvalidRouteEdgeException.class)
-			.hasMessage("간선 신뢰도는 0부터 100까지 입력해야 합니다.");
+			.hasMessage("내부 이동로 확인 정도는 0부터 100까지 입력해야 합니다.");
 
 		assertThatThrownBy(() -> service.updateRouteEdge(new UpdateRouteEdgeCommand(
 			"station-sangnoksu",

@@ -76,7 +76,7 @@ public record RouteSearchDashboardView(
 			return "차단된 경로 검색 없이 처리되고 있습니다.";
 		}
 		if (blockedCount * 100 >= totalCount * 20) {
-			return "경로 차단율이 높아 데이터 신뢰도와 접근성 경로 조건을 확인하세요.";
+			return "경로 차단율이 높아 이동 정보와 접근성 경로 조건을 확인하세요.";
 		}
 		return "일부 경로가 차단되어 차단 사유를 확인하세요.";
 	}

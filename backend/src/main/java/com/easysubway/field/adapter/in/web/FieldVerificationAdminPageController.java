@@ -96,8 +96,8 @@ class FieldVerificationAdminPageController {
 		return switch (status) {
 			case PLANNED -> "예정";
 			case IN_PROGRESS -> "진행 중";
-			case VERIFIED -> "검증 완료";
-			case NEEDS_RECHECK -> "재확인 필요";
+			case VERIFIED -> "확인 완료";
+			case NEEDS_RECHECK -> "다시 확인 필요";
 		};
 	}
 

@@ -94,7 +94,7 @@ class FieldVerificationAdminController {
 			"FIELD_VERIFICATION_SESSION",
 			session.id(),
 			"EXPORT_FIELD_VERIFICATION_CSV",
-			"업무 맥락: 현장 검증 CSV export"
+			"업무 맥락: 현장 확인 CSV export"
 		);
 		HttpHeaders headers = new HttpHeaders();
 		headers.add(HttpHeaders.CONTENT_TYPE, TEXT_CSV_UTF8);
@@ -247,11 +247,11 @@ class FieldVerificationAdminController {
 
 		UpdateFieldVerificationItemStatusCommand toCommand(String stationId, String itemId, String changedBy) {
 			if (status == null) {
-				throw new InvalidRequestException("현장 검증 상태를 선택해야 합니다.");
+				throw new InvalidRequestException("현장 확인 상태를 선택해야 합니다.");
 			}
 			if (status != FieldVerificationStatus.VERIFIED
 				&& status != FieldVerificationStatus.NEEDS_RECHECK) {
-				throw new InvalidRequestException("현장 검증 상태는 VERIFIED 또는 NEEDS_RECHECK만 허용됩니다.");
+				throw new InvalidRequestException("현장 확인 상태는 확인 완료 또는 다시 확인 필요만 선택할 수 있습니다.");
 			}
 			return new UpdateFieldVerificationItemStatusCommand(stationId, itemId, status, note, changedBy);
 		}

@@ -394,7 +394,7 @@ class TransitStationLayoutAdminPageController {
 				source.attributionRequired() ? "출처 표시 필요" : "출처 표시 불필요",
 				source.capturedAt().toString(),
 				source.reviewedAt() == null ? "" : source.reviewedAt().toString(),
-				source.reviewedAt() == null ? "검수 전" : source.reviewedAt().toString()
+				source.reviewedAt() == null ? "확인 전" : source.reviewedAt().toString()
 			);
 		}
 	}
@@ -505,7 +505,7 @@ class TransitStationLayoutAdminPageController {
 				edge.reliabilityScore(),
 				edge.active(),
 				edge.active() ? "활성" : "비활성",
-				"신뢰도 " + edge.reliabilityScore()
+				"확인 정도 " + edge.reliabilityScore()
 			);
 		}
 	}

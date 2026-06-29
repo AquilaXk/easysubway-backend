@@ -123,7 +123,7 @@
 	</header>
 	<h1 class="sr-only">신고 상세</h1>
 	<div class="alert warning" th:if="${masterDataError}">
-		<strong>검수 요청 차단</strong>
+		<strong>확인 요청 차단</strong>
 		<p th:text="${masterDataError}">운영 마스터 데이터가 읽기 전용입니다.</p>
 	</div>
 	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
@@ -169,11 +169,11 @@
 	</section>
 
 	<section>
-		<h2>검수 기록</h2>
+		<h2>확인 기록</h2>
 		<dl>
-			<dt>검수자</dt>
+			<dt>확인한 사람</dt>
 			<dd th:text="${report.reviewedBy != null ? report.reviewedBy : '없음'}">없음</dd>
-			<dt>검수일</dt>
+			<dt>확인일</dt>
 			<dd th:text="${report.reviewedAt != null ? report.reviewedAt : '없음'}">없음</dd>
 			<dt>기준 신고</dt>
 			<dd th:text="${report.duplicateOfReportId != null ? report.duplicateOfReportId : '없음'}">없음</dd>
@@ -186,7 +186,7 @@
 		<table th:if="${!reviewAudits.isEmpty()}">
 			<thead>
 			<tr>
-				<th>검수자</th>
+				<th>확인한 사람</th>
 				<th>결정</th>
 				<th>이전 상태</th>
 				<th>이후 상태</th>

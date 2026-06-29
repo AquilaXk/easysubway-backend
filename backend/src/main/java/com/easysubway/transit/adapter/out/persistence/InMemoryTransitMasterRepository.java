@@ -295,7 +295,7 @@ public class InMemoryTransitMasterRepository implements
 	public void saveFacilityStatus(String facilityId, AccessibilityFacilityStatus status, LocalDate updatedAt) {
 		AccessibilityFacility facility = accessibilityFacilities.get(facilityId);
 		if (facility == null) {
-			// 신고 생성 단계에서 시설 존재 여부를 검증하므로 저장 어댑터는 알 수 없는 식별자를 무시한다.
+			// 신고 생성 단계에서 시설 존재 여부를 확인하므로 저장 어댑터는 알 수 없는 식별자를 무시한다.
 			return;
 		}
 
