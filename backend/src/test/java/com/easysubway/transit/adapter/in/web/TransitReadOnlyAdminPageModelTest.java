@@ -1,7 +1,9 @@
 package com.easysubway.transit.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.Mockito.mock;
 
+import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
 import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
 import com.easysubway.transit.application.service.TransitMasterService;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -75,7 +77,11 @@ class TransitReadOnlyAdminPageModelTest {
 	@Test
 	@DisplayName("시설 등록·수정 화면은 저장 버튼 비활성화 기준을 전달한다")
 	void facilityEditorPageExposesReadOnlyMasterDataFlag() {
-		var controller = new TransitStationAdminPageController(transitMasterService, transitMasterService);
+		var controller = new TransitStationAdminPageController(
+			transitMasterService,
+			transitMasterService,
+			mock(DatapackReleaseBlockerSummaryUseCase.class)
+		);
 		var model = new ExtendedModelMap();
 
 		String viewName = controller.facilityEditorPage("station-sangnoksu", "facility-sangnoksu-elevator-1", model);
@@ -87,7 +93,11 @@ class TransitReadOnlyAdminPageModelTest {
 	@Test
 	@DisplayName("시설 등록·수정 직접 저장 요청은 읽기 전용 오류를 flash로 돌려보낸다")
 	void facilityEditorPostRedirectsWithReadOnlyFlash() {
-		var controller = new TransitStationAdminPageController(transitMasterService, transitMasterService);
+		var controller = new TransitStationAdminPageController(
+			transitMasterService,
+			transitMasterService,
+			mock(DatapackReleaseBlockerSummaryUseCase.class)
+		);
 		var redirectAttributes = new RedirectAttributesModelMap();
 
 		String viewName = controller.saveFacilityFromPage(

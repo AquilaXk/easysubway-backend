@@ -149,6 +149,28 @@
 		</div>
 	</div>
 
+	<section th:if="${datapackReleaseSummary != null}">
+		<h2>데이터팩 Release readiness</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">항목</th>
+				<th scope="col">상태</th>
+				<th scope="col">blocker</th>
+				<th scope="col">근거</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${datapackReleaseSummary.readinessRows}">
+				<td th:text="${row.label}">Source coverage</td>
+				<td th:text="${row.status}">FAIL</td>
+				<td th:text="${row.blockerCount}">0</td>
+				<td th:text="${row.note}">확인 필요</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
 	<section>
 		<h2>역 품질 등급</h2>
 		<table>

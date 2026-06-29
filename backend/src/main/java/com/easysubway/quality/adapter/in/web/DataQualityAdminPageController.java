@@ -1,6 +1,9 @@
 package com.easysubway.quality.adapter.in.web;
 
+import com.easysubway.admin.authorization.AdminAuthorization;
+import com.easysubway.admin.authorization.AdminPermission;
 import com.easysubway.common.web.WebMessageResolver;
+import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
 import com.easysubway.quality.application.port.in.DataQualityUseCase;
 import com.easysubway.quality.domain.AccessibilityImprovementPriority;
 import com.easysubway.quality.domain.DataQualitySummary;
@@ -22,6 +25,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.stream.Collectors;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -33,21 +37,24 @@ class DataQualityAdminPageController {
 	private final TransitMasterQueryUseCase transitMasterQueryUseCase;
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final WebMessageResolver messages;
+	private final DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase;
 
 	DataQualityAdminPageController(
 		DataQualityUseCase dataQualityUseCase,
 		TransitMasterQueryUseCase transitMasterQueryUseCase,
 		FacilityReportUseCase facilityReportUseCase,
-		WebMessageResolver messages
+		WebMessageResolver messages,
+		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase
 	) {
 		this.dataQualityUseCase = dataQualityUseCase;
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.messages = messages;
+		this.datapackReleaseBlockerSummaryUseCase = datapackReleaseBlockerSummaryUseCase;
 	}
 
 	@GetMapping("/admin/data-quality/page")
-	String dataQualityDashboardPage(Model model) {
+	String dataQualityDashboardPage(Model model, Authentication authentication) {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
 		Map<FacilityReportStatus, Long> reportStatusCounts = facilityReportUseCase.countReportsByStatus();
@@ -80,6 +87,9 @@ class DataQualityAdminPageController {
 				messages
 			)
 		);
+		if (AdminAuthorization.hasPermission(authentication, AdminPermission.DATAPACK_READ)) {
+			model.addAttribute("datapackReleaseSummary", datapackReleaseBlockerSummaryUseCase.summarize());
+		}
 		return "admin/quality/dashboard";
 	}
 

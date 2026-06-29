@@ -1,8 +1,11 @@
 package com.easysubway.transit.adapter.in.web;
 
+import com.easysubway.admin.authorization.AdminAuthorization;
+import com.easysubway.admin.authorization.AdminPermission;
 import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
+import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
 import com.easysubway.transit.application.port.in.CreateAccessibilityFacilityCommand;
 import com.easysubway.transit.application.port.in.StationMasterDataCounts;
 import com.easysubway.transit.application.port.in.StationSearchCommand;
@@ -31,9 +34,10 @@ import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.NotNull;
+import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
-import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.validation.BindingResult;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
@@ -47,13 +51,16 @@ class TransitStationAdminPageController {
 
 	private final TransitMasterQueryUseCase transitMasterQueryUseCase;
 	private final TransitMasterAdminUseCase transitMasterAdminUseCase;
+	private final DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase;
 
 	TransitStationAdminPageController(
 		TransitMasterQueryUseCase transitMasterQueryUseCase,
-		TransitMasterAdminUseCase transitMasterAdminUseCase
+		TransitMasterAdminUseCase transitMasterAdminUseCase,
+		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase
 	) {
 		this.transitMasterQueryUseCase = transitMasterQueryUseCase;
 		this.transitMasterAdminUseCase = transitMasterAdminUseCase;
+		this.datapackReleaseBlockerSummaryUseCase = datapackReleaseBlockerSummaryUseCase;
 	}
 
 	@GetMapping("/admin/stations/page")
@@ -84,7 +91,7 @@ class TransitStationAdminPageController {
 	}
 
 	@GetMapping("/admin/stations/{stationId}/page")
-	String stationDetailPage(@PathVariable String stationId, Model model) {
+	String stationDetailPage(@PathVariable String stationId, Model model, Authentication authentication) {
 		StationWithLines station = transitMasterQueryUseCase.getStation(stationId);
 		model.addAttribute("station", StationDetail.from(station));
 		model.addAttribute("exits", transitMasterQueryUseCase.listStationExits(stationId).stream()
@@ -97,6 +104,9 @@ class TransitStationAdminPageController {
 		model.addAttribute("layoutCount", transitMasterQueryUseCase.listSimplifiedStationLayouts(stationId).size());
 		model.addAttribute("routeNodeCount", transitMasterQueryUseCase.listRouteNodes(stationId).size());
 		model.addAttribute("routeEdgeCount", transitMasterQueryUseCase.listRouteEdges(stationId).size());
+		if (AdminAuthorization.hasPermission(authentication, AdminPermission.DATAPACK_READ)) {
+			model.addAttribute("stationReleaseSummary", datapackReleaseBlockerSummaryUseCase.summarizeStation(stationId));
+		}
 		return "admin/stations/detail";
 	}
 

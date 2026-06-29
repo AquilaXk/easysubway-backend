@@ -30,6 +30,36 @@
 		<div class="metric"><span>서비스 상태</span><strong th:text="${dashboard.healthStatus}">UP</strong><em th:text="${dashboard.serviceName}">easysubway</em></div>
 	</div>
 
+	<section class="admin-panel" th:if="${datapackReleaseSummary != null}">
+		<h2>데이터팩 출시 준비</h2>
+		<p class="summary">
+			<span th:text="${datapackReleaseSummary.candidateId}">candidate-id</span>
+			<span> · </span>
+			<strong th:text="${datapackReleaseSummary.status}">FAIL</strong>
+			<span> · </span>
+			<span th:text="|전체 blocker ${datapackReleaseSummary.totalBlockers}건|">전체 blocker 0건</span>
+			<span> · </span>
+			<span th:text="|alias ${datapackReleaseSummary.aliasBlockers}|">alias 0</span>
+			<span> · </span>
+			<span th:text="|quarantine ${datapackReleaseSummary.quarantineBlockers}|">quarantine 0</span>
+			<span> · </span>
+			<span th:text="|manual override ${datapackReleaseSummary.manualOverrideBlockers}|">manual override 0</span>
+			<span> · </span>
+			<span th:text="|route gate ${datapackReleaseSummary.routeGateBlockers}|">route gate 0</span>
+		</p>
+		<table>
+			<tbody>
+			<tr><th scope="row">candidate gate</th><td th:text="${datapackReleaseSummary.candidateGateBlockers}">0</td></tr>
+			<tr><th scope="row">alias</th><td th:text="${datapackReleaseSummary.aliasBlockers}">0</td></tr>
+			<tr><th scope="row">quarantine</th><td th:text="${datapackReleaseSummary.quarantineBlockers}">0</td></tr>
+			<tr><th scope="row">manual override</th><td th:text="${datapackReleaseSummary.manualOverrideBlockers}">0</td></tr>
+			<tr><th scope="row">facility evidence</th><td th:text="${datapackReleaseSummary.facilityBlockers}">0</td></tr>
+			<tr><th scope="row">route gate</th><td th:text="${datapackReleaseSummary.routeGateBlockers}">0</td></tr>
+			<tr><th scope="row">manifest signature</th><td th:text="${datapackReleaseSummary.manifestBlockers}">0</td></tr>
+			</tbody>
+		</table>
+	</section>
+
 	<div class="admin-grid-2">
 		<section class="admin-panel" th:if="${adminProgramIds.contains('a-reports')}">
 			<h2>먼저 확인할 제보</h2>

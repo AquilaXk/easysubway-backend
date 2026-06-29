@@ -1,7 +1,10 @@
 package com.easysubway.admin.adapter.in.web;
 
+import com.easysubway.admin.authorization.AdminAuthorization;
+import com.easysubway.admin.authorization.AdminPermission;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
 import com.easysubway.health.application.port.in.CheckHealthUseCase;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
@@ -18,6 +21,7 @@ import com.easysubway.usage.domain.UserActivityDashboardSummary;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Map;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -32,6 +36,7 @@ class AdminOverviewPageController {
 	private final UserActivityDashboardUseCase userActivityDashboardUseCase;
 	private final DataCollectionUseCase dataCollectionUseCase;
 	private final CheckHealthUseCase checkHealthUseCase;
+	private final DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase;
 
 	AdminOverviewPageController(
 		DataQualityUseCase dataQualityUseCase,
@@ -40,7 +45,8 @@ class AdminOverviewPageController {
 		PushNotificationDashboardUseCase pushNotificationDashboardUseCase,
 		UserActivityDashboardUseCase userActivityDashboardUseCase,
 		DataCollectionUseCase dataCollectionUseCase,
-		CheckHealthUseCase checkHealthUseCase
+		CheckHealthUseCase checkHealthUseCase,
+		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase
 	) {
 		this.dataQualityUseCase = dataQualityUseCase;
 		this.facilityReportUseCase = facilityReportUseCase;
@@ -49,10 +55,11 @@ class AdminOverviewPageController {
 		this.userActivityDashboardUseCase = userActivityDashboardUseCase;
 		this.dataCollectionUseCase = dataCollectionUseCase;
 		this.checkHealthUseCase = checkHealthUseCase;
+		this.datapackReleaseBlockerSummaryUseCase = datapackReleaseBlockerSummaryUseCase;
 	}
 
 	@GetMapping("/admin/dashboard/page")
-	String dashboardPage(Model model) {
+	String dashboardPage(Model model, Authentication authentication) {
 		DataQualitySummary quality = dataQualityUseCase.summarizeDataQuality();
 		Map<FacilityReportStatus, Long> reportCounts = facilityReportUseCase.countReportsByStatus();
 		RouteSearchDashboardSummary routes = routeSearchDashboardUseCase.summarizeRouteSearches();
@@ -73,6 +80,9 @@ class AdminOverviewPageController {
 			health.status(),
 			health.service()
 		));
+		if (AdminAuthorization.hasPermission(authentication, AdminPermission.DATAPACK_READ)) {
+			model.addAttribute("datapackReleaseSummary", datapackReleaseBlockerSummaryUseCase.summarize());
+		}
 		return "admin/dashboard";
 	}
 
