@@ -100,7 +100,8 @@ class TransitFacilityAdminPageControllerTest {
 
 		assertThat(html)
 			.contains("1번 출구 엘리베이터")
-			.contains("고장");
+			.contains("고장")
+			.contains("관리자 확인");
 	}
 
 	@Test

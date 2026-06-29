@@ -71,7 +71,7 @@ record FacilityStatusRow(
 
 	private static String sourceLabel(com.easysubway.transit.domain.DataSourceType sourceType) {
 		return switch (sourceType) {
-			case ADMIN_VERIFIED -> "운영기관 확인";
+			case ADMIN_VERIFIED -> "관리자 확인";
 			case OFFICIAL_API, OFFICIAL_FILE, OPERATOR_PAGE -> "공식 안내";
 			case USER_REPORT -> "사용자 제보";
 			case PARTNER_FEED -> "제휴기관 안내";
