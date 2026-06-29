@@ -1,0 +1,66 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Candidate Packs</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-candidates')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>Candidate Packs</h1>
+			<p>candidate pack artifact hash와 gate 상태를 읽기 전용으로 확인합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">candidate</th>
+				<th scope="col">scope</th>
+				<th scope="col">version</th>
+				<th scope="col">approval</th>
+				<th scope="col">gates</th>
+				<th scope="col">hashes</th>
+				<th scope="col">created</th>
+				<th scope="col">detail</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${candidates.isEmpty()}">
+				<td colspan="8">candidate pack row가 없습니다.</td>
+			</tr>
+			<tr th:each="candidate : ${candidates}">
+				<td th:text="${candidate.id}">candidate-id</td>
+				<td th:text="${candidate.scopeId}">scope</td>
+				<td th:text="${candidate.version}">version</td>
+				<td th:text="${candidate.approvalStatus}">READY_FOR_APPROVAL</td>
+				<td>
+					<span th:text="${candidate.coverageStatus}">PASS</span>
+					<span th:text="${candidate.validatorStatus}">PASS</span>
+					<span th:text="${candidate.routeRegressionStatus}">PASS</span>
+					<span th:text="${candidate.androidEvidenceStatus}">PASS</span>
+				</td>
+				<td>
+					<span th:text="${candidate.sqliteSha256}">sqlite</span>
+					<span th:text="${candidate.gzipSha256}">gzip</span>
+					<span th:text="${candidate.manifestSha256}">manifest</span>
+				</td>
+				<td th:text="${candidate.createdAt}">2026-06-29T03:00</td>
+				<td><a th:href="@{/admin/datapack/candidates/{candidateId}/page(candidateId=${candidate.id})}">상세</a></td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>

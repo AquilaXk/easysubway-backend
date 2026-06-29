@@ -25,6 +25,7 @@ public enum AdminProgram {
 	DATAPACK_FACILITY_EVIDENCE("a-datapack-facility-evidence", "데이터팩", "Facility Evidence", "/admin/datapack/facility-evidence/page", AdminPermission.DATAPACK_READ),
 	DATAPACK_ROUTE_GATES("a-datapack-route-gates", "데이터팩", "Route Gates", "/admin/datapack/route-gates/page", AdminPermission.DATAPACK_READ),
 	DATAPACK_MANUAL_OVERRIDES("a-datapack-manual-overrides", "데이터팩", "Manual Overrides", "/admin/datapack/manual-overrides/page", AdminPermission.DATAPACK_READ),
+	DATAPACK_CANDIDATES("a-datapack-candidates", "데이터팩", "Candidate Packs", "/admin/datapack/candidates/page", AdminPermission.DATAPACK_READ),
 	PUSH("a-push", "운영·분석", "푸시 알림", "/admin/notifications/push/page", AdminPermission.DATA_OPERATE),
 	USAGE("a-usage", "운영·분석", "사용 현황", "/admin/usage/activity/page", AdminPermission.SECURITY_AUDIT),
 	SYSTEM("a-system", "운영·분석", "시스템 상태", "/admin/system/page", AdminPermission.SECURITY_AUDIT),
