@@ -169,6 +169,9 @@ public class DatapackReleaseChannelCommandService {
 			requireSha(nextManifestSha256, "nextManifestSha256");
 			requireText(requestedBy, "requestedBy");
 			requireText(approvedBy, "approvedBy");
+			if (requestedBy.equals(approvedBy)) {
+				throw new IllegalArgumentException("approvedBy must be different from requestedBy");
+			}
 			requireText(reason, "reason");
 			requireText(idempotencyKey, "idempotencyKey");
 			requireText(workflowRunUrl, "workflowRunUrl");

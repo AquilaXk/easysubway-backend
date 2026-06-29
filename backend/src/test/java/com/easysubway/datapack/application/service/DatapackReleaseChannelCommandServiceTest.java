@@ -63,6 +63,11 @@ class DatapackReleaseChannelCommandServiceTest {
 		assertThat(channelValue("previous_manifest_sha256")).isEqualTo(SHA_3);
 		assertThat(channelValue("last_operation_type")).isEqualTo("PROMOTE");
 		assertThat(channelValue("last_operation_status")).isEqualTo("PASS");
+		assertThat(eventValue("idem-promote-1", "requested_by")).isEqualTo("data-operator");
+		assertThat(eventValue("idem-promote-1", "approved_by")).isEqualTo("release-approver");
+		assertThat(eventValue("idem-promote-1", "reason")).isEqualTo("release request");
+		assertThat(eventValue("idem-promote-1", "workflow_run_url"))
+			.isEqualTo("https://github.com/AquilaXk/easysubway/actions/runs/1131");
 		assertThat(eventCount("idem-promote-1")).isEqualTo(1);
 	}
 
@@ -182,6 +187,28 @@ class DatapackReleaseChannelCommandServiceTest {
 			.hasMessageContaining("nextManifestSha256 must be a sha256 hex string");
 	}
 
+	@Test
+	@DisplayName("요청자와 승인자가 같으면 production 승격 요청을 거절한다")
+	void commandRejectsSameRequesterAndApprover() {
+		var command = new ReleaseChannelCommand(
+			"production",
+			"candidate-stable-3",
+			"candidate-stable-4",
+			SHA_3,
+			SHA_4,
+			"release-operator",
+			"release-operator",
+			"ship stable 4",
+			"idem-same-actor",
+			"https://github.com/AquilaXk/easysubway/actions/runs/1140"
+		);
+
+		assertThatThrownBy(() -> service.promote(command))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("approvedBy must be different from requestedBy");
+		assertThat(eventCount("idem-same-actor")).isZero();
+	}
+
 	private ReleaseChannelCommand command(
 		String previousCandidateId,
 		String nextCandidateId,
@@ -261,6 +288,15 @@ class DatapackReleaseChannelCommandServiceTest {
 			SELECT COUNT(*) FROM datapack_release_channel_events
 			WHERE channel = 'production' AND idempotency_key = ?
 			""", Integer.class, idempotencyKey);
+	}
+
+	private String eventValue(String idempotencyKey, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM datapack_release_channel_events "
+				+ "WHERE channel = 'production' AND idempotency_key = ?",
+			String.class,
+			idempotencyKey
+		);
 	}
 
 	private static Stream<Arguments> missingAuditAndHashFields() {

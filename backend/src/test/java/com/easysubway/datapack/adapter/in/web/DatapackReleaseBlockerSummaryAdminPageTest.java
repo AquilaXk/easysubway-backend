@@ -75,6 +75,28 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	}
 
 	@Test
+	@DisplayName("datapack read 권한이 없으면 데이터 품질 release readiness matrix를 숨긴다")
+	void qualityDashboardHidesReleaseReadinessWithoutDatapackRead() throws Exception {
+		String html = getAdminHtmlWithoutDatapackRead("/admin/data-quality/page");
+
+		assertThat(html)
+			.doesNotContain("데이터팩 Release readiness")
+			.doesNotContain("candidate-release-blocked")
+			.doesNotContain("Manifest signature");
+	}
+
+	@Test
+	@DisplayName("datapack read 권한이 없으면 역 상세 release readiness를 숨긴다")
+	void stationDetailHidesReleaseReadinessWithoutDatapackRead() throws Exception {
+		String html = getAdminHtmlWithoutDatapackRead("/admin/stations/station-sangnoksu/page");
+
+		assertThat(html)
+			.doesNotContain("Release readiness")
+			.doesNotContain("상록수역 release blocker")
+			.doesNotContain("확인 필요 2건");
+	}
+
+	@Test
 	@DisplayName("데이터팩 근거가 없으면 release readiness는 집계 전 상태를 보여준다")
 	void releaseReadinessFallsBackWhenDatapackEvidenceIsEmpty() throws Exception {
 		clearDatapackTables();
