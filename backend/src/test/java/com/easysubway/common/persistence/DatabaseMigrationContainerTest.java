@@ -50,12 +50,13 @@ class DatabaseMigrationContainerTest {
 				"external_alias_approvals",
 				"source_quarantine_records",
 				"source_quarantine_resolutions",
+				"facility_evidence",
 				"manual_overrides",
 				"route_edge_evidence",
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -64,6 +65,8 @@ class DatabaseMigrationContainerTest {
 				"fk_external_alias_approvals_superseded",
 				"fk_source_quarantine_records_snapshot_source",
 				"fk_source_quarantine_resolutions_record",
+				"fk_facility_evidence_manual_override",
+				"fk_facility_evidence_snapshot_source",
 				"fk_manual_overrides_superseded",
 				"fk_route_edge_evidence_snapshot_source"
 			);
@@ -73,12 +76,14 @@ class DatabaseMigrationContainerTest {
 				"chk_external_alias_approvals_approved_state",
 				"chk_source_quarantine_records_resolution_state",
 				"chk_source_quarantine_resolutions_status",
+				"chk_facility_evidence_strict_route",
 				"chk_manual_overrides_approval_state",
 				"chk_manual_overrides_effective_window",
 				"chk_manual_overrides_route_safety",
 				"chk_route_edge_evidence_strict_route"
 			);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
+		assertFacilityEvidenceStrictRouteGuards(jdbcTemplate);
 		assertManualOverrideProductionGuards(jdbcTemplate);
 		assertRouteEdgeEvidenceStrictRouteGuards(jdbcTemplate);
 	}
@@ -132,6 +137,23 @@ class DatabaseMigrationContainerTest {
 			.migrate();
 
 		assertRouteEdgeEvidenceStrictRouteGuards(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration도 facility evidence의 strict route guard를 차단한다")
+	void h2MigrationRejectsUnsafeFacilityEvidence() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:datapack-facility-evidence;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		Flyway.configure()
+			.dataSource(dataSource)
+			.locations("classpath:db/migration/h2")
+			.load()
+			.migrate();
+
+		assertFacilityEvidenceStrictRouteGuards(new JdbcTemplate(dataSource));
 	}
 
 	private List<String> tableNames(JdbcTemplate jdbcTemplate) {
@@ -277,6 +299,94 @@ class DatabaseMigrationContainerTest {
 			approvalStatus,
 			strictRouteEligible,
 			supersededBy
+		);
+	}
+
+	private void assertFacilityEvidenceStrictRouteGuards(JdbcTemplate jdbcTemplate) {
+		insertSnapshot(jdbcTemplate, "facility-snapshot-a", "facility-source-a");
+		insertSnapshot(jdbcTemplate, "facility-snapshot-b", "facility-source-b");
+		insertFacilityEvidence(jdbcTemplate, "facility-evidence-ok", "facility-source-a", "facility-snapshot-a",
+			"EXISTS", "INSTALLED", "AVAILABLE", "OPERATOR_CONFIRMED", true, null);
+		insertFacilityEvidence(jdbcTemplate, "facility-static-visible", "facility-source-a", "facility-snapshot-a",
+			"EXISTS", "INSTALLED", "UNKNOWN", "STATIC_LOCATION", false, "OPERATIONAL_STATUS_UNKNOWN");
+
+		assertThatThrownBy(() -> insertFacilityEvidence(jdbcTemplate, "facility-source-mismatch", "facility-source-b", "facility-snapshot-a",
+			"EXISTS", "INSTALLED", "AVAILABLE", "OPERATOR_CONFIRMED", true, null))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertFacilityEvidence(jdbcTemplate, "facility-unknown-strict", "facility-source-a", "facility-snapshot-a",
+			"UNKNOWN_PENDING_REVIEW", "UNKNOWN", "UNKNOWN", "STATIC_LOCATION", true, "UNKNOWN_PENDING_REVIEW"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertFacilityEvidence(jdbcTemplate, "facility-static-strict", "facility-source-a", "facility-snapshot-a",
+			"EXISTS", "INSTALLED", "UNKNOWN", "STATIC_LOCATION", true, "OPERATIONAL_STATUS_UNKNOWN"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertFacilityEvidence(jdbcTemplate, "facility-orphan-override", "facility-source-a", "facility-snapshot-a",
+			"EXISTS", "INSTALLED", "AVAILABLE", "OPERATOR_CONFIRMED", true, null, "missing-override"))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertFacilityEvidence(
+		JdbcTemplate jdbcTemplate,
+		String evidenceId,
+		String sourceId,
+		String sourceSnapshotId,
+		String evidenceKind,
+		String installationStatus,
+		String operationalStatus,
+		String statusMeaning,
+		boolean strictRouteEligible,
+		String strictRouteEligibleReason
+	) {
+		insertFacilityEvidence(
+			jdbcTemplate,
+			evidenceId,
+			sourceId,
+			sourceSnapshotId,
+			evidenceKind,
+			installationStatus,
+			operationalStatus,
+			statusMeaning,
+			strictRouteEligible,
+			strictRouteEligibleReason,
+			null
+		);
+	}
+
+	private void insertFacilityEvidence(
+		JdbcTemplate jdbcTemplate,
+		String evidenceId,
+		String sourceId,
+		String sourceSnapshotId,
+		String evidenceKind,
+		String installationStatus,
+		String operationalStatus,
+		String statusMeaning,
+		boolean strictRouteEligible,
+		String strictRouteEligibleReason,
+		String manualOverrideId
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO facility_evidence (
+				id, station_id, line_id, facility_type, evidence_kind, source_id,
+				source_snapshot_id, provider_record_hash, status_meaning,
+				installation_status, operational_status, verified_at, retrieved_at,
+				freshness_expires_at, confidence, strict_route_eligible,
+				strict_route_eligible_reason, conflict_status, manual_override_id, created_at
+			)
+			VALUES (?, 'station-1', 'line-1', 'ELEVATOR', ?, ?, ?, ?, ?, ?, ?,
+				'2026-06-29 00:00:00', '2026-06-29 00:00:00', '2026-07-06 00:00:00',
+				90, ?, ?, 'NONE', ?, '2026-06-29 00:00:00')
+			""",
+			evidenceId,
+			evidenceKind,
+			sourceId,
+			sourceSnapshotId,
+			"8".repeat(64),
+			statusMeaning,
+			installationStatus,
+			operationalStatus,
+			strictRouteEligible,
+			strictRouteEligibleReason,
+			manualOverrideId
 		);
 	}
 
