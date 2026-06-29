@@ -1,0 +1,89 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Manual Overrides</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-manual-overrides')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>Manual Overrides</h1>
+			<p>production candidate 입력 전에 override 승인, 충돌, 만료, strict route 안전 승인 상태를 읽기 전용으로 확인합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">id</th>
+				<th scope="col">entity</th>
+				<th scope="col">field</th>
+				<th scope="col">before</th>
+				<th scope="col">after</th>
+				<th scope="col">reason</th>
+				<th scope="col">evidence</th>
+				<th scope="col">requested</th>
+				<th scope="col">approved</th>
+				<th scope="col">status</th>
+				<th scope="col">conflict</th>
+				<th scope="col">strict</th>
+				<th scope="col">window</th>
+				<th scope="col">superseded</th>
+				<th scope="col">production</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${overrideRows.isEmpty()}">
+				<td colspan="15">manual override row가 없습니다.</td>
+			</tr>
+			<tr th:each="row : ${overrideRows}">
+				<td th:text="${row.id}">override-id</td>
+				<td>
+					<span th:text="${row.entityType}">FACILITY</span>
+					<span th:text="${row.entityId}">entity-id</span>
+				</td>
+				<td th:text="${row.fieldName}">field</td>
+				<td th:text="${row.beforeValue}">before</td>
+				<td th:text="${row.afterValue}">after</td>
+				<td>
+					<span th:text="${row.reasonCode}">FIELD_CHECK</span>
+					<span th:text="${row.reason}">reason</span>
+				</td>
+				<td>
+					<span th:text="${row.evidenceUri}">evidence-uri</span>
+					<span th:text="${row.evidenceHash}">sha256</span>
+				</td>
+				<td th:text="${row.requestedBy}">requester</td>
+				<td>
+					<span th:text="${row.approvedBy}">approver</span>
+					<span th:text="${row.approvedAt}">approved-at</span>
+				</td>
+				<td th:text="${row.approvalStatus}">APPROVED</td>
+				<td th:text="${row.conflictStatus}">NONE</td>
+				<td>
+					<span th:text="${row.strictRouteEligible ? 'strict 요청' : 'strict 아님'}">strict 아님</span>
+					<span th:text="${row.routeSafetyApprovedBy}">-</span>
+				</td>
+				<td>
+					<span th:text="${row.effectiveFrom}">2026-06-29T03:00</span>
+					<span th:text="${row.expiresAt}">2026-07-29T03:00</span>
+				</td>
+				<td th:text="${row.supersededBy}">-</td>
+				<td th:text="${row.productionStatus}">candidate 가능</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>
