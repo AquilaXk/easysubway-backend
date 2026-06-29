@@ -13,6 +13,7 @@ import com.easysubway.notification.adapter.out.persistence.InMemoryPushNotificat
 import com.easysubway.profile.adapter.out.persistence.InMemoryMobilityProfileRepository;
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportRepository;
 import com.easysubway.report.adapter.out.persistence.InMemoryFacilityReportReviewAuditRepository;
+import com.easysubway.route.adapter.out.persistence.JdbcRouteSearchRepository;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.usage.adapter.out.persistence.InMemoryUserActivityRepository;
@@ -33,15 +34,24 @@ class InMemoryRepositoryProfileTest {
 		Profile profile = repositoryType.getAnnotation(Profile.class);
 
 		assertThat(profile)
-			.as("%s 클래스는 @Profile(\"!prod\")가 필요합니다.", repositoryType.getSimpleName())
+			.as("%s 클래스는 @Profile 선언이 필요합니다.", repositoryType.getSimpleName())
 			.isNotNull();
-		assertThat(profile.value()).containsExactly("!prod");
+		assertThat(profile.value()).containsExactly("!prod & !staging & !release & !prod-like");
 	}
 
 	@Test
 	@DisplayName("검증 대상에는 운영 데이터가 유실될 수 있는 인메모리 저장소를 모두 포함한다")
 	void allStatefulInMemoryRepositoriesAreCovered() {
 		assertThat(inMemoryRepositories()).hasSize(14);
+	}
+
+	@Test
+	@DisplayName("경로 검색 JDBC 저장소는 prod-like 프로필에서 인메모리 저장소를 대체한다")
+	void routeSearchJdbcRepositoryCoversProdLikeProfiles() {
+		Profile profile = JdbcRouteSearchRepository.class.getAnnotation(Profile.class);
+
+		assertThat(profile).isNotNull();
+		assertThat(profile.value()).containsExactly("prod | staging | release | prod-like");
 	}
 
 	static Stream<Class<?>> inMemoryRepositories() {

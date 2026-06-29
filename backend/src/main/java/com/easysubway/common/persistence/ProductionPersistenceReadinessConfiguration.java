@@ -14,7 +14,7 @@ import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 
 @Configuration(proxyBeanMethods = false)
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 class ProductionPersistenceReadinessConfiguration {
 
 	private static final String READY = "ready";

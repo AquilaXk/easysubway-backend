@@ -5,6 +5,10 @@ spring:
     fallback-to-system-locale: false
   profiles:
     default: dev
+    group:
+      staging: prod
+      release: prod
+      prod-like: prod
   batch:
     job:
       enabled: false

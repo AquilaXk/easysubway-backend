@@ -18,7 +18,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 public class JdbcFieldVerificationSessionRepository implements FieldVerificationSessionRepository {
 
 	private final JdbcTemplate jdbcTemplate;

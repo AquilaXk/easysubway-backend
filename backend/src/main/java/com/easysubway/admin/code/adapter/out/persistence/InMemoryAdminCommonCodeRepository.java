@@ -15,7 +15,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
-@Profile("!prod")
+@Profile("!prod & !staging & !release & !prod-like")
 public class InMemoryAdminCommonCodeRepository implements AdminCommonCodeRepository {
 
 	private final Map<String, AdminCommonCodeGroup> groups = new LinkedHashMap<>();

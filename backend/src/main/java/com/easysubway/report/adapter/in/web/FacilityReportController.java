@@ -101,7 +101,11 @@ class FacilityReportController {
 		if (body == null || body.length < 1 || body.length > 900 * 1024) {
 			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
 		}
-		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")) {
+		List<String> activeProfiles = Arrays.asList(environment.getActiveProfiles());
+		if (activeProfiles.contains("prod")
+			|| activeProfiles.contains("staging")
+			|| activeProfiles.contains("release")
+			|| activeProfiles.contains("prod-like")) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
 		FacilityReportUploadIntents.UploadIntent intent = uploadIntents.requireUpload(

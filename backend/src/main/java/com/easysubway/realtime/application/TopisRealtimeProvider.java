@@ -17,6 +17,7 @@ import java.util.ArrayList;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.core.env.Environment;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -35,14 +36,18 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	TopisRealtimeProvider(
 		@Value("${EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY:}") String serviceKey,
 		ObjectMapper objectMapper,
-		@Value("${EASYSUBWAY_SEOUL_TOPIS_FIXTURE_ENABLED:false}") boolean fixtureEnabled
+		@Value("${EASYSUBWAY_SEOUL_TOPIS_FIXTURE_ENABLED:false}") boolean fixtureEnabled,
+		@Value("${EASYSUBWAY_DEPLOY_ENV:}") String deployEnv,
+		Environment environment
 	) {
 		this(
 			serviceKey,
 			objectMapper,
 			HttpClient.newBuilder().connectTimeout(REQUEST_TIMEOUT).build(),
 			new FixtureRealtimeProvider(),
-			fixtureEnabled
+			fixtureEnabled,
+			deployEnv,
+			runtimeProfiles(environment)
 		);
 	}
 
@@ -62,11 +67,26 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		RealtimeProvider fallbackProvider,
 		boolean fixtureEnabled
 	) {
+		this(serviceKey, objectMapper, httpClient, fallbackProvider, fixtureEnabled, "", "");
+	}
+
+	TopisRealtimeProvider(
+		String serviceKey,
+		ObjectMapper objectMapper,
+		HttpClient httpClient,
+		RealtimeProvider fallbackProvider,
+		boolean fixtureEnabled,
+		String deployEnv,
+		String activeProfiles
+	) {
 		this.serviceKey = serviceKey == null ? "" : serviceKey.trim();
 		this.objectMapper = objectMapper;
 		this.httpClient = httpClient;
 		this.fallbackProvider = fallbackProvider;
 		this.fixtureEnabled = fixtureEnabled;
+		if (this.fixtureEnabled && !fixtureAllowedRuntime(deployEnv, activeProfiles)) {
+			throw new IllegalStateException("TOPIS fixture is only allowed in local/dev/test runtime.");
+		}
 	}
 
 	@Override
@@ -203,5 +223,46 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 			}
 		}
 		return null;
+	}
+
+	private boolean fixtureAllowedRuntime(String deployEnv, String activeProfiles) {
+		String runtime = "%s,%s".formatted(
+			firstNonBlank(deployEnv, propertyOrEnv("EASYSUBWAY_DEPLOY_ENV")),
+			firstNonBlank(activeProfiles, propertyOrEnv("spring.profiles.active"))
+		);
+		return !containsAny(runtime, "prod", "staging", "release", "prod-like")
+			&& containsAny(runtime, "local", "dev", "test");
+	}
+
+	private static String runtimeProfiles(Environment environment) {
+		String[] activeProfiles = environment.getActiveProfiles();
+		if (activeProfiles.length > 0) {
+			return String.join(",", activeProfiles);
+		}
+		return String.join(",", environment.getDefaultProfiles());
+	}
+
+	private String propertyOrEnv(String key) {
+		String property = System.getProperty(key, "");
+		if (!property.isBlank()) {
+			return property;
+		}
+		String envKey = key.toUpperCase().replace('.', '_').replace('-', '_');
+		return System.getenv().getOrDefault(key, System.getenv().getOrDefault(envKey, ""));
+	}
+
+	private String firstNonBlank(String first, String second) {
+		return first == null || first.isBlank() ? second : first;
+	}
+
+	private boolean containsAny(String value, String... targets) {
+		List<String> targetList = List.of(targets);
+		for (String item : value.split(",")) {
+			String normalized = item.trim().toLowerCase();
+			if (targetList.contains(normalized)) {
+				return true;
+			}
+		}
+		return false;
 	}
 }

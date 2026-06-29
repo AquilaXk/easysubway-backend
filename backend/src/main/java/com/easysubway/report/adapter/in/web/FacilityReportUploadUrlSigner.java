@@ -29,7 +29,7 @@ interface FacilityReportUploadUrlSigner {
 }
 
 @Component
-@Profile("!prod")
+@Profile("!prod & !staging & !release & !prod-like")
 class LocalFacilityReportUploadUrlSigner implements FacilityReportUploadUrlSigner {
 
 	@Override
@@ -39,7 +39,7 @@ class LocalFacilityReportUploadUrlSigner implements FacilityReportUploadUrlSigne
 }
 
 @Component
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 class ObjectStorageFacilityReportUploadUrlSigner implements FacilityReportUploadUrlSigner {
 
 	private static final String HMAC_ALGORITHM = "HmacSHA256";

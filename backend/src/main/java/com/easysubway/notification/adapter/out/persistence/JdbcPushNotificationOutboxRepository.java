@@ -25,7 +25,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 public class JdbcPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
 	LoadPendingPushNotificationOutboxPort,

@@ -323,19 +323,86 @@ class RealtimeGatewayServiceTest {
 	@Test
 	@DisplayName("TOPIS provider fixture는 명시적으로 켠 테스트 경로에서만 동작한다")
 	void topisProviderUsesFixtureOnlyWhenExplicitlyEnabled() {
+		String previous = System.getProperty("spring.profiles.active");
+		System.setProperty("spring.profiles.active", "test");
+		try {
+			TopisRealtimeProvider provider = new TopisRealtimeProvider(
+				"",
+				new ObjectMapper(),
+				java.net.http.HttpClient.newHttpClient(),
+				new FixtureRealtimeProvider(),
+				true
+			);
+
+			List<RealtimeArrival> arrivals = provider.arrivals(sangnoksuQuery());
+
+			assertThat(arrivals).hasSize(1);
+			assertThat(arrivals.get(0).stationName()).isEqualTo("상록수");
+			assertThat(arrivals.get(0).message()).isEqualTo("3분 후");
+		} finally {
+			if (previous == null) {
+				System.clearProperty("spring.profiles.active");
+			} else {
+				System.setProperty("spring.profiles.active", previous);
+			}
+		}
+	}
+
+	@Test
+	@DisplayName("TOPIS provider fixture는 기본 dev profile에서도 동작한다")
+	void topisProviderUsesFixtureOnDefaultDevProfile() {
 		TopisRealtimeProvider provider = new TopisRealtimeProvider(
 			"",
 			new ObjectMapper(),
 			java.net.http.HttpClient.newHttpClient(),
 			new FixtureRealtimeProvider(),
-			true
+			true,
+			"",
+			"dev"
 		);
 
 		List<RealtimeArrival> arrivals = provider.arrivals(sangnoksuQuery());
 
 		assertThat(arrivals).hasSize(1);
 		assertThat(arrivals.get(0).stationName()).isEqualTo("상록수");
-		assertThat(arrivals.get(0).message()).isEqualTo("3분 후");
+	}
+
+	@Test
+	@DisplayName("TOPIS fixture는 release deploy env에서 켜져도 시작하지 않는다")
+	void topisFixtureFailsOnReleaseDeployEnv() {
+		String previous = System.getProperty("EASYSUBWAY_DEPLOY_ENV");
+		System.setProperty("EASYSUBWAY_DEPLOY_ENV", "release");
+		try {
+			assertThatThrownBy(() -> new TopisRealtimeProvider(
+				"",
+				new ObjectMapper(),
+				java.net.http.HttpClient.newHttpClient(),
+				new FixtureRealtimeProvider(),
+				true
+			)).isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("TOPIS fixture");
+		} finally {
+			if (previous == null) {
+				System.clearProperty("EASYSUBWAY_DEPLOY_ENV");
+			} else {
+				System.setProperty("EASYSUBWAY_DEPLOY_ENV", previous);
+			}
+		}
+	}
+
+	@Test
+	@DisplayName("TOPIS fixture는 prod-like deploy env에서 test profile이어도 시작하지 않는다")
+	void topisFixtureFailsOnProdLikeDeployEnv() {
+		assertThatThrownBy(() -> new TopisRealtimeProvider(
+			"",
+			new ObjectMapper(),
+			java.net.http.HttpClient.newHttpClient(),
+			new FixtureRealtimeProvider(),
+			true,
+			"prod-like",
+			"test"
+		)).isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("TOPIS fixture");
 	}
 
 	@Test

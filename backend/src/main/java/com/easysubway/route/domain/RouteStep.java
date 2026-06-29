@@ -13,12 +13,18 @@ public record RouteStep(
 	int distanceMeters,
 	boolean includesStairs,
 	String stairAccessState,
-	boolean requiresAccessibilityCheck
+	boolean requiresAccessibilityCheck,
+	String timeSource,
+	String distanceSource,
+	String confidenceLabel
 ) {
 	public RouteStep {
 		stairAccessState = stairAccessState == null || stairAccessState.isBlank()
 			? stairAccessStateFor(includesStairs)
 			: stairAccessState;
+		timeSource = timeSource == null || timeSource.isBlank() ? "UNKNOWN" : timeSource;
+		distanceSource = distanceSource == null || distanceSource.isBlank() ? "UNKNOWN" : distanceSource;
+		confidenceLabel = confidenceLabel == null || confidenceLabel.isBlank() ? "확인 필요" : confidenceLabel;
 	}
 
 	public RouteStep(
@@ -48,7 +54,10 @@ public record RouteStep(
 			distanceMeters,
 			includesStairs,
 			stairAccessStateFor(includesStairs),
-			requiresAccessibilityCheck
+			requiresAccessibilityCheck,
+			"ESTIMATED_CONSTANT",
+			"ESTIMATED_CONSTANT",
+			"확인 필요"
 		);
 	}
 

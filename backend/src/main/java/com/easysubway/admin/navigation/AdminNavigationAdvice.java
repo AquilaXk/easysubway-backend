@@ -56,22 +56,22 @@ class AdminNavigationAdvice {
 
 	private String environmentLabel() {
 		List<String> profiles = activeProfiles();
-		if (profiles.contains("prod")) {
-			return "PRODUCTION";
-		}
 		if (profiles.contains("staging")) {
 			return "STAGING";
+		}
+		if (profiles.contains("prod")) {
+			return "PRODUCTION";
 		}
 		return profiles.isEmpty() ? "DEV" : profiles.get(0).toUpperCase(java.util.Locale.ROOT);
 	}
 
 	private String environmentTone() {
 		List<String> profiles = activeProfiles();
-		if (profiles.contains("prod")) {
-			return "production";
-		}
 		if (profiles.contains("staging")) {
 			return "staging";
+		}
+		if (profiles.contains("prod")) {
+			return "production";
 		}
 		return "development";
 	}

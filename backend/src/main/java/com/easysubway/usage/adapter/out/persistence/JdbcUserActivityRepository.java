@@ -18,7 +18,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 public class JdbcUserActivityRepository implements RecordUserActivityPort, RecordApiTrafficPort, SummarizeUserActivityPort {
 
 	private static final int USER_ID_MAX_LENGTH = 120;

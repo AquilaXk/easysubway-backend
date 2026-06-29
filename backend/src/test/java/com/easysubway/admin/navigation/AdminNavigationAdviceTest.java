@@ -56,6 +56,23 @@ class AdminNavigationAdviceTest {
 	}
 
 	@Test
+	@DisplayName("staging profile은 prod 설정을 함께 로드해도 staging badge를 유지한다")
+	void stagingProfileKeepsStagingShellMetadataWhenProdProfileIsImported() {
+		MockEnvironment environment = new MockEnvironment();
+		environment.setActiveProfiles("staging", "prod");
+		TestingAuthenticationToken authentication = new TestingAuthenticationToken(
+			"release-admin",
+			"ignored",
+			"admin.view"
+		);
+
+		AdminNavigationAdvice.AdminShell shell = new AdminNavigationAdvice(environment).adminShell(authentication);
+
+		assertThat(shell.environmentLabel()).isEqualTo("STAGING");
+		assertThat(shell.environmentTone()).isEqualTo("staging");
+	}
+
+	@Test
 	@DisplayName("익명 인증은 anonymous 사용자와 권한 없음으로 표시한다")
 	void anonymousAuthenticationBuildsAnonymousShellMetadata() {
 		MockEnvironment environment = new MockEnvironment();

@@ -31,7 +31,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 public class JdbcFavoriteRouteRepository implements
 	LoadFavoriteRoutePort,
 	LoadFavoriteRouteAlertTargetPort,

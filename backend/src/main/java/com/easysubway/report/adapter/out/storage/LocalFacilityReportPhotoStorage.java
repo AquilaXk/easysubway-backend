@@ -16,7 +16,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("!prod")
+@Profile("!prod & !staging & !release & !prod-like")
 public class LocalFacilityReportPhotoStorage implements
 	StoreFacilityReportPhotoPort,
 	LoadFacilityReportPhotoPort,

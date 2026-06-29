@@ -5,7 +5,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
 @Component
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 class ProductionReportReceiptTokenPepperValidator {
 
 	private static final String LOCAL_DEV_RECEIPT_TOKEN_PEPPER = "local-dev-report-receipt-pepper";

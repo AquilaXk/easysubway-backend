@@ -11,7 +11,7 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
 @Repository
-@Profile("!prod")
+@Profile("!prod & !staging & !release & !prod-like")
 public class InMemoryMobilityProfileRepository implements
 	LoadMobilityProfilePort,
 	SaveMobilityProfilePort,

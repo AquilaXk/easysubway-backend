@@ -13,7 +13,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
 @Repository
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 public class JdbcFieldVerificationChangeHistoryRepository implements FieldVerificationChangeHistoryRepository {
 
 	private final JdbcTemplate jdbcTemplate;

@@ -56,6 +56,11 @@ easysubway:
     password: ${EASYSUBWAY_ADMIN_PASSWORD}
     platform-transition:
       stage: ${EASYSUBWAY_ADMIN_PLATFORM_TRANSITION_STAGE:shadow}
+      flags:
+        rbac-enforcement: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_RBAC_ENFORCEMENT:false}
+        audit-enforcement: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_AUDIT_ENFORCEMENT:false}
+        legacy-env-admin-fallback: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_LEGACY_ENV_ADMIN_FALLBACK:true}
+        break-glass-bootstrap: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_BREAK_GLASS_BOOTSTRAP:true}
       release-gate:
         blocker-mode: ${EASYSUBWAY_ADMIN_PLATFORM_RELEASE_BLOCKER_MODE:fail}
     break-glass:

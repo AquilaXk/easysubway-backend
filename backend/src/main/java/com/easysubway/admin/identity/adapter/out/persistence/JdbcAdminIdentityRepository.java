@@ -27,7 +27,7 @@ import org.springframework.stereotype.Repository;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Repository
-@Profile("prod")
+@Profile("prod | staging | release | prod-like")
 public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 
 	private final JdbcTemplate jdbcTemplate;

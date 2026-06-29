@@ -84,6 +84,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Android Release Artifact / Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
       - name: Android Release Artifact / Set up Java
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
@@ -161,6 +166,14 @@ jobs:
             echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } >> "${GITHUB_STEP_SUMMARY}"
 
+      - name: Android Release Artifact / Audit bundled datapacks
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p "${RUNNER_TEMP}/release-gate"
+          node tools/ci/audit-mobile-datapack-assets.mjs --index apps/mobile/assets/datapacks/index.json --root apps/mobile > "${RUNNER_TEMP}/release-gate/mobile-datapack-asset-audit.json"
+          echo "EASYSUBWAY_MOBILE_DATAPACK_ASSET_AUDIT=${RUNNER_TEMP}/release-gate/mobile-datapack-asset-audit.json" >> "${GITHUB_ENV}"
+
       - name: Android Release Artifact / Build Flutter app bundle
         if: ${{ env.EASYSUBWAY_RELEASE_ARTIFACTS_SKIP_BUILD != 'true' }}
         working-directory: apps/mobile
@@ -173,6 +186,12 @@ jobs:
         run: |
           set -euo pipefail
           flutter pub get
+          ../../tools/mobile/validate-release-dart-defines.sh \
+            --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
+            --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
+            --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
@@ -188,6 +207,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-artifacts/android
           cp build/app/outputs/bundle/release/app-release.aab release-artifacts/android/app-release.aab
+          cp "${EASYSUBWAY_MOBILE_DATAPACK_ASSET_AUDIT}" release-artifacts/android/mobile-datapack-asset-audit.json
           cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
           cp release/android-16kb-page-size-gate.json release-artifacts/android/android-16kb-page-size-gate.json
           cp release/play-production-access-gate.json release-artifacts/android/play-production-access-gate.json
@@ -334,6 +354,17 @@ jobs:
         run: |
           set -euo pipefail
           flutter pub get
+          ../../tools/mobile/validate-release-dart-defines.sh \
+            --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
+            --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
+            --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_DATA_PACK_BASE_URL="${EASYSUBWAY_DATA_PACK_BASE_URL}" \
+            --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N}" \
+            --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E}" \
+            --dart-define=EASYSUBWAY_DATAPACK_SIGNING_KEY_ID="${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID}" \
+            --dart-define=EASYSUBWAY_DATAPACK_CHANNEL="${EASYSUBWAY_DATAPACK_CHANNEL}" \
+            --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
@@ -353,6 +384,7 @@ jobs:
           set -euo pipefail
           mkdir -p release-artifacts/android
           cp build/app/outputs/bundle/release/app-release.aab release-artifacts/android/app-release.aab
+          cp "${EASYSUBWAY_MOBILE_DATAPACK_ASSET_AUDIT}" release-artifacts/android/mobile-datapack-asset-audit.json
           cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
           cp release/android-16kb-page-size-gate.json release-artifacts/android/android-16kb-page-size-gate.json
           cp release/android-rc-store-evidence.json release-artifacts/android/android-rc-store-evidence.json
