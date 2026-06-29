@@ -31,6 +31,9 @@ class DataSourceSnapshotAdminPageControllerTest {
 
 	@BeforeEach
 	void setUp() {
+		jdbcTemplate.update("DELETE FROM source_quarantine_resolutions");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
 		jdbcTemplate.update("DELETE FROM data_source_snapshots");
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (

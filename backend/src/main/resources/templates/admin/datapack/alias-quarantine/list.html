@@ -1,0 +1,109 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>Alias / Quarantine</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-alias-quarantine')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>Alias / Quarantine</h1>
+			<p>candidate 입력 전에 source row 매핑 충돌과 quarantine blocker를 읽기 전용으로 확인합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<h2>Alias 검수 큐</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">id</th>
+				<th scope="col">source</th>
+				<th scope="col">snapshot</th>
+				<th scope="col">provider entity</th>
+				<th scope="col">canonical entity</th>
+				<th scope="col">confidence</th>
+				<th scope="col">method</th>
+				<th scope="col">status</th>
+				<th scope="col">requested</th>
+				<th scope="col">approved</th>
+				<th scope="col">evidence</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${aliasApprovals.isEmpty()}">
+				<td colspan="11">alias 검수 row가 없습니다.</td>
+			</tr>
+			<tr th:each="alias : ${aliasApprovals}">
+				<td th:text="${alias.id}">alias-id</td>
+				<td th:text="${alias.sourceId}">source-id</td>
+				<td th:text="${alias.sourceSnapshotId}">snapshot-id</td>
+				<td th:text="${alias.providerEntity}">STATION:provider-id</td>
+				<td th:text="${alias.canonicalEntity}">STATION:station-id</td>
+				<td th:text="${alias.confidence}">90</td>
+				<td th:text="${alias.matchMethod}">AUTO</td>
+				<td th:text="${alias.approvalStatus}">PENDING</td>
+				<td th:text="${alias.requestedBy}">qa</td>
+				<td>
+					<span th:text="${alias.approvedBy}">-</span>
+					<span th:text="${alias.approvedAt}">-</span>
+				</td>
+				<td th:text="${alias.evidenceHash}">sha256</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section class="admin-panel">
+		<h2>Quarantine 큐</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">id</th>
+				<th scope="col">source</th>
+				<th scope="col">snapshot</th>
+				<th scope="col">provider hash</th>
+				<th scope="col">reason</th>
+				<th scope="col">severity</th>
+				<th scope="col">status</th>
+				<th scope="col">latest resolution</th>
+				<th scope="col">canonical</th>
+				<th scope="col">resolved</th>
+				<th scope="col">excerpt</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${quarantineRecords.isEmpty()}">
+				<td colspan="11">quarantine row가 없습니다.</td>
+			</tr>
+			<tr th:each="record : ${quarantineRecords}">
+				<td th:text="${record.id}">quarantine-id</td>
+				<td th:text="${record.sourceId}">source-id</td>
+				<td th:text="${record.sourceSnapshotId}">snapshot-id</td>
+				<td th:text="${record.providerRecordHash}">sha256</td>
+				<td th:text="${record.reasonCode}">ALIAS_CONFLICT</td>
+				<td th:text="${record.severity}">P1</td>
+				<td th:text="${record.resolutionStatus}">OPEN</td>
+				<td th:text="${record.latestResolution}">-</td>
+				<td th:text="${record.latestCanonicalEntity}">-</td>
+				<td>
+					<span th:text="${record.resolvedBy}">-</span>
+					<span th:text="${record.resolvedAt}">-</span>
+				</td>
+				<td th:text="${record.redactedExcerpt}">redacted excerpt</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+</body>
+</html>
