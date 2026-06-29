@@ -55,7 +55,7 @@ class TransitFacilityAdminPageControllerTest {
 			.contains("정상")
 			.contains("장애인 화장실")
 			.contains("확인 필요")
-			.contains("정보 신뢰도 높음")
+			.contains("최근 확인된 정보")
 			.contains("name=\"status\"")
 			.contains("name=\"_csrf\"");
 	}
