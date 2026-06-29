@@ -3,6 +3,7 @@ package com.easysubway.common.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.sql.Timestamp;
 import java.util.List;
 import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.DisplayName;
@@ -47,6 +48,8 @@ class DatabaseMigrationContainerTest {
 				"facility_reports",
 				"push_notification_outbox",
 				"data_source_snapshots",
+				"datapack_normalization_runs",
+				"datapack_normalized_outputs",
 				"external_alias_approvals",
 				"source_quarantine_records",
 				"source_quarantine_resolutions",
@@ -56,11 +59,13 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21");
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
 				"fk_data_source_snapshots_previous",
+				"fk_datapack_normalization_runs_snapshot_source",
+				"fk_datapack_normalized_outputs_run",
 				"fk_external_alias_approvals_snapshot_source",
 				"fk_external_alias_approvals_superseded",
 				"fk_source_quarantine_records_snapshot_source",
@@ -72,6 +77,9 @@ class DatabaseMigrationContainerTest {
 			);
 		assertThat(checkConstraintNames(jdbcTemplate))
 			.contains(
+				"chk_datapack_normalization_runs_counts",
+				"chk_datapack_normalization_runs_finished_state",
+				"chk_datapack_normalized_outputs_kind",
 				"chk_external_alias_approvals_confidence",
 				"chk_external_alias_approvals_approved_state",
 				"chk_source_quarantine_records_resolution_state",
@@ -82,6 +90,7 @@ class DatabaseMigrationContainerTest {
 				"chk_manual_overrides_route_safety",
 				"chk_route_edge_evidence_strict_route"
 			);
+		assertNormalizationRunGuards(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
 		assertFacilityEvidenceStrictRouteGuards(jdbcTemplate);
 		assertManualOverrideProductionGuards(jdbcTemplate);
@@ -154,6 +163,23 @@ class DatabaseMigrationContainerTest {
 			.migrate();
 
 		assertFacilityEvidenceStrictRouteGuards(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration도 normalization run과 output ledger guard를 차단한다")
+	void h2MigrationRejectsUnsafeNormalizationRuns() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:datapack-normalization-runs;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		Flyway.configure()
+			.dataSource(dataSource)
+			.locations("classpath:db/migration/h2")
+			.load()
+			.migrate();
+
+		assertNormalizationRunGuards(new JdbcTemplate(dataSource));
 	}
 
 	private List<String> tableNames(JdbcTemplate jdbcTemplate) {
@@ -249,6 +275,86 @@ class DatabaseMigrationContainerTest {
 			VALUES ('quarantine-mismatch', ?, ?, ?, 'ALIAS_CONFLICT',
 				'P1', NULL, 'OPEN', NULL, NULL, '2026-06-29 00:00:00')
 			""", sourceId, sourceSnapshotId, "e".repeat(64));
+	}
+
+	private void assertNormalizationRunGuards(JdbcTemplate jdbcTemplate) {
+		insertSnapshot(jdbcTemplate, "normalization-snapshot-a", "normalization-source-a");
+		insertSnapshot(jdbcTemplate, "normalization-snapshot-b", "normalization-source-b");
+		insertNormalizationRun(jdbcTemplate, "normalization-ok", "normalization-source-a", "normalization-snapshot-a",
+			10, 6, 2, 2, "COMPLETED", "2026-06-29 00:10:00");
+		insertNormalizedOutput(jdbcTemplate, "normalization-output-accepted", "normalization-ok", "ACCEPTED_ROWS", 6);
+		insertNormalizedOutput(jdbcTemplate, "normalization-output-schema-diff", "normalization-ok", "SCHEMA_DIFF", 0);
+
+		assertThatThrownBy(() -> insertNormalizationRun(jdbcTemplate, "normalization-source-mismatch", "normalization-source-b", "normalization-snapshot-a",
+			1, 1, 0, 0, "COMPLETED", "2026-06-29 00:10:00"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertNormalizationRun(jdbcTemplate, "normalization-negative-count", "normalization-source-a", "normalization-snapshot-a",
+			1, -1, 0, 0, "COMPLETED", "2026-06-29 00:10:00"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertNormalizationRun(jdbcTemplate, "normalization-unfinished-completed", "normalization-source-a", "normalization-snapshot-a",
+			1, 1, 0, 0, "COMPLETED", null))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertNormalizedOutput(jdbcTemplate, "normalization-output-bad-kind", "normalization-ok", "UNKNOWN", 1))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertNormalizedOutput(jdbcTemplate, "normalization-output-orphan", "missing-run", "ACCEPTED_ROWS", 1))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertNormalizationRun(
+		JdbcTemplate jdbcTemplate,
+		String runId,
+		String sourceId,
+		String sourceSnapshotId,
+		int normalizedCount,
+		int acceptedCount,
+		int quarantineCount,
+		int aliasReviewCount,
+		String status,
+		String completedAt
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_normalization_runs (
+				id, source_id, source_snapshot_id, normalized_count, accepted_count,
+				quarantine_count, alias_review_count, schema_diff_sha256,
+				schema_diff_summary, status, started_at, completed_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'schema fields unchanged', ?,
+				'2026-06-29 00:00:00', ?)
+			""",
+			runId,
+			sourceId,
+			sourceSnapshotId,
+			normalizedCount,
+			acceptedCount,
+			quarantineCount,
+			aliasReviewCount,
+			"7".repeat(64),
+			status,
+			completedAt == null ? null : Timestamp.valueOf(completedAt)
+		);
+	}
+
+	private void insertNormalizedOutput(
+		JdbcTemplate jdbcTemplate,
+		String outputId,
+		String normalizationRunId,
+		String outputKind,
+		int rowCount
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_normalized_outputs (
+				id, normalization_run_id, output_kind, row_count, output_sha256,
+				object_uri, created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, '2026-06-29 00:00:00')
+			""",
+			outputId,
+			normalizationRunId,
+			outputKind,
+			rowCount,
+			"6".repeat(64),
+			"s3://evidence/normalized/" + outputId + ".json"
+		);
 	}
 
 	private void assertManualOverrideProductionGuards(JdbcTemplate jdbcTemplate) {
