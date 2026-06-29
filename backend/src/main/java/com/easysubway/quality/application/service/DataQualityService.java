@@ -240,7 +240,7 @@ public class DataQualityService implements DataQualityUseCase {
 			adjustment -= addReason(reasons, "정상 접근성 시설 부족", 20);
 		}
 		if (facilities.stream().anyMatch(this::isAttentionNeededFacilityStatus)) {
-			adjustment -= addReason(reasons, "시설 상태 확인 필요", 15);
+			adjustment -= addReason(reasons, "시설 상태를 다시 확인해야 해요", 15);
 		}
 		if (facilities.stream().anyMatch(facility -> facility.dataConfidence() == DataConfidenceLevel.LOW
 			|| facility.dataConfidence() == DataConfidenceLevel.NEEDS_VERIFICATION)) {

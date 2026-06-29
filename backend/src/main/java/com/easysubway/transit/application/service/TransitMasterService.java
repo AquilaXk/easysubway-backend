@@ -712,10 +712,10 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 			throw new InvalidAccessibilityFacilityException("시설 상태를 선택해야 합니다.");
 		}
 		if (dataConfidence == null) {
-			throw new InvalidAccessibilityFacilityException("시설 정보 신뢰도를 선택해야 합니다.");
+			throw new InvalidAccessibilityFacilityException("시설 정보 확인 상태를 선택해야 합니다.");
 		}
 		if (dataSourceType == null) {
-			throw new InvalidAccessibilityFacilityException("시설 데이터 출처를 선택해야 합니다.");
+			throw new InvalidAccessibilityFacilityException("시설 정보 출처를 선택해야 합니다.");
 		}
 		if (updatedBy == null || updatedBy.isBlank()) {
 			throw new InvalidAccessibilityFacilityException("수정자 식별자가 필요합니다.");

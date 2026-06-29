@@ -1,10 +1,10 @@
 package com.easysubway.transit.domain;
 
 public enum DataQualityLevel {
-	LEVEL_1("Level 1", "기본 정보만 있음", DataQualitySeverity.NEEDS_BASE_DATA, 40, "기본 정보만 있음"),
-	LEVEL_2("Level 2", "시설 정보 확인됨", DataQualitySeverity.NEEDS_ROUTE_VERIFICATION, 60, "쉬운 경로 검증 필요"),
-	LEVEL_3("Level 3", "쉬운 길 안내 가능", DataQualitySeverity.NEEDS_LIVE_STATUS, 80, "고장·공사 반영 필요"),
-	LEVEL_4("Level 4", "고장·공사 반영됨", DataQualitySeverity.VERIFIED, 100, "");
+	LEVEL_1("Level 1", "일부 정보는 확인 중이에요", DataQualitySeverity.NEEDS_BASE_DATA, 40, "일부 정보는 확인 중이에요"),
+	LEVEL_2("Level 2", "시설 정보를 함께 볼 수 있어요", DataQualitySeverity.NEEDS_ROUTE_VERIFICATION, 60, "쉬운 길 확인이 더 필요해요"),
+	LEVEL_3("Level 3", "쉬운 길 안내를 볼 수 있어요", DataQualitySeverity.NEEDS_LIVE_STATUS, 80, "고장·공사 소식 확인이 필요해요"),
+	LEVEL_4("Level 4", "고장·공사 소식이 반영됐어요", DataQualitySeverity.VERIFIED, 100, "");
 
 	private final String label;
 	private final String description;

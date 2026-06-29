@@ -55,7 +55,7 @@ class TransitFacilityAdminPageControllerTest {
 			.contains("정상")
 			.contains("장애인 화장실")
 			.contains("확인 필요")
-			.contains("정보 신뢰도 높음")
+			.contains("최근 확인된 정보")
 			.contains("name=\"status\"")
 			.contains("name=\"_csrf\"");
 	}
@@ -100,7 +100,8 @@ class TransitFacilityAdminPageControllerTest {
 
 		assertThat(html)
 			.contains("1번 출구 엘리베이터")
-			.contains("고장");
+			.contains("고장")
+			.contains("관리자 확인");
 	}
 
 	@Test
