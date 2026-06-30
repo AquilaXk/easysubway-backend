@@ -322,6 +322,27 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("도착 요청은 TOPIS station code providerLineId alias를 유지한다")
+	void arrivalAcceptsStationCodeProviderLineAlias() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeArrivalResult result = service.arrivals(new RealtimeQuery(
+			"station-sangnoksu",
+			"seoul-4",
+			"448",
+			"상록수",
+			null
+		));
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(1);
+	}
+
+	@Test
 	@DisplayName("불일치한 provider line 도착 query는 provider를 호출하지 않고 mapping missing으로 끝난다")
 	void mismatchedArrivalQuerySkipsProviderCall() {
 		CountingProvider provider = new CountingProvider();
@@ -363,6 +384,27 @@ class RealtimeGatewayServiceTest {
 		assertThat(result.status()).hasToString("UNSUPPORTED");
 		assertThat(result.fallbackCode()).isEqualTo("MAPPING_MISSING");
 		assertThat(provider.trainPositionCalls).hasValue(0);
+	}
+
+	@Test
+	@DisplayName("lineId 없는 열차 위치 요청은 provider line name으로 mapping을 찾는다")
+	void trainPositionWithoutLineIdUsesProviderLineNameMapping() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeTrainPositionResult result = service.trainPositions(new RealtimeQuery(
+			null,
+			null,
+			"1004",
+			null,
+			"4호선"
+		));
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(provider.trainPositionCalls).hasValue(1);
 	}
 
 	@Test

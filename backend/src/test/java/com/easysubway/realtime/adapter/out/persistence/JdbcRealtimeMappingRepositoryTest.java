@@ -104,6 +104,28 @@ class JdbcRealtimeMappingRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("도착 mapping은 TOPIS station code providerLineId alias를 조회한다")
+	void findArrivalMappingByStationCodeProviderLineAlias() {
+		var mapping = repository.findArrivalMapping(
+			"seoul-topis",
+			new RealtimeQuery("station-sangnoksu", "seoul-4", "448", "상록수", null)
+		);
+
+		assertThat(mapping).hasValueSatisfying((value) -> assertThat(value.providerLineId()).isEqualTo("1004"));
+	}
+
+	@Test
+	@DisplayName("도착 mapping은 lineId가 없어도 station-provider alias로 조회한다")
+	void findArrivalMappingWithoutLineId() {
+		var mapping = repository.findArrivalMapping(
+			"seoul-topis",
+			new RealtimeQuery("station-sangnoksu", null, "448", "상록수", null)
+		);
+
+		assertThat(mapping).isPresent();
+	}
+
+	@Test
 	@DisplayName("열차 위치 mapping은 line query로 provider line alias와 cache version을 조회한다")
 	void findTrainPositionMappingByLine() {
 		var mapping = repository.findTrainPositionMapping(
@@ -116,6 +138,17 @@ class JdbcRealtimeMappingRepositoryTest {
 			assertThat(value.providerLineName()).isEqualTo("4호선");
 			assertThat(value.cacheVersion()).isEqualTo(7L);
 		});
+	}
+
+	@Test
+	@DisplayName("열차 위치 mapping은 lineId가 없으면 provider line name으로 조회한다")
+	void findTrainPositionMappingByLineNameWhenLineIdIsBlank() {
+		var mapping = repository.findTrainPositionMapping(
+			"seoul-topis",
+			new RealtimeQuery(null, null, null, null, "4호선")
+		);
+
+		assertThat(mapping).hasValueSatisfying((value) -> assertThat(value.lineId()).isEqualTo("seoul-4"));
 	}
 
 	@Test

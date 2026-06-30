@@ -351,9 +351,7 @@ public class RealtimeGatewayService {
 	}
 
 	private boolean providerLineMatches(RealtimeQuery query, RealtimeMapping mapping) {
-		return query.providerLineId() == null
-			|| query.providerLineId().isBlank()
-			|| mapping.providerLineId().equals(query.providerLineId());
+		return mapping.matchesProviderLine(query.providerLineId());
 	}
 
 	private boolean isFresh(java.time.Instant cachedAt) {

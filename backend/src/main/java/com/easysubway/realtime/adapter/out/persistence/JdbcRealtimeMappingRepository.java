@@ -59,8 +59,8 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 						AND lm.line_id = sm.line_id
 					WHERE sm.provider_id = ?
 						AND sm.station_id = ?
-						AND sm.line_id = ?
-						AND (? IS NULL OR ? = '' OR sm.provider_line_id = ?)
+						AND (? IS NULL OR ? = '' OR sm.line_id = ?)
+						AND (? IS NULL OR ? = '' OR sm.provider_line_id = ? OR sm.provider_station_id LIKE CONCAT('%', ?))
 						AND (lm.valid_from IS NULL OR lm.valid_from <= CURRENT_TIMESTAMP)
 						AND (lm.valid_until IS NULL OR lm.valid_until > CURRENT_TIMESTAMP)
 					""",
@@ -68,6 +68,9 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 				providerId,
 				query.stationId(),
 				query.lineId(),
+				query.lineId(),
+				query.lineId(),
+				query.providerLineId(),
 				query.providerLineId(),
 				query.providerLineId(),
 				query.providerLineId()
@@ -95,7 +98,10 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 						lm.cache_version
 					FROM realtime_provider_line_mappings lm
 					WHERE lm.provider_id = ?
-						AND lm.line_id = ?
+						AND (
+							(? IS NOT NULL AND ? <> '' AND lm.line_id = ?)
+							OR ((? IS NULL OR ? = '') AND lm.provider_line_name = ?)
+						)
 						AND (? IS NULL OR ? = '' OR lm.provider_line_id = ?)
 						AND (lm.valid_from IS NULL OR lm.valid_from <= CURRENT_TIMESTAMP)
 						AND (lm.valid_until IS NULL OR lm.valid_until > CURRENT_TIMESTAMP)
@@ -103,6 +109,11 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 				this::mapMapping,
 				providerId,
 				query.lineId(),
+				query.lineId(),
+				query.lineId(),
+				query.lineId(),
+				query.lineId(),
+				query.lineName(),
 				query.providerLineId(),
 				query.providerLineId(),
 				query.providerLineId()

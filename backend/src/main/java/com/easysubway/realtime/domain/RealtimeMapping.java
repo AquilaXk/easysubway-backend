@@ -31,4 +31,15 @@ public record RealtimeMapping(
 	public String effectiveProviderLineName(String fallback) {
 		return providerLineName == null || providerLineName.isBlank() ? fallback : providerLineName;
 	}
+
+	public boolean matchesProviderLine(String requestedProviderLineId) {
+		if (requestedProviderLineId == null || requestedProviderLineId.isBlank()) {
+			return true;
+		}
+		if (providerLineId.equals(requestedProviderLineId)) {
+			return true;
+		}
+		// ponytail: TOPIS station-code alias is the provider station id suffix; add explicit alias data if another provider needs it.
+		return providerStationId != null && providerStationId.endsWith(requestedProviderLineId);
+	}
 }
