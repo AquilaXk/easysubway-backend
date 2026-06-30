@@ -7,20 +7,28 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.UUID;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.dao.DuplicateKeyException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @Service
 public class DatapackSourceSnapshotCommandService {
 
 	private final JdbcDataSourceSnapshotRepository snapshotRepository;
+	private final TransactionTemplate eventInsertTransaction;
 	private final Clock clock;
 
 	public DatapackSourceSnapshotCommandService(
 		JdbcDataSourceSnapshotRepository snapshotRepository,
+		PlatformTransactionManager transactionManager,
 		ObjectProvider<Clock> clockProvider
 	) {
 		this.snapshotRepository = snapshotRepository;
+		this.eventInsertTransaction = new TransactionTemplate(transactionManager);
+		this.eventInsertTransaction.setPropagationBehavior(TransactionDefinition.PROPAGATION_NESTED);
 		this.clock = clockProvider.getIfAvailable(Clock::systemDefaultZone);
 	}
 
@@ -35,7 +43,20 @@ public class DatapackSourceSnapshotCommandService {
 			return existingEvent.get().snapshotId();
 		}
 		String snapshotId = snapshotRepository.saveSnapshot(snapshot).snapshotId();
-		snapshotRepository.insertEvent(
+		try {
+			insertEvent(command, snapshotId);
+		} catch (DuplicateKeyException exception) {
+			SourceSnapshotEventRow replayedEvent = snapshotRepository
+				.findEventByIdempotencyKey(command.sourceId(), command.idempotencyKey())
+				.orElseThrow(() -> exception);
+			ensureSameIdempotentRequest(command, snapshot, replayedEvent);
+			return replayedEvent.snapshotId();
+		}
+		return snapshotId;
+	}
+
+	private void insertEvent(SourceSnapshotCommand command, String snapshotId) {
+		eventInsertTransaction.executeWithoutResult(status -> snapshotRepository.insertEvent(
 			"source-snapshot-event-" + UUID.randomUUID(),
 			command.sourceId(),
 			snapshotId,
@@ -45,8 +66,7 @@ public class DatapackSourceSnapshotCommandService {
 			command.reason(),
 			command.idempotencyKey(),
 			LocalDateTime.now(clock)
-		);
-		return snapshotId;
+		));
 	}
 
 	private static DataSourceSnapshot snapshotFrom(SourceSnapshotCommand command) {
