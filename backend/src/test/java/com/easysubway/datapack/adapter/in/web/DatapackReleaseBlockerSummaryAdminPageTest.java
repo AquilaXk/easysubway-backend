@@ -40,7 +40,10 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	void setUp() {
 		clearDatapackTables();
 		insertSourceSnapshot();
+		insertPreviousCandidate();
 		insertCandidate();
+		insertEvidenceBundle();
+		insertProductionChannel();
 		insertAliasQuarantineOverride();
 		insertEvidenceBlockers();
 	}
@@ -54,13 +57,53 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 			.contains("데이터팩 출시 준비")
 			.contains("FAIL")
 			.contains("candidate-release-blocked")
+			.contains(SHA_A)
+			.contains("https://github.com/AquilaXk/easysubway/actions/runs/1164?redacted")
+			.contains("candidate-previous-stable")
+			.contains("production promote 차단: blocker 9건")
 			.contains("전체 blocker 9건")
 			.contains("alias 1")
 			.contains("quarantine 1")
 			.contains("manual override 1")
 			.contains("route gate 1")
 			.contains("manifest signature")
-			.doesNotContain("name=\"commandToken\"");
+			.doesNotContain("name=\"commandToken\"")
+			.doesNotContain("serviceKey");
+	}
+
+	@Test
+	@DisplayName("evidence bundle 상태가 실패하면 candidate gate가 PASS여도 production promote를 차단한다")
+	void dashboardBlocksProductionPromoteWhenEvidenceBundleStatusFails() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PASS',
+				route_regression_status = 'PASS',
+				android_evidence_status = 'PASS'
+			WHERE id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("""
+			UPDATE datapack_release_evidence_bundles
+			SET route_regression_status = 'FAIL',
+				manifest_signature_status = 'PASS'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM manual_overrides");
+		jdbcTemplate.update("DELETE FROM facility_evidence");
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
+
+		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
+		String qualityHtml = getAdminHtml("/admin/data-quality/page");
+
+		assertThat(dashboardHtml)
+			.contains("production promote 차단: blocker 1건")
+			.contains("전체 blocker 1건")
+			.doesNotContain("production promote 가능")
+			.doesNotContain("READY");
+		assertThat(qualityHtml)
+			.contains("Route gate")
+			.contains("ENTRY/EXIT/TRANSFER and generated connector gates");
 	}
 
 	@Test
@@ -236,6 +279,51 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				'FAIL', 'PASS', 'FAIL', 'PENDING', 'READY_FOR_APPROVAL',
 				'2026-06-29 03:30:00')
 			""", SHA_A, SHA_B, SHA_C, SHA_D, SHA_E, SHA_F, "1".repeat(64));
+	}
+
+	private void insertPreviousCandidate() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_candidates (
+				id, scope_id, artifact_kind, version, source_snapshot_set_hash,
+				override_set_hash, build_spec_sha256, source_inventory_sha256,
+				sqlite_sha256, gzip_sha256, manifest_sha256, coverage_status,
+				validator_status, route_regression_status, android_evidence_status,
+				approval_status, created_at
+			)
+			VALUES ('candidate-previous-stable', 'capital_pilot_android_v1', 'DATAPACK',
+				'2026.06.29-cand.previous', ?, ?, ?, ?, ?, ?, ?,
+				'PASS', 'PASS', 'PASS', 'PASS', 'PROMOTED',
+				'2026-06-29 02:30:00')
+			""", SHA_A, SHA_B, SHA_C, SHA_D, SHA_E, SHA_F, "2".repeat(64));
+	}
+
+	private void insertEvidenceBundle() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_evidence_bundles (
+				id, candidate_id, evidence_bundle_sha256, workflow_run_url,
+				validator_status, route_regression_status, manifest_signature_status,
+				android_evidence_status, created_at
+			)
+			VALUES ('evidence-bundle-blocked', 'candidate-release-blocked', ?,
+				'https://github.com/AquilaXk/easysubway/actions/runs/1164?serviceKey=secret',
+				'PASS', 'PASS', 'FAIL', 'PASS', '2026-06-29 03:36:00')
+			""", "3".repeat(64));
+	}
+
+	private void insertProductionChannel() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_channels (
+				channel, candidate_id, manifest_url, manifest_sha256,
+				previous_stable_candidate_id, previous_manifest_sha256,
+				rollback_available, last_operation_type, last_operation_status,
+				requested_by, approved_by, reason, idempotency_key, updated_at
+			)
+			VALUES ('production', 'candidate-release-blocked',
+				'https://datapack.example.com/production/current.json', ?,
+				'candidate-previous-stable', ?, TRUE, 'PROMOTE', 'PENDING',
+				'data-operator', 'release-approver', 'release readiness blocked',
+				'idempotency-readiness-1164', '2026-06-29 03:37:00')
+			""", "1".repeat(64), "2".repeat(64));
 	}
 
 	private void insertAliasQuarantineOverride() {

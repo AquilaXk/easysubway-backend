@@ -10,6 +10,7 @@ import com.easysubway.datapack.application.service.DatapackCandidateCommandServi
 import com.easysubway.datapack.application.service.DatapackCandidateCommandService.CandidateGateRerunCommand;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -174,7 +175,7 @@ class DatapackCandidateAdminPageController {
 				row.id(),
 				row.candidateId(),
 				row.evidenceBundleSha256(),
-				row.workflowRunUrl(),
+				redactedUrl(row.workflowRunUrl()),
 				row.validatorStatus(),
 				row.routeRegressionStatus(),
 				row.manifestSignatureStatus(),
@@ -186,6 +187,19 @@ class DatapackCandidateAdminPageController {
 		static EvidenceBundleView empty(String candidateId) {
 			return new EvidenceBundleView("-", candidateId, "-", "-", "-", "-", "-", "-", null);
 		}
+
+		public boolean productionPromoteAllowed() {
+			return List.of(validatorStatus, routeRegressionStatus, manifestSignatureStatus, androidEvidenceStatus)
+				.stream()
+				.allMatch("PASS"::equals);
+		}
+
+		public String productionPromoteReason() {
+			if (productionPromoteAllowed()) {
+				return "production promote 가능";
+			}
+			return "production promote 차단: evidence bundle PASS 필요";
+		}
 	}
 
 	private static String valueOrDash(String value) {
@@ -193,6 +207,14 @@ class DatapackCandidateAdminPageController {
 			return "-";
 		}
 		return value;
+	}
+
+	private static String redactedUrl(String value) {
+		String text = valueOrDash(value);
+		int query = text.indexOf('?');
+		int fragment = text.indexOf('#');
+		int cut = query < 0 ? fragment : (fragment < 0 ? query : Math.min(query, fragment));
+		return cut < 0 ? text : text.substring(0, cut) + "?redacted";
 	}
 
 	record CandidateGateRerunForm(String reason, String idempotencyKey) {
