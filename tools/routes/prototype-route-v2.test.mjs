@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { readFile } from "node:fs/promises";
 import test from "node:test";
-import { loadFixtures, runRangeRaptor, runTimeDependentDijkstra } from "./prototype-route-v2.mjs";
+import { loadFixtures, runAll, runRangeRaptor, runTimeDependentDijkstra } from "./prototype-route-v2.mjs";
 
 const fixtures = await loadFixtures();
 
@@ -14,6 +14,7 @@ for (const query of fixtures.queries) {
 
 test("route v2 prototypes return Pareto alternatives with reconstructed paths", () => {
   const query = fixtures.queries.find((candidate) => candidate.id === "pareto_arrival_vs_transfer");
+  assert.ok(query, "missing fixture query: pareto_arrival_vs_transfer");
   const alternatives = runTimeDependentDijkstra(fixtures, query);
 
   assert.equal(alternatives.length, 2);
@@ -23,6 +24,14 @@ test("route v2 prototypes return Pareto alternatives with reconstructed paths", 
   assert.equal(alternatives[1].transferCount, 0);
   assert.equal(alternatives[0].path[0].from, "pareto_a");
   assert.equal(alternatives[0].path.at(-1).to, "pareto_b");
+});
+
+test("route v2 CLI report keeps full Pareto alternatives", () => {
+  const result = runAll(fixtures).results.find((candidate) => candidate.queryId === "pareto_arrival_vs_transfer");
+
+  assert.ok(result, "missing runAll result: pareto_arrival_vs_transfer");
+  assert.equal(result.raptor.length, 2);
+  assert.equal(result.timeDependentDijkstra.length, 2);
 });
 
 test("route algorithm ADR fixes backend and mobile responsibilities", async () => {

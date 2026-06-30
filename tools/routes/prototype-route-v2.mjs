@@ -25,15 +25,15 @@ export function runAll(fixtures) {
     fixtureCount: fixtures.queries.length,
     results: fixtures.queries.map((query) => ({
       queryId: query.id,
-      raptor: runRangeRaptor(fixtures, query)[0] ?? null,
-      timeDependentDijkstra: runTimeDependentDijkstra(fixtures, query)[0] ?? null,
+      raptor: runRangeRaptor(fixtures, query),
+      timeDependentDijkstra: runTimeDependentDijkstra(fixtures, query),
     })),
   };
 }
 
 export function runRangeRaptor(fixtures, query) {
   const start = departureMinute(fixtures, query);
-  const labelsByRound = [new Map([[query.origin, [label(query.origin, start)]]])];
+  const labelsByRound = [new Map([[query.origin, [label(query.origin, start, start)]]])];
 
   for (let round = 0; round <= maxTransfers(query); round += 1) {
     const current = cloneLabels(labelsByRound[round] ?? new Map());
@@ -42,12 +42,12 @@ export function runRangeRaptor(fixtures, query) {
     labelsByRound[round + 1] = mergeMaps(labelsByRound[round + 1], current, fixtures.paretoLimit);
   }
 
-  return alternatives(labelsByRound.at(-1)?.get(query.destination) ?? [], fixtures.paretoLimit, start);
+  return alternatives(labelsByRound.at(-1)?.get(query.destination) ?? [], fixtures.paretoLimit);
 }
 
 export function runTimeDependentDijkstra(fixtures, query) {
   const start = departureMinute(fixtures, query);
-  let queue = [label(query.origin, start)];
+  let queue = [label(query.origin, start, start)];
   const best = new Map([[query.origin, queue]]);
 
   while (queue.length > 0) {
@@ -62,7 +62,7 @@ export function runTimeDependentDijkstra(fixtures, query) {
     }
   }
 
-  return alternatives(best.get(query.destination) ?? [], fixtures.paretoLimit, start);
+  return alternatives(best.get(query.destination) ?? [], fixtures.paretoLimit);
 }
 
 function normalize(fixtures) {
@@ -91,7 +91,7 @@ function scanTrips(fixtures, query, labels, round) {
     let boarded = null;
     for (const stop of trip.stops) {
       for (const previous of labels.get(stop.station) ?? []) {
-        if (previous.boardings === round && canBoard(fixtures, query, previous, stop)) {
+        if (canBoardAtRound(fixtures, query, previous, stop, round)) {
           boarded = betterBoarding(boarded, previous, stop);
         }
       }
@@ -99,6 +99,7 @@ function scanTrips(fixtures, query, labels, round) {
       addLabel(labels, {
         station: stop.station,
         time: stop.arrival,
+        startTime: boarded.label.startTime,
         boardings: boarded.label.boardings + 1,
         path: [...boarded.label.path, leg(trip, boarded.stop, stop)],
       }, fixtures.paretoLimit);
@@ -116,6 +117,7 @@ function scanTransfers(fixtures, query, labels) {
         changed = addLabel(labels, {
           station: transfer.to,
           time: previous.time + Math.ceil(transfer.durationSeconds / 60),
+          startTime: previous.startTime,
           boardings: previous.boardings,
           path: [...previous.path, { type: "transfer", from: transfer.from, to: transfer.to, durationSeconds: transfer.durationSeconds }],
         }, fixtures.paretoLimit) || changed;
@@ -132,6 +134,7 @@ function nextLabels(fixtures, query, current) {
     next.push({
       station: transfer.to,
       time: current.time + Math.ceil(transfer.durationSeconds / 60),
+      startTime: current.startTime,
       boardings: current.boardings,
       path: [...current.path, { type: "transfer", from: transfer.from, to: transfer.to, durationSeconds: transfer.durationSeconds }],
     });
@@ -146,6 +149,7 @@ function nextLabels(fixtures, query, current) {
       next.push({
         station: to.station,
         time: to.arrival,
+        startTime: current.startTime,
         boardings: current.boardings + 1,
         path: [...current.path, leg(trip, from, to)],
       });
@@ -154,8 +158,8 @@ function nextLabels(fixtures, query, current) {
   return next;
 }
 
-function label(station, time) {
-  return { station, time, boardings: 0, path: [] };
+function label(station, time, startTime) {
+  return { station, time, startTime, boardings: 0, path: [] };
 }
 
 function leg(trip, from, to) {
@@ -181,10 +185,10 @@ function addLabel(labels, candidate, limit) {
   return true;
 }
 
-function alternatives(labels, limit, start) {
+function alternatives(labels, limit) {
   return keepPareto(labels, limit).map((result) => ({
     arrival: formatClock(result.time),
-    durationSeconds: (result.time - start) * 60,
+    durationSeconds: (result.time - result.startTime) * 60,
     transferCount: Math.max(0, result.boardings - 1),
     tripIds: result.path.filter((step) => step.type === "ride").map((step) => step.tripId),
     path: result.path,
@@ -217,6 +221,10 @@ function canBoard(fixtures, query, previous, stop) {
   const entrySlack = Math.ceil((query.entrySlackSeconds ?? 0) / 60);
   const slack = previous.path.length === 0 ? entrySlack : fixtures.transferSlackMinutes;
   return stop.departure >= previous.time + slack;
+}
+
+function canBoardAtRound(fixtures, query, previous, stop, round) {
+  return previous.boardings === round && canBoard(fixtures, query, previous, stop);
 }
 
 function betterBoarding(current, label, stop) {

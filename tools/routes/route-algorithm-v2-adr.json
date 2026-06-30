@@ -40,6 +40,12 @@
       "rangeRaptor": "overlay fresh provider stop times before scan",
       "timeDependentDijkstra": "edge update model is noisier",
       "choice": "Range RAPTOR"
+    },
+    {
+      "criterion": "calendar and timezone handling",
+      "rangeRaptor": "evaluate Asia/Seoul service day, 24:xx overnight trips and calendar exceptions before trip scans",
+      "timeDependentDijkstra": "can support the same rules but would duplicate them across time-dependent edges",
+      "choice": "Range RAPTOR"
     }
   ],
   "v2Rules": {
