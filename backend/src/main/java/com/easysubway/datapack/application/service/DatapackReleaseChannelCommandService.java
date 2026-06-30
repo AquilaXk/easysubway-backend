@@ -55,6 +55,9 @@ public class DatapackReleaseChannelCommandService {
 		ensureNoPendingOperation(channel);
 		ensureCurrentPointerMatches(channel, command);
 		ensureNextCandidateExists(command);
+		if ("PROMOTE".equals(operationType) && "production".equals(command.channel())) {
+			ensureProductionEvidenceBundle(command);
+		}
 		if ("ROLLBACK".equals(operationType)) {
 			ensureRollbackTarget(channel, command);
 		}
@@ -135,6 +138,12 @@ public class DatapackReleaseChannelCommandService {
 	private void ensureNextCandidateExists(ReleaseChannelCommand command) {
 		if (!repository.candidateHasManifest(command.nextCandidateId(), command.nextManifestSha256())) {
 			throw new IllegalArgumentException("next candidate manifest hash does not match a known candidate");
+		}
+	}
+
+	private void ensureProductionEvidenceBundle(ReleaseChannelCommand command) {
+		if (!repository.candidateHasPassingReleaseEvidence(command.nextCandidateId(), command.nextManifestSha256())) {
+			throw new IllegalArgumentException("release evidence bundle is required before production promote");
 		}
 	}
 

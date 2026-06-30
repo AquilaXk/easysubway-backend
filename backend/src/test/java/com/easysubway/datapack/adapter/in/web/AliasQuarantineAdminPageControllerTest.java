@@ -1,10 +1,15 @@
 package com.easysubway.datapack.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +17,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -68,10 +75,53 @@ class AliasQuarantineAdminPageControllerTest {
 			.contains("quarantine-resolved-1")
 			.contains("ALIAS_APPROVED")
 			.contains("station-sadang")
-			.doesNotContain("name=\"commandToken\"")
-			.doesNotContain("승인 저장")
-			.doesNotContain("해결 저장")
+			.contains("name=\"commandToken\"")
+			.contains("승인 저장")
+			.contains("해결 저장")
 			.doesNotContain("serviceKey");
+	}
+
+	@Test
+	@DisplayName("alias review 권한 관리자는 pending alias를 승인한다")
+	void aliasReviewerApprovesPendingAlias() throws Exception {
+		mockMvc.perform(post("/admin/datapack/alias-approvals/alias-station-1/approve")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/alias-quarantine/page"))
+				.with(user("alias-reviewer").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.alias.review")
+				))
+				.param("reason", "official station id verified")
+				.param("idempotencyKey", "alias-approve-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/alias-quarantine/page"));
+
+		assertThat(aliasValue("alias-station-1", "approval_status")).isEqualTo("APPROVED");
+		assertThat(aliasValue("alias-station-1", "approved_by")).isEqualTo("alias-reviewer");
+	}
+
+	@Test
+	@DisplayName("quarantine review 권한 관리자는 open quarantine을 해결한다")
+	void quarantineReviewerResolvesOpenRecord() throws Exception {
+		mockMvc.perform(post("/admin/datapack/quarantine-records/quarantine-open-1/resolve")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/alias-quarantine/page"))
+				.with(user("quarantine-reviewer").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.quarantine.review")
+				))
+				.param("resolutionStatus", "ALIAS_APPROVED")
+				.param("resolutionReason", "canonical station confirmed")
+				.param("canonicalEntityType", "STATION")
+				.param("canonicalEntityId", "station-sangnoksu")
+				.param("evidenceHash", "1".repeat(64))
+				.param("idempotencyKey", "quarantine-resolve-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/alias-quarantine/page"));
+
+		assertThat(quarantineValue("quarantine-open-1", "resolution_status")).isEqualTo("RESOLVED");
+		assertThat(quarantineValue("quarantine-open-1", "resolved_by")).isEqualTo("quarantine-reviewer");
+		assertThat(resolutionValue("quarantine-open-1", "canonical_entity_id")).isEqualTo("station-sangnoksu");
 	}
 
 	@Test
@@ -160,5 +210,59 @@ class AliasQuarantineAdminPageControllerTest {
 			""",
 			"0".repeat(64)
 		);
+	}
+
+	private String aliasValue(String aliasId, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM external_alias_approvals WHERE id = ?",
+			String.class,
+			aliasId
+		);
+	}
+
+	private String quarantineValue(String recordId, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM source_quarantine_records WHERE id = ?",
+			String.class,
+			recordId
+		);
+	}
+
+	private String resolutionValue(String recordId, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM source_quarantine_resolutions WHERE quarantine_record_id = ? "
+				+ "ORDER BY resolved_at DESC, id DESC LIMIT 1",
+			String.class,
+			recordId
+		);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = (MockHttpSession) request.getSession(true);
+			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+			request.setSession(session);
+			return request;
+		};
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) {
+		try {
+			return mockMvc.perform(get(path)
+					.session(session)
+					.with(user("token-reader").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 }

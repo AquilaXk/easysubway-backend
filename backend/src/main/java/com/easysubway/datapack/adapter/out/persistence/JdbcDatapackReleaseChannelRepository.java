@@ -91,6 +91,21 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 	}
 
 	@Override
+	public boolean candidateHasPassingReleaseEvidence(String candidateId, String evidenceBundleSha256) {
+		Integer count = jdbcTemplate.queryForObject("""
+			SELECT COUNT(*)
+			FROM datapack_release_evidence_bundles
+			WHERE candidate_id = ?
+				AND evidence_bundle_sha256 = ?
+				AND validator_status = 'PASS'
+				AND route_regression_status = 'PASS'
+				AND manifest_signature_status = 'PASS'
+				AND android_evidence_status = 'PASS'
+			""", Integer.class, candidateId, evidenceBundleSha256);
+		return count != null && count > 0;
+	}
+
+	@Override
 	public void updateChannel(
 		String channel,
 		String nextCandidateId,

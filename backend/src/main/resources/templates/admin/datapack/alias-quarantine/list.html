@@ -16,7 +16,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>Alias / Quarantine</h1>
-			<p>candidate 입력 전에 source row 매핑 충돌과 quarantine blocker를 읽기 전용으로 확인합니다.</p>
+			<p>candidate 입력 전에 source row 매핑 충돌과 quarantine blocker를 검수합니다.</p>
 		</div>
 	</header>
 
@@ -36,11 +36,12 @@
 				<th scope="col">requested</th>
 				<th scope="col">approved</th>
 				<th scope="col">evidence</th>
+				<th scope="col">command</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:if="${aliasApprovals.isEmpty()}">
-				<td colspan="11">alias 검수 row가 없습니다.</td>
+				<td colspan="12">alias 검수 row가 없습니다.</td>
 			</tr>
 			<tr th:each="alias : ${aliasApprovals}">
 				<td th:text="${alias.id}">alias-id</td>
@@ -57,6 +58,28 @@
 					<span th:text="${alias.approvedAt}">-</span>
 				</td>
 				<td th:text="${alias.evidenceHash}">sha256</td>
+				<td>
+					<form method="post" th:action="@{'/admin/datapack/alias-approvals/' + ${alias.id} + '/approve'}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'alias-approve-' + alias.id}">
+						<label>
+							<span class="sr-only">승인 사유</span>
+							<input name="reason" value="official alias reviewed" required>
+						</label>
+						<button type="submit">승인 저장</button>
+					</form>
+					<form method="post" th:action="@{'/admin/datapack/alias-approvals/' + ${alias.id} + '/reject'}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'alias-reject-' + alias.id}">
+						<label>
+							<span class="sr-only">반려 사유</span>
+							<input name="reason" value="official alias rejected" required>
+						</label>
+						<button type="submit">반려 저장</button>
+					</form>
+				</td>
 			</tr>
 			</tbody>
 		</table>
@@ -78,11 +101,12 @@
 				<th scope="col">canonical</th>
 				<th scope="col">resolved</th>
 				<th scope="col">excerpt</th>
+				<th scope="col">command</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:if="${quarantineRecords.isEmpty()}">
-				<td colspan="11">quarantine row가 없습니다.</td>
+				<td colspan="12">quarantine row가 없습니다.</td>
 			</tr>
 			<tr th:each="record : ${quarantineRecords}">
 				<td th:text="${record.id}">quarantine-id</td>
@@ -99,6 +123,28 @@
 					<span th:text="${record.resolvedAt}">-</span>
 				</td>
 				<td th:text="${record.redactedExcerpt}">redacted excerpt</td>
+				<td>
+					<form method="post" th:action="@{'/admin/datapack/quarantine-records/' + ${record.id} + '/resolve'}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'quarantine-resolve-' + record.id}">
+						<input type="hidden" name="resolutionStatus" value="ALIAS_APPROVED">
+						<input type="hidden" name="canonicalEntityType" value="STATION">
+						<label>
+							<span class="sr-only">canonical entity id</span>
+							<input name="canonicalEntityId" placeholder="station-id">
+						</label>
+						<label>
+							<span class="sr-only">evidence hash</span>
+							<input name="evidenceHash" placeholder="sha256">
+						</label>
+						<label>
+							<span class="sr-only">해결 사유</span>
+							<input name="resolutionReason" value="quarantine reviewed" required>
+						</label>
+						<button type="submit">해결 저장</button>
+					</form>
+				</td>
 			</tr>
 			</tbody>
 		</table>

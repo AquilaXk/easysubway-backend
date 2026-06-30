@@ -173,6 +173,28 @@ class DataSourceSnapshotAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("source run 권한 관리자는 locked snapshot normalization run을 요청한다")
+	void sourceRunAdminRequestsNormalizationRun() throws Exception {
+		mockMvc.perform(post("/admin/datapack/source-snapshots/snapshot-kric-20260629/normalization-runs")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/source-snapshots/snapshot-kric-20260629/page"))
+				.with(user("source-runner").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.source.run")
+				))
+				.param("runId", "normalization-run-1162")
+				.param("schemaDiffSha256", "9".repeat(64))
+				.param("schemaDiffSummary", "normalization requested")
+				.param("reason", "normalize locked snapshot")
+				.param("idempotencyKey", "normalization-run-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/source-snapshots/snapshot-kric-20260629/page"));
+
+		assertThat(normalizationValue("normalization-run-1162", "status")).isEqualTo("RUNNING");
+		assertThat(normalizationValue("normalization-run-1162", "source_snapshot_id")).isEqualTo("snapshot-kric-20260629");
+	}
+
+	@Test
 	@DisplayName("source snapshot command는 event unique 충돌을 기존 멱등 요청으로 재생한다")
 	void sourceSnapshotCommandReplaysDuplicateEvent() throws Exception {
 		insertMatchingLockedSnapshotAndEvent();
@@ -278,6 +300,14 @@ class DataSourceSnapshotAdminPageControllerTest {
 			Object.class,
 			"kric-station-elevator",
 			idempotencyKey
+		);
+	}
+
+	private Object normalizationValue(String runId, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM datapack_normalization_runs WHERE id = ?",
+			Object.class,
+			runId
 		);
 	}
 

@@ -65,6 +65,18 @@ public class JdbcDatapackCandidateRepository {
 			""", this::mapEvidenceBundle, candidateId).stream().findFirst();
 	}
 
+	public int rerunGates(String candidateId) {
+		return jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PENDING',
+				validator_status = 'PENDING',
+				route_regression_status = 'PENDING',
+				android_evidence_status = 'PENDING',
+				approval_status = 'DRAFT'
+			WHERE id = ?
+			""", candidateId);
+	}
+
 	private CandidateRow mapCandidate(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new CandidateRow(
 			resultSet.getString("id"),

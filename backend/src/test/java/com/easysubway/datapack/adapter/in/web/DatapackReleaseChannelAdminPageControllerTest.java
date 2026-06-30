@@ -83,6 +83,8 @@ class DatapackReleaseChannelAdminPageControllerTest {
 	@Test
 	@DisplayName("production approve 권한 관리자는 release channel을 승격한다")
 	void productionApproverPromotesReleaseChannel() throws Exception {
+		insertEvidenceBundle("candidate-stable-4", "0".repeat(64));
+
 		mockMvc.perform(post("/admin/datapack/release-channels/production/promote")
 				.with(csrf())
 				.with(commandToken("/admin/datapack/release-channels/page"))
@@ -137,6 +139,22 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			"e".repeat(64),
 			"f".repeat(64),
 			"0".repeat(64)
+		);
+	}
+
+	private void insertEvidenceBundle(String candidateId, String evidenceBundleSha256) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_evidence_bundles (
+				id, candidate_id, evidence_bundle_sha256, workflow_run_url,
+				validator_status, route_regression_status, manifest_signature_status,
+				android_evidence_status, created_at
+			)
+			VALUES (?, ?, ?, 'https://github.com/AquilaXk/easysubway/actions/runs/1162',
+				'PASS', 'PASS', 'PASS', 'PASS', '2026-06-29 03:20:00')
+			""",
+			"evidence-" + candidateId,
+			candidateId,
+			evidenceBundleSha256
 		);
 	}
 

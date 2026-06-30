@@ -32,6 +32,77 @@ public class JdbcManualOverrideLedgerRepository {
 			""", this::mapRow, limit);
 	}
 
+	public void insertRequest(
+		String id,
+		String entityType,
+		String entityId,
+		String fieldName,
+		String beforeValue,
+		String afterValue,
+		String reasonCode,
+		String reason,
+		String evidenceUri,
+		String evidenceHash,
+		String requestedBy,
+		boolean strictRouteEligible,
+		LocalDateTime effectiveFrom,
+		LocalDateTime expiresAt,
+		LocalDateTime createdAt
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO manual_overrides (
+				id, entity_type, entity_id, field_name, before_value, after_value,
+				reason_code, reason, evidence_uri, evidence_hash, requested_by,
+				approved_by, approved_at, route_safety_approved_by, approval_status,
+				conflict_status, strict_route_eligible, effective_from, expires_at,
+				superseded_by, created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, NULL,
+				'PENDING', 'NONE', ?, ?, ?, NULL, ?)
+			""",
+			id,
+			entityType,
+			entityId,
+			fieldName,
+			beforeValue,
+			afterValue,
+			reasonCode,
+			reason,
+			evidenceUri,
+			evidenceHash,
+			requestedBy,
+			strictRouteEligible,
+			effectiveFrom,
+			expiresAt,
+			createdAt
+		);
+	}
+
+	public int approve(String id, String approvedBy, LocalDateTime approvedAt) {
+		return jdbcTemplate.update("""
+			UPDATE manual_overrides
+			SET approval_status = 'APPROVED',
+				approved_by = ?,
+				approved_at = ?,
+				route_safety_approved_by = CASE
+					WHEN strict_route_eligible THEN ?
+					ELSE route_safety_approved_by
+				END
+			WHERE id = ?
+				AND approval_status = 'PENDING'
+				AND requested_by <> ?
+				AND conflict_status <> 'UNRESOLVED'
+			""", approvedBy, approvedAt, approvedBy, id, approvedBy);
+	}
+
+	public int expire(String id) {
+		return jdbcTemplate.update("""
+			UPDATE manual_overrides
+			SET approval_status = 'EXPIRED'
+			WHERE id = ? AND approval_status IN ('PENDING', 'APPROVED')
+			""", id);
+	}
+
 	private ManualOverrideRow mapRow(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new ManualOverrideRow(
 			resultSet.getString("id"),
