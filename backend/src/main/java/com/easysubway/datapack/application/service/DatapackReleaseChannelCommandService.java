@@ -142,7 +142,8 @@ public class DatapackReleaseChannelCommandService {
 	}
 
 	private void ensureProductionEvidenceBundle(ReleaseChannelCommand command) {
-		if (!repository.candidateHasPassingReleaseEvidence(command.nextCandidateId(), command.nextManifestSha256())) {
+		ReleaseChannelCommand.requireSha(command.evidenceBundleSha256(), "evidenceBundleSha256");
+		if (!repository.candidateHasPassingReleaseEvidence(command.nextCandidateId(), command.evidenceBundleSha256())) {
 			throw new IllegalArgumentException("release evidence bundle is required before production promote");
 		}
 	}
@@ -167,7 +168,8 @@ public class DatapackReleaseChannelCommandService {
 		String approvedBy,
 		String reason,
 		String idempotencyKey,
-		String workflowRunUrl
+		String workflowRunUrl,
+		String evidenceBundleSha256
 	) {
 
 		private void validate() {

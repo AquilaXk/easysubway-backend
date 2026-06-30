@@ -108,6 +108,7 @@ class DatapackCandidateAdminPageControllerTest {
 		assertThat(candidateValue("route_regression_status")).isEqualTo("PENDING");
 		assertThat(candidateValue("android_evidence_status")).isEqualTo("PENDING");
 		assertThat(candidateValue("approval_status")).isEqualTo("DRAFT");
+		assertThat(evidenceBundleCount()).isZero();
 	}
 
 	@Test
@@ -178,6 +179,13 @@ class DatapackCandidateAdminPageControllerTest {
 		return jdbcTemplate.queryForObject(
 			"SELECT " + column + " FROM datapack_candidates WHERE id = 'candidate-capital-1'",
 			String.class
+		);
+	}
+
+	private Integer evidenceBundleCount() {
+		return jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM datapack_release_evidence_bundles WHERE candidate_id = 'candidate-capital-1'",
+			Integer.class
 		);
 	}
 

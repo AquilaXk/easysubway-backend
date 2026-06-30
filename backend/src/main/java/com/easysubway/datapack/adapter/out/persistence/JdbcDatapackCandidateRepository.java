@@ -66,7 +66,7 @@ public class JdbcDatapackCandidateRepository {
 	}
 
 	public int rerunGates(String candidateId) {
-		return jdbcTemplate.update("""
+		int updated = jdbcTemplate.update("""
 			UPDATE datapack_candidates
 			SET coverage_status = 'PENDING',
 				validator_status = 'PENDING',
@@ -75,6 +75,10 @@ public class JdbcDatapackCandidateRepository {
 				approval_status = 'DRAFT'
 			WHERE id = ?
 			""", candidateId);
+		if (updated == 1) {
+			jdbcTemplate.update("DELETE FROM datapack_release_evidence_bundles WHERE candidate_id = ?", candidateId);
+		}
+		return updated;
 	}
 
 	private CandidateRow mapCandidate(ResultSet resultSet, int rowNumber) throws SQLException {

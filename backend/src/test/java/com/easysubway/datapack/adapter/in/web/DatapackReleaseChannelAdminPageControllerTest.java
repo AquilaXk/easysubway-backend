@@ -83,7 +83,7 @@ class DatapackReleaseChannelAdminPageControllerTest {
 	@Test
 	@DisplayName("production approve 권한 관리자는 release channel을 승격한다")
 	void productionApproverPromotesReleaseChannel() throws Exception {
-		insertEvidenceBundle("candidate-stable-4", "0".repeat(64));
+		insertEvidenceBundle("candidate-stable-4", "5".repeat(64));
 
 		mockMvc.perform(post("/admin/datapack/release-channels/production/promote")
 				.with(csrf())
@@ -96,6 +96,7 @@ class DatapackReleaseChannelAdminPageControllerTest {
 				.param("nextCandidateId", "candidate-stable-4")
 				.param("previousManifestSha256", "1".repeat(64))
 				.param("nextManifestSha256", "0".repeat(64))
+				.param("evidenceBundleSha256", "5".repeat(64))
 				.param("requestedBy", "data-operator")
 				.param("approvedBy", "forged-approver")
 				.param("reason", "approval-1162")

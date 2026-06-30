@@ -75,7 +75,13 @@
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="idempotencyKey" th:value="${'facility-review-' + row.id}">
-						<input type="hidden" name="strictRouteEligible" th:value="${row.strictRouteEligible}">
+						<label>
+							<span class="sr-only">strict route eligibility</span>
+							<select name="strictRouteEligible">
+								<option value="true" th:selected="${row.strictRouteEligible}">strict 가능</option>
+								<option value="false" th:selected="${!row.strictRouteEligible}">strict 불가</option>
+							</select>
+						</label>
 						<label>
 							<span class="sr-only">strict 제외 사유</span>
 							<input name="strictRouteEligibleReason" th:value="${row.strictRouteReason == '-' ? '' : row.strictRouteReason}" placeholder="strict 제외 사유">
