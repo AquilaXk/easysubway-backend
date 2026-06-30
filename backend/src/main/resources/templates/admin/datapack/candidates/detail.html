@@ -52,6 +52,8 @@
 
 	<section class="admin-panel">
 		<h2>Evidence Bundle</h2>
+		<p class="summary">raw evidence 원문은 표시하지 않고 검증된 hash/status만 표시합니다.</p>
+		<p class="summary" th:text="${evidenceBundle.productionPromoteReason()}">production promote 차단</p>
 		<table>
 			<tbody>
 			<tr><th scope="row">evidenceBundleSha256</th><td th:text="${evidenceBundle.evidenceBundleSha256}">sha</td></tr>

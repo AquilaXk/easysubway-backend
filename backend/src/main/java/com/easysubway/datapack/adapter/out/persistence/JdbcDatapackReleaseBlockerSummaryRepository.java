@@ -43,6 +43,8 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		long facilityBlockers = countFacilityBlockers(null);
 		long routeGateBlockers = countRouteGateBlockers(null);
 		ManifestSignatureSummary manifestSignature = manifestSignature(candidate);
+		EvidenceBundleSummary evidenceBundle = evidenceBundle(candidate);
+		ReleaseChannelSummary productionChannel = productionChannel();
 		long totalBlockers = candidateGateBlockers
 			+ aliasBlockers
 			+ quarantineBlockers
@@ -53,6 +55,12 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		return new DatapackReleaseBlockerSummary(
 			candidate.map(CandidateGateSummary::candidateId).orElse("-"),
 			candidate.map(CandidateGateSummary::scopeId).orElse("-"),
+			candidate.map(CandidateGateSummary::sourceSnapshotSetHash).orElse("-"),
+			candidate.map(CandidateGateSummary::manifestSha256).orElse("-"),
+			evidenceBundle.evidenceBundleSha256(),
+			evidenceBundle.workflowRunUrl(),
+			productionChannel.candidateId(),
+			productionChannel.rollbackCandidateId(),
 			releaseStatus(candidate, totalBlockers),
 			totalBlockers,
 			candidateGateBlockers,
@@ -95,7 +103,8 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 
 	private Optional<CandidateGateSummary> latestCandidate() {
 		return jdbcTemplate.query("""
-			SELECT id, scope_id, coverage_status, validator_status,
+			SELECT id, scope_id, source_snapshot_set_hash, manifest_sha256,
+				coverage_status, validator_status,
 				route_regression_status, android_evidence_status, created_at
 			FROM datapack_candidates
 			ORDER BY created_at DESC, id ASC
@@ -107,6 +116,8 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		return new CandidateGateSummary(
 			resultSet.getString("id"),
 			resultSet.getString("scope_id"),
+			resultSet.getString("source_snapshot_set_hash"),
+			valueOrDash(resultSet.getString("manifest_sha256")),
 			resultSet.getString("coverage_status"),
 			resultSet.getString("validator_status"),
 			resultSet.getString("route_regression_status"),
@@ -156,6 +167,31 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			.map(manifestStatus -> "PASS".equals(manifestStatus) ? "PASS" : manifestStatus)
 			.orElse("확인 필요");
 		return new ManifestSignatureSummary(status, "PASS".equals(status) ? 0 : 1);
+	}
+
+	private EvidenceBundleSummary evidenceBundle(Optional<CandidateGateSummary> candidate) {
+		if (candidate.isEmpty()) {
+			return EvidenceBundleSummary.empty();
+		}
+		return jdbcTemplate.query("""
+			SELECT evidence_bundle_sha256, workflow_run_url
+			FROM datapack_release_evidence_bundles
+			WHERE candidate_id = ?
+			""", (resultSet, rowNumber) -> new EvidenceBundleSummary(
+				resultSet.getString("evidence_bundle_sha256"),
+				redactedUrl(resultSet.getString("workflow_run_url"))
+			), candidate.get().candidateId()).stream().findFirst().orElse(EvidenceBundleSummary.empty());
+	}
+
+	private ReleaseChannelSummary productionChannel() {
+		return jdbcTemplate.query("""
+			SELECT candidate_id, previous_stable_candidate_id
+			FROM datapack_release_channels
+			WHERE channel = 'production'
+			""", (resultSet, rowNumber) -> new ReleaseChannelSummary(
+			resultSet.getString("candidate_id"),
+			valueOrDash(resultSet.getString("previous_stable_candidate_id"))
+		)).stream().findFirst().orElse(ReleaseChannelSummary.empty());
 	}
 
 	private long countManualOverrideBlockers() {
@@ -257,9 +293,26 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		return "alias " + aliasBlockers + " / quarantine " + quarantineBlockers;
 	}
 
+	private static String valueOrDash(String value) {
+		if (value == null || value.isBlank()) {
+			return "-";
+		}
+		return value;
+	}
+
+	private static String redactedUrl(String value) {
+		String text = valueOrDash(value);
+		int query = text.indexOf('?');
+		int fragment = text.indexOf('#');
+		int cut = query < 0 ? fragment : (fragment < 0 ? query : Math.min(query, fragment));
+		return cut < 0 ? text : text.substring(0, cut) + "?redacted";
+	}
+
 	private record CandidateGateSummary(
 		String candidateId,
 		String scopeId,
+		String sourceSnapshotSetHash,
+		String manifestSha256,
 		String coverageStatus,
 		String validatorStatus,
 		String routeRegressionStatus,
@@ -276,5 +329,19 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 	}
 
 	private record ManifestSignatureSummary(String status, long blockerCount) {
+	}
+
+	private record EvidenceBundleSummary(String evidenceBundleSha256, String workflowRunUrl) {
+
+		static EvidenceBundleSummary empty() {
+			return new EvidenceBundleSummary("-", "-");
+		}
+	}
+
+	private record ReleaseChannelSummary(String candidateId, String rollbackCandidateId) {
+
+		static ReleaseChannelSummary empty() {
+			return new ReleaseChannelSummary("-", "-");
+		}
 	}
 }

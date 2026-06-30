@@ -47,8 +47,16 @@
 			<span> · </span>
 			<span th:text="|route gate ${datapackReleaseSummary.routeGateBlockers}|">route gate 0</span>
 		</p>
+		<p class="summary" th:text="${datapackReleaseSummary.productionPromoteReason()}">production promote 차단: blocker 0건</p>
 		<table>
 			<tbody>
+			<tr><th scope="row">scope</th><td th:text="${datapackReleaseSummary.scopeId}">scope</td></tr>
+			<tr><th scope="row">source snapshot set</th><td th:text="${datapackReleaseSummary.sourceSnapshotSetHash}">sha</td></tr>
+			<tr><th scope="row">manifest</th><td th:text="${datapackReleaseSummary.manifestSha256}">sha</td></tr>
+			<tr><th scope="row">evidence bundle</th><td th:text="${datapackReleaseSummary.evidenceBundleSha256}">sha</td></tr>
+			<tr><th scope="row">evidence workflow</th><td th:text="${datapackReleaseSummary.evidenceWorkflowRunUrl}">workflow</td></tr>
+			<tr><th scope="row">production current</th><td th:text="${datapackReleaseSummary.productionCandidateId}">candidate</td></tr>
+			<tr><th scope="row">rollback target</th><td th:text="${datapackReleaseSummary.rollbackCandidateId}">candidate</td></tr>
 			<tr><th scope="row">candidate gate</th><td th:text="${datapackReleaseSummary.candidateGateBlockers}">0</td></tr>
 			<tr><th scope="row">alias</th><td th:text="${datapackReleaseSummary.aliasBlockers}">0</td></tr>
 			<tr><th scope="row">quarantine</th><td th:text="${datapackReleaseSummary.quarantineBlockers}">0</td></tr>

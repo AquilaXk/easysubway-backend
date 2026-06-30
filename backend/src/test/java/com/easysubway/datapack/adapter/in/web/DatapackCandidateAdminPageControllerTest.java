@@ -81,11 +81,14 @@ class DatapackCandidateAdminPageControllerTest {
 			.contains("snapshot-kric-20260629")
 			.contains("buildSpec")
 			.contains("workflowRunUrl")
-			.contains("https://github.com/AquilaXk/easysubway/actions/runs/123")
+			.contains("https://github.com/AquilaXk/easysubway/actions/runs/123?redacted")
 			.contains("evidenceBundleSha256")
+			.contains("raw evidence 원문은 표시하지 않고 검증된 hash/status만 표시합니다.")
+			.contains("production promote 가능")
 			.contains("name=\"commandToken\"")
 			.contains("gate 재실행")
-			.doesNotContain("production 승인");
+			.doesNotContain("production 승인")
+			.doesNotContain("serviceKey");
 	}
 
 	@Test
@@ -168,7 +171,7 @@ class DatapackCandidateAdminPageControllerTest {
 				android_evidence_status, created_at
 			)
 			VALUES ('evidence-bundle-1', 'candidate-capital-1', ?,
-				'https://github.com/AquilaXk/easysubway/actions/runs/123',
+				'https://github.com/AquilaXk/easysubway/actions/runs/123?serviceKey=secret',
 				'PASS', 'PASS', 'PASS', 'PASS', '2026-06-29 03:02:00')
 			""",
 			"5".repeat(64)

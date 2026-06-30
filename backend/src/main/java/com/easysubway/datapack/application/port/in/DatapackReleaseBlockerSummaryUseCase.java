@@ -12,6 +12,12 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 	record DatapackReleaseBlockerSummary(
 		String candidateId,
 		String scopeId,
+		String sourceSnapshotSetHash,
+		String manifestSha256,
+		String evidenceBundleSha256,
+		String evidenceWorkflowRunUrl,
+		String productionCandidateId,
+		String rollbackCandidateId,
 		String status,
 		long totalBlockers,
 		long candidateGateBlockers,
@@ -27,6 +33,12 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 
 		public static DatapackReleaseBlockerSummary empty() {
 			return new DatapackReleaseBlockerSummary(
+				"-",
+				"-",
+				"-",
+				"-",
+				"-",
+				"-",
 				"-",
 				"-",
 				"확인 필요",
@@ -49,6 +61,17 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 				),
 				null
 			);
+		}
+
+		public boolean productionPromoteAllowed() {
+			return "READY".equals(status);
+		}
+
+		public String productionPromoteReason() {
+			if (productionPromoteAllowed()) {
+				return "production promote 가능";
+			}
+			return "production promote 차단: blocker " + totalBlockers + "건";
 		}
 	}
 
