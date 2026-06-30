@@ -1,0 +1,428 @@
+{
+  "schemaVersion": 1,
+  "timezone": "Asia/Seoul",
+  "transferSlackSeconds": 180,
+  "paretoLimit": 3,
+  "calendarDates": {
+    "2026-07-02": ["holiday_removed"]
+  },
+  "transfers": [
+    {
+      "from": "sadang_l4",
+      "to": "sadang_l2",
+      "durationSeconds": 600,
+      "stepFree": true,
+      "verified": true
+    },
+    {
+      "from": "gangnam_l2",
+      "to": "gangnam_shin",
+      "durationSeconds": 240,
+      "stepFree": true,
+      "verified": true
+    },
+    {
+      "from": "pareto_mid_l1",
+      "to": "pareto_mid_l2",
+      "durationSeconds": 60,
+      "stepFree": true,
+      "verified": true
+    },
+    {
+      "from": "stairs_l4",
+      "to": "stairs_l2",
+      "durationSeconds": 180,
+      "stepFree": false,
+      "verified": true
+    },
+    {
+      "from": "stepfree_l4",
+      "to": "stepfree_l2",
+      "durationSeconds": 420,
+      "stepFree": true,
+      "verified": true
+    }
+  ],
+  "trips": [
+    {
+      "id": "l4-local-0900",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["sangnoksu_l4", "09:00", "09:00"],
+        ["banwol_l4", "09:08", "09:08"],
+        ["sadang_l4", "09:35", "09:35"]
+      ]
+    },
+    {
+      "id": "l4-local-0905",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["sangnoksu_l4", "09:05", "09:05"],
+        ["banwol_l4", "09:13", "09:13"],
+        ["sadang_l4", "09:40", "09:40"]
+      ]
+    },
+    {
+      "id": "l4-express-0903",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "express",
+      "stops": [
+        ["sangnoksu_l4", "09:03", "09:03"],
+        ["sadang_l4", "09:24", "09:24"]
+      ]
+    },
+    {
+      "id": "l4-express-0925",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "express",
+      "stops": [
+        ["sangnoksu_l4", "09:25", "09:25"],
+        ["sadang_l4", "09:50", "09:50"]
+      ]
+    },
+    {
+      "id": "l2-missed-0936",
+      "lineId": "line-2",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["sadang_l2", "09:36", "09:36"],
+        ["gangnam_l2", "09:48", "09:48"],
+        ["jamsil_l2", "10:08", "10:08"]
+      ]
+    },
+    {
+      "id": "l2-local-0945",
+      "lineId": "line-2",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["sadang_l2", "09:45", "09:45"],
+        ["gangnam_l2", "09:57", "09:57"],
+        ["jamsil_l2", "10:17", "10:17"]
+      ]
+    },
+    {
+      "id": "shin-local-1005",
+      "lineId": "shinbundang",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["gangnam_shin", "10:05", "10:05"],
+        ["pangyo_shin", "10:22", "10:22"]
+      ]
+    },
+    {
+      "id": "l4-stairs-0910",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["origin_l4", "09:10", "09:10"],
+        ["stairs_l4", "09:20", "09:20"],
+        ["stepfree_l4", "09:35", "09:35"]
+      ]
+    },
+    {
+      "id": "l2-stairs-0924",
+      "lineId": "line-2",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["stairs_l2", "09:24", "09:24"],
+        ["destination_l2", "09:34", "09:34"]
+      ]
+    },
+    {
+      "id": "l2-stepfree-0945",
+      "lineId": "line-2",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["stepfree_l2", "09:45", "09:45"],
+        ["destination_l2", "09:55", "09:55"]
+      ]
+    },
+    {
+      "id": "l4-last-2350",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["late_a_l4", "23:50", "23:50"],
+        ["late_b_l4", "24:05", "24:05"]
+      ]
+    },
+    {
+      "id": "l4-first-2410",
+      "lineId": "line-4",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["late_a_l4", "24:10", "24:10"],
+        ["late_b_l4", "24:25", "24:25"]
+      ]
+    },
+    {
+      "id": "holiday-removed-0900",
+      "lineId": "line-h",
+      "service": "holiday_removed",
+      "pattern": "local",
+      "stops": [
+        ["holiday_a", "09:00", "09:00"],
+        ["holiday_b", "09:10", "09:10"]
+      ]
+    },
+    {
+      "id": "holiday-daily-0915",
+      "lineId": "line-h",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["holiday_a", "09:15", "09:15"],
+        ["holiday_b", "09:25", "09:25"]
+      ]
+    },
+    {
+      "id": "freq-0900",
+      "lineId": "line-f",
+      "service": "daily",
+      "pattern": "frequency",
+      "stops": [
+        ["freq_a", "09:00", "09:00"],
+        ["freq_b", "09:12", "09:12"]
+      ]
+    },
+    {
+      "id": "freq-0910",
+      "lineId": "line-f",
+      "service": "daily",
+      "pattern": "frequency",
+      "stops": [
+        ["freq_a", "09:10", "09:10"],
+        ["freq_b", "09:22", "09:22"]
+      ]
+    },
+    {
+      "id": "fresh-0902",
+      "lineId": "line-r",
+      "service": "daily",
+      "pattern": "local",
+      "realtime": "fresh",
+      "stops": [
+        ["rt_a", "09:02", "09:02"],
+        ["rt_b", "09:17", "09:17"]
+      ]
+    },
+    {
+      "id": "stale-0900",
+      "lineId": "line-r",
+      "service": "daily",
+      "pattern": "local",
+      "realtime": "stale",
+      "stops": [
+        ["rt_a", "09:00", "09:00"],
+        ["rt_b", "09:15", "09:15"]
+      ]
+    },
+    {
+      "id": "pareto-direct-0900",
+      "lineId": "line-p",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["pareto_a", "09:00", "09:00"],
+        ["pareto_b", "09:30", "09:30"]
+      ]
+    },
+    {
+      "id": "pareto-leg1-0900",
+      "lineId": "line-p1",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["pareto_a", "09:00", "09:00"],
+        ["pareto_mid_l1", "09:10", "09:10"]
+      ]
+    },
+    {
+      "id": "pareto-leg2-0915",
+      "lineId": "line-p2",
+      "service": "daily",
+      "pattern": "local",
+      "stops": [
+        ["pareto_mid_l2", "09:15", "09:15"],
+        ["pareto_b", "09:25", "09:25"]
+      ]
+    }
+  ],
+  "queries": [
+    {
+      "id": "direct_timetable_route",
+      "origin": "sangnoksu_l4",
+      "destination": "sadang_l4",
+      "departure": "2026-07-01T08:58:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:24",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-express-0903"]
+    },
+    {
+      "id": "one_transfer",
+      "origin": "sangnoksu_l4",
+      "destination": "jamsil_l2",
+      "departure": "2026-07-01T08:58:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "10:17",
+      "expectedTransfers": 1,
+      "expectedTripIds": ["l4-express-0903", "l2-local-0945"]
+    },
+    {
+      "id": "two_transfer",
+      "origin": "sangnoksu_l4",
+      "destination": "pangyo_shin",
+      "departure": "2026-07-01T08:58:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "10:22",
+      "expectedTransfers": 2,
+      "expectedTripIds": ["l4-express-0903", "l2-local-0945", "shin-local-1005"]
+    },
+    {
+      "id": "express_beats_local",
+      "origin": "sangnoksu_l4",
+      "destination": "sadang_l4",
+      "departure": "2026-07-01T09:00:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:24",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-express-0903"]
+    },
+    {
+      "id": "missed_express_makes_local_faster",
+      "origin": "sangnoksu_l4",
+      "destination": "sadang_l4",
+      "departure": "2026-07-01T09:04:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:40",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-local-0905"]
+    },
+    {
+      "id": "transfer_buffer_too_short_selects_next_train",
+      "origin": "sangnoksu_l4",
+      "destination": "gangnam_l2",
+      "departure": "2026-07-01T08:58:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:57",
+      "expectedTransfers": 1,
+      "expectedTripIds": ["l4-express-0903", "l2-local-0945"]
+    },
+    {
+      "id": "strict_step_free_excludes_transfer",
+      "origin": "origin_l4",
+      "destination": "destination_l2",
+      "departure": "2026-07-01T09:00:00+09:00",
+      "constraintMode": "STRICT_STEP_FREE",
+      "expectedArrival": "09:55",
+      "expectedTransfers": 1,
+      "expectedTripIds": ["l4-stairs-0910", "l2-stepfree-0945"]
+    },
+    {
+      "id": "last_train_missed",
+      "origin": "late_a_l4",
+      "destination": "late_b_l4",
+      "departure": "2026-07-01T23:55:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "24:25",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-first-2410"]
+    },
+    {
+      "id": "first_train_next_day",
+      "origin": "late_a_l4",
+      "destination": "late_b_l4",
+      "departure": "2026-07-01T24:00:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "24:25",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-first-2410"]
+    },
+    {
+      "id": "service_calendar_holiday_removed",
+      "origin": "holiday_a",
+      "destination": "holiday_b",
+      "departure": "2026-07-02T08:50:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:25",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["holiday-daily-0915"]
+    },
+    {
+      "id": "frequency_based_service",
+      "origin": "freq_a",
+      "destination": "freq_b",
+      "departure": "2026-07-01T09:03:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:22",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["freq-0910"]
+    },
+    {
+      "id": "same_eta_fewer_transfers",
+      "origin": "sangnoksu_l4",
+      "destination": "sadang_l4",
+      "departure": "2026-07-01T09:00:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:24",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-express-0903"]
+    },
+    {
+      "id": "slower_but_strict_step_free_verified",
+      "origin": "origin_l4",
+      "destination": "destination_l2",
+      "departure": "2026-07-01T09:00:00+09:00",
+      "constraintMode": "STRICT_STEP_FREE",
+      "expectedArrival": "09:55",
+      "expectedTransfers": 1,
+      "expectedTripIds": ["l4-stairs-0910", "l2-stepfree-0945"]
+    },
+    {
+      "id": "pareto_arrival_vs_transfer",
+      "origin": "pareto_a",
+      "destination": "pareto_b",
+      "departure": "2026-07-01T08:58:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:25",
+      "expectedTransfers": 1,
+      "expectedTripIds": ["pareto-leg1-0900", "pareto-leg2-0915"]
+    },
+    {
+      "id": "provider_realtime_stale",
+      "origin": "rt_a",
+      "destination": "rt_b",
+      "departure": "2026-07-01T08:59:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:17",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["fresh-0902"]
+    },
+    {
+      "id": "provider_realtime_fresh_but_not_boardable_due_to_entry_slack",
+      "origin": "rt_a",
+      "destination": "rt_b",
+      "departure": "2026-07-01T09:01:00+09:00",
+      "entrySlackSeconds": 120,
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": null,
+      "expectedTransfers": null,
+      "expectedTripIds": []
+    }
+  ]
+}

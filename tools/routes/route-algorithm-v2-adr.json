@@ -1,0 +1,62 @@
+{
+  "schemaVersion": 1,
+  "status": "accepted-for-prototype",
+  "issue": 1220,
+  "decision": "Use Range RAPTOR for backend high-quality route search. Keep time-dependent Dijkstra for access graph legs and mobile static fallback only.",
+  "mobileRole": "static/local fallback with visible freshness and quality labels; not live high-quality routing",
+  "accessGraphDijkstraRole": [
+    "station entrance and exit legs",
+    "station pathway and platform transfer legs",
+    "elevator, escalator, stair and generated connector filtering",
+    "offline static fallback"
+  ],
+  "decisionMatrix": [
+    {
+      "criterion": "correctness",
+      "rangeRaptor": "round model matches trips, transfer count and service calendar scans",
+      "timeDependentDijkstra": "correct on fixtures but expands boardable trip edges as graph states",
+      "choice": "Range RAPTOR"
+    },
+    {
+      "criterion": "mobile feasibility",
+      "rangeRaptor": "keeps high-quality live ETA backend-only",
+      "timeDependentDijkstra": "too easy to overclaim mobile graph routing as live ETA",
+      "choice": "Range RAPTOR"
+    },
+    {
+      "criterion": "performance",
+      "rangeRaptor": "bounded by rounds and trip scans",
+      "timeDependentDijkstra": "priority queue over many time-dependent edges",
+      "choice": "Range RAPTOR"
+    },
+    {
+      "criterion": "accessibility constraints",
+      "rangeRaptor": "uses access graph filters around transfer and entry legs",
+      "timeDependentDijkstra": "best fit inside the access graph itself",
+      "choice": "Split responsibilities"
+    },
+    {
+      "criterion": "realtime handling",
+      "rangeRaptor": "overlay fresh provider stop times before scan",
+      "timeDependentDijkstra": "edge update model is noisier",
+      "choice": "Range RAPTOR"
+    }
+  ],
+  "v2Rules": {
+    "timezone": "Asia/Seoul",
+    "realtimeOverlay": "Fresh realtime updates boardable trip stop times before RAPTOR scan. Stale or unsupported realtime must not silently become live ETA.",
+    "transferSlack": "Apply transfer slack before each next boarding and entry slack before first boarding.",
+    "paretoCandidateLimit": 3,
+    "ranking": ["earliest arrival", "fewer transfers", "verified step-free", "lower unknown accessibility risk"],
+    "strictStepFree": "Exclude known stair transfers and unverified generated connectors."
+  },
+  "nonGoalsForV1CommercialRelease": [
+    "crowd density prediction",
+    "weather-aware routing",
+    "ML ETA correction",
+    "cross-provider fare optimization",
+    "mobile-only live high-quality routing",
+    "unlimited Pareto frontier exposure"
+  ],
+  "verification": "node --test tools/routes/*.test.mjs"
+}
