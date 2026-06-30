@@ -246,7 +246,8 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(
 					HttpMethod.POST,
-					"/api/v1/routes/search"
+					"/api/v1/routes/search",
+					"/api/v2/routes/search"
 				).permitAll()
 				.requestMatchers(
 					"/api/health",
