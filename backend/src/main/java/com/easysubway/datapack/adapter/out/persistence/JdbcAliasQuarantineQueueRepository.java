@@ -59,40 +59,29 @@ public class JdbcAliasQuarantineQueueRepository {
 			""", this::mapQuarantine, limit);
 	}
 
-	public void updateAliasStatus(String aliasId, String approvalStatus, String reviewedBy, LocalDateTime reviewedAt) {
-		int updated = jdbcTemplate.update("""
+	public int reviewAlias(String aliasId, String approvalStatus, String reviewedBy, LocalDateTime reviewedAt) {
+		return jdbcTemplate.update("""
 			UPDATE external_alias_approvals
-			SET approval_status = ?, approved_by = ?, approved_at = ?
+			SET approval_status = ?,
+				approved_by = ?,
+				approved_at = ?
 			WHERE id = ? AND approval_status = 'PENDING'
-			""",
-			approvalStatus,
-			reviewedBy,
-			reviewedAt,
-			aliasId
-		);
-		if (updated != 1) {
-			throw new IllegalArgumentException("pending alias approval not found: " + aliasId);
-		}
+			""", approvalStatus, reviewedBy, reviewedAt, aliasId);
 	}
 
-	public void resolveQuarantine(String quarantineId, String resolvedBy, LocalDateTime resolvedAt) {
-		int updated = jdbcTemplate.update("""
+	public int resolveQuarantine(String recordId, String resolvedBy, LocalDateTime resolvedAt) {
+		return jdbcTemplate.update("""
 			UPDATE source_quarantine_records
-			SET resolution_status = 'RESOLVED', resolved_by = ?, resolved_at = ?
+			SET resolution_status = 'RESOLVED',
+				resolved_by = ?,
+				resolved_at = ?
 			WHERE id = ? AND resolution_status = 'OPEN'
-			""",
-			resolvedBy,
-			resolvedAt,
-			quarantineId
-		);
-		if (updated != 1) {
-			throw new IllegalArgumentException("open quarantine record not found: " + quarantineId);
-		}
+			""", resolvedBy, resolvedAt, recordId);
 	}
 
 	public void insertQuarantineResolution(
 		String id,
-		String quarantineRecordId,
+		String recordId,
 		String resolutionStatus,
 		String resolutionReason,
 		String resolvedBy,
@@ -110,7 +99,7 @@ public class JdbcAliasQuarantineQueueRepository {
 			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
 			id,
-			quarantineRecordId,
+			recordId,
 			resolutionStatus,
 			resolutionReason,
 			resolvedBy,

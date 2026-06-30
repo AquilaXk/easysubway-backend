@@ -1,10 +1,15 @@
 package com.easysubway.datapack.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +17,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -76,9 +83,32 @@ class DatapackCandidateAdminPageControllerTest {
 			.contains("workflowRunUrl")
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/123")
 			.contains("evidenceBundleSha256")
-			.doesNotContain("name=\"commandToken\"")
-			.doesNotContain("후보팩 생성")
+			.contains("name=\"commandToken\"")
+			.contains("gate 재실행")
 			.doesNotContain("production 승인");
+	}
+
+	@Test
+	@DisplayName("candidate build 권한 관리자는 gate 재실행을 요청한다")
+	void candidateBuilderRequestsGateRerun() throws Exception {
+		mockMvc.perform(post("/admin/datapack/candidates/candidate-capital-1/rerun-gates")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/candidates/candidate-capital-1/page"))
+				.with(user("candidate-builder").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.candidate.build")
+				))
+				.param("reason", "rerun after evidence review")
+				.param("idempotencyKey", "candidate-rerun-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/candidates/candidate-capital-1/page"));
+
+		assertThat(candidateValue("coverage_status")).isEqualTo("PENDING");
+		assertThat(candidateValue("validator_status")).isEqualTo("PENDING");
+		assertThat(candidateValue("route_regression_status")).isEqualTo("PENDING");
+		assertThat(candidateValue("android_evidence_status")).isEqualTo("PENDING");
+		assertThat(candidateValue("approval_status")).isEqualTo("DRAFT");
+		assertThat(evidenceBundleCount()).isZero();
 	}
 
 	@Test
@@ -143,5 +173,48 @@ class DatapackCandidateAdminPageControllerTest {
 			""",
 			"5".repeat(64)
 		);
+	}
+
+	private String candidateValue(String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM datapack_candidates WHERE id = 'candidate-capital-1'",
+			String.class
+		);
+	}
+
+	private Integer evidenceBundleCount() {
+		return jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM datapack_release_evidence_bundles WHERE candidate_id = 'candidate-capital-1'",
+			Integer.class
+		);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = (MockHttpSession) request.getSession(true);
+			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+			request.setSession(session);
+			return request;
+		};
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) {
+		try {
+			return mockMvc.perform(get(path)
+					.session(session)
+					.with(user("token-reader").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 }

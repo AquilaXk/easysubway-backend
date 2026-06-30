@@ -65,6 +65,31 @@ public class JdbcDatapackCandidateRepository {
 			""", this::mapEvidenceBundle, candidateId).stream().findFirst();
 	}
 
+	public boolean candidateReferencedByReleaseChannel(String candidateId) {
+		Integer count = jdbcTemplate.queryForObject("""
+			SELECT COUNT(*)
+			FROM datapack_release_channels
+			WHERE candidate_id = ? OR previous_stable_candidate_id = ?
+			""", Integer.class, candidateId, candidateId);
+		return count != null && count > 0;
+	}
+
+	public int rerunGates(String candidateId) {
+		int updated = jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PENDING',
+				validator_status = 'PENDING',
+				route_regression_status = 'PENDING',
+				android_evidence_status = 'PENDING',
+				approval_status = 'DRAFT'
+			WHERE id = ?
+			""", candidateId);
+		if (updated == 1) {
+			jdbcTemplate.update("DELETE FROM datapack_release_evidence_bundles WHERE candidate_id = ?", candidateId);
+		}
+		return updated;
+	}
+
 	private CandidateRow mapCandidate(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new CandidateRow(
 			resultSet.getString("id"),

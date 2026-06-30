@@ -36,7 +36,7 @@
 				<th scope="col">requested</th>
 				<th scope="col">approved</th>
 				<th scope="col">evidence</th>
-				<th scope="col">actions</th>
+				<th scope="col">command</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -59,19 +59,26 @@
 				</td>
 				<td th:text="${alias.evidenceHash}">sha256</td>
 				<td>
-					<div th:if="${alias.approvalStatus == 'PENDING'}" class="admin-actions">
-						<form method="post" th:action="@{/admin/datapack/alias-quarantine/aliases/{aliasId}/approve(aliasId=${alias.id})}">
-							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-							<button type="submit">alias 승인</button>
-						</form>
-						<form method="post" th:action="@{/admin/datapack/alias-quarantine/aliases/{aliasId}/reject(aliasId=${alias.id})}">
-							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-							<button type="submit">alias 거절</button>
-						</form>
-					</div>
-					<span th:unless="${alias.approvalStatus == 'PENDING'}">-</span>
+					<form method="post" th:action="@{'/admin/datapack/alias-approvals/' + ${alias.id} + '/approve'}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'alias-approve-' + alias.id}">
+						<label>
+							<span class="sr-only">승인 사유</span>
+							<input name="reason" value="official alias reviewed" required>
+						</label>
+						<button type="submit">승인 저장</button>
+					</form>
+					<form method="post" th:action="@{'/admin/datapack/alias-approvals/' + ${alias.id} + '/reject'}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'alias-reject-' + alias.id}">
+						<label>
+							<span class="sr-only">반려 사유</span>
+							<input name="reason" value="official alias rejected" required>
+						</label>
+						<button type="submit">반려 저장</button>
+					</form>
 				</td>
 			</tr>
 			</tbody>
@@ -94,7 +101,7 @@
 				<th scope="col">canonical</th>
 				<th scope="col">resolved</th>
 				<th scope="col">excerpt</th>
-				<th scope="col">actions</th>
+				<th scope="col">command</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -117,38 +124,26 @@
 				</td>
 				<td th:text="${record.redactedExcerpt}">redacted excerpt</td>
 				<td>
-					<form th:if="${record.resolutionStatus == 'OPEN'}" method="post" th:action="@{/admin/datapack/alias-quarantine/quarantines/{quarantineId}/resolve(quarantineId=${record.id})}">
+					<form method="post" th:action="@{'/admin/datapack/quarantine-records/' + ${record.id} + '/resolve'}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'quarantine-resolve-' + record.id}">
+						<input type="hidden" name="resolutionStatus" value="ALIAS_APPROVED">
+						<input type="hidden" name="canonicalEntityType" value="STATION">
 						<label>
-							resolution
-							<select name="resolutionStatus" required>
-								<option value="ACCEPTED">ACCEPTED</option>
-								<option value="REJECTED">REJECTED</option>
-								<option value="ALIAS_APPROVED">ALIAS_APPROVED</option>
-								<option value="SOURCE_FIXED">SOURCE_FIXED</option>
-								<option value="IGNORED">IGNORED</option>
-							</select>
+							<span class="sr-only">canonical entity id</span>
+							<input name="canonicalEntityId" placeholder="station-id">
 						</label>
 						<label>
-							reason
-							<input name="resolutionReason" required>
+							<span class="sr-only">evidence hash</span>
+							<input name="evidenceHash" placeholder="sha256">
 						</label>
 						<label>
-							canonical type
-							<input name="canonicalEntityType">
+							<span class="sr-only">해결 사유</span>
+							<input name="resolutionReason" value="quarantine reviewed" required>
 						</label>
-						<label>
-							canonical id
-							<input name="canonicalEntityId">
-						</label>
-						<label>
-							evidence hash
-							<input name="evidenceHash" minlength="64" maxlength="64">
-						</label>
-						<button type="submit">quarantine 해결</button>
+						<button type="submit">해결 저장</button>
 					</form>
-					<span th:unless="${record.resolutionStatus == 'OPEN'}">-</span>
 				</td>
 			</tr>
 			</tbody>

@@ -1,10 +1,15 @@
 package com.easysubway.datapack.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +17,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -70,9 +77,80 @@ class ManualOverrideLedgerAdminPageControllerTest {
 			.contains("override-expired-1")
 			.contains("EXPIRED")
 			.contains("expired")
-			.doesNotContain("name=\"commandToken\"")
-			.doesNotContain("승인 저장")
+			.contains("name=\"commandToken\"")
+			.contains("요청 저장")
+			.contains("승인 저장")
+			.contains("만료 저장")
 			.doesNotContain("serviceKey");
+	}
+
+	@Test
+	@DisplayName("override request 권한 관리자는 manual override 요청을 생성한다")
+	void overrideRequesterCreatesManualOverrideRequest() throws Exception {
+		mockMvc.perform(post("/admin/datapack/manual-overrides")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/manual-overrides/page"))
+				.with(user("override-requester").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.override.request")
+				))
+				.param("id", "override-request-1162")
+				.param("entityType", "FACILITY")
+				.param("entityId", "station-suji:ELEVATOR")
+				.param("fieldName", "operational_status")
+				.param("beforeValue", "UNKNOWN")
+				.param("afterValue", "AVAILABLE")
+				.param("reasonCode", "FIELD_CHECK")
+				.param("reason", "현장 확인 완료")
+				.param("evidenceUri", "s3://easysubway-evidence/manual-overrides/override-request-1162.json")
+				.param("evidenceHash", "1".repeat(64))
+				.param("strictRouteEligible", "false")
+				.param("effectiveFrom", "2026-06-30T03:00:00")
+				.param("expiresAt", "2026-07-30T03:00:00")
+				.param("idempotencyKey", "override-request-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/manual-overrides/page"));
+
+		assertThat(overrideValue("override-request-1162", "approval_status")).isEqualTo("PENDING");
+		assertThat(overrideValue("override-request-1162", "requested_by")).isEqualTo("override-requester");
+	}
+
+	@Test
+	@DisplayName("override approve 권한 관리자는 요청자와 분리되어 strict override를 승인한다")
+	void overrideApproverApprovesStrictManualOverride() throws Exception {
+		mockMvc.perform(post("/admin/datapack/manual-overrides/override-strict-pending/approve")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/manual-overrides/page"))
+				.with(user("override-approver").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.override.approve")
+				))
+				.param("reason", "route safety reviewed")
+				.param("idempotencyKey", "override-approve-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/manual-overrides/page"));
+
+		assertThat(overrideValue("override-strict-pending", "approval_status")).isEqualTo("APPROVED");
+		assertThat(overrideValue("override-strict-pending", "approved_by")).isEqualTo("override-approver");
+		assertThat(overrideValue("override-strict-pending", "route_safety_approved_by")).isEqualTo("override-approver");
+	}
+
+	@Test
+	@DisplayName("override approve 권한 관리자는 만료 command를 기록한다")
+	void overrideApproverExpiresManualOverride() throws Exception {
+		mockMvc.perform(post("/admin/datapack/manual-overrides/override-approved-1/expire")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/manual-overrides/page"))
+				.with(user("override-approver").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.override.approve")
+				))
+				.param("reason", "temporary window ended")
+				.param("idempotencyKey", "override-expire-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/manual-overrides/page"));
+
+		assertThat(overrideValue("override-approved-1", "approval_status")).isEqualTo("EXPIRED");
 	}
 
 	@Test
@@ -222,5 +300,42 @@ class ManualOverrideLedgerAdminPageControllerTest {
 			strictRouteEligible,
 			supersededBy
 		);
+	}
+
+	private String overrideValue(String overrideId, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM manual_overrides WHERE id = ?",
+			String.class,
+			overrideId
+		);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = (MockHttpSession) request.getSession(true);
+			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+			request.setSession(session);
+			return request;
+		};
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) {
+		try {
+			return mockMvc.perform(get(path)
+					.session(session)
+					.with(user("token-reader").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 }

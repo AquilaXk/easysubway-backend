@@ -71,6 +71,10 @@
 							next manifest sha256
 							<input name="nextManifestSha256" minlength="64" maxlength="64" required>
 						</label>
+						<label th:if="${channel.channel == 'production'}">
+							evidence bundle sha256
+							<input name="evidenceBundleSha256" minlength="64" maxlength="64" required>
+						</label>
 						<label>
 							requested by
 							<input name="requestedBy" required>

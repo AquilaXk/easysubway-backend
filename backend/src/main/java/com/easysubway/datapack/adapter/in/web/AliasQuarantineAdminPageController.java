@@ -1,14 +1,18 @@
 package com.easysubway.datapack.adapter.in.web;
 
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository.AliasApprovalRow;
 import com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository.QuarantineRow;
-import com.easysubway.datapack.application.service.AliasQuarantineCommandService;
-import com.easysubway.datapack.application.service.AliasQuarantineCommandService.QuarantineResolutionCommand;
+import com.easysubway.datapack.application.service.DatapackAliasQuarantineCommandService;
+import com.easysubway.datapack.application.service.DatapackAliasQuarantineCommandService.AliasReviewCommand;
+import com.easysubway.datapack.application.service.DatapackAliasQuarantineCommandService.QuarantineResolutionCommand;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.List;
-import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -19,17 +23,20 @@ import org.springframework.web.bind.annotation.PostMapping;
 @Controller
 class AliasQuarantineAdminPageController {
 
-	private static final int QUEUE_LIMIT = 20;
+	private static final int QUEUE_LIMIT = 16;
 
 	private final JdbcAliasQuarantineQueueRepository queueRepository;
-	private final AliasQuarantineCommandService commandService;
+	private final DatapackAliasQuarantineCommandService commandService;
+	private final AdminAuditWriter auditWriter;
 
 	AliasQuarantineAdminPageController(
 		JdbcAliasQuarantineQueueRepository queueRepository,
-		AliasQuarantineCommandService commandService
+		DatapackAliasQuarantineCommandService commandService,
+		AdminAuditWriter auditWriter
 	) {
 		this.queueRepository = queueRepository;
 		this.commandService = commandService;
+		this.auditWriter = auditWriter;
 	}
 
 	@GetMapping("/admin/datapack/alias-quarantine/page")
@@ -44,28 +51,66 @@ class AliasQuarantineAdminPageController {
 		return "admin/datapack/alias-quarantine/list";
 	}
 
-	@PostMapping("/admin/datapack/alias-quarantine/aliases/{aliasId}/approve")
+	@PostMapping("/admin/datapack/alias-approvals/{aliasId}/approve")
 	@PreAuthorize("hasAuthority('admin.datapack.alias.review')")
-	String approveAlias(@PathVariable String aliasId, Authentication authentication) {
-		commandService.approveAlias(aliasId, authentication.getName());
+	String approveAlias(
+		@PathVariable String aliasId,
+		@ModelAttribute AliasReviewForm form,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		commandService.reviewAlias(aliasId, form.toCommand("APPROVED", authentication.getName()));
+		auditWriter.datapackCommand(
+			authentication,
+			request,
+			"DATAPACK_ALIAS",
+			aliasId,
+			"APPROVE",
+			AdminAuditOutcome.SUCCESS,
+			form.reason()
+		);
 		return "redirect:/admin/datapack/alias-quarantine/page";
 	}
 
-	@PostMapping("/admin/datapack/alias-quarantine/aliases/{aliasId}/reject")
+	@PostMapping("/admin/datapack/alias-approvals/{aliasId}/reject")
 	@PreAuthorize("hasAuthority('admin.datapack.alias.review')")
-	String rejectAlias(@PathVariable String aliasId, Authentication authentication) {
-		commandService.rejectAlias(aliasId, authentication.getName());
+	String rejectAlias(
+		@PathVariable String aliasId,
+		@ModelAttribute AliasReviewForm form,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		commandService.reviewAlias(aliasId, form.toCommand("REJECTED", authentication.getName()));
+		auditWriter.datapackCommand(
+			authentication,
+			request,
+			"DATAPACK_ALIAS",
+			aliasId,
+			"REJECT",
+			AdminAuditOutcome.SUCCESS,
+			form.reason()
+		);
 		return "redirect:/admin/datapack/alias-quarantine/page";
 	}
 
-	@PostMapping("/admin/datapack/alias-quarantine/quarantines/{quarantineId}/resolve")
+	@PostMapping("/admin/datapack/quarantine-records/{recordId}/resolve")
 	@PreAuthorize("hasAuthority('admin.datapack.quarantine.review')")
 	String resolveQuarantine(
-		@PathVariable String quarantineId,
+		@PathVariable String recordId,
 		@ModelAttribute QuarantineResolutionForm form,
-		Authentication authentication
+		Authentication authentication,
+		HttpServletRequest request
 	) {
-		commandService.resolveQuarantine(form.toCommand(quarantineId, authentication.getName()));
+		commandService.resolveQuarantine(recordId, form.toCommand(authentication.getName()));
+		auditWriter.datapackCommand(
+			authentication,
+			request,
+			"DATAPACK_QUARANTINE",
+			recordId,
+			"RESOLVE",
+			AdminAuditOutcome.SUCCESS,
+			form.resolutionReason()
+		);
 		return "redirect:/admin/datapack/alias-quarantine/page";
 	}
 
@@ -141,27 +186,6 @@ class AliasQuarantineAdminPageController {
 		}
 	}
 
-	record QuarantineResolutionForm(
-		String resolutionStatus,
-		String resolutionReason,
-		String canonicalEntityType,
-		String canonicalEntityId,
-		String evidenceHash
-	) {
-
-		QuarantineResolutionCommand toCommand(String quarantineId, String resolvedBy) {
-			return new QuarantineResolutionCommand(
-				quarantineId,
-				resolutionStatus,
-				resolutionReason,
-				resolvedBy,
-				canonicalEntityType,
-				canonicalEntityId,
-				evidenceHash
-			);
-		}
-	}
-
 	private static String entityOrDash(String type, String id) {
 		if (type == null || type.isBlank() || id == null || id.isBlank()) {
 			return "-";
@@ -177,5 +201,34 @@ class AliasQuarantineAdminPageController {
 			return "-";
 		}
 		return value.toString();
+	}
+
+	record AliasReviewForm(String reason, String idempotencyKey) {
+
+		AliasReviewCommand toCommand(String approvalStatus, String reviewedBy) {
+			return new AliasReviewCommand(approvalStatus, reviewedBy, reason, idempotencyKey);
+		}
+	}
+
+	record QuarantineResolutionForm(
+		String resolutionStatus,
+		String resolutionReason,
+		String canonicalEntityType,
+		String canonicalEntityId,
+		String evidenceHash,
+		String idempotencyKey
+	) {
+
+		QuarantineResolutionCommand toCommand(String resolvedBy) {
+			return new QuarantineResolutionCommand(
+				resolutionStatus,
+				resolutionReason,
+				resolvedBy,
+				canonicalEntityType,
+				canonicalEntityId,
+				evidenceHash,
+				idempotencyKey
+			);
+		}
 	}
 }

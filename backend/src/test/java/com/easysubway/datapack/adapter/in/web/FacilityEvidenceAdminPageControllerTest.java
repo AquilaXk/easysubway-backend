@@ -1,10 +1,15 @@
 package com.easysubway.datapack.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +17,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -72,9 +79,32 @@ class FacilityEvidenceAdminPageControllerTest {
 			.contains("strict 불가")
 			.contains("운행 상태 확인 필요")
 			.contains("override-facility-1")
-			.doesNotContain("name=\"commandToken\"")
-			.doesNotContain("수정 저장")
+			.contains("name=\"commandToken\"")
+			.contains("검수 저장")
 			.doesNotContain("serviceKey");
+	}
+
+	@Test
+	@DisplayName("evidence review 권한 관리자는 facility evidence 검수 상태를 저장한다")
+	void evidenceReviewerUpdatesFacilityEvidenceReviewState() throws Exception {
+		mockMvc.perform(post("/admin/datapack/facility-evidence/facility-evidence-lift-unknown/review")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/facility-evidence/page"))
+				.with(user("facility-reviewer").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.evidence.review")
+				))
+				.param("strictRouteEligible", "false")
+				.param("strictRouteEligibleReason", "wheelchair lift requires field verification")
+				.param("conflictStatus", "RESOLVED")
+				.param("reason", "official evidence reviewed")
+				.param("idempotencyKey", "facility-review-1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/facility-evidence/page"));
+
+		assertThat(evidenceValue("facility-evidence-lift-unknown", "conflict_status")).isEqualTo("RESOLVED");
+		assertThat(evidenceValue("facility-evidence-lift-unknown", "strict_route_eligible_reason"))
+			.isEqualTo("wheelchair lift requires field verification");
 	}
 
 	@Test
@@ -165,5 +195,42 @@ class FacilityEvidenceAdminPageControllerTest {
 			""",
 			"f".repeat(64)
 		);
+	}
+
+	private String evidenceValue(String id, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM facility_evidence WHERE id = ?",
+			String.class,
+			id
+		);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = (MockHttpSession) request.getSession(true);
+			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+			request.setSession(session);
+			return request;
+		};
+	}
+
+	private String getAdminHtml(String path, MockHttpSession session) {
+		try {
+			return mockMvc.perform(get(path)
+					.session(session)
+					.with(user("token-reader").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andExpect(status().isOk())
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static String commandTokenFrom(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
+		return matcher.group(1);
 	}
 }

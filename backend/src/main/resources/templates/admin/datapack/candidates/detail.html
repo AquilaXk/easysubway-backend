@@ -63,6 +63,20 @@
 			</tbody>
 		</table>
 	</section>
+
+	<section class="admin-panel">
+		<h2>Gate 재실행</h2>
+		<form method="post" th:action="@{'/admin/datapack/candidates/' + ${candidate.id} + '/rerun-gates'}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<input type="hidden" name="idempotencyKey" th:value="${'candidate-rerun-' + candidate.id}">
+			<label>
+				reason
+				<input name="reason" value="candidate gates rerun requested" required>
+			</label>
+			<button type="submit">gate 재실행</button>
+		</form>
+	</section>
 </main>
 </div>
 </body>

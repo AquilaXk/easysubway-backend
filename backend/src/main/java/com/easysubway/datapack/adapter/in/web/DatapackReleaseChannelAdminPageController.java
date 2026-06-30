@@ -159,7 +159,8 @@ class DatapackReleaseChannelAdminPageController {
 		String requestedBy,
 		String reason,
 		String idempotencyKey,
-		String workflowRunUrl
+		String workflowRunUrl,
+		String evidenceBundleSha256
 	) {
 
 		ReleaseChannelCommand toCommand(String channel, String approvedBy) {
@@ -173,7 +174,8 @@ class DatapackReleaseChannelAdminPageController {
 				approvedBy,
 				reason,
 				idempotencyKey,
-				workflowRunUrl
+				workflowRunUrl,
+				evidenceBundleSha256
 			);
 		}
 	}

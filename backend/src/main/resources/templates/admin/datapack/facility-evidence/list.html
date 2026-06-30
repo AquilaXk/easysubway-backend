@@ -16,7 +16,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>Facility Evidence Matrix</h1>
-			<p>station x facility type별 source evidence, 상태 의미, strict route 사용 가능 여부를 읽기 전용으로 확인합니다.</p>
+			<p>station x facility type별 source evidence, 상태 의미, strict route 사용 가능 여부를 검수합니다.</p>
 		</div>
 	</header>
 
@@ -38,11 +38,12 @@
 				<th scope="col">strict</th>
 				<th scope="col">conflict</th>
 				<th scope="col">override</th>
+				<th scope="col">command</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:if="${evidenceRows.isEmpty()}">
-				<td colspan="14">facility evidence row가 없습니다.</td>
+				<td colspan="15">facility evidence row가 없습니다.</td>
 			</tr>
 			<tr th:each="row : ${evidenceRows}">
 				<td th:text="${row.stationId}">station-id</td>
@@ -69,6 +70,37 @@
 				</td>
 				<td th:text="${row.conflictStatus}">NONE</td>
 				<td th:text="${row.manualOverrideId}">-</td>
+				<td>
+					<form method="post" th:action="@{'/admin/datapack/facility-evidence/' + ${row.id} + '/review'}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="idempotencyKey" th:value="${'facility-review-' + row.id}">
+						<label>
+							<span class="sr-only">strict route eligibility</span>
+							<select name="strictRouteEligible">
+								<option value="true" th:selected="${row.strictRouteEligible}">strict 가능</option>
+								<option value="false" th:selected="${!row.strictRouteEligible}">strict 불가</option>
+							</select>
+						</label>
+						<label>
+							<span class="sr-only">strict 제외 사유</span>
+							<input name="strictRouteEligibleReason" th:value="${row.strictRouteReason == '-' ? '' : row.strictRouteReason}" placeholder="strict 제외 사유">
+						</label>
+						<label>
+							<span class="sr-only">conflict status</span>
+							<select name="conflictStatus">
+								<option value="NONE" th:selected="${row.conflictStatus == 'NONE'}">NONE</option>
+								<option value="RESOLVED" th:selected="${row.conflictStatus == 'RESOLVED'}">RESOLVED</option>
+								<option value="UNRESOLVED" th:selected="${row.conflictStatus == 'UNRESOLVED'}">UNRESOLVED</option>
+							</select>
+						</label>
+						<label>
+							<span class="sr-only">검수 사유</span>
+							<input name="reason" value="facility evidence reviewed" required>
+						</label>
+						<button type="submit">검수 저장</button>
+					</form>
+				</td>
 			</tr>
 			</tbody>
 		</table>

@@ -33,6 +33,21 @@ public class JdbcFacilityEvidenceMatrixRepository {
 			""", this::mapRow, limit);
 	}
 
+	public int reviewEvidence(
+		String id,
+		boolean strictRouteEligible,
+		String strictRouteEligibleReason,
+		String conflictStatus
+	) {
+		return jdbcTemplate.update("""
+			UPDATE facility_evidence
+			SET strict_route_eligible = ?,
+				strict_route_eligible_reason = ?,
+				conflict_status = ?
+			WHERE id = ?
+			""", strictRouteEligible, strictRouteEligible ? null : strictRouteEligibleReason, conflictStatus, id);
+	}
+
 	private FacilityEvidenceRow mapRow(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new FacilityEvidenceRow(
 			resultSet.getString("id"),

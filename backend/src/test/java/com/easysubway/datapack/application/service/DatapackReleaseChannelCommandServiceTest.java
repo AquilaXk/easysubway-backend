@@ -28,6 +28,7 @@ class DatapackReleaseChannelCommandServiceTest {
 	private static final String SHA_2 = "2".repeat(64);
 	private static final String SHA_3 = "3".repeat(64);
 	private static final String SHA_4 = "4".repeat(64);
+	private static final String EVIDENCE_SHA = "5".repeat(64);
 
 	@Autowired
 	private DatapackReleaseChannelCommandService service;
@@ -52,6 +53,8 @@ class DatapackReleaseChannelCommandServiceTest {
 	@Test
 	@DisplayName("promotion은 channel pointer와 event를 한 transaction으로 기록한다")
 	void promoteUpdatesChannelAndWritesEvent() {
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "PASS");
+
 		var result = service.promote(command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-promote-1"));
 
 		assertThat(result.idempotentReplay()).isFalse();
@@ -66,14 +69,35 @@ class DatapackReleaseChannelCommandServiceTest {
 		assertThat(eventValue("idem-promote-1", "requested_by")).isEqualTo("data-operator");
 		assertThat(eventValue("idem-promote-1", "approved_by")).isEqualTo("release-approver");
 		assertThat(eventValue("idem-promote-1", "reason")).isEqualTo("release request");
+		assertThat(eventValue("idem-promote-1", "evidence_bundle_sha256")).isEqualTo(EVIDENCE_SHA);
 		assertThat(eventValue("idem-promote-1", "workflow_run_url"))
 			.isEqualTo("https://github.com/AquilaXk/easysubway/actions/runs/1131");
 		assertThat(eventCount("idem-promote-1")).isEqualTo(1);
 	}
 
 	@Test
+	@DisplayName("production promote는 candidate release evidence bundle hash와 PASS 상태가 필요하다")
+	void productionPromoteRequiresPassingReleaseEvidenceBundle() {
+		assertThatThrownBy(() -> service.promote(
+			command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-no-evidence")))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("release evidence bundle is required");
+		assertThat(eventCount("idem-no-evidence")).isZero();
+
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "FAIL");
+
+		assertThatThrownBy(() -> service.promote(
+			command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-failed-evidence")))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("release evidence bundle is required");
+		assertThat(eventCount("idem-failed-evidence")).isZero();
+	}
+
+	@Test
 	@DisplayName("같은 idempotency key 재요청은 기존 event를 재사용한다")
 	void repeatedIdempotencyKeyDoesNotCreateEventAgain() {
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "PASS");
+
 		var first = service.promote(command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-replay"));
 		var second = service.promote(command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-replay"));
 
@@ -85,6 +109,7 @@ class DatapackReleaseChannelCommandServiceTest {
 	@Test
 	@DisplayName("같은 idempotency key라도 요청 본문이 다르면 거절한다")
 	void idempotencyKeyRequiresSameRequestPayload() {
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "PASS");
 		service.promote(command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-conflict"));
 
 		assertThatThrownBy(() -> service.rollback(
@@ -97,6 +122,7 @@ class DatapackReleaseChannelCommandServiceTest {
 	@Test
 	@DisplayName("같은 idempotency key라도 workflow run URL이 다르면 거절한다")
 	void idempotencyKeyIncludesWorkflowRunUrl() {
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "PASS");
 		service.promote(command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-workflow"));
 
 		var changedWorkflowCommand = new ReleaseChannelCommand(
@@ -109,7 +135,8 @@ class DatapackReleaseChannelCommandServiceTest {
 			"release-approver",
 			"release request",
 			"idem-workflow",
-			"https://github.com/AquilaXk/easysubway/actions/runs/changed"
+			"https://github.com/AquilaXk/easysubway/actions/runs/changed",
+			EVIDENCE_SHA
 		);
 
 		assertThatThrownBy(() -> service.promote(changedWorkflowCommand))
@@ -119,8 +146,35 @@ class DatapackReleaseChannelCommandServiceTest {
 	}
 
 	@Test
+	@DisplayName("같은 idempotency key라도 evidence bundle hash가 다르면 거절한다")
+	void idempotencyKeyIncludesEvidenceBundleHash() {
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "PASS");
+		service.promote(command("candidate-stable-3", "candidate-stable-4", SHA_3, SHA_4, "idem-evidence"));
+
+		var changedEvidenceCommand = new ReleaseChannelCommand(
+			"production",
+			"candidate-stable-3",
+			"candidate-stable-4",
+			SHA_3,
+			SHA_4,
+			"data-operator",
+			"release-approver",
+			"release request",
+			"idem-evidence",
+			"https://github.com/AquilaXk/easysubway/actions/runs/1131",
+			"6".repeat(64)
+		);
+
+		assertThatThrownBy(() -> service.promote(changedEvidenceCommand))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("idempotency key already belongs to a different release operation");
+		assertThat(eventCount("idem-evidence")).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("진행 중인 channel operation이 있으면 새 요청을 거절한다")
 	void pendingOperationBlocksNewCommand() {
+		insertEvidenceBundle("candidate-stable-4", EVIDENCE_SHA, "PASS");
 		jdbcTemplate.update("""
 			UPDATE datapack_release_channels
 			SET last_operation_status = 'PENDING', idempotency_key = 'idem-pending'
@@ -157,6 +211,26 @@ class DatapackReleaseChannelCommandServiceTest {
 		assertThat(eventCount("idem-rollback")).isEqualTo(1);
 	}
 
+	private void insertEvidenceBundle(String candidateId, String evidenceBundleSha256, String status) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_evidence_bundles (
+				id, candidate_id, evidence_bundle_sha256, workflow_run_url,
+				validator_status, route_regression_status, manifest_signature_status,
+				android_evidence_status, created_at
+			)
+			VALUES (?, ?, ?, 'https://github.com/AquilaXk/easysubway/actions/runs/1162',
+				?, ?, ?, ?, '2026-06-29 03:20:00')
+			""",
+			"evidence-" + candidateId + "-" + status,
+			candidateId,
+			evidenceBundleSha256,
+			status,
+			status,
+			status,
+			status
+		);
+	}
+
 	@ParameterizedTest(name = "{0} 누락은 요청을 거절한다")
 	@MethodSource("missingAuditAndHashFields")
 	@DisplayName("reason, actor, manifest hash 같은 필수 값이 없으면 요청을 거절한다")
@@ -179,7 +253,8 @@ class DatapackReleaseChannelCommandServiceTest {
 			"release-approver",
 			"ship stable 4",
 			"idem-non-hex-hash",
-			"https://github.com/AquilaXk/easysubway/actions/runs/1131"
+			"https://github.com/AquilaXk/easysubway/actions/runs/1131",
+			EVIDENCE_SHA
 		);
 
 		assertThatThrownBy(() -> service.promote(command))
@@ -200,7 +275,8 @@ class DatapackReleaseChannelCommandServiceTest {
 			"release-operator",
 			"ship stable 4",
 			"idem-same-actor",
-			"https://github.com/AquilaXk/easysubway/actions/runs/1140"
+			"https://github.com/AquilaXk/easysubway/actions/runs/1140",
+			EVIDENCE_SHA
 		);
 
 		assertThatThrownBy(() -> service.promote(command))
@@ -226,7 +302,8 @@ class DatapackReleaseChannelCommandServiceTest {
 			"release-approver",
 			"release request",
 			idempotencyKey,
-			"https://github.com/AquilaXk/easysubway/actions/runs/1131"
+			"https://github.com/AquilaXk/easysubway/actions/runs/1131",
+			EVIDENCE_SHA
 		);
 	}
 
@@ -320,7 +397,8 @@ class DatapackReleaseChannelCommandServiceTest {
 			"approvedBy".equals(fieldName) ? "" : "release-approver",
 			"reason".equals(fieldName) ? "" : "ship stable 4",
 			"idem-missing-" + fieldName,
-			"https://github.com/AquilaXk/easysubway/actions/runs/1131"
+			"https://github.com/AquilaXk/easysubway/actions/runs/1131",
+			EVIDENCE_SHA
 		);
 	}
 

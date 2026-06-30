@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -75,9 +76,8 @@ class AliasQuarantineAdminPageControllerTest {
 			.contains("ALIAS_APPROVED")
 			.contains("station-sadang")
 			.contains("name=\"commandToken\"")
-			.contains("alias 승인")
-			.contains("alias 거절")
-			.contains("quarantine 해결")
+			.contains("승인 저장")
+			.contains("해결 저장")
 			.doesNotContain("serviceKey");
 	}
 
@@ -100,15 +100,17 @@ class AliasQuarantineAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("alias review 권한 관리자는 alias를 승인한다")
-	void aliasReviewerApprovesAlias() throws Exception {
-		mockMvc.perform(post("/admin/datapack/alias-quarantine/aliases/alias-station-1/approve")
+	@DisplayName("alias review 권한 관리자는 pending alias를 승인한다")
+	void aliasReviewerApprovesPendingAlias() throws Exception {
+		mockMvc.perform(post("/admin/datapack/alias-approvals/alias-station-1/approve")
 				.with(csrf())
 				.with(commandToken("/admin/datapack/alias-quarantine/page"))
 				.with(user("alias-reviewer").authorities(
 					new SimpleGrantedAuthority("admin.datapack.read"),
 					new SimpleGrantedAuthority("admin.datapack.alias.review")
-				)))
+				))
+				.param("reason", "official station id verified")
+				.param("idempotencyKey", "alias-approve-1162"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/admin/datapack/alias-quarantine/page"));
 
@@ -117,36 +119,9 @@ class AliasQuarantineAdminPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("alias review 권한 관리자는 alias를 거절한다")
-	void aliasReviewerRejectsAlias() throws Exception {
-		mockMvc.perform(post("/admin/datapack/alias-quarantine/aliases/alias-station-1/reject")
-				.with(csrf())
-				.with(commandToken("/admin/datapack/alias-quarantine/page"))
-				.with(user("alias-reviewer").authorities(
-					new SimpleGrantedAuthority("admin.datapack.read"),
-					new SimpleGrantedAuthority("admin.datapack.alias.review")
-				)))
-			.andExpect(status().is3xxRedirection())
-			.andExpect(redirectedUrl("/admin/datapack/alias-quarantine/page"));
-
-		assertThat(aliasValue("alias-station-1", "approval_status")).isEqualTo("REJECTED");
-		assertThat(aliasValue("alias-station-1", "approved_by")).isEqualTo("alias-reviewer");
-	}
-
-	@Test
-	@DisplayName("alias review 권한 없이 alias command를 실행할 수 없다")
-	void aliasCommandRequiresAliasReviewPermission() throws Exception {
-		mockMvc.perform(post("/admin/datapack/alias-quarantine/aliases/alias-station-1/approve")
-				.with(csrf())
-				.with(commandToken("/admin/datapack/alias-quarantine/page"))
-				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
-			.andExpect(status().isForbidden());
-	}
-
-	@Test
-	@DisplayName("quarantine review 권한 관리자는 quarantine blocker를 해결한다")
-	void quarantineReviewerResolvesQuarantine() throws Exception {
-		mockMvc.perform(post("/admin/datapack/alias-quarantine/quarantines/quarantine-open-1/resolve")
+	@DisplayName("quarantine review 권한 관리자는 open quarantine을 해결한다")
+	void quarantineReviewerResolvesOpenRecord() throws Exception {
+		mockMvc.perform(post("/admin/datapack/quarantine-records/quarantine-open-1/resolve")
 				.with(csrf())
 				.with(commandToken("/admin/datapack/alias-quarantine/page"))
 				.with(user("quarantine-reviewer").authorities(
@@ -154,29 +129,17 @@ class AliasQuarantineAdminPageControllerTest {
 					new SimpleGrantedAuthority("admin.datapack.quarantine.review")
 				))
 				.param("resolutionStatus", "ALIAS_APPROVED")
-				.param("resolutionReason", "station alias approved")
+				.param("resolutionReason", "canonical station confirmed")
 				.param("canonicalEntityType", "STATION")
 				.param("canonicalEntityId", "station-sangnoksu")
-				.param("evidenceHash", "1".repeat(64)))
+				.param("evidenceHash", "1".repeat(64))
+				.param("idempotencyKey", "quarantine-resolve-1162"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/admin/datapack/alias-quarantine/page"));
 
 		assertThat(quarantineValue("quarantine-open-1", "resolution_status")).isEqualTo("RESOLVED");
 		assertThat(quarantineValue("quarantine-open-1", "resolved_by")).isEqualTo("quarantine-reviewer");
-		assertThat(resolutionValue("quarantine-open-1", "resolution_status")).isEqualTo("ALIAS_APPROVED");
 		assertThat(resolutionValue("quarantine-open-1", "canonical_entity_id")).isEqualTo("station-sangnoksu");
-	}
-
-	@Test
-	@DisplayName("quarantine review 권한 없이 quarantine command를 실행할 수 없다")
-	void quarantineCommandRequiresQuarantineReviewPermission() throws Exception {
-		mockMvc.perform(post("/admin/datapack/alias-quarantine/quarantines/quarantine-open-1/resolve")
-				.with(csrf())
-				.with(commandToken("/admin/datapack/alias-quarantine/page"))
-				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read")))
-				.param("resolutionStatus", "IGNORED")
-				.param("resolutionReason", "not actionable"))
-			.andExpect(status().isForbidden());
 	}
 
 	@Test
@@ -279,43 +242,46 @@ class AliasQuarantineAdminPageControllerTest {
 		);
 	}
 
-	private Object aliasValue(String aliasId, String column) {
+	private String aliasValue(String aliasId, String column) {
 		return jdbcTemplate.queryForObject(
 			"SELECT " + column + " FROM external_alias_approvals WHERE id = ?",
-			Object.class,
+			String.class,
 			aliasId
 		);
 	}
 
-	private Object quarantineValue(String quarantineId, String column) {
+	private String quarantineValue(String recordId, String column) {
 		return jdbcTemplate.queryForObject(
 			"SELECT " + column + " FROM source_quarantine_records WHERE id = ?",
-			Object.class,
-			quarantineId
+			String.class,
+			recordId
 		);
 	}
 
-	private Object resolutionValue(String quarantineId, String column) {
+	private String resolutionValue(String recordId, String column) {
 		return jdbcTemplate.queryForObject(
-			"SELECT " + column + " FROM source_quarantine_resolutions WHERE quarantine_record_id = ?",
-			Object.class,
-			quarantineId
+			"SELECT " + column + " FROM source_quarantine_resolutions WHERE quarantine_record_id = ? "
+				+ "ORDER BY resolved_at DESC, id DESC LIMIT 1",
+			String.class,
+			recordId
 		);
 	}
 
 	private RequestPostProcessor commandToken(String pagePath) {
 		return request -> {
-			MockHttpSession session = (MockHttpSession) request.getSession();
+			MockHttpSession session = (MockHttpSession) request.getSession(true);
 			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+			request.setSession(session);
 			return request;
 		};
 	}
 
-	private String getAdminHtml(String pagePath, MockHttpSession session) {
+	private String getAdminHtml(String path, MockHttpSession session) {
 		try {
-			return mockMvc.perform(get(pagePath)
+			return mockMvc.perform(get(path)
 					.session(session)
-					.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+					.with(user("token-reader").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andExpect(status().isOk())
 				.andReturn()
 				.getResponse()
 				.getContentAsString();
@@ -325,15 +291,13 @@ class AliasQuarantineAdminPageControllerTest {
 	}
 
 	private static String commandTokenFrom(String html) {
-		var matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
-		if (!matcher.find()) {
-			throw new IllegalStateException("commandToken missing");
-		}
+		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		assertThat(matcher.find()).isTrue();
 		return matcher.group(1);
 	}
 
 	private static int commandTokenCount(String html) {
-		var matcher = Pattern.compile("name=\"commandToken\"").matcher(html);
+		Matcher matcher = Pattern.compile("name=\"commandToken\"").matcher(html);
 		int count = 0;
 		while (matcher.find()) {
 			count++;

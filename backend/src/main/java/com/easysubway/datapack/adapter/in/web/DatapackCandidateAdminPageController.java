@@ -1,16 +1,24 @@
 package com.easysubway.datapack.adapter.in.web;
 
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackCandidateRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackCandidateRepository.CandidateInputRow;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackCandidateRepository.CandidateRow;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackCandidateRepository.EvidenceBundleRow;
+import com.easysubway.datapack.application.service.DatapackCandidateCommandService;
+import com.easysubway.datapack.application.service.DatapackCandidateCommandService.CandidateGateRerunCommand;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.server.ResponseStatusException;
 
 @Controller
@@ -19,9 +27,17 @@ class DatapackCandidateAdminPageController {
 	private static final int CANDIDATE_LIMIT = 200;
 
 	private final JdbcDatapackCandidateRepository candidateRepository;
+	private final DatapackCandidateCommandService commandService;
+	private final AdminAuditWriter auditWriter;
 
-	DatapackCandidateAdminPageController(JdbcDatapackCandidateRepository candidateRepository) {
+	DatapackCandidateAdminPageController(
+		JdbcDatapackCandidateRepository candidateRepository,
+		DatapackCandidateCommandService commandService,
+		AdminAuditWriter auditWriter
+	) {
 		this.candidateRepository = candidateRepository;
+		this.commandService = commandService;
+		this.auditWriter = auditWriter;
 	}
 
 	@GetMapping("/admin/datapack/candidates/page")
@@ -46,6 +62,27 @@ class DatapackCandidateAdminPageController {
 			.map(EvidenceBundleView::from)
 			.orElse(EvidenceBundleView.empty(candidateId)));
 		return "admin/datapack/candidates/detail";
+	}
+
+	@PostMapping("/admin/datapack/candidates/{candidateId}/rerun-gates")
+	@PreAuthorize("hasAuthority('admin.datapack.candidate.build')")
+	String rerunGates(
+		@PathVariable String candidateId,
+		@ModelAttribute CandidateGateRerunForm form,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		commandService.rerunGates(candidateId, form.toCommand());
+		auditWriter.datapackCommand(
+			authentication,
+			request,
+			"DATAPACK_CANDIDATE",
+			candidateId,
+			"RERUN_GATES",
+			AdminAuditOutcome.SUCCESS,
+			form.reason()
+		);
+		return "redirect:/admin/datapack/candidates/%s/page".formatted(candidateId);
 	}
 
 	record CandidateView(
@@ -156,5 +193,12 @@ class DatapackCandidateAdminPageController {
 			return "-";
 		}
 		return value;
+	}
+
+	record CandidateGateRerunForm(String reason, String idempotencyKey) {
+
+		CandidateGateRerunCommand toCommand() {
+			return new CandidateGateRerunCommand(reason, idempotencyKey);
+		}
 	}
 }

@@ -11,6 +11,8 @@ public interface DatapackReleaseChannelCommandPort {
 
 	boolean candidateHasManifest(String candidateId, String manifestSha256);
 
+	boolean candidateHasPassingReleaseEvidence(String candidateId, String evidenceBundleSha256);
+
 	void updateChannel(
 		String channel,
 		String nextCandidateId,
@@ -38,6 +40,7 @@ public interface DatapackReleaseChannelCommandPort {
 		String reason,
 		String idempotencyKey,
 		String workflowRunUrl,
+		String evidenceBundleSha256,
 		LocalDateTime createdAt
 	);
 
@@ -53,7 +56,8 @@ public interface DatapackReleaseChannelCommandPort {
 		String approvedBy,
 		String reason,
 		String idempotencyKey,
-		String workflowRunUrl
+		String workflowRunUrl,
+		String evidenceBundleSha256
 	) {
 	}
 

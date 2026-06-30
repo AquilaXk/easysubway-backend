@@ -119,12 +119,24 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/datapack/**")
 				.hasAuthority(AdminPermission.DATAPACK_READ.authority())
-				.requestMatchers(HttpMethod.POST, "/admin/datapack/source-snapshots")
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/source-snapshots", "/admin/datapack/source-snapshots/**")
 				.hasAuthority(AdminPermission.DATAPACK_SOURCE_RUN.authority())
-				.requestMatchers(HttpMethod.POST, "/admin/datapack/alias-quarantine/aliases/**")
-				.hasAuthority(AdminPermission.DATAPACK_ALIAS_REVIEW.authority())
-				.requestMatchers(HttpMethod.POST, "/admin/datapack/alias-quarantine/quarantines/**")
-				.hasAuthority(AdminPermission.DATAPACK_QUARANTINE_REVIEW.authority())
+				.requestMatchers(
+					HttpMethod.POST,
+					"/admin/datapack/alias-approvals/**",
+					"/admin/datapack/quarantine-records/**",
+					"/admin/datapack/facility-evidence/**",
+					"/admin/datapack/manual-overrides/**",
+					"/admin/datapack/candidates/**"
+				)
+				.hasAnyAuthority(
+					AdminPermission.DATAPACK_ALIAS_REVIEW.authority(),
+					AdminPermission.DATAPACK_QUARANTINE_REVIEW.authority(),
+					AdminPermission.DATAPACK_EVIDENCE_REVIEW.authority(),
+					AdminPermission.DATAPACK_OVERRIDE_REQUEST.authority(),
+					AdminPermission.DATAPACK_OVERRIDE_APPROVE.authority(),
+					AdminPermission.DATAPACK_CANDIDATE_BUILD.authority()
+				)
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-channels/**")
 				.hasAnyAuthority(
 					AdminPermission.DATAPACK_STAGING_PROMOTE.authority(),
