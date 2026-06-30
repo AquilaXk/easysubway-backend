@@ -14,7 +14,7 @@ public class AdminCommandTokenService {
 
 	public static final String PARAMETER_NAME = "commandToken";
 	private static final String SESSION_ATTRIBUTE = AdminCommandTokenService.class.getName() + ".TOKENS";
-	private static final int MAX_TOKENS_PER_SESSION = 64;
+	private static final int MAX_TOKENS_PER_SESSION = 1024;
 
 	public String issue(HttpServletRequest request) {
 		HttpSession session = request.getSession();
