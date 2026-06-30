@@ -3,11 +3,16 @@ package com.easysubway.datapack.adapter.in.web;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository.ReleaseChannelEventRow;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository.ReleaseChannelRow;
+import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService;
+import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService.ReleaseChannelCommand;
 import java.time.LocalDateTime;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 
 @Controller
 class DatapackReleaseChannelAdminPageController {
@@ -15,9 +20,14 @@ class DatapackReleaseChannelAdminPageController {
 	private static final int EVENT_LIMIT = 20;
 
 	private final JdbcDatapackReleaseChannelRepository releaseChannelRepository;
+	private final DatapackReleaseChannelCommandService releaseChannelCommandService;
 
-	DatapackReleaseChannelAdminPageController(JdbcDatapackReleaseChannelRepository releaseChannelRepository) {
+	DatapackReleaseChannelAdminPageController(
+		JdbcDatapackReleaseChannelRepository releaseChannelRepository,
+		DatapackReleaseChannelCommandService releaseChannelCommandService
+	) {
 		this.releaseChannelRepository = releaseChannelRepository;
+		this.releaseChannelCommandService = releaseChannelCommandService;
 	}
 
 	@GetMapping("/admin/datapack/release-channels/page")
@@ -30,6 +40,21 @@ class DatapackReleaseChannelAdminPageController {
 			.map(ReleaseChannelEventView::from)
 			.toList());
 		return "admin/datapack/release-channels/list";
+	}
+
+	@PostMapping("/admin/datapack/release-channels/{channel}/promote")
+	@PreAuthorize("(#channel == 'production' and hasAuthority('admin.datapack.production.approve'))"
+		+ " or (#channel != 'production' and hasAuthority('admin.datapack.staging.promote'))")
+	String promote(@PathVariable("channel") String channel, @ModelAttribute ReleaseChannelCommandForm form) {
+		releaseChannelCommandService.promote(form.toCommand(channel));
+		return "redirect:/admin/datapack/release-channels/page";
+	}
+
+	@PostMapping("/admin/datapack/release-channels/{channel}/rollback")
+	@PreAuthorize("hasAuthority('admin.datapack.rollback')")
+	String rollback(@PathVariable("channel") String channel, @ModelAttribute ReleaseChannelCommandForm form) {
+		releaseChannelCommandService.rollback(form.toCommand(channel));
+		return "redirect:/admin/datapack/release-channels/page";
 	}
 
 	record ReleaseChannelView(
@@ -115,5 +140,33 @@ class DatapackReleaseChannelAdminPageController {
 			return "-";
 		}
 		return value;
+	}
+
+	record ReleaseChannelCommandForm(
+		String previousCandidateId,
+		String nextCandidateId,
+		String previousManifestSha256,
+		String nextManifestSha256,
+		String requestedBy,
+		String approvedBy,
+		String reason,
+		String idempotencyKey,
+		String workflowRunUrl
+	) {
+
+		ReleaseChannelCommand toCommand(String channel) {
+			return new ReleaseChannelCommand(
+				channel,
+				previousCandidateId,
+				nextCandidateId,
+				previousManifestSha256,
+				nextManifestSha256,
+				requestedBy,
+				approvedBy,
+				reason,
+				idempotencyKey,
+				workflowRunUrl
+			);
+		}
 	}
 }

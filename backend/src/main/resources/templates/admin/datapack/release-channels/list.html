@@ -58,6 +58,70 @@
 					<span th:text="${channel.lastOperationType}">PROMOTE</span>
 					<span th:text="${channel.lastOperationStatus}">PASS</span>
 					<span th:text="${channel.idempotencyKey}">idempotency</span>
+					<form method="post" th:action="@{/admin/datapack/release-channels/{channel}/promote(channel=${channel.channel})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
+						<input type="hidden" name="previousManifestSha256" th:value="${channel.manifestSha256}">
+						<label>
+							next candidate
+							<input name="nextCandidateId" required>
+						</label>
+						<label>
+							next manifest sha256
+							<input name="nextManifestSha256" minlength="64" maxlength="64" required>
+						</label>
+						<label>
+							requested by
+							<input name="requestedBy" required>
+						</label>
+						<label>
+							approved by
+							<input name="approvedBy" required>
+						</label>
+						<label>
+							reason
+							<input name="reason" required>
+						</label>
+						<label>
+							idempotency key
+							<input name="idempotencyKey" required>
+						</label>
+						<label>
+							workflow run URL
+							<input name="workflowRunUrl" type="url" required>
+						</label>
+						<button type="submit">production 승인</button>
+					</form>
+					<form method="post" th:if="${channel.previousStableCandidateId != '-'}" th:action="@{/admin/datapack/release-channels/{channel}/rollback(channel=${channel.channel})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
+						<input type="hidden" name="nextCandidateId" th:value="${channel.previousStableCandidateId}">
+						<input type="hidden" name="previousManifestSha256" th:value="${channel.manifestSha256}">
+						<input type="hidden" name="nextManifestSha256" th:value="${channel.previousManifestSha256}">
+						<label>
+							requested by
+							<input name="requestedBy" required>
+						</label>
+						<label>
+							approved by
+							<input name="approvedBy" required>
+						</label>
+						<label>
+							reason
+							<input name="reason" required>
+						</label>
+						<label>
+							idempotency key
+							<input name="idempotencyKey" required>
+						</label>
+						<label>
+							workflow run URL
+							<input name="workflowRunUrl" type="url" required>
+						</label>
+						<button type="submit">rollback 실행</button>
+					</form>
 				</td>
 				<td>
 					<span th:text="${channel.requestedBy}">requested</span>

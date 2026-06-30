@@ -1,10 +1,14 @@
 package com.easysubway.datapack.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -12,8 +16,10 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -38,6 +44,7 @@ class DatapackReleaseChannelAdminPageControllerTest {
 		jdbcTemplate.update("DELETE FROM datapack_candidates");
 		insertCandidate("candidate-stable-2", "2026.06.28-stable.2");
 		insertCandidate("candidate-stable-3", "2026.06.29-stable.3");
+		insertCandidate("candidate-stable-4", "2026.06.30-stable.4");
 		insertChannel();
 		insertEvent();
 	}
@@ -66,11 +73,38 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			.contains("approval-1128")
 			.contains("idempotency-production-1128")
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/1128")
-			.doesNotContain("name=\"commandToken\"")
-			.doesNotContain("rollback 실행")
-			.doesNotContain("production 승인")
+			.contains("name=\"commandToken\"")
+			.contains("rollback 실행")
+			.contains("production 승인")
 			.doesNotContain("serviceKey")
 			.doesNotContain("OBJECT_STORAGE_SECRET");
+	}
+
+	@Test
+	@DisplayName("production approve 권한 관리자는 release channel을 승격한다")
+	void productionApproverPromotesReleaseChannel() throws Exception {
+		mockMvc.perform(post("/admin/datapack/release-channels/production/promote")
+				.with(csrf())
+				.with(commandToken("/admin/datapack/release-channels/page"))
+				.with(user("release-approver").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.production.approve")
+				))
+				.param("previousCandidateId", "candidate-stable-3")
+				.param("nextCandidateId", "candidate-stable-4")
+				.param("previousManifestSha256", "1".repeat(64))
+				.param("nextManifestSha256", "0".repeat(64))
+				.param("requestedBy", "data-operator")
+				.param("approvedBy", "release-approver")
+				.param("reason", "approval-1162")
+				.param("idempotencyKey", "idempotency-production-1162")
+				.param("workflowRunUrl", "https://github.com/AquilaXk/easysubway/actions/runs/1162"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/release-channels/page"));
+
+		assertThat(channelValue("candidate_id")).isEqualTo("candidate-stable-4");
+		assertThat(eventValue("idempotency-production-1162", "requested_by")).isEqualTo("data-operator");
+		assertThat(eventValue("idempotency-production-1162", "approved_by")).isEqualTo("release-approver");
 	}
 
 	@Test
@@ -143,5 +177,50 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			"2".repeat(64),
 			"1".repeat(64)
 		);
+	}
+
+	private String channelValue(String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM datapack_release_channels WHERE channel = 'production'",
+			String.class
+		);
+	}
+
+	private String eventValue(String idempotencyKey, String column) {
+		return jdbcTemplate.queryForObject(
+			"SELECT " + column + " FROM datapack_release_channel_events "
+				+ "WHERE channel = 'production' AND idempotency_key = ?",
+			String.class,
+			idempotencyKey
+		);
+	}
+
+	private RequestPostProcessor commandToken(String pagePath) {
+		return request -> {
+			MockHttpSession session = (MockHttpSession) request.getSession();
+			request.addParameter("commandToken", commandTokenFrom(getAdminHtml(pagePath, session)));
+			return request;
+		};
+	}
+
+	private String getAdminHtml(String pagePath, MockHttpSession session) {
+		try {
+			return mockMvc.perform(get(pagePath)
+					.session(session)
+					.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static String commandTokenFrom(String html) {
+		var matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
+		if (!matcher.find()) {
+			throw new IllegalStateException("commandToken missing");
+		}
+		return matcher.group(1);
 	}
 }
