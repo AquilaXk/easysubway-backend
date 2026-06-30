@@ -1,11 +1,16 @@
 package com.easysubway.datapack.adapter.in.web;
 
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
+import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository;
+import com.easysubway.datapack.application.service.DatapackNormalizationRunCommandService;
+import com.easysubway.datapack.application.service.DatapackNormalizationRunCommandService.NormalizationRunCommand;
 import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService;
 import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService.SourceSnapshotCommand;
 import com.easysubway.datapack.domain.DataSourceSnapshot;
+import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
@@ -26,13 +31,19 @@ class DataSourceSnapshotAdminPageController {
 
 	private final JdbcDataSourceSnapshotRepository snapshotRepository;
 	private final DatapackSourceSnapshotCommandService snapshotCommandService;
+	private final DatapackNormalizationRunCommandService normalizationRunCommandService;
+	private final AdminAuditWriter auditWriter;
 
 	DataSourceSnapshotAdminPageController(
 		JdbcDataSourceSnapshotRepository snapshotRepository,
-		DatapackSourceSnapshotCommandService snapshotCommandService
+		DatapackSourceSnapshotCommandService snapshotCommandService,
+		DatapackNormalizationRunCommandService normalizationRunCommandService,
+		AdminAuditWriter auditWriter
 	) {
 		this.snapshotRepository = snapshotRepository;
 		this.snapshotCommandService = snapshotCommandService;
+		this.normalizationRunCommandService = normalizationRunCommandService;
+		this.auditWriter = auditWriter;
 	}
 
 	@GetMapping("/admin/datapack/source-snapshots/page")
@@ -72,6 +83,27 @@ class DataSourceSnapshotAdminPageController {
 	@PreAuthorize("hasAuthority('admin.datapack.source.run')")
 	String createSourceSnapshot(@ModelAttribute SourceSnapshotCommandForm form, Authentication authentication) {
 		String snapshotId = snapshotCommandService.createLockedSnapshot(form.toCommand(authentication.getName()));
+		return "redirect:/admin/datapack/source-snapshots/%s/page".formatted(snapshotId);
+	}
+
+	@PostMapping("/admin/datapack/source-snapshots/{snapshotId}/normalization-runs")
+	@PreAuthorize("hasAuthority('admin.datapack.source.run')")
+	String requestNormalizationRun(
+		@PathVariable String snapshotId,
+		@ModelAttribute NormalizationRunCommandForm form,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		normalizationRunCommandService.requestRun(snapshotId, form.toCommand());
+		auditWriter.datapackCommand(
+			authentication,
+			request,
+			"DATAPACK_NORMALIZATION_RUN",
+			form.runId(),
+			"REQUEST",
+			AdminAuditOutcome.SUCCESS,
+			form.reason()
+		);
 		return "redirect:/admin/datapack/source-snapshots/%s/page".formatted(snapshotId);
 	}
 
@@ -188,6 +220,19 @@ class DataSourceSnapshotAdminPageController {
 				reason,
 				idempotencyKey
 			);
+		}
+	}
+
+	record NormalizationRunCommandForm(
+		String runId,
+		String schemaDiffSha256,
+		String schemaDiffSummary,
+		String reason,
+		String idempotencyKey
+	) {
+
+		NormalizationRunCommand toCommand() {
+			return new NormalizationRunCommand(runId, schemaDiffSha256, schemaDiffSummary, reason, idempotencyKey);
 		}
 	}
 }
