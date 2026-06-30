@@ -65,6 +65,15 @@ public class JdbcDatapackCandidateRepository {
 			""", this::mapEvidenceBundle, candidateId).stream().findFirst();
 	}
 
+	public boolean candidateReferencedByReleaseChannel(String candidateId) {
+		Integer count = jdbcTemplate.queryForObject("""
+			SELECT COUNT(*)
+			FROM datapack_release_channels
+			WHERE candidate_id = ? OR previous_stable_candidate_id = ?
+			""", Integer.class, candidateId, candidateId);
+		return count != null && count > 0;
+	}
+
 	public int rerunGates(String candidateId) {
 		int updated = jdbcTemplate.update("""
 			UPDATE datapack_candidates

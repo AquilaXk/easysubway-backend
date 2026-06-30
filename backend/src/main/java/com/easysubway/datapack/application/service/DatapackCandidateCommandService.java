@@ -16,6 +16,9 @@ public class DatapackCandidateCommandService {
 	@Transactional
 	public void rerunGates(String candidateId, CandidateGateRerunCommand command) {
 		command.validate();
+		if (repository.candidateReferencedByReleaseChannel(candidateId)) {
+			throw new IllegalStateException("candidate is referenced by release channel: " + candidateId);
+		}
 		int updated = repository.rerunGates(candidateId);
 		if (updated != 1) {
 			throw new IllegalArgumentException("candidate not found: " + candidateId);
