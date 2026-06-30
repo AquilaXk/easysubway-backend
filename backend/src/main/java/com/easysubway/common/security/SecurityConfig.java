@@ -245,6 +245,10 @@ public class SecurityConfig {
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(
+					HttpMethod.POST,
+					"/api/v1/routes/search"
+				).permitAll()
+				.requestMatchers(
 					"/api/health",
 					"/actuator/health",
 					"/actuator/health/liveness",
