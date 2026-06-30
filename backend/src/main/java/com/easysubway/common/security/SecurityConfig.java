@@ -121,6 +121,10 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.DATAPACK_READ.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/source-snapshots")
 				.hasAuthority(AdminPermission.DATAPACK_SOURCE_RUN.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/alias-quarantine/aliases/**")
+				.hasAuthority(AdminPermission.DATAPACK_ALIAS_REVIEW.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/alias-quarantine/quarantines/**")
+				.hasAuthority(AdminPermission.DATAPACK_QUARANTINE_REVIEW.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-channels/**")
 				.hasAnyAuthority(
 					AdminPermission.DATAPACK_STAGING_PROMOTE.authority(),

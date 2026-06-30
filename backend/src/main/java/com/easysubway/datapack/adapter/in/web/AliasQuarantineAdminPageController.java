@@ -3,12 +3,18 @@ package com.easysubway.datapack.adapter.in.web;
 import com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository.AliasApprovalRow;
 import com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository.QuarantineRow;
+import com.easysubway.datapack.application.service.AliasQuarantineCommandService;
+import com.easysubway.datapack.application.service.AliasQuarantineCommandService.QuarantineResolutionCommand;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.springframework.security.core.Authentication;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
+import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 
 @Controller
 class AliasQuarantineAdminPageController {
@@ -16,9 +22,14 @@ class AliasQuarantineAdminPageController {
 	private static final int QUEUE_LIMIT = 100;
 
 	private final JdbcAliasQuarantineQueueRepository queueRepository;
+	private final AliasQuarantineCommandService commandService;
 
-	AliasQuarantineAdminPageController(JdbcAliasQuarantineQueueRepository queueRepository) {
+	AliasQuarantineAdminPageController(
+		JdbcAliasQuarantineQueueRepository queueRepository,
+		AliasQuarantineCommandService commandService
+	) {
 		this.queueRepository = queueRepository;
+		this.commandService = commandService;
 	}
 
 	@GetMapping("/admin/datapack/alias-quarantine/page")
@@ -31,6 +42,31 @@ class AliasQuarantineAdminPageController {
 			.map(QuarantineView::from)
 			.toList());
 		return "admin/datapack/alias-quarantine/list";
+	}
+
+	@PostMapping("/admin/datapack/alias-quarantine/aliases/{aliasId}/approve")
+	@PreAuthorize("hasAuthority('admin.datapack.alias.review')")
+	String approveAlias(@PathVariable String aliasId, Authentication authentication) {
+		commandService.approveAlias(aliasId, authentication.getName());
+		return "redirect:/admin/datapack/alias-quarantine/page";
+	}
+
+	@PostMapping("/admin/datapack/alias-quarantine/aliases/{aliasId}/reject")
+	@PreAuthorize("hasAuthority('admin.datapack.alias.review')")
+	String rejectAlias(@PathVariable String aliasId, Authentication authentication) {
+		commandService.rejectAlias(aliasId, authentication.getName());
+		return "redirect:/admin/datapack/alias-quarantine/page";
+	}
+
+	@PostMapping("/admin/datapack/alias-quarantine/quarantines/{quarantineId}/resolve")
+	@PreAuthorize("hasAuthority('admin.datapack.quarantine.review')")
+	String resolveQuarantine(
+		@PathVariable String quarantineId,
+		@ModelAttribute QuarantineResolutionForm form,
+		Authentication authentication
+	) {
+		commandService.resolveQuarantine(form.toCommand(quarantineId, authentication.getName()));
+		return "redirect:/admin/datapack/alias-quarantine/page";
 	}
 
 	record AliasApprovalView(
@@ -101,6 +137,27 @@ class AliasQuarantineAdminPageController {
 				row.createdAt(),
 				valueOrDash(row.latestResolutionStatus()),
 				entityOrDash(row.latestCanonicalEntityType(), row.latestCanonicalEntityId())
+			);
+		}
+	}
+
+	record QuarantineResolutionForm(
+		String resolutionStatus,
+		String resolutionReason,
+		String canonicalEntityType,
+		String canonicalEntityId,
+		String evidenceHash
+	) {
+
+		QuarantineResolutionCommand toCommand(String quarantineId, String resolvedBy) {
+			return new QuarantineResolutionCommand(
+				quarantineId,
+				resolutionStatus,
+				resolutionReason,
+				resolvedBy,
+				canonicalEntityType,
+				canonicalEntityId,
+				evidenceHash
 			);
 		}
 	}

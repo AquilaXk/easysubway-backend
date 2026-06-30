@@ -59,6 +59,68 @@ public class JdbcAliasQuarantineQueueRepository {
 			""", this::mapQuarantine, limit);
 	}
 
+	public void updateAliasStatus(String aliasId, String approvalStatus, String reviewedBy, LocalDateTime reviewedAt) {
+		int updated = jdbcTemplate.update("""
+			UPDATE external_alias_approvals
+			SET approval_status = ?, approved_by = ?, approved_at = ?
+			WHERE id = ? AND approval_status = 'PENDING'
+			""",
+			approvalStatus,
+			reviewedBy,
+			reviewedAt,
+			aliasId
+		);
+		if (updated != 1) {
+			throw new IllegalArgumentException("pending alias approval not found: " + aliasId);
+		}
+	}
+
+	public void resolveQuarantine(String quarantineId, String resolvedBy, LocalDateTime resolvedAt) {
+		int updated = jdbcTemplate.update("""
+			UPDATE source_quarantine_records
+			SET resolution_status = 'RESOLVED', resolved_by = ?, resolved_at = ?
+			WHERE id = ? AND resolution_status = 'OPEN'
+			""",
+			resolvedBy,
+			resolvedAt,
+			quarantineId
+		);
+		if (updated != 1) {
+			throw new IllegalArgumentException("open quarantine record not found: " + quarantineId);
+		}
+	}
+
+	public void insertQuarantineResolution(
+		String id,
+		String quarantineRecordId,
+		String resolutionStatus,
+		String resolutionReason,
+		String resolvedBy,
+		LocalDateTime resolvedAt,
+		String canonicalEntityType,
+		String canonicalEntityId,
+		String evidenceHash
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO source_quarantine_resolutions (
+				id, quarantine_record_id, resolution_status, resolution_reason,
+				resolved_by, resolved_at, canonical_entity_type, canonical_entity_id,
+				evidence_hash
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			""",
+			id,
+			quarantineRecordId,
+			resolutionStatus,
+			resolutionReason,
+			resolvedBy,
+			resolvedAt,
+			canonicalEntityType,
+			canonicalEntityId,
+			evidenceHash
+		);
+	}
+
 	private AliasApprovalRow mapAliasApproval(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new AliasApprovalRow(
 			resultSet.getString("id"),
