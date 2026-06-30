@@ -69,3 +69,43 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+
+  notify-slack-security-failure:
+    name: Slack / Security failure
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs:
+      - automatic-analysis
+      - sonarcloud
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+      }}
+    env:
+      SLACK_SECURITY_WEBHOOK_URL: ${{ secrets.SLACK_SECURITY_WEBHOOK_URL }}
+    steps:
+      - name: Slack / Skip missing security webhook
+        if: ${{ env.SLACK_SECURITY_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Slack notification::SLACK_SECURITY_WEBHOOK_URL is not configured."
+
+      - name: Slack / Notify security failure
+        if: ${{ env.SLACK_SECURITY_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
+        with:
+          webhook: ${{ env.SLACK_SECURITY_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway security workflow failed"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway 보안 workflow 실패*
+                    • repo: `${{ github.repository }}`
+                    • ref: `${{ github.ref_name }}`
+                    • actor: `${{ github.actor }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>

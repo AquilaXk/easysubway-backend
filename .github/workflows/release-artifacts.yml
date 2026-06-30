@@ -18,9 +18,6 @@ on:
           - ci-self-signed
           - production-upload-key
 
-permissions:
-  contents: read
-
 concurrency:
   group: release-artifacts-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -29,6 +26,8 @@ jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     outputs:
       android: ${{ steps.filter.outputs.android }}
@@ -76,6 +75,8 @@ jobs:
     name: Android Release Artifact
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.mobile == 'true' }}
 
     steps:
@@ -262,6 +263,8 @@ jobs:
     name: Android Production RC Artifact
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
     if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.android_rc_signing_mode == 'production-upload-key' }}
     environment:
       name: android-production-rc
@@ -441,6 +444,8 @@ jobs:
     name: Backend Release Image
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
     if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.deploy == 'true' }}
 
     steps:
@@ -502,6 +507,8 @@ jobs:
       - android-release
       - android-production-rc-release
       - backend-release
+    permissions:
+      contents: read
     if: ${{ always() && (needs.android-release.result == 'success' || needs.android-production-rc-release.result == 'success' || needs.backend-release.result == 'success') }}
 
     steps:
@@ -579,3 +586,45 @@ jobs:
           path: release-artifacts/rc
           if-no-files-found: error
           retention-days: 90
+
+  notify-slack-release-result:
+    name: Slack / Release artifacts result
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs:
+      - changes
+      - android-release
+      - android-production-rc-release
+      - backend-release
+      - rc-evidence-manifest
+    if: >-
+      ${{
+        always() &&
+        github.event_name != 'pull_request' &&
+        (needs.changes.result == 'success' || contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+      }}
+    env:
+      SLACK_RELEASE_WEBHOOK_URL: ${{ secrets.SLACK_RELEASE_WEBHOOK_URL }}
+    steps:
+      - name: Slack / Skip missing release webhook
+        if: ${{ env.SLACK_RELEASE_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Slack notification::SLACK_RELEASE_WEBHOOK_URL is not configured."
+
+      - name: Slack / Notify release artifacts result
+        if: ${{ env.SLACK_RELEASE_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
+        with:
+          webhook: ${{ env.SLACK_RELEASE_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway release artifacts ${{ contains(needs.*.result, 'failure') && 'failure' || contains(needs.*.result, 'cancelled') && 'cancelled' || 'success' }}"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway Release Artifacts ${{ contains(needs.*.result, 'failure') && '실패' || contains(needs.*.result, 'cancelled') && '취소' || '성공' }}*
+                    • repo: `${{ github.repository }}`
+                    • ref: `${{ github.ref_name }}`
+                    • actor: `${{ github.actor }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>

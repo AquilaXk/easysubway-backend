@@ -9,9 +9,6 @@ on:
       - main
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: ci-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
@@ -20,6 +17,8 @@ jobs:
   changes:
     name: Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
 
     outputs:
       android: ${{ steps.filter.outputs.android }}
@@ -82,6 +81,8 @@ jobs:
     name: Release Gate Consistency
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
 
     steps:
       - name: Release Gate Consistency / Checkout repository
@@ -103,6 +104,8 @@ jobs:
     name: Repository CI
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
 
     steps:
       - name: Repository CI / Skip unchanged area
@@ -202,6 +205,8 @@ jobs:
     name: Backend CI
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
 
     steps:
       - name: Backend CI / Skip unchanged area
@@ -245,6 +250,8 @@ jobs:
     name: Mobile App CI
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
 
     steps:
       - name: Mobile App CI / Skip unchanged area
@@ -319,6 +326,8 @@ jobs:
     name: Android CI
     runs-on: ubuntu-latest
     needs: changes
+    permissions:
+      contents: read
 
     steps:
       - name: Android CI / Skip unchanged area
@@ -368,3 +377,48 @@ jobs:
           set -euo pipefail
           flutter pub get
           flutter build apk --debug
+
+  notify-slack-ci-failure:
+    name: Slack / CI failure
+    runs-on: ubuntu-latest
+    permissions: {}
+    needs:
+      - changes
+      - release-gate-consistency
+      - repository-contracts
+      - backend
+      - mobile-app
+      - android
+      - dependency-vulnerability-scan
+    if: >-
+      ${{
+        always() &&
+        github.event_name == 'push' &&
+        github.ref == 'refs/heads/main' &&
+        (contains(needs.*.result, 'failure') || contains(needs.*.result, 'cancelled'))
+      }}
+    env:
+      SLACK_CI_WEBHOOK_URL: ${{ secrets.SLACK_CI_WEBHOOK_URL }}
+    steps:
+      - name: Slack / Skip missing CI webhook
+        if: ${{ env.SLACK_CI_WEBHOOK_URL == '' }}
+        run: echo "::notice title=Slack notification::SLACK_CI_WEBHOOK_URL is not configured."
+
+      - name: Slack / Notify CI failure
+        if: ${{ env.SLACK_CI_WEBHOOK_URL != '' }}
+        uses: slackapi/slack-github-action@45a88b9581bfab2566dc881e2cd66d334e621e2c
+        with:
+          webhook: ${{ env.SLACK_CI_WEBHOOK_URL }}
+          webhook-type: incoming-webhook
+          payload: |
+            text: "EasySubway CI failed"
+            blocks:
+              - type: section
+                text:
+                  type: mrkdwn
+                  text: |
+                    *EasySubway CI 실패*
+                    • repo: `${{ github.repository }}`
+                    • ref: `${{ github.ref_name }}`
+                    • actor: `${{ github.actor }}`
+                    • run: <${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}|GitHub Actions 열기>
