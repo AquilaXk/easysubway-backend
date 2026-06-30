@@ -42,6 +42,9 @@ function assertPrototype(query, result, name) {
   }
 
   assert.equal(result.arrival, query.expectedArrival, `${name} arrival`);
+  if (query.expectedDurationSeconds !== undefined) {
+    assert.equal(result.durationSeconds, query.expectedDurationSeconds, `${name} duration`);
+  }
   assert.equal(result.transferCount, query.expectedTransfers, `${name} transfer count`);
   assert.deepEqual(result.tripIds, query.expectedTripIds, `${name} trip ids`);
   assert.ok(result.path.length > 0, `${name} reconstructs path`);

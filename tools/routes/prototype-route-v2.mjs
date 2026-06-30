@@ -32,7 +32,7 @@ export function runAll(fixtures) {
 }
 
 export function runRangeRaptor(fixtures, query) {
-  const start = departureMinute(query);
+  const start = departureMinute(fixtures, query);
   const labelsByRound = [new Map([[query.origin, [label(query.origin, start)]]])];
 
   for (let round = 0; round <= maxTransfers(query); round += 1) {
@@ -42,11 +42,11 @@ export function runRangeRaptor(fixtures, query) {
     labelsByRound[round + 1] = mergeMaps(labelsByRound[round + 1], current, fixtures.paretoLimit);
   }
 
-  return alternatives(labelsByRound.at(-1)?.get(query.destination) ?? [], fixtures.paretoLimit);
+  return alternatives(labelsByRound.at(-1)?.get(query.destination) ?? [], fixtures.paretoLimit, start);
 }
 
 export function runTimeDependentDijkstra(fixtures, query) {
-  const start = departureMinute(query);
+  const start = departureMinute(fixtures, query);
   let queue = [label(query.origin, start)];
   const best = new Map([[query.origin, queue]]);
 
@@ -62,13 +62,14 @@ export function runTimeDependentDijkstra(fixtures, query) {
     }
   }
 
-  return alternatives(best.get(query.destination) ?? [], fixtures.paretoLimit);
+  return alternatives(best.get(query.destination) ?? [], fixtures.paretoLimit, start);
 }
 
 function normalize(fixtures) {
   return {
     ...fixtures,
     paretoLimit: fixtures.paretoLimit ?? 3,
+    serviceDayCutoffHour: fixtures.serviceDayCutoffHour ?? 3,
     transferSlackMinutes: Math.ceil((fixtures.transferSlackSeconds ?? 0) / 60),
     transfers: fixtures.transfers ?? [],
     trips: fixtures.trips.map((trip) => ({
@@ -180,10 +181,10 @@ function addLabel(labels, candidate, limit) {
   return true;
 }
 
-function alternatives(labels, limit) {
+function alternatives(labels, limit, start) {
   return keepPareto(labels, limit).map((result) => ({
     arrival: formatClock(result.time),
-    durationSeconds: (result.time - (result.path[0]?.departure ? parseClock(result.path[0].departure) : result.time)) * 60,
+    durationSeconds: (result.time - start) * 60,
     transferCount: Math.max(0, result.boardings - 1),
     tripIds: result.path.filter((step) => step.type === "ride").map((step) => step.tripId),
     path: result.path,
@@ -227,8 +228,9 @@ function maxTransfers(query) {
   return query.maxTransfers ?? 3;
 }
 
-function departureMinute(query) {
-  return parseClock(query.departure.slice(11, 16));
+function departureMinute(fixtures, query) {
+  const minute = parseClock(query.departure.slice(11, 16));
+  return minute < fixtures.serviceDayCutoffHour * 60 ? minute + 24 * 60 : minute;
 }
 
 function parseClock(clock) {
@@ -241,8 +243,18 @@ function formatClock(minutes) {
 }
 
 function isServiceActive(fixtures, query, trip) {
-  const serviceDate = query.departure.slice(0, 10);
+  const serviceDate = serviceDay(fixtures, query);
   return !(fixtures.calendarDates?.[serviceDate] ?? []).includes(trip.service);
+}
+
+function serviceDay(fixtures, query) {
+  const date = query.departure.slice(0, 10);
+  const hour = Number(query.departure.slice(11, 13));
+  if (hour >= fixtures.serviceDayCutoffHour) return date;
+
+  const serviceDate = new Date(`${date}T00:00:00Z`);
+  serviceDate.setUTCDate(serviceDate.getUTCDate() - 1);
+  return serviceDate.toISOString().slice(0, 10);
 }
 
 function cloneLabels(labels) {

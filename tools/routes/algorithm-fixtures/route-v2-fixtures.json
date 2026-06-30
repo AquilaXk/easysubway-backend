@@ -1,6 +1,7 @@
 {
   "schemaVersion": 1,
   "timezone": "Asia/Seoul",
+  "serviceDayCutoffHour": 3,
   "transferSlackSeconds": 180,
   "paretoLimit": 3,
   "calendarDates": {
@@ -270,6 +271,7 @@
       "departure": "2026-07-01T08:58:00+09:00",
       "constraintMode": "ALLOW_UNKNOWN",
       "expectedArrival": "09:24",
+      "expectedDurationSeconds": 1560,
       "expectedTransfers": 0,
       "expectedTripIds": ["l4-express-0903"]
     },
@@ -347,7 +349,7 @@
       "id": "first_train_next_day",
       "origin": "late_a_l4",
       "destination": "late_b_l4",
-      "departure": "2026-07-01T24:00:00+09:00",
+      "departure": "2026-07-02T00:00:00+09:00",
       "constraintMode": "ALLOW_UNKNOWN",
       "expectedArrival": "24:25",
       "expectedTransfers": 0,
