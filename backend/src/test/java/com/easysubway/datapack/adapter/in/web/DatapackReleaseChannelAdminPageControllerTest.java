@@ -95,7 +95,7 @@ class DatapackReleaseChannelAdminPageControllerTest {
 				.param("previousManifestSha256", "1".repeat(64))
 				.param("nextManifestSha256", "0".repeat(64))
 				.param("requestedBy", "data-operator")
-				.param("approvedBy", "release-approver")
+				.param("approvedBy", "forged-approver")
 				.param("reason", "approval-1162")
 				.param("idempotencyKey", "idempotency-production-1162")
 				.param("workflowRunUrl", "https://github.com/AquilaXk/easysubway/actions/runs/1162"))

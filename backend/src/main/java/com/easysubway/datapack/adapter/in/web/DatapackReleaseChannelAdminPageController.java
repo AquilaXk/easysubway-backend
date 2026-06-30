@@ -7,6 +7,7 @@ import com.easysubway.datapack.application.service.DatapackReleaseChannelCommand
 import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService.ReleaseChannelCommand;
 import java.time.LocalDateTime;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -45,15 +46,23 @@ class DatapackReleaseChannelAdminPageController {
 	@PostMapping("/admin/datapack/release-channels/{channel}/promote")
 	@PreAuthorize("(#channel == 'production' and hasAuthority('admin.datapack.production.approve'))"
 		+ " or (#channel != 'production' and hasAuthority('admin.datapack.staging.promote'))")
-	String promote(@PathVariable("channel") String channel, @ModelAttribute ReleaseChannelCommandForm form) {
-		releaseChannelCommandService.promote(form.toCommand(channel));
+	String promote(
+		@PathVariable("channel") String channel,
+		@ModelAttribute ReleaseChannelCommandForm form,
+		Authentication authentication
+	) {
+		releaseChannelCommandService.promote(form.toCommand(channel, authentication.getName()));
 		return "redirect:/admin/datapack/release-channels/page";
 	}
 
 	@PostMapping("/admin/datapack/release-channels/{channel}/rollback")
 	@PreAuthorize("hasAuthority('admin.datapack.rollback')")
-	String rollback(@PathVariable("channel") String channel, @ModelAttribute ReleaseChannelCommandForm form) {
-		releaseChannelCommandService.rollback(form.toCommand(channel));
+	String rollback(
+		@PathVariable("channel") String channel,
+		@ModelAttribute ReleaseChannelCommandForm form,
+		Authentication authentication
+	) {
+		releaseChannelCommandService.rollback(form.toCommand(channel, authentication.getName()));
 		return "redirect:/admin/datapack/release-channels/page";
 	}
 
@@ -148,13 +157,12 @@ class DatapackReleaseChannelAdminPageController {
 		String previousManifestSha256,
 		String nextManifestSha256,
 		String requestedBy,
-		String approvedBy,
 		String reason,
 		String idempotencyKey,
 		String workflowRunUrl
 	) {
 
-		ReleaseChannelCommand toCommand(String channel) {
+		ReleaseChannelCommand toCommand(String channel, String approvedBy) {
 			return new ReleaseChannelCommand(
 				channel,
 				previousCandidateId,
