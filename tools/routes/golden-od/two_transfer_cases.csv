@@ -1,0 +1,16 @@
+origin_station_id,destination_station_id,departure_time,mobility_type,constraint_mode,expected_transfer_count,max_eta_error_seconds,observed_eta_error_seconds,use_realtime,notes
+station-sangnoksu,station-jeongja,2026-06-30T11:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:04:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,true,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:08:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:12:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,true,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:16:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,true,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:20:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:24:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:28:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:32:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:36:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:40:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:44:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:48:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-jeongja,station-sangnoksu,2026-06-30T11:52:00+09:00,STROLLER,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
+station-sangnoksu,station-jeongja,2026-06-30T11:56:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,2,300,90,false,two transfer fixture
