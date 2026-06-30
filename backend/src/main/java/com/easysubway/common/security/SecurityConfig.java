@@ -249,7 +249,6 @@ public class SecurityConfig {
 					"/actuator/health",
 					"/actuator/health/liveness",
 					"/actuator/health/readiness",
-					"/actuator/prometheus",
 					"/privacy",
 					"/easysubway/privacy",
 					"/api/v1/realtime/**",
