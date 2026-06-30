@@ -84,14 +84,14 @@ class HealthCheckControllerTest {
 	}
 
 	@Test
-	@DisplayName("Prometheus 스크랩용 액추에이터 지표 엔드포인트를 노출한다")
-	void actuatorPrometheusIsAvailable() throws Exception {
+	@DisplayName("Prometheus 액추에이터 지표는 등록하되 공개 접근은 차단한다")
+	void actuatorPrometheusIsNotPublic() throws Exception {
 		assertThat(webEndpointsSupplier.getEndpoints())
 			.extracting(endpoint -> endpoint.getEndpointId().toString())
 			.contains("prometheus");
 
 		mockMvc.perform(get("/actuator/prometheus"))
-			.andExpect(status().isOk());
+			.andExpect(status().isForbidden());
 	}
 
 	@Test
