@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -44,7 +45,8 @@ class RouteSearchV2ControllerTest {
 		when(routeSearchUseCase.searchRoute(argThat(command ->
 			"station-sangnoksu".equals(command.originStationId())
 				&& "station-sadang".equals(command.destinationStationId())
-				&& command.mobilityType() == MobilityType.WHEELCHAIR
+				&& command.mobilityType() == MobilityType.STROLLER
+				&& command.constraintMode() == ConstraintMode.STRICT_STEP_FREE
 		))).thenReturn(foundRouteSearch());
 
 		mockMvc.perform(post("/api/v2/routes/search")
@@ -120,6 +122,109 @@ class RouteSearchV2ControllerTest {
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("출발 시간은 ISO offset 형식이어야 합니다."));
+
+		verifyNoInteractions(routeSearchUseCase);
+	}
+
+	@Test
+	@DisplayName("V2 prefer step-free는 mobility type을 유지한 채 command에 전달한다")
+	void routeSearchV2PreferStepFreeKeepsMobilityType() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command.mobilityType() == MobilityType.STROLLER
+				&& command.constraintMode() == ConstraintMode.PREFER_STEP_FREE
+		))).thenReturn(foundRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "PREFER_STEP_FREE",
+					  "useRealtime": true,
+					  "maxTransfers": 3,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.constraintMode").value("PREFER_STEP_FREE"));
+	}
+
+	@Test
+	@DisplayName("V2 PROFILE_DEFAULT는 기존 client 호환을 위해 mobility type 기본 constraint로 처리한다")
+	void routeSearchV2ProfileDefaultUsesMobilityTypeDefaultConstraintMode() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command.mobilityType() == MobilityType.STROLLER
+				&& command.constraintMode() == ConstraintMode.PREFER_STEP_FREE
+		))).thenReturn(foundRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "PROFILE_DEFAULT",
+					  "useRealtime": true,
+					  "maxTransfers": 3,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.constraintMode").value("PROFILE_DEFAULT"));
+	}
+
+	@Test
+	@DisplayName("V2 allow-with-warnings는 constraintMode를 command와 응답에 반영한다")
+	void routeSearchV2AllowWithWarningsKeepsConstraintMode() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command.mobilityType() == MobilityType.STROLLER
+				&& command.constraintMode() == ConstraintMode.ALLOW_WITH_WARNINGS
+		))).thenReturn(foundRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "ALLOW_WITH_WARNINGS",
+					  "useRealtime": true,
+					  "maxTransfers": 3,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.constraintMode").value("ALLOW_WITH_WARNINGS"));
+	}
+
+	@Test
+	@DisplayName("알 수 없는 V2 constraintMode는 search 저장 전에 JSON 400으로 거부한다")
+	void unknownRouteSearchV2ConstraintModeReturnsBadRequestBeforeSearch() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "STAIRS_ARE_FINE",
+					  "useRealtime": true,
+					  "maxTransfers": 3,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("지원하지 않는 이동 제약 조건입니다."));
 
 		verifyNoInteractions(routeSearchUseCase);
 	}

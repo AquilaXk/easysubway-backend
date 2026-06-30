@@ -9,6 +9,7 @@ import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepositor
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
+import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.InvalidRouteFeedbackException;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteFeedbackRating;
@@ -242,6 +243,54 @@ class RouteSearchServiceTest {
 		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
 		assertThat(result.steps()).isEmpty();
 		assertThat(result.recommendationReasons()).isEmpty();
+		assertThat(result.blockedReasons())
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("일시적 부상 strict step-free 조건은 계단만 있는 역 접근 경로를 차단한다")
+	void temporaryInjuryStrictStepFreeBlocksStairOnlyStationAccess() {
+		var repository = new InMemoryRouteSearchRepository();
+		var stairOnlyService = new RouteSearchService(
+			repository,
+			repository,
+			new StairOnlyTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = stairOnlyService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.TEMPORARY_INJURY,
+			ConstraintMode.STRICT_STEP_FREE
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.blockedReasons())
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("유모차 strict step-free 조건은 계단만 있는 역 접근 경로를 차단한다")
+	void strollerStrictStepFreeBlocksStairOnlyStationAccess() {
+		var repository = new InMemoryRouteSearchRepository();
+		var stairOnlyService = new RouteSearchService(
+			repository,
+			repository,
+			new StairOnlyTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = stairOnlyService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.STROLLER,
+			ConstraintMode.STRICT_STEP_FREE
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
 		assertThat(result.blockedReasons())
 			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
 	}

@@ -71,4 +71,17 @@ public record RouteProfileWeight(
 			);
 		};
 	}
+
+	public static RouteProfileWeight from(MobilityType mobilityType, ConstraintMode constraintMode) {
+		RouteProfileWeight base = from(mobilityType);
+		return new RouteProfileWeight(
+			base.baseAccessCost(),
+			base.lowDataConfidencePenalty(),
+			base.stairOnlyAccessPenalty(),
+			base.transferPenalty(),
+			constraintMode == ConstraintMode.STRICT_STEP_FREE,
+			base.entryGuidance(),
+			base.exitGuidance()
+		);
+	}
 }

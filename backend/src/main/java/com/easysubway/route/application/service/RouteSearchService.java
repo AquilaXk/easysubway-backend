@@ -126,7 +126,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			throw new InvalidRouteSearchException("출발역과 도착역이 달라야 합니다.");
 		}
 
-		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType());
+		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType(), command.constraintMode());
 		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id(), profileWeight);
 		List<String> accessibilityStationIds = routePlan.accessibilityStationIds(origin.id(), destination.id());
 		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
