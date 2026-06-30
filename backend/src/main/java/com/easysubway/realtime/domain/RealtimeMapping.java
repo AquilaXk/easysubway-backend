@@ -42,4 +42,11 @@ public record RealtimeMapping(
 		// ponytail: TOPIS station-code alias is the provider station id suffix; add explicit alias data if another provider needs it.
 		return providerStationId != null && providerStationId.endsWith(requestedProviderLineId);
 	}
+
+	public boolean matchesLine(String requestedLineId) {
+		if (requestedLineId == null || requestedLineId.isBlank()) {
+			return true;
+		}
+		return lineId.equals(requestedLineId) || lineId.endsWith("-" + requestedLineId);
+	}
 }

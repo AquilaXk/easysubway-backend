@@ -47,7 +47,7 @@ public class InMemoryRealtimeMappingPort implements RealtimeMappingPort {
 		return mappings.stream()
 			.filter((mapping) -> mapping.providerId().equals(providerId))
 			.filter((mapping) -> mapping.stationId().equals(query.stationId()))
-			.filter((mapping) -> query.lineId() == null || query.lineId().isBlank() || mapping.lineId().equals(query.lineId()))
+			.filter((mapping) -> mapping.matchesLine(query.lineId()))
 			.findFirst();
 	}
 
@@ -55,7 +55,7 @@ public class InMemoryRealtimeMappingPort implements RealtimeMappingPort {
 	public Optional<RealtimeMapping> findTrainPositionMapping(String providerId, RealtimeQuery query) {
 		return mappings.stream()
 			.filter((mapping) -> mapping.providerId().equals(providerId))
-			.filter((mapping) -> query.lineId() == null || query.lineId().isBlank() || mapping.lineId().equals(query.lineId()))
+			.filter((mapping) -> mapping.matchesLine(query.lineId()))
 			.findFirst();
 	}
 }

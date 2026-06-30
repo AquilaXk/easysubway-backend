@@ -126,6 +126,17 @@ class JdbcRealtimeMappingRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("도착 mapping은 legacy shorthand lineId로 조회한다")
+	void findArrivalMappingByLegacyShorthandLineId() {
+		var mapping = repository.findArrivalMapping(
+			"seoul-topis",
+			new RealtimeQuery("station-sangnoksu", "4", "448", "상록수", null)
+		);
+
+		assertThat(mapping).isPresent();
+	}
+
+	@Test
 	@DisplayName("열차 위치 mapping은 line query로 provider line alias와 cache version을 조회한다")
 	void findTrainPositionMappingByLine() {
 		var mapping = repository.findTrainPositionMapping(
@@ -149,6 +160,17 @@ class JdbcRealtimeMappingRepositoryTest {
 		);
 
 		assertThat(mapping).hasValueSatisfying((value) -> assertThat(value.lineId()).isEqualTo("seoul-4"));
+	}
+
+	@Test
+	@DisplayName("열차 위치 mapping은 legacy shorthand lineId로 조회한다")
+	void findTrainPositionMappingByLegacyShorthandLineId() {
+		var mapping = repository.findTrainPositionMapping(
+			"seoul-topis",
+			new RealtimeQuery(null, "4", null, null, "4호선")
+		);
+
+		assertThat(mapping).isPresent();
 	}
 
 	@Test
