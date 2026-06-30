@@ -90,6 +90,7 @@ public class DatapackReleaseChannelCommandService {
 			command.reason(),
 			command.idempotencyKey(),
 			command.workflowRunUrl(),
+			evidenceBundleForEvent(operationType, command),
 			now
 		);
 		return new ReleaseChannelOperationResult(
@@ -122,10 +123,23 @@ public class DatapackReleaseChannelCommandService {
 			|| !command.requestedBy().equals(event.requestedBy())
 			|| !command.approvedBy().equals(event.approvedBy())
 			|| !command.reason().equals(event.reason())
-			|| !command.workflowRunUrl().equals(event.workflowRunUrl())) {
+			|| !command.workflowRunUrl().equals(event.workflowRunUrl())
+			|| !sameEvidenceBundle(operationType, command, event)) {
 			throw new IllegalArgumentException(
 				"idempotency key already belongs to a different release operation");
 		}
+	}
+
+	private boolean sameEvidenceBundle(
+		String operationType,
+		ReleaseChannelCommand command,
+		ReleaseChannelEvent event
+	) {
+		if (!"PROMOTE".equals(operationType) || !"production".equals(command.channel())) {
+			return true;
+		}
+		ReleaseChannelCommand.requireSha(command.evidenceBundleSha256(), "evidenceBundleSha256");
+		return command.evidenceBundleSha256().equals(event.evidenceBundleSha256());
 	}
 
 	private void ensureCurrentPointerMatches(ReleaseChannelState channel, ReleaseChannelCommand command) {
@@ -146,6 +160,13 @@ public class DatapackReleaseChannelCommandService {
 		if (!repository.candidateHasPassingReleaseEvidence(command.nextCandidateId(), command.evidenceBundleSha256())) {
 			throw new IllegalArgumentException("release evidence bundle is required before production promote");
 		}
+	}
+
+	private String evidenceBundleForEvent(String operationType, ReleaseChannelCommand command) {
+		if ("PROMOTE".equals(operationType) && "production".equals(command.channel())) {
+			return command.evidenceBundleSha256();
+		}
+		return null;
 	}
 
 	private void ensureRollbackTarget(ReleaseChannelState channel, ReleaseChannelCommand command) {

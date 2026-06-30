@@ -40,6 +40,7 @@ public interface DatapackReleaseChannelCommandPort {
 		String reason,
 		String idempotencyKey,
 		String workflowRunUrl,
+		String evidenceBundleSha256,
 		LocalDateTime createdAt
 	);
 
@@ -55,7 +56,8 @@ public interface DatapackReleaseChannelCommandPort {
 		String approvedBy,
 		String reason,
 		String idempotencyKey,
-		String workflowRunUrl
+		String workflowRunUrl,
+		String evidenceBundleSha256
 	) {
 	}
 

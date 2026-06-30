@@ -62,7 +62,7 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			SELECT id, channel, previous_candidate_id, next_candidate_id,
 				previous_manifest_sha256, next_manifest_sha256, operation_type,
 				requested_by, approved_by, reason,
-				idempotency_key, workflow_run_url, created_at
+				idempotency_key, workflow_run_url, evidence_bundle_sha256, created_at
 			FROM datapack_release_channel_events
 			WHERE channel = ? AND idempotency_key = ?
 			""", this::mapCommandEvent, channel, idempotencyKey).stream().findFirst();
@@ -163,6 +163,7 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 		String reason,
 		String idempotencyKey,
 		String workflowRunUrl,
+		String evidenceBundleSha256,
 		LocalDateTime createdAt
 	) {
 		jdbcTemplate.update("""
@@ -170,9 +171,9 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 				id, channel, previous_candidate_id, next_candidate_id,
 				previous_manifest_sha256, next_manifest_sha256, operation_type,
 				operation_status, requested_by, approved_by, reason,
-				idempotency_key, workflow_run_url, created_at
+				idempotency_key, workflow_run_url, evidence_bundle_sha256, created_at
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, 'PASS', ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, 'PASS', ?, ?, ?, ?, ?, ?, ?)
 			""",
 			id,
 			channel,
@@ -186,6 +187,7 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			reason,
 			idempotencyKey,
 			workflowRunUrl,
+			evidenceBundleSha256,
 			createdAt
 		);
 	}
@@ -244,7 +246,8 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			resultSet.getString("approved_by"),
 			resultSet.getString("reason"),
 			resultSet.getString("idempotency_key"),
-			resultSet.getString("workflow_run_url")
+			resultSet.getString("workflow_run_url"),
+			resultSet.getString("evidence_bundle_sha256")
 		);
 	}
 
