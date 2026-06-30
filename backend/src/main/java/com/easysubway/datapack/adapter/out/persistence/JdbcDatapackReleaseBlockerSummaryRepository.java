@@ -42,8 +42,8 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		long manualOverrideBlockers = countManualOverrideBlockers();
 		long facilityBlockers = countFacilityBlockers(null);
 		long routeGateBlockers = countRouteGateBlockers(null);
-		ManifestSignatureSummary manifestSignature = manifestSignature(candidate);
 		EvidenceBundleSummary evidenceBundle = evidenceBundle(candidate);
+		ManifestSignatureSummary manifestSignature = evidenceBundle.manifestSignature();
 		ReleaseChannelSummary productionChannel = productionChannel();
 		long totalBlockers = candidateGateBlockers
 			+ aliasBlockers
@@ -51,7 +51,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			+ manualOverrideBlockers
 			+ facilityBlockers
 			+ routeGateBlockers
-			+ manifestSignature.blockerCount();
+			+ evidenceBundle.blockerCount();
 		return new DatapackReleaseBlockerSummary(
 			candidate.map(CandidateGateSummary::candidateId).orElse("-"),
 			candidate.map(CandidateGateSummary::scopeId).orElse("-"),
@@ -77,6 +77,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 				manualOverrideBlockers,
 				facilityBlockers,
 				routeGateBlockers,
+				evidenceBundle,
 				manifestSignature
 			),
 			candidate.map(CandidateGateSummary::createdAt).orElse(null)
@@ -133,15 +134,19 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		long manualOverrideBlockers,
 		long facilityBlockers,
 		long routeGateBlockers,
+		EvidenceBundleSummary evidenceBundle,
 		ManifestSignatureSummary manifestSignature
 	) {
 		long sourceBlockers = candidate.map(row -> "PASS".equals(row.coverageStatus()) ? 0L : 1L).orElse(1L)
 			+ aliasBlockers
 			+ quarantineBlockers;
-		long validatorBlockers = candidate.map(row -> "PASS".equals(row.validatorStatus()) ? 0L : 1L).orElse(1L);
+		long validatorBlockers = candidate.map(row -> "PASS".equals(row.validatorStatus()) ? 0L : 1L).orElse(1L)
+			+ evidenceBundle.validatorBlocker();
 		long routeBlockers = candidate.map(row -> "PASS".equals(row.routeRegressionStatus()) ? 0L : 1L).orElse(1L)
-			+ routeGateBlockers;
-		long androidBlockers = candidate.map(row -> "PASS".equals(row.androidEvidenceStatus()) ? 0L : 1L).orElse(1L);
+			+ routeGateBlockers
+			+ evidenceBundle.routeRegressionBlocker();
+		long androidBlockers = candidate.map(row -> "PASS".equals(row.androidEvidenceStatus()) ? 0L : 1L).orElse(1L)
+			+ evidenceBundle.androidBlocker();
 		return List.of(
 			new ReleaseReadinessRow("Source coverage", statusFor(sourceBlockers), sourceBlockers, sourceNote(aliasBlockers, quarantineBlockers)),
 			new ReleaseReadinessRow("Validator", statusFor(validatorBlockers), validatorBlockers, "SQLite integrity / validator gates"),
@@ -153,33 +158,23 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		);
 	}
 
-	private ManifestSignatureSummary manifestSignature(Optional<CandidateGateSummary> candidate) {
-		if (candidate.isEmpty()) {
-			return new ManifestSignatureSummary("확인 필요", 1);
-		}
-		String status = jdbcTemplate.query("""
-			SELECT manifest_signature_status
-			FROM datapack_release_evidence_bundles
-			WHERE candidate_id = ?
-			""", (resultSet, rowNumber) -> resultSet.getString("manifest_signature_status"), candidate.get().candidateId())
-			.stream()
-			.findFirst()
-			.map(manifestStatus -> "PASS".equals(manifestStatus) ? "PASS" : manifestStatus)
-			.orElse("확인 필요");
-		return new ManifestSignatureSummary(status, "PASS".equals(status) ? 0 : 1);
-	}
-
 	private EvidenceBundleSummary evidenceBundle(Optional<CandidateGateSummary> candidate) {
 		if (candidate.isEmpty()) {
 			return EvidenceBundleSummary.empty();
 		}
 		return jdbcTemplate.query("""
-			SELECT evidence_bundle_sha256, workflow_run_url
+			SELECT evidence_bundle_sha256, workflow_run_url, validator_status,
+				route_regression_status, manifest_signature_status, android_evidence_status
 			FROM datapack_release_evidence_bundles
 			WHERE candidate_id = ?
 			""", (resultSet, rowNumber) -> new EvidenceBundleSummary(
+				true,
 				resultSet.getString("evidence_bundle_sha256"),
-				redactedUrl(resultSet.getString("workflow_run_url"))
+				redactedUrl(resultSet.getString("workflow_run_url")),
+				resultSet.getString("validator_status"),
+				resultSet.getString("route_regression_status"),
+				resultSet.getString("manifest_signature_status"),
+				resultSet.getString("android_evidence_status")
 			), candidate.get().candidateId()).stream().findFirst().orElse(EvidenceBundleSummary.empty());
 	}
 
@@ -331,10 +326,49 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 	private record ManifestSignatureSummary(String status, long blockerCount) {
 	}
 
-	private record EvidenceBundleSummary(String evidenceBundleSha256, String workflowRunUrl) {
+	private record EvidenceBundleSummary(
+		boolean exists,
+		String evidenceBundleSha256,
+		String workflowRunUrl,
+		String validatorStatus,
+		String routeRegressionStatus,
+		String manifestSignatureStatus,
+		String androidEvidenceStatus
+	) {
+
+		long blockerCount() {
+			if (!exists) {
+				return 1;
+			}
+			return validatorBlocker() + routeRegressionBlocker() + manifestSignature().blockerCount() + androidBlocker();
+		}
+
+		long validatorBlocker() {
+			return statusBlocker(validatorStatus);
+		}
+
+		long routeRegressionBlocker() {
+			return statusBlocker(routeRegressionStatus);
+		}
+
+		long androidBlocker() {
+			return statusBlocker(androidEvidenceStatus);
+		}
+
+		ManifestSignatureSummary manifestSignature() {
+			return new ManifestSignatureSummary(statusOrNeed(manifestSignatureStatus), statusBlocker(manifestSignatureStatus));
+		}
 
 		static EvidenceBundleSummary empty() {
-			return new EvidenceBundleSummary("-", "-");
+			return new EvidenceBundleSummary(false, "-", "-", "PASS", "PASS", "확인 필요", "PASS");
+		}
+
+		private static long statusBlocker(String status) {
+			return "PASS".equals(status) ? 0 : 1;
+		}
+
+		private static String statusOrNeed(String status) {
+			return status == null || status.isBlank() ? "확인 필요" : status;
 		}
 	}
 

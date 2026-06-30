@@ -38,6 +38,8 @@ class DatapackCandidateAdminPageControllerTest {
 
 	@BeforeEach
 	void setUp() {
+		jdbcTemplate.update("DELETE FROM datapack_release_channel_events");
+		jdbcTemplate.update("DELETE FROM datapack_release_channels");
 		jdbcTemplate.update("DELETE FROM datapack_release_evidence_bundles");
 		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs");
 		jdbcTemplate.update("DELETE FROM datapack_candidates");

@@ -72,6 +72,41 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	}
 
 	@Test
+	@DisplayName("evidence bundle 상태가 실패하면 candidate gate가 PASS여도 production promote를 차단한다")
+	void dashboardBlocksProductionPromoteWhenEvidenceBundleStatusFails() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PASS',
+				route_regression_status = 'PASS',
+				android_evidence_status = 'PASS'
+			WHERE id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("""
+			UPDATE datapack_release_evidence_bundles
+			SET route_regression_status = 'FAIL',
+				manifest_signature_status = 'PASS'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM manual_overrides");
+		jdbcTemplate.update("DELETE FROM facility_evidence");
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
+
+		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
+		String qualityHtml = getAdminHtml("/admin/data-quality/page");
+
+		assertThat(dashboardHtml)
+			.contains("production promote 차단: blocker 1건")
+			.contains("전체 blocker 1건")
+			.doesNotContain("production promote 가능")
+			.doesNotContain("READY");
+		assertThat(qualityHtml)
+			.contains("Route gate")
+			.contains("ENTRY/EXIT/TRANSFER and generated connector gates");
+	}
+
+	@Test
 	@DisplayName("datapack read 권한이 없으면 통합 대시보드 release blocker 요약을 숨긴다")
 	void dashboardHidesDatapackReleaseBlockerSummaryWithoutDatapackRead() throws Exception {
 		String html = getAdminHtmlWithoutDatapackRead("/admin/dashboard/page");
