@@ -4,6 +4,7 @@ import com.easysubway.datapack.domain.DataSourceSnapshot;
 import com.easysubway.datapack.domain.InvalidDataSourceSnapshotException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -71,6 +72,49 @@ public class JdbcDataSourceSnapshotRepository {
 			""", this::mapSnapshot, limit, offset);
 	}
 
+	public Optional<SourceSnapshotEventRow> findEventByIdempotencyKey(String sourceId, String idempotencyKey) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject("""
+				SELECT id, source_id, snapshot_id, operation_type, operation_status,
+					requested_by, reason, idempotency_key, created_at
+				FROM datapack_source_snapshot_events
+				WHERE source_id = ? AND idempotency_key = ?
+				""", this::mapEvent, sourceId, idempotencyKey));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	public void insertEvent(
+		String id,
+		String sourceId,
+		String snapshotId,
+		String operationType,
+		String operationStatus,
+		String requestedBy,
+		String reason,
+		String idempotencyKey,
+		LocalDateTime createdAt
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_source_snapshot_events (
+				id, source_id, snapshot_id, operation_type, operation_status,
+				requested_by, reason, idempotency_key, created_at
+			)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			""",
+			id,
+			sourceId,
+			snapshotId,
+			operationType,
+			operationStatus,
+			requestedBy,
+			reason,
+			idempotencyKey,
+			createdAt
+		);
+	}
+
 	private void insert(DataSourceSnapshot snapshot) {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
@@ -129,5 +173,32 @@ public class JdbcDataSourceSnapshotRepository {
 			resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
 			resultSet.getTimestamp("raw_retention_expires_at").toLocalDateTime()
 		);
+	}
+
+	private SourceSnapshotEventRow mapEvent(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new SourceSnapshotEventRow(
+			resultSet.getString("id"),
+			resultSet.getString("source_id"),
+			resultSet.getString("snapshot_id"),
+			resultSet.getString("operation_type"),
+			resultSet.getString("operation_status"),
+			resultSet.getString("requested_by"),
+			resultSet.getString("reason"),
+			resultSet.getString("idempotency_key"),
+			resultSet.getTimestamp("created_at").toLocalDateTime()
+		);
+	}
+
+	public record SourceSnapshotEventRow(
+		String id,
+		String sourceId,
+		String snapshotId,
+		String operationType,
+		String operationStatus,
+		String requestedBy,
+		String reason,
+		String idempotencyKey,
+		LocalDateTime createdAt
+	) {
 	}
 }

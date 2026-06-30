@@ -3,16 +3,21 @@ package com.easysubway.datapack.adapter.in.web;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository;
+import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService;
+import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService.SourceSnapshotCommand;
 import com.easysubway.datapack.domain.DataSourceSnapshot;
 import java.time.LocalDateTime;
 import java.util.Collections;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
+import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.server.ResponseStatusException;
 
@@ -20,9 +25,14 @@ import org.springframework.web.server.ResponseStatusException;
 class DataSourceSnapshotAdminPageController {
 
 	private final JdbcDataSourceSnapshotRepository snapshotRepository;
+	private final DatapackSourceSnapshotCommandService snapshotCommandService;
 
-	DataSourceSnapshotAdminPageController(JdbcDataSourceSnapshotRepository snapshotRepository) {
+	DataSourceSnapshotAdminPageController(
+		JdbcDataSourceSnapshotRepository snapshotRepository,
+		DatapackSourceSnapshotCommandService snapshotCommandService
+	) {
 		this.snapshotRepository = snapshotRepository;
+		this.snapshotCommandService = snapshotCommandService;
 	}
 
 	@GetMapping("/admin/datapack/source-snapshots/page")
@@ -56,6 +66,13 @@ class DataSourceSnapshotAdminPageController {
 			.orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Source snapshot not found."));
 		model.addAttribute("snapshot", snapshot);
 		return "admin/datapack/source-snapshots/detail";
+	}
+
+	@PostMapping("/admin/datapack/source-snapshots")
+	@PreAuthorize("hasAuthority('admin.datapack.source.run')")
+	String createSourceSnapshot(@ModelAttribute SourceSnapshotCommandForm form, Authentication authentication) {
+		String snapshotId = snapshotCommandService.createLockedSnapshot(form.toCommand(authentication.getName()));
+		return "redirect:/admin/datapack/source-snapshots/%s/page".formatted(snapshotId);
 	}
 
 	record SourceSnapshotRow(
@@ -119,6 +136,58 @@ class DataSourceSnapshotAdminPageController {
 				return "-";
 			}
 			return value;
+		}
+	}
+
+	record SourceSnapshotCommandForm(
+		String snapshotId,
+		String sourceId,
+		String provider,
+		LocalDateTime retrievedAt,
+		LocalDateTime sourceUpdatedAt,
+		int rowCount,
+		String rawSha256,
+		String rawObjectUri,
+		String redactedRequestFingerprint,
+		String schemaFingerprint,
+		String schemaStatus,
+		String licenseStatus,
+		String fetchStatus,
+		boolean redistributionAllowed,
+		boolean credentialRedacted,
+		String previousSnapshotId,
+		String diffSummary,
+		LocalDateTime freshnessExpiresAt,
+		LocalDateTime rawRetentionExpiresAt,
+		String reason,
+		String idempotencyKey
+	) {
+
+		SourceSnapshotCommand toCommand(String requestedBy) {
+			return new SourceSnapshotCommand(
+				snapshotId,
+				sourceId,
+				provider,
+				retrievedAt,
+				sourceUpdatedAt,
+				rowCount,
+				rawSha256,
+				rawObjectUri,
+				redactedRequestFingerprint,
+				schemaFingerprint,
+				schemaStatus,
+				licenseStatus,
+				fetchStatus,
+				redistributionAllowed,
+				credentialRedacted,
+				previousSnapshotId,
+				diffSummary,
+				freshnessExpiresAt,
+				rawRetentionExpiresAt,
+				requestedBy,
+				reason,
+				idempotencyKey
+			);
 		}
 	}
 }
