@@ -1,5 +1,7 @@
 package com.easysubway.realtime.application;
 
+import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
+import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import java.time.Clock;
@@ -28,13 +30,10 @@ public class RealtimeGatewayService {
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
-	private static final String SANGNOKSU_STATION_ID = "station-sangnoksu";
-	private static final String SANGNOKSU_STATION_NAME = "상록수";
-	private static final String LINE_ID = "4";
-	private static final String LINE_NAME = "4호선";
-	private static final String PROVIDER_LINE_ID = "1004";
+	private static final String PROVIDER_ID = "seoul-topis";
 
 	private final RealtimeProvider provider;
+	private final RealtimeMappingPort mappingPort;
 	private final Clock clock;
 	private final Map<String, CachedArrival> arrivalCache = new ConcurrentHashMap<>();
 	private final Map<String, CachedTrainPosition> trainPositionCache = new ConcurrentHashMap<>();
@@ -43,28 +42,30 @@ public class RealtimeGatewayService {
 	private volatile java.time.Instant quotaCircuitOpenUntil;
 
 	@Autowired
-	public RealtimeGatewayService(RealtimeProvider provider) {
-		this(provider, Clock.systemUTC());
+	public RealtimeGatewayService(RealtimeProvider provider, RealtimeMappingPort mappingPort) {
+		this(provider, Clock.systemUTC(), mappingPort);
 	}
 
-	RealtimeGatewayService(RealtimeProvider provider, Clock clock) {
+	RealtimeGatewayService(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
 		this.provider = provider;
 		this.clock = clock;
+		this.mappingPort = mappingPort;
 	}
 
 	public RealtimeArrivalResult arrivals(RealtimeQuery query) {
-		RealtimeQuery normalizedQuery = normalizeArrivalQuery(query);
-		if (normalizedQuery == null) {
+		NormalizedRealtimeQuery normalizedQuery = normalizeArrivalQuery(query);
+		if (normalizedQuery.rejected()) {
 			return RealtimeArrivalResult.unsupported(
-				"UNSUPPORTED_REGION",
+				normalizedQuery.fallbackCode(),
 				"서울 TOPIS 실시간 지원 범위 밖입니다."
 			);
 		}
 		String cacheKey = "ARRIVALS:%s:%s:%s".formatted(
-			normalizedQuery.providerLineId(),
-			normalizedQuery.stationId(),
-			normalizedQuery.stationQueryName()
+			normalizedQuery.query().providerLineId(),
+			normalizedQuery.query().stationId(),
+			normalizedQuery.query().stationQueryName()
 		);
+		cacheKey = "%s:%d".formatted(cacheKey, normalizedQuery.cacheVersion());
 		CachedArrival cached = arrivalCache.get(cacheKey);
 		if (cached != null && isFresh(cached.cachedAt())) {
 			return cached.result();
@@ -80,7 +81,7 @@ public class RealtimeGatewayService {
 			return joinArrival(existing);
 		}
 		try {
-			RealtimeArrivalResult result = fetchArrivals(normalizedQuery, cacheKey, cached);
+			RealtimeArrivalResult result = fetchArrivals(normalizedQuery.query(), cacheKey, cached);
 			request.complete(result);
 			return result;
 		} catch (RuntimeException exception) {
@@ -115,14 +116,18 @@ public class RealtimeGatewayService {
 	}
 
 	public RealtimeTrainPositionResult trainPositions(RealtimeQuery query) {
-		RealtimeQuery normalizedQuery = normalizeTrainPositionQuery(query);
-		if (normalizedQuery == null) {
+		NormalizedRealtimeQuery normalizedQuery = normalizeTrainPositionQuery(query);
+		if (normalizedQuery.rejected()) {
 			return RealtimeTrainPositionResult.unsupported(
-				"UNSUPPORTED_REGION",
+				normalizedQuery.fallbackCode(),
 				"서울 TOPIS 실시간 지원 범위 밖입니다."
 			);
 		}
-		String cacheKey = "POSITIONS:%s:%s".formatted(normalizedQuery.providerLineId(), normalizedQuery.lineName());
+		String cacheKey = "POSITIONS:%s:%s:%d".formatted(
+			normalizedQuery.query().providerLineId(),
+			normalizedQuery.query().lineName(),
+			normalizedQuery.cacheVersion()
+		);
 		CachedTrainPosition cached = trainPositionCache.get(cacheKey);
 		if (cached != null && isFresh(cached.cachedAt())) {
 			return cached.result();
@@ -138,7 +143,7 @@ public class RealtimeGatewayService {
 			return joinTrainPosition(existing);
 		}
 		try {
-			RealtimeTrainPositionResult result = fetchTrainPositions(normalizedQuery, cacheKey, cached);
+			RealtimeTrainPositionResult result = fetchTrainPositions(normalizedQuery.query(), cacheKey, cached);
 			request.complete(result);
 			return result;
 		} catch (RuntimeException exception) {
@@ -295,54 +300,60 @@ public class RealtimeGatewayService {
 		return exception;
 	}
 
-	private RealtimeQuery normalizeArrivalQuery(RealtimeQuery query) {
-		if (!SANGNOKSU_STATION_ID.equals(query.stationId()) || !SANGNOKSU_STATION_NAME.equals(query.stationQueryName())) {
-			return null;
-		}
-		if (!isBlankOrOneOf(query.lineId(), LINE_ID, "seoul-4")) {
-			return null;
-		}
-		if (!isBlankOrOneOf(query.providerLineId(), PROVIDER_LINE_ID, "448")) {
-			return null;
-		}
-		return new RealtimeQuery(
-			SANGNOKSU_STATION_ID,
-			LINE_ID,
-			PROVIDER_LINE_ID,
-			SANGNOKSU_STATION_NAME,
-			LINE_NAME
-		);
+	private NormalizedRealtimeQuery normalizeArrivalQuery(RealtimeQuery query) {
+		return mappingPort.findArrivalMapping(PROVIDER_ID, query)
+			.map((mapping) -> normalizeArrivalMapping(query, mapping))
+			.orElseGet(() -> NormalizedRealtimeQuery.rejected("MAPPING_MISSING"));
 	}
 
-	private RealtimeQuery normalizeTrainPositionQuery(RealtimeQuery query) {
-		if (!LINE_NAME.equals(query.lineName())) {
-			return null;
+	private NormalizedRealtimeQuery normalizeArrivalMapping(RealtimeQuery query, RealtimeMapping mapping) {
+		if (!providerLineMatches(query, mapping)) {
+			return NormalizedRealtimeQuery.rejected("MAPPING_MISSING");
 		}
-		if (!isBlankOrOneOf(query.lineId(), LINE_ID, "seoul-4")) {
-			return null;
+		if (!mapping.supportsArrivals()) {
+			return NormalizedRealtimeQuery.rejected("UNSUPPORTED_CAPABILITY");
 		}
-		if (!isBlankOrOneOf(query.providerLineId(), PROVIDER_LINE_ID)) {
-			return null;
+		if (!mapping.liveEligible()) {
+			return NormalizedRealtimeQuery.rejected(mapping.ineligibleReason());
 		}
-		return new RealtimeQuery(
-			SANGNOKSU_STATION_ID,
-			LINE_ID,
-			PROVIDER_LINE_ID,
-			SANGNOKSU_STATION_NAME,
-			LINE_NAME
-		);
+		return NormalizedRealtimeQuery.mapped(new RealtimeQuery(
+			mapping.stationId(),
+			mapping.lineId(),
+			mapping.providerLineId(),
+			mapping.effectiveQueryName(query.stationQueryName()),
+			mapping.effectiveProviderLineName(query.lineName())
+		), mapping.cacheVersion());
 	}
 
-	private boolean isBlankOrOneOf(String value, String... allowedValues) {
-		if (value == null || value.isBlank()) {
-			return true;
+	private NormalizedRealtimeQuery normalizeTrainPositionQuery(RealtimeQuery query) {
+		return mappingPort.findTrainPositionMapping(PROVIDER_ID, query)
+			.map((mapping) -> normalizeTrainPositionMapping(query, mapping))
+			.orElseGet(() -> NormalizedRealtimeQuery.rejected("MAPPING_MISSING"));
+	}
+
+	private NormalizedRealtimeQuery normalizeTrainPositionMapping(RealtimeQuery query, RealtimeMapping mapping) {
+		if (!providerLineMatches(query, mapping)) {
+			return NormalizedRealtimeQuery.rejected("MAPPING_MISSING");
 		}
-		for (String allowedValue : allowedValues) {
-			if (allowedValue.equals(value)) {
-				return true;
-			}
+		if (!mapping.supportsTrainPositions()) {
+			return NormalizedRealtimeQuery.rejected("UNSUPPORTED_CAPABILITY");
 		}
-		return false;
+		if (!mapping.liveEligible()) {
+			return NormalizedRealtimeQuery.rejected(mapping.ineligibleReason());
+		}
+		return NormalizedRealtimeQuery.mapped(new RealtimeQuery(
+			mapping.stationId(),
+			mapping.lineId(),
+			mapping.providerLineId(),
+			mapping.effectiveQueryName(query.stationQueryName()),
+			mapping.effectiveProviderLineName(query.lineName())
+		), mapping.cacheVersion());
+	}
+
+	private boolean providerLineMatches(RealtimeQuery query, RealtimeMapping mapping) {
+		return query.providerLineId() == null
+			|| query.providerLineId().isBlank()
+			|| mapping.providerLineId().equals(query.providerLineId());
 	}
 
 	private boolean isFresh(java.time.Instant cachedAt) {
@@ -368,5 +379,19 @@ public class RealtimeGatewayService {
 	}
 
 	private record CachedTrainPosition(RealtimeTrainPositionResult result, java.time.Instant cachedAt) {
+	}
+
+	private record NormalizedRealtimeQuery(RealtimeQuery query, long cacheVersion, String fallbackCode) {
+		static NormalizedRealtimeQuery mapped(RealtimeQuery query, long cacheVersion) {
+			return new NormalizedRealtimeQuery(query, cacheVersion, null);
+		}
+
+		static NormalizedRealtimeQuery rejected(String fallbackCode) {
+			return new NormalizedRealtimeQuery(null, 0, fallbackCode);
+		}
+
+		boolean rejected() {
+			return fallbackCode != null;
+		}
 	}
 }

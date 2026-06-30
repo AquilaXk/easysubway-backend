@@ -30,7 +30,7 @@ class RealtimeControllerTest {
 	void arrivalsReturnNormalizedFreshItems() throws Exception {
 		mockMvc.perform(get("/api/v1/realtime/arrivals")
 				.param("stationId", "station-sangnoksu")
-				.param("lineId", "4")
+				.param("lineId", "seoul-4")
 				.param("providerLineId", "1004")
 				.param("stationQueryName", "상록수"))
 			.andExpect(status().isOk())
@@ -50,7 +50,7 @@ class RealtimeControllerTest {
 				.param("stationQueryName", "외부역"))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.status").value("UNSUPPORTED"))
-			.andExpect(jsonPath("$.data.fallbackCode").value("UNSUPPORTED_REGION"))
+			.andExpect(jsonPath("$.data.fallbackCode").value("MAPPING_MISSING"))
 			.andExpect(jsonPath("$.data.message").value("서울 TOPIS 실시간 지원 범위 밖입니다."));
 	}
 
@@ -58,7 +58,7 @@ class RealtimeControllerTest {
 	@DisplayName("열차 위치는 GPS가 아닌 운행 정보 snapshot 안내를 포함한다")
 	void trainPositionsIncludeOperationSnapshotNotice() throws Exception {
 		mockMvc.perform(get("/api/v1/realtime/train-positions")
-				.param("lineId", "4")
+				.param("lineId", "seoul-4")
 				.param("providerLineId", "1004")
 				.param("lineName", "4호선"))
 			.andExpect(status().isOk())
