@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { mkdir, readFile, readdir, writeFile } from "node:fs/promises";
 import path from "node:path";
+import { pathToFileURL } from "node:url";
 
 const requiredFiles = new Map([
   ["single_ride_cases.csv", "singleRide"],
@@ -23,10 +24,14 @@ const requiredColumns = [
   "notes",
 ];
 
-main().catch((error) => {
-  console.error(error.message);
-  process.exit(1);
-});
+if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  try {
+    await main();
+  } catch (error) {
+    console.error(error.message);
+    process.exit(1);
+  }
+}
 
 async function main() {
   const args = parseArgs(process.argv.slice(2));
@@ -72,26 +77,36 @@ function parseCsv(source) {
   for (const column of requiredColumns) {
     if (!header.includes(column)) throw new Error(`golden OD CSV missing column: ${column}`);
   }
-  return lines.filter(Boolean).map((line) => {
+  return lines.map((line, index) => ({ line, lineNumber: index + 2 })).filter(({ line }) => line).map(({ line, lineNumber }) => {
     const values = splitCsvLine(line);
-    return Object.fromEntries(header.map((column, index) => [column, values[index] ?? ""]));
+    return {
+      ...Object.fromEntries(header.map((column, index) => [column, values[index] ?? ""])),
+      lineNumber,
+    };
   });
 }
 
-function splitCsvLine(line) {
+export function splitCsvLine(line) {
   const values = [];
   let value = "";
   let quoted = false;
-  for (let index = 0; index < line.length; index += 1) {
+  let index = 0;
+  while (index < line.length) {
     const char = line[index];
     if (char === "\"") {
-      quoted = !quoted;
+      if (quoted && line[index + 1] === "\"") {
+        value += "\"";
+        index += 1;
+      } else {
+        quoted = !quoted;
+      }
     } else if (char === "," && !quoted) {
       values.push(value);
       value = "";
     } else {
       value += char;
     }
+    index += 1;
   }
   values.push(value);
   return values;
@@ -99,12 +114,15 @@ function splitCsvLine(line) {
 
 function buildReport(rows) {
   const failures = [];
-  const errors = rows.map((row, index) => {
+  const errors = [];
+  for (const row of rows) {
     const observed = requiredNumber(row.observed_eta_error_seconds, row, "observed_eta_error_seconds", failures);
     const max = requiredNumber(row.max_eta_error_seconds, row, "max_eta_error_seconds", failures);
-    if (observed > max) failures.push(`${row.sourceFile}:${index + 2} observed ETA error exceeds max`);
-    return observed;
-  }).sort((left, right) => left - right);
+    if (observed === null || max === null) continue;
+    if (observed > max) failures.push(`${row.sourceFile}:${row.lineNumber} observed ETA error exceeds max`);
+    errors.push(observed);
+  }
+  errors.sort((left, right) => left - right);
   const coverage = {
     singleRide: rows.some((row) => row.category === "singleRide"),
     oneTransfer: rows.some((row) => row.category === "oneTransfer"),
@@ -126,7 +144,7 @@ function buildReport(rows) {
     sampleSize: rows.length,
     coverage,
     metrics: {
-      sampleSize: rows.length,
+      sampleSize: errors.length,
       p50ErrorSeconds: percentile(errors, 0.5),
       p90ErrorSeconds: percentile(errors, 0.9),
       maxErrorSeconds: errors.at(-1) ?? 0,
@@ -136,8 +154,11 @@ function buildReport(rows) {
 }
 
 function requiredNumber(value, row, column, failures) {
-  const number = Number.parseInt(value, 10);
-  if (!Number.isFinite(number)) failures.push(`${row.sourceFile} invalid number: ${column}`);
+  const number = Number(value);
+  if (!Number.isFinite(number)) {
+    failures.push(`${row.sourceFile}:${row.lineNumber} invalid number: ${column}`);
+    return null;
+  }
   return number;
 }
 
