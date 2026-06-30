@@ -65,6 +65,105 @@
 			</tbody>
 		</table>
 	</section>
+
+	<section class="admin-panel">
+		<h2>LOCKED snapshot 저장</h2>
+		<form method="post" th:action="@{/admin/datapack/source-snapshots}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<label>
+				snapshot id
+				<input name="snapshotId" required>
+			</label>
+			<label>
+				source id
+				<input name="sourceId" th:value="${snapshot.sourceId}" required>
+			</label>
+			<label>
+				provider
+				<input name="provider" th:value="${snapshot.provider}" required>
+			</label>
+			<label>
+				retrieved at
+				<input name="retrievedAt" type="datetime-local" required>
+			</label>
+			<label>
+				source updated at
+				<input name="sourceUpdatedAt" type="datetime-local">
+			</label>
+			<label>
+				row count
+				<input name="rowCount" type="number" min="0" required>
+			</label>
+			<label>
+				raw sha256
+				<input name="rawSha256" minlength="64" maxlength="64" required>
+			</label>
+			<label>
+				raw object uri
+				<input name="rawObjectUri" required>
+			</label>
+			<label>
+				request fingerprint
+				<input name="redactedRequestFingerprint" minlength="64" maxlength="64" required>
+			</label>
+			<label>
+				schema fingerprint
+				<input name="schemaFingerprint" minlength="64" maxlength="64" required>
+			</label>
+			<label>
+				schema status
+				<input name="schemaStatus" value="PASS" required>
+			</label>
+			<label>
+				license status
+				<input name="licenseStatus" value="PASS" required>
+			</label>
+			<label>
+				fetch status
+				<input name="fetchStatus" value="SUCCESS" required>
+			</label>
+			<label>
+				redistribution allowed
+				<select name="redistributionAllowed" required>
+					<option value="true">true</option>
+					<option value="false">false</option>
+				</select>
+			</label>
+			<label>
+				credential redacted
+				<select name="credentialRedacted" required>
+					<option value="true">true</option>
+					<option value="false">false</option>
+				</select>
+			</label>
+			<label>
+				previous snapshot id
+				<input name="previousSnapshotId" th:value="${snapshot.snapshotId}">
+			</label>
+			<label>
+				diff summary
+				<input name="diffSummary" required>
+			</label>
+			<label>
+				freshness expires at
+				<input name="freshnessExpiresAt" type="datetime-local" required>
+			</label>
+			<label>
+				raw retention expires at
+				<input name="rawRetentionExpiresAt" type="datetime-local" required>
+			</label>
+			<label>
+				reason
+				<input name="reason" required>
+			</label>
+			<label>
+				idempotency key
+				<input name="idempotencyKey" required>
+			</label>
+			<button type="submit">LOCKED snapshot 저장</button>
+		</form>
+	</section>
 </main>
 </div>
 </body>

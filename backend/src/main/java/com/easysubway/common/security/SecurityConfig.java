@@ -119,6 +119,8 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/datapack/**")
 				.hasAuthority(AdminPermission.DATAPACK_READ.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/source-snapshots")
+				.hasAuthority(AdminPermission.DATAPACK_SOURCE_RUN.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-channels/**")
 				.hasAnyAuthority(
 					AdminPermission.DATAPACK_STAGING_PROMOTE.authority(),
