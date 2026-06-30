@@ -82,6 +82,24 @@ class AliasQuarantineAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("alias/quarantine 화면은 세션 보관 한도 이하의 commandToken만 발급한다")
+	void aliasQuarantinePageKeepsCommandTokensWithinSessionCap() throws Exception {
+		for (int index = 2; index <= 40; index++) {
+			insertAliasApproval("alias-station-" + index, "provider-station-code-" + index);
+			insertQuarantineRecord("quarantine-open-" + index, "provider line=" + index);
+		}
+
+		String html = mockMvc.perform(get("/admin/datapack/alias-quarantine/page")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(commandTokenCount(html)).isLessThanOrEqualTo(64);
+	}
+
+	@Test
 	@DisplayName("alias review 권한 관리자는 pending alias를 승인한다")
 	void aliasReviewerApprovesPendingAlias() throws Exception {
 		mockMvc.perform(post("/admin/datapack/alias-approvals/alias-station-1/approve")
@@ -154,6 +172,10 @@ class AliasQuarantineAdminPageControllerTest {
 	}
 
 	private void insertAliasApproval() {
+		insertAliasApproval("alias-station-1", "provider-station-code-243");
+	}
+
+	private void insertAliasApproval(String aliasId, String providerEntityId) {
 		jdbcTemplate.update("""
 			INSERT INTO external_alias_approvals (
 				id, source_id, source_snapshot_id, provider_entity_type, provider_entity_id,
@@ -161,27 +183,35 @@ class AliasQuarantineAdminPageControllerTest {
 				approval_status, requested_by, approved_by, approved_at, evidence_hash,
 				superseded_by, created_at
 			)
-			VALUES ('alias-station-1', 'kric-station-elevator', 'snapshot-kric-20260629',
-				'STATION', 'provider-station-code-243', 'STATION', 'station-sangnoksu',
+			VALUES (?, 'kric-station-elevator', 'snapshot-kric-20260629',
+				'STATION', ?, 'STATION', 'station-sangnoksu',
 				92, 'AUTO_NAME_LINE', 'PENDING', 'qa-operator', NULL, NULL, ?,
 				NULL, '2026-06-29 03:10:00')
 			""",
+			aliasId,
+			providerEntityId,
 			"d".repeat(64)
 		);
 	}
 
 	private void insertQuarantineRecord() {
+		insertQuarantineRecord("quarantine-open-1", "provider line=4, station=상록수");
+	}
+
+	private void insertQuarantineRecord(String quarantineId, String redactedExcerpt) {
 		jdbcTemplate.update("""
 			INSERT INTO source_quarantine_records (
 				id, source_id, source_snapshot_id, provider_record_hash, reason_code,
 				severity, redacted_excerpt, resolution_status, resolved_by, resolved_at,
 				created_at
 			)
-			VALUES ('quarantine-open-1', 'kric-station-elevator', 'snapshot-kric-20260629',
-				?, 'ALIAS_CONFLICT', 'P1', 'provider line=4, station=상록수',
+			VALUES (?, 'kric-station-elevator', 'snapshot-kric-20260629',
+				?, 'ALIAS_CONFLICT', 'P1', ?,
 				'OPEN', NULL, NULL, '2026-06-29 03:20:00')
 			""",
-			"e".repeat(64)
+			quarantineId,
+			"e".repeat(64),
+			redactedExcerpt
 		);
 	}
 
@@ -264,5 +294,14 @@ class AliasQuarantineAdminPageControllerTest {
 		Matcher matcher = Pattern.compile("name=\"commandToken\" value=\"([^\"]+)\"").matcher(html);
 		assertThat(matcher.find()).isTrue();
 		return matcher.group(1);
+	}
+
+	private static int commandTokenCount(String html) {
+		Matcher matcher = Pattern.compile("name=\"commandToken\"").matcher(html);
+		int count = 0;
+		while (matcher.find()) {
+			count++;
+		}
+		return count;
 	}
 }

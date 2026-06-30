@@ -23,7 +23,7 @@ import org.springframework.web.bind.annotation.PostMapping;
 @Controller
 class AliasQuarantineAdminPageController {
 
-	private static final int QUEUE_LIMIT = 100;
+	private static final int QUEUE_LIMIT = 16;
 
 	private final JdbcAliasQuarantineQueueRepository queueRepository;
 	private final DatapackAliasQuarantineCommandService commandService;
