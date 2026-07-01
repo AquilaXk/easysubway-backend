@@ -470,6 +470,60 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider kill switch는 외부 호출을 막고 cache를 오염시키지 않는다")
+	void providerKillSwitchSkipsProviderCallWithoutPoisoningCache() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeProviderControl control = new RealtimeProviderControl();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			control
+		);
+
+		control.disableProvider("seoul-topis", "MAINTENANCE");
+		RealtimeArrivalResult disabled = service.arrivals(sangnoksuQuery());
+		control.enableProvider("seoul-topis");
+		RealtimeArrivalResult fresh = service.arrivals(sangnoksuQuery());
+
+		assertThat(disabled.status()).hasToString("UNSUPPORTED");
+		assertThat(disabled.fallbackCode()).isEqualTo("PROVIDER_DISABLED");
+		assertThat(fresh.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(1);
+	}
+
+	@Test
+	@DisplayName("provider health snapshot은 low-cardinality 집계만 노출한다")
+	void providerHealthSnapshotExposesOnlySafeCounters() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(provider, clock);
+
+		service.arrivals(sangnoksuQuery());
+		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		provider.failureCode = "PROVIDER_TIMEOUT";
+		service.arrivals(sangnoksuQuery());
+		service.arrivals(new RealtimeQuery("station-outside", "other", null, "외부역", null));
+		provider.failureCode = "PROVIDER_QUOTA_EXCEEDED";
+		service.trainPositions(line4Query());
+
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+
+		assertThat(snapshot.providerId()).isEqualTo("seoul-topis");
+		assertThat(snapshot.providerCallCount()).isEqualTo(3);
+		assertThat(snapshot.providerTimeoutCount()).isEqualTo(1);
+		assertThat(snapshot.providerQuotaExceededCount()).isEqualTo(1);
+		assertThat(snapshot.freshResultRatio()).isPositive();
+		assertThat(snapshot.staleResultRatio()).isPositive();
+		assertThat(snapshot.unsupportedRatio()).isPositive();
+		assertThat(snapshot.toString())
+			.doesNotContain("상록수")
+			.doesNotContain("외부역")
+			.doesNotContain("4123")
+			.doesNotContain("1004");
+	}
+
+	@Test
 	@DisplayName("TOPIS provider는 backend service key가 없으면 unavailable로 낮춘다")
 	void topisProviderWithoutBackendServiceKeyIsUnavailableByDefault() {
 		TopisRealtimeProvider provider = new TopisRealtimeProvider(
@@ -660,6 +714,15 @@ class RealtimeGatewayServiceTest {
 
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
 		return new RealtimeGatewayService(provider, clock, mappingPort);
+	}
+
+	private RealtimeGatewayService service(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl control
+	) {
+		return new RealtimeGatewayService(provider, clock, mappingPort, control);
 	}
 
 	private RealtimeMapping mapping(
