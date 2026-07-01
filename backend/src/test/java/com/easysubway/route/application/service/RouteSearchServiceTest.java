@@ -332,6 +332,161 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("maxTransfers 2는 2회 환승 경로를 찾고 환승역 순서를 보존한다")
+	void searchRouteFindsTwoTransferRouteWhenAllowed() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new TwoTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			2
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.transferCount()).isEqualTo(2);
+		assertThat(result.lineName()).isEqualTo("A 노선 / B 노선 / C 노선");
+		assertThat(result.steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-transfer-1", "station-transfer-2");
+	}
+
+	@Test
+	@DisplayName("maxTransfers 1은 2회 환승 전용 경로를 찾지 않는다")
+	void searchRouteDoesNotFindTwoTransferRouteWhenLimitIsOne() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new TwoTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		assertThatThrownBy(() -> transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			1
+		))).isInstanceOf(RouteNotFoundException.class);
+	}
+
+	@Test
+	@DisplayName("maxTransfers 0은 직접 경로만 허용한다")
+	void searchRouteWithZeroMaxTransfersIsDirectOnly() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new OneTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		assertThatThrownBy(() -> transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			0
+		))).isInstanceOf(RouteNotFoundException.class);
+	}
+
+	@Test
+	@DisplayName("maxTransfers 3은 3회 환승 경로를 찾는다")
+	void searchRouteFindsThreeTransferRouteWhenAllowed() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new ThreeTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			3
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.transferCount()).isEqualTo(3);
+		assertThat(result.steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-transfer-1", "station-transfer-2", "station-transfer-3");
+	}
+
+	@Test
+	@DisplayName("휠체어 이동 유형은 계단 전용 1회 환승보다 무단차 2회 환승을 우선한다")
+	void wheelchairRoutePrefersStepFreeTwoTransferRouteOverStairOnlyOneTransferRoute() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new StairOnlyOneTransferWithStepFreeTwoTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR,
+			ConstraintMode.STRICT_STEP_FREE,
+			2
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.transferCount()).isEqualTo(2);
+		assertThat(result.steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-transfer-1", "station-transfer-2");
+		assertThat(result.warnings())
+			.extracting("code")
+			.doesNotContain(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
+	@DisplayName("휠체어 이동 유형은 짧은 계단 전용 다중 환승보다 긴 무단차 다중 환승을 우선한다")
+	void wheelchairRoutePrefersStepFreeMultiTransferRouteEvenWhenDetourIsLong() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new MixedMultiTransferAccessibilityTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = transferService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR,
+			ConstraintMode.STRICT_STEP_FREE,
+			2
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.transferCount()).isEqualTo(2);
+		assertThat(result.steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-step-free-transfer-1", "station-step-free-transfer-2");
+		assertThat(result.warnings())
+			.extracting("code")
+			.doesNotContain(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("access graph 계약은 진입, 환승, 진출 시간과 no-path reason을 분리한다")
 	void accessGraphContractSeparatesAccessTimesAndNoPathReasons() {
 		var profileWeight = RouteProfileWeight.from(MobilityType.WHEELCHAIR, ConstraintMode.STRICT_STEP_FREE);
@@ -1152,6 +1307,245 @@ class RouteSearchServiceTest {
 			return List.of(
 				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
 				facility("facility-transfer-elevator", "station-transfer", "exit-transfer-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
+			);
+		}
+	}
+
+	private static class TwoTransferTransitMasterPort extends StairOnlyTransitMasterPort {
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("line-a", "operator-a", "A 노선", "#0052A4", "수도권", null, true),
+				new SubwayLine("line-b", "operator-a", "B 노선", "#00A84D", "수도권", null, true),
+				new SubwayLine("line-c", "operator-a", "C 노선", "#F5A200", "수도권", null, true)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-a", "출발역"),
+				station("station-transfer-1", "첫환승역"),
+				station("station-transfer-2", "둘째환승역"),
+				station("station-b", "도착역")
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "line-a", "101", 1, "상행 / 하행"),
+				new StationLine("station-transfer-1", "line-a", "102", 2, "상행 / 하행"),
+				new StationLine("station-transfer-1", "line-b", "201", 1, "상행 / 하행"),
+				new StationLine("station-transfer-2", "line-b", "202", 2, "상행 / 하행"),
+				new StationLine("station-transfer-2", "line-c", "301", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-c", "302", 2, "상행 / 하행")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of(
+				stepFreeExit("exit-a-1", "station-a"),
+				stepFreeExit("exit-transfer-1", "station-transfer-1"),
+				stepFreeExit("exit-transfer-2", "station-transfer-2"),
+				stepFreeExit("exit-b-1", "station-b")
+			);
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-1-elevator", "station-transfer-1", "exit-transfer-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-2-elevator", "station-transfer-2", "exit-transfer-2", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
+			);
+		}
+	}
+
+	private static class ThreeTransferTransitMasterPort extends TwoTransferTransitMasterPort {
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("line-a", "operator-a", "A 노선", "#0052A4", "수도권", null, true),
+				new SubwayLine("line-b", "operator-a", "B 노선", "#00A84D", "수도권", null, true),
+				new SubwayLine("line-c", "operator-a", "C 노선", "#F5A200", "수도권", null, true),
+				new SubwayLine("line-d", "operator-a", "D 노선", "#8A2BE2", "수도권", null, true)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-a", "출발역"),
+				station("station-transfer-1", "첫환승역"),
+				station("station-transfer-2", "둘째환승역"),
+				station("station-transfer-3", "셋째환승역"),
+				station("station-b", "도착역")
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "line-a", "101", 1, "상행 / 하행"),
+				new StationLine("station-transfer-1", "line-a", "102", 2, "상행 / 하행"),
+				new StationLine("station-transfer-1", "line-b", "201", 1, "상행 / 하행"),
+				new StationLine("station-transfer-2", "line-b", "202", 2, "상행 / 하행"),
+				new StationLine("station-transfer-2", "line-c", "301", 1, "상행 / 하행"),
+				new StationLine("station-transfer-3", "line-c", "302", 2, "상행 / 하행"),
+				new StationLine("station-transfer-3", "line-d", "401", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-d", "402", 2, "상행 / 하행")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of(
+				stepFreeExit("exit-a-1", "station-a"),
+				stepFreeExit("exit-transfer-1", "station-transfer-1"),
+				stepFreeExit("exit-transfer-2", "station-transfer-2"),
+				stepFreeExit("exit-transfer-3", "station-transfer-3"),
+				stepFreeExit("exit-b-1", "station-b")
+			);
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-1-elevator", "station-transfer-1", "exit-transfer-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-2-elevator", "station-transfer-2", "exit-transfer-2", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-3-elevator", "station-transfer-3", "exit-transfer-3", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
+			);
+		}
+	}
+
+	private static class StairOnlyOneTransferWithStepFreeTwoTransferTransitMasterPort extends TwoTransferTransitMasterPort {
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("line-a", "operator-a", "A 노선", "#0052A4", "수도권", null, true),
+				new SubwayLine("line-b", "operator-a", "B 노선", "#00A84D", "수도권", null, true),
+				new SubwayLine("line-c", "operator-a", "C 노선", "#F5A200", "수도권", null, true),
+				new SubwayLine("line-d", "operator-a", "D 노선", "#8A2BE2", "수도권", null, true)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-a", "출발역"),
+				station("station-stair-transfer", "계단환승역"),
+				station("station-transfer-1", "첫환승역"),
+				station("station-transfer-2", "둘째환승역"),
+				station("station-b", "도착역")
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "line-a", "101", 1, "상행 / 하행"),
+				new StationLine("station-stair-transfer", "line-a", "102", 2, "상행 / 하행"),
+				new StationLine("station-stair-transfer", "line-d", "401", 1, "상행 / 하행"),
+				new StationLine("station-transfer-1", "line-a", "103", 3, "상행 / 하행"),
+				new StationLine("station-transfer-1", "line-b", "201", 1, "상행 / 하행"),
+				new StationLine("station-transfer-2", "line-b", "202", 2, "상행 / 하행"),
+				new StationLine("station-transfer-2", "line-c", "301", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-c", "302", 2, "상행 / 하행"),
+				new StationLine("station-b", "line-d", "402", 2, "상행 / 하행")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of(
+				stepFreeExit("exit-a-1", "station-a"),
+				stairOnlyExit("exit-stair-transfer-1", "station-stair-transfer"),
+				stepFreeExit("exit-transfer-1", "station-transfer-1"),
+				stepFreeExit("exit-transfer-2", "station-transfer-2"),
+				stepFreeExit("exit-b-1", "station-b")
+			);
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-1-elevator", "station-transfer-1", "exit-transfer-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-transfer-2-elevator", "station-transfer-2", "exit-transfer-2", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
+			);
+		}
+	}
+
+	private static class MixedMultiTransferAccessibilityTransitMasterPort extends TwoTransferTransitMasterPort {
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("line-a", "operator-a", "A 노선", "#0052A4", "수도권", null, true),
+				new SubwayLine("line-stair-mid", "operator-a", "계단 중간 노선", "#00A84D", "수도권", null, true),
+				new SubwayLine("line-stair-end", "operator-a", "계단 도착 노선", "#F5A200", "수도권", null, true),
+				new SubwayLine("line-step-free-mid", "operator-a", "무단차 중간 노선", "#8A2BE2", "수도권", null, true),
+				new SubwayLine("line-step-free-end", "operator-a", "무단차 도착 노선", "#00FFFF", "수도권", null, true)
+			);
+		}
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-a", "출발역"),
+				station("station-stair-transfer-1", "첫계단환승역"),
+				station("station-stair-transfer-2", "둘째계단환승역"),
+				station("station-step-free-transfer-1", "첫무단차환승역"),
+				station("station-step-free-transfer-2", "둘째무단차환승역"),
+				station("station-b", "도착역")
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "line-a", "101", 1, "상행 / 하행"),
+				new StationLine("station-stair-transfer-1", "line-a", "102", 2, "상행 / 하행"),
+				new StationLine("station-stair-transfer-1", "line-stair-mid", "201", 1, "상행 / 하행"),
+				new StationLine("station-stair-transfer-2", "line-stair-mid", "202", 2, "상행 / 하행"),
+				new StationLine("station-stair-transfer-2", "line-stair-end", "301", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-stair-end", "302", 2, "상행 / 하행"),
+				new StationLine("station-step-free-transfer-1", "line-a", "110", 10, "상행 / 하행"),
+				new StationLine("station-step-free-transfer-1", "line-step-free-mid", "401", 1, "상행 / 하행"),
+				new StationLine("station-step-free-transfer-2", "line-step-free-mid", "402", 2, "상행 / 하행"),
+				new StationLine("station-step-free-transfer-2", "line-step-free-end", "501", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-step-free-end", "502", 2, "상행 / 하행")
+			);
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of(
+				stepFreeExit("exit-a-1", "station-a"),
+				stairOnlyExit("exit-stair-transfer-1", "station-stair-transfer-1"),
+				stairOnlyExit("exit-stair-transfer-2", "station-stair-transfer-2"),
+				stepFreeExit("exit-step-free-transfer-1", "station-step-free-transfer-1"),
+				stepFreeExit("exit-step-free-transfer-2", "station-step-free-transfer-2"),
+				stepFreeExit("exit-b-1", "station-b")
+			);
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-step-free-transfer-1-elevator", "station-step-free-transfer-1", "exit-step-free-transfer-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-step-free-transfer-2-elevator", "station-step-free-transfer-2", "exit-step-free-transfer-2", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
 				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
 			);
 		}

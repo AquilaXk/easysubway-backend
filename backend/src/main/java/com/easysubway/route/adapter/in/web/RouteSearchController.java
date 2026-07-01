@@ -13,6 +13,7 @@ import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
@@ -139,8 +140,10 @@ class RouteSearchController {
 		String constraintMode,
 		@NotNull(message = "실시간 반영 여부를 선택해야 합니다.")
 		Boolean useRealtime,
-		@Min(value = 1, message = "V2 skeleton은 최대 환승 수 1 이상만 지원합니다.")
-		int maxTransfers,
+		@NotNull(message = "최대 환승 수를 선택해야 합니다.")
+		@Min(value = 0, message = "최대 환승 수는 0 이상이어야 합니다.")
+		@Max(value = 3, message = "최대 환승 수는 3 이하여야 합니다.")
+		Integer maxTransfers,
 		@Min(value = 1, message = "대안 경로 수는 1 이상이어야 합니다.")
 		int alternativeCount
 	) {
@@ -150,7 +153,8 @@ class RouteSearchController {
 				originStationId,
 				destinationStationId,
 				mobilityType,
-				parseConstraintMode(mobilityType, constraintMode)
+				parseConstraintMode(mobilityType, constraintMode),
+				maxTransfers
 			);
 		}
 

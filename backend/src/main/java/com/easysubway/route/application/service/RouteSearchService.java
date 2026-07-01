@@ -40,10 +40,12 @@ import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.PriorityQueue;
+import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
@@ -127,7 +129,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 
 		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType(), command.constraintMode());
-		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id(), profileWeight);
+		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id(), profileWeight, command.maxTransfers());
 		List<String> accessibilityStationIds = routePlan.accessibilityStationIds(origin.id(), destination.id());
 		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
 		List<RouteWarning> warnings = routeWarnings(accessibilityStationIds, stairOnlyAccess);
@@ -307,12 +309,39 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private RoutePlan findRoutePlan(
 		String originStationId,
 		String destinationStationId,
-		RouteProfileWeight profileWeight
+		RouteProfileWeight profileWeight,
+		int maxTransfers
 	) {
 		return findDirectLine(originStationId, destinationStationId)
 			.map(RoutePlan::direct)
-			.or(() -> findOneTransferRoute(originStationId, destinationStationId, profileWeight).map(RoutePlan::transfer))
+			.or(() -> findTransferRoutePlan(originStationId, destinationStationId, profileWeight, maxTransfers))
 			.orElseThrow(RouteNotFoundException::new);
+	}
+
+	private Optional<RoutePlan> findTransferRoutePlan(
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight,
+		int maxTransfers
+	) {
+		List<RoutePlan> candidates = new ArrayList<>();
+		if (maxTransfers >= 1) {
+			findOneTransferRoute(originStationId, destinationStationId, profileWeight)
+				.map(RoutePlan::transfer)
+				.ifPresent(candidates::add);
+		}
+		if (maxTransfers >= 2) {
+			findMultiTransferRoute(originStationId, destinationStationId, profileWeight, maxTransfers)
+				.map(RoutePlan::multiTransfer)
+				.ifPresent(candidates::add);
+		}
+		return candidates.stream()
+			.min(Comparator.comparingInt((RoutePlan routePlan) ->
+					routeAccessibilityRank(routePlan, originStationId, destinationStationId, profileWeight))
+				.thenComparingInt(routePlan ->
+					routeCandidateCost(routePlan, originStationId, destinationStationId, profileWeight))
+				.thenComparingInt(RoutePlan::transferCount)
+				.thenComparing(RoutePlan::lineName));
 	}
 
 	private Optional<DirectLine> findDirectLine(String originStationId, String destinationStationId) {
@@ -365,6 +394,91 @@ public class RouteSearchService implements RouteSearchUseCase {
 		);
 	}
 
+	private Optional<MultiTransferRoute> findMultiTransferRoute(
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight,
+		int maxTransfers
+	) {
+		Map<String, SubwayLine> activeLinesById = loadTransitMasterPort.loadLines()
+			.stream()
+			.filter(SubwayLine::active)
+			.collect(Collectors.toMap(SubwayLine::id, Function.identity()));
+		Map<String, Station> activeStationsById = loadTransitMasterPort.loadStations()
+			.stream()
+			.filter(Station::active)
+			.collect(Collectors.toMap(Station::id, Function.identity()));
+		List<StationLine> activeStationLines = loadTransitMasterPort.loadStationLines()
+			.stream()
+			.filter(stationLine -> activeLinesById.containsKey(stationLine.lineId()))
+			.filter(stationLine -> activeStationsById.containsKey(stationLine.stationId()))
+			.toList();
+		Map<String, List<StationLine>> stationLinesByStationId = activeStationLines.stream()
+			.collect(Collectors.groupingBy(StationLine::stationId));
+		Map<String, List<StationLine>> stationLinesByLineId = activeStationLines.stream()
+			.collect(Collectors.groupingBy(StationLine::lineId));
+		PriorityQueue<MultiTransferCandidate> queue = new PriorityQueue<>(
+			Comparator.comparingInt(MultiTransferCandidate::cost)
+				.thenComparingInt(candidate -> candidate.segments().size())
+		);
+		for (StationLine originLine : stationLinesByStationId.getOrDefault(originStationId, List.of())) {
+			queue.add(new MultiTransferCandidate(originLine, List.of(), Set.of(originStationId + ":" + originLine.lineId())));
+		}
+
+		List<MultiTransferRoute> routes = new ArrayList<>();
+		while (!queue.isEmpty()) {
+			MultiTransferCandidate current = queue.poll();
+			for (StationLine lineStop : stationLinesByLineId.getOrDefault(current.currentLine().lineId(), List.of())) {
+				if (lineStop.stationId().equals(current.currentLine().stationId())) {
+					continue;
+				}
+				List<RouteSegment> nextSegments = appendSegment(current.segments(), current.currentLine(), lineStop);
+				if (lineStop.stationId().equals(destinationStationId)) {
+					routes.add(new MultiTransferRoute(nextSegments, activeLinesById, activeStationsById));
+					continue;
+				}
+				int nextTransferCount = nextSegments.size();
+				if (nextTransferCount > maxTransfers) {
+					continue;
+				}
+				for (StationLine transferLine : stationLinesByStationId.getOrDefault(lineStop.stationId(), List.of())) {
+					if (transferLine.lineId().equals(lineStop.lineId())) {
+						continue;
+					}
+					String visitKey = transferLine.stationId() + ":" + transferLine.lineId();
+					if (current.visited().contains(visitKey)) {
+						continue;
+					}
+					Set<String> visited = new HashSet<>(current.visited());
+					visited.add(visitKey);
+					queue.add(new MultiTransferCandidate(
+						transferLine,
+						nextSegments,
+						Set.copyOf(visited)
+					));
+				}
+			}
+		}
+		return routes.stream()
+			.filter(route -> route.transferCount() <= maxTransfers)
+			.min(Comparator.comparingInt((MultiTransferRoute route) ->
+					accessibilityRank(route.accessibilityStationIds(originStationId, destinationStationId), profileWeight))
+				.thenComparingInt(route -> accessibilityAwareCost(
+					route.stopCount(),
+					route.transferCount(),
+					route.accessibilityStationIds(originStationId, destinationStationId),
+					profileWeight
+				))
+				.thenComparingInt(MultiTransferRoute::transferCount)
+				.thenComparing(MultiTransferRoute::lineName));
+	}
+
+	private List<RouteSegment> appendSegment(List<RouteSegment> segments, StationLine from, StationLine to) {
+		List<RouteSegment> next = new ArrayList<>(segments);
+		next.add(new RouteSegment(from, to));
+		return List.copyOf(next);
+	}
+
 	private List<RouteWarning> routeWarnings(List<String> stationIds, boolean stairOnlyAccess) {
 		// 출구 데이터가 없거나 확인 정도가 낮으면 사용자가 이동 전 확인할 수 있게 경고를 남긴다.
 		List<RouteWarning> warnings = new ArrayList<>();
@@ -380,6 +494,51 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return List.copyOf(warnings);
 	}
 
+	private int routeAccessibilityRank(
+		RoutePlan routePlan,
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight
+	) {
+		return accessibilityRank(routePlan.accessibilityStationIds(originStationId, destinationStationId), profileWeight);
+	}
+
+	private int accessibilityRank(List<String> stationIds, RouteProfileWeight profileWeight) {
+		if (profileWeight.blocksStairOnlyAccess() && hasStairOnlyAccess(stationIds)) {
+			return 1;
+		}
+		return 0;
+	}
+
+	private int routeCandidateCost(
+		RoutePlan routePlan,
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight
+	) {
+		return accessibilityAwareCost(
+			routePlan.stopCount(),
+			routePlan.transferCount(),
+			routePlan.accessibilityStationIds(originStationId, destinationStationId),
+			profileWeight
+		);
+	}
+
+	private int accessibilityAwareCost(
+		int stopCount,
+		int transferCount,
+		List<String> accessibilityStationIds,
+		RouteProfileWeight profileWeight
+	) {
+		int stairOnlyPenalty = hasStairOnlyAccess(accessibilityStationIds)
+			? profileWeight.stairOnlyAccessPenalty()
+			: 0;
+		int lowDataPenalty = hasLowAccessibilityData(accessibilityStationIds)
+			? profileWeight.lowDataConfidencePenalty()
+			: 0;
+		return stopCount * 3 + transferCount * profileWeight.transferPenalty() + stairOnlyPenalty + lowDataPenalty;
+	}
+
 	private boolean hasLowAccessibilityData(String stationId) {
 		List<StationExit> exits = stationExits(stationId);
 		if (exits.isEmpty()) {
@@ -391,6 +550,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(this::isStepFreeFacility)
 			.anyMatch(facility -> facility.dataConfidence() != DataConfidenceLevel.HIGH);
 		return hasLowConfidenceExit || hasLowConfidenceStepFreeFacility;
+	}
+
+	private boolean hasLowAccessibilityData(List<String> stationIds) {
+		return stationIds.stream().anyMatch(this::hasLowAccessibilityData);
 	}
 
 	private boolean hasStaleAccessibilityData(String stationId) {
@@ -770,6 +933,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 		RouteProfileWeight profileWeight
 	) {
 		RouteAssembler routeAssembler = new RouteAssembler();
+		if (routePlan.multiTransferRoute().isPresent()) {
+			return routeAssembler.assemble(multiTransferSteps(origin, destination, routePlan.multiTransferRoute().get(), profileWeight));
+		}
 		if (routePlan.transferRoute().isPresent()) {
 			return routeAssembler.assemble(transferSteps(origin, destination, routePlan.transferRoute().get(), profileWeight));
 		}
@@ -930,6 +1096,108 @@ public class RouteSearchService implements RouteSearchUseCase {
 		);
 	}
 
+	private List<RouteStep> multiTransferSteps(
+		Station origin,
+		Station destination,
+		MultiTransferRoute route,
+		RouteProfileWeight profileWeight
+	) {
+		List<RouteStep> steps = new ArrayList<>();
+		AccessGraphRouter accessGraphRouter = new AccessGraphRouter();
+		StationPathwayRouter stationPathwayRouter = new StationPathwayRouter();
+		RouteSegment firstSegment = route.segments().getFirst();
+		RouteSegment lastSegment = route.segments().getLast();
+		SubwayLine firstLine = route.line(firstSegment.lineId());
+		SubwayLine lastLine = route.line(lastSegment.lineId());
+		AccessPath entryAccess = accessGraphRouter.entryAccess(
+			origin.id(),
+			firstSegment.lineId(),
+			hasStairOnlyAccess(origin.id()),
+			profileWeight
+		);
+		steps.add(new RouteStep(
+			1,
+			"entry",
+			origin.nameKo() + "역에서 " + displayLineName(firstLine) + " 승강장으로 이동",
+			profileWeight.entryGuidance(),
+			firstLine.id(),
+			firstLine.name(),
+			origin.id(),
+			origin.id(),
+			entryAccess.estimatedMinutes(),
+			entryAccess.distanceMeters(),
+			entryAccess.includesStairs(),
+			true
+		));
+		for (int index = 0; index < route.segments().size(); index++) {
+			RouteSegment segment = route.segments().get(index);
+			SubwayLine line = route.line(segment.lineId());
+			Station fromStation = route.station(segment.fromStationId());
+			Station toStation = route.station(segment.toStationId());
+			steps.add(new RouteStep(
+				steps.size() + 1,
+				"ride",
+				line.name() + "으로 " + toStation.nameKo() + "역까지 이동",
+				segment.stopCount() + "개 역을 이동합니다.",
+				line.id(),
+				line.name(),
+				fromStation.id(),
+				toStation.id(),
+				trainEstimatedMinutes(segment.stopCount()),
+				trainDistanceMeters(segment.stopCount()),
+				false,
+				false
+			));
+			if (index == route.segments().size() - 1) {
+				continue;
+			}
+			RouteSegment nextSegment = route.segments().get(index + 1);
+			SubwayLine nextLine = route.line(nextSegment.lineId());
+			AccessPath transferAccess = stationPathwayRouter.transferPath(
+				toStation.id(),
+				line.id(),
+				nextLine.id(),
+				hasStairOnlyAccess(toStation.id()),
+				profileWeight
+			);
+			steps.add(new RouteStep(
+				steps.size() + 1,
+				"transfer",
+				toStation.nameKo() + "역에서 " + displayLineName(nextLine) + " 승강장으로 환승",
+				toStation.nameKo() + "의 엘리베이터와 계단 없는 연결 동선을 먼저 확인합니다.",
+				nextLine.id(),
+				nextLine.name(),
+				toStation.id(),
+				toStation.id(),
+				transferAccess.estimatedMinutes(),
+				transferAccess.distanceMeters(),
+				transferAccess.includesStairs(),
+				true
+			));
+		}
+		AccessPath egressAccess = accessGraphRouter.egressAccess(
+			destination.id(),
+			lastSegment.lineId(),
+			hasStairOnlyAccess(destination.id()),
+			profileWeight
+		);
+		steps.add(new RouteStep(
+			steps.size() + 1,
+			"exit",
+			destination.nameKo() + "역에서 출구 접근성 정보를 확인",
+			exitGuidance(destination.id(), profileWeight.exitGuidance()),
+			lastLine.id(),
+			lastLine.name(),
+			destination.id(),
+			destination.id(),
+			egressAccess.estimatedMinutes(),
+			egressAccess.distanceMeters(),
+			egressAccess.includesStairs(),
+			true
+		));
+		return List.copyOf(steps);
+	}
+
 	private int trainEstimatedMinutes(int stopCount) {
 		return Math.max(1, stopCount) * MINUTES_PER_STATION;
 	}
@@ -974,15 +1242,20 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private record RoutePlan(
 		Optional<DirectLine> directLine,
-		Optional<TransferRoute> transferRoute
+		Optional<TransferRoute> transferRoute,
+		Optional<MultiTransferRoute> multiTransferRoute
 	) {
 
 		static RoutePlan direct(DirectLine directLine) {
-			return new RoutePlan(Optional.of(directLine), Optional.empty());
+			return new RoutePlan(Optional.of(directLine), Optional.empty(), Optional.empty());
 		}
 
 		static RoutePlan transfer(TransferRoute transferRoute) {
-			return new RoutePlan(Optional.empty(), Optional.of(transferRoute));
+			return new RoutePlan(Optional.empty(), Optional.of(transferRoute), Optional.empty());
+		}
+
+		static RoutePlan multiTransfer(MultiTransferRoute multiTransferRoute) {
+			return new RoutePlan(Optional.empty(), Optional.empty(), Optional.of(multiTransferRoute));
 		}
 
 		String lineId() {
@@ -990,7 +1263,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 				.map(direct -> direct.line().id())
 				.orElseGet(() -> transferRoute
 					.map(route -> route.firstLine().id() + "/" + route.secondLine().id())
-					.orElseThrow());
+					.orElseGet(() -> multiTransferRoute.map(MultiTransferRoute::lineId).orElseThrow()));
 		}
 
 		String lineName() {
@@ -998,23 +1271,110 @@ public class RouteSearchService implements RouteSearchUseCase {
 				.map(direct -> direct.line().name())
 				.orElseGet(() -> transferRoute
 					.map(route -> route.firstLine().name() + " / " + route.secondLine().name())
-					.orElseThrow());
+					.orElseGet(() -> multiTransferRoute.map(MultiTransferRoute::lineName).orElseThrow()));
 		}
 
 		int stopCount() {
 			return directLine
 				.map(DirectLine::stopCount)
-				.orElseGet(() -> transferRoute.map(TransferRoute::stopCount).orElseThrow());
+				.orElseGet(() -> transferRoute
+					.map(TransferRoute::stopCount)
+					.orElseGet(() -> multiTransferRoute.map(MultiTransferRoute::stopCount).orElseThrow()));
 		}
 
 		int transferCount() {
-			return transferRoute.isPresent() ? 1 : 0;
+			return multiTransferRoute.map(MultiTransferRoute::transferCount)
+				.orElseGet(() -> transferRoute.isPresent() ? 1 : 0);
 		}
 
 		List<String> accessibilityStationIds(String originStationId, String destinationStationId) {
 			return transferRoute
 				.map(route -> List.of(originStationId, route.transferStation().id(), destinationStationId))
-				.orElseGet(() -> List.of(originStationId, destinationStationId));
+				.orElseGet(() -> multiTransferRoute
+					.map(route -> route.accessibilityStationIds(originStationId, destinationStationId))
+					.orElseGet(() -> List.of(originStationId, destinationStationId)));
+		}
+	}
+
+	private record RouteSegment(
+		StationLine from,
+		StationLine to
+	) {
+
+		String lineId() {
+			return from.lineId();
+		}
+
+		String fromStationId() {
+			return from.stationId();
+		}
+
+		String toStationId() {
+			return to.stationId();
+		}
+
+		int stopCount() {
+			return Math.abs(from.sequence() - to.sequence());
+		}
+	}
+
+	private record MultiTransferRoute(
+		List<RouteSegment> segments,
+		Map<String, SubwayLine> linesById,
+		Map<String, Station> stationsById
+	) {
+
+		String lineId() {
+			return segments.stream()
+				.map(RouteSegment::lineId)
+				.collect(Collectors.joining("/"));
+		}
+
+		String lineName() {
+			return segments.stream()
+				.map(segment -> line(segment.lineId()).name())
+				.collect(Collectors.joining(" / "));
+		}
+
+		int stopCount() {
+			return segments.stream()
+				.mapToInt(RouteSegment::stopCount)
+				.sum();
+		}
+
+		int transferCount() {
+			return Math.max(0, segments.size() - 1);
+		}
+
+		SubwayLine line(String lineId) {
+			return linesById.get(lineId);
+		}
+
+		Station station(String stationId) {
+			return stationsById.get(stationId);
+		}
+
+		List<String> accessibilityStationIds(String originStationId, String destinationStationId) {
+			List<String> stationIds = new ArrayList<>();
+			stationIds.add(originStationId);
+			for (int index = 0; index < segments.size() - 1; index++) {
+				stationIds.add(segments.get(index).toStationId());
+			}
+			stationIds.add(destinationStationId);
+			return List.copyOf(stationIds);
+		}
+	}
+
+	private record MultiTransferCandidate(
+		StationLine currentLine,
+		List<RouteSegment> segments,
+		Set<String> visited
+	) {
+
+		int cost() {
+			return segments.stream()
+				.mapToInt(RouteSegment::stopCount)
+				.sum() + segments.size() * 100;
 		}
 	}
 }

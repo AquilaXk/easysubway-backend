@@ -49,6 +49,7 @@ class RouteSearchV2ControllerTest {
 				&& "station-sadang".equals(command.destinationStationId())
 				&& command.mobilityType() == MobilityType.STROLLER
 				&& command.constraintMode() == ConstraintMode.STRICT_STEP_FREE
+				&& command.maxTransfers() == 3
 		))).thenReturn(foundRouteSearch());
 
 		mockMvc.perform(post("/api/v2/routes/search")
@@ -291,6 +292,55 @@ class RouteSearchV2ControllerTest {
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("출발 시간은 ISO offset 형식이어야 합니다."));
+
+		verifyNoInteractions(routeSearchUseCase);
+	}
+
+	@Test
+	@DisplayName("V2 최대 환승 수는 3회를 초과하면 search 저장 전에 JSON 400으로 거부한다")
+	void routeSearchV2MaxTransfersAboveThreeReturnsBadRequestBeforeSearch() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "STRICT_STEP_FREE",
+					  "useRealtime": true,
+					  "maxTransfers": 4,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").exists());
+
+		verifyNoInteractions(routeSearchUseCase);
+	}
+
+	@Test
+	@DisplayName("V2 최대 환승 수 누락은 search 저장 전에 JSON 400으로 거부한다")
+	void routeSearchV2MissingMaxTransfersReturnsBadRequestBeforeSearch() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "STRICT_STEP_FREE",
+					  "useRealtime": true,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").exists());
 
 		verifyNoInteractions(routeSearchUseCase);
 	}

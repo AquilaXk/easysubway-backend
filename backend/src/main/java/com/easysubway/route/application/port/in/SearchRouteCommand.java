@@ -7,15 +7,26 @@ public record SearchRouteCommand(
 	String originStationId,
 	String destinationStationId,
 	MobilityType mobilityType,
-	ConstraintMode constraintMode
+	ConstraintMode constraintMode,
+	int maxTransfers
 ) {
 	public SearchRouteCommand(String originStationId, String destinationStationId, MobilityType mobilityType) {
-		this(originStationId, destinationStationId, mobilityType, ConstraintMode.defaultFor(mobilityType));
+		this(originStationId, destinationStationId, mobilityType, ConstraintMode.defaultFor(mobilityType), 1);
+	}
+
+	public SearchRouteCommand(
+		String originStationId,
+		String destinationStationId,
+		MobilityType mobilityType,
+		ConstraintMode constraintMode
+	) {
+		this(originStationId, destinationStationId, mobilityType, constraintMode, 1);
 	}
 
 	public SearchRouteCommand {
 		if (constraintMode == null) {
 			constraintMode = ConstraintMode.defaultFor(mobilityType);
 		}
+		maxTransfers = Math.max(0, maxTransfers);
 	}
 }
