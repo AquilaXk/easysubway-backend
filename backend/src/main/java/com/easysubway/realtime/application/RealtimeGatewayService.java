@@ -3,6 +3,7 @@ package com.easysubway.realtime.application;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
+import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import java.time.Clock;
 import java.time.Duration;
@@ -17,6 +18,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
@@ -35,6 +37,8 @@ public class RealtimeGatewayService {
 	private final RealtimeProvider provider;
 	private final RealtimeMappingPort mappingPort;
 	private final Clock clock;
+	private final RealtimeProviderControl providerControl;
+	private final ProviderMetrics providerMetrics = new ProviderMetrics();
 	private final Map<String, CachedArrival> arrivalCache = new ConcurrentHashMap<>();
 	private final Map<String, CachedTrainPosition> trainPositionCache = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeArrivalResult>> arrivalRequests = new ConcurrentHashMap<>();
@@ -42,23 +46,43 @@ public class RealtimeGatewayService {
 	private volatile java.time.Instant quotaCircuitOpenUntil;
 
 	@Autowired
-	public RealtimeGatewayService(RealtimeProvider provider, RealtimeMappingPort mappingPort) {
-		this(provider, Clock.systemUTC(), mappingPort);
+	public RealtimeGatewayService(
+		RealtimeProvider provider,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl providerControl
+	) {
+		this(provider, Clock.systemUTC(), mappingPort, providerControl);
 	}
 
 	RealtimeGatewayService(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
+		this(provider, clock, mappingPort, new RealtimeProviderControl());
+	}
+
+	RealtimeGatewayService(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl providerControl
+	) {
 		this.provider = provider;
 		this.clock = clock;
 		this.mappingPort = mappingPort;
+		this.providerControl = providerControl;
 	}
 
 	public RealtimeArrivalResult arrivals(RealtimeQuery query) {
 		NormalizedRealtimeQuery normalizedQuery = normalizeArrivalQuery(query);
 		if (normalizedQuery.rejected()) {
-			return RealtimeArrivalResult.unsupported(
+			return recordArrivalResult(RealtimeArrivalResult.unsupported(
 				normalizedQuery.fallbackCode(),
 				"서울 TOPIS 실시간 지원 범위 밖입니다."
-			);
+			));
+		}
+		if (!providerControl.providerEnabled(PROVIDER_ID)) {
+			return recordArrivalResult(RealtimeArrivalResult.unsupported(
+				"PROVIDER_DISABLED",
+				"실시간 provider가 운영자 설정으로 일시 중지되었습니다."
+			));
 		}
 		String cacheKey = "ARRIVALS:%s:%s:%s".formatted(
 			normalizedQuery.query().providerLineId(),
@@ -68,22 +92,22 @@ public class RealtimeGatewayService {
 		cacheKey = "%s:%d".formatted(cacheKey, normalizedQuery.cacheVersion());
 		CachedArrival cached = arrivalCache.get(cacheKey);
 		if (cached != null && isFresh(cached.cachedAt())) {
-			return cached.result();
+			return recordArrivalResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
-			return cached != null && isStaleUsable(cached.cachedAt())
+			return recordArrivalResult(cached != null && isStaleUsable(cached.cachedAt())
 				? cached.result().stale()
-				: RealtimeArrivalResult.unavailable("PROVIDER_QUOTA_EXCEEDED");
+				: RealtimeArrivalResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
 		}
 		CompletableFuture<RealtimeArrivalResult> request = new CompletableFuture<>();
 		CompletableFuture<RealtimeArrivalResult> existing = arrivalRequests.putIfAbsent(cacheKey, request);
 		if (existing != null) {
-			return joinArrival(existing);
+			return recordArrivalResult(joinArrival(existing));
 		}
 		try {
 			RealtimeArrivalResult result = fetchArrivals(normalizedQuery.query(), cacheKey, cached);
 			request.complete(result);
-			return result;
+			return recordArrivalResult(result);
 		} catch (RuntimeException exception) {
 			request.completeExceptionally(exception);
 			throw exception;
@@ -93,9 +117,11 @@ public class RealtimeGatewayService {
 	}
 
 	private RealtimeArrivalResult fetchArrivals(RealtimeQuery normalizedQuery, String cacheKey, CachedArrival cached) {
+		Instant providerCallStartedAt = clock.instant();
 		try {
 			List<RealtimeArrival> arrivals = provider.arrivals(normalizedQuery);
 			if (arrivals.isEmpty()) {
+				providerMetrics.recordEmptyResult();
 				return RealtimeArrivalResult.unavailable("EMPTY_PROVIDER_RESULT");
 			}
 			Instant receivedAt = clock.instant();
@@ -110,18 +136,27 @@ public class RealtimeGatewayService {
 			arrivalCache.put(cacheKey, new CachedArrival(result, receivedAt));
 			return result;
 		} catch (RealtimeProviderException exception) {
+			providerMetrics.recordProviderException(exception.fallbackCode());
 			openQuotaCircuitIfNeeded(exception);
 			return staleArrivalOrUnavailable(cached, exception.fallbackCode());
+		} finally {
+			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
 	}
 
 	public RealtimeTrainPositionResult trainPositions(RealtimeQuery query) {
 		NormalizedRealtimeQuery normalizedQuery = normalizeTrainPositionQuery(query);
 		if (normalizedQuery.rejected()) {
-			return RealtimeTrainPositionResult.unsupported(
+			return recordTrainPositionResult(RealtimeTrainPositionResult.unsupported(
 				normalizedQuery.fallbackCode(),
 				"서울 TOPIS 실시간 지원 범위 밖입니다."
-			);
+			));
+		}
+		if (!providerControl.providerEnabled(PROVIDER_ID)) {
+			return recordTrainPositionResult(RealtimeTrainPositionResult.unsupported(
+				"PROVIDER_DISABLED",
+				"실시간 provider가 운영자 설정으로 일시 중지되었습니다."
+			));
 		}
 		String cacheKey = "POSITIONS:%s:%s:%d".formatted(
 			normalizedQuery.query().providerLineId(),
@@ -130,22 +165,22 @@ public class RealtimeGatewayService {
 		);
 		CachedTrainPosition cached = trainPositionCache.get(cacheKey);
 		if (cached != null && isFresh(cached.cachedAt())) {
-			return cached.result();
+			return recordTrainPositionResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
-			return cached != null && isStaleUsable(cached.cachedAt())
+			return recordTrainPositionResult(cached != null && isStaleUsable(cached.cachedAt())
 				? cached.result().stale()
-				: RealtimeTrainPositionResult.unavailable("PROVIDER_QUOTA_EXCEEDED");
+				: RealtimeTrainPositionResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
 		}
 		CompletableFuture<RealtimeTrainPositionResult> request = new CompletableFuture<>();
 		CompletableFuture<RealtimeTrainPositionResult> existing = trainPositionRequests.putIfAbsent(cacheKey, request);
 		if (existing != null) {
-			return joinTrainPosition(existing);
+			return recordTrainPositionResult(joinTrainPosition(existing));
 		}
 		try {
 			RealtimeTrainPositionResult result = fetchTrainPositions(normalizedQuery.query(), cacheKey, cached);
 			request.complete(result);
-			return result;
+			return recordTrainPositionResult(result);
 		} catch (RuntimeException exception) {
 			request.completeExceptionally(exception);
 			throw exception;
@@ -159,9 +194,11 @@ public class RealtimeGatewayService {
 		String cacheKey,
 		CachedTrainPosition cached
 	) {
+		Instant providerCallStartedAt = clock.instant();
 		try {
 			List<RealtimeTrainPosition> trainPositions = provider.trainPositions(normalizedQuery);
 			if (trainPositions.isEmpty()) {
+				providerMetrics.recordEmptyResult();
 				return RealtimeTrainPositionResult.unavailable("EMPTY_PROVIDER_RESULT");
 			}
 			Instant receivedAt = clock.instant();
@@ -176,9 +213,31 @@ public class RealtimeGatewayService {
 			trainPositionCache.put(cacheKey, new CachedTrainPosition(result, receivedAt));
 			return result;
 		} catch (RealtimeProviderException exception) {
+			providerMetrics.recordProviderException(exception.fallbackCode());
 			openQuotaCircuitIfNeeded(exception);
 			return staleTrainPositionOrUnavailable(cached, exception.fallbackCode());
+		} finally {
+			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
+	}
+
+	public RealtimeProviderHealthSnapshot providerHealthSnapshot() {
+		RealtimeProviderControl.RealtimeProviderSwitchState switchState = providerControl.switchState(PROVIDER_ID);
+		return providerMetrics.snapshot(
+			PROVIDER_ID,
+			switchState.enabled(),
+			switchState.disabledReason()
+		);
+	}
+
+	private RealtimeArrivalResult recordArrivalResult(RealtimeArrivalResult result) {
+		providerMetrics.recordResult(result.status());
+		return result;
+	}
+
+	private RealtimeTrainPositionResult recordTrainPositionResult(RealtimeTrainPositionResult result) {
+		providerMetrics.recordResult(result.status());
+		return result;
 	}
 
 	private RealtimeArrivalResult staleArrivalOrUnavailable(CachedArrival cached, String fallbackCode) {
@@ -377,6 +436,75 @@ public class RealtimeGatewayService {
 	}
 
 	private record CachedTrainPosition(RealtimeTrainPositionResult result, java.time.Instant cachedAt) {
+	}
+
+	private static final class ProviderMetrics {
+		private final AtomicLong providerCallCount = new AtomicLong();
+		private final AtomicLong providerTimeoutCount = new AtomicLong();
+		private final AtomicLong providerQuotaExceededCount = new AtomicLong();
+		private final AtomicLong providerEmptyResultCount = new AtomicLong();
+		private final AtomicLong providerLatencyMsTotal = new AtomicLong();
+		private final AtomicLong resultCount = new AtomicLong();
+		private final AtomicLong freshResultCount = new AtomicLong();
+		private final AtomicLong staleResultCount = new AtomicLong();
+		private final AtomicLong unsupportedResultCount = new AtomicLong();
+
+		private void recordProviderCall(Duration latency) {
+			providerCallCount.incrementAndGet();
+			providerLatencyMsTotal.addAndGet(Math.max(0, latency.toMillis()));
+		}
+
+		private void recordProviderException(String fallbackCode) {
+			if ("PROVIDER_TIMEOUT".equals(fallbackCode)) {
+				providerTimeoutCount.incrementAndGet();
+			}
+			if ("PROVIDER_QUOTA_EXCEEDED".equals(fallbackCode)) {
+				providerQuotaExceededCount.incrementAndGet();
+			}
+		}
+
+		private void recordEmptyResult() {
+			providerEmptyResultCount.incrementAndGet();
+		}
+
+		private void recordResult(RealtimeStatus status) {
+			resultCount.incrementAndGet();
+			if (status == RealtimeStatus.FRESH) {
+				freshResultCount.incrementAndGet();
+			}
+			if (status == RealtimeStatus.STALE) {
+				staleResultCount.incrementAndGet();
+			}
+			if (status == RealtimeStatus.UNSUPPORTED) {
+				unsupportedResultCount.incrementAndGet();
+			}
+		}
+
+		private RealtimeProviderHealthSnapshot snapshot(
+			String providerId,
+			boolean providerEnabled,
+			String disabledReason
+		) {
+			long calls = providerCallCount.get();
+			long results = resultCount.get();
+			return new RealtimeProviderHealthSnapshot(
+				providerId,
+				providerEnabled,
+				disabledReason,
+				calls,
+				providerTimeoutCount.get(),
+				providerQuotaExceededCount.get(),
+				providerEmptyResultCount.get(),
+				ratio(freshResultCount.get(), results),
+				ratio(staleResultCount.get(), results),
+				ratio(unsupportedResultCount.get(), results),
+				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls
+			);
+		}
+
+		private double ratio(long count, long total) {
+			return total == 0 ? 0.0 : (double) count / total;
+		}
 	}
 
 	private record NormalizedRealtimeQuery(RealtimeQuery query, long cacheVersion, String fallbackCode) {
