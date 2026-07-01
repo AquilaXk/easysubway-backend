@@ -302,6 +302,36 @@ class JdbcRouteSearchRepositoryTest {
 			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
 	}
 
+	@Test
+	@DisplayName("경로 품질 dashboard 신호는 저장된 status, ETA source, warning code만 집계한다")
+	void loadRouteSearchQualitySignalsForDashboard() {
+		repository.saveRouteSearch(directRouteSearch("route-search-1", "상록수", "사당"));
+		repository.saveRouteSearch(blockedRouteSearch("route-search-2"));
+		repository.saveRouteSearch(fallbackRouteSearch("route-search-3"));
+
+		var rows = repository.loadRouteSearchQualitySignalsForDashboard();
+
+		assertThat(rows)
+			.extracting("status", "etaSource", "warningCodes")
+			.containsExactly(
+				tuple(
+					RouteSearchStatus.FOUND,
+					EtaSource.FALLBACK,
+					List.of(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
+				),
+				tuple(
+					RouteSearchStatus.BLOCKED,
+					EtaSource.PLANNED,
+					List.of(RouteWarningCode.STAIR_ONLY_ACCESS)
+				),
+				tuple(
+					RouteSearchStatus.FOUND,
+					EtaSource.PLANNED,
+					List.of(RouteWarningCode.LOW_DATA_CONFIDENCE)
+				)
+			);
+	}
+
 	private RouteSearchResult directRouteSearch(
 		String routeSearchId,
 		String originStationName,
@@ -364,6 +394,42 @@ class JdbcRouteSearchRepositoryTest {
 			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)),
 			List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
 			LocalDateTime.of(2026, 6, 17, 10, 0)
+		);
+	}
+
+	private RouteSearchResult fallbackRouteSearch(String routeSearchId) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-origin",
+			"출발역",
+			"station-destination",
+			"도착역",
+			MobilityType.SENIOR,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			50,
+			List.of(new RouteStep(
+				1,
+				"ride",
+				"출발역에서 도착역까지 이동",
+				"provider ETA가 없어 보수 추정값을 사용합니다.",
+				"line-4",
+				"수도권 4호선",
+				"station-origin",
+				"station-destination",
+				20,
+				8000,
+				false,
+				"VERIFIED_STEP_FREE",
+				false,
+				EtaSource.FALLBACK.name(),
+				"ESTIMATED_CONSTANT",
+				"낮음"
+			)),
+			List.of(new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)),
+			List.of(),
+			LocalDateTime.of(2026, 6, 17, 11, 0)
 		);
 	}
 

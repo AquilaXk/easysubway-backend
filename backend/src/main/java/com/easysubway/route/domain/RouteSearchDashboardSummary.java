@@ -9,7 +9,10 @@ public record RouteSearchDashboardSummary(
 	long blockedCount,
 	List<MobilityTypeCount> mobilityTypeCounts,
 	List<RegionUsageCount> regionUsageCounts,
-	List<BlockedReasonCount> blockedReasonCounts
+	List<BlockedReasonCount> blockedReasonCounts,
+	List<EtaSourceCount> etaSourceCounts,
+	List<FallbackReasonCount> fallbackReasonCounts,
+	List<RouteQualitySignalCount> routeQualitySignalCounts
 ) {
 
 	public RouteSearchDashboardSummary(
@@ -18,7 +21,17 @@ public record RouteSearchDashboardSummary(
 		long blockedCount,
 		List<MobilityTypeCount> mobilityTypeCounts
 	) {
-		this(totalCount, foundCount, blockedCount, mobilityTypeCounts, List.of(), List.of());
+		this(
+			totalCount,
+			foundCount,
+			blockedCount,
+			mobilityTypeCounts,
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of()
+		);
 	}
 
 	public RouteSearchDashboardSummary(
@@ -28,7 +41,38 @@ public record RouteSearchDashboardSummary(
 		List<MobilityTypeCount> mobilityTypeCounts,
 		List<RegionUsageCount> regionUsageCounts
 	) {
-		this(totalCount, foundCount, blockedCount, mobilityTypeCounts, regionUsageCounts, List.of());
+		this(
+			totalCount,
+			foundCount,
+			blockedCount,
+			mobilityTypeCounts,
+			regionUsageCounts,
+			List.of(),
+			List.of(),
+			List.of(),
+			List.of()
+		);
+	}
+
+	public RouteSearchDashboardSummary(
+		long totalCount,
+		long foundCount,
+		long blockedCount,
+		List<MobilityTypeCount> mobilityTypeCounts,
+		List<RegionUsageCount> regionUsageCounts,
+		List<BlockedReasonCount> blockedReasonCounts
+	) {
+		this(
+			totalCount,
+			foundCount,
+			blockedCount,
+			mobilityTypeCounts,
+			regionUsageCounts,
+			blockedReasonCounts,
+			List.of(),
+			List.of(),
+			List.of()
+		);
 	}
 
 	public RouteSearchDashboardSummary {
@@ -47,6 +91,9 @@ public record RouteSearchDashboardSummary(
 		}
 		regionUsageCounts = List.copyOf(regionUsageCounts);
 		blockedReasonCounts = List.copyOf(blockedReasonCounts);
+		etaSourceCounts = List.copyOf(etaSourceCounts);
+		fallbackReasonCounts = List.copyOf(fallbackReasonCounts);
+		routeQualitySignalCounts = List.copyOf(routeQualitySignalCounts);
 	}
 
 	public record MobilityTypeCount(MobilityType mobilityType, long count) {
@@ -81,6 +128,42 @@ public record RouteSearchDashboardSummary(
 			}
 			if (count < 0) {
 				throw new InvalidRouteSearchException("경로 검색 차단 사유 수는 0 이상이어야 합니다.");
+			}
+		}
+	}
+
+	public record EtaSourceCount(EtaSource etaSource, long count) {
+
+		public EtaSourceCount {
+			if (etaSource == null) {
+				throw new InvalidRouteSearchException("ETA source 집계에는 ETA source가 필요합니다.");
+			}
+			if (count < 0) {
+				throw new InvalidRouteSearchException("ETA source 집계 수는 0 이상이어야 합니다.");
+			}
+		}
+	}
+
+	public record FallbackReasonCount(String reason, long count) {
+
+		public FallbackReasonCount {
+			if (reason == null || reason.isBlank()) {
+				throw new InvalidRouteSearchException("fallback 사유 집계에는 사유가 필요합니다.");
+			}
+			if (count < 0) {
+				throw new InvalidRouteSearchException("fallback 사유 집계 수는 0 이상이어야 합니다.");
+			}
+		}
+	}
+
+	public record RouteQualitySignalCount(String signal, long count) {
+
+		public RouteQualitySignalCount {
+			if (signal == null || signal.isBlank()) {
+				throw new InvalidRouteSearchException("경로 품질 신호 집계에는 신호명이 필요합니다.");
+			}
+			if (count < 0) {
+				throw new InvalidRouteSearchException("경로 품질 신호 집계 수는 0 이상이어야 합니다.");
 			}
 		}
 	}

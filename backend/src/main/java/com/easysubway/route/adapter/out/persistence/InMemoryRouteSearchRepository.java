@@ -7,6 +7,7 @@ import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchQualitySignals;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
@@ -17,6 +18,7 @@ import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
+import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -118,6 +120,23 @@ public class InMemoryRouteSearchRepository
 				.stream()
 				.filter(routeSearch -> routeSearch.status() == RouteSearchStatus.BLOCKED)
 				.map(routeSearch -> new RouteSearchBlockedReasons(routeSearch.blockedReasons()))
+				.toList();
+		}
+	}
+
+	@Override
+	public List<RouteSearchQualitySignals> loadRouteSearchQualitySignalsForDashboard() {
+		synchronized (routeSearches) {
+			return routeSearches.values()
+				.stream()
+				.map(routeSearch -> new RouteSearchQualitySignals(
+					routeSearch.status(),
+					routeSearch.etaSource(),
+					routeSearch.warnings()
+						.stream()
+						.map(RouteWarning::code)
+						.toList()
+				))
 				.toList();
 		}
 	}
