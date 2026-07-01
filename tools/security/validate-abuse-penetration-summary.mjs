@@ -1,5 +1,11 @@
 #!/usr/bin/env node
-import { readFile } from "node:fs/promises";
+import {
+  argValue,
+  collectStrings,
+  readJson,
+  required,
+  stableFlatJson,
+} from "../release/summary-validation-utils.mjs";
 
 const STATUS = new Set(["PASS", "FAIL", "BLOCKED_EXTERNAL"]);
 const RAW_SECRET_PATTERNS = [
@@ -9,28 +15,6 @@ const RAW_SECRET_PATTERNS = [
   /\b(JSESSIONID|sessionid)=\S+/i,
   /-----BEGIN (RSA |EC |OPENSSH )?PRIVATE KEY-----/i,
 ];
-
-function argValue(args, name, fallback) {
-  const index = args.indexOf(name);
-  return index >= 0 ? args[index + 1] : fallback;
-}
-
-function required(value, name) {
-  if (value === undefined || value === null || value === "") {
-    throw new Error(`abuse rehearsal summary missing ${name}`);
-  }
-  return value;
-}
-
-function collectStrings(value, path = "$", out = []) {
-  if (typeof value === "string") out.push([path, value]);
-  if (Array.isArray(value)) {
-    value.forEach((item, index) => collectStrings(item, `${path}[${index}]`, out));
-  } else if (value && typeof value === "object") {
-    Object.entries(value).forEach(([key, item]) => collectStrings(item, `${path}.${key}`, out));
-  }
-  return out;
-}
 
 function assertNoSensitiveSummary(summary, gate) {
   const forbiddenValues = new Set([
@@ -51,10 +35,6 @@ function assertNoSensitiveSummary(summary, gate) {
       }
     }
   }
-}
-
-function stableFlatJson(value) {
-  return JSON.stringify(Object.fromEntries(Object.entries(value).sort(([a], [b]) => a.localeCompare(b))));
 }
 
 function assertIdentity(summary, gate, path = "artifactIdentity", expectedIdentity) {
@@ -120,10 +100,7 @@ async function main() {
   const requirePass = args.includes("--require-pass");
   if (!summaryPath) throw new Error("--summary is required");
 
-  const [summary, gate] = await Promise.all([
-    readFile(summaryPath, "utf8").then(JSON.parse),
-    readFile(gatePath, "utf8").then(JSON.parse),
-  ]);
+  const [summary, gate] = await Promise.all([readJson(summaryPath), readJson(gatePath)]);
   if (summary.schemaVersion !== 1) throw new Error("schemaVersion must be 1");
   if (summary.releaseGate !== gate.releaseGate) throw new Error(`releaseGate must be ${gate.releaseGate}`);
   if (summary.issue !== gate.issue) throw new Error(`issue must be ${gate.issue}`);

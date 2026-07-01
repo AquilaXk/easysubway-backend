@@ -175,6 +175,12 @@ jobs:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
         run: node --test tools/security/*.test.mjs
 
+      - name: Repository CI / Run ops tool tests
+        if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: node --test tools/ops/*.test.mjs
+
       - name: Repository CI / Validate Docker Compose config
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
         run: docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
