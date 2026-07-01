@@ -4,6 +4,9 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.RouteEtaOffsetBucket;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteSearchResult;
@@ -62,6 +65,12 @@ class JdbcRouteSearchRepositoryTest {
 				user_id VARCHAR(120) NOT NULL,
 				rating VARCHAR(40) NOT NULL,
 				comment VARCHAR(1000) NOT NULL,
+				itinerary_id VARCHAR(120),
+				mobility_type VARCHAR(40),
+				constraint_mode VARCHAR(40),
+				eta_source VARCHAR(40),
+				eta_offset_bucket VARCHAR(40),
+				eta_feedback_opted_in BOOLEAN NOT NULL DEFAULT FALSE,
 				created_at TIMESTAMP NOT NULL,
 				CONSTRAINT chk_route_feedbacks_rating CHECK (rating IN ('HELPFUL', 'NOT_HELPFUL', 'BLOCKED_BY_REAL_WORLD'))
 			)
@@ -173,6 +182,57 @@ class JdbcRouteSearchRepositoryTest {
 		assertThat(summary.helpfulCount()).isEqualTo(1);
 		assertThat(summary.notHelpfulCount()).isEqualTo(1);
 		assertThat(summary.blockedByRealWorldCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("경로 ETA calibration report는 opt-in bucket만 개인정보 없이 집계한다")
+	void summarizeRouteFeedbacksIncludesEtaCalibrationBuckets() {
+		repository.saveRouteFeedback(new RouteFeedback(
+			"feedback-eta-1",
+			"route-search-1",
+			"anonymous-user-1",
+			RouteFeedbackRating.NOT_HELPFUL,
+			"예상보다 늦었어요",
+			"route-search-1-primary",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			EtaSource.PLANNED,
+			RouteEtaOffsetBucket.LATE_1_TO_3_MINUTES,
+			true,
+			LocalDateTime.of(2026, 6, 17, 10, 0)
+		));
+		repository.saveRouteFeedback(new RouteFeedback(
+			"feedback-eta-2",
+			"route-search-2",
+			"anonymous-user-2",
+			RouteFeedbackRating.HELPFUL,
+			"맞았어요",
+			"route-search-2-primary",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			EtaSource.PLANNED,
+			RouteEtaOffsetBucket.LATE_1_TO_3_MINUTES,
+			false,
+			LocalDateTime.of(2026, 6, 17, 11, 0)
+		));
+
+		var summary = repository.summarizeRouteFeedbacks();
+
+		assertThat(summary.etaCalibrationBuckets())
+			.extracting(
+				"mobilityType",
+				"constraintMode",
+				"etaSource",
+				"etaOffsetBucket",
+				"count"
+			)
+			.containsExactly(tuple(
+				MobilityType.SENIOR,
+				ConstraintMode.PREFER_STEP_FREE,
+				EtaSource.PLANNED,
+				RouteEtaOffsetBucket.LATE_1_TO_3_MINUTES,
+				1L
+			));
 	}
 
 	@Test

@@ -11,7 +11,9 @@ import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.InvalidRouteFeedbackException;
+import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteNotFoundException;
+import com.easysubway.route.domain.RouteEtaOffsetBucket;
 import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteProfileWeight;
 import com.easysubway.route.domain.RouteRefreshStatus;
@@ -208,6 +210,37 @@ class RouteSearchServiceTest {
 		assertThat(feedback.rating()).isEqualTo(RouteFeedbackRating.HELPFUL);
 		assertThat(feedback.comment()).isEqualTo("엘리베이터 안내가 실제 이동에 맞았어요");
 		assertThat(feedback.createdAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
+	}
+
+	@Test
+	@DisplayName("경로 ETA 피드백은 opt-in 이후 bucketed offset과 calibration context만 저장한다")
+	void submitRouteFeedbackStoresPrivacySafeEtaCalibrationContext() {
+		var routeSearch = service.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE
+		));
+
+		var feedback = service.submitRouteFeedback(new SubmitRouteFeedbackCommand(
+			routeSearch.routeSearchId(),
+			"anonymous-user-1",
+			RouteFeedbackRating.NOT_HELPFUL,
+			"예상보다 늦었어요",
+			routeSearch.routeSearchId() + "-primary",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			EtaSource.PLANNED,
+			RouteEtaOffsetBucket.LATE_1_TO_3_MINUTES,
+			true
+		));
+
+		assertThat(feedback.etaFeedbackOptedIn()).isTrue();
+		assertThat(feedback.itineraryId()).isEqualTo(routeSearch.routeSearchId() + "-primary");
+		assertThat(feedback.mobilityType()).isEqualTo(MobilityType.SENIOR);
+		assertThat(feedback.constraintMode()).isEqualTo(ConstraintMode.PREFER_STEP_FREE);
+		assertThat(feedback.etaSource()).isEqualTo(EtaSource.PLANNED);
+		assertThat(feedback.etaOffsetBucket()).isEqualTo(RouteEtaOffsetBucket.LATE_1_TO_3_MINUTES);
 	}
 
 	@Test

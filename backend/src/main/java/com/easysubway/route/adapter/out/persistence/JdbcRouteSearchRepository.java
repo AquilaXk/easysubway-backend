@@ -8,8 +8,12 @@ import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
+import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.RouteEtaOffsetBucket;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary.EtaCalibrationBucket;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary.RecentBlockedFeedback;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount;
@@ -132,7 +136,35 @@ public class JdbcRouteSearchRepository
 			countSummary.helpfulCount(),
 			countSummary.notHelpfulCount(),
 			countSummary.blockedByRealWorldCount(),
-			loadRecentBlockedFeedbacks()
+			loadRecentBlockedFeedbacks(),
+			loadEtaCalibrationBuckets()
+		);
+	}
+
+	private List<EtaCalibrationBucket> loadEtaCalibrationBuckets() {
+		return jdbcTemplate.query(
+			"""
+				SELECT mobility_type,
+					constraint_mode,
+					eta_source,
+					eta_offset_bucket,
+					COUNT(*) AS count
+				FROM route_feedbacks
+				WHERE eta_feedback_opted_in = TRUE
+					AND mobility_type IS NOT NULL
+					AND constraint_mode IS NOT NULL
+					AND eta_source IS NOT NULL
+					AND eta_offset_bucket IS NOT NULL
+				GROUP BY mobility_type, constraint_mode, eta_source, eta_offset_bucket
+				ORDER BY mobility_type, constraint_mode, eta_source, eta_offset_bucket
+				""",
+			(resultSet, rowNumber) -> new EtaCalibrationBucket(
+				MobilityType.valueOf(resultSet.getString("mobility_type")),
+				ConstraintMode.valueOf(resultSet.getString("constraint_mode")),
+				EtaSource.valueOf(resultSet.getString("eta_source")),
+				RouteEtaOffsetBucket.valueOf(resultSet.getString("eta_offset_bucket")),
+				resultSet.getLong("count")
+			)
 		);
 	}
 
@@ -350,14 +382,26 @@ public class JdbcRouteSearchRepository
 					user_id,
 					rating,
 					comment,
+					itinerary_id,
+					mobility_type,
+					constraint_mode,
+					eta_source,
+					eta_offset_bucket,
+					eta_feedback_opted_in,
 					created_at
 				)
-				VALUES (?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				ON CONFLICT (feedback_id) DO UPDATE
 				SET route_search_id = EXCLUDED.route_search_id,
 					user_id = EXCLUDED.user_id,
 					rating = EXCLUDED.rating,
 					comment = EXCLUDED.comment,
+					itinerary_id = EXCLUDED.itinerary_id,
+					mobility_type = EXCLUDED.mobility_type,
+					constraint_mode = EXCLUDED.constraint_mode,
+					eta_source = EXCLUDED.eta_source,
+					eta_offset_bucket = EXCLUDED.eta_offset_bucket,
+					eta_feedback_opted_in = EXCLUDED.eta_feedback_opted_in,
 					created_at = EXCLUDED.created_at
 				""",
 			feedback.feedbackId(),
@@ -365,6 +409,12 @@ public class JdbcRouteSearchRepository
 			feedback.userId(),
 			feedback.rating().name(),
 			feedback.comment(),
+			feedback.itineraryId(),
+			nameOrNull(feedback.mobilityType()),
+			nameOrNull(feedback.constraintMode()),
+			nameOrNull(feedback.etaSource()),
+			nameOrNull(feedback.etaOffsetBucket()),
+			feedback.etaFeedbackOptedIn(),
 			feedback.createdAt()
 		);
 	}
@@ -378,16 +428,28 @@ public class JdbcRouteSearchRepository
 					user_id,
 					rating,
 					comment,
+					itinerary_id,
+					mobility_type,
+					constraint_mode,
+					eta_source,
+					eta_offset_bucket,
+					eta_feedback_opted_in,
 					created_at
 				)
 				KEY (feedback_id)
-				VALUES (?, ?, ?, ?, ?, ?)
+				VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 				""",
 			feedback.feedbackId(),
 			feedback.routeSearchId(),
 			feedback.userId(),
 			feedback.rating().name(),
 			feedback.comment(),
+			feedback.itineraryId(),
+			nameOrNull(feedback.mobilityType()),
+			nameOrNull(feedback.constraintMode()),
+			nameOrNull(feedback.etaSource()),
+			nameOrNull(feedback.etaOffsetBucket()),
+			feedback.etaFeedbackOptedIn(),
 			feedback.createdAt()
 		);
 	}
@@ -447,6 +509,10 @@ public class JdbcRouteSearchRepository
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("경로 검색 JSON 저장값을 읽지 못했습니다.", exception);
 		}
+	}
+
+	private String nameOrNull(Enum<?> value) {
+		return value == null ? null : value.name();
 	}
 
 	private DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {

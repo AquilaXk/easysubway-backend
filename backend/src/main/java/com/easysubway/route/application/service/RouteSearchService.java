@@ -260,6 +260,12 @@ public class RouteSearchService implements RouteSearchUseCase {
 			command.userId().trim(),
 			command.rating(),
 			normalizeFeedbackComment(command.comment()),
+			normalizeItineraryId(command.itineraryId()),
+			command.mobilityType(),
+			command.constraintMode(),
+			command.etaSource(),
+			command.etaOffsetBucket(),
+			command.etaFeedbackOptedIn(),
 			LocalDateTime.now(clock)
 		));
 	}
@@ -355,6 +361,16 @@ public class RouteSearchService implements RouteSearchUseCase {
 		if (command.rating() == null) {
 			throw new InvalidRouteFeedbackException("피드백 평가를 선택해야 합니다.");
 		}
+		if (!command.etaFeedbackOptedIn()) {
+			return;
+		}
+		if (command.itineraryId() == null || command.itineraryId().isBlank()
+			|| command.mobilityType() == null
+			|| command.constraintMode() == null
+			|| command.etaSource() == null
+			|| command.etaOffsetBucket() == null) {
+			throw new InvalidRouteFeedbackException("ETA 보정 피드백은 경로, 이동 조건, ETA 출처, offset bucket이 필요합니다.");
+		}
 	}
 
 	private String normalizeFeedbackComment(String comment) {
@@ -362,6 +378,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return "";
 		}
 		return comment.trim();
+	}
+
+	private String normalizeItineraryId(String itineraryId) {
+		if (itineraryId == null) {
+			return "";
+		}
+		return itineraryId.trim();
 	}
 
 	private static SaveRouteFeedbackPort requireFeedbackPort(SaveRouteSearchPort saveRouteSearchPort) {

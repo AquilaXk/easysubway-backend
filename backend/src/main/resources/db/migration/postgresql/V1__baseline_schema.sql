@@ -353,6 +353,12 @@ CREATE TABLE IF NOT EXISTS route_feedbacks (
 	user_id VARCHAR(120) NOT NULL,
 	rating VARCHAR(40) NOT NULL,
 	comment VARCHAR(1000) NOT NULL,
+	itinerary_id VARCHAR(120),
+	mobility_type VARCHAR(40),
+	constraint_mode VARCHAR(40),
+	eta_source VARCHAR(40),
+	eta_offset_bucket VARCHAR(40),
+	eta_feedback_opted_in BOOLEAN NOT NULL DEFAULT FALSE,
 	created_at TIMESTAMP NOT NULL,
 	CONSTRAINT chk_route_feedbacks_rating
 		CHECK (rating IN ('HELPFUL', 'NOT_HELPFUL', 'BLOCKED_BY_REAL_WORLD'))
@@ -363,6 +369,10 @@ CREATE INDEX IF NOT EXISTS idx_route_feedbacks_user
 
 CREATE INDEX IF NOT EXISTS idx_route_feedbacks_route_search
 	ON route_feedbacks (route_search_id);
+
+CREATE INDEX IF NOT EXISTS idx_route_feedbacks_eta_calibration
+	ON route_feedbacks (mobility_type, constraint_mode, eta_source, eta_offset_bucket)
+	WHERE eta_feedback_opted_in = TRUE;
 
 CREATE TABLE IF NOT EXISTS facility_reports (
 	report_id VARCHAR(120) NOT NULL PRIMARY KEY,
