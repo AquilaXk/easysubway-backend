@@ -7,8 +7,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
+import com.easysubway.route.domain.RouteStep;
+import com.easysubway.route.domain.RouteWarning;
+import com.easysubway.route.domain.RouteWarningCode;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -39,7 +43,12 @@ class RouteSearchAdminPageControllerTest {
 	@Test
 	@DisplayName("관리자는 경로 검색의 전체, 상태별, 이동 프로필별 건수를 확인한다")
 	void adminGetsRouteSearchDashboardPage() throws Exception {
-		saveRouteSearchPort.saveRouteSearch(foundRouteSearch("route-search-found-1", MobilityType.SENIOR));
+		saveRouteSearchPort.saveRouteSearch(foundRouteSearch(
+			"route-search-found-1",
+			MobilityType.SENIOR,
+			List.of(routeStep(EtaSource.FALLBACK)),
+			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE))
+		));
 		saveRouteSearchPort.saveRouteSearch(foundRouteSearch("route-search-found-2", MobilityType.WHEELCHAIR));
 
 		String html = mockMvc.perform(get("/admin/routes/searches/page")
@@ -56,6 +65,7 @@ class RouteSearchAdminPageControllerTest {
 			.contains("경로 찾음")
 			.contains("경로 차단")
 			.contains(">0<")
+			.contains("route_not_found_rate")
 			.contains("이동 프로필별 검색")
 			.contains("고령자")
 			.contains("휠체어 사용자")
@@ -64,6 +74,15 @@ class RouteSearchAdminPageControllerTest {
 			.contains("출발 검색")
 			.contains("도착 검색")
 			.contains("수도권")
+			.contains("ETA source 현황")
+			.contains("FALLBACK")
+			.contains("provider 지연/장애 fallback")
+			.contains("fallback 사유별 현황")
+			.contains("LOW_DATA_CONFIDENCE")
+			.contains("품질 신호 구분")
+			.contains("PROVIDER_OUTAGE")
+			.contains("알림 기준")
+			.contains("route graph/strict accessibility source review")
 			.doesNotContain("routeSearchId")
 			.doesNotContain("station-sangnoksu");
 	}
@@ -107,6 +126,15 @@ class RouteSearchAdminPageControllerTest {
 	}
 
 	private RouteSearchResult foundRouteSearch(String routeSearchId, MobilityType mobilityType) {
+		return foundRouteSearch(routeSearchId, mobilityType, List.of(), List.of());
+	}
+
+	private RouteSearchResult foundRouteSearch(
+		String routeSearchId,
+		MobilityType mobilityType,
+		List<RouteStep> steps,
+		List<RouteWarning> warnings
+	) {
 		return new RouteSearchResult(
 			routeSearchId,
 			"station-sangnoksu",
@@ -118,10 +146,31 @@ class RouteSearchAdminPageControllerTest {
 			"line-4",
 			"수도권 4호선",
 			18,
-			List.of(),
-			List.of(),
+			steps,
+			warnings,
 			List.of(),
 			LocalDateTime.of(2026, 6, 17, 9, 0)
+		);
+	}
+
+	private RouteStep routeStep(EtaSource etaSource) {
+		return new RouteStep(
+			1,
+			"ride",
+			"상록수에서 사당까지 이동",
+			"수도권 4호선을 이용합니다.",
+			"line-4",
+			"수도권 4호선",
+			"station-sangnoksu",
+			"station-sadang",
+			24,
+			15000,
+			false,
+			"VERIFIED_STEP_FREE",
+			false,
+			etaSource.name(),
+			"ESTIMATED_CONSTANT",
+			"낮음"
 		);
 	}
 

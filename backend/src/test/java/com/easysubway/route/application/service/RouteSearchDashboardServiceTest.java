@@ -5,8 +5,12 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
+import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
+import com.easysubway.route.domain.RouteStep;
+import com.easysubway.route.domain.RouteWarning;
+import com.easysubway.route.domain.RouteWarningCode;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.DataQualityLevel;
@@ -118,10 +122,62 @@ class RouteSearchDashboardServiceTest {
 			);
 	}
 
+	@Test
+	@DisplayName("route quality 운영 신호를 낮은 cardinality 값으로 집계한다")
+	void summarizeRouteQualitySignalsForOperations() {
+		var repository = new InMemoryRouteSearchRepository();
+		repository.saveRouteSearch(routeSearch(
+			"route-search-1",
+			MobilityType.SENIOR,
+			RouteSearchStatus.FOUND,
+			List.of(routeStep(EtaSource.FALLBACK)),
+			List.of(new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE))
+		));
+		repository.saveRouteSearch(routeSearch(
+			"route-search-2",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.BLOCKED,
+			List.of(),
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS))
+		));
+		var service = new RouteSearchDashboardService(repository, new FakeTransitMasterPort());
+
+		var summary = service.summarizeRouteSearches();
+
+		assertThat(summary.etaSourceCounts())
+			.extracting("etaSource", "count")
+			.containsExactly(tuple(EtaSource.FALLBACK, 1L));
+		assertThat(summary.fallbackReasonCounts())
+			.extracting("reason", "count")
+			.contains(
+				tuple("PROVIDER_OUTAGE_OR_STALE_REALTIME", 1L),
+				tuple("ROUTE_GRAPH_OR_STRICT_ACCESSIBILITY_BLOCK", 1L),
+				tuple("LOW_DATA_CONFIDENCE", 1L),
+				tuple("STRICT_STAIR_ONLY_ACCESS", 1L)
+			);
+		assertThat(summary.routeQualitySignalCounts())
+			.extracting("signal", "count")
+			.contains(
+				tuple("PROVIDER_OUTAGE", 1L),
+				tuple("ROUTE_GRAPH_DATA_QUALITY", 2L),
+				tuple("STRICT_ACCESSIBILITY_BLOCK", 1L)
+			);
+	}
+
 	private RouteSearchResult routeSearch(
 		String routeSearchId,
 		MobilityType mobilityType,
 		RouteSearchStatus status
+	) {
+		return routeSearch(routeSearchId, mobilityType, status, List.of(), List.of());
+	}
+
+	private RouteSearchResult routeSearch(
+		String routeSearchId,
+		MobilityType mobilityType,
+		RouteSearchStatus status,
+		List<RouteStep> steps,
+		List<RouteWarning> warnings
 	) {
 		return routeSearch(
 			routeSearchId,
@@ -130,7 +186,9 @@ class RouteSearchDashboardServiceTest {
 			"station-sangnoksu",
 			"상록수",
 			"station-sadang",
-			"사당"
+			"사당",
+			steps,
+			warnings
 		);
 	}
 
@@ -143,6 +201,30 @@ class RouteSearchDashboardServiceTest {
 		String destinationStationId,
 		String destinationStationName
 	) {
+		return routeSearch(
+			routeSearchId,
+			mobilityType,
+			status,
+			originStationId,
+			originStationName,
+			destinationStationId,
+			destinationStationName,
+			List.of(),
+			List.of()
+		);
+	}
+
+	private RouteSearchResult routeSearch(
+		String routeSearchId,
+		MobilityType mobilityType,
+		RouteSearchStatus status,
+		String originStationId,
+		String originStationName,
+		String destinationStationId,
+		String destinationStationName,
+		List<RouteStep> steps,
+		List<RouteWarning> warnings
+	) {
 		return new RouteSearchResult(
 			routeSearchId,
 			originStationId,
@@ -154,10 +236,31 @@ class RouteSearchDashboardServiceTest {
 			"line-4",
 			"수도권 4호선",
 			status == RouteSearchStatus.FOUND ? 90 : 0,
-			List.of(),
-			List.of(),
+			steps,
+			warnings,
 			status == RouteSearchStatus.FOUND ? List.of() : List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
 			LocalDateTime.of(2026, 6, 17, 10, 0)
+		);
+	}
+
+	private RouteStep routeStep(EtaSource etaSource) {
+		return new RouteStep(
+			1,
+			"ride",
+			"상록수에서 사당까지 이동",
+			"수도권 4호선을 이용합니다.",
+			"line-4",
+			"수도권 4호선",
+			"station-sangnoksu",
+			"station-sadang",
+			24,
+			15000,
+			false,
+			"VERIFIED_STEP_FREE",
+			false,
+			etaSource.name(),
+			"ESTIMATED_CONSTANT",
+			"낮음"
 		);
 	}
 

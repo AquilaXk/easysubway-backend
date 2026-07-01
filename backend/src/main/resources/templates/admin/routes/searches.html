@@ -143,7 +143,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>경로 검색 분석</h1>
-			<p>경로 탐색 성공·차단률과 이동 유형·지역·차단 사유를 분석합니다.</p>
+			<p>경로 탐색 성공·차단률과 route quality 운영 신호를 분석합니다.</p>
 		</div>
 	</header>
 
@@ -164,6 +164,11 @@
 			<span>경로 차단율</span>
 			<strong th:text="${summary.blockedRateLabel}">0.0%</strong>
 			<em>전체 검색 중 차단 비율</em>
+		</div>
+		<div class="metric">
+			<span>route_not_found_rate</span>
+			<strong th:text="${summary.routeNotFoundRateLabel}">0.0%</strong>
+			<em>route graph·strict 접근성 차단 비율</em>
 		</div>
 	</div>
 
@@ -223,6 +228,86 @@
 			<tr th:each="row : ${summary.blockedReasonRows}">
 				<td th:text="${row.reason}">계단 없는 역 접근 경로를 확인할 수 없습니다.</td>
 				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>ETA source 현황</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">ETA source</th>
+				<th scope="col">설명</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.etaSourceRows}">
+				<td th:text="${row.code}">PLANNED</td>
+				<td th:text="${row.label}">시간표 기준</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>fallback 사유별 현황</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">fallback 사유</th>
+				<th scope="col">설명</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.fallbackReasonRows}">
+				<td th:text="${row.reason}">PROVIDER_OUTAGE_OR_STALE_REALTIME</td>
+				<td th:text="${row.label}">provider 장애 또는 stale realtime</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>품질 신호 구분</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">신호</th>
+				<th scope="col">구분</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.routeQualitySignalRows}">
+				<td th:text="${row.signal}">ROUTE_GRAPH_DATA_QUALITY</td>
+				<td th:text="${row.label}">route graph/data quality</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>알림 기준</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">metric</th>
+				<th scope="col">threshold</th>
+				<th scope="col">대응</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.alertThresholdRows}">
+				<td th:text="${row.metric}">route_not_found_rate</td>
+				<td th:text="${row.threshold}">&gt;= 2.0%</td>
+				<td th:text="${row.action}">route graph/strict accessibility source review</td>
 			</tr>
 			</tbody>
 		</table>

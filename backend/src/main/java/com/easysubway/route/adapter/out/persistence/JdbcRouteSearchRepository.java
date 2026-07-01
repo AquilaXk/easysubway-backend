@@ -7,6 +7,7 @@ import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
+import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchQualitySignals;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
@@ -245,6 +246,30 @@ public class JdbcRouteSearchRepository
 			(resultSet, rowNumber) -> new RouteSearchBlockedReasons(
 				readJson(resultSet.getString("blocked_reasons_json"), STRING_LIST_TYPE)
 			)
+		);
+	}
+
+	@Override
+	public List<RouteSearchQualitySignals> loadRouteSearchQualitySignalsForDashboard() {
+		return jdbcTemplate.query(
+			"""
+				SELECT status,
+					steps_json,
+					warnings_json
+				FROM route_search_results
+				ORDER BY created_at DESC, route_search_id
+				""",
+			(resultSet, rowNumber) -> {
+				List<RouteStep> steps = readJson(resultSet.getString("steps_json"), ROUTE_STEPS_TYPE);
+				List<RouteWarning> warnings = readJson(resultSet.getString("warnings_json"), ROUTE_WARNINGS_TYPE);
+				return new RouteSearchQualitySignals(
+					RouteSearchStatus.valueOf(resultSet.getString("status")),
+					etaSourceFromSteps(steps),
+					warnings.stream()
+						.map(RouteWarning::code)
+						.toList()
+				);
+			}
 		);
 	}
 
@@ -493,6 +518,24 @@ public class JdbcRouteSearchRepository
 			.filter(row -> row.mobilityType() == mobilityType)
 			.mapToLong(RouteSearchDashboardCountRow::count)
 			.sum();
+	}
+
+	private EtaSource etaSourceFromSteps(List<RouteStep> steps) {
+		if (steps.isEmpty()) {
+			return EtaSource.PLANNED;
+		}
+		boolean fallback = steps.stream()
+			.anyMatch(step -> EtaSource.FALLBACK.name().equals(step.timeSource()));
+		if (fallback) {
+			return EtaSource.FALLBACK;
+		}
+		long realtimeSteps = steps.stream()
+			.filter(step -> EtaSource.REALTIME.name().equals(step.timeSource()))
+			.count();
+		if (realtimeSteps == 0) {
+			return EtaSource.PLANNED;
+		}
+		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
 	}
 
 	private String writeJson(Object value) {
