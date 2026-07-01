@@ -25,20 +25,20 @@
 		<form method="post" th:action="@{/admin/datapack/manual-overrides}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-			<input type="hidden" name="idempotencyKey" value="manual-override-request">
-			<label>id <input name="id" required></label>
-			<label>entityType <input name="entityType" value="FACILITY" required></label>
-			<label>entityId <input name="entityId" required></label>
-			<label>fieldName <input name="fieldName" required></label>
-			<label>beforeValue <input name="beforeValue"></label>
-			<label>afterValue <input name="afterValue" required></label>
-			<label>reasonCode <input name="reasonCode" value="FIELD_CHECK" required></label>
-			<label>reason <input name="reason" required></label>
-			<label>evidenceUri <input name="evidenceUri" required></label>
-			<label>evidenceHash <input name="evidenceHash" required></label>
-			<label>strictRouteEligible <input type="checkbox" name="strictRouteEligible" value="true"></label>
-			<label>effectiveFrom <input type="datetime-local" name="effectiveFrom" required></label>
-			<label>expiresAt <input type="datetime-local" name="expiresAt" required></label>
+			<input type="hidden" name="idempotencyKey" th:value="${overrideForm.idempotencyKey != null ? overrideForm.idempotencyKey : 'manual-override-request'}">
+			<label>id <input name="id" th:value="${overrideForm.id}" required></label>
+			<label>entityType <input name="entityType" th:value="${overrideForm.entityType != null ? overrideForm.entityType : 'FACILITY'}" required></label>
+			<label>entityId <input name="entityId" th:value="${overrideForm.entityId}" required></label>
+			<label>fieldName <input name="fieldName" th:value="${overrideForm.fieldName}" required></label>
+			<label>beforeValue <input name="beforeValue" th:value="${overrideForm.beforeValue}"></label>
+			<label>afterValue <input name="afterValue" th:value="${overrideForm.afterValue}" required></label>
+			<label>reasonCode <input name="reasonCode" th:value="${overrideForm.reasonCode != null ? overrideForm.reasonCode : 'FIELD_CHECK'}" required></label>
+			<label>reason <input name="reason" th:value="${overrideForm.reason}" required></label>
+			<label>evidenceUri <input name="evidenceUri" th:value="${overrideForm.evidenceUri}" required></label>
+			<label>evidenceHash <input name="evidenceHash" th:value="${overrideForm.evidenceHash}" required></label>
+			<label>strictRouteEligible <input type="checkbox" name="strictRouteEligible" value="true" th:checked="${overrideForm.strictRouteEligible}"></label>
+			<label>effectiveFrom <input type="datetime-local" name="effectiveFrom" th:value="${overrideForm.effectiveFrom}" required></label>
+			<label>expiresAt <input type="datetime-local" name="expiresAt" th:value="${overrideForm.expiresAt}" required></label>
 			<button type="submit">요청 저장</button>
 		</form>
 	</section>

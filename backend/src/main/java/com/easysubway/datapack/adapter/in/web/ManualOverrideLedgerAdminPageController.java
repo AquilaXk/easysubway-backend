@@ -39,10 +39,11 @@ class ManualOverrideLedgerAdminPageController {
 
 	@GetMapping("/admin/datapack/manual-overrides/page")
 	@PreAuthorize("hasAuthority('admin.datapack.read')")
-	String manualOverrides(Model model) {
+	String manualOverrides(@ModelAttribute("overrideForm") ManualOverrideRequestForm form, Model model) {
 		model.addAttribute("overrideRows", ledgerRepository.listRecentOverrides(LEDGER_LIMIT).stream()
 			.map(ManualOverrideView::from)
 			.toList());
+		model.addAttribute("overrideForm", form);
 		return "admin/datapack/manual-overrides/list";
 	}
 
@@ -206,7 +207,7 @@ class ManualOverrideLedgerAdminPageController {
 		String reason,
 		String evidenceUri,
 		String evidenceHash,
-		boolean strictRouteEligible,
+		Boolean strictRouteEligible,
 		LocalDateTime effectiveFrom,
 		LocalDateTime expiresAt,
 		String idempotencyKey
@@ -225,7 +226,7 @@ class ManualOverrideLedgerAdminPageController {
 				evidenceUri,
 				evidenceHash,
 				requestedBy,
-				strictRouteEligible,
+				Boolean.TRUE.equals(strictRouteEligible),
 				effectiveFrom,
 				expiresAt,
 				idempotencyKey

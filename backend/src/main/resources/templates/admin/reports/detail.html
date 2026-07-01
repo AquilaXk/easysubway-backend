@@ -143,6 +143,8 @@
 			<dd th:text="${report.stationId}">station-id</dd>
 			<dt>시설 ID</dt>
 			<dd th:text="${report.facilityId}">facility-id</dd>
+			<dt th:if="${report.correctionOverrideHref != null}">임시 override</dt>
+			<dd th:if="${report.correctionOverrideHref != null}"><a class="admin-btn" th:href="@{__${report.correctionOverrideHref}__}">manual override 요청</a></dd>
 			<dt>신고자</dt>
 			<dd th:text="${report.userId}">user-id</dd>
 			<dt>좌표</dt>

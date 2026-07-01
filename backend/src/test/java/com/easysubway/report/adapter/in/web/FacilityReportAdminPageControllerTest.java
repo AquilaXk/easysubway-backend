@@ -181,6 +181,10 @@ class FacilityReportAdminPageControllerTest {
 			.contains("상세에서 확인할 신고")
 			.contains("elevator-notice.png")
 			.contains("/admin/reports/%s/photo/thumbnail".formatted(reportId))
+			.contains("/admin/datapack/manual-overrides/page")
+			.contains("entityId=facility-sangnoksu-elevator-1")
+			.contains("reason=%EC%8B%A0%EA%B3%A0%20%EA%B2%80%EC%88%98%20%ED%9B%84%20%EC%9E%84%EC%8B%9C%20override")
+			.contains("evidenceUri=/admin/reports/%s/page".formatted(reportId))
 			.doesNotContain("객체 키")
 			.doesNotContain("facility-reports/")
 			.contains("37.302421")
@@ -190,13 +194,32 @@ class FacilityReportAdminPageControllerTest {
 			.contains("name=\"decision\" value=\"MARK_DUPLICATE\"");
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
 			.singleElement()
-			.satisfies(event -> {
-				assertThat(event.actor()).isEqualTo("admin-test");
-				assertThat(event.targetType()).isEqualTo("FACILITY_REPORT");
-				assertThat(event.targetId()).isEqualTo(reportId);
-				assertThat(event.action()).isEqualTo("VIEW_REPORT_DETAIL");
-				assertThat(event.reason()).contains("신고 상세 조회");
-			});
+				.satisfies(event -> {
+					assertThat(event.actor()).isEqualTo("admin-test");
+					assertThat(event.targetType()).isEqualTo("FACILITY_REPORT");
+					assertThat(event.targetId()).isEqualTo(reportId);
+					assertThat(event.action()).isEqualTo("VIEW_REPORT_DETAIL");
+					assertThat(event.reason()).contains("신고 상세 조회");
+				});
+	}
+
+	@Test
+	@DisplayName("관리자는 시설 상태 증거가 아닌 신고에서 override 링크를 보지 않는다")
+	void adminReportDetailPageHidesOverrideLinkForNonFacilityStatusEvidence() throws Exception {
+		String reportId = createReport("경로가 막힌 신고", "ROUTE_BLOCKED", "");
+
+		String html = mockMvc.perform(get("/admin/reports/{reportId}/page", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("경로가 막힌 신고")
+			.contains("경로가 막혔어요")
+			.doesNotContain("manual override 요청")
+			.doesNotContain("id=override-" + reportId);
 	}
 
 	@Test
@@ -449,7 +472,7 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	private String createReport(String description) throws Exception {
-		return createReport(description, "");
+		return createReport(description, "BROKEN", "");
 	}
 
 	private String getAdminHtml(String path, MockHttpSession session) throws Exception {
@@ -492,6 +515,7 @@ class FacilityReportAdminPageControllerTest {
 	private String createReportWithPhotoAndLocation(String description) throws Exception {
 		return createReport(
 			description,
+			"BROKEN",
 			"""
 				,
 						  "photoFileName": "elevator-notice.png",
@@ -505,17 +529,21 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	private String createReport(String description, String optionalJson) throws Exception {
+		return createReport(description, "BROKEN", optionalJson);
+	}
+
+	private String createReport(String description, String reportType, String optionalJson) throws Exception {
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
-					{
-					  "stationId": "station-sangnoksu",
-					  "facilityId": "facility-sangnoksu-elevator-1",
-					  "reportType": "BROKEN",
-					  "description": "%s"%s
-					}
-					""".formatted(description, optionalJson)))
+					  {
+					    "stationId": "station-sangnoksu",
+					    "facilityId": "facility-sangnoksu-elevator-1",
+					    "reportType": "%s",
+					    "description": "%s"%s
+					  }
+					""".formatted(reportType, description, optionalJson)))
 			.andExpect(status().isCreated())
 			.andReturn()
 			.getResponse()

@@ -945,10 +945,11 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private Optional<AccessibilityFacilityStatus> toFacilityStatus(FacilityReportType reportType) {
 		return switch (reportType) {
 			case BROKEN -> Optional.of(AccessibilityFacilityStatus.BROKEN);
+			case ELEVATOR_UNAVAILABLE -> Optional.of(AccessibilityFacilityStatus.BROKEN);
 			case UNDER_CONSTRUCTION -> Optional.of(AccessibilityFacilityStatus.UNDER_CONSTRUCTION);
 			case CLOSED -> Optional.of(AccessibilityFacilityStatus.CLOSED);
 			case RECOVERED -> Optional.of(AccessibilityFacilityStatus.NORMAL);
-			case LOCATION_WRONG, INFORMATION_WRONG -> Optional.empty();
+			case ROUTE_BLOCKED, STAIRS_PRESENT, ETA_INACCURATE, TRANSFER_IMPOSSIBLE, LOCATION_WRONG, INFORMATION_WRONG -> Optional.empty();
 		};
 	}
 
