@@ -486,8 +486,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private boolean isInternalMovementEdge(RouteEdge edge) {
 		return switch (edge.type()) {
-			case WALK, STAIR, ELEVATOR, ESCALATOR, RAMP -> true;
-			case TRAIN, TRANSFER -> false;
+			case WALK, WALKWAY, STAIR, ELEVATOR, ESCALATOR, RAMP, FACILITY_CONNECTOR -> true;
+			case TRAIN, RIDE, TRANSFER, IN_STATION_TRANSFER, OUT_OF_STATION_TRANSFER, ENTRY, EXIT, LEGACY_TRANSFER -> false;
 		};
 	}
 

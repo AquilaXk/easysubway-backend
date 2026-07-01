@@ -3,11 +3,33 @@ package com.easysubway.transit.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.util.Arrays;
+
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 @DisplayName("내부 이동 간선")
 class RouteEdgeTest {
+
+	@Test
+	@DisplayName("상용 network edge type 계약값을 모두 표현한다")
+	void includesCommercialNetworkEdgeTypes() {
+		assertThat(Arrays.stream(RouteEdgeType.values()).map(Enum::name))
+			.contains(
+				"RIDE",
+				"IN_STATION_TRANSFER",
+				"OUT_OF_STATION_TRANSFER",
+				"ENTRY",
+				"EXIT",
+				"WALKWAY",
+				"ELEVATOR",
+				"RAMP",
+				"STAIR",
+				"ESCALATOR",
+				"FACILITY_CONNECTOR",
+				"LEGACY_TRANSFER"
+			);
+	}
 
 	@Test
 	@DisplayName("필수 문자열은 공백을 정리해 저장한다")

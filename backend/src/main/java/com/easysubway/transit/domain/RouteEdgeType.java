@@ -2,10 +2,18 @@ package com.easysubway.transit.domain;
 
 public enum RouteEdgeType {
 	WALK,
+	WALKWAY,
 	STAIR,
 	ELEVATOR,
 	ESCALATOR,
 	RAMP,
 	TRAIN,
-	TRANSFER
+	RIDE,
+	TRANSFER,
+	IN_STATION_TRANSFER,
+	OUT_OF_STATION_TRANSFER,
+	ENTRY,
+	EXIT,
+	FACILITY_CONNECTOR,
+	LEGACY_TRANSFER
 }
