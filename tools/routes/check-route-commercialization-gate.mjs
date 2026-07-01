@@ -48,7 +48,7 @@ async function main(argv) {
     schemaVersion: 1,
     gate: "route-commercialization",
     status: failures.length > 0 ? "FAIL" : "PASS",
-    checkedReports: Object.keys(reports).sort(),
+    checkedReports: Object.keys(reports).sort((left, right) => left.localeCompare(right)),
     failures,
   };
 }

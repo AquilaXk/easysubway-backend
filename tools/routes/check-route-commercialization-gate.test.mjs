@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { execFile } from "node:child_process";
-import { mkdtemp, writeFile } from "node:fs/promises";
+import { mkdtemp, readFile, writeFile } from "node:fs/promises";
 import { tmpdir } from "node:os";
 import path from "node:path";
 import test from "node:test";
@@ -169,6 +169,12 @@ test("route commercialization gate keeps legacy production sample fallback", asy
       return true;
     },
   );
+});
+
+test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
+  const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
+
+  assert.match(source, /Object\.keys\(reports\)\.sort\(\([^)]*\) => [^)]*localeCompare/);
 });
 
 async function writeFixtureSet(reports) {
