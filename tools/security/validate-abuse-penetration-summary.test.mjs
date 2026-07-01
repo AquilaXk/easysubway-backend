@@ -51,6 +51,11 @@ function validSummary() {
     issue: gate.issue,
     status: "PASS",
     artifactIdentity: { ...artifactIdentity },
+    productionLikeEvidence: gate.productionLikeEvidencePolicy.requiredForClosing.map((evidenceId) => ({
+      evidenceId,
+      result: "PASS",
+      localEvidencePath: ".codex/evidence/security/abuse-penetration-rehearsal/rc/redacted-summary.json",
+    })),
     matrices: Object.entries(gate.rehearsalMatrices).map(([matrixId, matrix]) => ({
       matrixId,
       scenarioId: matrix.scenarioId,
@@ -87,6 +92,38 @@ test("abuse penetration summary validator accepts a complete redacted matrix sum
       summaryPath,
       "--require-pass",
     ], { cwd: root }),
+  );
+});
+
+test("abuse penetration summary validator rejects pass without production-like closure evidence", async () => {
+  const missingProductionEvidence = validSummary();
+  missingProductionEvidence.productionLikeEvidence.pop();
+  await assert.rejects(
+    withSummary(missingProductionEvidence, (summaryPath) =>
+      execFileAsync(process.execPath, [
+        "tools/security/validate-abuse-penetration-summary.mjs",
+        "--summary",
+        summaryPath,
+        "--require-pass",
+      ], { cwd: root }),
+    ),
+    /productionLikeEvidence missing/,
+  );
+});
+
+test("abuse penetration summary validator rejects forbidden closure evidence markers", async () => {
+  const forbiddenClosureEvidence = validSummary();
+  forbiddenClosureEvidence.productionLikeEvidence[0].source = "preflight env check only";
+  await assert.rejects(
+    withSummary(forbiddenClosureEvidence, (summaryPath) =>
+      execFileAsync(process.execPath, [
+        "tools/security/validate-abuse-penetration-summary.mjs",
+        "--summary",
+        summaryPath,
+        "--require-pass",
+      ], { cwd: root }),
+    ),
+    /forbidden sensitive evidence marker/,
   );
 });
 
