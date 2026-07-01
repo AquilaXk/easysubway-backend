@@ -115,14 +115,23 @@ export function splitCsvLine(line) {
 function buildReport(rows) {
   const failures = [];
   const errors = [];
+  const singleRideErrors = [];
+  const transferErrors = [];
   for (const row of rows) {
     const observed = requiredNumber(row.observed_eta_error_seconds, row, "observed_eta_error_seconds", failures);
     const max = requiredNumber(row.max_eta_error_seconds, row, "max_eta_error_seconds", failures);
     if (observed === null || max === null) continue;
     if (observed > max) failures.push(`${row.sourceFile}:${row.lineNumber} observed ETA error exceeds max`);
     errors.push(observed);
+    if (Number(row.expected_transfer_count) === 0) {
+      singleRideErrors.push(observed);
+    } else {
+      transferErrors.push(observed);
+    }
   }
   errors.sort((left, right) => left - right);
+  singleRideErrors.sort((left, right) => left - right);
+  transferErrors.sort((left, right) => left - right);
   const coverage = {
     singleRide: rows.some((row) => row.category === "singleRide"),
     oneTransfer: rows.some((row) => row.category === "oneTransfer"),
@@ -142,14 +151,51 @@ function buildReport(rows) {
     schemaVersion: 1,
     generatedAt: new Date().toISOString(),
     sampleSize: rows.length,
+    sampleSourceCounts: countSampleSources(rows),
     coverage,
     metrics: {
       sampleSize: errors.length,
       p50ErrorSeconds: percentile(errors, 0.5),
       p90ErrorSeconds: percentile(errors, 0.9),
       maxErrorSeconds: errors.at(-1) ?? 0,
+      singleRide: metricBlock(singleRideErrors),
+      transfer: metricBlock(transferErrors),
     },
     failures,
+  };
+}
+
+function countSampleSources(rows) {
+  const counts = {
+    fixture: 0,
+    staticTimetable: 0,
+    realtimeProvider: 0,
+    manualObservation: 0,
+    staleRealtime: 0,
+  };
+  for (const row of rows) {
+    const note = row.notes.toLowerCase();
+    if (note.includes("fixture")) {
+      counts.fixture += 1;
+      continue;
+    }
+    if (note.includes("manual")) counts.manualObservation += 1;
+    if (note.includes("stale")) counts.staleRealtime += 1;
+    if (row.use_realtime === "true") {
+      counts.realtimeProvider += 1;
+    } else {
+      counts.staticTimetable += 1;
+    }
+  }
+  return counts;
+}
+
+function metricBlock(sortedErrors) {
+  return {
+    sampleSize: sortedErrors.length,
+    p50ErrorSeconds: percentile(sortedErrors, 0.5),
+    p90ErrorSeconds: percentile(sortedErrors, 0.9),
+    maxErrorSeconds: sortedErrors.at(-1) ?? 0,
   };
 }
 
