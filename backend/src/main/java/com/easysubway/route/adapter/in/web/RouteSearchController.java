@@ -457,17 +457,33 @@ class RouteSearchController {
 				durationSeconds,
 				Math.max(0, step.distanceMeters()),
 				etaSourceOf(step).name(),
-				"LOW",
+				etaConfidenceOf(step),
 				AccessibilityRiskDto.from(step)
 			);
 		}
 
 		private static EtaSource etaSourceOf(RouteStep step) {
+			if (step.timeSource() == null || step.timeSource().isBlank()) {
+				return EtaSource.PLANNED;
+			}
 			try {
 				return EtaSource.valueOf(step.timeSource());
 			} catch (IllegalArgumentException exception) {
 				return EtaSource.PLANNED;
 			}
+		}
+
+		private static String etaConfidenceOf(RouteStep step) {
+			if ("HIGH".equals(step.confidenceLabel())
+				|| "MEDIUM".equals(step.confidenceLabel())
+				|| "LOW".equals(step.confidenceLabel())) {
+				return step.confidenceLabel();
+			}
+			return switch (etaSourceOf(step)) {
+				case REALTIME -> "HIGH";
+				case MIXED -> "MEDIUM";
+				case PLANNED, FALLBACK -> "LOW";
+			};
 		}
 
 		private static String legTypeOf(RouteStep step) {

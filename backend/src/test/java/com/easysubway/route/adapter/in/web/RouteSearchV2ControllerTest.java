@@ -152,6 +152,33 @@ class RouteSearchV2ControllerTest {
 	}
 
 	@Test
+	@DisplayName("V2 leg ETA source와 confidence는 step data에서 파생한다")
+	void routeSearchV2MapsLegEtaSourceAndConfidence() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command != null && "station-realtime-origin".equals(command.originStationId())
+		))).thenReturn(realtimeRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-realtime-origin",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "ALLOW_WITH_WARNINGS",
+					  "useRealtime": true,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("REALTIME"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("REALTIME"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].confidence").value("HIGH"));
+	}
+
+	@Test
 	@DisplayName("모바일 V2 계약의 blocked reasonCodes는 사용자 문장 대신 안정적인 코드만 반환한다")
 	void routeSearchV2BlockedRiskReasonCodesAreStableCodes() throws Exception {
 		when(routeSearchUseCase.searchRoute(argThat(command ->
@@ -416,6 +443,42 @@ class RouteSearchV2ControllerTest {
 				new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE),
 				new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
 			),
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult realtimeRouteSearch() {
+		return new RouteSearchResult(
+			"route-search-realtime",
+			"station-realtime-origin",
+			"실시간 출발역",
+			"station-sadang",
+			"사당",
+			MobilityType.STROLLER,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			18,
+			List.of(new RouteStep(
+				1,
+				"ride",
+				"실시간 열차",
+				"실시간 도착 후보를 반영합니다.",
+				"line-4",
+				"수도권 4호선",
+				"station-realtime-origin",
+				"station-sadang",
+				3,
+				1800,
+				false,
+				"VERIFIED",
+				false,
+				"REALTIME",
+				"ESTIMATED_CONSTANT",
+				"HIGH"
+			)),
+			List.of(),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
 		);

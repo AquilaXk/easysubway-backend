@@ -93,7 +93,7 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 		if (result.status() == RealtimeStatus.UNSUPPORTED) {
 			return ArrivalFreshness.UNSUPPORTED;
 		}
-		if ("EMPTY_PROVIDER_RESULT".equals(result.fallbackCode())) {
+		if (ArrivalFreshness.EMPTY_PROVIDER_RESULT.name().equals(result.fallbackCode())) {
 			return ArrivalFreshness.EMPTY_PROVIDER_RESULT;
 		}
 		return ArrivalFreshness.UNAVAILABLE;

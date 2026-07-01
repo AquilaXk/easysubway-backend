@@ -16,6 +16,20 @@ public final class RealtimeEtaOverlay {
 		String fallbackCode,
 		List<ArrivalCandidate> candidates
 	) {
+		return overlay(readyAt, plannedWaitSeconds, direction, providerStatus, fallbackCode, null, null, 0, candidates);
+	}
+
+	public Result overlay(
+		Instant readyAt,
+		int plannedWaitSeconds,
+		String direction,
+		ArrivalFreshness providerStatus,
+		String fallbackCode,
+		String providerSnapshotId,
+		Instant providerReceivedAt,
+		int providerHealthCount,
+		List<ArrivalCandidate> candidates
+	) {
 		if (readyAt == null) {
 			throw new IllegalArgumentException("readyAt is required.");
 		}
@@ -25,12 +39,23 @@ public final class RealtimeEtaOverlay {
 		ArrivalFreshness status = providerStatus == null ? ArrivalFreshness.UNAVAILABLE : providerStatus;
 		List<ArrivalCandidate> safeCandidates = candidates == null ? List.of() : candidates;
 		return switch (status) {
-			case FRESH_REALTIME -> freshOverlay(readyAt, plannedWaitSeconds, direction, safeCandidates);
+			case FRESH_REALTIME -> freshOverlay(
+				readyAt,
+				plannedWaitSeconds,
+				direction,
+				providerSnapshotId,
+				providerReceivedAt,
+				providerHealthCount,
+				safeCandidates
+			);
 			case STALE_REALTIME -> planned(
 				readyAt,
 				plannedWaitSeconds,
 				EtaSource.PLANNED,
 				EtaConfidence.MEDIUM,
+				providerSnapshotId,
+				providerReceivedAt,
+				providerHealthCount,
 				List.of("STALE_REALTIME")
 			);
 			case UNSUPPORTED -> planned(
@@ -38,6 +63,9 @@ public final class RealtimeEtaOverlay {
 				plannedWaitSeconds,
 				EtaSource.PLANNED,
 				EtaConfidence.MEDIUM,
+				providerSnapshotId,
+				providerReceivedAt,
+				providerHealthCount,
 				List.of("UNSUPPORTED_REALTIME")
 			);
 			case UNAVAILABLE -> planned(
@@ -45,6 +73,9 @@ public final class RealtimeEtaOverlay {
 				plannedWaitSeconds,
 				EtaSource.FALLBACK,
 				EtaConfidence.LOW,
+				providerSnapshotId,
+				providerReceivedAt,
+				providerHealthCount,
 				warnings("REALTIME_UNAVAILABLE_PLANNED_USED", fallbackCode)
 			);
 			case EMPTY_PROVIDER_RESULT -> planned(
@@ -52,7 +83,10 @@ public final class RealtimeEtaOverlay {
 				plannedWaitSeconds,
 				EtaSource.FALLBACK,
 				EtaConfidence.LOW,
-				warnings("EMPTY_PROVIDER_RESULT", fallbackCode)
+				providerSnapshotId,
+				providerReceivedAt,
+				providerHealthCount,
+				warnings(ArrivalFreshness.EMPTY_PROVIDER_RESULT.name(), fallbackCode)
 			);
 		};
 	}
@@ -61,6 +95,9 @@ public final class RealtimeEtaOverlay {
 		Instant readyAt,
 		int plannedWaitSeconds,
 		String direction,
+		String providerSnapshotId,
+		Instant providerReceivedAt,
+		int providerHealthCount,
 		List<ArrivalCandidate> candidates
 	) {
 		return candidates.stream()
@@ -68,21 +105,32 @@ public final class RealtimeEtaOverlay {
 			.filter(candidate -> !candidate.expectedArrivalAt().isBefore(readyAt))
 			.filter(candidate -> matchesDirection(direction, candidate.direction()))
 			.min(Comparator.comparing(ArrivalCandidate::expectedArrivalAt))
-			.map(candidate -> realtime(readyAt, plannedWaitSeconds, candidate))
+			.map(candidate -> realtime(readyAt, plannedWaitSeconds, providerSnapshotId, providerReceivedAt, providerHealthCount, candidate))
 			.orElseGet(() -> planned(
 				readyAt,
 				plannedWaitSeconds,
 				EtaSource.FALLBACK,
 				EtaConfidence.LOW,
+				providerSnapshotId,
+				providerReceivedAt,
+				providerHealthCount,
 				List.of("NO_USABLE_REALTIME_CANDIDATE")
 			));
 	}
 
-	private Result realtime(Instant readyAt, int plannedWaitSeconds, ArrivalCandidate candidate) {
+	private Result realtime(
+		Instant readyAt,
+		int plannedWaitSeconds,
+		String providerSnapshotId,
+		Instant providerReceivedAt,
+		int providerHealthCount,
+		ArrivalCandidate candidate
+	) {
 		int waitSeconds = Math.toIntExact(Duration.between(readyAt, candidate.expectedArrivalAt()).toSeconds());
-		String evidence = candidate.providerReceivedAt() == null
+		Instant evidenceReceivedAt = providerReceivedAt == null ? candidate.providerReceivedAt() : providerReceivedAt;
+		String evidence = evidenceReceivedAt == null
 			? null
-			: "providerReceivedAt=" + candidate.providerReceivedAt();
+			: "providerReceivedAt=" + evidenceReceivedAt;
 		return new Result(
 			EtaSource.REALTIME,
 			candidate.confidence(),
@@ -91,6 +139,9 @@ public final class RealtimeEtaOverlay {
 			candidate.expectedArrivalAt(),
 			candidate.trainNo(),
 			evidence,
+			providerSnapshotId,
+			evidenceReceivedAt,
+			providerHealthCount,
 			List.of()
 		);
 	}
@@ -100,6 +151,9 @@ public final class RealtimeEtaOverlay {
 		int plannedWaitSeconds,
 		EtaSource etaSource,
 		EtaConfidence confidence,
+		String providerSnapshotId,
+		Instant providerReceivedAt,
+		int providerHealthCount,
 		List<String> warningCodes
 	) {
 		return new Result(
@@ -110,6 +164,9 @@ public final class RealtimeEtaOverlay {
 			readyAt.plusSeconds(plannedWaitSeconds),
 			null,
 			null,
+			providerSnapshotId,
+			providerReceivedAt,
+			providerHealthCount,
 			warningCodes
 		);
 	}
@@ -135,6 +192,9 @@ public final class RealtimeEtaOverlay {
 		Instant expectedDepartureAt,
 		String trainNo,
 		String providerEvidence,
+		String providerSnapshotId,
+		Instant providerReceivedAt,
+		int providerHealthCount,
 		List<String> warningCodes
 	) {
 		public Result {

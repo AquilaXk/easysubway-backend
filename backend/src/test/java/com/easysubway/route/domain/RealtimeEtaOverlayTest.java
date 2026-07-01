@@ -36,6 +36,9 @@ class RealtimeEtaOverlayTest {
 			"당고개 방면",
 			ArrivalFreshness.FRESH_REALTIME,
 			null,
+			"seoul-topis:2026-07-01T00:00:00Z",
+			READY_AT,
+			1,
 			List.of(candidate)
 		);
 
@@ -44,7 +47,10 @@ class RealtimeEtaOverlayTest {
 		assertThat(result.plannedWaitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
 		assertThat(result.waitSeconds()).isEqualTo(120);
 		assertThat(result.trainNo()).isEqualTo("train-401");
-		assertThat(result.providerEvidence()).isEqualTo("providerReceivedAt=2026-06-30T23:59:30Z");
+		assertThat(result.providerEvidence()).isEqualTo("providerReceivedAt=2026-07-01T00:00:00Z");
+		assertThat(result.providerSnapshotId()).isEqualTo("seoul-topis:2026-07-01T00:00:00Z");
+		assertThat(result.providerReceivedAt()).isEqualTo(READY_AT);
+		assertThat(result.providerHealthCount()).isEqualTo(1);
 		assertThat(result.warningCodes()).isEmpty();
 	}
 
