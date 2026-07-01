@@ -86,7 +86,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].status").value("FOUND"))
 			.andExpect(jsonPath("$.data.itineraries[0].plannedArrivalTime").value("2026-06-30T09:22:00+09:00"))
 			.andExpect(jsonPath("$.data.itineraries[0].realtimeArrivalTime").doesNotExist())
-			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.itineraries[0].etaConfidence").value("LOW"))
 			.andExpect(jsonPath("$.data.itineraries[0].durationSeconds").value(420))
 			.andExpect(jsonPath("$.data.itineraries[0].transferCount").value(0))
@@ -106,7 +106,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].plannedArrivalTime").value("2026-06-30T09:22:00+09:00"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].waitTimeSeconds").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].slackSeconds").value(0))
-			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.itineraries[0].commercialEtaEligible").value(false));
 	}
 
@@ -149,6 +149,34 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.riskLevel").value("MEDIUM"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.stairCount").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.unknownAccessibilityCount").value(1));
+	}
+
+	@Test
+	@DisplayName("V2 leg ETA source와 confidence는 step data에서 파생한다")
+	void routeSearchV2MapsLegEtaSourceAndConfidence() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command != null && "station-realtime-origin".equals(command.originStationId())
+		))).thenReturn(realtimeRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-realtime-origin",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "ALLOW_WITH_WARNINGS",
+					  "useRealtime": true,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("REALTIME"))
+			.andExpect(jsonPath("$.data.itineraries[0].etaConfidence").value("HIGH"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("REALTIME"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].confidence").value("HIGH"));
 	}
 
 	@Test
@@ -416,6 +444,42 @@ class RouteSearchV2ControllerTest {
 				new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE),
 				new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
 			),
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult realtimeRouteSearch() {
+		return new RouteSearchResult(
+			"route-search-realtime",
+			"station-realtime-origin",
+			"실시간 출발역",
+			"station-sadang",
+			"사당",
+			MobilityType.STROLLER,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			18,
+			List.of(new RouteStep(
+				1,
+				"ride",
+				"실시간 열차",
+				"실시간 도착 후보를 반영합니다.",
+				"line-4",
+				"수도권 4호선",
+				"station-realtime-origin",
+				"station-sadang",
+				3,
+				1800,
+				false,
+				"VERIFIED",
+				false,
+				"REALTIME",
+				"ESTIMATED_CONSTANT",
+				"HIGH"
+			)),
+			List.of(),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
 		);

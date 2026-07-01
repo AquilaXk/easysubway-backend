@@ -6,6 +6,7 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -113,7 +114,7 @@ class RouteSearchController {
 				result.recommendationReasons(),
 				result.evidenceSummary(),
 				result.createdAt(),
-				"STATIC_BACKEND_V1",
+				result.etaSource().name(),
 				"LEGACY_STATIC",
 				false
 			);
@@ -227,8 +228,8 @@ class RouteSearchController {
 				statusOf(result),
 				formatOffset(plannedArrivalTime),
 				null,
-				"STATIC_BACKEND_V1",
-				confidenceOf(result),
+				result.etaSource().name(),
+				etaConfidenceOf(result),
 				result.estimatedDurationSeconds(),
 				result.transferCount(),
 				result.walkingDistanceMeters(),
@@ -242,8 +243,15 @@ class RouteSearchController {
 			return result.status() == RouteSearchStatus.BLOCKED ? "BLOCKED_ACCESSIBILITY" : result.status().name();
 		}
 
-		private static String confidenceOf(RouteSearchResult result) {
-			return result.status() == RouteSearchStatus.FOUND ? "LOW" : "UNKNOWN";
+		private static String etaConfidenceOf(RouteSearchResult result) {
+			if (result.status() != RouteSearchStatus.FOUND) {
+				return "UNKNOWN";
+			}
+			return switch (result.etaSource()) {
+				case REALTIME -> "HIGH";
+				case MIXED -> "MEDIUM";
+				case PLANNED, FALLBACK -> "LOW";
+			};
 		}
 	}
 
@@ -455,10 +463,34 @@ class RouteSearchController {
 				0,
 				durationSeconds,
 				Math.max(0, step.distanceMeters()),
-				"STATIC_BACKEND_V1",
-				"LOW",
+				etaSourceOf(step).name(),
+				etaConfidenceOf(step),
 				AccessibilityRiskDto.from(step)
 			);
+		}
+
+		private static EtaSource etaSourceOf(RouteStep step) {
+			if (step.timeSource() == null || step.timeSource().isBlank()) {
+				return EtaSource.PLANNED;
+			}
+			try {
+				return EtaSource.valueOf(step.timeSource());
+			} catch (IllegalArgumentException exception) {
+				return EtaSource.PLANNED;
+			}
+		}
+
+		private static String etaConfidenceOf(RouteStep step) {
+			if ("HIGH".equals(step.confidenceLabel())
+				|| "MEDIUM".equals(step.confidenceLabel())
+				|| "LOW".equals(step.confidenceLabel())) {
+				return step.confidenceLabel();
+			}
+			return switch (etaSourceOf(step)) {
+				case REALTIME -> "HIGH";
+				case MIXED -> "MEDIUM";
+				case PLANNED, FALLBACK -> "LOW";
+			};
 		}
 
 		private static String legTypeOf(RouteStep step) {

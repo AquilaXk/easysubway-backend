@@ -74,7 +74,7 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.data.warnings").isArray())
 			.andExpect(jsonPath("$.data.blockedReasons").isArray())
 			.andExpect(jsonPath("$.data.createdAt").value("2026-06-30T09:00:00"))
-			.andExpect(jsonPath("$.data.etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.routeQuality").value("LEGACY_STATIC"))
 			.andExpect(jsonPath("$.data.commercialEtaEligible").value(false));
 	}
@@ -138,9 +138,44 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.status").value("BLOCKED"))
 			.andExpect(jsonPath("$.data.blockedReasons[0]").value("계단 없는 역 접근 경로를 확인할 수 없습니다."))
-			.andExpect(jsonPath("$.data.etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.routeQuality").value("LEGACY_STATIC"))
 			.andExpect(jsonPath("$.data.commercialEtaEligible").value(false));
+	}
+
+	@Test
+	@DisplayName("V1 ETA source는 step timeSource의 REALTIME, MIXED, FALLBACK을 노출한다")
+	void searchRouteMapsCommercialEtaSources() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command -> command != null
+			&& "station-realtime".equals(command.originStationId()))))
+			.thenReturn(routeSearchWithSteps(List.of(routeStep("REALTIME", "HIGH"))));
+		when(routeSearchUseCase.searchRoute(argThat(command -> command != null
+			&& "station-mixed".equals(command.originStationId()))))
+			.thenReturn(routeSearchWithSteps(List.of(
+				routeStep("REALTIME", "HIGH"),
+				routeStep("ESTIMATED_CONSTANT", "LOW")
+			)));
+		when(routeSearchUseCase.searchRoute(argThat(command -> command != null
+			&& "station-fallback".equals(command.originStationId()))))
+			.thenReturn(routeSearchWithSteps(List.of(routeStep("FALLBACK", "LOW"))));
+
+		assertEtaSource("station-realtime", "REALTIME");
+		assertEtaSource("station-mixed", "MIXED");
+		assertEtaSource("station-fallback", "FALLBACK");
+	}
+
+	private void assertEtaSource(String originStationId, String etaSource) throws Exception {
+		mockMvc.perform(post("/api/v1/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "%s",
+					  "destinationStationId": "station-sadang",
+					  "mobilityType": "WHEELCHAIR"
+					}
+					""".formatted(originStationId)))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.etaSource").value(etaSource));
 	}
 
 	private RouteSearchResult foundRouteSearch() {
@@ -176,6 +211,46 @@ class RouteSearchControllerTest {
 			List.of(),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult routeSearchWithSteps(List<RouteStep> steps) {
+		return new RouteSearchResult(
+			"route-search-eta",
+			"station-origin",
+			"출발역",
+			"station-sadang",
+			"사당",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			18,
+			steps,
+			List.of(),
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteStep routeStep(String timeSource, String confidenceLabel) {
+		return new RouteStep(
+			1,
+			"ride",
+			"4호선 이동",
+			"열차로 이동합니다.",
+			"line-4",
+			"수도권 4호선",
+			"station-origin",
+			"station-sadang",
+			7,
+			1800,
+			false,
+			"VERIFIED",
+			false,
+			timeSource,
+			"ESTIMATED_CONSTANT",
+			confidenceLabel
 		);
 	}
 
