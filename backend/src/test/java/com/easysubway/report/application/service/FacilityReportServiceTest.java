@@ -925,6 +925,61 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
+	@DisplayName("신고 보정 루프는 현장 접근성 신고 유형을 접수한다")
+	void correctionLoopAcceptsFieldReportTypes() {
+		assertThat(FacilityReportType.values())
+			.contains(
+				FacilityReportType.ROUTE_BLOCKED,
+				FacilityReportType.ELEVATOR_UNAVAILABLE,
+				FacilityReportType.STAIRS_PRESENT,
+				FacilityReportType.ETA_INACCURATE,
+				FacilityReportType.TRANSFER_IMPOSSIBLE
+			);
+	}
+
+	@Test
+	@DisplayName("승인된 엘리베이터 이용불가 신고만 시설 상태 증거로 반영한다")
+	void acceptedElevatorUnavailableReportUpdatesFacilityStatus() {
+		var transitRepository = new InMemoryTransitMasterRepository();
+		var serviceWithFacilityStatus = serviceWithTransitRepository(transitRepository);
+
+		var report = serviceWithFacilityStatus.createReport(reportCommand(
+			"anonymous-user-elevator-unavailable",
+			FacilityReportType.ELEVATOR_UNAVAILABLE,
+			"엘리베이터가 이용 불가입니다."
+		));
+
+		serviceWithFacilityStatus.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.ACCEPT));
+
+		assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+			.isEqualTo(AccessibilityFacilityStatus.BROKEN);
+	}
+
+	@Test
+	@DisplayName("사용자 경로 신고 유형은 승인되어도 시설 상태 증거로 반영하지 않는다")
+	void acceptedRouteReportTypesDoNotUpdateFacilityStatusEvidence() {
+		for (FacilityReportType reportType : List.of(
+			FacilityReportType.ROUTE_BLOCKED,
+			FacilityReportType.STAIRS_PRESENT,
+			FacilityReportType.ETA_INACCURATE,
+			FacilityReportType.TRANSFER_IMPOSSIBLE
+		)) {
+			var transitRepository = new InMemoryTransitMasterRepository();
+			var serviceWithFacilityStatus = serviceWithTransitRepository(transitRepository);
+			var report = serviceWithFacilityStatus.createReport(reportCommand(
+				"anonymous-user-" + reportType.name().toLowerCase(),
+				reportType,
+				"현장 확인 전에는 검증 증거가 아닙니다."
+			));
+
+			serviceWithFacilityStatus.reviewReport(reviewCommand(report.id(), FacilityReportReviewDecision.ACCEPT));
+
+			assertThat(facilityStatus(transitRepository, "facility-sangnoksu-elevator-1"))
+				.isEqualTo(AccessibilityFacilityStatus.NORMAL);
+		}
+	}
+
+	@Test
 	@DisplayName("읽기 전용 마스터 데이터에서는 시설 상태 신고 승인을 저장 전에 거부한다")
 	void acceptedReportRejectsReadOnlyMasterDataBeforeReviewSave() {
 		var transitRepository = new UnavailableTransitMasterRepository();

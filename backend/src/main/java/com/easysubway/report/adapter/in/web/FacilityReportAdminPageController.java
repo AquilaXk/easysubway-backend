@@ -365,7 +365,8 @@ class FacilityReportAdminPageController {
 		String photoSha256,
 		Long photoSizeBytes,
 		String duplicateOfReportId,
-		String coordinateLabel
+		String coordinateLabel,
+		String correctionOverrideHref
 	) {
 
 		static FacilityReportDetailPageView from(FacilityReport report, WebMessageResolver messages) {
@@ -387,7 +388,8 @@ class FacilityReportAdminPageController {
 				report.photoSha256(),
 				report.photoSizeBytes(),
 				report.duplicateOfReportId(),
-				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
+				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude()),
+				FacilityReportAdminPageController.correctionOverrideHref(report)
 			);
 		}
 
@@ -396,6 +398,20 @@ class FacilityReportAdminPageController {
 				&& FacilityReportAdminPageController.hasText(photoContentType)
 				&& FacilityReportAdminPageController.hasText(photoObjectKey);
 		}
+	}
+
+	private static String correctionOverrideHref(FacilityReport report) {
+		return UriComponentsBuilder.fromPath("/admin/datapack/manual-overrides/page")
+			.queryParam("id", "override-" + report.id())
+			.queryParam("entityType", "FACILITY")
+			.queryParam("entityId", report.facilityId())
+			.queryParam("fieldName", "operational_status")
+			.queryParam("reasonCode", "FIELD_REPORT")
+			.queryParam("reason", "신고 검수 후 임시 override")
+			.queryParam("evidenceUri", "/admin/reports/%s/page".formatted(report.id()))
+			.queryParam("idempotencyKey", "override-" + report.id())
+			.build()
+			.toUriString();
 	}
 
 	record StatusOption(FacilityReportStatus value, String label) {

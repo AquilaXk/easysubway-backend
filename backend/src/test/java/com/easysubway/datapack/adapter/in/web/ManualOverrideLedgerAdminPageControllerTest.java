@@ -116,6 +116,34 @@ class ManualOverrideLedgerAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("manual override 요청 폼은 신고 상세 query 값을 보존한다")
+	void manualOverrideRequestFormKeepsReportPrefill() throws Exception {
+		String html = mockMvc.perform(get("/admin/datapack/manual-overrides/page")
+				.param("id", "override-report-1")
+				.param("entityType", "FACILITY")
+				.param("entityId", "facility-sangnoksu-elevator-1")
+				.param("fieldName", "operational_status")
+				.param("reasonCode", "FIELD_REPORT")
+				.param("reason", "신고 검수 후 임시 override")
+				.param("evidenceUri", "/admin/reports/report-1/page")
+				.param("idempotencyKey", "override-report-1")
+				.with(user("override-requester").authorities(
+					new SimpleGrantedAuthority("admin.datapack.read"),
+					new SimpleGrantedAuthority("admin.datapack.override.request")
+				)))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("value=\"override-report-1\"")
+			.contains("value=\"facility-sangnoksu-elevator-1\"")
+			.contains("value=\"FIELD_REPORT\"")
+			.contains("value=\"/admin/reports/report-1/page\"");
+	}
+
+	@Test
 	@DisplayName("override approve 권한 관리자는 요청자와 분리되어 strict override를 승인한다")
 	void overrideApproverApprovesStrictManualOverride() throws Exception {
 		mockMvc.perform(post("/admin/datapack/manual-overrides/override-strict-pending/approve")
