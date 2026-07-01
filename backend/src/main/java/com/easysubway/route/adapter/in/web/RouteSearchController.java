@@ -17,6 +17,7 @@ import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotNull;
 import jakarta.validation.constraints.Pattern;
+import java.time.Duration;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -221,8 +222,11 @@ class RouteSearchController {
 	) {
 
 		private static ItineraryDto from(RouteSearchResult result, OffsetDateTime departureTime) {
-			OffsetDateTime plannedArrivalTime = departureTime.plusSeconds(result.estimatedDurationSeconds());
-			List<LegDto> legs = LegDto.fromSteps(result.steps(), departureTime);
+			List<LegDto> legs = LegDto.fromSteps(result.steps(), departureTime, result.mobilityType());
+			OffsetDateTime plannedArrivalTime = legs.isEmpty()
+				? departureTime
+				: OffsetDateTime.parse(legs.get(legs.size() - 1).plannedArrivalTime());
+			int durationSeconds = Math.toIntExact(Duration.between(departureTime, plannedArrivalTime).toSeconds());
 			return new ItineraryDto(
 				result.routeSearchId() + "-primary",
 				statusOf(result),
@@ -230,7 +234,7 @@ class RouteSearchController {
 				null,
 				result.etaSource().name(),
 				etaConfidenceOf(result),
-				result.estimatedDurationSeconds(),
+				durationSeconds,
 				result.transferCount(),
 				result.walkingDistanceMeters(),
 				AccessibilityRiskDto.from(result),
@@ -428,13 +432,20 @@ class RouteSearchController {
 		AccessibilityRiskDto accessibilityRisk
 	) {
 
-		private static List<LegDto> fromSteps(List<RouteStep> steps, OffsetDateTime departureTime) {
+		private static List<LegDto> fromSteps(
+			List<RouteStep> steps,
+			OffsetDateTime departureTime,
+			MobilityType mobilityType
+		) {
 			List<LegDto> legs = new ArrayList<>();
 			OffsetDateTime cursor = departureTime;
 			for (RouteStep step : steps) {
+				String legType = legTypeOf(step);
 				int durationSeconds = Math.max(0, step.estimatedMinutes()) * 60;
-				OffsetDateTime plannedArrivalTime = cursor.plusSeconds(durationSeconds);
-				legs.add(from(step, cursor, plannedArrivalTime, durationSeconds));
+				int slackSeconds = slackSeconds(legType, mobilityType);
+				OffsetDateTime plannedDepartureTime = cursor.plusSeconds(slackSeconds);
+				OffsetDateTime plannedArrivalTime = plannedDepartureTime.plusSeconds(durationSeconds);
+				legs.add(from(step, legType, plannedDepartureTime, plannedArrivalTime, durationSeconds, slackSeconds));
 				cursor = plannedArrivalTime;
 			}
 			return List.copyOf(legs);
@@ -442,12 +453,14 @@ class RouteSearchController {
 
 		private static LegDto from(
 			RouteStep step,
+			String legType,
 			OffsetDateTime departureTime,
 			OffsetDateTime plannedArrivalTime,
-			int durationSeconds
+			int durationSeconds,
+			int slackSeconds
 		) {
 			return new LegDto(
-				legTypeOf(step),
+				legType,
 				step.fromStationId(),
 				step.toStationId(),
 				"",
@@ -459,14 +472,27 @@ class RouteSearchController {
 				null,
 				formatOffset(plannedArrivalTime),
 				null,
-				0,
-				0,
+				slackSeconds,
+				slackSeconds,
 				durationSeconds,
 				Math.max(0, step.distanceMeters()),
 				etaSourceOf(step).name(),
 				etaConfidenceOf(step),
 				AccessibilityRiskDto.from(step)
 			);
+		}
+
+		private static int slackSeconds(String legType, MobilityType mobilityType) {
+			if (!"RIDE".equals(legType)) {
+				return 0;
+			}
+			// ponytail: schedule candidate selection belongs with timetable schema; expose only mobility buffer for now.
+			return switch (mobilityType) {
+				case LUGGAGE -> 60;
+				case SENIOR, PREGNANT -> 90;
+				case STROLLER, TEMPORARY_INJURY -> 120;
+				case WHEELCHAIR -> 180;
+			};
 		}
 
 		private static EtaSource etaSourceOf(RouteStep step) {

@@ -180,6 +180,68 @@ class RouteSearchV2ControllerTest {
 	}
 
 	@Test
+	@DisplayName("V2 첫 탑승과 환승 후 탑승은 이동약자 준비시간 이후로 계산한다")
+	void routeSearchV2AppliesBoardingAndTransferSlackBeforeRideLegs() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command != null && "station-boarding-origin".equals(command.originStationId())
+		))).thenReturn(boardingTransferRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-boarding-origin",
+					  "destinationStationId": "station-boarding-destination",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "PREFER_STEP_FREE",
+					  "useRealtime": true,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].plannedArrivalTime").value("2026-06-30T09:33:00+09:00"))
+			.andExpect(jsonPath("$.data.itineraries[0].durationSeconds").value(1080))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].plannedDepartureTime").value("2026-06-30T09:21:00+09:00"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].waitTimeSeconds").value(120))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].slackSeconds").value(120))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[3].plannedDepartureTime").value("2026-06-30T09:28:00+09:00"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[3].waitTimeSeconds").value(120))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[3].slackSeconds").value(120));
+	}
+
+	@Test
+	@DisplayName("V2 큰 짐 이동은 탑승 준비시간 60초를 적용한다")
+	void routeSearchV2AppliesLuggageBoardingSlack() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			command != null && command.mobilityType() == MobilityType.LUGGAGE
+		))).thenReturn(boardingTransferRouteSearch(MobilityType.LUGGAGE));
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-boarding-origin",
+					  "destinationStationId": "station-boarding-destination",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "LUGGAGE",
+					  "constraintMode": "PREFER_STEP_FREE",
+					  "useRealtime": true,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].plannedArrivalTime").value("2026-06-30T09:31:00+09:00"))
+			.andExpect(jsonPath("$.data.itineraries[0].durationSeconds").value(960))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].waitTimeSeconds").value(60))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].slackSeconds").value(60))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[3].waitTimeSeconds").value(60))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[3].slackSeconds").value(60));
+	}
+
+	@Test
 	@DisplayName("모바일 V2 계약의 blocked reasonCodes는 사용자 문장 대신 안정적인 코드만 반환한다")
 	void routeSearchV2BlockedRiskReasonCodesAreStableCodes() throws Exception {
 		when(routeSearchUseCase.searchRoute(argThat(command ->
@@ -479,6 +541,100 @@ class RouteSearchV2ControllerTest {
 				"ESTIMATED_CONSTANT",
 				"HIGH"
 			)),
+			List.of(),
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult boardingTransferRouteSearch() {
+		return boardingTransferRouteSearch(MobilityType.STROLLER);
+	}
+
+	private RouteSearchResult boardingTransferRouteSearch(MobilityType mobilityType) {
+		return new RouteSearchResult(
+			"route-search-boarding-transfer",
+			"station-boarding-origin",
+			"탑승 출발역",
+			"station-boarding-destination",
+			"탑승 도착역",
+			mobilityType,
+			RouteSearchStatus.FOUND,
+			"line-boarding",
+			"탑승 노선",
+			20,
+			List.of(
+				new RouteStep(
+					1,
+					"entry",
+					"출발역 승강장 이동",
+					"엘리베이터를 이용해 승강장으로 이동합니다.",
+					"line-boarding-a",
+					"탑승 A 노선",
+					"station-boarding-origin",
+					"station-boarding-origin",
+					4,
+					180,
+					false,
+					false
+				),
+				new RouteStep(
+					2,
+					"ride",
+					"A 노선 탑승",
+					"첫 열차 탑승 시간을 반영합니다.",
+					"line-boarding-a",
+					"탑승 A 노선",
+					"station-boarding-origin",
+					"station-transfer",
+					3,
+					900,
+					false,
+					false
+				),
+				new RouteStep(
+					3,
+					"transfer",
+					"환승 승강장 이동",
+					"환승 동선 시간을 반영합니다.",
+					"line-boarding-b",
+					"탑승 B 노선",
+					"station-transfer",
+					"station-transfer",
+					2,
+					120,
+					false,
+					false
+				),
+				new RouteStep(
+					4,
+					"ride",
+					"B 노선 탑승",
+					"환승 후 열차 탑승 시간을 반영합니다.",
+					"line-boarding-b",
+					"탑승 B 노선",
+					"station-transfer",
+					"station-boarding-destination",
+					4,
+					1200,
+					false,
+					false
+				),
+				new RouteStep(
+					5,
+					"exit",
+					"도착역 출구 이동",
+					"출구 동선을 반영합니다.",
+					"line-boarding-b",
+					"탑승 B 노선",
+					"station-boarding-destination",
+					"station-boarding-destination",
+					1,
+					80,
+					false,
+					false
+				)
+			),
 			List.of(),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
