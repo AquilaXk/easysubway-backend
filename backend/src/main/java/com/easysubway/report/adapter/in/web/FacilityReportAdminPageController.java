@@ -401,6 +401,9 @@ class FacilityReportAdminPageController {
 	}
 
 	private static String correctionOverrideHref(FacilityReport report) {
+		if (!isFacilityStatusEvidence(report)) {
+			return null;
+		}
 		return UriComponentsBuilder.fromPath("/admin/datapack/manual-overrides/page")
 			.queryParam("id", "override-" + report.id())
 			.queryParam("entityType", "FACILITY")
@@ -411,7 +414,15 @@ class FacilityReportAdminPageController {
 			.queryParam("evidenceUri", "/admin/reports/%s/page".formatted(report.id()))
 			.queryParam("idempotencyKey", "override-" + report.id())
 			.build()
+			.encode()
 			.toUriString();
+	}
+
+	private static boolean isFacilityStatusEvidence(FacilityReport report) {
+		return switch (report.reportType()) {
+			case BROKEN, ELEVATOR_UNAVAILABLE, UNDER_CONSTRUCTION, CLOSED, RECOVERED -> true;
+			case ROUTE_BLOCKED, STAIRS_PRESENT, ETA_INACCURATE, TRANSFER_IMPOSSIBLE, LOCATION_WRONG, INFORMATION_WRONG -> false;
+		};
 	}
 
 	record StatusOption(FacilityReportStatus value, String label) {
