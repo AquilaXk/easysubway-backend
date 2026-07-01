@@ -72,22 +72,31 @@ function normalize(fixtures) {
     serviceDayCutoffHour: fixtures.serviceDayCutoffHour ?? 3,
     transferSlackMinutes: Math.ceil((fixtures.transferSlackSeconds ?? 0) / 60),
     transfers: fixtures.transfers ?? [],
-    trips: fixtures.trips.map((trip) => ({
-      ...trip,
-      stops: trip.stops.map(([station, arrival, departure], index) => ({
+    trips: fixtures.trips.map((trip) => {
+      const stops = trip.stops.map(([station, arrival, departure], index) => ({
         station,
         arrival: parseClock(arrival),
         departure: parseClock(departure),
         index,
-      })),
-    })),
+      }));
+      const stopPattern = stops.map((stop) => stop.station);
+      return {
+        ...trip,
+        servicePattern: normalizeServicePattern(trip.servicePattern ?? trip.pattern),
+        headsign: trip.headsign ?? trip.tripHeadsign ?? stops.at(-1)?.station ?? "",
+        directionId: trip.directionId ?? "",
+        destinationStationId: trip.destinationStationId ?? stops.at(-1)?.station ?? "",
+        stopPattern,
+        stops,
+      };
+    }),
   };
 }
 
 function scanTrips(fixtures, query, labels, round) {
   // ponytail: fixture scan only; production RAPTOR should index trips by route and marked stops.
   for (const trip of fixtures.trips) {
-    if (!isServiceActive(fixtures, query, trip) || trip.realtime === "stale") continue;
+    if (!isTripUsable(fixtures, query, trip)) continue;
     let boarded = null;
     for (const stop of trip.stops) {
       for (const previous of labels.get(stop.station) ?? []) {
@@ -142,7 +151,7 @@ function nextLabels(fixtures, query, current) {
 
   if (current.boardings >= maxTransfers(query) + 1) return next;
   for (const trip of fixtures.trips) {
-    if (!isServiceActive(fixtures, query, trip) || trip.realtime === "stale") continue;
+    if (!isTripUsable(fixtures, query, trip)) continue;
     const from = trip.stops.find((stop) => stop.station === current.station && canBoard(fixtures, query, current, stop));
     if (!from) continue;
     for (const to of trip.stops.slice(from.index + 1)) {
@@ -168,6 +177,12 @@ function leg(trip, from, to) {
     tripId: trip.id,
     lineId: trip.lineId,
     pattern: trip.pattern,
+    servicePattern: trip.servicePattern,
+    headsign: trip.headsign,
+    directionId: trip.directionId,
+    destinationStationId: trip.destinationStationId,
+    stopPattern: trip.stopPattern,
+    realtimeMatchLevel: realtimeMatchLevel(trip),
     from: from.station,
     to: to.station,
     departure: formatClock(from.departure),
@@ -253,6 +268,24 @@ function formatClock(minutes) {
 function isServiceActive(fixtures, query, trip) {
   const serviceDate = serviceDay(fixtures, query);
   return !(fixtures.calendarDates?.[serviceDate] ?? []).includes(trip.service);
+}
+
+function isTripUsable(fixtures, query, trip) {
+  if (!isServiceActive(fixtures, query, trip)) return false;
+  const matchLevel = realtimeMatchLevel(trip);
+  return matchLevel !== "STALE_REALTIME" && matchLevel !== "UNMATCHED_REALTIME";
+}
+
+function realtimeMatchLevel(trip) {
+  if (trip.realtimeMatchLevel) return trip.realtimeMatchLevel;
+  if (trip.realtimeMatch === "unmatched") return "UNMATCHED_REALTIME";
+  if (trip.realtime === "stale") return "STALE_REALTIME";
+  if (trip.realtime === "fresh") return "MATCHED_REALTIME";
+  return "PLANNED";
+}
+
+function normalizeServicePattern(pattern) {
+  return String(pattern ?? "").toUpperCase() === "EXPRESS" ? "EXPRESS" : "LOCAL";
 }
 
 function serviceDay(fixtures, query) {

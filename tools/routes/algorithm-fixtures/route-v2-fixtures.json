@@ -50,6 +50,10 @@
       "lineId": "line-4",
       "service": "daily",
       "pattern": "local",
+      "servicePattern": "LOCAL",
+      "headsign": "사당",
+      "directionId": "up",
+      "destinationStationId": "sadang_l4",
       "stops": [
         ["sangnoksu_l4", "09:00", "09:00"],
         ["banwol_l4", "09:08", "09:08"],
@@ -61,6 +65,10 @@
       "lineId": "line-4",
       "service": "daily",
       "pattern": "local",
+      "servicePattern": "LOCAL",
+      "headsign": "사당",
+      "directionId": "up",
+      "destinationStationId": "sadang_l4",
       "stops": [
         ["sangnoksu_l4", "09:05", "09:05"],
         ["banwol_l4", "09:13", "09:13"],
@@ -72,6 +80,10 @@
       "lineId": "line-4",
       "service": "daily",
       "pattern": "express",
+      "servicePattern": "EXPRESS",
+      "headsign": "사당",
+      "directionId": "up",
+      "destinationStationId": "sadang_l4",
       "stops": [
         ["sangnoksu_l4", "09:03", "09:03"],
         ["sadang_l4", "09:24", "09:24"]
@@ -82,6 +94,10 @@
       "lineId": "line-4",
       "service": "daily",
       "pattern": "express",
+      "servicePattern": "EXPRESS",
+      "headsign": "사당",
+      "directionId": "up",
+      "destinationStationId": "sadang_l4",
       "stops": [
         ["sangnoksu_l4", "09:25", "09:25"],
         ["sadang_l4", "09:50", "09:50"]
@@ -215,6 +231,7 @@
       "lineId": "line-r",
       "service": "daily",
       "pattern": "local",
+      "servicePattern": "LOCAL",
       "realtime": "fresh",
       "stops": [
         ["rt_a", "09:02", "09:02"],
@@ -226,10 +243,64 @@
       "lineId": "line-r",
       "service": "daily",
       "pattern": "local",
+      "servicePattern": "LOCAL",
       "realtime": "stale",
       "stops": [
         ["rt_a", "09:00", "09:00"],
         ["rt_b", "09:15", "09:15"]
+      ]
+    },
+    {
+      "id": "shortturn-0910",
+      "lineId": "line-short",
+      "service": "daily",
+      "pattern": "local",
+      "servicePattern": "LOCAL",
+      "headsign": "단축종착",
+      "directionId": "outbound",
+      "destinationStationId": "short_terminal",
+      "stops": [
+        ["short_a", "09:10", "09:10"],
+        ["short_terminal", "09:20", "09:20"]
+      ]
+    },
+    {
+      "id": "fullrun-0912",
+      "lineId": "line-short",
+      "service": "daily",
+      "pattern": "local",
+      "servicePattern": "LOCAL",
+      "headsign": "연장운행",
+      "directionId": "outbound",
+      "destinationStationId": "short_after_terminal",
+      "stops": [
+        ["short_a", "09:12", "09:12"],
+        ["short_terminal", "09:22", "09:22"],
+        ["short_after_terminal", "09:32", "09:32"]
+      ]
+    },
+    {
+      "id": "rt2-unmatched-express-0901",
+      "lineId": "line-r2",
+      "service": "daily",
+      "pattern": "express",
+      "servicePattern": "EXPRESS",
+      "realtime": "fresh",
+      "realtimeMatchLevel": "UNMATCHED_REALTIME",
+      "stops": [
+        ["rt2_a", "09:01", "09:01"],
+        ["rt2_b", "09:10", "09:10"]
+      ]
+    },
+    {
+      "id": "rt2-planned-local-0905",
+      "lineId": "line-r2",
+      "service": "daily",
+      "pattern": "local",
+      "servicePattern": "LOCAL",
+      "stops": [
+        ["rt2_a", "09:05", "09:05"],
+        ["rt2_b", "09:25", "09:25"]
       ]
     },
     {
@@ -273,7 +344,24 @@
       "expectedArrival": "09:24",
       "expectedDurationSeconds": 1560,
       "expectedTransfers": 0,
-      "expectedTripIds": ["l4-express-0903"]
+      "expectedTripIds": ["l4-express-0903"],
+      "expectedServicePatterns": ["EXPRESS"],
+      "expectedHeadsigns": ["사당"],
+      "expectedDirections": ["up"],
+      "expectedDestinationStationIds": ["sadang_l4"],
+      "expectedStopPatterns": [["sangnoksu_l4", "sadang_l4"]]
+    },
+    {
+      "id": "express_skips_intermediate_stop",
+      "origin": "sangnoksu_l4",
+      "destination": "banwol_l4",
+      "departure": "2026-07-01T08:58:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:08",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["l4-local-0900"],
+      "expectedServicePatterns": ["LOCAL"],
+      "expectedStopPatterns": [["sangnoksu_l4", "banwol_l4", "sadang_l4"]]
     },
     {
       "id": "one_transfer",
@@ -303,7 +391,8 @@
       "constraintMode": "ALLOW_UNKNOWN",
       "expectedArrival": "09:24",
       "expectedTransfers": 0,
-      "expectedTripIds": ["l4-express-0903"]
+      "expectedTripIds": ["l4-express-0903"],
+      "expectedServicePatterns": ["EXPRESS"]
     },
     {
       "id": "missed_express_makes_local_faster",
@@ -313,7 +402,8 @@
       "constraintMode": "ALLOW_UNKNOWN",
       "expectedArrival": "09:40",
       "expectedTransfers": 0,
-      "expectedTripIds": ["l4-local-0905"]
+      "expectedTripIds": ["l4-local-0905"],
+      "expectedServicePatterns": ["LOCAL"]
     },
     {
       "id": "transfer_buffer_too_short_selects_next_train",
@@ -413,7 +503,8 @@
       "constraintMode": "ALLOW_UNKNOWN",
       "expectedArrival": "09:17",
       "expectedTransfers": 0,
-      "expectedTripIds": ["fresh-0902"]
+      "expectedTripIds": ["fresh-0902"],
+      "expectedRealtimeMatchLevels": ["MATCHED_REALTIME"]
     },
     {
       "id": "provider_realtime_fresh_but_not_boardable_due_to_entry_slack",
@@ -425,6 +516,31 @@
       "expectedArrival": null,
       "expectedTransfers": null,
       "expectedTripIds": []
+    },
+    {
+      "id": "short_turn_does_not_route_past_terminal",
+      "origin": "short_a",
+      "destination": "short_after_terminal",
+      "departure": "2026-07-01T09:00:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:32",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["fullrun-0912"],
+      "expectedHeadsigns": ["연장운행"],
+      "expectedDestinationStationIds": ["short_after_terminal"],
+      "expectedStopPatterns": [["short_a", "short_terminal", "short_after_terminal"]]
+    },
+    {
+      "id": "unmatched_realtime_express_does_not_override_planned_local",
+      "origin": "rt2_a",
+      "destination": "rt2_b",
+      "departure": "2026-07-01T08:59:00+09:00",
+      "constraintMode": "ALLOW_UNKNOWN",
+      "expectedArrival": "09:25",
+      "expectedTransfers": 0,
+      "expectedTripIds": ["rt2-planned-local-0905"],
+      "expectedServicePatterns": ["LOCAL"],
+      "expectedRealtimeMatchLevels": ["PLANNED"]
     }
   ]
 }

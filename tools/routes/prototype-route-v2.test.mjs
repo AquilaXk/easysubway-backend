@@ -57,4 +57,16 @@ function assertPrototype(query, result, name) {
   assert.equal(result.transferCount, query.expectedTransfers, `${name} transfer count`);
   assert.deepEqual(result.tripIds, query.expectedTripIds, `${name} trip ids`);
   assert.ok(result.path.length > 0, `${name} reconstructs path`);
+  const rideSteps = result.path.filter((step) => step.type === "ride");
+  assertExpected(query, "expectedServicePatterns", rideSteps.map((step) => step.servicePattern), name);
+  assertExpected(query, "expectedHeadsigns", rideSteps.map((step) => step.headsign), name);
+  assertExpected(query, "expectedDirections", rideSteps.map((step) => step.directionId), name);
+  assertExpected(query, "expectedDestinationStationIds", rideSteps.map((step) => step.destinationStationId), name);
+  assertExpected(query, "expectedStopPatterns", rideSteps.map((step) => step.stopPattern), name);
+  assertExpected(query, "expectedRealtimeMatchLevels", rideSteps.map((step) => step.realtimeMatchLevel), name);
+}
+
+function assertExpected(query, field, actual, name) {
+  if (query[field] === undefined) return;
+  assert.deepEqual(actual, query[field], `${name} ${field}`);
 }
