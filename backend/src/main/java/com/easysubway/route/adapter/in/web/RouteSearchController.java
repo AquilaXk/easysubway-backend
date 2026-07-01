@@ -246,14 +246,150 @@ class RouteSearchController {
 		}
 	}
 
-	private record AccessibilityRiskDto(String level, List<String> reasons) {
+	private record AccessibilityRiskDto(
+		int stairCount,
+		int unknownAccessibilityCount,
+		int generatedConnectorCount,
+		int staleDataCount,
+		int lowConfidenceCount,
+		int unavailableFacilityCount,
+		String riskLevel,
+		List<String> reasonCodes,
+		String level,
+		List<String> reasons
+	) {
 
 		private static AccessibilityRiskDto from(RouteSearchResult result) {
-			List<String> reasons = result.evidenceSummary().stream()
-				.filter("ACCESSIBILITY_CHECK_REQUIRED"::equals)
-				.toList();
-			String level = reasons.isEmpty() ? "LOW" : "REVIEW_REQUIRED";
-			return new AccessibilityRiskDto(level, reasons);
+			List<String> reasonCodes = reasonCodesFrom(result);
+			int stairCount = Math.toIntExact(result.steps().stream()
+				.filter(RouteStep::includesStairs)
+				.count());
+			int unknownAccessibilityCount = Math.toIntExact(result.steps().stream()
+				.filter(step -> step.requiresAccessibilityCheck() || "UNKNOWN".equals(step.stairAccessState()))
+				.count());
+			int generatedConnectorCount = countReason(reasonCodes, "GENERATED_CONNECTOR_UNVERIFIED");
+			int staleDataCount = countReason(reasonCodes, "STALE_ACCESSIBILITY_DATA");
+			int lowConfidenceCount = countReason(reasonCodes, "LOW_DATA_CONFIDENCE");
+			int unavailableFacilityCount = countReason(reasonCodes, "FACILITY_UNAVAILABLE");
+			String riskLevel = riskLevel(
+				result.status(),
+				stairCount,
+				unknownAccessibilityCount,
+				generatedConnectorCount,
+				staleDataCount,
+				lowConfidenceCount,
+				unavailableFacilityCount
+			);
+			return new AccessibilityRiskDto(
+				stairCount,
+				unknownAccessibilityCount,
+				generatedConnectorCount,
+				staleDataCount,
+				lowConfidenceCount,
+				unavailableFacilityCount,
+				riskLevel,
+				reasonCodes,
+				legacyLevel(riskLevel),
+				reasonCodes
+			);
+		}
+
+		private static AccessibilityRiskDto from(RouteStep step) {
+			List<String> reasonCodes = reasonCodesFrom(step);
+			int stairCount = step.includesStairs() ? 1 : 0;
+			int unknownAccessibilityCount = step.requiresAccessibilityCheck() || "UNKNOWN".equals(step.stairAccessState()) ? 1 : 0;
+			int generatedConnectorCount = countReason(reasonCodes, "GENERATED_CONNECTOR_UNVERIFIED");
+			int staleDataCount = countReason(reasonCodes, "STALE_ACCESSIBILITY_DATA");
+			int lowConfidenceCount = countReason(reasonCodes, "LOW_DATA_CONFIDENCE");
+			int unavailableFacilityCount = countReason(reasonCodes, "FACILITY_UNAVAILABLE");
+			String riskLevel = riskLevel(
+				RouteSearchStatus.FOUND,
+				stairCount,
+				unknownAccessibilityCount,
+				generatedConnectorCount,
+				staleDataCount,
+				lowConfidenceCount,
+				unavailableFacilityCount
+			);
+			return new AccessibilityRiskDto(
+				stairCount,
+				unknownAccessibilityCount,
+				generatedConnectorCount,
+				staleDataCount,
+				lowConfidenceCount,
+				unavailableFacilityCount,
+				riskLevel,
+				reasonCodes,
+				legacyLevel(riskLevel),
+				reasonCodes
+			);
+		}
+
+		private static List<String> reasonCodesFrom(RouteSearchResult result) {
+			List<String> reasonCodes = new ArrayList<>();
+			result.blockedReasons().stream()
+				.filter(reason -> reason != null && !reason.isBlank())
+				.forEach(reasonCodes::add);
+			result.warnings().stream()
+				.map(warning -> warning.code().name())
+				.forEach(reasonCodes::add);
+			if (result.evidenceSummary().contains("ACCESSIBILITY_CHECK_REQUIRED")) {
+				reasonCodes.add("ACCESSIBILITY_CHECK_REQUIRED");
+			}
+			if (result.status() == RouteSearchStatus.BLOCKED && reasonCodes.isEmpty()) {
+				reasonCodes.add("BLOCKED_ACCESSIBILITY");
+			}
+			return List.copyOf(reasonCodes.stream().distinct().toList());
+		}
+
+		private static List<String> reasonCodesFrom(RouteStep step) {
+			List<String> reasonCodes = new ArrayList<>();
+			if (step.includesStairs()) {
+				reasonCodes.add("STAIR_ONLY_ACCESS");
+			}
+			if (step.requiresAccessibilityCheck() || "UNKNOWN".equals(step.stairAccessState())) {
+				reasonCodes.add("ACCESSIBILITY_CHECK_REQUIRED");
+			}
+			return List.copyOf(reasonCodes);
+		}
+
+		private static int countReason(List<String> reasonCodes, String reasonCode) {
+			return Math.toIntExact(reasonCodes.stream()
+				.filter(reasonCode::equals)
+				.count());
+		}
+
+		private static String riskLevel(
+			RouteSearchStatus status,
+			int stairCount,
+			int unknownAccessibilityCount,
+			int generatedConnectorCount,
+			int staleDataCount,
+			int lowConfidenceCount,
+			int unavailableFacilityCount
+		) {
+			if (status == RouteSearchStatus.BLOCKED) {
+				return "BLOCKED";
+			}
+			if (unavailableFacilityCount > 0 || stairCount > 0) {
+				return "HIGH";
+			}
+			if (unknownAccessibilityCount > 0 || generatedConnectorCount > 0) {
+				return "MEDIUM";
+			}
+			if (staleDataCount > 0 || lowConfidenceCount > 0) {
+				return "LOW";
+			}
+			return "NONE";
+		}
+
+		private static String legacyLevel(String riskLevel) {
+			return switch (riskLevel) {
+				case "BLOCKED" -> "BLOCKED";
+				case "HIGH", "MEDIUM" -> "REVIEW_REQUIRED";
+				case "LOW" -> "LOW";
+				default -> "LOW";
+			};
 		}
 	}
 
@@ -316,10 +452,7 @@ class RouteSearchController {
 				Math.max(0, step.distanceMeters()),
 				"STATIC_BACKEND_V1",
 				"LOW",
-				new AccessibilityRiskDto(
-					step.requiresAccessibilityCheck() ? "REVIEW_REQUIRED" : "LOW",
-					step.requiresAccessibilityCheck() ? List.of("ACCESSIBILITY_CHECK_REQUIRED") : List.of()
-				)
+				AccessibilityRiskDto.from(step)
 			);
 		}
 
