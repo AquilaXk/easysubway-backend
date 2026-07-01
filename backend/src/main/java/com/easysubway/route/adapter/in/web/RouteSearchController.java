@@ -6,7 +6,10 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.RouteRefreshResult;
+import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -26,6 +29,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -48,6 +52,11 @@ class RouteSearchController {
 		OffsetDateTime departureTime = request.parsedDepartureTime();
 		SearchRouteCommand command = request.toCommand();
 		return ApiResponse.ok(RouteSearchV2Response.from(routeSearchUseCase.searchRoute(command), request, departureTime));
+	}
+
+	@PostMapping("/api/v2/routes/{routeSearchId}/refresh")
+	ApiResponse<RouteRefreshResponse> refreshRoute(@PathVariable String routeSearchId) {
+		return ApiResponse.ok(RouteRefreshResponse.from(routeSearchUseCase.refreshRoute(routeSearchId)));
 	}
 
 	private record RouteSearchRequest(
@@ -166,6 +175,31 @@ class RouteSearchController {
 			}
 		}
 
+	}
+
+	private record RouteRefreshResponse(
+		String routeSearchId,
+		RouteRefreshStatus status,
+		RouteSearchV1Response route,
+		LocalDateTime refreshedAt,
+		EtaSource etaSource,
+		EtaConfidence etaConfidence,
+		String sourceLabel,
+		List<String> reasonCodes
+	) {
+
+		private static RouteRefreshResponse from(RouteRefreshResult result) {
+			return new RouteRefreshResponse(
+				result.routeSearchId(),
+				result.status(),
+				RouteSearchV1Response.from(result.routeSearch()),
+				result.refreshedAt(),
+				result.etaSource(),
+				result.etaConfidence(),
+				result.sourceLabel(),
+				result.reasonCodes()
+			);
+		}
 	}
 
 	private record RouteSearchV2Response(

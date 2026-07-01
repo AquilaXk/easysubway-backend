@@ -14,6 +14,7 @@ import com.easysubway.route.domain.InvalidRouteFeedbackException;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteProfileWeight;
+import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteWarningCode;
@@ -157,6 +158,32 @@ class RouteSearchServiceTest {
 		var loaded = service.getRouteSearch(created.routeSearchId());
 
 		assertThat(loaded).isEqualTo(created);
+	}
+
+	@Test
+	@DisplayName("경로 refresh는 저장된 itinerary를 재사용하고 ETA 상태를 반환한다")
+	void refreshRouteReusesStoredRouteSearch() {
+		var created = service.searchRoute(new SearchRouteCommand(
+			"station-sangnoksu",
+			"station-sadang",
+			MobilityType.SENIOR
+		));
+
+		var refreshed = service.refreshRoute(created.routeSearchId());
+
+		assertThat(refreshed.routeSearch()).isEqualTo(created);
+		assertThat(refreshed.status()).isEqualTo(RouteRefreshStatus.UNCHANGED);
+		assertThat(refreshed.etaSource()).isEqualTo(created.etaSource());
+		assertThat(refreshed.sourceLabel()).isEqualTo("계획 시간 기준");
+		assertThat(refreshed.refreshedAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
+	}
+
+	@Test
+	@DisplayName("경로 refresh는 알 수 없는 routeSearchId를 안정 not found로 거부한다")
+	void refreshRouteRejectsUnknownRouteSearchId() {
+		assertThatThrownBy(() -> service.refreshRoute("route-missing"))
+			.isInstanceOf(RouteSearchNotFoundException.class)
+			.hasMessage("경로 검색 결과를 찾을 수 없습니다.");
 	}
 
 	@Test
