@@ -92,15 +92,13 @@ function validateAccuracy(gate, report, failures) {
   const sampleSizeMin = gate.routeEtaAccuracy.sampleSizeMin;
   const sources = report.sampleSourceCounts ?? {};
   if (number(report.sampleSize) < sampleSizeMin) failures.push(`routeEtaAccuracy sampleSize is below ${sampleSizeMin}`);
-  const commercialSampleSize = Math.max(
-    0,
-    Math.min(number(sources.realtimeProvider), number(sources.manualObservation)) - number(sources.staleRealtime),
-  );
+  const commercialSampleSize = Number.isFinite(Number(report.productionSampleSize))
+    ? number(report.productionSampleSize)
+    : Math.max(0, Math.min(number(sources.realtimeProvider), number(sources.manualObservation)) - number(sources.staleRealtime));
   if (commercialSampleSize < sampleSizeMin) failures.push(`routeEtaAccuracy production sampleSize is below ${sampleSizeMin}`);
   if (number(sources.fixture) >= sampleSizeMin && commercialSampleSize < sampleSizeMin) {
     failures.push("routeEtaAccuracy fixture-only samples cannot satisfy production gate");
   }
-  if (number(sources.staticTimetable) > 0) failures.push("routeEtaAccuracy static local samples must be labeled outside commercial ETA samples");
   if (number(sources.staleRealtime) > 0) failures.push("routeEtaAccuracy stale realtime samples cannot count as fresh provider samples");
 
   const singleRide = report.metrics?.singleRide ?? {};

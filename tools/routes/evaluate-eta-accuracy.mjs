@@ -23,6 +23,13 @@ const requiredColumns = [
   "use_realtime",
   "notes",
 ];
+const referenceSources = [
+  "PROVIDER_LIVE_ARRIVAL",
+  "STATIC_TIMETABLE_REFERENCE",
+  "MANUAL_OBSERVATION",
+  "COMPETING_APP_COMPARISON",
+  "FIXTURE_EXPECTED",
+];
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -117,11 +124,23 @@ function buildReport(rows) {
   const errors = [];
   const singleRideErrors = [];
   const transferErrors = [];
+  const quality = {
+    routeNotFound: 0,
+    wrongTransferCount: 0,
+    wrongLineSequence: 0,
+    strictStepFreeFalsePositive: 0,
+    etaSourceMismatch: 0,
+    realtimeFallbackMismatch: 0,
+    providerStaleMisuse: 0,
+  };
   for (const row of rows) {
+    collectQualityFailures(row, failures, quality);
     const observed = requiredNumber(row.observed_eta_error_seconds, row, "observed_eta_error_seconds", failures);
     const max = requiredNumber(row.max_eta_error_seconds, row, "max_eta_error_seconds", failures);
     if (observed === null || max === null) continue;
-    if (observed > max) failures.push(`${row.sourceFile}:${row.lineNumber} observed ETA error exceeds max`);
+    if (observed > max) {
+      addFailure(failures, row, "ETA_ERROR", "observed ETA error exceeds max", { maxEtaErrorSeconds: max }, { observedEtaErrorSeconds: observed });
+    }
     errors.push(observed);
     if (Number(row.expected_transfer_count) === 0) {
       singleRideErrors.push(observed);
@@ -152,6 +171,9 @@ function buildReport(rows) {
     generatedAt: new Date().toISOString(),
     sampleSize: rows.length,
     sampleSourceCounts: countSampleSources(rows),
+    referenceSourceCounts: countReferenceSources(rows),
+    productionSampleSize: rows.filter(isProductionSample).length,
+    nonProductionSampleSize: rows.filter((row) => !isProductionSample(row)).length,
     coverage,
     metrics: {
       sampleSize: errors.length,
@@ -160,6 +182,13 @@ function buildReport(rows) {
       maxErrorSeconds: errors.at(-1) ?? 0,
       singleRide: metricBlock(singleRideErrors),
       transfer: metricBlock(transferErrors),
+      routeNotFoundRate: rate(quality.routeNotFound, rows.length),
+      wrongTransferCountRate: rate(quality.wrongTransferCount, rows.length),
+      wrongLineSequenceRate: rate(quality.wrongLineSequence, rows.length),
+      strictStepFreeFalsePositiveCount: quality.strictStepFreeFalsePositive,
+      etaSourceMismatchCount: quality.etaSourceMismatch,
+      realtimeFallbackMismatchCount: quality.realtimeFallbackMismatch,
+      providerStaleMisuseCount: quality.providerStaleMisuse,
     },
     failures,
   };
@@ -190,6 +219,76 @@ function countSampleSources(rows) {
   return counts;
 }
 
+function countReferenceSources(rows) {
+  const counts = Object.fromEntries(referenceSources.map((source) => [source, 0]));
+  for (const row of rows) {
+    counts[referenceSource(row)] += 1;
+  }
+  return counts;
+}
+
+function referenceSource(row) {
+  if (referenceSources.includes(row.reference_source)) return row.reference_source;
+  const note = row.notes.toLowerCase();
+  if (note.includes("fixture")) return "FIXTURE_EXPECTED";
+  if (note.includes("manual")) return "MANUAL_OBSERVATION";
+  if (row.use_realtime === "true") return "PROVIDER_LIVE_ARRIVAL";
+  return "STATIC_TIMETABLE_REFERENCE";
+}
+
+function isProductionSample(row) {
+  const source = referenceSource(row);
+  if (source === "MANUAL_OBSERVATION" || source === "COMPETING_APP_COMPARISON") return true;
+  return source === "PROVIDER_LIVE_ARRIVAL" && !isStale(row);
+}
+
+function collectQualityFailures(row, failures, quality) {
+  if (row.actual_route_found === "false") {
+    quality.routeNotFound += 1;
+    addFailure(failures, row, "ROUTE_NOT_FOUND", "route was not found", { found: true }, { found: false });
+  }
+  if (hasValue(row.actual_transfer_count) && Number(row.actual_transfer_count) !== Number(row.expected_transfer_count)) {
+    quality.wrongTransferCount += 1;
+    addFailure(failures, row, "WRONG_TRANSFER_COUNT", "wrong transfer count", { transferCount: Number(row.expected_transfer_count) }, { transferCount: Number(row.actual_transfer_count) });
+  }
+  if (hasValue(row.expected_line_sequence) && hasValue(row.actual_line_sequence) && row.expected_line_sequence !== row.actual_line_sequence) {
+    quality.wrongLineSequence += 1;
+    addFailure(failures, row, "WRONG_LINE_SEQUENCE", "wrong line sequence", { lineSequence: row.expected_line_sequence }, { lineSequence: row.actual_line_sequence });
+  }
+  if (isStrictStepFree(row) && containsBlockedStepFreeEdge(row.actual_edge_types)) {
+    quality.strictStepFreeFalsePositive += 1;
+    addFailure(failures, row, "ACCESSIBILITY_FALSE_POSITIVE", "strict step-free route contains blocked edge", { stepFree: true }, { edgeTypes: row.actual_edge_types });
+  }
+  if (hasValue(row.expected_eta_source) && hasValue(row.actual_eta_source) && row.expected_eta_source !== row.actual_eta_source) {
+    quality.etaSourceMismatch += 1;
+    addFailure(failures, row, "ETA_SOURCE_MISMATCH", "ETA source mismatch", { etaSource: row.expected_eta_source }, { etaSource: row.actual_eta_source });
+  }
+  if (row.realtime_expected === "true" && hasValue(row.actual_eta_source) && row.actual_eta_source !== "REALTIME") {
+    quality.realtimeFallbackMismatch += 1;
+    addFailure(failures, row, "REALTIME_FALLBACK_MISMATCH", "realtime expected but actual ETA is not realtime", { etaSource: "REALTIME" }, { etaSource: row.actual_eta_source });
+  }
+  if (row.actual_eta_source === "REALTIME" && isStale(row)) {
+    quality.providerStaleMisuse += 1;
+    addFailure(failures, row, "PROVIDER_STALE_MISUSE", "stale provider sample used as realtime ETA", { providerFreshnessStatus: "FRESH" }, { providerFreshnessStatus: row.provider_freshness_status || "STALE" });
+  }
+}
+
+function isStrictStepFree(row) {
+  return row.constraint_mode === "STRICT_STEP_FREE" || row.strict_step_free_expected_status === "STEP_FREE";
+}
+
+function containsBlockedStepFreeEdge(edgeTypes = "") {
+  return edgeTypes.split("|").some((type) => type === "STAIR" || type === "ESCALATOR" || type === "ESCALATOR_ONLY");
+}
+
+function isStale(row) {
+  return row.provider_freshness_status === "STALE" || row.notes.toLowerCase().includes("stale");
+}
+
+function hasValue(value) {
+  return value !== undefined && value !== "";
+}
+
 function metricBlock(sortedErrors) {
   return {
     sampleSize: sortedErrors.length,
@@ -202,10 +301,26 @@ function metricBlock(sortedErrors) {
 function requiredNumber(value, row, column, failures) {
   const number = Number(value);
   if (!Number.isFinite(number)) {
-    failures.push(`${row.sourceFile}:${row.lineNumber} invalid number: ${column}`);
+    addFailure(failures, row, "INVALID_NUMBER", `invalid number: ${column}`, { numeric: true }, { value });
     return null;
   }
   return number;
+}
+
+function addFailure(failures, row, type, message, expected, actual) {
+  failures.push({
+    caseId: row.case_id || `${row.sourceFile}:${row.lineNumber}`,
+    type,
+    message,
+    sourceFile: row.sourceFile,
+    lineNumber: row.lineNumber,
+    expected,
+    actual,
+  });
+}
+
+function rate(count, total) {
+  return total === 0 ? 0 : count / total;
 }
 
 function percentile(sortedValues, percentileValue) {
