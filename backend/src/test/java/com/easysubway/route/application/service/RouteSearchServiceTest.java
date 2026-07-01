@@ -13,6 +13,7 @@ import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.InvalidRouteFeedbackException;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteFeedbackRating;
+import com.easysubway.route.domain.RouteProfileWeight;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteWarningCode;
@@ -328,6 +329,38 @@ class RouteSearchServiceTest {
 		assertThat(result.steps().get(2).estimatedMinutes()).isEqualTo(6);
 		assertThat(result.steps().get(2).distanceMeters()).isEqualTo(260);
 		assertThat(result.steps().get(2).requiresAccessibilityCheck()).isTrue();
+	}
+
+	@Test
+	@DisplayName("access graph 계약은 진입, 환승, 진출 시간과 no-path reason을 분리한다")
+	void accessGraphContractSeparatesAccessTimesAndNoPathReasons() {
+		var profileWeight = RouteProfileWeight.from(MobilityType.WHEELCHAIR, ConstraintMode.STRICT_STEP_FREE);
+		var accessRouter = new AccessGraphRouter();
+		var stationRouter = new StationPathwayRouter();
+
+		var entry = accessRouter.entryAccess("station-a", "line-a", false, profileWeight);
+		var transfer = stationRouter.transferPath("station-x", "line-a", "line-b", false, profileWeight);
+		var egress = accessRouter.egressAccess("station-b", "line-b", false, profileWeight);
+		var ready = new TransferAccessResolver().resolve(transfer, 600, 1000);
+
+		assertThat(entry.estimatedMinutes()).isEqualTo(4);
+		assertThat(transfer.estimatedMinutes()).isEqualTo(6);
+		assertThat(egress.estimatedMinutes()).isEqualTo(3);
+		assertThat(transfer.evidenceSources()).containsExactly(
+			"station:station-x",
+			"transfer:line-a:line-b",
+			"access:transfer"
+		);
+		assertThat(ready.transferReadyAtMinutes()).isEqualTo(606);
+		assertThat(ready.slackMinutes()).isEqualTo(394);
+		assertThat(ready.feasible()).isTrue();
+		assertThat(accessRouter.entryAccess("station-a", "line-a", true, profileWeight).noPathReason())
+			.isEqualTo(AccessNoPathReason.BLOCKED);
+		assertThat(accessRouter.generatedConnector("edge-generated", profileWeight).noPathReason())
+			.isEqualTo(AccessNoPathReason.UNKNOWN);
+		assertThat(AccessPath.unsupported(List.of("STRICT_EVIDENCE_UNSUPPORTED")).noPathReason())
+			.isEqualTo(AccessNoPathReason.UNSUPPORTED);
+		assertThat(AccessPath.noData().noPathReason()).isEqualTo(AccessNoPathReason.NO_DATA);
 	}
 
 	@Test

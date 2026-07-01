@@ -769,10 +769,11 @@ public class RouteSearchService implements RouteSearchUseCase {
 		RoutePlan routePlan,
 		RouteProfileWeight profileWeight
 	) {
+		RouteAssembler routeAssembler = new RouteAssembler();
 		if (routePlan.transferRoute().isPresent()) {
-			return transferSteps(origin, destination, routePlan.transferRoute().get(), profileWeight);
+			return routeAssembler.assemble(transferSteps(origin, destination, routePlan.transferRoute().get(), profileWeight));
 		}
-		return directLineSteps(origin, destination, routePlan.directLine().orElseThrow(), profileWeight);
+		return routeAssembler.assemble(directLineSteps(origin, destination, routePlan.directLine().orElseThrow(), profileWeight));
 	}
 
 	private List<RouteStep> directLineSteps(
@@ -784,6 +785,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 		String displayLine = displayLineName(directLine.line());
 		boolean originIncludesStairs = hasStairOnlyAccess(origin.id());
 		boolean destinationIncludesStairs = hasStairOnlyAccess(destination.id());
+		AccessGraphRouter accessGraphRouter = new AccessGraphRouter();
+		AccessPath entryAccess = accessGraphRouter.entryAccess(origin.id(), directLine.line().id(), originIncludesStairs, profileWeight);
+		AccessPath egressAccess = accessGraphRouter.egressAccess(destination.id(), directLine.line().id(), destinationIncludesStairs, profileWeight);
 		return List.of(
 			new RouteStep(
 				1,
@@ -794,9 +798,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				directLine.line().name(),
 				origin.id(),
 				origin.id(),
-				ENTRY_ESTIMATED_MINUTES,
-				ENTRY_DISTANCE_METERS,
-				originIncludesStairs,
+				entryAccess.estimatedMinutes(),
+				entryAccess.distanceMeters(),
+				entryAccess.includesStairs(),
 				true
 			),
 			new RouteStep(
@@ -822,9 +826,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				directLine.line().name(),
 				destination.id(),
 				destination.id(),
-				EXIT_ESTIMATED_MINUTES,
-				EXIT_DISTANCE_METERS,
-				destinationIncludesStairs,
+				egressAccess.estimatedMinutes(),
+				egressAccess.distanceMeters(),
+				egressAccess.includesStairs(),
 				true
 			)
 		);
@@ -841,6 +845,17 @@ public class RouteSearchService implements RouteSearchUseCase {
 		boolean originIncludesStairs = hasStairOnlyAccess(origin.id());
 		boolean transferIncludesStairs = hasStairOnlyAccess(route.transferStation().id());
 		boolean destinationIncludesStairs = hasStairOnlyAccess(destination.id());
+		AccessGraphRouter accessGraphRouter = new AccessGraphRouter();
+		StationPathwayRouter stationPathwayRouter = new StationPathwayRouter();
+		AccessPath entryAccess = accessGraphRouter.entryAccess(origin.id(), route.firstLine().id(), originIncludesStairs, profileWeight);
+		AccessPath transferAccess = stationPathwayRouter.transferPath(
+			route.transferStation().id(),
+			route.firstLine().id(),
+			route.secondLine().id(),
+			transferIncludesStairs,
+			profileWeight
+		);
+		AccessPath egressAccess = accessGraphRouter.egressAccess(destination.id(), route.secondLine().id(), destinationIncludesStairs, profileWeight);
 		return List.of(
 			new RouteStep(
 				1,
@@ -851,9 +866,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				route.firstLine().name(),
 				origin.id(),
 				origin.id(),
-				ENTRY_ESTIMATED_MINUTES,
-				ENTRY_DISTANCE_METERS,
-				originIncludesStairs,
+				entryAccess.estimatedMinutes(),
+				entryAccess.distanceMeters(),
+				entryAccess.includesStairs(),
 				true
 			),
 			new RouteStep(
@@ -879,9 +894,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				route.secondLine().name(),
 				route.transferStation().id(),
 				route.transferStation().id(),
-				TRANSFER_ESTIMATED_MINUTES,
-				TRANSFER_DISTANCE_METERS,
-				transferIncludesStairs,
+				transferAccess.estimatedMinutes(),
+				transferAccess.distanceMeters(),
+				transferAccess.includesStairs(),
 				true
 			),
 			new RouteStep(
@@ -907,9 +922,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				route.secondLine().name(),
 				destination.id(),
 				destination.id(),
-				EXIT_ESTIMATED_MINUTES,
-				EXIT_DISTANCE_METERS,
-				destinationIncludesStairs,
+				egressAccess.estimatedMinutes(),
+				egressAccess.distanceMeters(),
+				egressAccess.includesStairs(),
 				true
 			)
 		);
@@ -1001,5 +1016,164 @@ public class RouteSearchService implements RouteSearchUseCase {
 				.map(route -> List.of(originStationId, route.transferStation().id(), destinationStationId))
 				.orElseGet(() -> List.of(originStationId, destinationStationId));
 		}
+	}
+}
+
+enum AccessNoPathReason {
+	BLOCKED,
+	UNKNOWN,
+	UNSUPPORTED,
+	NO_DATA
+}
+
+record AccessPath(
+	int estimatedMinutes,
+	int distanceMeters,
+	boolean includesStairs,
+	String stairAccessState,
+	List<String> evidenceSources,
+	AccessNoPathReason noPathReason,
+	List<String> reasonCodes
+) {
+
+	static AccessPath found(
+		int estimatedMinutes,
+		int distanceMeters,
+		boolean includesStairs,
+		String stationId,
+		String lineId,
+		String evidenceKind
+	) {
+		List<String> evidenceSources = new ArrayList<>();
+		evidenceSources.add("station:" + stationId);
+		if (lineId != null && !lineId.isBlank()) {
+			evidenceSources.add("line:" + lineId);
+		}
+		evidenceSources.add("access:" + evidenceKind);
+		return new AccessPath(
+			estimatedMinutes,
+			distanceMeters,
+			includesStairs,
+			includesStairs ? "STAIR_ONLY" : "UNKNOWN",
+			List.copyOf(evidenceSources),
+			null,
+			List.of()
+		);
+	}
+
+	static AccessPath transfer(
+		String stationId,
+		String fromLineId,
+		String toLineId,
+		boolean includesStairs
+	) {
+		return new AccessPath(
+			6,
+			260,
+			includesStairs,
+			includesStairs ? "STAIR_ONLY" : "UNKNOWN",
+			List.of("station:" + stationId, "transfer:" + fromLineId + ":" + toLineId, "access:transfer"),
+			null,
+			List.of()
+		);
+	}
+
+	static AccessPath blocked(List<String> reasonCodes) {
+		return noPath(AccessNoPathReason.BLOCKED, reasonCodes);
+	}
+
+	static AccessPath unknown(List<String> reasonCodes) {
+		return noPath(AccessNoPathReason.UNKNOWN, reasonCodes);
+	}
+
+	static AccessPath unsupported(List<String> reasonCodes) {
+		return noPath(AccessNoPathReason.UNSUPPORTED, reasonCodes);
+	}
+
+	static AccessPath noData() {
+		return noPath(AccessNoPathReason.NO_DATA, List.of("NO_DATA"));
+	}
+
+	private static AccessPath noPath(AccessNoPathReason reason, List<String> reasonCodes) {
+		return new AccessPath(0, 0, false, "UNKNOWN", List.of(), reason, List.copyOf(reasonCodes));
+	}
+}
+
+final class AccessGraphRouter {
+
+	AccessPath entryAccess(
+		String stationId,
+		String lineId,
+		boolean includesStairs,
+		RouteProfileWeight profileWeight
+	) {
+		if (profileWeight.blocksStairOnlyAccess() && includesStairs) {
+			return AccessPath.blocked(List.of("STAIR_ONLY_ACCESS"));
+		}
+		return AccessPath.found(4, 180, includesStairs, stationId, lineId, "entry");
+	}
+
+	AccessPath egressAccess(
+		String stationId,
+		String lineId,
+		boolean includesStairs,
+		RouteProfileWeight profileWeight
+	) {
+		if (profileWeight.blocksStairOnlyAccess() && includesStairs) {
+			return AccessPath.blocked(List.of("STAIR_ONLY_ACCESS"));
+		}
+		return AccessPath.found(3, 120, includesStairs, stationId, lineId, "egress");
+	}
+
+	AccessPath generatedConnector(String edgeId, RouteProfileWeight profileWeight) {
+		if (profileWeight.blocksStairOnlyAccess()) {
+			return AccessPath.unknown(List.of("GENERATED_CONNECTOR_UNVERIFIED"));
+		}
+		return AccessPath.found(0, 0, false, edgeId, "", "generated");
+	}
+}
+
+final class StationPathwayRouter {
+
+	AccessPath transferPath(
+		String stationId,
+		String fromLineId,
+		String toLineId,
+		boolean includesStairs,
+		RouteProfileWeight profileWeight
+	) {
+		if (profileWeight.blocksStairOnlyAccess() && includesStairs) {
+			return AccessPath.blocked(List.of("STAIR_ONLY_ACCESS"));
+		}
+		return AccessPath.transfer(stationId, fromLineId, toLineId, includesStairs);
+	}
+}
+
+record TransferAccess(
+	AccessPath path,
+	int transferReadyAtMinutes,
+	int slackMinutes,
+	boolean feasible
+) {
+}
+
+final class TransferAccessResolver {
+
+	TransferAccess resolve(AccessPath path, int alightAtMinutes, int nextDepartureMinutes) {
+		int transferReadyAtMinutes = alightAtMinutes + path.estimatedMinutes();
+		return new TransferAccess(
+			path,
+			transferReadyAtMinutes,
+			nextDepartureMinutes - transferReadyAtMinutes,
+			nextDepartureMinutes >= transferReadyAtMinutes
+		);
+	}
+}
+
+final class RouteAssembler {
+
+	List<RouteStep> assemble(List<RouteStep> steps) {
+		// ponytail: keep this boundary thin until E/F add schedule and realtime inputs.
+		return List.copyOf(steps);
 	}
 }
