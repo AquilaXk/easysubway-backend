@@ -1,6 +1,9 @@
 package com.easysubway.realtime.adapter.in.web;
 
+import static org.hamcrest.Matchers.containsString;
+import static org.hamcrest.Matchers.not;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -52,6 +55,35 @@ class RealtimeControllerTest {
 			.andExpect(jsonPath("$.data.status").value("UNSUPPORTED"))
 			.andExpect(jsonPath("$.data.fallbackCode").value("MAPPING_MISSING"))
 			.andExpect(jsonPath("$.data.message").value("서울 TOPIS 실시간 지원 범위 밖입니다."));
+	}
+
+	@Test
+	@DisplayName("공개 실시간 API는 provider credential query parameter를 받지 않는다")
+	void realtimePublicApiRejectsProviderCredentialParameters() throws Exception {
+		mockMvc.perform(get("/api/v1/realtime/arrivals")
+				.param("stationId", "station-sangnoksu")
+				.param("lineId", "seoul-4")
+				.param("stationQueryName", "상록수")
+				.param("serviceKey", "raw-provider-secret"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("실시간 provider credential은 앱/API 요청에 포함할 수 없습니다."))
+			.andExpect(content().string(not(containsString("raw-provider-secret"))))
+			.andExpect(content().string(not(containsString("상록수"))));
+	}
+
+	@Test
+	@DisplayName("열차 위치 API도 provider URL proxy parameter를 거부한다")
+	void trainPositionsRejectProviderUrlProxyParameter() throws Exception {
+		mockMvc.perform(get("/api/v1/realtime/train-positions")
+				.param("lineId", "seoul-4")
+				.param("lineName", "4호선")
+				.param("providerUrl", "http://swopenapi.seoul.go.kr/api/subway/raw-key/json/realtimePosition/0/10/4호선"))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(content().string(not(containsString("raw-key"))))
+			.andExpect(content().string(not(containsString("swopenapi.seoul.go.kr"))))
+			.andExpect(content().string(not(containsString("4호선"))));
 	}
 
 	@Test

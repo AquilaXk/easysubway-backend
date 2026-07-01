@@ -183,6 +183,107 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider call rate limit은 cache miss 남용을 외부 provider 호출 전에 차단한다")
+	void providerRateLimitBlocksRepeatedCacheMissesBeforeProviderCall() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			1
+		);
+		RealtimeQuery query = sangnoksuQuery();
+
+		RealtimeArrivalResult first = service.arrivals(query);
+		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		provider.providerReceivedAt = "2026-06-26T08:00:30Z";
+		RealtimeArrivalResult limited = service.arrivals(query);
+
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(limited.status()).hasToString("UNAVAILABLE");
+		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(provider.arrivalCalls).hasValue(1);
+	}
+
+	@Test
+	@DisplayName("provider fallback code는 allowlist 밖 값을 API/metric으로 노출하지 않는다")
+	void providerFallbackCodeIsAllowlistedBeforeExposure() {
+		CountingProvider provider = new CountingProvider();
+		provider.failureCode = "PROVIDER_TIMEOUT serviceKey=raw-secret stationQueryName=상록수 trainNo=4123";
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+
+		assertThat(result.status()).hasToString("UNAVAILABLE");
+		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(result.toString())
+			.doesNotContain("raw-secret")
+			.doesNotContain("상록수")
+			.doesNotContain("4123");
+		assertThat(snapshot.toString())
+			.doesNotContain("raw-secret")
+			.doesNotContain("상록수")
+			.doesNotContain("4123");
+	}
+
+	@Test
+	@DisplayName("열차 위치 provider call rate limit도 cache miss 남용을 외부 provider 호출 전에 차단한다")
+	void trainPositionProviderRateLimitBlocksRepeatedCacheMissesBeforeProviderCall() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			1
+		);
+		RealtimeQuery query = line4Query();
+
+		RealtimeTrainPositionResult first = service.trainPositions(query);
+		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		provider.providerReceivedAt = "2026-06-26T08:00:30Z";
+		RealtimeTrainPositionResult limited = service.trainPositions(query);
+
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(limited.status()).hasToString("UNAVAILABLE");
+		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(provider.trainPositionCalls).hasValue(1);
+	}
+
+	@Test
+	@DisplayName("열차 위치 provider fallback code도 allowlist 밖 값을 API/metric으로 노출하지 않는다")
+	void trainPositionProviderFallbackCodeIsAllowlistedBeforeExposure() {
+		CountingProvider provider = new CountingProvider();
+		provider.failureCode = "PROVIDER_TIMEOUT serviceKey=raw-secret lineName=4호선 trainNo=4123";
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+
+		assertThat(result.status()).hasToString("UNAVAILABLE");
+		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(result.toString())
+			.doesNotContain("raw-secret")
+			.doesNotContain("4호선")
+			.doesNotContain("4123");
+		assertThat(snapshot.toString())
+			.doesNotContain("raw-secret")
+			.doesNotContain("4호선")
+			.doesNotContain("4123");
+		assertThat(provider.trainPositionCalls).hasValue(1);
+	}
+
+	@Test
 	@DisplayName("열차 위치 quota 초과도 circuit을 열고 다음 요청에서 provider를 호출하지 않는다")
 	void trainPositionQuotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
@@ -723,6 +824,16 @@ class RealtimeGatewayServiceTest {
 		RealtimeProviderControl control
 	) {
 		return new RealtimeGatewayService(provider, clock, mappingPort, control);
+	}
+
+	private RealtimeGatewayService service(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl control,
+		int providerCallLimitPerMinute
+	) {
+		return new RealtimeGatewayService(provider, clock, mappingPort, control, providerCallLimitPerMinute);
 	}
 
 	private RealtimeMapping mapping(

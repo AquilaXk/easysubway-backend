@@ -15,6 +15,7 @@ import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,15 +30,25 @@ public class RealtimeGatewayService {
 	private static final Duration STALE_TTL = Duration.ofSeconds(120);
 	private static final Duration PROVIDER_FRESHNESS_TTL = Duration.ofSeconds(90);
 	private static final Duration QUOTA_CIRCUIT_OPEN = Duration.ofSeconds(60);
+	private static final int DEFAULT_PROVIDER_CALL_LIMIT_PER_MINUTE = 120;
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final String PROVIDER_ID = "seoul-topis";
+	private static final Set<String> SAFE_FALLBACK_CODES = Set.of(
+		"EMPTY_PROVIDER_RESULT",
+		"PROVIDER_ERROR",
+		"PROVIDER_QUOTA_EXCEEDED",
+		"PROVIDER_RATE_LIMITED",
+		"PROVIDER_TIMEOUT",
+		"PROVIDER_UNAVAILABLE"
+	);
 
 	private final RealtimeProvider provider;
 	private final RealtimeMappingPort mappingPort;
 	private final Clock clock;
 	private final RealtimeProviderControl providerControl;
+	private final ProviderCallRateLimiter providerCallRateLimiter;
 	private final ProviderMetrics providerMetrics = new ProviderMetrics();
 	private final Map<String, CachedArrival> arrivalCache = new ConcurrentHashMap<>();
 	private final Map<String, CachedTrainPosition> trainPositionCache = new ConcurrentHashMap<>();
@@ -64,10 +75,21 @@ public class RealtimeGatewayService {
 		RealtimeMappingPort mappingPort,
 		RealtimeProviderControl providerControl
 	) {
+		this(provider, clock, mappingPort, providerControl, DEFAULT_PROVIDER_CALL_LIMIT_PER_MINUTE);
+	}
+
+	RealtimeGatewayService(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl providerControl,
+		int providerCallLimitPerMinute
+	) {
 		this.provider = provider;
 		this.clock = clock;
 		this.mappingPort = mappingPort;
 		this.providerControl = providerControl;
+		this.providerCallRateLimiter = new ProviderCallRateLimiter(providerCallLimitPerMinute);
 	}
 
 	public RealtimeArrivalResult arrivals(RealtimeQuery query) {
@@ -105,6 +127,11 @@ public class RealtimeGatewayService {
 			return recordArrivalResult(joinArrival(existing));
 		}
 		try {
+			if (!providerCallRateLimiter.tryAcquire(clock.instant())) {
+				RealtimeArrivalResult result = RealtimeArrivalResult.unavailable("PROVIDER_RATE_LIMITED");
+				request.complete(result);
+				return recordArrivalResult(result);
+			}
 			RealtimeArrivalResult result = fetchArrivals(normalizedQuery.query(), cacheKey, cached);
 			request.complete(result);
 			return recordArrivalResult(result);
@@ -136,9 +163,10 @@ public class RealtimeGatewayService {
 			arrivalCache.put(cacheKey, new CachedArrival(result, receivedAt));
 			return result;
 		} catch (RealtimeProviderException exception) {
-			providerMetrics.recordProviderException(exception.fallbackCode());
+			String fallbackCode = safeFallbackCode(exception.fallbackCode());
+			providerMetrics.recordProviderException(fallbackCode);
 			openQuotaCircuitIfNeeded(exception);
-			return staleArrivalOrUnavailable(cached, exception.fallbackCode());
+			return staleArrivalOrUnavailable(cached, fallbackCode);
 		} finally {
 			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
@@ -178,6 +206,11 @@ public class RealtimeGatewayService {
 			return recordTrainPositionResult(joinTrainPosition(existing));
 		}
 		try {
+			if (!providerCallRateLimiter.tryAcquire(clock.instant())) {
+				RealtimeTrainPositionResult result = RealtimeTrainPositionResult.unavailable("PROVIDER_RATE_LIMITED");
+				request.complete(result);
+				return recordTrainPositionResult(result);
+			}
 			RealtimeTrainPositionResult result = fetchTrainPositions(normalizedQuery.query(), cacheKey, cached);
 			request.complete(result);
 			return recordTrainPositionResult(result);
@@ -213,9 +246,10 @@ public class RealtimeGatewayService {
 			trainPositionCache.put(cacheKey, new CachedTrainPosition(result, receivedAt));
 			return result;
 		} catch (RealtimeProviderException exception) {
-			providerMetrics.recordProviderException(exception.fallbackCode());
+			String fallbackCode = safeFallbackCode(exception.fallbackCode());
+			providerMetrics.recordProviderException(fallbackCode);
 			openQuotaCircuitIfNeeded(exception);
-			return staleTrainPositionOrUnavailable(cached, exception.fallbackCode());
+			return staleTrainPositionOrUnavailable(cached, fallbackCode);
 		} finally {
 			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
@@ -429,6 +463,33 @@ public class RealtimeGatewayService {
 	private void openQuotaCircuitIfNeeded(RealtimeProviderException exception) {
 		if ("PROVIDER_QUOTA_EXCEEDED".equals(exception.fallbackCode())) {
 			quotaCircuitOpenUntil = clock.instant().plus(QUOTA_CIRCUIT_OPEN);
+		}
+	}
+
+	private String safeFallbackCode(String fallbackCode) {
+		return fallbackCode != null && SAFE_FALLBACK_CODES.contains(fallbackCode) ? fallbackCode : "PROVIDER_ERROR";
+	}
+
+	private static final class ProviderCallRateLimiter {
+		private final int limitPerMinute;
+		private long windowMinute = Long.MIN_VALUE;
+		private int calls;
+
+		private ProviderCallRateLimiter(int limitPerMinute) {
+			this.limitPerMinute = Math.max(1, limitPerMinute);
+		}
+
+		private synchronized boolean tryAcquire(Instant now) {
+			long minute = now.getEpochSecond() / 60;
+			if (minute != windowMinute) {
+				windowMinute = minute;
+				calls = 0;
+			}
+			if (calls >= limitPerMinute) {
+				return false;
+			}
+			calls += 1;
+			return true;
 		}
 	}
 
