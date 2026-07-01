@@ -8,6 +8,8 @@ import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.domain.EtaConfidence;
+import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.InternalRouteResult;
 import com.easysubway.route.domain.InternalRouteStep;
 import com.easysubway.route.domain.InvalidRouteFeedbackException;
@@ -15,6 +17,8 @@ import com.easysubway.route.domain.InvalidRouteSearchException;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteProfileWeight;
+import com.easysubway.route.domain.RouteRefreshResult;
+import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
@@ -228,6 +232,22 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	@Override
+	public RouteRefreshResult refreshRoute(String routeSearchId) {
+		RouteSearchResult routeSearch = getRouteSearch(routeSearchId);
+		RouteRefreshStatus status = refreshStatus(routeSearch);
+		return new RouteRefreshResult(
+			routeSearch.routeSearchId(),
+			status,
+			routeSearch,
+			LocalDateTime.now(clock),
+			routeSearch.etaSource(),
+			etaConfidence(routeSearch),
+			sourceLabel(status, routeSearch),
+			reasonCodes(status, routeSearch)
+		);
+	}
+
+	@Override
 	public RouteFeedback submitRouteFeedback(SubmitRouteFeedbackCommand command) {
 		requireFeedbackCommand(command);
 		String routeSearchId = command.routeSearchId().trim();
@@ -242,6 +262,60 @@ public class RouteSearchService implements RouteSearchUseCase {
 			normalizeFeedbackComment(command.comment()),
 			LocalDateTime.now(clock)
 		));
+	}
+
+	private RouteRefreshStatus refreshStatus(RouteSearchResult routeSearch) {
+		if (routeSearch.status() != RouteSearchStatus.FOUND || routeSearch.steps().isEmpty()) {
+			return RouteRefreshStatus.REROUTE_REQUIRED;
+		}
+		if (routeSearch.etaSource() == EtaSource.FALLBACK
+			|| hasWarning(routeSearch, RouteWarningCode.STALE_ACCESSIBILITY_DATA)) {
+			return RouteRefreshStatus.STALE_FALLBACK;
+		}
+		if (routeSearch.etaSource() == EtaSource.REALTIME
+			|| routeSearch.etaSource() == EtaSource.MIXED) {
+			return RouteRefreshStatus.UPDATED_ETA;
+		}
+		return RouteRefreshStatus.UNCHANGED;
+	}
+
+	private EtaConfidence etaConfidence(RouteSearchResult routeSearch) {
+		return switch (routeSearch.etaSource()) {
+			case REALTIME -> EtaConfidence.HIGH;
+			case MIXED -> EtaConfidence.MEDIUM;
+			case PLANNED -> EtaConfidence.MEDIUM;
+			case FALLBACK -> EtaConfidence.LOW;
+		};
+	}
+
+	private String sourceLabel(RouteRefreshStatus status, RouteSearchResult routeSearch) {
+		return switch (status) {
+			case UPDATED_ETA -> "실시간 도착 정보 기준";
+			case STALE_FALLBACK -> "최근 확인 시간이 오래되어 계획 시간으로 안내";
+			case REROUTE_REQUIRED -> "경로를 다시 찾아야 합니다";
+			case UNCHANGED -> routeSearch.etaSource() == EtaSource.PLANNED
+				? "계획 시간 기준"
+				: "기존 안내 유지";
+		};
+	}
+
+	private List<String> reasonCodes(RouteRefreshStatus status, RouteSearchResult routeSearch) {
+		List<String> reasons = new ArrayList<>();
+		if (status == RouteRefreshStatus.REROUTE_REQUIRED) {
+			reasons.add("REROUTE_REQUIRED");
+		}
+		if (status == RouteRefreshStatus.STALE_FALLBACK) {
+			reasons.add("STALE_FALLBACK");
+		}
+		routeSearch.warnings().stream()
+			.map(warning -> warning.code().name())
+			.forEach(reasons::add);
+		return List.copyOf(reasons.stream().distinct().toList());
+	}
+
+	private boolean hasWarning(RouteSearchResult routeSearch, RouteWarningCode warningCode) {
+		return routeSearch.warnings().stream()
+			.anyMatch(warning -> warning.code() == warningCode);
 	}
 
 	private void requireCommand(SearchRouteCommand command) {

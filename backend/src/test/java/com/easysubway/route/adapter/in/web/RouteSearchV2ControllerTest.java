@@ -10,6 +10,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.domain.EtaConfidence;
+import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.RouteRefreshResult;
+import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
@@ -109,6 +113,48 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].slackSeconds").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.itineraries[0].commercialEtaEligible").value(false));
+	}
+
+	@Test
+	@DisplayName("V2 route refresh는 저장된 itinerary와 refresh 상태를 반환한다")
+	void routeRefreshV2ReturnsRefreshStatusAndStoredRoute() throws Exception {
+		when(routeSearchUseCase.refreshRoute("route-search-1"))
+			.thenReturn(new RouteRefreshResult(
+				"route-search-1",
+				RouteRefreshStatus.STALE_FALLBACK,
+				fallbackRouteSearch(),
+				LocalDateTime.of(2026, 7, 1, 15, 30),
+				EtaSource.FALLBACK,
+				EtaConfidence.LOW,
+				"최근 확인 시간이 오래되어 계획 시간으로 안내",
+				List.of("STALE_FALLBACK", "STALE_ACCESSIBILITY_DATA")
+			));
+
+		mockMvc.perform(post("/api/v2/routes/route-search-1/refresh"))
+			.andExpect(status().isOk())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.routeSearchId").value("route-search-1"))
+			.andExpect(jsonPath("$.data.status").value("STALE_FALLBACK"))
+			.andExpect(jsonPath("$.data.etaSource").value("FALLBACK"))
+			.andExpect(jsonPath("$.data.etaConfidence").value("LOW"))
+			.andExpect(jsonPath("$.data.sourceLabel").value("최근 확인 시간이 오래되어 계획 시간으로 안내"))
+			.andExpect(jsonPath("$.data.reasonCodes[0]").value("STALE_FALLBACK"))
+			.andExpect(jsonPath("$.data.route.routeSearchId").value("route-search-1"))
+			.andExpect(jsonPath("$.data.route.etaSource").value("FALLBACK"));
+	}
+
+	@Test
+	@DisplayName("V2 route refresh는 없는 routeSearchId를 안정 JSON 404로 반환한다")
+	void routeRefreshV2UnknownRouteSearchIdReturnsJsonNotFound() throws Exception {
+		when(routeSearchUseCase.refreshRoute("route-missing"))
+			.thenThrow(new com.easysubway.route.domain.RouteSearchNotFoundException());
+
+		mockMvc.perform(post("/api/v2/routes/route-missing/refresh"))
+			.andExpect(status().isNotFound())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("경로 검색 결과를 찾을 수 없습니다."));
 	}
 
 	@Test
@@ -496,6 +542,42 @@ class RouteSearchV2ControllerTest {
 				"LEGACY_STATIC"
 			)),
 			List.of(),
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult fallbackRouteSearch() {
+		return new RouteSearchResult(
+			"route-search-1",
+			"station-sangnoksu",
+			"상록수",
+			"station-sadang",
+			"사당",
+			MobilityType.STROLLER,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			18,
+			List.of(new RouteStep(
+				1,
+				"ride",
+				"수도권 4호선으로 이동",
+				"열차로 이동합니다.",
+				"line-4",
+				"수도권 4호선",
+				"station-sangnoksu",
+				"station-sadang",
+				7,
+				1800,
+				false,
+				"VERIFIED",
+				false,
+				"FALLBACK",
+				"ESTIMATED_CONSTANT",
+				"LOW"
+			)),
+			List.of(new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
 		);

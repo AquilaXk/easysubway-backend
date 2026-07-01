@@ -247,7 +247,8 @@ public class SecurityConfig {
 				.requestMatchers(
 					HttpMethod.POST,
 					"/api/v1/routes/search",
-					"/api/v2/routes/search"
+					"/api/v2/routes/search",
+					"/api/v2/routes/*/refresh"
 				).permitAll()
 				.requestMatchers(
 					"/api/health",
