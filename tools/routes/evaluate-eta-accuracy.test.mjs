@@ -26,9 +26,28 @@ test("ETA evaluator emits the route accuracy report contract", async (t) => {
   const report = JSON.parse(await readFile(output, "utf8"));
   assert.equal(report.schemaVersion, 1);
   assert.equal(report.sampleSize, 100);
+  assert.deepEqual(report.sampleSourceCounts, {
+    fixture: 100,
+    staticTimetable: 0,
+    realtimeProvider: 0,
+    manualObservation: 0,
+    staleRealtime: 0,
+  });
   assert.equal(report.metrics.sampleSize, 100);
   assert.equal(report.metrics.p50ErrorSeconds, 45);
   assert.equal(report.metrics.p90ErrorSeconds, 90);
+  assert.deepEqual(report.metrics.singleRide, {
+    sampleSize: 35,
+    p50ErrorSeconds: 45,
+    p90ErrorSeconds: 90,
+    maxErrorSeconds: 90,
+  });
+  assert.deepEqual(report.metrics.transfer, {
+    sampleSize: 65,
+    p50ErrorSeconds: 90,
+    p90ErrorSeconds: 120,
+    maxErrorSeconds: 120,
+  });
   assert.deepEqual(report.failures, []);
   assert.equal(report.coverage.singleRide, true);
   assert.equal(report.coverage.oneTransfer, true);
@@ -90,6 +109,13 @@ test("ETA evaluator reports file-local lines and excludes invalid numbers from m
 
   const report = JSON.parse(await readFile(output, "utf8"));
   assert.equal(report.metrics.sampleSize, 5);
+  assert.deepEqual(report.sampleSourceCounts, {
+    fixture: 0,
+    staticTimetable: 5,
+    realtimeProvider: 1,
+    manualObservation: 0,
+    staleRealtime: 0,
+  });
   assert.equal(report.metrics.maxErrorSeconds, 50);
   assert.ok(report.failures.includes("one_transfer_cases.csv:2 observed ETA error exceeds max"));
   assert.ok(report.failures.includes("two_transfer_cases.csv:2 invalid number: observed_eta_error_seconds"));
