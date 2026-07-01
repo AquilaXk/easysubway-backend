@@ -74,7 +74,7 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.data.warnings").isArray())
 			.andExpect(jsonPath("$.data.blockedReasons").isArray())
 			.andExpect(jsonPath("$.data.createdAt").value("2026-06-30T09:00:00"))
-			.andExpect(jsonPath("$.data.etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.routeQuality").value("LEGACY_STATIC"))
 			.andExpect(jsonPath("$.data.commercialEtaEligible").value(false));
 	}
@@ -138,7 +138,7 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.status").value("BLOCKED"))
 			.andExpect(jsonPath("$.data.blockedReasons[0]").value("계단 없는 역 접근 경로를 확인할 수 없습니다."))
-			.andExpect(jsonPath("$.data.etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.routeQuality").value("LEGACY_STATIC"))
 			.andExpect(jsonPath("$.data.commercialEtaEligible").value(false));
 	}

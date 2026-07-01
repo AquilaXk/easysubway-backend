@@ -6,6 +6,7 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -113,7 +114,7 @@ class RouteSearchController {
 				result.recommendationReasons(),
 				result.evidenceSummary(),
 				result.createdAt(),
-				"STATIC_BACKEND_V1",
+				result.etaSource().name(),
 				"LEGACY_STATIC",
 				false
 			);
@@ -227,7 +228,7 @@ class RouteSearchController {
 				statusOf(result),
 				formatOffset(plannedArrivalTime),
 				null,
-				"STATIC_BACKEND_V1",
+				result.etaSource().name(),
 				confidenceOf(result),
 				result.estimatedDurationSeconds(),
 				result.transferCount(),
@@ -455,10 +456,18 @@ class RouteSearchController {
 				0,
 				durationSeconds,
 				Math.max(0, step.distanceMeters()),
-				"STATIC_BACKEND_V1",
+				etaSourceOf(step).name(),
 				"LOW",
 				AccessibilityRiskDto.from(step)
 			);
+		}
+
+		private static EtaSource etaSourceOf(RouteStep step) {
+			try {
+				return EtaSource.valueOf(step.timeSource());
+			} catch (IllegalArgumentException exception) {
+				return EtaSource.PLANNED;
+			}
 		}
 
 		private static String legTypeOf(RouteStep step) {

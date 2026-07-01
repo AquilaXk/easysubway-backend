@@ -52,6 +52,25 @@ public record RouteSearchResult(
 			.sum();
 	}
 
+	@JsonProperty("etaSource")
+	public EtaSource etaSource() {
+		if (steps.isEmpty()) {
+			return EtaSource.PLANNED;
+		}
+		long realtimeSteps = steps.stream()
+			.filter(step -> EtaSource.REALTIME.name().equals(step.timeSource()))
+			.count();
+		boolean fallback = steps.stream()
+			.anyMatch(step -> EtaSource.FALLBACK.name().equals(step.timeSource()));
+		if (fallback) {
+			return EtaSource.FALLBACK;
+		}
+		if (realtimeSteps == 0) {
+			return EtaSource.PLANNED;
+		}
+		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
+	}
+
 	@JsonProperty("walkingDistanceMeters")
 	public int walkingDistanceMeters() {
 		return steps.stream()

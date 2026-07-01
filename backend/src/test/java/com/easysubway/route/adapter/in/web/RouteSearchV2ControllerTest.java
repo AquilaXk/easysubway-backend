@@ -86,7 +86,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].status").value("FOUND"))
 			.andExpect(jsonPath("$.data.itineraries[0].plannedArrivalTime").value("2026-06-30T09:22:00+09:00"))
 			.andExpect(jsonPath("$.data.itineraries[0].realtimeArrivalTime").doesNotExist())
-			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.itineraries[0].etaConfidence").value("LOW"))
 			.andExpect(jsonPath("$.data.itineraries[0].durationSeconds").value(420))
 			.andExpect(jsonPath("$.data.itineraries[0].transferCount").value(0))
@@ -106,7 +106,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].plannedArrivalTime").value("2026-06-30T09:22:00+09:00"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].waitTimeSeconds").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].slackSeconds").value(0))
-			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.itineraries[0].commercialEtaEligible").value(false));
 	}
 
