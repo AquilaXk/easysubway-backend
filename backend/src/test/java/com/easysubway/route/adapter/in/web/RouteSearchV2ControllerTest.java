@@ -145,7 +145,39 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.reasonCodes[2]").value("ACCESSIBILITY_CHECK_REQUIRED"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.riskLevel").value("HIGH"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.stairCount").value(1))
-			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.unknownAccessibilityCount").value(1));
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.unknownAccessibilityCount").value(0))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.riskLevel").value("MEDIUM"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.stairCount").value(0))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.unknownAccessibilityCount").value(1));
+	}
+
+	@Test
+	@DisplayName("모바일 V2 계약의 blocked reasonCodes는 사용자 문장 대신 안정적인 코드만 반환한다")
+	void routeSearchV2BlockedRiskReasonCodesAreStableCodes() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			"station-blocked-origin".equals(command.originStationId())
+				&& "station-blocked-destination".equals(command.destinationStationId())
+		))).thenReturn(blockedRouteSearch());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-blocked-origin",
+					  "destinationStationId": "station-blocked-destination",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "WHEELCHAIR",
+					  "constraintMode": "STRICT_STEP_FREE",
+					  "useRealtime": true,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].status").value("BLOCKED_ACCESSIBILITY"))
+			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.riskLevel").value("BLOCKED"))
+			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.reasonCodes[0]").value("BLOCKED_ACCESSIBILITY"))
+			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.reasonCodes[1]").doesNotExist());
 	}
 
 	@Test
@@ -341,29 +373,68 @@ class RouteSearchV2ControllerTest {
 			"line-risk",
 			"위험 노선",
 			42,
-			List.of(new RouteStep(
-				1,
-				"entry",
-				"계단 포함 진입",
-				"계단과 확인 필요 구간을 포함합니다.",
-				"line-risk",
-				"위험 노선",
-				"station-risk-origin",
-				"station-risk-origin",
-				5,
-				90,
-				true,
-				"UNKNOWN",
-				true,
-				"STATIC_BACKEND_V1",
-				"STATIC_BACKEND_V1",
-				"LOW_CONFIDENCE"
-			)),
+			List.of(
+				new RouteStep(
+					1,
+					"entry",
+					"계단 포함 진입",
+					"계단과 확인 필요 구간을 포함합니다.",
+					"line-risk",
+					"위험 노선",
+					"station-risk-origin",
+					"station-risk-origin",
+					5,
+					90,
+					true,
+					"STAIR_ONLY",
+					true,
+					"STATIC_BACKEND_V1",
+					"STATIC_BACKEND_V1",
+					"LOW_CONFIDENCE"
+				),
+				new RouteStep(
+					2,
+					"exit",
+					"확인 필요 출구",
+					"계단 없는 길인지 추가 확인이 필요합니다.",
+					"line-risk",
+					"위험 노선",
+					"station-risk-destination",
+					"station-risk-destination",
+					3,
+					60,
+					false,
+					"UNKNOWN",
+					true,
+					"STATIC_BACKEND_V1",
+					"STATIC_BACKEND_V1",
+					"LOW_CONFIDENCE"
+				)
+			),
 			List.of(
 				new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE),
 				new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
 			),
 			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult blockedRouteSearch() {
+		return new RouteSearchResult(
+			"route-search-blocked",
+			"station-blocked-origin",
+			"차단 출발역",
+			"station-blocked-destination",
+			"차단 도착역",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.BLOCKED,
+			"line-blocked",
+			"차단 노선",
+			0,
+			List.of(),
+			List.of(),
+			List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
 		);
 	}

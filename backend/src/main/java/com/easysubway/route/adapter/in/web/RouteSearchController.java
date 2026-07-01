@@ -265,7 +265,7 @@ class RouteSearchController {
 				.filter(RouteStep::includesStairs)
 				.count());
 			int unknownAccessibilityCount = Math.toIntExact(result.steps().stream()
-				.filter(step -> step.requiresAccessibilityCheck() || "UNKNOWN".equals(step.stairAccessState()))
+				.filter(step -> "UNKNOWN".equals(step.stairAccessState()))
 				.count());
 			int generatedConnectorCount = countReason(reasonCodes, "GENERATED_CONNECTOR_UNVERIFIED");
 			int staleDataCount = countReason(reasonCodes, "STALE_ACCESSIBILITY_DATA");
@@ -297,7 +297,7 @@ class RouteSearchController {
 		private static AccessibilityRiskDto from(RouteStep step) {
 			List<String> reasonCodes = reasonCodesFrom(step);
 			int stairCount = step.includesStairs() ? 1 : 0;
-			int unknownAccessibilityCount = step.requiresAccessibilityCheck() || "UNKNOWN".equals(step.stairAccessState()) ? 1 : 0;
+			int unknownAccessibilityCount = "UNKNOWN".equals(step.stairAccessState()) ? 1 : 0;
 			int generatedConnectorCount = countReason(reasonCodes, "GENERATED_CONNECTOR_UNVERIFIED");
 			int staleDataCount = countReason(reasonCodes, "STALE_ACCESSIBILITY_DATA");
 			int lowConfidenceCount = countReason(reasonCodes, "LOW_DATA_CONFIDENCE");
@@ -327,17 +327,14 @@ class RouteSearchController {
 
 		private static List<String> reasonCodesFrom(RouteSearchResult result) {
 			List<String> reasonCodes = new ArrayList<>();
-			result.blockedReasons().stream()
-				.filter(reason -> reason != null && !reason.isBlank())
-				.forEach(reasonCodes::add);
+			if (result.status() == RouteSearchStatus.BLOCKED) {
+				reasonCodes.add("BLOCKED_ACCESSIBILITY");
+			}
 			result.warnings().stream()
 				.map(warning -> warning.code().name())
 				.forEach(reasonCodes::add);
 			if (result.evidenceSummary().contains("ACCESSIBILITY_CHECK_REQUIRED")) {
 				reasonCodes.add("ACCESSIBILITY_CHECK_REQUIRED");
-			}
-			if (result.status() == RouteSearchStatus.BLOCKED && reasonCodes.isEmpty()) {
-				reasonCodes.add("BLOCKED_ACCESSIBILITY");
 			}
 			return List.copyOf(reasonCodes.stream().distinct().toList());
 		}
