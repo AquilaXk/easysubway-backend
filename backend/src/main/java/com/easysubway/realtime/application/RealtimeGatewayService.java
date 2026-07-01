@@ -467,7 +467,7 @@ public class RealtimeGatewayService {
 	}
 
 	private String safeFallbackCode(String fallbackCode) {
-		return SAFE_FALLBACK_CODES.contains(fallbackCode) ? fallbackCode : "PROVIDER_ERROR";
+		return fallbackCode != null && SAFE_FALLBACK_CODES.contains(fallbackCode) ? fallbackCode : "PROVIDER_ERROR";
 	}
 
 	private static final class ProviderCallRateLimiter {
