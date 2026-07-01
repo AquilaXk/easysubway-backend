@@ -67,9 +67,8 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 		if (providerReceivedAt == null) {
 			providerReceivedAt = receivedAt;
 		}
-		Instant expectedArrivalAt = providerReceivedAt == null
-			? query.readyAt().plusSeconds(arrival.etaSeconds())
-			: providerReceivedAt.plusSeconds(arrival.etaSeconds());
+		Instant etaBase = receivedAt == null ? query.readyAt() : receivedAt;
+		Instant expectedArrivalAt = etaBase.plusSeconds(arrival.etaSeconds());
 		return new ArrivalCandidate(
 			arrival.trainNo(),
 			arrival.lineId(),

@@ -229,7 +229,7 @@ class RouteSearchController {
 				formatOffset(plannedArrivalTime),
 				null,
 				result.etaSource().name(),
-				confidenceOf(result),
+				etaConfidenceOf(result),
 				result.estimatedDurationSeconds(),
 				result.transferCount(),
 				result.walkingDistanceMeters(),
@@ -243,8 +243,15 @@ class RouteSearchController {
 			return result.status() == RouteSearchStatus.BLOCKED ? "BLOCKED_ACCESSIBILITY" : result.status().name();
 		}
 
-		private static String confidenceOf(RouteSearchResult result) {
-			return result.status() == RouteSearchStatus.FOUND ? "LOW" : "UNKNOWN";
+		private static String etaConfidenceOf(RouteSearchResult result) {
+			if (result.status() != RouteSearchStatus.FOUND) {
+				return "UNKNOWN";
+			}
+			return switch (result.etaSource()) {
+				case REALTIME -> "HIGH";
+				case MIXED -> "MEDIUM";
+				case PLANNED, FALLBACK -> "LOW";
+			};
 		}
 	}
 

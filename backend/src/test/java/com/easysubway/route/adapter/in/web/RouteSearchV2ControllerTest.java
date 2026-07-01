@@ -174,6 +174,7 @@ class RouteSearchV2ControllerTest {
 					"""))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("REALTIME"))
+			.andExpect(jsonPath("$.data.itineraries[0].etaConfidence").value("HIGH"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("REALTIME"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].confidence").value("HIGH"));
 	}
