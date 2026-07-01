@@ -51,6 +51,17 @@ public class RouteFeedbackDashboardAssembler {
 					row.destinationStationName(),
 					mobilityTypeLabel(row.mobilityType())
 				))
+				.toList(),
+			summary.etaCalibrationBuckets()
+				.stream()
+				.map(row -> new RouteFeedbackDashboardView.EtaCalibrationBucketRow(
+					mobilityTypeLabel(row.mobilityType()),
+					row.constraintMode().name(),
+					row.etaSource().name(),
+					row.etaOffsetBucket().name(),
+					row.count(),
+					"board/transfer slack 기본값 변경은 별도 검토 PR로 반영"
+				))
 				.toList()
 		);
 	}

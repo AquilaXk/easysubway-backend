@@ -172,6 +172,35 @@
 			</tbody>
 		</table>
 	</section>
+
+	<section>
+		<h2>ETA 보정 bucket</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">이동 프로필</th>
+				<th scope="col">제약</th>
+				<th scope="col">ETA 출처</th>
+				<th scope="col">Offset bucket</th>
+				<th scope="col">검토 작업</th>
+				<th scope="col">건수</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="row : ${summary.etaCalibrationBuckets}">
+				<td th:text="${row.mobilityTypeLabel}">고령자</td>
+				<td th:text="${row.constraintMode}">PREFER_STEP_FREE</td>
+				<td th:text="${row.etaSource}">PLANNED</td>
+				<td th:text="${row.etaOffsetBucket}">LATE_1_TO_3_MINUTES</td>
+				<td th:text="${row.reviewAction}">board/transfer slack 기본값 변경은 별도 검토 PR로 반영</td>
+				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.etaCalibrationBuckets)}">
+				<td colspan="6">opt-in ETA 보정 피드백이 없습니다.</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
 </main>
 </div>
 </body>

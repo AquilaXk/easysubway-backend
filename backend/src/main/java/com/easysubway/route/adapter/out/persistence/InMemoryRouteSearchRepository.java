@@ -10,6 +10,7 @@ import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteS
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary.EtaCalibrationBucket;
 import com.easysubway.route.domain.RouteFeedbackDashboardSummary.RecentBlockedFeedback;
 import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
@@ -77,7 +78,8 @@ public class InMemoryRouteSearchRepository
 				helpfulCount,
 				notHelpfulCount,
 				blockedByRealWorldCount,
-				recentBlockedFeedbacks()
+				recentBlockedFeedbacks(),
+				etaCalibrationBuckets()
 			);
 		}
 	}
@@ -143,6 +145,12 @@ public class InMemoryRouteSearchRepository
 			DELETED_USER_ID,
 			feedback.rating(),
 			DELETED_COMMENT,
+			feedback.itineraryId(),
+			feedback.mobilityType(),
+			feedback.constraintMode(),
+			feedback.etaSource(),
+			feedback.etaOffsetBucket(),
+			feedback.etaFeedbackOptedIn(),
 			feedback.createdAt()
 		);
 	}
@@ -180,6 +188,42 @@ public class InMemoryRouteSearchRepository
 		);
 	}
 
+	private List<EtaCalibrationBucket> etaCalibrationBuckets() {
+		Map<EtaCalibrationKey, Long> counts = new LinkedHashMap<>();
+		routeFeedbacks.values()
+			.stream()
+			.filter(RouteFeedback::etaFeedbackOptedIn)
+			.filter(feedback -> feedback.mobilityType() != null
+				&& feedback.constraintMode() != null
+				&& feedback.etaSource() != null
+				&& feedback.etaOffsetBucket() != null)
+			.sorted(Comparator
+				.comparing(RouteFeedback::mobilityType)
+				.thenComparing(RouteFeedback::constraintMode)
+				.thenComparing(RouteFeedback::etaSource)
+				.thenComparing(RouteFeedback::etaOffsetBucket))
+			.forEach(feedback -> counts.merge(
+				new EtaCalibrationKey(
+					feedback.mobilityType(),
+					feedback.constraintMode(),
+					feedback.etaSource(),
+					feedback.etaOffsetBucket()
+				),
+				1L,
+				Long::sum
+			));
+		return counts.entrySet()
+			.stream()
+			.map(entry -> new EtaCalibrationBucket(
+				entry.getKey().mobilityType(),
+				entry.getKey().constraintMode(),
+				entry.getKey().etaSource(),
+				entry.getKey().etaOffsetBucket(),
+				entry.getValue()
+			))
+			.toList();
+	}
+
 	private long countByStatus(RouteSearchStatus status) {
 		return routeSearches.values()
 			.stream()
@@ -215,5 +259,13 @@ public class InMemoryRouteSearchRepository
 			String oldestFeedbackId = routeFeedbacks.keySet().iterator().next();
 			routeFeedbacks.remove(oldestFeedbackId);
 		}
+	}
+
+	private record EtaCalibrationKey(
+		MobilityType mobilityType,
+		com.easysubway.route.domain.ConstraintMode constraintMode,
+		com.easysubway.route.domain.EtaSource etaSource,
+		com.easysubway.route.domain.RouteEtaOffsetBucket etaOffsetBucket
+	) {
 	}
 }

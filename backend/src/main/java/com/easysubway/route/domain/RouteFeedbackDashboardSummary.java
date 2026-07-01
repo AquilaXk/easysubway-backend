@@ -9,8 +9,19 @@ public record RouteFeedbackDashboardSummary(
 	long helpfulCount,
 	long notHelpfulCount,
 	long blockedByRealWorldCount,
-	List<RecentBlockedFeedback> recentBlockedFeedbacks
+	List<RecentBlockedFeedback> recentBlockedFeedbacks,
+	List<EtaCalibrationBucket> etaCalibrationBuckets
 ) {
+
+	public RouteFeedbackDashboardSummary(
+		long totalCount,
+		long helpfulCount,
+		long notHelpfulCount,
+		long blockedByRealWorldCount,
+		List<RecentBlockedFeedback> recentBlockedFeedbacks
+	) {
+		this(totalCount, helpfulCount, notHelpfulCount, blockedByRealWorldCount, recentBlockedFeedbacks, List.of());
+	}
 
 	public RouteFeedbackDashboardSummary {
 		if (totalCount < 0 || helpfulCount < 0 || notHelpfulCount < 0 || blockedByRealWorldCount < 0) {
@@ -20,6 +31,7 @@ public record RouteFeedbackDashboardSummary(
 			throw new InvalidRouteFeedbackException("전체 경로 피드백 수와 평점별 피드백 수가 일치하지 않습니다.");
 		}
 		recentBlockedFeedbacks = List.copyOf(recentBlockedFeedbacks);
+		etaCalibrationBuckets = List.copyOf(etaCalibrationBuckets);
 	}
 
 	public record RecentBlockedFeedback(
@@ -41,6 +53,24 @@ public record RouteFeedbackDashboardSummary(
 			}
 			if (createdAt == null) {
 				throw new InvalidRouteFeedbackException("현장 차단 신고 시각이 필요합니다.");
+			}
+		}
+	}
+
+	public record EtaCalibrationBucket(
+		MobilityType mobilityType,
+		ConstraintMode constraintMode,
+		EtaSource etaSource,
+		RouteEtaOffsetBucket etaOffsetBucket,
+		long count
+	) {
+
+		public EtaCalibrationBucket {
+			if (mobilityType == null || constraintMode == null || etaSource == null || etaOffsetBucket == null) {
+				throw new InvalidRouteFeedbackException("ETA 보정 bucket 집계 기준이 필요합니다.");
+			}
+			if (count < 0) {
+				throw new InvalidRouteFeedbackException("ETA 보정 bucket 집계 수는 0 이상이어야 합니다.");
 			}
 		}
 	}

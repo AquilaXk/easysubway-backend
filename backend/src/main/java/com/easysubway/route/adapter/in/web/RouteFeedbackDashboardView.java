@@ -8,7 +8,8 @@ public record RouteFeedbackDashboardView(
 	long notHelpfulCount,
 	long blockedByRealWorldCount,
 	List<RatingCountRow> ratingRows,
-	List<RecentBlockedFeedbackRow> recentBlockedFeedbacks
+	List<RecentBlockedFeedbackRow> recentBlockedFeedbacks,
+	List<EtaCalibrationBucketRow> etaCalibrationBuckets
 ) {
 
 	public record RatingCountRow(String label, String description, long count) {
@@ -19,6 +20,16 @@ public record RouteFeedbackDashboardView(
 		String originStationName,
 		String destinationStationName,
 		String mobilityTypeLabel
+	) {
+	}
+
+	public record EtaCalibrationBucketRow(
+		String mobilityTypeLabel,
+		String constraintMode,
+		String etaSource,
+		String etaOffsetBucket,
+		long count,
+		String reviewAction
 	) {
 	}
 }
