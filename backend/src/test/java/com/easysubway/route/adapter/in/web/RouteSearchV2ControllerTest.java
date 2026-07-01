@@ -138,7 +138,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.unknownAccessibilityCount").value(1))
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.generatedConnectorCount").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.staleDataCount").value(1))
-			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.lowConfidenceCount").value(1))
+			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.lowConfidenceCount").value(2))
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.unavailableFacilityCount").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.reasonCodes[0]").value("LOW_DATA_CONFIDENCE"))
 			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.reasonCodes[1]").value("STALE_ACCESSIBILITY_DATA"))
@@ -412,6 +412,7 @@ class RouteSearchV2ControllerTest {
 				)
 			),
 			List.of(
+				new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE),
 				new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE),
 				new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
 			),

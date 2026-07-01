@@ -10,6 +10,7 @@ import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
+import com.easysubway.route.domain.RouteWarningCode;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotBlank;
 import jakarta.validation.constraints.Min;
@@ -267,10 +268,11 @@ class RouteSearchController {
 			int unknownAccessibilityCount = Math.toIntExact(result.steps().stream()
 				.filter(step -> "UNKNOWN".equals(step.stairAccessState()))
 				.count());
-			int generatedConnectorCount = countReason(reasonCodes, "GENERATED_CONNECTOR_UNVERIFIED");
-			int staleDataCount = countReason(reasonCodes, "STALE_ACCESSIBILITY_DATA");
-			int lowConfidenceCount = countReason(reasonCodes, "LOW_DATA_CONFIDENCE");
-			int unavailableFacilityCount = countReason(reasonCodes, "FACILITY_UNAVAILABLE");
+			// Keep the V2 response shape stable until route warnings expose these signals.
+			int generatedConnectorCount = 0;
+			int staleDataCount = countWarning(result.warnings(), RouteWarningCode.STALE_ACCESSIBILITY_DATA);
+			int lowConfidenceCount = countWarning(result.warnings(), RouteWarningCode.LOW_DATA_CONFIDENCE);
+			int unavailableFacilityCount = 0;
 			String riskLevel = riskLevel(
 				result.status(),
 				stairCount,
@@ -353,6 +355,12 @@ class RouteSearchController {
 		private static int countReason(List<String> reasonCodes, String reasonCode) {
 			return Math.toIntExact(reasonCodes.stream()
 				.filter(reasonCode::equals)
+				.count());
+		}
+
+		private static int countWarning(List<RouteWarning> warnings, RouteWarningCode warningCode) {
+			return Math.toIntExact(warnings.stream()
+				.filter(warning -> warning.code() == warningCode)
 				.count());
 		}
 
