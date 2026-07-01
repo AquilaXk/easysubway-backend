@@ -5,6 +5,7 @@ import com.easysubway.realtime.application.RealtimeGatewayService;
 import com.easysubway.realtime.application.RealtimeProviderControl;
 import com.easysubway.realtime.application.RealtimeProviderHealthSnapshot;
 import org.springframework.http.HttpStatus;
+import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -34,6 +35,7 @@ class RealtimeProviderAdminController {
 	}
 
 	@PostMapping("/admin/realtime/providers/{providerId}/disable")
+	@PreAuthorize("hasAuthority('admin.data.operate')")
 	ApiResponse<RealtimeProviderHealthSnapshot> disableProvider(
 		@PathVariable String providerId,
 		@RequestParam(required = false) String reason
@@ -44,6 +46,7 @@ class RealtimeProviderAdminController {
 	}
 
 	@PostMapping("/admin/realtime/providers/{providerId}/enable")
+	@PreAuthorize("hasAuthority('admin.data.operate')")
 	ApiResponse<RealtimeProviderHealthSnapshot> enableProvider(@PathVariable String providerId) {
 		validateProvider(providerId);
 		providerControl.enableProvider(providerId);

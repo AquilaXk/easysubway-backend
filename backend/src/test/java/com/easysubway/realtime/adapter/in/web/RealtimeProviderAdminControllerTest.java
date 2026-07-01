@@ -4,6 +4,7 @@ import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -17,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -96,5 +98,15 @@ class RealtimeProviderAdminControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.providerEnabled").value(true))
 			.andExpect(jsonPath("$.data.disabledReason").doesNotExist());
+	}
+
+	@Test
+	@DisplayName("view 권한만 있는 관리자는 실시간 provider kill switch를 토글할 수 없다")
+	void realtimeProviderKillSwitchRequiresDataOperateAuthority() throws Exception {
+		mockMvc.perform(post("/admin/realtime/providers/seoul-topis/disable")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view")))
+				.with(csrf())
+				.param("reason", "MAINTENANCE"))
+			.andExpect(status().isForbidden());
 	}
 }
