@@ -19,7 +19,8 @@ const artifactIdentity = {
   backendArtifactSha256: "c".repeat(64),
 };
 
-function caseValue(field) {
+function caseValue(field, matrix, caseId) {
+  if (field === "expectedStatus" || field === "observedStatus") return matrix.expectedStatusByCase[caseId][0];
   return {
     apiStep: "submit",
     artifactType: "android-aab",
@@ -30,11 +31,9 @@ function caseValue(field) {
     contentType: "image/jpeg",
     deleteOrCleanupResult: "PASS",
     endpoint: "/api/v1/reports",
-    expectedStatus: 403,
     localEvidencePath: ".codex/evidence/security/abuse-penetration-rehearsal/rc/redacted-summary.json",
     method: "PUT",
     nodeOrStoreMode: "multi-node",
-    observedStatus: 403,
     redactionResult: "PASS",
     retentionRule: "30d",
     role: "REPORT_REVIEWER",
@@ -64,7 +63,7 @@ function validSummary() {
       requiredEvidence: matrix.requiredEvidence,
       cases: matrix.requiredCases.map((caseId) => {
         const item = { caseId };
-        for (const field of matrix.summaryFields) item[field] = field === "caseId" ? caseId : caseValue(field);
+        for (const field of matrix.summaryFields) item[field] = field === "caseId" ? caseId : caseValue(field, matrix, caseId);
         return item;
       }),
     })),
@@ -148,5 +147,50 @@ test("abuse penetration summary validator rejects missing cases, raw sensitive m
       }),
     ),
     /artifactIdentity must match/,
+  );
+});
+
+test("abuse penetration summary validator rejects case-level failed rehearsal evidence", async () => {
+  const statusMismatch = validSummary();
+  statusMismatch.matrices[0].cases[0].observedStatus = 200;
+  await assert.rejects(
+    withSummary(statusMismatch, (summaryPath) =>
+      execFileAsync(process.execPath, [
+        "tools/security/validate-abuse-penetration-summary.mjs",
+        "--summary",
+        summaryPath,
+        "--require-pass",
+      ], { cwd: root }),
+    ),
+    /observedStatus must match expectedStatus/,
+  );
+
+  const redactionFailure = validSummary();
+  redactionFailure.matrices[0].cases[0].redactionResult = "FAIL";
+  await assert.rejects(
+    withSummary(redactionFailure, (summaryPath) =>
+      execFileAsync(process.execPath, [
+        "tools/security/validate-abuse-penetration-summary.mjs",
+        "--summary",
+        summaryPath,
+        "--require-pass",
+      ], { cwd: root }),
+    ),
+    /redactionResult must be PASS/,
+  );
+
+  const untrustedStatusPair = validSummary();
+  untrustedStatusPair.matrices[0].cases[0].expectedStatus = 500;
+  untrustedStatusPair.matrices[0].cases[0].observedStatus = 500;
+  await assert.rejects(
+    withSummary(untrustedStatusPair, (summaryPath) =>
+      execFileAsync(process.execPath, [
+        "tools/security/validate-abuse-penetration-summary.mjs",
+        "--summary",
+        summaryPath,
+        "--require-pass",
+      ], { cwd: root }),
+    ),
+    /expectedStatus must match release gate/,
   );
 });
