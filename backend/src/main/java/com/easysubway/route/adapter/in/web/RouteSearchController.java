@@ -5,6 +5,8 @@ import com.easysubway.common.web.ApiResponse;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.service.RouteV2Planner;
+import com.easysubway.route.application.service.RouteV2Planner.RouteV2Plan;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
@@ -37,9 +39,11 @@ import org.springframework.web.bind.annotation.RestController;
 class RouteSearchController {
 
 	private final RouteSearchUseCase routeSearchUseCase;
+	private final RouteV2Planner routeV2Planner;
 
-	RouteSearchController(RouteSearchUseCase routeSearchUseCase) {
+	RouteSearchController(RouteSearchUseCase routeSearchUseCase, RouteV2Planner routeV2Planner) {
 		this.routeSearchUseCase = routeSearchUseCase;
+		this.routeV2Planner = routeV2Planner;
 	}
 
 	@PostMapping("/api/v1/routes/search")
@@ -50,8 +54,8 @@ class RouteSearchController {
 	@PostMapping("/api/v2/routes/search")
 	ApiResponse<RouteSearchV2Response> searchRouteV2(@Valid @RequestBody RouteSearchV2Request request) {
 		OffsetDateTime departureTime = request.parsedDepartureTime();
-		SearchRouteCommand command = request.toCommand();
-		return ApiResponse.ok(RouteSearchV2Response.from(routeSearchUseCase.searchRoute(command), request, departureTime));
+		RouteV2Plan plan = routeV2Planner.search(request.toV2Command(departureTime));
+		return ApiResponse.ok(RouteSearchV2Response.from(plan, request, departureTime));
 	}
 
 	@PostMapping("/api/v2/routes/{routeSearchId}/refresh")
@@ -157,13 +161,16 @@ class RouteSearchController {
 		int alternativeCount
 	) {
 
-		SearchRouteCommand toCommand() {
-			return new SearchRouteCommand(
+		RouteV2Planner.SearchRouteV2Command toV2Command(OffsetDateTime departureTime) {
+			return new RouteV2Planner.SearchRouteV2Command(
 				originStationId,
 				destinationStationId,
+				departureTime,
 				mobilityType,
 				parseConstraintMode(mobilityType, constraintMode),
-				maxTransfers
+				Boolean.TRUE.equals(useRealtime),
+				maxTransfers,
+				alternativeCount
 			);
 		}
 
@@ -217,7 +224,7 @@ class RouteSearchController {
 	) {
 
 		private static RouteSearchV2Response from(
-			RouteSearchResult result,
+			RouteV2Plan plan,
 			RouteSearchV2Request request,
 			OffsetDateTime departureTime
 		) {
@@ -239,7 +246,9 @@ class RouteSearchController {
 					"UNSUPPORTED_REGION",
 					"ROUTE_GRAPH_UNKNOWN"
 				),
-				List.of(ItineraryDto.from(result, departureTime))
+				plan.itineraries().stream()
+					.map(result -> ItineraryDto.from(result, departureTime))
+					.toList()
 			);
 		}
 	}
