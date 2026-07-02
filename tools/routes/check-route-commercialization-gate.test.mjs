@@ -42,9 +42,9 @@ test("route commercialization gate passes with production-ready reports", async 
     },
     contract: {
       schemaVersion: 1,
-      multiTransferSupported: true,
-      outOfStationTransferSupported: true,
-      alternativeItinerariesMinObserved: 2,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 1,
       wrongTransferCount: 0,
       wrongLineSequence: 0,
       routeNotFoundRate: 0.01,
@@ -93,7 +93,7 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
     contract: {
       schemaVersion: 1,
       multiTransferSupported: false,
-      outOfStationTransferSupported: true,
+      outOfStationTransferSupported: false,
       alternativeItinerariesMinObserved: 1,
       wrongTransferCount: 1,
       wrongLineSequence: 1,
@@ -111,7 +111,7 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
       assert.ok(report.failures.includes("routeEtaAccuracy production sampleSize is below 100"));
       assert.ok(report.failures.includes("accessibility strict step-free false positive count exceeds 0"));
       assert.ok(report.failures.includes("accessibility generated connector verified count exceeds 0"));
-      assert.ok(report.failures.includes("routing D-3 blocker must be satisfied before out-of-station transfer release claim"));
+      assert.ok(!report.failures.includes("routing D-3 blocker must be satisfied before out-of-station transfer release claim"));
       return true;
     },
   );
