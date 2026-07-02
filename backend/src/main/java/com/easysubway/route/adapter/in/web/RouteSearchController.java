@@ -5,8 +5,8 @@ import com.easysubway.common.web.ApiResponse;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
-import com.easysubway.route.application.service.RouteV2Planner;
-import com.easysubway.route.application.service.RouteV2Planner.RouteV2Plan;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
@@ -39,11 +39,11 @@ import org.springframework.web.bind.annotation.RestController;
 class RouteSearchController {
 
 	private final RouteSearchUseCase routeSearchUseCase;
-	private final RouteV2Planner routeV2Planner;
+	private final RouteV2SearchUseCase routeV2SearchUseCase;
 
-	RouteSearchController(RouteSearchUseCase routeSearchUseCase, RouteV2Planner routeV2Planner) {
+	RouteSearchController(RouteSearchUseCase routeSearchUseCase, RouteV2SearchUseCase routeV2SearchUseCase) {
 		this.routeSearchUseCase = routeSearchUseCase;
-		this.routeV2Planner = routeV2Planner;
+		this.routeV2SearchUseCase = routeV2SearchUseCase;
 	}
 
 	@PostMapping("/api/v1/routes/search")
@@ -54,7 +54,7 @@ class RouteSearchController {
 	@PostMapping("/api/v2/routes/search")
 	ApiResponse<RouteSearchV2Response> searchRouteV2(@Valid @RequestBody RouteSearchV2Request request) {
 		OffsetDateTime departureTime = request.parsedDepartureTime();
-		RouteV2Plan plan = routeV2Planner.search(request.toV2Command(departureTime));
+		RouteV2Plan plan = routeV2SearchUseCase.search(request.toV2Command(departureTime));
 		return ApiResponse.ok(RouteSearchV2Response.from(plan, request, departureTime));
 	}
 
@@ -161,8 +161,8 @@ class RouteSearchController {
 		int alternativeCount
 	) {
 
-		RouteV2Planner.SearchRouteV2Command toV2Command(OffsetDateTime departureTime) {
-			return new RouteV2Planner.SearchRouteV2Command(
+		RouteV2SearchUseCase.SearchRouteV2Command toV2Command(OffsetDateTime departureTime) {
+			return new RouteV2SearchUseCase.SearchRouteV2Command(
 				originStationId,
 				destinationStationId,
 				departureTime,
@@ -238,7 +238,9 @@ class RouteSearchController {
 				Boolean.TRUE.equals(request.useRealtime()),
 				request.maxTransfers(),
 				request.alternativeCount(),
-				plan.statuses(),
+				plan.statuses().stream()
+					.map(Enum::name)
+					.toList(),
 				plan.itineraries().stream()
 					.map(result -> ItineraryDto.from(result, departureTime))
 					.toList()

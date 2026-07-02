@@ -8,6 +8,8 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.application.port.out.RealtimeArrivalResolver;
 import com.easysubway.route.domain.ArrivalCandidate;
@@ -720,7 +722,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 0, 3));
 
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().transferCount()).isZero();
 	}
@@ -734,7 +736,7 @@ class RouteSearchServiceTest {
 
 		assertThat(plan.plannerAdr()).isEqualTo("tools/routes/route-algorithm-v2-adr.json");
 		assertThat(plan.itineraries()).hasSize(2);
-		assertThat(plan.statuses()).containsExactly("FOUND", "BLOCKED_ACCESSIBILITY");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND, RouteV2Status.BLOCKED_ACCESSIBILITY);
 		assertThat(plan.itineraries())
 			.extracting(RouteSearchResult::status)
 			.containsExactly(RouteSearchStatus.FOUND, RouteSearchStatus.BLOCKED);
@@ -747,7 +749,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(1);
 	}
@@ -759,7 +761,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 2, 3));
 
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(2);
 	}
@@ -771,7 +773,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
-		assertThat(plan.statuses()).containsExactly("NO_TIMETABLE_SERVICE");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
 		assertThat(plan.itineraries()).isEmpty();
 	}
 
@@ -782,7 +784,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.STRICT_STEP_FREE, MobilityType.WHEELCHAIR, 0, 3));
 
-		assertThat(plan.statuses()).containsExactly("BLOCKED_ACCESSIBILITY");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.BLOCKED_ACCESSIBILITY);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().status()).isEqualTo(RouteSearchStatus.BLOCKED);
 	}
@@ -801,7 +803,7 @@ class RouteSearchServiceTest {
 		);
 		var planner = new RouteV2Planner(routeSearchService);
 
-		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -820,7 +822,7 @@ class RouteSearchServiceTest {
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("timeSource")
 			.containsExactly(EtaSource.REALTIME.name());
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 	}
 
 	@Test
@@ -837,7 +839,7 @@ class RouteSearchServiceTest {
 		);
 		var planner = new RouteV2Planner(routeSearchService);
 
-		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -850,7 +852,7 @@ class RouteSearchServiceTest {
 
 		assertThat(resolver.callCount()).isZero();
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.STATIC_BACKEND_ESTIMATE);
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 	}
 
 	@Test
@@ -872,7 +874,7 @@ class RouteSearchServiceTest {
 		);
 		var planner = new RouteV2Planner(routeSearchService);
 
-		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -884,7 +886,22 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.FALLBACK);
-		assertThat(plan.statuses()).containsExactly("FOUND", "REALTIME_UNAVAILABLE_PLANNED_USED");
+		assertThat(plan.statuses())
+			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+	}
+
+	@Test
+	@DisplayName("V2 search port command는 adapter를 우회한 잘못된 planner 조건을 거부한다")
+	void routeV2SearchCommandRejectsInvalidPlannerBounds() {
+		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, -1, 1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("maxTransfers must not be negative");
+		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 4, 1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("maxTransfers must be 3 or less");
+		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 0))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("alternativeCount must be at least 1");
 	}
 
 	@Test
@@ -1557,13 +1574,13 @@ class RouteSearchServiceTest {
 		return new RouteV2Planner(new RouteSearchService(repository, repository, transitMasterPort, CLOCK));
 	}
 
-	private static RouteV2Planner.SearchRouteV2Command routeV2Command(
+	private static RouteV2SearchUseCase.SearchRouteV2Command routeV2Command(
 		ConstraintMode constraintMode,
 		MobilityType mobilityType,
 		int maxTransfers,
 		int alternativeCount
 	) {
-		return new RouteV2Planner.SearchRouteV2Command(
+		return new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
