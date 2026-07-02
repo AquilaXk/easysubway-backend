@@ -74,6 +74,7 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 			arrival.etaSeconds(),
 			expectedArrivalAt,
 			providerReceivedAt,
+			arrival.servicePattern(),
 			status,
 			confidenceOf(status)
 		);

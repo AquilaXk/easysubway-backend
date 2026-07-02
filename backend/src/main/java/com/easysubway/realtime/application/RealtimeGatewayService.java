@@ -334,7 +334,8 @@ public class RealtimeGatewayService {
 			adjustedEtaSeconds,
 			arrivalMessage(adjustedEtaSeconds),
 			arrival.positionMessage(),
-			arrival.providerReceivedAt()
+			arrival.providerReceivedAt(),
+			arrival.servicePattern()
 		);
 	}
 

@@ -788,6 +788,7 @@ class RealtimeGatewayServiceTest {
 				      "trainLineNm": "오이도행 - 중앙방면",
 				      "updnLine": "하행",
 				      "btrainNo": "4001",
+				      "btrainSttus": "급행",
 				      "barvlDt": "180",
 				      "arvlMsg2": "3분 후"
 				    }
@@ -799,6 +800,7 @@ class RealtimeGatewayServiceTest {
 
 		assertThat(arrivals).hasSize(1);
 		assertThat(arrivals.get(0).destination()).isEqualTo("오이도행 - 중앙방면");
+		assertThat(arrivals.get(0).servicePattern()).isEqualTo("급행");
 	}
 
 	private RealtimeQuery sangnoksuQuery() {

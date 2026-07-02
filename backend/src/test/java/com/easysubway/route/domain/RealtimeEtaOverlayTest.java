@@ -210,4 +210,66 @@ class RealtimeEtaOverlayTest {
 		assertThat(result.waitSeconds()).isEqualTo(90);
 		assertThat(result.trainNo()).isEqualTo("train-404");
 	}
+
+	@Test
+	@DisplayName("service pattern이 다르면 같은 방향 fresh 후보도 realtime ETA로 쓰지 않는다")
+	void freshRealtimeCandidateRequiresMatchingServicePattern() {
+		ArrivalCandidate expressCandidate = new ArrivalCandidate(
+			"train-405",
+			"seoul-4",
+			"상행",
+			"당고개",
+			90,
+			READY_AT.plusSeconds(90),
+			READY_AT.minusSeconds(20),
+			"급행",
+			ArrivalFreshness.FRESH_REALTIME,
+			EtaConfidence.HIGH
+		);
+
+		RealtimeEtaOverlay.Result result = overlay.overlay(
+			READY_AT,
+			PLANNED_WAIT_SECONDS,
+			"당고개 방면",
+			"LOCAL",
+			ArrivalFreshness.FRESH_REALTIME,
+			null,
+			List.of(expressCandidate)
+		);
+
+		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.waitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
+		assertThat(result.warningCodes()).containsExactly("NO_USABLE_REALTIME_CANDIDATE");
+	}
+
+	@Test
+	@DisplayName("provider raw service pattern 표기가 달라도 canonical pattern이 같으면 fresh 후보를 사용한다")
+	void freshRealtimeCandidateCanMatchCanonicalServicePattern() {
+		ArrivalCandidate expressCandidate = new ArrivalCandidate(
+			"train-406",
+			"seoul-4",
+			"상행",
+			"당고개",
+			90,
+			READY_AT.plusSeconds(90),
+			READY_AT.minusSeconds(20),
+			"급행",
+			ArrivalFreshness.FRESH_REALTIME,
+			EtaConfidence.HIGH
+		);
+
+		RealtimeEtaOverlay.Result result = overlay.overlay(
+			READY_AT,
+			PLANNED_WAIT_SECONDS,
+			"당고개 방면",
+			"EXPRESS",
+			ArrivalFreshness.FRESH_REALTIME,
+			null,
+			List.of(expressCandidate)
+		);
+
+		assertThat(result.etaSource()).isEqualTo(EtaSource.REALTIME);
+		assertThat(result.waitSeconds()).isEqualTo(90);
+		assertThat(result.trainNo()).isEqualTo("train-406");
+	}
 }

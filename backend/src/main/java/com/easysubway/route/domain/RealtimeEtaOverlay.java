@@ -16,13 +16,51 @@ public final class RealtimeEtaOverlay {
 		String fallbackCode,
 		List<ArrivalCandidate> candidates
 	) {
-		return overlay(readyAt, plannedWaitSeconds, direction, providerStatus, fallbackCode, null, null, 0, candidates);
+		return overlay(readyAt, plannedWaitSeconds, direction, null, providerStatus, fallbackCode, null, null, 0, candidates);
 	}
 
 	public Result overlay(
 		Instant readyAt,
 		int plannedWaitSeconds,
 		String direction,
+		String servicePattern,
+		ArrivalFreshness providerStatus,
+		String fallbackCode,
+		List<ArrivalCandidate> candidates
+	) {
+		return overlay(readyAt, plannedWaitSeconds, direction, servicePattern, providerStatus, fallbackCode, null, null, 0, candidates);
+	}
+
+	public Result overlay(
+		Instant readyAt,
+		int plannedWaitSeconds,
+		String direction,
+		ArrivalFreshness providerStatus,
+		String fallbackCode,
+		String providerSnapshotId,
+		Instant providerReceivedAt,
+		int providerHealthCount,
+		List<ArrivalCandidate> candidates
+	) {
+		return overlay(
+			readyAt,
+			plannedWaitSeconds,
+			direction,
+			null,
+			providerStatus,
+			fallbackCode,
+			providerSnapshotId,
+			providerReceivedAt,
+			providerHealthCount,
+			candidates
+		);
+	}
+
+	public Result overlay(
+		Instant readyAt,
+		int plannedWaitSeconds,
+		String direction,
+		String servicePattern,
 		ArrivalFreshness providerStatus,
 		String fallbackCode,
 		String providerSnapshotId,
@@ -43,6 +81,7 @@ public final class RealtimeEtaOverlay {
 				readyAt,
 				plannedWaitSeconds,
 				direction,
+				servicePattern,
 				providerSnapshotId,
 				providerReceivedAt,
 				providerHealthCount,
@@ -95,6 +134,7 @@ public final class RealtimeEtaOverlay {
 		Instant readyAt,
 		int plannedWaitSeconds,
 		String direction,
+		String servicePattern,
 		String providerSnapshotId,
 		Instant providerReceivedAt,
 		int providerHealthCount,
@@ -104,6 +144,7 @@ public final class RealtimeEtaOverlay {
 			.filter(candidate -> candidate.freshness() == ArrivalFreshness.FRESH_REALTIME)
 			.filter(candidate -> !candidate.expectedArrivalAt().isBefore(readyAt))
 			.filter(candidate -> matchesDirection(direction, candidate))
+			.filter(candidate -> matchesServicePattern(servicePattern, candidate))
 			.min(Comparator.comparing(ArrivalCandidate::expectedArrivalAt))
 			.map(candidate -> realtime(readyAt, plannedWaitSeconds, providerSnapshotId, providerReceivedAt, providerHealthCount, candidate))
 			.orElseGet(() -> planned(
@@ -182,6 +223,29 @@ public final class RealtimeEtaOverlay {
 			? ""
 			: candidate.destination() + " 방면";
 		return expected.equals(destinationDirection);
+	}
+
+	private boolean matchesServicePattern(String expected, ArrivalCandidate candidate) {
+		String expectedPattern = normalizedServicePattern(expected);
+		if (expectedPattern.isBlank()) {
+			return true;
+		}
+		String actualPattern = normalizedServicePattern(candidate.servicePattern());
+		return !actualPattern.isBlank() && expectedPattern.equals(actualPattern);
+	}
+
+	private String normalizedServicePattern(String value) {
+		if (value == null || value.isBlank()) {
+			return "";
+		}
+		String normalized = value.trim().toUpperCase();
+		if (normalized.contains("EXPRESS") || normalized.contains("RAPID") || normalized.contains("급행")) {
+			return "EXPRESS";
+		}
+		if (normalized.contains("LOCAL") || normalized.contains("완행") || normalized.contains("일반")) {
+			return "LOCAL";
+		}
+		return normalized;
 	}
 
 	private List<String> warnings(String defaultCode, String fallbackCode) {

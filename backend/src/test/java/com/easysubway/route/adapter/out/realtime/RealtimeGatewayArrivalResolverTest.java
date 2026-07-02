@@ -32,7 +32,8 @@ class RealtimeGatewayArrivalResolverTest {
 				150,
 				"3분 후",
 				"전역 출발",
-				"2026-06-26T07:59:30Z"
+				"2026-06-26T07:59:30Z",
+				"급행"
 			))
 		));
 		RealtimeGatewayArrivalResolver resolver = new RealtimeGatewayArrivalResolver(gatewayService);
@@ -50,6 +51,7 @@ class RealtimeGatewayArrivalResolverTest {
 		ArrivalCandidate candidate = resolution.candidates().getFirst();
 		assertThat(candidate.providerReceivedAt()).isEqualTo(Instant.parse("2026-06-26T07:59:30Z"));
 		assertThat(candidate.expectedArrivalAt()).isEqualTo(Instant.parse("2026-06-26T08:02:00Z"));
+		assertThat(candidate.servicePattern()).isEqualTo("급행");
 	}
 
 	@Test
