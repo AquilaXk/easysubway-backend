@@ -484,27 +484,29 @@ body.admin-v3 {
 	min-height: 100vh;
 	place-items: center;
 	padding: 32px 18px;
-	background:
-		linear-gradient(135deg, rgba(15, 39, 48, 0.92), rgba(12, 80, 73, 0.88)),
-		#0f2730;
+	background: var(--admin-bg);
 }
 
 .login-card {
 	width: min(100%, 420px);
-	padding: 28px;
-	border: 1px solid rgba(255, 255, 255, 0.18);
+	padding: 32px;
+	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
-	box-shadow: 0 22px 70px rgba(0, 0, 0, 0.28);
+	box-shadow: var(--admin-shadow-card);
 }
 
 .login-card .login-brand {
 	padding: 0;
-	color: #102a2c;
+	color: var(--admin-ink);
 }
 
 .login-card .login-brand strong {
-	color: #102a2c;
+	color: var(--admin-ink);
+}
+
+.login-card .login-brand span {
+	color: var(--admin-ink-2);
 }
 
 .login-card h1 {
@@ -541,10 +543,10 @@ body.admin-v3 {
 }
 
 .login-note {
-	margin-top: 14px;
-	padding: 12px;
-	border-radius: var(--admin-radius-card);
-	background: var(--admin-accent-soft);
+	margin-top: 18px;
+	padding-top: 16px;
+	border-top: 1px solid var(--admin-border);
+	color: var(--admin-ink-2);
 	font-size: 13px;
 }
 
