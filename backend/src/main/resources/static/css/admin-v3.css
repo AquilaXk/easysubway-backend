@@ -18,6 +18,8 @@
 	/* 브랜드 액센트 1계열 + 의미 상태색 */
 	--admin-accent: #0f6b52;
 	--admin-accent-soft: #eef4f1;
+	--admin-sidebar-bg: #0f2730;
+	--admin-sidebar-accent: #4fcfa9;
 	--admin-primary: #123a37;
 	--admin-primary-hover: #0c2b28;
 	--admin-good: #1f6b45;
@@ -85,27 +87,13 @@ body.admin-v3 {
 	top: 0;
 	align-self: start;
 	min-height: 100vh;
-	padding: 20px 16px;
-	background: #0f2730;
-	color: #d8e8e6;
+	padding: 22px 14px;
+	background: var(--admin-sidebar-bg);
+	color: #cfe1de;
 }
 
 .admin-brand {
-	display: flex;
-	gap: 12px;
-	align-items: center;
-	padding: 6px 6px 20px;
-}
-
-.admin-brand-mark {
-	display: grid;
-	width: 38px;
-	height: 38px;
-	place-items: center;
-	border-radius: 10px;
-	background: #48d6b5;
-	color: #07251f;
-	font-weight: 900;
+	padding: 4px 10px 22px;
 }
 
 .admin-brand strong,
@@ -116,14 +104,16 @@ body.admin-v3 {
 .admin-brand strong {
 	color: #fff;
 	font-size: 17px;
+	font-weight: var(--admin-w-title);
 	line-height: 1.25;
 }
 
 .admin-brand span {
-	margin-top: 2px;
-	color: #a8c2bf;
+	margin-top: 3px;
+	color: #92aca8;
 	font-size: 12px;
-	font-weight: 800;
+	font-weight: var(--admin-w-medium);
+	letter-spacing: 0.02em;
 }
 
 .admin-nav-group {
@@ -131,28 +121,35 @@ body.admin-v3 {
 }
 
 .admin-nav-group p {
-	margin: 0 0 7px 8px;
-	color: #87a5a1;
+	margin: 0 0 6px 12px;
+	color: #7f9b97;
 	font-size: 12px;
-	font-weight: 900;
+	font-weight: var(--admin-w-strong);
 }
 
 .admin-nav-group a {
 	display: flex;
 	align-items: center;
-	min-height: 39px;
-	padding: 0 11px;
-	border-radius: 8px;
-	color: #d8e8e6;
+	min-height: 38px;
+	padding: 0 12px;
+	border-left: 3px solid transparent;
+	border-radius: var(--admin-radius-control);
+	color: #cfe1de;
 	font-size: 14px;
-	font-weight: 800;
+	font-weight: var(--admin-w-medium);
 	text-decoration: none;
 }
 
-.admin-nav-group a:hover,
+.admin-nav-group a:hover {
+	background: rgba(255, 255, 255, 0.05);
+	color: #fff;
+}
+
 .admin-nav-group a.is-active {
-	background: #dff7ef;
-	color: #082720;
+	border-left-color: var(--admin-sidebar-accent);
+	background: rgba(255, 255, 255, 0.07);
+	color: #fff;
+	font-weight: var(--admin-w-strong);
 }
 
 .admin-main {
@@ -188,11 +185,17 @@ body.admin-v3 {
 .admin-topbar-meta {
 	display: flex;
 	flex-wrap: wrap;
-	gap: 8px 14px;
+	gap: 6px 12px;
 	align-items: center;
 	color: var(--admin-ink-2);
 	font-size: 13px;
 	font-weight: var(--admin-w-medium);
+}
+
+.admin-topbar-meta > span:not(:first-child)::before {
+	content: "·";
+	margin-right: 12px;
+	color: var(--admin-ink-3);
 }
 
 .admin-topbar-meta strong {
