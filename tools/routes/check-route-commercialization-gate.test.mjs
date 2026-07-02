@@ -722,6 +722,72 @@ test("route commercialization gate requires realtime coverage provider and regio
   );
 });
 
+test("route commercialization gate requires out-of-station allowlist evidence", async () => {
+  const fixture = await writeFixtureSet({
+    gateOverride: {
+      routing: {
+        outOfStationTransferSupported: true,
+        outOfStationTransferAllowlistSource: "catalog_metadata:route.outOfStationTransfer.allowlist",
+      },
+    },
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      productionSampleSize: 120,
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      supportedStationLinePairs: 150,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: true,
+      alternativeItinerariesMinObserved: 2,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  await assert.rejects(
+    execChecker(fixture),
+    (error) => {
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.status, "FAIL");
+      assert.ok(report.failures.includes("routing out-of-station transfer allowlist source mismatch"));
+      assert.ok(report.failures.includes("routing out-of-station transfer allowlist must contain at least one pair"));
+      return true;
+    },
+  );
+});
+
 test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
   const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
 
@@ -730,8 +796,19 @@ test("route commercialization gate sorts checked reports with an explicit compar
 
 async function writeFixtureSet(reports) {
   const dir = await mkdtemp(path.join(tmpdir(), "route-commercialization-gate-"));
+  const gatePath = path.join(dir, "route-commercialization-gate.json");
+  const gate = JSON.parse(await readFile("apps/mobile/release/route-commercialization-gate.json", "utf8"));
+  const gateOverride = reports.gateOverride ?? {};
+  await writeFile(gatePath, `${JSON.stringify({
+    ...gate,
+    ...gateOverride,
+    routing: {
+      ...gate.routing,
+      ...(gateOverride.routing ?? {}),
+    },
+  }, null, 2)}\n`);
   const files = {
-    gate: path.join(root, "apps/mobile/release/route-commercialization-gate.json"),
+    gate: gatePath,
     accuracy: path.join(dir, "route-accuracy-report.json"),
     accessibility: path.join(dir, "route-accessibility-regression-report.json"),
     coverage: path.join(dir, "realtime-provider-coverage-report.json"),
@@ -743,7 +820,9 @@ async function writeFixtureSet(reports) {
     accuracy: normalizeAccuracyReport(reports.accuracy),
     coverage: normalizeCoverageReport(reports.coverage),
   };
-  await Promise.all(Object.entries(normalizedReports).map(([key, report]) => writeFile(files[key], `${JSON.stringify(report, null, 2)}\n`)));
+  await Promise.all(Object.entries(normalizedReports)
+    .filter(([key]) => key !== "gateOverride")
+    .map(([key, report]) => writeFile(files[key], `${JSON.stringify(report, null, 2)}\n`)));
   return files;
 }
 

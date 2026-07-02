@@ -249,6 +249,12 @@ function validateContract(gate, report, failures) {
   if (number(report.wrongLineSequence) > gate.routeQuality.wrongLineSequenceAllowed) failures.push("routeQuality wrong line sequence exceeds 0");
   max(report.routeNotFoundRate, gate.routeQuality.routeNotFoundRateMax, "routeQuality route not found rate", failures);
   if (gate.routing.outOfStationTransferSupported) {
+    if (report.outOfStationTransferAllowlistSource !== gate.routing.outOfStationTransferAllowlistSource) {
+      failures.push("routing out-of-station transfer allowlist source mismatch");
+    }
+    if (number(report.outOfStationTransferAllowlistPairCount) < 1) {
+      failures.push("routing out-of-station transfer allowlist must contain at least one pair");
+    }
     const satisfied = new Set(report.releaseBlockersSatisfied ?? []);
     for (const blocker of gate.outOfStationTransferReleaseBlockers) {
       if (!satisfied.has(blocker)) failures.push(`routing ${blocker} blocker must be satisfied before out-of-station transfer release claim`);

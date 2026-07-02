@@ -1438,6 +1438,27 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("backend planner는 allowlist 없는 역외 환승 간선을 내부 경로 후보로 승격하지 않는다")
+	void searchInternalRouteIgnoresOutOfStationTransferEdges() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new OutOfStationTransferOnlyTransitMasterPort(),
+			CLOCK
+		);
+
+		assertThatThrownBy(() -> routeEdgeService.searchInternalRoute(new SearchInternalRouteCommand(
+			"station-a",
+			"node-station-a-entrance",
+			"node-station-a-platform",
+			MobilityType.STROLLER
+		)))
+			.isInstanceOf(RouteNotFoundException.class)
+			.hasMessage("연결 가능한 경로를 찾을 수 없습니다.");
+	}
+
+	@Test
 	@DisplayName("휠체어 역 내부 이동 경로는 계단만 있으면 차단한다")
 	void wheelchairInternalRouteBlocksStairOnlyInternalPath() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -2503,6 +2524,30 @@ class RouteSearchServiceTest {
 			return List.of(
 				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "출입구"),
 				routeNode("node-station-a-landing", "station-a", RouteNodeType.CONCOURSE, "중간 지점"),
+				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
+			);
+		}
+	}
+
+	private static class OutOfStationTransferOnlyTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(internalEdge(
+				"edge-a-out-of-station-transfer",
+				"node-station-a-entrance",
+				"node-station-a-platform",
+				RouteEdgeType.OUT_OF_STATION_TRANSFER,
+				120,
+				180,
+				false
+			));
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			return List.of(
+				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "외부 출입구"),
 				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
 			);
 		}
