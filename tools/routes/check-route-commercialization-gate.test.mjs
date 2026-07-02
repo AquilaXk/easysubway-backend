@@ -657,6 +657,71 @@ test("route commercialization gate requires runtime traceability summary", async
   );
 });
 
+test("route commercialization gate requires realtime coverage provider and region reason breakdowns", async () => {
+  const fixture = await writeFixtureSet({
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      productionSampleSize: 120,
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      supportedStationLinePairs: 150,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failedRows: 1, failureRate: 0.1, failuresByReason: { UNKNOWN: 1 } },
+      byProvider: [],
+      byRegion: [{ region: "capital", supportedStationLinePairs: 150, mappingFailedRows: 1, staleCount: 0, mappingFailuresByReason: { UNKNOWN: 1 } }],
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 2,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  await assert.rejects(
+    execChecker(fixture),
+    (error) => {
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.status, "FAIL");
+      assert.ok(report.failures.includes("realtimeCoverage mapping failures must not use UNKNOWN reason code"));
+      assert.ok(report.failures.includes("realtimeCoverage provider breakdown must be reported"));
+      assert.ok(report.failures.includes("realtimeCoverage region mapping failures must not use UNKNOWN reason code"));
+      return true;
+    },
+  );
+});
+
 test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
   const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
 
@@ -676,6 +741,7 @@ async function writeFixtureSet(reports) {
   const normalizedReports = {
     ...reports,
     accuracy: normalizeAccuracyReport(reports.accuracy),
+    coverage: normalizeCoverageReport(reports.coverage),
   };
   await Promise.all(Object.entries(normalizedReports).map(([key, report]) => writeFile(files[key], `${JSON.stringify(report, null, 2)}\n`)));
   return files;
@@ -711,6 +777,39 @@ function normalizeAccuracyReport(report) {
       STATIC_LOCAL: 0,
       FALLBACK: 0,
     },
+  };
+}
+
+function normalizeCoverageReport(report) {
+  return {
+    ...report,
+    freshness: {
+      staleCount: 0,
+      ...report.freshness,
+    },
+    mapping: {
+      failedRows: 0,
+      failuresByReason: {},
+      ...report.mapping,
+    },
+    byProvider: report.byProvider ?? [
+      {
+        providerId: "seoul-topis",
+        supportedStationLinePairs: report.supportedStationLinePairs ?? 0,
+        mappingFailedRows: report.mapping?.failedRows ?? 0,
+        mappingFailuresByReason: report.mapping?.failuresByReason ?? {},
+        staleCount: report.freshness?.staleCount ?? 0,
+      },
+    ],
+    byRegion: report.byRegion ?? [
+      {
+        region: "capital",
+        supportedStationLinePairs: report.supportedStationLinePairs ?? 0,
+        mappingFailedRows: report.mapping?.failedRows ?? 0,
+        mappingFailuresByReason: report.mapping?.failuresByReason ?? {},
+        staleCount: report.freshness?.staleCount ?? 0,
+      },
+    ],
   };
 }
 

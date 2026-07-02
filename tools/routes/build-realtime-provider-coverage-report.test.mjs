@@ -11,13 +11,13 @@ test("builds realtime provider coverage report with freshness and mapping metric
     scope: { id: "capital_pilot_android_v1", supportedStationLinePairsMin: 2 },
     staleFallbackRequired: true,
     stationLinePairs: [
-      { stationId: "station-sangnoksu", lineId: "seoul-4", supportsArrivals: true, mappingStatus: "MAPPED" },
-      { stationId: "station-sadang", lineId: "seoul-4", supportsArrivals: true, mappingStatus: "MAPPED" },
-      { stationId: "station-busan", lineId: "busan-1", supportsArrivals: false, mappingStatus: "UNSUPPORTED_REGION", failureReason: "UNSUPPORTED_REGION" },
+      { providerId: "seoul-topis", region: "capital", stationId: "station-sangnoksu", lineId: "seoul-4", supportsArrivals: true, mappingStatus: "MAPPED" },
+      { providerId: "seoul-topis", region: "capital", stationId: "station-sadang", lineId: "seoul-4", supportsArrivals: true, mappingStatus: "MAPPED" },
+      { providerId: "busan-openapi", region: "busan", stationId: "station-busan", lineId: "busan-1", supportsArrivals: false, mappingStatus: "UNSUPPORTED_REGION", failureReason: "UNSUPPORTED_REGION" },
     ],
     samples: [
-      { providerFreshnessSeconds: 12, freshnessStatus: "FRESH", labeledAsRealtime: true },
-      { providerFreshnessSeconds: 120, freshnessStatus: "STALE", labeledAsRealtime: false },
+      { providerId: "seoul-topis", region: "capital", providerFreshnessSeconds: 12, freshnessStatus: "FRESH", labeledAsRealtime: true },
+      { providerId: "busan-openapi", region: "busan", providerFreshnessSeconds: 120, freshnessStatus: "STALE", labeledAsRealtime: false },
     ],
     unsupportedRegions: [{ region: "busan", reason: "실시간 미지원" }],
   });
@@ -32,6 +32,42 @@ test("builds realtime provider coverage report with freshness and mapping metric
     failureRate: 1 / 3,
     failuresByReason: { UNSUPPORTED_REGION: 1 },
   });
+  assert.deepEqual(report.byProvider, [
+    {
+      providerId: "busan-openapi",
+      supportedStationLinePairs: 0,
+      mappingFailedRows: 1,
+      mappingFailuresByReason: { UNSUPPORTED_REGION: 1 },
+      freshCount: 0,
+      staleCount: 1,
+    },
+    {
+      providerId: "seoul-topis",
+      supportedStationLinePairs: 2,
+      mappingFailedRows: 0,
+      mappingFailuresByReason: {},
+      freshCount: 1,
+      staleCount: 0,
+    },
+  ]);
+  assert.deepEqual(report.byRegion, [
+    {
+      region: "busan",
+      supportedStationLinePairs: 0,
+      mappingFailedRows: 1,
+      mappingFailuresByReason: { UNSUPPORTED_REGION: 1 },
+      freshCount: 0,
+      staleCount: 1,
+    },
+    {
+      region: "capital",
+      supportedStationLinePairs: 2,
+      mappingFailedRows: 0,
+      mappingFailuresByReason: {},
+      freshCount: 1,
+      staleCount: 0,
+    },
+  ]);
   assert.deepEqual(report.unsupportedRegions, [{ region: "busan", reason: "실시간 미지원" }]);
 });
 

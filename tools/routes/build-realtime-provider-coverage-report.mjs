@@ -30,6 +30,8 @@ export function buildRealtimeProviderCoverageReport(input) {
   const mappingFailures = pairs.filter((row) => row.mappingStatus !== "MAPPED");
   const realtimeSamples = samples.filter((row) => row.labeledAsRealtime === true);
   const staleAsFresh = realtimeSamples.filter((row) => row.freshnessStatus !== "FRESH");
+  const providerIds = uniqueKeys([...pairs, ...samples], "providerId");
+  const regions = uniqueKeys([...pairs, ...samples], "region");
 
   return {
     schemaVersion: 1,
@@ -48,7 +50,29 @@ export function buildRealtimeProviderCoverageReport(input) {
       failureRate: ratio(mappingFailures.length, pairs.length),
       failuresByReason: countBy(mappingFailures, "failureReason"),
     },
+    byProvider: providerIds.map((providerId) => aggregateScope(providerId, "providerId", pairs, samples)),
+    byRegion: regions.map((region) => aggregateScope(region, "region", pairs, samples)),
     unsupportedRegions: Array.isArray(input.unsupportedRegions) ? input.unsupportedRegions : [],
+  };
+}
+
+function uniqueKeys(rows, field) {
+  return [...new Set(rows.map((row) => row[field]).filter((value) => value != null && value !== ""))]
+    .sort((left, right) => `${left}`.localeCompare(`${right}`));
+}
+
+function aggregateScope(key, field, pairs, samples) {
+  const scopedPairs = pairs.filter((row) => row[field] === key);
+  const scopedSamples = samples.filter((row) => row[field] === key);
+  const mappedPairs = scopedPairs.filter((row) => row.supportsArrivals === true && row.mappingStatus === "MAPPED");
+  const mappingFailures = scopedPairs.filter((row) => row.mappingStatus !== "MAPPED");
+  return {
+    [field]: key,
+    supportedStationLinePairs: uniquePairCount(mappedPairs),
+    mappingFailedRows: mappingFailures.length,
+    mappingFailuresByReason: countBy(mappingFailures, "failureReason"),
+    freshCount: scopedSamples.filter((row) => row.freshnessStatus === "FRESH").length,
+    staleCount: scopedSamples.filter((row) => row.freshnessStatus === "STALE").length,
   };
 }
 

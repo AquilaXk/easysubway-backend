@@ -186,8 +186,42 @@ function validateCoverage(gate, report, failures) {
   if (number(report.freshness?.staleAsFreshCount) > 0) {
     failures.push("realtimeCoverage stale-as-fresh count exceeds 0");
   }
+  if (!Number.isFinite(Number(report.freshness?.staleCount))) {
+    failures.push("realtimeCoverage stale count must be reported");
+  }
   if (!Number.isFinite(Number(report.mapping?.failureRate))) {
     failures.push("realtimeCoverage mapping failure rate must be reported");
+  }
+  if (number(report.mapping?.failedRows) > 0 && objectCount(report.mapping?.failuresByReason) <= 0) {
+    failures.push("realtimeCoverage mapping failures must include reason codes");
+  }
+  if (number(report.mapping?.failuresByReason?.UNKNOWN) > 0) {
+    failures.push("realtimeCoverage mapping failures must not use UNKNOWN reason code");
+  }
+  validateCoverageBreakdown(report.byProvider, "providerId", "provider", failures);
+  validateCoverageBreakdown(report.byRegion, "region", "region", failures);
+}
+
+function validateCoverageBreakdown(rows, key, label, failures) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    failures.push(`realtimeCoverage ${label} breakdown must be reported`);
+    return;
+  }
+  for (const row of rows) {
+    if (typeof row?.[key] !== "string" || row[key].trim() === "") {
+      failures.push(`realtimeCoverage ${label} breakdown key must be reported`);
+    }
+    for (const metric of ["supportedStationLinePairs", "mappingFailedRows", "staleCount"]) {
+      if (!Number.isFinite(Number(row?.[metric]))) {
+        failures.push(`realtimeCoverage ${label} breakdown ${metric} must be reported`);
+      }
+    }
+    if (number(row?.mappingFailedRows) > 0 && objectCount(row?.mappingFailuresByReason) <= 0) {
+      failures.push(`realtimeCoverage ${label} mapping failures must include reason codes`);
+    }
+    if (number(row?.mappingFailuresByReason?.UNKNOWN) > 0) {
+      failures.push(`realtimeCoverage ${label} mapping failures must not use UNKNOWN reason code`);
+    }
   }
 }
 
@@ -228,4 +262,9 @@ function max(actual, limit, label, failures) {
 
 function number(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function objectCount(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  return Object.values(value).reduce((sum, count) => sum + number(count), 0);
 }
