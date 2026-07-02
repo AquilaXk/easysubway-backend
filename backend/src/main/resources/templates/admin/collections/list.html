@@ -56,7 +56,7 @@
 			</tr>
 			<tr th:each="run : ${runs}">
 				<td th:text="${run.sourceLabel}">도시철도 마스터</td>
-				<td th:text="${run.statusLabel}">완료</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${run.statusLabel})}">완료</span></td>
 				<td th:text="${run.requestedBy}">admin-user</td>
 				<td th:text="${run.startedAt}">2026-06-15T10:00:00</td>
 				<td th:text="${run.completedAtLabel()}">2026-06-15T10:01:00</td>

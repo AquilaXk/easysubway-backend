@@ -80,7 +80,7 @@
 			<tr th:each="incident : ${incidents}">
 				<td th:text="${incident.incidentId}">INC-1</td>
 				<td th:text="${incident.severity}">MAJOR</td>
-				<td th:text="${incident.status}">OPEN</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${incident.status})}">OPEN</span></td>
 				<td th:text="${incident.source}">HEALTH</td>
 				<td th:text="${incident.summary}">요약</td>
 				<td th:text="${incident.owner}">admin</td>

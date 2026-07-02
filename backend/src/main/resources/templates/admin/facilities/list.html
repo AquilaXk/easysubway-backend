@@ -56,7 +56,7 @@
 				<span th:text="${facility.stationName}">상록수</span>
 				<span class="meta" th:text="${facility.stationId}">station-id</span>
 			</td>
-			<td th:text="${facility.statusLabel}">정상</td>
+			<td><span th:replace="~{admin/fragments/shell :: statusAuto(${facility.statusLabel})}">정상</span></td>
 			<td>
 				<span th:text="${facility.confidenceLabel}">최근 확인된 정보</span>
 				<span class="meta" th:text="${facility.sourceLabel}">공식 안내</span>
