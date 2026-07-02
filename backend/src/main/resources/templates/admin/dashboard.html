@@ -33,21 +33,17 @@
 	<section class="admin-panel" th:if="${datapackReleaseSummary != null}">
 		<h2>데이터팩 출시 준비</h2>
 		<p class="summary">
-			<span th:text="${datapackReleaseSummary.candidateId}">candidate-id</span>
-			<span> · </span>
-			<strong th:text="${datapackReleaseSummary.status}">FAIL</strong>
-			<span> · </span>
-			<span th:text="|전체 blocker ${datapackReleaseSummary.totalBlockers}건|">전체 blocker 0건</span>
-			<span> · </span>
-			<span th:text="|alias ${datapackReleaseSummary.aliasBlockers}|">alias 0</span>
-			<span> · </span>
-			<span th:text="|quarantine ${datapackReleaseSummary.quarantineBlockers}|">quarantine 0</span>
-			<span> · </span>
-			<span th:text="|manual override ${datapackReleaseSummary.manualOverrideBlockers}|">manual override 0</span>
-			<span> · </span>
-			<span th:text="|route gate ${datapackReleaseSummary.routeGateBlockers}|">route gate 0</span>
+			<strong th:text="${datapackReleaseSummary.candidateId}">candidate-id</strong>
+			<span th:replace="~{admin/fragments/shell :: status(${datapackReleaseSummary.status}, ${datapackReleaseSummary.status == 'PASS' ? 'good' : (datapackReleaseSummary.status == 'FAIL' ? 'bad' : 'warn')})}">FAIL</span>
 		</p>
 		<p class="summary" th:text="${datapackReleaseSummary.productionPromoteReason()}">production promote 차단: blocker 0건</p>
+		<ul class="blocker-summary">
+			<li th:text="|전체 blocker ${datapackReleaseSummary.totalBlockers}건|">전체 blocker 0건</li>
+			<li th:text="|alias ${datapackReleaseSummary.aliasBlockers}|">alias 0</li>
+			<li th:text="|quarantine ${datapackReleaseSummary.quarantineBlockers}|">quarantine 0</li>
+			<li th:text="|manual override ${datapackReleaseSummary.manualOverrideBlockers}|">manual override 0</li>
+			<li th:text="|route gate ${datapackReleaseSummary.routeGateBlockers}|">route gate 0</li>
+		</ul>
 		<table>
 			<tbody>
 			<tr><th scope="row">scope</th><td th:text="${datapackReleaseSummary.scopeId}">scope</td></tr>
