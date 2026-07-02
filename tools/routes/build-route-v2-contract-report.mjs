@@ -84,7 +84,7 @@ function hasMultiTransfer(samples) {
 function hasOutOfStationTransfer(samples) {
   return samples.some((sample) => itinerariesOf(sample).some((itinerary) => {
     const steps = itinerary.legs ?? itinerary.steps ?? [];
-    return steps.some((step) => step.type === "OUT_OF_STATION_TRANSFER" || step.stepType === "out_of_station_transfer");
+    return steps.some((step) => isOutOfStationTransferStep(step));
   }));
 }
 
@@ -119,6 +119,10 @@ function lineSequenceOf(itinerary) {
 
 function isRideStep(step) {
   return ["RIDE", "ride"].includes(step.legType ?? step.type ?? step.stepType);
+}
+
+function isOutOfStationTransferStep(step) {
+  return ["OUT_OF_STATION_TRANSFER", "out_of_station_transfer"].includes(step.legType ?? step.type ?? step.stepType);
 }
 
 function number(value) {

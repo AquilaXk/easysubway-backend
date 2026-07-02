@@ -73,6 +73,34 @@ test("reads line sequence from route v2 legType runtime response", () => {
   assert.equal(report.wrongLineSequence, 0);
 });
 
+test("detects out-of-station transfer from route v2 legType runtime response", () => {
+  const report = buildContractReport({
+    schemaVersion: 1,
+    samples: [
+      {
+        id: "out-of-station-runtime",
+        response: {
+          data: {
+            itineraries: [
+              {
+                status: "FOUND",
+                transferCount: 1,
+                legs: [
+                  { legType: "RIDE", lineId: "line-a" },
+                  { legType: "OUT_OF_STATION_TRANSFER" },
+                  { legType: "RIDE", lineId: "line-b" },
+                ],
+              },
+            ],
+          },
+        },
+      },
+    ],
+  });
+
+  assert.equal(report.outOfStationTransferSupported, true);
+});
+
 test("writes route v2 contract report json", async () => {
   const dir = await mkdtemp(path.join(os.tmpdir(), "route-v2-contract-"));
   const inputPath = path.join(dir, "responses.json");
