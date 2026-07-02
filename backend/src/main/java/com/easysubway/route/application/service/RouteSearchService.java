@@ -6,6 +6,7 @@ import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.application.port.out.LoadRouteSearchPort;
+import com.easysubway.route.application.port.out.RealtimeArrivalResolver;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
 import com.easysubway.route.domain.EtaConfidence;
@@ -25,6 +26,7 @@ import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
+import com.easysubway.route.domain.RealtimeEtaOverlay;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -39,8 +41,10 @@ import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SubwayLine;
 import java.time.Clock;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -55,6 +59,7 @@ import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -75,15 +80,25 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private final SaveRouteFeedbackPort saveRouteFeedbackPort;
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final Clock clock;
+	private final RealtimeArrivalResolver realtimeArrivalResolver;
+	private final RealtimeEtaOverlay realtimeEtaOverlay;
 
 	@Autowired
 	public RouteSearchService(
 		LoadRouteSearchPort loadRouteSearchPort,
 		SaveRouteSearchPort saveRouteSearchPort,
 		SaveRouteFeedbackPort saveRouteFeedbackPort,
-		LoadTransitMasterPort loadTransitMasterPort
+		LoadTransitMasterPort loadTransitMasterPort,
+		ObjectProvider<RealtimeArrivalResolver> realtimeArrivalResolver
 	) {
-		this(loadRouteSearchPort, saveRouteSearchPort, saveRouteFeedbackPort, loadTransitMasterPort, Clock.systemDefaultZone());
+		this(
+			loadRouteSearchPort,
+			saveRouteSearchPort,
+			saveRouteFeedbackPort,
+			loadTransitMasterPort,
+			Clock.systemDefaultZone(),
+			realtimeArrivalResolver.getIfAvailable()
+		);
 	}
 
 	public RouteSearchService(
@@ -107,11 +122,24 @@ public class RouteSearchService implements RouteSearchUseCase {
 		LoadTransitMasterPort loadTransitMasterPort,
 		Clock clock
 	) {
+		this(loadRouteSearchPort, saveRouteSearchPort, saveRouteFeedbackPort, loadTransitMasterPort, clock, null);
+	}
+
+	public RouteSearchService(
+		LoadRouteSearchPort loadRouteSearchPort,
+		SaveRouteSearchPort saveRouteSearchPort,
+		SaveRouteFeedbackPort saveRouteFeedbackPort,
+		LoadTransitMasterPort loadTransitMasterPort,
+		Clock clock,
+		RealtimeArrivalResolver realtimeArrivalResolver
+	) {
 		this.loadRouteSearchPort = loadRouteSearchPort;
 		this.saveRouteSearchPort = saveRouteSearchPort;
 		this.saveRouteFeedbackPort = saveRouteFeedbackPort;
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.clock = clock;
+		this.realtimeArrivalResolver = realtimeArrivalResolver;
+		this.realtimeEtaOverlay = new RealtimeEtaOverlay();
 	}
 
 	public RouteSearchService(
@@ -121,6 +149,23 @@ public class RouteSearchService implements RouteSearchUseCase {
 		Clock clock
 	) {
 		this(loadRouteSearchPort, saveRouteSearchPort, requireFeedbackPort(saveRouteSearchPort), loadTransitMasterPort, clock);
+	}
+
+	public RouteSearchService(
+		LoadRouteSearchPort loadRouteSearchPort,
+		SaveRouteSearchPort saveRouteSearchPort,
+		LoadTransitMasterPort loadTransitMasterPort,
+		Clock clock,
+		RealtimeArrivalResolver realtimeArrivalResolver
+	) {
+		this(
+			loadRouteSearchPort,
+			saveRouteSearchPort,
+			requireFeedbackPort(saveRouteSearchPort),
+			loadTransitMasterPort,
+			clock,
+			realtimeArrivalResolver
+		);
 	}
 
 	@Override
@@ -182,6 +227,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 			));
 		}
 
+		List<RouteStep> routeSteps = realtimeAwareRouteSteps(
+			command,
+			routeSteps(origin, destination, routePlan, profileWeight)
+		);
 		return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
 			newRouteSearchId(),
 			origin.id(),
@@ -193,7 +242,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			routePlan.lineId(),
 			routePlan.lineName(),
 			routeScore(profileWeight, routePlan, warnings),
-			routeSteps(origin, destination, routePlan, profileWeight),
+			routeSteps,
 			warnings,
 			List.of(),
 			LocalDateTime.now(clock)
@@ -426,6 +475,15 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(station -> station.id().equals(stationId))
 			.findFirst()
 			.orElseThrow(StationNotFoundException::new);
+	}
+
+	private SubwayLine loadActiveLine(String lineId) {
+		return loadTransitMasterPort.loadLines()
+			.stream()
+			.filter(SubwayLine::active)
+			.filter(line -> line.id().equals(lineId))
+			.findFirst()
+			.orElseThrow(RouteNotFoundException::new);
 	}
 
 	private List<RoutePlan> findRoutePlans(
@@ -1073,6 +1131,84 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return routeAssembler.assemble(transferSteps(origin, destination, routePlan.transferRoute().get(), profileWeight));
 		}
 		return routeAssembler.assemble(directLineSteps(origin, destination, routePlan.directLine().orElseThrow(), profileWeight));
+	}
+
+	private List<RouteStep> realtimeAwareRouteSteps(SearchRouteCommand command, List<RouteStep> plannedSteps) {
+		if (!command.useRealtime() || realtimeArrivalResolver == null || command.departureTime() == null) {
+			return plannedSteps;
+		}
+		List<RouteStep> realtimeSteps = new ArrayList<>(plannedSteps);
+		int elapsedMinutes = 0;
+		for (int index = 0; index < realtimeSteps.size(); index++) {
+			RouteStep step = realtimeSteps.get(index);
+			if (!"ride".equals(step.stepType())) {
+				elapsedMinutes += Math.max(0, step.estimatedMinutes());
+				continue;
+			}
+			Instant readyAt = command.departureTime().toInstant().plusSeconds(elapsedMinutes * 60L);
+			RealtimeArrivalResolver.Resolution resolution = realtimeArrivalResolver.resolve(realtimeQuery(step, readyAt));
+			RealtimeEtaOverlay.Result overlay = realtimeEtaOverlay.overlay(
+				readyAt,
+				Math.max(0, step.estimatedMinutes()) * 60,
+				directionFor(step),
+				resolution.status(),
+				resolution.fallbackCode(),
+				resolution.providerSnapshotId(),
+				resolution.providerReceivedAt(),
+				resolution.candidates().size(),
+				resolution.candidates()
+			);
+			realtimeSteps.set(index, withEtaOverlay(step, overlay));
+			break;
+		}
+		return List.copyOf(realtimeSteps);
+	}
+
+	private RealtimeArrivalResolver.Query realtimeQuery(RouteStep step, Instant readyAt) {
+		Station station = loadActiveStation(step.fromStationId());
+		SubwayLine line = loadActiveLine(step.lineId());
+		return new RealtimeArrivalResolver.Query(
+			station.id(),
+			line.id(),
+			providerLineId(line),
+			station.nameKo(),
+			line.name(),
+			directionFor(step),
+			readyAt
+		);
+	}
+
+	private RouteStep withEtaOverlay(RouteStep step, RealtimeEtaOverlay.Result overlay) {
+		return new RouteStep(
+			step.sequence(),
+			step.stepType(),
+			step.title(),
+			step.description(),
+			step.lineId(),
+			step.lineName(),
+			step.fromStationId(),
+			step.toStationId(),
+			Math.max(1, (overlay.waitSeconds() + 59) / 60),
+			step.distanceMeters(),
+			step.includesStairs(),
+			step.stairAccessState(),
+			step.requiresAccessibilityCheck(),
+			overlay.etaSource().name(),
+			step.distanceSource(),
+			overlay.confidence().name()
+		);
+	}
+
+	private String directionFor(RouteStep step) {
+		try {
+			return loadActiveStation(step.toStationId()).nameKo() + " 방면";
+		} catch (StationNotFoundException ignored) {
+			return "";
+		}
+	}
+
+	private String providerLineId(SubwayLine line) {
+		return line.lineCode() == null || line.lineCode().isBlank() ? line.id() : line.lineCode();
 	}
 
 	private List<RouteStep> directLineSteps(

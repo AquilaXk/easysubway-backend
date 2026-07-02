@@ -45,11 +45,18 @@ public class RouteV2Planner {
 		List<String> statuses = new ArrayList<>();
 		for (RouteSearchResult itinerary : itineraries) {
 			statuses.add(statusOf(itinerary));
-			if (useRealtime && itinerary.status() == RouteSearchStatus.FOUND && itinerary.etaSource() == EtaSource.PLANNED) {
+			if (usesPlannedEtaAfterRealtimeRequest(itinerary, useRealtime)) {
 				statuses.add("REALTIME_UNAVAILABLE_PLANNED_USED");
 			}
 		}
 		return List.copyOf(statuses.stream().distinct().toList());
+	}
+
+	private boolean usesPlannedEtaAfterRealtimeRequest(RouteSearchResult itinerary, boolean useRealtime) {
+		if (!useRealtime || itinerary.status() != RouteSearchStatus.FOUND) {
+			return false;
+		}
+		return itinerary.etaSource() == EtaSource.PLANNED || itinerary.etaSource() == EtaSource.FALLBACK;
 	}
 
 	private String statusOf(RouteSearchResult itinerary) {
@@ -73,7 +80,9 @@ public class RouteV2Planner {
 				destinationStationId,
 				mobilityType,
 				constraintMode,
-				maxTransfers
+				maxTransfers,
+				departureTime,
+				useRealtime
 			);
 		}
 	}
