@@ -103,7 +103,7 @@ public final class RealtimeEtaOverlay {
 		return candidates.stream()
 			.filter(candidate -> candidate.freshness() == ArrivalFreshness.FRESH_REALTIME)
 			.filter(candidate -> !candidate.expectedArrivalAt().isBefore(readyAt))
-			.filter(candidate -> matchesDirection(direction, candidate.direction()))
+			.filter(candidate -> matchesDirection(direction, candidate))
 			.min(Comparator.comparing(ArrivalCandidate::expectedArrivalAt))
 			.map(candidate -> realtime(readyAt, plannedWaitSeconds, providerSnapshotId, providerReceivedAt, providerHealthCount, candidate))
 			.orElseGet(() -> planned(
@@ -171,8 +171,17 @@ public final class RealtimeEtaOverlay {
 		);
 	}
 
-	private boolean matchesDirection(String expected, String actual) {
-		return expected == null || expected.isBlank() || expected.equals(actual);
+	private boolean matchesDirection(String expected, ArrivalCandidate candidate) {
+		if (expected == null || expected.isBlank()) {
+			return false;
+		}
+		if (expected.equals(candidate.direction())) {
+			return true;
+		}
+		String destinationDirection = candidate.destination() == null || candidate.destination().isBlank()
+			? ""
+			: candidate.destination() + " 방면";
+		return expected.equals(destinationDirection);
 	}
 
 	private List<String> warnings(String defaultCode, String fallbackCode) {

@@ -153,4 +153,61 @@ class RealtimeEtaOverlayTest {
 		assertThat(result.waitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
 		assertThat(result.warningCodes()).containsExactly("NO_USABLE_REALTIME_CANDIDATE");
 	}
+
+	@Test
+	@DisplayName("기대 방향이 비어 있으면 fresh 후보를 realtime ETA로 쓰지 않는다")
+	void freshRealtimeCandidateRequiresResolvedDirection() {
+		ArrivalCandidate candidate = new ArrivalCandidate(
+			"train-403",
+			"seoul-4",
+			"당고개 방면",
+			"당고개",
+			90,
+			READY_AT.plusSeconds(90),
+			READY_AT.minusSeconds(20),
+			ArrivalFreshness.FRESH_REALTIME,
+			EtaConfidence.HIGH
+		);
+
+		RealtimeEtaOverlay.Result result = overlay.overlay(
+			READY_AT,
+			PLANNED_WAIT_SECONDS,
+			"",
+			ArrivalFreshness.FRESH_REALTIME,
+			null,
+			List.of(candidate)
+		);
+
+		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.warningCodes()).containsExactly("NO_USABLE_REALTIME_CANDIDATE");
+	}
+
+	@Test
+	@DisplayName("provider raw direction 표기가 달라도 destination canonical 방향이 같으면 fresh 후보를 사용한다")
+	void freshRealtimeCandidateCanMatchCanonicalDestinationDirection() {
+		ArrivalCandidate candidate = new ArrivalCandidate(
+			"train-404",
+			"seoul-4",
+			"상행",
+			"당고개",
+			90,
+			READY_AT.plusSeconds(90),
+			READY_AT.minusSeconds(20),
+			ArrivalFreshness.FRESH_REALTIME,
+			EtaConfidence.HIGH
+		);
+
+		RealtimeEtaOverlay.Result result = overlay.overlay(
+			READY_AT,
+			PLANNED_WAIT_SECONDS,
+			"당고개 방면",
+			ArrivalFreshness.FRESH_REALTIME,
+			null,
+			List.of(candidate)
+		);
+
+		assertThat(result.etaSource()).isEqualTo(EtaSource.REALTIME);
+		assertThat(result.waitSeconds()).isEqualTo(90);
+		assertThat(result.trainNo()).isEqualTo("train-404");
+	}
 }
