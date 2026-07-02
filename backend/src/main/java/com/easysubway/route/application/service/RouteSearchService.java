@@ -778,11 +778,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
 			.filter(this::isStepFreeFacility)
 			.toList();
-		boolean hasUsableStepFreeFacility = highConfidenceStepFreeFacilities.stream()
-			.anyMatch(this::hasUsableStatus);
 		boolean hasUsableStepFreeExit = highConfidenceExits.stream()
 			.anyMatch(exit -> isUsableStepFreeExit(exit, highConfidenceStepFreeFacilities));
-		return !hasUsableStepFreeFacility && !hasUsableStepFreeExit;
+		return !hasUsableStepFreeExit;
 	}
 
 	private Optional<Boolean> hasStairOnlyInternalEdges(String stationId) {
@@ -852,14 +850,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	private Optional<StationExit> recommendedStepFreeExit(String stationId) {
-		List<AccessibilityFacility> highConfidenceStepFreeFacilities = stationFacilities(stationId).stream()
-			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
-			.filter(this::isStepFreeFacility)
-			.toList();
 		return stationExits(stationId).stream()
 			.filter(exit -> exit.dataConfidence() == DataConfidenceLevel.HIGH)
-			.filter(exit -> isUsableStepFreeExit(exit, highConfidenceStepFreeFacilities))
+			.filter(this::hasStepFreeExitSummary)
 			.findFirst();
+	}
+
+	private boolean hasStepFreeExitSummary(StationExit exit) {
+		return exit.hasElevatorConnection() && !exit.hasStairOnlyPath();
 	}
 
 	private boolean isStepFreeFacility(AccessibilityFacility facility) {
@@ -867,13 +865,6 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case ELEVATOR, WHEELCHAIR_LIFT, RAMP -> true;
 			default -> false;
 		};
-	}
-
-	private boolean hasUsableStepFreeFacility(String stationId) {
-		return stationFacilities(stationId).stream()
-			.filter(facility -> facility.dataConfidence() == DataConfidenceLevel.HIGH)
-			.filter(this::isStepFreeFacility)
-			.anyMatch(this::hasUsableStatus);
 	}
 
 	private boolean hasUsableStatus(AccessibilityFacility facility) {
@@ -889,7 +880,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return false;
 		}
 		return highConfidenceStepFreeFacilities.stream()
-			.noneMatch(facility -> exit.id().equals(facility.exitId()) && !hasUsableStatus(facility));
+			.anyMatch(facility -> exit.id().equals(facility.exitId()) && hasUsableStatus(facility));
 	}
 
 	private List<StationExit> stationExits(String stationId) {

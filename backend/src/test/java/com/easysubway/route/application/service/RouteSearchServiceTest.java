@@ -88,7 +88,7 @@ class RouteSearchServiceTest {
 			.containsExactly(
 				"선택된 경로에서 접근성 확인이 필요한 구간을 표시합니다.",
 				"출구와 시설 상태는 현장 안내를 함께 확인해 주세요.",
-				"유모차 이동 조건을 반영해 이동 부담이 낮은 경로를 우선했습니다."
+				"계단 포함 구간을 미리 표시했어요"
 			);
 		assertThat(String.join("\n", result.recommendationReasons())).doesNotContain("확인했어요");
 		assertThat(result.steps())
@@ -1002,8 +1002,8 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("휠체어 이동 유형은 출구 요약에 엘리베이터 연결이 있으면 별도 시설 행이 없어도 경로를 제공한다")
-	void wheelchairRouteAllowsElevatorConnectedExitWithoutFacilityRow() {
+	@DisplayName("휠체어 이동 유형은 출구 요약만 있고 검증된 시설 행이 없으면 strict 경로를 차단한다")
+	void wheelchairRouteBlocksElevatorConnectedExitWithoutFacilityRow() {
 		var repository = new InMemoryRouteSearchRepository();
 		var exitSummaryService = new RouteSearchService(
 			repository,
@@ -1018,8 +1018,33 @@ class RouteSearchServiceTest {
 			MobilityType.WHEELCHAIR
 		));
 
-		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
-		assertThat(result.blockedReasons()).isEmpty();
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.blockedReasons())
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
+	}
+
+	@Test
+	@DisplayName("휠체어 이동 유형은 출구와 연결되지 않은 시설 행만 있으면 strict 경로를 차단한다")
+	void wheelchairRouteBlocksUnlinkedStepFreeFacilityRow() {
+		var repository = new InMemoryRouteSearchRepository();
+		var unlinkedFacilityService = new RouteSearchService(
+			repository,
+			repository,
+			new UnlinkedStepFreeFacilityTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = unlinkedFacilityService.searchRoute(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(result.steps()).isEmpty();
+		assertThat(result.blockedReasons())
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
 	}
 
 	@Test
@@ -2020,6 +2045,7 @@ class RouteSearchServiceTest {
 		public List<StationExit> loadStationExits() {
 			return List.of(
 				stairOnlyExit("exit-a-1", "station-a"),
+				stepFreeExit("exit-a-2", "station-a"),
 				stepFreeExit("exit-b-1", "station-b")
 			);
 		}
@@ -2030,12 +2056,14 @@ class RouteSearchServiceTest {
 				facility(
 					"facility-a-ramp",
 					"station-a",
+					"exit-a-2",
 					AccessibilityFacilityType.RAMP,
 					AccessibilityFacilityStatus.NORMAL
 				),
 				facility(
 					"facility-b-elevator",
 					"station-b",
+					"exit-b-1",
 					AccessibilityFacilityType.ELEVATOR,
 					AccessibilityFacilityStatus.NORMAL
 				)
@@ -2051,6 +2079,29 @@ class RouteSearchServiceTest {
 				stairOnlyExit("exit-a-1", "station-a"),
 				stepFreeExit("exit-a-2", "station-a"),
 				stepFreeExit("exit-b-1", "station-b")
+			);
+		}
+	}
+
+	private static class UnlinkedStepFreeFacilityTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility(
+					"facility-a-elevator",
+					"station-a",
+					"exit-a-missing",
+					AccessibilityFacilityType.ELEVATOR,
+					AccessibilityFacilityStatus.NORMAL
+				),
+				facility(
+					"facility-b-elevator",
+					"station-b",
+					"exit-b-missing",
+					AccessibilityFacilityType.ELEVATOR,
+					AccessibilityFacilityStatus.NORMAL
+				)
 			);
 		}
 	}
