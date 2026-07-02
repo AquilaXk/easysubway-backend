@@ -324,6 +324,135 @@ test("route commercialization gate fails on unclassified ETA deviations", async 
   );
 });
 
+test("route commercialization gate requires explicit ETA source buckets", async () => {
+  const fixture = await writeFixtureSet({
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      actualEtaSourceCounts: null,
+      productionSampleSize: 120,
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      supportedStationLinePairs: 150,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 2,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  await assert.rejects(
+    execChecker(fixture),
+    (error) => {
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.status, "FAIL");
+      assert.ok(report.failures.includes("routeEtaAccuracy actual ETA source counts must be reported"));
+      return true;
+    },
+  );
+});
+
+test("route commercialization gate requires static, planned, realtime, and fallback source labels", async () => {
+  const fixture = await writeFixtureSet({
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      actualEtaSourceCounts: {
+        REALTIME: 120,
+        PLANNED: 0,
+        STATIC_LOCAL: 0,
+        FALLBACK: 0,
+      },
+      productionSampleSize: 120,
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      supportedStationLinePairs: 150,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 2,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  await assert.rejects(
+    execChecker(fixture),
+    (error) => {
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.status, "FAIL");
+      assert.ok(report.failures.includes("routeEtaAccuracy actual ETA source count missing: STATIC_BACKEND_ESTIMATE"));
+      return true;
+    },
+  );
+});
+
 test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
   const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
 
@@ -340,8 +469,26 @@ async function writeFixtureSet(reports) {
     routeGraphCoverage: path.join(dir, "route-graph-coverage-report.json"),
     contract: path.join(dir, "route-v2-contract-report.json"),
   };
-  await Promise.all(Object.entries(reports).map(([key, report]) => writeFile(files[key], `${JSON.stringify(report, null, 2)}\n`)));
+  const normalizedReports = {
+    ...reports,
+    accuracy: normalizeAccuracyReport(reports.accuracy),
+  };
+  await Promise.all(Object.entries(normalizedReports).map(([key, report]) => writeFile(files[key], `${JSON.stringify(report, null, 2)}\n`)));
   return files;
+}
+
+function normalizeAccuracyReport(report) {
+  if (Object.hasOwn(report, "actualEtaSourceCounts")) return report;
+  return {
+    ...report,
+    actualEtaSourceCounts: {
+      REALTIME: 0,
+      PLANNED: 0,
+      STATIC_BACKEND_ESTIMATE: 0,
+      STATIC_LOCAL: 0,
+      FALLBACK: 0,
+    },
+  };
 }
 
 function execChecker(files) {

@@ -40,6 +40,10 @@ test("ETA evaluator emits the route accuracy report contract", async (t) => {
     COMPETING_APP_COMPARISON: 0,
     FIXTURE_EXPECTED: 100,
   });
+  for (const source of ["REALTIME", "PLANNED", "STATIC_BACKEND_ESTIMATE", "STATIC_LOCAL", "FALLBACK"]) {
+    assert.equal(typeof report.actualEtaSourceCounts[source], "number");
+    assert.equal(typeof report.expectedEtaSourceCounts[source], "number");
+  }
   assert.equal(report.productionSampleSize, 0);
   assert.equal(report.nonProductionSampleSize, 100);
   assert.equal(report.metrics.sampleSize, 100);
@@ -213,6 +217,20 @@ test("ETA evaluator emits structured production-safe failures", async (t) => {
     MANUAL_OBSERVATION: 2,
     COMPETING_APP_COMPARISON: 1,
     FIXTURE_EXPECTED: 3,
+  });
+  assert.deepEqual(report.actualEtaSourceCounts, {
+    REALTIME: 2,
+    PLANNED: 6,
+    STATIC_BACKEND_ESTIMATE: 0,
+    STATIC_LOCAL: 2,
+    FALLBACK: 0,
+  });
+  assert.deepEqual(report.expectedEtaSourceCounts, {
+    REALTIME: 3,
+    PLANNED: 7,
+    STATIC_BACKEND_ESTIMATE: 0,
+    STATIC_LOCAL: 0,
+    FALLBACK: 0,
   });
   assert.equal(report.productionSampleSize, 5);
   assert.equal(report.nonProductionSampleSize, 5);

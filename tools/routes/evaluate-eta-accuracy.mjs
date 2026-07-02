@@ -177,6 +177,8 @@ function buildReport(rows) {
     sampleSize: rows.length,
     sampleSourceCounts: countSampleSources(rows),
     referenceSourceCounts: countReferenceSources(rows),
+    actualEtaSourceCounts: countEtaSources(rows, "actual_eta_source"),
+    expectedEtaSourceCounts: countEtaSources(rows, "expected_eta_source"),
     productionSampleSize: rows.filter(isProductionSample).length,
     nonProductionSampleSize: rows.filter((row) => !isProductionSample(row)).length,
     coverage,
@@ -229,6 +231,20 @@ function countReferenceSources(rows) {
   const counts = Object.fromEntries(referenceSources.map((source) => [source, 0]));
   for (const row of rows) {
     counts[referenceSource(row)] += 1;
+  }
+  return counts;
+}
+
+function countEtaSources(rows, key) {
+  const counts = {
+    REALTIME: 0,
+    PLANNED: 0,
+    STATIC_BACKEND_ESTIMATE: 0,
+    STATIC_LOCAL: 0,
+    FALLBACK: 0,
+  };
+  for (const row of rows) {
+    if (Object.hasOwn(counts, row[key])) counts[row[key]] += 1;
   }
   return counts;
 }

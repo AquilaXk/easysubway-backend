@@ -90,6 +90,7 @@ function validateGate(gate) {
 function validateAccuracy(gate, report, failures) {
   if (report.schemaVersion !== 1) failures.push("route accuracy report schemaVersion must be 1");
   if (Array.isArray(report.failures) && report.failures.length > 0) failures.push("route accuracy report contains failures");
+  validateEtaSourceCounts(gate, report, failures);
 
   const sampleSizeMin = gate.routeEtaAccuracy.sampleSizeMin;
   const sources = report.sampleSourceCounts ?? {};
@@ -111,6 +112,20 @@ function validateAccuracy(gate, report, failures) {
   max(transfer.p90ErrorSeconds, gate.routeEtaAccuracy.transferP90ErrorSecondsMax, "transfer P90 ETA error", failures);
   if (number(report.metrics?.unclassifiedEtaDeviationCount) > 0) {
     failures.push("routeEtaAccuracy unclassified ETA deviation count exceeds 0");
+  }
+}
+
+function validateEtaSourceCounts(gate, report, failures) {
+  if (!gate.etaSourceIntegrity) return;
+  const counts = report.actualEtaSourceCounts;
+  if (!counts || typeof counts !== "object") {
+    failures.push("routeEtaAccuracy actual ETA source counts must be reported");
+    return;
+  }
+  for (const source of ["REALTIME", "PLANNED", "STATIC_BACKEND_ESTIMATE", "STATIC_LOCAL", "FALLBACK"]) {
+    if (!Number.isFinite(Number(counts[source]))) {
+      failures.push(`routeEtaAccuracy actual ETA source count missing: ${source}`);
+    }
   }
 }
 
