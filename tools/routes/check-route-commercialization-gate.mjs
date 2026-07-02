@@ -16,13 +16,14 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
 async function main(argv) {
   const args = parseArgs(argv);
   const gatePath = args.gate ?? args._[0];
-  if (!gatePath) throw new Error("usage: check-route-commercialization-gate.mjs --gate <gate.json> --accuracy <report.json> --accessibility <report.json> --coverage <report.json> --contract <report.json>");
+  if (!gatePath) throw new Error("usage: check-route-commercialization-gate.mjs --gate <gate.json> --accuracy <report.json> --accessibility <report.json> --coverage <report.json> --routeGraphCoverage <report.json> --contract <report.json>");
 
   const gate = await readJson(gatePath);
   const reportPaths = {
     accuracy: args.accuracy ?? gate.requiredReports?.accuracy,
     accessibility: args.accessibility ?? gate.requiredReports?.accessibility,
     coverage: args.coverage ?? gate.requiredReports?.coverage,
+    routeGraphCoverage: args.routeGraphCoverage ?? gate.requiredReports?.routeGraphCoverage,
     contract: args.contract ?? gate.requiredReports?.contract,
   };
   const failures = validateGate(gate);
@@ -42,6 +43,7 @@ async function main(argv) {
   if (reports.accuracy) validateAccuracy(gate, reports.accuracy, failures);
   if (reports.accessibility) validateAccessibility(gate, reports.accessibility, failures);
   if (reports.coverage) validateCoverage(gate, reports.coverage, failures);
+  if (reports.routeGraphCoverage) validateRouteGraphCoverage(gate, reports.routeGraphCoverage, failures);
   if (reports.contract) validateContract(gate, reports.contract, failures);
 
   return {
@@ -79,7 +81,7 @@ function validateGate(gate) {
   if (gate.schemaVersion !== 1) failures.push("gate schemaVersion must be 1");
   if (gate.releaseGate !== "route-commercialization") failures.push("gate releaseGate must be route-commercialization");
   if (gate.releaseBlockerPolicy !== true) failures.push("gate releaseBlockerPolicy must be true");
-  for (const key of ["accuracy", "accessibility", "coverage", "contract"]) {
+  for (const key of ["accuracy", "accessibility", "coverage", "routeGraphCoverage", "contract"]) {
     if (typeof gate.requiredReports?.[key] !== "string") failures.push(`gate requiredReports.${key} must be set`);
   }
   return failures;
@@ -131,6 +133,14 @@ function validateCoverage(gate, report, failures) {
   if (gate.realtimeCoverage.staleFallbackRequired && report.staleFallbackRequired !== true) {
     failures.push("realtimeCoverage stale fallback must be required");
   }
+}
+
+function validateRouteGraphCoverage(gate, report, failures) {
+  if (report.schemaVersion !== 1) failures.push("route graph coverage report schemaVersion must be 1");
+  if (!gate.accessibility.generatedConnectorAsVerifiedAllowed && number(report.generatedConnectorVerifiedAccessibilityCount) > 0) {
+    failures.push("route graph generated connector verified count exceeds 0");
+  }
+  max(report.strictRouteNotFound?.rate, gate.routeQuality.routeNotFoundRateMax, "route graph strict route not found rate", failures);
 }
 
 function validateContract(gate, report, failures) {

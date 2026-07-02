@@ -40,6 +40,11 @@ test("route commercialization gate passes with production-ready reports", async 
       providerFreshnessSecondsMaxObserved: 80,
       staleFallbackRequired: true,
     },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
     contract: {
       schemaVersion: 1,
       multiTransferSupported: false,
@@ -90,6 +95,16 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
       providerFreshnessSecondsMaxObserved: 120,
       staleFallbackRequired: false,
     },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 1,
+      strictRouteNotFound: {
+        total: 100,
+        notFoundCount: 5,
+        rate: 0.05,
+        byReasonCode: { GENERATED_CONNECTOR_UNVERIFIED: 5 },
+      },
+    },
     contract: {
       schemaVersion: 1,
       multiTransferSupported: false,
@@ -111,6 +126,8 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
       assert.ok(report.failures.includes("routeEtaAccuracy production sampleSize is below 100"));
       assert.ok(report.failures.includes("accessibility strict step-free false positive count exceeds 0"));
       assert.ok(report.failures.includes("accessibility generated connector verified count exceeds 0"));
+      assert.ok(report.failures.includes("route graph generated connector verified count exceeds 0"));
+      assert.ok(report.failures.includes("route graph strict route not found rate exceeds 0.02"));
       assert.ok(!report.failures.includes("routing D-3 blocker must be satisfied before out-of-station transfer release claim"));
       return true;
     },
@@ -146,6 +163,11 @@ test("route commercialization gate keeps legacy production sample fallback", asy
       supportedStationLinePairs: 150,
       providerFreshnessSecondsMaxObserved: 80,
       staleFallbackRequired: true,
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
     },
     contract: {
       schemaVersion: 1,
@@ -184,6 +206,7 @@ async function writeFixtureSet(reports) {
     accuracy: path.join(dir, "route-accuracy-report.json"),
     accessibility: path.join(dir, "route-accessibility-regression-report.json"),
     coverage: path.join(dir, "realtime-provider-coverage-report.json"),
+    routeGraphCoverage: path.join(dir, "route-graph-coverage-report.json"),
     contract: path.join(dir, "route-v2-contract-report.json"),
   };
   await Promise.all(Object.entries(reports).map(([key, report]) => writeFile(files[key], `${JSON.stringify(report, null, 2)}\n`)));
@@ -201,6 +224,8 @@ function execChecker(files) {
     files.accessibility,
     "--coverage",
     files.coverage,
+    "--routeGraphCoverage",
+    files.routeGraphCoverage,
     "--contract",
     files.contract,
   ], { cwd: root });
