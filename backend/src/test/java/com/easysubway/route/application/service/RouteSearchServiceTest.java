@@ -1413,6 +1413,35 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 내부 ETA는 burden 점수보다 먼저 비교하고 표시 초는 시간 항만 합산한다")
+	void internalRouteRanksEtaBeforeBurdenScore() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new EtaBurdenSplitInternalTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchInternalRoute(new SearchInternalRouteCommand(
+			"station-a",
+			"node-station-a-entrance",
+			"node-station-a-platform",
+			MobilityType.STROLLER
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.totalEstimatedSeconds()).isEqualTo(90);
+		assertThat(result.totalDistanceMeters()).isEqualTo(400);
+		assertThat(result.steps())
+			.extracting("edgeId")
+			.containsExactly("edge-fast-stair");
+		assertThat(result.warnings())
+			.extracting("code")
+			.containsExactly(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("역 내부 이동 경로는 같은 역에 속한 노드를 요구한다")
 	void searchInternalRouteRequiresNodesInStation() {
 		assertThatThrownBy(() -> service.searchInternalRoute(new SearchInternalRouteCommand(
@@ -2315,6 +2344,51 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class EtaBurdenSplitInternalTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(
+				internalEdge(
+					"edge-fast-stair",
+					"node-station-a-entrance",
+					"node-station-a-platform",
+					RouteEdgeType.STAIR,
+					400,
+					90,
+					true
+				),
+				internalEdge(
+					"edge-slower-step-free-a",
+					"node-station-a-entrance",
+					"node-station-a-landing",
+					RouteEdgeType.WALKWAY,
+					5,
+					60,
+					false
+				),
+				internalEdge(
+					"edge-slower-step-free-b",
+					"node-station-a-landing",
+					"node-station-a-platform",
+					RouteEdgeType.WALKWAY,
+					5,
+					60,
+					false
+				)
+			);
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			return List.of(
+				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "출입구"),
+				routeNode("node-station-a-landing", "station-a", RouteNodeType.CONCOURSE, "중간 지점"),
+				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
+			);
+		}
+	}
+
 	private static class BrokenElevatorInternalEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
 
 		@Override
@@ -2589,6 +2663,33 @@ class RouteSearchServiceTest {
 			false,
 			1,
 			3,
+			95,
+			true
+		);
+	}
+
+	private static RouteEdge internalEdge(
+		String id,
+		String fromNodeId,
+		String toNodeId,
+		RouteEdgeType type,
+		int distanceMeters,
+		int estimatedSeconds,
+		boolean hasStairs
+	) {
+		return new RouteEdge(
+			id,
+			"station-a",
+			fromNodeId,
+			toNodeId,
+			type,
+			distanceMeters,
+			estimatedSeconds,
+			hasStairs,
+			false,
+			false,
+			1,
+			5,
 			95,
 			true
 		);

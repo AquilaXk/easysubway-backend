@@ -978,23 +978,23 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(edgeFilter)
 			.collect(Collectors.groupingBy(RouteEdge::fromNodeId));
 		PriorityQueue<InternalRouteCandidate> queue = new PriorityQueue<>(
-			Comparator.comparingInt(InternalRouteCandidate::cost)
+			Comparator.comparing(InternalRouteCandidate::cost)
 		);
-		Map<String, Integer> bestCostByNodeId = new HashMap<>();
-		queue.add(new InternalRouteCandidate(fromNodeId, 0, List.of()));
-		bestCostByNodeId.put(fromNodeId, 0);
+		Map<String, InternalRouteCost> bestCostByNodeId = new HashMap<>();
+		queue.add(new InternalRouteCandidate(fromNodeId, InternalRouteCost.ZERO, List.of()));
+		bestCostByNodeId.put(fromNodeId, InternalRouteCost.ZERO);
 
 		while (!queue.isEmpty()) {
 			InternalRouteCandidate current = queue.poll();
-			if (current.cost() > bestCostByNodeId.getOrDefault(current.nodeId(), Integer.MAX_VALUE)) {
+			if (current.cost().compareTo(bestCostByNodeId.getOrDefault(current.nodeId(), InternalRouteCost.MAX)) > 0) {
 				continue;
 			}
 			if (current.nodeId().equals(toNodeId)) {
 				return Optional.of(current.path());
 			}
 			for (RouteEdge edge : edgesByFromNode.getOrDefault(current.nodeId(), List.of())) {
-				int nextCost = current.cost() + internalEdgeCost(edge);
-				if (nextCost >= bestCostByNodeId.getOrDefault(edge.toNodeId(), Integer.MAX_VALUE)) {
+				InternalRouteCost nextCost = current.cost().plus(internalEdgeCost(edge));
+				if (nextCost.compareTo(bestCostByNodeId.getOrDefault(edge.toNodeId(), InternalRouteCost.MAX)) >= 0) {
 					continue;
 				}
 				List<RouteEdge> nextPath = new ArrayList<>(current.path());
@@ -1010,14 +1010,16 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return findInternalRoutePath(edges, fromNodeId, toNodeId, edge -> true).isPresent();
 	}
 
-	private int internalEdgeCost(RouteEdge edge) {
+	private InternalRouteCost internalEdgeCost(RouteEdge edge) {
 		int stairPenalty = edge.hasStairs() ? 120 : 0;
 		int elevatorPenalty = edge.requiresElevator() ? 20 : 0;
 		int escalatorPenalty = edge.requiresEscalator() ? 35 : 0;
 		int slopePenalty = edge.slopeLevel() * 8;
 		int widthPenalty = (6 - edge.widthLevel()) * 4;
-		return edge.distanceMeters() + edge.estimatedSeconds() + stairPenalty + elevatorPenalty + escalatorPenalty
-			+ slopePenalty + widthPenalty;
+		return new InternalRouteCost(
+			edge.estimatedSeconds(),
+			edge.distanceMeters() + stairPenalty + elevatorPenalty + escalatorPenalty + slopePenalty + widthPenalty
+		);
 	}
 
 	private List<InternalRouteStep> internalRouteSteps(List<RouteEdge> path, Map<String, RouteNode> nodesById) {
@@ -1486,9 +1488,34 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private record InternalRouteCandidate(
 		String nodeId,
-		int cost,
+		InternalRouteCost cost,
 		List<RouteEdge> path
 	) {
+	}
+
+	private record InternalRouteCost(
+		int timeSeconds,
+		int burdenScore
+	) implements Comparable<InternalRouteCost> {
+
+		private static final InternalRouteCost ZERO = new InternalRouteCost(0, 0);
+		private static final InternalRouteCost MAX = new InternalRouteCost(Integer.MAX_VALUE, Integer.MAX_VALUE);
+
+		InternalRouteCost plus(InternalRouteCost other) {
+			return new InternalRouteCost(
+				Math.addExact(timeSeconds, other.timeSeconds),
+				Math.addExact(burdenScore, other.burdenScore)
+			);
+		}
+
+		@Override
+		public int compareTo(InternalRouteCost other) {
+			int timeComparison = Integer.compare(timeSeconds, other.timeSeconds);
+			if (timeComparison != 0) {
+				return timeComparison;
+			}
+			return Integer.compare(burdenScore, other.burdenScore);
+		}
 	}
 
 	private record DirectLine(
