@@ -595,6 +595,39 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("직접 경로가 있어도 더 낮은 비용의 환승 후보를 우선한다")
+	void directRouteDoesNotShortCircuitLowerCostTransferCandidate() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new DirectAndShorterTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		var results = transferService.searchRouteAlternatives(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			1
+		), 2);
+
+		assertThat(results).hasSize(2);
+		assertThat(results)
+			.extracting(RouteSearchResult::status)
+			.containsExactly(RouteSearchStatus.FOUND, RouteSearchStatus.FOUND);
+		assertThat(results)
+			.extracting(RouteSearchResult::transferCount)
+			.containsExactly(1, 0);
+		assertThat(results.get(0).steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-transfer");
+		assertThat(results.get(1).lineName()).isEqualTo("테스트 직통");
+	}
+
+	@Test
 	@DisplayName("휠체어 이동 유형은 환승역이 계단 전용이면 경로를 차단한다")
 	void wheelchairRouteBlocksStairOnlyTransferStation() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -1945,6 +1978,30 @@ class RouteSearchServiceTest {
 			return List.of(
 				facility("facility-a-elevator", "station-a", "exit-a-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
 				facility("facility-b-elevator", "station-b", "exit-b-1", AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL)
+			);
+		}
+	}
+
+	private static class DirectAndShorterTransferTransitMasterPort extends OneTransferTransitMasterPort {
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("line-a", "operator-a", "A 노선", "#0052A4", "수도권", null, true),
+				new SubwayLine("line-b", "operator-a", "B 노선", "#00A84D", "수도권", null, true),
+				new SubwayLine("line-direct", "operator-a", "테스트 직통", "#F5A200", "수도권", null, true)
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "line-a", "101", 1, "상행 / 하행"),
+				new StationLine("station-transfer", "line-a", "103", 3, "상행 / 하행"),
+				new StationLine("station-transfer", "line-b", "201", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-b", "203", 3, "상행 / 하행"),
+				new StationLine("station-a", "line-direct", "101", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-direct", "150", 50, "상행 / 하행")
 			);
 		}
 	}
