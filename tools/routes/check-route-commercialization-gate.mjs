@@ -109,6 +109,9 @@ function validateAccuracy(gate, report, failures) {
   max(singleRide.p90ErrorSeconds, gate.routeEtaAccuracy.singleRideP90ErrorSecondsMax, "singleRide P90 ETA error", failures);
   max(transfer.p50ErrorSeconds, gate.routeEtaAccuracy.transferP50ErrorSecondsMax, "transfer P50 ETA error", failures);
   max(transfer.p90ErrorSeconds, gate.routeEtaAccuracy.transferP90ErrorSecondsMax, "transfer P90 ETA error", failures);
+  if (number(report.metrics?.unclassifiedEtaDeviationCount) > 0) {
+    failures.push("routeEtaAccuracy unclassified ETA deviation count exceeds 0");
+  }
 }
 
 function validateAccessibility(gate, report, failures) {

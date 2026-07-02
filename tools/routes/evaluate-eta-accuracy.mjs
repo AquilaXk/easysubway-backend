@@ -132,6 +132,7 @@ function buildReport(rows) {
     etaSourceMismatch: 0,
     realtimeFallbackMismatch: 0,
     providerStaleMisuse: 0,
+    unclassifiedEtaDeviation: 0,
   };
   for (const row of rows) {
     collectQualityFailures(row, failures, quality);
@@ -140,6 +141,10 @@ function buildReport(rows) {
     if (observed === null || max === null) continue;
     if (observed > max) {
       addFailure(failures, row, "ETA_ERROR", "observed ETA error exceeds max", { maxEtaErrorSeconds: max }, { observedEtaErrorSeconds: observed });
+      if (!hasValue(row.deviation_reason_code)) {
+        quality.unclassifiedEtaDeviation += 1;
+        addFailure(failures, row, "UNCLASSIFIED_ETA_DEVIATION", "over-budget ETA deviation must include deviation reason code", { deviationReasonCode: "classified" }, { deviationReasonCode: "" });
+      }
     }
     errors.push(observed);
     if (Number(row.expected_transfer_count) === 0) {
@@ -189,6 +194,7 @@ function buildReport(rows) {
       etaSourceMismatchCount: quality.etaSourceMismatch,
       realtimeFallbackMismatchCount: quality.realtimeFallbackMismatch,
       providerStaleMisuseCount: quality.providerStaleMisuse,
+      unclassifiedEtaDeviationCount: quality.unclassifiedEtaDeviation,
     },
     failures,
   };
