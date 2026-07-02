@@ -183,7 +183,7 @@ class RouteSearchServiceTest {
 		assertThat(refreshed.routeSearch()).isEqualTo(created);
 		assertThat(refreshed.status()).isEqualTo(RouteRefreshStatus.UNCHANGED);
 		assertThat(refreshed.etaSource()).isEqualTo(created.etaSource());
-		assertThat(refreshed.sourceLabel()).isEqualTo("계획 시간 기준");
+		assertThat(refreshed.sourceLabel()).isEqualTo("상수 추정 기준");
 		assertThat(refreshed.refreshedAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
 	}
 
@@ -800,7 +800,7 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(resolver.callCount()).isZero();
-		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.STATIC_BACKEND_ESTIMATE);
 		assertThat(plan.statuses()).containsExactly("FOUND");
 	}
 

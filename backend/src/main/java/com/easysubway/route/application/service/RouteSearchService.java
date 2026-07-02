@@ -364,7 +364,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case REALTIME -> EtaConfidence.HIGH;
 			case MIXED -> EtaConfidence.MEDIUM;
 			case PLANNED -> EtaConfidence.MEDIUM;
-			case FALLBACK -> EtaConfidence.LOW;
+			case STATIC_BACKEND_ESTIMATE, FALLBACK -> EtaConfidence.LOW;
 		};
 	}
 
@@ -375,7 +375,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case REROUTE_REQUIRED -> "경로를 다시 찾아야 합니다";
 			case UNCHANGED -> routeSearch.etaSource() == EtaSource.PLANNED
 				? "계획 시간 기준"
-				: "기존 안내 유지";
+				: routeSearch.etaSource() == EtaSource.STATIC_BACKEND_ESTIMATE
+					? "상수 추정 기준"
+					: "기존 안내 유지";
 		};
 	}
 

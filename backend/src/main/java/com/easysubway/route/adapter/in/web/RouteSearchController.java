@@ -294,7 +294,7 @@ class RouteSearchController {
 			return switch (result.etaSource()) {
 				case REALTIME -> "HIGH";
 				case MIXED -> "MEDIUM";
-				case PLANNED, FALLBACK -> "LOW";
+				case STATIC_BACKEND_ESTIMATE, PLANNED, FALLBACK -> "LOW";
 			};
 		}
 	}
@@ -535,16 +535,19 @@ class RouteSearchController {
 			};
 		}
 
-		private static EtaSource etaSourceOf(RouteStep step) {
-			if (step.timeSource() == null || step.timeSource().isBlank()) {
-				return EtaSource.PLANNED;
+			private static EtaSource etaSourceOf(RouteStep step) {
+				if (step.timeSource() == null || step.timeSource().isBlank()) {
+					return EtaSource.STATIC_BACKEND_ESTIMATE;
+				}
+				if ("ESTIMATED_CONSTANT".equals(step.timeSource()) || "STATIC_BACKEND_V1".equals(step.timeSource())) {
+					return EtaSource.STATIC_BACKEND_ESTIMATE;
+				}
+				try {
+					return EtaSource.valueOf(step.timeSource());
+				} catch (IllegalArgumentException exception) {
+					return EtaSource.STATIC_BACKEND_ESTIMATE;
+				}
 			}
-			try {
-				return EtaSource.valueOf(step.timeSource());
-			} catch (IllegalArgumentException exception) {
-				return EtaSource.PLANNED;
-			}
-		}
 
 		private static String etaConfidenceOf(RouteStep step) {
 			if ("HIGH".equals(step.confidenceLabel())
@@ -552,12 +555,12 @@ class RouteSearchController {
 				|| "LOW".equals(step.confidenceLabel())) {
 				return step.confidenceLabel();
 			}
-			return switch (etaSourceOf(step)) {
-				case REALTIME -> "HIGH";
-				case MIXED -> "MEDIUM";
-				case PLANNED, FALLBACK -> "LOW";
-			};
-		}
+				return switch (etaSourceOf(step)) {
+					case REALTIME -> "HIGH";
+					case MIXED -> "MEDIUM";
+					case STATIC_BACKEND_ESTIMATE, PLANNED, FALLBACK -> "LOW";
+				};
+			}
 
 		private static String legTypeOf(RouteStep step) {
 			return switch (step.stepType()) {

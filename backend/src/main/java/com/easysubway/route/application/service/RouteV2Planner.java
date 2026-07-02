@@ -61,7 +61,9 @@ public class RouteV2Planner {
 		if (!useRealtime || itinerary.status() != RouteSearchStatus.FOUND) {
 			return false;
 		}
-		return itinerary.etaSource() == EtaSource.PLANNED || itinerary.etaSource() == EtaSource.FALLBACK;
+		return itinerary.etaSource() == EtaSource.STATIC_BACKEND_ESTIMATE
+			|| itinerary.etaSource() == EtaSource.PLANNED
+			|| itinerary.etaSource() == EtaSource.FALLBACK;
 	}
 
 	private String statusOf(RouteSearchResult itinerary) {
