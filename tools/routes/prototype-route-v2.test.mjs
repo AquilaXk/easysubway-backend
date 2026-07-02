@@ -36,6 +36,21 @@ test("route v2 prototypes honor requested alternative count", () => {
   assert.equal(alternatives[0].arrival, "09:25");
 });
 
+test("route v2 fixture suite covers commercialization time-axis blockers", () => {
+  const queryIds = new Set(fixtures.queries.map((query) => query.id));
+
+  for (const id of [
+    "provider_realtime_fresh_but_not_boardable_due_to_entry_slack",
+    "transfer_buffer_too_short_selects_next_train",
+    "pareto_arrival_vs_transfer",
+    "provider_realtime_stale",
+    "unmatched_realtime_express_does_not_override_planned_local",
+    "strict_step_free_excludes_transfer",
+  ]) {
+    assert.ok(queryIds.has(id), `missing route commercialization fixture: ${id}`);
+  }
+});
+
 test("route v2 time-axis fixtures reject unboardable realtime arrivals", () => {
   const query = fixtureQuery("provider_realtime_fresh_but_not_boardable_due_to_entry_slack");
 
