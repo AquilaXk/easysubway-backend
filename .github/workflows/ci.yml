@@ -4,6 +4,12 @@ on:
   pull_request:
     branches:
       - main
+    types:
+      - opened
+      - synchronize
+      - reopened
+      - ready_for_review
+      - edited
   push:
     branches:
       - main
@@ -76,6 +82,24 @@ jobs:
         --lockfile=apps/mobile/pubspec.lock
         --lockfile=apps/mobile/android/app/gradle.lockfile
         --lockfile=backend/gradle.lockfile
+
+  pr-title:
+    name: PR Title
+    runs-on: ubuntu-latest
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      contents: read
+    env:
+      PR_TITLE: ${{ github.event.pull_request.title }}
+    steps:
+      - name: PR Title / Validate bracket prefix
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ ! "${PR_TITLE}" =~ ^\[(Feat|Fix|Test|Chore|Docs|Build|CI|Style|Refactor|Backend|Mobile)\]\ .+ ]]; then
+            echo "::error title=PR title::Use '[Type] 한국어 작업 요약' format."
+            exit 1
+          fi
 
   release-gate-consistency:
     name: Release Gate Consistency
