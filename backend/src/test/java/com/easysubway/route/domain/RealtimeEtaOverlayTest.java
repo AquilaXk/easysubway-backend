@@ -50,6 +50,8 @@ class RealtimeEtaOverlayTest {
 		assertThat(result.providerEvidence()).isEqualTo("providerReceivedAt=2026-07-01T00:00:00Z");
 		assertThat(result.providerSnapshotId()).isEqualTo("seoul-topis:2026-07-01T00:00:00Z");
 		assertThat(result.providerReceivedAt()).isEqualTo(READY_AT);
+		assertThat(result.providerObservedAt()).isEqualTo(Instant.parse("2026-06-30T23:59:30Z"));
+		assertThat(result.gatewayReceivedAt()).isEqualTo(READY_AT);
 		assertThat(result.providerHealthCount()).isEqualTo(1);
 		assertThat(result.warningCodes()).isEmpty();
 	}

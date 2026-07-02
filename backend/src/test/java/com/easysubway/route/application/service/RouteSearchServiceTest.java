@@ -823,6 +823,16 @@ class RouteSearchServiceTest {
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("timeSource")
 			.containsExactly(EtaSource.REALTIME.name());
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.first()
+			.satisfies(step -> {
+				assertThat(step.reasonCodes()).containsExactly("MATCHED_REALTIME");
+				assertThat(step.providerSnapshotId()).isEqualTo("test-realtime-snapshot");
+				assertThat(step.providerObservedAt()).isEqualTo("2026-07-01T00:05:00Z");
+				assertThat(step.gatewayReceivedAt()).isEqualTo("2026-07-01T00:05:00Z");
+				assertThat(step.servedAt()).isEqualTo("2026-06-13T09:00:00Z");
+			});
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 	}
 
@@ -971,6 +981,11 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.first()
+			.satisfies(step -> assertThat(step.reasonCodes())
+				.containsExactly("REALTIME_UNAVAILABLE_PLANNED_USED", "PROVIDER_QUOTA_EXCEEDED"));
 		assertThat(plan.statuses())
 			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
 	}

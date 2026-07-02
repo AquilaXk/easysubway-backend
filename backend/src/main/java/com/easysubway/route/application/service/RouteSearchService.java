@@ -75,6 +75,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private static final int MINUTES_PER_STATION = 2;
 	private static final int METERS_PER_STATION = 900;
 	private static final int ACCESSIBILITY_DATA_FRESH_DAYS = 30;
+	private static final String MATCHED_REALTIME_REASON = "MATCHED_REALTIME";
 
 	private final LoadRouteSearchPort loadRouteSearchPort;
 	private final SaveRouteSearchPort saveRouteSearchPort;
@@ -1193,8 +1194,27 @@ public class RouteSearchService implements RouteSearchUseCase {
 			step.requiresAccessibilityCheck(),
 			overlay.etaSource().name(),
 			step.distanceSource(),
-			overlay.confidence().name()
+			overlay.confidence().name(),
+			reasonCodesFor(overlay),
+			overlay.providerSnapshotId(),
+			formatInstant(overlay.providerObservedAt()),
+			formatInstant(overlay.gatewayReceivedAt()),
+			formatInstant(Instant.now(clock))
 		);
+	}
+
+	private List<String> reasonCodesFor(RealtimeEtaOverlay.Result overlay) {
+		if (overlay.etaSource() != EtaSource.REALTIME) {
+			return overlay.warningCodes();
+		}
+		List<String> reasonCodes = new ArrayList<>();
+		reasonCodes.add(MATCHED_REALTIME_REASON);
+		reasonCodes.addAll(overlay.warningCodes());
+		return List.copyOf(reasonCodes);
+	}
+
+	private String formatInstant(Instant instant) {
+		return instant == null ? null : instant.toString();
 	}
 
 	private int durationSeconds(RouteStep step) {

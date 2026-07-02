@@ -182,6 +182,8 @@ public final class RealtimeEtaOverlay {
 			evidence,
 			providerSnapshotId,
 			evidenceReceivedAt,
+			candidate.providerReceivedAt(),
+			providerReceivedAt,
 			providerHealthCount,
 			List.of()
 		);
@@ -206,6 +208,8 @@ public final class RealtimeEtaOverlay {
 			null,
 			null,
 			providerSnapshotId,
+			providerReceivedAt,
+			null,
 			providerReceivedAt,
 			providerHealthCount,
 			warningCodes
@@ -267,6 +271,8 @@ public final class RealtimeEtaOverlay {
 		String providerEvidence,
 		String providerSnapshotId,
 		Instant providerReceivedAt,
+		Instant providerObservedAt,
+		Instant gatewayReceivedAt,
 		int providerHealthCount,
 		List<String> warningCodes
 	) {

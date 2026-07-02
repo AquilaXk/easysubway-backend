@@ -253,7 +253,12 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].etaSource").value("REALTIME"))
 			.andExpect(jsonPath("$.data.itineraries[0].etaConfidence").value("HIGH"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("REALTIME"))
-			.andExpect(jsonPath("$.data.itineraries[0].legs[0].confidence").value("HIGH"));
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].confidence").value("HIGH"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].reasonCodes[0]").value("MATCHED_REALTIME"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].providerSnapshotId").value("seoul-topis:2026-06-30T00:14:30Z"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].providerObservedAt").value("2026-06-30T00:14:20Z"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].gatewayReceivedAt").value("2026-06-30T00:14:30Z"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].servedAt").value("2026-06-30T00:15:00Z"));
 	}
 
 	@Test
@@ -701,7 +706,12 @@ class RouteSearchV2ControllerTest {
 				false,
 				"REALTIME",
 				"ESTIMATED_CONSTANT",
-				"HIGH"
+				"HIGH",
+				List.of("MATCHED_REALTIME"),
+				"seoul-topis:2026-06-30T00:14:30Z",
+				"2026-06-30T00:14:20Z",
+				"2026-06-30T00:14:30Z",
+				"2026-06-30T00:15:00Z"
 			)),
 			List.of(),
 			List.of(),

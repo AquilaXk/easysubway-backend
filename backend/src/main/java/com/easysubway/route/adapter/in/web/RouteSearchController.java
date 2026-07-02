@@ -472,6 +472,11 @@ class RouteSearchController {
 		int distanceMeters,
 		String etaSource,
 		String confidence,
+		List<String> reasonCodes,
+		String providerSnapshotId,
+		String providerObservedAt,
+		String gatewayReceivedAt,
+		String servedAt,
 		AccessibilityRiskDto accessibilityRisk
 	) {
 
@@ -521,6 +526,11 @@ class RouteSearchController {
 				Math.max(0, step.distanceMeters()),
 				etaSourceOf(step).name(),
 				etaConfidenceOf(step),
+				step.reasonCodes(),
+				step.providerSnapshotId(),
+				step.providerObservedAt(),
+				step.gatewayReceivedAt(),
+				step.servedAt(),
 				AccessibilityRiskDto.from(step)
 			);
 		}
