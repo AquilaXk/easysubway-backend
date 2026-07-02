@@ -193,6 +193,65 @@ test("route commercialization gate keeps legacy production sample fallback", asy
   );
 });
 
+test("route commercialization gate derives realtime pair minimum from coverage scope", async () => {
+  const fixture = await writeFixtureSet({
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      productionSampleSize: 120,
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      scope: {
+        id: "capital_pilot_android_v1",
+        supportedStationLinePairsMin: 2,
+      },
+      supportedStationLinePairs: 2,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 1,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  const { stdout } = await execChecker(fixture);
+  const report = JSON.parse(stdout);
+
+  assert.equal(report.status, "PASS");
+  assert.deepEqual(report.failures, []);
+});
+
 test("route commercialization gate fails on unclassified ETA deviations", async () => {
   const fixture = await writeFixtureSet({
     accuracy: {

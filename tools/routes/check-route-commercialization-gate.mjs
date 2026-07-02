@@ -129,13 +129,19 @@ function validateAccessibility(gate, report, failures) {
 
 function validateCoverage(gate, report, failures) {
   if (report.schemaVersion !== 1) failures.push("coverage report schemaVersion must be 1");
-  if (number(report.supportedStationLinePairs) < gate.realtimeCoverage.supportedStationLinePairsMin) {
-    failures.push(`realtimeCoverage supported station-line pairs below ${gate.realtimeCoverage.supportedStationLinePairsMin}`);
+  const supportedStationLinePairsMin = realtimeSupportedStationLinePairsMin(gate, report);
+  if (number(report.supportedStationLinePairs) < supportedStationLinePairsMin) {
+    failures.push(`realtimeCoverage supported station-line pairs below ${supportedStationLinePairsMin}`);
   }
   max(report.providerFreshnessSecondsMaxObserved, gate.realtimeCoverage.providerFreshnessSecondsMax, "realtimeCoverage provider freshness seconds", failures);
   if (gate.realtimeCoverage.staleFallbackRequired && report.staleFallbackRequired !== true) {
     failures.push("realtimeCoverage stale fallback must be required");
   }
+}
+
+function realtimeSupportedStationLinePairsMin(gate, report) {
+  const scopedMin = number(report.scope?.supportedStationLinePairsMin);
+  return scopedMin > 0 ? scopedMin : gate.realtimeCoverage.supportedStationLinePairsMin;
 }
 
 function validateRouteGraphCoverage(gate, report, failures) {
