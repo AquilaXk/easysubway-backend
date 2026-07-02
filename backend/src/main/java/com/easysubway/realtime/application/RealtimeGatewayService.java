@@ -5,6 +5,7 @@ import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
+import com.easysubway.realtime.domain.RealtimeTripMapping;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -152,7 +153,7 @@ public class RealtimeGatewayService {
 				return RealtimeArrivalResult.unavailable("EMPTY_PROVIDER_RESULT");
 			}
 			Instant receivedAt = clock.instant();
-			List<RealtimeArrival> freshArrivals = freshArrivals(arrivals, receivedAt);
+			List<RealtimeArrival> freshArrivals = freshArrivals(arrivals, receivedAt, normalizedQuery);
 			if (freshArrivals.isEmpty()) {
 				return staleArrivalOrUnavailable(cached, "PROVIDER_ERROR");
 			}
@@ -291,14 +292,19 @@ public class RealtimeGatewayService {
 		return RealtimeTrainPositionResult.unavailable(fallbackCode);
 	}
 
-	private List<RealtimeArrival> freshArrivals(List<RealtimeArrival> arrivals, Instant receivedAt) {
+	private List<RealtimeArrival> freshArrivals(
+		List<RealtimeArrival> arrivals,
+		Instant receivedAt,
+		RealtimeQuery normalizedQuery
+	) {
 		List<RealtimeArrival> freshArrivals = new ArrayList<>();
 		for (RealtimeArrival arrival : arrivals) {
 			Instant providerReceivedAt = parseProviderReceivedAt(arrival.providerReceivedAt());
 			if (providerReceivedAt == null || !isProviderFresh(providerReceivedAt, receivedAt)) {
 				continue;
 			}
-			freshArrivals.add(adjustArrivalEta(arrival, providerReceivedAt, receivedAt));
+			RealtimeArrival adjusted = adjustArrivalEta(arrival, providerReceivedAt, receivedAt);
+			freshArrivals.add(canonicalizeArrival(adjusted, normalizedQuery));
 		}
 		return List.copyOf(freshArrivals);
 	}
@@ -335,7 +341,40 @@ public class RealtimeGatewayService {
 			arrivalMessage(adjustedEtaSeconds),
 			arrival.positionMessage(),
 			arrival.providerReceivedAt(),
-			arrival.servicePattern()
+			arrival.servicePattern(),
+			arrival.rawDestination(),
+			arrival.rawDirection(),
+			arrival.rawServicePattern()
+		);
+	}
+
+	private RealtimeArrival canonicalizeArrival(RealtimeArrival arrival, RealtimeQuery normalizedQuery) {
+		return mappingPort.findTripMapping(
+			PROVIDER_ID,
+			normalizedQuery.lineId(),
+			normalizedQuery.providerLineId(),
+			arrival.rawDirection(),
+			arrival.rawDestination(),
+			arrival.rawServicePattern()
+		).map((mapping) -> mappedArrival(arrival, mapping))
+			.orElse(arrival);
+	}
+
+	private RealtimeArrival mappedArrival(RealtimeArrival arrival, RealtimeTripMapping mapping) {
+		return new RealtimeArrival(
+			arrival.lineId(),
+			arrival.stationName(),
+			mapping.canonicalDestination(arrival.destination()),
+			mapping.canonicalDirection(arrival.direction()),
+			arrival.trainNo(),
+			arrival.etaSeconds(),
+			arrival.message(),
+			arrival.positionMessage(),
+			arrival.providerReceivedAt(),
+			mapping.canonicalServicePattern(arrival.servicePattern()),
+			arrival.rawDestination(),
+			arrival.rawDirection(),
+			arrival.rawServicePattern()
 		);
 	}
 

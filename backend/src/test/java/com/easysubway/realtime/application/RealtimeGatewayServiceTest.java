@@ -8,6 +8,7 @@ import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
+import com.easysubway.realtime.domain.RealtimeTripMapping;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.time.Clock;
@@ -162,6 +163,25 @@ class RealtimeGatewayServiceTest {
 		assertThat(result.status()).hasToString("FRESH");
 		assertThat(result.arrivals().get(0).etaSeconds()).isEqualTo(150);
 		assertThat(result.arrivals().get(0).message()).isEqualTo("3분 후");
+	}
+
+	@Test
+	@DisplayName("provider raw trip 표기는 canonical 값으로 변환하되 raw evidence도 보존한다")
+	void arrivalTripMappingCanonicalizesDirectionAndPreservesRawEvidence() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+
+		assertThat(result.status()).hasToString("FRESH");
+		RealtimeArrival arrival = result.arrivals().getFirst();
+		assertThat(arrival.direction()).isEqualTo("당고개 방면");
+		assertThat(arrival.destination()).isEqualTo("당고개");
+		assertThat(arrival.rawDirection()).isEqualTo("상행");
+		assertThat(arrival.rawDestination()).isEqualTo("당고개");
 	}
 
 	@Test
@@ -865,6 +885,7 @@ class RealtimeGatewayServiceTest {
 
 	private static final class StubMappingPort implements RealtimeMappingPort {
 		private final Map<String, RealtimeMapping> mappings = new HashMap<>();
+		private final Map<String, RealtimeTripMapping> tripMappings = new HashMap<>();
 
 		private void add(RealtimeMapping mapping) {
 			mappings.put(arrivalKey(mapping.stationId(), mapping.lineId()), mapping);
@@ -880,6 +901,19 @@ class RealtimeGatewayServiceTest {
 		@Override
 		public Optional<RealtimeMapping> findTrainPositionMapping(String providerId, RealtimeQuery query) {
 			return Optional.ofNullable(mappings.get(lineKey(query.lineId())))
+				.filter((mapping) -> providerId.equals(mapping.providerId()));
+		}
+
+		@Override
+		public Optional<RealtimeTripMapping> findTripMapping(
+			String providerId,
+			String lineId,
+			String providerLineId,
+			String rawDirection,
+			String rawDestination,
+			String rawServicePattern
+		) {
+			return Optional.ofNullable(tripMappings.get("%s:%s:%s".formatted(lineId, rawDirection, rawDestination)))
 				.filter((mapping) -> providerId.equals(mapping.providerId()));
 		}
 
