@@ -35,7 +35,7 @@
 			<dt>신고 번호</dt>
 			<dd th:text="${report.id}">report-id</dd>
 			<dt>상태</dt>
-			<dd th:text="${report.statusLabel}">접수됨</dd>
+			<dd><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></dd>
 			<dt>유형</dt>
 			<dd th:text="${report.reportTypeLabel}">고장</dd>
 			<dt>내용</dt>
