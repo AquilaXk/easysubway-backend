@@ -98,7 +98,10 @@ jobs:
       - name: Release Gate Consistency / Run release gate contract tests
         env:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
-        run: node --test tools/ci/repository-contract.test.mjs
+        run: |
+          node --test tools/ci/repository-contract.test.mjs
+          node tools/ci/check-map-attribution.mjs
+          node --test tools/ci/check-map-attribution.test.mjs
 
   repository-contracts:
     name: Repository CI
