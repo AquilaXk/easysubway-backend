@@ -5,6 +5,7 @@ import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import java.time.OffsetDateTime;
@@ -24,21 +25,25 @@ public class RouteV2Planner {
 	}
 
 	public RouteV2Plan search(SearchRouteV2Command command) {
-		SearchRouteCommand searchRouteCommand = command.toSearchRouteCommand();
-		if (routeSearchUseCase instanceof RouteSearchService routeSearchService) {
-			List<RouteSearchResult> itineraries = routeSearchService.searchRouteAlternatives(
-				searchRouteCommand,
-				command.alternativeCount()
-			);
-			return new RouteV2Plan(
-				itineraries,
-				statusesOf(itineraries, command.useRealtime()),
-				PLANNER_ADR
-			);
+		try {
+			SearchRouteCommand searchRouteCommand = command.toSearchRouteCommand();
+			if (routeSearchUseCase instanceof RouteSearchService routeSearchService) {
+				List<RouteSearchResult> itineraries = routeSearchService.searchRouteAlternatives(
+					searchRouteCommand,
+					command.alternativeCount()
+				);
+				return new RouteV2Plan(
+					itineraries,
+					statusesOf(itineraries, command.useRealtime()),
+					PLANNER_ADR
+				);
+			}
+			RouteSearchResult primary = routeSearchUseCase.searchRoute(searchRouteCommand);
+			List<RouteSearchResult> itineraries = List.of(primary);
+			return new RouteV2Plan(itineraries, statusesOf(itineraries, command.useRealtime()), PLANNER_ADR);
+		} catch (RouteNotFoundException exception) {
+			return new RouteV2Plan(List.of(), List.of("NO_TIMETABLE_SERVICE"), PLANNER_ADR);
 		}
-		RouteSearchResult primary = routeSearchUseCase.searchRoute(searchRouteCommand);
-		List<RouteSearchResult> itineraries = List.of(primary);
-		return new RouteV2Plan(itineraries, statusesOf(itineraries, command.useRealtime()), PLANNER_ADR);
 	}
 
 	private List<String> statusesOf(List<RouteSearchResult> itineraries, boolean useRealtime) {

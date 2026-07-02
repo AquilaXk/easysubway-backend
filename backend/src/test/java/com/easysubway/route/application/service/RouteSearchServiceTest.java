@@ -681,6 +681,65 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 직접 경로를 FOUND 단일 itinerary로 반환한다")
+	void routeV2PlannerReturnsDirectItinerary() {
+		var planner = routeV2Planner(new StairOnlyTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 0, 3));
+
+		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.itineraries()).hasSize(1);
+		assertThat(plan.itineraries().getFirst().transferCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 1회 환승 경로를 FOUND itinerary로 반환한다")
+	void routeV2PlannerReturnsOneTransferItinerary() {
+		var planner = routeV2Planner(new OneTransferTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.itineraries()).hasSize(1);
+		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 2회 환승 경로를 FOUND itinerary로 반환한다")
+	void routeV2PlannerReturnsTwoTransferItinerary() {
+		var planner = routeV2Planner(new TwoTransferTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 2, 3));
+
+		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.itineraries()).hasSize(1);
+		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 시간표 서비스가 없으면 NO_TIMETABLE_SERVICE status를 반환한다")
+	void routeV2PlannerReturnsNoTimetableServiceStatus() {
+		var planner = routeV2Planner(new TwoTransferTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly("NO_TIMETABLE_SERVICE");
+		assertThat(plan.itineraries()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 접근성 차단 경로를 BLOCKED_ACCESSIBILITY status로 반환한다")
+	void routeV2PlannerReturnsBlockedAccessibilityStatus() {
+		var planner = routeV2Planner(new StairOnlyTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.STRICT_STEP_FREE, MobilityType.WHEELCHAIR, 0, 3));
+
+		assertThat(plan.statuses()).containsExactly("BLOCKED_ACCESSIBILITY");
+		assertThat(plan.itineraries()).hasSize(1);
+		assertThat(plan.itineraries().getFirst().status()).isEqualTo(RouteSearchStatus.BLOCKED);
+	}
+
+	@Test
 	@DisplayName("V2 useRealtime=true는 provider ETA를 첫 승차 단계에 반영한다")
 	void routeV2PlannerAppliesRealtimeEtaWhenRequested() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -1388,6 +1447,29 @@ class RouteSearchServiceTest {
 		var repository = new InMemoryRouteSearchRepository();
 		var routeSearchService = new RouteSearchService(repository, repository, transitMasterPort, CLOCK);
 		return routeSearchService.searchRoute(new SearchRouteCommand("station-a", "station-b", mobilityType)).score();
+	}
+
+	private static RouteV2Planner routeV2Planner(LoadTransitMasterPort transitMasterPort) {
+		var repository = new InMemoryRouteSearchRepository();
+		return new RouteV2Planner(new RouteSearchService(repository, repository, transitMasterPort, CLOCK));
+	}
+
+	private static RouteV2Planner.SearchRouteV2Command routeV2Command(
+		ConstraintMode constraintMode,
+		MobilityType mobilityType,
+		int maxTransfers,
+		int alternativeCount
+	) {
+		return new RouteV2Planner.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			mobilityType,
+			constraintMode,
+			false,
+			maxTransfers,
+			alternativeCount
+		);
 	}
 
 	private static String firstStepDescription(MobilityType mobilityType) {

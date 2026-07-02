@@ -15,6 +15,7 @@ import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -110,6 +111,35 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].slackSeconds").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].etaSource").value("PLANNED"))
 			.andExpect(jsonPath("$.data.itineraries[0].commercialEtaEligible").value(false));
+	}
+
+	@Test
+	@DisplayName("V2 경로 검색은 시간표 서비스가 없으면 NO_TIMETABLE_SERVICE status와 빈 itinerary를 반환한다")
+	void routeSearchV2ReturnsNoTimetableServiceStatus() throws Exception {
+		when(routeSearchUseCase.searchRoute(argThat(command ->
+			"station-no-service-origin".equals(command.originStationId())
+				&& "station-no-service-destination".equals(command.destinationStationId())
+		))).thenThrow(new RouteNotFoundException());
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-no-service-origin",
+					  "destinationStationId": "station-no-service-destination",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "SENIOR",
+					  "constraintMode": "PREFER_STEP_FREE",
+					  "useRealtime": false,
+					  "maxTransfers": 1,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.statuses[0]").value("NO_TIMETABLE_SERVICE"))
+			.andExpect(jsonPath("$.data.statuses[1]").doesNotExist())
+			.andExpect(jsonPath("$.data.itineraries").isEmpty());
 	}
 
 	@Test
