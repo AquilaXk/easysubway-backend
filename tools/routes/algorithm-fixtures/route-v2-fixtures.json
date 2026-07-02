@@ -491,6 +491,7 @@
       "destination": "pareto_b",
       "departure": "2026-07-01T08:58:00+09:00",
       "constraintMode": "ALLOW_UNKNOWN",
+      "alternativeCount": 3,
       "expectedArrival": "09:25",
       "expectedTransfers": 1,
       "expectedTripIds": ["pareto-leg1-0900", "pareto-leg2-0915"]

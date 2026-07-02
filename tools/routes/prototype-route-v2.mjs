@@ -42,7 +42,7 @@ export function runRangeRaptor(fixtures, query) {
     labelsByRound[round + 1] = mergeMaps(labelsByRound[round + 1], current, fixtures.paretoLimit);
   }
 
-  return alternatives(labelsByRound.at(-1)?.get(query.destination) ?? [], fixtures.paretoLimit);
+  return alternatives(labelsByRound.at(-1)?.get(query.destination) ?? [], resultLimit(fixtures, query));
 }
 
 export function runTimeDependentDijkstra(fixtures, query) {
@@ -62,7 +62,7 @@ export function runTimeDependentDijkstra(fixtures, query) {
     }
   }
 
-  return alternatives(best.get(query.destination) ?? [], fixtures.paretoLimit);
+  return alternatives(best.get(query.destination) ?? [], resultLimit(fixtures, query));
 }
 
 function normalize(fixtures) {
@@ -249,6 +249,10 @@ function betterBoarding(current, label, stop) {
 
 function maxTransfers(query) {
   return query.maxTransfers ?? 3;
+}
+
+function resultLimit(fixtures, query) {
+  return query.alternativeCount ?? fixtures.paretoLimit;
 }
 
 function departureMinute(fixtures, query) {

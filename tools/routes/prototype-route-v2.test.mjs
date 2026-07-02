@@ -17,6 +17,7 @@ test("route v2 prototypes return Pareto alternatives with reconstructed paths", 
   assert.ok(query, "missing fixture query: pareto_arrival_vs_transfer");
   const alternatives = runTimeDependentDijkstra(fixtures, query);
 
+  assert.equal(query.alternativeCount, 3);
   assert.equal(alternatives.length, 2);
   assert.equal(alternatives[0].arrival, "09:25");
   assert.equal(alternatives[0].transferCount, 1);
@@ -24,6 +25,15 @@ test("route v2 prototypes return Pareto alternatives with reconstructed paths", 
   assert.equal(alternatives[1].transferCount, 0);
   assert.equal(alternatives[0].path[0].from, "pareto_a");
   assert.equal(alternatives[0].path.at(-1).to, "pareto_b");
+});
+
+test("route v2 prototypes honor requested alternative count", () => {
+  const query = fixtures.queries.find((candidate) => candidate.id === "pareto_arrival_vs_transfer");
+  assert.ok(query, "missing fixture query: pareto_arrival_vs_transfer");
+  const alternatives = runTimeDependentDijkstra(fixtures, { ...query, alternativeCount: 1 });
+
+  assert.equal(alternatives.length, 1);
+  assert.equal(alternatives[0].arrival, "09:25");
 });
 
 test("route v2 CLI report keeps full Pareto alternatives", () => {
