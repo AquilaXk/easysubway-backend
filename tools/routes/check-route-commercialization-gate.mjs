@@ -133,7 +133,10 @@ function validateEtaSourceCounts(gate, report, failures) {
 
 function validateAccessibility(gate, report, failures) {
   if (report.schemaVersion !== 1) failures.push("accessibility report schemaVersion must be 1");
-  if (number(report.strictStepFreeKnownStairFalsePositiveCount) > gate.accessibility.strictStepFreeKnownStairFalsePositiveAllowed) {
+  const strictStepFreeFalsePositiveCount = report.strictStepFreeKnownStairFalsePositiveCount;
+  if (strictStepFreeFalsePositiveCount === null || !Number.isFinite(Number(strictStepFreeFalsePositiveCount))) {
+    failures.push("accessibility strict step-free false positive count must be reported");
+  } else if (number(strictStepFreeFalsePositiveCount) > gate.accessibility.strictStepFreeKnownStairFalsePositiveAllowed) {
     failures.push("accessibility strict step-free false positive count exceeds 0");
   }
   if (!gate.accessibility.generatedConnectorAsVerifiedAllowed && number(report.generatedConnectorVerifiedAccessibilityCount) > 0) {
