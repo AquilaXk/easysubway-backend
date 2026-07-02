@@ -238,14 +238,7 @@ class RouteSearchController {
 				Boolean.TRUE.equals(request.useRealtime()),
 				request.maxTransfers(),
 				request.alternativeCount(),
-				List.of(
-					"FOUND",
-					"BLOCKED_ACCESSIBILITY",
-					"NO_TIMETABLE_SERVICE",
-					"REALTIME_UNAVAILABLE_PLANNED_USED",
-					"UNSUPPORTED_REGION",
-					"ROUTE_GRAPH_UNKNOWN"
-				),
+				plan.statuses(),
 				plan.itineraries().stream()
 					.map(result -> ItineraryDto.from(result, departureTime))
 					.toList()

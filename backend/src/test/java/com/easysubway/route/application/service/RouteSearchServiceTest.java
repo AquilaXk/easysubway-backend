@@ -17,6 +17,7 @@ import com.easysubway.route.domain.RouteEtaOffsetBucket;
 import com.easysubway.route.domain.RouteFeedbackRating;
 import com.easysubway.route.domain.RouteProfileWeight;
 import com.easysubway.route.domain.RouteRefreshStatus;
+import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteWarningCode;
@@ -637,6 +638,40 @@ class RouteSearchServiceTest {
 		assertThat(result.warnings())
 			.extracting("code")
 			.doesNotContain(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
+	@DisplayName("V2 대안 검색은 Pareto 후보 안에서 접근 가능 경로와 차단 경로를 함께 반환한다")
+	void searchRouteAlternativesReturnsParetoItinerariesWithActualStatuses() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new MixedTransferAccessibilityTransitMasterPort(),
+			CLOCK
+		);
+
+		var results = transferService.searchRouteAlternatives(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.WHEELCHAIR,
+			ConstraintMode.STRICT_STEP_FREE,
+			1
+		), 2);
+
+		assertThat(results).hasSize(2);
+		assertThat(results)
+			.extracting(RouteSearchResult::status)
+			.containsExactly(RouteSearchStatus.FOUND, RouteSearchStatus.BLOCKED);
+		assertThat(results)
+			.extracting(RouteSearchResult::routeSearchId)
+			.doesNotHaveDuplicates();
+		assertThat(results.get(0).steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-step-free-transfer");
+		assertThat(results.get(1).blockedReasons())
+			.containsExactly("계단 없는 역 접근 경로를 확인할 수 없습니다.");
 	}
 
 	@Test

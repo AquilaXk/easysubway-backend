@@ -46,6 +46,22 @@ class TransferRouteGraph {
 		Predicate<String> stairOnlyAccess,
 		Predicate<String> lowAccessibilityData
 	) {
+		return findOneTransferRoutes(
+			originStationId,
+			destinationStationId,
+			profileWeight,
+			stairOnlyAccess,
+			lowAccessibilityData
+		).stream().findFirst();
+	}
+
+	List<TransferRoute> findOneTransferRoutes(
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight,
+		Predicate<String> stairOnlyAccess,
+		Predicate<String> lowAccessibilityData
+	) {
 		List<StationLine> originLines = stationLines(originStationId);
 		List<StationLine> destinationLines = stationLines(destinationStationId);
 
@@ -59,9 +75,10 @@ class TransferRouteGraph {
 		}
 
 		return candidates.stream()
-			.min(Comparator.comparingInt((TransferRoute route) -> transferAccessibilityRank(route, profileWeight, stairOnlyAccess))
+			.sorted(Comparator.comparingInt((TransferRoute route) -> transferAccessibilityRank(route, profileWeight, stairOnlyAccess))
 				.thenComparingInt(route -> transferCandidateCost(route, profileWeight, stairOnlyAccess, lowAccessibilityData))
-				.thenComparing(route -> route.transferStation().nameKo()));
+				.thenComparing(route -> route.transferStation().nameKo()))
+			.toList();
 	}
 
 	private void addTransferCandidates(

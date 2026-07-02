@@ -125,6 +125,10 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	@Override
 	public RouteSearchResult searchRoute(SearchRouteCommand command) {
+		return searchRouteAlternatives(command, 1).getFirst();
+	}
+
+	List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
 		requireCommand(command);
 		Station origin = loadActiveStation(command.originStationId());
 		Station destination = loadActiveStation(command.destinationStationId());
@@ -133,7 +137,28 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 
 		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType(), command.constraintMode());
-		RoutePlan routePlan = findRoutePlan(origin.id(), destination.id(), profileWeight, command.maxTransfers());
+		List<RoutePlan> routePlans = findRoutePlans(
+			origin.id(),
+			destination.id(),
+			profileWeight,
+			command.maxTransfers(),
+			Math.max(1, alternativeCount)
+		);
+		if (routePlans.isEmpty()) {
+			throw new RouteNotFoundException();
+		}
+		return routePlans.stream()
+			.map(routePlan -> saveRouteSearch(command, origin, destination, profileWeight, routePlan))
+			.toList();
+	}
+
+	private RouteSearchResult saveRouteSearch(
+		SearchRouteCommand command,
+		Station origin,
+		Station destination,
+		RouteProfileWeight profileWeight,
+		RoutePlan routePlan
+	) {
 		List<String> accessibilityStationIds = routePlan.accessibilityStationIds(origin.id(), destination.id());
 		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
 		List<RouteWarning> warnings = routeWarnings(accessibilityStationIds, stairOnlyAccess);
@@ -403,42 +428,52 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.orElseThrow(StationNotFoundException::new);
 	}
 
-	private RoutePlan findRoutePlan(
+	private List<RoutePlan> findRoutePlans(
 		String originStationId,
 		String destinationStationId,
 		RouteProfileWeight profileWeight,
-		int maxTransfers
-	) {
-		return findDirectLine(originStationId, destinationStationId)
-			.map(RoutePlan::direct)
-			.or(() -> findTransferRoutePlan(originStationId, destinationStationId, profileWeight, maxTransfers))
-			.orElseThrow(RouteNotFoundException::new);
-	}
-
-	private Optional<RoutePlan> findTransferRoutePlan(
-		String originStationId,
-		String destinationStationId,
-		RouteProfileWeight profileWeight,
-		int maxTransfers
+		int maxTransfers,
+		int candidateLimit
 	) {
 		List<RoutePlan> candidates = new ArrayList<>();
+		findDirectLine(originStationId, destinationStationId)
+			.map(RoutePlan::direct)
+			.ifPresent(candidates::add);
 		if (maxTransfers >= 1) {
-			findOneTransferRoute(originStationId, destinationStationId, profileWeight)
+			findOneTransferRoutes(originStationId, destinationStationId, profileWeight)
+				.stream()
 				.map(RoutePlan::transfer)
-				.ifPresent(candidates::add);
+				.forEach(candidates::add);
 		}
 		if (maxTransfers >= 2) {
-			findMultiTransferRoute(originStationId, destinationStationId, profileWeight, maxTransfers)
+			findMultiTransferRoutes(originStationId, destinationStationId, profileWeight, maxTransfers)
+				.stream()
 				.map(RoutePlan::multiTransfer)
-				.ifPresent(candidates::add);
+				.forEach(candidates::add);
 		}
+		Set<String> signatures = new HashSet<>();
 		return candidates.stream()
-			.min(Comparator.comparingInt((RoutePlan routePlan) ->
-					routeAccessibilityRank(routePlan, originStationId, destinationStationId, profileWeight))
-				.thenComparingInt(routePlan ->
-					routeCandidateCost(routePlan, originStationId, destinationStationId, profileWeight))
-				.thenComparingInt(RoutePlan::transferCount)
-				.thenComparing(RoutePlan::lineName));
+			.sorted(routePlanComparator(originStationId, destinationStationId, profileWeight))
+			.filter(routePlan -> signatures.add(routePlanSignature(routePlan, originStationId, destinationStationId)))
+			.limit(Math.max(1, candidateLimit))
+			.toList();
+	}
+
+	private Comparator<RoutePlan> routePlanComparator(
+		String originStationId,
+		String destinationStationId,
+		RouteProfileWeight profileWeight
+	) {
+		return Comparator.comparingInt((RoutePlan routePlan) ->
+				routeAccessibilityRank(routePlan, originStationId, destinationStationId, profileWeight))
+			.thenComparingInt(routePlan ->
+				routeCandidateCost(routePlan, originStationId, destinationStationId, profileWeight))
+			.thenComparingInt(RoutePlan::transferCount)
+			.thenComparing(RoutePlan::lineName);
+	}
+
+	private String routePlanSignature(RoutePlan routePlan, String originStationId, String destinationStationId) {
+		return routePlan.lineId() + "|" + String.join(">", routePlan.accessibilityStationIds(originStationId, destinationStationId));
 	}
 
 	private Optional<DirectLine> findDirectLine(String originStationId, String destinationStationId) {
@@ -466,7 +501,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.min(Comparator.comparingInt(DirectLine::stopCount));
 	}
 
-	private Optional<TransferRoute> findOneTransferRoute(
+	private List<TransferRoute> findOneTransferRoutes(
 		String originStationId,
 		String destinationStationId,
 		RouteProfileWeight profileWeight
@@ -482,7 +517,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			loadTransitMasterPort.loadLines(),
 			loadTransitMasterPort.loadStations(),
 			loadTransitMasterPort.loadStationLines()
-		).findBestOneTransferRoute(
+		).findOneTransferRoutes(
 			originStationId,
 			destinationStationId,
 			profileWeight,
@@ -491,7 +526,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		);
 	}
 
-	private Optional<MultiTransferRoute> findMultiTransferRoute(
+	private List<MultiTransferRoute> findMultiTransferRoutes(
 		String originStationId,
 		String destinationStationId,
 		RouteProfileWeight profileWeight,
@@ -558,7 +593,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		}
 		return routes.stream()
 			.filter(route -> route.transferCount() <= maxTransfers)
-			.min(Comparator.comparingInt((MultiTransferRoute route) ->
+			.sorted(Comparator.comparingInt((MultiTransferRoute route) ->
 					accessibilityRank(route.accessibilityStationIds(originStationId, destinationStationId), profileWeight))
 				.thenComparingInt(route -> accessibilityAwareCost(
 					route.stopCount(),
@@ -567,7 +602,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 					profileWeight
 				))
 				.thenComparingInt(MultiTransferRoute::transferCount)
-				.thenComparing(MultiTransferRoute::lineName));
+				.thenComparing(MultiTransferRoute::lineName))
+			.toList();
 	}
 
 	private List<RouteSegment> appendSegment(List<RouteSegment> segments, StationLine from, StationLine to) {
