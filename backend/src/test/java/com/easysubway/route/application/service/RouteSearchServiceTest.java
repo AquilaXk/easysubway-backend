@@ -693,6 +693,21 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 alternativeCount 범위 안에서 복수 itinerary와 실제 상태를 반환한다")
+	void routeV2PlannerReturnsAlternativeItinerariesWithActualStatuses() {
+		var planner = routeV2Planner(new MixedTransferAccessibilityTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.STRICT_STEP_FREE, MobilityType.WHEELCHAIR, 1, 2));
+
+		assertThat(plan.plannerAdr()).isEqualTo("tools/routes/route-algorithm-v2-adr.json");
+		assertThat(plan.itineraries()).hasSize(2);
+		assertThat(plan.statuses()).containsExactly("FOUND", "BLOCKED_ACCESSIBILITY");
+		assertThat(plan.itineraries())
+			.extracting(RouteSearchResult::status)
+			.containsExactly(RouteSearchStatus.FOUND, RouteSearchStatus.BLOCKED);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 1회 환승 경로를 FOUND itinerary로 반환한다")
 	void routeV2PlannerReturnsOneTransferItinerary() {
 		var planner = routeV2Planner(new OneTransferTransitMasterPort());
