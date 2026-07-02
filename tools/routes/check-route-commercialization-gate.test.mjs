@@ -577,6 +577,86 @@ test("route commercialization gate requires offline planned and online realtime 
   );
 });
 
+test("route commercialization gate requires runtime traceability summary", async () => {
+  const fixture = await writeFixtureSet({
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      actualEtaSourceCounts: {
+        REALTIME: 120,
+        PLANNED: 0,
+        STATIC_BACKEND_ESTIMATE: 0,
+        STATIC_LOCAL: 0,
+        FALLBACK: 0,
+      },
+      productionSampleSize: 120,
+      runtimeTraceability: {
+        productionRowCount: 119,
+        tracedProductionRowCount: 118,
+        missingRequiredFieldCount: 1,
+        realtimeAnchorMissingCount: 1,
+        stratificationMissingCount: 1,
+        unclassifiedBudgetExceededCount: 1,
+      },
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      supportedStationLinePairs: 150,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 2,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  await assert.rejects(
+    execChecker(fixture),
+    (error) => {
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.status, "FAIL");
+      assert.ok(report.failures.includes("routeEtaAccuracy runtime traceability production row count must match production sampleSize"));
+      assert.ok(report.failures.includes("routeEtaAccuracy runtime traceability required fields missing"));
+      assert.ok(report.failures.includes("routeEtaAccuracy realtime runtime anchor fields missing"));
+      assert.ok(report.failures.includes("routeEtaAccuracy runtime stratification fields missing"));
+      assert.ok(report.failures.includes("routeEtaAccuracy runtime budget exceeded rows must include deviation reason code"));
+      return true;
+    },
+  );
+});
+
 test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
   const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
 
@@ -602,8 +682,19 @@ async function writeFixtureSet(reports) {
 }
 
 function normalizeAccuracyReport(report) {
+  const productionSampleSize = Number.isFinite(Number(report.productionSampleSize))
+    ? Number(report.productionSampleSize)
+    : 0;
   const normalized = {
     ...report,
+    runtimeTraceability: report.runtimeTraceability ?? {
+      productionRowCount: productionSampleSize,
+      tracedProductionRowCount: productionSampleSize,
+      missingRequiredFieldCount: 0,
+      realtimeAnchorMissingCount: 0,
+      stratificationMissingCount: 0,
+      unclassifiedBudgetExceededCount: 0,
+    },
     metrics: {
       offlinePlanned: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
       onlineRealtime: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },

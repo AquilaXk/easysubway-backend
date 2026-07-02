@@ -30,6 +30,29 @@ const referenceSources = [
   "COMPETING_APP_COMPARISON",
   "FIXTURE_EXPECTED",
 ];
+const runtimeTraceabilityRequiredFields = [
+  "route_search_id",
+  "itinerary_id",
+  "leg_index",
+  "actual_eta_source",
+  "reference_confidence",
+  "reason_codes",
+  "predicted_arrival_at",
+  "actual_arrival_at",
+  "observed_eta_error_seconds",
+];
+const realtimeAnchorRequiredFields = [
+  "realtime_provider_id",
+  "provider_observed_at",
+  "gateway_received_at",
+  "served_at",
+];
+const stratificationRequiredFields = [
+  "region",
+  "operator_id",
+  "time_period",
+  "actual_transfer_count",
+];
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -179,6 +202,16 @@ function buildReport(rows) {
     if (!covered) failures.push(`missing required coverage: ${key}`);
   }
   if (rows.length < 100) failures.push("golden OD sampleSize must be at least 100");
+  const runtimeTraceability = buildRuntimeTraceability(rows, quality);
+  if (runtimeTraceability.missingRequiredFieldCount > 0) {
+    failures.push("runtime traceability required fields missing");
+  }
+  if (runtimeTraceability.realtimeAnchorMissingCount > 0) {
+    failures.push("runtime traceability realtime anchor fields missing");
+  }
+  if (runtimeTraceability.stratificationMissingCount > 0) {
+    failures.push("runtime traceability stratification fields missing");
+  }
 
   return {
     schemaVersion: 1,
@@ -190,6 +223,7 @@ function buildReport(rows) {
     expectedEtaSourceCounts: countEtaSources(rows, "expected_eta_source"),
     productionSampleSize: rows.filter(isProductionSample).length,
     nonProductionSampleSize: rows.filter((row) => !isProductionSample(row)).length,
+    runtimeTraceability,
     coverage,
     metrics: {
       sampleSize: errors.length,
@@ -211,6 +245,57 @@ function buildReport(rows) {
     },
     failures,
   };
+}
+
+function buildRuntimeTraceability(rows, quality) {
+  const productionRows = rows.filter(isProductionSample);
+  const requiredFieldMissing = countMissingFields(productionRows, runtimeTraceabilityRequiredFields);
+  const realtimeRows = productionRows.filter((row) => row.actual_eta_source === "REALTIME" || row.use_realtime === "true");
+  const realtimeAnchorMissing = countMissingFields(realtimeRows, realtimeAnchorRequiredFields);
+  const stratificationMissing = countMissingFields(productionRows, stratificationRequiredFields);
+  const missingRequiredFieldCount = totalMissing(requiredFieldMissing);
+  const realtimeAnchorMissingCount = totalMissing(realtimeAnchorMissing);
+  const stratificationMissingCount = totalMissing(stratificationMissing);
+  return {
+    requiredFields: runtimeTraceabilityRequiredFields,
+    realtimeAnchorRequiredFields,
+    stratificationRequiredFields,
+    productionRowCount: productionRows.length,
+    tracedProductionRowCount: productionRows.filter((row) => (
+      hasAllFields(row, runtimeTraceabilityRequiredFields)
+        && (!isRealtimeTraceRow(row) || hasAllFields(row, realtimeAnchorRequiredFields))
+        && hasAllFields(row, stratificationRequiredFields)
+    )).length,
+    missingRequiredFieldsByName: requiredFieldMissing,
+    missingRequiredFieldCount,
+    realtimeAnchorMissingByName: realtimeAnchorMissing,
+    realtimeAnchorMissingCount,
+    stratificationMissingByName: stratificationMissing,
+    stratificationMissingCount,
+    unclassifiedBudgetExceededCount: quality.unclassifiedEtaDeviation,
+  };
+}
+
+function countMissingFields(rows, fields) {
+  const counts = Object.fromEntries(fields.map((field) => [field, 0]));
+  for (const row of rows) {
+    for (const field of fields) {
+      if (!hasValue(row[field])) counts[field] += 1;
+    }
+  }
+  return counts;
+}
+
+function totalMissing(counts) {
+  return Object.values(counts).reduce((total, count) => total + count, 0);
+}
+
+function hasAllFields(row, fields) {
+  return fields.every((field) => hasValue(row[field]));
+}
+
+function isRealtimeTraceRow(row) {
+  return row.actual_eta_source === "REALTIME" || row.use_realtime === "true";
 }
 
 function countSampleSources(rows) {

@@ -115,6 +115,32 @@ function validateAccuracy(gate, report, failures) {
   if (number(report.metrics?.unclassifiedEtaDeviationCount) > 0) {
     failures.push("routeEtaAccuracy unclassified ETA deviation count exceeds 0");
   }
+  if (gate.evidence?.runtimeTraceabilityRequired) {
+    validateRuntimeTraceability(report, failures);
+  }
+}
+
+function validateRuntimeTraceability(report, failures) {
+  const traceability = report.runtimeTraceability;
+  if (!traceability || typeof traceability !== "object") {
+    failures.push("routeEtaAccuracy runtime traceability must be reported");
+    return;
+  }
+  if (number(traceability.productionRowCount) !== number(report.productionSampleSize)) {
+    failures.push("routeEtaAccuracy runtime traceability production row count must match production sampleSize");
+  }
+  if (number(traceability.missingRequiredFieldCount) > 0) {
+    failures.push("routeEtaAccuracy runtime traceability required fields missing");
+  }
+  if (number(traceability.realtimeAnchorMissingCount) > 0) {
+    failures.push("routeEtaAccuracy realtime runtime anchor fields missing");
+  }
+  if (number(traceability.stratificationMissingCount) > 0) {
+    failures.push("routeEtaAccuracy runtime stratification fields missing");
+  }
+  if (number(traceability.unclassifiedBudgetExceededCount) > 0) {
+    failures.push("routeEtaAccuracy runtime budget exceeded rows must include deviation reason code");
+  }
 }
 
 function validateEtaSourceCounts(gate, report, failures) {
