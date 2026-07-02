@@ -7,6 +7,7 @@ import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
+import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
@@ -529,12 +530,7 @@ class RouteSearchController {
 				return 0;
 			}
 			// ponytail: schedule candidate selection belongs with timetable schema; expose only mobility buffer for now.
-			return switch (mobilityType) {
-				case LUGGAGE -> 60;
-				case SENIOR, PREGNANT -> 90;
-				case STROLLER, TEMPORARY_INJURY -> 120;
-				case WHEELCHAIR -> 180;
-			};
+			return BoardingSlackPolicy.secondsFor(mobilityType);
 		}
 
 			private static EtaSource etaSourceOf(RouteStep step) {

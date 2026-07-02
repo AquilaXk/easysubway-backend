@@ -9,6 +9,7 @@ import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.RealtimeArrivalResolver;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.InternalRouteResult;
@@ -1133,18 +1134,19 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return plannedSteps;
 		}
 		List<RouteStep> realtimeSteps = new ArrayList<>(plannedSteps);
-		int elapsedMinutes = 0;
+		int elapsedSeconds = 0;
 		for (int index = 0; index < realtimeSteps.size(); index++) {
 			RouteStep step = realtimeSteps.get(index);
 			if (!"ride".equals(step.stepType())) {
-				elapsedMinutes += Math.max(0, step.estimatedMinutes());
+				elapsedSeconds += durationSeconds(step);
 				continue;
 			}
-			Instant readyAt = command.departureTime().toInstant().plusSeconds(elapsedMinutes * 60L);
+			int boardingSlackSeconds = boardingSlackSeconds(command.mobilityType());
+			Instant readyAt = command.departureTime().toInstant().plusSeconds(elapsedSeconds + boardingSlackSeconds);
 			RealtimeArrivalResolver.Resolution resolution = realtimeArrivalResolver.resolve(realtimeQuery(step, readyAt));
 			RealtimeEtaOverlay.Result overlay = realtimeEtaOverlay.overlay(
 				readyAt,
-				Math.max(0, step.estimatedMinutes()) * 60,
+				durationSeconds(step),
 				directionFor(step),
 				resolution.status(),
 				resolution.fallbackCode(),
@@ -1153,8 +1155,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				resolution.candidates().size(),
 				resolution.candidates()
 			);
-			realtimeSteps.set(index, withEtaOverlay(step, overlay));
-			break;
+			RouteStep realtimeStep = withEtaOverlay(step, overlay);
+			realtimeSteps.set(index, realtimeStep);
+			elapsedSeconds += boardingSlackSeconds + realtimeWaitSeconds(overlay) + durationSeconds(step);
 		}
 		return List.copyOf(realtimeSteps);
 	}
@@ -1183,7 +1186,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			step.lineName(),
 			step.fromStationId(),
 			step.toStationId(),
-			Math.max(1, (overlay.waitSeconds() + 59) / 60),
+			step.estimatedMinutes() + ((realtimeWaitSeconds(overlay) + 59) / 60),
 			step.distanceMeters(),
 			step.includesStairs(),
 			step.stairAccessState(),
@@ -1192,6 +1195,21 @@ public class RouteSearchService implements RouteSearchUseCase {
 			step.distanceSource(),
 			overlay.confidence().name()
 		);
+	}
+
+	private int durationSeconds(RouteStep step) {
+		return Math.max(0, step.estimatedMinutes()) * 60;
+	}
+
+	private int realtimeWaitSeconds(RealtimeEtaOverlay.Result overlay) {
+		if (overlay.etaSource() != EtaSource.REALTIME) {
+			return 0;
+		}
+		return Math.max(0, overlay.waitSeconds());
+	}
+
+	private int boardingSlackSeconds(MobilityType mobilityType) {
+		return BoardingSlackPolicy.secondsFor(mobilityType);
 	}
 
 	private String directionFor(RouteStep step) {

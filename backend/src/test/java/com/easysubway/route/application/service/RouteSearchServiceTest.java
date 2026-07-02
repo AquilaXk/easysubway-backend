@@ -51,6 +51,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -816,13 +817,97 @@ class RouteSearchServiceTest {
 
 		assertThat(resolver.callCount()).isEqualTo(1);
 		assertThat(resolver.lastQuery().stationId()).isEqualTo("station-a");
-		assertThat(resolver.lastQuery().readyAt()).isEqualTo(Instant.parse("2026-07-01T00:04:00Z"));
+		assertThat(resolver.lastQuery().readyAt()).isEqualTo(Instant.parse("2026-07-01T00:05:30Z"));
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.MIXED);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("timeSource")
 			.containsExactly(EtaSource.REALTIME.name());
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+	}
+
+	@Test
+	@DisplayName("V2 useRealtime=true는 환승 이후 승차 단계에도 provider ETA를 반영한다")
+	void routeV2PlannerAppliesRealtimeEtaAfterTransfer() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver();
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new OneTransferTransitMasterPort(),
+			CLOCK,
+			resolver
+		);
+		var planner = new RouteV2Planner(routeSearchService);
+
+		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			true,
+			1,
+			1
+		));
+
+		assertThat(resolver.callCount()).isEqualTo(2);
+		assertThat(resolver.queries())
+			.extracting(RealtimeArrivalResolver.Query::readyAt)
+			.containsExactly(
+				Instant.parse("2026-07-01T00:05:30Z"),
+				Instant.parse("2026-07-01T00:19:00Z")
+			);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("timeSource")
+			.containsExactly(EtaSource.REALTIME.name(), EtaSource.REALTIME.name());
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("estimatedMinutes")
+			.containsExactly(6, 6);
+	}
+
+	@Test
+	@DisplayName("V2 useRealtime=true는 환승 전 fallback ride의 planned duration을 wait으로 중복 계산하지 않는다")
+	void routeV2PlannerDoesNotDoubleCountFallbackWaitBeforeTransfer() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver(ArrivalFreshness.UNAVAILABLE, ArrivalFreshness.FRESH_REALTIME);
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new OneTransferTransitMasterPort(),
+			CLOCK,
+			resolver
+		);
+		var planner = new RouteV2Planner(routeSearchService);
+
+		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			true,
+			1,
+			1
+		));
+
+		assertThat(resolver.callCount()).isEqualTo(2);
+		assertThat(resolver.queries())
+			.extracting(RealtimeArrivalResolver.Query::readyAt)
+			.containsExactly(
+				Instant.parse("2026-07-01T00:05:30Z"),
+				Instant.parse("2026-07-01T00:17:00Z")
+			);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("timeSource")
+			.containsExactly(EtaSource.FALLBACK.name(), EtaSource.REALTIME.name());
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("estimatedMinutes")
+			.containsExactly(4, 6);
 	}
 
 	@Test
@@ -1609,19 +1694,25 @@ class RouteSearchServiceTest {
 	private static class CountingRealtimeArrivalResolver implements RealtimeArrivalResolver {
 
 		private final AtomicInteger callCount = new AtomicInteger();
+		private final List<Query> queries = new ArrayList<>();
+		private final List<ArrivalFreshness> statuses;
 		private Query lastQuery;
+
+		CountingRealtimeArrivalResolver(ArrivalFreshness... statuses) {
+			this.statuses = statuses.length == 0
+				? List.of(ArrivalFreshness.FRESH_REALTIME)
+				: List.of(statuses);
+		}
 
 		@Override
 		public Resolution resolve(Query query) {
-			callCount.incrementAndGet();
+			int callIndex = callCount.getAndIncrement();
+			queries.add(query);
 			lastQuery = query;
+			ArrivalFreshness status = statuses.get(Math.min(callIndex, statuses.size() - 1));
 			Instant expectedArrivalAt = query.readyAt().plusSeconds(120);
-			return new Resolution(
-				ArrivalFreshness.FRESH_REALTIME,
-				null,
-				"test-realtime-snapshot",
-				query.readyAt().minusSeconds(30),
-				List.of(new ArrivalCandidate(
+			List<ArrivalCandidate> candidates = status == ArrivalFreshness.FRESH_REALTIME
+				? List.of(new ArrivalCandidate(
 					"train-test",
 					query.lineId(),
 					query.direction(),
@@ -1632,6 +1723,13 @@ class RouteSearchServiceTest {
 					ArrivalFreshness.FRESH_REALTIME,
 					EtaConfidence.HIGH
 				))
+				: List.of();
+			return new Resolution(
+				status,
+				status == ArrivalFreshness.FRESH_REALTIME ? null : "PROVIDER_UNAVAILABLE",
+				status == ArrivalFreshness.FRESH_REALTIME ? "test-realtime-snapshot" : null,
+				query.readyAt().minusSeconds(30),
+				candidates
 			);
 		}
 
@@ -1641,6 +1739,10 @@ class RouteSearchServiceTest {
 
 		Query lastQuery() {
 			return lastQuery;
+		}
+
+		List<Query> queries() {
+			return List.copyOf(queries);
 		}
 	}
 
