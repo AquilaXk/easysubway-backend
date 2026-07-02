@@ -137,6 +137,12 @@ function validateCoverage(gate, report, failures) {
   if (gate.realtimeCoverage.staleFallbackRequired && report.staleFallbackRequired !== true) {
     failures.push("realtimeCoverage stale fallback must be required");
   }
+  if (number(report.freshness?.staleAsFreshCount) > 0) {
+    failures.push("realtimeCoverage stale-as-fresh count exceeds 0");
+  }
+  if (!Number.isFinite(Number(report.mapping?.failureRate))) {
+    failures.push("realtimeCoverage mapping failure rate must be reported");
+  }
 }
 
 function realtimeSupportedStationLinePairsMin(gate, report) {

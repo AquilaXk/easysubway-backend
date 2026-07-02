@@ -39,6 +39,8 @@ test("route commercialization gate passes with production-ready reports", async 
       supportedStationLinePairs: 150,
       providerFreshnessSecondsMaxObserved: 80,
       staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
     },
     routeGraphCoverage: {
       schemaVersion: 1,
@@ -94,6 +96,8 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
       supportedStationLinePairs: 50,
       providerFreshnessSecondsMaxObserved: 120,
       staleFallbackRequired: false,
+      freshness: { staleAsFreshCount: 1 },
+      mapping: { failureRate: 0.1 },
     },
     routeGraphCoverage: {
       schemaVersion: 1,
@@ -126,6 +130,7 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
       assert.ok(report.failures.includes("routeEtaAccuracy production sampleSize is below 100"));
       assert.ok(report.failures.includes("accessibility strict step-free false positive count exceeds 0"));
       assert.ok(report.failures.includes("accessibility generated connector verified count exceeds 0"));
+      assert.ok(report.failures.includes("realtimeCoverage stale-as-fresh count exceeds 0"));
       assert.ok(report.failures.includes("route graph generated connector verified count exceeds 0"));
       assert.ok(report.failures.includes("route graph strict route not found rate exceeds 0.02"));
       assert.ok(!report.failures.includes("routing D-3 blocker must be satisfied before out-of-station transfer release claim"));
@@ -163,6 +168,8 @@ test("route commercialization gate keeps legacy production sample fallback", asy
       supportedStationLinePairs: 150,
       providerFreshnessSecondsMaxObserved: 80,
       staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
     },
     routeGraphCoverage: {
       schemaVersion: 1,
@@ -227,6 +234,8 @@ test("route commercialization gate derives realtime pair minimum from coverage s
       supportedStationLinePairs: 2,
       providerFreshnessSecondsMaxObserved: 80,
       staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
     },
     routeGraphCoverage: {
       schemaVersion: 1,
@@ -283,6 +292,8 @@ test("route commercialization gate fails on unclassified ETA deviations", async 
       supportedStationLinePairs: 150,
       providerFreshnessSecondsMaxObserved: 80,
       staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
     },
     routeGraphCoverage: {
       schemaVersion: 1,
