@@ -255,9 +255,9 @@ function collectQualityFailures(row, failures, quality) {
     quality.wrongLineSequence += 1;
     addFailure(failures, row, "WRONG_LINE_SEQUENCE", "wrong line sequence", { lineSequence: row.expected_line_sequence }, { lineSequence: row.actual_line_sequence });
   }
-  if (isStrictStepFree(row) && containsBlockedStepFreeEdge(row.actual_edge_types)) {
+  if (isStrictStepFree(row) && containsUnsafeStrictStepFreeEdge(row.actual_edge_types)) {
     quality.strictStepFreeFalsePositive += 1;
-    addFailure(failures, row, "ACCESSIBILITY_FALSE_POSITIVE", "strict step-free route contains blocked edge", { stepFree: true }, { edgeTypes: row.actual_edge_types });
+    addFailure(failures, row, "ACCESSIBILITY_FALSE_POSITIVE", "strict step-free route contains unsafe edge", { stepFree: true }, { edgeTypes: row.actual_edge_types });
   }
   if (hasValue(row.expected_eta_source) && hasValue(row.actual_eta_source) && row.expected_eta_source !== row.actual_eta_source) {
     quality.etaSourceMismatch += 1;
@@ -277,8 +277,21 @@ function isStrictStepFree(row) {
   return row.constraint_mode === "STRICT_STEP_FREE" || row.strict_step_free_expected_status === "STEP_FREE";
 }
 
-function containsBlockedStepFreeEdge(edgeTypes = "") {
-  return edgeTypes.split("|").some((type) => type === "STAIR" || type === "ESCALATOR" || type === "ESCALATOR_ONLY");
+function containsUnsafeStrictStepFreeEdge(edgeTypes = "") {
+  const unsafeTypes = new Set([
+    "STAIR",
+    "ESCALATOR",
+    "ESCALATOR_ONLY",
+    "UNKNOWN",
+    "UNKNOWN_EDGE",
+    "UNKNOWN_EXIT",
+    "UNKNOWN_FACILITY",
+    "UNVERIFIED",
+    "UNVERIFIED_EDGE",
+    "UNVERIFIED_EXIT",
+    "UNVERIFIED_FACILITY",
+  ]);
+  return edgeTypes.split("|").some((type) => unsafeTypes.has(type));
 }
 
 function isStale(row) {

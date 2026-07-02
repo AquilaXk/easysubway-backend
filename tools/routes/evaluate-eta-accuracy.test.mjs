@@ -185,7 +185,11 @@ test("ETA evaluator emits structured production-safe failures", async (t) => {
       "case-not-found,station-a,station-i,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,false,MANUAL_OBSERVATION,2026-06-30T09:30:00+09:00,HIGH,,false,true,FRESH,PLANNED,PLANNED,line-9,line-9,0,0,100,55,false,false,STEP_FREE,RIDE,route missing",
     ].join("\n"),
     "out_of_station_transfer_cases.csv": "case-competing,station-a,station-f,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,false,COMPETING_APP_COMPARISON,2026-06-30T09:30:00+09:00,MEDIUM,,false,true,FRESH,PLANNED,PLANNED,line-1|line-8,line-1|line-8,1,1,100,60,false,true,STEP_FREE,RIDE|WALK,competing",
-    "strict_step_free_cases.csv": "case-stair,station-a,station-g,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,false,FIXTURE_EXPECTED,2026-06-30T09:30:00+09:00,LOW,,false,true,FRESH,PLANNED,PLANNED,line-1,line-1,0,0,100,70,false,true,STEP_FREE,RIDE|STAIR,fixture stair",
+    "strict_step_free_cases.csv": [
+      "case-stair,station-a,station-g,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,false,FIXTURE_EXPECTED,2026-06-30T09:30:00+09:00,LOW,,false,true,FRESH,PLANNED,PLANNED,line-1,line-1,0,0,100,70,false,true,STEP_FREE,RIDE|STAIR,fixture stair",
+      "case-unknown-exit,station-a,station-j,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,false,FIXTURE_EXPECTED,2026-06-30T09:30:00+09:00,LOW,,false,true,FRESH,PLANNED,PLANNED,line-1,line-1,0,0,100,75,false,true,STEP_FREE,RIDE|UNKNOWN_EXIT,fixture unknown exit",
+      "case-unverified-edge,station-a,station-k,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,false,FIXTURE_EXPECTED,2026-06-30T09:30:00+09:00,LOW,,false,true,FRESH,PLANNED,PLANNED,line-1,line-1,0,0,100,80,false,true,STEP_FREE,RIDE|UNVERIFIED_EDGE,fixture unverified edge",
+    ].join("\n"),
   };
   await Promise.all(Object.entries(rowsByFile).map(([file, row]) => (
     writeFile(path.join(dataset, file), `${header}\n${row}\n`)
@@ -207,14 +211,14 @@ test("ETA evaluator emits structured production-safe failures", async (t) => {
     STATIC_TIMETABLE_REFERENCE: 1,
     MANUAL_OBSERVATION: 2,
     COMPETING_APP_COMPARISON: 1,
-    FIXTURE_EXPECTED: 1,
+    FIXTURE_EXPECTED: 3,
   });
   assert.equal(report.productionSampleSize, 5);
-  assert.equal(report.nonProductionSampleSize, 3);
-  assert.equal(report.metrics.routeNotFoundRate, 1 / 8);
-  assert.equal(report.metrics.wrongTransferCountRate, 1 / 8);
-  assert.equal(report.metrics.wrongLineSequenceRate, 1 / 8);
-  assert.equal(report.metrics.strictStepFreeFalsePositiveCount, 1);
+  assert.equal(report.nonProductionSampleSize, 5);
+  assert.equal(report.metrics.routeNotFoundRate, 1 / 10);
+  assert.equal(report.metrics.wrongTransferCountRate, 1 / 10);
+  assert.equal(report.metrics.wrongLineSequenceRate, 1 / 10);
+  assert.equal(report.metrics.strictStepFreeFalsePositiveCount, 3);
   assert.equal(report.metrics.etaSourceMismatchCount, 2);
   assert.equal(report.metrics.realtimeFallbackMismatchCount, 1);
   assert.equal(report.metrics.providerStaleMisuseCount, 1);
@@ -232,5 +236,11 @@ test("ETA evaluator emits structured production-safe failures", async (t) => {
   )));
   assert.ok(report.failures.some((failure) => (
     failure.caseId === "case-stair" && failure.type === "ACCESSIBILITY_FALSE_POSITIVE"
+  )));
+  assert.ok(report.failures.some((failure) => (
+    failure.caseId === "case-unknown-exit" && failure.type === "ACCESSIBILITY_FALSE_POSITIVE"
+  )));
+  assert.ok(report.failures.some((failure) => (
+    failure.caseId === "case-unverified-edge" && failure.type === "ACCESSIBILITY_FALSE_POSITIVE"
   )));
 });
