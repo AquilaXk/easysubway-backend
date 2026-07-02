@@ -52,6 +52,7 @@ test("ETA evaluator emits the route accuracy report contract", async (t) => {
   assert.equal(report.metrics.etaSourceMismatchCount, 0);
   assert.equal(report.metrics.realtimeFallbackMismatchCount, 0);
   assert.equal(report.metrics.providerStaleMisuseCount, 0);
+  assert.equal(report.metrics.unclassifiedEtaDeviationCount, 0);
   assert.deepEqual(report.metrics.singleRide, {
     sampleSize: 35,
     p50ErrorSeconds: 45,
@@ -242,5 +243,61 @@ test("ETA evaluator emits structured production-safe failures", async (t) => {
   )));
   assert.ok(report.failures.some((failure) => (
     failure.caseId === "case-unverified-edge" && failure.type === "ACCESSIBILITY_FALSE_POSITIVE"
+  )));
+});
+
+test("ETA evaluator fails over-budget rows without deviation reason code", async (t) => {
+  const dataset = path.join(tmpdir(), `route-accuracy-deviation-${Date.now()}`);
+  const output = path.join(tmpdir(), `route-accuracy-deviation-${Date.now()}.json`);
+  t.after(() => rm(dataset, { recursive: true, force: true }));
+  t.after(() => rm(output, { force: true }));
+  await mkdir(dataset, { recursive: true });
+
+  const header = [
+    "case_id",
+    "origin_station_id",
+    "destination_station_id",
+    "departure_time",
+    "mobility_type",
+    "constraint_mode",
+    "reference_source",
+    "provider_freshness_status",
+    "expected_transfer_count",
+    "max_eta_error_seconds",
+    "observed_eta_error_seconds",
+    "use_realtime",
+    "actual_route_found",
+    "deviation_reason_code",
+    "notes",
+  ].join(",");
+  const rowsByFile = {
+    "single_ride_cases.csv": "case-unclassified,station-a,station-b,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,PROVIDER_LIVE_ARRIVAL,FRESH,0,30,90,true,true,,manual live",
+    "one_transfer_cases.csv": "case-classified,station-a,station-c,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,PROVIDER_LIVE_ARRIVAL,FRESH,1,30,90,true,true,WAIT_ESTIMATE,manual live classified",
+    "two_transfer_cases.csv": "case-ok-2,station-a,station-d,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,MANUAL_OBSERVATION,FRESH,2,100,20,false,true,,manual",
+    "express_cases.csv": "case-ok-express,station-a,station-e,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,MANUAL_OBSERVATION,FRESH,0,100,20,false,true,,manual",
+    "out_of_station_transfer_cases.csv": "case-ok-out,station-a,station-f,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,MANUAL_OBSERVATION,FRESH,1,100,20,false,true,,manual",
+    "strict_step_free_cases.csv": "case-ok-strict,station-a,station-g,2026-06-30T09:00:00+09:00,WHEELCHAIR,STRICT_STEP_FREE,MANUAL_OBSERVATION,FRESH,0,100,20,false,true,,manual",
+  };
+  await Promise.all(Object.entries(rowsByFile).map(([file, row]) => (
+    writeFile(path.join(dataset, file), `${header}\n${row}\n`)
+  )));
+
+  await assert.rejects(
+    execFileAsync(process.execPath, [
+      "tools/routes/evaluate-eta-accuracy.mjs",
+      "--dataset",
+      dataset,
+      "--output",
+      output,
+    ], { cwd: root }),
+  );
+
+  const report = JSON.parse(await readFile(output, "utf8"));
+  assert.equal(report.metrics.unclassifiedEtaDeviationCount, 1);
+  assert.ok(report.failures.some((failure) => (
+    failure.caseId === "case-unclassified" && failure.type === "UNCLASSIFIED_ETA_DEVIATION"
+  )));
+  assert.ok(!report.failures.some((failure) => (
+    failure.caseId === "case-classified" && failure.type === "UNCLASSIFIED_ETA_DEVIATION"
   )));
 });
