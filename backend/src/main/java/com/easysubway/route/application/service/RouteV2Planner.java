@@ -27,20 +27,15 @@ public class RouteV2Planner {
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
 			SearchRouteCommand searchRouteCommand = command.toSearchRouteCommand();
-			if (routeSearchUseCase instanceof RouteSearchService routeSearchService) {
-				List<RouteSearchResult> itineraries = routeSearchService.searchRouteAlternatives(
-					searchRouteCommand,
-					command.alternativeCount()
-				);
-				return new RouteV2Plan(
-					itineraries,
-					statusesOf(itineraries, command.useRealtime()),
-					PLANNER_ADR
-				);
-			}
-			RouteSearchResult primary = routeSearchUseCase.searchRoute(searchRouteCommand);
-			List<RouteSearchResult> itineraries = List.of(primary);
-			return new RouteV2Plan(itineraries, statusesOf(itineraries, command.useRealtime()), PLANNER_ADR);
+			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
+				searchRouteCommand,
+				command.alternativeCount()
+			);
+			return new RouteV2Plan(
+				itineraries,
+				statusesOf(itineraries, command.useRealtime()),
+				PLANNER_ADR
+			);
 		} catch (RouteNotFoundException exception) {
 			return new RouteV2Plan(List.of(), List.of("NO_TIMETABLE_SERVICE"), PLANNER_ADR);
 		}

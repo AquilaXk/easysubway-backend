@@ -173,7 +173,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return searchRouteAlternatives(command, 1).getFirst();
 	}
 
-	List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
+	public List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
 		requireCommand(command);
 		Station origin = loadActiveStation(command.originStationId());
 		Station destination = loadActiveStation(command.destinationStationId());
