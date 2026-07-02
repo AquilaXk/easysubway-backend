@@ -51,7 +51,7 @@ test("route commercialization gate passes with production-ready reports", async 
       schemaVersion: 1,
       multiTransferSupported: false,
       outOfStationTransferSupported: false,
-      alternativeItinerariesMinObserved: 1,
+      alternativeItinerariesMinObserved: 2,
       wrongTransferCount: 0,
       wrongLineSequence: 0,
       routeNotFoundRate: 0.01,
@@ -133,6 +133,7 @@ test("route commercialization gate fails closed for fixture-only or unsafe route
       assert.ok(report.failures.includes("realtimeCoverage stale-as-fresh count exceeds 0"));
       assert.ok(report.failures.includes("route graph generated connector verified count exceeds 0"));
       assert.ok(report.failures.includes("route graph strict route not found rate exceeds 0.02"));
+      assert.ok(report.failures.includes("routing alternative itineraries below 2"));
       assert.ok(!report.failures.includes("routing D-3 blocker must be satisfied before out-of-station transfer release claim"));
       return true;
     },
@@ -246,7 +247,7 @@ test("route commercialization gate derives realtime pair minimum from coverage s
       schemaVersion: 1,
       multiTransferSupported: false,
       outOfStationTransferSupported: false,
-      alternativeItinerariesMinObserved: 1,
+      alternativeItinerariesMinObserved: 2,
       wrongTransferCount: 0,
       wrongLineSequence: 0,
       routeNotFoundRate: 0.01,
@@ -304,7 +305,7 @@ test("route commercialization gate fails on unclassified ETA deviations", async 
       schemaVersion: 1,
       multiTransferSupported: false,
       outOfStationTransferSupported: false,
-      alternativeItinerariesMinObserved: 1,
+      alternativeItinerariesMinObserved: 2,
       wrongTransferCount: 0,
       wrongLineSequence: 0,
       routeNotFoundRate: 0.01,
