@@ -124,6 +124,8 @@ function buildReport(rows) {
   const errors = [];
   const singleRideErrors = [];
   const transferErrors = [];
+  const offlinePlannedErrors = [];
+  const onlineRealtimeErrors = [];
   const quality = {
     routeNotFound: 0,
     wrongTransferCount: 0,
@@ -147,6 +149,11 @@ function buildReport(rows) {
       }
     }
     errors.push(observed);
+    if (row.use_realtime === "true") {
+      onlineRealtimeErrors.push(observed);
+    } else {
+      offlinePlannedErrors.push(observed);
+    }
     if (Number(row.expected_transfer_count) === 0) {
       singleRideErrors.push(observed);
     } else {
@@ -156,6 +163,8 @@ function buildReport(rows) {
   errors.sort((left, right) => left - right);
   singleRideErrors.sort((left, right) => left - right);
   transferErrors.sort((left, right) => left - right);
+  offlinePlannedErrors.sort((left, right) => left - right);
+  onlineRealtimeErrors.sort((left, right) => left - right);
   const coverage = {
     singleRide: rows.some((row) => row.category === "singleRide"),
     oneTransfer: rows.some((row) => row.category === "oneTransfer"),
@@ -189,6 +198,8 @@ function buildReport(rows) {
       maxErrorSeconds: errors.at(-1) ?? 0,
       singleRide: metricBlock(singleRideErrors),
       transfer: metricBlock(transferErrors),
+      offlinePlanned: metricBlock(offlinePlannedErrors),
+      onlineRealtime: metricBlock(onlineRealtimeErrors),
       routeNotFoundRate: rate(quality.routeNotFound, rows.length),
       wrongTransferCountRate: rate(quality.wrongTransferCount, rows.length),
       wrongLineSequenceRate: rate(quality.wrongLineSequence, rows.length),

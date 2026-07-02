@@ -453,6 +453,70 @@ test("route commercialization gate requires static, planned, realtime, and fallb
   );
 });
 
+test("route commercialization gate requires offline planned and online realtime metrics", async () => {
+  const fixture = await writeFixtureSet({
+    accuracy: {
+      schemaVersion: 1,
+      sampleSize: 120,
+      sampleSourceCounts: {
+        fixture: 0,
+        staticTimetable: 0,
+        realtimeProvider: 120,
+        manualObservation: 120,
+        staleRealtime: 0,
+      },
+      productionSampleSize: 120,
+      metrics: {
+        singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+        transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+        offlinePlanned: { sampleSize: 0, p50ErrorSeconds: 0, p90ErrorSeconds: 0 },
+        onlineRealtime: { sampleSize: 0, p50ErrorSeconds: 0, p90ErrorSeconds: 0 },
+      },
+      failures: [],
+    },
+    accessibility: {
+      schemaVersion: 1,
+      strictStepFreeKnownStairFalsePositiveCount: 0,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      unknownAccessibilityLabeled: true,
+    },
+    coverage: {
+      schemaVersion: 1,
+      supportedStationLinePairs: 150,
+      providerFreshnessSecondsMaxObserved: 80,
+      staleFallbackRequired: true,
+      freshness: { staleAsFreshCount: 0 },
+      mapping: { failureRate: 0 },
+    },
+    routeGraphCoverage: {
+      schemaVersion: 1,
+      generatedConnectorVerifiedAccessibilityCount: 0,
+      strictRouteNotFound: { total: 100, notFoundCount: 1, rate: 0.01, byReasonCode: {} },
+    },
+    contract: {
+      schemaVersion: 1,
+      multiTransferSupported: false,
+      outOfStationTransferSupported: false,
+      alternativeItinerariesMinObserved: 2,
+      wrongTransferCount: 0,
+      wrongLineSequence: 0,
+      routeNotFoundRate: 0.01,
+      releaseBlockersSatisfied: ["D-2", "D-3", "H-1"],
+    },
+  });
+
+  await assert.rejects(
+    execChecker(fixture),
+    (error) => {
+      const report = JSON.parse(error.stdout);
+      assert.equal(report.status, "FAIL");
+      assert.ok(report.failures.includes("routeEtaAccuracy offline PLANNED metrics must be reported"));
+      assert.ok(report.failures.includes("routeEtaAccuracy online REALTIME metrics must be reported"));
+      return true;
+    },
+  );
+});
+
 test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
   const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
 
@@ -478,9 +542,17 @@ async function writeFixtureSet(reports) {
 }
 
 function normalizeAccuracyReport(report) {
-  if (Object.hasOwn(report, "actualEtaSourceCounts")) return report;
-  return {
+  const normalized = {
     ...report,
+    metrics: {
+      offlinePlanned: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+      onlineRealtime: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
+      ...report.metrics,
+    },
+  };
+  if (Object.hasOwn(report, "actualEtaSourceCounts")) return normalized;
+  return {
+    ...normalized,
     actualEtaSourceCounts: {
       REALTIME: 0,
       PLANNED: 0,

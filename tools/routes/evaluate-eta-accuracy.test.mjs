@@ -69,6 +69,18 @@ test("ETA evaluator emits the route accuracy report contract", async (t) => {
     p90ErrorSeconds: 120,
     maxErrorSeconds: 120,
   });
+  assert.deepEqual(report.metrics.offlinePlanned, {
+    sampleSize: 60,
+    p50ErrorSeconds: 90,
+    p90ErrorSeconds: 120,
+    maxErrorSeconds: 120,
+  });
+  assert.deepEqual(report.metrics.onlineRealtime, {
+    sampleSize: 40,
+    p50ErrorSeconds: 45,
+    p90ErrorSeconds: 90,
+    maxErrorSeconds: 90,
+  });
   assert.deepEqual(report.failures, []);
   assert.equal(report.coverage.singleRide, true);
   assert.equal(report.coverage.oneTransfer, true);

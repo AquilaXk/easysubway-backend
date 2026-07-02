@@ -106,6 +106,8 @@ function validateAccuracy(gate, report, failures) {
 
   const singleRide = report.metrics?.singleRide ?? {};
   const transfer = report.metrics?.transfer ?? {};
+  if (number(report.metrics?.offlinePlanned?.sampleSize) <= 0) failures.push("routeEtaAccuracy offline PLANNED metrics must be reported");
+  if (number(report.metrics?.onlineRealtime?.sampleSize) <= 0) failures.push("routeEtaAccuracy online REALTIME metrics must be reported");
   max(singleRide.p50ErrorSeconds, gate.routeEtaAccuracy.singleRideP50ErrorSecondsMax, "singleRide P50 ETA error", failures);
   max(singleRide.p90ErrorSeconds, gate.routeEtaAccuracy.singleRideP90ErrorSecondsMax, "singleRide P90 ETA error", failures);
   max(transfer.p50ErrorSeconds, gate.routeEtaAccuracy.transferP50ErrorSecondsMax, "transfer P50 ETA error", failures);
