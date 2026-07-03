@@ -8,6 +8,7 @@ import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
+import com.easysubway.realtime.domain.RealtimeTripMapping;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
 import java.time.Clock;
@@ -121,7 +122,7 @@ class RealtimeGatewayServiceTest {
 		RealtimeQuery query = sangnoksuQuery();
 
 		service.arrivals(query);
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		clock.instant = Instant.parse("2026-06-26T08:01:31Z");
 		provider.failureCode = "PROVIDER_TIMEOUT";
 		RealtimeArrivalResult stale = service.arrivals(query);
 
@@ -165,6 +166,25 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider raw trip 표기는 canonical 값으로 변환하되 raw evidence도 보존한다")
+	void arrivalTripMappingCanonicalizesDirectionAndPreservesRawEvidence() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+
+		assertThat(result.status()).hasToString("FRESH");
+		RealtimeArrival arrival = result.arrivals().getFirst();
+		assertThat(arrival.direction()).isEqualTo("당고개 방면");
+		assertThat(arrival.destination()).isEqualTo("당고개");
+		assertThat(arrival.rawDirection()).isEqualTo("상행");
+		assertThat(arrival.rawDestination()).isEqualTo("당고개");
+	}
+
+	@Test
 	@DisplayName("quota 초과는 circuit을 열고 다음 요청에서 provider를 호출하지 않는다")
 	void quotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
@@ -183,8 +203,8 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("provider call rate limit은 cache miss 남용을 외부 provider 호출 전에 차단한다")
-	void providerRateLimitBlocksRepeatedCacheMissesBeforeProviderCall() {
+	@DisplayName("provider call rate limit은 stale cache가 있으면 stale 응답을 유지한다")
+	void providerRateLimitServesStaleCacheWhenAvailable() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
@@ -202,8 +222,8 @@ class RealtimeGatewayServiceTest {
 		RealtimeArrivalResult limited = service.arrivals(query);
 
 		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("UNAVAILABLE");
-		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(limited.status()).hasToString("STALE");
+		assertThat(limited.fallbackCode()).isEqualTo("STALE_CACHE");
 		assertThat(provider.arrivalCalls).hasValue(1);
 	}
 
@@ -233,8 +253,111 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("열차 위치 provider call rate limit도 cache miss 남용을 외부 provider 호출 전에 차단한다")
-	void trainPositionProviderRateLimitBlocksRepeatedCacheMissesBeforeProviderCall() {
+	@DisplayName("provider call rate limit 설정은 안전 상한을 넘지 않는다")
+	void providerRateLimitIsCappedAtSafeDefault() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		StubMappingPort mappingPort = new StubMappingPort();
+		for (int index = 0; index < 2; index += 1) {
+			mappingPort.add(mapping(
+				"station-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"10040004%02d".formatted(index),
+				"상록수%02d".formatted(index),
+				true,
+				false,
+				"OFFICIAL"
+			));
+		}
+		RealtimeGatewayService service = service(
+			provider,
+			clock,
+			mappingPort,
+			new RealtimeProviderControl(),
+			999
+		);
+
+		RealtimeArrivalResult result = null;
+		for (int index = 0; index < 2; index += 1) {
+			result = service.arrivals(new RealtimeQuery(
+				"station-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"상록수%02d".formatted(index),
+				null
+			));
+		}
+
+		assertThat(result.status()).hasToString("UNAVAILABLE");
+		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(provider.arrivalCalls).hasValue(1);
+	}
+
+	@Test
+	@DisplayName("provider call rate limit은 KST 일일 안전 한도도 넘지 않는다")
+	void providerRateLimitBlocksDailyOverflow() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		StubMappingPort mappingPort = new StubMappingPort();
+		for (int index = 0; index < 4; index += 1) {
+			mappingPort.add(mapping(
+				"station-day-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"10040005%02d".formatted(index),
+				"상록수일일%02d".formatted(index),
+				true,
+				false,
+				"OFFICIAL"
+			));
+		}
+		RealtimeGatewayService service = service(
+			provider,
+			clock,
+			mappingPort,
+			new RealtimeProviderControl(),
+			1,
+			2
+		);
+
+		RealtimeArrivalResult result = null;
+		List<Instant> sameKstDayInstants = List.of(
+			Instant.parse("2026-06-26T08:00:00Z"),
+			Instant.parse("2026-06-26T08:01:00Z"),
+			Instant.parse("2026-06-26T08:02:00Z")
+		);
+		for (int index = 0; index < sameKstDayInstants.size(); index += 1) {
+			clock.instant = sameKstDayInstants.get(index);
+			provider.providerReceivedAt = clock.instant.toString();
+			result = service.arrivals(new RealtimeQuery(
+				"station-day-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"상록수일일%02d".formatted(index),
+				null
+			));
+		}
+
+		assertThat(result.status()).hasToString("UNAVAILABLE");
+		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		clock.instant = Instant.parse("2026-06-26T15:00:00Z");
+		provider.providerReceivedAt = clock.instant.toString();
+		RealtimeArrivalResult nextKstDay = service.arrivals(new RealtimeQuery(
+			"station-day-03",
+			"seoul-4",
+			"1004",
+			"상록수일일03",
+			null
+		));
+
+		assertThat(nextKstDay.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(3);
+	}
+
+	@Test
+	@DisplayName("열차 위치 provider call rate limit도 stale cache가 있으면 stale 응답을 유지한다")
+	void trainPositionProviderRateLimitServesStaleCacheWhenAvailable() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
@@ -252,8 +375,8 @@ class RealtimeGatewayServiceTest {
 		RealtimeTrainPositionResult limited = service.trainPositions(query);
 
 		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("UNAVAILABLE");
-		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(limited.status()).hasToString("STALE");
+		assertThat(limited.fallbackCode()).isEqualTo("STALE_CACHE");
 		assertThat(provider.trainPositionCalls).hasValue(1);
 	}
 
@@ -553,14 +676,14 @@ class RealtimeGatewayServiceTest {
 	@Test
 	@DisplayName("provider empty 결과는 quota circuit을 열지 않는다")
 	void emptyProviderResultDoesNotOpenQuotaCircuit() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(
-			provider,
-			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC)
-		);
+		RealtimeGatewayService service = service(provider, clock);
 		provider.emptyArrivals = true;
 
 		RealtimeArrivalResult empty = service.arrivals(sangnoksuQuery());
+		clock.instant = Instant.parse("2026-06-26T08:01:00Z");
+		provider.providerReceivedAt = "2026-06-26T08:01:00Z";
 		provider.emptyArrivals = false;
 		RealtimeArrivalResult fresh = service.arrivals(sangnoksuQuery());
 
@@ -601,10 +724,11 @@ class RealtimeGatewayServiceTest {
 		RealtimeGatewayService service = service(provider, clock);
 
 		service.arrivals(sangnoksuQuery());
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		clock.instant = Instant.parse("2026-06-26T08:01:31Z");
 		provider.failureCode = "PROVIDER_TIMEOUT";
 		service.arrivals(sangnoksuQuery());
 		service.arrivals(new RealtimeQuery("station-outside", "other", null, "외부역", null));
+		clock.instant = Instant.parse("2026-06-26T08:02:00Z");
 		provider.failureCode = "PROVIDER_QUOTA_EXCEEDED";
 		service.trainPositions(line4Query());
 
@@ -788,6 +912,7 @@ class RealtimeGatewayServiceTest {
 				      "trainLineNm": "오이도행 - 중앙방면",
 				      "updnLine": "하행",
 				      "btrainNo": "4001",
+				      "btrainSttus": "급행",
 				      "barvlDt": "180",
 				      "arvlMsg2": "3분 후"
 				    }
@@ -799,6 +924,7 @@ class RealtimeGatewayServiceTest {
 
 		assertThat(arrivals).hasSize(1);
 		assertThat(arrivals.get(0).destination()).isEqualTo("오이도행 - 중앙방면");
+		assertThat(arrivals.get(0).servicePattern()).isEqualTo("급행");
 	}
 
 	private RealtimeQuery sangnoksuQuery() {
@@ -836,6 +962,24 @@ class RealtimeGatewayServiceTest {
 		return new RealtimeGatewayService(provider, clock, mappingPort, control, providerCallLimitPerMinute);
 	}
 
+	private RealtimeGatewayService service(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl control,
+		int providerCallLimitPerMinute,
+		int providerCallLimitPerDay
+	) {
+		return new RealtimeGatewayService(
+			provider,
+			clock,
+			mappingPort,
+			control,
+			providerCallLimitPerMinute,
+			providerCallLimitPerDay
+		);
+	}
+
 	private RealtimeMapping mapping(
 		String stationId,
 		String lineId,
@@ -863,6 +1007,7 @@ class RealtimeGatewayServiceTest {
 
 	private static final class StubMappingPort implements RealtimeMappingPort {
 		private final Map<String, RealtimeMapping> mappings = new HashMap<>();
+		private final Map<String, RealtimeTripMapping> tripMappings = new HashMap<>();
 
 		private void add(RealtimeMapping mapping) {
 			mappings.put(arrivalKey(mapping.stationId(), mapping.lineId()), mapping);
@@ -878,6 +1023,19 @@ class RealtimeGatewayServiceTest {
 		@Override
 		public Optional<RealtimeMapping> findTrainPositionMapping(String providerId, RealtimeQuery query) {
 			return Optional.ofNullable(mappings.get(lineKey(query.lineId())))
+				.filter((mapping) -> providerId.equals(mapping.providerId()));
+		}
+
+		@Override
+		public Optional<RealtimeTripMapping> findTripMapping(
+			String providerId,
+			String lineId,
+			String providerLineId,
+			String rawDirection,
+			String rawDestination,
+			String rawServicePattern
+		) {
+			return Optional.ofNullable(tripMappings.get("%s:%s:%s".formatted(lineId, rawDirection, rawDestination)))
 				.filter((mapping) -> providerId.equals(mapping.providerId()));
 		}
 

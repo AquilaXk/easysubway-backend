@@ -9,6 +9,7 @@ import com.easysubway.route.application.port.out.LoadRouteSearchPort;
 import com.easysubway.route.application.port.out.RealtimeArrivalResolver;
 import com.easysubway.route.application.port.out.SaveRouteFeedbackPort;
 import com.easysubway.route.application.port.out.SaveRouteSearchPort;
+import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.InternalRouteResult;
@@ -74,6 +75,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private static final int MINUTES_PER_STATION = 2;
 	private static final int METERS_PER_STATION = 900;
 	private static final int ACCESSIBILITY_DATA_FRESH_DAYS = 30;
+	private static final String MATCHED_REALTIME_REASON = "MATCHED_REALTIME";
 
 	private final LoadRouteSearchPort loadRouteSearchPort;
 	private final SaveRouteSearchPort saveRouteSearchPort;
@@ -173,7 +175,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return searchRouteAlternatives(command, 1).getFirst();
 	}
 
-	List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
+	public List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
 		requireCommand(command);
 		Station origin = loadActiveStation(command.originStationId());
 		Station destination = loadActiveStation(command.destinationStationId());
@@ -364,7 +366,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case REALTIME -> EtaConfidence.HIGH;
 			case MIXED -> EtaConfidence.MEDIUM;
 			case PLANNED -> EtaConfidence.MEDIUM;
-			case FALLBACK -> EtaConfidence.LOW;
+			case STATIC_BACKEND_ESTIMATE, FALLBACK -> EtaConfidence.LOW;
 		};
 	}
 
@@ -375,7 +377,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case REROUTE_REQUIRED -> "경로를 다시 찾아야 합니다";
 			case UNCHANGED -> routeSearch.etaSource() == EtaSource.PLANNED
 				? "계획 시간 기준"
-				: "기존 안내 유지";
+				: routeSearch.etaSource() == EtaSource.STATIC_BACKEND_ESTIMATE
+					? "상수 추정 기준"
+					: "기존 안내 유지";
 		};
 	}
 
@@ -976,23 +980,23 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(edgeFilter)
 			.collect(Collectors.groupingBy(RouteEdge::fromNodeId));
 		PriorityQueue<InternalRouteCandidate> queue = new PriorityQueue<>(
-			Comparator.comparingInt(InternalRouteCandidate::cost)
+			Comparator.comparing(InternalRouteCandidate::cost)
 		);
-		Map<String, Integer> bestCostByNodeId = new HashMap<>();
-		queue.add(new InternalRouteCandidate(fromNodeId, 0, List.of()));
-		bestCostByNodeId.put(fromNodeId, 0);
+		Map<String, InternalRouteCost> bestCostByNodeId = new HashMap<>();
+		queue.add(new InternalRouteCandidate(fromNodeId, InternalRouteCost.ZERO, List.of()));
+		bestCostByNodeId.put(fromNodeId, InternalRouteCost.ZERO);
 
 		while (!queue.isEmpty()) {
 			InternalRouteCandidate current = queue.poll();
-			if (current.cost() > bestCostByNodeId.getOrDefault(current.nodeId(), Integer.MAX_VALUE)) {
+			if (current.cost().compareTo(bestCostByNodeId.getOrDefault(current.nodeId(), InternalRouteCost.MAX)) > 0) {
 				continue;
 			}
 			if (current.nodeId().equals(toNodeId)) {
 				return Optional.of(current.path());
 			}
 			for (RouteEdge edge : edgesByFromNode.getOrDefault(current.nodeId(), List.of())) {
-				int nextCost = current.cost() + internalEdgeCost(edge);
-				if (nextCost >= bestCostByNodeId.getOrDefault(edge.toNodeId(), Integer.MAX_VALUE)) {
+				InternalRouteCost nextCost = current.cost().plus(internalEdgeCost(edge));
+				if (nextCost.compareTo(bestCostByNodeId.getOrDefault(edge.toNodeId(), InternalRouteCost.MAX)) >= 0) {
 					continue;
 				}
 				List<RouteEdge> nextPath = new ArrayList<>(current.path());
@@ -1008,14 +1012,16 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return findInternalRoutePath(edges, fromNodeId, toNodeId, edge -> true).isPresent();
 	}
 
-	private int internalEdgeCost(RouteEdge edge) {
+	private InternalRouteCost internalEdgeCost(RouteEdge edge) {
 		int stairPenalty = edge.hasStairs() ? 120 : 0;
 		int elevatorPenalty = edge.requiresElevator() ? 20 : 0;
 		int escalatorPenalty = edge.requiresEscalator() ? 35 : 0;
 		int slopePenalty = edge.slopeLevel() * 8;
 		int widthPenalty = (6 - edge.widthLevel()) * 4;
-		return edge.distanceMeters() + edge.estimatedSeconds() + stairPenalty + elevatorPenalty + escalatorPenalty
-			+ slopePenalty + widthPenalty;
+		return new InternalRouteCost(
+			edge.estimatedSeconds(),
+			edge.distanceMeters() + stairPenalty + elevatorPenalty + escalatorPenalty + slopePenalty + widthPenalty
+		);
 	}
 
 	private List<InternalRouteStep> internalRouteSteps(List<RouteEdge> path, Map<String, RouteNode> nodesById) {
@@ -1129,18 +1135,19 @@ public class RouteSearchService implements RouteSearchUseCase {
 			return plannedSteps;
 		}
 		List<RouteStep> realtimeSteps = new ArrayList<>(plannedSteps);
-		int elapsedMinutes = 0;
+		int elapsedSeconds = 0;
 		for (int index = 0; index < realtimeSteps.size(); index++) {
 			RouteStep step = realtimeSteps.get(index);
 			if (!"ride".equals(step.stepType())) {
-				elapsedMinutes += Math.max(0, step.estimatedMinutes());
+				elapsedSeconds += durationSeconds(step);
 				continue;
 			}
-			Instant readyAt = command.departureTime().toInstant().plusSeconds(elapsedMinutes * 60L);
+			int boardingSlackSeconds = boardingSlackSeconds(command.mobilityType());
+			Instant readyAt = command.departureTime().toInstant().plusSeconds(elapsedSeconds + boardingSlackSeconds);
 			RealtimeArrivalResolver.Resolution resolution = realtimeArrivalResolver.resolve(realtimeQuery(step, readyAt));
 			RealtimeEtaOverlay.Result overlay = realtimeEtaOverlay.overlay(
 				readyAt,
-				Math.max(0, step.estimatedMinutes()) * 60,
+				durationSeconds(step),
 				directionFor(step),
 				resolution.status(),
 				resolution.fallbackCode(),
@@ -1149,8 +1156,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 				resolution.candidates().size(),
 				resolution.candidates()
 			);
-			realtimeSteps.set(index, withEtaOverlay(step, overlay));
-			break;
+			RouteStep realtimeStep = withEtaOverlay(step, overlay);
+			realtimeSteps.set(index, realtimeStep);
+			elapsedSeconds += boardingSlackSeconds + realtimeWaitSeconds(overlay) + durationSeconds(step);
 		}
 		return List.copyOf(realtimeSteps);
 	}
@@ -1179,15 +1187,49 @@ public class RouteSearchService implements RouteSearchUseCase {
 			step.lineName(),
 			step.fromStationId(),
 			step.toStationId(),
-			Math.max(1, (overlay.waitSeconds() + 59) / 60),
+			step.estimatedMinutes() + ((realtimeWaitSeconds(overlay) + 59) / 60),
 			step.distanceMeters(),
 			step.includesStairs(),
 			step.stairAccessState(),
 			step.requiresAccessibilityCheck(),
 			overlay.etaSource().name(),
 			step.distanceSource(),
-			overlay.confidence().name()
+			overlay.confidence().name(),
+			reasonCodesFor(overlay),
+			overlay.providerSnapshotId(),
+			formatInstant(overlay.providerObservedAt()),
+			formatInstant(overlay.gatewayReceivedAt()),
+			formatInstant(Instant.now(clock))
 		);
+	}
+
+	private List<String> reasonCodesFor(RealtimeEtaOverlay.Result overlay) {
+		if (overlay.etaSource() != EtaSource.REALTIME) {
+			return overlay.warningCodes();
+		}
+		List<String> reasonCodes = new ArrayList<>();
+		reasonCodes.add(MATCHED_REALTIME_REASON);
+		reasonCodes.addAll(overlay.warningCodes());
+		return List.copyOf(reasonCodes);
+	}
+
+	private String formatInstant(Instant instant) {
+		return instant == null ? null : instant.toString();
+	}
+
+	private int durationSeconds(RouteStep step) {
+		return Math.max(0, step.estimatedMinutes()) * 60;
+	}
+
+	private int realtimeWaitSeconds(RealtimeEtaOverlay.Result overlay) {
+		if (overlay.etaSource() != EtaSource.REALTIME) {
+			return 0;
+		}
+		return Math.max(0, overlay.waitSeconds());
+	}
+
+	private int boardingSlackSeconds(MobilityType mobilityType) {
+		return BoardingSlackPolicy.secondsFor(mobilityType);
 	}
 
 	private String directionFor(RouteStep step) {
@@ -1484,9 +1526,34 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private record InternalRouteCandidate(
 		String nodeId,
-		int cost,
+		InternalRouteCost cost,
 		List<RouteEdge> path
 	) {
+	}
+
+	private record InternalRouteCost(
+		int timeSeconds,
+		int burdenScore
+	) implements Comparable<InternalRouteCost> {
+
+		private static final InternalRouteCost ZERO = new InternalRouteCost(0, 0);
+		private static final InternalRouteCost MAX = new InternalRouteCost(Integer.MAX_VALUE, Integer.MAX_VALUE);
+
+		InternalRouteCost plus(InternalRouteCost other) {
+			return new InternalRouteCost(
+				Math.addExact(timeSeconds, other.timeSeconds),
+				Math.addExact(burdenScore, other.burdenScore)
+			);
+		}
+
+		@Override
+		public int compareTo(InternalRouteCost other) {
+			int timeComparison = Integer.compare(timeSeconds, other.timeSeconds);
+			if (timeComparison != 0) {
+				return timeComparison;
+			}
+			return Integer.compare(burdenScore, other.burdenScore);
+		}
 	}
 
 	private record DirectLine(

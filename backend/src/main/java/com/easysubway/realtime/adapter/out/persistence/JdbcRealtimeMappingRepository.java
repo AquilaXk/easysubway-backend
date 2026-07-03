@@ -3,6 +3,7 @@ package com.easysubway.realtime.adapter.out.persistence;
 import com.easysubway.realtime.application.RealtimeQuery;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.domain.RealtimeMapping;
+import com.easysubway.realtime.domain.RealtimeTripMapping;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.Optional;
@@ -125,6 +126,60 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 		}
 	}
 
+	@Override
+	public Optional<RealtimeTripMapping> findTripMapping(
+		String providerId,
+		String lineId,
+		String providerLineId,
+		String rawDirection,
+		String rawDestination,
+		String rawServicePattern
+	) {
+		return jdbcTemplate.query(
+			"""
+				SELECT provider_id,
+					line_id,
+					provider_line_id,
+					raw_direction,
+					canonical_direction,
+					raw_destination,
+					canonical_destination,
+					raw_service_pattern,
+					canonical_service_pattern,
+					mapping_confidence,
+					cache_version
+				FROM realtime_provider_trip_mappings
+				WHERE provider_id = ?
+					AND (? IS NULL OR ? = '' OR line_id = ? OR line_id LIKE CONCAT('%-', ?))
+					AND (? IS NULL OR ? = '' OR provider_line_id = ?)
+					AND (raw_direction = ? OR raw_direction = '')
+					AND (raw_destination = ? OR raw_destination = '')
+					AND (raw_service_pattern = ? OR raw_service_pattern = '')
+					AND mapping_confidence IN ('OFFICIAL', 'MANUAL')
+					AND (valid_from IS NULL OR valid_from <= CURRENT_TIMESTAMP)
+					AND (valid_until IS NULL OR valid_until > CURRENT_TIMESTAMP)
+				ORDER BY
+					(CASE WHEN raw_direction = '' THEN 0 ELSE 1 END
+					 + CASE WHEN raw_destination = '' THEN 0 ELSE 1 END
+					 + CASE WHEN raw_service_pattern = '' THEN 0 ELSE 1 END) DESC,
+					cache_version DESC
+				LIMIT 1
+				""",
+			this::mapTripMapping,
+			providerId,
+			lineId,
+			lineId,
+			lineId,
+			lineId,
+			providerLineId,
+			providerLineId,
+			providerLineId,
+			rawDirection,
+			rawDestination,
+			rawServicePattern
+		).stream().findFirst();
+	}
+
 	private RealtimeMapping mapMapping(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new RealtimeMapping(
 			resultSet.getString("provider_id"),
@@ -136,6 +191,22 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 			resultSet.getString("provider_line_name"),
 			resultSet.getBoolean("supports_arrivals"),
 			resultSet.getBoolean("supports_train_positions"),
+			resultSet.getString("mapping_confidence"),
+			resultSet.getLong("cache_version")
+		);
+	}
+
+	private RealtimeTripMapping mapTripMapping(ResultSet resultSet, int rowNumber) throws SQLException {
+		return new RealtimeTripMapping(
+			resultSet.getString("provider_id"),
+			resultSet.getString("line_id"),
+			resultSet.getString("provider_line_id"),
+			resultSet.getString("raw_direction"),
+			resultSet.getString("canonical_direction"),
+			resultSet.getString("raw_destination"),
+			resultSet.getString("canonical_destination"),
+			resultSet.getString("raw_service_pattern"),
+			resultSet.getString("canonical_service_pattern"),
 			resultSet.getString("mapping_confidence"),
 			resultSet.getLong("cache_version")
 		);
