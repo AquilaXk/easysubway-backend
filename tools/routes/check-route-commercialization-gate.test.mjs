@@ -25,6 +25,8 @@ test("route commercialization gate passes with production-ready reports", async 
       metrics: {
         singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
         transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+        offlinePlanned: { sampleSize: 100, p50ErrorSeconds: 50, p90ErrorSeconds: 120 },
+        onlineRealtime: { sampleSize: 120, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
       },
       failures: [],
     },
@@ -82,6 +84,8 @@ test("route commercialization gate fails closed when strict step-free false posi
       metrics: {
         singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
         transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+        offlinePlanned: { sampleSize: 100, p50ErrorSeconds: 50, p90ErrorSeconds: 120 },
+        onlineRealtime: { sampleSize: 120, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
       },
       failures: [],
     },
@@ -215,6 +219,8 @@ test("route commercialization gate keeps legacy production sample fallback", asy
       metrics: {
         singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
         transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+        offlinePlanned: { sampleSize: 100, p50ErrorSeconds: 50, p90ErrorSeconds: 120 },
+        onlineRealtime: { sampleSize: 120, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
       },
       failures: [],
     },
@@ -277,6 +283,8 @@ test("route commercialization gate derives realtime pair minimum from coverage s
       metrics: {
         singleRide: { sampleSize: 60, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
         transfer: { sampleSize: 60, p50ErrorSeconds: 90, p90ErrorSeconds: 240 },
+        offlinePlanned: { sampleSize: 100, p50ErrorSeconds: 50, p90ErrorSeconds: 120 },
+        onlineRealtime: { sampleSize: 120, p50ErrorSeconds: 45, p90ErrorSeconds: 100 },
       },
       failures: [],
     },
@@ -570,8 +578,8 @@ test("route commercialization gate requires offline planned and online realtime 
     (error) => {
       const report = JSON.parse(error.stdout);
       assert.equal(report.status, "FAIL");
-      assert.ok(report.failures.includes("routeEtaAccuracy offline PLANNED metrics must be reported"));
-      assert.ok(report.failures.includes("routeEtaAccuracy online REALTIME metrics must be reported"));
+      assert.ok(report.failures.includes("routeEtaAccuracy offline PLANNED sampleSize is below 100"));
+      assert.ok(report.failures.includes("routeEtaAccuracy online REALTIME sampleSize is below 100"));
       return true;
     },
   );
