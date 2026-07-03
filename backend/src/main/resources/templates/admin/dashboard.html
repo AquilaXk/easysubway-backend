@@ -34,7 +34,7 @@
 		<h2>데이터팩 출시 준비</h2>
 		<p class="summary">
 			<strong th:text="${datapackReleaseSummary.candidateId}">candidate-id</strong>
-			<span th:replace="~{admin/fragments/shell :: status(${datapackReleaseSummary.status}, ${datapackReleaseSummary.status == 'PASS' ? 'good' : (datapackReleaseSummary.status == 'FAIL' ? 'bad' : 'warn')})}">FAIL</span>
+			<span th:replace="~{admin/fragments/shell :: status(${datapackReleaseSummary.status}, ${datapackReleaseSummary.status == 'READY' || datapackReleaseSummary.status == 'PASS' ? 'good' : (datapackReleaseSummary.status == 'FAIL' ? 'bad' : 'warn')})}">FAIL</span>
 		</p>
 		<p class="summary" th:text="${datapackReleaseSummary.productionPromoteReason()}">production promote 차단: blocker 0건</p>
 		<ul class="blocker-summary">
