@@ -90,6 +90,7 @@ function validateGate(gate) {
 function validateAccuracy(gate, report, failures) {
   if (report.schemaVersion !== 1) failures.push("route accuracy report schemaVersion must be 1");
   if (Array.isArray(report.failures) && report.failures.length > 0) failures.push("route accuracy report contains failures");
+  validateEtaSourceCounts(gate, report, failures);
 
   const sampleSizeMin = gate.routeEtaAccuracy.sampleSizeMin;
   const sources = report.sampleSourceCounts ?? {};
@@ -105,6 +106,12 @@ function validateAccuracy(gate, report, failures) {
 
   const singleRide = report.metrics?.singleRide ?? {};
   const transfer = report.metrics?.transfer ?? {};
+  if (number(report.metrics?.offlinePlanned?.sampleSize) < sampleSizeMin) {
+    failures.push(`routeEtaAccuracy offline PLANNED sampleSize is below ${sampleSizeMin}`);
+  }
+  if (number(report.metrics?.onlineRealtime?.sampleSize) < sampleSizeMin) {
+    failures.push(`routeEtaAccuracy online REALTIME sampleSize is below ${sampleSizeMin}`);
+  }
   max(singleRide.p50ErrorSeconds, gate.routeEtaAccuracy.singleRideP50ErrorSecondsMax, "singleRide P50 ETA error", failures);
   max(singleRide.p90ErrorSeconds, gate.routeEtaAccuracy.singleRideP90ErrorSecondsMax, "singleRide P90 ETA error", failures);
   max(transfer.p50ErrorSeconds, gate.routeEtaAccuracy.transferP50ErrorSecondsMax, "transfer P50 ETA error", failures);
@@ -112,11 +119,54 @@ function validateAccuracy(gate, report, failures) {
   if (number(report.metrics?.unclassifiedEtaDeviationCount) > 0) {
     failures.push("routeEtaAccuracy unclassified ETA deviation count exceeds 0");
   }
+  if (gate.evidence?.runtimeTraceabilityRequired) {
+    validateRuntimeTraceability(report, failures);
+  }
+}
+
+function validateRuntimeTraceability(report, failures) {
+  const traceability = report.runtimeTraceability;
+  if (!traceability || typeof traceability !== "object") {
+    failures.push("routeEtaAccuracy runtime traceability must be reported");
+    return;
+  }
+  if (number(traceability.productionRowCount) !== number(report.productionSampleSize)) {
+    failures.push("routeEtaAccuracy runtime traceability production row count must match production sampleSize");
+  }
+  if (number(traceability.missingRequiredFieldCount) > 0) {
+    failures.push("routeEtaAccuracy runtime traceability required fields missing");
+  }
+  if (number(traceability.realtimeAnchorMissingCount) > 0) {
+    failures.push("routeEtaAccuracy realtime runtime anchor fields missing");
+  }
+  if (number(traceability.stratificationMissingCount) > 0) {
+    failures.push("routeEtaAccuracy runtime stratification fields missing");
+  }
+  if (number(traceability.unclassifiedBudgetExceededCount) > 0) {
+    failures.push("routeEtaAccuracy runtime budget exceeded rows must include deviation reason code");
+  }
+}
+
+function validateEtaSourceCounts(gate, report, failures) {
+  if (!gate.etaSourceIntegrity) return;
+  const counts = report.actualEtaSourceCounts;
+  if (!counts || typeof counts !== "object") {
+    failures.push("routeEtaAccuracy actual ETA source counts must be reported");
+    return;
+  }
+  for (const source of ["REALTIME", "PLANNED", "STATIC_BACKEND_ESTIMATE", "STATIC_LOCAL", "FALLBACK"]) {
+    if (!Number.isFinite(Number(counts[source]))) {
+      failures.push(`routeEtaAccuracy actual ETA source count missing: ${source}`);
+    }
+  }
 }
 
 function validateAccessibility(gate, report, failures) {
   if (report.schemaVersion !== 1) failures.push("accessibility report schemaVersion must be 1");
-  if (number(report.strictStepFreeKnownStairFalsePositiveCount) > gate.accessibility.strictStepFreeKnownStairFalsePositiveAllowed) {
+  const strictStepFreeFalsePositiveCount = report.strictStepFreeKnownStairFalsePositiveCount;
+  if (strictStepFreeFalsePositiveCount === null || !Number.isFinite(Number(strictStepFreeFalsePositiveCount))) {
+    failures.push("accessibility strict step-free false positive count must be reported");
+  } else if (number(strictStepFreeFalsePositiveCount) > gate.accessibility.strictStepFreeKnownStairFalsePositiveAllowed) {
     failures.push("accessibility strict step-free false positive count exceeds 0");
   }
   if (!gate.accessibility.generatedConnectorAsVerifiedAllowed && number(report.generatedConnectorVerifiedAccessibilityCount) > 0) {
@@ -129,13 +179,59 @@ function validateAccessibility(gate, report, failures) {
 
 function validateCoverage(gate, report, failures) {
   if (report.schemaVersion !== 1) failures.push("coverage report schemaVersion must be 1");
-  if (number(report.supportedStationLinePairs) < gate.realtimeCoverage.supportedStationLinePairsMin) {
-    failures.push(`realtimeCoverage supported station-line pairs below ${gate.realtimeCoverage.supportedStationLinePairsMin}`);
+  const supportedStationLinePairsMin = realtimeSupportedStationLinePairsMin(gate, report);
+  if (number(report.supportedStationLinePairs) < supportedStationLinePairsMin) {
+    failures.push(`realtimeCoverage supported station-line pairs below ${supportedStationLinePairsMin}`);
   }
   max(report.providerFreshnessSecondsMaxObserved, gate.realtimeCoverage.providerFreshnessSecondsMax, "realtimeCoverage provider freshness seconds", failures);
   if (gate.realtimeCoverage.staleFallbackRequired && report.staleFallbackRequired !== true) {
     failures.push("realtimeCoverage stale fallback must be required");
   }
+  if (number(report.freshness?.staleAsFreshCount) > 0) {
+    failures.push("realtimeCoverage stale-as-fresh count exceeds 0");
+  }
+  if (!Number.isFinite(Number(report.freshness?.staleCount))) {
+    failures.push("realtimeCoverage stale count must be reported");
+  }
+  if (!Number.isFinite(Number(report.mapping?.failureRate))) {
+    failures.push("realtimeCoverage mapping failure rate must be reported");
+  }
+  if (number(report.mapping?.failedRows) > 0 && objectCount(report.mapping?.failuresByReason) <= 0) {
+    failures.push("realtimeCoverage mapping failures must include reason codes");
+  }
+  if (number(report.mapping?.failuresByReason?.UNKNOWN) > 0) {
+    failures.push("realtimeCoverage mapping failures must not use UNKNOWN reason code");
+  }
+  validateCoverageBreakdown(report.byProvider, "providerId", "provider", failures);
+  validateCoverageBreakdown(report.byRegion, "region", "region", failures);
+}
+
+function validateCoverageBreakdown(rows, key, label, failures) {
+  if (!Array.isArray(rows) || rows.length === 0) {
+    failures.push(`realtimeCoverage ${label} breakdown must be reported`);
+    return;
+  }
+  for (const row of rows) {
+    if (typeof row?.[key] !== "string" || row[key].trim() === "") {
+      failures.push(`realtimeCoverage ${label} breakdown key must be reported`);
+    }
+    for (const metric of ["supportedStationLinePairs", "mappingFailedRows", "staleCount"]) {
+      if (!Number.isFinite(Number(row?.[metric]))) {
+        failures.push(`realtimeCoverage ${label} breakdown ${metric} must be reported`);
+      }
+    }
+    if (number(row?.mappingFailedRows) > 0 && objectCount(row?.mappingFailuresByReason) <= 0) {
+      failures.push(`realtimeCoverage ${label} mapping failures must include reason codes`);
+    }
+    if (number(row?.mappingFailuresByReason?.UNKNOWN) > 0) {
+      failures.push(`realtimeCoverage ${label} mapping failures must not use UNKNOWN reason code`);
+    }
+  }
+}
+
+function realtimeSupportedStationLinePairsMin(gate, report) {
+  const scopedMin = number(report.scope?.supportedStationLinePairsMin);
+  return scopedMin > 0 ? scopedMin : gate.realtimeCoverage.supportedStationLinePairsMin;
 }
 
 function validateRouteGraphCoverage(gate, report, failures) {
@@ -157,6 +253,12 @@ function validateContract(gate, report, failures) {
   if (number(report.wrongLineSequence) > gate.routeQuality.wrongLineSequenceAllowed) failures.push("routeQuality wrong line sequence exceeds 0");
   max(report.routeNotFoundRate, gate.routeQuality.routeNotFoundRateMax, "routeQuality route not found rate", failures);
   if (gate.routing.outOfStationTransferSupported) {
+    if (report.outOfStationTransferAllowlistSource !== gate.routing.outOfStationTransferAllowlistSource) {
+      failures.push("routing out-of-station transfer allowlist source mismatch");
+    }
+    if (number(report.outOfStationTransferAllowlistPairCount) < 1) {
+      failures.push("routing out-of-station transfer allowlist must contain at least one pair");
+    }
     const satisfied = new Set(report.releaseBlockersSatisfied ?? []);
     for (const blocker of gate.outOfStationTransferReleaseBlockers) {
       if (!satisfied.has(blocker)) failures.push(`routing ${blocker} blocker must be satisfied before out-of-station transfer release claim`);
@@ -170,4 +272,9 @@ function max(actual, limit, label, failures) {
 
 function number(value) {
   return Number.isFinite(Number(value)) ? Number(value) : 0;
+}
+
+function objectCount(value) {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return 0;
+  return Object.values(value).reduce((sum, count) => sum + number(count), 0);
 }

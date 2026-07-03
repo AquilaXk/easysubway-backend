@@ -30,6 +30,29 @@ const referenceSources = [
   "COMPETING_APP_COMPARISON",
   "FIXTURE_EXPECTED",
 ];
+const runtimeTraceabilityRequiredFields = [
+  "route_search_id",
+  "itinerary_id",
+  "leg_index",
+  "actual_eta_source",
+  "reference_confidence",
+  "reason_codes",
+  "predicted_arrival_at",
+  "actual_arrival_at",
+  "observed_eta_error_seconds",
+];
+const realtimeAnchorRequiredFields = [
+  "realtime_provider_id",
+  "provider_observed_at",
+  "gateway_received_at",
+  "served_at",
+];
+const stratificationRequiredFields = [
+  "region",
+  "operator_id",
+  "time_period",
+  "actual_transfer_count",
+];
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -124,6 +147,8 @@ function buildReport(rows) {
   const errors = [];
   const singleRideErrors = [];
   const transferErrors = [];
+  const offlinePlannedErrors = [];
+  const onlineRealtimeErrors = [];
   const quality = {
     routeNotFound: 0,
     wrongTransferCount: 0,
@@ -147,6 +172,11 @@ function buildReport(rows) {
       }
     }
     errors.push(observed);
+    if (row.use_realtime === "true") {
+      onlineRealtimeErrors.push(observed);
+    } else {
+      offlinePlannedErrors.push(observed);
+    }
     if (Number(row.expected_transfer_count) === 0) {
       singleRideErrors.push(observed);
     } else {
@@ -156,6 +186,8 @@ function buildReport(rows) {
   errors.sort((left, right) => left - right);
   singleRideErrors.sort((left, right) => left - right);
   transferErrors.sort((left, right) => left - right);
+  offlinePlannedErrors.sort((left, right) => left - right);
+  onlineRealtimeErrors.sort((left, right) => left - right);
   const coverage = {
     singleRide: rows.some((row) => row.category === "singleRide"),
     oneTransfer: rows.some((row) => row.category === "oneTransfer"),
@@ -170,6 +202,16 @@ function buildReport(rows) {
     if (!covered) failures.push(`missing required coverage: ${key}`);
   }
   if (rows.length < 100) failures.push("golden OD sampleSize must be at least 100");
+  const runtimeTraceability = buildRuntimeTraceability(rows, quality);
+  if (runtimeTraceability.missingRequiredFieldCount > 0) {
+    failures.push("runtime traceability required fields missing");
+  }
+  if (runtimeTraceability.realtimeAnchorMissingCount > 0) {
+    failures.push("runtime traceability realtime anchor fields missing");
+  }
+  if (runtimeTraceability.stratificationMissingCount > 0) {
+    failures.push("runtime traceability stratification fields missing");
+  }
 
   return {
     schemaVersion: 1,
@@ -177,8 +219,11 @@ function buildReport(rows) {
     sampleSize: rows.length,
     sampleSourceCounts: countSampleSources(rows),
     referenceSourceCounts: countReferenceSources(rows),
+    actualEtaSourceCounts: countEtaSources(rows, "actual_eta_source"),
+    expectedEtaSourceCounts: countEtaSources(rows, "expected_eta_source"),
     productionSampleSize: rows.filter(isProductionSample).length,
     nonProductionSampleSize: rows.filter((row) => !isProductionSample(row)).length,
+    runtimeTraceability,
     coverage,
     metrics: {
       sampleSize: errors.length,
@@ -187,6 +232,8 @@ function buildReport(rows) {
       maxErrorSeconds: errors.at(-1) ?? 0,
       singleRide: metricBlock(singleRideErrors),
       transfer: metricBlock(transferErrors),
+      offlinePlanned: metricBlock(offlinePlannedErrors),
+      onlineRealtime: metricBlock(onlineRealtimeErrors),
       routeNotFoundRate: rate(quality.routeNotFound, rows.length),
       wrongTransferCountRate: rate(quality.wrongTransferCount, rows.length),
       wrongLineSequenceRate: rate(quality.wrongLineSequence, rows.length),
@@ -198,6 +245,57 @@ function buildReport(rows) {
     },
     failures,
   };
+}
+
+function buildRuntimeTraceability(rows, quality) {
+  const productionRows = rows.filter(isProductionSample);
+  const requiredFieldMissing = countMissingFields(productionRows, runtimeTraceabilityRequiredFields);
+  const realtimeRows = productionRows.filter((row) => row.actual_eta_source === "REALTIME" || row.use_realtime === "true");
+  const realtimeAnchorMissing = countMissingFields(realtimeRows, realtimeAnchorRequiredFields);
+  const stratificationMissing = countMissingFields(productionRows, stratificationRequiredFields);
+  const missingRequiredFieldCount = totalMissing(requiredFieldMissing);
+  const realtimeAnchorMissingCount = totalMissing(realtimeAnchorMissing);
+  const stratificationMissingCount = totalMissing(stratificationMissing);
+  return {
+    requiredFields: runtimeTraceabilityRequiredFields,
+    realtimeAnchorRequiredFields,
+    stratificationRequiredFields,
+    productionRowCount: productionRows.length,
+    tracedProductionRowCount: productionRows.filter((row) => (
+      hasAllFields(row, runtimeTraceabilityRequiredFields)
+        && (!isRealtimeTraceRow(row) || hasAllFields(row, realtimeAnchorRequiredFields))
+        && hasAllFields(row, stratificationRequiredFields)
+    )).length,
+    missingRequiredFieldsByName: requiredFieldMissing,
+    missingRequiredFieldCount,
+    realtimeAnchorMissingByName: realtimeAnchorMissing,
+    realtimeAnchorMissingCount,
+    stratificationMissingByName: stratificationMissing,
+    stratificationMissingCount,
+    unclassifiedBudgetExceededCount: quality.unclassifiedEtaDeviation,
+  };
+}
+
+function countMissingFields(rows, fields) {
+  const counts = Object.fromEntries(fields.map((field) => [field, 0]));
+  for (const row of rows) {
+    for (const field of fields) {
+      if (!hasValue(row[field])) counts[field] += 1;
+    }
+  }
+  return counts;
+}
+
+function totalMissing(counts) {
+  return Object.values(counts).reduce((total, count) => total + count, 0);
+}
+
+function hasAllFields(row, fields) {
+  return fields.every((field) => hasValue(row[field]));
+}
+
+function isRealtimeTraceRow(row) {
+  return row.actual_eta_source === "REALTIME" || row.use_realtime === "true";
 }
 
 function countSampleSources(rows) {
@@ -229,6 +327,20 @@ function countReferenceSources(rows) {
   const counts = Object.fromEntries(referenceSources.map((source) => [source, 0]));
   for (const row of rows) {
     counts[referenceSource(row)] += 1;
+  }
+  return counts;
+}
+
+function countEtaSources(rows, key) {
+  const counts = {
+    REALTIME: 0,
+    PLANNED: 0,
+    STATIC_BACKEND_ESTIMATE: 0,
+    STATIC_LOCAL: 0,
+    FALLBACK: 0,
+  };
+  for (const row of rows) {
+    if (Object.hasOwn(counts, row[key])) counts[row[key]] += 1;
   }
   return counts;
 }
