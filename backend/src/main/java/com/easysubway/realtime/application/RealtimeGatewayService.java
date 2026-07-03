@@ -22,6 +22,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicLong;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -31,7 +32,10 @@ public class RealtimeGatewayService {
 	private static final Duration STALE_TTL = Duration.ofSeconds(120);
 	private static final Duration PROVIDER_FRESHNESS_TTL = Duration.ofSeconds(90);
 	private static final Duration QUOTA_CIRCUIT_OPEN = Duration.ofSeconds(60);
-	private static final int DEFAULT_PROVIDER_CALL_LIMIT_PER_MINUTE = 120;
+	private static final int DEFAULT_PROVIDER_CALL_LIMIT_PER_MINUTE = 1;
+	private static final int DEFAULT_PROVIDER_CALL_LIMIT_PER_DAY = 800;
+	private static final int MAX_PROVIDER_CALL_LIMIT_PER_MINUTE = 1;
+	private static final int MAX_PROVIDER_CALL_LIMIT_PER_DAY = 800;
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -61,9 +65,11 @@ public class RealtimeGatewayService {
 	public RealtimeGatewayService(
 		RealtimeProvider provider,
 		RealtimeMappingPort mappingPort,
-		RealtimeProviderControl providerControl
+		RealtimeProviderControl providerControl,
+		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_MINUTE:1}") int providerCallLimitPerMinute,
+		@Value("${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}") int providerCallLimitPerDay
 	) {
-		this(provider, Clock.systemUTC(), mappingPort, providerControl);
+		this(provider, Clock.systemUTC(), mappingPort, providerControl, providerCallLimitPerMinute, providerCallLimitPerDay);
 	}
 
 	RealtimeGatewayService(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
@@ -86,11 +92,22 @@ public class RealtimeGatewayService {
 		RealtimeProviderControl providerControl,
 		int providerCallLimitPerMinute
 	) {
+		this(provider, clock, mappingPort, providerControl, providerCallLimitPerMinute, DEFAULT_PROVIDER_CALL_LIMIT_PER_DAY);
+	}
+
+	RealtimeGatewayService(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
+		RealtimeProviderControl providerControl,
+		int providerCallLimitPerMinute,
+		int providerCallLimitPerDay
+	) {
 		this.provider = provider;
 		this.clock = clock;
 		this.mappingPort = mappingPort;
 		this.providerControl = providerControl;
-		this.providerCallRateLimiter = new ProviderCallRateLimiter(providerCallLimitPerMinute);
+		this.providerCallRateLimiter = new ProviderCallRateLimiter(providerCallLimitPerMinute, providerCallLimitPerDay);
 	}
 
 	public RealtimeArrivalResult arrivals(RealtimeQuery query) {
@@ -129,7 +146,9 @@ public class RealtimeGatewayService {
 		}
 		try {
 			if (!providerCallRateLimiter.tryAcquire(clock.instant())) {
-				RealtimeArrivalResult result = RealtimeArrivalResult.unavailable("PROVIDER_RATE_LIMITED");
+				RealtimeArrivalResult result = cached != null && isStaleUsable(cached.cachedAt())
+					? cached.result().stale()
+					: RealtimeArrivalResult.unavailable("PROVIDER_RATE_LIMITED");
 				request.complete(result);
 				return recordArrivalResult(result);
 			}
@@ -208,7 +227,9 @@ public class RealtimeGatewayService {
 		}
 		try {
 			if (!providerCallRateLimiter.tryAcquire(clock.instant())) {
-				RealtimeTrainPositionResult result = RealtimeTrainPositionResult.unavailable("PROVIDER_RATE_LIMITED");
+				RealtimeTrainPositionResult result = cached != null && isStaleUsable(cached.cachedAt())
+					? cached.result().stale()
+					: RealtimeTrainPositionResult.unavailable("PROVIDER_RATE_LIMITED");
 				request.complete(result);
 				return recordTrainPositionResult(result);
 			}
@@ -512,23 +533,33 @@ public class RealtimeGatewayService {
 
 	private static final class ProviderCallRateLimiter {
 		private final int limitPerMinute;
+		private final int limitPerDay;
 		private long windowMinute = Long.MIN_VALUE;
+		private long windowDay = Long.MIN_VALUE;
 		private int calls;
+		private int dailyCalls;
 
-		private ProviderCallRateLimiter(int limitPerMinute) {
-			this.limitPerMinute = Math.max(1, limitPerMinute);
+		private ProviderCallRateLimiter(int limitPerMinute, int limitPerDay) {
+			this.limitPerMinute = Math.min(MAX_PROVIDER_CALL_LIMIT_PER_MINUTE, Math.max(1, limitPerMinute));
+			this.limitPerDay = Math.min(MAX_PROVIDER_CALL_LIMIT_PER_DAY, Math.max(1, limitPerDay));
 		}
 
 		private synchronized boolean tryAcquire(Instant now) {
 			long minute = now.getEpochSecond() / 60;
+			long day = now.atZone(PROVIDER_ZONE).toLocalDate().toEpochDay();
 			if (minute != windowMinute) {
 				windowMinute = minute;
 				calls = 0;
 			}
-			if (calls >= limitPerMinute) {
+			if (day != windowDay) {
+				windowDay = day;
+				dailyCalls = 0;
+			}
+			if (calls >= limitPerMinute || dailyCalls >= limitPerDay) {
 				return false;
 			}
 			calls += 1;
+			dailyCalls += 1;
 			return true;
 		}
 	}
