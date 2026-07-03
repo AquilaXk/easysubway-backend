@@ -339,6 +339,16 @@ body.admin-v3 {
 	overflow-x: auto;
 }
 
+.admin-v3 th,
+.admin-v3 td {
+	padding: 13px 16px;
+	border-bottom: 1px solid var(--admin-border);
+	text-align: left;
+	vertical-align: top;
+	font-size: 14px;
+	line-height: 1.45;
+}
+
 .admin-v3 th {
 	background: var(--admin-header-bg);
 	color: var(--admin-ink-2);
@@ -348,16 +358,49 @@ body.admin-v3 {
 
 .admin-v3 td {
 	color: var(--admin-ink);
+	font-weight: var(--admin-w-body);
+}
+
+.admin-v3 tbody tr:last-child td {
+	border-bottom: 0;
 }
 
 .admin-v3 .metric-grid {
-	grid-template-columns: repeat(auto-fit, minmax(170px, 1fr));
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+	gap: 12px;
+	margin-bottom: 20px;
+}
+
+.admin-v3 .metric {
+	padding: 18px;
+}
+
+.admin-v3 .metric span {
+	display: block;
+	color: var(--admin-ink-2);
+	font-size: 14px;
+	font-weight: var(--admin-w-medium);
+	line-height: 1.4;
 }
 
 .admin-v3 .metric strong {
+	display: block;
+	margin-top: 8px;
 	color: var(--admin-ink);
 	font-size: 28px;
 	font-weight: var(--admin-w-title);
+	line-height: 1.15;
+}
+
+.admin-v3 .metric em {
+	display: block;
+	margin-top: 8px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-style: normal;
+	font-weight: var(--admin-w-body);
+	line-height: 1.45;
 }
 
 .admin-v3 .alert {
@@ -511,6 +554,277 @@ body.admin-v3 {
 	clip: rect(0, 0, 0, 0);
 	white-space: nowrap;
 	border: 0;
+}
+
+/* 페이지 컴포넌트 — 인라인 style 블록에서 공용 CSS로 통합(#1436) */
+
+.admin-v3 section > h2 {
+	margin: 0;
+	padding: 14px 18px;
+	border-bottom: 1px solid var(--admin-border);
+	background: transparent;
+	font-size: 18px;
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-v3 section + section {
+	margin-top: 24px;
+}
+
+.admin-v3 .admin-panel > h2 {
+	margin: 0 0 12px;
+	padding: 0;
+	border-bottom: 0;
+}
+
+.admin-v3 .summary {
+	margin: 0 0 18px;
+	color: var(--admin-ink-2);
+	font-size: 15px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.45;
+}
+
+.admin-v3 .meta {
+	display: block;
+	margin-top: 4px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-body);
+}
+
+.admin-v3 section > p.empty,
+.admin-v3 td.empty {
+	padding: 28px 16px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	text-align: center;
+	color: var(--admin-ink-3);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .detail-link,
+.admin-v3 .back-link {
+	color: var(--admin-accent);
+	font-weight: var(--admin-w-strong);
+	text-decoration: none;
+}
+
+.admin-v3 .detail-link:hover,
+.admin-v3 .back-link:hover {
+	text-decoration: underline;
+}
+
+.admin-v3 .back-link {
+	display: inline-block;
+	margin-bottom: 20px;
+}
+
+.admin-v3 .status-filter {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	margin-bottom: 20px;
+}
+
+.admin-v3 .status-filter a,
+.admin-v3 .pagination a {
+	display: inline-flex;
+	align-items: center;
+	min-height: 38px;
+	padding: 0 14px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: 14px;
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+}
+
+.admin-v3 .status-filter a[aria-current="page"],
+.admin-v3 .pagination a[aria-current="page"] {
+	border-color: var(--admin-primary);
+	background: var(--admin-primary);
+	color: #fff;
+}
+
+.admin-v3 .pagination {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	justify-content: flex-end;
+	gap: 8px;
+	margin-top: 18px;
+}
+
+.admin-v3 dl {
+	display: grid;
+	grid-template-columns: minmax(120px, 200px) 1fr;
+	margin: 0;
+}
+
+.admin-v3 dt,
+.admin-v3 dd {
+	margin: 0;
+	padding: 13px 18px;
+	border-top: 1px solid var(--admin-border);
+	line-height: 1.5;
+}
+
+.admin-v3 dt {
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-v3 dd {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-body);
+}
+
+.admin-v3 .surge-alert,
+.admin-v3 .processing-time {
+	display: grid;
+	grid-template-columns: minmax(0, 1fr) auto;
+	gap: 12px;
+	align-items: center;
+	margin-bottom: 18px;
+	padding: 16px 18px;
+	border-left: 3px solid var(--admin-border-strong);
+}
+
+.admin-v3 .surge-alert h2,
+.admin-v3 .processing-time h2 {
+	margin: 0 0 4px;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	font-size: 17px;
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-v3 .surge-alert p,
+.admin-v3 .processing-time p {
+	margin: 0;
+	color: var(--admin-ink-2);
+	font-size: 14px;
+	line-height: 1.45;
+}
+
+.admin-v3 .surge-alert .status-label,
+.admin-v3 .processing-time .metric-label {
+	justify-self: end;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-strong);
+	white-space: nowrap;
+}
+
+.admin-v3 .surge-alert.warning {
+	border-left-color: var(--admin-warn);
+}
+
+.admin-v3 .surge-alert.warning .status-label {
+	color: var(--admin-warn);
+}
+
+.admin-v3 .api-error-alert,
+.admin-v3 .failure-reason,
+.admin-v3 .delivery-alert {
+	margin-bottom: 24px;
+	padding: 16px 18px;
+	border: 1px solid var(--admin-border);
+	border-left: 3px solid var(--admin-border-strong);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	font-weight: var(--admin-w-medium);
+	line-height: 1.45;
+}
+
+.admin-v3 .api-error-alert strong {
+	display: block;
+	font-size: 18px;
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-v3 .api-error-alert span,
+.admin-v3 .api-error-alert p {
+	display: block;
+	margin: 8px 0 0;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-body);
+}
+
+.admin-v3 .api-error-alert.warning,
+.admin-v3 .delivery-alert.failure,
+.admin-v3 .failure-reason {
+	border-left-color: var(--admin-danger);
+}
+
+.admin-v3 .alert.ok,
+.admin-v3 .api-error-alert.ok,
+.admin-v3 .delivery-alert.ok {
+	border-left-color: var(--admin-good);
+}
+
+.admin-v3 .alert strong {
+	display: block;
+	font-size: 18px;
+	font-weight: var(--admin-w-strong);
+	line-height: 1.3;
+}
+
+.admin-v3 .alert p {
+	margin: 8px 0 0;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-body);
+	line-height: 1.5;
+}
+
+.admin-v3 .photo-preview {
+	max-width: 100%;
+	max-height: 420px;
+	margin-top: 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+}
+
+.admin-v3 .review-form,
+.admin-v3 .run-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	align-items: center;
+	margin-bottom: 24px;
+	padding: 18px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: var(--admin-shadow-card);
+}
+
+.admin-v3 td > form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+}
+
+.admin-v3 .run-form label {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 40px;
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 button.secondary {
+	background: var(--admin-warn);
+}
+
+.admin-v3 button.danger {
+	background: var(--admin-danger);
 }
 
 @media (max-width: 900px) {
