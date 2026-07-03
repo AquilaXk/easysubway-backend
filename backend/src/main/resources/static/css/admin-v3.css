@@ -598,6 +598,26 @@ body.admin-v3 {
 	font-weight: var(--admin-w-body);
 }
 
+.admin-v3 .blocker-summary {
+	margin: 0 0 16px;
+	padding: 0;
+	list-style: none;
+	font-size: 14px;
+}
+
+.admin-v3 .blocker-summary li {
+	padding: 9px 0;
+	border-top: 1px solid var(--admin-border);
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .blocker-summary li:first-child {
+	border-top: 0;
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
 .admin-v3 section > p.empty,
 .admin-v3 td.empty {
 	padding: 28px 16px;
