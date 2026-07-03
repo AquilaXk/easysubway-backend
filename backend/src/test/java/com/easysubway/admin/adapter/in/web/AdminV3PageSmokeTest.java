@@ -148,6 +148,7 @@ class AdminV3PageSmokeTest {
 			.contains("반영됨")
 			.contains("폐쇄")
 			.contains("접수됨")
+			.contains("실행 중")
 			.contains("사용자 제보")
 			.contains("관리자 확인");
 	}
