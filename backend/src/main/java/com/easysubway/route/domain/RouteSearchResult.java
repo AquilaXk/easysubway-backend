@@ -66,7 +66,9 @@ public record RouteSearchResult(
 			return EtaSource.FALLBACK;
 		}
 		if (realtimeSteps == 0) {
-			return EtaSource.PLANNED;
+			return steps.stream().allMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource()))
+				? EtaSource.PLANNED
+				: EtaSource.STATIC_BACKEND_ESTIMATE;
 		}
 		return realtimeSteps == steps.size() ? EtaSource.REALTIME : EtaSource.MIXED;
 	}
