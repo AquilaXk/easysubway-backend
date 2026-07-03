@@ -12,6 +12,7 @@ import com.easysubway.route.domain.EtaConfidence;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Objects;
 import org.springframework.stereotype.Component;
 
 @Component
@@ -39,36 +40,32 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 			result.fallbackCode(),
 			providerSnapshotId(result),
 			receivedAt,
-			candidates(query, result, status, receivedAt)
+			candidates(result, status)
 		);
 	}
 
 	private List<ArrivalCandidate> candidates(
-		Query query,
 		RealtimeArrivalResult result,
-		ArrivalFreshness status,
-		Instant receivedAt
+		ArrivalFreshness status
 	) {
 		return result.arrivals()
 			.stream()
 			.filter(arrival -> arrival.etaSeconds() != null)
 			.filter(arrival -> arrival.etaSeconds() >= 0)
-			.map(arrival -> candidate(query, arrival, status, receivedAt))
+			.map(arrival -> candidate(arrival, status))
+			.filter(Objects::nonNull)
 			.toList();
 	}
 
 	private ArrivalCandidate candidate(
-		Query query,
 		RealtimeArrival arrival,
-		ArrivalFreshness status,
-		Instant receivedAt
+		ArrivalFreshness status
 	) {
 		Instant providerReceivedAt = parseInstant(arrival.providerReceivedAt());
 		if (providerReceivedAt == null) {
-			providerReceivedAt = receivedAt;
+			return null;
 		}
-		Instant etaBase = receivedAt == null ? query.readyAt() : receivedAt;
-		Instant expectedArrivalAt = etaBase.plusSeconds(arrival.etaSeconds());
+		Instant expectedArrivalAt = providerReceivedAt.plusSeconds(arrival.etaSeconds());
 		return new ArrivalCandidate(
 			arrival.trainNo(),
 			arrival.lineId(),
@@ -77,6 +74,7 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 			arrival.etaSeconds(),
 			expectedArrivalAt,
 			providerReceivedAt,
+			arrival.servicePattern(),
 			status,
 			confidenceOf(status)
 		);

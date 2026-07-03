@@ -324,11 +324,11 @@ class JdbcRouteSearchRepositoryTest {
 					EtaSource.PLANNED,
 					List.of(RouteWarningCode.STAIR_ONLY_ACCESS)
 				),
-				tuple(
-					RouteSearchStatus.FOUND,
-					EtaSource.PLANNED,
-					List.of(RouteWarningCode.LOW_DATA_CONFIDENCE)
-				)
+					tuple(
+						RouteSearchStatus.FOUND,
+						EtaSource.STATIC_BACKEND_ESTIMATE,
+						List.of(RouteWarningCode.LOW_DATA_CONFIDENCE)
+					)
 			);
 	}
 
