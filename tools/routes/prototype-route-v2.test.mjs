@@ -36,6 +36,38 @@ test("route v2 prototypes honor requested alternative count", () => {
   assert.equal(alternatives[0].arrival, "09:25");
 });
 
+test("route v2 fixture suite covers commercialization time-axis blockers", () => {
+  const queryIds = new Set(fixtures.queries.map((query) => query.id));
+
+  for (const id of [
+    "provider_realtime_fresh_but_not_boardable_due_to_entry_slack",
+    "transfer_buffer_too_short_selects_next_train",
+    "pareto_arrival_vs_transfer",
+    "provider_realtime_stale",
+    "unmatched_realtime_express_does_not_override_planned_local",
+    "strict_step_free_excludes_transfer",
+  ]) {
+    assert.ok(queryIds.has(id), `missing route commercialization fixture: ${id}`);
+  }
+});
+
+test("route v2 time-axis fixtures reject unboardable realtime arrivals", () => {
+  const query = fixtureQuery("provider_realtime_fresh_but_not_boardable_due_to_entry_slack");
+
+  assert.equal(runRangeRaptor(fixtures, query)[0] ?? null, null);
+  assert.equal(runTimeDependentDijkstra(fixtures, query)[0] ?? null, null);
+});
+
+test("route v2 time-axis fixtures keep transfer feasibility and stale realtime fallback explicit", () => {
+  const transfer = fixtureQuery("transfer_buffer_too_short_selects_next_train");
+  const staleRealtime = fixtureQuery("provider_realtime_stale");
+  const unmatchedRealtime = fixtureQuery("unmatched_realtime_express_does_not_override_planned_local");
+
+  assert.deepEqual(runTimeDependentDijkstra(fixtures, transfer)[0].tripIds, ["l4-express-0903", "l2-local-0945"]);
+  assert.deepEqual(runTimeDependentDijkstra(fixtures, staleRealtime)[0].path.map((step) => step.realtimeMatchLevel), ["MATCHED_REALTIME"]);
+  assert.deepEqual(runTimeDependentDijkstra(fixtures, unmatchedRealtime)[0].path.map((step) => step.realtimeMatchLevel), ["PLANNED"]);
+});
+
 test("route v2 CLI report keeps full Pareto alternatives", () => {
   const result = runAll(fixtures).results.find((candidate) => candidate.queryId === "pareto_arrival_vs_transfer");
 
@@ -74,6 +106,12 @@ function assertPrototype(query, result, name) {
   assertExpected(query, "expectedDestinationStationIds", rideSteps.map((step) => step.destinationStationId), name);
   assertExpected(query, "expectedStopPatterns", rideSteps.map((step) => step.stopPattern), name);
   assertExpected(query, "expectedRealtimeMatchLevels", rideSteps.map((step) => step.realtimeMatchLevel), name);
+}
+
+function fixtureQuery(id) {
+  const query = fixtures.queries.find((candidate) => candidate.id === id);
+  assert.ok(query, `missing fixture query: ${id}`);
+  return query;
 }
 
 function assertExpected(query, field, actual, name) {

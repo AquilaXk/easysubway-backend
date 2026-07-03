@@ -46,8 +46,19 @@ export function buildContractReport(input) {
     routeNotFoundRate: input.samples.length === 0
       ? 0
       : (input.samples.length - foundSamples.length) / input.samples.length,
+    outOfStationTransferAllowlistSource: input.capabilities?.outOfStationTransferAllowlistSource ?? "",
+    outOfStationTransferAllowlistPairCount: outOfStationTransferAllowlistPairCount(input.capabilities ?? {}),
     releaseBlockersSatisfied: input.capabilities?.releaseBlockersSatisfied ?? [],
   };
+}
+
+function outOfStationTransferAllowlistPairCount(capabilities) {
+  if (Number.isFinite(Number(capabilities.outOfStationTransferAllowlistPairCount))) {
+    return Number(capabilities.outOfStationTransferAllowlistPairCount);
+  }
+  return Array.isArray(capabilities.outOfStationTransferAllowlist)
+    ? capabilities.outOfStationTransferAllowlist.length
+    : 0;
 }
 
 function parseArgs(argv) {

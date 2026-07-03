@@ -74,7 +74,7 @@ class RouteSearchControllerTest {
 			.andExpect(jsonPath("$.data.warnings").isArray())
 			.andExpect(jsonPath("$.data.blockedReasons").isArray())
 			.andExpect(jsonPath("$.data.createdAt").value("2026-06-30T09:00:00"))
-			.andExpect(jsonPath("$.data.etaSource").value("PLANNED"))
+			.andExpect(jsonPath("$.data.etaSource").value("STATIC_BACKEND_ESTIMATE"))
 			.andExpect(jsonPath("$.data.routeQuality").value("LEGACY_STATIC"))
 			.andExpect(jsonPath("$.data.commercialEtaEligible").value(false));
 	}

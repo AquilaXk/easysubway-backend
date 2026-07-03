@@ -39,7 +39,6 @@
 	--admin-w-strong: 700;
 	--admin-w-title: 800;
 
-	--admin-focus: #ffbf47;
 }
 
 body.admin-v3 {
@@ -60,7 +59,7 @@ body.admin-v3 {
 .admin-v3 input:focus-visible,
 .admin-v3 select:focus-visible,
 .admin-v3 textarea:focus-visible {
-	outline: 3px solid var(--admin-focus);
+	outline: 3px solid #ffbf47;
 	outline-offset: 3px;
 }
 
@@ -203,21 +202,29 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
-.admin-env-badge {
+.admin-env-badge,
+.admin-status {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
 	color: var(--admin-ink-2);
-	font-size: 12px;
 	font-weight: var(--admin-w-strong);
 }
 
-.admin-env-badge::before {
+.admin-env-badge::before,
+.admin-status::before {
 	content: "";
+	border-radius: 50%;
+	background: currentcolor;
+}
+
+.admin-env-badge {
+	font-size: 12px;
+}
+
+.admin-env-badge::before {
 	width: 6px;
 	height: 6px;
-	border-radius: 50%;
-	background: currentColor;
 }
 
 .admin-env-badge.is-production {
@@ -419,20 +426,12 @@ body.admin-v3 {
 }
 
 .admin-status {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	color: var(--admin-ink-2);
 	font-size: 13px;
-	font-weight: var(--admin-w-strong);
 }
 
 .admin-status::before {
-	content: "";
 	width: 7px;
 	height: 7px;
-	border-radius: 50%;
-	background: currentColor;
 }
 
 .admin-status.good {
@@ -573,6 +572,16 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
+.admin-v3 section + section {
+	margin-top: 24px;
+}
+
+.admin-v3 .admin-panel > h2 {
+	margin: 0 0 12px;
+	padding: 0;
+	border-bottom: 0;
+}
+
 .admin-v3 .summary {
 	margin: 0 0 18px;
 	color: var(--admin-ink-2);
@@ -589,7 +598,7 @@ body.admin-v3 {
 	font-weight: var(--admin-w-body);
 }
 
-.admin-v3 p.empty,
+.admin-v3 section > p.empty,
 .admin-v3 td.empty {
 	padding: 28px 16px;
 	border: 0;
@@ -758,6 +767,7 @@ body.admin-v3 {
 	border-left-color: var(--admin-danger);
 }
 
+.admin-v3 .alert.ok,
 .admin-v3 .api-error-alert.ok,
 .admin-v3 .delivery-alert.ok {
 	border-left-color: var(--admin-good);
@@ -797,6 +807,13 @@ body.admin-v3 {
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
 	box-shadow: var(--admin-shadow-card);
+}
+
+.admin-v3 td > form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
 }
 
 .admin-v3 .run-form label {

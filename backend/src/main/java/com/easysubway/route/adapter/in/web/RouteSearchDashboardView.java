@@ -138,6 +138,7 @@ public record RouteSearchDashboardView(
 		return switch (etaSource) {
 			case REALTIME -> "실시간 반영";
 			case MIXED -> "일부 실시간 반영";
+			case STATIC_BACKEND_ESTIMATE -> "상수 추정";
 			case PLANNED -> "시간표 기준";
 			case FALLBACK -> "provider 지연/장애 fallback";
 		};
