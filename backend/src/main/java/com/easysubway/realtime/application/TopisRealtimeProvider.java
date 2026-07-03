@@ -117,7 +117,8 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 				optionalInt(item, "barvlDt"),
 				stringOrEmpty(item, "arvlMsg2"),
 				stringOrEmpty(item, "arvlMsg3"),
-				stringOrEmpty(item, "recptnDt")
+				stringOrEmpty(item, "recptnDt"),
+				stringOrEmpty(item, "btrainSttus")
 			));
 		}
 		return List.copyOf(arrivals);

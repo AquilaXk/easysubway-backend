@@ -107,6 +107,35 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	}
 
 	@Test
+	@DisplayName("production promote 가능 상태는 성공 badge로 보여준다")
+	void dashboardShowsReadyStatusAsGoodBadge() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidates
+			SET coverage_status = 'PASS',
+				route_regression_status = 'PASS',
+				android_evidence_status = 'PASS'
+			WHERE id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("""
+			UPDATE datapack_release_evidence_bundles
+			SET manifest_signature_status = 'PASS'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+		jdbcTemplate.update("DELETE FROM external_alias_approvals");
+		jdbcTemplate.update("DELETE FROM source_quarantine_records");
+		jdbcTemplate.update("DELETE FROM manual_overrides");
+		jdbcTemplate.update("DELETE FROM facility_evidence");
+		jdbcTemplate.update("DELETE FROM route_edge_evidence");
+
+		String html = getAdminHtml("/admin/dashboard/page");
+
+		assertThat(html)
+			.contains("production promote 가능")
+			.contains("class=\"admin-status  good\"")
+			.contains(">READY</span>");
+	}
+
+	@Test
 	@DisplayName("datapack read 권한이 없으면 통합 대시보드 release blocker 요약을 숨긴다")
 	void dashboardHidesDatapackReleaseBlockerSummaryWithoutDatapackRead() throws Exception {
 		String html = getAdminHtmlWithoutDatapackRead("/admin/dashboard/page");

@@ -42,6 +42,41 @@ test("builds route v2 contract report from runtime responses", () => {
   assert.deepEqual(report.releaseBlockersSatisfied, ["D-2", "D-3", "H-1"]);
 });
 
+test("records out-of-station transfer allowlist source in contract report", () => {
+  const report = buildContractReport({
+    schemaVersion: 1,
+    capabilities: {
+      outOfStationTransferSupported: true,
+      outOfStationTransferAllowlistSource: "catalog_metadata:route.outOfStationTransfer.allowlist",
+      outOfStationTransferAllowlist: [
+        "station-a:line-a->station-b:line-b",
+      ],
+    },
+    samples: [
+      {
+        id: "allowlisted-out-of-station-runtime",
+        response: routeResponse([
+          {
+            status: "FOUND",
+            transferCount: 1,
+            legs: [
+              { type: "RIDE", lineId: "line-a" },
+              { type: "OUT_OF_STATION_TRANSFER" },
+              { type: "RIDE", lineId: "line-b" },
+            ],
+          },
+        ]),
+      },
+    ],
+  });
+
+  assert.equal(
+    report.outOfStationTransferAllowlistSource,
+    "catalog_metadata:route.outOfStationTransfer.allowlist",
+  );
+  assert.equal(report.outOfStationTransferAllowlistPairCount, 1);
+});
+
 test("reads line sequence from route v2 legType runtime response", () => {
   const report = buildContractReport({
     schemaVersion: 1,

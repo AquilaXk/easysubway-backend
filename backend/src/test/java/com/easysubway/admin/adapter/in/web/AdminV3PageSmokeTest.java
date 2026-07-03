@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrlPattern;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -133,6 +134,23 @@ class AdminV3PageSmokeTest {
 		mockMvc.perform(get("/admin/notifications/push/page")
 				.with(user("operator").authorities(new SimpleGrantedAuthority("admin.data.operate"))))
 			.andExpect(status().isOk());
+	}
+
+	@Test
+	@DisplayName("자동 상태 badge는 적용 화면의 실제 label을 tone으로 분류한다")
+	void statusAutoCoversConvertedListLabels() throws Exception {
+		String shell = new String(
+			getClass().getResourceAsStream("/templates/admin/fragments/shell.html").readAllBytes(),
+			StandardCharsets.UTF_8
+		);
+
+		assertThat(shell)
+			.contains("반영됨")
+			.contains("폐쇄")
+			.contains("접수됨")
+			.contains("실행 중")
+			.contains("사용자 제보")
+			.contains("관리자 확인");
 	}
 
 	@Test
