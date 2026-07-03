@@ -567,6 +567,10 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
+.admin-v3 section + section {
+	margin-top: 24px;
+}
+
 .admin-v3 .admin-panel > h2 {
 	margin: 0 0 12px;
 	padding: 0;
@@ -798,6 +802,13 @@ body.admin-v3 {
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
 	box-shadow: var(--admin-shadow-card);
+}
+
+.admin-v3 td > form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
 }
 
 .admin-v3 .run-form label {
