@@ -567,6 +567,12 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
+.admin-v3 .admin-panel > h2 {
+	margin: 0 0 12px;
+	padding: 0;
+	border-bottom: 0;
+}
+
 .admin-v3 .summary {
 	margin: 0 0 18px;
 	color: var(--admin-ink-2);
@@ -583,7 +589,7 @@ body.admin-v3 {
 	font-weight: var(--admin-w-body);
 }
 
-.admin-v3 p.empty,
+.admin-v3 section > p.empty,
 .admin-v3 td.empty {
 	padding: 28px 16px;
 	border: 0;
@@ -752,6 +758,7 @@ body.admin-v3 {
 	border-left-color: var(--admin-danger);
 }
 
+.admin-v3 .alert.ok,
 .admin-v3 .api-error-alert.ok,
 .admin-v3 .delivery-alert.ok {
 	border-left-color: var(--admin-good);
