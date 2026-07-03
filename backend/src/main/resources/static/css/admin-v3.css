@@ -37,7 +37,6 @@
 	--admin-w-strong: 700;
 	--admin-w-title: 800;
 
-	--admin-focus: #ffbf47;
 }
 
 body.admin-v3 {
@@ -58,7 +57,7 @@ body.admin-v3 {
 .admin-v3 input:focus-visible,
 .admin-v3 select:focus-visible,
 .admin-v3 textarea:focus-visible {
-	outline: 3px solid var(--admin-focus);
+	outline: 3px solid #ffbf47;
 	outline-offset: 3px;
 }
 
@@ -200,21 +199,29 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
-.admin-env-badge {
+.admin-env-badge,
+.admin-status {
 	display: inline-flex;
 	align-items: center;
 	gap: 6px;
 	color: var(--admin-ink-2);
-	font-size: 12px;
 	font-weight: var(--admin-w-strong);
 }
 
-.admin-env-badge::before {
+.admin-env-badge::before,
+.admin-status::before {
 	content: "";
+	border-radius: 50%;
+	background: currentcolor;
+}
+
+.admin-env-badge {
+	font-size: 12px;
+}
+
+.admin-env-badge::before {
 	width: 6px;
 	height: 6px;
-	border-radius: 50%;
-	background: currentColor;
 }
 
 .admin-env-badge.is-production {
@@ -373,20 +380,12 @@ body.admin-v3 {
 }
 
 .admin-status {
-	display: inline-flex;
-	align-items: center;
-	gap: 6px;
-	color: var(--admin-ink-2);
 	font-size: 13px;
-	font-weight: var(--admin-w-strong);
 }
 
 .admin-status::before {
-	content: "";
 	width: 7px;
 	height: 7px;
-	border-radius: 50%;
-	background: currentColor;
 }
 
 .admin-status.good {
