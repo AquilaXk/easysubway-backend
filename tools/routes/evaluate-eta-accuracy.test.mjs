@@ -40,8 +40,17 @@ test("ETA evaluator emits the route accuracy report contract", async (t) => {
     COMPETING_APP_COMPARISON: 0,
     FIXTURE_EXPECTED: 100,
   });
+  for (const source of ["REALTIME", "PLANNED", "STATIC_BACKEND_ESTIMATE", "STATIC_LOCAL", "FALLBACK"]) {
+    assert.equal(typeof report.actualEtaSourceCounts[source], "number");
+    assert.equal(typeof report.expectedEtaSourceCounts[source], "number");
+  }
   assert.equal(report.productionSampleSize, 0);
   assert.equal(report.nonProductionSampleSize, 100);
+  assert.equal(report.runtimeTraceability.productionRowCount, 0);
+  assert.equal(report.runtimeTraceability.tracedProductionRowCount, 0);
+  assert.equal(report.runtimeTraceability.missingRequiredFieldCount, 0);
+  assert.equal(report.runtimeTraceability.realtimeAnchorMissingCount, 0);
+  assert.equal(report.runtimeTraceability.stratificationMissingCount, 0);
   assert.equal(report.metrics.sampleSize, 100);
   assert.equal(report.metrics.p50ErrorSeconds, 45);
   assert.equal(report.metrics.p90ErrorSeconds, 90);
@@ -64,6 +73,18 @@ test("ETA evaluator emits the route accuracy report contract", async (t) => {
     p50ErrorSeconds: 90,
     p90ErrorSeconds: 120,
     maxErrorSeconds: 120,
+  });
+  assert.deepEqual(report.metrics.offlinePlanned, {
+    sampleSize: 60,
+    p50ErrorSeconds: 90,
+    p90ErrorSeconds: 120,
+    maxErrorSeconds: 120,
+  });
+  assert.deepEqual(report.metrics.onlineRealtime, {
+    sampleSize: 40,
+    p50ErrorSeconds: 45,
+    p90ErrorSeconds: 90,
+    maxErrorSeconds: 90,
   });
   assert.deepEqual(report.failures, []);
   assert.equal(report.coverage.singleRide, true);
@@ -214,8 +235,25 @@ test("ETA evaluator emits structured production-safe failures", async (t) => {
     COMPETING_APP_COMPARISON: 1,
     FIXTURE_EXPECTED: 3,
   });
+  assert.deepEqual(report.actualEtaSourceCounts, {
+    REALTIME: 2,
+    PLANNED: 6,
+    STATIC_BACKEND_ESTIMATE: 0,
+    STATIC_LOCAL: 2,
+    FALLBACK: 0,
+  });
+  assert.deepEqual(report.expectedEtaSourceCounts, {
+    REALTIME: 3,
+    PLANNED: 7,
+    STATIC_BACKEND_ESTIMATE: 0,
+    STATIC_LOCAL: 0,
+    FALLBACK: 0,
+  });
   assert.equal(report.productionSampleSize, 5);
   assert.equal(report.nonProductionSampleSize, 5);
+  assert.ok(report.runtimeTraceability.missingRequiredFieldCount > 0);
+  assert.ok(report.runtimeTraceability.realtimeAnchorMissingCount > 0);
+  assert.ok(report.runtimeTraceability.stratificationMissingCount > 0);
   assert.equal(report.metrics.routeNotFoundRate, 1 / 10);
   assert.equal(report.metrics.wrongTransferCountRate, 1 / 10);
   assert.equal(report.metrics.wrongLineSequenceRate, 1 / 10);
@@ -300,4 +338,119 @@ test("ETA evaluator fails over-budget rows without deviation reason code", async
   assert.ok(!report.failures.some((failure) => (
     failure.caseId === "case-classified" && failure.type === "UNCLASSIFIED_ETA_DEVIATION"
   )));
+});
+
+test("ETA evaluator preserves runtime traceability fields for production rows", async (t) => {
+  const dataset = path.join(tmpdir(), `route-accuracy-traceability-${Date.now()}`);
+  const output = path.join(tmpdir(), `route-accuracy-traceability-${Date.now()}.json`);
+  t.after(() => rm(dataset, { recursive: true, force: true }));
+  t.after(() => rm(output, { force: true }));
+  await mkdir(dataset, { recursive: true });
+
+  const header = [
+    "case_id",
+    "route_search_id",
+    "itinerary_id",
+    "leg_index",
+    "origin_station_id",
+    "destination_station_id",
+    "departure_time",
+    "mobility_type",
+    "constraint_mode",
+    "region",
+    "operator_id",
+    "time_period",
+    "reference_source",
+    "reference_collected_at",
+    "reference_confidence",
+    "realtime_provider_id",
+    "provider_observed_at",
+    "gateway_received_at",
+    "served_at",
+    "provider_freshness_status",
+    "expected_eta_source",
+    "actual_eta_source",
+    "reason_codes",
+    "predicted_arrival_at",
+    "actual_arrival_at",
+    "expected_transfer_count",
+    "actual_transfer_count",
+    "max_eta_error_seconds",
+    "observed_eta_error_seconds",
+    "use_realtime",
+    "actual_route_found",
+    "deviation_reason_code",
+    "notes",
+  ].join(",");
+  const row = (caseId, category, transferCount, realtime) => [
+    caseId,
+    `search-${caseId}`,
+    `itinerary-${caseId}`,
+    "0",
+    `station-${category}-a`,
+    `station-${category}-b`,
+    "2026-06-30T09:00:00+09:00",
+    "WHEELCHAIR",
+    "STRICT_STEP_FREE",
+    "capital",
+    "seoul-metro",
+    "peak",
+    realtime ? "PROVIDER_LIVE_ARRIVAL" : "MANUAL_OBSERVATION",
+    "2026-06-30T08:59:30+09:00",
+    "HIGH",
+    realtime ? "seoul-topis" : "",
+    realtime ? "2026-06-30T08:59:10+09:00" : "",
+    realtime ? "2026-06-30T08:59:20+09:00" : "",
+    realtime ? "2026-06-30T08:59:25+09:00" : "",
+    "FRESH",
+    realtime ? "REALTIME" : "PLANNED",
+    realtime ? "REALTIME" : "PLANNED",
+    realtime ? "PROVIDER_FRESH" : "MANUAL_BASELINE",
+    "2026-06-30T09:10:00+09:00",
+    "2026-06-30T09:10:30+09:00",
+    String(transferCount),
+    String(transferCount),
+    "120",
+    "30",
+    realtime ? "true" : "false",
+    "true",
+    "",
+    "manual production",
+  ].join(",");
+  const extraSingleRideRows = Array.from({ length: 93 }, (_, index) => (
+    row(`case-manual-single-extra-${index}`, `single-extra-${index}`, 0, false)
+  ));
+  const rowsByFile = {
+    "single_ride_cases.csv": [
+      row("case-live-single", "single", 0, true),
+      row("case-manual-single", "single", 0, false),
+      ...extraSingleRideRows,
+    ].join("\n"),
+    "one_transfer_cases.csv": row("case-live-one-transfer", "one", 1, true),
+    "two_transfer_cases.csv": row("case-manual-two-transfer", "two", 2, false),
+    "express_cases.csv": row("case-manual-express", "express", 0, false),
+    "out_of_station_transfer_cases.csv": row("case-manual-out", "out", 1, false),
+    "strict_step_free_cases.csv": row("case-manual-strict", "strict", 0, false),
+  };
+  await Promise.all(Object.entries(rowsByFile).map(([file, rows]) => (
+    writeFile(path.join(dataset, file), `${header}\n${rows}\n`)
+  )));
+
+  await execFileAsync(process.execPath, [
+    "tools/routes/evaluate-eta-accuracy.mjs",
+    "--dataset",
+    dataset,
+    "--output",
+    output,
+  ], { cwd: root });
+
+  const report = JSON.parse(await readFile(output, "utf8"));
+  assert.equal(report.productionSampleSize, 100);
+  assert.equal(report.runtimeTraceability.productionRowCount, 100);
+  assert.equal(report.runtimeTraceability.tracedProductionRowCount, 100);
+  assert.equal(report.runtimeTraceability.missingRequiredFieldCount, 0);
+  assert.equal(report.runtimeTraceability.realtimeAnchorMissingCount, 0);
+  assert.equal(report.runtimeTraceability.stratificationMissingCount, 0);
+  assert.equal(report.runtimeTraceability.unclassifiedBudgetExceededCount, 0);
+  assert.deepEqual(report.failures, []);
 });

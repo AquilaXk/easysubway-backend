@@ -5,8 +5,9 @@ import com.easysubway.common.web.ApiResponse;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
-import com.easysubway.route.application.service.RouteV2Planner;
-import com.easysubway.route.application.service.RouteV2Planner.RouteV2Plan;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
+import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
@@ -39,11 +40,11 @@ import org.springframework.web.bind.annotation.RestController;
 class RouteSearchController {
 
 	private final RouteSearchUseCase routeSearchUseCase;
-	private final RouteV2Planner routeV2Planner;
+	private final RouteV2SearchUseCase routeV2SearchUseCase;
 
-	RouteSearchController(RouteSearchUseCase routeSearchUseCase, RouteV2Planner routeV2Planner) {
+	RouteSearchController(RouteSearchUseCase routeSearchUseCase, RouteV2SearchUseCase routeV2SearchUseCase) {
 		this.routeSearchUseCase = routeSearchUseCase;
-		this.routeV2Planner = routeV2Planner;
+		this.routeV2SearchUseCase = routeV2SearchUseCase;
 	}
 
 	@PostMapping("/api/v1/routes/search")
@@ -54,7 +55,7 @@ class RouteSearchController {
 	@PostMapping("/api/v2/routes/search")
 	ApiResponse<RouteSearchV2Response> searchRouteV2(@Valid @RequestBody RouteSearchV2Request request) {
 		OffsetDateTime departureTime = request.parsedDepartureTime();
-		RouteV2Plan plan = routeV2Planner.search(request.toV2Command(departureTime));
+		RouteV2Plan plan = routeV2SearchUseCase.search(request.toV2Command(departureTime));
 		return ApiResponse.ok(RouteSearchV2Response.from(plan, request, departureTime));
 	}
 
@@ -161,8 +162,8 @@ class RouteSearchController {
 		int alternativeCount
 	) {
 
-		RouteV2Planner.SearchRouteV2Command toV2Command(OffsetDateTime departureTime) {
-			return new RouteV2Planner.SearchRouteV2Command(
+		RouteV2SearchUseCase.SearchRouteV2Command toV2Command(OffsetDateTime departureTime) {
+			return new RouteV2SearchUseCase.SearchRouteV2Command(
 				originStationId,
 				destinationStationId,
 				departureTime,
@@ -238,7 +239,9 @@ class RouteSearchController {
 				Boolean.TRUE.equals(request.useRealtime()),
 				request.maxTransfers(),
 				request.alternativeCount(),
-				plan.statuses(),
+				plan.statuses().stream()
+					.map(Enum::name)
+					.toList(),
 				plan.itineraries().stream()
 					.map(result -> ItineraryDto.from(result, departureTime))
 					.toList()
@@ -294,7 +297,7 @@ class RouteSearchController {
 			return switch (result.etaSource()) {
 				case REALTIME -> "HIGH";
 				case MIXED -> "MEDIUM";
-				case PLANNED, FALLBACK -> "LOW";
+				case STATIC_BACKEND_ESTIMATE, PLANNED, FALLBACK -> "LOW";
 			};
 		}
 	}
@@ -469,6 +472,11 @@ class RouteSearchController {
 		int distanceMeters,
 		String etaSource,
 		String confidence,
+		List<String> reasonCodes,
+		String providerSnapshotId,
+		String providerObservedAt,
+		String gatewayReceivedAt,
+		String servedAt,
 		AccessibilityRiskDto accessibilityRisk
 	) {
 
@@ -518,6 +526,11 @@ class RouteSearchController {
 				Math.max(0, step.distanceMeters()),
 				etaSourceOf(step).name(),
 				etaConfidenceOf(step),
+				step.reasonCodes(),
+				step.providerSnapshotId(),
+				step.providerObservedAt(),
+				step.gatewayReceivedAt(),
+				step.servedAt(),
 				AccessibilityRiskDto.from(step)
 			);
 		}
@@ -527,24 +540,22 @@ class RouteSearchController {
 				return 0;
 			}
 			// ponytail: schedule candidate selection belongs with timetable schema; expose only mobility buffer for now.
-			return switch (mobilityType) {
-				case LUGGAGE -> 60;
-				case SENIOR, PREGNANT -> 90;
-				case STROLLER, TEMPORARY_INJURY -> 120;
-				case WHEELCHAIR -> 180;
-			};
+			return BoardingSlackPolicy.secondsFor(mobilityType);
 		}
 
-		private static EtaSource etaSourceOf(RouteStep step) {
-			if (step.timeSource() == null || step.timeSource().isBlank()) {
-				return EtaSource.PLANNED;
+			private static EtaSource etaSourceOf(RouteStep step) {
+				if (step.timeSource() == null || step.timeSource().isBlank()) {
+					return EtaSource.STATIC_BACKEND_ESTIMATE;
+				}
+				if ("ESTIMATED_CONSTANT".equals(step.timeSource()) || "STATIC_BACKEND_V1".equals(step.timeSource())) {
+					return EtaSource.STATIC_BACKEND_ESTIMATE;
+				}
+				try {
+					return EtaSource.valueOf(step.timeSource());
+				} catch (IllegalArgumentException exception) {
+					return EtaSource.STATIC_BACKEND_ESTIMATE;
+				}
 			}
-			try {
-				return EtaSource.valueOf(step.timeSource());
-			} catch (IllegalArgumentException exception) {
-				return EtaSource.PLANNED;
-			}
-		}
 
 		private static String etaConfidenceOf(RouteStep step) {
 			if ("HIGH".equals(step.confidenceLabel())
@@ -552,12 +563,12 @@ class RouteSearchController {
 				|| "LOW".equals(step.confidenceLabel())) {
 				return step.confidenceLabel();
 			}
-			return switch (etaSourceOf(step)) {
-				case REALTIME -> "HIGH";
-				case MIXED -> "MEDIUM";
-				case PLANNED, FALLBACK -> "LOW";
-			};
-		}
+				return switch (etaSourceOf(step)) {
+					case REALTIME -> "HIGH";
+					case MIXED -> "MEDIUM";
+					case STATIC_BACKEND_ESTIMATE, PLANNED, FALLBACK -> "LOW";
+				};
+			}
 
 		private static String legTypeOf(RouteStep step) {
 			return switch (step.stepType()) {

@@ -8,6 +8,8 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
 import com.easysubway.route.application.port.out.RealtimeArrivalResolver;
 import com.easysubway.route.domain.ArrivalCandidate;
@@ -49,6 +51,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -183,7 +186,7 @@ class RouteSearchServiceTest {
 		assertThat(refreshed.routeSearch()).isEqualTo(created);
 		assertThat(refreshed.status()).isEqualTo(RouteRefreshStatus.UNCHANGED);
 		assertThat(refreshed.etaSource()).isEqualTo(created.etaSource());
-		assertThat(refreshed.sourceLabel()).isEqualTo("계획 시간 기준");
+		assertThat(refreshed.sourceLabel()).isEqualTo("상수 추정 기준");
 		assertThat(refreshed.refreshedAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
 	}
 
@@ -595,6 +598,39 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("직접 경로가 있어도 더 낮은 비용의 환승 후보를 우선한다")
+	void directRouteDoesNotShortCircuitLowerCostTransferCandidate() {
+		var repository = new InMemoryRouteSearchRepository();
+		var transferService = new RouteSearchService(
+			repository,
+			repository,
+			new DirectAndShorterTransferTransitMasterPort(),
+			CLOCK
+		);
+
+		var results = transferService.searchRouteAlternatives(new SearchRouteCommand(
+			"station-a",
+			"station-b",
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			1
+		), 2);
+
+		assertThat(results).hasSize(2);
+		assertThat(results)
+			.extracting(RouteSearchResult::status)
+			.containsExactly(RouteSearchStatus.FOUND, RouteSearchStatus.FOUND);
+		assertThat(results)
+			.extracting(RouteSearchResult::transferCount)
+			.containsExactly(1, 0);
+		assertThat(results.get(0).steps())
+			.filteredOn(step -> "transfer".equals(step.stepType()))
+			.extracting("fromStationId")
+			.containsExactly("station-transfer");
+		assertThat(results.get(1).lineName()).isEqualTo("테스트 직통");
+	}
+
+	@Test
 	@DisplayName("휠체어 이동 유형은 환승역이 계단 전용이면 경로를 차단한다")
 	void wheelchairRouteBlocksStairOnlyTransferStation() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -687,9 +723,24 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 0, 3));
 
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().transferCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 alternativeCount 범위 안에서 복수 itinerary와 실제 상태를 반환한다")
+	void routeV2PlannerReturnsAlternativeItinerariesWithActualStatuses() {
+		var planner = routeV2Planner(new MixedTransferAccessibilityTransitMasterPort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.STRICT_STEP_FREE, MobilityType.WHEELCHAIR, 1, 2));
+
+		assertThat(plan.plannerAdr()).isEqualTo("tools/routes/route-algorithm-v2-adr.json");
+		assertThat(plan.itineraries()).hasSize(2);
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND, RouteV2Status.BLOCKED_ACCESSIBILITY);
+		assertThat(plan.itineraries())
+			.extracting(RouteSearchResult::status)
+			.containsExactly(RouteSearchStatus.FOUND, RouteSearchStatus.BLOCKED);
 	}
 
 	@Test
@@ -699,7 +750,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(1);
 	}
@@ -711,7 +762,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 2, 3));
 
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(2);
 	}
@@ -723,7 +774,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
-		assertThat(plan.statuses()).containsExactly("NO_TIMETABLE_SERVICE");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
 		assertThat(plan.itineraries()).isEmpty();
 	}
 
@@ -734,7 +785,7 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.STRICT_STEP_FREE, MobilityType.WHEELCHAIR, 0, 3));
 
-		assertThat(plan.statuses()).containsExactly("BLOCKED_ACCESSIBILITY");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.BLOCKED_ACCESSIBILITY);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().status()).isEqualTo(RouteSearchStatus.BLOCKED);
 	}
@@ -753,7 +804,7 @@ class RouteSearchServiceTest {
 		);
 		var planner = new RouteV2Planner(routeSearchService);
 
-		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -766,12 +817,107 @@ class RouteSearchServiceTest {
 
 		assertThat(resolver.callCount()).isEqualTo(1);
 		assertThat(resolver.lastQuery().stationId()).isEqualTo("station-a");
+		assertThat(resolver.lastQuery().readyAt()).isEqualTo(Instant.parse("2026-07-01T00:05:30Z"));
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.MIXED);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("timeSource")
 			.containsExactly(EtaSource.REALTIME.name());
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.first()
+			.satisfies(step -> {
+				assertThat(step.reasonCodes()).containsExactly("MATCHED_REALTIME");
+				assertThat(step.providerSnapshotId()).isEqualTo("test-realtime-snapshot");
+				assertThat(step.providerObservedAt()).isEqualTo("2026-07-01T00:05:00Z");
+				assertThat(step.gatewayReceivedAt()).isEqualTo("2026-07-01T00:05:00Z");
+				assertThat(step.servedAt()).isEqualTo("2026-06-13T09:00:00Z");
+			});
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+	}
+
+	@Test
+	@DisplayName("V2 useRealtime=true는 환승 이후 승차 단계에도 provider ETA를 반영한다")
+	void routeV2PlannerAppliesRealtimeEtaAfterTransfer() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver();
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new OneTransferTransitMasterPort(),
+			CLOCK,
+			resolver
+		);
+		var planner = new RouteV2Planner(routeSearchService);
+
+		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			true,
+			1,
+			1
+		));
+
+		assertThat(resolver.callCount()).isEqualTo(2);
+		assertThat(resolver.queries())
+			.extracting(RealtimeArrivalResolver.Query::readyAt)
+			.containsExactly(
+				Instant.parse("2026-07-01T00:05:30Z"),
+				Instant.parse("2026-07-01T00:19:00Z")
+			);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("timeSource")
+			.containsExactly(EtaSource.REALTIME.name(), EtaSource.REALTIME.name());
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("estimatedMinutes")
+			.containsExactly(6, 6);
+	}
+
+	@Test
+	@DisplayName("V2 useRealtime=true는 환승 전 fallback ride의 planned duration을 wait으로 중복 계산하지 않는다")
+	void routeV2PlannerDoesNotDoubleCountFallbackWaitBeforeTransfer() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver(ArrivalFreshness.UNAVAILABLE, ArrivalFreshness.FRESH_REALTIME);
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new OneTransferTransitMasterPort(),
+			CLOCK,
+			resolver
+		);
+		var planner = new RouteV2Planner(routeSearchService);
+
+		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			true,
+			1,
+			1
+		));
+
+		assertThat(resolver.callCount()).isEqualTo(2);
+		assertThat(resolver.queries())
+			.extracting(RealtimeArrivalResolver.Query::readyAt)
+			.containsExactly(
+				Instant.parse("2026-07-01T00:05:30Z"),
+				Instant.parse("2026-07-01T00:17:00Z")
+			);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("timeSource")
+			.containsExactly(EtaSource.FALLBACK.name(), EtaSource.REALTIME.name());
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("estimatedMinutes")
+			.containsExactly(4, 6);
 	}
 
 	@Test
@@ -788,7 +934,7 @@ class RouteSearchServiceTest {
 		);
 		var planner = new RouteV2Planner(routeSearchService);
 
-		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -800,8 +946,8 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(resolver.callCount()).isZero();
-		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
-		assertThat(plan.statuses()).containsExactly("FOUND");
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.STATIC_BACKEND_ESTIMATE);
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 	}
 
 	@Test
@@ -823,7 +969,7 @@ class RouteSearchServiceTest {
 		);
 		var planner = new RouteV2Planner(routeSearchService);
 
-		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -835,7 +981,27 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.FALLBACK);
-		assertThat(plan.statuses()).containsExactly("FOUND", "REALTIME_UNAVAILABLE_PLANNED_USED");
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.first()
+			.satisfies(step -> assertThat(step.reasonCodes())
+				.containsExactly("REALTIME_UNAVAILABLE_PLANNED_USED", "PROVIDER_QUOTA_EXCEEDED"));
+		assertThat(plan.statuses())
+			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+	}
+
+	@Test
+	@DisplayName("V2 search port command는 adapter를 우회한 잘못된 planner 조건을 거부한다")
+	void routeV2SearchCommandRejectsInvalidPlannerBounds() {
+		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, -1, 1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("maxTransfers must not be negative");
+		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 4, 1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("maxTransfers must be 3 or less");
+		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 0))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("alternativeCount must be at least 1");
 	}
 
 	@Test
@@ -1287,6 +1453,27 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("backend planner는 allowlist 없는 역외 환승 간선을 내부 경로 후보로 승격하지 않는다")
+	void searchInternalRouteIgnoresOutOfStationTransferEdges() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new OutOfStationTransferOnlyTransitMasterPort(),
+			CLOCK
+		);
+
+		assertThatThrownBy(() -> routeEdgeService.searchInternalRoute(new SearchInternalRouteCommand(
+			"station-a",
+			"node-station-a-entrance",
+			"node-station-a-platform",
+			MobilityType.STROLLER
+		)))
+			.isInstanceOf(RouteNotFoundException.class)
+			.hasMessage("연결 가능한 경로를 찾을 수 없습니다.");
+	}
+
+	@Test
 	@DisplayName("휠체어 역 내부 이동 경로는 계단만 있으면 차단한다")
 	void wheelchairInternalRouteBlocksStairOnlyInternalPath() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -1358,6 +1545,35 @@ class RouteSearchServiceTest {
 		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
 		assertThat(result.steps()).hasSize(1);
 		assertThat(result.steps().getFirst().includesStairs()).isTrue();
+		assertThat(result.warnings())
+			.extracting("code")
+			.containsExactly(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
+	@DisplayName("역 내부 ETA는 burden 점수보다 먼저 비교하고 표시 초는 시간 항만 합산한다")
+	void internalRouteRanksEtaBeforeBurdenScore() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new EtaBurdenSplitInternalTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchInternalRoute(new SearchInternalRouteCommand(
+			"station-a",
+			"node-station-a-entrance",
+			"node-station-a-platform",
+			MobilityType.STROLLER
+		));
+
+		assertThat(result.status()).isEqualTo(RouteSearchStatus.FOUND);
+		assertThat(result.totalEstimatedSeconds()).isEqualTo(90);
+		assertThat(result.totalDistanceMeters()).isEqualTo(400);
+		assertThat(result.steps())
+			.extracting("edgeId")
+			.containsExactly("edge-fast-stair");
 		assertThat(result.warnings())
 			.extracting("code")
 			.containsExactly(RouteWarningCode.STAIR_ONLY_ACCESS);
@@ -1479,13 +1695,13 @@ class RouteSearchServiceTest {
 		return new RouteV2Planner(new RouteSearchService(repository, repository, transitMasterPort, CLOCK));
 	}
 
-	private static RouteV2Planner.SearchRouteV2Command routeV2Command(
+	private static RouteV2SearchUseCase.SearchRouteV2Command routeV2Command(
 		ConstraintMode constraintMode,
 		MobilityType mobilityType,
 		int maxTransfers,
 		int alternativeCount
 	) {
-		return new RouteV2Planner.SearchRouteV2Command(
+		return new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
@@ -1514,19 +1730,25 @@ class RouteSearchServiceTest {
 	private static class CountingRealtimeArrivalResolver implements RealtimeArrivalResolver {
 
 		private final AtomicInteger callCount = new AtomicInteger();
+		private final List<Query> queries = new ArrayList<>();
+		private final List<ArrivalFreshness> statuses;
 		private Query lastQuery;
+
+		CountingRealtimeArrivalResolver(ArrivalFreshness... statuses) {
+			this.statuses = statuses.length == 0
+				? List.of(ArrivalFreshness.FRESH_REALTIME)
+				: List.of(statuses);
+		}
 
 		@Override
 		public Resolution resolve(Query query) {
-			callCount.incrementAndGet();
+			int callIndex = callCount.getAndIncrement();
+			queries.add(query);
 			lastQuery = query;
+			ArrivalFreshness status = statuses.get(Math.min(callIndex, statuses.size() - 1));
 			Instant expectedArrivalAt = query.readyAt().plusSeconds(120);
-			return new Resolution(
-				ArrivalFreshness.FRESH_REALTIME,
-				null,
-				"test-realtime-snapshot",
-				query.readyAt().minusSeconds(30),
-				List.of(new ArrivalCandidate(
+			List<ArrivalCandidate> candidates = status == ArrivalFreshness.FRESH_REALTIME
+				? List.of(new ArrivalCandidate(
 					"train-test",
 					query.lineId(),
 					query.direction(),
@@ -1537,6 +1759,13 @@ class RouteSearchServiceTest {
 					ArrivalFreshness.FRESH_REALTIME,
 					EtaConfidence.HIGH
 				))
+				: List.of();
+			return new Resolution(
+				status,
+				status == ArrivalFreshness.FRESH_REALTIME ? null : "PROVIDER_UNAVAILABLE",
+				status == ArrivalFreshness.FRESH_REALTIME ? "test-realtime-snapshot" : null,
+				query.readyAt().minusSeconds(30),
+				candidates
 			);
 		}
 
@@ -1546,6 +1775,10 @@ class RouteSearchServiceTest {
 
 		Query lastQuery() {
 			return lastQuery;
+		}
+
+		List<Query> queries() {
+			return List.copyOf(queries);
 		}
 	}
 
@@ -1933,6 +2166,30 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class DirectAndShorterTransferTransitMasterPort extends OneTransferTransitMasterPort {
+
+		@Override
+		public List<SubwayLine> loadLines() {
+			return List.of(
+				new SubwayLine("line-a", "operator-a", "A 노선", "#0052A4", "수도권", null, true),
+				new SubwayLine("line-b", "operator-a", "B 노선", "#00A84D", "수도권", null, true),
+				new SubwayLine("line-direct", "operator-a", "테스트 직통", "#F5A200", "수도권", null, true)
+			);
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "line-a", "101", 1, "상행 / 하행"),
+				new StationLine("station-transfer", "line-a", "103", 3, "상행 / 하행"),
+				new StationLine("station-transfer", "line-b", "201", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-b", "203", 3, "상행 / 하행"),
+				new StationLine("station-a", "line-direct", "101", 1, "상행 / 하행"),
+				new StationLine("station-b", "line-direct", "150", 50, "상행 / 하행")
+			);
+		}
+	}
+
 	private static class StairOnlyTransferTransitMasterPort extends OneTransferTransitMasterPort {
 
 		@Override
@@ -2242,6 +2499,75 @@ class RouteSearchServiceTest {
 		}
 	}
 
+	private static class EtaBurdenSplitInternalTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(
+				internalEdge(
+					"edge-fast-stair",
+					"node-station-a-entrance",
+					"node-station-a-platform",
+					RouteEdgeType.STAIR,
+					400,
+					90,
+					true
+				),
+				internalEdge(
+					"edge-slower-step-free-a",
+					"node-station-a-entrance",
+					"node-station-a-landing",
+					RouteEdgeType.WALKWAY,
+					5,
+					60,
+					false
+				),
+				internalEdge(
+					"edge-slower-step-free-b",
+					"node-station-a-landing",
+					"node-station-a-platform",
+					RouteEdgeType.WALKWAY,
+					5,
+					60,
+					false
+				)
+			);
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			return List.of(
+				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "출입구"),
+				routeNode("node-station-a-landing", "station-a", RouteNodeType.CONCOURSE, "중간 지점"),
+				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
+			);
+		}
+	}
+
+	private static class OutOfStationTransferOnlyTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(internalEdge(
+				"edge-a-out-of-station-transfer",
+				"node-station-a-entrance",
+				"node-station-a-platform",
+				RouteEdgeType.OUT_OF_STATION_TRANSFER,
+				120,
+				180,
+				false
+			));
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			return List.of(
+				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "외부 출입구"),
+				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
+			);
+		}
+	}
+
 	private static class BrokenElevatorInternalEdgeTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
 
 		@Override
@@ -2516,6 +2842,33 @@ class RouteSearchServiceTest {
 			false,
 			1,
 			3,
+			95,
+			true
+		);
+	}
+
+	private static RouteEdge internalEdge(
+		String id,
+		String fromNodeId,
+		String toNodeId,
+		RouteEdgeType type,
+		int distanceMeters,
+		int estimatedSeconds,
+		boolean hasStairs
+	) {
+		return new RouteEdge(
+			id,
+			"station-a",
+			fromNodeId,
+			toNodeId,
+			type,
+			distanceMeters,
+			estimatedSeconds,
+			hasStairs,
+			false,
+			false,
+			1,
+			5,
 			95,
 			true
 		);

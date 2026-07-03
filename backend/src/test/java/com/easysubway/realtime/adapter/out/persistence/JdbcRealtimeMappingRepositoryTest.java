@@ -23,6 +23,7 @@ class JdbcRealtimeMappingRepositoryTest {
 			""
 		);
 		jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate.execute("DROP TABLE IF EXISTS realtime_provider_trip_mappings");
 		jdbcTemplate.execute("DROP TABLE IF EXISTS realtime_provider_station_mappings");
 		jdbcTemplate.execute("DROP TABLE IF EXISTS realtime_provider_line_mappings");
 		jdbcTemplate.execute("""
@@ -59,6 +60,30 @@ class JdbcRealtimeMappingRepositoryTest {
 				UNIQUE (provider_id, line_id, station_id)
 			)
 			""");
+		jdbcTemplate.execute("""
+			CREATE TABLE realtime_provider_trip_mappings (
+				provider_id VARCHAR(80) NOT NULL,
+				provider_line_id VARCHAR(80) NOT NULL,
+				line_id VARCHAR(80) NOT NULL,
+				raw_direction VARCHAR(120) NOT NULL DEFAULT '',
+				canonical_direction VARCHAR(120) NOT NULL DEFAULT '',
+				raw_destination VARCHAR(120) NOT NULL DEFAULT '',
+				canonical_destination VARCHAR(120) NOT NULL DEFAULT '',
+				raw_service_pattern VARCHAR(80) NOT NULL DEFAULT '',
+				canonical_service_pattern VARCHAR(80) NOT NULL DEFAULT '',
+				mapping_confidence VARCHAR(40) NOT NULL,
+				valid_from TIMESTAMP,
+				valid_until TIMESTAMP,
+				cache_version BIGINT NOT NULL,
+				PRIMARY KEY (
+					provider_id,
+					provider_line_id,
+					raw_direction,
+					raw_destination,
+					raw_service_pattern
+				)
+			)
+			""");
 		jdbcTemplate.update("""
 			INSERT INTO realtime_provider_line_mappings (
 				provider_id, provider_line_id, line_id, provider_line_name,
@@ -72,6 +97,13 @@ class JdbcRealtimeMappingRepositoryTest {
 				supports_arrivals, supports_train_positions, mapping_confidence, cache_version
 			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""", "seoul-topis", "1004", "1004000448", "station-sangnoksu", "seoul-4", "상록수", true, true, "OFFICIAL", 8L);
+		jdbcTemplate.update("""
+			INSERT INTO realtime_provider_trip_mappings (
+				provider_id, provider_line_id, line_id, raw_direction, canonical_direction,
+				raw_destination, canonical_destination, raw_service_pattern, canonical_service_pattern,
+				mapping_confidence, valid_from, valid_until, cache_version
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, NULL, NULL, ?)
+			""", "seoul-topis", "1004", "seoul-4", "상행", "당고개 방면", "당고개", "당고개", "", "", "OFFICIAL", 9L);
 		repository = new JdbcRealtimeMappingRepository(jdbcTemplate);
 	}
 
@@ -208,5 +240,46 @@ class JdbcRealtimeMappingRepositoryTest {
 			assertThat(value.liveEligible()).isFalse();
 			assertThat(value.ineligibleReason()).isEqualTo("MAPPING_LOW_CONFIDENCE");
 		});
+	}
+
+	@Test
+	@DisplayName("trip mapping은 provider raw direction/destination을 canonical 값으로 조회한다")
+	void findTripMappingByProviderRawDirectionDestination() {
+		var mapping = repository.findTripMapping(
+			"seoul-topis",
+			"seoul-4",
+			"1004",
+			"상행",
+			"당고개",
+			null
+		);
+
+		assertThat(mapping).hasValueSatisfying((value) -> {
+			assertThat(value.canonicalDirection()).isEqualTo("당고개 방면");
+			assertThat(value.canonicalDestination()).isEqualTo("당고개");
+			assertThat(value.rawDirection()).isEqualTo("상행");
+			assertThat(value.cacheVersion()).isEqualTo(9L);
+		});
+	}
+
+	@Test
+	@DisplayName("trip mapping은 HEURISTIC raw mapping을 production canonical 후보로 쓰지 않는다")
+	void findTripMappingIgnoresLowConfidenceRows() {
+		jdbcTemplate.update("""
+			UPDATE realtime_provider_trip_mappings
+			SET mapping_confidence = 'HEURISTIC'
+			WHERE provider_id = 'seoul-topis'
+			""");
+
+		var mapping = repository.findTripMapping(
+			"seoul-topis",
+			"seoul-4",
+			"1004",
+			"상행",
+			"당고개",
+			null
+		);
+
+		assertThat(mapping).isEmpty();
 	}
 }
