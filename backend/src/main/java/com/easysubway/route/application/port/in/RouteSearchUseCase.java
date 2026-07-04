@@ -23,6 +23,10 @@ public interface RouteSearchUseCase {
 		return List.copyOf(timetableResults);
 	}
 
+	default boolean supportsRealtimeOverlay() {
+		return true;
+	}
+
 	InternalRouteResult searchInternalRoute(SearchInternalRouteCommand command);
 
 	RouteSearchResult getRouteSearch(String routeSearchId);

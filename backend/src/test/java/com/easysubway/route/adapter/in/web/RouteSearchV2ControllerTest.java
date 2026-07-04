@@ -26,6 +26,7 @@ import com.easysubway.route.domain.RouteWarningCode;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -50,6 +51,11 @@ class RouteSearchV2ControllerTest {
 
 	@MockitoBean
 	private RouteSearchUseCase routeSearchUseCase;
+
+	@BeforeEach
+	void setUpRealtimeOverlayCapability() {
+		when(routeSearchUseCase.supportsRealtimeOverlay()).thenReturn(true);
+	}
 
 	@TestConfiguration
 	static class RouteTimetableTestConfiguration {

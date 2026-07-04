@@ -78,7 +78,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 					command.alternativeCount(),
 					timetableItineraries
 				);
-				return new RouteV2Plan(timetableItineraries, statusesOf(timetableItineraries, false), PLANNER_ADR);
+				return new RouteV2Plan(timetableItineraries, statusesOf(timetableItineraries, command.useRealtime()), PLANNER_ADR);
 			}
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
@@ -96,9 +96,9 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	}
 
 	private boolean canUseTimetableRaptor(SearchRouteV2Command command) {
-		return !command.useRealtime()
-			&& command.constraintMode() != ConstraintMode.STRICT_STEP_FREE
-			&& command.mobilityType() != MobilityType.WHEELCHAIR;
+		return command.constraintMode() != ConstraintMode.STRICT_STEP_FREE
+			&& command.mobilityType() != MobilityType.WHEELCHAIR
+			&& (!command.useRealtime() || !routeSearchUseCase.supportsRealtimeOverlay());
 	}
 
 	private RouteTimetable routeTimetable() {

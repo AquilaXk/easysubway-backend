@@ -828,6 +828,29 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 realtime 요청에서 overlay가 없으면 시간표 PLANNED로 강등한다")
+	void routeV2PlannerFallsBackToPlannedTimetableWhenRealtimeOverlayMissing() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new DisconnectedTransitMasterPort(), CLOCK);
+		var planner = new RouteV2Planner(routeSearchService, routeTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			true,
+			1,
+			3
+		));
+
+		assertThat(plan.statuses())
+			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 시간표 환승 경로에 접근과 환승 step을 보강한다")
 	void routeV2PlannerAddsAccessAndTransferStepsToTimetableTransferRoute() {
 		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), transferRouteTimetablePort());
@@ -1041,7 +1064,7 @@ class RouteSearchServiceTest {
 		var planner = new RouteV2Planner(routeSearchService, new LoadRouteTimetablePort() {
 			@Override
 			public boolean hasRouteTimetable() {
-				return true;
+				return false;
 			}
 
 			@Override
@@ -1061,7 +1084,8 @@ class RouteSearchServiceTest {
 			3
 		));
 
-		assertThat(plan.statuses()).contains(RouteV2Status.FOUND);
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
+		assertThat(plan.itineraries()).isEmpty();
 	}
 
 	@Test

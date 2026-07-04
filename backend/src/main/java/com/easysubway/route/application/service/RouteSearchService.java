@@ -147,6 +147,11 @@ public class RouteSearchService implements RouteSearchUseCase {
 		this.realtimeEtaOverlay = new RealtimeEtaOverlay();
 	}
 
+	@Override
+	public boolean supportsRealtimeOverlay() {
+		return realtimeArrivalResolver != null;
+	}
+
 	public RouteSearchService(
 		LoadRouteSearchPort loadRouteSearchPort,
 		SaveRouteSearchPort saveRouteSearchPort,
