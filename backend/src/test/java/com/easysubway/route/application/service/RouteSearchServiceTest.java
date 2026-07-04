@@ -988,6 +988,40 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 심야 24시대 시간표를 이전 service day로 탐색한다")
+	void routeV2PlannerUsesPreviousServiceDayForAfterMidnightTrips() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), lateNightRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-02T00:00:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			false,
+			1,
+			3
+		));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("fromStationId", "toStationId", "estimatedMinutes")
+			.containsExactly(tuple("station-a", "station-b", 15));
+	}
+
+	@Test
+	@DisplayName("V2 planner는 calendar exception 제거일의 시간표를 제외한다")
+	void routeV2PlannerRemovesCalendarDateExceptionService() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), removedCalendarDateRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
+		assertThat(plan.itineraries()).isEmpty();
+	}
+
+	@Test
 	@DisplayName("V2 planner는 pickup/drop-off 제한 stop_times를 승하차 후보에서 제외한다")
 	void routeV2PlannerHonorsPickupAndDropOffRestrictions() {
 		var noPickupPlanner = new RouteV2Planner(legacySearchMustNotBeCalled(), restrictedStopRouteTimetablePort(1, 0));
@@ -2047,6 +2081,58 @@ class RouteSearchServiceTest {
 			),
 			List.of(new LoadRouteTimetablePort.TransitFrequency("trip-seoul-4-frequency", 32400, 36000, 600, false))
 		);
+	}
+
+	private static LoadRouteTimetablePort lateNightRouteTimetablePort() {
+		return () -> {
+			var timetable = routeTimetable(
+				List.of(
+					new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-late", 1, "station-a", "seoul-4", 87000, 87000, 0, 0),
+					new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-late", 2, "station-b", "seoul-4", 87900, 87900, 0, 0)
+				),
+				List.of()
+			);
+			return new LoadRouteTimetablePort.RouteTimetable(
+				List.of(new LoadRouteTimetablePort.ServiceCalendar(
+					"weekday-2026",
+					true,
+					true,
+					true,
+					true,
+					true,
+					false,
+					false,
+					LocalDate.parse("2026-07-01"),
+					LocalDate.parse("2026-07-01"),
+					"Asia/Seoul"
+				)),
+				timetable.serviceCalendarDates(),
+				timetable.transitRoutes(),
+				timetable.transitTrips(),
+				timetable.transitStopTimes(),
+				timetable.transitFrequencies()
+			);
+		};
+	}
+
+	private static LoadRouteTimetablePort removedCalendarDateRouteTimetablePort() {
+		return () -> {
+			var timetable = routeTimetable(
+				List.of(
+					new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-removed", 1, "station-a", "seoul-4", 32760, 32760, 0, 0),
+					new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-removed", 2, "station-b", "seoul-4", 33360, 33360, 0, 0)
+				),
+				List.of()
+			);
+			return new LoadRouteTimetablePort.RouteTimetable(
+				timetable.serviceCalendars(),
+				List.of(new LoadRouteTimetablePort.ServiceCalendarDate("weekday-2026", LocalDate.parse("2026-07-01"), 2)),
+				timetable.transitRoutes(),
+				timetable.transitTrips(),
+				timetable.transitStopTimes(),
+				timetable.transitFrequencies()
+			);
+		};
 	}
 
 	private static LoadRouteTimetablePort restrictedStopRouteTimetablePort(int pickupType, int dropOffType) {
