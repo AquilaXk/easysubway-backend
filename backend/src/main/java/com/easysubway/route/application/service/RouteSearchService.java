@@ -1854,10 +1854,11 @@ record AccessPath(
 		String stationId,
 		String fromLineId,
 		String toLineId,
-		boolean includesStairs
+		boolean includesStairs,
+		RouteProfileWeight profileWeight
 	) {
 		return new AccessPath(
-			6,
+			profileWeight.profiledMinutes(360),
 			260,
 			includesStairs,
 			includesStairs ? "STAIR_ONLY" : "UNKNOWN",
@@ -1899,7 +1900,7 @@ final class AccessGraphRouter {
 		if (profileWeight.blocksStairOnlyAccess() && includesStairs) {
 			return AccessPath.blocked(List.of("STAIR_ONLY_ACCESS"));
 		}
-		return AccessPath.found(4, 180, includesStairs, stationId, lineId, "entry");
+		return AccessPath.found(profileWeight.profiledMinutes(240), 180, includesStairs, stationId, lineId, "entry");
 	}
 
 	AccessPath egressAccess(
@@ -1911,7 +1912,7 @@ final class AccessGraphRouter {
 		if (profileWeight.blocksStairOnlyAccess() && includesStairs) {
 			return AccessPath.blocked(List.of("STAIR_ONLY_ACCESS"));
 		}
-		return AccessPath.found(3, 120, includesStairs, stationId, lineId, "egress");
+		return AccessPath.found(profileWeight.profiledMinutes(180), 120, includesStairs, stationId, lineId, "egress");
 	}
 
 	AccessPath generatedConnector(String edgeId, RouteProfileWeight profileWeight) {
@@ -1934,7 +1935,7 @@ final class StationPathwayRouter {
 		if (profileWeight.blocksStairOnlyAccess() && includesStairs) {
 			return AccessPath.blocked(List.of("STAIR_ONLY_ACCESS"));
 		}
-		return AccessPath.transfer(stationId, fromLineId, toLineId, includesStairs);
+		return AccessPath.transfer(stationId, fromLineId, toLineId, includesStairs, profileWeight);
 	}
 }
 

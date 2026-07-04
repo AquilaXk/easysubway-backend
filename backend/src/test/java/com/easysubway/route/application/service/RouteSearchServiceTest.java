@@ -113,7 +113,7 @@ class RouteSearchServiceTest {
 		assertThat(result.steps())
 			.extracting("stepType")
 			.containsExactly("entry", "ride", "exit");
-		assertThat(result.steps().get(0).estimatedMinutes()).isEqualTo(4);
+		assertThat(result.steps().get(0).estimatedMinutes()).isEqualTo(5);
 		assertThat(result.steps().get(0).distanceMeters()).isEqualTo(180);
 		assertThat(result.steps().get(0).includesStairs()).isFalse();
 		assertThat(result.steps().get(0).stairAccessState()).isEqualTo("UNKNOWN");
@@ -405,7 +405,7 @@ class RouteSearchServiceTest {
 			);
 		assertThat(result.steps().get(2).description())
 			.isEqualTo("환승역의 엘리베이터와 계단 없는 연결 동선을 먼저 확인합니다.");
-		assertThat(result.steps().get(2).estimatedMinutes()).isEqualTo(6);
+		assertThat(result.steps().get(2).estimatedMinutes()).isEqualTo(9);
 		assertThat(result.steps().get(2).distanceMeters()).isEqualTo(260);
 		assertThat(result.steps().get(2).requiresAccessibilityCheck()).isTrue();
 	}
@@ -577,16 +577,16 @@ class RouteSearchServiceTest {
 		var egress = accessRouter.egressAccess("station-b", "line-b", false, profileWeight);
 		var ready = new TransferAccessResolver().resolve(transfer, 600, 1000);
 
-		assertThat(entry.estimatedMinutes()).isEqualTo(4);
-		assertThat(transfer.estimatedMinutes()).isEqualTo(6);
-		assertThat(egress.estimatedMinutes()).isEqualTo(3);
+		assertThat(entry.estimatedMinutes()).isEqualTo(5);
+		assertThat(transfer.estimatedMinutes()).isEqualTo(7);
+		assertThat(egress.estimatedMinutes()).isEqualTo(4);
 		assertThat(transfer.evidenceSources()).containsExactly(
 			"station:station-x",
 			"transfer:line-a:line-b",
 			"access:transfer"
 		);
-		assertThat(ready.transferReadyAtMinutes()).isEqualTo(606);
-		assertThat(ready.slackMinutes()).isEqualTo(394);
+		assertThat(ready.transferReadyAtMinutes()).isEqualTo(607);
+		assertThat(ready.slackMinutes()).isEqualTo(393);
 		assertThat(ready.feasible()).isTrue();
 		assertThat(accessRouter.entryAccess("station-a", "line-a", true, profileWeight).noPathReason())
 			.isEqualTo(AccessNoPathReason.BLOCKED);
@@ -595,6 +595,21 @@ class RouteSearchServiceTest {
 		assertThat(AccessPath.unsupported(List.of("STRICT_EVIDENCE_UNSUPPORTED")).noPathReason())
 			.isEqualTo(AccessNoPathReason.UNSUPPORTED);
 		assertThat(AccessPath.noData().noPathReason()).isEqualTo(AccessNoPathReason.NO_DATA);
+	}
+
+	@Test
+	@DisplayName("access graph 시간은 mobility type 기본 보행 프리셋을 반영한다")
+	void accessGraphTimesApplyMobilityProfilePreset() {
+		var profileWeight = RouteProfileWeight.from(MobilityType.LUGGAGE);
+		var accessRouter = new AccessGraphRouter();
+		var stationRouter = new StationPathwayRouter();
+
+		assertThat(accessRouter.entryAccess("station-a", "line-a", false, profileWeight).estimatedMinutes())
+			.isEqualTo(5);
+		assertThat(stationRouter.transferPath("station-x", "line-a", "line-b", false, profileWeight).estimatedMinutes())
+			.isEqualTo(8);
+		assertThat(accessRouter.egressAccess("station-b", "line-b", false, profileWeight).estimatedMinutes())
+			.isEqualTo(4);
 	}
 
 	@Test
@@ -1362,7 +1377,7 @@ class RouteSearchServiceTest {
 
 		assertThat(resolver.callCount()).isEqualTo(1);
 		assertThat(resolver.lastQuery().stationId()).isEqualTo("station-a");
-		assertThat(resolver.lastQuery().readyAt()).isEqualTo(Instant.parse("2026-07-01T00:05:30Z"));
+		assertThat(resolver.lastQuery().readyAt()).isEqualTo(Instant.parse("2026-07-01T00:07:30Z"));
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.MIXED);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
@@ -1374,8 +1389,8 @@ class RouteSearchServiceTest {
 			.satisfies(step -> {
 				assertThat(step.reasonCodes()).containsExactly("MATCHED_REALTIME");
 				assertThat(step.providerSnapshotId()).isEqualTo("test-realtime-snapshot");
-				assertThat(step.providerObservedAt()).isEqualTo("2026-07-01T00:05:00Z");
-				assertThat(step.gatewayReceivedAt()).isEqualTo("2026-07-01T00:05:00Z");
+				assertThat(step.providerObservedAt()).isEqualTo("2026-07-01T00:07:00Z");
+				assertThat(step.gatewayReceivedAt()).isEqualTo("2026-07-01T00:07:00Z");
 				assertThat(step.servedAt()).isEqualTo("2026-06-13T09:00:00Z");
 			});
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
@@ -1410,8 +1425,8 @@ class RouteSearchServiceTest {
 		assertThat(resolver.queries())
 			.extracting(RealtimeArrivalResolver.Query::readyAt)
 			.containsExactly(
-				Instant.parse("2026-07-01T00:05:30Z"),
-				Instant.parse("2026-07-01T00:19:00Z")
+				Instant.parse("2026-07-01T00:07:30Z"),
+				Instant.parse("2026-07-01T00:24:00Z")
 			);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
@@ -1452,8 +1467,8 @@ class RouteSearchServiceTest {
 		assertThat(resolver.queries())
 			.extracting(RealtimeArrivalResolver.Query::readyAt)
 			.containsExactly(
-				Instant.parse("2026-07-01T00:05:30Z"),
-				Instant.parse("2026-07-01T00:17:00Z")
+				Instant.parse("2026-07-01T00:07:30Z"),
+				Instant.parse("2026-07-01T00:22:00Z")
 			);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))

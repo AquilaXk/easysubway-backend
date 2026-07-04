@@ -9,10 +9,12 @@ public record RouteProfileWeight(
 	int transferPenalty,
 	boolean blocksStairOnlyAccess,
 	String entryGuidance,
-	String exitGuidance
+	String exitGuidance,
+	ProfileWalkTimeCalculator.MobilityPreset mobilityPreset
 ) {
 
 	public static RouteProfileWeight from(MobilityType mobilityType) {
+		var preset = ProfileWalkTimeCalculator.presetFor(mobilityType);
 		// 점수는 시간 예측이 아니라 같은 경로 후보를 비교하기 위한 접근 부담 비용이다.
 		return switch (mobilityType) {
 			case SENIOR -> new RouteProfileWeight(
@@ -22,7 +24,8 @@ public record RouteProfileWeight(
 				12,
 				false,
 				"계단을 피하고 이동 거리가 짧은 출구를 먼저 확인합니다.",
-				"도착역에서 계단을 피할 수 있는 출구와 짧은 동선을 확인합니다."
+				"도착역에서 계단을 피할 수 있는 출구와 짧은 동선을 확인합니다.",
+				preset
 			);
 			case STROLLER -> new RouteProfileWeight(
 				20,
@@ -31,7 +34,8 @@ public record RouteProfileWeight(
 				15,
 				false,
 				"엘리베이터와 넓은 통로가 있는 출구를 먼저 확인합니다.",
-				"도착역에서 엘리베이터와 넓은 통로가 있는 출구를 확인합니다."
+				"도착역에서 엘리베이터와 넓은 통로가 있는 출구를 확인합니다.",
+				preset
 			);
 			case WHEELCHAIR -> new RouteProfileWeight(
 				24,
@@ -40,7 +44,8 @@ public record RouteProfileWeight(
 				18,
 				true,
 				"엘리베이터, 리프트, 경사로 연결을 먼저 확인합니다.",
-				"도착역에서 엘리베이터, 리프트, 경사로 연결 출구를 확인합니다."
+				"도착역에서 엘리베이터, 리프트, 경사로 연결 출구를 확인합니다.",
+				preset
 			);
 			case PREGNANT -> new RouteProfileWeight(
 				17,
@@ -49,7 +54,8 @@ public record RouteProfileWeight(
 				14,
 				false,
 				"엘리베이터와 짧은 이동 동선을 먼저 확인합니다.",
-				"도착역에서 짧게 걸을 수 있는 엘리베이터 출구를 확인합니다."
+				"도착역에서 짧게 걸을 수 있는 엘리베이터 출구를 확인합니다.",
+				preset
 			);
 			case TEMPORARY_INJURY -> new RouteProfileWeight(
 				22,
@@ -58,7 +64,8 @@ public record RouteProfileWeight(
 				17,
 				false,
 				"계단을 피하고 쉬어 갈 수 있는 동선을 먼저 확인합니다.",
-				"도착역에서 계단을 피하고 천천히 이동할 수 있는 출구를 확인합니다."
+				"도착역에서 계단을 피하고 천천히 이동할 수 있는 출구를 확인합니다.",
+				preset
 			);
 			case LUGGAGE -> new RouteProfileWeight(
 				16,
@@ -67,7 +74,8 @@ public record RouteProfileWeight(
 				10,
 				false,
 				"엘리베이터와 넓은 출구 동선을 먼저 확인합니다.",
-				"도착역에서 큰 짐을 들고 지나가기 쉬운 출구를 확인합니다."
+				"도착역에서 큰 짐을 들고 지나가기 쉬운 출구를 확인합니다.",
+				preset
 			);
 		};
 	}
@@ -81,7 +89,18 @@ public record RouteProfileWeight(
 			base.transferPenalty(),
 			constraintMode == ConstraintMode.STRICT_STEP_FREE,
 			base.entryGuidance(),
-			base.exitGuidance()
+			base.exitGuidance(),
+			base.mobilityPreset()
 		);
+	}
+
+	public int profiledMinutes(int baselineSeconds) {
+		int seconds = ProfileWalkTimeCalculator.estimateSeconds(
+			baselineSeconds,
+			mobilityPreset,
+			ProfileWalkTimeCalculator.WalkTimeSource.MEASURED_PATHWAY,
+			false
+		).seconds();
+		return Math.toIntExact(Math.ceilDiv(seconds, 60));
 	}
 }
