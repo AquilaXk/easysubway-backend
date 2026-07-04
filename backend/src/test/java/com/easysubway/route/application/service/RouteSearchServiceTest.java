@@ -811,7 +811,7 @@ class RouteSearchServiceTest {
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries()).hasSize(1);
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
-		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1140);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1320);
 		assertThat(plan.itineraries().getFirst().steps())
 			.extracting("stepType", "fromStationId", "toStationId", "timeSource")
 			.containsExactly(
@@ -822,9 +822,27 @@ class RouteSearchServiceTest {
 		assertThat(plan.itineraries().getFirst().steps())
 			.extracting("stepType", "estimatedMinutes")
 			.containsExactly(
-				tuple("entry", 6),
+				tuple("entry", 7),
 				tuple("ride", 10),
-				tuple("exit", 3)
+				tuple("exit", 5)
+			);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 이동 프로필 보행 시간을 시간표 접근 step에 반영한다")
+	void routeV2PlannerAppliesMobilityProfileWalkTimeToTimetableAccessSteps() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), routeTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.LUGGAGE, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1260);
+		assertThat(plan.itineraries().getFirst().steps())
+			.extracting("stepType", "estimatedMinutes")
+			.containsExactly(
+				tuple("entry", 7),
+				tuple("ride", 10),
+				tuple("exit", 4)
 			);
 	}
 
@@ -1109,7 +1127,7 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
-		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1980);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(2100);
 	}
 
 	@Test
@@ -1153,13 +1171,13 @@ class RouteSearchServiceTest {
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.itineraries().getFirst().createdAt()).isEqualTo(LocalDate.of(2026, 7, 1).atTime(23, 55));
-		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1980);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(2100);
 		assertThat(plan.itineraries().getFirst().steps())
 			.extracting("stepType", "estimatedMinutes")
 			.containsExactly(
 				tuple("entry", 15),
 				tuple("ride", 15),
-				tuple("exit", 3)
+				tuple("exit", 5)
 			);
 	}
 
@@ -1180,7 +1198,7 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
-		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1920);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(2040);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("lineName", "fromStationId", "toStationId", "estimatedMinutes")
@@ -1204,7 +1222,7 @@ class RouteSearchServiceTest {
 		));
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
-		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1740);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1920);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("lineName", "fromStationId", "toStationId", "estimatedMinutes")
@@ -2408,8 +2426,8 @@ class RouteSearchServiceTest {
 				0
 			)),
 			List.of(
-				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 1, "station-a", "seoul-4", 32760, 32760, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 2, "station-b", "seoul-4", 33360, 33360, 0, 0)
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 1, "station-a", "seoul-4", 32820, 32820, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 2, "station-b", "seoul-4", 33420, 33420, 0, 0)
 			),
 			List.of()
 		);
@@ -2623,8 +2641,8 @@ class RouteSearchServiceTest {
 			List.of(
 				new LoadRouteTimetablePort.TransitStopTime("express-0904", 1, "station-a", "line-express", 32640, 32640, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("express-0904", 2, "station-b", "line-express", 33180, 33180, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime("local-0905", 1, "station-a", "line-local", 32700, 32700, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime("local-0905", 2, "station-b", "line-local", 33900, 33900, 0, 0)
+				new LoadRouteTimetablePort.TransitStopTime("local-0905", 1, "station-a", "line-local", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("local-0905", 2, "station-b", "line-local", 33960, 33960, 0, 0)
 			),
 			List.of()
 		);
@@ -2680,7 +2698,7 @@ class RouteSearchServiceTest {
 	}
 
 	private static LoadRouteTimetablePort transferRouteTimetablePort() {
-		return transferRouteTimetablePort(33720);
+		return transferRouteTimetablePort(33780);
 	}
 
 	private static LoadRouteTimetablePort sameArrivalRouteTimetablePort() {
@@ -2710,11 +2728,11 @@ class RouteSearchServiceTest {
 				new LoadRouteTimetablePort.TransitTrip("trip-b", "route-line-b", "weekday-2026", "도착", "0", "LOCAL", 0)
 			),
 			List.of(
-				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 1, "station-a", "line-direct", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 1, "station-a", "line-direct", 32820, 32820, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 2, "station-b", "line-direct", 34200, 34200, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime("trip-a", 1, "station-a", "line-a", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-a", 1, "station-a", "line-a", 32820, 32820, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-a", 2, "station-transfer", "line-a", 33180, 33180, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime("trip-b", 1, "station-transfer", "line-b", 33720, 33720, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-b", 1, "station-transfer", "line-b", 33780, 33780, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-b", 2, "station-b", "line-b", 34200, 34200, 0, 0)
 			),
 			List.of()
@@ -2776,7 +2794,7 @@ class RouteSearchServiceTest {
 				)
 			),
 			List.of(
-				new LoadRouteTimetablePort.TransitStopTime("trip-line-a-0900", 1, "station-a", "line-a", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-line-a-0900", 1, "station-a", "line-a", 32820, 32820, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-line-a-0900", 2, "station-transfer", "line-a", 33180, 33180, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-line-b-0915", 1, "station-transfer", "line-b", secondDepartureSeconds, secondDepartureSeconds, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-line-b-0915", 2, "station-b", "line-b", secondDepartureSeconds + 420, secondDepartureSeconds + 420, 0, 0)

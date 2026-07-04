@@ -11,6 +11,8 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitS
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
@@ -111,7 +113,10 @@ class RouteTimetableRaptorPlanner {
 
 	private boolean canBoard(SearchRouteV2Command command, Label label, TransitStopTime stopTime, int round) {
 		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
-		int accessSeconds = label.boardings() > 0 ? TRANSFER_DURATION_SECONDS : ENTRY_DURATION_SECONDS;
+		int accessSeconds = profiledWalkSeconds(
+			command,
+			label.boardings() > 0 ? TRANSFER_DURATION_SECONDS : ENTRY_DURATION_SECONDS
+		);
 		return label.boardings() == round && stopTime.departureSeconds() >= label.timeSeconds() + accessSeconds + slackSeconds;
 	}
 
@@ -175,6 +180,9 @@ class RouteTimetableRaptorPlanner {
 		List<RouteStep> steps = new ArrayList<>();
 		int sequence = 1;
 		int boardingSlackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
+		int entryDurationSeconds = profiledWalkSeconds(command, ENTRY_DURATION_SECONDS);
+		int transferDurationSeconds = profiledWalkSeconds(command, TRANSFER_DURATION_SECONDS);
+		int exitDurationSeconds = profiledWalkSeconds(command, EXIT_DURATION_SECONDS);
 		List<RideLeg> path = label.path();
 		RideLeg firstLeg = path.getFirst();
 		RideLeg lastLeg = path.getLast();
@@ -185,7 +193,7 @@ class RouteTimetableRaptorPlanner {
 			firstLeg.from().stationId(),
 			firstLeg.lineId(),
 			firstLeg.lineName(),
-			waitMinutesBeforeBoarding(label.startSeconds(), firstLeg.from().departureSeconds(), ENTRY_DURATION_SECONDS, boardingSlackSeconds),
+			waitMinutesBeforeBoarding(label.startSeconds(), firstLeg.from().departureSeconds(), entryDurationSeconds, boardingSlackSeconds),
 			ENTRY_DISTANCE_METERS
 		));
 		sequence += 1;
@@ -200,7 +208,7 @@ class RouteTimetableRaptorPlanner {
 					leg.from().stationId(),
 					leg.lineId(),
 					leg.lineName(),
-					waitMinutesBeforeBoarding(previousLeg.to().arrivalSeconds(), leg.from().departureSeconds(), TRANSFER_DURATION_SECONDS, boardingSlackSeconds),
+					waitMinutesBeforeBoarding(previousLeg.to().arrivalSeconds(), leg.from().departureSeconds(), transferDurationSeconds, boardingSlackSeconds),
 					TRANSFER_DISTANCE_METERS
 				));
 				sequence += 1;
@@ -233,7 +241,7 @@ class RouteTimetableRaptorPlanner {
 			command.destinationStationId(),
 			lastLeg.lineId(),
 			lastLeg.lineName(),
-			EXIT_DURATION_SECONDS / 60,
+			(int) Math.ceil(exitDurationSeconds / 60.0),
 			EXIT_DISTANCE_METERS
 		));
 		return new RouteSearchResult(
@@ -253,6 +261,15 @@ class RouteTimetableRaptorPlanner {
 			List.of(),
 			LocalDateTime.of(serviceDay.date(), java.time.LocalTime.MIDNIGHT).plusSeconds(label.startSeconds())
 		);
+	}
+
+	private static int profiledWalkSeconds(SearchRouteV2Command command, int baselineSeconds) {
+		return ProfileWalkTimeCalculator.estimateSeconds(
+			baselineSeconds,
+			ProfileWalkTimeCalculator.presetFor(command.mobilityType()),
+			WalkTimeSource.OFFICIAL_BASELINE,
+			false
+		).seconds();
 	}
 
 	private static RouteStep timetableAccessStep(
