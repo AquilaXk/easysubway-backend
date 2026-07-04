@@ -495,6 +495,31 @@ class RouteSearchV2ControllerTest {
 	}
 
 	@Test
+	@DisplayName("V2 대안 경로 수는 3개를 초과하면 search 저장 전에 JSON 400으로 거부한다")
+	void routeSearchV2AlternativeCountAboveThreeReturnsBadRequestBeforeSearch() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "STRICT_STEP_FREE",
+					  "useRealtime": true,
+					  "maxTransfers": 3,
+					  "alternativeCount": 4
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").exists());
+
+		verifyNoInteractions(routeSearchUseCase);
+	}
+
+	@Test
 	@DisplayName("V2 prefer step-free는 mobility type을 유지한 채 command에 전달한다")
 	void routeSearchV2PreferStepFreeKeepsMobilityType() throws Exception {
 		when(routeSearchUseCase.searchRouteAlternatives(argThat(command ->

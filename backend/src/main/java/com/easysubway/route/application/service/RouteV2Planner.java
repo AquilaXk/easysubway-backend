@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
@@ -8,6 +9,7 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
@@ -25,7 +27,9 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 
 	private final RouteSearchUseCase routeSearchUseCase;
 	private final LoadRouteTimetablePort routeTimetablePort;
+	private final RouteTimetableRaptorPlanner timetableRaptorPlanner = new RouteTimetableRaptorPlanner();
 	private final boolean timetableRequired;
+	private volatile RouteTimetable cachedRouteTimetable;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
 		this(routeSearchUseCase, RouteTimetable::empty, false);
@@ -59,6 +63,23 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			if (timetableRequired && !routeTimetablePort.hasRouteTimetable()) {
 				return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
 			}
+			if (timetableRequired && canUseTimetableRaptor(command)) {
+				SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
+				routeSearchUseCase.validateRouteSearch(searchRouteCommand);
+				List<RouteSearchResult> timetableItineraries = timetableRaptorPlanner.search(
+					command,
+					routeTimetable()
+				);
+				if (timetableItineraries.isEmpty()) {
+					return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
+				}
+				timetableItineraries = routeSearchUseCase.stabilizeTimetableRouteResults(
+					searchRouteCommand,
+					command.alternativeCount(),
+					timetableItineraries
+				);
+				return new RouteV2Plan(timetableItineraries, statusesOf(timetableItineraries, false), PLANNER_ADR);
+			}
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
 				searchRouteCommand,
@@ -71,6 +92,25 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			);
 		} catch (RouteNotFoundException exception) {
 			return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
+		}
+	}
+
+	private boolean canUseTimetableRaptor(SearchRouteV2Command command) {
+		return !command.useRealtime()
+			&& command.constraintMode() != ConstraintMode.STRICT_STEP_FREE
+			&& command.mobilityType() != MobilityType.WHEELCHAIR;
+	}
+
+	private RouteTimetable routeTimetable() {
+		RouteTimetable snapshot = cachedRouteTimetable;
+		if (snapshot != null) {
+			return snapshot;
+		}
+		synchronized (this) {
+			if (cachedRouteTimetable == null) {
+				cachedRouteTimetable = routeTimetablePort.loadRouteTimetable();
+			}
+			return cachedRouteTimetable;
 		}
 	}
 

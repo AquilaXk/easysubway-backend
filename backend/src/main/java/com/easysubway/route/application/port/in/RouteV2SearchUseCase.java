@@ -36,6 +36,9 @@ public interface RouteV2SearchUseCase {
 			if (alternativeCount < 1) {
 				throw new IllegalArgumentException("alternativeCount must be at least 1");
 			}
+			if (alternativeCount > 3) {
+				throw new IllegalArgumentException("alternativeCount must be 3 or less");
+			}
 		}
 	}
 

@@ -59,6 +59,8 @@ import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
@@ -66,6 +68,7 @@ import org.springframework.stereotype.Service;
 @Service
 public class RouteSearchService implements RouteSearchUseCase {
 
+	private static final Logger log = LoggerFactory.getLogger(RouteSearchService.class);
 	private static final int ENTRY_ESTIMATED_MINUTES = 4;
 	private static final int ENTRY_DISTANCE_METERS = 180;
 	private static final int EXIT_ESTIMATED_MINUTES = 3;
@@ -176,12 +179,64 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	public List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
-		requireCommand(command);
-		Station origin = loadActiveStation(command.originStationId());
-		Station destination = loadActiveStation(command.destinationStationId());
-		if (origin.id().equals(destination.id())) {
-			throw new InvalidRouteSearchException("출발역과 도착역이 달라야 합니다.");
+		return buildRouteSearchAlternatives(command, alternativeCount).stream()
+			.map(saveRouteSearchPort::saveRouteSearch)
+			.toList();
+	}
+
+	@Override
+	public void validateRouteSearch(SearchRouteCommand command) {
+		validatedRouteStations(command);
+	}
+
+	@Override
+	public List<RouteSearchResult> stabilizeTimetableRouteResults(
+		SearchRouteCommand command,
+		int alternativeCount,
+		List<RouteSearchResult> timetableResults
+	) {
+		try {
+			List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(command, alternativeCount);
+			if (accessibilityCheckedResults.stream().anyMatch(this::hasAccessibilitySignal)) {
+				return accessibilityCheckedResults.stream()
+					.map(saveRouteSearchPort::saveRouteSearch)
+					.toList();
+			}
+		} catch (RouteNotFoundException | StationNotFoundException exception) {
+			// Timetable coverage can lead legacy graph coverage while #1400 closes the production graph gap.
+			log.debug("Legacy graph could not stabilize timetable route {} -> {}", command.originStationId(), command.destinationStationId(), exception);
 		}
+		return timetableResults.stream()
+			.map(this::storedTimetableRouteResult)
+			.map(saveRouteSearchPort::saveRouteSearch)
+			.toList();
+	}
+
+	private RouteSearchResult storedTimetableRouteResult(RouteSearchResult routeSearchResult) {
+		Station origin = loadActiveStation(routeSearchResult.originStationId());
+		Station destination = loadActiveStation(routeSearchResult.destinationStationId());
+		return new RouteSearchResult(
+			newRouteSearchId(),
+			routeSearchResult.originStationId(),
+			origin.nameKo(),
+			routeSearchResult.destinationStationId(),
+			destination.nameKo(),
+			routeSearchResult.mobilityType(),
+			routeSearchResult.status(),
+			routeSearchResult.lineId(),
+			routeSearchResult.lineName(),
+			routeSearchResult.score(),
+			routeSearchResult.steps(),
+			routeSearchResult.warnings(),
+			routeSearchResult.blockedReasons(),
+			LocalDateTime.now(clock)
+		);
+	}
+
+	private List<RouteSearchResult> buildRouteSearchAlternatives(SearchRouteCommand command, int alternativeCount) {
+		RouteStations routeStations = validatedRouteStations(command);
+		Station origin = routeStations.origin();
+		Station destination = routeStations.destination();
 
 		RouteProfileWeight profileWeight = RouteProfileWeight.from(command.mobilityType(), command.constraintMode());
 		List<RoutePlan> routePlans = findRoutePlans(
@@ -195,11 +250,29 @@ public class RouteSearchService implements RouteSearchUseCase {
 			throw new RouteNotFoundException();
 		}
 		return routePlans.stream()
-			.map(routePlan -> saveRouteSearch(command, origin, destination, profileWeight, routePlan))
+			.map(routePlan -> routeSearchResult(command, origin, destination, profileWeight, routePlan))
 			.toList();
 	}
 
-	private RouteSearchResult saveRouteSearch(
+	private RouteStations validatedRouteStations(SearchRouteCommand command) {
+		requireCommand(command);
+		Station origin = loadActiveStation(command.originStationId());
+		Station destination = loadActiveStation(command.destinationStationId());
+		if (origin.id().equals(destination.id())) {
+			throw new InvalidRouteSearchException("출발역과 도착역이 달라야 합니다.");
+		}
+		return new RouteStations(origin, destination);
+	}
+
+	private record RouteStations(Station origin, Station destination) {
+	}
+
+	private boolean hasAccessibilitySignal(RouteSearchResult routeSearchResult) {
+		return routeSearchResult.status() != RouteSearchStatus.FOUND
+			|| !routeSearchResult.warnings().isEmpty();
+	}
+
+	private RouteSearchResult routeSearchResult(
 		SearchRouteCommand command,
 		Station origin,
 		Station destination,
@@ -211,7 +284,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		List<RouteWarning> warnings = routeWarnings(accessibilityStationIds, stairOnlyAccess);
 
 		if (profileWeight.blocksStairOnlyAccess() && stairOnlyAccess) {
-			return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
+			return new RouteSearchResult(
 				newRouteSearchId(),
 				origin.id(),
 				origin.nameKo(),
@@ -226,14 +299,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 				warnings,
 				List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
 				LocalDateTime.now(clock)
-			));
+			);
 		}
 
 		List<RouteStep> routeSteps = realtimeAwareRouteSteps(
 			command,
 			routeSteps(origin, destination, routePlan, profileWeight)
 		);
-		return saveRouteSearchPort.saveRouteSearch(new RouteSearchResult(
+		return new RouteSearchResult(
 			newRouteSearchId(),
 			origin.id(),
 			origin.nameKo(),
@@ -248,7 +321,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			warnings,
 			List.of(),
 			LocalDateTime.now(clock)
-		));
+		);
 	}
 
 	@Override
