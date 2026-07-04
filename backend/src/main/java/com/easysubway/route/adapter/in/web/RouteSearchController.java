@@ -257,7 +257,7 @@ class RouteSearchController {
 					.map(Enum::name)
 					.toList(),
 				plan.itineraries().stream()
-					.map(result -> ItineraryDto.from(result, departureTime))
+					.map(result -> ItineraryDto.from(result, departureTime, request.mobilityPresetName()))
 					.toList()
 			);
 		}
@@ -278,8 +278,8 @@ class RouteSearchController {
 		boolean commercialEtaEligible
 	) {
 
-		private static ItineraryDto from(RouteSearchResult result, OffsetDateTime departureTime) {
-			List<LegDto> legs = LegDto.fromSteps(result.steps(), departureTime, result.mobilityType());
+		private static ItineraryDto from(RouteSearchResult result, OffsetDateTime departureTime, String mobilityPreset) {
+			List<LegDto> legs = LegDto.fromSteps(result.steps(), departureTime, result.mobilityType(), mobilityPreset);
 			OffsetDateTime plannedArrivalTime = legs.isEmpty()
 				? departureTime
 				: OffsetDateTime.parse(legs.get(legs.size() - 1).plannedArrivalTime());
@@ -486,6 +486,9 @@ class RouteSearchController {
 		int distanceMeters,
 		String etaSource,
 		String confidence,
+		int walkSeconds,
+		String timeSource,
+		String appliedPreset,
 		List<String> reasonCodes,
 		String providerSnapshotId,
 		String providerObservedAt,
@@ -497,7 +500,8 @@ class RouteSearchController {
 		private static List<LegDto> fromSteps(
 			List<RouteStep> steps,
 			OffsetDateTime departureTime,
-			MobilityType mobilityType
+			MobilityType mobilityType,
+			String mobilityPreset
 		) {
 			List<LegDto> legs = new ArrayList<>();
 			OffsetDateTime cursor = departureTime;
@@ -507,7 +511,7 @@ class RouteSearchController {
 				int slackSeconds = slackSeconds(step, legType, mobilityType);
 				OffsetDateTime plannedDepartureTime = cursor.plusSeconds(slackSeconds);
 				OffsetDateTime plannedArrivalTime = plannedDepartureTime.plusSeconds(durationSeconds);
-				legs.add(from(step, legType, plannedDepartureTime, plannedArrivalTime, durationSeconds, slackSeconds));
+				legs.add(from(step, legType, plannedDepartureTime, plannedArrivalTime, durationSeconds, slackSeconds, mobilityPreset));
 				cursor = plannedArrivalTime;
 			}
 			return List.copyOf(legs);
@@ -519,8 +523,11 @@ class RouteSearchController {
 			OffsetDateTime departureTime,
 			OffsetDateTime plannedArrivalTime,
 			int durationSeconds,
-			int slackSeconds
+			int slackSeconds,
+			String mobilityPreset
 		) {
+			boolean hasTimetableWait = "TIMETABLE".equals(step.distanceSource()) && !"exit".equals(step.stepType());
+			int walkSeconds = "RIDE".equals(legType) || hasTimetableWait ? 0 : durationSeconds;
 			return new LegDto(
 				legType,
 				step.fromStationId(),
@@ -540,6 +547,9 @@ class RouteSearchController {
 				Math.max(0, step.distanceMeters()),
 				etaSourceOf(step).name(),
 				etaConfidenceOf(step),
+				walkSeconds,
+				step.timeSource(),
+				walkSeconds > 0 ? mobilityPreset : "",
 				step.reasonCodes(),
 				step.providerSnapshotId(),
 				step.providerObservedAt(),
