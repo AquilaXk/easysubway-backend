@@ -1188,6 +1188,30 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 진입 준비 시간보다 이른 직통 후보를 제외한다")
+	void routeV2PlannerSkipsDirectTripBeforeEntrySlack() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), entrySlackRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T08:59:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			false,
+			1,
+			3
+		));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1740);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("lineName", "fromStationId", "toStationId", "estimatedMinutes")
+			.containsExactly(tuple("테스트 완행", "station-a", "station-b", 20));
+	}
+
+	@Test
 	@DisplayName("V2 planner는 calendar exception 제거일의 시간표를 제외한다")
 	void routeV2PlannerRemovesCalendarDateExceptionService() {
 		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), removedCalendarDateRouteTimetablePort());
@@ -2537,6 +2561,70 @@ class RouteSearchServiceTest {
 				new LoadRouteTimetablePort.TransitStopTime("fullrun-0912", 1, "station-a", "line-short", 33120, 33120, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("fullrun-0912", 2, "station-terminal", "line-short", 33960, 33960, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("fullrun-0912", 3, "station-c", "line-short", 34140, 34140, 0, 0)
+			),
+			List.of()
+		);
+	}
+
+	private static LoadRouteTimetablePort entrySlackRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026",
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				LocalDate.parse("2026-07-01"),
+				LocalDate.parse("2026-12-31"),
+				"Asia/Seoul"
+			)),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-express",
+					"line-express",
+					"X",
+					"테스트 급행",
+					"도착 방면",
+					"Asia/Seoul"
+				),
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-local",
+					"line-local",
+					"L",
+					"테스트 완행",
+					"도착 방면",
+					"Asia/Seoul"
+				)
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip(
+					"express-0904",
+					"route-express",
+					"weekday-2026",
+					"도착",
+					"0",
+					"EXPRESS",
+					0
+				),
+				new LoadRouteTimetablePort.TransitTrip(
+					"local-0905",
+					"route-local",
+					"weekday-2026",
+					"도착",
+					"0",
+					"LOCAL",
+					0
+				)
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("express-0904", 1, "station-a", "line-express", 32640, 32640, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("express-0904", 2, "station-b", "line-express", 33180, 33180, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("local-0905", 1, "station-a", "line-local", 32700, 32700, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("local-0905", 2, "station-b", "line-local", 33900, 33900, 0, 0)
 			),
 			List.of()
 		);
