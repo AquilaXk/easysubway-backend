@@ -11,24 +11,28 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteRefreshStatus;
-import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
+import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
@@ -46,6 +50,70 @@ class RouteSearchV2ControllerTest {
 
 	@MockitoBean
 	private RouteSearchUseCase routeSearchUseCase;
+
+	@TestConfiguration
+	static class RouteTimetableTestConfiguration {
+
+		@Bean
+		LoadRouteTimetablePort routeTimetablePort() {
+			return () -> new LoadRouteTimetablePort.RouteTimetable(
+				List.of(new LoadRouteTimetablePort.ServiceCalendar(
+					"weekday-2026",
+					true,
+					true,
+					true,
+					true,
+					true,
+					false,
+					false,
+					LocalDate.parse("2026-07-01"),
+					LocalDate.parse("2026-12-31"),
+					"Asia/Seoul"
+				)),
+				List.of(),
+				List.of(new LoadRouteTimetablePort.TransitRoute(
+					"route-seoul-4",
+					"seoul-4",
+					"4",
+					"수도권 4호선",
+					"사당 방면",
+					"Asia/Seoul"
+				)),
+				List.of(new LoadRouteTimetablePort.TransitTrip(
+					"trip-seoul-4-0900",
+					"route-seoul-4",
+					"weekday-2026",
+					"사당",
+					"0",
+					"LOCAL",
+					0
+				)),
+				List.of(
+					new LoadRouteTimetablePort.TransitStopTime(
+						"trip-seoul-4-0900",
+						1,
+						"station-sangnoksu",
+						"seoul-4",
+						32400,
+						32400,
+						0,
+						0
+					),
+					new LoadRouteTimetablePort.TransitStopTime(
+						"trip-seoul-4-0900",
+						2,
+						"station-sadang",
+						"seoul-4",
+						33000,
+						33000,
+						0,
+						0
+					)
+				),
+				List.of()
+			);
+		}
+	}
 
 	@Test
 	@DisplayName("모바일 V2 계약으로 itinerary와 leg 단위 ETA 필드를 반환한다")

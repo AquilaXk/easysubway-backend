@@ -25,9 +25,10 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 
 	private final RouteSearchUseCase routeSearchUseCase;
 	private final LoadRouteTimetablePort routeTimetablePort;
+	private final boolean timetableRequired;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
-		this(routeSearchUseCase, RouteTimetable::empty);
+		this(routeSearchUseCase, RouteTimetable::empty, false);
 	}
 
 	@Autowired
@@ -35,18 +36,30 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		RouteSearchUseCase routeSearchUseCase,
 		ObjectProvider<LoadRouteTimetablePort> routeTimetablePortProvider
 	) {
-		this(routeSearchUseCase, routeTimetablePortProvider.getIfAvailable(() -> RouteTimetable::empty));
+		this(routeSearchUseCase, routeTimetablePortProvider.getIfAvailable(), true);
 	}
 
 	RouteV2Planner(RouteSearchUseCase routeSearchUseCase, LoadRouteTimetablePort routeTimetablePort) {
+		this(routeSearchUseCase, routeTimetablePort, true);
+	}
+
+	private RouteV2Planner(
+		RouteSearchUseCase routeSearchUseCase,
+		LoadRouteTimetablePort routeTimetablePort,
+		boolean timetableRequired
+	) {
 		this.routeSearchUseCase = routeSearchUseCase;
-		this.routeTimetablePort = routeTimetablePort;
+		this.routeTimetablePort = routeTimetablePort == null ? RouteTimetable::empty : routeTimetablePort;
+		this.timetableRequired = timetableRequired && routeTimetablePort != null;
 	}
 
 	@Override
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
-			routeTimetablePort.loadRouteTimetable();
+			RouteTimetable timetable = routeTimetablePort.loadRouteTimetable();
+			if (timetableRequired && (timetable.transitTrips().isEmpty() || timetable.transitStopTimes().isEmpty())) {
+				return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
+			}
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
 				searchRouteCommand,
