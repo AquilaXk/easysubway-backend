@@ -126,6 +126,7 @@ jobs:
           node --test tools/ci/repository-contract.test.mjs
           node tools/ci/check-map-attribution.mjs
           node --test tools/ci/check-map-attribution.test.mjs
+          node --test tools/route-map/capital-route-map-coverage.test.mjs
 
   repository-contracts:
     name: Repository CI
