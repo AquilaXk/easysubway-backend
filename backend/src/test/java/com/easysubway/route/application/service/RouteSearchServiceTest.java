@@ -898,6 +898,17 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 maxTransfers 0에서 시간표 환승 후보를 제외한다")
+	void routeV2PlannerRejectsTimetableTransferWhenMaxTransfersIsZero() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), transferRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 0, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
+		assertThat(plan.itineraries()).isEmpty();
+	}
+
+	@Test
 	@DisplayName("V2 planner는 시간표 scan 결과를 refresh와 feedback 조회 경로에 저장한다")
 	void routeV2PlannerPersistsTimetableScanResultsForRefreshAndFeedback() {
 		var repository = new InMemoryRouteSearchRepository();
