@@ -852,9 +852,23 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("V2 planner는 동일 ETA 후보에서 접근성 미확인 위험이 낮은 경로를 우선한다")
-	void routeV2PlannerRanksLowerAccessibilityRiskForSameEtaCandidates() {
+	@DisplayName("V2 planner는 동일 ETA 후보에서 접근성 위험보다 환승 수를 먼저 반영한다")
+	void routeV2PlannerRanksFewerTransfersBeforeAccessibilityRiskForSameEtaCandidates() {
 		var risky = routeSearchResultWithAccessState("route-risky", "UNKNOWN", true);
+		var verified = transferRouteSearchResultWithAccessState("route-verified", "AVAILABLE", false);
+		var planner = new RouteV2Planner(stabilizingRouteSearchUseCase(List.of(risky, verified)), routeTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 1));
+
+		assertThat(plan.itineraries())
+			.extracting(RouteSearchResult::routeSearchId)
+			.containsExactly("route-risky");
+	}
+
+	@Test
+	@DisplayName("V2 planner는 동일 ETA·환승 수 후보에서 접근성 미확인 위험이 낮은 경로를 우선한다")
+	void routeV2PlannerRanksLowerAccessibilityRiskAfterTransferCountForSameEtaCandidates() {
+		var risky = transferRouteSearchResultWithAccessState("route-risky", "UNKNOWN", true);
 		var verified = transferRouteSearchResultWithAccessState("route-verified", "AVAILABLE", false);
 		var planner = new RouteV2Planner(stabilizingRouteSearchUseCase(List.of(risky, verified)), routeTimetablePort());
 

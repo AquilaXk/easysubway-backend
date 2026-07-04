@@ -135,8 +135,8 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private List<RouteSearchResult> rankTimetableItineraries(List<RouteSearchResult> itineraries, int alternativeCount) {
 		return itineraries.stream()
 			.sorted(Comparator.comparingInt(RouteSearchResult::estimatedDurationSeconds)
-				.thenComparingInt(this::accessibilityRiskScore)
-				.thenComparingInt(RouteSearchResult::transferCount))
+				.thenComparingInt(RouteSearchResult::transferCount)
+				.thenComparingInt(this::accessibilityRiskScore))
 			.limit(alternativeCount)
 			.toList();
 	}
