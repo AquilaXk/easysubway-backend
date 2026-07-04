@@ -603,7 +603,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.mobilityPreset").value("STEP_FREE"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].walkSeconds").value(240))
-			.andExpect(jsonPath("$.data.itineraries[0].legs[0].timeSource").value("STATIC_BACKEND_V1"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].timeSource").value("MEASURED_PATHWAY"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].appliedPreset").value("STEP_FREE"));
 	}
 
@@ -632,6 +632,7 @@ class RouteSearchV2ControllerTest {
 					"""))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].walkSeconds").value(160))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].timeSource").value("OFFICIAL_BASELINE"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].appliedPreset").value("STEP_FREE"));
 	}
 
@@ -660,6 +661,7 @@ class RouteSearchV2ControllerTest {
 					"""))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].walkSeconds").value(160))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].timeSource").value("OFFICIAL_BASELINE"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[0].appliedPreset").value("STEP_FREE"));
 	}
 

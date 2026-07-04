@@ -13,6 +13,7 @@ import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchResult;
@@ -548,7 +549,7 @@ class RouteSearchController {
 				etaSourceOf(step).name(),
 				etaConfidenceOf(step),
 				walkSeconds,
-				step.timeSource(),
+				timeSource(step, legType, walkSeconds),
 				walkSeconds > 0 ? mobilityPreset : "",
 				step.reasonCodes(),
 				step.providerSnapshotId(),
@@ -567,6 +568,16 @@ class RouteSearchController {
 				return step.walkSeconds();
 			}
 			return hasTimetableWait ? 0 : durationSeconds;
+		}
+
+		private static String timeSource(RouteStep step, String legType, int walkSeconds) {
+			if ("RIDE".equals(legType) || walkSeconds <= 0) {
+				return step.timeSource();
+			}
+			if ("TIMETABLE".equals(step.distanceSource())) {
+				return WalkTimeSource.OFFICIAL_BASELINE.name();
+			}
+			return WalkTimeSource.MEASURED_PATHWAY.name();
 		}
 
 		private static int slackSeconds(String legType, MobilityType mobilityType) {
