@@ -1136,6 +1136,34 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 막차 이후 요청에서 다음 24시대 운행을 선택한다")
+	void routeV2PlannerSelectsNextAfterLateNightMissedTrain() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), lateNightMissedLastTrainRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T23:55:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			false,
+			1,
+			3
+		));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries().getFirst().createdAt()).isEqualTo(LocalDate.of(2026, 7, 1).atTime(23, 55));
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1980);
+		assertThat(plan.itineraries().getFirst().steps())
+			.extracting("stepType", "estimatedMinutes")
+			.containsExactly(
+				tuple("entry", 15),
+				tuple("ride", 15),
+				tuple("exit", 3)
+			);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 calendar exception 제거일의 시간표를 제외한다")
 	void routeV2PlannerRemovesCalendarDateExceptionService() {
 		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), removedCalendarDateRouteTimetablePort());
@@ -2379,6 +2407,60 @@ class RouteSearchServiceTest {
 				timetable.transitFrequencies()
 			);
 		};
+	}
+
+	private static LoadRouteTimetablePort lateNightMissedLastTrainRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026",
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				LocalDate.parse("2026-07-01"),
+				LocalDate.parse("2026-07-01"),
+				"Asia/Seoul"
+			)),
+			List.of(),
+			List.of(new LoadRouteTimetablePort.TransitRoute(
+				"route-seoul-4",
+				"seoul-4",
+				"4",
+				"수도권 4호선",
+				"사당 방면",
+				"Asia/Seoul"
+			)),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-seoul-4-2350",
+					"route-seoul-4",
+					"weekday-2026",
+					"사당",
+					"0",
+					"LOCAL",
+					0
+				),
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-seoul-4-2410",
+					"route-seoul-4",
+					"weekday-2026",
+					"사당",
+					"0",
+					"LOCAL",
+					0
+				)
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-2350", 1, "station-a", "seoul-4", 85800, 85800, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-2350", 2, "station-b", "seoul-4", 86700, 86700, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-2410", 1, "station-a", "seoul-4", 87000, 87000, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-2410", 2, "station-b", "seoul-4", 87900, 87900, 0, 0)
+			),
+			List.of()
+		);
 	}
 
 	private static LoadRouteTimetablePort removedCalendarDateRouteTimetablePort() {
