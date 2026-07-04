@@ -6,12 +6,16 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import java.util.ArrayList;
 import java.util.List;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -20,14 +24,29 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private static final String PLANNER_ADR = "tools/routes/route-algorithm-v2-adr.json";
 
 	private final RouteSearchUseCase routeSearchUseCase;
+	private final LoadRouteTimetablePort routeTimetablePort;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
+		this(routeSearchUseCase, RouteTimetable::empty);
+	}
+
+	@Autowired
+	public RouteV2Planner(
+		RouteSearchUseCase routeSearchUseCase,
+		ObjectProvider<LoadRouteTimetablePort> routeTimetablePortProvider
+	) {
+		this(routeSearchUseCase, routeTimetablePortProvider.getIfAvailable(() -> RouteTimetable::empty));
+	}
+
+	RouteV2Planner(RouteSearchUseCase routeSearchUseCase, LoadRouteTimetablePort routeTimetablePort) {
 		this.routeSearchUseCase = routeSearchUseCase;
+		this.routeTimetablePort = routeTimetablePort;
 	}
 
 	@Override
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
+			routeTimetablePort.loadRouteTimetable();
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
 				searchRouteCommand,
