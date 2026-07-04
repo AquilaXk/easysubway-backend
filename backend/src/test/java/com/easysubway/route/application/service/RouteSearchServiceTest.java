@@ -795,6 +795,28 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 시간표 availability 확인에 전체 snapshot을 읽지 않는다")
+	void routeV2PlannerDoesNotLoadFullTimetableForAvailabilityGuard() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
+		var planner = new RouteV2Planner(routeSearchService, new LoadRouteTimetablePort() {
+			@Override
+			public boolean hasRouteTimetable() {
+				return true;
+			}
+
+			@Override
+			public LoadRouteTimetablePort.RouteTimetable loadRouteTimetable() {
+				throw new AssertionError("RouteV2Planner must not materialize the full timetable before RAPTOR uses it");
+			}
+		});
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 접근성 차단 경로를 BLOCKED_ACCESSIBILITY status로 반환한다")
 	void routeV2PlannerReturnsBlockedAccessibilityStatus() {
 		var planner = routeV2Planner(new StairOnlyTransitMasterPort());

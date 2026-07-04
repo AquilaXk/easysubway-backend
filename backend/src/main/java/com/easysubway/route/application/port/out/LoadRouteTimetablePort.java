@@ -9,6 +9,11 @@ public interface LoadRouteTimetablePort {
 
 	RouteTimetable loadRouteTimetable();
 
+	default boolean hasRouteTimetable() {
+		RouteTimetable timetable = loadRouteTimetable();
+		return !timetable.transitTrips().isEmpty() && !timetable.transitStopTimes().isEmpty();
+	}
+
 	record RouteTimetable(
 		List<ServiceCalendar> serviceCalendars,
 		List<ServiceCalendarDate> serviceCalendarDates,

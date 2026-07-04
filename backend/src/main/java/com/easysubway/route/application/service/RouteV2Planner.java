@@ -56,8 +56,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	@Override
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
-			RouteTimetable timetable = routeTimetablePort.loadRouteTimetable();
-			if (timetableRequired && (timetable.transitTrips().isEmpty() || timetable.transitStopTimes().isEmpty())) {
+			if (timetableRequired && !routeTimetablePort.hasRouteTimetable()) {
 				return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
 			}
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
