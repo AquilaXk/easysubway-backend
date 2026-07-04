@@ -194,7 +194,8 @@ class RouteTimetableRaptorPlanner {
 			firstLeg.lineId(),
 			firstLeg.lineName(),
 			waitMinutesBeforeBoarding(label.startSeconds(), firstLeg.from().departureSeconds(), entryDurationSeconds, boardingSlackSeconds),
-			ENTRY_DISTANCE_METERS
+			ENTRY_DISTANCE_METERS,
+			entryDurationSeconds
 		));
 		sequence += 1;
 		for (int index = 0; index < path.size(); index += 1) {
@@ -209,7 +210,8 @@ class RouteTimetableRaptorPlanner {
 					leg.lineId(),
 					leg.lineName(),
 					waitMinutesBeforeBoarding(previousLeg.to().arrivalSeconds(), leg.from().departureSeconds(), transferDurationSeconds, boardingSlackSeconds),
-					TRANSFER_DISTANCE_METERS
+					TRANSFER_DISTANCE_METERS,
+					transferDurationSeconds
 				));
 				sequence += 1;
 			}
@@ -242,7 +244,8 @@ class RouteTimetableRaptorPlanner {
 			lastLeg.lineId(),
 			lastLeg.lineName(),
 			(int) Math.ceil(exitDurationSeconds / 60.0),
-			EXIT_DISTANCE_METERS
+			EXIT_DISTANCE_METERS,
+			exitDurationSeconds
 		));
 		return new RouteSearchResult(
 			"route-v2-raptor-" + serviceDay.date() + "-" + command.originStationId() + "-" + command.destinationStationId()
@@ -280,7 +283,8 @@ class RouteTimetableRaptorPlanner {
 		String lineId,
 		String lineName,
 		int estimatedMinutes,
-		int distanceMeters
+		int distanceMeters,
+		int walkSeconds
 	) {
 		return new RouteStep(
 			sequence,
@@ -298,7 +302,13 @@ class RouteTimetableRaptorPlanner {
 			true,
 			EtaSource.PLANNED.name(),
 			"TIMETABLE",
-			"시간표"
+			"시간표",
+			List.of(),
+			null,
+			null,
+			null,
+			null,
+			walkSeconds
 		);
 	}
 

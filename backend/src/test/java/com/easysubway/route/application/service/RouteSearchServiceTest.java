@@ -860,6 +860,13 @@ class RouteSearchServiceTest {
 				tuple("ride", 10),
 				tuple("exit", 4)
 			);
+		assertThat(plan.itineraries().getFirst().steps())
+			.extracting("stepType", "walkSeconds")
+			.containsExactly(
+				tuple("entry", 288),
+				tuple("ride", null),
+				tuple("exit", 216)
+			);
 	}
 
 	@Test

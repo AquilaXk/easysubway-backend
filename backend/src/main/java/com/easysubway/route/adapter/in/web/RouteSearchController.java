@@ -527,7 +527,7 @@ class RouteSearchController {
 			String mobilityPreset
 		) {
 			boolean hasTimetableWait = "TIMETABLE".equals(step.distanceSource()) && !"exit".equals(step.stepType());
-			int walkSeconds = "RIDE".equals(legType) || hasTimetableWait ? 0 : durationSeconds;
+			int walkSeconds = walkSeconds(step, legType, durationSeconds, hasTimetableWait);
 			return new LegDto(
 				legType,
 				step.fromStationId(),
@@ -557,6 +557,16 @@ class RouteSearchController {
 				step.servedAt(),
 				AccessibilityRiskDto.from(step)
 			);
+		}
+
+		private static int walkSeconds(RouteStep step, String legType, int durationSeconds, boolean hasTimetableWait) {
+			if ("RIDE".equals(legType)) {
+				return 0;
+			}
+			if (step.walkSeconds() != null) {
+				return step.walkSeconds();
+			}
+			return hasTimetableWait ? 0 : durationSeconds;
 		}
 
 		private static int slackSeconds(String legType, MobilityType mobilityType) {
