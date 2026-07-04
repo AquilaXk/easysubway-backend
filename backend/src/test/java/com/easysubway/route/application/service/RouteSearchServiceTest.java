@@ -880,6 +880,19 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 동일 도착 시각 시간표 후보에서 환승 수가 많은 경로를 제거한다")
+	void routeV2PlannerDropsMoreTransfersForSameArrivalTimetableScanCandidates() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), sameArrivalRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 2));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries())
+			.extracting(RouteSearchResult::transferCount)
+			.containsExactly(0);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 시간표 환승 경로에 접근과 환승 step을 보강한다")
 	void routeV2PlannerAddsAccessAndTransferStepsToTimetableTransferRoute() {
 		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), transferRouteTimetablePort());
@@ -2419,6 +2432,44 @@ class RouteSearchServiceTest {
 
 	private static LoadRouteTimetablePort transferRouteTimetablePort() {
 		return transferRouteTimetablePort(33720);
+	}
+
+	private static LoadRouteTimetablePort sameArrivalRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026",
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				LocalDate.parse("2026-07-01"),
+				LocalDate.parse("2026-12-31"),
+				"Asia/Seoul"
+			)),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.TransitRoute("route-direct", "line-direct", "D", "직통 노선", "도착 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("route-line-a", "line-a", "A", "A 노선", "환승 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("route-line-b", "line-b", "B", "B 노선", "도착 방면", "Asia/Seoul")
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip("trip-direct", "route-direct", "weekday-2026", "도착", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("trip-a", "route-line-a", "weekday-2026", "환승", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("trip-b", "route-line-b", "weekday-2026", "도착", "0", "LOCAL", 0)
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 1, "station-a", "line-direct", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 2, "station-b", "line-direct", 34200, 34200, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-a", 1, "station-a", "line-a", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-a", 2, "station-transfer", "line-a", 33180, 33180, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-b", 1, "station-transfer", "line-b", 33720, 33720, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-b", 2, "station-b", "line-b", 34200, 34200, 0, 0)
+			),
+			List.of()
+		);
 	}
 
 	private static LoadRouteTimetablePort transferRouteTimetablePort(int secondDepartureSeconds) {
