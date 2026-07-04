@@ -5,6 +5,7 @@ import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteSearchResult;
 import java.util.List;
+import java.util.function.UnaryOperator;
 
 public interface RouteSearchUseCase {
 
@@ -21,6 +22,30 @@ public interface RouteSearchUseCase {
 		List<RouteSearchResult> timetableResults
 	) {
 		return List.copyOf(timetableResults);
+	}
+
+	default List<RouteSearchResult> stabilizeTimetableRouteCandidates(
+		SearchRouteCommand command,
+		int candidateCount,
+		int alternativeCount,
+		List<RouteSearchResult> timetableResults
+	) {
+		return stabilizeTimetableRouteResults(command, alternativeCount, timetableResults);
+	}
+
+	default List<RouteSearchResult> stabilizeTimetableRouteCandidates(
+		SearchRouteCommand command,
+		int candidateCount,
+		int alternativeCount,
+		List<RouteSearchResult> timetableResults,
+		UnaryOperator<List<RouteSearchResult>> selectCandidates
+	) {
+		return selectCandidates.apply(stabilizeTimetableRouteCandidates(
+			command,
+			candidateCount,
+			alternativeCount,
+			timetableResults
+		));
 	}
 
 	default boolean supportsRealtimeOverlay() {

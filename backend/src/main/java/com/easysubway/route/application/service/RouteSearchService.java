@@ -58,6 +58,7 @@ import java.util.Set;
 import java.util.UUID;
 import java.util.function.Function;
 import java.util.function.Predicate;
+import java.util.function.UnaryOperator;
 import java.util.stream.Collectors;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -200,10 +201,32 @@ public class RouteSearchService implements RouteSearchUseCase {
 		int alternativeCount,
 		List<RouteSearchResult> timetableResults
 	) {
+		return stabilizeTimetableRouteCandidates(command, alternativeCount, alternativeCount, timetableResults);
+	}
+
+	@Override
+	public List<RouteSearchResult> stabilizeTimetableRouteCandidates(
+		SearchRouteCommand command,
+		int candidateCount,
+		int alternativeCount,
+		List<RouteSearchResult> timetableResults
+	) {
+		return stabilizeTimetableRouteCandidates(command, candidateCount, alternativeCount, timetableResults, List::copyOf);
+	}
+
+	@Override
+	public List<RouteSearchResult> stabilizeTimetableRouteCandidates(
+		SearchRouteCommand command,
+		int candidateCount,
+		int alternativeCount,
+		List<RouteSearchResult> timetableResults,
+		UnaryOperator<List<RouteSearchResult>> selectCandidates
+	) {
 		try {
-			List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(command, alternativeCount);
-			if (accessibilityCheckedResults.stream().anyMatch(this::hasAccessibilitySignal)) {
-				return accessibilityCheckedResults.stream()
+			List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(command, candidateCount);
+			List<RouteSearchResult> selectedAccessibilityCheckedResults = selectCandidates.apply(accessibilityCheckedResults);
+			if (selectedAccessibilityCheckedResults.stream().anyMatch(this::hasAccessibilitySignal)) {
+				return selectedAccessibilityCheckedResults.stream()
 					.map(saveRouteSearchPort::saveRouteSearch)
 					.toList();
 			}
@@ -211,7 +234,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 			// Timetable coverage can lead legacy graph coverage while #1400 closes the production graph gap.
 			log.debug("Legacy graph could not stabilize timetable route {} -> {}", command.originStationId(), command.destinationStationId(), exception);
 		}
-		return timetableResults.stream()
+		return selectCandidates.apply(timetableResults)
+			.stream()
 			.map(this::storedTimetableRouteResult)
 			.map(saveRouteSearchPort::saveRouteSearch)
 			.toList();

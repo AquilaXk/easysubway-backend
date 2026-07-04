@@ -33,6 +33,7 @@ import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchNotFoundException;
 import com.easysubway.route.domain.RouteSearchStatus;
+import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarningCode;
 import com.easysubway.transit.adapter.out.persistence.InMemoryTransitMasterRepository;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
@@ -851,6 +852,20 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 동일 ETA 후보에서 접근성 미확인 위험이 낮은 경로를 우선한다")
+	void routeV2PlannerRanksLowerAccessibilityRiskForSameEtaCandidates() {
+		var risky = routeSearchResultWithAccessState("route-risky", "UNKNOWN", true);
+		var verified = transferRouteSearchResultWithAccessState("route-verified", "AVAILABLE", false);
+		var planner = new RouteV2Planner(stabilizingRouteSearchUseCase(List.of(risky, verified)), routeTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 1));
+
+		assertThat(plan.itineraries())
+			.extracting(RouteSearchResult::routeSearchId)
+			.containsExactly("route-verified");
+	}
+
+	@Test
 	@DisplayName("V2 planner는 시간표 환승 경로에 접근과 환승 step을 보강한다")
 	void routeV2PlannerAddsAccessAndTransferStepsToTimetableTransferRoute() {
 		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), transferRouteTimetablePort());
@@ -913,6 +928,55 @@ class RouteSearchServiceTest {
 		assertThat(first.destinationStationName()).isEqualTo("도착역");
 		assertThat(first.createdAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
 		assertThat(second.createdAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
+	}
+
+	@Test
+	@DisplayName("시간표 후보 stabilization은 응답에서 제외된 후보를 저장하지 않는다")
+	void stabilizeTimetableRouteCandidatesDoesNotPersistDroppedCandidates() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new DisconnectedTransitMasterPort(), CLOCK);
+
+		var results = routeSearchService.stabilizeTimetableRouteCandidates(
+			new SearchRouteCommand("station-a", "station-b", MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, 1),
+			3,
+			1,
+			List.of(
+				routeSearchResultWithAccessState("route-dropped", "UNKNOWN", true),
+				routeSearchResultWithAccessState("route-selected", "AVAILABLE", false)
+			),
+			candidates -> candidates.stream()
+				.filter(candidate -> "route-selected".equals(candidate.routeSearchId()))
+				.toList()
+		);
+
+		assertThat(results).hasSize(1);
+		assertThat(repository.summarizeRouteSearches().totalCount()).isEqualTo(1);
+		assertThat(repository.loadRouteSearch(results.getFirst().routeSearchId())).isPresent();
+	}
+
+	@Test
+	@DisplayName("시간표 후보 stabilization은 탈락 후보의 접근성 signal로 응답 source를 바꾸지 않는다")
+	void stabilizeTimetableRouteCandidatesIgnoresDroppedAccessibilitySignals() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new MixedTransferAccessibilityTransitMasterPort(),
+			CLOCK
+		);
+
+		var results = routeSearchService.stabilizeTimetableRouteCandidates(
+			new SearchRouteCommand("station-a", "station-b", MobilityType.WHEELCHAIR, ConstraintMode.STRICT_STEP_FREE, 1),
+			2,
+			1,
+			List.of(routeSearchResultWithAccessState("route-timetable", "AVAILABLE", false)),
+			candidates -> candidates.stream()
+				.limit(1)
+				.toList()
+		);
+
+		assertThat(results).hasSize(1);
+		assertThat(results.getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
 	}
 
 	@Test
@@ -2054,6 +2118,146 @@ class RouteSearchServiceTest {
 				throw new AssertionError("RouteV2Planner must not submit feedback during search");
 			}
 		};
+	}
+
+	private static RouteSearchUseCase stabilizingRouteSearchUseCase(List<RouteSearchResult> stabilizedResults) {
+		return new RouteSearchUseCase() {
+			@Override
+			public RouteSearchResult searchRoute(SearchRouteCommand command) {
+				throw new AssertionError("RouteV2Planner must use timetable scan for this test");
+			}
+
+			@Override
+			public List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
+				throw new AssertionError("RouteV2Planner must use timetable scan for this test");
+			}
+
+			@Override
+			public List<RouteSearchResult> stabilizeTimetableRouteCandidates(
+				SearchRouteCommand command,
+				int candidateCount,
+				int alternativeCount,
+				List<RouteSearchResult> timetableResults,
+				java.util.function.UnaryOperator<List<RouteSearchResult>> selectCandidates
+			) {
+				return selectCandidates.apply(stabilizedResults.stream()
+					.limit(candidateCount)
+					.toList());
+			}
+
+			@Override
+			public InternalRouteResult searchInternalRoute(SearchInternalRouteCommand command) {
+				throw new AssertionError("RouteV2Planner must not call internal route search");
+			}
+
+			@Override
+			public RouteSearchResult getRouteSearch(String routeSearchId) {
+				throw new AssertionError("RouteV2Planner must not load legacy route search results");
+			}
+
+			@Override
+			public RouteRefreshResult refreshRoute(String routeSearchId) {
+				throw new AssertionError("RouteV2Planner must not refresh legacy route search results");
+			}
+
+			@Override
+			public RouteFeedback submitRouteFeedback(SubmitRouteFeedbackCommand command) {
+				throw new AssertionError("RouteV2Planner must not submit feedback during search");
+			}
+		};
+	}
+
+	private static RouteSearchResult routeSearchResultWithAccessState(
+		String routeSearchId,
+		String stairAccessState,
+		boolean requiresAccessibilityCheck
+	) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-a",
+			"출발역",
+			"station-b",
+			"도착역",
+			MobilityType.SENIOR,
+			RouteSearchStatus.FOUND,
+			"seoul-4",
+			"4호선",
+			0,
+			List.of(
+				timetableStep(1, "entry", stairAccessState, requiresAccessibilityCheck),
+				timetableStep(2, "ride", "AVAILABLE", false),
+				timetableStep(3, "exit", stairAccessState, requiresAccessibilityCheck)
+			),
+			List.of(),
+			List.of(),
+			LocalDate.of(2026, 7, 1).atStartOfDay()
+		);
+	}
+
+	private static RouteSearchResult transferRouteSearchResultWithAccessState(
+		String routeSearchId,
+		String stairAccessState,
+		boolean requiresAccessibilityCheck
+	) {
+		return new RouteSearchResult(
+			routeSearchId,
+			"station-a",
+			"출발역",
+			"station-b",
+			"도착역",
+			MobilityType.SENIOR,
+			RouteSearchStatus.FOUND,
+			"seoul-4",
+			"4호선",
+			0,
+			List.of(
+				timetableStep(1, "entry", stairAccessState, requiresAccessibilityCheck, 3),
+				timetableStep(2, "ride", "AVAILABLE", false, 3),
+				timetableStep(3, "transfer", stairAccessState, requiresAccessibilityCheck, 3),
+				timetableStep(4, "ride", "AVAILABLE", false, 3),
+				timetableStep(5, "exit", stairAccessState, requiresAccessibilityCheck, 3)
+			),
+			List.of(),
+			List.of(),
+			LocalDate.of(2026, 7, 1).atStartOfDay()
+		);
+	}
+
+	private static RouteStep timetableStep(
+		int sequence,
+		String stepType,
+		String stairAccessState,
+		boolean requiresAccessibilityCheck
+	) {
+		return timetableStep(sequence, stepType, stairAccessState, requiresAccessibilityCheck, 5);
+	}
+
+	private static RouteStep timetableStep(
+		int sequence,
+		String stepType,
+		String stairAccessState,
+		boolean requiresAccessibilityCheck,
+		int estimatedMinutes
+	) {
+		boolean includesStairs = "STAIR_ONLY".equals(stairAccessState);
+		return new RouteStep(
+			sequence,
+			stepType,
+			stepType,
+			"시간표 경로",
+			"seoul-4",
+			"4호선",
+			"station-a",
+			"station-b",
+			estimatedMinutes,
+			100,
+			includesStairs,
+			stairAccessState,
+			requiresAccessibilityCheck,
+			EtaSource.PLANNED.name(),
+			"TIMETABLE",
+			"시간표"
+		);
 	}
 
 	private static LoadRouteTimetablePort routeTimetablePort() {
