@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
@@ -11,6 +12,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
@@ -85,6 +87,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				);
 				return new RouteV2Plan(timetableItineraries, statusesOf(timetableItineraries, command.useRealtime()), PLANNER_ADR);
 			}
+			rejectUnsupportedMobilityPreset(command);
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
 				searchRouteCommand,
@@ -106,6 +109,12 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			&& (!command.useRealtime() || !routeSearchUseCase.supportsRealtimeOverlay());
 	}
 
+	private void rejectUnsupportedMobilityPreset(SearchRouteV2Command command) {
+		if (command.mobilityPreset() != ProfileWalkTimeCalculator.presetFor(command.mobilityType())) {
+			throw new InvalidRequestException("보행 프리셋은 RAPTOR 시간표 경로에서만 변경할 수 있습니다.");
+		}
+	}
+
 	private RouteTimetable routeTimetable() {
 		RouteTimetable snapshot = cachedRouteTimetable;
 		if (snapshot != null) {
@@ -125,6 +134,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			command.destinationStationId(),
 			command.departureTime(),
 			command.mobilityType(),
+			command.mobilityPreset(),
 			command.constraintMode(),
 			command.useRealtime(),
 			command.maxTransfers(),

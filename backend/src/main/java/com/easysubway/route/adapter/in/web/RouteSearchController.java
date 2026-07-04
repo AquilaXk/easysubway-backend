@@ -11,6 +11,8 @@ import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchResult;
@@ -150,6 +152,7 @@ class RouteSearchController {
 		String departureTime,
 		@NotNull(message = "이동 유형을 선택해야 합니다.")
 		MobilityType mobilityType,
+		String mobilityPreset,
 		@NotBlank(message = "이동 제약 조건을 선택해야 합니다.")
 		String constraintMode,
 		@NotNull(message = "실시간 반영 여부를 선택해야 합니다.")
@@ -169,6 +172,7 @@ class RouteSearchController {
 				destinationStationId,
 				departureTime,
 				mobilityType,
+				parseMobilityPreset(mobilityPreset),
 				parseConstraintMode(mobilityType, constraintMode),
 				Boolean.TRUE.equals(useRealtime),
 				maxTransfers,
@@ -182,6 +186,13 @@ class RouteSearchController {
 			} catch (DateTimeParseException exception) {
 				throw new InvalidRequestException("출발 시간은 ISO offset 형식이어야 합니다.", exception);
 			}
+		}
+
+		String mobilityPresetName() {
+			MobilityPreset parsedMobilityPreset = parseMobilityPreset(mobilityPreset);
+			return (parsedMobilityPreset == null
+				? ProfileWalkTimeCalculator.presetFor(mobilityType)
+				: parsedMobilityPreset).name();
 		}
 
 	}
@@ -217,6 +228,7 @@ class RouteSearchController {
 		String destinationStationId,
 		String departureTime,
 		MobilityType mobilityType,
+		String mobilityPreset,
 		String constraintMode,
 		boolean useRealtime,
 		int maxTransfers,
@@ -236,6 +248,7 @@ class RouteSearchController {
 				request.destinationStationId(),
 				request.departureTime(),
 				request.mobilityType(),
+				request.mobilityPresetName(),
 				request.constraintMode(),
 				Boolean.TRUE.equals(request.useRealtime()),
 				request.maxTransfers(),
@@ -607,5 +620,16 @@ class RouteSearchController {
 			return ConstraintMode.defaultFor(mobilityType);
 		}
 		return parseConstraintMode(value);
+	}
+
+	private static MobilityPreset parseMobilityPreset(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return MobilityPreset.valueOf(value);
+		} catch (IllegalArgumentException exception) {
+			throw new InvalidRequestException("보행 프리셋을 확인해야 합니다.", exception);
+		}
 	}
 }

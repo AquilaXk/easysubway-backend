@@ -27,6 +27,7 @@ import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteEtaOffsetBucket;
 import com.easysubway.route.domain.RouteFeedbackRating;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.RouteProfileWeight;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteRefreshStatus;
@@ -843,6 +844,30 @@ class RouteSearchServiceTest {
 				tuple("entry", 7),
 				tuple("ride", 10),
 				tuple("exit", 4)
+			);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 명시적 보행 프리셋을 mobility type 기본값보다 우선한다")
+	void routeV2PlannerUsesExplicitMobilityPresetBeforeMobilityTypeMapping() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), routeTimetablePort());
+
+		var plan = planner.search(routeV2Command(
+			ConstraintMode.PREFER_STEP_FREE,
+			MobilityType.SENIOR,
+			MobilityPreset.STANDARD,
+			1,
+			3
+		));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1200);
+		assertThat(plan.itineraries().getFirst().steps())
+			.extracting("stepType", "estimatedMinutes")
+			.containsExactly(
+				tuple("entry", 7),
+				tuple("ride", 10),
+				tuple("exit", 3)
 			);
 	}
 
@@ -2850,11 +2875,22 @@ class RouteSearchServiceTest {
 		int maxTransfers,
 		int alternativeCount
 	) {
+		return routeV2Command(constraintMode, mobilityType, null, maxTransfers, alternativeCount);
+	}
+
+	private static RouteV2SearchUseCase.SearchRouteV2Command routeV2Command(
+		ConstraintMode constraintMode,
+		MobilityType mobilityType,
+		MobilityPreset mobilityPreset,
+		int maxTransfers,
+		int alternativeCount
+	) {
 		return new RouteV2SearchUseCase.SearchRouteV2Command(
 			"station-a",
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
 			mobilityType,
+			mobilityPreset,
 			constraintMode,
 			false,
 			maxTransfers,

@@ -266,7 +266,7 @@ class RouteTimetableRaptorPlanner {
 	private static int profiledWalkSeconds(SearchRouteV2Command command, int baselineSeconds) {
 		return ProfileWalkTimeCalculator.estimateSeconds(
 			baselineSeconds,
-			ProfileWalkTimeCalculator.presetFor(command.mobilityType()),
+			command.mobilityPreset(),
 			WalkTimeSource.OFFICIAL_BASELINE,
 			false
 		).seconds();

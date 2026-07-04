@@ -2,6 +2,8 @@ package com.easysubway.route.application.port.in;
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.RouteSearchResult;
 import java.time.OffsetDateTime;
 import java.util.List;
@@ -16,16 +18,43 @@ public interface RouteV2SearchUseCase {
 		String destinationStationId,
 		OffsetDateTime departureTime,
 		MobilityType mobilityType,
+		MobilityPreset mobilityPreset,
 		ConstraintMode constraintMode,
 		boolean useRealtime,
 		int maxTransfers,
 		int alternativeCount
 	) {
+		public SearchRouteV2Command(
+			String originStationId,
+			String destinationStationId,
+			OffsetDateTime departureTime,
+			MobilityType mobilityType,
+			ConstraintMode constraintMode,
+			boolean useRealtime,
+			int maxTransfers,
+			int alternativeCount
+		) {
+			this(
+				originStationId,
+				destinationStationId,
+				departureTime,
+				mobilityType,
+				null,
+				constraintMode,
+				useRealtime,
+				maxTransfers,
+				alternativeCount
+			);
+		}
+
 		public SearchRouteV2Command {
 			requireText(originStationId, "originStationId");
 			requireText(destinationStationId, "destinationStationId");
 			Objects.requireNonNull(departureTime, "departureTime must not be null");
 			Objects.requireNonNull(mobilityType, "mobilityType must not be null");
+			mobilityPreset = mobilityPreset == null
+				? ProfileWalkTimeCalculator.presetFor(mobilityType)
+				: mobilityPreset;
 			Objects.requireNonNull(constraintMode, "constraintMode must not be null");
 			if (maxTransfers < 0) {
 				throw new IllegalArgumentException("maxTransfers must not be negative");
