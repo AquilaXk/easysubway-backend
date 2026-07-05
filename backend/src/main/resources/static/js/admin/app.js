@@ -205,6 +205,76 @@ document.addEventListener('alpine:init', function () {
 		};
 	});
 
+	// 운영 화면 자동 갱신(#1742): 실행 중 배치/수집·장애 목록을 새로고침 없이 반영한다.
+	// alertCenter 폴링 패턴을 재사용한다 — 설정은 요소의 data-refresh-* 속성에서 읽고(CSP: 표현식 금지),
+	// data-refresh-active="true"일 때만 폴링한다(배치/수집은 실행 중일 때만 요소가 렌더되어 없으면 정지).
+	// 탭 비활성(document.hidden)이면 멈추고 활성화 시 즉시 갱신 후 재개한다(query budget 보호).
+	// htmx 부분 갱신(hx-select로 live 영역만)이라 폼 포커스·스크롤은 스왑 영역 밖에서 보존된다.
+	Alpine.data('autoRefresh', function () {
+		return {
+			timer: null,
+			active: false,
+			url: '',
+			target: '',
+			interval: 60000,
+			onVisibility: null,
+			init: function () {
+				var dataset = this.$el.dataset;
+				this.url = dataset.refreshUrl || '';
+				this.target = dataset.refreshTarget || '';
+				this.interval = parseInt(dataset.refreshInterval, 10) || 60000;
+				this.active = dataset.refreshActive === 'true';
+				if (!this.active || !this.url || !this.target) {
+					return;
+				}
+				var self = this;
+				this.onVisibility = function () {
+					if (document.hidden) {
+						self.stop();
+					} else {
+						self.refresh();
+						self.start();
+					}
+				};
+				document.addEventListener('visibilitychange', this.onVisibility);
+				this.start();
+			},
+			start: function () {
+				if (this.timer || !this.active) {
+					return;
+				}
+				var self = this;
+				this.timer = setInterval(function () {
+					if (!document.hidden) {
+						self.refresh();
+					}
+				}, this.interval);
+			},
+			stop: function () {
+				if (this.timer) {
+					clearInterval(this.timer);
+					this.timer = null;
+				}
+			},
+			refresh: function () {
+				if (window.htmx) {
+					window.htmx.ajax('GET', this.url, {
+						target: this.target,
+						select: this.target,
+						swap: 'outerHTML',
+					});
+				}
+			},
+			destroy: function () {
+				this.stop();
+				if (this.onVisibility) {
+					document.removeEventListener('visibilitychange', this.onVisibility);
+					this.onVisibility = null;
+				}
+			},
+		};
+	});
+
 	// 표준 테이블: 일괄 선택(선택 수·전체 선택) + 밀도 3단 + 컬럼 표시 토글.
 	// 진화형 향상 — JS가 없으면 개별 체크박스 + 액션 버튼(no-JS 폼)이 그대로 동작하고, 표는 기본 밀도로 보인다.
 	// CSP 빌드 규약: x-on/x-text/x-bind에는 메서드·프로퍼티(게터) 이름만 쓰고 표현식은 쓰지 않는다.

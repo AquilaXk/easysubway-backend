@@ -34,8 +34,11 @@
 		<button type="submit">수집 실행</button>
 	</form>
 
-	<section>
+	<section id="collection-live" th:fragment="live">
 		<h2>최근 실행 기록</h2>
+		<div class="admin-auto-refresh" hidden x-data="autoRefresh"
+		     data-refresh-url="/admin/data-collections/page/live" data-refresh-target="#collection-live"
+		     data-refresh-interval="10000" th:attr="data-refresh-active=${hasRunning} ? 'true' : 'false'"></div>
 		<table>
 			<thead>
 			<tr>
@@ -63,17 +66,32 @@
 				<td th:text="${run.completedAtLabel()}">2026-06-15T10:01:00</td>
 				<td th:text="${run.collectedCount}">13</td>
 				<td>
-					<ul>
-						<li th:each="step : ${run.steps}">
-							<strong th:text="${step.name}">FETCH</strong>
-							<span th:text="${step.statusLabel}">완료</span>
-							<span th:text="${'건수 ' + step.recordCount}">건수 14</span>
-							<span th:text="${step.failureMessage}">-</span>
-						</li>
-					</ul>
+					<details class="admin-step-accordion" th:attr="open=${run.failedStepCount() > 0} ? 'open' : null">
+						<summary th:text="${run.stepSummaryLabel()}">단계 3개</summary>
+						<ol class="admin-step-list">
+							<li th:each="step : ${run.steps}" th:classappend="${step.failed} ? ' admin-step-failed'">
+								<strong th:text="${step.name}">FETCH</strong>
+								<span th:text="${step.statusLabel}">완료</span>
+								<span th:text="${'건수 ' + step.recordCount}">건수 14</span>
+								<span th:if="${step.failed}" class="admin-step-failure" th:text="${step.failureMessage}">-</span>
+							</li>
+						</ol>
+					</details>
 				</td>
 				<td th:text="${run.failureLabel()}">-</td>
-				<td th:text="${run.retryableLabel()}">불필요</td>
+				<td>
+					<details th:if="${run.retryable}" class="admin-retry-confirm">
+						<summary>재시도…</summary>
+						<p class="meta" th:text="|대상: ${run.sourceLabel}. 확인하면 수집을 다시 실행합니다.|">영향</p>
+						<form th:action="@{/admin/data-collections/page/run}" method="post">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="source" th:value="${run.source}">
+							<button type="submit">재시도 확인</button>
+						</form>
+					</details>
+					<span th:unless="${run.retryable}" th:text="${run.retryableLabel()}">불필요</span>
+				</td>
 				<td th:text="${run.operatorAction}">수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요.</td>
 			</tr>
 			</tbody>

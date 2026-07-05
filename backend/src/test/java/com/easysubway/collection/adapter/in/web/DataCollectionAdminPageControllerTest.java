@@ -8,7 +8,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
+import com.easysubway.collection.domain.DataCollectionRun;
+import com.easysubway.collection.domain.DataCollectionRunStep;
+import com.easysubway.collection.domain.DataCollectionSource;
+import com.easysubway.collection.domain.DataCollectionStatus;
+import com.easysubway.collection.domain.DataCollectionStepStatus;
 import jakarta.servlet.http.HttpSession;
+import java.time.LocalDateTime;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -34,6 +42,30 @@ class DataCollectionAdminPageControllerTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private SaveDataCollectionRunPort saveDataCollectionRunPort;
+
+	@Test
+	@DisplayName("실패 실행은 실패 단계를 강조한 아코디언과 재시도 확인을 표시한다")
+	void failedRunHighlightsFailedStepAndOffersRetry() throws Exception {
+		saveDataCollectionRunPort.saveRun(failedRun("failed-run"));
+
+		String html = mockMvc.perform(get("/admin/data-collections/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("admin-step-accordion")
+			.contains("admin-step-failed")
+			.contains("실패 1개")
+			.contains("source timeout")
+			.contains("재시도 확인")
+			.contains("value=\"TRANSIT_MASTER\"");
+	}
 
 	@Test
 	@DisplayName("관리자는 데이터 수집 화면에서 실행 버튼과 최근 실행 기록을 확인한다")
@@ -137,6 +169,73 @@ class DataCollectionAdminPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("source", "TRANSIT_MASTER"))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("실행 중 수집이 있으면 live 폴러가 활성이고 fragment는 셸 없이 반환된다")
+	void collectionLiveActiveWhenRunning() throws Exception {
+		saveDataCollectionRunPort.saveRun(runningRun("running-run"));
+
+		String page = mockMvc.perform(get("/admin/data-collections/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(page)
+			.contains("x-data=\"autoRefresh\"")
+			.contains("data-refresh-url=\"/admin/data-collections/page/live\"")
+			.contains("data-refresh-interval=\"10000\"")
+			.contains("data-refresh-active=\"true\"");
+
+		String fragment = mockMvc.perform(get("/admin/data-collections/page/live")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(fragment)
+			.contains("id=\"collection-live\"")
+			.contains("최근 실행 기록")
+			.doesNotContain("admin-shell")
+			.doesNotContain("class=\"run-form\"");
+	}
+
+	private DataCollectionRun runningRun(String runId) {
+		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.RUNNING,
+			"admin-user",
+			now,
+			null,
+			0,
+			null,
+			false,
+			"수집이 진행 중입니다.",
+			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.COMPLETED, null, null, null, 1, null))
+		);
+	}
+
+	private DataCollectionRun failedRun(String runId) {
+		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.FAILED,
+			"admin-user",
+			now,
+			now.plusMinutes(1),
+			0,
+			"FETCH 실패",
+			true,
+			"원인 확인 후 재시도하세요.",
+			List.of(
+				new DataCollectionRunStep("FETCH", DataCollectionStepStatus.FAILED, null, null, null, 0, "source timeout"),
+				new DataCollectionRunStep("STAGE", DataCollectionStepStatus.SKIPPED, null, null, null, 0, null)
+			)
+		);
 	}
 
 	private void runTransitMasterCollection() throws Exception {

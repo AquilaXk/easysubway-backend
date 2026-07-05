@@ -79,6 +79,57 @@ class AdminBatchPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("배치 화면은 잡별 실행 이력 차트와 데이터 표 대체를 렌더링한다")
+	void batchPageRendersJobHistoryChart() throws Exception {
+		saveDataCollectionRunPort.saveRun(completedRun("done-run"));
+		saveDataCollectionRunPort.saveRun(failedRun("failed-run"));
+
+		String html = mockMvc.perform(get("/admin/batches/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("잡별 실행 이력")
+			.contains("batch-history-canvas")
+			.contains("data-chart=")
+			.contains("&quot;statuses&quot;")
+			.contains("데이터 표로 보기")
+			.contains("/js/admin/batch-history-charts.js");
+	}
+
+	@Test
+	@DisplayName("실행 중 배치가 있으면 live 폴러가 활성이고 fragment는 셸 없이 반환된다")
+	void batchLiveActiveWhenRunning() throws Exception {
+		saveDataCollectionRunPort.saveRun(runningRun("running-run"));
+
+		String page = getAdminHtml("/admin/batches/page", new MockHttpSession());
+		assertThat(page)
+			.contains("x-data=\"autoRefresh\"")
+			.contains("data-refresh-url=\"/admin/batches/page/live\"")
+			.contains("data-refresh-interval=\"10000\"")
+			.contains("data-refresh-active=\"true\"");
+
+		String fragment = getAdminHtml("/admin/batches/page/live", new MockHttpSession());
+		assertThat(fragment)
+			.contains("id=\"batch-live\"")
+			.contains("잡별 실행 이력")
+			.doesNotContain("admin-shell")
+			.doesNotContain("허용된 배치 작업");
+	}
+
+	@Test
+	@DisplayName("실행 중 배치가 없으면 live 폴러는 비활성이다")
+	void batchLiveInactiveWhenIdle() throws Exception {
+		saveDataCollectionRunPort.saveRun(completedRun("done-run"));
+
+		String page = getAdminHtml("/admin/batches/page", new MockHttpSession());
+		assertThat(page).contains("data-refresh-active=\"false\"");
+	}
+
+	@Test
 	@DisplayName("배치 실행 목록은 page size와 현재 페이지를 링크에 표시한다")
 	void batchPageShowsPaginationLinks() throws Exception {
 		saveDataCollectionRunPort.saveRun(failedRun("failed-run-1"));
@@ -290,6 +341,23 @@ class AdminBatchPageControllerTest {
 			null,
 			false,
 			"수집 완료",
+			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.COMPLETED, null, null, null, 1, null))
+		);
+	}
+
+	private DataCollectionRun runningRun(String runId) {
+		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.RUNNING,
+			"batch-test",
+			now,
+			null,
+			0,
+			null,
+			false,
+			"수집 실행 중입니다.",
 			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.COMPLETED, null, null, null, 1, null))
 		);
 	}

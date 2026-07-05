@@ -58,6 +58,25 @@ class AdminBatchOperationServiceTest {
 	}
 
 	@Test
+	@DisplayName("잡별 실행 이력을 오래된 순으로 소요 시간·성공/실패와 함께 돌려준다")
+	void jobHistoriesGroupsBySourceOldestFirst() {
+		repository.saveRun(completedRun("run-1"));
+		repository.saveRun(failedRun("run-2", true));
+
+		AdminBatchOperationService.JobExecutionHistory master = service.jobHistories(30).stream()
+			.filter(history -> history.jobId().equals("transit-master-collection"))
+			.findFirst()
+			.orElseThrow();
+
+		assertThat(master.executions())
+			.extracting(execution -> execution.status().name())
+			.containsExactly("COMPLETED", "FAILED");
+		assertThat(master.successCount()).isEqualTo(1);
+		assertThat(master.failureCount()).isEqualTo(1);
+		assertThat(master.executions().get(0).durationMillis()).isEqualTo(60_000L);
+	}
+
+	@Test
 	@DisplayName("registry 밖 job id와 성공 실행 재처리는 거부한다")
 	void retryRejectsUnknownJobAndCompletedRun() {
 		repository.saveRun(completedRun("completed-run"));

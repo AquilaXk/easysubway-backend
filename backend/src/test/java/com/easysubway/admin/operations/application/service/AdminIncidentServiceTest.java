@@ -8,6 +8,8 @@ import com.easysubway.admin.code.application.service.AdminCommonCodeService;
 import com.easysubway.admin.operations.adapter.out.persistence.InMemoryAdminIncidentRepository;
 import com.easysubway.admin.operations.application.service.AdminIncidentService.OpenAdminIncidentCommand;
 import com.easysubway.admin.operations.domain.AdminIncident;
+import com.easysubway.admin.operations.domain.AdminIncidentStatus;
+import com.easysubway.admin.operations.domain.AdminIncidentTransition;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
@@ -25,22 +27,73 @@ class AdminIncidentServiceTest {
 	);
 
 	@Test
-	@DisplayName("incident를 생성하고 해결 기록을 남긴다")
-	void openAndResolveIncident() {
+	@DisplayName("접수 → 조치 중 → 모니터링 → 종결 워크플로를 전이하고 타임라인을 남긴다")
+	void openAndTransitionThroughWorkflow() {
 		AdminIncident opened = service.open(new OpenAdminIncidentCommand(
 			"MAJOR",
-			"OPEN",
+			"RECEIVED",
 			"HEALTH",
 			"database DOWN",
-			"ops"
+			"ops",
+			null,
+			null
 		));
 
-		AdminIncident resolved = service.resolve(opened.incidentId(), "DB connection restored");
+		service.transition(opened.incidentId(), "IN_PROGRESS", "ops", "복구 시작", null);
+		service.transition(opened.incidentId(), "MONITORING", "ops", "복구 확인", null);
+		AdminIncident resolved = service.transition(opened.incidentId(), "RESOLVED", "ops", null, "DB connection restored");
 
 		assertThat(opened.incidentId()).startsWith("INC-");
-		assertThat(resolved.status()).isEqualTo("RESOLVED");
+		assertThat(opened.status()).isEqualTo(AdminIncidentStatus.RECEIVED);
+		assertThat(resolved.status()).isEqualTo(AdminIncidentStatus.RESOLVED);
 		assertThat(resolved.resolvedAt()).isNotNull();
 		assertThat(resolved.resolution()).isEqualTo("DB connection restored");
+
+		List<AdminIncidentTransition> timeline = service.listTransitions(opened.incidentId());
+		assertThat(timeline)
+			.extracting(AdminIncidentTransition::toStatus)
+			.containsExactly(
+				AdminIncidentStatus.RECEIVED,
+				AdminIncidentStatus.IN_PROGRESS,
+				AdminIncidentStatus.MONITORING,
+				AdminIncidentStatus.RESOLVED
+			);
+		assertThat(timeline.get(0).isInitial()).isTrue();
+	}
+
+	@Test
+	@DisplayName("모니터링 → 조치 중 역방향 전이를 허용한다")
+	void allowsReverseFromMonitoringToInProgress() {
+		AdminIncident opened = openReceived();
+		service.transition(opened.incidentId(), "IN_PROGRESS", "ops", null, null);
+		service.transition(opened.incidentId(), "MONITORING", "ops", null, null);
+
+		AdminIncident reopened = service.transition(opened.incidentId(), "IN_PROGRESS", "ops", "재발 조치", null);
+
+		assertThat(reopened.status()).isEqualTo(AdminIncidentStatus.IN_PROGRESS);
+		assertThat(reopened.resolvedAt()).isNull();
+	}
+
+	@Test
+	@DisplayName("단계를 건너뛰는 전이는 거부한다")
+	void rejectsSkippingTransition() {
+		AdminIncident opened = openReceived();
+
+		assertThatThrownBy(() -> service.transition(opened.incidentId(), "RESOLVED", "ops", null, "즉시 종결"))
+			.isInstanceOf(InvalidRequestException.class)
+			.hasMessageContaining("전이할 수 없습니다");
+	}
+
+	@Test
+	@DisplayName("종결 전이에는 해결 기록이 필요하다")
+	void resolveRequiresResolution() {
+		AdminIncident opened = openReceived();
+		service.transition(opened.incidentId(), "IN_PROGRESS", "ops", null, null);
+		service.transition(opened.incidentId(), "MONITORING", "ops", null, null);
+
+		assertThatThrownBy(() -> service.transition(opened.incidentId(), "RESOLVED", "ops", null, "  "))
+			.isInstanceOf(InvalidRequestException.class)
+			.hasMessageContaining("해결 기록");
 	}
 
 	@Test
@@ -49,32 +102,36 @@ class AdminIncidentServiceTest {
 		assertThatThrownBy(() -> new AdminIncident(
 			"INC-OPEN",
 			"MAJOR",
-			"OPEN",
+			AdminIncidentStatus.RECEIVED,
 			"HEALTH",
 			"database DOWN",
 			"ops",
 			LocalDateTime.parse("2026-06-27T00:00:00"),
 			null,
-			"already fixed"
+			"already fixed",
+			null,
+			null
 		)).isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("열린 incident는 resolvedAt과 resolution을 가질 수 없습니다.");
 	}
 
 	@Test
-	@DisplayName("새 incident는 OPEN 상태로만 생성할 수 있다")
-	void openRejectsResolvedStatus() {
+	@DisplayName("새 incident는 접수 상태로만 생성할 수 있다")
+	void openRejectsNonReceivedStatus() {
 		assertThatThrownBy(() -> service.open(new OpenAdminIncidentCommand(
 			"MAJOR",
 			"RESOLVED",
 			"HEALTH",
 			"database restored",
-			"ops"
+			"ops",
+			null,
+			null
 		))).isInstanceOf(InvalidRequestException.class)
-			.hasMessageContaining("OPEN");
+			.hasMessageContaining("접수");
 	}
 
 	@Test
-	@DisplayName("health DOWN 상태는 incident 생성 후보로 연결된다")
+	@DisplayName("health DOWN 상태는 접수 incident 생성 후보로 연결된다")
 	void openFromHealthStatus() {
 		HealthStatus health = HealthStatus.of(
 			"DOWN",
@@ -86,6 +143,11 @@ class AdminIncidentServiceTest {
 
 		assertThat(incident.severity()).isEqualTo("MAJOR");
 		assertThat(incident.source()).isEqualTo("HEALTH");
+		assertThat(incident.status()).isEqualTo(AdminIncidentStatus.RECEIVED);
 		assertThat(incident.summary()).contains("Health DOWN", "database DOWN");
+	}
+
+	private AdminIncident openReceived() {
+		return service.open(new OpenAdminIncidentCommand("MAJOR", "RECEIVED", "HEALTH", "database DOWN", "ops", null, null));
 	}
 }

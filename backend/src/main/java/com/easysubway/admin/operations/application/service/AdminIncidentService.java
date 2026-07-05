@@ -5,19 +5,25 @@ import com.easysubway.admin.code.domain.AdminCommonCode;
 import com.easysubway.admin.code.domain.AdminCommonCodeGroups;
 import com.easysubway.admin.operations.application.port.out.AdminIncidentRepository;
 import com.easysubway.admin.operations.domain.AdminIncident;
+import com.easysubway.admin.operations.domain.AdminIncidentStatus;
+import com.easysubway.admin.operations.domain.AdminIncidentTransition;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Collection;
 import java.util.List;
 import java.util.Locale;
+import java.util.Map;
 import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 @Service
 public class AdminIncidentService {
+
+	private static final String INITIAL_STATUS = AdminIncidentStatus.RECEIVED.name();
 
 	private final AdminIncidentRepository repository;
 	private final AdminCommonCodeService commonCodeService;
@@ -42,25 +48,44 @@ public class AdminIncidentService {
 		return repository.findRecent(limit, offset);
 	}
 
+	public List<AdminIncidentTransition> listTransitions(String incidentId) {
+		return repository.findTransitions(incidentId);
+	}
+
+	public Map<String, List<AdminIncidentTransition>> listTransitions(Collection<String> incidentIds) {
+		return incidentIds.isEmpty() ? Map.of() : repository.findTransitions(incidentIds);
+	}
+
 	public AdminIncident open(OpenAdminIncidentCommand command) {
 		requireEnabled(AdminCommonCodeGroups.INCIDENT_SEVERITY, command.severity());
 		requireEnabled(AdminCommonCodeGroups.INCIDENT_STATUS, command.status());
 		requireEnabled(AdminCommonCodeGroups.INCIDENT_SOURCE, command.source());
-		if (!"OPEN".equals(command.status())) {
-			throw new InvalidRequestException("새 incident는 OPEN 상태로만 생성할 수 있습니다.");
+		if (!INITIAL_STATUS.equals(command.status())) {
+			throw new InvalidRequestException("새 incident는 접수(RECEIVED) 상태로만 생성할 수 있습니다.");
 		}
 		LocalDateTime now = LocalDateTime.now(clock);
-		return repository.save(new AdminIncident(
+		AdminIncident incident = repository.save(new AdminIncident(
 			nextId(),
 			command.severity(),
-			command.status(),
+			AdminIncidentStatus.RECEIVED,
 			command.source(),
 			command.summary(),
 			command.owner(),
 			now,
 			null,
-			null
+			null,
+			command.stationId(),
+			command.lineId()
 		));
+		repository.saveTransition(new AdminIncidentTransition(
+			incident.incidentId(),
+			null,
+			AdminIncidentStatus.RECEIVED,
+			now,
+			command.owner(),
+			"접수"
+		));
+		return incident;
 	}
 
 	public AdminIncident openFromHealth(HealthStatus health, String owner) {
@@ -69,16 +94,45 @@ public class AdminIncidentService {
 		}
 		String severity = "DOWN".equals(health.status()) ? "MAJOR" : "MINOR";
 		String summary = "Health %s: %s".formatted(health.status(), componentSummary(health.components()));
-		return open(new OpenAdminIncidentCommand(severity, "OPEN", "HEALTH", summary, owner));
+		return open(new OpenAdminIncidentCommand(severity, INITIAL_STATUS, "HEALTH", summary, owner, null, null));
 	}
 
-	public AdminIncident resolve(String incidentId, String resolution) {
+	/**
+	 * 장애 상태를 대상 상태로 전이하고 전이 이력을 남긴다. 종결로 전이할 때만 resolution을 요구한다.
+	 * 전이 허용 규칙은 {@link AdminIncidentStatus}가 강제한다.
+	 */
+	public AdminIncident transition(String incidentId, String targetStatus, String changedBy, String note, String resolution) {
 		AdminIncident incident = repository.findById(incidentId)
 			.orElseThrow(() -> new InvalidRequestException("incident를 찾을 수 없습니다."));
-		if ("RESOLVED".equals(incident.status())) {
-			throw new InvalidRequestException("이미 해결된 incident입니다.");
+		AdminIncidentStatus target = parseStatus(targetStatus);
+		if (!incident.status().canTransitionTo(target)) {
+			throw new InvalidRequestException("%s에서 %s로 전이할 수 없습니다."
+				.formatted(incident.status().label(), target.label()));
 		}
-		return repository.save(incident.resolve(resolution, LocalDateTime.now(clock)));
+		if (target.isResolved() && (resolution == null || resolution.isBlank())) {
+			throw new InvalidRequestException("종결 전이에는 해결 기록이 필요합니다.");
+		}
+		AdminIncidentStatus fromStatus = incident.status();
+		LocalDateTime now = LocalDateTime.now(clock);
+		AdminIncident updated = repository.save(
+			incident.transitionTo(target, now, target.isResolved() ? resolution : null));
+		repository.saveTransition(new AdminIncidentTransition(
+			incidentId,
+			fromStatus,
+			target,
+			now,
+			changedBy,
+			note
+		));
+		return updated;
+	}
+
+	private static AdminIncidentStatus parseStatus(String targetStatus) {
+		try {
+			return AdminIncidentStatus.from(targetStatus);
+		} catch (IllegalArgumentException exception) {
+			throw new InvalidRequestException("알 수 없는 장애 상태입니다.");
+		}
 	}
 
 	private void requireEnabled(String groupCode, String code) {
@@ -109,7 +163,9 @@ public class AdminIncidentService {
 		String status,
 		String source,
 		String summary,
-		String owner
+		String owner,
+		String stationId,
+		String lineId
 	) {
 	}
 }

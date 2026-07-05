@@ -90,8 +90,8 @@ class AdminOperationsPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("OPEN")
-			.doesNotContain("/admin/codes/INCIDENT_STATUS/OPEN/disable");
+			.contains("RECEIVED")
+			.doesNotContain("/admin/codes/INCIDENT_STATUS/RECEIVED/disable");
 	}
 
 	@Test
@@ -132,9 +132,9 @@ class AdminOperationsPageControllerTest {
 				.with(commandToken("/admin/codes/page?groupCode=INCIDENT_STATUS"))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("groupCode", "INCIDENT_STATUS")
-				.param("code", "OPEN")
-				.param("displayName", "Open")
-				.param("description", "처리 전")
+				.param("code", "RECEIVED")
+				.param("displayName", "접수")
+				.param("description", "접수됨, 조치 대기")
 				.param("sortOrder", "10"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(header().string("Location", "/admin/codes/page?groupCode=INCIDENT_STATUS"));
@@ -146,7 +146,7 @@ class AdminOperationsPageControllerTest {
 			.getResponse()
 			.getContentAsString();
 
-		assertThat(html).contains("Open");
+		assertThat(html).contains("접수");
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.COMMON_CODE_CHANGE, 1))
 			.singleElement()
 			.satisfies(event -> assertThat(event.reason()).isEqualTo("enabled=true"));
@@ -165,8 +165,8 @@ class AdminOperationsPageControllerTest {
 		assertThat(html)
 			.contains("장애관리")
 			.contains("Major")
-			.contains("Open")
-			.contains("name=\"status\" value=\"OPEN\"")
+			.contains("접수")
+			.contains("name=\"status\" value=\"RECEIVED\"")
 			.doesNotContain("Health incident 생성");
 	}
 
@@ -209,20 +209,9 @@ class AdminOperationsPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("incident 생성과 해결은 audit을 남긴다")
-	void incidentOpenAndResolveWritesAudit() throws Exception {
-		mockMvc.perform(post("/admin/incidents")
-				.with(httpBasic("admin-user", "admin-test-password"))
-				.with(csrf())
-				.with(commandToken("/admin/incidents/page"))
-				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
-				.param("severity", "MAJOR")
-				.param("status", "OPEN")
-				.param("source", "HEALTH")
-				.param("summary", "database DOWN")
-				.param("owner", "ops"))
-			.andExpect(status().is3xxRedirection())
-			.andExpect(header().string("Location", "/admin/incidents/page"));
+	@DisplayName("incident 생성과 전이·종결은 타임라인 audit을 남긴다")
+	void incidentOpenAndTransitionWritesAudit() throws Exception {
+		openIncident("database DOWN");
 
 		String incidentId = auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 1)
 			.get(0)
@@ -230,18 +219,13 @@ class AdminOperationsPageControllerTest {
 
 		assertThat(incidentId).startsWith("INC-");
 
-		mockMvc.perform(post("/admin/incidents/{incidentId}/resolve", incidentId)
-				.with(httpBasic("admin-user", "admin-test-password"))
-				.with(csrf())
-				.with(commandToken("/admin/incidents/page"))
-				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
-				.param("resolution", "provider secret upload url rotated"))
-			.andExpect(status().is3xxRedirection())
-			.andExpect(header().string("Location", "/admin/incidents/page"));
+		transition(incidentId, "IN_PROGRESS", null, null);
+		transition(incidentId, "MONITORING", null, null);
+		transition(incidentId, "RESOLVED", "provider secret upload url rotated", "종결 처리");
 
-		assertThat(auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 2))
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 4))
 			.extracting(event -> event.action())
-			.containsExactly("RESOLVE_INCIDENT", "OPEN_INCIDENT");
+			.containsExactly("RESOLVE_INCIDENT", "TRANSITION_INCIDENT", "TRANSITION_INCIDENT", "OPEN_INCIDENT");
 
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 1))
 			.singleElement()
@@ -252,6 +236,69 @@ class AdminOperationsPageControllerTest {
 				assertThat(event.reason()).startsWith("resolutionLength=");
 				assertThat(event.reason()).doesNotContain("secret");
 			});
+	}
+
+	@Test
+	@DisplayName("장애 화면은 60초 자동 갱신 폴러를 렌더링하고 live fragment는 목록 영역만 반환한다")
+	void incidentsPageRendersAutoRefreshPollerAndLiveFragment() throws Exception {
+		openIncident("database DOWN");
+
+		String page = getAdminHtml("/admin/incidents/page", new MockHttpSession());
+		assertThat(page)
+			.contains("x-data=\"autoRefresh\"")
+			.contains("data-refresh-url=\"/admin/incidents/page/live\"")
+			.contains("data-refresh-interval=\"60000\"")
+			.contains("data-refresh-active=\"true\"");
+
+		String fragment = getAdminHtml("/admin/incidents/page/live", new MockHttpSession());
+		assertThat(fragment)
+			.contains("id=\"incident-live\"")
+			.contains("최근 Incident")
+			.doesNotContain("admin-shell")
+			.doesNotContain("Incident 생성");
+	}
+
+	@Test
+	@DisplayName("역·노선 연결 장애는 역 허브 딥링크를 표시한다")
+	void incidentWithStationLinkShowsHubDeepLink() throws Exception {
+		mockMvc.perform(post("/admin/incidents")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.with(commandToken("/admin/incidents/page"))
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("severity", "MAJOR")
+				.param("status", "RECEIVED")
+				.param("source", "HEALTH")
+				.param("summary", "platform gate down")
+				.param("owner", "ops")
+				.param("stationId", "STN-1")
+				.param("lineId", "L1"))
+			.andExpect(status().is3xxRedirection());
+
+		String html = getAdminHtml("/admin/incidents/page", new MockHttpSession());
+
+		assertThat(html)
+			.contains("/admin/stations/STN-1/page")
+			.contains("노선 L1");
+	}
+
+	@Test
+	@DisplayName("장애 화면은 전이 타임라인과 다음 전이 버튼을 표시한다")
+	void incidentsPageShowsTimelineAndTransitionOptions() throws Exception {
+		openIncident("database DOWN");
+
+		String html = mockMvc.perform(get("/admin/incidents/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("타임라인")
+			.contains("접수")
+			.contains("name=\"targetStatus\" value=\"IN_PROGRESS\"")
+			.contains("/transition");
 	}
 
 	@Test
@@ -267,7 +314,7 @@ class AdminOperationsPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("commandToken", token)
 				.param("severity", "MAJOR")
-				.param("status", "OPEN")
+				.param("status", "RECEIVED")
 				.param("source", "HEALTH")
 				.param("summary", "database DOWN")
 				.param("owner", "ops"))
@@ -280,7 +327,7 @@ class AdminOperationsPageControllerTest {
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("commandToken", token)
 				.param("severity", "MAJOR")
-				.param("status", "OPEN")
+				.param("status", "RECEIVED")
 				.param("source", "HEALTH")
 				.param("summary", "database DOWN")
 				.param("owner", "ops"))
@@ -311,7 +358,7 @@ class AdminOperationsPageControllerTest {
 				.with(csrf())
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("severity", "MAJOR")
-				.param("status", "OPEN")
+				.param("status", "RECEIVED")
 				.param("source", "HEALTH")
 				.param("summary", "database DOWN")
 				.param("owner", "ops"))
@@ -348,11 +395,29 @@ class AdminOperationsPageControllerTest {
 				.with(commandToken("/admin/incidents/page"))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.param("severity", "MAJOR")
-				.param("status", "OPEN")
+				.param("status", "RECEIVED")
 				.param("source", "HEALTH")
 				.param("summary", summary)
 				.param("owner", "ops"))
 			.andExpect(status().is3xxRedirection());
+	}
+
+	private void transition(String incidentId, String targetStatus, String resolution, String note) throws Exception {
+		var builder = post("/admin/incidents/{incidentId}/transition", incidentId)
+			.with(httpBasic("admin-user", "admin-test-password"))
+			.with(csrf())
+			.with(commandToken("/admin/incidents/page"))
+			.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+			.param("targetStatus", targetStatus);
+		if (resolution != null) {
+			builder = builder.param("resolution", resolution);
+		}
+		if (note != null) {
+			builder = builder.param("note", note);
+		}
+		mockMvc.perform(builder)
+			.andExpect(status().is3xxRedirection())
+			.andExpect(header().string("Location", "/admin/incidents/page"));
 	}
 
 	private String getAdminHtml(String path, MockHttpSession session) throws Exception {

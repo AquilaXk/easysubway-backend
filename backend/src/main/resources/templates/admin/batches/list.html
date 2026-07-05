@@ -44,6 +44,45 @@
 		</table>
 	</section>
 
+	<div id="batch-live" th:fragment="live">
+		<div class="admin-auto-refresh" hidden x-data="autoRefresh"
+		     data-refresh-url="/admin/batches/page/live" data-refresh-target="#batch-live"
+		     data-refresh-interval="10000" th:attr="data-refresh-active=${hasRunning} ? 'true' : 'false'"></div>
+	<section>
+		<h2>잡별 실행 이력</h2>
+		<p>잡별 최근 30회 실행의 소요 시간(ms)과 성공/실패를 막대 차트로 봅니다. Chart.js 미로딩 시 아래 표로 대체됩니다.</p>
+		<div class="batch-history-charts">
+			<section th:each="history : ${histories}" class="admin-panel batch-history-panel">
+				<h3 th:text="${history.label}">배치 잡</h3>
+				<p class="meta" th:text="${'성공 ' + history.successCount + ' · 실패 ' + history.failureCount}">성공 0 · 실패 0</p>
+				<div th:if="${!history.isEmpty()}" class="batch-history-canvas-wrap">
+					<canvas th:id="${history.canvasId}" class="batch-history-canvas" role="img"
+					        th:attr="aria-label=|${history.label} 최근 실행 소요 시간 추이|,data-chart=${history.json}"></canvas>
+				</div>
+				<p th:if="${history.isEmpty()}">실행 이력이 없습니다.</p>
+				<details class="batch-history-details" th:if="${!history.isEmpty()}">
+					<summary>데이터 표로 보기</summary>
+					<table>
+						<thead>
+						<tr>
+							<th scope="col">시작</th>
+							<th scope="col">상태</th>
+							<th scope="col">소요</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="cell : ${history.table}">
+							<td th:text="${cell.startedAt}">2026-06-27T00:00</td>
+							<td th:text="${cell.statusLabel}">완료</td>
+							<td th:text="${cell.durationLabel}">120ms</td>
+						</tr>
+						</tbody>
+					</table>
+				</details>
+			</section>
+		</div>
+	</section>
+
 	<section>
 		<h2>최근 배치 실행</h2>
 		<table>
@@ -83,14 +122,18 @@
 				</td>
 				<td th:text="${run.failureMessage}">실패 사유</td>
 				<td>
-					<form th:if="${run.retryable}"
-					      th:action="@{'/admin/batches/' + ${run.jobId} + '/runs/' + ${run.runId} + '/retry'}"
-					      method="post">
-						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<input type="hidden" name="retryRequested" value="true">
-						<button type="submit">재처리</button>
-					</form>
+					<details th:if="${run.retryable}" class="admin-retry-confirm">
+						<summary>재처리…</summary>
+						<p class="meta"
+						   th:text="|대상: ${run.sourceLabel} · 실행 ${run.runId}. 확인하면 새 수집 실행이 시작됩니다.|">영향</p>
+						<form th:action="@{'/admin/batches/' + ${run.jobId} + '/runs/' + ${run.runId} + '/retry'}"
+						      method="post">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="retryRequested" value="true">
+							<button type="submit">재처리 확인</button>
+						</form>
+					</details>
 					<span th:unless="${run.retryable}" th:text="${run.retryableLabel()}">불가</span>
 					<p class="meta" th:text="${run.operatorAction}">다음 행동</p>
 				</td>
@@ -99,8 +142,11 @@
 		</table>
 		<div th:replace="~{admin/fragments/pagination :: pager('배치 실행 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</section>
+	</div>
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: chartScripts}"></th:block>
+<script th:src="@{/js/admin/batch-history-charts.js}" defer></script>
 </body>
 </html>

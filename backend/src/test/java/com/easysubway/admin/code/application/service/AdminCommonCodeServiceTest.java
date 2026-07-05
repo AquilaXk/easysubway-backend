@@ -61,13 +61,13 @@ class AdminCommonCodeServiceTest {
 	@Test
 	@DisplayName("incident lifecycle 필수 코드는 비활성화할 수 없다")
 	void requiredIncidentCodesCannotBeDisabled() {
-		assertThatThrownBy(() -> service.disableCode(AdminCommonCodeGroups.INCIDENT_STATUS, "OPEN"))
+		assertThatThrownBy(() -> service.disableCode(AdminCommonCodeGroups.INCIDENT_STATUS, "RECEIVED"))
 			.isInstanceOf(InvalidRequestException.class)
 			.hasMessage("필수 incident 공통코드는 비활성화할 수 없습니다.");
 
 		assertThat(service.enabledCodes(AdminCommonCodeGroups.INCIDENT_STATUS))
 			.extracting(AdminCommonCode::code)
-			.contains("OPEN");
+			.contains("RECEIVED");
 	}
 
 	@Test
@@ -75,9 +75,9 @@ class AdminCommonCodeServiceTest {
 	void requiredIncidentCodesRemainEnabledOnSave() {
 		AdminCommonCode saved = service.saveCode(new SaveAdminCommonCodeCommand(
 			AdminCommonCodeGroups.INCIDENT_STATUS,
-			"OPEN",
-			"Open",
-			"처리 전",
+			"RECEIVED",
+			"접수",
+			"접수됨, 조치 대기",
 			10,
 			false
 		));
@@ -85,7 +85,7 @@ class AdminCommonCodeServiceTest {
 		assertThat(saved.enabled()).isTrue();
 		assertThat(service.enabledCodes(AdminCommonCodeGroups.INCIDENT_STATUS))
 			.extracting(AdminCommonCode::code)
-			.contains("OPEN");
+			.contains("RECEIVED");
 	}
 
 	@Test
@@ -93,18 +93,18 @@ class AdminCommonCodeServiceTest {
 	void requiredIncidentCodesRemainEnabledOnTrimmedSave() {
 		AdminCommonCode saved = service.saveCode(new SaveAdminCommonCodeCommand(
 			" " + AdminCommonCodeGroups.INCIDENT_STATUS + " ",
-			" OPEN ",
-			"Open",
-			"처리 전",
+			" RECEIVED ",
+			"접수",
+			"접수됨, 조치 대기",
 			10,
 			false
 		));
 
 		assertThat(saved.groupCode()).isEqualTo(AdminCommonCodeGroups.INCIDENT_STATUS);
-		assertThat(saved.code()).isEqualTo("OPEN");
+		assertThat(saved.code()).isEqualTo("RECEIVED");
 		assertThat(saved.enabled()).isTrue();
 		assertThat(service.enabledCodes(AdminCommonCodeGroups.INCIDENT_STATUS))
 			.extracting(AdminCommonCode::code)
-			.contains("OPEN");
+			.contains("RECEIVED");
 	}
 }

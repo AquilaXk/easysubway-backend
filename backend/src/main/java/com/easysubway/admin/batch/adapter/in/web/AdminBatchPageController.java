@@ -4,6 +4,8 @@ import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService;
+import com.easysubway.admin.batch.application.service.AdminBatchOperationService.JobExecutionHistory;
+import com.easysubway.admin.batch.application.service.AdminBatchOperationService.RunExecution;
 import com.easysubway.admin.batch.domain.AdminBatchJob;
 import com.easysubway.common.web.pagination.AdminPageRequest;
 import com.easysubway.common.web.pagination.EgovPaginationView;
@@ -11,14 +13,19 @@ import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionStepStatus;
 import com.easysubway.collection.domain.DataCollectionStatus;
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.AssertTrue;
 import java.security.Principal;
 import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
@@ -34,12 +41,21 @@ import org.springframework.web.bind.annotation.RequestParam;
 @Controller
 class AdminBatchPageController {
 
+	private static final int HISTORY_PER_JOB = 30;
+	private static final DateTimeFormatter HISTORY_LABEL = DateTimeFormatter.ofPattern("MM-dd HH:mm");
+
 	private final AdminBatchOperationService batchOperationService;
 	private final AdminAuditWriter auditWriter;
+	private final ObjectMapper objectMapper;
 
-	AdminBatchPageController(AdminBatchOperationService batchOperationService, AdminAuditWriter auditWriter) {
+	AdminBatchPageController(
+		AdminBatchOperationService batchOperationService,
+		AdminAuditWriter auditWriter,
+		ObjectMapper objectMapper
+	) {
 		this.batchOperationService = batchOperationService;
 		this.auditWriter = auditWriter;
+		this.objectMapper = objectMapper;
 	}
 
 	@GetMapping("/admin/batches/page")
@@ -48,20 +64,108 @@ class AdminBatchPageController {
 		@RequestParam(required = false) Integer size,
 		Model model
 	) {
+		model.addAttribute("jobs", batchOperationService.listJobs().stream().map(BatchJobRow::from).toList());
+		populateBatchLive(model, page, size);
+		return "admin/batches/list";
+	}
+
+	// 배치 운영 자동 갱신(#1742): 실행 중 배치가 있을 때만 10초 폴링이 live 영역(이력 차트·최근 실행)을 받아간다.
+	@GetMapping("/admin/batches/page/live")
+	String batchLive(
+		@RequestParam(required = false) Integer page,
+		@RequestParam(required = false) Integer size,
+		Model model
+	) {
+		populateBatchLive(model, page, size);
+		return "admin/batches/list :: live";
+	}
+
+	private void populateBatchLive(Model model, Integer page, Integer size) {
 		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
-		List<BatchRunRow> runs = batchOperationService.listExecutions(
-				pageRequest.limitForHasNext(),
-				pageRequest.offset()
-			)
-			.stream()
+		List<DataCollectionRun> recent = batchOperationService.listExecutions(
+			pageRequest.limitForHasNext(),
+			pageRequest.offset()
+		);
+		List<BatchRunRow> runs = recent.stream()
 			.flatMap(run -> BatchRunRow.from(run).stream())
 			.toList();
 		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), runs.size());
-		model.addAttribute("jobs", batchOperationService.listJobs().stream().map(BatchJobRow::from).toList());
 		model.addAttribute("runs", pageView.visibleItems(runs));
 		model.addAttribute("page", pageView);
 		model.addAttribute("paginationLinks", pageView.links("/admin/batches/page", Collections.emptyMap()));
-		return "admin/batches/list";
+		model.addAttribute("histories", batchOperationService.jobHistories(HISTORY_PER_JOB)
+			.stream()
+			.map(this::historyChart)
+			.toList());
+		model.addAttribute("hasRunning", recent.stream()
+			.anyMatch(run -> run.status() == DataCollectionStatus.RUNNING));
+	}
+
+	private BatchHistoryChart historyChart(JobExecutionHistory history) {
+		List<String> labels = history.executions().stream()
+			.map(execution -> HISTORY_LABEL.format(execution.startedAt()))
+			.toList();
+		List<Long> values = history.executions().stream()
+			.map(execution -> execution.durationMillis() == null ? 0L : execution.durationMillis())
+			.toList();
+		List<String> statuses = history.executions().stream()
+			.map(execution -> execution.status().name())
+			.toList();
+		List<HistoryCell> table = history.executions().stream().map(HistoryCell::from).toList();
+		Map<String, Object> chart = new LinkedHashMap<>();
+		chart.put("labels", labels);
+		chart.put("values", values);
+		chart.put("statuses", statuses);
+		return new BatchHistoryChart(
+			"batch-history-" + history.jobId(),
+			history.label(),
+			history.successCount(),
+			history.failureCount(),
+			toJson(chart),
+			table
+		);
+	}
+
+	// Chart.js가 읽을 데이터 섬(JSON). 직렬화 실패 시 빈 차트로 안전 폴백(details 표가 대체).
+	private String toJson(Map<String, Object> chart) {
+		try {
+			return objectMapper.writeValueAsString(chart);
+		} catch (JsonProcessingException exception) {
+			return "{\"labels\":[],\"values\":[],\"statuses\":[]}";
+		}
+	}
+
+	record BatchHistoryChart(
+		String canvasId,
+		String label,
+		long successCount,
+		long failureCount,
+		String json,
+		List<HistoryCell> table
+	) {
+
+		public boolean isEmpty() {
+			return table.isEmpty();
+		}
+	}
+
+	record HistoryCell(String startedAt, String statusLabel, String durationLabel) {
+
+		static HistoryCell from(RunExecution execution) {
+			return new HistoryCell(
+				execution.startedAt().toString(),
+				statusLabel(execution.status()),
+				execution.durationMillis() == null ? "-" : execution.durationMillis() + "ms"
+			);
+		}
+
+		private static String statusLabel(DataCollectionStatus status) {
+			return switch (status) {
+				case RUNNING -> "실행 중";
+				case COMPLETED -> "완료";
+				case FAILED -> "실패";
+			};
+		}
 	}
 
 	@PostMapping("/admin/batches/{jobId}/runs/{runId}/retry")

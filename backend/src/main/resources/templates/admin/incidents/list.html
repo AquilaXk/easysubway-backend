@@ -17,7 +17,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>장애관리</h1>
-			<p>health와 batch에서 확인한 운영 이벤트를 incident로 추적합니다.</p>
+			<p>접수 → 조치 중 → 모니터링 → 종결 흐름으로 운영 이벤트를 추적하고, 각 전이를 타임라인에 기록합니다.</p>
 		</div>
 	</header>
 
@@ -41,10 +41,10 @@
 					<option th:each="option : ${severityOptions}" th:value="${option.code}" th:text="${option.displayName}">Major</option>
 				</select>
 			</label>
-			<input type="hidden" name="status" value="OPEN">
+			<input type="hidden" name="status" value="RECEIVED">
 			<label>상태
 				<select disabled>
-					<option th:each="option : ${statusOptions}" th:if="${option.code == 'OPEN'}" th:text="${option.displayName}" selected>Open</option>
+					<option th:each="option : ${statusOptions}" th:text="${option.displayName}" selected>접수</option>
 				</select>
 			</label>
 			<label>출처
@@ -54,12 +54,17 @@
 			</label>
 			<label>요약 <input name="summary" required></label>
 			<label>담당자 <input name="owner"></label>
+			<label>연결 역 ID <input name="stationId" placeholder="선택"></label>
+			<label>연결 노선 ID <input name="lineId" placeholder="선택"></label>
 			<button type="submit">생성</button>
 		</form>
 	</section>
 
-	<section>
+	<section id="incident-live" th:fragment="live">
 		<h2>최근 Incident</h2>
+		<div class="admin-auto-refresh" hidden x-data="autoRefresh"
+		     data-refresh-url="/admin/incidents/page/live" data-refresh-target="#incident-live"
+		     data-refresh-interval="60000" data-refresh-active="true"></div>
 		<table>
 			<thead>
 			<tr>
@@ -71,7 +76,7 @@
 				<th scope="col">담당자</th>
 				<th scope="col">시작</th>
 				<th scope="col">해결</th>
-				<th scope="col">관리</th>
+				<th scope="col">타임라인·전이</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -81,21 +86,46 @@
 			<tr th:each="incident : ${incidents}">
 				<td th:text="${incident.incidentId}">INC-1</td>
 				<td th:text="${incident.severity}">MAJOR</td>
-				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${incident.status})}">OPEN</span></td>
+				<td><span th:replace="~{admin/fragments/shell :: status(${incident.statusLabel}, ${incident.open} ? 'warn' : 'good')}">접수</span></td>
 				<td th:text="${incident.source}">HEALTH</td>
 				<td th:text="${incident.summary}">요약</td>
 				<td th:text="${incident.owner}">admin</td>
 				<td th:text="${incident.openedAt}">2026-06-27T00:00</td>
 				<td th:text="${incident.resolvedAt}">-</td>
 				<td>
-					<form th:if="${incident.open}" th:action="@{'/admin/incidents/' + ${incident.incidentId} + '/resolve'}" method="post">
-						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<label for="incident-resolution" th:for="${'incident-resolution-' + incident.incidentId}">해결 기록</label>
-						<input id="incident-resolution" th:id="${'incident-resolution-' + incident.incidentId}" name="resolution" required placeholder="해결 기록">
-						<button type="submit">해결</button>
-					</form>
-					<span th:unless="${incident.open}" th:text="${incident.resolution}">해결됨</span>
+					<details class="admin-incident-detail">
+						<summary th:text="${'타임라인 (' + incident.timeline.size() + '건)'}">타임라인</summary>
+						<p class="admin-incident-target" th:if="${incident.stationId != null}">
+							연결 역: <a th:href="@{${incident.stationHubUrl}}" th:text="${incident.stationId}">역</a>
+							<th:block th:if="${incident.lineId != null}" th:text="${' · 노선 ' + incident.lineId}"></th:block>
+						</p>
+						<ol class="admin-timeline">
+							<li th:each="step : ${incident.timeline}">
+								<span class="admin-timeline-status">
+									<th:block th:if="${step.initial}" th:text="${step.toLabel}">접수</th:block>
+									<th:block th:unless="${step.initial}" th:text="${step.fromLabel + ' → ' + step.toLabel}">조치 중 → 모니터링</th:block>
+								</span>
+								<span class="admin-timeline-meta" th:text="${step.changedAt + ' · ' + step.changedBy}">시각 · 담당자</span>
+								<span class="admin-timeline-note" th:if="${!step.note.isEmpty()}" th:text="${step.note}">메모</span>
+							</li>
+						</ol>
+						<div class="admin-incident-actions" th:if="${incident.open}">
+							<form th:each="option : ${incident.transitionOptions}" method="post"
+							      th:action="@{'/admin/incidents/' + ${incident.incidentId} + '/transition'}">
+								<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+								<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+								<input type="hidden" name="targetStatus" th:value="${option.code}">
+								<th:block th:if="${option.requiresResolution}">
+									<label th:for="${'incident-resolution-' + incident.incidentId}">해결 기록</label>
+									<input th:id="${'incident-resolution-' + incident.incidentId}" name="resolution" required placeholder="해결 기록">
+								</th:block>
+								<label th:for="${'incident-note-' + incident.incidentId + '-' + option.code}">메모</label>
+								<input th:id="${'incident-note-' + incident.incidentId + '-' + option.code}" name="note" placeholder="전이 메모(선택)">
+								<button type="submit" th:text="${option.label + '(으)로'}">전이</button>
+							</form>
+						</div>
+						<p th:unless="${incident.open}" class="admin-incident-resolution" th:text="${incident.resolution}">해결됨</p>
+					</details>
 				</td>
 			</tr>
 			</tbody>

@@ -37,8 +37,10 @@ public class InMemoryAdminCommonCodeRepository implements AdminCommonCodeReposit
 		seedCode(AdminCommonCodeGroups.BATCH_FAILURE_CATEGORY, "VALIDATION_ERROR", "확인 실패", "수집 산출물 확인 실패", 20, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SEVERITY, "MAJOR", "Major", "사용자 기능 영향", 10, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SEVERITY, "MINOR", "Minor", "운영 확인 필요", 20, true, now);
-		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "OPEN", "Open", "처리 전", 10, true, now);
-		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "RESOLVED", "Resolved", "해결됨", 20, true, now);
+		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "RECEIVED", "접수", "접수됨, 조치 대기", 10, true, now);
+		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "IN_PROGRESS", "조치 중", "원인 파악·복구 진행", 20, true, now);
+		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "MONITORING", "모니터링", "복구 후 관찰", 30, true, now);
+		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "RESOLVED", "종결", "해결·종료됨", 40, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SOURCE, "HEALTH", "Health", "health 상태", 10, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SOURCE, "BATCH", "Batch", "배치 실행", 20, true, now);
 	}
