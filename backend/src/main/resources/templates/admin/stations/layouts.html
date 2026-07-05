@@ -57,7 +57,7 @@
 					      method="post">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label class="meta" th:for="|source-type-${source.id}|">자료 유형</label>
-						<select name="sourceType" th:id="|source-type-${source.id}|">
+						<select name="sourceType" th:id="|source-type-${source.id}|" aria-label="자료 유형">
 							<option th:each="option : ${sourceTypeOptions}"
 							        th:value="${option.value}"
 							        th:text="${option.label}"
@@ -65,29 +65,29 @@
 						</select>
 						<label class="meta" th:for="|source-name-${source.id}|">자료 이름</label>
 						<input type="text" name="sourceName" th:id="|source-name-${source.id}|"
-						       th:value="${source.sourceName}" required>
+						       aria-label="자료 이름" th:value="${source.sourceName}" required>
 						<label class="meta" th:for="|source-url-${source.id}|">자료 URL</label>
 						<input type="url" name="sourceUrl" th:id="|source-url-${source.id}|"
-						       th:value="${source.sourceUrl}" required>
+						       aria-label="자료 URL" th:value="${source.sourceUrl}" required>
 						<label class="meta" th:for="|source-license-${source.id}|">라이선스</label>
 						<input type="text" name="license" th:id="|source-license-${source.id}|"
-						       th:value="${source.license}" required>
+						       aria-label="라이선스" th:value="${source.license}" required>
 						<label class="meta" th:for="|commercial-use-${source.id}|">상업적 이용</label>
-						<select name="commercialUseAllowed" th:id="|commercial-use-${source.id}|">
+						<select name="commercialUseAllowed" th:id="|commercial-use-${source.id}|" aria-label="상업적 이용">
 							<option value="false" th:selected="${!source.commercialUseAllowed}">불가</option>
 							<option value="true" th:selected="${source.commercialUseAllowed}">가능</option>
 						</select>
 						<label class="meta" th:for="|attribution-${source.id}|">출처 표시</label>
-						<select name="attributionRequired" th:id="|attribution-${source.id}|">
+						<select name="attributionRequired" th:id="|attribution-${source.id}|" aria-label="출처 표시">
 							<option value="true" th:selected="${source.attributionRequired}">필요</option>
 							<option value="false" th:selected="${!source.attributionRequired}">불필요</option>
 						</select>
 						<label class="meta" th:for="|captured-at-${source.id}|">수집일</label>
 						<input type="date" name="capturedAt" th:id="|captured-at-${source.id}|"
-						       th:value="${source.capturedAt}" required>
+						       aria-label="수집일" th:value="${source.capturedAt}" required>
 						<label class="meta" th:for="|reviewed-at-${source.id}|">확인일</label>
 						<input type="date" name="reviewedAt" th:id="|reviewed-at-${source.id}|"
-						       th:value="${source.rawReviewedAt}">
+						       aria-label="확인일" th:value="${source.rawReviewedAt}">
 						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
 					</form>
 					<span class="meta" th:text="${source.sourceName}">상록수역 역사 안내도</span>
@@ -134,7 +134,7 @@
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="expectedVersion" th:value="${layout.version}">
 							<label class="meta" th:for="|status-${layout.id}|">확인 상태</label>
-						<select name="status" th:id="|status-${layout.id}|">
+						<select name="status" th:id="|status-${layout.id}|" aria-label="확인 상태">
 							<option th:each="option : ${layoutStatusOptions}"
 							        th:value="${option.value}"
 							        th:text="${option.label}"
@@ -179,16 +179,16 @@
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label class="meta" th:for="|display-label-${node.id}|">표시 라벨</label>
 						<input type="text" name="displayLabel" th:id="|display-label-${node.id}|"
-						       th:value="${node.displayLabel}" required>
+						       aria-label="표시 라벨" th:value="${node.displayLabel}" required>
 						<label class="meta" th:for="|display-x-${node.id}|">x</label>
 						<input type="number" name="displayX" th:id="|display-x-${node.id}|"
-						       th:value="${node.displayX}" min="0" required>
+						       aria-label="표시 x 좌표" th:value="${node.displayX}" min="0" required>
 						<label class="meta" th:for="|display-y-${node.id}|">y</label>
 						<input type="number" name="displayY" th:id="|display-y-${node.id}|"
-						       th:value="${node.displayY}" min="0" required>
+						       aria-label="표시 y 좌표" th:value="${node.displayY}" min="0" required>
 						<label class="meta" th:for="|accessibility-note-${node.id}|">접근성 메모</label>
 						<input type="text" name="accessibilityNote" th:id="|accessibility-note-${node.id}|"
-						       th:value="${node.rawAccessibilityNote}">
+						       aria-label="접근성 메모" th:value="${node.rawAccessibilityNote}">
 						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
 						<span class="meta" th:text="${node.positionLabel}">x 120, y 240</span>
 						<span class="meta" th:text="${node.layoutId}">layout-sangnoksu-draft</span>
@@ -227,36 +227,36 @@
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label class="meta" th:for="|distance-meters-${edge.id}|">거리 m</label>
 						<input type="number" name="distanceMeters" th:id="|distance-meters-${edge.id}|"
-						       th:value="${edge.distanceMeters}" min="0" required>
+						       aria-label="거리 m" th:value="${edge.distanceMeters}" min="0" required>
 						<label class="meta" th:for="|estimated-seconds-${edge.id}|">예상 초</label>
 						<input type="number" name="estimatedSeconds" th:id="|estimated-seconds-${edge.id}|"
-						       th:value="${edge.estimatedSeconds}" min="0" required>
+						       aria-label="예상 초" th:value="${edge.estimatedSeconds}" min="0" required>
 						<label class="meta" th:for="|slope-level-${edge.id}|">경사</label>
 						<input type="number" name="slopeLevel" th:id="|slope-level-${edge.id}|"
-						       th:value="${edge.slopeLevel}" min="1" max="5" required>
+						       aria-label="경사 수준" th:value="${edge.slopeLevel}" min="1" max="5" required>
 						<label class="meta" th:for="|width-level-${edge.id}|">폭</label>
 						<input type="number" name="widthLevel" th:id="|width-level-${edge.id}|"
-						       th:value="${edge.widthLevel}" min="1" max="5" required>
+						       aria-label="폭 수준" th:value="${edge.widthLevel}" min="1" max="5" required>
 							<label class="meta" th:for="|reliability-score-${edge.id}|">확인 정도</label>
 						<input type="number" name="reliabilityScore" th:id="|reliability-score-${edge.id}|"
-						       th:value="${edge.reliabilityScore}" min="0" max="100" required>
+						       aria-label="확인 정도" th:value="${edge.reliabilityScore}" min="0" max="100" required>
 						<label class="meta" th:for="|has-stairs-${edge.id}|">계단</label>
-						<select name="hasStairs" th:id="|has-stairs-${edge.id}|">
+						<select name="hasStairs" th:id="|has-stairs-${edge.id}|" aria-label="계단">
 							<option value="false" th:selected="${!edge.hasStairs}">없음</option>
 							<option value="true" th:selected="${edge.hasStairs}">포함</option>
 						</select>
 						<label class="meta" th:for="|requires-elevator-${edge.id}|">엘리베이터</label>
-						<select name="requiresElevator" th:id="|requires-elevator-${edge.id}|">
+						<select name="requiresElevator" th:id="|requires-elevator-${edge.id}|" aria-label="엘리베이터 필요">
 							<option value="false" th:selected="${!edge.requiresElevator}">불필요</option>
 							<option value="true" th:selected="${edge.requiresElevator}">필요</option>
 						</select>
 						<label class="meta" th:for="|requires-escalator-${edge.id}|">에스컬레이터</label>
-						<select name="requiresEscalator" th:id="|requires-escalator-${edge.id}|">
+						<select name="requiresEscalator" th:id="|requires-escalator-${edge.id}|" aria-label="에스컬레이터 필요">
 							<option value="false" th:selected="${!edge.requiresEscalator}">불필요</option>
 							<option value="true" th:selected="${edge.requiresEscalator}">필요</option>
 						</select>
 						<label class="meta" th:for="|active-${edge.id}|">활성</label>
-						<select name="active" th:id="|active-${edge.id}|">
+						<select name="active" th:id="|active-${edge.id}|" aria-label="활성 여부">
 							<option value="true" th:selected="${edge.active}">활성</option>
 							<option value="false" th:selected="${!edge.active}">비활성</option>
 						</select>

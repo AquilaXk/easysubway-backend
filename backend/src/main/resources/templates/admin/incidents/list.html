@@ -117,10 +117,12 @@
 								<input type="hidden" name="targetStatus" th:value="${option.code}">
 								<th:block th:if="${option.requiresResolution}">
 									<label th:for="${'incident-resolution-' + incident.incidentId}">해결 기록</label>
-									<input th:id="${'incident-resolution-' + incident.incidentId}" name="resolution" required placeholder="해결 기록">
+									<input th:id="${'incident-resolution-' + incident.incidentId}" name="resolution" required
+									       aria-label="해결 기록" placeholder="해결 기록">
 								</th:block>
 								<label th:for="${'incident-note-' + incident.incidentId + '-' + option.code}">메모</label>
-								<input th:id="${'incident-note-' + incident.incidentId + '-' + option.code}" name="note" placeholder="전이 메모(선택)">
+								<input th:id="${'incident-note-' + incident.incidentId + '-' + option.code}" name="note"
+								       aria-label="전이 메모" placeholder="전이 메모(선택)">
 								<button type="submit" th:text="${option.label + '(으)로'}">전이</button>
 							</form>
 						</div>
