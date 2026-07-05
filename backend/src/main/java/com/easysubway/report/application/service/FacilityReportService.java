@@ -3,6 +3,7 @@ package com.easysubway.report.application.service;
 import com.easysubway.common.domain.PageResult;
 import com.easysubway.report.application.port.in.CreateFacilityReportCommand;
 import com.easysubway.report.application.port.in.CreatedFacilityReport;
+import com.easysubway.report.application.port.in.FacilityReportListQuery;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
@@ -570,6 +571,16 @@ public class FacilityReportService implements FacilityReportUseCase {
 		FacilityReportPageRequest pageRequest
 	) {
 		return loadFacilityReportPort.loadReportSummaries(status, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> searchReportSummaries(FacilityReportListQuery query) {
+		return loadFacilityReportPort.loadReportSummaries(query);
+	}
+
+	@Override
+	public long countReports(FacilityReportListQuery query) {
+		return loadFacilityReportPort.countReports(query);
 	}
 
 	@Override

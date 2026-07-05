@@ -13,6 +13,8 @@
 <main class="admin-main">
 	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<!-- 드로어(사이드 패널) htmx 로드 대상(#1737): 이 fragment만 부분 응답으로 반환된다. -->
+	<div th:fragment="detailBody">
 	<header class="admin-page-head">
 		<div>
 			<h1>제보 상세·판정</h1>
@@ -121,6 +123,7 @@
 		<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
 		<button class="secondary" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>
 	</form>
+	</div>
 </main>
 </div>
 </body>

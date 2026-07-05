@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.out.persistence;
 
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportListQuery;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
@@ -17,9 +18,11 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.stream.Stream;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
@@ -82,6 +85,46 @@ public class InMemoryFacilityReportRepository implements
 			.map(FacilityReportSummary::from)
 			.toList();
 		return page(summaries, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadReportSummaries(FacilityReportListQuery query) {
+		List<FacilityReportSummary> summaries = matchingReports(query)
+			.sorted(reportComparator(query))
+			.map(FacilityReportSummary::from)
+			.toList();
+		return page(summaries, query.toPageRequest());
+	}
+
+	@Override
+	public long countReports(FacilityReportListQuery query) {
+		return matchingReports(query).count();
+	}
+
+	private Stream<FacilityReport> matchingReports(FacilityReportListQuery query) {
+		String keyword = query.keyword() == null ? null : query.keyword().toLowerCase(Locale.ROOT);
+		return reports.values()
+			.stream()
+			.filter(report -> query.status() == null || report.status() == query.status())
+			.filter(report -> keyword == null
+				|| (report.description() != null
+					&& report.description().toLowerCase(Locale.ROOT).contains(keyword)))
+			.filter(report -> query.createdFrom() == null
+				|| !report.createdAt().isBefore(query.createdFrom().atStartOfDay()))
+			.filter(report -> query.createdTo() == null
+				|| report.createdAt().isBefore(query.createdTo().plusDays(1).atStartOfDay()));
+	}
+
+	// JDBC와 동일하게 정렬 컬럼·방향 + report_id ASC tie-break.
+	private Comparator<FacilityReport> reportComparator(FacilityReportListQuery query) {
+		Comparator<FacilityReport> base = switch (query.sortField()) {
+			case CREATED_AT -> Comparator.comparing(FacilityReport::createdAt);
+			case STATUS -> Comparator.comparing(report -> report.status().name());
+		};
+		if (query.sortDirection() == FacilityReportListQuery.SortDirection.DESC) {
+			base = base.reversed();
+		}
+		return base.thenComparing(FacilityReport::id);
 	}
 
 	@Override

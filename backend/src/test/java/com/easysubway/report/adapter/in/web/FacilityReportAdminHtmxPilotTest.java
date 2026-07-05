@@ -8,6 +8,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.admin.savedview.application.port.in.AdminSavedViewUseCase;
+import com.easysubway.admin.savedview.application.port.in.SaveAdminSavedViewCommand;
 import com.jayway.jsonpath.JsonPath;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -40,6 +42,9 @@ class FacilityReportAdminHtmxPilotTest {
 
 	@Autowired
 	private MockMvc mockMvc;
+
+	@Autowired
+	private AdminSavedViewUseCase savedViewUseCase;
 
 	@Test
 	@DisplayName("일반 요청은 셸·스크립트·결과 fragment를 모두 포함한 풀페이지를 반환한다")
@@ -145,6 +150,216 @@ class FacilityReportAdminHtmxPilotTest {
 			.doesNotContain("cdn.jsdelivr.net")
 			.doesNotContain("unpkg.com")
 			.doesNotContain("cdnjs.cloudflare.com");
+	}
+
+	@Test
+	@DisplayName("키워드 검색은 신고 내용으로 목록을 거른다")
+	void keywordSearchFiltersReports() throws Exception {
+		createReport("엘리베이터가 멈췄습니다");
+		createReport("에스컬레이터 소음 문제");
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("keyword", "엘리베이터")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("엘리베이터가 멈췄습니다")
+			.doesNotContain("에스컬레이터 소음 문제");
+	}
+
+	@Test
+	@DisplayName("검색 툴바와 정렬 헤더가 접근성 속성과 함께 렌더된다")
+	void searchToolbarAndSortableHeadersRender() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("role=\"search\"")
+			.contains("name=\"keyword\"")
+			// 기본 정렬은 접수일 내림차순
+			.contains("aria-sort=\"descending\"")
+			.contains("sort=status,asc")
+			.contains("sort=created_at,asc");
+	}
+
+	@Test
+	@DisplayName("검색·상태 필터 링크는 현재 키워드를 유지한다")
+	void filterLinksPreserveKeyword() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("keyword", "엘리베이터")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("keyword=%EC%97%98%EB%A6%AC%EB%B2%A0%EC%9D%B4%ED%84%B0")
+			.contains("status=SUBMITTED");
+	}
+
+	@Test
+	@DisplayName("기간 프리셋이 렌더되고 활성 필터는 제거 칩으로 표시된다")
+	void datePresetsAndFilterChipsRender() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("keyword", "엘리베이터")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("오늘")
+			.contains("최근 7일")
+			.contains("최근 30일")
+			.contains("전체 기간")
+			.contains("class=\"filter-chip\"")
+			.contains("검색: 엘리베이터");
+	}
+
+	@Test
+	@DisplayName("기본 저장 뷰가 있으면 필터 없이 진입 시 그 질의로 리다이렉트된다(루프 없음)")
+	void defaultSavedViewAppliesOnFreshEntry() throws Exception {
+		var view = savedViewUseCase.saveView(new SaveAdminSavedViewCommand(
+			"admin-test", "a-reports", "기본 진입 뷰", "status=SUBMITTED", true));
+		try {
+			mockMvc.perform(get("/admin/reports/page")
+					.with(httpBasic("admin-test", "admin-test-password")))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(header().string("Location", "/admin/reports/page?status=SUBMITTED"));
+			// 파라미터가 붙은 요청은 재리다이렉트하지 않는다(루프 방지).
+			mockMvc.perform(get("/admin/reports/page")
+					.param("status", "RESOLVED")
+					.with(httpBasic("admin-test", "admin-test-password")))
+				.andExpect(status().isOk());
+		} finally {
+			savedViewUseCase.deleteView("admin-test", view.viewId());
+		}
+	}
+
+	@Test
+	@DisplayName("저장된 뷰 저장 폼과 저장된 뷰 적용 링크가 렌더된다")
+	void savedViewsSectionRenders() throws Exception {
+		savedViewUseCase.saveView(new SaveAdminSavedViewCommand(
+			"admin-test", "a-reports", "미확인 급증", "status=SUBMITTED", false));
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			// 저장 폼
+			.contains("class=\"save-view\"")
+			.contains("name=\"programId\"")
+			.contains("현재 검색 저장")
+			.contains("name=\"commandToken\"")
+			// 적용 링크
+			.contains("미확인 급증")
+			.contains("/admin/reports/page?status=SUBMITTED");
+	}
+
+	@Test
+	@DisplayName("상세를 htmx로 열면 셸 없이 상세 본문 fragment만 오고 드로어 열기 트리거가 붙는다")
+	void detailDrawerFragmentReturnsBodyWithOpenTrigger() throws Exception {
+		String reportId = createReport("드로어로 볼 신고");
+
+		var result = mockMvc.perform(get("/admin/reports/{id}/page", reportId)
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(header().string("HX-Trigger", org.hamcrest.Matchers.containsString("admin-drawer-open")))
+			.andReturn();
+		String fragment = result.getResponse().getContentAsString();
+
+		assertThat(fragment)
+			.contains("제보 상세·판정")
+			.contains("드로어로 볼 신고");
+		assertThat(fragment)
+			.doesNotContain("<!doctype html>")
+			.doesNotContain("admin-sidebar");
+	}
+
+	@Test
+	@DisplayName("목록의 드로어 컨테이너와 상세 링크의 드로어 타깃이 렌더된다")
+	void drawerContainerAndDetailLinkRender() throws Exception {
+		createReport("드로어 링크 신고");
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("class=\"admin-drawer\"")
+			.contains("id=\"admin-drawer-body\"")
+			.contains("hx-target=\"#admin-drawer-body\"");
+	}
+
+	@Test
+	@DisplayName("토스트 영역이 aria-live와 함께 렌더된다(no-JS는 서버 flash가 대체)")
+	void toastRegionRenders() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("class=\"toast-region\"")
+			.contains("aria-live=\"polite\"")
+			.contains("x-data=\"toastHub\"");
+	}
+
+	@Test
+	@DisplayName("표 보기 설정(밀도·컬럼 토글)과 표 스코프가 렌더된다")
+	void tableViewControlsRender() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("x-data=\"reportTable\"")
+			.contains("class=\"table-viewbar\"")
+			.contains("좁게")
+			.contains("넓게")
+			.contains("좌표 숨김")
+			.contains("사진 숨김")
+			.contains("x-bind:class=\"tableClass\"");
+	}
+
+	@Test
+	@DisplayName("결과가 없으면 표준 빈 상태 컴포넌트가 안내 문구와 함께 렌더된다")
+	void emptyResultRendersEmptyStateComponent() throws Exception {
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.param("keyword", "존재하지않는키워드zzz")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("class=\"empty-state\"")
+			.contains("확인할 신고가 없습니다.")
+			.contains("검색어·상태·기간 필터를 조정해 보세요.");
 	}
 
 	private String createReport(String description) throws Exception {

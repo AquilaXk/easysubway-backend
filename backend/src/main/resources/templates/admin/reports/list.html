@@ -51,47 +51,171 @@
 	-->
 	<div id="report-results" th:fragment="reportResults"
 	     hx-target="#report-results" hx-swap="outerHTML" hx-push-url="true">
+		<!-- 검색 툴바(#1737): 키워드 live search. JS 있으면 300ms debounce htmx 부분 갱신,
+		     없으면 form GET 제출로 동일 동작. 상태·정렬·기간은 hidden으로 유지된다. -->
+		<form class="table-toolbar" method="get" th:action="@{/admin/reports/page}"
+		      role="search" aria-label="신고 검색"
+		      hx-target="#report-results" hx-swap="outerHTML" hx-push-url="true"
+		      th:attr="hx-get=@{/admin/reports/page}"
+		      hx-trigger="submit, keyup changed delay:300ms">
+			<input type="search" name="keyword" th:value="${searchKeyword}"
+			       placeholder="신고 내용 검색" aria-label="신고 내용 검색" autocomplete="off">
+			<input type="hidden" name="status" th:if="${selectedStatus != null}" th:value="${selectedStatus}">
+			<input type="hidden" name="sort" th:if="${sortParam != null}" th:value="${sortParam}">
+			<input type="hidden" name="from" th:if="${createdFrom != null}" th:value="${createdFrom}">
+			<input type="hidden" name="to" th:if="${createdTo != null}" th:value="${createdTo}">
+			<button type="submit">검색</button>
+		</form>
+
+		<div class="table-filters">
+			<nav class="date-presets" aria-label="접수 기간">
+				<a th:each="preset : ${datePresets}"
+				   th:href="${preset.href}"
+				   th:attr="hx-get=${preset.href},aria-current=${preset.active ? 'true' : null}"
+				   th:text="${preset.label}">오늘</a>
+			</nav>
+			<div class="filter-chips" th:if="${!filterChips.isEmpty()}" aria-label="적용된 필터">
+				<a th:each="chip : ${filterChips}" class="filter-chip"
+				   th:href="${chip.removeHref}" th:attr="hx-get=${chip.removeHref}"
+				   th:title="|${chip.label} 제거|">
+					<span th:text="${chip.label}">검색: 키워드</span>
+					<span aria-hidden="true">✕</span>
+				</a>
+			</div>
+		</div>
+
+		<!--
+		  저장된 뷰(#1737): 계정별 검색 스냅샷. 적용은 htmx/no-JS 링크, 저장·기본·삭제는 command token +
+		  CSRF POST(no-JS 기준선, 처리 후 목록으로 리다이렉트). 화면군 이슈가 이 패턴을 복제한다.
+		-->
+		<div class="saved-views" aria-label="저장된 뷰">
+			<div class="saved-view-list" th:if="${!savedViews.isEmpty()}">
+				<span th:each="view : ${savedViews}" class="saved-view">
+					<a th:href="${view.applyHref}" th:attr="hx-get=${view.applyHref}"
+					   th:classappend="${view.isDefault} ? ' is-default'"
+					   th:text="${view.name}">저장된 뷰</a>
+					<form method="post" th:if="${!view.isDefault}"
+					      th:action="@{/admin/saved-views/{id}/default(id=${view.viewId})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="returnTo" th:value="${currentListHref}">
+						<button type="submit" title="기본으로 지정" aria-label="기본 뷰로 지정">★</button>
+					</form>
+					<form method="post" th:action="@{/admin/saved-views/{id}/delete(id=${view.viewId})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<input type="hidden" name="returnTo" th:value="${currentListHref}">
+						<button type="submit" title="삭제" aria-label="저장된 뷰 삭제">✕</button>
+					</form>
+				</span>
+			</div>
+			<form class="save-view" method="post" th:action="@{/admin/saved-views}">
+				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+				<input type="hidden" name="programId" value="a-reports">
+				<input type="hidden" name="queryParams" th:value="${currentQueryString}">
+				<input type="hidden" name="returnTo" th:value="${currentListHref}">
+				<input type="text" name="name" placeholder="현재 검색 저장" aria-label="저장된 뷰 이름" required>
+				<label class="save-view-default">
+					<input type="checkbox" name="makeDefault" value="true"> 기본
+				</label>
+				<button type="submit">저장</button>
+			</form>
+		</div>
+
 		<nav class="status-filter" aria-label="신고 상태 필터">
-			<a th:href="@{/admin/reports/page}"
-			   th:attr="hx-get=@{/admin/reports/page},aria-current=${selectedStatus == null ? 'page' : null}">전체</a>
-			<a th:each="statusOption : ${statusOptions}"
-			   th:href="@{/admin/reports/page(status=${statusOption.value})}"
-			   th:attr="hx-get=@{/admin/reports/page(status=${statusOption.value})},aria-current=${selectedStatus == statusOption.value ? 'page' : null}"
-			   th:text="${statusOption.label}">접수됨</a>
+			<a th:href="${allFilter.href}"
+			   th:attr="hx-get=${allFilter.href},aria-current=${allFilter.current ? 'page' : null}">전체</a>
+			<a th:each="filter : ${statusFilters}"
+			   th:href="${filter.href}"
+			   th:attr="hx-get=${filter.href},aria-current=${filter.current ? 'page' : null}"
+			   th:text="${filter.label}">접수됨</a>
 		</nav>
 
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">상태</th>
-				<th scope="col">유형</th>
-				<th scope="col">신고 내용</th>
-				<th scope="col">역 ID</th>
-				<th scope="col">시설 ID</th>
-				<th scope="col">좌표</th>
-				<th scope="col">사진</th>
-				<th scope="col">상세</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:if="${reports.isEmpty()}">
-				<td class="empty" colspan="8">확인할 신고가 없습니다.</td>
-			</tr>
-			<tr th:each="report : ${reports}">
-				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></td>
-				<td th:text="${report.reportTypeLabel}">고장</td>
-				<td th:text="${report.description}">신고 내용</td>
-				<td th:text="${report.stationId}">station-id</td>
-				<td th:text="${report.facilityId}">facility-id</td>
-				<td th:text="${report.coordinateLabel}">위치 없음</td>
-				<td th:text="${report.hasPhoto ? '있음' : '없음'}">없음</td>
-				<td>
-					<a class="detail-link"
-					   th:href="@{/admin/reports/{reportId}/page(reportId=${report.id})}">상세 보기</a>
-				</td>
-			</tr>
-			</tbody>
-		</table>
+		<!--
+		  일괄 검수(#1737): 체크박스로 선택한 신고를 한 번에 승인/반려한다. command token + CSRF POST.
+		  진화형 향상 — JS 없으면 체크박스 + 액션 버튼이 그대로 동작하고, 있으면 전체 선택·선택 수 표시가 붙는다.
+		-->
+		<div class="report-table" x-data="reportTable">
+			<!--
+			  표 보기 설정(#1737): 밀도 3단·컬럼 표시 토글. 순수 표시 설정이라 폼 밖에 두어 제출되지 않는다.
+			  진화형 향상 — JS 없으면 기본 밀도·전체 컬럼으로 보이고, 있으면 즉시 반영된다(CSP: 메서드 참조만).
+			-->
+			<div class="table-viewbar" role="group" aria-label="표 보기 설정">
+				<fieldset class="density-control">
+					<legend>밀도</legend>
+					<label><input type="radio" name="_density" value="compact" x-on:change="setDensity"> 좁게</label>
+					<label><input type="radio" name="_density" value="default" checked x-on:change="setDensity"> 기본</label>
+					<label><input type="radio" name="_density" value="comfortable" x-on:change="setDensity"> 넓게</label>
+				</fieldset>
+				<fieldset class="column-control">
+					<legend>열 표시</legend>
+					<label><input type="checkbox" x-on:change="toggleCoordinate"> 좌표 숨김</label>
+					<label><input type="checkbox" x-on:change="togglePhoto"> 사진 숨김</label>
+				</fieldset>
+			</div>
+			<form class="bulk-form" method="post" th:action="@{/admin/reports/bulk-review}">
+				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+				<input type="hidden" name="returnTo" th:value="${currentListHref}">
+				<table x-bind:class="tableClass">
+				<thead>
+				<tr>
+					<th scope="col" class="select-col">
+						<input type="checkbox" aria-label="목록 전체 선택" x-on:change="toggleAll">
+					</th>
+					<th scope="col" th:attr="aria-sort=${statusSort.ariaSort}">
+						<a th:href="${statusSort.href}" th:attr="hx-get=${statusSort.href}">상태</a>
+					</th>
+					<th scope="col">유형</th>
+					<th scope="col">신고 내용</th>
+					<th scope="col">역</th>
+					<th scope="col">시설</th>
+					<th scope="col" th:attr="aria-sort=${createdSort.ariaSort}">
+						<a th:href="${createdSort.href}" th:attr="hx-get=${createdSort.href}">접수일</a>
+					</th>
+					<th scope="col">좌표</th>
+					<th scope="col">사진</th>
+					<th scope="col">상세</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:if="${reports.isEmpty()}">
+					<td class="empty" colspan="10">
+						<div th:replace="~{admin/fragments/empty-state :: panel('확인할 신고가 없습니다.', '검색어·상태·기간 필터를 조정해 보세요.')}"></div>
+					</td>
+				</tr>
+				<tr th:each="report : ${reports}">
+					<td class="select-col">
+						<input type="checkbox" name="reportIds" th:value="${report.id}"
+						       aria-label="신고 선택"
+						       x-on:change="recount" th:attr="aria-label=|${report.stationLabel} 신고 선택|">
+					</td>
+					<td><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></td>
+					<td th:text="${report.reportTypeLabel}">고장</td>
+					<td th:text="${report.description}">신고 내용</td>
+					<td th:text="${report.stationLabel}">상록수(station-id)</td>
+					<td th:text="${report.facilityLabel}">엘리베이터(facility-id)</td>
+					<td th:text="${#temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm')}">2026-06-17 09:00</td>
+					<td th:text="${report.coordinateLabel}">위치 없음</td>
+					<td th:text="${report.hasPhoto ? '있음' : '없음'}">없음</td>
+					<td>
+						<!-- 드로어로 열되(hx-target 오버라이드) no-JS는 상세 페이지로 이동. hx-push-url=false로 URL 유지 -->
+						<a class="detail-link"
+						   th:href="@{/admin/reports/{reportId}/page(reportId=${report.id})}"
+						   th:attr="hx-get=@{/admin/reports/{reportId}/page(reportId=${report.id})}"
+						   hx-target="#admin-drawer-body" hx-swap="innerHTML" hx-push-url="false">상세 보기</a>
+					</td>
+				</tr>
+				</tbody>
+			</table>
+			<div class="bulk-actionbar">
+				<span class="bulk-count" x-text="selectionLabel">선택한 신고 일괄 처리</span>
+				<button type="submit" name="decision" value="ACCEPT">선택 승인</button>
+				<button type="submit" name="decision" value="REJECT">선택 반려</button>
+			</div>
+			</form>
+		</div>
 
 		<!-- 페이지네이션은 공용 pager fragment(hx-get 없음)라 이 파일럿에서는 전체 새로고침으로 동작한다.
 		     상태 필터만 htmx 부분 갱신 대상이며, 대기열 전체 htmx화는 #1740 범위다. -->
@@ -99,6 +223,8 @@
 	</div>
 </main>
 </div>
+<th:block th:replace="~{admin/fragments/shell :: toastRegion}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
 </body>
 </html>

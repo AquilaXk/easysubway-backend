@@ -115,6 +115,17 @@ public class AdminAuditWriter {
 		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, targetType, targetId, action, outcome, reason);
 	}
 
+	public void savedViewChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "ADMIN_SAVED_VIEW", targetId, action, outcome, reason);
+	}
+
 	private void writeAudit(
 		Authentication authentication,
 		HttpServletRequest request,

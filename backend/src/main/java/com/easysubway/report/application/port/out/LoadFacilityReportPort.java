@@ -1,6 +1,7 @@
 package com.easysubway.report.application.port.out;
 
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportListQuery;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportSummary;
@@ -26,6 +27,10 @@ public interface LoadFacilityReportPort {
 		FacilityReportStatus status,
 		FacilityReportPageRequest pageRequest
 	);
+
+	PageResult<FacilityReportSummary> loadReportSummaries(FacilityReportListQuery query);
+
+	long countReports(FacilityReportListQuery query);
 
 	Map<FacilityReportStatus, Long> loadReportStatusCounts();
 

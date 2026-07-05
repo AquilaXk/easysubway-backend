@@ -3,9 +3,11 @@ package com.easysubway.report.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
+import com.easysubway.report.application.port.in.FacilityReportListQuery;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
@@ -345,6 +347,118 @@ class JdbcFacilityReportRepositoryTest {
 		assertThat(anonymizedReport.status()).isEqualTo(targetReport.status());
 		assertThat(anonymizedReport.reviewedAt()).isEqualTo(targetReport.reviewedAt());
 		assertThat(anonymizedReport.reviewedBy()).isEqualTo(targetReport.reviewedBy());
+	}
+
+	@Test
+	@DisplayName("검색 질의는 신고 내용 키워드를 대소문자 구분 없이 부분일치로 거른다")
+	void searchFiltersByKeywordCaseInsensitively() {
+		repository.saveReport(reportAt("r-1", "Elevator broken", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 9, 0)));
+		repository.saveReport(reportAt("r-2", "에스컬레이터 멈춤", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 10, 0)));
+
+		var page = repository.loadReportSummaries(
+			FacilityReportListQuery.of(null, "elevator", null, null, null, 0, 20));
+
+		assertThat(page.items()).extracting(FacilityReportSummary::id).containsExactly("r-1");
+		assertThat(repository.countReports(
+			FacilityReportListQuery.of(null, "elevator", null, null, null, 0, 20))).isEqualTo(1L);
+	}
+
+	@Test
+	@DisplayName("키워드 검색은 LIKE 메타문자(%,_)를 리터럴로 처리한다")
+	void searchTreatsLikeMetacharactersLiterally() {
+		repository.saveReport(reportAt("pct-hit", "10% 할인 안내 오류", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 9, 0)));
+		repository.saveReport(reportAt("pct-miss", "1000원 요금 오류", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 10, 0)));
+
+		var percentPage = repository.loadReportSummaries(
+			FacilityReportListQuery.of(null, "10%", null, null, null, 0, 20));
+		assertThat(percentPage.items()).extracting(FacilityReportSummary::id).containsExactly("pct-hit");
+
+		repository.saveReport(reportAt("us-hit", "a_b 코드 오류", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 11, 0)));
+		repository.saveReport(reportAt("us-miss", "axb 코드 오류", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 12, 0)));
+		var underscorePage = repository.loadReportSummaries(
+			FacilityReportListQuery.of(null, "a_b", null, null, null, 0, 20));
+		assertThat(underscorePage.items()).extracting(FacilityReportSummary::id).containsExactly("us-hit");
+	}
+
+	@Test
+	@DisplayName("검색 질의는 접수일 기간을 포함 경계로 거른다")
+	void searchFiltersByCreatedDateRangeInclusive() {
+		repository.saveReport(reportAt("r-15", "15일 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 15, 23, 0)));
+		repository.saveReport(reportAt("r-17", "17일 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 12, 0)));
+		repository.saveReport(reportAt("r-19", "19일 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 19, 1, 0)));
+
+		var page = repository.loadReportSummaries(FacilityReportListQuery.of(
+			null, null, java.time.LocalDate.of(2026, 6, 16), java.time.LocalDate.of(2026, 6, 18), null, 0, 20));
+
+		assertThat(page.items()).extracting(FacilityReportSummary::id).containsExactly("r-17");
+	}
+
+	@Test
+	@DisplayName("검색 질의는 접수일 오름차순 정렬을 지원한다")
+	void searchSortsByCreatedAtAscending() {
+		repository.saveReport(reportAt("r-new", "새 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 12, 0)));
+		repository.saveReport(reportAt("r-old", "오래된 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 8, 0)));
+
+		var page = repository.loadReportSummaries(
+			FacilityReportListQuery.of(null, null, null, null, "created_at,asc", 0, 20));
+
+		assertThat(page.items()).extracting(FacilityReportSummary::id).containsExactly("r-old", "r-new");
+	}
+
+	@Test
+	@DisplayName("검색 질의는 상태 필터와 결합해 count한다")
+	void searchCombinesStatusFilterWithCount() {
+		repository.saveReport(reportAt("s-1", "접수 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 8, 0)));
+		repository.saveReport(reportAt("s-2", "접수 신고", FacilityReportStatus.SUBMITTED,
+			LocalDateTime.of(2026, 6, 17, 9, 0)));
+		repository.saveReport(reportAt("d-1", "반영 신고", FacilityReportStatus.ACCEPTED,
+			LocalDateTime.of(2026, 6, 17, 10, 0)));
+
+		var query = FacilityReportListQuery.of(
+			FacilityReportStatus.SUBMITTED, "신고", null, null, null, 0, 20);
+
+		assertThat(repository.loadReportSummaries(query).items())
+			.extracting(FacilityReportSummary::id)
+			.containsExactlyInAnyOrder("s-1", "s-2");
+		assertThat(repository.countReports(query)).isEqualTo(2L);
+	}
+
+	private FacilityReport reportAt(
+		String reportId,
+		String description,
+		FacilityReportStatus status,
+		LocalDateTime createdAt
+	) {
+		return new FacilityReport(
+			reportId,
+			"anonymous-user-1",
+			"station-sangnoksu",
+			"facility-elevator-1",
+			FacilityReportType.BROKEN,
+			description,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			status,
+			createdAt,
+			null,
+			null
+		);
 	}
 
 	private FacilityReport submittedReport(String reportId, String userId, int hour) {

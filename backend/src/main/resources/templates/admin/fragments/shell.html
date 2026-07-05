@@ -48,6 +48,31 @@
 	<button type="button" class="alert-dismiss" x-cloak x-on:click="dismiss" aria-label="알림 닫기">✕</button>
 </output>
 <!--
+  토스트 영역(#1737): htmx 응답의 HX-Trigger("admin-toast", {message, tone}) 이벤트로 우상단 알림을 띄운다.
+  no-JS에서는 서버 flash(<output th:fragment="flash">)가 대체한다. 화면군 이슈가 이 fragment를 재사용한다.
+-->
+<div th:fragment="toastRegion" class="toast-region" aria-live="polite" aria-atomic="true"
+     x-data="toastHub" x-on:admin-toast.window="show">
+	<output class="toast-item" x-cloak x-show="visible" x-bind:class="toneClass">
+		<span x-text="message">알림</span>
+		<button type="button" class="toast-dismiss" x-on:click="hide" aria-label="알림 닫기">✕</button>
+	</output>
+</div>
+<!--
+  드로어(사이드 패널, #1737): htmx가 #admin-drawer-body에 상세 fragment를 로드하고 HX-Trigger로
+  admin-drawer-open을 쏘면 열린다. Esc·백드롭·닫기 버튼으로 닫는다. no-JS는 상세 링크가 상세 페이지로 이동.
+  화면군 이슈가 재사용한다. 열림/닫힘 포커스 이동·복귀 키보드 검증은 접근성 QA(#1749)에서 확인한다.
+-->
+<aside th:fragment="drawer" class="admin-drawer" x-data="drawer" x-show="visible" x-cloak
+       x-on:admin-drawer-open.window="open" x-on:keydown.escape.window="close"
+       role="dialog" aria-modal="true" aria-label="상세 패널">
+	<div class="admin-drawer-backdrop" x-on:click="close"></div>
+	<div class="admin-drawer-panel" x-ref="panel" tabindex="-1">
+		<button type="button" class="admin-drawer-close" x-on:click="close" aria-label="패널 닫기">✕</button>
+		<div id="admin-drawer-body" class="admin-drawer-body"></div>
+	</div>
+</aside>
+<!--
   관리자 프론트 스크립트(#1736): htmx·Alpine(CSP 빌드)·app.js를 self-host + SRI로 로드한다.
   전부 defer라 파싱 순서대로 실행되어 app.js의 alpine:init 리스너가 Alpine start 전에 등록된다.
   Chart.js는 필요한 화면만 chartScripts fragment로 별도 로드한다(대시보드·분석).

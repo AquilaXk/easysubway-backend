@@ -453,6 +453,291 @@ body.admin-v3 {
 	background: rgba(22, 48, 47, 0.08);
 }
 
+/* 표준 테이블 검색 툴바·정렬 헤더(#1737) */
+.admin-v3 .table-toolbar {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.admin-v3 .table-toolbar input[type="search"] {
+	flex: 1;
+	min-width: 0;
+}
+
+.admin-v3 table th[aria-sort] a {
+	display: inline-flex;
+	align-items: center;
+	gap: 4px;
+	color: inherit;
+}
+
+.admin-v3 table th[aria-sort="ascending"] a::after {
+	content: "▲";
+	font-size: 9px;
+}
+
+.admin-v3 table th[aria-sort="descending"] a::after {
+	content: "▼";
+	font-size: 9px;
+}
+
+.admin-v3 .table-filters {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.admin-v3 .date-presets {
+	display: flex;
+	gap: 6px;
+}
+
+.admin-v3 .date-presets a[aria-current="true"] {
+	font-weight: 700;
+}
+
+.admin-v3 .filter-chips {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+}
+
+.admin-v3 .filter-chip {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 2px 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: 999px;
+	font-size: 12px;
+	color: var(--admin-ink-2);
+	text-decoration: none;
+}
+
+.admin-v3 .filter-chip:hover {
+	border-color: var(--admin-border-strong);
+}
+
+/* 저장된 뷰(#1737) */
+.admin-v3 .saved-views {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.admin-v3 .saved-view-list {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+}
+
+.admin-v3 .saved-view {
+	display: inline-flex;
+	align-items: center;
+	gap: 2px;
+	border: 1px solid var(--admin-border);
+	border-radius: 6px;
+	padding: 0 4px 0 10px;
+}
+
+.admin-v3 .saved-view a.is-default {
+	font-weight: 700;
+}
+
+.admin-v3 .saved-view form {
+	display: inline;
+	margin: 0;
+}
+
+.admin-v3 .saved-view button {
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+	padding: 2px 4px;
+	color: var(--admin-ink-2);
+}
+
+.admin-v3 .save-view {
+	display: inline-flex;
+	gap: 6px;
+	align-items: center;
+	margin: 0;
+}
+
+/* 표준 빈 상태(#1737) — 텍스트 중심, 과장 박스 금지 */
+.admin-v3 .empty-state {
+	padding: 24px 8px;
+	text-align: center;
+}
+
+.admin-v3 .empty-state-message {
+	color: var(--admin-ink);
+	margin: 0;
+}
+
+.admin-v3 .empty-state-hint {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	margin: 6px 0 0;
+}
+
+/* 일괄 선택·액션 바(#1737) */
+.admin-v3 .select-col {
+	width: 36px;
+	text-align: center;
+}
+
+.admin-v3 .bulk-actionbar {
+	position: sticky;
+	bottom: 0;
+	display: flex;
+	align-items: center;
+	gap: 10px;
+	padding: 10px 12px;
+	background: var(--admin-surface);
+	border-top: 1px solid var(--admin-border);
+}
+
+.admin-v3 .bulk-count {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	margin-right: auto;
+}
+
+/* 표 보기 설정: 밀도 3단·컬럼 표시 토글(#1737) */
+.admin-v3 .table-viewbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 16px;
+	align-items: center;
+	margin-bottom: 8px;
+}
+
+.admin-v3 .table-viewbar fieldset {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	border: 0;
+	padding: 0;
+	margin: 0;
+}
+
+.admin-v3 .table-viewbar legend {
+	float: none;
+	width: auto;
+	font-size: 12px;
+	color: var(--admin-ink-2);
+	padding: 0;
+	margin-right: 4px;
+}
+
+.admin-v3 table.density-compact td,
+.admin-v3 table.density-compact th {
+	padding-top: 6px;
+	padding-bottom: 6px;
+}
+
+.admin-v3 table.density-comfortable td,
+.admin-v3 table.density-comfortable th {
+	padding-top: 16px;
+	padding-bottom: 16px;
+}
+
+.admin-v3 table.hide-col-coordinate td:nth-child(8),
+.admin-v3 table.hide-col-coordinate th:nth-child(8),
+.admin-v3 table.hide-col-photo td:nth-child(9),
+.admin-v3 table.hide-col-photo th:nth-child(9) {
+	display: none;
+}
+
+/* 토스트(#1737) — 우상단, htmx HX-Trigger로 표시. no-JS는 서버 flash가 대체 */
+.toast-region {
+	position: fixed;
+	top: 16px;
+	right: 16px;
+	z-index: 60;
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	max-width: 360px;
+}
+
+.toast-region .toast-item {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 12px;
+	border: 1px solid var(--admin-border);
+	border-left: 3px solid var(--admin-border-strong);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: 0 4px 14px rgba(22, 48, 47, 0.12);
+}
+
+.toast-region .toast-item.is-good {
+	border-left-color: var(--admin-good);
+}
+
+.toast-region .toast-item.is-warning {
+	border-left-color: var(--admin-warn);
+}
+
+.toast-region .toast-item.is-failure {
+	border-left-color: var(--admin-danger);
+}
+
+.toast-region .toast-dismiss {
+	flex: none;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	cursor: pointer;
+	padding: 0 2px;
+}
+
+/* 드로어(사이드 패널, #1737) */
+.admin-drawer {
+	position: fixed;
+	inset: 0;
+	z-index: 70;
+}
+
+.admin-drawer-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(22, 48, 47, 0.35);
+}
+
+.admin-drawer-panel {
+	position: absolute;
+	top: 0;
+	right: 0;
+	height: 100%;
+	width: min(560px, 92vw);
+	overflow-y: auto;
+	background: var(--admin-surface);
+	border-left: 1px solid var(--admin-border);
+	box-shadow: -8px 0 24px rgba(22, 48, 47, 0.14);
+	padding: 16px 20px;
+}
+
+.admin-drawer-close {
+	position: sticky;
+	top: 0;
+	float: right;
+	border: 0;
+	background: transparent;
+	cursor: pointer;
+	font-size: 16px;
+}
+
 .admin-status {
 	font-size: 13px;
 }

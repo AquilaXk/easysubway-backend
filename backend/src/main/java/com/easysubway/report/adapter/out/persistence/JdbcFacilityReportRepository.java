@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.out.persistence;
 
 import com.easysubway.common.domain.PageResult;
+import com.easysubway.report.application.port.in.FacilityReportListQuery;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
@@ -16,8 +17,10 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -260,6 +263,89 @@ public class JdbcFacilityReportRepository implements
 			pageRequest.offset()
 		);
 		return page(summaries, pageRequest);
+	}
+
+	@Override
+	public PageResult<FacilityReportSummary> loadReportSummaries(FacilityReportListQuery query) {
+		List<Object> args = new ArrayList<>();
+		String where = buildReportSearchWhere(query, args);
+		// 정렬 컬럼·방향은 화이트리스트 enum(created_at|status, ASC|DESC)이라 SQL 주입 위험이 없다.
+		String orderBy = "ORDER BY " + query.sortField().column() + " " + query.sortDirection().sql()
+			+ ", report_id ASC";
+		args.add(query.limitForHasNext());
+		args.add(query.offset());
+		List<FacilityReportSummary> summaries = jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					public_receipt_code,
+					user_id,
+					station_id,
+					facility_id,
+					report_type,
+					description,
+					CASE
+						WHEN photo_file_name IS NOT NULL
+							AND photo_content_type IS NOT NULL
+							AND photo_object_key IS NOT NULL
+						THEN TRUE
+						ELSE FALSE
+					END AS has_photo,
+					latitude,
+					longitude,
+					duplicate_of_report_id,
+					status,
+					created_at,
+					reviewed_at,
+					reviewed_by
+				FROM facility_reports
+				"""
+				+ where + "\n" + orderBy + "\nLIMIT ? OFFSET ?",
+			this::mapFacilityReportSummary,
+			args.toArray()
+		);
+		return page(summaries, query.toPageRequest());
+	}
+
+	@Override
+	public long countReports(FacilityReportListQuery query) {
+		List<Object> args = new ArrayList<>();
+		String where = buildReportSearchWhere(query, args);
+		Long count = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM facility_reports\n" + where,
+			Long.class,
+			args.toArray()
+		);
+		return count == null ? 0L : count;
+	}
+
+	// 상태·키워드(신고 내용 부분일치)·접수 기간을 동적 WHERE로 조립하고 바인딩 값을 args에 채운다.
+	private String buildReportSearchWhere(FacilityReportListQuery query, List<Object> args) {
+		List<String> clauses = new ArrayList<>();
+		if (query.status() != null) {
+			clauses.add("status = ?");
+			args.add(query.status().name());
+		}
+		if (query.hasKeyword()) {
+			// LIKE 메타문자(%,_,\)를 이스케이프해 부분일치를 리터럴로 맞춘다(InMemory .contains()와 시맨틱 일치).
+			clauses.add("LOWER(description) LIKE ? ESCAPE '\\'");
+			args.add("%" + escapeLike(query.keyword().toLowerCase(Locale.ROOT)) + "%");
+		}
+		if (query.createdFrom() != null) {
+			clauses.add("created_at >= ?");
+			args.add(query.createdFrom().atStartOfDay());
+		}
+		if (query.createdTo() != null) {
+			clauses.add("created_at < ?");
+			args.add(query.createdTo().plusDays(1).atStartOfDay());
+		}
+		if (clauses.isEmpty()) {
+			return "";
+		}
+		return "WHERE " + String.join(" AND ", clauses);
+	}
+
+	private static String escapeLike(String value) {
+		return value.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_");
 	}
 
 	@Override

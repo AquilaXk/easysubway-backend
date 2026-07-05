@@ -45,6 +45,10 @@ public interface FacilityReportUseCase {
 		FacilityReportPageRequest pageRequest
 	);
 
+	PageResult<FacilityReportSummary> searchReportSummaries(FacilityReportListQuery query);
+
+	long countReports(FacilityReportListQuery query);
+
 	Map<FacilityReportStatus, Long> countReportsByStatus();
 
 	long countReportsCreatedSince(LocalDateTime cutoff);
