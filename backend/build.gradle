@@ -68,6 +68,9 @@ dependencies {
 	implementation 'org.springframework.boot:spring-boot-starter-thymeleaf'
 	implementation 'org.springframework.boot:spring-boot-starter-validation'
 	implementation 'org.springframework.boot:spring-boot-starter-web'
+	// 관리자 콘솔 htmx 부분 응답 규약: @HxRequest 매핑 분리와 hx: dialect의 CSRF 헤더 자동 주입.
+	// 4.0.x는 Spring Boot 3.5 기준으로 빌드된 계열이라 현재 BOM(3.5.15)과 정합한다(5.x는 Spring Boot 4.0 기준).
+	implementation 'io.github.wimdeblauwe:htmx-spring-boot-thymeleaf:4.0.3'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'org.flywaydb:flyway-core'
 	runtimeOnly 'com.h2database:h2'

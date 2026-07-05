@@ -48,6 +48,21 @@ import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
 @EnableMethodSecurity
 public class SecurityConfig {
 
+	// 관리자·operator 콘솔 CSP: 모든 스크립트·스타일은 self-host(static/vendor·static/css)만 허용한다.
+	// Alpine는 CSP 빌드라 'unsafe-eval' 불필요, 인라인 스크립트·핸들러는 전면 금지(진화형 향상 원칙).
+	// img data:는 Chart.js가 canvas를 toDataURL로 내보낼 때만 쓰이며 신고 사진은 same-origin 엔드포인트('self')로 제공된다.
+	private static final String ADMIN_CONTENT_SECURITY_POLICY =
+		"default-src 'self'; "
+			+ "script-src 'self'; "
+			+ "style-src 'self'; "
+			+ "img-src 'self' data:; "
+			+ "font-src 'self'; "
+			+ "connect-src 'self'; "
+			+ "object-src 'none'; "
+			+ "base-uri 'self'; "
+			+ "form-action 'self'; "
+			+ "frame-ancestors 'none'";
+
 	@Bean
 	AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler() {
 		return new AdminHtmlAccessDeniedHandler();
@@ -64,6 +79,8 @@ public class SecurityConfig {
 		// 관리자 확인 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
 		HttpSecurity configured = http
 			.securityMatcher("/admin/**")
+			.headers(headers -> headers
+				.contentSecurityPolicy(csp -> csp.policyDirectives(ADMIN_CONTENT_SECURITY_POLICY)))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/admin/login").permitAll()
 				.requestMatchers("/admin/error/page").permitAll()
@@ -193,6 +210,8 @@ public class SecurityConfig {
 		// 운영기관 전용 화면은 전역 관리자와 별도 역할로 분리해 이후 기관별 범위 제한을 붙일 수 있게 한다.
 		HttpSecurity configured = http
 			.securityMatcher("/operator/**")
+			.headers(headers -> headers
+				.contentSecurityPolicy(csp -> csp.policyDirectives(ADMIN_CONTENT_SECURITY_POLICY)))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers("/operator/login").permitAll()
 				.anyRequest().hasRole("OPERATOR_ADMIN")
@@ -261,6 +280,7 @@ public class SecurityConfig {
 					"/favicon.ico",
 					"/css/**",
 					"/js/**",
+					"/vendor/**",
 					"/images/**",
 					"/webjars/**"
 				).permitAll()

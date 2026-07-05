@@ -425,6 +425,34 @@ body.admin-v3 {
 	border-left-color: var(--admin-danger);
 }
 
+/* Alpine 진화형 향상(#1736): 초기화 전 요소를 숨겨 JS 없는 환경에서 죽은 컨트롤 노출을 막는다. */
+[x-cloak] {
+	display: none !important;
+}
+
+.admin-v3 .alert-dismissible {
+	display: flex;
+	align-items: flex-start;
+	justify-content: space-between;
+	gap: 12px;
+}
+
+.admin-v3 .alert-dismiss {
+	flex: none;
+	border: 0;
+	background: transparent;
+	color: inherit;
+	font-size: 13px;
+	line-height: 1;
+	padding: 2px 6px;
+	cursor: pointer;
+	border-radius: 6px;
+}
+
+.admin-v3 .alert-dismiss:hover {
+	background: rgba(22, 48, 47, 0.08);
+}
+
 .admin-status {
 	font-size: 13px;
 }
