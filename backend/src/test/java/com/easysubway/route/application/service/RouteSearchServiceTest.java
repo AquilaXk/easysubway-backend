@@ -1139,6 +1139,33 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 시간표 개정 유효기간이 지난 데이터를 STALE_TIMETABLE로 강등하고 PLANNED를 만들지 않는다")
+	void routeV2PlannerDemotesExpiredTimetableRevisionToStaleTimetable() {
+		var planner = new RouteV2Planner(
+			legacySearchMustNotBeCalled(),
+			feedValidityRouteTimetablePort(LocalDate.parse("2026-06-30"))
+		);
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.STALE_TIMETABLE);
+		assertThat(plan.itineraries()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 요청일이 시간표 개정 유효기간 이내면 PLANNED로 계획한다")
+	void routeV2PlannerPlansTimetableWhenRequestWithinRevisionValidity() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
+		var planner = new RouteV2Planner(routeSearchService, feedValidityRouteTimetablePort(LocalDate.parse("2026-07-01")));
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 시간표 scan 결과 저장 시 검색별 ID와 생성 시각을 부여한다")
 	void routeV2PlannerStoresTimetableScanResultsWithSearchIdentityAndCreationTime() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -2638,6 +2665,19 @@ class RouteSearchServiceTest {
 				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 2, "station-b", "seoul-4", 33420, 33420, 0, 0)
 			),
 			List.of()
+		);
+	}
+
+	private static LoadRouteTimetablePort feedValidityRouteTimetablePort(LocalDate feedEndDate) {
+		var base = routeTimetablePort().loadRouteTimetable();
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			base.serviceCalendars(),
+			base.serviceCalendarDates(),
+			base.transitRoutes(),
+			base.transitTrips(),
+			base.transitStopTimes(),
+			base.transitFrequencies(),
+			feedEndDate
 		);
 	}
 

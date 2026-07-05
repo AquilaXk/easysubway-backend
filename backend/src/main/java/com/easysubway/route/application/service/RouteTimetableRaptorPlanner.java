@@ -52,6 +52,11 @@ class RouteTimetableRaptorPlanner {
 			.toList();
 	}
 
+	boolean isFeedStale(SearchRouteV2Command command, RouteTimetable timetable) {
+		LocalDate feedEndDate = timetable.feedEndDate();
+		return feedEndDate != null && serviceDay(command).date().isAfter(feedEndDate);
+	}
+
 	Optional<OffsetDateTime> nextServiceTime(SearchRouteV2Command command, RouteTimetable timetable) {
 		ServiceDay serviceDay = serviceDay(command);
 		for (int dayOffset = 0; dayOffset <= 7; dayOffset += 1) {

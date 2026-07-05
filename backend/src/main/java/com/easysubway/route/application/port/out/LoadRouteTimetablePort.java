@@ -20,8 +20,21 @@ public interface LoadRouteTimetablePort {
 		List<TransitRoute> transitRoutes,
 		List<TransitTrip> transitTrips,
 		List<TransitStopTime> transitStopTimes,
-		List<TransitFrequency> transitFrequencies
+		List<TransitFrequency> transitFrequencies,
+		// GTFS feed_info.feed_end_date (개정 유효 종료일). null이면 개정 유효기간 미선언이므로 STALE 강등하지 않는다.
+		LocalDate feedEndDate
 	) {
+		public RouteTimetable(
+			List<ServiceCalendar> serviceCalendars,
+			List<ServiceCalendarDate> serviceCalendarDates,
+			List<TransitRoute> transitRoutes,
+			List<TransitTrip> transitTrips,
+			List<TransitStopTime> transitStopTimes,
+			List<TransitFrequency> transitFrequencies
+		) {
+			this(serviceCalendars, serviceCalendarDates, transitRoutes, transitTrips, transitStopTimes, transitFrequencies, null);
+		}
+
 		public RouteTimetable {
 			serviceCalendars = List.copyOf(serviceCalendars);
 			serviceCalendarDates = List.copyOf(serviceCalendarDates);
