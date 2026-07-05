@@ -67,6 +67,8 @@ public class FacilityReportService implements FacilityReportUseCase {
 	private static final String LOCAL_DEV_RECEIPT_TOKEN_PEPPER = "local-dev-report-receipt-pepper";
 	private static final String UNCLAIMED_UPLOAD_OBJECT_PREFIX = "facility-reports/unclaimed/";
 	private static final int PUBLIC_RECEIPT_CODE_SAVE_ATTEMPTS = 3;
+	// 드로어 "같은 시설 신고 목록" 상한(현재 신고 제외 전 조회 수). 폭주 방지·query budget 보호.
+	private static final int SAME_FACILITY_REPORT_LIMIT = 20;
 
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort;
@@ -601,6 +603,15 @@ public class FacilityReportService implements FacilityReportUseCase {
 	@Override
 	public List<RepeatedBrokenFacilityReportSummary> listRepeatedBrokenReportFacilities() {
 		return loadFacilityReportPort.loadRepeatedBrokenReportFacilities();
+	}
+
+	@Override
+	public List<FacilityReportSummary> listReportsForFacility(String stationId, String facilityId) {
+		if (stationId == null || facilityId == null) {
+			return List.of();
+		}
+		return loadFacilityReportPort.loadReportsForFacility(
+			stationId, facilityId, SAME_FACILITY_REPORT_LIMIT);
 	}
 
 	@Override

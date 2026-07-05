@@ -593,6 +593,91 @@ body.admin-v3 {
 	text-align: center;
 }
 
+/* 신고 사진 썸네일(#1740): 목록에서 첨부 미리보기, 클릭 시 원본으로 이동 */
+.admin-v3 .report-thumb {
+	display: inline-block;
+	line-height: 0;
+}
+
+.admin-v3 .report-thumb img {
+	width: 48px;
+	height: 48px;
+	object-fit: cover;
+	border-radius: 6px;
+	border: 1px solid var(--admin-border);
+}
+
+/* 키보드로 이동한 행 강조(#1740): 상세 링크에 포커스가 들어오면 행 전체를 표시 */
+.admin-v3 .report-row:focus-within {
+	background: var(--admin-surface-2, rgba(22, 48, 47, 0.06));
+	outline: 2px solid var(--admin-accent, #1f6f6a);
+	outline-offset: -2px;
+}
+
+/* 단축키 도움말(#1740): 버튼 + 오버레이 다이얼로그 */
+.admin-v3 .shortcut-help-trigger {
+	margin-left: auto;
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 4px 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: 6px;
+	background: var(--admin-surface);
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	cursor: pointer;
+}
+
+.admin-v3 .shortcut-help-trigger kbd {
+	padding: 1px 6px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: 4px;
+	font-size: 11px;
+}
+
+.admin-v3 .shortcut-help {
+	position: fixed;
+	inset: 0;
+	z-index: 90;
+	display: flex;
+	align-items: center;
+	justify-content: center;
+	background: rgba(22, 48, 47, 0.35);
+}
+
+.admin-v3 .shortcut-help-panel {
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: 10px;
+	padding: 20px 24px;
+	max-width: 360px;
+	width: calc(100% - 32px);
+	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+}
+
+.admin-v3 .shortcut-help-panel h2 {
+	margin: 0 0 12px;
+	font-size: 16px;
+}
+
+.admin-v3 .shortcut-help-panel ul {
+	list-style: none;
+	margin: 0 0 16px;
+	padding: 0;
+	display: grid;
+	gap: 8px;
+	font-size: 13px;
+	color: var(--admin-ink-2);
+}
+
+.admin-v3 .shortcut-help-panel kbd {
+	padding: 1px 6px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: 4px;
+	font-size: 11px;
+}
+
 .admin-v3 .bulk-actionbar {
 	position: sticky;
 	bottom: 0;
@@ -649,10 +734,11 @@ body.admin-v3 {
 	padding-bottom: 16px;
 }
 
-.admin-v3 table.hide-col-coordinate td:nth-child(8),
-.admin-v3 table.hide-col-coordinate th:nth-child(8),
-.admin-v3 table.hide-col-photo td:nth-child(9),
-.admin-v3 table.hide-col-photo th:nth-child(9) {
+/* 경과 컬럼(#1740)이 접수일과 좌표 사이(8열)에 들어가 좌표=9열·사진=10열로 밀렸다. */
+.admin-v3 table.hide-col-coordinate td:nth-child(9),
+.admin-v3 table.hide-col-coordinate th:nth-child(9),
+.admin-v3 table.hide-col-photo td:nth-child(10),
+.admin-v3 table.hide-col-photo th:nth-child(10) {
 	display: none;
 }
 

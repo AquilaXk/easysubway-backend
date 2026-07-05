@@ -16,8 +16,10 @@ import com.easysubway.report.application.port.in.ReviewFacilityReportCommand;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportReviewAudit;
 import com.easysubway.report.domain.FacilityReportReviewDecision;
+import com.easysubway.report.domain.ReportSlaBadge;
 import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.ReportProcessingTimeSummary;
 import com.easysubway.transit.domain.MasterDataWriteNotAllowedException;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxRequest;
@@ -62,6 +64,8 @@ class FacilityReportAdminPageController {
 	private static final int REPORT_SURGE_ALERT_THRESHOLD = 10;
 	private static final long REPORT_SURGE_LOOKBACK_HOURS = 24;
 	private static final String REPORTS_PROGRAM_ID = "a-reports";
+	// 사진 endpoint의 @PreAuthorize('admin.report.photo.read')와 같은 권한. 목록 썸네일 노출 게이팅에 쓴다.
+	private static final String REPORT_PHOTO_READ_AUTHORITY = "admin.report.photo.read";
 
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final LoadFacilityReportPhotoPort loadFacilityReportPhotoPort;
@@ -135,6 +139,9 @@ class FacilityReportAdminPageController {
 	String reportListPage(
 		@RequestParam(required = false) FacilityReportStatus status,
 		@RequestParam(required = false) String keyword,
+		@RequestParam(required = false) String station,
+		@RequestParam(required = false) FacilityReportType type,
+		@RequestParam(required = false) Boolean hasPhoto,
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
 		@RequestParam(required = false) String sort,
@@ -144,11 +151,13 @@ class FacilityReportAdminPageController {
 		Model model
 	) {
 		// 기본 저장 뷰 자동 적용: 필터 없이 목록에 진입하면 사용자의 기본 뷰 질의로 리다이렉트한다.
-		String defaultViewUrl = defaultViewRedirect(status, keyword, from, to, sort, page, size, authentication);
+		String defaultViewUrl = defaultViewRedirect(
+			status, keyword, station, type, hasPhoto, from, to, sort, page, size, authentication);
 		if (defaultViewUrl != null) {
 			return "redirect:" + defaultViewUrl;
 		}
-		FacilityReportListQuery query = FacilityReportListQuery.of(status, keyword, from, to, sort, page, size);
+		FacilityReportListQuery query = FacilityReportListQuery.of(
+			status, keyword, station, type, hasPhoto, from, to, sort, page, size);
 		EgovPaginationView pageView = reportListPageView(query);
 		if (pageView.page() != query.page() || pageView.size() != query.size()) {
 			return redirectToReportList(query, pageView);
@@ -163,6 +172,9 @@ class FacilityReportAdminPageController {
 	private String defaultViewRedirect(
 		FacilityReportStatus status,
 		String keyword,
+		String station,
+		FacilityReportType type,
+		Boolean hasPhoto,
 		LocalDate from,
 		LocalDate to,
 		String sort,
@@ -170,7 +182,8 @@ class FacilityReportAdminPageController {
 		Integer size,
 		Authentication authentication
 	) {
-		boolean freshEntry = status == null && keyword == null && from == null && to == null
+		boolean freshEntry = status == null && keyword == null && station == null && type == null
+			&& hasPhoto == null && from == null && to == null
 			&& sort == null && page == null && size == null;
 		if (!freshEntry || authentication == null) {
 			return null;
@@ -192,6 +205,9 @@ class FacilityReportAdminPageController {
 	String reportListFragment(
 		@RequestParam(required = false) FacilityReportStatus status,
 		@RequestParam(required = false) String keyword,
+		@RequestParam(required = false) String station,
+		@RequestParam(required = false) FacilityReportType type,
+		@RequestParam(required = false) Boolean hasPhoto,
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate from,
 		@RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate to,
 		@RequestParam(required = false) String sort,
@@ -202,9 +218,11 @@ class FacilityReportAdminPageController {
 		Model model
 	) {
 		if (historyRestore) {
-			return reportListPage(status, keyword, from, to, sort, page, size, authentication, model);
+			return reportListPage(
+				status, keyword, station, type, hasPhoto, from, to, sort, page, size, authentication, model);
 		}
-		FacilityReportListQuery query = FacilityReportListQuery.of(status, keyword, from, to, sort, page, size);
+		FacilityReportListQuery query = FacilityReportListQuery.of(
+			status, keyword, station, type, hasPhoto, from, to, sort, page, size);
 		EgovPaginationView pageView = reportListPageView(query);
 		addReportResultsAttributes(clampQuery(query, pageView), pageView, authentication, model);
 		return "admin/reports/list :: reportResults";
@@ -218,6 +236,9 @@ class FacilityReportAdminPageController {
 		return new FacilityReportListQuery(
 			query.status(),
 			query.keyword(),
+			query.stationId(),
+			query.reportType(),
+			query.hasPhoto(),
 			query.createdFrom(),
 			query.createdTo(),
 			query.sortField(),
@@ -242,15 +263,22 @@ class FacilityReportAdminPageController {
 		Map<String, String> facilityLabels = labelResolver.facilityLabels(
 			items.stream().map(FacilityReportSummary::facilityId).toList());
 		List<FacilityReportListPageRow> reports = items.stream()
-			.map(report -> FacilityReportListPageRow.from(report, messages, stationLabels, facilityLabels))
+			.map(report -> FacilityReportListPageRow.from(
+				report, messages, stationLabels, facilityLabels, LocalDateTime.now(clock)))
 			.toList();
 
 		model.addAttribute("reports", reports);
 		model.addAttribute("page", pageView);
+		// 사진 열람 권한(REPORT_PHOTO_READ·V15)이 있는 계정에만 썸네일을 노출한다. 권한이 없으면
+		// 썸네일 endpoint 자체가 403이므로 깨진 이미지를 막고 '있음' 텍스트만 보여준다.
+		model.addAttribute("canReadPhoto", hasReportPhotoReadAuthority(authentication));
 		model.addAttribute("paginationLinks", pageView.links("/admin/reports/page", queryParams(query)));
 		model.addAttribute("selectedStatus", query.status());
 		model.addAttribute("statusOptions", statusOptions());
 		model.addAttribute("searchKeyword", query.keyword());
+		model.addAttribute("selectedStation", query.stationId());
+		model.addAttribute("selectedType", query.reportType());
+		model.addAttribute("selectedHasPhoto", query.hasPhoto());
 		model.addAttribute("createdFrom", query.createdFrom());
 		model.addAttribute("createdTo", query.createdTo());
 		model.addAttribute("reportQuery", query);
@@ -259,48 +287,55 @@ class FacilityReportAdminPageController {
 		model.addAttribute("sortParam", sortParam);
 
 		// 링크는 컨트롤러에서 조립한다: Thymeleaf @{...(p=${null})}은 null도 빈 파라미터로 렌더해 URL을 오염시킨다.
-		String currentSort = sortParam == null ? null : sortParam.toString();
-		String keyword = query.keyword();
-		LocalDate createdFromDate = query.createdFrom();
-		LocalDate createdToDate = query.createdTo();
+		// hrefWith(query, overrides)는 현재 질의(상태·키워드·역·유형·사진·기간·정렬)를 유지하고 지정한
+		// 차원만 덮어쓴다(override 값 null이면 그 파라미터를 제거).
 		model.addAttribute("allFilter", new StatusFilterLink(
-			"전체", hrefWith(null, keyword, createdFromDate, createdToDate, currentSort), query.status() == null));
+			"전체", hrefWith(query, override("status", null)), query.status() == null));
 		model.addAttribute("statusFilters", statusOptions().stream()
 			.map(option -> new StatusFilterLink(
 				option.label(),
-				hrefWith(option.value(), keyword, createdFromDate, createdToDate, currentSort),
+				hrefWith(query, override("status", option.value())),
 				query.status() == option.value()))
 			.toList());
 		// 일괄 처리·저장된 뷰 변경 후 현재 필터·정렬 컨텍스트로 되돌아갈 returnTo.
-		model.addAttribute("currentListHref",
-			hrefWith(query.status(), keyword, createdFromDate, createdToDate, currentSort));
+		model.addAttribute("currentListHref", hrefWith(query, Map.of()));
 		model.addAttribute("statusSort", new SortHeaderLink(
-			hrefWith(query.status(), keyword, createdFromDate, createdToDate, query.nextSortFor("status")),
+			hrefWith(query, override("sort", query.nextSortFor("status"))),
 			query.ariaSortFor("status")));
 		model.addAttribute("createdSort", new SortHeaderLink(
-			hrefWith(query.status(), keyword, createdFromDate, createdToDate, query.nextSortFor("created_at")),
+			hrefWith(query, override("sort", query.nextSortFor("created_at"))),
 			query.ariaSortFor("created_at")));
+
+		// 유형 필터(툴바 select): 전체 유형 + 신고 유형별. no-JS는 select 변경 후 검색 버튼, JS는 change 즉시.
+		model.addAttribute("typeFilters", typeFilterOptions(query));
+		// 사진 유무 필터(툴바 select): 전체 / 사진 있음 / 사진 없음.
+		model.addAttribute("photoFilters", photoFilterOptions(query));
 
 		// 기간 프리셋(오늘·최근 7일·최근 30일·전체 기간). 접수일 기준.
 		LocalDate today = LocalDate.now(clock);
+		LocalDate createdFromDate = query.createdFrom();
+		LocalDate createdToDate = query.createdTo();
 		model.addAttribute("datePresets", List.of(
-			datePreset(query, "오늘", today, today, currentSort),
-			datePreset(query, "최근 7일", today.minusDays(6), today, currentSort),
-			datePreset(query, "최근 30일", today.minusDays(29), today, currentSort),
+			datePreset(query, "오늘", today, today),
+			datePreset(query, "최근 7일", today.minusDays(6), today),
+			datePreset(query, "최근 30일", today.minusDays(29), today),
 			new DatePresetLink("전체 기간",
-				hrefWith(query.status(), keyword, null, null, currentSort),
+				hrefWith(query, dateOverride(null, null)),
 				createdFromDate == null && createdToDate == null)
 		));
 
-		// 활성 필터 칩(개별 제거). 상태는 상단 필터 nav로 표현하므로 칩은 키워드·기간만 담는다.
+		// 활성 필터 칩(개별 제거). 상태·유형·사진은 상단 필터·툴바로 표현하므로 칩은 키워드·역·기간만 담는다.
 		List<FilterChip> chips = new java.util.ArrayList<>();
-		if (keyword != null) {
-			chips.add(new FilterChip("검색: " + keyword,
-				hrefWith(query.status(), null, createdFromDate, createdToDate, currentSort)));
+		if (query.hasKeyword()) {
+			chips.add(new FilterChip("검색: " + query.keyword(), hrefWith(query, override("keyword", null))));
+		}
+		if (query.hasStation()) {
+			String stationLabel = stationLabels.getOrDefault(query.stationId(), query.stationId());
+			chips.add(new FilterChip("역: " + stationLabel, hrefWith(query, override("station", null))));
 		}
 		if (createdFromDate != null || createdToDate != null) {
 			chips.add(new FilterChip("기간: " + dateRangeLabel(createdFromDate, createdToDate),
-				hrefWith(query.status(), keyword, null, null, currentSort)));
+				hrefWith(query, dateOverride(null, null))));
 		}
 		model.addAttribute("filterChips", chips);
 
@@ -332,11 +367,31 @@ class FacilityReportAdminPageController {
 		FacilityReportListQuery query,
 		String label,
 		LocalDate from,
-		LocalDate to,
-		String currentSort
+		LocalDate to
 	) {
 		boolean active = from.equals(query.createdFrom()) && to.equals(query.createdTo());
-		return new DatePresetLink(label, hrefWith(query.status(), query.keyword(), from, to, currentSort), active);
+		return new DatePresetLink(label, hrefWith(query, dateOverride(from, to)), active);
+	}
+
+	private List<FilterSelectOption> typeFilterOptions(FacilityReportListQuery query) {
+		List<FilterSelectOption> options = new java.util.ArrayList<>();
+		options.add(new FilterSelectOption("", "전체 유형", query.reportType() == null));
+		for (FacilityReportType type : FacilityReportType.values()) {
+			options.add(new FilterSelectOption(
+				type.name(),
+				messages.enumLabel("admin.report.type", type),
+				query.reportType() == type));
+		}
+		return options;
+	}
+
+	private static List<FilterSelectOption> photoFilterOptions(FacilityReportListQuery query) {
+		Boolean hasPhoto = query.hasPhoto();
+		return List.of(
+			new FilterSelectOption("", "사진 전체", hasPhoto == null),
+			new FilterSelectOption("true", "사진 있음", Boolean.TRUE.equals(hasPhoto)),
+			new FilterSelectOption("false", "사진 없음", Boolean.FALSE.equals(hasPhoto))
+		);
 	}
 
 	private static String dateRangeLabel(LocalDate from, LocalDate to) {
@@ -346,21 +401,35 @@ class FacilityReportAdminPageController {
 		return from != null ? from + " ~" : "~ " + to;
 	}
 
-	// 상태·검색·기간·정렬을 명시적으로 받아 링크 URL을 만든다. null 값은 생략한다.
-	private static String hrefWith(
-		FacilityReportStatus status,
-		String keyword,
-		LocalDate from,
-		LocalDate to,
-		String sort
-	) {
+	// 현재 질의(상태·키워드·역·유형·사진·기간·정렬)를 유지하되 overrides로 특정 파라미터만 덮어쓴 목록 URL을 만든다.
+	// override 값이 null이면 그 파라미터를 제거한다(예: 필터 칩의 개별 제거 링크). null·빈 값은 URL에서 생략한다.
+	private static String hrefWith(FacilityReportListQuery query, Map<String, Object> overrides) {
+		Map<String, Object> params = new LinkedHashMap<>();
+		params.put("status", query.status());
+		params.put("keyword", query.keyword());
+		params.put("station", query.stationId());
+		params.put("type", query.reportType());
+		params.put("hasPhoto", query.hasPhoto());
+		params.put("from", query.createdFrom());
+		params.put("to", query.createdTo());
+		params.put("sort", queryParams(query).get("sort"));
+		params.putAll(overrides);
 		UriComponentsBuilder builder = UriComponentsBuilder.fromPath("/admin/reports/page");
-		appendParam(builder, "status", status);
-		appendParam(builder, "keyword", keyword);
-		appendParam(builder, "from", from);
-		appendParam(builder, "to", to);
-		appendParam(builder, "sort", sort);
+		params.forEach((name, value) -> appendParam(builder, name, value));
 		return builder.build().encode().toUriString();
+	}
+
+	private static Map<String, Object> override(String key, Object value) {
+		Map<String, Object> overrides = new java.util.HashMap<>();
+		overrides.put(key, value);
+		return overrides;
+	}
+
+	private static Map<String, Object> dateOverride(LocalDate from, LocalDate to) {
+		Map<String, Object> overrides = new java.util.HashMap<>();
+		overrides.put("from", from);
+		overrides.put("to", to);
+		return overrides;
 	}
 
 	private static void appendParam(UriComponentsBuilder builder, String name, Object value) {
@@ -370,6 +439,9 @@ class FacilityReportAdminPageController {
 	}
 
 	record StatusFilterLink(String label, String href, boolean current) {
+	}
+
+	record FilterSelectOption(String value, String label, boolean selected) {
 	}
 
 	record SortHeaderLink(String href, String ariaSort) {
@@ -400,6 +472,9 @@ class FacilityReportAdminPageController {
 		Map<String, Object> params = new LinkedHashMap<>();
 		params.put("status", query.status());
 		params.put("keyword", query.keyword());
+		params.put("station", query.stationId());
+		params.put("type", query.reportType());
+		params.put("hasPhoto", query.hasPhoto());
 		params.put("from", query.createdFrom());
 		params.put("to", query.createdTo());
 		if (query.sortField() != FacilityReportListQuery.SortField.CREATED_AT
@@ -428,7 +503,7 @@ class FacilityReportAdminPageController {
 		Authentication authentication,
 		HttpServletRequest request
 	) {
-		populateReportDetailModel(reportId, model, null);
+		populateReportDetailModel(reportId, model, null, authentication);
 		auditReportDetailRead(authentication, request, reportId);
 		return "admin/reports/detail";
 	}
@@ -444,13 +519,35 @@ class FacilityReportAdminPageController {
 		Authentication authentication,
 		HttpServletRequest request
 	) {
-		populateReportDetailModel(reportId, model, null);
+		populateReportDetailModel(reportId, model, null, authentication);
 		auditReportDetailRead(authentication, request, reportId);
 		return "admin/reports/detail :: detailBody";
 	}
 
-	private void populateReportDetailModel(String reportId, Model model, ReviewReportForm submittedForm) {
-		model.addAttribute("report", FacilityReportDetailPageView.from(facilityReportUseCase.getReport(reportId), messages));
+	private void populateReportDetailModel(
+		String reportId,
+		Model model,
+		ReviewReportForm submittedForm,
+		Authentication authentication
+	) {
+		FacilityReport report = facilityReportUseCase.getReport(reportId);
+		model.addAttribute("report", FacilityReportDetailPageView.from(report, messages));
+		// 원시 ID 단독 노출 금지(#1740): 역·시설을 "이름(코드)"로 해석한다. 같은 시설 신고 행에도 재사용한다.
+		Map<String, String> stationLabels = labelResolver.stationLabels(List.of(report.stationId()));
+		Map<String, String> facilityLabels = labelResolver.facilityLabels(List.of(report.facilityId()));
+		model.addAttribute("stationLabel", stationLabels.getOrDefault(report.stationId(), report.stationId()));
+		model.addAttribute("facilityLabel", facilityLabels.getOrDefault(report.facilityId(), report.facilityId()));
+		model.addAttribute("canReadPhoto", hasReportPhotoReadAuthority(authentication));
+		// 같은 시설 신고 목록(#1740): 현재 신고는 제외하고 최신순으로 보여준다. 판정 전 반복 신고 맥락을 준다.
+		// #1163 중복 병합 기능과 독립적인 읽기 전용 목록이라 회귀 위험이 없다.
+		LocalDateTime now = LocalDateTime.now(clock);
+		List<FacilityReportListPageRow> sameFacilityReports = facilityReportUseCase
+			.listReportsForFacility(report.stationId(), report.facilityId())
+			.stream()
+			.filter(summary -> !summary.id().equals(reportId))
+			.map(summary -> FacilityReportListPageRow.from(summary, messages, stationLabels, facilityLabels, now))
+			.toList();
+		model.addAttribute("sameFacilityReports", sameFacilityReports);
 		model.addAttribute(
 			"reviewAudits",
 			facilityReportUseCase.listReviewAudits(reportId)
@@ -527,7 +624,7 @@ class FacilityReportAdminPageController {
 	) {
 		if (bindingResult.hasErrors()) {
 			response.setStatus(HttpServletResponse.SC_BAD_REQUEST);
-			populateReportDetailModel(reportId, model, form);
+			populateReportDetailModel(reportId, model, form, authentication);
 			auditReportDetailRead(authentication, request, reportId);
 			AdminFormErrorView.expose(model, bindingResult);
 			return "admin/reports/detail";
@@ -645,6 +742,11 @@ class FacilityReportAdminPageController {
 		return value != null && !value.isBlank();
 	}
 
+	private static boolean hasReportPhotoReadAuthority(Authentication authentication) {
+		return authentication != null && authentication.getAuthorities().stream()
+			.anyMatch(authority -> REPORT_PHOTO_READ_AUTHORITY.equals(authority.getAuthority()));
+	}
+
 	record FacilityReportListPageRow(
 		String id,
 		String stationId,
@@ -656,15 +758,19 @@ class FacilityReportAdminPageController {
 		String statusLabel,
 		LocalDateTime createdAt,
 		boolean hasPhoto,
-		String coordinateLabel
+		String coordinateLabel,
+		String slaLabel,
+		String slaTone
 	) {
 
 		static FacilityReportListPageRow from(
 			FacilityReportSummary report,
 			WebMessageResolver messages,
 			Map<String, String> stationLabels,
-			Map<String, String> facilityLabels
+			Map<String, String> facilityLabels,
+			LocalDateTime now
 		) {
+			ReportSlaBadge sla = ReportSlaBadge.of(report.status(), report.createdAt(), now);
 			return new FacilityReportListPageRow(
 				report.id(),
 				report.stationId(),
@@ -676,7 +782,9 @@ class FacilityReportAdminPageController {
 				messages.enumLabel("admin.report.status", report.status()),
 				report.createdAt(),
 				FacilityReportAdminPageController.hasCompletePhoto(report),
-				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude())
+				FacilityReportAdminPageController.coordinateLabel(report.latitude(), report.longitude()),
+				sla.label(),
+				sla.tone()
 			);
 		}
 	}

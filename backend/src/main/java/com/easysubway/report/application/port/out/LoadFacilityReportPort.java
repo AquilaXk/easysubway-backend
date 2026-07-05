@@ -39,4 +39,10 @@ public interface LoadFacilityReportPort {
 	ReportProcessingTimeSummary loadReportProcessingTimeSummary();
 
 	List<RepeatedBrokenFacilityReportSummary> loadRepeatedBrokenReportFacilities();
+
+	/**
+	 * 같은 역·시설로 접수된 신고 요약을 최신순으로 조회한다(드로어의 "같은 시설 신고 목록"용).
+	 * 목록이 폭주하지 않도록 limit로 상한을 둔다. 호출부에서 현재 신고는 제외한다.
+	 */
+	List<FacilityReportSummary> loadReportsForFacility(String stationId, String facilityId, int limit);
 }

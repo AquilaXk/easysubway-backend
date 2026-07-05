@@ -57,6 +57,9 @@ public interface FacilityReportUseCase {
 
 	List<RepeatedBrokenFacilityReportSummary> listRepeatedBrokenReportFacilities();
 
+	/** 같은 역·시설로 접수된 신고 요약(최신순, 상한 적용). 드로어의 "같은 시설 신고 목록"에 쓴다. */
+	List<FacilityReportSummary> listReportsForFacility(String stationId, String facilityId);
+
 	FacilityReport reviewReport(ReviewFacilityReportCommand command);
 
 	FacilityReport confirmReportResult(String reportId, String userId);

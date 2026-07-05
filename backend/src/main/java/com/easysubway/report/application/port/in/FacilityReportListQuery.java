@@ -1,6 +1,7 @@
 package com.easysubway.report.application.port.in;
 
 import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.report.domain.FacilityReportType;
 import com.easysubway.report.domain.InvalidFacilityReportException;
 import java.time.LocalDate;
 import java.util.Locale;
@@ -8,13 +9,16 @@ import java.util.Locale;
 /**
  * 관리자 신고 대기열 표준 테이블(#1737)의 서버 파라미터 질의.
  *
- * <p>상태 필터에 더해 키워드 검색(신고 내용)·접수 기간·정렬을 담는다. 모든 값은 URL 쿼리에서
- * 오며 no-JS(폼 제출)와 htmx(부분 갱신)가 같은 파라미터를 공유한다. 잘못된 정렬 토큰은 500이
- * 아니라 기본값(최신순)으로 관대하게 처리한다.
+ * <p>상태 필터에 더해 키워드 검색(신고 내용)·역·유형·사진 유무·접수 기간·정렬을 담는다. 모든 값은
+ * URL 쿼리에서 오며 no-JS(폼 제출)와 htmx(부분 갱신)가 같은 파라미터를 공유한다. 잘못된 정렬
+ * 토큰은 500이 아니라 기본값(최신순)으로 관대하게 처리한다.
  */
 public record FacilityReportListQuery(
 	FacilityReportStatus status,
 	String keyword,
+	String stationId,
+	FacilityReportType reportType,
+	Boolean hasPhoto,
 	LocalDate createdFrom,
 	LocalDate createdTo,
 	SortField sortField,
@@ -57,6 +61,7 @@ public record FacilityReportListQuery(
 
 	public FacilityReportListQuery {
 		keyword = (keyword == null || keyword.isBlank()) ? null : keyword.trim();
+		stationId = (stationId == null || stationId.isBlank()) ? null : stationId.trim();
 		sortField = sortField == null ? SortField.CREATED_AT : sortField;
 		sortDirection = sortDirection == null ? SortDirection.DESC : sortDirection;
 		if (page < 0 || size <= 0) {
@@ -74,6 +79,9 @@ public record FacilityReportListQuery(
 	public static FacilityReportListQuery of(
 		FacilityReportStatus status,
 		String keyword,
+		String stationId,
+		FacilityReportType reportType,
+		Boolean hasPhoto,
 		LocalDate createdFrom,
 		LocalDate createdTo,
 		String sort,
@@ -94,6 +102,9 @@ public record FacilityReportListQuery(
 		return new FacilityReportListQuery(
 			status,
 			keyword,
+			stationId,
+			reportType,
+			hasPhoto,
 			createdFrom,
 			createdTo,
 			field,
@@ -170,5 +181,18 @@ public record FacilityReportListQuery(
 
 	public boolean hasKeyword() {
 		return keyword != null;
+	}
+
+	public boolean hasStation() {
+		return stationId != null;
+	}
+
+	public boolean hasReportType() {
+		return reportType != null;
+	}
+
+	/** 사진 유무 필터가 지정됐는지. 지정 시 {@link #hasPhoto()}가 있음/없음을 가리킨다. */
+	public boolean hasPhotoFilter() {
+		return hasPhoto != null;
 	}
 }

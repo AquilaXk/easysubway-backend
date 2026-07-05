@@ -70,6 +70,67 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("관리자는 유형·사진·역 필터로 신고 대기열을 좁힌다")
+	void adminReportListPageFiltersByTypeStationAndPhoto() throws Exception {
+		createReportWithPhotoAndLocation("사진 있는 고장 신고");
+		createReport("사진 없는 정보 오류 신고", "INFORMATION_WRONG", "");
+
+		// 유형 필터: INFORMATION_WRONG만 남기고 필터·페이지 링크에 type 파라미터가 유지된다.
+		String typeFiltered = mockMvc.perform(get("/admin/reports/page")
+				.param("type", "INFORMATION_WRONG")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(typeFiltered)
+			.contains("사진 없는 정보 오류 신고")
+			.doesNotContain("사진 있는 고장 신고")
+			.contains("type=INFORMATION_WRONG");
+
+		// 사진 유무 필터: 사진 있는 신고만 남는다.
+		String photoFiltered = mockMvc.perform(get("/admin/reports/page")
+				.param("hasPhoto", "true")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(photoFiltered)
+			.contains("사진 있는 고장 신고")
+			.doesNotContain("사진 없는 정보 오류 신고")
+			.contains("hasPhoto=true");
+
+		// 역 필터: 매칭되지 않는 역으로 좁히면 빈 상태 + 제거 가능한 역 칩이 뜬다.
+		String stationFiltered = mockMvc.perform(get("/admin/reports/page")
+				.param("station", "station-none")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(stationFiltered)
+			.contains("확인할 신고가 없습니다.")
+			.contains("역: station-none");
+	}
+
+	@Test
+	@DisplayName("신고 대기열은 키보드 단축키 도움말과 버튼 대체 수단을 함께 제공한다")
+	void adminReportListPageExposesKeyboardShortcutAffordances() throws Exception {
+		createReport("단축키 대상 신고");
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			// 키보드 리스너·행 마커·단축키 도움말이 렌더된다(런타임 키 동작은 #1749 접근성 QA에서 검증).
+			.contains("x-on:keydown.window=\"handleKey\"")
+			.contains("class=\"report-row\"")
+			.contains("키보드 단축키")
+			// 스크린리더·no-JS를 위해 모든 단축키 동작은 버튼으로도 존재한다: 상세(o)·승인(a)·반려(r)·도움말(?).
+			.contains(">상세 보기</a>")
+			.contains("value=\"ACCEPT\"")
+			.contains("value=\"REJECT\"")
+			.contains("단축키 도움말 열기");
+	}
+
+	@Test
 	@DisplayName("관리자는 신고 목록 화면에서 다음 페이지로 이동한다")
 	void adminReportListPageShowsNextPageLink() throws Exception {
 		createReport("페이지 이동 신고 1");
@@ -204,6 +265,27 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("신고 상세는 역·시설 이름을 보여주고 같은 시설 신고 목록을 노출한다")
+	void adminReportDetailShowsLabelsAndSameFacilityReports() throws Exception {
+		String first = createReport("첫 신고");
+		String second = createReport("같은 시설 두 번째 신고");
+
+		String html = mockMvc.perform(get("/admin/reports/{reportId}/page", first)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			// 원시 ID 단독 노출 제거: '역 ID'/'시설 ID' 라벨 대신 역·시설 이름(코드).
+			.doesNotContain("역 ID")
+			.doesNotContain("시설 ID")
+			// 같은 시설 신고 목록에 다른 신고와 상세 크로스링크가 뜬다(현재 신고는 제외).
+			.contains("같은 시설 신고")
+			.contains("같은 시설 두 번째 신고")
+			.contains("/admin/reports/%s/page".formatted(second));
+	}
+
+	@Test
 	@DisplayName("관리자는 시설 상태 증거가 아닌 신고에서 override 링크를 보지 않는다")
 	void adminReportDetailPageHidesOverrideLinkForNonFacilityStatusEvidence() throws Exception {
 		String reportId = createReport("경로가 막힌 신고", "ROUTE_BLOCKED", "");
@@ -261,6 +343,32 @@ class FacilityReportAdminPageControllerTest {
 		mockMvc.perform(get("/admin/reports/{reportId}/photo/original", reportId)
 				.with(reportReviewer))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("사진 열람 권한이 있는 관리자만 목록에서 썸네일을 본다")
+	void adminReportListShowsPhotoThumbnailOnlyWithReadPermission() throws Exception {
+		String reportId = createReportWithPhotoAndLocation("썸네일로 확인할 신고");
+
+		// 사진 열람 권한이 있는 계정(admin-test): 썸네일 img + 원본 링크 노출.
+		String withPermission = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(withPermission)
+			.contains("/admin/reports/%s/photo/thumbnail".formatted(reportId))
+			.contains("/admin/reports/%s/photo/original".formatted(reportId));
+
+		// 검수 권한만 있고 사진 열람 권한이 없는 계정: 썸네일 미노출, '있음' 텍스트만.
+		RequestPostProcessor reportReviewer = user("report-reviewer")
+			.authorities(new SimpleGrantedAuthority(AdminPermission.REPORT_REVIEW.authority()));
+		String withoutPermission = mockMvc.perform(get("/admin/reports/page")
+				.with(reportReviewer))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(withoutPermission)
+			.doesNotContain("/admin/reports/%s/photo/thumbnail".formatted(reportId))
+			.contains("있음");
 	}
 
 	@Test

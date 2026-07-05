@@ -214,6 +214,7 @@ document.addEventListener('alpine:init', function () {
 			density: 'default',
 			hideCoordinate: false,
 			hidePhoto: false,
+			helpVisible: false,
 			get selectionLabel() {
 				return this.count > 0 ? '선택한 신고 ' + this.count + '건' : '선택한 신고 일괄 처리';
 			},
@@ -243,6 +244,133 @@ document.addEventListener('alpine:init', function () {
 			},
 			togglePhoto: function (event) {
 				this.hidePhoto = event.target.checked;
+			},
+			// 키보드 단축키(#1740): j/k 행 이동·o 상세 열기·a 승인·r 반려·Esc 닫기·? 도움말.
+			// 모더레이터가 마우스 없이 대기열을 처리하도록 한다(Reddit modqueue·모더레이션 API 공통 패턴).
+			// 진화형 향상 — 모든 단축키 동작은 버튼(상세 링크·일괄 승인/반려·도움말)으로도 존재해 스크린리더/no-JS를
+			// 커버한다. 입력·select·textarea 포커스 중에는 비활성해 타이핑을 방해하지 않는다.
+			// 런타임/실제 키 입력 검증은 브라우저가 필요해 접근성 QA(#1749)로 이월한다.
+			get helpExpanded() {
+				return this.helpVisible ? 'true' : 'false';
+			},
+			toggleHelp: function () {
+				this.helpVisible = !this.helpVisible;
+			},
+			hideHelp: function () {
+				this.helpVisible = false;
+			},
+			rowLinks: function () {
+				return Array.prototype.slice.call(this.$root.querySelectorAll('.report-row .detail-link'));
+			},
+			// 현재 포커스가 향한 행의 상세 링크. 포커스가 표 밖이면 첫 행으로 대체한다(비파괴 동작 전용).
+			currentLink: function () {
+				var links = this.rowLinks();
+				if (!links.length) {
+					return null;
+				}
+				return this.focusedRowLink() || links[0];
+			},
+			// 포커스가 실제로 어느 행 안에 있을 때만 그 행의 상세 링크를 준다(없으면 null, 첫 행 폴백 없음).
+			// 승인·반려처럼 파괴적인 단축키가 포커스가 표 밖일 때 첫 행을 잘못 처리하지 않게 한다.
+			focusedRowLink: function () {
+				var active = document.activeElement;
+				var links = this.rowLinks();
+				if (links.indexOf(active) !== -1) {
+					return active;
+				}
+				var row = active && active.closest ? active.closest('.report-row') : null;
+				return row ? row.querySelector('.detail-link') : null;
+			},
+			isFormField: function (element) {
+				if (!element) {
+					return false;
+				}
+				var tag = element.tagName ? element.tagName.toLowerCase() : '';
+				return tag === 'input' || tag === 'textarea' || tag === 'select' || element.isContentEditable;
+			},
+			moveActive: function (delta) {
+				var links = this.rowLinks();
+				if (!links.length) {
+					return;
+				}
+				var index = links.indexOf(document.activeElement);
+				var next;
+				if (index === -1) {
+					next = delta > 0 ? links[0] : links[links.length - 1];
+				} else {
+					next = links[index + delta];
+				}
+				if (next) {
+					next.focus();
+				}
+			},
+			openActive: function () {
+				var link = this.currentLink();
+				if (link) {
+					link.click();
+				}
+			},
+			// 활성 행 하나만 선택 상태로 만들고 일괄 검수 폼을 해당 결정으로 제출한다(단일 처리 시맨틱).
+			// 포커스가 표 밖이면 아무 것도 하지 않는다(첫 행 오처리 방지) — focusedRowLink는 폴백이 없다.
+			processActive: function (decision) {
+				var link = this.focusedRowLink();
+				if (!link) {
+					return;
+				}
+				var row = link.closest('.report-row');
+				var form = this.$root.querySelector('.bulk-form');
+				if (!row || !form) {
+					return;
+				}
+				this.$root.querySelectorAll('input[name="reportIds"]').forEach(function (checkbox) {
+					checkbox.checked = false;
+				});
+				var checkbox = row.querySelector('input[name="reportIds"]');
+				if (checkbox) {
+					checkbox.checked = true;
+				}
+				var button = form.querySelector('button[value="' + decision + '"]');
+				if (button) {
+					button.click();
+				}
+			},
+			handleKey: function (event) {
+				if (this.isFormField(document.activeElement) || event.ctrlKey || event.metaKey || event.altKey) {
+					return;
+				}
+				switch (event.key) {
+					case '?':
+						this.toggleHelp();
+						event.preventDefault();
+						break;
+					case 'j':
+						this.moveActive(1);
+						event.preventDefault();
+						break;
+					case 'k':
+						this.moveActive(-1);
+						event.preventDefault();
+						break;
+					case 'o':
+						this.openActive();
+						event.preventDefault();
+						break;
+					case 'a':
+						this.processActive('ACCEPT');
+						event.preventDefault();
+						break;
+					case 'r':
+						this.processActive('REJECT');
+						event.preventDefault();
+						break;
+					case 'Escape':
+						if (this.helpVisible) {
+							this.hideHelp();
+						}
+						break;
+					default:
+						break;
+				}
 			},
 		};
 	});
