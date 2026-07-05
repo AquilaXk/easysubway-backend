@@ -114,6 +114,20 @@ public class InMemoryRouteSearchRepository
 	}
 
 	@Override
+	public List<RouteSearchStationPair> loadBlockedRouteSearchStationPairsForDashboard() {
+		synchronized (routeSearches) {
+			return routeSearches.values()
+				.stream()
+				.filter(routeSearch -> routeSearch.status() == RouteSearchStatus.BLOCKED)
+				.map(routeSearch -> new RouteSearchStationPair(
+					routeSearch.originStationId(),
+					routeSearch.destinationStationId()
+				))
+				.toList();
+		}
+	}
+
+	@Override
 	public List<RouteSearchBlockedReasons> loadRouteSearchBlockedReasonsForDashboard() {
 		synchronized (routeSearches) {
 			return routeSearches.values()

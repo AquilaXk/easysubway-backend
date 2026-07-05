@@ -70,6 +70,45 @@ class RouteFeedbackAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("경로 피드백 화면은 유형별 추이 차트·증감 카드·기간 버튼을 렌더링한다")
+	void routeFeedbackPageRendersTrendChart() throws Exception {
+		String html = mockMvc.perform(get("/admin/routes/feedback/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("id=\"route-feedback-trends\"")
+			.contains("추이 기간 선택")
+			.contains("/admin/routes/feedback/trends")
+			.contains("전 기간 대비 증감")
+			.contains("route-feedback-trend-canvas")
+			.contains("현장 차단 신고")
+			.contains("/js/admin/dashboard-charts.js");
+	}
+
+	@Test
+	@DisplayName("기간 추이 fragment는 셸 없이 추이 영역만 반환한다")
+	void routeFeedbackTrendsFragmentReturnsSectionOnly() throws Exception {
+		String fragment = mockMvc.perform(get("/admin/routes/feedback/trends")
+				.param("days", "30")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(fragment)
+			.contains("id=\"route-feedback-trends\"")
+			.contains("최근 30일 추이")
+			.doesNotContain("admin-shell")
+			.doesNotContain("평점별 피드백");
+	}
+
+	@Test
 	@DisplayName("경로 피드백 현황 페이지는 관리자 인증을 요구한다")
 	void routeFeedbackDashboardRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/routes/feedback/page"))

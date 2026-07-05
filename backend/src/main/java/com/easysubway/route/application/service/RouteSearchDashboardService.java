@@ -5,6 +5,7 @@ import com.easysubway.route.application.port.out.SummarizeRouteSearchPort;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchBlockedReasons;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchQualitySignals;
 import com.easysubway.route.application.port.out.SummarizeRouteSearchPort.RouteSearchStationPair;
+import com.easysubway.route.domain.BlockedStationRanking;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary.BlockedReasonCount;
@@ -54,6 +55,40 @@ public class RouteSearchDashboardService implements RouteSearchDashboardUseCase 
 			fallbackReasonCounts(qualitySignals),
 			routeQualitySignalCounts(qualitySignals)
 		);
+	}
+
+	@Override
+	public List<BlockedStationRanking> topBlockedStations(int limit) {
+		if (limit <= 0) {
+			return List.of();
+		}
+		List<RouteSearchStationPair> blockedPairs = summarizeRouteSearchPort.loadBlockedRouteSearchStationPairsForDashboard();
+		Map<String, Long> blockedCountByStationId = new HashMap<>();
+		for (RouteSearchStationPair pair : blockedPairs) {
+			mergeStation(blockedCountByStationId, pair.originStationId());
+			mergeStation(blockedCountByStationId, pair.destinationStationId());
+		}
+		if (blockedCountByStationId.isEmpty()) {
+			return List.of();
+		}
+		// 이름 해석은 전체 역을 1회 벌크 로드해 map으로(역별 반복 조회 금지).
+		Map<String, String> stationNamesById = loadTransitMasterPort.loadStations()
+			.stream()
+			.collect(Collectors.toMap(Station::id, Station::nameKo, (first, second) -> first));
+		return blockedCountByStationId.entrySet()
+			.stream()
+			.sorted(Comparator.comparingLong(Map.Entry<String, Long>::getValue).reversed()
+				.thenComparing(Map.Entry::getKey))
+			.limit(limit)
+			.map(entry -> new BlockedStationRanking(
+				entry.getKey(), stationNamesById.get(entry.getKey()), entry.getValue()))
+			.toList();
+	}
+
+	private static void mergeStation(Map<String, Long> counts, String stationId) {
+		if (stationId != null && !stationId.isBlank()) {
+			counts.merge(stationId, 1L, Long::sum);
+		}
 	}
 
 	private List<EtaSourceCount> etaSourceCounts(List<RouteSearchQualitySignals> qualitySignals) {

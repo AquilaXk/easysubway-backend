@@ -1,12 +1,17 @@
 package com.easysubway.usage.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.easysubway.admin.metric.application.service.AdminMetricQueryService;
+import com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart;
 import com.easysubway.usage.application.port.in.UserActivityDashboardUseCase;
 import com.easysubway.usage.domain.UserActivityDashboardSummary;
 import com.easysubway.usage.domain.UserActivityDashboardSummary.DailyUserActivity;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -30,12 +35,17 @@ class UserActivityAdminPageControllerTest {
 				new DailyUserActivity(LocalDate.of(2026, 6, 16), 1, 5, 1, 1_840)
 			)
 		));
-		var controller = new UserActivityAdminPageController(useCase);
+		AdminMetricQueryService metricQueryService = mock(AdminMetricQueryService.class);
+		when(metricQueryService.chart(any(), anyInt())).thenReturn(new AdminMetricChart(7, List.of(), List.of()));
+		when(metricQueryService.compare(any(), anyInt())).thenReturn(List.of());
+		var controller = new UserActivityAdminPageController(useCase, metricQueryService, new ObjectMapper());
 		ExtendedModelMap model = new ExtendedModelMap();
 
-		String viewName = controller.userActivityDashboardPage(model);
+		String viewName = controller.userActivityDashboardPage(7, model);
 
 		assertThat(viewName).isEqualTo("admin/usage/activity");
+		assertThat(model.getAttribute("comparisons")).isNotNull();
+		assertThat(model.getAttribute("trendJson")).isNotNull();
 		UserActivityDashboardView view = (UserActivityDashboardView) model.getAttribute("summary");
 		assertThat(view.totalActiveUsers()).isEqualTo(3);
 		assertThat(view.totalApiRequests()).isEqualTo(12);

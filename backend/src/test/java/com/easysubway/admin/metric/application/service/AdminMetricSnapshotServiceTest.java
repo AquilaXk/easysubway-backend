@@ -18,7 +18,9 @@ import com.easysubway.route.domain.RouteSearchDashboardSummary.MobilityTypeCount
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.domain.FacilityReportStatus;
 import com.easysubway.report.domain.ReportProcessingTimeSummary;
+import com.easysubway.route.application.port.in.RouteFeedbackDashboardUseCase;
 import com.easysubway.route.application.port.in.RouteSearchDashboardUseCase;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.usage.application.port.in.UserActivityDashboardUseCase;
 import com.easysubway.usage.domain.UserActivityDashboardSummary;
@@ -40,12 +42,13 @@ class AdminMetricSnapshotServiceTest {
 	private final FacilityReportUseCase reportUseCase = mock(FacilityReportUseCase.class);
 	private final DataQualityUseCase qualityUseCase = mock(DataQualityUseCase.class);
 	private final RouteSearchDashboardUseCase routeUseCase = mock(RouteSearchDashboardUseCase.class);
+	private final RouteFeedbackDashboardUseCase feedbackUseCase = mock(RouteFeedbackDashboardUseCase.class);
 	private final PushNotificationDashboardUseCase pushUseCase = mock(PushNotificationDashboardUseCase.class);
 	private final UserActivityDashboardUseCase usageUseCase = mock(UserActivityDashboardUseCase.class);
 	private final InMemoryAdminMetricDailyRepository repository = new InMemoryAdminMetricDailyRepository();
 	private final AdminMetricSnapshotStatusHolder statusHolder = new AdminMetricSnapshotStatusHolder();
 	private final AdminMetricSnapshotService service = new AdminMetricSnapshotService(
-		reportUseCase, qualityUseCase, routeUseCase, pushUseCase, usageUseCase,
+		reportUseCase, qualityUseCase, routeUseCase, feedbackUseCase, pushUseCase, usageUseCase,
 		repository, statusHolder, fixedClock());
 
 	@Test
@@ -62,6 +65,9 @@ class AdminMetricSnapshotServiceTest {
 		assertThat(value(AdminMetricKeys.FACILITIES_DELAYED)).isEqualTo(2);
 		assertThat(value(AdminMetricKeys.ROUTE_SEARCHES)).isEqualTo(100);
 		assertThat(value(AdminMetricKeys.ROUTE_BLOCKED_RATE)).isEqualTo(25.0); // 25/100
+		assertThat(value(AdminMetricKeys.ROUTE_FEEDBACK_HELPFUL)).isEqualTo(40);
+		assertThat(value(AdminMetricKeys.ROUTE_FEEDBACK_NOT_HELPFUL)).isEqualTo(8);
+		assertThat(value(AdminMetricKeys.ROUTE_FEEDBACK_BLOCKED)).isEqualTo(2);
 		assertThat(value(AdminMetricKeys.PUSH_ATTEMPTED)).isEqualTo(50);
 		assertThat(value(AdminMetricKeys.PUSH_FAILED)).isEqualTo(4);
 		assertThat(value(AdminMetricKeys.API_ERROR_RATE)).isEqualTo(1.0); // 10/1000
@@ -107,6 +113,8 @@ class AdminMetricSnapshotServiceTest {
 		when(routeUseCase.summarizeRouteSearches())
 			.thenReturn(new RouteSearchDashboardSummary(100, 75, 25,
 				List.of(new MobilityTypeCount(MobilityType.values()[0], 100))));
+		when(feedbackUseCase.summarizeRouteFeedbacks())
+			.thenReturn(new RouteFeedbackDashboardSummary(50, 40, 8, 2, List.of()));
 		when(pushUseCase.summarizePushNotifications())
 			.thenReturn(new PushNotificationDashboardSummary(50, 6, 40, 4));
 		when(usageUseCase.summarizeUserActivity())

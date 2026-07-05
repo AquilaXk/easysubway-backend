@@ -164,6 +164,41 @@ class RouteSearchDashboardServiceTest {
 			);
 	}
 
+	@Test
+	@DisplayName("차단 검색에 얽힌 상위 역을 차단 횟수 내림차순으로 이름과 함께 돌려준다")
+	void topBlockedStationsRanksByBlockedInvolvement() {
+		var repository = new InMemoryRouteSearchRepository();
+		repository.saveRouteSearch(routeSearch(
+			"rs-1", MobilityType.WHEELCHAIR, RouteSearchStatus.BLOCKED,
+			"station-sangnoksu", "상록수", "station-sadang", "사당"));
+		repository.saveRouteSearch(routeSearch(
+			"rs-2", MobilityType.SENIOR, RouteSearchStatus.BLOCKED,
+			"station-sangnoksu", "상록수", "station-busan", "부산"));
+		repository.saveRouteSearch(routeSearch("rs-3", MobilityType.SENIOR, RouteSearchStatus.FOUND));
+		var service = new RouteSearchDashboardService(repository, new FakeTransitMasterPort());
+
+		var rankings = service.topBlockedStations(10);
+
+		// 상록수는 두 차단 검색의 출발역(=2), 부산·사당은 각 1. 동점은 역 id 오름차순(busan<sadang).
+		assertThat(rankings)
+			.extracting("stationName", "blockedCount")
+			.containsExactly(
+				tuple("상록수", 2L),
+				tuple("부산", 1L),
+				tuple("사당", 1L));
+		assertThat(rankings).allSatisfy(row -> assertThat(row.stationId()).startsWith("station-"));
+	}
+
+	@Test
+	@DisplayName("차단 검색이 없으면 상위 역 랭킹은 비어 있다")
+	void topBlockedStationsEmptyWhenNoBlocked() {
+		var repository = new InMemoryRouteSearchRepository();
+		repository.saveRouteSearch(routeSearch("rs-1", MobilityType.SENIOR, RouteSearchStatus.FOUND));
+		var service = new RouteSearchDashboardService(repository, new FakeTransitMasterPort());
+
+		assertThat(service.topBlockedStations(10)).isEmpty();
+	}
+
 	private RouteSearchResult routeSearch(
 		String routeSearchId,
 		MobilityType mobilityType,

@@ -115,6 +115,68 @@ class RouteSearchAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("차단 상위 역 랭킹은 역 허브 딥링크로 표시된다")
+	void routeSearchPageRendersBlockedStationRankingWithHubLink() throws Exception {
+		saveRouteSearchPort.saveRouteSearch(blockedRouteSearch(
+			"route-search-blocked-1", "계단 없는 역 접근 경로를 확인할 수 없습니다."));
+		saveRouteSearchPort.saveRouteSearch(blockedRouteSearch(
+			"route-search-blocked-2", "계단 없는 역 접근 경로를 확인할 수 없습니다."));
+
+		String html = mockMvc.perform(get("/admin/routes/searches/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("차단 상위 역")
+			.contains("/admin/stations/station-sangnoksu/page")
+			.contains("/admin/stations/station-sadang/page")
+			.contains("is-blocked-surge");
+	}
+
+	@Test
+	@DisplayName("경로 검색 화면은 기간 추이 차트·증감 카드·기간 버튼을 렌더링한다")
+	void routeSearchPageRendersTrendChartAndComparison() throws Exception {
+		String html = mockMvc.perform(get("/admin/routes/searches/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("id=\"route-search-trends\"")
+			.contains("추이 기간 선택")
+			.contains("/admin/routes/searches/trends")
+			.contains("전 기간 대비 증감")
+			.contains("route-search-trend-canvas")
+			.contains("data-chart=")
+			.contains("데이터 표로 보기")
+			.contains("/js/admin/dashboard-charts.js");
+	}
+
+	@Test
+	@DisplayName("기간 추이 fragment는 셸 없이 추이 영역만 반환한다")
+	void routeSearchTrendsFragmentReturnsSectionOnly() throws Exception {
+		String fragment = mockMvc.perform(get("/admin/routes/searches/trends")
+				.param("days", "30")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(fragment)
+			.contains("id=\"route-search-trends\"")
+			.contains("최근 30일 추이")
+			.doesNotContain("admin-shell")
+			.doesNotContain("이동 프로필별 검색");
+	}
+
+	@Test
 	@DisplayName("경로 검색 현황 페이지는 관리자 인증을 요구한다")
 	void routeSearchDashboardRequiresAdminAuthentication() throws Exception {
 		mockMvc.perform(get("/admin/routes/searches/page"))

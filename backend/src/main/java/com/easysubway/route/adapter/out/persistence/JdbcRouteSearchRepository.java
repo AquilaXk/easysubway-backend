@@ -236,6 +236,23 @@ public class JdbcRouteSearchRepository
 	}
 
 	@Override
+	public List<RouteSearchStationPair> loadBlockedRouteSearchStationPairsForDashboard() {
+		return jdbcTemplate.query(
+			"""
+				SELECT origin_station_id,
+					destination_station_id
+				FROM route_search_results
+				WHERE status = 'BLOCKED'
+				ORDER BY created_at DESC, route_search_id
+				""",
+			(resultSet, rowNumber) -> new RouteSearchStationPair(
+				resultSet.getString("origin_station_id"),
+				resultSet.getString("destination_station_id")
+			)
+		);
+	}
+
+	@Override
 	public List<RouteSearchBlockedReasons> loadRouteSearchBlockedReasonsForDashboard() {
 		return jdbcTemplate.query(
 			"""

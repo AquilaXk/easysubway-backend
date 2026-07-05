@@ -40,6 +40,58 @@
 		</div>
 	</div>
 
+	<div id="route-feedback-trends" th:fragment="trends" class="dashboard-trends-section">
+		<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+			<a th:each="d : ${ {7, 30, 90} }"
+			   th:href="@{/admin/routes/feedback/page(days=${d})}"
+			   th:attr="hx-get=@{/admin/routes/feedback/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+			   hx-target="#route-feedback-trends" hx-swap="outerHTML"
+			   th:classappend="${trendDays == d} ? ' is-active'"
+			   th:text="|${d}일|">7일</a>
+		</div>
+
+		<p class="admin-export">
+			<a class="admin-export-link" th:href="@{/admin/analytics/metrics/export(keys=${exportKeys},days=${trendDays})}"
+			   download>CSV 내보내기</a>
+		</p>
+
+		<div class="metric-grid" aria-label="전 기간 대비 증감">
+			<div th:each="card : ${comparisons}" class="metric" th:classappend="${'tone-' + card.tone}">
+				<span th:text="${card.label}">지표</span>
+				<strong th:text="${card.currentLabel}">0</strong>
+				<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+			</div>
+		</div>
+
+		<div class="trend-charts">
+			<section class="admin-panel trend-chart-panel">
+				<h2 th:text="|유형별 피드백 최근 ${trendDays}일 추이|">유형별 피드백 추이</h2>
+				<div class="trend-canvas-wrap">
+					<canvas id="route-feedback-trend-canvas" class="trend-canvas" role="img"
+					        th:attr="aria-label=|유형별 피드백 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
+				</div>
+				<details class="dashboard-details">
+					<summary>데이터 표로 보기</summary>
+					<table>
+						<thead>
+						<tr>
+							<th scope="col">날짜</th>
+							<th th:each="s : ${trendChart.series}" scope="col" th:text="${s.label}">지표</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="label, iter : ${trendChart.labels}">
+							<th scope="row" th:text="${label}">날짜</th>
+							<td th:each="s : ${trendChart.series}"
+							    th:text="${s.values[iter.index] != null ? s.values[iter.index] : '—'}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</details>
+			</section>
+		</div>
+	</div>
+
 	<section>
 		<h2>평점별 피드백</h2>
 		<table>
@@ -116,5 +168,7 @@
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: chartScripts}"></th:block>
+<script th:src="@{/js/admin/dashboard-charts.js}" defer></script>
 </body>
 </html>

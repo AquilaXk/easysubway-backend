@@ -12,6 +12,9 @@ public interface SummarizeRouteSearchPort {
 
 	List<RouteSearchStationPair> loadRouteSearchStationPairsForDashboard();
 
+	/** 차단(BLOCKED)된 경로 검색의 출발·도착역 쌍만 돌려준다(차단 상위 역 랭킹 집계용). */
+	List<RouteSearchStationPair> loadBlockedRouteSearchStationPairsForDashboard();
+
 	List<RouteSearchBlockedReasons> loadRouteSearchBlockedReasonsForDashboard();
 
 	List<RouteSearchQualitySignals> loadRouteSearchQualitySignalsForDashboard();

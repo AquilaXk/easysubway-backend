@@ -9,7 +9,9 @@ import com.easysubway.notification.application.port.in.PushNotificationDashboard
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.report.domain.FacilityReportStatus;
+import com.easysubway.route.application.port.in.RouteFeedbackDashboardUseCase;
 import com.easysubway.route.application.port.in.RouteSearchDashboardUseCase;
+import com.easysubway.route.domain.RouteFeedbackDashboardSummary;
 import com.easysubway.route.domain.RouteSearchDashboardSummary;
 import com.easysubway.usage.application.port.in.UserActivityDashboardUseCase;
 import com.easysubway.usage.domain.UserActivityDashboardSummary;
@@ -37,6 +39,7 @@ public class AdminMetricSnapshotService {
 	private final FacilityReportUseCase facilityReportUseCase;
 	private final DataQualityUseCase dataQualityUseCase;
 	private final RouteSearchDashboardUseCase routeSearchDashboardUseCase;
+	private final RouteFeedbackDashboardUseCase routeFeedbackDashboardUseCase;
 	private final PushNotificationDashboardUseCase pushNotificationDashboardUseCase;
 	private final UserActivityDashboardUseCase userActivityDashboardUseCase;
 	private final AdminMetricDailyRepository repository;
@@ -48,6 +51,7 @@ public class AdminMetricSnapshotService {
 		FacilityReportUseCase facilityReportUseCase,
 		DataQualityUseCase dataQualityUseCase,
 		RouteSearchDashboardUseCase routeSearchDashboardUseCase,
+		RouteFeedbackDashboardUseCase routeFeedbackDashboardUseCase,
 		PushNotificationDashboardUseCase pushNotificationDashboardUseCase,
 		UserActivityDashboardUseCase userActivityDashboardUseCase,
 		AdminMetricDailyRepository repository,
@@ -58,6 +62,7 @@ public class AdminMetricSnapshotService {
 			facilityReportUseCase,
 			dataQualityUseCase,
 			routeSearchDashboardUseCase,
+			routeFeedbackDashboardUseCase,
 			pushNotificationDashboardUseCase,
 			userActivityDashboardUseCase,
 			repository,
@@ -69,6 +74,7 @@ public class AdminMetricSnapshotService {
 		FacilityReportUseCase facilityReportUseCase,
 		DataQualityUseCase dataQualityUseCase,
 		RouteSearchDashboardUseCase routeSearchDashboardUseCase,
+		RouteFeedbackDashboardUseCase routeFeedbackDashboardUseCase,
 		PushNotificationDashboardUseCase pushNotificationDashboardUseCase,
 		UserActivityDashboardUseCase userActivityDashboardUseCase,
 		AdminMetricDailyRepository repository,
@@ -78,6 +84,7 @@ public class AdminMetricSnapshotService {
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.dataQualityUseCase = dataQualityUseCase;
 		this.routeSearchDashboardUseCase = routeSearchDashboardUseCase;
+		this.routeFeedbackDashboardUseCase = routeFeedbackDashboardUseCase;
 		this.pushNotificationDashboardUseCase = pushNotificationDashboardUseCase;
 		this.userActivityDashboardUseCase = userActivityDashboardUseCase;
 		this.repository = repository;
@@ -105,6 +112,7 @@ public class AdminMetricSnapshotService {
 
 			DataQualitySummary quality = dataQualityUseCase.summarizeDataQuality();
 			RouteSearchDashboardSummary routes = routeSearchDashboardUseCase.summarizeRouteSearches();
+			RouteFeedbackDashboardSummary feedback = routeFeedbackDashboardUseCase.summarizeRouteFeedbacks();
 			PushNotificationDashboardSummary push = pushNotificationDashboardUseCase.summarizePushNotifications();
 			UserActivityDashboardSummary usage = userActivityDashboardUseCase.summarizeUserActivity();
 
@@ -115,6 +123,9 @@ public class AdminMetricSnapshotService {
 			save(date, AdminMetricKeys.FACILITIES_DELAYED, quality.delayedFacilityStatusCount());
 			save(date, AdminMetricKeys.ROUTE_SEARCHES, routes.totalCount());
 			save(date, AdminMetricKeys.ROUTE_BLOCKED_RATE, percent(routes.blockedCount(), routes.totalCount()));
+			save(date, AdminMetricKeys.ROUTE_FEEDBACK_HELPFUL, feedback.helpfulCount());
+			save(date, AdminMetricKeys.ROUTE_FEEDBACK_NOT_HELPFUL, feedback.notHelpfulCount());
+			save(date, AdminMetricKeys.ROUTE_FEEDBACK_BLOCKED, feedback.blockedByRealWorldCount());
 			save(date, AdminMetricKeys.PUSH_ATTEMPTED, push.totalCount());
 			save(date, AdminMetricKeys.PUSH_FAILED, push.failedCount());
 			save(date, AdminMetricKeys.API_ERROR_RATE, percent(usage.totalApiErrors(), usage.totalApiRequests()));
