@@ -1,5 +1,6 @@
 package com.easysubway.admin.alert;
 
+import com.easysubway.admin.metric.application.service.AdminMetricSnapshotStatusHolder;
 import com.easysubway.admin.navigation.AdminProgram;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
@@ -37,6 +38,7 @@ public class AdminAlertService {
 	private final PushNotificationDashboardUseCase pushNotificationDashboardUseCase;
 	private final DataCollectionUseCase dataCollectionUseCase;
 	private final DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase;
+	private final AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder;
 	private final Clock clock;
 
 	// Clock은 전역 빈이 아니라서(코드베이스 규약) 있으면 쓰고 없으면 시스템 기본으로 폴백한다.
@@ -46,6 +48,7 @@ public class AdminAlertService {
 		PushNotificationDashboardUseCase pushNotificationDashboardUseCase,
 		DataCollectionUseCase dataCollectionUseCase,
 		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase,
+		AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder,
 		ObjectProvider<Clock> clockProvider
 	) {
 		this(
@@ -53,6 +56,7 @@ public class AdminAlertService {
 			pushNotificationDashboardUseCase,
 			dataCollectionUseCase,
 			datapackReleaseBlockerSummaryUseCase,
+			metricSnapshotStatusHolder,
 			clockProvider.getIfAvailable(Clock::systemDefaultZone));
 	}
 
@@ -61,12 +65,14 @@ public class AdminAlertService {
 		PushNotificationDashboardUseCase pushNotificationDashboardUseCase,
 		DataCollectionUseCase dataCollectionUseCase,
 		DatapackReleaseBlockerSummaryUseCase datapackReleaseBlockerSummaryUseCase,
+		AdminMetricSnapshotStatusHolder metricSnapshotStatusHolder,
 		Clock clock
 	) {
 		this.facilityReportUseCase = facilityReportUseCase;
 		this.pushNotificationDashboardUseCase = pushNotificationDashboardUseCase;
 		this.dataCollectionUseCase = dataCollectionUseCase;
 		this.datapackReleaseBlockerSummaryUseCase = datapackReleaseBlockerSummaryUseCase;
+		this.metricSnapshotStatusHolder = metricSnapshotStatusHolder;
 		this.clock = clock;
 	}
 
@@ -77,6 +83,7 @@ public class AdminAlertService {
 		addPushFailure(items, visible);
 		addBatchFailure(items, visible);
 		addDatapackBlocker(items, visible);
+		addMetricSnapshotFailure(items, visible);
 		return new AdminAlertSummary(items);
 	}
 
@@ -141,6 +148,21 @@ public class AdminAlertService {
 				blockers + "건",
 				"warning",
 				AdminProgram.DATAPACK_CANDIDATES.path()));
+		}
+	}
+
+	// 지표 스냅샷(#1739) 잡의 마지막 실행이 실패면 대시보드 화면이 보이는 계정에 노출한다.
+	private void addMetricSnapshotFailure(List<AdminAlertItem> items, List<AdminProgram> visible) {
+		if (!visible.contains(AdminProgram.DASHBOARD)) {
+			return;
+		}
+		if (metricSnapshotStatusHolder.isFailing()) {
+			items.add(new AdminAlertItem(
+				"metric-snapshot-failure",
+				"지표 스냅샷 실패",
+				"최근 집계가 실패했습니다",
+				"failure",
+				AdminProgram.DASHBOARD.path()));
 		}
 	}
 }

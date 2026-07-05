@@ -7,6 +7,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
 import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.metric.application.service.AdminMetricSnapshotStatusHolder;
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
@@ -18,6 +19,7 @@ import com.easysubway.notification.domain.PushNotificationDashboardSummary;
 import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.util.List;
@@ -35,8 +37,9 @@ class AdminAlertServiceTest {
 	private final DataCollectionUseCase collectionUseCase = mock(DataCollectionUseCase.class);
 	private final DatapackReleaseBlockerSummaryUseCase datapackUseCase =
 		mock(DatapackReleaseBlockerSummaryUseCase.class);
+	private final AdminMetricSnapshotStatusHolder metricStatusHolder = new AdminMetricSnapshotStatusHolder();
 	private final AdminAlertService service = new AdminAlertService(
-		reportUseCase, pushUseCase, collectionUseCase, datapackUseCase, fixedClock());
+		reportUseCase, pushUseCase, collectionUseCase, datapackUseCase, metricStatusHolder, fixedClock());
 
 	@Test
 	@DisplayName("24시간 신고가 임계값 이상이면 신고 급증 알림을 딥링크와 함께 준다")
@@ -114,6 +117,23 @@ class AdminAlertServiceTest {
 			.satisfies(item -> {
 				assertThat(item.href()).isEqualTo("/admin/datapack/candidates/page");
 				assertThat(item.tone()).isEqualTo("warning");
+			});
+	}
+
+	@Test
+	@DisplayName("지표 스냅샷 마지막 실행이 실패면 스냅샷 실패 알림을 딥링크와 함께 준다")
+	void metricSnapshotFailureAlert() {
+		metricStatusHolder.recordFailure(
+			LocalDateTime.of(2026, 7, 5, 0, 10), LocalDate.of(2026, 7, 5), "집계 실패");
+
+		AdminAlertSummary summary = service.summarize(authWith(AdminPermission.ADMIN_VIEW));
+
+		assertThat(summary.items())
+			.filteredOn(item -> item.id().equals("metric-snapshot-failure"))
+			.singleElement()
+			.satisfies(item -> {
+				assertThat(item.href()).isEqualTo("/admin/dashboard/page");
+				assertThat(item.tone()).isEqualTo("failure");
 			});
 	}
 

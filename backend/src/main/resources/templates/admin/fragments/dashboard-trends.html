@@ -1,0 +1,53 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>추이 섹션</title>
+</head>
+<body>
+<!--
+  추이 섹션(#1739). 기간(7/30/90) 라인 차트 2개. 기간 버튼은 no-JS에서 ?days= 링크로 페이지를
+  새로고침하고, JS에서는 hx-get으로 #dashboard-trends만 부분 갱신한다.
+  차트 데이터는 canvas data-chart(JSON)에 실려 dashboard-charts.js가 Chart.js로 그린다.
+  접근성: canvas는 role=img + aria-label, 같은 데이터를 details 안 표로 제공(no-JS 대체 겸용).
+-->
+<div th:fragment="section" class="dashboard-trends-section">
+	<div class="trend-periods" role="group" aria-label="추이 기간 선택">
+		<a th:each="d : ${ {7, 30, 90} }"
+		   th:href="@{/admin/dashboard/page(days=${d})}"
+		   th:attr="hx-get=@{/admin/dashboard/trends(days=${d})},aria-current=${trendDays == d} ? 'true' : null"
+		   hx-target="#dashboard-trends" hx-swap="innerHTML"
+		   th:classappend="${trendDays == d} ? ' is-active'"
+		   th:text="|${d}일|">7일</a>
+	</div>
+
+	<div class="trend-charts">
+		<section th:each="trend : ${trends}" class="admin-panel trend-chart-panel">
+			<h2 th:text="${trend.title}">추이</h2>
+			<div class="trend-canvas-wrap">
+				<canvas th:id="${trend.id}" class="trend-canvas" role="img"
+				        th:attr="aria-label=|${trend.title} 최근 ${trendDays}일 추이|,data-chart=${trend.json}"></canvas>
+			</div>
+			<details class="dashboard-details">
+				<summary>데이터 표로 보기</summary>
+				<table>
+					<thead>
+					<tr>
+						<th scope="col">날짜</th>
+						<th th:each="s : ${trend.data.series}" scope="col" th:text="${s.label}">지표</th>
+					</tr>
+					</thead>
+					<tbody>
+					<tr th:each="label, iter : ${trend.data.labels}">
+						<th scope="row" th:text="${label}">날짜</th>
+						<td th:each="s : ${trend.data.series}"
+						    th:text="${s.values[iter.index] != null ? s.values[iter.index] : '—'}">0</td>
+					</tr>
+					</tbody>
+				</table>
+			</details>
+		</section>
+	</div>
+</div>
+</body>
+</html>
