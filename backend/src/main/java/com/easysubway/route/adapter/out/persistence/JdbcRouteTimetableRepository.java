@@ -4,7 +4,11 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.List;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
@@ -15,6 +19,8 @@ import org.springframework.transaction.annotation.Transactional;
 @Profile("prod | staging | release | prod-like")
 @Transactional(readOnly = true)
 public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
+
+	private static final Logger log = LoggerFactory.getLogger(JdbcRouteTimetableRepository.class);
 
 	private final JdbcTemplate jdbcTemplate;
 
@@ -139,8 +145,29 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					resultSet.getInt("headway_seconds"),
 					resultSet.getBoolean("exact_times")
 				)
-			)
+			),
+			loadFeedEndDate()
 		);
+	}
+
+	private LocalDate loadFeedEndDate() {
+		List<LocalDate> rows = jdbcTemplate.query(
+			"SELECT feed_end_date FROM transit_feed_info LIMIT 1",
+			(resultSet, rowNumber) -> parseFeedEndDate(resultSet.getString("feed_end_date"))
+		);
+		return rows.isEmpty() ? null : rows.get(0);
+	}
+
+	private static LocalDate parseFeedEndDate(String value) {
+		if (value == null || value.isBlank()) {
+			return null;
+		}
+		try {
+			return LocalDate.parse(value.trim(), DateTimeFormatter.BASIC_ISO_DATE);
+		} catch (DateTimeParseException exception) {
+			log.warn("transit_feed_info.feed_end_date 형식이 YYYYMMDD가 아니어서 무시한다: {}", value);
+			return null;
+		}
 	}
 
 	private static LocalDate serviceDate(String value) {

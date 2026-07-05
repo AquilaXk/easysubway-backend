@@ -2,6 +2,7 @@ package com.easysubway.route.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.time.LocalDate;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -24,6 +25,7 @@ class JdbcRouteTimetableRepositoryTest {
 		jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.execute("DROP ALL OBJECTS");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		repository = new JdbcRouteTimetableRepository(jdbcTemplate);
 	}
 
@@ -53,6 +55,34 @@ class JdbcRouteTimetableRepositoryTest {
 		insertTimetableRows();
 
 		assertThat(repository.hasRouteTimetable()).isTrue();
+	}
+
+	@Test
+	@DisplayName("transit_feed_info 행이 있으면 feed_end_date를 LocalDate로 매핑한다")
+	void loadRouteTimetableMapsFeedEndDateWhenPresent() {
+		jdbcTemplate.update("INSERT INTO transit_feed_info (id, feed_end_date) VALUES (1, '20261231')");
+
+		var timetable = repository.loadRouteTimetable();
+
+		assertThat(timetable.feedEndDate()).isEqualTo(LocalDate.of(2026, 12, 31));
+	}
+
+	@Test
+	@DisplayName("transit_feed_info 행이 없으면 feedEndDate는 null이다(dormant 유지)")
+	void loadRouteTimetableReturnsNullFeedEndDateWhenAbsent() {
+		var timetable = repository.loadRouteTimetable();
+
+		assertThat(timetable.feedEndDate()).isNull();
+	}
+
+	@Test
+	@DisplayName("transit_feed_info feed_end_date 형식 불량은 planner를 죽이지 않고 null로 방어한다")
+	void loadRouteTimetableDefendsAgainstMalformedFeedEndDate() {
+		jdbcTemplate.update("INSERT INTO transit_feed_info (id, feed_end_date) VALUES (1, 'BADDATE!')");
+
+		var timetable = repository.loadRouteTimetable();
+
+		assertThat(timetable.feedEndDate()).isNull();
 	}
 
 	private void insertTimetableRows() {
