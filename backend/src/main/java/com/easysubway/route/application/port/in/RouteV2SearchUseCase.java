@@ -74,8 +74,17 @@ public interface RouteV2SearchUseCase {
 	record RouteV2Plan(
 		List<RouteSearchResult> itineraries,
 		List<RouteV2Status> statuses,
-		String plannerAdr
+		String plannerAdr,
+		OffsetDateTime nextServiceTime
 	) {
+		public RouteV2Plan(
+			List<RouteSearchResult> itineraries,
+			List<RouteV2Status> statuses,
+			String plannerAdr
+		) {
+			this(itineraries, statuses, plannerAdr, null);
+		}
+
 		public RouteV2Plan {
 			itineraries = List.copyOf(Objects.requireNonNull(itineraries, "itineraries must not be null"));
 			statuses = List.copyOf(Objects.requireNonNull(statuses, "statuses must not be null"));

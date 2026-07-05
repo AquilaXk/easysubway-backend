@@ -17,6 +17,7 @@ import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
+import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
@@ -76,7 +77,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 					routeTimetable()
 				);
 				if (timetableItineraries.isEmpty()) {
-					return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
+					return noTimetableServicePlan(command);
 				}
 				timetableItineraries = routeSearchUseCase.stabilizeTimetableRouteCandidates(
 					searchRouteCommand,
@@ -101,6 +102,11 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		} catch (RouteNotFoundException exception) {
 			return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
 		}
+	}
+
+	private RouteV2Plan noTimetableServicePlan(SearchRouteV2Command command) {
+		OffsetDateTime nextServiceTime = timetableRaptorPlanner.nextServiceTime(command, routeTimetable()).orElse(null);
+		return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR, nextServiceTime);
 	}
 
 	private boolean canUseTimetableRaptor(SearchRouteV2Command command) {

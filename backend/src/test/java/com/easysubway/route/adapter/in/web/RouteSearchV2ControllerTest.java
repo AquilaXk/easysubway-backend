@@ -220,6 +220,30 @@ class RouteSearchV2ControllerTest {
 	}
 
 	@Test
+	@DisplayName("V2 경로 검색은 막차 이후 다음 운행 시각을 함께 반환한다")
+	void routeSearchV2ReturnsNextServiceTimeAfterLastTrain() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-07-01T23:55:00+09:00",
+					  "mobilityType": "SENIOR",
+					  "constraintMode": "PREFER_STEP_FREE",
+					  "useRealtime": false,
+					  "maxTransfers": 1,
+					  "alternativeCount": 3
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.statuses[0]").value("NO_TIMETABLE_SERVICE"))
+			.andExpect(jsonPath("$.data.nextServiceTime").value("2026-07-02T09:00:00+09:00"))
+			.andExpect(jsonPath("$.data.itineraries").isEmpty());
+	}
+
+	@Test
 	@DisplayName("V2 route refresh는 저장된 itinerary와 refresh 상태를 반환한다")
 	void routeRefreshV2ReturnsRefreshStatusAndStoredRoute() throws Exception {
 		when(routeSearchUseCase.refreshRoute("route-search-1"))

@@ -235,6 +235,7 @@ class RouteSearchController {
 		int maxTransfers,
 		int alternativeCount,
 		List<String> statuses,
+		String nextServiceTime,
 		List<ItineraryDto> itineraries
 	) {
 
@@ -257,6 +258,7 @@ class RouteSearchController {
 				plan.statuses().stream()
 					.map(Enum::name)
 					.toList(),
+				plan.nextServiceTime() == null ? null : formatOffset(plan.nextServiceTime()),
 				plan.itineraries().stream()
 					.map(result -> ItineraryDto.from(result, departureTime, request.mobilityPresetName()))
 					.toList()
