@@ -8,6 +8,7 @@ public record RealtimeProviderHealthSnapshot(
 	long providerTimeoutCount,
 	long providerQuotaExceededCount,
 	long providerEmptyResultCount,
+	long tripMappingFailureCount,
 	double freshResultRatio,
 	double staleResultRatio,
 	double unsupportedRatio,

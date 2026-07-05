@@ -185,6 +185,26 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider trip mapping 실패는 도착 row를 버리지 않고 metric으로 계측한다")
+	void arrivalTripMappingMissIsCountedWithoutDroppingArrival() {
+		CountingProvider provider = new CountingProvider();
+		StubMappingPort mappingPort = new StubMappingPort();
+		mappingPort.add(mapping("station-sangnoksu", "seoul-4", "1004", "1004000448", "상록수", true, true, "OFFICIAL"));
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			mappingPort
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(result.arrivals()).hasSize(1);
+		assertThat(snapshot.tripMappingFailureCount()).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("quota 초과는 circuit을 열고 다음 요청에서 provider를 호출하지 않는다")
 	void quotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));

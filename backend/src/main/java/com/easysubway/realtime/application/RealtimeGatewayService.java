@@ -378,7 +378,10 @@ public class RealtimeGatewayService {
 			arrival.rawDestination(),
 			arrival.rawServicePattern()
 		).map((mapping) -> mappedArrival(arrival, mapping))
-			.orElse(arrival);
+			.orElseGet(() -> {
+				providerMetrics.recordTripMappingFailure();
+				return arrival;
+			});
 	}
 
 	private RealtimeArrival mappedArrival(RealtimeArrival arrival, RealtimeTripMapping mapping) {
@@ -575,6 +578,7 @@ public class RealtimeGatewayService {
 		private final AtomicLong providerTimeoutCount = new AtomicLong();
 		private final AtomicLong providerQuotaExceededCount = new AtomicLong();
 		private final AtomicLong providerEmptyResultCount = new AtomicLong();
+		private final AtomicLong tripMappingFailureCount = new AtomicLong();
 		private final AtomicLong providerLatencyMsTotal = new AtomicLong();
 		private final AtomicLong resultCount = new AtomicLong();
 		private final AtomicLong freshResultCount = new AtomicLong();
@@ -597,6 +601,10 @@ public class RealtimeGatewayService {
 
 		private void recordEmptyResult() {
 			providerEmptyResultCount.incrementAndGet();
+		}
+
+		private void recordTripMappingFailure() {
+			tripMappingFailureCount.incrementAndGet();
 		}
 
 		private void recordResult(RealtimeStatus status) {
@@ -627,6 +635,7 @@ public class RealtimeGatewayService {
 				providerTimeoutCount.get(),
 				providerQuotaExceededCount.get(),
 				providerEmptyResultCount.get(),
+				tripMappingFailureCount.get(),
 				ratio(freshResultCount.get(), results),
 				ratio(staleResultCount.get(), results),
 				ratio(unsupportedResultCount.get(), results),
