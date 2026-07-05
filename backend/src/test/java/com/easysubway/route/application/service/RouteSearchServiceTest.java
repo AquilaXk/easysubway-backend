@@ -1095,6 +1095,25 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 보행 프리셋별 환승 가능 시간을 시간표 scan에 반영한다")
+	void routeV2PlannerAppliesMobilityPresetToTransferFeasibility() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), transferRouteTimetablePort(33630));
+
+		var seniorPlan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+		var standardPlan = planner.search(routeV2Command(
+			ConstraintMode.PREFER_STEP_FREE,
+			MobilityType.SENIOR,
+			MobilityPreset.STANDARD,
+			1,
+			3
+		));
+
+		assertThat(seniorPlan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
+		assertThat(standardPlan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(standardPlan.itineraries().getFirst().transferCount()).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 maxTransfers 0에서 시간표 환승 후보를 제외한다")
 	void routeV2PlannerRejectsTimetableTransferWhenMaxTransfersIsZero() {
 		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), transferRouteTimetablePort());
