@@ -45,6 +45,126 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
+	@DisplayName("시설 상태판은 유형·상태·역 필터 툴바와 제보·허브 크로스링크를 렌더한다")
+	void facilityStatusBoardRendersV4ToolbarAndCrossLinks() throws Exception {
+		String html = mockMvc.perform(get("/admin/facilities/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("시설·역 이름 검색")
+			.contains("유형 필터")
+			.contains("상태 필터")
+			.contains("역 필터")
+			.contains("확인 필요 먼저")
+			// 역명은 허브(시설 탭)로, 제보는 역 필터 제보 대기열로 크로스링크한다.
+			.contains("/admin/stations/station-sangnoksu/page?tab=facilities")
+			.contains("/admin/reports/page?station=station-sangnoksu");
+
+		String fragment = mockMvc.perform(get("/admin/facilities/page")
+				.param("sort", "attention")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(fragment)
+			.contains("id=\"facility-results\"")
+			.doesNotContain("admin-shell");
+	}
+
+	@Test
+	@DisplayName("역 목록은 검색·지역·노선·정렬 툴바와 미확인 제보 뱃지를 렌더한다")
+	void stationListRendersV4ToolbarAndPendingBadge() throws Exception {
+		String html = mockMvc.perform(get("/admin/stations/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("역 이름 검색")
+			.contains("지역 필터")
+			.contains("노선 필터")
+			.contains("미확인 제보 많은 순")
+			.contains("미확인 제보")
+			.contains("확인 필요 시설")
+			// 상록수 역 링크가 상세 허브로 연결된다.
+			.contains("/admin/stations/station-sangnoksu/page");
+
+		// 정렬·지역 파라미터가 페이지네이션/툴바에 유지된다(htmx 부분 갱신도 같은 필터 공유).
+		String sorted = mockMvc.perform(get("/admin/stations/page")
+				.param("sort", "pending")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(sorted)
+			.contains("id=\"station-results\"")
+			.doesNotContain("admin-shell");
+	}
+
+	@Test
+	@DisplayName("역 상세는 허브 탭으로 개요·시설·제보·현장·구조를 오간다")
+	void stationDetailHubTabsNavigate() throws Exception {
+		String overview = getStationHub(null);
+		assertThat(overview)
+			.contains("상록수")
+			.contains("개요")
+			.contains("제보 이력")
+			.contains("현장 확인")
+			.contains("구조·동선")
+			.contains("데이터 품질");
+
+		String reports = getStationHub("reports");
+		assertThat(reports)
+			.contains("제보 이력")
+			.contains("전체 제보 보기")
+			// 제보 이력 탭은 역 필터가 걸린 제보 대기열(#1740)로 딥링크한다.
+			.contains("/admin/reports/page?station=station-sangnoksu");
+
+		String field = getStationHub("field");
+		assertThat(field)
+			.contains("현장 확인")
+			.contains("/admin/field-verifications/station-sangnoksu/page");
+
+		String structure = getStationHub("structure");
+		assertThat(structure)
+			.contains("구조·동선")
+			.contains("/admin/stations/station-sangnoksu/layouts/page");
+
+		assertThat(getStationHub("facilities")).contains("접근성 시설");
+	}
+
+	@Test
+	@DisplayName("역 허브 탭 htmx 요청은 셸 없이 탭 패널 fragment만 돌려준다")
+	void stationDetailHubTabHtmxReturnsFragmentOnly() throws Exception {
+		String fragment = mockMvc.perform(get("/admin/stations/station-sangnoksu/page")
+				.param("tab", "reports")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(fragment)
+			.contains("id=\"station-hub\"")
+			.contains("제보 이력")
+			// fragment 응답은 셸(사이드바·<html>)을 포함하지 않는다.
+			.doesNotContain("admin-shell")
+			.doesNotContain("<html");
+	}
+
+	private String getStationHub(String tab) throws Exception {
+		var request = get("/admin/stations/station-sangnoksu/page")
+			.with(httpBasic("admin-user", "admin-test-password"));
+		if (tab != null) {
+			request = request.param("tab", tab);
+		}
+		return mockMvc.perform(request)
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+	}
+
+	@Test
 	@DisplayName("관리자 시스템 화면은 health component 표를 표시한다")
 	void adminSystemPageShowsHealthComponents() throws Exception {
 		String html = mockMvc.perform(get("/admin/system/page")

@@ -387,6 +387,26 @@ public class JdbcFacilityReportRepository implements
 	}
 
 	@Override
+	public Map<String, Long> countPendingReportsByStation() {
+		return jdbcTemplate.query(
+			"""
+				SELECT station_id,
+					COUNT(*) AS report_count
+				FROM facility_reports
+				WHERE status IN ('SUBMITTED', 'UNDER_REVIEW')
+				GROUP BY station_id
+				""",
+			resultSet -> {
+				Map<String, Long> counts = new java.util.HashMap<>();
+				while (resultSet.next()) {
+					counts.put(resultSet.getString("station_id"), resultSet.getLong("report_count"));
+				}
+				return Map.copyOf(counts);
+			}
+		);
+	}
+
+	@Override
 	public long countReportsCreatedSince(LocalDateTime cutoff) {
 		Long count = jdbcTemplate.queryForObject(
 			"""

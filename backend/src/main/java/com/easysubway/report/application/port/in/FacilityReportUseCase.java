@@ -60,6 +60,9 @@ public interface FacilityReportUseCase {
 	/** 같은 역·시설로 접수된 신고 요약(최신순, 상한 적용). 드로어의 "같은 시설 신고 목록"에 쓴다. */
 	List<FacilityReportSummary> listReportsForFacility(String stationId, String facilityId);
 
+	/** 대기 제보 수를 역 단위로 집계한다(역 목록 "미확인 제보" 뱃지용). 대기 없는 역은 결과에 없다. */
+	java.util.Map<String, Long> countPendingReportsByStation();
+
 	FacilityReport reviewReport(ReviewFacilityReportCommand command);
 
 	FacilityReport confirmReportResult(String reportId, String userId);

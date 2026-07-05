@@ -28,6 +28,9 @@ public interface TransitMasterQueryUseCase {
 
 	Map<String, StationMasterDataCounts> countStationMasterDataByStationId();
 
+	/** 확인이 필요한(needsAttention) 접근성 시설 수를 역 단위로 집계한다(역 목록 "확인 필요 시설" 뱃지). */
+	Map<String, Long> countAttentionFacilitiesByStation();
+
 	StationWithLines getStation(String stationId);
 
 	List<StationExit> listStationExits(String stationId);

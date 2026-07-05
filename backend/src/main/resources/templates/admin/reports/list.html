@@ -209,7 +209,11 @@
 					<td><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></td>
 					<td th:text="${report.reportTypeLabel}">고장</td>
 					<td th:text="${report.description}">신고 내용</td>
-					<td th:text="${report.stationLabel}">상록수(station-id)</td>
+					<td>
+						<!-- 역 허브 크로스링크(#1741): 이름(코드) → 역 상세 허브 제보 탭. -->
+						<a th:href="@{/admin/stations/{stationId}/page(stationId=${report.stationId},tab='reports')}"
+						   th:text="${report.stationLabel}">상록수(코드)</a>
+					</td>
 					<td th:text="${report.facilityLabel}">엘리베이터(facility-id)</td>
 					<td th:text="${#temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm')}">2026-06-17 09:00</td>
 					<td>

@@ -3,7 +3,11 @@ package com.easysubway.transit.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
 
+import com.easysubway.admin.web.AdminMasterLabelResolver;
+import com.easysubway.common.web.WebMessageResolver;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
+import com.easysubway.field.application.port.in.FieldVerificationUseCase;
+import com.easysubway.report.application.port.in.FacilityReportUseCase;
 import com.easysubway.transit.adapter.out.persistence.UnavailableTransitMasterRepository;
 import com.easysubway.transit.application.service.TransitMasterService;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -45,7 +49,7 @@ class TransitReadOnlyAdminPageModelTest {
 		);
 		var model = new ExtendedModelMap();
 
-		String viewName = controller.facilitiesPage(null, null, model);
+		String viewName = controller.facilitiesPage(null, null, null, null, null, null, null, model);
 
 		assertThat(viewName).isEqualTo("admin/facilities/list");
 		assertThat(model.get("masterDataWritable")).isEqualTo(false);
@@ -80,7 +84,11 @@ class TransitReadOnlyAdminPageModelTest {
 		var controller = new TransitStationAdminPageController(
 			transitMasterService,
 			transitMasterService,
-			mock(DatapackReleaseBlockerSummaryUseCase.class)
+			mock(DatapackReleaseBlockerSummaryUseCase.class),
+			mock(FacilityReportUseCase.class),
+			mock(FieldVerificationUseCase.class),
+			AdminMasterLabelResolver.empty(),
+			WebMessageResolver.defaultMessages()
 		);
 		var model = new ExtendedModelMap();
 
@@ -96,7 +104,11 @@ class TransitReadOnlyAdminPageModelTest {
 		var controller = new TransitStationAdminPageController(
 			transitMasterService,
 			transitMasterService,
-			mock(DatapackReleaseBlockerSummaryUseCase.class)
+			mock(DatapackReleaseBlockerSummaryUseCase.class),
+			mock(FacilityReportUseCase.class),
+			mock(FieldVerificationUseCase.class),
+			AdminMasterLabelResolver.empty(),
+			WebMessageResolver.defaultMessages()
 		);
 		var redirectAttributes = new RedirectAttributesModelMap();
 

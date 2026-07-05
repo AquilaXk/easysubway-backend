@@ -140,6 +140,18 @@ public class InMemoryFacilityReportRepository implements
 	}
 
 	@Override
+	public Map<String, Long> countPendingReportsByStation() {
+		Map<String, Long> counts = new HashMap<>();
+		for (FacilityReport report : reports.values()) {
+			if (report.status() == FacilityReportStatus.SUBMITTED
+				|| report.status() == FacilityReportStatus.UNDER_REVIEW) {
+				counts.merge(report.stationId(), 1L, Long::sum);
+			}
+		}
+		return Map.copyOf(counts);
+	}
+
+	@Override
 	public long countReportsCreatedSince(LocalDateTime cutoff) {
 		return reports.values()
 			.stream()

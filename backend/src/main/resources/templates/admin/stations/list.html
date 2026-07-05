@@ -17,49 +17,95 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>역 목록</h1>
-			<p>역을 검색하고 데이터 품질과 하위 데이터 개수를 비교합니다.</p>
+			<p>역을 검색·필터하고 미확인 제보와 데이터 품질을 비교합니다.</p>
 		</div>
-		<form class="admin-actions" th:action="@{/admin/stations/page}" method="get">
-			<input name="query" th:value="${query}" placeholder="역 이름 검색">
-			<button type="submit">검색</button>
-		</form>
 	</header>
 
-	<table>
-		<thead>
-		<tr>
-			<th scope="col">역</th>
-			<th scope="col">노선</th>
-			<th scope="col">지역</th>
-			<th scope="col">품질</th>
-			<th scope="col">출구 / 시설 / 자료</th>
-			<th scope="col">노드 / 간선</th>
-			<th scope="col">마지막 확인</th>
-			<th scope="col">작업</th>
-		</tr>
-		</thead>
-		<tbody>
-		<tr th:if="${stations.isEmpty()}">
-			<td colspan="8">검색된 역이 없습니다.</td>
-		</tr>
-		<tr th:each="station : ${stations}">
-			<td>
-				<strong th:text="${station.stationName}">상록수</strong>
-				<span class="meta" th:text="${station.stationId}">station-id</span>
-			</td>
-			<td th:text="${station.lineNames}">4호선</td>
-			<td th:text="${station.region}">수도권</td>
-			<td><span class="admin-status" th:text="${station.qualityLabel}">정보 확인 중</span></td>
-			<td th:text="|${station.exitCount} / ${station.facilityCount} / ${station.layoutSourceCount}|">0 / 0 / 0</td>
-			<td th:text="|${station.routeNodeCount} / ${station.routeEdgeCount}|">0 / 0</td>
-			<td th:text="${station.lastVerifiedAt}">2026-06-20</td>
-			<td>
-				<a class="admin-btn" th:href="@{/admin/stations/{stationId}/page(stationId=${station.stationId})}">상세</a>
-			</td>
-		</tr>
-		</tbody>
-	</table>
-	<div th:replace="~{admin/fragments/pagination :: pager('역 목록 페이지', ${page}, ${paginationLinks})}"></div>
+	<!--
+	  역 목록 표준 테이블(#1741): 검색·지역·노선·정렬 툴바 + 표 + 페이지네이션을 stationResults fragment로 묶는다.
+	  JS 있으면 htmx가 이 컨테이너만 교체하고 URL을 push, 없으면 form GET·링크가 전체 페이지로 동작한다.
+	-->
+	<div id="station-results" th:fragment="stationResults"
+	     hx-target="#station-results" hx-swap="outerHTML" hx-push-url="true">
+		<form class="table-toolbar" method="get" th:action="@{/admin/stations/page}"
+		      role="search" aria-label="역 검색"
+		      hx-target="#station-results" hx-swap="outerHTML" hx-push-url="true"
+		      th:attr="hx-get=@{/admin/stations/page}"
+		      hx-trigger="submit, change, keyup changed delay:300ms">
+			<input type="search" name="query" th:value="${query}"
+			       placeholder="역 이름 검색" aria-label="역 이름 검색" autocomplete="off">
+			<select name="region" aria-label="지역 필터">
+				<option th:each="opt : ${regionOptions}" th:value="${opt.value}"
+				        th:text="${opt.label}" th:selected="${opt.selected}">전체 지역</option>
+			</select>
+			<select name="lineId" aria-label="노선 필터">
+				<option th:each="opt : ${lineOptions}" th:value="${opt.value}"
+				        th:text="${opt.label}" th:selected="${opt.selected}">전체 노선</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${selectedSort == null}">역명순</option>
+				<option value="name_desc" th:selected="${selectedSort == 'name_desc'}">역명 역순</option>
+				<option value="pending" th:selected="${selectedSort == 'pending'}">미확인 제보 많은 순</option>
+			</select>
+			<button type="submit">검색</button>
+		</form>
+
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">역</th>
+				<th scope="col">노선</th>
+				<th scope="col">지역</th>
+				<th scope="col">미확인 제보</th>
+				<th scope="col">확인 필요 시설</th>
+				<th scope="col">품질</th>
+				<th scope="col">출구 / 시설 / 자료</th>
+				<th scope="col">노드 / 간선</th>
+				<th scope="col">마지막 확인</th>
+				<th scope="col">작업</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${stations.isEmpty()}">
+				<td colspan="10">
+					<div th:replace="~{admin/fragments/empty-state :: panel('검색된 역이 없습니다.', '검색어·지역·노선 필터를 조정해 보세요.')}"></div>
+				</td>
+			</tr>
+			<tr th:each="station : ${stations}">
+				<td>
+					<a th:href="@{/admin/stations/{stationId}/page(stationId=${station.stationId})}"
+					   th:text="${station.stationName}">상록수</a>
+				</td>
+				<td th:text="${station.lineNames}">4호선</td>
+				<td th:text="${station.region}">수도권</td>
+				<td>
+					<!-- 미확인 제보 뱃지: 대기(SUBMITTED+UNDER_REVIEW) 건수. 0이면 표시하지 않는다. -->
+					<a th:if="${station.pendingReportCount > 0}" class="count-badge"
+					   th:href="@{/admin/reports/page(station=${station.stationId})}"
+					   th:text="${station.pendingReportCount}"
+					   th:attr="aria-label=|${station.stationName} 미확인 제보 ${station.pendingReportCount}건|">0</a>
+					<span th:unless="${station.pendingReportCount > 0}" class="meta">0</span>
+				</td>
+				<td>
+					<!-- 확인 필요 시설 뱃지: 고장·공사·폐쇄·확인 필요·사용자 제보 시설 수. 클릭 시 역 필터 시설 상태판. -->
+					<a th:if="${station.attentionFacilityCount > 0}" class="count-badge is-warn"
+					   th:href="@{/admin/facilities/page(stationId=${station.stationId},sort='attention')}"
+					   th:text="${station.attentionFacilityCount}"
+					   th:attr="aria-label=|${station.stationName} 확인 필요 시설 ${station.attentionFacilityCount}개|">0</a>
+					<span th:unless="${station.attentionFacilityCount > 0}" class="meta">0</span>
+				</td>
+				<td><span class="admin-status" th:text="${station.qualityLabel}">정보 확인 중</span></td>
+				<td th:text="|${station.exitCount} / ${station.facilityCount} / ${station.layoutSourceCount}|">0 / 0 / 0</td>
+				<td th:text="|${station.routeNodeCount} / ${station.routeEdgeCount}|">0 / 0</td>
+				<td th:text="${station.lastVerifiedAt}">2026-06-20</td>
+				<td>
+					<a class="admin-btn" th:href="@{/admin/stations/{stationId}/page(stationId=${station.stationId})}">상세</a>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		<div th:replace="~{admin/fragments/pagination :: pager('역 목록 페이지', ${page}, ${paginationLinks})}"></div>
+	</div>
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>

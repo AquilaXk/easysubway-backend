@@ -678,6 +678,82 @@ body.admin-v3 {
 	font-size: 11px;
 }
 
+/* 역 상세 허브 탭(#1741) */
+.admin-v3 .hub-tabs {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 4px;
+	border-bottom: 1px solid var(--admin-border);
+	margin: 16px 0;
+}
+
+.admin-v3 .hub-tabs a {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	padding: 8px 14px;
+	border: 1px solid transparent;
+	border-bottom: none;
+	border-radius: 8px 8px 0 0;
+	color: var(--admin-ink-2);
+	text-decoration: none;
+	font-size: 14px;
+}
+
+.admin-v3 .hub-tabs a:hover {
+	background: var(--admin-surface-2, rgba(22, 48, 47, 0.05));
+}
+
+.admin-v3 .hub-tabs a.is-active {
+	border-color: var(--admin-border);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-weight: 600;
+	margin-bottom: -1px;
+}
+
+.admin-v3 .hub-tab-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	border-radius: 9px;
+	background: var(--admin-accent, #1f6f6a);
+	color: #fff;
+	font-size: 11px;
+	font-weight: 600;
+}
+
+.admin-v3 .hub-panel-head {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	flex-wrap: wrap;
+}
+
+/* 역 목록 카운트 뱃지(#1741): 미확인 제보·확인 필요 시설. 클릭 시 해당 필터 화면으로 이동 */
+.admin-v3 .count-badge {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	min-width: 22px;
+	height: 20px;
+	padding: 0 7px;
+	border-radius: 10px;
+	background: var(--admin-accent, #1f6f6a);
+	color: #fff;
+	font-size: 12px;
+	font-weight: 600;
+	text-decoration: none;
+}
+
+.admin-v3 .count-badge.is-warn {
+	background: var(--admin-warn, #b4690e);
+}
+
 .admin-v3 .bulk-actionbar {
 	position: sticky;
 	bottom: 0;

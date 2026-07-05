@@ -18,8 +18,6 @@
 		<div>
 			<h1 th:text="${station.stationName}">역 상세</h1>
 			<p>
-				<span th:text="${station.stationId}">station-id</span>
-				<span> · </span>
 				<span th:text="${station.region}">수도권</span>
 				<span> · </span>
 				<span th:text="${station.lineNames}">4호선</span>
@@ -31,112 +29,274 @@
 		</div>
 	</header>
 
-	<div class="metric-grid">
-		<div class="metric"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">정보 확인 중</strong></div>
-		<div class="metric"><span>접근성 시설</span><strong th:text="${facilities.size()}">0</strong></div>
-		<div class="metric"><span>구조 자료</span><strong th:text="${layoutSourceCount}">0</strong></div>
-		<div class="metric"><span>노드 / 간선</span><strong th:text="|${routeNodeCount} / ${routeEdgeCount}|">0 / 0</strong></div>
+	<!--
+	  역 상세 허브 탭(#1741): 개요·시설·제보 이력·현장 확인·구조·동선. 탭 네비와 패널을 한 fragment로 묶어
+	  htmx가 이 컨테이너만 outerHTML로 교체하고 URL(?tab=)을 push한다. no-JS는 링크가 전체 페이지 이동으로 동작.
+	-->
+	<div id="station-hub" th:fragment="tabPanel"
+	     hx-target="#station-hub" hx-swap="outerHTML" hx-push-url="true">
+		<nav class="hub-tabs" aria-label="역 상세 탭">
+			<a th:each="t : ${tabs}"
+			   th:href="${t.href}"
+			   th:attr="hx-get=${t.href},aria-current=${t.active ? 'page' : null}"
+			   th:classappend="${t.active} ? ' is-active'">
+				<span th:text="${t.label}">개요</span>
+				<span class="hub-tab-badge" th:if="${t.hasBadge()}" th:text="${t.badge}">0</span>
+			</a>
+		</nav>
+
+		<div class="hub-panel">
+			<!-- 개요 -->
+			<th:block th:if="${activeTab == 'overview'}">
+				<div class="metric-grid">
+					<div class="metric"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">정보 확인 중</strong></div>
+					<div class="metric"><span>접근성 시설</span><strong th:text="${facilityCount}">0</strong></div>
+					<div class="metric"><span>구조 자료</span><strong th:text="${layoutSourceCount}">0</strong></div>
+					<div class="metric"><span>노드 / 간선</span><strong th:text="|${routeNodeCount} / ${routeEdgeCount}|">0 / 0</strong></div>
+				</div>
+
+				<section class="admin-panel">
+					<h2>역 주요 정보</h2>
+					<table>
+						<tbody>
+						<tr><th scope="row">한글 역명</th><td th:text="${station.stationName}">상록수</td></tr>
+						<tr><th scope="row">지역</th><td th:text="${station.region}">수도권</td></tr>
+						<tr><th scope="row">위도</th><td th:text="${station.latitude}">0</td></tr>
+						<tr><th scope="row">경도</th><td th:text="${station.longitude}">0</td></tr>
+						<tr><th scope="row">출처 유형</th><td th:text="${station.sourceType}">OPERATOR</td></tr>
+						<tr><th scope="row">마지막 확인</th><td th:text="${station.lastVerifiedAt}">2026-06-20</td></tr>
+						</tbody>
+					</table>
+				</section>
+
+				<section th:if="${stationReleaseSummary != null}">
+					<h2>Release readiness</h2>
+					<p class="summary" th:text="|${station.stationName}역 release blocker|">상록수역 release blocker</p>
+					<p class="summary">
+						<strong th:text="|${stationReleaseSummary.status} ${stationReleaseSummary.totalBlockers}건|">확인 필요 0건</strong>
+					</p>
+					<table>
+						<thead>
+						<tr>
+							<th scope="col">항목</th>
+							<th scope="col">상태</th>
+							<th scope="col">blocker</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${stationReleaseSummary.rows}">
+							<td th:text="${row.label}">Facility evidence</td>
+							<td><span th:replace="~{admin/fragments/shell :: statusAuto(${row.status})}">확인 필요</span></td>
+							<td th:text="${row.blockerCount}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</section>
+			</th:block>
+
+			<!-- 시설 -->
+			<th:block th:if="${activeTab == 'facilities'}">
+				<section>
+					<h2>출구</h2>
+					<table th:if="${!exits.isEmpty()}">
+						<thead>
+						<tr>
+							<th scope="col">출구</th>
+							<th scope="col">이름</th>
+							<th scope="col">엘리베이터</th>
+							<th scope="col">계단 경로</th>
+							<th scope="col">확인 상태</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="exit : ${exits}">
+							<td th:text="${exit.exitNumber}">1</td>
+							<td th:text="${exit.name}">1번 출구</td>
+							<td th:text="${exit.elevatorLabel}">엘리베이터 연결</td>
+							<td th:text="${exit.stairOnlyLabel}">계단 전용 아님</td>
+							<td th:text="${exit.confidenceLabel}">높음</td>
+						</tr>
+						</tbody>
+					</table>
+					<p th:if="${exits.isEmpty()}">등록된 출구가 없습니다.</p>
+				</section>
+
+				<section>
+					<h2>접근성 시설</h2>
+					<table th:if="${!facilities.isEmpty()}">
+						<thead>
+						<tr>
+							<th scope="col">시설</th>
+							<th scope="col">위치</th>
+							<th scope="col">상태</th>
+							<th scope="col">확인 상태</th>
+							<th scope="col">작업</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="facility : ${facilities}">
+							<td>
+								<strong th:text="${facility.facilityName}">엘리베이터</strong>
+								<span class="meta" th:text="${facility.typeLabel}">ELEVATOR</span>
+							</td>
+							<td th:text="${facility.floorLabel}">B1 → 지상</td>
+							<td th:text="${facility.statusLabel}">정상</td>
+							<td th:text="${facility.confidenceLabel}">높음</td>
+							<td>
+								<a class="admin-btn"
+								   th:href="@{/admin/facilities/editor/page(stationId=${station.stationId},facilityId=${facility.facilityId})}">수정</a>
+							</td>
+						</tr>
+						</tbody>
+					</table>
+					<div th:if="${facilities.isEmpty()}"
+					     th:replace="~{admin/fragments/empty-state :: panel('등록된 접근성 시설이 없습니다.', '구조·동선 편집에서 시설을 추가하세요.')}"></div>
+				</section>
+			</th:block>
+
+			<!-- 제보 이력 -->
+			<th:block th:if="${activeTab == 'reports'}">
+				<section>
+					<div class="hub-panel-head">
+						<h2>제보 이력</h2>
+						<a class="admin-btn" th:href="@{${stationReportsHref}}">전체 제보 보기</a>
+					</div>
+					<table th:if="${!stationReports.isEmpty()}">
+						<thead>
+						<tr>
+							<th scope="col">상태</th>
+							<th scope="col">유형</th>
+							<th scope="col">시설</th>
+							<th scope="col">사진</th>
+							<th scope="col">접수일</th>
+							<th scope="col">상세</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="report : ${stationReports}">
+							<td><span th:replace="~{admin/fragments/shell :: statusAuto(${report.statusLabel})}">접수됨</span></td>
+							<td th:text="${report.typeLabel}">고장</td>
+							<td th:text="${report.facilityLabel}">엘리베이터(코드)</td>
+							<td th:text="${report.hasPhoto ? '있음' : '없음'}">없음</td>
+							<td th:text="${#temporals.format(report.createdAt, 'yyyy-MM-dd HH:mm')}">2026-06-17 09:00</td>
+							<td><a th:href="@{${report.href}}">상세 보기</a></td>
+						</tr>
+						</tbody>
+					</table>
+					<div th:if="${stationReports.isEmpty()}"
+					     th:replace="~{admin/fragments/empty-state :: panel('이 역의 제보가 없습니다.', '접수되면 여기와 제보 대기열에 함께 표시됩니다.')}"></div>
+				</section>
+			</th:block>
+
+			<!-- 현장 확인 -->
+			<th:block th:if="${activeTab == 'field'}">
+				<section>
+					<div class="hub-panel-head">
+						<h2>현장 확인</h2>
+						<a class="admin-btn" th:href="@{${fieldVerificationHref}}">현장 확인 화면</a>
+					</div>
+					<div th:if="${fieldSession == null}"
+					     th:replace="~{admin/fragments/empty-state :: panel('현장 확인 세션이 없습니다.', '현장 확인 화면에서 확인 일정을 등록하세요.')}"></div>
+					<div th:if="${fieldSession != null}">
+						<table>
+							<tbody>
+							<tr><th scope="row">확인 상태</th><td th:text="${fieldSession.statusLabel}">확인 완료</td></tr>
+							<tr><th scope="row">확인일</th><td th:text="${fieldSession.verifiedAt}">2026-06-20</td></tr>
+							<tr><th scope="row">확인자</th><td th:text="${fieldSession.verifiedBy}">operator</td></tr>
+							<tr><th scope="row">확인 항목</th><td th:text="|${fieldSession.itemCount}개|">0개</td></tr>
+							<tr th:if="${fieldSession.note != null}"><th scope="row">메모</th><td th:text="${fieldSession.note}">-</td></tr>
+							</tbody>
+						</table>
+						<h3>최근 상태 변경</h3>
+						<table th:if="${!fieldHistory.isEmpty()}">
+							<thead>
+							<tr>
+								<th scope="col">항목</th>
+								<th scope="col">이전</th>
+								<th scope="col">이후</th>
+								<th scope="col">변경자</th>
+								<th scope="col">변경일</th>
+							</tr>
+							</thead>
+							<tbody>
+							<tr th:each="change : ${fieldHistory}">
+								<td th:text="${change.itemId}">항목</td>
+								<td th:text="${change.previousStatusLabel}">예정</td>
+								<td th:text="${change.newStatusLabel}">확인 완료</td>
+								<td th:text="${change.changedBy}">operator</td>
+								<td th:text="${#temporals.format(change.changedAt, 'yyyy-MM-dd HH:mm')}">2026-06-20 10:00</td>
+							</tr>
+							</tbody>
+						</table>
+						<p th:if="${fieldHistory.isEmpty()}">상태 변경 이력이 없습니다.</p>
+					</div>
+				</section>
+			</th:block>
+
+			<!-- 구조·동선 -->
+			<th:block th:if="${activeTab == 'structure'}">
+				<section>
+					<div class="hub-panel-head">
+						<h2>구조·동선</h2>
+						<a class="admin-btn" th:href="@{${layoutEditorHref}}">구조·동선 편집</a>
+					</div>
+					<h3>구조 자료</h3>
+					<table th:if="${!layoutSources.isEmpty()}">
+						<thead>
+						<tr>
+							<th scope="col">자료명</th>
+							<th scope="col">출처 유형</th>
+							<th scope="col">라이선스</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="source : ${layoutSources}">
+							<td th:text="${source.sourceName}">자료</td>
+							<td th:text="${source.sourceType}">OPERATOR</td>
+							<td th:text="${source.license}">-</td>
+						</tr>
+						</tbody>
+					</table>
+					<p th:if="${layoutSources.isEmpty()}">등록된 구조 자료가 없습니다.</p>
+
+					<h3>동선 노드 / 간선</h3>
+					<table th:if="${!routeNodes.isEmpty()}">
+						<thead>
+						<tr>
+							<th scope="col">노드</th>
+							<th scope="col">유형</th>
+							<th scope="col">층</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="node : ${routeNodes}">
+							<td th:text="${node.nodeName}">노드</td>
+							<td th:text="${node.nodeType}">PLATFORM</td>
+							<td th:text="${node.floor}">B1</td>
+						</tr>
+						</tbody>
+					</table>
+					<p th:if="${routeNodes.isEmpty()}">등록된 동선 노드가 없습니다.</p>
+					<table th:if="${!routeEdges.isEmpty()}">
+						<thead>
+						<tr>
+							<th scope="col">간선</th>
+							<th scope="col">유형</th>
+							<th scope="col">신뢰도</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="edge : ${routeEdges}">
+							<td th:text="${edge.edgeName}">노드 → 노드</td>
+							<td th:text="${edge.edgeType}">WALK</td>
+							<td th:text="${edge.confidenceScore}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</section>
+			</th:block>
+		</div>
 	</div>
-
-	<div class="admin-grid-2">
-		<section class="admin-panel">
-				<h2>역 주요 정보</h2>
-			<table>
-				<tbody>
-				<tr><th scope="row">한글 역명</th><td th:text="${station.stationName}">상록수</td></tr>
-				<tr><th scope="row">지역</th><td th:text="${station.region}">수도권</td></tr>
-				<tr><th scope="row">위도</th><td th:text="${station.latitude}">0</td></tr>
-				<tr><th scope="row">경도</th><td th:text="${station.longitude}">0</td></tr>
-				<tr><th scope="row">출처 유형</th><td th:text="${station.sourceType}">OPERATOR</td></tr>
-				<tr><th scope="row">마지막 확인</th><td th:text="${station.lastVerifiedAt}">2026-06-20</td></tr>
-				</tbody>
-			</table>
-		</section>
-
-		<section class="admin-panel">
-			<h2>사용자 화면 미리보기</h2>
-			<p class="summary">현재 시설 상태와 확인일을 사용자가 읽을 수 있는 형태로 확인합니다.</p>
-			<div class="admin-status warn" th:if="${!facilities.isEmpty()}" th:text="|시설 ${facilities.size()}개 연결됨|">시설 0개</div>
-		</section>
-	</div>
-
-	<section th:if="${stationReleaseSummary != null}">
-		<h2>Release readiness</h2>
-		<p class="summary" th:text="|${station.stationName}역 release blocker|">상록수역 release blocker</p>
-		<p class="summary">
-			<strong th:text="|${stationReleaseSummary.status} ${stationReleaseSummary.totalBlockers}건|">확인 필요 0건</strong>
-		</p>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">항목</th>
-				<th scope="col">상태</th>
-				<th scope="col">blocker</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="row : ${stationReleaseSummary.rows}">
-				<td th:text="${row.label}">Facility evidence</td>
-				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${row.status})}">확인 필요</span></td>
-				<td th:text="${row.blockerCount}">0</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
-
-	<section>
-		<h2>출구</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">출구</th>
-				<th scope="col">이름</th>
-				<th scope="col">엘리베이터</th>
-				<th scope="col">계단 경로</th>
-					<th scope="col">확인 상태</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="exit : ${exits}">
-				<td th:text="${exit.exitNumber}">1</td>
-				<td th:text="${exit.name}">1번 출구</td>
-				<td th:text="${exit.elevatorLabel}">엘리베이터 연결</td>
-				<td th:text="${exit.stairOnlyLabel}">계단 전용 아님</td>
-				<td th:text="${exit.confidenceLabel}">높음</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
-
-	<section>
-		<h2>접근성 시설</h2>
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">시설</th>
-				<th scope="col">위치</th>
-				<th scope="col">상태</th>
-					<th scope="col">확인 상태</th>
-				<th scope="col">수정</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:each="facility : ${facilities}">
-				<td>
-					<strong th:text="${facility.facilityName}">엘리베이터</strong>
-					<span class="meta" th:text="${facility.typeLabel}">ELEVATOR</span>
-				</td>
-				<td th:text="${facility.floorLabel}">B1 → 지상</td>
-				<td th:text="${facility.statusLabel}">정상</td>
-				<td th:text="${facility.confidenceLabel}">높음</td>
-				<td>
-					<a class="admin-btn"
-					   th:href="@{/admin/facilities/editor/page(stationId=${station.stationId},facilityId=${facility.facilityId})}">수정</a>
-				</td>
-			</tr>
-			</tbody>
-		</table>
-	</section>
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>

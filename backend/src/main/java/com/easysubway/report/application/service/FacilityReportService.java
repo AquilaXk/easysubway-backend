@@ -615,6 +615,11 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	@Override
+	public Map<String, Long> countPendingReportsByStation() {
+		return loadFacilityReportPort.countPendingReportsByStation();
+	}
+
+	@Override
 	@Transactional
 	public FacilityReport reviewReport(ReviewFacilityReportCommand command) {
 		requireReviewDecision(command);

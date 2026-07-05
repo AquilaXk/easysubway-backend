@@ -520,6 +520,46 @@ class JdbcFacilityReportRepositoryTest {
 			.containsExactly("c", "b");
 	}
 
+	@Test
+	@DisplayName("대기 제보 집계는 역별로 SUBMITTED·UNDER_REVIEW만 센다")
+	void countPendingReportsByStationCountsOnlyPendingStatuses() {
+		repository.saveReport(reportAtFacilityStatus("a", "station-a", "facility-1", FacilityReportStatus.SUBMITTED));
+		repository.saveReport(reportAtFacilityStatus("b", "station-a", "facility-2", FacilityReportStatus.UNDER_REVIEW));
+		repository.saveReport(reportAtFacilityStatus("c", "station-a", "facility-1", FacilityReportStatus.ACCEPTED));
+		repository.saveReport(reportAtFacilityStatus("d", "station-b", "facility-1", FacilityReportStatus.SUBMITTED));
+
+		assertThat(repository.countPendingReportsByStation())
+			.hasSize(2)
+			.containsEntry("station-a", 2L)
+			.containsEntry("station-b", 1L);
+	}
+
+	private FacilityReport reportAtFacilityStatus(
+		String reportId,
+		String stationId,
+		String facilityId,
+		FacilityReportStatus status
+	) {
+		return new FacilityReport(
+			reportId,
+			"anonymous-user-1",
+			stationId,
+			facilityId,
+			FacilityReportType.BROKEN,
+			"신고 내용",
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			status,
+			LocalDateTime.of(2026, 6, 17, 9, 0),
+			null,
+			null
+		);
+	}
+
 	private FacilityReport reportAtFacility(
 		String reportId,
 		String stationId,

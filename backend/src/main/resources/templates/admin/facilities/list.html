@@ -34,56 +34,100 @@
 	</div>
 	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
-	<p class="empty" th:if="${facilities.isEmpty()}">등록된 시설이 없습니다.</p>
-	<table th:if="${!facilities.isEmpty()}">
-		<thead>
-		<tr>
-			<th scope="col">시설</th>
-			<th scope="col">역</th>
-			<th scope="col">현재 상태</th>
+	<!--
+	  시설 상태판 표준 테이블(#1741): 검색·유형·상태·역 필터 툴바 + 표 + 페이지네이션을 facilityResults로 묶는다.
+	  JS 있으면 htmx가 이 컨테이너만 교체하고 URL을 push, 없으면 form GET·링크가 전체 페이지로 동작한다.
+	-->
+	<div id="facility-results" th:fragment="facilityResults"
+	     hx-target="#facility-results" hx-swap="outerHTML" hx-push-url="true">
+		<form class="table-toolbar" method="get" th:action="@{/admin/facilities/page}"
+		      role="search" aria-label="시설 검색"
+		      hx-target="#facility-results" hx-swap="outerHTML" hx-push-url="true"
+		      th:attr="hx-get=@{/admin/facilities/page}"
+		      hx-trigger="submit, change, keyup changed delay:300ms">
+			<input type="search" name="query" th:value="${searchKeyword}"
+			       placeholder="시설·역 이름 검색" aria-label="시설·역 이름 검색" autocomplete="off">
+			<select name="type" aria-label="유형 필터">
+				<option th:each="opt : ${typeOptions}" th:value="${opt.value}"
+				        th:text="${opt.label}" th:selected="${opt.selected}">전체 유형</option>
+			</select>
+			<select name="status" aria-label="상태 필터">
+				<option value="" th:selected="${selectedStatus == null}">전체 상태</option>
+				<option th:each="option : ${statusOptions}" th:value="${option.value}"
+				        th:text="${option.label}" th:selected="${option.value == selectedStatus}">정상</option>
+			</select>
+			<select name="stationId" aria-label="역 필터">
+				<option th:each="opt : ${stationFilterOptions}" th:value="${opt.value}"
+				        th:text="${opt.label}" th:selected="${opt.selected}">전체 역</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${selectedSort == null}">역명순</option>
+				<option value="attention" th:selected="${selectedSort == 'attention'}">확인 필요 먼저</option>
+				<option value="updated" th:selected="${selectedSort == 'updated'}">갱신일 최신순</option>
+			</select>
+			<button type="submit">검색</button>
+		</form>
+
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">시설</th>
+				<th scope="col">역</th>
+				<th scope="col">현재 상태</th>
 				<th scope="col">확인 상태</th>
-			<th scope="col">갱신일</th>
-			<th scope="col">상태 변경</th>
-		</tr>
-		</thead>
-		<tbody>
-		<tr th:each="facility : ${facilities}">
-			<td>
-				<span th:text="${facility.facilityName}">1번 출구 엘리베이터</span>
-				<span class="meta" th:text="${facility.typeLabel}">엘리베이터</span>
-				<span class="meta" th:text="${facility.facilityId}">facility-id</span>
-			</td>
-			<td>
-				<span th:text="${facility.stationName}">상록수</span>
-				<span class="meta" th:text="${facility.stationId}">station-id</span>
-			</td>
-			<td><span th:replace="~{admin/fragments/shell :: statusAuto(${facility.statusLabel})}">정상</span></td>
-			<td>
-				<span th:text="${facility.confidenceLabel}">최근 확인된 정보</span>
-				<span class="meta" th:text="${facility.sourceLabel}">공식 안내</span>
-			</td>
-			<td th:text="${facility.lastUpdatedAt}">2026-06-12</td>
-			<td>
-				<form th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
-				      method="post">
-					<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-					<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-					<label>
-						<span class="meta">변경할 상태</span>
-						<select name="status">
-							<option th:each="option : ${statusOptions}"
-							        th:value="${option.value}"
-							        th:selected="${option.value == facility.status}"
-							        th:text="${option.label}">정상</option>
-						</select>
-					</label>
-					<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
-				</form>
-			</td>
-		</tr>
-		</tbody>
-	</table>
-	<div th:replace="~{admin/fragments/pagination :: pager('시설 상태 목록 페이지', ${page}, ${paginationLinks})}"></div>
+				<th scope="col">갱신일</th>
+				<th scope="col">제보</th>
+				<th scope="col">상태 변경</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${facilities.isEmpty()}">
+				<td colspan="7">
+					<div th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 시설이 없습니다.', '검색어·유형·상태·역 필터를 조정해 보세요.')}"></div>
+				</td>
+			</tr>
+			<tr th:each="facility : ${facilities}">
+				<td>
+					<span th:text="${facility.facilityName}">1번 출구 엘리베이터</span>
+					<span class="meta" th:text="${facility.typeLabel}">엘리베이터</span>
+				</td>
+				<td>
+					<a th:href="@{/admin/stations/{stationId}/page(stationId=${facility.stationId},tab='facilities')}"
+					   th:text="${facility.stationName}">상록수</a>
+				</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${facility.statusLabel})}">정상</span></td>
+				<td>
+					<span th:text="${facility.confidenceLabel}">최근 확인된 정보</span>
+					<span class="meta" th:text="${facility.sourceLabel}">공식 안내</span>
+				</td>
+				<td th:text="${facility.lastUpdatedAt}">2026-06-12</td>
+				<td>
+					<!-- 관련 제보: 이 시설의 역으로 필터된 제보 대기열(#1740)로 이동한다. -->
+					<a th:href="@{/admin/reports/page(station=${facility.stationId})}"
+					   th:attr="aria-label=|${facility.stationName} 제보 보기|">제보 보기</a>
+				</td>
+				<td>
+					<form th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
+					      method="post">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<label>
+							<span class="meta">변경할 상태</span>
+							<select name="status">
+								<option th:each="option : ${statusOptions}"
+								        th:value="${option.value}"
+								        th:selected="${option.value == facility.status}"
+								        th:text="${option.label}">정상</option>
+							</select>
+						</label>
+						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
+					</form>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+		<div th:replace="~{admin/fragments/pagination :: pager('시설 상태 목록 페이지', ${page}, ${paginationLinks})}"></div>
+	</div>
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>

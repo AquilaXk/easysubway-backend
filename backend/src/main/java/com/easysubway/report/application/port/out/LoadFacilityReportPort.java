@@ -45,4 +45,10 @@ public interface LoadFacilityReportPort {
 	 * 목록이 폭주하지 않도록 limit로 상한을 둔다. 호출부에서 현재 신고는 제외한다.
 	 */
 	List<FacilityReportSummary> loadReportsForFacility(String stationId, String facilityId, int limit);
+
+	/**
+	 * 대기 상태(SUBMITTED·UNDER_REVIEW) 제보 수를 역 단위로 집계한다(역 목록 "미확인 제보" 뱃지용).
+	 * 단일 GROUP BY 집계라 역별 N+1 조회를 피한다. 대기 제보가 없는 역은 결과에 담기지 않는다.
+	 */
+	Map<String, Long> countPendingReportsByStation();
 }

@@ -283,6 +283,15 @@ public class TransitMasterService implements TransitMasterQueryUseCase, TransitM
 	}
 
 	@Override
+	public Map<String, Long> countAttentionFacilitiesByStation() {
+		// 시설 전체를 한 번만 벌크 로드해 역 단위로 집계한다(역별 재조회 N+1 회피, countStationMasterData…와 같은 패턴).
+		return loadTransitMasterPort.loadAccessibilityFacilities()
+			.stream()
+			.filter(facility -> facility.status().needsAttention())
+			.collect(Collectors.groupingBy(AccessibilityFacility::stationId, Collectors.counting()));
+	}
+
+	@Override
 	public StationWithLines getStation(String stationId) {
 		return withLines(loadActiveStation(stationId));
 	}
