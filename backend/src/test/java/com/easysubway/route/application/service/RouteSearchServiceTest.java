@@ -1393,6 +1393,43 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 calendar exception 추가일의 임시 시간표를 탐색한다")
+	void routeV2PlannerAddsCalendarDateExceptionService() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), addedCalendarDateRouteTimetablePort(
+			LocalDate.parse("2026-07-01")
+		));
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries()).hasSize(1);
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 다음 운행 시각 계산에도 calendar exception 추가일을 반영한다")
+	void routeV2PlannerUsesAddedCalendarDateForNextServiceTime() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), addedCalendarDateRouteTimetablePort(
+			LocalDate.parse("2026-07-02")
+		));
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T23:55:00+09:00"),
+			MobilityType.SENIOR,
+			ConstraintMode.PREFER_STEP_FREE,
+			false,
+			1,
+			3
+		));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
+		assertThat(plan.itineraries()).isEmpty();
+		assertThat(plan.nextServiceTime()).isEqualTo(OffsetDateTime.parse("2026-07-02T09:07:00+09:00"));
+	}
+
+	@Test
 	@DisplayName("V2 planner는 pickup/drop-off 제한 stop_times를 승하차 후보에서 제외한다")
 	void routeV2PlannerHonorsPickupAndDropOffRestrictions() {
 		var noPickupPlanner = new RouteV2Planner(legacySearchMustNotBeCalled(), restrictedStopRouteTimetablePort(1, 0));
@@ -2818,6 +2855,35 @@ class RouteSearchServiceTest {
 				timetable.transitFrequencies()
 			);
 		};
+	}
+
+	private static LoadRouteTimetablePort addedCalendarDateRouteTimetablePort(LocalDate serviceDate) {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(),
+			List.of(new LoadRouteTimetablePort.ServiceCalendarDate("special-2026", serviceDate, 1)),
+			List.of(new LoadRouteTimetablePort.TransitRoute(
+				"route-seoul-4-special",
+				"seoul-4",
+				"4",
+				"수도권 4호선 임시",
+				"사당 방면",
+				"Asia/Seoul"
+			)),
+			List.of(new LoadRouteTimetablePort.TransitTrip(
+				"trip-seoul-4-special-0907",
+				"route-seoul-4-special",
+				"special-2026",
+				"사당",
+				"0",
+				"LOCAL",
+				0
+			)),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-special-0907", 1, "station-a", "seoul-4", 32820, 32820, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-special-0907", 2, "station-b", "seoul-4", 33420, 33420, 0, 0)
+			),
+			List.of()
+		);
 	}
 
 	private static LoadRouteTimetablePort restrictedStopRouteTimetablePort(int pickupType, int dropOffType) {
