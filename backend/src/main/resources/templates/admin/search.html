@@ -1,0 +1,57 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>통합 검색</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>통합 검색</h1>
+			<p>메뉴·역·시설·제보·장애·데이터팩을 한 곳에서 찾습니다. 권한이 없는 항목은 결과에서 제외됩니다.</p>
+		</div>
+	</header>
+
+	<!-- no-JS: form GET으로 결과 페이지 갱신. JS: 300ms debounce htmx로 #search-results만 갱신. -->
+	<form class="table-toolbar" method="get" th:action="@{/admin/search}"
+	      role="search" aria-label="통합 검색"
+	      hx-target="#search-results" hx-swap="innerHTML" hx-push-url="true"
+	      th:attr="hx-get=@{/admin/search}" hx-trigger="submit, keyup changed delay:300ms">
+		<input type="search" name="q" th:value="${query}"
+		       placeholder="메뉴·역·제보 검색" aria-label="검색어" autocomplete="off">
+		<button type="submit">검색</button>
+	</form>
+
+	<div id="search-results">
+		<div th:fragment="results">
+			<div th:if="${query != null and !query.isEmpty() and resultGroups.isEmpty()}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('검색 결과가 없습니다.', '다른 검색어로 시도해 보세요.')}"></div>
+			</div>
+			<section th:each="group : ${resultGroups}" class="search-group">
+				<h2 th:text="${group.label}">메뉴</h2>
+				<ul class="search-hits">
+					<li th:each="hit : ${group.hits}">
+						<a th:href="${hit.href}">
+							<span th:text="${hit.label}">이름</span>
+							<small th:text="${hit.sublabel}" th:if="${hit.sublabel != null and !hit.sublabel.isEmpty()}">보조</small>
+						</a>
+					</li>
+				</ul>
+			</section>
+		</div>
+	</div>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: toastRegion}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

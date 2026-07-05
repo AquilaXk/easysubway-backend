@@ -9,7 +9,33 @@
 // 진화형 향상(progressive enhancement) 원칙:
 //   - JS가 꺼져도 화면은 온전히 동작한다. 여기 등록되는 컴포넌트는 "이미 동작하는 화면에
 //     선택적 편의"만 얹는다(예: 이미 보이는 알림을 닫는 버튼).
+// JS 사용 가능 표식: 반응형 사이드바 오프캔버스는 JS가 있을 때만 켠다(no-JS는 스택 표시).
+// app.js는 defer라 이 시점에 document.body가 존재한다.
+document.body.classList.add('has-js');
+
 document.addEventListener('alpine:init', function () {
+	// 반응형 사이드바 토글(#1738): ≤1024px에서 사이드바를 오프캔버스로 여닫는다.
+	// 사이드바 표시는 body.sidebar-open 클래스가, 백드롭은 open 프로퍼티(x-show)가 함께 반영한다.
+	// 메뉴 링크로 이동하면 페이지가 새로 로드되며 자연히 닫힌다. CSP 빌드: 메서드·게터 이름만 쓴다.
+	Alpine.data('sidebarToggle', function () {
+		return {
+			open: false,
+			get ariaExpanded() {
+				return this.open ? 'true' : 'false';
+			},
+			setOpen: function (value) {
+				this.open = value;
+				document.body.classList.toggle('sidebar-open', value);
+			},
+			toggle: function () {
+				this.setOpen(!this.open);
+			},
+			close: function () {
+				this.setOpen(false);
+			},
+		};
+	});
+
 	// 관리자 플래시/토스트 알림: JS가 있으면 닫기 버튼으로 사라진다. 없으면 그대로 표시된다.
 	Alpine.data('dismissibleAlert', function () {
 		return {
@@ -43,6 +69,54 @@ document.addEventListener('alpine:init', function () {
 		};
 	});
 
+	// 커맨드 팔레트(#1738): Cmd/Ctrl+K로 열고, 검색 입력을 htmx로 /admin/search에 debounce 조회한다.
+	// Esc·백드롭으로 닫고, 열릴 때 입력에 포커스. 방향키로 결과 링크 사이를 이동한다.
+	// 진화형 향상 — JS가 없으면 topbar 검색 버튼이 /admin/search 전용 페이지로 이동한다(no-JS 대체).
+	Alpine.data('commandPalette', function () {
+		return {
+			open: false,
+			show: function () {
+				this.open = true;
+				var input = this.$refs.input;
+				this.$nextTick(function () {
+					if (input) {
+						input.focus();
+					}
+				});
+			},
+			hide: function () {
+				this.open = false;
+			},
+			// 입력에서 아래 방향키 → 첫 결과 링크로 포커스 이동.
+			focusResults: function () {
+				var first = this.$root.querySelector('#palette-results a');
+				if (first) {
+					first.focus();
+				}
+			},
+			// 결과 링크에서 위/아래 방향키 → 인접 링크로 포커스 이동(CSP 빌드용 인자 없는 래퍼).
+			moveDown: function (event) {
+				this.moveFocus(event, 1);
+			},
+			moveUp: function (event) {
+				this.moveFocus(event, -1);
+			},
+			moveFocus: function (event, delta) {
+				var links = Array.prototype.slice.call(this.$root.querySelectorAll('#palette-results a'));
+				var index = links.indexOf(event.target);
+				var next = links[index + delta];
+				if (next) {
+					next.focus();
+				} else if (delta < 0) {
+					var input = this.$refs.input;
+					if (input) {
+						input.focus();
+					}
+				}
+			},
+		};
+	});
+
 	// 드로어(사이드 패널): htmx가 상세 fragment를 로드하고 HX-Trigger로 admin-drawer-open을 쏘면 열린다.
 	// Esc·백드롭 클릭·닫기 버튼으로 닫고, 열릴 때 패널로 포커스를 옮긴다(접근성).
 	// 진화형 향상 — JS가 없으면 상세 링크가 상세 페이지로 이동한다(no-JS 대체).
@@ -65,6 +139,68 @@ document.addEventListener('alpine:init', function () {
 			},
 			close: function () {
 				this.visible = false;
+			},
+		};
+	});
+
+	// 알림 센터(#1738): topbar 벨. 60초마다 /admin/alerts를 htmx로 폴링해 #admin-alert-live를 갱신한다.
+	// 탭이 비활성(document.hidden)이면 폴링을 멈추고, 다시 활성화되면 즉시 갱신 후 재개한다(query budget 보호).
+	// 벨 클릭으로 요약 패널을 여닫는다(열림 상태는 .admin-alert-center.is-open 클래스로 CSS가 표시).
+	// 진화형 향상 — JS가 없으면 벨이 /admin/alerts 전용 페이지로 이동한다(no-JS 대체).
+	// CSP 빌드 규약: x-on/x-bind에는 메서드·프로퍼티(게터) 이름만 쓴다.
+	Alpine.data('alertCenter', function () {
+		return {
+			open: false,
+			timer: null,
+			get rootClass() {
+				return this.open ? 'is-open' : '';
+			},
+			get ariaExpanded() {
+				return this.open ? 'true' : 'false';
+			},
+			init: function () {
+				var self = this;
+				this.refresh();
+				this.start();
+				document.addEventListener('visibilitychange', function () {
+					if (document.hidden) {
+						self.stop();
+					} else {
+						self.refresh();
+						self.start();
+					}
+				});
+			},
+			start: function () {
+				if (this.timer) {
+					return;
+				}
+				var self = this;
+				this.timer = setInterval(function () {
+					if (!document.hidden) {
+						self.refresh();
+					}
+				}, 60000);
+			},
+			stop: function () {
+				if (this.timer) {
+					clearInterval(this.timer);
+					this.timer = null;
+				}
+			},
+			refresh: function () {
+				if (window.htmx) {
+					window.htmx.ajax('GET', '/admin/alerts', {
+						target: '#admin-alert-live',
+						swap: 'innerHTML',
+					});
+				}
+			},
+			toggle: function () {
+				this.open = !this.open;
+			},
+			hide: function () {
+				this.open = false;
 			},
 		};
 	});

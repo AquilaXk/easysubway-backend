@@ -1165,11 +1165,12 @@ body.admin-v3 {
 	background: var(--admin-danger);
 }
 
-@media (max-width: 900px) {
+@media (max-width: 1024px) {
 	.admin-shell {
 		grid-template-columns: 1fr;
 	}
 
+	/* no-JS 기본: 사이드바가 본문 위에 스택으로 보인다(전 기능 접근 가능). */
 	.admin-sidebar {
 		position: static;
 		min-height: auto;
@@ -1189,4 +1190,318 @@ body.admin-v3 {
 	.admin-page-head {
 		display: block;
 	}
+
+	.admin-sidebar-toggle {
+		display: inline-flex;
+	}
+
+	/* JS 있으면 오프캔버스: 사이드바를 화면 밖에 두고 토글로 연다(body.sidebar-open). */
+	.has-js .admin-sidebar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		bottom: 0;
+		width: min(280px, 82vw);
+		min-height: 100vh;
+		max-height: none;
+		overflow-y: auto;
+		transform: translateX(-100%);
+		transition: transform 0.2s ease;
+		z-index: 90;
+		box-shadow: 0 0 40px rgba(22, 48, 47, 0.35);
+	}
+
+	.has-js.sidebar-open .admin-sidebar {
+		transform: translateX(0);
+	}
+
+	.admin-sidebar-backdrop {
+		position: fixed;
+		inset: 0;
+		z-index: 80;
+		background: rgba(22, 48, 47, 0.4);
+	}
+}
+
+/* ≤768px: 표준 테이블 밀도를 좁힌다(가로 스크롤은 table min-width + section overflow-x가 담당). */
+@media (max-width: 768px) {
+	.admin-v3 th,
+	.admin-v3 td {
+		padding: 8px 10px;
+		font-size: 13px;
+	}
+}
+
+/* 통합 검색 결과(#1738) */
+.admin-v3 .search-group {
+	margin-top: 8px;
+}
+
+.admin-v3 .search-group h2 {
+	font-size: 13px;
+	color: var(--admin-ink-2);
+	margin: 12px 0 6px;
+}
+
+.admin-v3 .search-hits {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+}
+
+.admin-v3 .search-hits a {
+	display: flex;
+	align-items: baseline;
+	gap: 10px;
+	padding: 8px 10px;
+	border-radius: 6px;
+	text-decoration: none;
+	color: var(--admin-ink);
+}
+
+.admin-v3 .search-hits a:hover,
+.admin-v3 .search-hits a:focus-visible {
+	background: var(--admin-header-bg);
+}
+
+.admin-v3 .search-hits small {
+	color: var(--admin-ink-2);
+	font-size: 12px;
+}
+
+/* breadcrumb(#1738) */
+.admin-v3 .admin-breadcrumb ol {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 6px;
+	align-items: center;
+	list-style: none;
+	margin: 0 0 12px;
+	padding: 0;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+}
+
+.admin-v3 .admin-breadcrumb li:not(:first-child)::before {
+	content: "\203A";
+	margin-right: 6px;
+	color: var(--admin-ink-3);
+}
+
+.admin-v3 .admin-breadcrumb a {
+	color: var(--admin-ink-2);
+	text-decoration: none;
+}
+
+.admin-v3 .admin-breadcrumb a:hover {
+	text-decoration: underline;
+}
+
+.admin-v3 .admin-breadcrumb [aria-current="page"] {
+	color: var(--admin-ink);
+}
+
+/* 커맨드 팔레트(#1738) */
+.admin-v3 .command-palette {
+	margin-bottom: 10px;
+}
+
+.admin-v3 .command-palette-trigger {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	padding: 0 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink-2);
+	text-decoration: none;
+	font-size: 13px;
+}
+
+.admin-v3 .command-palette-trigger kbd {
+	padding: 1px 6px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: 4px;
+	font-size: 11px;
+	color: var(--admin-ink-2);
+}
+
+.command-palette-overlay {
+	position: fixed;
+	inset: 0;
+	z-index: 80;
+	display: flex;
+	align-items: flex-start;
+	justify-content: center;
+	padding-top: 12vh;
+}
+
+.command-palette-backdrop {
+	position: absolute;
+	inset: 0;
+	background: rgba(22, 48, 47, 0.35);
+}
+
+.command-palette-panel {
+	position: relative;
+	width: min(560px, 92vw);
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	box-shadow: 0 12px 32px rgba(22, 48, 47, 0.2);
+	padding: 12px;
+}
+
+.command-palette-panel form {
+	display: flex;
+	gap: 8px;
+}
+
+.command-palette-panel input[type="search"] {
+	flex: 1;
+	min-width: 0;
+}
+
+.command-palette-results {
+	margin-top: 8px;
+}
+
+/* 알림 센터(#1738): topbar 벨 + 배지 + 드롭다운 요약 패널. 열림 상태는 is-open 클래스가 표시한다. */
+.admin-alert-center {
+	position: relative;
+	display: inline-flex;
+	align-items: center;
+}
+
+.admin-alert-bell {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink-2);
+	text-decoration: none;
+	font-size: 16px;
+}
+
+.admin-alert-center .admin-alert-badge {
+	position: absolute;
+	top: -6px;
+	right: -6px;
+	min-width: 18px;
+	height: 18px;
+	padding: 0 5px;
+	border-radius: 9px;
+	background: var(--admin-danger);
+	color: #fff;
+	font-size: 11px;
+	line-height: 18px;
+	text-align: center;
+	font-weight: 600;
+}
+
+.admin-alert-center .admin-alert-panel {
+	display: none;
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	z-index: 70;
+	width: min(340px, 88vw);
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	box-shadow: 0 12px 32px rgba(22, 48, 47, 0.2);
+	padding: 12px;
+}
+
+.admin-alert-center.is-open .admin-alert-panel {
+	display: block;
+}
+
+.admin-alert-panel-head {
+	margin: 0 0 8px;
+	font-size: 13px;
+	font-weight: 600;
+	color: var(--admin-ink-2);
+}
+
+.admin-alert-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+}
+
+.admin-alert-list a {
+	display: block;
+	padding: 8px 10px;
+	border: 1px solid var(--admin-border);
+	border-left-width: 3px;
+	border-radius: var(--admin-radius-control);
+	text-decoration: none;
+	color: var(--admin-ink);
+}
+
+.admin-alert-list a.tone-warning {
+	border-left-color: var(--admin-warn);
+}
+
+.admin-alert-list a.tone-failure {
+	border-left-color: var(--admin-danger);
+}
+
+.admin-alert-list a strong {
+	display: block;
+	font-size: 13px;
+}
+
+.admin-alert-list a small {
+	color: var(--admin-ink-2);
+	font-size: 12px;
+}
+
+/* 알림 전용 페이지(no-JS): 패널이 드롭다운이 아니라 본문에 그대로 펼쳐진다. 배지는 감춘다. */
+.admin-alert-page .admin-alert-badge {
+	display: none;
+}
+
+.admin-alert-page .admin-alert-panel {
+	position: static;
+	width: auto;
+	box-shadow: none;
+	padding: 0;
+	border: 0;
+}
+
+/* 반응형 사이드바 토글(#1738): 데스크톱(>1024px)에서는 숨긴다. ≤1024px 규칙에서 노출한다. */
+.admin-sidebar-nav-control {
+	display: contents;
+}
+
+.admin-sidebar-toggle {
+	display: none;
+	align-items: center;
+	justify-content: center;
+	width: 36px;
+	height: 36px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: 16px;
+	cursor: pointer;
+}
+
+.admin-sidebar-backdrop {
+	display: none;
 }

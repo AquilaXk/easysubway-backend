@@ -3,6 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
 	<title>역 목록</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
@@ -61,5 +62,6 @@
 	<div th:replace="~{admin/fragments/pagination :: pager('역 목록 페이지', ${page}, ${paginationLinks})}"></div>
 </main>
 </div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
 </body>
 </html>

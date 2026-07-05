@@ -1,7 +1,7 @@
 <!doctype html>
 <html lang="ko" xmlns:th="http://www.thymeleaf.org">
 <body>
-<nav class="admin-sidebar" th:fragment="sidebar(active)" aria-label="통합 관리자 화면">
+<nav class="admin-sidebar" id="admin-primary-nav" th:fragment="sidebar(active)" aria-label="통합 관리자 화면">
 	<div class="admin-brand">
 		<div>
 			<strong>쉬운 지하철</strong>
@@ -18,6 +18,48 @@
 </nav>
 <a th:fragment="skipLink" class="skip-link" href="#admin-content">본문으로 건너뛰기</a>
 <div th:fragment="topbar" class="admin-topbar">
+	<!--
+	  반응형 사이드바 토글(#1738): ≤1024px에서만 보인다. 누르면 사이드바를 오프캔버스로 연다
+	  (body.sidebar-open + 백드롭). Esc·백드롭·메뉴 이동으로 닫힌다. aria-expanded로 상태 노출.
+	  진화형 향상 — JS가 없으면 사이드바가 본문 위에 스택으로 그대로 보인다(has-js 게이팅).
+	-->
+	<div class="admin-sidebar-nav-control" x-data="sidebarToggle"
+	     x-on:keydown.escape.window="close">
+		<button type="button" class="admin-sidebar-toggle" x-on:click="toggle"
+		        x-bind:aria-expanded="ariaExpanded" aria-controls="admin-primary-nav"
+		        aria-label="주 메뉴 열기·닫기">
+			<span aria-hidden="true">☰</span>
+		</button>
+		<div class="admin-sidebar-backdrop" x-cloak x-show="open" x-on:click="close"></div>
+	</div>
+	<!--
+	  커맨드 팔레트(#1738): Cmd/Ctrl+K 또는 검색 버튼으로 연다. no-JS는 버튼이 /admin/search로 이동.
+	-->
+	<div class="command-palette" x-data="commandPalette"
+	     x-on:keydown.cmd.k.window.prevent="show"
+	     x-on:keydown.ctrl.k.window.prevent="show"
+	     x-on:keydown.escape.window="hide">
+		<a class="command-palette-trigger" th:href="@{/admin/search}" x-on:click.prevent="show">
+			<span>검색</span><kbd>⌘K</kbd>
+		</a>
+		<div class="command-palette-overlay" x-cloak x-show="open"
+		     role="dialog" aria-modal="true" aria-label="통합 검색">
+			<div class="command-palette-backdrop" x-on:click="hide"></div>
+			<div class="command-palette-panel">
+				<form role="search" method="get" th:action="@{/admin/search}"
+				      hx-target="#palette-results" hx-swap="innerHTML"
+				      th:attr="hx-get=@{/admin/search}" hx-trigger="keyup changed delay:300ms">
+					<input type="search" name="q" x-ref="input" placeholder="메뉴·역 검색"
+					       aria-label="검색어" autocomplete="off"
+					       x-on:keydown.arrow-down.prevent="focusResults">
+					<button type="submit">검색</button>
+				</form>
+				<div id="palette-results" class="command-palette-results"
+				     x-on:keydown.arrow-down.prevent="moveDown"
+				     x-on:keydown.arrow-up.prevent="moveUp"></div>
+			</div>
+		</div>
+	</div>
 	<div class="admin-topbar-row" aria-label="관리자 실행 환경">
 		<div class="admin-topbar-meta">
 			<span class="admin-env-badge"
@@ -27,6 +69,20 @@
 			<span>권한 <strong th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</strong></span>
 		</div>
 		<div class="admin-topbar-meta">
+			<!--
+			  알림 센터(#1738): topbar 벨. 벨을 누르면 요약 패널이 열린다(Cmd 없이 클릭으로).
+			  live 영역은 alertCenter 컴포넌트가 60초마다 htmx로 /admin/alerts를 폴링해 채운다.
+			  탭이 비활성이면 폴링을 멈춘다. no-JS는 벨이 /admin/alerts 전용 페이지로 이동한다.
+			-->
+			<div class="admin-alert-center" x-data="alertCenter"
+			     x-bind:class="rootClass" x-on:keydown.escape.window="hide">
+				<a class="admin-alert-bell" th:href="@{/admin/alerts}" x-on:click.prevent="toggle"
+				   aria-haspopup="dialog" x-bind:aria-expanded="ariaExpanded"
+				   aria-controls="admin-alert-live" aria-label="알림 센터">
+					<span class="admin-alert-bell-icon" aria-hidden="true">🔔</span>
+				</a>
+				<div id="admin-alert-live" class="admin-alert-live"></div>
+			</div>
 			<span>revision <strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong></span>
 			<span>master data <strong th:text="${adminShell != null ? adminShell.masterDataVersion : 'unknown'}">unknown</strong></span>
 			<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
@@ -40,6 +96,19 @@
 	</div>
 </div>
 <div th:fragment="contentStart" id="admin-content" class="admin-content-anchor" tabindex="-1"></div>
+<!--
+  breadcrumb(#1738): 그룹 > 프로그램(링크) > 상세. 상세 화면(reports/detail 등)에서 위치를 보여준다.
+  detailLabel이 null이면 2단만 렌더. 화면군 이슈가 재사용한다.
+-->
+<nav th:fragment="breadcrumb(groupLabel, programLabel, programHref, detailLabel)"
+     class="admin-breadcrumb" aria-label="위치">
+	<ol>
+		<li th:text="${groupLabel}">그룹</li>
+		<li><a th:href="@{${programHref}}" th:text="${programLabel}">프로그램</a></li>
+		<li th:if="${detailLabel != null and !detailLabel.isEmpty()}"
+		    aria-current="page" th:text="${detailLabel}">상세</li>
+	</ol>
+</nav>
 <output th:fragment="flash" class="alert alert-dismissible"
         th:if="${flashMessage != null && !flashMessage.isBlank()}"
         th:classappend="${flashTone == 'failure'} ? ' failure' : (${flashTone == 'warning'} ? ' warning' : ' good')"

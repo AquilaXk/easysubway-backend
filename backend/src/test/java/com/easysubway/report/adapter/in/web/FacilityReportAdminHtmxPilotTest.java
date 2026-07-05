@@ -271,6 +271,32 @@ class FacilityReportAdminHtmxPilotTest {
 	}
 
 	@Test
+	@DisplayName("상세 풀페이지는 breadcrumb를 보여주고 드로어 fragment에는 없다")
+	void detailPageShowsBreadcrumbButDrawerFragmentDoesNot() throws Exception {
+		String reportId = createReport("breadcrumb 확인 신고");
+
+		String fullPage = mockMvc.perform(get("/admin/reports/{id}/page", reportId)
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(fullPage)
+			.contains("admin-breadcrumb")
+			.contains("aria-label=\"위치\"")
+			.contains("제보 확인 대기열");
+
+		String drawerFragment = mockMvc.perform(get("/admin/reports/{id}/page", reportId)
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(drawerFragment).doesNotContain("admin-breadcrumb");
+	}
+
+	@Test
 	@DisplayName("상세를 htmx로 열면 셸 없이 상세 본문 fragment만 오고 드로어 열기 트리거가 붙는다")
 	void detailDrawerFragmentReturnsBodyWithOpenTrigger() throws Exception {
 		String reportId = createReport("드로어로 볼 신고");

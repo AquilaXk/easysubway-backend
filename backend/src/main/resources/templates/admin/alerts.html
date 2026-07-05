@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>알림 센터</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>알림 센터</h1>
+			<p>신고 급증·푸시 실패·배치 실패·데이터팩 blocker를 한 곳에서 확인합니다. 권한이 없는 신호는 제외됩니다.</p>
+		</div>
+	</header>
+
+	<!--
+	  no-JS: 이 페이지가 알림 전용 화면으로 동작한다(topbar 벨 링크의 대상).
+	  JS: topbar 벨이 같은 panel fragment를 60초 폴링으로 갱신한다.
+	-->
+	<section class="admin-alert-page">
+		<div th:replace="~{:: panel}"></div>
+	</section>
+</main>
+</div>
+<!--
+  알림 요약 패널(#1738): topbar 벨의 live 영역이 이 fragment를 htmx로 로드·폴링한다.
+  badge는 벨 위에 절대배치되고, 목록은 벨을 열었을 때(.admin-alert-center.is-open) 보인다.
+  신호가 없으면 빈 상태를 보여준다. 각 항목은 해당 화면으로 딥링크한다.
+-->
+<th:block th:fragment="panel">
+	<span class="admin-alert-badge" aria-hidden="true"
+	      th:if="${alertSummary.hasAlerts()}" th:text="${alertSummary.count()}">0</span>
+	<div class="admin-alert-panel" role="region" aria-label="알림 센터">
+		<p class="admin-alert-panel-head">알림 <span th:text="${alertSummary.count()}">0</span>건</p>
+		<div th:unless="${alertSummary.hasAlerts()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('확인할 알림이 없습니다.', '새 신호가 생기면 여기에 표시됩니다.')}"></div>
+		</div>
+		<ul class="admin-alert-list" th:if="${alertSummary.hasAlerts()}">
+			<li th:each="item : ${alertSummary.items}">
+				<a th:href="@{${item.href}}" th:classappend="${' tone-' + item.tone}">
+					<strong th:text="${item.label}">신호</strong>
+					<small th:text="${item.detail}">설명</small>
+				</a>
+			</li>
+		</ul>
+	</div>
+</th:block>
+<th:block th:replace="~{admin/fragments/shell :: toastRegion}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

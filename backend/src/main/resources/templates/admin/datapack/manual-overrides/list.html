@@ -3,6 +3,7 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
 	<title>Manual Overrides</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
@@ -131,5 +132,6 @@
 	</section>
 </main>
 </div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
 </body>
 </html>
