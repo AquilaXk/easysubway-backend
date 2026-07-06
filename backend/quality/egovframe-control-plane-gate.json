@@ -7,6 +7,15 @@
     "java": "21"
   },
   "decision": "selective_control_plane_only",
+  "utilizationDefinition": {
+    "formula": "adopted_modules / gate_approved_applicable_modules",
+    "denominatorExcludes": [
+      "noGoSurface",
+      "pending_separate_decision(psl-dataaccess, fdl-access)"
+    ],
+    "target": "100_percent",
+    "supersedes": "adoption_plan_docx_whole_codebase_30_percent"
+  },
   "allowedProductionSurface": [
     "backend_admin_operator_pages",
     "data_collection_batch_control_plane",
@@ -43,9 +52,10 @@
       "verification": "backend/src/test/java/com/easysubway/common/web/pagination/EgovPaginationViewTest.java"
     },
     "egovframeBatCore": {
-      "status": "deferred_until_dependency_convergence_and_local_mirror",
+      "status": "adoption_in_progress",
+      "targetStatus": "adopted_control_plane_only",
       "currentImplementation": "spring_batch_control_plane_job",
-      "reason": "local eGovFrame mirror contains MVC, common, and logging artifacts only; Spring Batch job already verifies restart/idempotency without adding a remote-only runtime dependency"
+      "reason": "local mirror now carries bat-core and its org.egovframe transitive closure (S1); the collection batch adopts bat-core in S2 while keeping Spring Batch restart/idempotency semantics"
     },
     "fdlLogging": {
       "status": "classpath_verified_control_plane_only",
@@ -53,12 +63,14 @@
       "constraint": "do not import eGovFrame logging types outside backend support runtime verification"
     },
     "fdlProperty": {
-      "status": "not_enabled_for_production",
-      "constraint": "Spring Boot configuration remains the source of truth until a control-plane-only PoC proves value"
+      "status": "adoption_in_progress",
+      "targetStatus": "adopted_control_plane_only",
+      "constraint": "Spring Boot configuration remains the source of truth; only operational parameters move to eGovFrame property in S3"
     },
     "fdlIdgnr": {
-      "status": "not_enabled_for_production",
-      "constraint": "UUID, database IDs, receipt tokens, and security identifiers must not move to eGovFrame ID generation"
+      "status": "adoption_in_progress",
+      "targetStatus": "adopted_control_plane_only",
+      "constraint": "UUID, database IDs, receipt tokens, and security identifiers must not move to eGovFrame ID generation; S3 adopts it only for the operational collection run ID"
     },
     "pslDataaccess": {
       "status": "forbidden_until_poc_passes",
@@ -69,8 +81,9 @@
       "constraint": "admin/operator auth stays on Spring Security and does not cross token or crypto boundaries"
     },
     "fdlExcel": {
-      "status": "forbidden_until_poc_passes",
-      "constraint": "exports must prove memory, privacy, and CI cost before adding Excel-specific runtime dependencies"
+      "status": "adoption_in_progress",
+      "targetStatus": "adopted_control_plane_only",
+      "constraint": "exports must prove memory, privacy, and CI cost before adding Excel-specific runtime dependencies; S4 adds xlsx alongside the unchanged CSV contract"
     }
   },
   "compatibilityEvidence": {
