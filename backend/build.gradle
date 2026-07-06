@@ -61,6 +61,9 @@ dependencyLocking {
 
 dependencies {
 	implementation 'org.egovframe.rte:egovframe-rte-ptl-mvc'
+	// 수집 배치 control-plane: bat-core 변수 리스너로 표준 배치 변수 시딩 + 생명주기 로깅(#1820).
+	// psl-dataaccess는 bat-core의 inert transitive로만 존재(직접 채택 금지, contract test 강제).
+	implementation 'org.egovframe.rte:egovframe-rte-bat-core'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-batch'
 	implementation 'org.springframework.boot:spring-boot-starter-log4j2'

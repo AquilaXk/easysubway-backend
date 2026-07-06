@@ -30,10 +30,10 @@
   ],
   "dependencyPolicy": {
     "directAllowed": [
-      "org.egovframe.rte:egovframe-rte-ptl-mvc"
+      "org.egovframe.rte:egovframe-rte-ptl-mvc",
+      "org.egovframe.rte:egovframe-rte-bat-core"
     ],
     "directDeferredUntilPocPasses": [
-      "org.egovframe.rte:egovframe-rte-bat-core",
       "org.egovframe.rte:egovframe-rte-fdl-property",
       "org.egovframe.rte:egovframe-rte-fdl-idgnr",
       "org.egovframe.rte:egovframe-rte-psl-dataaccess",
@@ -52,10 +52,10 @@
       "verification": "backend/src/test/java/com/easysubway/common/web/pagination/EgovPaginationViewTest.java"
     },
     "egovframeBatCore": {
-      "status": "adoption_in_progress",
-      "targetStatus": "adopted_control_plane_only",
-      "currentImplementation": "spring_batch_control_plane_job",
-      "reason": "local mirror now carries bat-core and its org.egovframe transitive closure (S1); the collection batch adopts bat-core in S2 while keeping Spring Batch restart/idempotency semantics"
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/collection/adapter/out/batch/TransitMasterCollectionBatchConfig.java",
+      "verification": "backend/src/test/java/com/easysubway/collection/adapter/out/batch/TransitMasterCollectionBatchConfigTest.java",
+      "reason": "collection batch seeds standardized batch variables into the ExecutionContext and gets lifecycle logging via bat-core EgovJobVariableListener/EgovStepVariableListener; Spring Batch JobRepository, restart, and idempotency semantics and job/step names stay unchanged. psl-dataaccess rides in only as bat-core's inert transitive (classpath-verified, never imported)."
     },
     "fdlLogging": {
       "status": "classpath_verified_control_plane_only",

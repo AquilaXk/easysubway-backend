@@ -53,6 +53,11 @@ class TransitMasterCollectionBatchConfigTest {
 		assertThat(run.steps())
 			.extracting("name")
 			.containsExactly("FETCH", "ARCHIVE", "VALIDATE", "PARSE", "DIFF", "STAGE", "PUBLISH", "ACTIVATE");
+		var stepExecution = execution.getStepExecutions().iterator().next();
+		assertThat(stepExecution.getExecutionContext()
+			.getString(TransitMasterCollectionBatchConfig.COLLECTION_SOURCE_VARIABLE))
+			.as("bat-core EgovStepVariableListener가 수집 변수를 ExecutionContext에 시딩한다")
+			.isEqualTo(TransitMasterCollectionBatchConfig.COLLECTION_SOURCE_VALUE);
 	}
 
 	@Test

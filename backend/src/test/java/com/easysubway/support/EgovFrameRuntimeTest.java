@@ -23,4 +23,12 @@ class EgovFrameRuntimeTest {
 
 		assertThat(loggingUtility.getPackageName()).isEqualTo("org.egovframe.rte.fdl.logging.util");
 	}
+
+	@Test
+	@DisplayName("전자정부프레임워크 bat-core 배치 변수 리스너가 control-plane 클래스패스에 존재한다")
+	void egovFrameBatCoreRuntimeIsOnClasspathForControlPlaneOnly() throws ClassNotFoundException {
+		Class<?> stepVariableListener = Class.forName("org.egovframe.rte.bat.support.EgovStepVariableListener");
+
+		assertThat(stepVariableListener.getPackageName()).isEqualTo("org.egovframe.rte.bat.support");
+	}
 }
