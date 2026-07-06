@@ -33,12 +33,12 @@
       "org.egovframe.rte:egovframe-rte-ptl-mvc",
       "org.egovframe.rte:egovframe-rte-bat-core",
       "org.egovframe.rte:egovframe-rte-fdl-property",
-      "org.egovframe.rte:egovframe-rte-fdl-idgnr"
+      "org.egovframe.rte:egovframe-rte-fdl-idgnr",
+      "org.egovframe.rte:egovframe-rte-fdl-excel"
     ],
     "directDeferredUntilPocPasses": [
       "org.egovframe.rte:egovframe-rte-psl-dataaccess",
-      "org.egovframe.boot:egovframe-boot-starter-access",
-      "org.egovframe.rte:egovframe-rte-fdl-excel"
+      "org.egovframe.boot:egovframe-boot-starter-access"
     ],
     "directForbidden": [
       "org.egovframe.boot:egovframe-boot-starter-crypto",
@@ -83,9 +83,10 @@
       "constraint": "admin/operator auth stays on Spring Security and does not cross token or crypto boundaries"
     },
     "fdlExcel": {
-      "status": "adoption_in_progress",
-      "targetStatus": "adopted_control_plane_only",
-      "constraint": "exports must prove memory, privacy, and CI cost before adding Excel-specific runtime dependencies; S4 adds xlsx alongside the unchanged CSV contract"
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/common/web/export/EgovExcelExportSupport.java",
+      "verification": "backend/src/test/java/com/easysubway/common/web/export/EgovExcelExportSupportTest.java",
+      "constraint": "admin/operator xlsx exports run alongside the unchanged CSV contract via fdl-excel AbstractPOIExcelView; in-memory XSSF is bounded by MAX_EXPORT_ROWS (fail on exceed), privacy columns match the CSV policy (verifiedBy unchanged), and eGovFrame excel types stay inside the export support class."
     }
   },
   "compatibilityEvidence": {

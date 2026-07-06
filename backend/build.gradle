@@ -70,6 +70,9 @@ dependencies {
 	// 보안 식별자(UUID·DB PK·토큰)는 대상 아님 — 운영성 수집 run ID 한정(contract test 강제).
 	implementation 'org.egovframe.rte:egovframe-rte-fdl-property'
 	implementation 'org.egovframe.rte:egovframe-rte-fdl-idgnr'
+	// 관리자·운영기관 내보내기 xlsx 병행(#1822): fdl-excel AbstractPOIExcelView로 렌더. CSV 계약 불변.
+	// POI 계열 transitive는 mavenCentral 해석(버전 충돌 시 dependencyManagement 명시 고정).
+	implementation 'org.egovframe.rte:egovframe-rte-fdl-excel'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-batch'
 	implementation 'org.springframework.boot:spring-boot-starter-log4j2'
@@ -95,4 +98,7 @@ dependencies {
 
 tasks.named('test') {
 	useJUnitPlatform()
+	// @SpringBootTest 컨텍스트 캐시 누적 + fdl-excel 1만 행 xlsx 메모리 테스트(#1822)로 스위트 힙 수요가
+	// 기본 512MB를 넘어선다. 포크 테스트 JVM 힙을 2g로 상향(전체 스위트·CI 공통 OOM 방지).
+	maxHeapSize = '2g'
 }

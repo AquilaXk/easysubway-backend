@@ -20,10 +20,13 @@ import com.easysubway.field.domain.FieldVerificationItemType;
 import com.easysubway.field.domain.FieldVerificationSession;
 import com.easysubway.field.domain.FieldVerificationStatus;
 import jakarta.servlet.http.HttpSession;
+import java.io.ByteArrayInputStream;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -146,6 +149,38 @@ class FieldVerificationAdminControllerTest {
 				assertThat(event.targetType()).isEqualTo("FIELD_VERIFICATION_SESSION");
 				assertThat(event.targetId()).isEqualTo("field-verification-sangnoksu-2026-06");
 				assertThat(event.action()).isEqualTo("EXPORT_FIELD_VERIFICATION_CSV");
+			});
+	}
+
+	@Test
+	@DisplayName("관리자는 역별 현장 검증 결과를 xlsx로도 내려받는다(CSV와 동일 데이터·감사)")
+	void adminDownloadsStationFieldVerificationXlsx() throws Exception {
+		byte[] xlsx = mockMvc.perform(get("/admin/field-verifications/stations/station-sangnoksu/export.xlsx")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(header().string(
+				HttpHeaders.CONTENT_DISPOSITION,
+				"attachment; filename=\"easysubway-field-verification-station-sangnoksu.xlsx\""
+			))
+			.andExpect(header().string(
+				HttpHeaders.CONTENT_TYPE,
+				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+			))
+			.andReturn().getResponse().getContentAsByteArray();
+
+		try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
+			Sheet sheet = workbook.getSheetAt(0);
+			assertThat(sheet.getRow(0).getCell(0).getStringCellValue()).isEqualTo("sessionId");
+			assertThat(sheet.getRow(0).getCell(4).getStringCellValue()).isEqualTo("verifiedBy");
+			assertThat(sheet.getRow(1).getCell(0).getStringCellValue())
+				.isEqualTo("field-verification-sangnoksu-2026-06");
+			assertThat(sheet.getRow(1).getCell(1).getStringCellValue()).isEqualTo("station-sangnoksu");
+		}
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.targetType()).isEqualTo("FIELD_VERIFICATION_SESSION");
+				assertThat(event.action()).isEqualTo("EXPORT_FIELD_VERIFICATION_XLSX");
 			});
 	}
 

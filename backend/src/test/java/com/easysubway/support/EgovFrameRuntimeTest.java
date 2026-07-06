@@ -47,4 +47,12 @@ class EgovFrameRuntimeTest {
 
 		assertThat(tableIdGnrService.getPackageName()).isEqualTo("org.egovframe.rte.fdl.idgnr.impl");
 	}
+
+	@Test
+	@DisplayName("전자정부프레임워크 fdl-excel POI Excel View가 control-plane 클래스패스에 존재한다")
+	void egovFrameFdlExcelRuntimeIsOnClasspathForControlPlaneOnly() throws ClassNotFoundException {
+		Class<?> poiExcelView = Class.forName("org.egovframe.rte.fdl.excel.util.AbstractPOIExcelView");
+
+		assertThat(poiExcelView.getPackageName()).isEqualTo("org.egovframe.rte.fdl.excel.util");
+	}
 }

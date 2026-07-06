@@ -6,9 +6,12 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 
+import java.io.ByteArrayInputStream;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
+import org.apache.poi.ss.usermodel.Sheet;
+import org.apache.poi.xssf.usermodel.XSSFWorkbook;
 import org.springframework.http.HttpHeaders;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -90,6 +93,33 @@ class OperatorAccessibilityReportControllerTest {
 					.contains("stationScore,상록수,")
 					.contains("priority,상록수,장애인 화장실,\"60 - 확인 필요 상태");
 			});
+	}
+
+	@Test
+	@DisplayName("운영기관 계정은 제휴 제안 리포트를 xlsx로도 내려받는다(CSV와 동일 데이터)")
+	void operatorDownloadsPartnershipProposalXlsx() throws Exception {
+		byte[] xlsx = mockMvc.perform(get("/operator/api/accessibility-report/proposal.xlsx")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isOk())
+			.andExpect(header().string(
+				HttpHeaders.CONTENT_DISPOSITION,
+				"attachment; filename=\"easysubway-operator-accessibility-proposal.xlsx\""
+			))
+			.andExpect(header().string(
+				HttpHeaders.CONTENT_TYPE,
+				"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+			))
+			.andReturn().getResponse().getContentAsByteArray();
+
+		try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
+			Sheet sheet = workbook.getSheetAt(0);
+			org.assertj.core.api.Assertions.assertThat(sheet.getRow(0).getCell(0).getStringCellValue())
+				.isEqualTo("section");
+			org.assertj.core.api.Assertions.assertThat(sheet.getRow(1).getCell(1).getStringCellValue())
+				.isEqualTo("totalStations");
+			org.assertj.core.api.Assertions.assertThat(sheet.getRow(1).getCell(2).getStringCellValue())
+				.isEqualTo("2");
+		}
 	}
 
 	@Test

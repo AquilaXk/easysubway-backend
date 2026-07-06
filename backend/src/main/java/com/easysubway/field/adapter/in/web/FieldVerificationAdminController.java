@@ -3,6 +3,7 @@ package com.easysubway.field.adapter.in.web;
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.web.ApiResponse;
+import com.easysubway.common.web.export.EgovExcelExportSupport;
 import com.easysubway.field.application.port.in.FieldVerificationUseCase;
 import com.easysubway.field.application.port.in.UpdateFieldVerificationItemStatusCommand;
 import com.easysubway.field.domain.FieldVerificationChangeHistory;
@@ -16,6 +17,7 @@ import jakarta.validation.constraints.NotNull;
 import java.security.Principal;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
@@ -32,19 +34,31 @@ import org.springframework.web.bind.annotation.RestController;
 class FieldVerificationAdminController {
 
 	private static final String TEXT_CSV_UTF8 = "text/csv;charset=UTF-8";
+	private static final String XLSX_CONTENT_TYPE =
+		"application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 	private static final String CSV_HEADER = "sessionId,stationId,stationName,verifiedAt,verifiedBy,sessionStatus,itemType,itemLabel,targetName,itemStatus,note";
+	private static final List<String> XLSX_HEADER = List.of(
+		"sessionId", "stationId", "stationName", "verifiedAt", "verifiedBy", "sessionStatus",
+		"itemType", "itemLabel", "targetName", "itemStatus", "note"
+	);
 
 	private final FieldVerificationUseCase fieldVerificationUseCase;
 	private final AdminAuditWriter auditWriter;
+	private final EgovExcelExportSupport excelExportSupport;
 
 	FieldVerificationAdminController(FieldVerificationUseCase fieldVerificationUseCase) {
-		this(fieldVerificationUseCase, AdminAuditWriter.noop());
+		this(fieldVerificationUseCase, AdminAuditWriter.noop(), new EgovExcelExportSupport());
 	}
 
 	@Autowired
-	FieldVerificationAdminController(FieldVerificationUseCase fieldVerificationUseCase, AdminAuditWriter auditWriter) {
+	FieldVerificationAdminController(
+		FieldVerificationUseCase fieldVerificationUseCase,
+		AdminAuditWriter auditWriter,
+		EgovExcelExportSupport excelExportSupport
+	) {
 		this.fieldVerificationUseCase = fieldVerificationUseCase;
 		this.auditWriter = auditWriter;
+		this.excelExportSupport = excelExportSupport;
 	}
 
 	@GetMapping("/admin/field-verifications/stations")
@@ -103,6 +117,54 @@ class FieldVerificationAdminController {
 			"attachment; filename=\"easysubway-field-verification-" + safeFilenameStationId(stationId) + ".csv\""
 		);
 		return new ResponseEntity<>(toCsv(session), headers, HttpStatus.OK);
+	}
+
+	@GetMapping("/admin/field-verifications/stations/{stationId}/export.xlsx")
+	ResponseEntity<byte[]> stationFieldVerificationXlsx(
+		@PathVariable String stationId,
+		Authentication authentication,
+		HttpServletRequest request
+	) {
+		FieldVerificationSession session = fieldVerificationUseCase.getStationVerification(stationId);
+		auditWriter.privacyRead(
+			authentication,
+			request,
+			"FIELD_VERIFICATION_SESSION",
+			session.id(),
+			"EXPORT_FIELD_VERIFICATION_XLSX",
+			"업무 맥락: 현장 확인 xlsx export"
+		);
+		byte[] xlsx = excelExportSupport.toXlsx("field-verification", XLSX_HEADER, toXlsxRows(session));
+		HttpHeaders headers = new HttpHeaders();
+		headers.add(HttpHeaders.CONTENT_TYPE, XLSX_CONTENT_TYPE);
+		headers.add(
+			HttpHeaders.CONTENT_DISPOSITION,
+			"attachment; filename=\"easysubway-field-verification-" + safeFilenameStationId(stationId) + ".xlsx\""
+		);
+		return new ResponseEntity<>(xlsx, headers, HttpStatus.OK);
+	}
+
+	private List<List<String>> toXlsxRows(FieldVerificationSession session) {
+		List<List<String>> rows = new ArrayList<>();
+		session.items().forEach(item -> rows.add(List.of(
+			cellValue(session.id()),
+			cellValue(session.stationId()),
+			cellValue(session.stationName()),
+			cellValue(String.valueOf(session.verifiedAt())),
+			cellValue(session.verifiedBy()),
+			cellValue(session.status().name()),
+			cellValue(item.type().name()),
+			cellValue(item.type().label()),
+			cellValue(item.targetName()),
+			cellValue(item.status().name()),
+			cellValue(item.note())
+		)));
+		return rows;
+	}
+
+	// xlsx 셀은 CSV와 동일한 데이터 정책(수식 주입 이스케이프)을 적용하되 CSV 전송용 따옴표 감싸기는 하지 않는다.
+	private String cellValue(String value) {
+		return value == null ? "" : escapeSpreadsheetFormula(value);
 	}
 
 	private String toCsv(FieldVerificationSession session) {
