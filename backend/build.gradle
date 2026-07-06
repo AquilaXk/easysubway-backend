@@ -49,10 +49,11 @@ dependencyManagement {
 		// fdl-property가 끌어오는 commons-configuration2 2.11.0은 GHSA-337m-mw94-2v6g(Medium)라 2.15.0으로 상향(#1821).
 		dependency 'org.apache.commons:commons-configuration2:2.15.0'
 		dependency 'org.apache.commons:commons-lang3:3.18.0'
-		dependency 'org.apache.logging.log4j:log4j-api:2.25.3'
-		dependency 'org.apache.logging.log4j:log4j-core:2.25.3'
-		dependency 'org.apache.logging.log4j:log4j-jul:2.25.3'
-		dependency 'org.apache.logging.log4j:log4j-slf4j2-impl:2.25.3'
+		// log4j 2.25.3은 verifyHostName 설정 속성 경로의 TLS 호스트명 검증이 누락(CVE-2026-34477, CVE-2025-68161 불완전 수정)이라 2.25.4로 상향(#1837).
+		dependency 'org.apache.logging.log4j:log4j-api:2.25.4'
+		dependency 'org.apache.logging.log4j:log4j-core:2.25.4'
+		dependency 'org.apache.logging.log4j:log4j-jul:2.25.4'
+		dependency 'org.apache.logging.log4j:log4j-slf4j2-impl:2.25.4'
 		dependency 'org.apache.commons:commons-compress:1.26.2'
 	}
 }
