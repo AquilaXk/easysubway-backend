@@ -36,6 +36,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private final RouteTimetableRaptorPlanner timetableRaptorPlanner = new RouteTimetableRaptorPlanner();
 	private final boolean timetableRequired;
 	private volatile RouteTimetable cachedRouteTimetable;
+	private volatile java.util.Set<String> cachedCoveredStationIds;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
 		this(routeSearchUseCase, RouteTimetable::empty, false);
@@ -66,10 +67,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	@Override
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
-			if (timetableRequired && !routeTimetablePort.hasRouteTimetable()) {
-				return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
-			}
-			if (timetableRequired && canUseTimetableRaptor(command)) {
+			if (timetableRequired && canUseTimetableRaptor(command) && timetableCovers(command)) {
 				if (timetableRaptorPlanner.isFeedStale(command, routeTimetable())) {
 					return new RouteV2Plan(List.of(), List.of(RouteV2Status.STALE_TIMETABLE), PLANNER_ADR);
 				}
@@ -134,6 +132,30 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				cachedRouteTimetable = routeTimetablePort.loadRouteTimetable();
 			}
 			return cachedRouteTimetable;
+		}
+	}
+
+	private boolean timetableCovers(SearchRouteV2Command command) {
+		if (!routeTimetablePort.hasRouteTimetable()) {
+			return false;
+		}
+		java.util.Set<String> covered = coveredStationIds();
+		return covered.contains(command.originStationId())
+			&& covered.contains(command.destinationStationId());
+	}
+
+	private java.util.Set<String> coveredStationIds() {
+		java.util.Set<String> snapshot = cachedCoveredStationIds;
+		if (snapshot != null) {
+			return snapshot;
+		}
+		synchronized (this) {
+			if (cachedCoveredStationIds == null) {
+				cachedCoveredStationIds = routeTimetable().transitStopTimes().stream()
+					.map(LoadRouteTimetablePort.TransitStopTime::stationId)
+					.collect(java.util.stream.Collectors.toUnmodifiableSet());
+			}
+			return cachedCoveredStationIds;
 		}
 	}
 

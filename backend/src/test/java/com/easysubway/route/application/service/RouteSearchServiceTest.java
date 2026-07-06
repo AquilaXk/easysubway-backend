@@ -792,16 +792,30 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("V2 planner는 시간표 서비스가 없으면 NO_TIMETABLE_SERVICE status를 반환한다")
-	void routeV2PlannerReturnsNoTimetableServiceStatus() {
+	@DisplayName("V2 planner는 커버되지 않는 O/D는 graph 검색으로 폴백한다")
+	void routeV2PlannerFallsBackToGraphForUncoveredStations() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new StairOnlyTransitMasterPort(), CLOCK);
+		// 시간표는 station-x·station-y만 커버 → routeV2Command()의 station-a·station-b는 비커버(그래프는 라우팅 가능).
+		var planner = new RouteV2Planner(routeSearchService, uncoveredRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 0, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries()).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 빈 시간표면 graph 검색으로 폴백한다")
+	void routeV2PlannerFallsBackToGraphWhenTimetableEmpty() {
 		var repository = new InMemoryRouteSearchRepository();
 		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
 		var planner = new RouteV2Planner(routeSearchService, LoadRouteTimetablePort.RouteTimetable::empty);
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
-		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
-		assertThat(plan.itineraries()).isEmpty();
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.itineraries()).isNotEmpty();
 	}
 
 	@Test
@@ -1488,7 +1502,7 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("V2 realtime overlay fallback 경로는 availability 확인에 전체 snapshot을 읽지 않는다")
+	@DisplayName("V2 비커버 fallback 경로는 게이트 판정에 전체 snapshot을 읽지 않는다")
 	void routeV2PlannerDoesNotLoadFullTimetableForRealtimeAvailabilityGuard() {
 		var repository = new InMemoryRouteSearchRepository();
 		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
@@ -1515,8 +1529,9 @@ class RouteSearchServiceTest {
 			3
 		));
 
-		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
-		assertThat(plan.itineraries()).isEmpty();
+		// hasRouteTimetable()==false면 게이트가 loadRouteTimetable() 없이 graph 폴백한다(AssertionError 미발생=불변식).
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+		assertThat(plan.itineraries()).isNotEmpty();
 	}
 
 	@Test
@@ -2663,6 +2678,49 @@ class RouteSearchServiceTest {
 			List.of(
 				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 1, "station-a", "seoul-4", 32820, 32820, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 2, "station-b", "seoul-4", 33420, 33420, 0, 0)
+			),
+			List.of()
+		);
+	}
+
+	// 시간표가 비어있지 않지만(hasRouteTimetable()==true) station-a·station-b는 커버하지 않는 포트.
+	// 커버리지 게이트가 비커버 O/D를 graph 폴백으로 보내는지 검증하는 데 쓴다.
+	private static LoadRouteTimetablePort uncoveredRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026",
+				true,
+				true,
+				true,
+				true,
+				true,
+				false,
+				false,
+				LocalDate.parse("2026-07-01"),
+				LocalDate.parse("2026-12-31"),
+				"Asia/Seoul"
+			)),
+			List.of(),
+			List.of(new LoadRouteTimetablePort.TransitRoute(
+				"route-seoul-4",
+				"seoul-4",
+				"4",
+				"수도권 4호선",
+				"사당 방면",
+				"Asia/Seoul"
+			)),
+			List.of(new LoadRouteTimetablePort.TransitTrip(
+				"trip-seoul-4-0900",
+				"route-seoul-4",
+				"weekday-2026",
+				"사당",
+				"0",
+				"LOCAL",
+				0
+			)),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 1, "station-x", "seoul-4", 32820, 32820, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-seoul-4-0900", 2, "station-y", "seoul-4", 33420, 33420, 0, 0)
 			),
 			List.of()
 		);
