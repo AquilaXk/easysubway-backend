@@ -86,7 +86,10 @@ jobs:
   pr-title:
     name: PR Title
     runs-on: ubuntu-latest
-    if: ${{ github.event_name == 'pull_request' }}
+    # Dependabot PR titles follow its own convention, not the bracket prefix.
+    # Skipping the job (rather than loosening the human regex) reports as skipped,
+    # which a required-check ruleset treats as satisfied (issue #1684, #1685).
+    if: ${{ github.event_name == 'pull_request' && github.actor != 'dependabot[bot]' }}
     permissions:
       contents: read
     env:
