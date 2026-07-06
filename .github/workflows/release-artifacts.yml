@@ -440,6 +440,9 @@ jobs:
         run: |
           rm -f "${RUNNER_TEMP}/easysubway-ci-release.jks" "${RUNNER_TEMP}/easysubway-upload-key.jks" "${RUNNER_TEMP}/easysubway-release.env"
 
+  # Validation only: builds and inspects the backend image as a PR-time dry-run
+  # and does NOT push. The single production image producer is the CD build-image
+  # job (cd.yml), which publishes the arm64 image to GHCR by digest (#1686).
   backend-release:
     name: Backend Release Image
     runs-on: ubuntu-latest
