@@ -32,6 +32,37 @@ import org.junit.jupiter.api.Test;
 class RealtimeGatewayServiceTest {
 
 	@Test
+	@DisplayName("provider의 TOPIS 로컬(KST) recptnDt는 경계에서 ISO providerReceivedAt으로 정규화되어 emit된다")
+	void normalizesProviderTimestampToIsoAtBoundary() {
+		// TOPIS recptnDt는 "yyyy-MM-dd HH:mm:ss"(KST). 17:00:00 KST = 08:00:00Z, clock과 20초 차 → fresh.
+		RealtimeProvider provider = query -> List.of(new RealtimeArrival(
+			"seoul-4",
+			"상록수",
+			"사당",
+			"상행",
+			"T1001",
+			150,
+			"3분 후",
+			"전역 출발",
+			"2026-06-26 17:00:00",
+			"일반"
+		));
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:20Z"), ZoneOffset.UTC)
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+
+		assertThat(result.arrivals()).hasSize(1);
+		RealtimeArrival arrival = result.arrivals().get(0);
+		// 하류(resolver)가 Instant.parse 가능한 ISO로 정규화 → drop 버그의 근본(포맷 누출) 차단.
+		assertThat(Instant.parse(arrival.providerReceivedAt())).isEqualTo(Instant.parse("2026-06-26T08:00:00Z"));
+		// v1 표시용 수신지연 보정은 유지: 150 - 20초 delay = 130.
+		assertThat(arrival.etaSeconds()).isEqualTo(130);
+	}
+
+	@Test
 	@DisplayName("같은 도착 요청은 cache TTL 안에서 provider 호출을 반복하지 않는다")
 	void arrivalsUseCacheWithinTtl() {
 		CountingProvider provider = new CountingProvider();

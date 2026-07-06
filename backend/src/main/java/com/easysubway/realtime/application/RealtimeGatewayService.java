@@ -324,7 +324,10 @@ public class RealtimeGatewayService {
 			if (providerReceivedAt == null || !isProviderFresh(providerReceivedAt, receivedAt)) {
 				continue;
 			}
-			RealtimeArrival adjusted = adjustArrivalEta(arrival, providerReceivedAt, receivedAt);
+			// provider 로컬(예: TOPIS KST "yyyy-MM-dd HH:mm:ss") timestamp를 경계에서 ISO(Instant)로
+			// 정규화해 하류 소비처(route resolver의 Instant.parse)가 파싱 가능하게 한다. 원문 포맷 누출 차단.
+			RealtimeArrival normalized = arrival.withProviderReceivedAt(providerReceivedAt.toString());
+			RealtimeArrival adjusted = adjustArrivalEta(normalized, providerReceivedAt, receivedAt);
 			freshArrivals.add(canonicalizeArrival(adjusted, normalizedQuery));
 		}
 		return List.copyOf(freshArrivals);
@@ -352,21 +355,7 @@ public class RealtimeGatewayService {
 		}
 		long delaySeconds = Math.max(0, Duration.between(providerReceivedAt, receivedAt).toSeconds());
 		int adjustedEtaSeconds = (int) Math.max(0, etaSeconds - delaySeconds);
-		return new RealtimeArrival(
-			arrival.lineId(),
-			arrival.stationName(),
-			arrival.destination(),
-			arrival.direction(),
-			arrival.trainNo(),
-			adjustedEtaSeconds,
-			arrivalMessage(adjustedEtaSeconds),
-			arrival.positionMessage(),
-			arrival.providerReceivedAt(),
-			arrival.servicePattern(),
-			arrival.rawDestination(),
-			arrival.rawDirection(),
-			arrival.rawServicePattern()
-		);
+		return arrival.withEtaAndMessage(adjustedEtaSeconds, arrivalMessage(adjustedEtaSeconds));
 	}
 
 	private RealtimeArrival canonicalizeArrival(RealtimeArrival arrival, RealtimeQuery normalizedQuery) {
@@ -385,20 +374,10 @@ public class RealtimeGatewayService {
 	}
 
 	private RealtimeArrival mappedArrival(RealtimeArrival arrival, RealtimeTripMapping mapping) {
-		return new RealtimeArrival(
-			arrival.lineId(),
-			arrival.stationName(),
+		return arrival.withCanonical(
 			mapping.canonicalDestination(arrival.destination()),
 			mapping.canonicalDirection(arrival.direction()),
-			arrival.trainNo(),
-			arrival.etaSeconds(),
-			arrival.message(),
-			arrival.positionMessage(),
-			arrival.providerReceivedAt(),
-			mapping.canonicalServicePattern(arrival.servicePattern()),
-			arrival.rawDestination(),
-			arrival.rawDirection(),
-			arrival.rawServicePattern()
+			mapping.canonicalServicePattern(arrival.servicePattern())
 		);
 	}
 

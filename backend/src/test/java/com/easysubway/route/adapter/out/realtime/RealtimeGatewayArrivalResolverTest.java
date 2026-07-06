@@ -18,8 +18,8 @@ import org.junit.jupiter.api.Test;
 class RealtimeGatewayArrivalResolverTest {
 
 	@Test
-	@DisplayName("gateway가 조정한 ETA는 provider timestamp 기준 expectedArrivalAt으로 변환한다")
-	void adjustedEtaUsesProviderTimestampAsBase() {
+	@DisplayName("gateway가 수신지연 보정한 ETA는 gateway 수신시각(receivedAt) 기준 expectedArrivalAt으로 변환한다")
+	void adjustedEtaUsesGatewayReceivedAtAsBase() {
 		RealtimeGatewayService gatewayService = org.mockito.Mockito.mock(RealtimeGatewayService.class);
 		when(gatewayService.arrivals(any(RealtimeQuery.class))).thenReturn(RealtimeArrivalResult.fresh(
 			"2026-06-26T08:00:00Z",
@@ -49,8 +49,10 @@ class RealtimeGatewayArrivalResolverTest {
 		));
 
 		ArrivalCandidate candidate = resolution.candidates().getFirst();
+		// providerReceivedAt(07:59:30Z)은 증거 metadata로 보존하되, 이미 수신지연 보정된 eta의 실제
+		// 앵커는 gateway 수신시각(08:00:00Z)이다 → 08:00:00 + 150s = 08:02:30. (recptnDt 재앵커 이중보정 제거)
 		assertThat(candidate.providerReceivedAt()).isEqualTo(Instant.parse("2026-06-26T07:59:30Z"));
-		assertThat(candidate.expectedArrivalAt()).isEqualTo(Instant.parse("2026-06-26T08:02:00Z"));
+		assertThat(candidate.expectedArrivalAt()).isEqualTo(Instant.parse("2026-06-26T08:02:30Z"));
 		assertThat(candidate.servicePattern()).isEqualTo("급행");
 	}
 

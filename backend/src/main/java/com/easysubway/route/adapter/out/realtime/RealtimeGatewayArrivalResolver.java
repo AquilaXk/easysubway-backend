@@ -40,32 +40,40 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 			result.fallbackCode(),
 			providerSnapshotId(result),
 			receivedAt,
-			candidates(result, status)
+			candidates(result, receivedAt, status)
 		);
 	}
 
 	private List<ArrivalCandidate> candidates(
 		RealtimeArrivalResult result,
+		Instant receivedAt,
 		ArrivalFreshness status
 	) {
+		if (receivedAt == null) {
+			return List.of();
+		}
 		return result.arrivals()
 			.stream()
 			.filter(arrival -> arrival.etaSeconds() != null)
 			.filter(arrival -> arrival.etaSeconds() >= 0)
-			.map(arrival -> candidate(arrival, status))
+			.map(arrival -> candidate(arrival, receivedAt, status))
 			.filter(Objects::nonNull)
 			.toList();
 	}
 
 	private ArrivalCandidate candidate(
 		RealtimeArrival arrival,
+		Instant receivedAt,
 		ArrivalFreshness status
 	) {
 		Instant providerReceivedAt = parseInstant(arrival.providerReceivedAt());
 		if (providerReceivedAt == null) {
+			// 북극성 Anchor: provider 증거(timestamp) 없는 REALTIME claim은 쓰지 않는다.
 			return null;
 		}
-		Instant expectedArrivalAt = providerReceivedAt.plusSeconds(arrival.etaSeconds());
+		// gateway가 수신지연 보정(eta -= now-recptnDt)한 값의 실제 앵커는 gateway 수신시각(receivedAt)이다.
+		// providerReceivedAt(recptnDt)에 재앵커하면 지연이 이중 차감된다. 수학적으로 recptnDt + 원본eta 와 동일.
+		Instant expectedArrivalAt = receivedAt.plusSeconds(arrival.etaSeconds());
 		return new ArrivalCandidate(
 			arrival.trainNo(),
 			arrival.lineId(),
