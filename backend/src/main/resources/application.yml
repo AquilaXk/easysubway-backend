@@ -77,6 +77,9 @@ easysubway:
           - legacy env admin fallback removal criteria are incomplete
           - break-glass credential rotation is overdue
           - role or account seed is missing in prod
+  datapack:
+    # 워크플로 전용 서비스 토큰. 미설정이면 조회/콜백 API 체인이 전면 거부(자동화 dormant = 안전 기본값).
+    workflow-token: ${EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN:}
   notifications:
     push:
       delivery:

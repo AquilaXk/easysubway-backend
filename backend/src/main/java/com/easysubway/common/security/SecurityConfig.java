@@ -69,6 +69,27 @@ public class SecurityConfig {
 	}
 
 	@Bean
+	@Order(0)
+	SecurityFilterChain datapackWorkflowApiSecurityFilterChain(
+		HttpSecurity http,
+		@Value("${easysubway.datapack.workflow-token:}") String workflowToken
+	) throws Exception {
+		// 워크플로 전용 조회/콜백 API는 admin(/admin/** @Order 1)보다 먼저 평가되도록 @Order(0).
+		// 서비스 토큰(Bearer)만 인증하고 stateless·CSRF off. 토큰 미설정이면 인증이 주입되지
+		// 않아 전면 거부(자동화 dormant = 안전 기본값). admin 세션은 이 체인에 닿지 못한다.
+		return http
+			.securityMatcher("/admin/api/datapack/release-requests/**", "/admin/api/datapack/release-callbacks")
+			.csrf(csrf -> csrf.disable())
+			.sessionManagement(sm -> sm.sessionCreationPolicy(
+				org.springframework.security.config.http.SessionCreationPolicy.STATELESS))
+			.authorizeHttpRequests(authorize -> authorize.anyRequest().hasRole("DATAPACK_WORKFLOW"))
+			.addFilterBefore(
+				new com.easysubway.datapack.adapter.in.web.WorkflowServiceTokenFilter(workflowToken),
+				org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter.class)
+			.build();
+	}
+
+	@Bean
 	@Order(1)
 	SecurityFilterChain adminSecurityFilterChain(
 		HttpSecurity http,
@@ -154,6 +175,10 @@ public class SecurityConfig {
 					AdminPermission.DATAPACK_OVERRIDE_APPROVE.authority(),
 					AdminPermission.DATAPACK_CANDIDATE_BUILD.authority()
 				)
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-requests")
+				.hasAuthority(AdminPermission.DATAPACK_STAGING_PROMOTE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-requests/*/approve")
+				.hasAuthority(AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-channels/**")
 				.hasAnyAuthority(
 					AdminPermission.DATAPACK_STAGING_PROMOTE.authority(),

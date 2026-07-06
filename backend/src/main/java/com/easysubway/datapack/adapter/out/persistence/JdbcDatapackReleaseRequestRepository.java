@@ -1,0 +1,82 @@
+package com.easysubway.datapack.adapter.out.persistence;
+
+import com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository;
+import com.easysubway.datapack.domain.DatapackReleaseRequest;
+import com.easysubway.datapack.domain.DatapackReleaseRequestStatus;
+import java.sql.Timestamp;
+import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Optional;
+import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.RowMapper;
+import org.springframework.stereotype.Repository;
+
+@Repository
+public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequestRepository {
+
+	private static final RowMapper<DatapackReleaseRequest> ROW_MAPPER = (rs, n) -> new DatapackReleaseRequest(
+		rs.getString("approval_id"), rs.getString("candidate_id"), rs.getString("scope_id"),
+		rs.getString("target_channel"), rs.getString("build_spec_sha256"),
+		rs.getString("source_snapshot_set_hash"), rs.getString("approved_ledger_hash"),
+		rs.getString("requested_by"), rs.getString("approved_by"),
+		DatapackReleaseRequestStatus.valueOf(rs.getString("status")),
+		rs.getString("dispatch_idempotency_key"), rs.getString("workflow_run_url"),
+		toLdt(rs.getTimestamp("created_at")), toLdt(rs.getTimestamp("approved_at")),
+		toLdt(rs.getTimestamp("updated_at")));
+
+	private final JdbcTemplate jdbcTemplate;
+
+	public JdbcDatapackReleaseRequestRepository(JdbcTemplate jdbcTemplate) {
+		this.jdbcTemplate = jdbcTemplate;
+	}
+
+	@Override
+	public void save(DatapackReleaseRequest r) {
+		int updated = jdbcTemplate.update(
+			"UPDATE datapack_release_request SET candidate_id=?, scope_id=?, target_channel=?,"
+				+ " build_spec_sha256=?, source_snapshot_set_hash=?, approved_ledger_hash=?,"
+				+ " requested_by=?, approved_by=?, status=?, dispatch_idempotency_key=?,"
+				+ " workflow_run_url=?, approved_at=?, updated_at=? WHERE approval_id=?",
+			r.candidateId(), r.scopeId(), r.targetChannel(), r.buildSpecSha256(),
+			r.sourceSnapshotSetHash(), r.approvedLedgerHash(), r.requestedBy(), r.approvedBy(),
+			r.status().name(), r.dispatchIdempotencyKey(), r.workflowRunUrl(),
+			toTs(r.approvedAt()), toTs(r.updatedAt()), r.approvalId());
+		if (updated == 0) {
+			jdbcTemplate.update(
+				"INSERT INTO datapack_release_request (approval_id, candidate_id, scope_id,"
+					+ " target_channel, build_spec_sha256, source_snapshot_set_hash, approved_ledger_hash,"
+					+ " requested_by, approved_by, status, dispatch_idempotency_key, workflow_run_url,"
+					+ " created_at, approved_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+				r.approvalId(), r.candidateId(), r.scopeId(), r.targetChannel(), r.buildSpecSha256(),
+				r.sourceSnapshotSetHash(), r.approvedLedgerHash(), r.requestedBy(), r.approvedBy(),
+				r.status().name(), r.dispatchIdempotencyKey(), r.workflowRunUrl(),
+				toTs(r.createdAt()), toTs(r.approvedAt()), toTs(r.updatedAt()));
+		}
+	}
+
+	@Override
+	public Optional<DatapackReleaseRequest> findByApprovalId(String approvalId) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject(
+				"SELECT * FROM datapack_release_request WHERE approval_id=?", ROW_MAPPER, approvalId));
+		} catch (EmptyResultDataAccessException e) {
+			return Optional.empty();
+		}
+	}
+
+	@Override
+	public List<DatapackReleaseRequest> findRecent(int limit) {
+		return jdbcTemplate.query(
+			"SELECT * FROM datapack_release_request ORDER BY created_at DESC, approval_id DESC LIMIT ?",
+			ROW_MAPPER, limit);
+	}
+
+	private static Timestamp toTs(LocalDateTime v) {
+		return v == null ? null : Timestamp.valueOf(v);
+	}
+
+	private static LocalDateTime toLdt(Timestamp v) {
+		return v == null ? null : v.toLocalDateTime();
+	}
+}

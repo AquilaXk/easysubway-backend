@@ -1,0 +1,96 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>release request</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-release-requests')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>release request</h1>
+			<p>게시 대상 candidate를 골라 release request를 요청하고, 다른 관리자가 승인합니다. 승인 이후 단계(워크플로 자동 트리거)는 후속 범위입니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<h2>release request 생성</h2>
+		<form method="post" th:action="@{/admin/datapack/release-requests}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<label>
+				candidate
+				<select name="candidateId">
+					<option th:each="candidate : ${candidates}"
+							th:value="${candidate.id}"
+							th:text="${candidate.id + ' · ' + candidate.version + ' · ' + candidate.approvalStatus}">candidate</option>
+				</select>
+			</label>
+			<label>
+				target channel
+				<select name="targetChannel">
+					<option value="staging">staging</option>
+					<option value="production">production</option>
+					<option value="dev">dev</option>
+				</select>
+			</label>
+			<button type="submit">release request 요청</button>
+		</form>
+	</section>
+
+	<section class="admin-panel">
+		<h2>release request 목록</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">approval</th>
+				<th scope="col">candidate</th>
+				<th scope="col">scope</th>
+				<th scope="col">channel</th>
+				<th scope="col">status</th>
+				<th scope="col">requested</th>
+				<th scope="col">approved</th>
+				<th scope="col">created</th>
+				<th scope="col">승인</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${requests.isEmpty()}">
+				<td colspan="9">release request가 없습니다.</td>
+			</tr>
+			<tr th:each="request : ${requests}">
+				<td th:text="${request.approvalId}">approval</td>
+				<td th:text="${request.candidateId}">candidate</td>
+				<td th:text="${request.scopeId}">scope</td>
+				<td th:text="${request.targetChannel}">staging</td>
+				<td th:text="${request.status}">REQUESTED</td>
+				<td th:text="${request.requestedBy}">requested</td>
+				<td th:text="${request.approvedBy}">approved</td>
+				<td th:text="${request.createdAt}">2026-07-06T00:00</td>
+				<td>
+					<form th:if="${request.status == 'REQUESTED'}"
+						  method="post"
+						  th:action="@{/admin/datapack/release-requests/{approvalId}/approve(approvalId=${request.approvalId})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<button type="submit">승인</button>
+					</form>
+					<span th:unless="${request.status == 'REQUESTED'}">-</span>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>
