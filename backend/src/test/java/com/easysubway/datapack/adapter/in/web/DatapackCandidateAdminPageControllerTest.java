@@ -79,16 +79,18 @@ class DatapackCandidateAdminPageControllerTest {
 
 		assertThat(detailHtml)
 			.contains("candidate-capital-1")
-			.contains("sourceSnapshotIds")
+			.contains("게이트 체크리스트")
+			.contains("매니페스트 서명")
+			.contains("원천 스냅샷 ids")
 			.contains("snapshot-kric-20260629")
 			.contains("buildSpec")
-			.contains("workflowRunUrl")
+			.contains("증거 워크플로")
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/123?redacted")
-			.contains("evidenceBundleSha256")
-			.contains("raw evidence 원문은 표시하지 않고 검증된 hash/status만 표시합니다.")
+			.contains("증거 번들 sha256")
+			.contains("sha 원문 보기")
 			.contains("production promote 가능")
 			.contains("name=\"commandToken\"")
-			.contains("gate 재실행")
+			.contains("게이트 재실행")
 			.doesNotContain("production 승인")
 			.doesNotContain("serviceKey");
 	}

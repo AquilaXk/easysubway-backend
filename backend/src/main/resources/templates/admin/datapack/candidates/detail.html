@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>Candidate Pack Detail</title>
+	<title>후보 팩 상세</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
@@ -14,70 +14,108 @@
 <main class="admin-main">
 	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<nav th:replace="~{admin/fragments/shell :: breadcrumb('데이터팩', '파이프라인 개요', '/admin/datapack/pipeline/page', ${candidate.id})}"></nav>
 	<header class="admin-page-head">
 		<div>
 			<h1 th:text="${candidate.id}">candidate-id</h1>
-			<p>buildSpec, candidate 입력, release evidence bundle을 읽기 전용으로 확인합니다.</p>
+			<p th:text="${'scope ' + candidate.scopeId + ' · ' + candidate.artifactKind + ' · ' + candidate.version}">scope</p>
+		</div>
+		<div class="admin-actions">
+			<a class="admin-btn" th:href="@{/admin/datapack/pipeline/page}">파이프라인 개요</a>
 		</div>
 	</header>
 
 	<section class="admin-panel">
-		<h2>Artifact</h2>
+		<h2>게이트 체크리스트</h2>
+		<p class="summary" th:text="${evidenceBundle.productionPromoteReason()}">production promote 상태</p>
 		<table>
+			<thead>
+			<tr>
+				<th scope="col">게이트</th>
+				<th scope="col">상태</th>
+			</tr>
+			</thead>
 			<tbody>
-			<tr><th scope="row">scope</th><td th:text="${candidate.scopeId}">scope</td></tr>
-			<tr><th scope="row">artifactKind</th><td th:text="${candidate.artifactKind}">DATAPACK</td></tr>
-			<tr><th scope="row">version</th><td th:text="${candidate.version}">version</td></tr>
-			<tr><th scope="row">approval</th><td th:text="${candidate.approvalStatus}">READY_FOR_APPROVAL</td></tr>
-			<tr><th scope="row">sourceSnapshotSetHash</th><td th:text="${candidate.sourceSnapshotSetHash}">sha</td></tr>
-			<tr><th scope="row">overrideSetHash</th><td th:text="${candidate.overrideSetHash}">sha</td></tr>
-			<tr><th scope="row">buildSpec</th><td th:text="${candidate.buildSpecSha256}">sha</td></tr>
-			<tr><th scope="row">sourceInventory</th><td th:text="${candidate.sourceInventorySha256}">sha</td></tr>
-			<tr><th scope="row">sqlite/gzip/manifest</th><td><span th:text="${candidate.sqliteSha256}">sqlite</span> <span th:text="${candidate.gzipSha256}">gzip</span> <span th:text="${candidate.manifestSha256}">manifest</span></td></tr>
+			<tr>
+				<td>원천 커버리지</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${candidate.coverageStatus})}">확인 필요</span></td>
+			</tr>
+			<tr>
+				<td>검증기(Validator)</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${candidate.validatorStatus})}">확인 필요</span></td>
+			</tr>
+			<tr>
+				<td>경로 회귀</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${candidate.routeRegressionStatus})}">확인 필요</span></td>
+			</tr>
+			<tr>
+				<td>Android 증거</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${candidate.androidEvidenceStatus})}">확인 필요</span></td>
+			</tr>
+			<tr>
+				<td>매니페스트 서명</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${evidenceBundle.manifestSignatureStatus})}">확인 필요</span></td>
+			</tr>
+			<tr>
+				<td>승인</td>
+				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${candidate.approvalStatus})}">확인 필요</span></td>
+			</tr>
 			</tbody>
 		</table>
 	</section>
 
 	<section class="admin-panel">
-		<h2>Input</h2>
+		<h2>증거·산출물</h2>
+		<dl class="admin-meta-list">
+			<dt>증거 워크플로</dt>
+			<dd th:text="${evidenceBundle.workflowRunUrl}">workflow</dd>
+			<dt>증거 번들 sha256</dt>
+			<dd><span th:title="${evidenceBundle.evidenceBundleSha256}" th:text="${#strings.abbreviate(evidenceBundle.evidenceBundleSha256, 11)}">sha</span></dd>
+			<dt>매니페스트 sha256</dt>
+			<dd><span th:title="${candidate.manifestSha256}" th:text="${#strings.abbreviate(candidate.manifestSha256, 11)}">sha</span></dd>
+			<dt>원천 스냅샷 세트 hash</dt>
+			<dd><span th:title="${candidate.sourceSnapshotSetHash}" th:text="${#strings.abbreviate(candidate.sourceSnapshotSetHash, 11)}">sha</span></dd>
+			<dt>오버라이드 세트 hash</dt>
+			<dd><span th:title="${candidate.overrideSetHash}" th:text="${#strings.abbreviate(candidate.overrideSetHash, 11)}">sha</span></dd>
+		</dl>
+		<details>
+			<summary>sha 원문 보기</summary>
+			<table>
+				<tbody>
+				<tr><th scope="row">buildSpec</th><td th:text="${candidate.buildSpecSha256}">sha</td></tr>
+				<tr><th scope="row">sourceInventory</th><td th:text="${candidate.sourceInventorySha256}">sha</td></tr>
+				<tr><th scope="row">sqlite</th><td th:text="${candidate.sqliteSha256}">sha</td></tr>
+				<tr><th scope="row">gzip</th><td th:text="${candidate.gzipSha256}">sha</td></tr>
+				<tr><th scope="row">manifest</th><td th:text="${candidate.manifestSha256}">sha</td></tr>
+				<tr><th scope="row">evidenceBundle</th><td th:text="${evidenceBundle.evidenceBundleSha256}">sha</td></tr>
+				</tbody>
+			</table>
+		</details>
+	</section>
+
+	<section class="admin-panel">
+		<h2>입력 원장</h2>
 		<table>
 			<tbody>
-			<tr><th scope="row">sourceSnapshotIds</th><td th:text="${candidateInput.sourceSnapshotIds}">snapshot ids</td></tr>
-			<tr><th scope="row">approvedAliasLedgerHash</th><td th:text="${candidateInput.approvedAliasLedgerHash}">sha</td></tr>
-			<tr><th scope="row">facilityEvidenceLedgerHash</th><td th:text="${candidateInput.facilityEvidenceLedgerHash}">sha</td></tr>
-			<tr><th scope="row">routeEvidenceLedgerHash</th><td th:text="${candidateInput.routeEvidenceLedgerHash}">sha</td></tr>
-			<tr><th scope="row">approvedOverrideSetHash</th><td th:text="${candidateInput.approvedOverrideSetHash}">sha</td></tr>
+			<tr><th scope="row">원천 스냅샷 ids</th><td th:text="${candidateInput.sourceSnapshotIds}">snapshot ids</td></tr>
+			<tr><th scope="row">승인 별칭 원장 hash</th><td><span th:title="${candidateInput.approvedAliasLedgerHash}" th:text="${#strings.abbreviate(candidateInput.approvedAliasLedgerHash, 11)}">sha</span></td></tr>
+			<tr><th scope="row">시설 근거 원장 hash</th><td><span th:title="${candidateInput.facilityEvidenceLedgerHash}" th:text="${#strings.abbreviate(candidateInput.facilityEvidenceLedgerHash, 11)}">sha</span></td></tr>
+			<tr><th scope="row">경로 근거 원장 hash</th><td><span th:title="${candidateInput.routeEvidenceLedgerHash}" th:text="${#strings.abbreviate(candidateInput.routeEvidenceLedgerHash, 11)}">sha</span></td></tr>
+			<tr><th scope="row">승인 오버라이드 세트 hash</th><td><span th:title="${candidateInput.approvedOverrideSetHash}" th:text="${#strings.abbreviate(candidateInput.approvedOverrideSetHash, 11)}">sha</span></td></tr>
 			</tbody>
 		</table>
 	</section>
 
 	<section class="admin-panel">
-		<h2>Evidence Bundle</h2>
-		<p class="summary">raw evidence 원문은 표시하지 않고 검증된 hash/status만 표시합니다.</p>
-		<p class="summary" th:text="${evidenceBundle.productionPromoteReason()}">production promote 차단</p>
-		<table>
-			<tbody>
-			<tr><th scope="row">evidenceBundleSha256</th><td th:text="${evidenceBundle.evidenceBundleSha256}">sha</td></tr>
-			<tr><th scope="row">workflowRunUrl</th><td th:text="${evidenceBundle.workflowRunUrl}">workflow</td></tr>
-			<tr><th scope="row">validator</th><td th:text="${evidenceBundle.validatorStatus}">PASS</td></tr>
-			<tr><th scope="row">routeRegression</th><td th:text="${evidenceBundle.routeRegressionStatus}">PASS</td></tr>
-			<tr><th scope="row">manifestSignature</th><td th:text="${evidenceBundle.manifestSignatureStatus}">PASS</td></tr>
-			<tr><th scope="row">androidEvidence</th><td th:text="${evidenceBundle.androidEvidenceStatus}">PASS</td></tr>
-			</tbody>
-		</table>
-	</section>
-
-	<section class="admin-panel">
-		<h2>Gate 재실행</h2>
+		<h2>게이트 재실행</h2>
 		<form method="post" th:action="@{'/admin/datapack/candidates/' + ${candidate.id} + '/rerun-gates'}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<input type="hidden" name="idempotencyKey" th:value="${'candidate-rerun-' + candidate.id}">
-			<label>
-				reason
+			<label>사유
 				<input name="reason" value="candidate gates rerun requested" required>
 			</label>
-			<button type="submit">gate 재실행</button>
+			<button type="submit">게이트 재실행</button>
 		</form>
 	</section>
 </main>

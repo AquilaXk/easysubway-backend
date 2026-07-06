@@ -20,6 +20,7 @@ public enum AdminProgram {
 	INCIDENTS("a-incidents", "운영·분석", "장애관리", "/admin/incidents/page", AdminPermission.OPERATIONS_MANAGE),
 	ROUTE_SEARCHES("a-route-searches", "운영·분석", "경로 검색 분석", "/admin/routes/searches/page", AdminPermission.ADMIN_VIEW),
 	ROUTE_FEEDBACK("a-route-feedback", "운영·분석", "경로 피드백 분석", "/admin/routes/feedback/page", AdminPermission.ADMIN_VIEW),
+	DATAPACK_PIPELINE("a-datapack-pipeline", "데이터팩", "파이프라인 개요", "/admin/datapack/pipeline/page", AdminPermission.DATAPACK_READ),
 	DATAPACK_SOURCE_SNAPSHOTS("a-datapack-source-snapshots", "데이터팩", "원천 스냅샷", "/admin/datapack/source-snapshots/page", AdminPermission.DATAPACK_READ),
 	DATAPACK_ALIAS_QUARANTINE("a-datapack-alias-quarantine", "데이터팩", "별칭·격리 검토", "/admin/datapack/alias-quarantine/page", AdminPermission.DATAPACK_READ),
 	DATAPACK_FACILITY_EVIDENCE("a-datapack-facility-evidence", "데이터팩", "시설 근거 검토", "/admin/datapack/facility-evidence/page", AdminPermission.DATAPACK_READ),

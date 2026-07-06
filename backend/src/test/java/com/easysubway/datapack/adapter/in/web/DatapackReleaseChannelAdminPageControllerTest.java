@@ -60,7 +60,9 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("Release Channels")
+			.contains("배포 채널")
+			.contains("승격 승인")
+			.contains("rollback 대상")
 			.contains("production")
 			.contains("candidate-stable-3")
 			.contains("2026.06.29-stable.3")

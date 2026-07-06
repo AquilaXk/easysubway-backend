@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title>데이터팩 파이프라인 개요</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-datapack-pipeline')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>데이터팩 파이프라인 개요</h1>
+			<p>원천 스냅샷 → 후보 생성 → 게이트 6종 → 채널 승격을 한 화면에서 보고, 각 단계에서 상세로 이동합니다.</p>
+		</div>
+	</header>
+
+	<section>
+		<h2>현재 후보</h2>
+		<div class="metric-grid" aria-label="현재 후보 요약">
+			<div class="metric">
+				<span>후보</span>
+				<strong><span th:title="${pipeline.candidateId}" th:text="${pipeline.candidateIdShort}">-</span></strong>
+				<em th:text="${'scope ' + pipeline.scopeId}">scope</em>
+			</div>
+			<div class="metric">
+				<span>상태</span>
+				<strong><span th:replace="~{admin/fragments/shell :: status(${pipeline.status}, ${pipeline.statusTone})}">확인 필요</span></strong>
+				<em th:text="${pipeline.productionPromoteReason}">production promote</em>
+			</div>
+			<div class="metric" th:classappend="${pipeline.totalBlockers > 0} ? ' tone-bad'">
+				<span>총 blocker</span>
+				<strong th:text="${pipeline.totalBlockers}">0</strong>
+				<em th:text="${'생성 ' + pipeline.candidateCreatedAt}">생성 시각</em>
+			</div>
+			<div class="metric">
+				<span>production / rollback</span>
+				<strong th:text="${pipeline.productionCandidateId}">-</strong>
+				<em th:text="${'rollback ' + pipeline.rollbackCandidateId}">rollback</em>
+			</div>
+		</div>
+	</section>
+
+	<section>
+		<h2>파이프라인 단계</h2>
+		<p>단계 노드를 눌러 해당 화면으로 이동합니다. blocker가 있는 단계는 강조됩니다.</p>
+		<ol class="datapack-pipeline" aria-label="데이터팩 파이프라인 단계">
+			<li th:each="node : ${pipeline.stages}" class="datapack-pipeline-node"
+			    th:classappend="${node.blocked} ? ' is-blocked'">
+				<a th:href="@{${node.drillUrl}}">
+					<span class="datapack-pipeline-label" th:text="${node.label}">단계</span>
+					<span class="datapack-pipeline-badge"
+					      th:classappend="${node.blocked} ? ' bad' : ' good'"
+					      th:text="${node.blocked} ? ('blocker ' + node.blockerCount + '건') : '통과'">통과</span>
+					<span class="meta" th:text="${node.drillLabel}">이동</span>
+				</a>
+			</li>
+		</ol>
+	</section>
+
+	<section>
+		<h2>단계별 blocker (표)</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">단계</th>
+				<th scope="col">blocker</th>
+				<th scope="col">상세</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="node : ${pipeline.stages}" th:classappend="${node.blocked} ? ' is-blocked'">
+				<td th:text="${node.label}">단계</td>
+				<td th:text="${node.blocked} ? node.blockerCount : 0">0</td>
+				<td><a th:href="@{${node.drillUrl}}" th:text="${node.drillLabel}">이동</a></td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
+		<h2>서명·증거</h2>
+		<dl class="admin-meta-list">
+			<dt>원천 스냅샷 세트</dt>
+			<dd><span th:title="${pipeline.sourceSnapshotSetHash.fullValue}" th:text="${pipeline.sourceSnapshotSetHash.shortValue}">-</span></dd>
+			<dt>매니페스트 sha256</dt>
+			<dd><span th:title="${pipeline.manifestSha256.fullValue}" th:text="${pipeline.manifestSha256.shortValue}">-</span></dd>
+			<dt>증거 번들 sha256</dt>
+			<dd><span th:title="${pipeline.evidenceBundleSha256.fullValue}" th:text="${pipeline.evidenceBundleSha256.shortValue}">-</span></dd>
+			<dt>증거 워크플로</dt>
+			<dd th:text="${pipeline.evidenceWorkflowRunUrl}">-</dd>
+		</dl>
+		<details>
+			<summary>sha 원문 보기</summary>
+			<dl class="admin-meta-list">
+				<dt>원천 스냅샷 세트</dt>
+				<dd th:text="${pipeline.sourceSnapshotSetHash.fullValue}">-</dd>
+				<dt>매니페스트 sha256</dt>
+				<dd th:text="${pipeline.manifestSha256.fullValue}">-</dd>
+				<dt>증거 번들 sha256</dt>
+				<dd th:text="${pipeline.evidenceBundleSha256.fullValue}">-</dd>
+			</dl>
+		</details>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>
