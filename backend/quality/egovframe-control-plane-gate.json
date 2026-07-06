@@ -31,11 +31,11 @@
   "dependencyPolicy": {
     "directAllowed": [
       "org.egovframe.rte:egovframe-rte-ptl-mvc",
-      "org.egovframe.rte:egovframe-rte-bat-core"
+      "org.egovframe.rte:egovframe-rte-bat-core",
+      "org.egovframe.rte:egovframe-rte-fdl-property",
+      "org.egovframe.rte:egovframe-rte-fdl-idgnr"
     ],
     "directDeferredUntilPocPasses": [
-      "org.egovframe.rte:egovframe-rte-fdl-property",
-      "org.egovframe.rte:egovframe-rte-fdl-idgnr",
       "org.egovframe.rte:egovframe-rte-psl-dataaccess",
       "org.egovframe.boot:egovframe-boot-starter-access",
       "org.egovframe.rte:egovframe-rte-fdl-excel"
@@ -63,14 +63,16 @@
       "constraint": "do not import eGovFrame logging types outside backend support runtime verification"
     },
     "fdlProperty": {
-      "status": "adoption_in_progress",
-      "targetStatus": "adopted_control_plane_only",
-      "constraint": "Spring Boot configuration remains the source of truth; only operational parameters move to eGovFrame property in S3"
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfig.java",
+      "verification": "backend/src/test/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfigTest.java",
+      "constraint": "Spring Boot application.yml remains the bootstrap source of truth; only the operational collection run id prefix is externalized to egovframe/collection-control-plane.properties. No credentials or secrets in eGovFrame property."
     },
     "fdlIdgnr": {
-      "status": "adoption_in_progress",
-      "targetStatus": "adopted_control_plane_only",
-      "constraint": "UUID, database IDs, receipt tokens, and security identifiers must not move to eGovFrame ID generation; S3 adopts it only for the operational collection run ID"
+      "status": "adopted_control_plane_only",
+      "currentImplementation": "backend/src/main/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfig.java",
+      "verification": "backend/src/test/java/com/easysubway/collection/adapter/out/idgnr/CollectionControlPlaneEgovConfigTest.java",
+      "constraint": "UUID, database IDs, receipt tokens, and security identifiers must not move to eGovFrame ID generation; adopted only for the operational collection run id (collection-<id>) via the Table strategy on the ids table."
     },
     "pslDataaccess": {
       "status": "forbidden_until_poc_passes",

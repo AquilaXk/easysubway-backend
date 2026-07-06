@@ -2,13 +2,13 @@ package com.easysubway.collection.application.service;
 
 import com.easysubway.collection.application.port.in.DataCollectionUseCase;
 import com.easysubway.collection.application.port.in.RunDataCollectionCommand;
+import com.easysubway.collection.application.port.out.GenerateCollectionRunIdPort;
 import com.easysubway.collection.application.port.out.LoadDataCollectionRunPort;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 import org.springframework.batch.core.Job;
 import org.springframework.batch.core.JobExecutionException;
 import org.springframework.batch.core.JobParametersBuilder;
@@ -20,15 +20,18 @@ import org.springframework.stereotype.Service;
 public class DataCollectionService implements DataCollectionUseCase {
 
 	private final LoadDataCollectionRunPort loadDataCollectionRunPort;
+	private final GenerateCollectionRunIdPort generateCollectionRunIdPort;
 	private final JobLauncher jobLauncher;
 	private final Job transitMasterCollectionJob;
 
 	public DataCollectionService(
 		LoadDataCollectionRunPort loadDataCollectionRunPort,
+		GenerateCollectionRunIdPort generateCollectionRunIdPort,
 		JobLauncher jobLauncher,
 		@Qualifier("transitMasterCollectionJob") Job transitMasterCollectionJob
 	) {
 		this.loadDataCollectionRunPort = loadDataCollectionRunPort;
+		this.generateCollectionRunIdPort = generateCollectionRunIdPort;
 		this.jobLauncher = jobLauncher;
 		this.transitMasterCollectionJob = transitMasterCollectionJob;
 	}
@@ -56,7 +59,7 @@ public class DataCollectionService implements DataCollectionUseCase {
 	}
 
 	private DataCollectionRun launchTransitMasterCollection(String requestedBy) {
-		String runId = "collection-" + UUID.randomUUID();
+		String runId = generateCollectionRunIdPort.nextCollectionRunId();
 		var parameters = new JobParametersBuilder()
 			.addString("runId", runId)
 			.addString("requestedBy", requestedBy)

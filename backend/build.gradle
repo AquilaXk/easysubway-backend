@@ -46,6 +46,8 @@ dependencyManagement {
 	}
 	dependencies {
 		// Spring Boot BOM이 더 낮게 고정하는 공통 라이브러리는 기존 eGovFrame 기준 보안 패치 버전을 유지한다.
+		// fdl-property가 끌어오는 commons-configuration2 2.11.0은 GHSA-337m-mw94-2v6g(Medium)라 2.15.0으로 상향(#1821).
+		dependency 'org.apache.commons:commons-configuration2:2.15.0'
 		dependency 'org.apache.commons:commons-lang3:3.18.0'
 		dependency 'org.apache.logging.log4j:log4j-api:2.25.3'
 		dependency 'org.apache.logging.log4j:log4j-core:2.25.3'
@@ -64,6 +66,10 @@ dependencies {
 	// 수집 배치 control-plane: bat-core 변수 리스너로 표준 배치 변수 시딩 + 생명주기 로깅(#1820).
 	// psl-dataaccess는 bat-core의 inert transitive로만 존재(직접 채택 금지, contract test 강제).
 	implementation 'org.egovframe.rte:egovframe-rte-bat-core'
+	// 수집 run ID control-plane: fdl-idgnr Table 전략 ID + fdl-property 접두어 외부화(#1821).
+	// 보안 식별자(UUID·DB PK·토큰)는 대상 아님 — 운영성 수집 run ID 한정(contract test 강제).
+	implementation 'org.egovframe.rte:egovframe-rte-fdl-property'
+	implementation 'org.egovframe.rte:egovframe-rte-fdl-idgnr'
 	implementation 'org.springframework.boot:spring-boot-starter-actuator'
 	implementation 'org.springframework.boot:spring-boot-starter-batch'
 	implementation 'org.springframework.boot:spring-boot-starter-log4j2'
