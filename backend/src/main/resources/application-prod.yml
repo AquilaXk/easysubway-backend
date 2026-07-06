@@ -80,3 +80,6 @@ easysubway:
   notifications:
     push:
       external-enabled: ${EASYSUBWAY_PUSH_EXTERNAL_ENABLED:false}
+  timetable:
+    seed:
+      enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}
