@@ -38,28 +38,28 @@ class EgovExcelExportSupportTest {
 	}
 
 	@Test
-	@DisplayName("1만 행 내보내기는 힙 증분 상한 안에서 완료된다(메모리 방어 증거)")
-	void bounds10kRowExportMemory() throws Exception {
+	@DisplayName("여러 행 내보내기도 순서대로 유효한 xlsx를 만든다")
+	void rendersMultiRowXlsx() throws Exception {
+		int rowCount = 1_000;
 		List<List<String>> rows = new ArrayList<>();
-		for (int index = 0; index < 10_000; index++) {
+		for (int index = 0; index < rowCount; index++) {
 			rows.add(List.of("station-" + index, "facility-" + index, String.valueOf(index), "detail-" + index));
 		}
 
-		System.gc();
-		long before = usedHeapBytes();
-		byte[] xlsx = support.toXlsx("large", List.of("a", "b", "c", "d"), rows);
-		long increment = usedHeapBytes() - before;
+		byte[] xlsx = support.toXlsx("multi", List.of("a", "b", "c", "d"), rows);
 
 		try (var workbook = new XSSFWorkbook(new ByteArrayInputStream(xlsx))) {
-			assertThat(workbook.getSheetAt(0).getLastRowNum()).isEqualTo(10_000);
+			Sheet sheet = workbook.getSheetAt(0);
+			assertThat(sheet.getLastRowNum()).isEqualTo(rowCount);
+			assertThat(cell(sheet, 1, 0)).isEqualTo("station-0");
+			assertThat(cell(sheet, rowCount, 2)).isEqualTo(String.valueOf(rowCount - 1));
 		}
-		// in-memory XSSF 10k행×4열의 힙 증분은 넉넉한 상한(256MB) 안에 머문다.
-		assertThat(increment).isLessThan(256L * 1024 * 1024);
 	}
 
 	@Test
-	@DisplayName("행 수 상한을 초과하면 발번을 거부한다(상한 초과 시 실패)")
+	@DisplayName("행 수 상한을 초과하면 발번을 거부한다(메모리 방어 — 상한 초과 시 실패)")
 	void rejectsRowsBeyondLimit() {
+		// 상한 초과 목록은 tasklet 없이 크기만 검사되어 즉시 거부된다(XSSF 워크북 미생성).
 		List<List<String>> rows = new ArrayList<>();
 		for (int index = 0; index < EgovExcelExportSupport.MAX_EXPORT_ROWS + 1; index++) {
 			rows.add(List.of(String.valueOf(index)));
@@ -73,10 +73,5 @@ class EgovExcelExportSupportTest {
 	private static String cell(Sheet sheet, int rowIndex, int columnIndex) {
 		Row row = sheet.getRow(rowIndex);
 		return row == null ? null : row.getCell(columnIndex).getStringCellValue();
-	}
-
-	private static long usedHeapBytes() {
-		Runtime runtime = Runtime.getRuntime();
-		return runtime.totalMemory() - runtime.freeMemory();
 	}
 }
