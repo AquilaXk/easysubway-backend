@@ -1951,3 +1951,73 @@ body.admin-v3 {
 	font-variant-numeric: tabular-nums;
 	text-align: right;
 }
+
+/* 감사 콘솔(#1747): 필터 체크박스·점검 배너·상세 타임라인 */
+.admin-v3 .toolbar-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--admin-ink-2);
+	white-space: nowrap;
+}
+
+.admin-v3 .compliance-banner {
+	margin: 12px 0;
+	padding: 10px 14px;
+	border-radius: var(--admin-radius-control);
+	background: #fff2da;
+	color: var(--admin-warn);
+	font-size: 13px;
+}
+
+.admin-v3 .compliance-banner .filter-quick {
+	margin-left: 8px;
+	color: var(--admin-warn);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 td.reason-missing,
+.admin-v3 dd.reason-missing {
+	color: var(--admin-danger);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .target-link {
+	margin-left: 8px;
+	font-size: 13px;
+	color: var(--admin-accent);
+}
+
+.admin-v3 .audit-timeline {
+	margin-top: 24px;
+}
+
+.admin-v3 .timeline {
+	list-style: none;
+	margin: 12px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 2px;
+	border-left: 2px solid var(--admin-border-strong);
+}
+
+.admin-v3 .timeline li {
+	display: grid;
+	grid-template-columns: max-content 1fr max-content;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 12px;
+	font-size: 13px;
+}
+
+.admin-v3 .timeline .timeline-time {
+	color: var(--admin-ink-3);
+	font-variant-numeric: tabular-nums;
+}
+
+.admin-v3 .timeline .timeline-current {
+	background: var(--admin-accent-soft);
+	border-radius: 0 var(--admin-radius-control) var(--admin-radius-control) 0;
+	font-weight: var(--admin-w-medium);
+}

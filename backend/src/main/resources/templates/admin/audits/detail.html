@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title th:text="${title} + ' 상세'">감사 상세</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar(${activeProgram})}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<!-- breadcrumb은 풀페이지 전용(드로어 fragment 밖) -->
+	<div th:replace="~{admin/fragments/shell :: breadcrumb('감사·로그', ${title}, ${basePath}, '상세')}"></div>
+	<!-- 드로어(사이드 패널) htmx 로드 대상(#1747): 이 fragment만 부분 응답으로 반환된다. -->
+	<div th:fragment="detailBody">
+		<header class="admin-page-head">
+			<div>
+				<h1 th:text="${title} + ' 상세'">감사 상세</h1>
+				<p th:if="${!privacyMode}">이벤트 상세와 같은 담당자의 직전·직후 작업 흐름을 확인합니다.</p>
+				<p th:if="${privacyMode}">개인정보 조회 상세와 조회 사유, 같은 담당자의 전후 조회 흐름을 확인합니다.</p>
+			</div>
+			<div class="admin-actions">
+				<a class="admin-btn" th:href="@{${basePath}}">목록으로</a>
+			</div>
+		</header>
+
+		<section aria-labelledby="audit-detail-heading">
+			<h2 id="audit-detail-heading">이벤트 상세</h2>
+			<dl class="detail-list">
+				<dt>발생</dt>
+				<dd th:text="${event.occurredAt}">2026-06-27T00:00</dd>
+				<dt th:if="${!privacyMode}">유형</dt>
+				<dd th:if="${!privacyMode}" th:text="${event.eventTypeLabel}">관리자 작업</dd>
+				<dt>actor</dt>
+				<dd th:text="${event.actor}">admin</dd>
+				<dt>권한</dt>
+				<dd th:text="${event.rolePermission}">admin.view</dd>
+				<dt>action</dt>
+				<dd th:text="${event.action}">action</dd>
+				<dt>결과</dt>
+				<dd>
+					<span class="status-badge" th:classappend="${'tone-' + event.outcomeTone}"
+					      th:text="${event.outcomeLabel}">성공</span>
+				</dd>
+				<dt>target</dt>
+				<dd>
+					<span th:text="${event.targetType}">target</span>
+					<span class="meta" th:text="${event.targetId}">id</span>
+					<a th:if="${targetHref != null}" th:href="@{${targetHref}}" class="target-link">대상 열기</a>
+				</dd>
+				<dt>사유</dt>
+				<dd th:class="${privacyMode and event.reasonMissing} ? 'reason-missing'"
+				    th:text="${event.reason}">-</dd>
+				<dt>요청 ID</dt>
+				<dd th:text="${event.requestId}">-</dd>
+				<dt>클라이언트 IP</dt>
+				<dd th:text="${event.clientIp}">-</dd>
+			</dl>
+		</section>
+
+		<section aria-labelledby="audit-timeline-heading" class="audit-timeline">
+			<h2 id="audit-timeline-heading" th:text="'같은 담당자(' + ${event.actor} + ') 전후 흐름'">전후 흐름</h2>
+			<p class="section-hint" th:if="${timelineBefore.isEmpty() and timelineAfter.isEmpty()}">
+				이 담당자의 다른 이벤트가 없습니다.
+			</p>
+			<ol class="timeline">
+				<li th:each="row : ${timelineBefore}">
+					<span class="timeline-time" th:text="${row.occurredAt}">시각</span>
+					<span class="timeline-action" th:text="${row.action}">action</span>
+					<span class="status-badge" th:classappend="${'tone-' + row.outcomeTone}"
+					      th:text="${row.outcomeLabel}">성공</span>
+				</li>
+				<li class="timeline-current" aria-current="true">
+					<span class="timeline-time" th:text="${event.occurredAt}">시각</span>
+					<span class="timeline-action" th:text="${event.action}">현재 이벤트</span>
+					<span class="status-badge" th:classappend="${'tone-' + event.outcomeTone}"
+					      th:text="${event.outcomeLabel}">성공</span>
+				</li>
+				<li th:each="row : ${timelineAfter}">
+					<span class="timeline-time" th:text="${row.occurredAt}">시각</span>
+					<span class="timeline-action" th:text="${row.action}">action</span>
+					<span class="status-badge" th:classappend="${'tone-' + row.outcomeTone}"
+					      th:text="${row.outcomeLabel}">성공</span>
+				</li>
+			</ol>
+		</section>
+	</div>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

@@ -3,6 +3,7 @@ package com.easysubway.admin.audit.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.admin.audit.application.AdminAuditQuery;
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
@@ -75,6 +76,95 @@ class JdbcAdminAuditEventRepositoryTest {
 
 		assertThat(columns)
 			.doesNotContain("receipt_token", "upload_url", "photo_object_key", "private_note", "secret", "provider_key");
+	}
+
+	@Test
+	@DisplayName("감사 검색은 유형·actor·결과·target·사유없음으로 필터하고 발생 최신순으로 정렬한다")
+	void searchFiltersAuditEvents() {
+		var repository = new JdbcAdminAuditEventRepository(adminAuditDataSource());
+		LocalDateTime base = LocalDateTime.of(2026, 6, 27, 9, 0);
+		repository.save(fullEvent(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.SUCCESS,
+			"REPORT", "report-1", "업무 맥락", base));
+		repository.save(fullEvent(AdminAuditEventType.PRIVACY_READ, "admin-b", AdminAuditOutcome.SUCCESS,
+			"REPORT", "report-2", null, base.plusMinutes(1)));
+		repository.save(fullEvent(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.FAILURE,
+			"INCIDENT", "incident-9", "업무 맥락", base.plusMinutes(2)));
+
+		assertThat(repository.search(query(AdminAuditEventType.ADMIN_ACTION, "admin-a", null, null, false)))
+			.extracting(AdminAuditEvent::targetId).containsExactly("incident-9", "report-1");
+		assertThat(repository.search(query(null, null, AdminAuditOutcome.FAILURE, null, false)))
+			.extracting(AdminAuditEvent::targetId).containsExactly("incident-9");
+		assertThat(repository.search(query(null, null, null, "report", false)))
+			.extracting(AdminAuditEvent::targetId).containsExactly("report-2", "report-1");
+		assertThat(repository.search(query(null, null, null, null, true)))
+			.extracting(AdminAuditEvent::targetId).containsExactly("report-2");
+		assertThat(repository.count(query(AdminAuditEventType.ADMIN_ACTION, null, null, null, false))).isEqualTo(2);
+		assertThat(repository.findDistinctActors(null)).containsExactly("admin-a", "admin-b");
+		assertThat(repository.findDistinctActors(AdminAuditEventType.PRIVACY_READ)).containsExactly("admin-b");
+	}
+
+	@Test
+	@DisplayName("단건 조회와 actor 전후 타임라인은 scope 유형을 지키고 전후를 시간순으로 나눈다")
+	void findByIdAndActorContext() {
+		var repository = new JdbcAdminAuditEventRepository(adminAuditDataSource());
+		LocalDateTime base = LocalDateTime.of(2026, 6, 27, 9, 0);
+		for (int index = 0; index < 6; index++) {
+			repository.save(fullEvent(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.SUCCESS,
+				"REPORT", "a-" + index, "업무 맥락", base.plusMinutes(index)));
+		}
+		repository.save(fullEvent(AdminAuditEventType.PRIVACY_READ, "admin-a", AdminAuditOutcome.SUCCESS,
+			"REPORT", "priv-0", "업무 맥락", base.plusSeconds(200)));
+
+		AdminAuditEvent pivot = repository.search(
+				new AdminAuditQuery(null, "admin-a", null, "a-3", null, null, false, 0, 10))
+			.get(0);
+
+		assertThat(repository.findById(pivot.id(), null, false)).isPresent();
+		assertThat(repository.findById(pivot.id(), AdminAuditEventType.PRIVACY_READ, false)).isEmpty();
+
+		var context = repository.findActorContext(pivot, AdminAuditEventType.ADMIN_ACTION, false, 2);
+		assertThat(context.before()).extracting(AdminAuditEvent::targetId).containsExactly("a-1", "a-2");
+		assertThat(context.after()).extracting(AdminAuditEvent::targetId).containsExactly("a-4", "a-5");
+	}
+
+	@Test
+	@DisplayName("target 검색은 LIKE 메타문자(%,_)를 리터럴로 이스케이프해 오매칭을 막는다")
+	void searchEscapesLikeMetacharacters() {
+		var repository = new JdbcAdminAuditEventRepository(adminAuditDataSource());
+		LocalDateTime base = LocalDateTime.of(2026, 6, 27, 9, 0);
+		repository.save(fullEvent(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.SUCCESS,
+			"REPORT", "a%b", "업무 맥락", base));
+		repository.save(fullEvent(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.SUCCESS,
+			"REPORT", "axb", "업무 맥락", base.plusMinutes(1)));
+
+		// '%'가 와일드카드로 해석되면 axb도 매칭되지만, 이스케이프되어 a%b만 매칭돼야 한다.
+		assertThat(repository.search(query(null, null, null, "a%b", false)))
+			.extracting(AdminAuditEvent::targetId).containsExactly("a%b");
+	}
+
+	private static AdminAuditQuery query(
+		AdminAuditEventType eventType,
+		String actor,
+		AdminAuditOutcome outcome,
+		String targetKeyword,
+		boolean reasonMissing
+	) {
+		return AdminAuditQuery.of(
+			null, eventType, actor, outcome, targetKeyword, null, null, reasonMissing, null, null, false);
+	}
+
+	private AdminAuditEvent fullEvent(
+		AdminAuditEventType type,
+		String actor,
+		AdminAuditOutcome outcome,
+		String targetType,
+		String targetId,
+		String reason,
+		LocalDateTime occurredAt
+	) {
+		return new AdminAuditEvent(
+			null, type, actor, "admin.view", "request-1", "127.0.0.1", "JUnit",
+			targetType, targetId, "ACTION", outcome, reason, occurredAt);
 	}
 
 	private AdminAuditEvent event(AdminAuditEventType type, String action, LocalDateTime occurredAt) {

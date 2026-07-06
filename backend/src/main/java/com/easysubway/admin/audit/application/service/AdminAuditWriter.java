@@ -148,6 +148,17 @@ public class AdminAuditWriter {
 		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "ANALYTICS_EXPORT", targetId, action, outcome, reason);
 	}
 
+	public void auditExport(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "AUDIT_EXPORT", targetId, action, outcome, reason);
+	}
+
 	private void writeAudit(
 		Authentication authentication,
 		HttpServletRequest request,
