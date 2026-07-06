@@ -7,6 +7,7 @@ import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -243,6 +244,107 @@ class JdbcPushNotificationOutboxRepositoryTest {
 		assertThat(repository.loadPushNotifications("anonymous-user-1")).isEmpty();
 		assertThat(repository.loadPushNotifications("anonymous-user-2"))
 			.containsExactly(notification("push-3", "anonymous-user-2", PushNotificationType.FAVORITE_ROUTE_FACILITY, 11));
+	}
+
+	@Test
+	@DisplayName("이력 검색은 상태·유형·키워드·기간으로 필터하고 최신순으로 정렬한다")
+	void searchPushNotificationsFiltersAndOrders() {
+		repository.savePushNotification(notification("push-1", "user-1", PushNotificationType.REPORT_STATUS, 9));
+		repository.savePushNotification(failedNotification(
+			"push-2", "user-2", PushNotificationType.DATA_QUALITY, "provider timeout", 10));
+		repository.savePushNotification(notification(
+			"push-3", "user-3", PushNotificationType.REPORT_STATUS, PushNotificationStatus.SENT, 11));
+
+		var byStatus = repository.searchPushNotifications(query(PushNotificationStatus.FAILED, null, null));
+		assertThat(byStatus).extracting(PushNotification::notificationId).containsExactly("push-2");
+
+		var byType = repository.searchPushNotifications(query(null, PushNotificationType.REPORT_STATUS, null));
+		assertThat(byType).extracting(PushNotification::notificationId).containsExactly("push-3", "push-1");
+
+		var byKeyword = repository.searchPushNotifications(query(null, null, "제목 push-2"));
+		assertThat(byKeyword).extracting(PushNotification::notificationId).containsExactly("push-2");
+	}
+
+	@Test
+	@DisplayName("이력 검색은 페이지 크기·오프셋으로 잘라내고 전체 건수를 센다")
+	void searchPushNotificationsPaginatesAndCounts() {
+		for (int index = 0; index < 5; index++) {
+			repository.savePushNotification(notification(
+				"push-" + index, "user-1", PushNotificationType.REPORT_STATUS, 9 + index));
+		}
+
+		var firstPage = repository.searchPushNotifications(
+			new com.easysubway.notification.application.port.in.PushNotificationHistoryQuery(
+				null, null, null, null, null, null, 0, 2));
+		var secondPage = repository.searchPushNotifications(
+			new com.easysubway.notification.application.port.in.PushNotificationHistoryQuery(
+				null, null, null, null, null, null, 1, 2));
+
+		assertThat(firstPage).extracting(PushNotification::notificationId).containsExactly("push-4", "push-3");
+		assertThat(secondPage).extracting(PushNotification::notificationId).containsExactly("push-2", "push-1");
+		assertThat(repository.countPushNotifications(query(null, null, null))).isEqualTo(5);
+		assertThat(repository.countPushNotifications(query(null, null, "제목 push-0"))).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("LIKE 메타문자가 든 키워드는 리터럴로 매칭한다")
+	void searchPushNotificationsEscapesLikeMetacharacters() {
+		repository.savePushNotification(new PushNotification(
+			"push-pct", "user-1", DevicePlatform.ANDROID, "device-token-pct",
+			PushNotificationType.REPORT_STATUS, "50% 할인 안내", "본문", PushNotificationStatus.PENDING,
+			LocalDateTime.of(2026, 6, 17, 9, 0)));
+		repository.savePushNotification(notification("push-plain", "user-1", PushNotificationType.REPORT_STATUS, 10));
+
+		assertThat(repository.searchPushNotifications(query(null, null, "50%")))
+			.extracting(PushNotification::notificationId)
+			.containsExactly("push-pct");
+	}
+
+	@Test
+	@DisplayName("실패 사유별 분해는 status=FAILED를 사유별로 GROUP BY 하고 목록 건수와 정합한다")
+	void countFailureReasonsGroupsFailedByReason() {
+		repository.savePushNotification(failedNotification(
+			"push-1", "user-1", PushNotificationType.REPORT_STATUS, "provider timeout", 9));
+		repository.savePushNotification(failedNotification(
+			"push-2", "user-2", PushNotificationType.REPORT_STATUS, "provider timeout", 10));
+		repository.savePushNotification(failedNotification(
+			"push-3", "user-3", PushNotificationType.DATA_QUALITY, "invalid token", 11));
+		repository.savePushNotification(notification("push-4", "user-4", PushNotificationType.REPORT_STATUS, 12));
+
+		var breakdown = repository.countFailureReasons(query(null, null, null));
+
+		assertThat(breakdown)
+			.extracting(
+				com.easysubway.notification.domain.PushNotificationFailureReasonCount::reason,
+				com.easysubway.notification.domain.PushNotificationFailureReasonCount::count)
+			.containsExactly(tuple("provider timeout", 2L), tuple("invalid token", 1L));
+
+		// 분해 수치 = 사유 드릴다운 목록 건수 정합.
+		var drilldown = com.easysubway.notification.application.port.in.PushNotificationHistoryQuery.of(
+			null, null, null, "provider timeout", null, null, null, null);
+		assertThat(repository.countPushNotifications(drilldown)).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("식별자 목록으로 알림들을 로드한다(재발송 대상 검증용)")
+	void loadPushNotificationsByIdsReturnsMatchingNotifications() {
+		repository.savePushNotification(notification("push-1", "user-1", PushNotificationType.REPORT_STATUS, 9));
+		repository.savePushNotification(notification("push-2", "user-2", PushNotificationType.DATA_QUALITY, 10));
+		repository.savePushNotification(notification("push-3", "user-3", PushNotificationType.REPORT_STATUS, 11));
+
+		assertThat(repository.loadPushNotificationsByIds(List.of("push-1", "push-3", "missing")))
+			.extracting(PushNotification::notificationId)
+			.containsExactlyInAnyOrder("push-1", "push-3");
+		assertThat(repository.loadPushNotificationsByIds(List.of())).isEmpty();
+	}
+
+	private static com.easysubway.notification.application.port.in.PushNotificationHistoryQuery query(
+		PushNotificationStatus status,
+		PushNotificationType type,
+		String keyword
+	) {
+		return com.easysubway.notification.application.port.in.PushNotificationHistoryQuery.of(
+			status, type, keyword, null, null, null, null, null);
 	}
 
 	private PushNotification notification(

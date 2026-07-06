@@ -29,6 +29,7 @@ public class InMemoryAdminCommonCodeRepository implements AdminCommonCodeReposit
 		seedGroup(AdminCommonCodeGroups.INCIDENT_SEVERITY, "장애 심각도", "운영 incident 심각도", 40, now);
 		seedGroup(AdminCommonCodeGroups.INCIDENT_STATUS, "장애 상태", "운영 incident 처리 상태", 50, now);
 		seedGroup(AdminCommonCodeGroups.INCIDENT_SOURCE, "장애 출처", "incident 발생 출처", 60, now);
+		seedGroup(AdminCommonCodeGroups.PUSH_RESEND_LIMIT, "푸시 재발송 상한", "1회 재발송으로 처리할 수 있는 최대 건수", 70, now);
 		seedCode(AdminCommonCodeGroups.REPORT_REJECTION_REASON, "DUPLICATE", "중복 제보", "이미 처리 중인 동일 제보", 10, true, now);
 		seedCode(AdminCommonCodeGroups.REPORT_REJECTION_REASON, "INSUFFICIENT", "정보 부족", "역·시설·사진 정보 부족", 20, true, now);
 		seedCode(AdminCommonCodeGroups.FACILITY_STATUS_REASON, "INSPECTION", "정기 점검", "운영기관 정기 점검", 10, true, now);
@@ -43,6 +44,7 @@ public class InMemoryAdminCommonCodeRepository implements AdminCommonCodeReposit
 		seedCode(AdminCommonCodeGroups.INCIDENT_STATUS, "RESOLVED", "종결", "해결·종료됨", 40, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SOURCE, "HEALTH", "Health", "health 상태", 10, true, now);
 		seedCode(AdminCommonCodeGroups.INCIDENT_SOURCE, "BATCH", "Batch", "배치 실행", 20, true, now);
+		seedCode(AdminCommonCodeGroups.PUSH_RESEND_LIMIT, "50", "1회 재발송 상한(건)", "한 번에 재발송할 수 있는 최대 실패 건수", 10, true, now);
 	}
 
 	@Override

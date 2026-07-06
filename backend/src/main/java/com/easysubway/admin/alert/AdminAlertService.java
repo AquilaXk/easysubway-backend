@@ -114,7 +114,8 @@ public class AdminAlertService {
 				"푸시 발송 실패",
 				failed + "건 실패",
 				"failure",
-				AdminProgram.PUSH.path()));
+				// 실패 신호는 푸시 화면의 실패 필터 이력으로 바로 딥링크한다(#1746).
+				AdminProgram.PUSH.path() + "?status=FAILED"));
 		}
 	}
 

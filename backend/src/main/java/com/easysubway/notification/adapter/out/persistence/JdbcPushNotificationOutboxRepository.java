@@ -1,12 +1,15 @@
 package com.easysubway.notification.adapter.out.persistence;
 
+import com.easysubway.notification.application.port.in.PushNotificationHistoryQuery;
 import com.easysubway.notification.application.port.out.LoadPendingPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.LoadPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SavePushNotificationOutboxPort;
+import com.easysubway.notification.application.port.out.SearchPushNotificationOutboxPort;
 import com.easysubway.notification.application.port.out.SummarizePushNotificationOutboxPort;
 import com.easysubway.notification.domain.DevicePlatform;
 import com.easysubway.notification.domain.PushNotification;
 import com.easysubway.notification.domain.PushNotificationDashboardSummary;
+import com.easysubway.notification.domain.PushNotificationFailureReasonCount;
 import com.easysubway.notification.domain.PushNotificationStatus;
 import com.easysubway.notification.domain.PushNotificationType;
 import com.easysubway.user.application.port.out.DeleteUserPushNotificationPort;
@@ -14,6 +17,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -30,6 +34,7 @@ public class JdbcPushNotificationOutboxRepository implements
 	LoadPushNotificationOutboxPort,
 	LoadPendingPushNotificationOutboxPort,
 	SavePushNotificationOutboxPort,
+	SearchPushNotificationOutboxPort,
 	SummarizePushNotificationOutboxPort,
 	DeleteUserPushNotificationPort {
 
@@ -198,6 +203,157 @@ public class JdbcPushNotificationOutboxRepository implements
 			failedCount,
 			latestFailureReason
 		);
+	}
+
+	@Override
+	public List<PushNotification> searchPushNotifications(PushNotificationHistoryQuery query) {
+		List<Object> arguments = new ArrayList<>();
+		String whereClause = buildHistoryWhere(query, arguments);
+		arguments.add(query.size());
+		arguments.add(query.offset());
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				FROM push_notification_outbox
+				"""
+				+ whereClause
+				+ " ORDER BY created_at DESC, notification_id DESC LIMIT ? OFFSET ?",
+			this::mapPushNotification,
+			arguments.toArray()
+		);
+	}
+
+	@Override
+	public long countPushNotifications(PushNotificationHistoryQuery query) {
+		List<Object> arguments = new ArrayList<>();
+		String whereClause = buildHistoryWhere(query, arguments);
+		Long count = jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM push_notification_outbox" + whereClause,
+			Long.class,
+			arguments.toArray()
+		);
+		return count == null ? 0L : count;
+	}
+
+	@Override
+	public List<PushNotification> loadPushNotificationsByIds(List<String> notificationIds) {
+		if (notificationIds == null || notificationIds.isEmpty()) {
+			return List.of();
+		}
+		String placeholders = String.join(", ", java.util.Collections.nCopies(notificationIds.size(), "?"));
+		return jdbcTemplate.query(
+			"""
+				SELECT notification_id,
+					user_id,
+					platform,
+					device_token,
+					notification_type,
+					title,
+					body,
+					status,
+					failure_reason,
+					created_at
+				FROM push_notification_outbox
+				WHERE notification_id IN (""" + placeholders + ")",
+			this::mapPushNotification,
+			notificationIds.toArray()
+		);
+	}
+
+	// 이력 필터를 화이트리스트 컬럼으로만 조립한다. 키워드는 제목·본문만 매칭하고(수신자 식별자는 제외)
+	// LIKE 메타문자를 이스케이프한다. 기간은 created_at 기준(종료일 포함).
+	private String buildHistoryWhere(PushNotificationHistoryQuery query, List<Object> arguments) {
+		List<String> conditions = new ArrayList<>();
+		if (query.hasStatus()) {
+			conditions.add("status = ?");
+			arguments.add(query.status().name());
+		}
+		if (query.hasType()) {
+			conditions.add("notification_type = ?");
+			arguments.add(query.type().name());
+		}
+		if (query.hasKeyword()) {
+			conditions.add("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(body) LIKE ? ESCAPE '\\')");
+			String pattern = "%" + escapeLike(query.keyword().toLowerCase(java.util.Locale.ROOT)) + "%";
+			arguments.add(pattern);
+			arguments.add(pattern);
+		}
+		if (query.hasFailureReason()) {
+			conditions.add("failure_reason = ?");
+			arguments.add(query.failureReason());
+		}
+		if (query.createdFrom() != null) {
+			conditions.add("created_at >= ?");
+			arguments.add(query.createdFrom().atStartOfDay());
+		}
+		if (query.createdTo() != null) {
+			conditions.add("created_at < ?");
+			arguments.add(query.createdTo().plusDays(1).atStartOfDay());
+		}
+		if (conditions.isEmpty()) {
+			return "";
+		}
+		return " WHERE " + String.join(" AND ", conditions);
+	}
+
+	@Override
+	public List<PushNotificationFailureReasonCount> countFailureReasons(PushNotificationHistoryQuery query) {
+		// 분해는 항상 실패 전체를 사유별로 본다: status=FAILED 강제, 사유 드릴다운은 제외하고 기간·유형·검색만 반영.
+		List<Object> arguments = new ArrayList<>();
+		String whereClause = buildFailureBreakdownWhere(query, arguments);
+		return jdbcTemplate.query(
+			"SELECT failure_reason, COUNT(*) AS count FROM push_notification_outbox"
+				+ whereClause
+				+ " GROUP BY failure_reason ORDER BY count DESC, failure_reason ASC",
+			(resultSet, rowNumber) -> new PushNotificationFailureReasonCount(
+				resultSet.getString("failure_reason"),
+				resultSet.getLong("count")
+			),
+			arguments.toArray()
+		);
+	}
+
+	// 실패 분해 WHERE: status=FAILED 고정 + 유형·검색·기간(사유 드릴다운·상태 필터는 무시).
+	private String buildFailureBreakdownWhere(PushNotificationHistoryQuery query, List<Object> arguments) {
+		List<String> conditions = new ArrayList<>();
+		conditions.add("status = ?");
+		arguments.add(PushNotificationStatus.FAILED.name());
+		conditions.add("failure_reason IS NOT NULL");
+		if (query.hasType()) {
+			conditions.add("notification_type = ?");
+			arguments.add(query.type().name());
+		}
+		if (query.hasKeyword()) {
+			conditions.add("(LOWER(title) LIKE ? ESCAPE '\\' OR LOWER(body) LIKE ? ESCAPE '\\')");
+			String pattern = "%" + escapeLike(query.keyword().toLowerCase(java.util.Locale.ROOT)) + "%";
+			arguments.add(pattern);
+			arguments.add(pattern);
+		}
+		if (query.createdFrom() != null) {
+			conditions.add("created_at >= ?");
+			arguments.add(query.createdFrom().atStartOfDay());
+		}
+		if (query.createdTo() != null) {
+			conditions.add("created_at < ?");
+			arguments.add(query.createdTo().plusDays(1).atStartOfDay());
+		}
+		return " WHERE " + String.join(" AND ", conditions);
+	}
+
+	private static String escapeLike(String value) {
+		return value
+			.replace("\\", "\\\\")
+			.replace("%", "\\%")
+			.replace("_", "\\_");
 	}
 
 	@Override

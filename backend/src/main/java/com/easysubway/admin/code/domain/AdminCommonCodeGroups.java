@@ -10,6 +10,7 @@ public final class AdminCommonCodeGroups {
 	public static final String INCIDENT_SEVERITY = "INCIDENT_SEVERITY";
 	public static final String INCIDENT_STATUS = "INCIDENT_STATUS";
 	public static final String INCIDENT_SOURCE = "INCIDENT_SOURCE";
+	public static final String PUSH_RESEND_LIMIT = "PUSH_RESEND_LIMIT";
 
 	private static final Set<String> REQUIRED_INCIDENT_CODES = Set.of(
 		INCIDENT_SEVERITY + ":MAJOR",

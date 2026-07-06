@@ -444,4 +444,25 @@ document.addEventListener('alpine:init', function () {
 			},
 		};
 	});
+
+	// 실패 푸시 재발송 선택(#1746): 확인 단계에 선택 건수를 보여주고, 선택이 없으면 제출을 막는다.
+	// 진화형 향상 — no-JS에서는 버튼이 항상 활성이고 서버가 빈 선택을 안내한다. 런타임/키 검증은 #1749.
+	Alpine.data('pushResendSelection', function () {
+		return {
+			count: 0,
+			get selectionLabel() {
+				return this.count > 0 ? '선택한 실패 ' + this.count + '건 재발송' : '재발송할 실패 건 선택';
+			},
+			get hasSelection() {
+				return this.count > 0;
+			},
+			// CSP 빌드는 x-bind 안의 연산자(!)를 평가하지 않는다 — 부정은 getter로 노출한다.
+			get submitDisabled() {
+				return this.count === 0;
+			},
+			recount: function () {
+				this.count = this.$root.querySelectorAll('input[name="notificationIds"]:checked').length;
+			},
+		};
+	});
 });

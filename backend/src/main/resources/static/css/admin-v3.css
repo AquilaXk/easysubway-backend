@@ -1823,3 +1823,131 @@ body.admin-v3 {
 	width: 100%;
 	height: 100%;
 }
+
+/* 발송 이력 콘솔(#1746) */
+.admin-v3 .card-sparkline {
+	display: block;
+	width: 100%;
+	height: 24px;
+	margin-top: 6px;
+}
+
+.admin-v3 .card-sparkline polyline {
+	stroke: #b3261e;
+	stroke-width: 1.5;
+	vector-effect: non-scaling-stroke;
+}
+
+.admin-v3 .metric .card-sparkline polyline {
+	fill: none;
+}
+
+.admin-v3 .delivery-alert-link {
+	margin: -8px 0 12px;
+	font-size: 14px;
+}
+
+.admin-v3 .section-hint {
+	color: #5f6b7a;
+	font-size: 13px;
+	margin: 4px 0 12px;
+}
+
+.admin-v3 .table-summary {
+	color: #384250;
+	font-size: 14px;
+	margin: 12px 0;
+}
+
+.admin-v3 .table-summary .filter-clear {
+	margin-left: 6px;
+	font-size: 13px;
+}
+
+.admin-v3 .status-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: 10px;
+	font-size: 12px;
+	background: #eef1f5;
+	color: #384250;
+}
+
+.admin-v3 .status-badge.tone-ok {
+	background: #e4f4ea;
+	color: #1f7a44;
+}
+
+.admin-v3 .status-badge.tone-failure {
+	background: #fbe6e6;
+	color: #b3261e;
+}
+
+.admin-v3 .status-badge.tone-pending {
+	background: #fff2da;
+	color: #8a5a00;
+}
+
+.admin-v3 .row-detail summary {
+	cursor: pointer;
+	color: #2456b3;
+}
+
+.admin-v3 .row-detail-list {
+	margin: 8px 0 0;
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 12px;
+}
+
+.admin-v3 .row-detail-list dt {
+	color: #5f6b7a;
+	font-size: 13px;
+}
+
+.admin-v3 .row-detail-list dd {
+	margin: 0;
+	font-size: 13px;
+}
+
+.admin-v3 .failure-breakdown {
+	margin: 16px 0;
+}
+
+.admin-v3 .breakdown-bars {
+	list-style: none;
+	margin: 8px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 6px;
+}
+
+.admin-v3 .breakdown-bars a {
+	display: grid;
+	grid-template-columns: minmax(140px, 1fr) 2fr max-content;
+	align-items: center;
+	gap: 12px;
+	text-decoration: none;
+	color: #384250;
+	padding: 4px 8px;
+	border-radius: 6px;
+}
+
+.admin-v3 .breakdown-bars a:hover,
+.admin-v3 .breakdown-bars a[aria-current="true"] {
+	background: #eef4ff;
+}
+
+.admin-v3 .breakdown-bar {
+	width: 100%;
+	height: 12px;
+}
+
+.admin-v3 .breakdown-bar rect {
+	fill: #b3261e;
+}
+
+.admin-v3 .breakdown-count {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}

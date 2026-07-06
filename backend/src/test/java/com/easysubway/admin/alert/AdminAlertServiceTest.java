@@ -80,7 +80,7 @@ class AdminAlertServiceTest {
 			.filteredOn(item -> item.id().equals("push-failure"))
 			.singleElement()
 			.satisfies(item -> {
-				assertThat(item.href()).isEqualTo("/admin/notifications/push/page");
+				assertThat(item.href()).isEqualTo("/admin/notifications/push/page?status=FAILED");
 				assertThat(item.tone()).isEqualTo("failure");
 			});
 	}
