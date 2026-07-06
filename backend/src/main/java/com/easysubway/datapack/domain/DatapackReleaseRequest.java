@@ -59,6 +59,28 @@ public record DatapackReleaseRequest(
 			dispatchIdempotencyKey, workflowRunUrl, createdAt, at, at);
 	}
 
+	public DatapackReleaseRequest markDispatched(String workflowRunUrl, String idempotencyKey, LocalDateTime at) {
+		if (!status.canTransitionTo(DatapackReleaseRequestStatus.DISPATCHED)) {
+			throw new IllegalStateException("release request cannot be dispatched from state: " + status);
+		}
+		return new DatapackReleaseRequest(
+			approvalId, candidateId, scopeId, targetChannel,
+			buildSpecSha256, sourceSnapshotSetHash, approvedLedgerHash,
+			requestedBy, approvedBy, DatapackReleaseRequestStatus.DISPATCHED,
+			idempotencyKey, workflowRunUrl, createdAt, approvedAt, at);
+	}
+
+	public DatapackReleaseRequest markDispatchFailed(String idempotencyKey, LocalDateTime at) {
+		if (!status.canTransitionTo(DatapackReleaseRequestStatus.DISPATCH_FAILED)) {
+			throw new IllegalStateException("release request cannot fail dispatch from state: " + status);
+		}
+		return new DatapackReleaseRequest(
+			approvalId, candidateId, scopeId, targetChannel,
+			buildSpecSha256, sourceSnapshotSetHash, approvedLedgerHash,
+			requestedBy, approvedBy, DatapackReleaseRequestStatus.DISPATCH_FAILED,
+			idempotencyKey, workflowRunUrl, createdAt, approvedAt, at);
+	}
+
 	private static String normalizeSha(String value, String name) {
 		if (value == null || !SHA256_HEX.matcher(value).matches()) {
 			throw new IllegalArgumentException(name + " must be a sha256 hex string");

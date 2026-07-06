@@ -179,6 +179,8 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.DATAPACK_STAGING_PROMOTE.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-requests/*/approve")
 				.hasAuthority(AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-requests/*/retry-dispatch")
+				.hasAuthority(AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/datapack/release-channels/**")
 				.hasAnyAuthority(
 					AdminPermission.DATAPACK_STAGING_PROMOTE.authority(),

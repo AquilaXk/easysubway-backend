@@ -69,4 +69,33 @@ class DatapackReleaseRequestTest {
 		assertThat(DatapackReleaseRequestStatus.REQUESTED
 			.canTransitionTo(DatapackReleaseRequestStatus.PUBLISHED)).isFalse();
 	}
+
+	@Test
+	@DisplayName("markDispatched는 APPROVED→DISPATCHED로 전이하고 workflowRunUrl·idempotencyKey를 세팅한다")
+	void markDispatchedTransitions() {
+		var dispatched = requested("alice").approve("bob", T0)
+			.markDispatched("https://gh/run/1", "appr-1", T0);
+		assertThat(dispatched.status()).isEqualTo(DatapackReleaseRequestStatus.DISPATCHED);
+		assertThat(dispatched.workflowRunUrl()).isEqualTo("https://gh/run/1");
+		assertThat(dispatched.dispatchIdempotencyKey()).isEqualTo("appr-1");
+		assertThat(dispatched.approvedBy()).isEqualTo("bob");
+	}
+
+	@Test
+	@DisplayName("markDispatchFailed는 DISPATCH_FAILED로 전이하고, 거기서 markDispatched 재시도가 허용된다")
+	void markDispatchFailedThenRetry() {
+		var failed = requested("alice").approve("bob", T0).markDispatchFailed("appr-1", T0);
+		assertThat(failed.status()).isEqualTo(DatapackReleaseRequestStatus.DISPATCH_FAILED);
+
+		var retried = failed.markDispatched("https://gh/run/2", "appr-1", T0);
+		assertThat(retried.status()).isEqualTo(DatapackReleaseRequestStatus.DISPATCHED);
+		assertThat(retried.workflowRunUrl()).isEqualTo("https://gh/run/2");
+	}
+
+	@Test
+	@DisplayName("REQUESTED에서 markDispatched는 상태 위반으로 거부한다")
+	void markDispatchedRejectsFromRequested() {
+		assertThatThrownBy(() -> requested("alice").markDispatched("https://gh/run/1", "appr-1", T0))
+			.isInstanceOf(IllegalStateException.class);
+	}
 }

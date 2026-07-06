@@ -58,13 +58,14 @@
 				<th scope="col">status</th>
 				<th scope="col">requested</th>
 				<th scope="col">approved</th>
+				<th scope="col">workflow</th>
 				<th scope="col">created</th>
-				<th scope="col">승인</th>
+				<th scope="col">액션</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:if="${requests.isEmpty()}">
-				<td colspan="9">release request가 없습니다.</td>
+				<td colspan="10">release request가 없습니다.</td>
 			</tr>
 			<tr th:each="request : ${requests}">
 				<td th:text="${request.approvalId}">approval</td>
@@ -74,6 +75,13 @@
 				<td th:text="${request.status}">REQUESTED</td>
 				<td th:text="${request.requestedBy}">requested</td>
 				<td th:text="${request.approvedBy}">approved</td>
+				<td>
+					<a th:if="${request.workflowRunUrl != null}"
+					   th:href="${request.workflowRunUrl}"
+					   th:text="${request.workflowRunUrl}"
+					   target="_blank" rel="noopener noreferrer">workflow run</a>
+					<span th:unless="${request.workflowRunUrl != null}">-</span>
+				</td>
 				<td th:text="${request.createdAt}">2026-07-06T00:00</td>
 				<td>
 					<form th:if="${request.status == 'REQUESTED'}"
@@ -83,7 +91,17 @@
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<button type="submit">승인</button>
 					</form>
-					<span th:unless="${request.status == 'REQUESTED'}">-</span>
+					<form th:if="${request.status == 'DISPATCH_FAILED'}"
+						  method="post"
+						  th:action="@{/admin/datapack/release-requests/{approvalId}/retry-dispatch(approvalId=${request.approvalId})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<button type="submit">dispatch 재시도</button>
+					</form>
+					<span th:if="${request.status == 'APPROVED'}">수동 실행 필요</span>
+					<span th:if="${request.status != 'REQUESTED'
+						and request.status != 'DISPATCH_FAILED'
+						and request.status != 'APPROVED'}">-</span>
 				</td>
 			</tr>
 			</tbody>

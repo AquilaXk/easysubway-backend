@@ -86,6 +86,15 @@ class DatapackReleaseRequestAdminPageController {
 		return "redirect:/admin/datapack/release-requests/page";
 	}
 
+	// 자동 dispatch가 실패한(DISPATCH_FAILED) 승인 건을 재시도한다. 재시도는 production 게시
+	// 워크플로를 재발화하므로 approve와 동일한 production approve 권한을 요구한다(권한 경계 일치).
+	@PostMapping("/admin/datapack/release-requests/{approvalId}/retry-dispatch")
+	@PreAuthorize("hasAuthority('admin.datapack.production.approve')")
+	String retryDispatch(@PathVariable("approvalId") String approvalId) {
+		releaseRequestService.retryDispatch(approvalId);
+		return "redirect:/admin/datapack/release-requests/page";
+	}
+
 	record CandidateOption(String id, String version, String scopeId, String approvalStatus) {
 		static CandidateOption from(CandidateRow row) {
 			return new CandidateOption(row.id(), row.version(), row.scopeId(), row.approvalStatus());
@@ -100,13 +109,15 @@ class DatapackReleaseRequestAdminPageController {
 		String status,
 		String requestedBy,
 		String approvedBy,
+		String workflowRunUrl,
 		LocalDateTime createdAt
 	) {
 		static ReleaseRequestView from(DatapackReleaseRequest r) {
 			return new ReleaseRequestView(
 				r.approvalId(), r.candidateId(), r.scopeId(), r.targetChannel(),
 				r.status().name(), r.requestedBy(),
-				r.approvedBy() == null ? "-" : r.approvedBy(), r.createdAt());
+				r.approvedBy() == null ? "-" : r.approvedBy(),
+				r.workflowRunUrl(), r.createdAt());
 		}
 	}
 }

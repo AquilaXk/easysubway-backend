@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.datapack.application.port.out.DatapackWorkflowDispatchPort;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -15,6 +16,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
@@ -26,10 +30,14 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @DisplayName("관리자 release request 화면")
 class DatapackReleaseRequestAdminPageControllerTest {
 
+	private static final String SHA = "a".repeat(64);
+
 	@Autowired
 	private MockMvc mockMvc;
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
+	@Autowired
+	private StubDispatchPort dispatchPort;
 
 	@BeforeEach
 	void setUp() {
@@ -37,6 +45,8 @@ class DatapackReleaseRequestAdminPageControllerTest {
 		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs");
 		jdbcTemplate.update("DELETE FROM datapack_candidates");
 		insertCandidate("candidate-stable-9", "2026.07.06-stable.9");
+		// 기본은 dormant(토큰 미설정) — 승인이 자동 dispatch되어 상태가 바뀌지 않게 한다.
+		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.skippedResult());
 	}
 
 	@Test
@@ -141,6 +151,71 @@ class DatapackReleaseRequestAdminPageControllerTest {
 		assertThat(count).isZero();
 	}
 
+	@Test
+	@DisplayName("DISPATCH_FAILED 요청은 production approve 권한으로 dispatch를 재시도해 DISPATCHED로 전이한다")
+	void retryDispatchRecoversFailedRequest() throws Exception {
+		insertReleaseRequest("rr-failed-1", "DISPATCH_FAILED", null);
+		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.succeeded("stub ok"));
+
+		mockMvc.perform(post("/admin/datapack/release-requests/{id}/retry-dispatch", "rr-failed-1")
+				.with(csrf()).with(commandToken())
+				.with(user("carol").authorities(new SimpleGrantedAuthority("admin.datapack.production.approve"))))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/release-requests/page"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT status FROM datapack_release_request WHERE approval_id = ?", String.class, "rr-failed-1"))
+			.isEqualTo("DISPATCHED");
+	}
+
+	@Test
+	@DisplayName("retry-dispatch는 production publish를 재발화하므로 staging promote 권한으로는 거부된다")
+	void retryDispatchRequiresProductionApprove() throws Exception {
+		insertReleaseRequest("rr-failed-2", "DISPATCH_FAILED", null);
+
+		// staging promote(하위 권한)만 있으면 거부 — approve와 동일한 production approve 필요
+		mockMvc.perform(post("/admin/datapack/release-requests/{id}/retry-dispatch", "rr-failed-2")
+				.with(csrf()).with(commandToken())
+				.with(user("carol").authorities(new SimpleGrantedAuthority("admin.datapack.staging.promote"))))
+			.andExpect(status().isForbidden());
+
+		// read 전용도 거부
+		mockMvc.perform(post("/admin/datapack/release-requests/{id}/retry-dispatch", "rr-failed-2")
+				.with(csrf()).with(commandToken())
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("목록은 DISPATCH_FAILED 행에 재시도 버튼을, workflow run URL이 있으면 링크를 렌더한다")
+	void listRendersRetryButtonAndWorkflowRunLink() throws Exception {
+		insertReleaseRequest("rr-failed-3", "DISPATCH_FAILED", null);
+		insertReleaseRequest("rr-dispatched-1", "DISPATCHED",
+			"https://github.com/AquilaXk/easysubway/actions/runs/9001");
+
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("rr-failed-3/retry-dispatch")
+			.contains("https://github.com/AquilaXk/easysubway/actions/runs/9001");
+	}
+
+	private void insertReleaseRequest(String approvalId, String status, String workflowRunUrl) {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_request (
+				approval_id, candidate_id, scope_id, target_channel, build_spec_sha256,
+				source_snapshot_set_hash, approved_ledger_hash, requested_by, approved_by,
+				status, dispatch_idempotency_key, workflow_run_url, created_at, approved_at, updated_at
+			)
+			VALUES (?, 'candidate-stable-9', 'capital_pilot_android_v1', 'staging', ?,
+				?, ?, 'alice', 'bob', ?, ?, ?, '2026-07-06 03:00:00', '2026-07-06 03:05:00', '2026-07-06 03:05:00')
+			""",
+			approvalId, SHA, SHA, SHA, status, approvalId, workflowRunUrl);
+	}
+
 	private void insertCandidate(String id, String version) {
 		insertCandidateWithStatus(id, version, "PROMOTED");
 	}
@@ -188,5 +263,30 @@ class DatapackReleaseRequestAdminPageControllerTest {
 			throw new IllegalStateException("commandToken missing");
 		}
 		return matcher.group(1);
+	}
+
+	@TestConfiguration
+	static class DispatchStubConfiguration {
+
+		@Bean
+		@Primary
+		StubDispatchPort stubDispatchPort() {
+			return new StubDispatchPort();
+		}
+	}
+
+	/** 실제 GitHub 호출 없이 다음 결과를 지정 가능한 dispatch 포트 테스트 이중. */
+	static class StubDispatchPort implements DatapackWorkflowDispatchPort {
+
+		private volatile DispatchResult nextResult = DispatchResult.skippedResult();
+
+		@Override
+		public DispatchResult dispatch(DispatchCommand command) {
+			return nextResult;
+		}
+
+		void willReturn(DispatchResult result) {
+			this.nextResult = result;
+		}
 	}
 }
