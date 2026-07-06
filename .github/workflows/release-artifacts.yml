@@ -17,6 +17,14 @@ on:
         options:
           - ci-self-signed
           - production-upload-key
+      play_upload:
+        description: Upload the production RC to a Play track
+        type: choice
+        required: false
+        default: none
+        options:
+          - none
+          - internal
 
 concurrency:
   group: release-artifacts-${{ github.workflow }}-${{ github.ref }}
@@ -440,6 +448,94 @@ jobs:
         run: |
           rm -f "${RUNNER_TEMP}/easysubway-ci-release.jks" "${RUNNER_TEMP}/easysubway-upload-key.jks" "${RUNNER_TEMP}/easysubway-release.env"
 
+  play-internal-upload:
+    name: Play internal track upload
+    runs-on: ubuntu-latest
+    needs: android-production-rc-release
+    permissions:
+      contents: read
+    # Google Play allows only one active edit per app; serialize uploads and
+    # never cancel an in-flight one so a running commit is not interrupted.
+    concurrency:
+      group: play-internal-upload
+      cancel-in-progress: false
+    # Shares the android-production-rc environment approval gate. Opt-in only:
+    # play_upload=internal keeps the default build-only flow unchanged (#1689).
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.android_rc_signing_mode == 'production-upload-key' && inputs.play_upload == 'internal' && needs.android-production-rc-release.result == 'success' }}
+    environment:
+      name: android-production-rc
+    steps:
+      - name: Play internal upload / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Play internal upload / Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Play internal upload / Download production RC artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: easysubway-android-production-rc-${{ github.sha }}
+          path: release-artifacts/downloaded/android-production-rc
+
+      - name: Play internal upload / Restore release environment
+        shell: bash
+        env:
+          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
+            printf 'EASYSUBWAY_ENV secret is required for Play internal uploads.\n' >&2
+            exit 1
+          fi
+          umask 077
+          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${RUNNER_TEMP}/easysubway-release.env"
+
+      - name: Play internal upload / Upload AAB to internal track
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          aab="release-artifacts/downloaded/android-production-rc/app-release.aab"
+          mapping="release-artifacts/downloaded/android-production-rc/mapping.txt"
+
+          version_code="$(sed -nE 's/^version:[^+]*\+([0-9]+).*/\1/p' apps/mobile/pubspec.yaml | head -n1)"
+          if [[ -z "${version_code}" ]]; then
+            echo "could not resolve versionCode from apps/mobile/pubspec.yaml" >&2
+            exit 1
+          fi
+
+          mapping_args=()
+          if [[ -f "${mapping}" ]] && ! grep -q '^mapping=not-generated$' "${mapping}"; then
+            mapping_args=(--mapping "${mapping}")
+          fi
+
+          node tools/release/upload-play-internal.mjs \
+            --env-file "${RUNNER_TEMP}/easysubway-release.env" \
+            --aab "${aab}" \
+            --version-code "${version_code}" \
+            --track internal \
+            --report release-artifacts/play-internal-upload-evidence.json \
+            ${mapping_args[@]+"${mapping_args[@]}"}
+
+      - name: Play internal upload / Upload evidence
+        if: ${{ always() }}
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-play-internal-upload-${{ github.sha }}
+          path: release-artifacts/play-internal-upload-evidence.json
+          if-no-files-found: ignore
+          retention-days: 90
+
+      - name: Play internal upload / Cleanup sensitive files
+        if: ${{ always() }}
+        shell: bash
+        run: |
+          rm -f "${RUNNER_TEMP}/easysubway-release.env"
+
   # Validation only: builds and inspects the backend image as a PR-time dry-run
   # and does NOT push. The single production image producer is the CD build-image
   # job (cd.yml), which publishes the arm64 image to GHCR by digest (#1686).
@@ -598,6 +694,7 @@ jobs:
       - changes
       - android-release
       - android-production-rc-release
+      - play-internal-upload
       - backend-release
       - rc-evidence-manifest
     if: >-
