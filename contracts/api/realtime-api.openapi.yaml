@@ -1,0 +1,25 @@
+openapi: 3.0.3
+info:
+  title: EasySubway realtime API
+  version: 1.0.0
+paths:
+  /api/v1/realtime/arrivals:
+    get:
+      responses:
+        "200":
+          description: realtime arrivals
+  /api/v1/realtime/train-positions:
+    get:
+      responses:
+        "200":
+          description: realtime train positions
+components:
+  schemas:
+    ApiResponseEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object

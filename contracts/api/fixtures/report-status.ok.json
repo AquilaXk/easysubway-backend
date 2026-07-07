@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "id": "__REPORT_ID__",
+    "stationId": "station-sangnoksu",
+    "facilityId": "facility-sangnoksu-elevator-1",
+    "reportType": "BROKEN",
+    "description": "엘리베이터 문이 열리지 않습니다.",
+    "duplicateOfReportId": null,
+    "status": "SUBMITTED",
+    "createdAt": "__CREATED_AT__",
+    "reviewedAt": null,
+    "publicReceiptCode": "__PUBLIC_RECEIPT_CODE__"
+  }
+}

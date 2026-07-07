@@ -1,0 +1,15 @@
+{
+  "success": true,
+  "data": {
+    "id": "__REPORT_ID__",
+    "publicReceiptCode": "__PUBLIC_RECEIPT_CODE__",
+    "stationId": "station-sangnoksu",
+    "facilityId": "facility-sangnoksu-elevator-1",
+    "reportType": "BROKEN",
+    "description": "처리 결과를 확인할 신고",
+    "duplicateOfReportId": null,
+    "status": "RESOLVED",
+    "createdAt": "__CREATED_AT__",
+    "reviewedAt": "__REVIEWED_AT__"
+  }
+}

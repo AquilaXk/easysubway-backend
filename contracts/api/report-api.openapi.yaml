@@ -1,0 +1,80 @@
+openapi: 3.0.3
+info:
+  title: EasySubway report API
+  version: 1.0.0
+paths:
+  /api/v1/report-uploads:
+    post:
+      responses:
+        "201":
+          description: report upload intent
+  /api/v1/report-uploads/{uploadId}:
+    put:
+      parameters:
+        - name: uploadId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: content-type
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: x-easysubway-upload-sha256
+          in: header
+          required: true
+          schema:
+            type: string
+        - name: x-easysubway-upload-size
+          in: header
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          image/jpeg:
+            schema:
+              type: string
+              format: binary
+      responses:
+        "204":
+          description: uploaded
+  /api/v1/reports:
+    post:
+      responses:
+        "201":
+          description: report created
+  /api/v1/reports/{reportId}:
+    get:
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: report status
+  /api/v1/reports/{reportId}/confirm:
+    post:
+      parameters:
+        - name: reportId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          description: report confirmed
+components:
+  schemas:
+    ApiResponseEnvelope:
+      type: object
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+        data:
+          type: object

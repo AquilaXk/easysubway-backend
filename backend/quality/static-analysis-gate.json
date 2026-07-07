@@ -40,8 +40,13 @@
     },
     {
       "id": "archunit",
-      "enforcement": "not_enabled_in_this_slice",
+      "enforcement": "enabled",
       "firstAllowedGate": "public_mobile_api_absence",
+      "evidence": {
+        "hexagonalBoundaryInventory": "jdeps snapshot in PR evidence",
+        "publicMobileApiAbsenceContract": "repository-contract test: 백엔드는 모바일 기본 경로용 public transit, me API와 search 외 route API를 노출하지 않는다",
+        "ciRuntimeMeasurement": "./gradlew test --tests '*PackageDependencyRulesTest' measured locally under 3 minutes"
+      },
       "requires": [
         "current hexagonal boundary inventory",
         "public mobile API absence contract",

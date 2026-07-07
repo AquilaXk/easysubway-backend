@@ -1,0 +1,14 @@
+{
+  "success": true,
+  "data": {
+    "objectKey": "reports/__REPORT_UPLOAD_OBJECT_KEY__.jpg",
+    "uploadUrl": "/api/v1/report-uploads/__REPORT_UPLOAD_ID__",
+    "uploadMethod": "PUT",
+    "uploadHeaders": {
+      "content-type": "image/jpeg",
+      "x-easysubway-upload-sha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+      "x-easysubway-upload-size": "11"
+    },
+    "expiresAt": "__EXPIRES_AT__"
+  }
+}

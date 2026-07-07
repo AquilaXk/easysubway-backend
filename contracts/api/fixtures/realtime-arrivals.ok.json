@@ -1,0 +1,27 @@
+{
+  "success": true,
+  "data": {
+    "status": "FRESH",
+    "fallbackCode": null,
+    "message": null,
+    "receivedAt": "__RECEIVED_AT__",
+    "providerId": "seoul-topis",
+    "arrivals": [
+      {
+        "lineId": "4",
+        "stationName": "상록수",
+        "destination": "당고개",
+        "direction": "당고개 방면",
+        "trainNo": "4123",
+        "etaSeconds": 180,
+        "message": "3분 후",
+        "positionMessage": "전역 출발",
+        "providerReceivedAt": "__RECEIVED_AT__",
+        "servicePattern": null,
+        "rawDestination": "당고개",
+        "rawDirection": "상행",
+        "rawServicePattern": null
+      }
+    ]
+  }
+}
