@@ -99,9 +99,12 @@
 						<button type="submit">dispatch 재시도</button>
 					</form>
 					<span th:if="${request.status == 'APPROVED'}">수동 실행 필요</span>
+					<span th:if="${request.status == 'PUBLISHED' and request.promoteOutcome == 'REJECTED'}"
+						  th:text="'promote 수동 필요 — ' + (${request.promoteDetail} ?: '사유 없음')">promote 수동 필요</span>
 					<span th:if="${request.status != 'REQUESTED'
 						and request.status != 'DISPATCH_FAILED'
-						and request.status != 'APPROVED'}">-</span>
+						and request.status != 'APPROVED'
+						and not (request.status == 'PUBLISHED' and request.promoteOutcome == 'REJECTED')}">-</span>
 				</td>
 			</tr>
 			</tbody>

@@ -110,14 +110,17 @@ class DatapackReleaseRequestAdminPageController {
 		String requestedBy,
 		String approvedBy,
 		String workflowRunUrl,
-		LocalDateTime createdAt
+		LocalDateTime createdAt,
+		String promoteOutcome,
+		String promoteDetail
 	) {
 		static ReleaseRequestView from(DatapackReleaseRequest r) {
 			return new ReleaseRequestView(
 				r.approvalId(), r.candidateId(), r.scopeId(), r.targetChannel(),
 				r.status().name(), r.requestedBy(),
 				r.approvedBy() == null ? "-" : r.approvedBy(),
-				r.workflowRunUrl(), r.createdAt());
+				r.workflowRunUrl(), r.createdAt(),
+				r.promoteOutcome(), r.promoteDetail());
 		}
 	}
 }

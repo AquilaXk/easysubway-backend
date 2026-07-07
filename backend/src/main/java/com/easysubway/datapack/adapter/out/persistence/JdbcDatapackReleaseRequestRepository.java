@@ -23,7 +23,8 @@ public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequ
 		DatapackReleaseRequestStatus.valueOf(rs.getString("status")),
 		rs.getString("dispatch_idempotency_key"), rs.getString("workflow_run_url"),
 		toLdt(rs.getTimestamp("created_at")), toLdt(rs.getTimestamp("approved_at")),
-		toLdt(rs.getTimestamp("updated_at")));
+		toLdt(rs.getTimestamp("updated_at")),
+		rs.getString("promote_outcome"), rs.getString("promote_detail"));
 
 	private final JdbcTemplate jdbcTemplate;
 
@@ -37,21 +38,25 @@ public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequ
 			"UPDATE datapack_release_request SET candidate_id=?, scope_id=?, target_channel=?,"
 				+ " build_spec_sha256=?, source_snapshot_set_hash=?, approved_ledger_hash=?,"
 				+ " requested_by=?, approved_by=?, status=?, dispatch_idempotency_key=?,"
-				+ " workflow_run_url=?, approved_at=?, updated_at=? WHERE approval_id=?",
+				+ " workflow_run_url=?, approved_at=?, updated_at=?,"
+				+ " promote_outcome=?, promote_detail=? WHERE approval_id=?",
 			r.candidateId(), r.scopeId(), r.targetChannel(), r.buildSpecSha256(),
 			r.sourceSnapshotSetHash(), r.approvedLedgerHash(), r.requestedBy(), r.approvedBy(),
 			r.status().name(), r.dispatchIdempotencyKey(), r.workflowRunUrl(),
-			toTs(r.approvedAt()), toTs(r.updatedAt()), r.approvalId());
+			toTs(r.approvedAt()), toTs(r.updatedAt()),
+			r.promoteOutcome(), r.promoteDetail(), r.approvalId());
 		if (updated == 0) {
 			jdbcTemplate.update(
 				"INSERT INTO datapack_release_request (approval_id, candidate_id, scope_id,"
 					+ " target_channel, build_spec_sha256, source_snapshot_set_hash, approved_ledger_hash,"
 					+ " requested_by, approved_by, status, dispatch_idempotency_key, workflow_run_url,"
-					+ " created_at, approved_at, updated_at) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+					+ " created_at, approved_at, updated_at, promote_outcome, promote_detail)"
+					+ " VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 				r.approvalId(), r.candidateId(), r.scopeId(), r.targetChannel(), r.buildSpecSha256(),
 				r.sourceSnapshotSetHash(), r.approvedLedgerHash(), r.requestedBy(), r.approvedBy(),
 				r.status().name(), r.dispatchIdempotencyKey(), r.workflowRunUrl(),
-				toTs(r.createdAt()), toTs(r.approvedAt()), toTs(r.updatedAt()));
+				toTs(r.createdAt()), toTs(r.approvedAt()), toTs(r.updatedAt()),
+				r.promoteOutcome(), r.promoteDetail());
 		}
 	}
 

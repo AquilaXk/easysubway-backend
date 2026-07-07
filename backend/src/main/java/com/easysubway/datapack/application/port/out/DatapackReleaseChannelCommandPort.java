@@ -7,6 +7,9 @@ public interface DatapackReleaseChannelCommandPort {
 
 	Optional<ReleaseChannelEvent> findEventByIdempotencyKey(String channel, String idempotencyKey);
 
+	/** 채널 현재 상태 조회 — 잠금 없음. promote 전 채널 존재 확인 등 읽기 전용 용도. */
+	Optional<ReleaseChannelState> findChannel(String channel);
+
 	Optional<ReleaseChannelState> lockChannel(String channel);
 
 	boolean candidateHasManifest(String candidateId, String manifestSha256);

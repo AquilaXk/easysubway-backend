@@ -12,6 +12,13 @@ class DatapackReleaseRequestTest {
 
 	private static final String SHA = "a".repeat(64);
 	private static final LocalDateTime T0 = LocalDateTime.parse("2026-07-06T00:00:00");
+	private static final LocalDateTime AT = LocalDateTime.of(2026, 7, 6, 12, 0);
+
+	private static DatapackReleaseRequest requestIn(DatapackReleaseRequestStatus status) {
+		String sha = "a".repeat(64);
+		return new DatapackReleaseRequest("rr-1", "cand-1", "scope-1", "production",
+			sha, sha, sha, "alice", "bob", status, "rr-1", null, AT, AT, AT, null, null);
+	}
 
 	private DatapackReleaseRequest requested(String requester) {
 		return DatapackReleaseRequest.requested(
@@ -97,5 +104,36 @@ class DatapackReleaseRequestTest {
 	void markDispatchedRejectsFromRequested() {
 		assertThatThrownBy(() -> requested("alice").markDispatched("https://gh/run/1", "appr-1", T0))
 			.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	@DisplayName("markPublished는 DISPATCHED·APPROVED에서 PUBLISHED로 전이하고 workflowRunUrl을 세팅한다")
+	void markPublishedTransitions() {
+		var dispatched = requestIn(DatapackReleaseRequestStatus.DISPATCHED);
+		var published = dispatched.markPublished("https://run/1", AT);
+		assertThat(published.status()).isEqualTo(DatapackReleaseRequestStatus.PUBLISHED);
+		assertThat(published.workflowRunUrl()).isEqualTo("https://run/1");
+
+		var approved = requestIn(DatapackReleaseRequestStatus.APPROVED);
+		assertThat(approved.markPublished("https://run/2", AT).status())
+			.isEqualTo(DatapackReleaseRequestStatus.PUBLISHED);
+	}
+
+	@Test
+	@DisplayName("markFailed는 FAILED로 전이하고 promoteDetail에 사유를 남긴다")
+	void markFailedTransitions() {
+		var failed = requestIn(DatapackReleaseRequestStatus.DISPATCHED).markFailed("publish BLOCKED_EXTERNAL", AT);
+		assertThat(failed.status()).isEqualTo(DatapackReleaseRequestStatus.FAILED);
+		assertThat(failed.promoteDetail()).contains("BLOCKED_EXTERNAL");
+	}
+
+	@Test
+	@DisplayName("withPromoteOutcome는 상태를 바꾸지 않고 promoteOutcome·promoteDetail만 기록한다")
+	void withPromoteOutcomeKeepsStatus() {
+		var published = requestIn(DatapackReleaseRequestStatus.DISPATCHED).markPublished("https://run/1", AT);
+		var recorded = published.withPromoteOutcome("REJECTED", "evidence bundle not registered");
+		assertThat(recorded.status()).isEqualTo(DatapackReleaseRequestStatus.PUBLISHED);
+		assertThat(recorded.promoteOutcome()).isEqualTo("REJECTED");
+		assertThat(recorded.promoteDetail()).contains("evidence bundle");
 	}
 }

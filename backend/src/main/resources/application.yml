@@ -86,6 +86,8 @@ easysubway:
     github-actions-dispatch-token: ${EASYSUBWAY_GITHUB_ACTIONS_DISPATCH_TOKEN:}
     # 승인된 release request로 dispatch할 production build spec의 리포 경로(워크플로 buildSpecPath 입력).
     build-spec-path: ${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH:tools/datapack/fixtures/candidate-build-spec.json}
+    # 워크플로→backend 콜백 payload HMAC 서명 키. 미설정이면 빈 키로 초기화해 모든 콜백이 거부된다(안전 기본값).
+    callback-hmac-key: ${EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY:}
   notifications:
     push:
       delivery:
