@@ -61,13 +61,15 @@ public class GithubWorkflowDispatchAdapter implements DatapackWorkflowDispatchPo
 		}
 		String body;
 		try {
+			String modeArgs = OBJECT_MAPPER.writeValueAsString(Map.of(
+				"buildSpecPath", command.buildSpecPath(),
+				"releaseRequestId", command.releaseRequestId()));
 			body = OBJECT_MAPPER.writeValueAsString(Map.of(
 				"ref", "main",
 				"inputs", Map.of(
 					"mode", modeFor(command.targetChannel()),
 					"targetChannel", command.targetChannel(),
-					"releaseRequestId", command.releaseRequestId(),
-					"buildSpecPath", command.buildSpecPath())));
+					"modeArgs", modeArgs)));
 		} catch (IOException e) {
 			return DispatchResult.failed("dispatch payload error");
 		}

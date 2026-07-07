@@ -58,7 +58,7 @@ class GithubWorkflowDispatchAdapterTest {
 	}
 
 	@Test
-	@DisplayName("204면 ok, Authorization 헤더와 inputs 4필드를 담아 POST한다")
+	@DisplayName("204면 ok, Authorization 헤더와 inputs 3필드를 담아 POST한다")
 	void dispatchesWithInputsAndAuth() throws IOException {
 		String base = startServer(204);
 		var adapter = new GithubWorkflowDispatchAdapter(HttpClient.newHttpClient(), base, "test-pat");
@@ -72,8 +72,23 @@ class GithubWorkflowDispatchAdapterTest {
 			.contains("\"ref\":\"main\"")
 			.contains("\"mode\":\"production-publish\"")
 			.contains("\"targetChannel\":\"production\"")
-			.contains("\"releaseRequestId\":\"release-request-1\"")
-			.contains("\"buildSpecPath\":\"tools/datapack/build-spec.json\"");
+			.contains("\"modeArgs\":\"");
+	}
+
+	@Test
+	@DisplayName("body는 mode·targetChannel·modeArgs 3필드이고 modeArgs는 releaseRequestId·buildSpecPath를 담은 JSON 문자열이다")
+	void dispatchesWithModeArgsJson() throws IOException {
+		String base = startServer(204);
+		var adapter = new GithubWorkflowDispatchAdapter(HttpClient.newHttpClient(), base, "test-pat");
+
+		adapter.dispatch(new DispatchCommand("production", "release-request-1", "tools/datapack/build-spec.json"));
+
+		String body = capturedBody.get();
+		assertThat(body).contains("\"mode\":\"production-publish\"").contains("\"targetChannel\":\"production\"");
+		// modeArgs는 JSON을 문자열로 인코딩 — 이스케이프된 따옴표 포함
+		assertThat(body).contains("\"modeArgs\":").contains("releaseRequestId").contains("release-request-1")
+			.contains("buildSpecPath").contains("tools/datapack/build-spec.json");
+		assertThat(body).doesNotContain("\"buildSpecPath\":\"tools"); // 최상위 입력 아님(modeArgs 안)
 	}
 
 	@Test
