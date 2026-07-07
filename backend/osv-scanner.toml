@@ -1,15 +1,7 @@
-# Existing vulnerable backend Gradle lockfile advisories surfaced when the
-# dependency gate was first enabled. Keep these exceptions vulnerability-id
-# scoped and adjacent to this lockfile so new advisories still fail the PR gate.
+# backend Gradle lockfile 취약점 예외 목록. 예외는 취약점 ID 단위로 좁게, 사유를
+# 명시해 lockfile 옆에 유지한다 — 새 advisory는 계속 PR 게이트에서 실패한다.
+# 수정 버전을 채택하면 해당 항목을 즉시 제거한다.
 
 [[IgnoredVulns]]
-id = "GHSA-3pxv-7cmr-fjr4"
-reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
-
-[[IgnoredVulns]]
-id = "GHSA-445c-vh5m-36rj"
-reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
-
-[[IgnoredVulns]]
-id = "GHSA-6hg6-v5c8-fphq"
-reason = "기존 backend Gradle lockfile 기준선에서 발견된 취약점은 별도 업그레이드 작업으로 처리한다."
+id = "GHSA-5jmj-h7xm-6q6v"
+reason = "jackson-databind 2.21.4 CVE-2026-54515 — 취약 조건 미해당(per-property @JsonIgnoreProperties 제외 + ACCEPT_CASE_INSENSITIVE_PROPERTIES 조합 미사용)이며 수정 버전 미출시(2026-07-07 기준). fix 게시 시 버전 상향으로 대체한다(#1854)."
