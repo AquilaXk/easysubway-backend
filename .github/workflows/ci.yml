@@ -228,7 +228,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          unexpected_markdown="$(git ls-files '*.md' ':!:README.md' ':!:.github/pull_request_template.md')"
+          unexpected_markdown="$(git ls-files '*.md' ':!:README.md' ':!:.github/pull_request_template.md' ':!:.github/PULL_REQUEST_TEMPLATE/*.md')"
           if [[ -n "${unexpected_markdown}" ]]; then
             echo "Unexpected tracked Markdown file:"
             echo "${unexpected_markdown}"
