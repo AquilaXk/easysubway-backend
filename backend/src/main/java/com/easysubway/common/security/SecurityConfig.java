@@ -187,7 +187,7 @@ public class SecurityConfig {
 					AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority(),
 					AdminPermission.DATAPACK_ROLLBACK.authority()
 				)
-				.requestMatchers("/admin/codes/**", "/admin/incidents/**")
+				.requestMatchers("/admin/codes/**", "/admin/incidents/**", "/admin/notices/**")
 				.hasAuthority(AdminPermission.OPERATIONS_MANAGE.authority())
 				.requestMatchers("/admin/audits/privacy/**")
 				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())
@@ -304,6 +304,7 @@ public class SecurityConfig {
 					"/privacy",
 					"/easysubway/privacy",
 					"/api/v1/realtime/**",
+					"/api/notices/active",
 					"/favicon.ico",
 					"/css/**",
 					"/js/**",

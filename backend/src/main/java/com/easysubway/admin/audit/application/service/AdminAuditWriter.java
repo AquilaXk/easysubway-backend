@@ -126,6 +126,17 @@ public class AdminAuditWriter {
 		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "ADMIN_SAVED_VIEW", targetId, action, outcome, reason);
 	}
 
+	public void noticeChange(
+		Authentication authentication,
+		HttpServletRequest request,
+		String targetId,
+		String action,
+		AdminAuditOutcome outcome,
+		String reason
+	) {
+		writeAudit(authentication, request, AdminAuditEventType.ADMIN_ACTION, "SERVICE_NOTICE", targetId, action, outcome, reason);
+	}
+
 	public void pushResend(
 		Authentication authentication,
 		HttpServletRequest request,
