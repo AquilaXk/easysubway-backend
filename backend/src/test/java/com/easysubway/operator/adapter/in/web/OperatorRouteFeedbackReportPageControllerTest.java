@@ -56,6 +56,13 @@ class OperatorRouteFeedbackReportPageControllerTest {
 		assertThat(html)
 			.contains("운영기관 이동 불편 신고 분석")
 			.contains("운영기관 포털")
+			.contains("method=\"get\"")
+			.contains("name=\"q\"")
+			.contains("name=\"from\"")
+			.contains("name=\"to\"")
+			.contains("aria-sort=")
+			.contains("data-operator-chart=\"bar\"")
+			.contains("차트 데이터 표")
 			.contains("전체 피드백")
 			.contains("도움이 됨")
 			.contains("도움이 안 됨")
@@ -69,7 +76,6 @@ class OperatorRouteFeedbackReportPageControllerTest {
 			.doesNotContain(routeSearchId)
 			.doesNotContain("엘리베이터가 막혀 있었어요")
 			.doesNotContain("name=\"_csrf\"")
-			.doesNotContain("<form")
 			.doesNotContain("/admin/reports");
 	}
 

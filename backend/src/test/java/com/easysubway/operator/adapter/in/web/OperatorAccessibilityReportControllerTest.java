@@ -86,7 +86,7 @@ class OperatorAccessibilityReportControllerTest {
 			.andExpect(result -> {
 				String csv = result.getResponse().getContentAsString();
 				org.assertj.core.api.Assertions.assertThat(csv)
-					.startsWith("section,metric,value,detail\n")
+					.startsWith("﻿section,metric,value,detail\r\n")
 					.contains("summary,totalStations,2,")
 					.contains("summary,totalFacilities,3,")
 					.contains("summary,needsVerificationFacilityCount,1,")

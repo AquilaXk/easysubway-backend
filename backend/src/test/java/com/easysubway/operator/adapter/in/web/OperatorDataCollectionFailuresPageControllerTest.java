@@ -90,6 +90,13 @@ class OperatorDataCollectionFailuresPageControllerTest {
 		assertThat(html)
 			.contains("데이터 수집 실패 보고서")
 			.contains("운영기관 포털")
+			.contains("method=\"get\"")
+			.contains("name=\"q\"")
+			.contains("name=\"from\"")
+			.contains("name=\"to\"")
+			.contains("aria-sort=")
+			.contains("data-operator-chart=\"bar\"")
+			.contains("차트 데이터 표")
 			.contains("전체 수집 실행")
 			.contains("실패 실행")
 			.contains("재시도 가능")
@@ -117,8 +124,100 @@ class OperatorDataCollectionFailuresPageControllerTest {
 			.doesNotContain("collection-completed")
 			.doesNotContain("admin-user")
 			.doesNotContain("name=\"_csrf\"")
-			.doesNotContain("<form")
 			.doesNotContain("/admin/collections");
+	}
+
+	@Test
+	@DisplayName("운영기관 데이터 수집 실패 현황은 검색어와 기간으로 목록을 좁힌다")
+	void dataCollectionFailuresPageFiltersRows() throws Exception {
+		saveRun(new DataCollectionRun(
+			"collection-completed",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.COMPLETED,
+			"admin-user",
+			LocalDateTime.parse("2026-06-17T09:00:00"),
+			LocalDateTime.parse("2026-06-17T09:01:00"),
+			14,
+			null,
+			false,
+			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."
+		));
+		saveRun(new DataCollectionRun(
+			"collection-failed",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.FAILED,
+			"admin-user",
+			LocalDateTime.parse("2026-06-18T10:00:00"),
+			LocalDateTime.parse("2026-06-18T10:00:30"),
+			0,
+			"공공데이터 응답 지연",
+			true,
+			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
+		));
+
+		String html = mockMvc.perform(get("/operator/data-collection-failures/page")
+				.param("q", "응답 지연")
+				.param("from", "2026-06-18")
+				.param("to", "2026-06-18")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("공공데이터 응답 지연")
+			.contains("value=\"응답 지연\"")
+			.contains("value=\"2026-06-18\"")
+			.doesNotContain("수집이 완료되었습니다.");
+	}
+
+	@Test
+	@DisplayName("운영기관 데이터 수집 실패 현황은 필터된 행 기준으로 요약과 차트를 집계한다")
+	void dataCollectionFailuresPageSummarizesFilteredRows() throws Exception {
+		saveRun(new DataCollectionRun(
+			"collection-completed",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.COMPLETED,
+			"admin-user",
+			LocalDateTime.parse("2026-06-17T09:00:00"),
+			LocalDateTime.parse("2026-06-17T09:01:00"),
+			14,
+			null,
+			false,
+			"수집이 완료되었습니다. 최근 데이터 품질 화면에서 반영 결과를 확인하세요."
+		));
+		saveRun(new DataCollectionRun(
+			"collection-failed",
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.FAILED,
+			"admin-user",
+			LocalDateTime.parse("2026-06-18T10:00:00"),
+			LocalDateTime.parse("2026-06-18T10:00:30"),
+			0,
+			"공공데이터 응답 지연",
+			true,
+			"일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요."
+		));
+
+		String html = mockMvc.perform(get("/operator/data-collection-failures/page")
+				.param("q", "완료")
+				.with(httpBasic("operator-user", "operator-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("전체 수집 실행</span><strong>1</strong>")
+			.contains("실패 실행</span><strong>0</strong>")
+			.contains("재시도 가능</span><strong>0</strong>")
+			.contains("<td>완료</td>")
+			.contains("<td>1</td>")
+			.contains("<td>실패</td>")
+			.contains("<td>0</td>")
+			.contains("수집이 완료되었습니다.")
+			.doesNotContain("공공데이터 응답 지연");
 	}
 
 	@Test

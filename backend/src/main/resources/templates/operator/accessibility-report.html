@@ -3,37 +3,16 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
 	<title>운영기관 접근성 현황 보고서</title>
 	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
 <div class="desktop-frame">
-	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
-		<div class="desktop-brand">
-			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
-		</div>
-		<nav class="desktop-nav">
-			<div class="nav-group">보고서</div>
-			<a class="nav-link active" href="/operator/accessibility-report/page">접근성 현황</a>
-			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
-			<a class="nav-link" href="/operator/data-collection-failures/page">수집 실패</a>
-			<a class="nav-link" href="/operator/route-feedback-report/page">현장 피드백</a>
-			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
-		</nav>
-		<div class="desktop-user">
-			<div class="avatar">MO</div>
-			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
-		</div>
-	</aside>
+	<aside th:replace="~{operator/fragments/shell :: sidebar('accessibility')}"></aside>
 
 	<section class="desktop-workspace">
-		<header class="desktop-topbar">
-			<div>
-				<div class="desktop-breadcrumb">운영기관 보고서</div>
-				<div class="desktop-page-name">접근성 현황</div>
-			</div>
-			<div class="topbar-note">읽기 전용 리포트 · 실제 운영 데이터 연동</div>
-		</header>
+		<header th:replace="~{operator/fragments/shell :: topbar('접근성 현황', '읽기 전용 리포트 · 실제 운영 데이터 연동')}"></header>
 
 		<main class="desktop-content">
 			<div class="page-head">
@@ -52,6 +31,50 @@
 				<div class="metric"><span>확인일 누락 역</span><strong th:text="${report.missingStationVerificationDateCount}">0</strong></div>
 			</div>
 
+			<form class="table-toolbar" method="get" action="/operator/accessibility-report/page">
+				<label>
+					<span>검색</span>
+					<input type="search" name="q" th:value="${query.q}" placeholder="지역·역·시설·사유">
+				</label>
+				<input type="hidden" name="sort" th:value="${query.sort}">
+				<input type="hidden" name="direction" th:value="${query.direction}">
+				<button type="submit">필터 적용</button>
+				<a class="desk-btn" href="/operator/accessibility-report/page">초기화</a>
+			</form>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>역 품질 등급 차트</h2>
+						<p>접근성 데이터 품질 분포입니다.</p>
+					</div>
+				</div>
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="station-quality-chart"
+					        role="img"
+					        aria-label="역 품질 등급별 역 수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<table id="station-quality-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">등급</th>
+							<th scope="col">역 수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.stationQualityRows}">
+							<td th:text="${row.label}">정보 확인 중</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</details>
+			</section>
+
 			<div class="desktop-grid-2">
 				<div>
 					<section class="panel">
@@ -64,10 +87,18 @@
 						<table class="data-table">
 							<thead>
 							<tr>
-								<th scope="col">지역</th>
-								<th scope="col">운영기관</th>
-								<th scope="col">노선</th>
-								<th scope="col">역</th>
+								<th scope="col" th:attr="aria-sort=${query.ariaSort('region')}">
+									<a th:href="@{/operator/accessibility-report/page(q=${query.q},sort='region',direction=${query.nextDirection('region')})}">지역</a>
+								</th>
+								<th scope="col" th:attr="aria-sort=${query.ariaSort('operators')}">
+									<a th:href="@{/operator/accessibility-report/page(q=${query.q},sort='operators',direction=${query.nextDirection('operators')})}">운영기관</a>
+								</th>
+								<th scope="col" th:attr="aria-sort=${query.ariaSort('lines')}">
+									<a th:href="@{/operator/accessibility-report/page(q=${query.q},sort='lines',direction=${query.nextDirection('lines')})}">노선</a>
+								</th>
+								<th scope="col" th:attr="aria-sort=${query.ariaSort('stations')}">
+									<a th:href="@{/operator/accessibility-report/page(q=${query.q},sort='stations',direction=${query.nextDirection('stations')})}">역</a>
+								</th>
 								<th scope="col">정보 확인 중</th>
 								<th scope="col">시설 정보 있음</th>
 								<th scope="col">쉬운 길 안내 가능</th>
@@ -174,5 +205,6 @@
 		</main>
 	</section>
 </div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
 </body>
 </html>

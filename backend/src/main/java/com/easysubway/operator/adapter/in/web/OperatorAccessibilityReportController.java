@@ -76,37 +76,29 @@ class OperatorAccessibilityReportController {
 	}
 
 	private String toCsv(OperatorAccessibilityReportView report) {
-		StringBuilder csv = new StringBuilder("section,metric,value,detail\n");
-		appendRow(csv, "summary", "totalStations", report.totalStations(), "");
-		appendRow(csv, "summary", "totalFacilities", report.totalFacilities(), "");
-		appendRow(csv, "summary", "needsVerificationFacilityCount", report.needsVerificationFacilityCount(), "");
-		appendRow(csv, "summary", "delayedFacilityStatusCount", report.delayedFacilityStatusCount(), "");
-		appendRow(csv, "summary", "missingStationVerificationDateCount", report.missingStationVerificationDateCount(), "");
-		report.stationAccessibilityScoreRows()
-			.forEach(row -> appendRow(csv, "stationScore", row.stationName(), row.score(), row.region() + " - " + row.reasonText()));
-		report.accessibilityImprovementPriorityRows()
-			.forEach(row -> appendRow(csv, "priority", row.stationName(), row.facilityName(), row.priorityScore() + " - " + row.reasonText()));
-		return csv.toString();
+		List<List<String>> rows = new ArrayList<>();
+		rows.add(row("summary", "totalStations", String.valueOf(report.totalStations()), ""));
+		rows.add(row("summary", "totalFacilities", String.valueOf(report.totalFacilities()), ""));
+		rows.add(row("summary", "needsVerificationFacilityCount",
+			String.valueOf(report.needsVerificationFacilityCount()), ""));
+		rows.add(row("summary", "delayedFacilityStatusCount",
+			String.valueOf(report.delayedFacilityStatusCount()), ""));
+		rows.add(row("summary", "missingStationVerificationDateCount",
+			String.valueOf(report.missingStationVerificationDateCount()), ""));
+		report.stationAccessibilityScoreRows().forEach(scoreRow -> rows.add(row(
+			"stationScore",
+			scoreRow.stationName(),
+			String.valueOf(scoreRow.score()),
+			scoreRow.region() + " - " + scoreRow.reasonText())));
+		report.accessibilityImprovementPriorityRows().forEach(priorityRow -> rows.add(row(
+			"priority",
+			priorityRow.stationName(),
+			priorityRow.facilityName(),
+			priorityRow.priorityScore() + " - " + priorityRow.reasonText())));
+		return OperatorReportCsv.document(List.of("section", "metric", "value", "detail"), rows);
 	}
 
-	private void appendRow(StringBuilder csv, String section, String metric, Object value, String detail) {
-		csv.append(csvValue(section))
-			.append(',')
-			.append(csvValue(metric))
-			.append(',')
-			.append(csvValue(String.valueOf(value)))
-			.append(',')
-			.append(csvValue(detail))
-			.append('\n');
-	}
-
-	private String csvValue(String value) {
-		if (value == null) {
-			return "";
-		}
-		if (value.contains(",") || value.contains("\"") || value.contains("\n") || value.contains("\r")) {
-			return "\"" + value.replace("\"", "\"\"") + "\"";
-		}
-		return value;
+	private static List<String> row(String section, String metric, String value, String detail) {
+		return List.of(section, metric, value, detail);
 	}
 }

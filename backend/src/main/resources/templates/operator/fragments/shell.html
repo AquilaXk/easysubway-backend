@@ -1,0 +1,41 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>운영기관 공용 셸</title>
+</head>
+<body>
+<aside class="desktop-sidebar" th:fragment="sidebar(active)" aria-label="운영기관 포털 메뉴">
+	<div class="desktop-brand">
+		<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
+	</div>
+	<nav class="desktop-nav">
+		<div class="nav-group">보고서</div>
+		<a class="nav-link" th:classappend="${active == 'accessibility'} ? ' active'" href="/operator/accessibility-report/page">접근성 현황</a>
+		<a class="nav-link" th:classappend="${active == 'repeated-broken'} ? ' active'" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
+		<a class="nav-link" th:classappend="${active == 'data-collection'} ? ' active'" href="/operator/data-collection-failures/page">수집 실패</a>
+		<a class="nav-link" th:classappend="${active == 'route-feedback'} ? ' active'" href="/operator/route-feedback-report/page">현장 피드백</a>
+		<a class="nav-link" th:classappend="${active == 'push'} ? ' active'" href="/operator/push-notification-report/page">알림 보고서</a>
+	</nav>
+	<div class="desktop-user">
+		<div class="avatar">MO</div>
+		<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
+	</div>
+</aside>
+
+<header class="desktop-topbar" th:fragment="topbar(pageName, note)">
+	<div>
+		<div class="desktop-breadcrumb">운영기관 보고서</div>
+		<div class="desktop-page-name" th:text="${pageName}">보고서</div>
+	</div>
+	<div class="topbar-note" th:text="${note}">읽기 전용 리포트</div>
+</header>
+
+<th:block th:fragment="chartScripts">
+	<script th:src="@{/vendor/chartjs-4.5.1/chart.umd.js}"
+	        integrity="sha384-hfkuqrKeWFmnTMWN31VWyoe8xgdTADD11kgxmdpx2uyE6j5Az5uZq6u6AKYYmAOw"
+	        crossorigin="anonymous" defer></script>
+	<script th:src="@{/js/operator/report-charts.js}" defer></script>
+</th:block>
+</body>
+</html>

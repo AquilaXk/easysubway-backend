@@ -3,37 +3,16 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
 	<title>운영기관 데이터 수집 실패 보고서</title>
 	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
 <div class="desktop-frame">
-	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
-		<div class="desktop-brand">
-			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
-		</div>
-		<nav class="desktop-nav">
-			<div class="nav-group">보고서</div>
-			<a class="nav-link" href="/operator/accessibility-report/page">접근성 현황</a>
-			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
-			<a class="nav-link active" href="/operator/data-collection-failures/page">수집 실패</a>
-			<a class="nav-link" href="/operator/route-feedback-report/page">현장 피드백</a>
-			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
-		</nav>
-		<div class="desktop-user">
-			<div class="avatar">MO</div>
-			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
-		</div>
-	</aside>
+	<aside th:replace="~{operator/fragments/shell :: sidebar('data-collection')}"></aside>
 
 	<section class="desktop-workspace">
-		<header class="desktop-topbar">
-			<div>
-				<div class="desktop-breadcrumb">운영기관 보고서</div>
-				<div class="desktop-page-name">데이터 수집 실패</div>
-			</div>
-			<div class="topbar-note">읽기 전용 리포트 · 최근 20회</div>
-		</header>
+		<header th:replace="~{operator/fragments/shell :: topbar('데이터 수집 실패', '읽기 전용 리포트 · 최근 20회')}"></header>
 
 		<main class="desktop-content">
 			<div class="page-head">
@@ -56,6 +35,58 @@
 				<div class="metric"><span>최신 완료</span><strong th:text="${report.latestCompletedAtLabel}">-</strong></div>
 			</div>
 
+			<form class="table-toolbar" method="get" action="/operator/data-collection-failures/page">
+				<label>
+					<span>검색</span>
+					<input type="search" name="q" th:value="${query.q}" placeholder="원천·상태·실패 사유">
+				</label>
+				<label>
+					<span>시작일</span>
+					<input type="date" name="from" th:value="${query.from}">
+				</label>
+				<label>
+					<span>종료일</span>
+					<input type="date" name="to" th:value="${query.to}">
+				</label>
+				<input type="hidden" name="sort" th:value="${query.sort}">
+				<input type="hidden" name="direction" th:value="${query.direction}">
+				<button type="submit">필터 적용</button>
+				<a class="desk-btn" href="/operator/data-collection-failures/page">초기화</a>
+			</form>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>수집 상태 차트</h2>
+						<p>완료·실패·실행 중 분포입니다.</p>
+					</div>
+				</div>
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="data-collection-status-chart"
+					        role="img"
+					        aria-label="데이터 수집 상태별 실행 수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<table id="data-collection-status-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">상태</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.statusRows}">
+							<td th:text="${row.label}">완료</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</details>
+			</section>
+
 			<section class="panel">
 				<div class="panel-head">
 					<div class="panel-title">
@@ -66,11 +97,19 @@
 				<table class="data-table">
 					<thead>
 					<tr>
-						<th scope="col">수집 원천</th>
-						<th scope="col">상태</th>
-						<th scope="col">시작 시각</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('source')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='source',direction=${query.nextDirection('source')})}">수집 원천</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('status')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='status',direction=${query.nextDirection('status')})}">상태</a>
+						</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('startedAt')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='startedAt',direction=${query.nextDirection('startedAt')})}">시작 시각</a>
+						</th>
 						<th scope="col">종료 시각</th>
-						<th scope="col">수집 건수</th>
+						<th scope="col" th:attr="aria-sort=${query.ariaSort('collectedCount')}">
+							<a th:href="@{/operator/data-collection-failures/page(q=${query.q},from=${query.from},to=${query.to},sort='collectedCount',direction=${query.nextDirection('collectedCount')})}">수집 건수</a>
+						</th>
 						<th scope="col">실패 사유</th>
 						<th scope="col">운영 조치</th>
 					</tr>
@@ -96,5 +135,6 @@
 		</main>
 	</section>
 </div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
 </body>
 </html>

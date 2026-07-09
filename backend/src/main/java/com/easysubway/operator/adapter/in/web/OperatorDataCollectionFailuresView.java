@@ -10,8 +10,12 @@ record OperatorDataCollectionFailuresView(
 	String freshnessAlertLabel,
 	String freshnessAlertDescription,
 	String freshnessAlertClass,
+	List<StatusCountRow> statusRows,
 	List<DataCollectionRunRow> rows
 ) {
+
+	record StatusCountRow(String label, long count) {
+	}
 
 	record DataCollectionRunRow(
 		String sourceLabel,

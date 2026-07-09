@@ -57,6 +57,8 @@ class OperatorPushNotificationReportPageControllerTest {
 		assertThat(html)
 			.contains("알림 발송 보고서")
 			.contains("운영기관 포털")
+			.contains("data-operator-chart=\"bar\"")
+			.contains("차트 데이터 표")
 			.contains("전체 알림")
 			.contains("대기 중")
 			.contains("발송 완료")

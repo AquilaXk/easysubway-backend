@@ -6,6 +6,7 @@ import com.easysubway.transit.application.port.in.TransitMasterQueryUseCase;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 import org.springframework.stereotype.Component;
@@ -25,13 +26,31 @@ class OperatorRepeatedBrokenFacilitiesAssembler {
 	}
 
 	OperatorRepeatedBrokenFacilitiesView assemble() {
+		return assemble(OperatorReportQuery.empty());
+	}
+
+	OperatorRepeatedBrokenFacilitiesView assemble(OperatorReportQuery query) {
 		List<OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow> rows = facilityReportUseCase
 			.listRepeatedBrokenReportFacilities()
 			.stream()
 			.map(this::row)
 			.flatMap(Optional::stream)
+			.filter(row -> query.matches(row.stationName(), row.facilityName(), row.statusLabel()))
+			.sorted(repeatedBrokenComparator(query))
 			.toList();
 		return new OperatorRepeatedBrokenFacilitiesView(rows.size(), rows);
+	}
+
+	private static Comparator<OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow> repeatedBrokenComparator(
+		OperatorReportQuery query
+	) {
+		Comparator<OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow> comparator = switch (query.sort()) {
+			case "station" -> Comparator.comparing(OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow::stationName);
+			case "facility" -> Comparator.comparing(OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow::facilityName);
+			case "status" -> Comparator.comparing(OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow::statusLabel);
+			default -> Comparator.comparingLong(OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow::reportCount);
+		};
+		return query.sort().isBlank() || "desc".equals(query.direction()) ? comparator.reversed() : comparator;
 	}
 
 	private Optional<OperatorRepeatedBrokenFacilitiesView.RepeatedBrokenFacilityRow> row(

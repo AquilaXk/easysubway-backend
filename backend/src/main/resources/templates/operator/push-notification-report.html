@@ -3,37 +3,16 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
 	<title>운영기관 알림 발송 보고서</title>
 	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
 <div class="desktop-frame">
-	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
-		<div class="desktop-brand">
-			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
-		</div>
-		<nav class="desktop-nav">
-			<div class="nav-group">보고서</div>
-			<a class="nav-link" href="/operator/accessibility-report/page">접근성 현황</a>
-			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
-			<a class="nav-link" href="/operator/data-collection-failures/page">수집 실패</a>
-			<a class="nav-link" href="/operator/route-feedback-report/page">현장 피드백</a>
-			<a class="nav-link active" href="/operator/push-notification-report/page">알림 보고서</a>
-		</nav>
-		<div class="desktop-user">
-			<div class="avatar">MO</div>
-			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
-		</div>
-	</aside>
+	<aside th:replace="~{operator/fragments/shell :: sidebar('push')}"></aside>
 
 	<section class="desktop-workspace">
-		<header class="desktop-topbar">
-			<div>
-				<div class="desktop-breadcrumb">운영기관 보고서</div>
-				<div class="desktop-page-name">알림 발송 보고서</div>
-			</div>
-			<div class="topbar-note">읽기 전용 리포트 · 전달 상태</div>
-		</header>
+		<header th:replace="~{operator/fragments/shell :: topbar('알림 발송 보고서', '읽기 전용 리포트 · 전달 상태')}"></header>
 
 		<main class="desktop-content">
 			<div class="page-head">
@@ -54,6 +33,39 @@
 				<div class="metric"><span>발송 완료</span><strong th:text="${report.sentCount}">0</strong></div>
 				<div class="metric"><span>발송 실패</span><strong th:text="${report.failedCount}">0</strong></div>
 			</div>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>알림 발송 상태 차트</h2>
+						<p>대기·완료·실패 건수입니다.</p>
+					</div>
+				</div>
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="push-notification-status-chart"
+					        role="img"
+					        aria-label="알림 발송 상태별 건수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<table id="push-notification-status-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">상태</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${report.statusRows}">
+							<td th:text="${row.label}">대기 중</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</details>
+			</section>
 
 			<div class="desktop-grid-2">
 				<section class="panel">
@@ -99,5 +111,6 @@
 		</main>
 	</section>
 </div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
 </body>
 </html>

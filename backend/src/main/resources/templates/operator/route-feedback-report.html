@@ -3,37 +3,16 @@
 <head>
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<link rel="icon" href="data:,">
 	<title>운영기관 현장 차단 피드백</title>
 	<link rel="stylesheet" href="/css/operator-v3.css">
 </head>
 <body>
 <div class="desktop-frame">
-	<aside class="desktop-sidebar" aria-label="운영기관 포털 메뉴">
-		<div class="desktop-brand">
-			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
-		</div>
-		<nav class="desktop-nav">
-			<div class="nav-group">보고서</div>
-			<a class="nav-link" href="/operator/accessibility-report/page">접근성 현황</a>
-			<a class="nav-link" href="/operator/repeated-broken-facilities/page">반복 고장 시설</a>
-			<a class="nav-link" href="/operator/data-collection-failures/page">수집 실패</a>
-			<a class="nav-link active" href="/operator/route-feedback-report/page">현장 피드백</a>
-			<a class="nav-link" href="/operator/push-notification-report/page">알림 보고서</a>
-		</nav>
-		<div class="desktop-user">
-			<div class="avatar">MO</div>
-			<div><strong>Metro 운영자</strong><span>OPERATOR_ADMIN</span></div>
-		</div>
-	</aside>
+	<aside th:replace="~{operator/fragments/shell :: sidebar('route-feedback')}"></aside>
 
 	<section class="desktop-workspace">
-		<header class="desktop-topbar">
-			<div>
-				<div class="desktop-breadcrumb">운영기관 보고서</div>
-				<div class="desktop-page-name">현장 차단 피드백</div>
-			</div>
-			<div class="topbar-note">읽기 전용 리포트 · 최근 사례</div>
-		</header>
+		<header th:replace="~{operator/fragments/shell :: topbar('현장 차단 피드백', '읽기 전용 리포트 · 최근 사례')}"></header>
 
 		<main class="desktop-content">
 			<div class="page-head">
@@ -54,6 +33,58 @@
 				<strong>현장 차단 확인 대상</strong>
 				<span th:text="|총 ${summary.blockedByRealWorldCount}건 · 시설 고장·공사·통로 적치 가능성을 확인하세요.|">총 0건</span>
 			</div>
+
+			<form class="table-toolbar" method="get" action="/operator/route-feedback-report/page">
+				<label>
+					<span>검색</span>
+					<input type="search" name="q" th:value="${query.q}" placeholder="출발역·도착역·이동 프로필">
+				</label>
+				<label>
+					<span>시작일</span>
+					<input type="date" name="from" th:value="${query.from}">
+				</label>
+				<label>
+					<span>종료일</span>
+					<input type="date" name="to" th:value="${query.to}">
+				</label>
+				<input type="hidden" name="sort" th:value="${query.sort}">
+				<input type="hidden" name="direction" th:value="${query.direction}">
+				<button type="submit">필터 적용</button>
+				<a class="desk-btn" href="/operator/route-feedback-report/page">초기화</a>
+			</form>
+
+			<section class="panel chart-panel">
+				<div class="panel-head">
+					<div class="panel-title">
+						<h2>피드백 분포 차트</h2>
+						<p>도움됨·도움 안 됨·현장 차단 분포입니다.</p>
+					</div>
+				</div>
+				<div class="operator-chart-frame">
+					<canvas class="operator-chart-canvas"
+					        data-operator-chart="bar"
+					        data-operator-chart-table="route-feedback-rating-chart"
+					        role="img"
+					        aria-label="평점별 피드백 건수 차트"></canvas>
+				</div>
+				<details open class="chart-data">
+					<summary>차트 데이터 표</summary>
+					<table id="route-feedback-rating-chart" class="data-table">
+						<thead>
+						<tr>
+							<th scope="col">평점</th>
+							<th scope="col">건수</th>
+						</tr>
+						</thead>
+						<tbody>
+						<tr th:each="row : ${summary.ratingRows}">
+							<td th:text="${row.label}">도움이 됨</td>
+							<td th:text="${row.count}">0</td>
+						</tr>
+						</tbody>
+					</table>
+				</details>
+			</section>
 
 			<div class="desktop-grid-2">
 				<section class="panel">
@@ -91,10 +122,18 @@
 					<table class="data-table">
 						<thead>
 						<tr>
-							<th scope="col">신고 시각</th>
-							<th scope="col">출발역</th>
-							<th scope="col">도착역</th>
-							<th scope="col">이동 프로필</th>
+							<th scope="col" th:attr="aria-sort=${query.ariaSort('createdAt')}">
+								<a th:href="@{/operator/route-feedback-report/page(q=${query.q},from=${query.from},to=${query.to},sort='createdAt',direction=${query.nextDirection('createdAt')})}">신고 시각</a>
+							</th>
+							<th scope="col" th:attr="aria-sort=${query.ariaSort('origin')}">
+								<a th:href="@{/operator/route-feedback-report/page(q=${query.q},from=${query.from},to=${query.to},sort='origin',direction=${query.nextDirection('origin')})}">출발역</a>
+							</th>
+							<th scope="col" th:attr="aria-sort=${query.ariaSort('destination')}">
+								<a th:href="@{/operator/route-feedback-report/page(q=${query.q},from=${query.from},to=${query.to},sort='destination',direction=${query.nextDirection('destination')})}">도착역</a>
+							</th>
+							<th scope="col" th:attr="aria-sort=${query.ariaSort('mobility')}">
+								<a th:href="@{/operator/route-feedback-report/page(q=${query.q},from=${query.from},to=${query.to},sort='mobility',direction=${query.nextDirection('mobility')})}">이동 프로필</a>
+							</th>
 						</tr>
 						</thead>
 						<tbody>
@@ -114,5 +153,6 @@
 		</main>
 	</section>
 </div>
+<th:block th:replace="~{operator/fragments/shell :: chartScripts}"></th:block>
 </body>
 </html>

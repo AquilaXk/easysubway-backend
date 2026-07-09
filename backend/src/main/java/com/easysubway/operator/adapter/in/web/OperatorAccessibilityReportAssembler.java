@@ -11,6 +11,7 @@ import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.StationWithLines;
 import com.easysubway.transit.domain.TransitRegionSummary;
 import java.util.Arrays;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -32,6 +33,10 @@ class OperatorAccessibilityReportAssembler {
 	}
 
 	OperatorAccessibilityReportView assemble() {
+		return assemble(OperatorReportQuery.empty());
+	}
+
+	OperatorAccessibilityReportView assemble(OperatorReportQuery query) {
 		DataQualitySummary summary = dataQualityUseCase.summarizeDataQuality();
 		List<TransitRegionSummary> regions = transitMasterQueryUseCase.listRegions();
 		return new OperatorAccessibilityReportView(
@@ -41,9 +46,9 @@ class OperatorAccessibilityReportAssembler {
 			summary.delayedFacilityStatusCount(),
 			summary.missingStationVerificationDateCount(),
 			qualityRows(summary.stationQualityCounts()),
-			regionQualityRows(summary.regionSummaries(), regions),
-			stationAccessibilityScoreRows(summary.stationAccessibilityScores()),
-			accessibilityImprovementPriorityRows(summary.accessibilityImprovementPriorities())
+			regionQualityRows(summary.regionSummaries(), regions, query),
+			stationAccessibilityScoreRows(summary.stationAccessibilityScores(), query),
+			accessibilityImprovementPriorityRows(summary.accessibilityImprovementPriorities(), query)
 		);
 	}
 
@@ -61,7 +66,8 @@ class OperatorAccessibilityReportAssembler {
 
 	private List<OperatorAccessibilityReportView.RegionQualityRow> regionQualityRows(
 		List<RegionDataQualitySummary> regionSummaries,
-		List<TransitRegionSummary> regions
+		List<TransitRegionSummary> regions,
+		OperatorReportQuery query
 	) {
 		Map<String, TransitRegionSummary> regionsByName = regions.stream()
 			.collect(Collectors.toMap(TransitRegionSummary::name, region -> region));
@@ -79,11 +85,26 @@ class OperatorAccessibilityReportAssembler {
 					region.stationQualityCounts().getOrDefault(DataQualityLevel.LEVEL_4, 0L)
 				);
 			})
+			.filter(row -> query.matches(row.name()))
+			.sorted(regionQualityComparator(query))
 			.toList();
 	}
 
+	private static Comparator<OperatorAccessibilityReportView.RegionQualityRow> regionQualityComparator(
+		OperatorReportQuery query
+	) {
+		Comparator<OperatorAccessibilityReportView.RegionQualityRow> comparator = switch (query.sort()) {
+			case "operators" -> Comparator.comparingInt(OperatorAccessibilityReportView.RegionQualityRow::operatorCount);
+			case "lines" -> Comparator.comparingInt(OperatorAccessibilityReportView.RegionQualityRow::lineCount);
+			case "stations" -> Comparator.comparingInt(OperatorAccessibilityReportView.RegionQualityRow::stationCount);
+			default -> Comparator.comparing(OperatorAccessibilityReportView.RegionQualityRow::name);
+		};
+		return "desc".equals(query.direction()) ? comparator.reversed() : comparator;
+	}
+
 	private List<OperatorAccessibilityReportView.StationAccessibilityScoreRow> stationAccessibilityScoreRows(
-		List<StationAccessibilityScore> scores
+		List<StationAccessibilityScore> scores,
+		OperatorReportQuery query
 	) {
 		return scores.stream()
 			.map(score -> new OperatorAccessibilityReportView.StationAccessibilityScoreRow(
@@ -92,15 +113,18 @@ class OperatorAccessibilityReportAssembler {
 				score.score(),
 				score.reasons()
 			))
+			.filter(row -> query.matches(row.stationName(), row.region(), row.reasonText()))
 			.toList();
 	}
 
 	private List<OperatorAccessibilityReportView.AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows(
-		List<AccessibilityImprovementPriority> priorities
+		List<AccessibilityImprovementPriority> priorities,
+		OperatorReportQuery query
 	) {
 		return priorities.stream()
 			.map(this::accessibilityImprovementPriorityRow)
 			.flatMap(Optional::stream)
+			.filter(row -> query.matches(row.stationName(), row.facilityName(), row.reasonText()))
 			.toList();
 	}
 
