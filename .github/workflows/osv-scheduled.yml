@@ -26,6 +26,7 @@ jobs:
         --lockfile=apps/mobile/pubspec.lock
         --lockfile=apps/mobile/android/app/gradle.lockfile
         --lockfile=backend/gradle.lockfile
+        --lockfile=tools/qa/package-lock.json
 
   notify-slack-security-failure:
     name: Slack / Security failure

@@ -200,6 +200,10 @@ public class SecurityConfig {
 			.exceptionHandling(exception -> exception
 				.accessDeniedHandler(adminHtmlAccessDeniedHandler)
 				.defaultAuthenticationEntryPointFor(
+					new HtmxRefreshAuthenticationEntryPoint(),
+					HtmxRefreshAuthenticationEntryPoint::matches
+				)
+				.defaultAuthenticationEntryPointFor(
 					new LoginUrlAuthenticationEntryPoint("/admin/login"),
 					request -> {
 						String accept = request.getHeader("Accept");
@@ -244,6 +248,10 @@ public class SecurityConfig {
 				.anyRequest().hasRole("OPERATOR_ADMIN")
 			)
 			.exceptionHandling(exception -> exception
+				.defaultAuthenticationEntryPointFor(
+					new HtmxRefreshAuthenticationEntryPoint(),
+					HtmxRefreshAuthenticationEntryPoint::matches
+				)
 				.defaultAuthenticationEntryPointFor(
 					new HttpStatusEntryPoint(HttpStatus.UNAUTHORIZED),
 					new AntPathRequestMatcher("/operator/api/**")

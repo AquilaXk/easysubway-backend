@@ -87,6 +87,7 @@ jobs:
         --lockfile=apps/mobile/pubspec.lock
         --lockfile=apps/mobile/android/app/gradle.lockfile
         --lockfile=backend/gradle.lockfile
+        --lockfile=tools/qa/package-lock.json
 
   pr-title:
     name: PR Title
@@ -129,9 +130,39 @@ jobs:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
         run: |
           node --test tools/ci/repository-contract.test.mjs
+          node tools/ci/check-admin-vendor-integrity.mjs
           node tools/ci/check-map-attribution.mjs
           node --test tools/ci/check-map-attribution.test.mjs
           node --test tools/route-map/capital-route-map-coverage.test.mjs
+
+  admin-qa-gates:
+    name: Admin QA Gates
+    runs-on: ubuntu-latest
+    needs: changes
+    if: ${{ needs.changes.outputs.docs_only != 'true' }}
+    permissions:
+      contents: read
+
+    steps:
+      - name: Admin QA Gates / Checkout repository
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Admin QA Gates / Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Admin QA Gates / Install pinned QA tools
+        run: npm ci --prefix tools/qa
+
+      - name: Admin QA Gates / Run static QA gates
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: |
+          node tools/ci/check-admin-vendor-integrity.mjs
+          npm test --prefix tools/qa
 
   repository-contracts:
     name: Repository CI
@@ -445,6 +476,7 @@ jobs:
       - changes
       - release-gate-consistency
       - repository-contracts
+      - admin-qa-gates
       - backend
       - mobile-app
       - android
