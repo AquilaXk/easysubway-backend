@@ -63,7 +63,8 @@ class AliasQuarantineAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("Alias / Quarantine")
+			.contains("별칭·격리 검토")
+			.contains("별칭·격리 검색")
 			.contains("alias-station-1")
 			.contains("provider-station-code-243")
 			.contains("station-sangnoksu")
@@ -97,6 +98,28 @@ class AliasQuarantineAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(commandTokenCount(html)).isLessThanOrEqualTo(64);
+	}
+
+	@Test
+	@DisplayName("alias/quarantine 검색은 표시 한도 밖의 alias도 필터 후 찾는다")
+	void aliasQuarantineSearchesBeforeDisplayLimit() throws Exception {
+		for (int index = 2; index <= 25; index++) {
+			insertAliasApproval("alias-station-" + index, "provider-noise-" + index);
+		}
+		insertAliasApproval("alias-target-hidden", "provider-target-hidden");
+
+		String html = mockMvc.perform(get("/admin/datapack/alias-quarantine/page")
+				.param("query", "provider-target-hidden")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("alias-target-hidden")
+			.contains("provider-target-hidden")
+			.doesNotContain("provider-noise-2");
 	}
 
 	@Test

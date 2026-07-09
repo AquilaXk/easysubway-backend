@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>Source Snapshots</title>
+	<title>원천 스냅샷</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
@@ -16,19 +16,49 @@
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
-			<h1>Source Snapshots</h1>
-			<p>데이터팩 candidate 입력으로 쓰는 공식 source snapshot의 고정 상태와 evidence hash를 확인합니다.</p>
+			<h1>원천 스냅샷</h1>
+			<p>데이터팩 후보 입력으로 쓰는 공식 source snapshot의 고정 상태와 evidence hash를 확인합니다.</p>
 		</div>
 	</header>
 
 	<section>
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/source-snapshots/page}"
+		      role="search" aria-label="원천 스냅샷 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="스냅샷·source·provider 검색" aria-label="원천 스냅샷 검색" autocomplete="off">
+			<select name="status" aria-label="상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
+				<option value="LOCKED" th:selected="${filter.selectedStatus('LOCKED')}">LOCKED</option>
+				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">PASS</option>
+				<option value="SUCCESS" th:selected="${filter.selectedStatus('SUCCESS')}">SUCCESS</option>
+				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">FAIL</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${filter.selectedSort('')}">수집 최신순</option>
+				<option value="retrieved_asc" th:selected="${filter.selectedSort('retrieved_asc')}">수집 오래된순</option>
+				<option value="source" th:selected="${filter.selectedSort('source')}">source순</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
+			<button type="submit">검색</button>
+			<a class="admin-btn" th:href="@{/admin/datapack/source-snapshots/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate() or filter.hasSourceSnapshot()}"
+				      th:text="${filter.contextLabel()}">컨텍스트</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
 		<table>
 			<thead>
 			<tr>
-				<th scope="col">snapshot</th>
+				<th scope="col">스냅샷</th>
 				<th scope="col">source</th>
 				<th scope="col">provider</th>
-				<th scope="col">retrieved</th>
+				<th scope="col">수집</th>
 				<th scope="col">rows</th>
 				<th scope="col">status</th>
 				<th scope="col">raw sha256</th>
@@ -38,7 +68,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${snapshots.isEmpty()}">
-				<td colspan="9">source snapshot이 없습니다.</td>
+				<td colspan="9">
+					<div th:replace="~{admin/fragments/empty-state :: panel('원천 스냅샷이 없습니다.', '검색어·상태 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="snapshot : ${snapshots}">
 				<td th:text="${snapshot.snapshotId}">snapshot-id</td>
@@ -52,7 +84,7 @@
 					<span th:text="${snapshot.licenseStatus}">PASS</span>
 					<span th:text="${snapshot.fetchStatus}">SUCCESS</span>
 				</td>
-				<td th:text="${snapshot.rawSha256}">sha256</td>
+				<td><span th:title="${snapshot.rawSha256}" th:text="${#strings.abbreviate(snapshot.rawSha256, 11)}">sha256</span></td>
 				<td th:text="${snapshot.diffSummary}">-</td>
 				<td>
 					<a class="detail-link"
@@ -61,7 +93,7 @@
 			</tr>
 			</tbody>
 		</table>
-		<div th:replace="~{admin/fragments/pagination :: pager('Source snapshot 목록 페이지', ${page}, ${paginationLinks})}"></div>
+		<div th:replace="~{admin/fragments/pagination :: pager('원천 스냅샷 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</section>
 </main>
 </div>

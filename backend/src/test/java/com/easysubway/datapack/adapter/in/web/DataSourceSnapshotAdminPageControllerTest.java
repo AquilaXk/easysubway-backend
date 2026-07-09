@@ -98,7 +98,8 @@ class DataSourceSnapshotAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("Source Snapshots")
+			.contains("원천 스냅샷")
+			.contains("원천 스냅샷 검색")
 			.contains("kric-station-elevator")
 			.contains("국가철도공단")
 			.contains("12345")
@@ -108,6 +109,26 @@ class DataSourceSnapshotAdminPageControllerTest {
 			.contains("이전 snapshot 대비 +12 rows")
 			.contains("/admin/datapack/source-snapshots/snapshot-kric-20260629/page")
 			.doesNotContain("serviceKey");
+	}
+
+	@Test
+	@DisplayName("source snapshot 목록은 필터 후 page offset을 유지한다")
+	void sourceSnapshotListKeepsOffsetAfterFiltering() throws Exception {
+		insertSecondSnapshot();
+
+		String html = mockMvc.perform(get("/admin/datapack/source-snapshots/page")
+				.param("page", "1")
+				.param("size", "1")
+				.param("query", "kric-station-elevator")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("snapshot-kric-20260629")
+			.doesNotContain("snapshot-kric-20260630");
 	}
 
 	@Test
@@ -312,6 +333,20 @@ class DataSourceSnapshotAdminPageControllerTest {
 	}
 
 	private void insertMatchingLockedSnapshotAndEvent() {
+		insertSecondSnapshot();
+		jdbcTemplate.update("""
+			INSERT INTO datapack_source_snapshot_events (
+				id, source_id, snapshot_id, operation_type, operation_status,
+				requested_by, reason, idempotency_key, created_at
+			)
+			VALUES ('event-source-snapshot-20260630', 'kric-station-elevator',
+				'snapshot-kric-20260630', 'CREATE_LOCKED', 'PASS',
+				'source-runner', 'official source refresh',
+				'source-snapshot-1162-20260630', '2026-06-30 03:01:00')
+			""");
+	}
+
+	private void insertSecondSnapshot() {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
 				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
@@ -331,16 +366,6 @@ class DataSourceSnapshotAdminPageControllerTest {
 			"e".repeat(64),
 			"f".repeat(64)
 		);
-		jdbcTemplate.update("""
-			INSERT INTO datapack_source_snapshot_events (
-				id, source_id, snapshot_id, operation_type, operation_status,
-				requested_by, reason, idempotency_key, created_at
-			)
-			VALUES ('event-source-snapshot-20260630', 'kric-station-elevator',
-				'snapshot-kric-20260630', 'CREATE_LOCKED', 'PASS',
-				'source-runner', 'official source refresh',
-				'source-snapshot-1162-20260630', '2026-06-30 03:01:00')
-			""");
 	}
 
 	private RequestPostProcessor commandToken(String pagePath) {

@@ -40,6 +40,11 @@
 				<em th:text="${'생성 ' + pipeline.candidateCreatedAt}">생성 시각</em>
 			</div>
 			<div class="metric">
+				<span>후보 입력 스냅샷</span>
+				<strong><span th:title="${pipeline.sourceSnapshotIds}" th:text="${pipeline.firstSourceSnapshotId}">-</span></strong>
+				<em th:text="${pipeline.sourceSnapshotIds}">snapshot ids</em>
+			</div>
+			<div class="metric">
 				<span>production / rollback</span>
 				<strong th:text="${pipeline.productionCandidateId}">-</strong>
 				<em th:text="${'rollback ' + pipeline.rollbackCandidateId}">rollback</em>
@@ -85,14 +90,51 @@
 	</section>
 
 	<section>
+		<h2>게이트 6종 + 서명</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">게이트</th>
+				<th scope="col">상태</th>
+				<th scope="col">blocker</th>
+				<th scope="col">근거</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:each="gate : ${pipeline.gateNodes}">
+				<td th:text="${gate.label}">게이트</td>
+				<td><span th:replace="~{admin/fragments/shell :: status(${gate.status}, ${gate.tone})}">PASS</span></td>
+				<td th:text="${gate.blockerCount}">0</td>
+				<td th:text="${gate.note}">근거</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+
+	<section>
 		<h2>서명·증거</h2>
 		<dl class="admin-meta-list">
 			<dt>원천 스냅샷 세트</dt>
-			<dd><span th:title="${pipeline.sourceSnapshotSetHash.fullValue}" th:text="${pipeline.sourceSnapshotSetHash.shortValue}">-</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${pipeline.sourceSnapshotSetHash.fullValue}"
+				      th:text="${pipeline.sourceSnapshotSetHash.shortValue}">-</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${pipeline.sourceSnapshotSetHash.fullValue}">복사</button>
+			</dd>
 			<dt>매니페스트 sha256</dt>
-			<dd><span th:title="${pipeline.manifestSha256.fullValue}" th:text="${pipeline.manifestSha256.shortValue}">-</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${pipeline.manifestSha256.fullValue}"
+				      th:text="${pipeline.manifestSha256.shortValue}">-</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${pipeline.manifestSha256.fullValue}">복사</button>
+			</dd>
 			<dt>증거 번들 sha256</dt>
-			<dd><span th:title="${pipeline.evidenceBundleSha256.fullValue}" th:text="${pipeline.evidenceBundleSha256.shortValue}">-</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${pipeline.evidenceBundleSha256.fullValue}"
+				      th:text="${pipeline.evidenceBundleSha256.shortValue}">-</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${pipeline.evidenceBundleSha256.fullValue}">복사</button>
+			</dd>
 			<dt>증거 워크플로</dt>
 			<dd th:text="${pipeline.evidenceWorkflowRunUrl}">-</dd>
 		</dl>

@@ -56,7 +56,8 @@ class RouteGateMatrixAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("Route Gate Matrix")
+			.contains("경로 게이트")
+			.contains("경로 게이트 검색")
 			.contains("station-sangnoksu")
 			.contains("line-4")
 			.contains("ENTRY")

@@ -3,10 +3,12 @@ package com.easysubway.datapack.adapter.in.web;
 import com.easysubway.datapack.adapter.out.persistence.JdbcRouteGateMatrixRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcRouteGateMatrixRepository.RouteGateRow;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.stereotype.Controller;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class RouteGateMatrixAdminPageController {
@@ -21,10 +23,32 @@ class RouteGateMatrixAdminPageController {
 
 	@GetMapping("/admin/datapack/route-gates/page")
 	@PreAuthorize("hasAuthority('admin.datapack.read')")
-	String routeGateMatrix(Model model) {
+	String routeGateMatrix(
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sourceSnapshotId,
+		Model model
+	) {
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, sourceSnapshotId, null);
 		model.addAttribute("routeGateRows", matrixRepository.listRecentEdges(MATRIX_LIMIT).stream()
 			.map(RouteGateView::from)
+			.filter(row -> filter.matchesSourceSnapshot(row.sourceSnapshotId()))
+			.filter(row -> filter.matchesText(
+				row.id(),
+				row.stationId(),
+				row.lineId(),
+				row.edgeId(),
+				row.edgeType(),
+				row.sourceId(),
+				row.sourceSnapshotId(),
+				row.provenanceKind(),
+				row.verificationStatus(),
+				row.blockerReason()
+			))
+			.filter(row -> routeStatusMatches(row, filter.statusValue()))
 			.toList());
+		model.addAttribute("filter", filter);
 		return "admin/datapack/route-gates/list";
 	}
 
@@ -66,6 +90,24 @@ class RouteGateMatrixAdminPageController {
 				RouteGateMatrixAdminPageController.blockerReason(row, generated)
 			);
 		}
+
+		public boolean blocker() {
+			return !strictRouteEligible
+				|| generatedConnector
+				|| List.of("GENERATED", "UNKNOWN").contains(provenanceKind)
+				|| List.of("UNKNOWN", "GENERATED", "STALE", "MISSING").contains(verificationStatus);
+		}
+	}
+
+	private static boolean routeStatusMatches(RouteGateView row, String status) {
+		return switch (status) {
+			case "ALL" -> true;
+			case "BLOCKER" -> row.blocker();
+			case "STRICT" -> row.strictRouteEligible();
+			default -> status.equals(row.edgeType())
+				|| status.equals(row.provenanceKind())
+				|| status.equals(row.verificationStatus());
+		};
 	}
 
 	private static boolean isGenerated(RouteGateRow row) {

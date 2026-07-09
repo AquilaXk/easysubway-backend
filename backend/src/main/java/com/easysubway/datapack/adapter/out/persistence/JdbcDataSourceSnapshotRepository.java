@@ -5,6 +5,7 @@ import com.easysubway.datapack.domain.InvalidDataSourceSnapshotException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
@@ -70,6 +71,37 @@ public class JdbcDataSourceSnapshotRepository {
 			ORDER BY retrieved_at DESC, snapshot_id ASC
 			LIMIT ? OFFSET ?
 			""", this::mapSnapshot, limit, offset);
+	}
+
+	public List<DataSourceSnapshot> listSnapshotsForAdmin(
+		String query,
+		String status,
+		List<String> sourceSnapshotIds,
+		String sort,
+		int limit,
+		int offset
+	) {
+		StringBuilder sql = new StringBuilder("""
+			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
+				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
+				raw_retention_expires_at
+			FROM data_source_snapshots
+			""");
+		List<String> predicates = new ArrayList<>();
+		List<Object> params = new ArrayList<>();
+		addSnapshotIdPredicate(predicates, params, sourceSnapshotIds);
+		addQueryPredicate(predicates, params, query);
+		addStatusPredicate(predicates, params, status);
+		if (!predicates.isEmpty()) {
+			sql.append(" WHERE ").append(String.join(" AND ", predicates)).append("\n");
+		}
+		sql.append(orderBy(sort));
+		sql.append(" LIMIT ? OFFSET ?");
+		params.add(limit);
+		params.add(offset);
+		return jdbcTemplate.query(sql.toString(), this::mapSnapshot, params.toArray());
 	}
 
 	public Optional<SourceSnapshotEventRow> findEventByIdempotencyKey(String sourceId, String idempotencyKey) {
@@ -173,6 +205,74 @@ public class JdbcDataSourceSnapshotRepository {
 			resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
 			resultSet.getTimestamp("raw_retention_expires_at").toLocalDateTime()
 		);
+	}
+
+	private static void addSnapshotIdPredicate(
+		List<String> predicates,
+		List<Object> params,
+		List<String> sourceSnapshotIds
+	) {
+		if (sourceSnapshotIds == null || sourceSnapshotIds.isEmpty()) {
+			return;
+		}
+		String placeholders = String.join(", ", java.util.Collections.nCopies(sourceSnapshotIds.size(), "?"));
+		predicates.add("snapshot_id IN (" + placeholders + ")");
+		params.addAll(sourceSnapshotIds);
+	}
+
+	private static void addQueryPredicate(List<String> predicates, List<Object> params, String query) {
+		if (!hasText(query)) {
+			return;
+		}
+		predicates.add("""
+			(LOWER(snapshot_id) LIKE ?
+				OR LOWER(source_id) LIKE ?
+				OR LOWER(provider) LIKE ?
+				OR LOWER(snapshot_status) LIKE ?
+				OR LOWER(schema_status) LIKE ?
+				OR LOWER(license_status) LIKE ?
+				OR LOWER(fetch_status) LIKE ?
+				OR LOWER(COALESCE(diff_summary, '')) LIKE ?)
+			""");
+		String needle = "%" + query.toLowerCase(java.util.Locale.ROOT) + "%";
+		for (int index = 0; index < 8; index++) {
+			params.add(needle);
+		}
+	}
+
+	private static void addStatusPredicate(List<String> predicates, List<Object> params, String status) {
+		if (!hasText(status) || "ALL".equals(status)) {
+			return;
+		}
+		if ("BLOCKER".equals(status)) {
+			predicates.add("""
+				NOT (
+					snapshot_status = 'LOCKED'
+					AND schema_status = 'PASS'
+					AND license_status = 'PASS'
+					AND fetch_status = 'SUCCESS'
+					AND redistribution_allowed = TRUE
+					AND credential_redacted = TRUE
+				)
+				""");
+			return;
+		}
+		predicates.add("(snapshot_status = ? OR schema_status = ? OR license_status = ? OR fetch_status = ?)");
+		for (int index = 0; index < 4; index++) {
+			params.add(status);
+		}
+	}
+
+	private static String orderBy(String sort) {
+		return switch (sort == null ? "" : sort) {
+			case "source" -> " ORDER BY source_id ASC, retrieved_at DESC, snapshot_id ASC\n";
+			case "retrieved_asc" -> " ORDER BY retrieved_at ASC, snapshot_id ASC\n";
+			default -> " ORDER BY retrieved_at DESC, snapshot_id ASC\n";
+		};
+	}
+
+	private static boolean hasText(String value) {
+		return value != null && !value.isBlank();
 	}
 
 	private SourceSnapshotEventRow mapEvent(ResultSet resultSet, int rowNumber) throws SQLException {

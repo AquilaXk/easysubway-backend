@@ -12,7 +12,6 @@ import com.easysubway.datapack.application.service.DatapackSourceSnapshotCommand
 import com.easysubway.datapack.domain.DataSourceSnapshot;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
-import java.util.Collections;
 import java.util.List;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -51,20 +50,34 @@ class DataSourceSnapshotAdminPageController {
 	String listSourceSnapshots(
 		@RequestParam(required = false) Integer page,
 		@RequestParam(required = false) Integer size,
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sourceSnapshotId,
+		@RequestParam(required = false) String sort,
 		Model model
 	) {
 		AdminPageRequest pageRequest = AdminPageRequest.of(page, size);
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, sourceSnapshotId, sort);
 		List<SourceSnapshotRow> rows = snapshotRepository
-			.listRecentSnapshots(pageRequest.limitForHasNext(), pageRequest.offset())
+			.listSnapshotsForAdmin(
+				filter.queryValue(),
+				filter.statusValue(),
+				filter.sourceSnapshotIds(),
+				filter.sortValue(),
+				pageRequest.limitForHasNext(),
+				pageRequest.offset()
+			)
 			.stream()
 			.map(SourceSnapshotRow::from)
 			.toList();
 		EgovPaginationView pageView = EgovPaginationView.fromSlice(pageRequest.page(), pageRequest.size(), rows.size());
 		model.addAttribute("snapshots", pageView.visibleItems(rows));
 		model.addAttribute("page", pageView);
+		model.addAttribute("filter", filter);
 		model.addAttribute(
 			"paginationLinks",
-			pageView.links("/admin/datapack/source-snapshots/page", Collections.emptyMap())
+			pageView.links("/admin/datapack/source-snapshots/page", filter.params())
 		);
 		return "admin/datapack/source-snapshots/list";
 	}
@@ -235,4 +248,5 @@ class DataSourceSnapshotAdminPageController {
 			return new NormalizationRunCommand(runId, schemaDiffSha256, schemaDiffSummary, reason, idempotencyKey);
 		}
 	}
+
 }

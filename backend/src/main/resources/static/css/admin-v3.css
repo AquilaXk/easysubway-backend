@@ -256,6 +256,18 @@ body.admin-v3 {
 	text-decoration: none;
 }
 
+.admin-v3 .tiny-btn {
+	min-height: 30px;
+	padding: 0 9px;
+	font-size: 12px;
+}
+
+.admin-v3 .sha-inline {
+	display: inline-block;
+	margin-right: 8px;
+	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+}
+
 .admin-btn:hover,
 .admin-v3 button:hover {
 	background: var(--admin-primary-hover);

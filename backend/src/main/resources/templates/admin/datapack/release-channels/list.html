@@ -22,6 +22,37 @@
 	</header>
 
 	<section class="admin-panel">
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/release-channels/page}"
+		      role="search" aria-label="배포 채널 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="채널·후보·사유 검색" aria-label="배포 채널 검색" autocomplete="off">
+			<select name="status" aria-label="상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="production" th:selected="${filter.selectedStatus('production')}">production</option>
+				<option value="staging" th:selected="${filter.selectedStatus('staging')}">staging</option>
+				<option value="dev" th:selected="${filter.selectedStatus('dev')}">dev</option>
+				<option value="ROLLBACK_AVAILABLE" th:selected="${filter.selectedStatus('ROLLBACK_AVAILABLE')}">rollback 가능</option>
+				<option value="PROMOTE" th:selected="${filter.selectedStatus('PROMOTE')}">PROMOTE</option>
+				<option value="ROLLBACK" th:selected="${filter.selectedStatus('ROLLBACK')}">ROLLBACK</option>
+				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">PASS</option>
+				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">FAIL</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">PENDING</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${filter.selectedSort('')}">채널 우선순</option>
+				<option value="candidate" th:selected="${filter.selectedSort('candidate')}">후보 ID순</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<button type="submit">검색</button>
+			<a class="admin-btn" th:href="@{/admin/datapack/release-channels/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate()}" th:text="${filter.contextLabel()}">후보</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
 		<table>
 			<thead>
 			<tr>
@@ -37,7 +68,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${channels.isEmpty()}">
-				<td colspan="8">release channel row가 없습니다.</td>
+				<td colspan="8">
+					<div th:replace="~{admin/fragments/empty-state :: panel('배포 채널 row가 없습니다.', '검색어·후보·상태 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="channel : ${channels}">
 				<td th:text="${channel.channel}">production</td>
@@ -47,12 +80,12 @@
 				</td>
 				<td>
 					<span th:text="${channel.manifestUrl}">manifest</span>
-					<span th:text="${channel.manifestSha256}">sha</span>
+					<span th:title="${channel.manifestSha256}" th:text="${#strings.abbreviate(channel.manifestSha256, 11)}">sha</span>
 				</td>
 				<td>
 					<span th:text="${channel.previousStableCandidateId}">previous candidate</span>
 					<span th:text="${channel.previousStableCandidateVersion}">previous version</span>
-					<span th:text="${channel.previousManifestSha256}">previous sha</span>
+					<span th:title="${channel.previousManifestSha256}" th:text="${#strings.abbreviate(channel.previousManifestSha256, 11)}">previous sha</span>
 				</td>
 				<td th:text="${channel.rollbackLabel}">rollback 가능</td>
 				<td>
@@ -142,7 +175,7 @@
 	</section>
 
 	<section class="admin-panel">
-		<h2>Channel Events</h2>
+		<h2>채널 이벤트</h2>
 		<table>
 			<thead>
 			<tr>
@@ -157,7 +190,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${events.isEmpty()}">
-				<td colspan="7">release channel event row가 없습니다.</td>
+				<td colspan="7">
+					<div th:replace="~{admin/fragments/empty-state :: panel('채널 이벤트 row가 없습니다.', '검색어·후보·상태 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="event : ${events}">
 				<td th:text="${event.id}">event</td>
@@ -165,7 +200,7 @@
 				<td>
 					<span th:text="${event.previousCandidateId}">previous</span>
 					<span th:text="${event.nextCandidateId}">next</span>
-					<span th:text="${event.nextManifestSha256}">sha</span>
+					<span th:title="${event.nextManifestSha256}" th:text="${#strings.abbreviate(event.nextManifestSha256, 11)}">sha</span>
 				</td>
 				<td>
 					<span th:text="${event.operationType}">PROMOTE</span>

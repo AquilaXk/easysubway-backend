@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>Alias / Quarantine</title>
+	<title>별칭·격리 검토</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
@@ -16,10 +16,39 @@
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
-			<h1>Alias / Quarantine</h1>
-			<p>candidate 입력 전에 source row 매핑 충돌과 quarantine blocker를 검수합니다.</p>
+			<h1>별칭·격리 검토</h1>
+			<p>후보 입력 전에 source row 매핑 충돌과 quarantine blocker를 검수합니다.</p>
 		</div>
 	</header>
+
+	<section class="admin-panel">
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/alias-quarantine/page}"
+		      role="search" aria-label="별칭·격리 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="alias·quarantine·station 검색" aria-label="별칭·격리 검색" autocomplete="off">
+			<select name="status" aria-label="상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">Alias PENDING</option>
+				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">Alias APPROVED</option>
+				<option value="REJECTED" th:selected="${filter.selectedStatus('REJECTED')}">Alias REJECTED</option>
+				<option value="OPEN" th:selected="${filter.selectedStatus('OPEN')}">Quarantine OPEN</option>
+				<option value="RESOLVED" th:selected="${filter.selectedStatus('RESOLVED')}">Quarantine RESOLVED</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
+			<button type="submit">검색</button>
+			<a class="admin-btn" th:href="@{/admin/datapack/alias-quarantine/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate() or filter.hasSourceSnapshot()}"
+				      th:text="${filter.contextLabel()}">컨텍스트</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
+	</section>
 
 	<section class="admin-panel">
 		<h2>Alias 검수 큐</h2>
@@ -42,7 +71,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${aliasApprovals.isEmpty()}">
-				<td colspan="12">alias 검수 row가 없습니다.</td>
+				<td colspan="12">
+					<div th:replace="~{admin/fragments/empty-state :: panel('alias 검수 row가 없습니다.', '검색어·상태·스냅샷 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="alias : ${aliasApprovals}">
 				<td th:text="${alias.id}">alias-id</td>
@@ -58,7 +89,7 @@
 					<span th:text="${alias.approvedBy}">-</span>
 					<span th:text="${alias.approvedAt}">-</span>
 				</td>
-				<td th:text="${alias.evidenceHash}">sha256</td>
+				<td><span th:title="${alias.evidenceHash}" th:text="${#strings.abbreviate(alias.evidenceHash, 11)}">sha256</span></td>
 				<td>
 					<form method="post" th:action="@{'/admin/datapack/alias-approvals/' + ${alias.id} + '/approve'}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
@@ -87,7 +118,7 @@
 	</section>
 
 	<section class="admin-panel">
-		<h2>Quarantine 큐</h2>
+		<h2>격리 큐</h2>
 		<table>
 			<thead>
 			<tr>
@@ -107,13 +138,15 @@
 			</thead>
 			<tbody>
 			<tr th:if="${quarantineRecords.isEmpty()}">
-				<td colspan="12">quarantine row가 없습니다.</td>
+				<td colspan="12">
+					<div th:replace="~{admin/fragments/empty-state :: panel('quarantine row가 없습니다.', '검색어·상태·스냅샷 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="record : ${quarantineRecords}">
 				<td th:text="${record.id}">quarantine-id</td>
 				<td th:text="${record.sourceId}">source-id</td>
 				<td th:text="${record.sourceSnapshotId}">snapshot-id</td>
-				<td th:text="${record.providerRecordHash}">sha256</td>
+				<td><span th:title="${record.providerRecordHash}" th:text="${#strings.abbreviate(record.providerRecordHash, 11)}">sha256</span></td>
 				<td th:text="${record.reasonCode}">ALIAS_CONFLICT</td>
 				<td th:text="${record.severity}">P1</td>
 				<td th:text="${record.resolutionStatus}">OPEN</td>

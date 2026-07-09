@@ -9,6 +9,7 @@ import com.easysubway.datapack.application.service.DatapackManualOverrideCommand
 import com.easysubway.datapack.application.service.DatapackManualOverrideCommandService.ManualOverrideRequestCommand;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -17,6 +18,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class ManualOverrideLedgerAdminPageController {
@@ -39,11 +41,35 @@ class ManualOverrideLedgerAdminPageController {
 
 	@GetMapping("/admin/datapack/manual-overrides/page")
 	@PreAuthorize("hasAuthority('admin.datapack.read')")
-	String manualOverrides(@ModelAttribute("overrideForm") ManualOverrideRequestForm form, Model model) {
+	String manualOverrides(
+		@ModelAttribute("overrideForm") ManualOverrideRequestForm form,
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sort,
+		Model model
+	) {
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, null, sort);
 		model.addAttribute("overrideRows", ledgerRepository.listRecentOverrides(LEDGER_LIMIT).stream()
 			.map(ManualOverrideView::from)
+			.filter(row -> filter.matchesText(
+				row.id(),
+				row.entityType(),
+				row.entityId(),
+				row.fieldName(),
+				row.reasonCode(),
+				row.reason(),
+				row.requestedBy(),
+				row.approvedBy(),
+				row.approvalStatus(),
+				row.conflictStatus(),
+				row.productionStatus()
+			))
+			.filter(row -> manualStatusMatches(row, filter.statusValue()))
+			.sorted(manualSort(filter.sortValue()))
 			.toList());
 		model.addAttribute("overrideForm", form);
+		model.addAttribute("filter", filter);
 		return "admin/datapack/manual-overrides/list";
 	}
 
@@ -65,6 +91,33 @@ class ManualOverrideLedgerAdminPageController {
 			form.reason()
 		);
 		return "redirect:/admin/datapack/manual-overrides/page";
+	}
+
+	private static boolean manualStatusMatches(ManualOverrideView row, String status) {
+		return switch (status) {
+			case "ALL" -> true;
+			case "BLOCKER" -> !productionReady(row);
+			case "STRICT" -> row.strictRouteEligible();
+			default -> status.equals(row.approvalStatus()) || status.equals(row.conflictStatus());
+		};
+	}
+
+	private static Comparator<ManualOverrideView> manualSort(String sort) {
+		return switch (sort) {
+			case "entity" -> Comparator.comparing(ManualOverrideView::entityType)
+				.thenComparing(ManualOverrideView::entityId)
+				.thenComparing(ManualOverrideView::fieldName);
+			case "created" -> Comparator.comparing(ManualOverrideView::effectiveFrom).reversed()
+				.thenComparing(ManualOverrideView::id);
+			default -> Comparator.comparing(ManualOverrideLedgerAdminPageController::productionReady)
+				.thenComparing(ManualOverrideView::productionStatus)
+				.thenComparing(ManualOverrideView::entityType)
+				.thenComparing(ManualOverrideView::entityId);
+		};
+	}
+
+	private static boolean productionReady(ManualOverrideView row) {
+		return "candidate 가능".equals(row.productionStatus());
 	}
 
 	@PostMapping("/admin/datapack/manual-overrides/{overrideId}/approve")

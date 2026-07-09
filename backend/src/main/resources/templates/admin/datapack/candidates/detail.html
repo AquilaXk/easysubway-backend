@@ -70,13 +70,33 @@
 			<dt>증거 워크플로</dt>
 			<dd th:text="${evidenceBundle.workflowRunUrl}">workflow</dd>
 			<dt>증거 번들 sha256</dt>
-			<dd><span th:title="${evidenceBundle.evidenceBundleSha256}" th:text="${#strings.abbreviate(evidenceBundle.evidenceBundleSha256, 11)}">sha</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${evidenceBundle.evidenceBundleSha256}"
+				      th:text="${evidenceBundle.evidenceBundleSha256Short()}">sha</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${evidenceBundle.evidenceBundleSha256}">복사</button>
+			</dd>
 			<dt>매니페스트 sha256</dt>
-			<dd><span th:title="${candidate.manifestSha256}" th:text="${#strings.abbreviate(candidate.manifestSha256, 11)}">sha</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${candidate.manifestSha256}"
+				      th:text="${candidate.manifestSha256Short()}">sha</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${candidate.manifestSha256}">복사</button>
+			</dd>
 			<dt>원천 스냅샷 세트 hash</dt>
-			<dd><span th:title="${candidate.sourceSnapshotSetHash}" th:text="${#strings.abbreviate(candidate.sourceSnapshotSetHash, 11)}">sha</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${candidate.sourceSnapshotSetHash}"
+				      th:text="${candidate.sourceSnapshotSetHashShort()}">sha</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${candidate.sourceSnapshotSetHash}">복사</button>
+			</dd>
 			<dt>오버라이드 세트 hash</dt>
-			<dd><span th:title="${candidate.overrideSetHash}" th:text="${#strings.abbreviate(candidate.overrideSetHash, 11)}">sha</span></dd>
+			<dd>
+				<span class="sha-inline" th:title="${candidate.overrideSetHash}"
+				      th:text="${candidate.overrideSetHashShort()}">sha</span>
+				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				        th:attr="data-copy-value=${candidate.overrideSetHash}">복사</button>
+			</dd>
 		</dl>
 		<details>
 			<summary>sha 원문 보기</summary>
@@ -98,10 +118,10 @@
 		<table>
 			<tbody>
 			<tr><th scope="row">원천 스냅샷 ids</th><td th:text="${candidateInput.sourceSnapshotIds}">snapshot ids</td></tr>
-			<tr><th scope="row">승인 별칭 원장 hash</th><td><span th:title="${candidateInput.approvedAliasLedgerHash}" th:text="${#strings.abbreviate(candidateInput.approvedAliasLedgerHash, 11)}">sha</span></td></tr>
-			<tr><th scope="row">시설 근거 원장 hash</th><td><span th:title="${candidateInput.facilityEvidenceLedgerHash}" th:text="${#strings.abbreviate(candidateInput.facilityEvidenceLedgerHash, 11)}">sha</span></td></tr>
-			<tr><th scope="row">경로 근거 원장 hash</th><td><span th:title="${candidateInput.routeEvidenceLedgerHash}" th:text="${#strings.abbreviate(candidateInput.routeEvidenceLedgerHash, 11)}">sha</span></td></tr>
-			<tr><th scope="row">승인 오버라이드 세트 hash</th><td><span th:title="${candidateInput.approvedOverrideSetHash}" th:text="${#strings.abbreviate(candidateInput.approvedOverrideSetHash, 11)}">sha</span></td></tr>
+			<tr><th scope="row">승인 별칭 원장 hash</th><td><span th:title="${candidateInput.approvedAliasLedgerHash}" th:text="${candidateInput.approvedAliasLedgerHashShort()}">sha</span></td></tr>
+			<tr><th scope="row">시설 근거 원장 hash</th><td><span th:title="${candidateInput.facilityEvidenceLedgerHash}" th:text="${candidateInput.facilityEvidenceLedgerHashShort()}">sha</span></td></tr>
+			<tr><th scope="row">경로 근거 원장 hash</th><td><span th:title="${candidateInput.routeEvidenceLedgerHash}" th:text="${candidateInput.routeEvidenceLedgerHashShort()}">sha</span></td></tr>
+			<tr><th scope="row">승인 오버라이드 세트 hash</th><td><span th:title="${candidateInput.approvedOverrideSetHash}" th:text="${candidateInput.approvedOverrideSetHashShort()}">sha</span></td></tr>
 			</tbody>
 		</table>
 	</section>

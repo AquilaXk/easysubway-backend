@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>Candidate Packs</title>
+	<title>후보 팩</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
@@ -16,28 +16,59 @@
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
-			<h1>Candidate Packs</h1>
-			<p>candidate pack artifact hash와 gate 상태를 읽기 전용으로 확인합니다.</p>
+			<h1>후보 팩</h1>
+			<p>후보 팩 artifact hash와 gate 상태를 검색·필터로 확인합니다.</p>
 		</div>
 	</header>
 
 	<section class="admin-panel">
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/candidates/page}"
+		      role="search" aria-label="후보 팩 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="후보·scope·version 검색" aria-label="후보 팩 검색" autocomplete="off">
+			<select name="status" aria-label="후보 상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">게이트 blocker</option>
+				<option value="READY" th:selected="${filter.selectedStatus('READY')}">승인 대기</option>
+				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">승인됨</option>
+				<option value="PROMOTED" th:selected="${filter.selectedStatus('PROMOTED')}">승격됨</option>
+				<option value="DRAFT" th:selected="${filter.selectedStatus('DRAFT')}">초안</option>
+				<option value="FAILED" th:selected="${filter.selectedStatus('FAILED')}">실패</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${filter.selectedSort('')}">생성 최신순</option>
+				<option value="created_asc" th:selected="${filter.selectedSort('created_asc')}">생성 오래된순</option>
+				<option value="candidate" th:selected="${filter.selectedSort('candidate')}">후보 ID순</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<button type="submit">검색</button>
+			<a class="admin-btn" th:href="@{/admin/datapack/candidates/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate()}" th:text="${filter.contextLabel()}">후보</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
 		<table>
 			<thead>
 			<tr>
-				<th scope="col">candidate</th>
+				<th scope="col">후보</th>
 				<th scope="col">scope</th>
 				<th scope="col">version</th>
 				<th scope="col">approval</th>
 				<th scope="col">gates</th>
-				<th scope="col">hashes</th>
-				<th scope="col">created</th>
-				<th scope="col">detail</th>
+				<th scope="col">hash</th>
+				<th scope="col">생성</th>
+				<th scope="col">상세</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:if="${candidates.isEmpty()}">
-				<td colspan="8">candidate pack row가 없습니다.</td>
+				<td colspan="8">
+					<div th:replace="~{admin/fragments/empty-state :: panel('후보 팩이 없습니다.', '검색어·상태 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="candidate : ${candidates}">
 				<td th:text="${candidate.id}">candidate-id</td>
@@ -51,9 +82,9 @@
 					<span th:text="${candidate.androidEvidenceStatus}">PASS</span>
 				</td>
 				<td>
-					<span th:text="${candidate.sqliteSha256}">sqlite</span>
-					<span th:text="${candidate.gzipSha256}">gzip</span>
-					<span th:text="${candidate.manifestSha256}">manifest</span>
+					<span class="meta" th:title="${candidate.sqliteSha256}" th:text="${'sqlite ' + candidate.sqliteSha256Short()}">sqlite</span>
+					<span class="meta" th:title="${candidate.gzipSha256}" th:text="${'gzip ' + candidate.gzipSha256Short()}">gzip</span>
+					<span class="meta" th:title="${candidate.manifestSha256}" th:text="${'manifest ' + candidate.manifestSha256Short()}">manifest</span>
 				</td>
 				<td th:text="${candidate.createdAt}">2026-06-29T03:00</td>
 				<td><a th:href="@{/admin/datapack/candidates/{candidateId}/page(candidateId=${candidate.id})}">상세</a></td>

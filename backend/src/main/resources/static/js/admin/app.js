@@ -69,6 +69,21 @@ document.addEventListener('alpine:init', function () {
 		};
 	});
 
+	// sha/hash 복사(#1745): 원문은 title/details로 항상 확인 가능하고, JS가 있으면 버튼으로 클립보드에 복사한다.
+	// Clipboard API가 막힌 브라우저에서는 조용히 버튼 문구만 유지한다(원문 확인 fallback은 이미 렌더됨).
+	Alpine.data('copyField', function () {
+		return {
+			copy: function () {
+				var value = this.$el.dataset.copyValue || '';
+				if (!value || value === '-' || !navigator.clipboard) {
+					return;
+				}
+				navigator.clipboard.writeText(value);
+				this.$el.textContent = '복사됨';
+			},
+		};
+	});
+
 	// 커맨드 팔레트(#1738): Cmd/Ctrl+K로 열고, 검색 입력을 htmx로 /admin/search에 debounce 조회한다.
 	// Esc·백드롭으로 닫고, 열릴 때 입력에 포커스. 방향키로 결과 링크 사이를 이동한다.
 	// 진화형 향상 — JS가 없으면 topbar 검색 버튼이 /admin/search 전용 페이지로 이동한다(no-JS 대체).

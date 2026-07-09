@@ -8,6 +8,7 @@ import com.easysubway.datapack.application.service.DatapackFacilityEvidenceComma
 import com.easysubway.datapack.application.service.DatapackFacilityEvidenceCommandService.FacilityEvidenceReviewCommand;
 import jakarta.servlet.http.HttpServletRequest;
 import java.time.LocalDateTime;
+import java.util.List;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -16,6 +17,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class FacilityEvidenceAdminPageController {
@@ -38,10 +40,35 @@ class FacilityEvidenceAdminPageController {
 
 	@GetMapping("/admin/datapack/facility-evidence/page")
 	@PreAuthorize("hasAuthority('admin.datapack.read')")
-	String facilityEvidenceMatrix(Model model) {
+	String facilityEvidenceMatrix(
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sourceSnapshotId,
+		Model model
+	) {
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, sourceSnapshotId, null);
 		model.addAttribute("evidenceRows", matrixRepository.listRecentEvidence(MATRIX_LIMIT).stream()
 			.map(FacilityEvidenceView::from)
+			.filter(row -> filter.matchesSourceSnapshot(row.sourceSnapshotId()))
+			.filter(row -> filter.matchesText(
+				row.id(),
+				row.stationId(),
+				row.lineId(),
+				row.facilityType(),
+				row.evidenceKind(),
+				row.sourceId(),
+				row.sourceSnapshotId(),
+				row.statusMeaning(),
+				row.installationStatus(),
+				row.operationalStatus(),
+				row.conflictStatus(),
+				row.strictRouteReason(),
+				row.manualOverrideId()
+			))
+			.filter(row -> facilityStatusMatches(row, filter.statusValue()))
 			.toList());
+		model.addAttribute("filter", filter);
 		return "admin/datapack/facility-evidence/list";
 	}
 
@@ -64,6 +91,18 @@ class FacilityEvidenceAdminPageController {
 			form.reason()
 		);
 		return "redirect:/admin/datapack/facility-evidence/page";
+	}
+
+	private static boolean facilityStatusMatches(FacilityEvidenceView row, String status) {
+		return switch (status) {
+			case "ALL" -> true;
+			case "BLOCKER" -> row.blocker();
+			case "STRICT" -> row.strictRouteEligible();
+			default -> status.equals(row.operationalStatus())
+				|| status.equals(row.installationStatus())
+				|| status.equals(row.evidenceKind())
+				|| status.equals(row.conflictStatus());
+		};
 	}
 
 	record FacilityEvidenceView(
@@ -112,6 +151,13 @@ class FacilityEvidenceAdminPageController {
 				row.conflictStatus(),
 				valueOrDash(row.manualOverrideId())
 			);
+		}
+
+		public boolean blocker() {
+			return !strictRouteEligible
+				|| "UNKNOWN_PENDING_REVIEW".equals(evidenceKind)
+				|| List.of("UNKNOWN", "CHECK_REQUIRED").contains(operationalStatus)
+				|| "UNRESOLVED".equals(conflictStatus);
 		}
 	}
 

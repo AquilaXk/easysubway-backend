@@ -140,6 +140,7 @@ class FacilityReportAdminHtmxPilotTest {
 
 		assertThat(html)
 			.contains("/vendor/htmx-2.0.10/htmx.min.js")
+			.contains("/js/admin/app.js")
 			.contains("/vendor/alpinejs-csp-3.15.12/cdn.min.js")
 			.contains("integrity=\"sha384-")
 			.contains("crossorigin=\"anonymous\"")
@@ -150,6 +151,10 @@ class FacilityReportAdminHtmxPilotTest {
 			.doesNotContain("cdn.jsdelivr.net")
 			.doesNotContain("unpkg.com")
 			.doesNotContain("cdnjs.cloudflare.com");
+		assertThat(html.indexOf("/vendor/htmx-2.0.10/htmx.min.js"))
+			.isLessThan(html.indexOf("/js/admin/app.js"));
+		assertThat(html.indexOf("/js/admin/app.js"))
+			.isLessThan(html.indexOf("/vendor/alpinejs-csp-3.15.12/cdn.min.js"));
 	}
 
 	@Test

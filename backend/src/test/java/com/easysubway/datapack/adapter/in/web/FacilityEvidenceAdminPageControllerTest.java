@@ -63,7 +63,8 @@ class FacilityEvidenceAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("Facility Evidence Matrix")
+			.contains("시설 근거 검토")
+			.contains("시설 근거 검색")
 			.contains("station-sangnoksu")
 			.contains("line-4")
 			.contains("ELEVATOR")

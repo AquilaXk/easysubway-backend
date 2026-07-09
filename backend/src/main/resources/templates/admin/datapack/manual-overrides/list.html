@@ -4,7 +4,7 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>Manual Overrides</title>
+	<title>수동 오버라이드</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
@@ -16,7 +16,7 @@
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
-			<h1>Manual Overrides</h1>
+			<h1>수동 오버라이드</h1>
 			<p>production candidate 입력 전에 override 요청, 승인, 만료, strict route 안전 승인 상태를 검수합니다.</p>
 		</div>
 	</header>
@@ -45,6 +45,35 @@
 	</section>
 
 	<section class="admin-panel">
+		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/manual-overrides/page}"
+		      role="search" aria-label="수동 오버라이드 검색">
+			<input type="search" name="query" th:value="${filter.queryValue}"
+			       placeholder="entity·field·reason 검색" aria-label="수동 오버라이드 검색" autocomplete="off">
+			<select name="status" aria-label="상태 필터">
+				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
+				<option value="STRICT" th:selected="${filter.selectedStatus('STRICT')}">strict 요청</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">PENDING</option>
+				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">APPROVED</option>
+				<option value="EXPIRED" th:selected="${filter.selectedStatus('EXPIRED')}">EXPIRED</option>
+				<option value="UNRESOLVED" th:selected="${filter.selectedStatus('UNRESOLVED')}">충돌 미해결</option>
+			</select>
+			<select name="sort" aria-label="정렬">
+				<option value="" th:selected="${filter.selectedSort('')}">production blocker 우선</option>
+				<option value="entity" th:selected="${filter.selectedSort('entity')}">entity순</option>
+				<option value="created" th:selected="${filter.selectedSort('created')}">시작 최신순</option>
+			</select>
+			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
+			<button type="submit">검색</button>
+			<a class="admin-btn" th:href="@{/admin/datapack/manual-overrides/page}">초기화</a>
+		</form>
+		<div class="table-filters" th:if="${filter.active()}">
+			<div class="filter-chips" aria-label="적용된 필터">
+				<span class="filter-chip" th:if="${filter.hasCandidate()}" th:text="${filter.contextLabel()}">후보</span>
+				<span class="filter-chip" th:if="${filter.hasStatus()}" th:text="${'상태 ' + filter.statusValue}">상태</span>
+				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
+			</div>
+		</div>
 		<table>
 			<thead>
 			<tr>
@@ -68,7 +97,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${overrideRows.isEmpty()}">
-				<td colspan="16">manual override row가 없습니다.</td>
+				<td colspan="16">
+					<div th:replace="~{admin/fragments/empty-state :: panel('수동 오버라이드 row가 없습니다.', '검색어·상태 필터를 조정해 보세요.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="row : ${overrideRows}">
 				<td th:text="${row.id}">override-id</td>
@@ -85,7 +116,7 @@
 				</td>
 				<td>
 					<span th:text="${row.evidenceUri}">evidence-uri</span>
-					<span th:text="${row.evidenceHash}">sha256</span>
+					<span th:title="${row.evidenceHash}" th:text="${#strings.abbreviate(row.evidenceHash, 11)}">sha256</span>
 				</td>
 				<td th:text="${row.requestedBy}">requester</td>
 				<td>

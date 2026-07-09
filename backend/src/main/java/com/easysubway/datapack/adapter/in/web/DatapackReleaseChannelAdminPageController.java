@@ -6,6 +6,7 @@ import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChanne
 import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService;
 import com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService.ReleaseChannelCommand;
 import java.time.LocalDateTime;
+import java.util.Comparator;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.Authentication;
 import org.springframework.stereotype.Controller;
@@ -14,6 +15,7 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class DatapackReleaseChannelAdminPageController {
@@ -33,13 +35,49 @@ class DatapackReleaseChannelAdminPageController {
 
 	@GetMapping("/admin/datapack/release-channels/page")
 	@PreAuthorize("hasAuthority('admin.datapack.read')")
-	String releaseChannels(Model model) {
+	String releaseChannels(
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sort,
+		Model model
+	) {
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, null, sort);
 		model.addAttribute("channels", releaseChannelRepository.listChannels().stream()
 			.map(ReleaseChannelView::from)
+			.filter(channel -> filter.matchesCandidate(channel.candidateId())
+				|| filter.matchesCandidate(channel.previousStableCandidateId()))
+			.filter(channel -> filter.matchesText(
+				channel.channel(),
+				channel.candidateId(),
+				channel.candidateVersion(),
+				channel.previousStableCandidateId(),
+				channel.previousStableCandidateVersion(),
+				channel.lastOperationType(),
+				channel.lastOperationStatus(),
+				channel.reason()
+			))
+			.filter(channel -> channelStatusMatches(channel, filter.statusValue()))
+			.sorted(channelSort(filter.sortValue()))
 			.toList());
 		model.addAttribute("events", releaseChannelRepository.listRecentEvents(EVENT_LIMIT).stream()
 			.map(ReleaseChannelEventView::from)
+			.filter(event -> filter.matchesCandidate(event.nextCandidateId())
+				|| filter.matchesCandidate(event.previousCandidateId()))
+			.filter(event -> filter.matchesText(
+				event.id(),
+				event.channel(),
+				event.previousCandidateId(),
+				event.nextCandidateId(),
+				event.operationType(),
+				event.operationStatus(),
+				event.requestedBy(),
+				event.approvedBy(),
+				event.reason()
+			))
+			.filter(event -> eventStatusMatches(event, filter.statusValue()))
 			.toList());
+		model.addAttribute("filter", filter);
 		return "admin/datapack/release-channels/list";
 	}
 
@@ -53,6 +91,42 @@ class DatapackReleaseChannelAdminPageController {
 	) {
 		releaseChannelCommandService.promote(form.toCommand(channel, authentication.getName()));
 		return "redirect:/admin/datapack/release-channels/page";
+	}
+
+	private static boolean channelStatusMatches(ReleaseChannelView channel, String status) {
+		return switch (status) {
+			case "ALL" -> true;
+			case "ROLLBACK_AVAILABLE" -> "rollback 가능".equals(channel.rollbackLabel());
+			default -> status.equals(channel.channel())
+				|| status.equals(channel.lastOperationType())
+				|| status.equals(channel.lastOperationStatus());
+		};
+	}
+
+	private static boolean eventStatusMatches(ReleaseChannelEventView event, String status) {
+		return switch (status) {
+			case "ALL", "ROLLBACK_AVAILABLE" -> true;
+			default -> status.equals(event.channel())
+				|| status.equals(event.operationType())
+				|| status.equals(event.operationStatus());
+		};
+	}
+
+	private static Comparator<ReleaseChannelView> channelSort(String sort) {
+		return switch (sort) {
+			case "candidate" -> Comparator.comparing(ReleaseChannelView::candidateId);
+			default -> Comparator.comparingInt(DatapackReleaseChannelAdminPageController::channelOrder)
+				.thenComparing(ReleaseChannelView::channel);
+		};
+	}
+
+	private static int channelOrder(ReleaseChannelView channel) {
+		return switch (channel.channel()) {
+			case "production" -> 0;
+			case "staging" -> 1;
+			case "dev" -> 2;
+			default -> 3;
+		};
 	}
 
 	@PostMapping("/admin/datapack/release-channels/{channel}/rollback")

@@ -19,11 +19,13 @@ import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ModelAttribute;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 @Controller
 class AliasQuarantineAdminPageController {
 
 	private static final int QUEUE_LIMIT = 16;
+	private static final int QUEUE_FILTER_LIMIT = 500;
 
 	private final JdbcAliasQuarantineQueueRepository queueRepository;
 	private final DatapackAliasQuarantineCommandService commandService;
@@ -41,13 +43,48 @@ class AliasQuarantineAdminPageController {
 
 	@GetMapping("/admin/datapack/alias-quarantine/page")
 	@PreAuthorize("hasAuthority('admin.datapack.read')")
-	String aliasQuarantineQueue(Model model) {
-		model.addAttribute("aliasApprovals", queueRepository.listRecentAliasApprovals(QUEUE_LIMIT).stream()
+	String aliasQuarantineQueue(
+		@RequestParam(required = false) String query,
+		@RequestParam(required = false) String status,
+		@RequestParam(required = false) String candidateId,
+		@RequestParam(required = false) String sourceSnapshotId,
+		Model model
+	) {
+		DatapackAdminListQuery filter = DatapackAdminListQuery.of(query, status, candidateId, sourceSnapshotId, null);
+		int fetchLimit = filter.active() ? QUEUE_FILTER_LIMIT : QUEUE_LIMIT;
+		model.addAttribute("aliasApprovals", queueRepository.listRecentAliasApprovals(fetchLimit).stream()
 			.map(AliasApprovalView::from)
+			.filter(alias -> filter.matchesSourceSnapshot(alias.sourceSnapshotId()))
+			.filter(alias -> filter.matchesText(
+				alias.id(),
+				alias.sourceId(),
+				alias.sourceSnapshotId(),
+				alias.providerEntity(),
+				alias.canonicalEntity(),
+				alias.matchMethod(),
+				alias.approvalStatus()
+			))
+			.filter(alias -> aliasStatusMatches(alias, filter.statusValue()))
+			.limit(QUEUE_LIMIT)
 			.toList());
-		model.addAttribute("quarantineRecords", queueRepository.listRecentQuarantineRecords(QUEUE_LIMIT).stream()
+		model.addAttribute("quarantineRecords", queueRepository.listRecentQuarantineRecords(fetchLimit).stream()
 			.map(QuarantineView::from)
+			.filter(record -> filter.matchesSourceSnapshot(record.sourceSnapshotId()))
+			.filter(record -> filter.matchesText(
+				record.id(),
+				record.sourceId(),
+				record.sourceSnapshotId(),
+				record.reasonCode(),
+				record.severity(),
+				record.redactedExcerpt(),
+				record.resolutionStatus(),
+				record.latestResolution(),
+				record.latestCanonicalEntity()
+			))
+			.filter(record -> quarantineStatusMatches(record, filter.statusValue()))
+			.limit(QUEUE_LIMIT)
 			.toList());
+		model.addAttribute("filter", filter);
 		return "admin/datapack/alias-quarantine/list";
 	}
 
@@ -70,6 +107,22 @@ class AliasQuarantineAdminPageController {
 			form.reason()
 		);
 		return "redirect:/admin/datapack/alias-quarantine/page";
+	}
+
+	private static boolean aliasStatusMatches(AliasApprovalView alias, String status) {
+		return switch (status) {
+			case "ALL" -> true;
+			case "BLOCKER" -> !"APPROVED".equals(alias.approvalStatus()) && "-".equals(alias.supersededBy());
+			default -> status.equals(alias.approvalStatus());
+		};
+	}
+
+	private static boolean quarantineStatusMatches(QuarantineView record, String status) {
+		return switch (status) {
+			case "ALL" -> true;
+			case "BLOCKER" -> "OPEN".equals(record.resolutionStatus());
+			default -> status.equals(record.resolutionStatus());
+		};
 	}
 
 	@PostMapping("/admin/datapack/alias-approvals/{aliasId}/reject")

@@ -59,7 +59,8 @@ class DatapackCandidateAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(listHtml)
-			.contains("Candidate Packs")
+			.contains("후보 팩")
+			.contains("후보 팩 검색")
 			.contains("candidate-capital-1")
 			.contains("capital_pilot_android_v1")
 			.contains("2026.06.29-cand.1")
@@ -88,6 +89,7 @@ class DatapackCandidateAdminPageControllerTest {
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/123?redacted")
 			.contains("증거 번들 sha256")
 			.contains("sha 원문 보기")
+			.contains("복사")
 			.contains("production promote 가능")
 			.contains("name=\"commandToken\"")
 			.contains("게이트 재실행")

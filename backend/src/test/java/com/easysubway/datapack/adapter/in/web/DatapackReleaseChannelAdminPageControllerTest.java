@@ -61,6 +61,8 @@ class DatapackReleaseChannelAdminPageControllerTest {
 
 		assertThat(html)
 			.contains("배포 채널")
+			.contains("배포 채널 검색")
+			.contains("채널 이벤트")
 			.contains("승격 승인")
 			.contains("rollback 대상")
 			.contains("production")
