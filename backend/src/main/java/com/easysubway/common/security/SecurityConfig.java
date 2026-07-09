@@ -294,7 +294,8 @@ public class SecurityConfig {
 					HttpMethod.POST,
 					"/api/v1/routes/search",
 					"/api/v2/routes/search",
-					"/api/v2/routes/*/refresh"
+					"/api/v2/routes/*/refresh",
+					"/api/ads/events"
 				).permitAll()
 				.requestMatchers(
 					"/api/health",
@@ -305,6 +306,7 @@ public class SecurityConfig {
 					"/easysubway/privacy",
 					"/api/v1/realtime/**",
 					"/api/notices/active",
+					"/api/ads/active",
 					"/favicon.ico",
 					"/css/**",
 					"/js/**",
