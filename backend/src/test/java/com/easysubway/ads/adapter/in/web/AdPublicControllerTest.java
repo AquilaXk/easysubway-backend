@@ -74,6 +74,41 @@ class AdPublicControllerTest {
 	}
 
 	@Test
+	@DisplayName("활성 소재가 없으면 무재고 응답을 저장하지 않는다")
+	void doesNotCacheNoActiveCreative() throws Exception {
+		mockMvc.perform(get("/api/ads/active")
+				.param("placement", "route-result-bottom"))
+			.andExpect(status().isNoContent())
+			.andExpect(header().string("Cache-Control", containsString("no-store")));
+	}
+
+	@Test
+	@DisplayName("소재 응답 필드가 바뀌면 같은 creative도 ETag가 바뀐다")
+	void changesEtagWhenCreativeContentChanges() throws Exception {
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+		insertPlacement("route-result-bottom");
+		insertCreative("active", "route-result-bottom", now.minusHours(1), now.plusHours(1), true);
+
+		MvcResult first = mockMvc.perform(get("/api/ads/active")
+				.param("placement", "route-result-bottom"))
+			.andExpect(status().isOk())
+			.andReturn();
+
+		jdbcTemplate.update("""
+			UPDATE ad_creatives
+			SET image_url=?
+			WHERE id=?
+			""", "https://cdn.easysubway.example/ads/active-v2.png", "active");
+
+		mockMvc.perform(get("/api/ads/active")
+				.param("placement", "route-result-bottom")
+				.header("If-None-Match", first.getResponse().getHeader("ETag")))
+			.andExpect(status().isOk())
+			.andExpect(header().string("ETag", org.hamcrest.Matchers.not(first.getResponse().getHeader("ETag"))))
+			.andExpect(jsonPath("$.data.imageUrl").value("https://cdn.easysubway.example/ads/active-v2.png"));
+	}
+
+	@Test
 	@DisplayName("이벤트는 placement·creative·종류·일자 count만 집계한다")
 	void aggregatesAnonymousEventsByDay() throws Exception {
 		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);

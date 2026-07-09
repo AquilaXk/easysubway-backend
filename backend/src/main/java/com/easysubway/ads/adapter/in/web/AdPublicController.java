@@ -23,6 +23,7 @@ import org.springframework.web.server.ResponseStatusException;
 class AdPublicController {
 
 	private static final CacheControl AD_CACHE = CacheControl.maxAge(300, TimeUnit.SECONDS).cachePublic();
+	private static final CacheControl NO_AD_CACHE = CacheControl.noStore();
 
 	private final AdService service;
 
@@ -37,7 +38,7 @@ class AdPublicController {
 	) {
 		return service.activeCreative(placement)
 			.map(creative -> activeResponse(creative, webRequest))
-			.orElseGet(() -> ResponseEntity.noContent().cacheControl(AD_CACHE).build());
+			.orElseGet(() -> ResponseEntity.noContent().cacheControl(NO_AD_CACHE).build());
 	}
 
 	@PostMapping("/api/ads/events")
@@ -63,8 +64,15 @@ class AdPublicController {
 	}
 
 	private static String etagFor(AdResponse response, AdCreative creative) {
-		String fingerprint = response.placement() + "@" + response.creativeId()
-			+ "@" + creative.startsAt() + "~" + creative.endsAt();
+		String fingerprint = String.join("@",
+			response.placement(),
+			response.creativeId(),
+			response.imageUrl(),
+			response.landingUrl(),
+			response.advertiserName(),
+			response.altText(),
+			String.valueOf(creative.startsAt()),
+			String.valueOf(creative.endsAt()));
 		return "\"" + DigestUtils.md5DigestAsHex(fingerprint.getBytes(StandardCharsets.UTF_8)) + "\"";
 	}
 
