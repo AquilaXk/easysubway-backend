@@ -71,6 +71,13 @@ public class JdbcServiceNoticeRepository implements ServiceNoticeRepository {
 	}
 
 	@Override
+	public List<ServiceNotice> findRecent(int limit) {
+		return jdbcTemplate.query(
+			"SELECT * FROM service_notice ORDER BY published_at DESC LIMIT ?",
+			ROW_MAPPER, limit);
+	}
+
+	@Override
 	public void deleteById(String id) {
 		jdbcTemplate.update("DELETE FROM service_notice WHERE id=?", id);
 	}

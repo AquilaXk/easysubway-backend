@@ -1,0 +1,103 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>운행 공지</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-service-notices')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>운행 공지</h1>
+			<p>앱 홈 배너와 운행 공지 목록에 노출할 공지를 발행하고 내립니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel">
+		<h2>공지 발행</h2>
+		<form method="post" th:action="@{/admin/notices/page}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<label>
+				대상
+				<select name="scope">
+					<option th:each="scope : ${scopes}" th:value="${scope}" th:text="${scope}">ALL</option>
+				</select>
+			</label>
+			<label>
+				대상 값
+				<input name="scopeValue" placeholder="LINE이면 노선 id, REGION이면 지역">
+			</label>
+			<label>
+				심각도
+				<select name="severity">
+					<option th:each="severity : ${severities}" th:value="${severity}" th:text="${severity}">INFO</option>
+				</select>
+			</label>
+			<label>
+				제목
+				<input name="title" required maxlength="255">
+			</label>
+			<label>
+				본문
+				<textarea name="body" required rows="4" maxlength="2000"></textarea>
+			</label>
+			<label>
+				만료 시각
+				<input name="expiresAt" type="datetime-local">
+			</label>
+			<button type="submit">공지 발행</button>
+		</form>
+	</section>
+
+	<section class="admin-panel">
+		<h2>최근 공지</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">제목</th>
+				<th scope="col">대상</th>
+				<th scope="col">심각도</th>
+				<th scope="col">본문</th>
+				<th scope="col">게시</th>
+				<th scope="col">만료</th>
+				<th scope="col">발행자</th>
+				<th scope="col">액션</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${notices.isEmpty()}">
+				<td colspan="8">공지 없음</td>
+			</tr>
+			<tr th:each="notice : ${notices}">
+				<td th:text="${notice.title}">제목</td>
+				<td th:text="${notice.scope + ' ' + notice.scopeValue}">대상</td>
+				<td th:text="${notice.severity}">INFO</td>
+				<td th:text="${notice.body}">본문</td>
+				<td th:text="${notice.publishedAt}">2026-07-09T10:00</td>
+				<td th:text="${notice.expiresAt != null ? notice.expiresAt : '-'}">-</td>
+				<td th:text="${notice.publishedBy}">operator</td>
+				<td>
+					<form method="post"
+					      th:action="@{/admin/notices/{id}/unpublish/page(id=${notice.id})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<button type="submit">즉시 내리기</button>
+					</form>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

@@ -19,5 +19,7 @@ public interface ServiceNoticeRepository {
 	 */
 	List<ServiceNotice> findActiveAt(LocalDateTime now);
 
+	List<ServiceNotice> findRecent(int limit);
+
 	void deleteById(String id);
 }
