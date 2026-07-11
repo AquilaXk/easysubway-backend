@@ -7,6 +7,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -21,6 +22,7 @@ import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
+import org.springframework.util.DigestUtils;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -46,8 +48,9 @@ class AdPublicControllerTest {
 	@DisplayName("활성 소재 1개만 식별자 없이 반환하고 public max-age=300 캐시를 붙인다")
 	void returnsActiveCreativeWithoutIdentifiers() throws Exception {
 		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+		LocalDateTime endsAt = now.plusHours(1).withNano(0);
 		insertPlacement("route-result-bottom");
-		insertCreative("active", "route-result-bottom", now.minusHours(1), now.plusHours(1), true);
+		insertCreative("active", "route-result-bottom", now.minusHours(1), endsAt, true);
 		insertCreative("expired", "route-result-bottom", now.minusHours(3), now.minusHours(1), true);
 		insertCreative("disabled", "route-result-bottom", now.minusHours(1), now.plusHours(1), false);
 
@@ -63,6 +66,7 @@ class AdPublicControllerTest {
 			.andExpect(jsonPath("$.data.landingUrl").value("https://partner.example/active"))
 			.andExpect(jsonPath("$.data.advertiserName").value("상록수 제휴"))
 			.andExpect(jsonPath("$.data.altText").value("상록수 제휴 광고"))
+			.andExpect(jsonPath("$.data.endsAt").value(endsAt.toInstant(ZoneOffset.UTC).toString()))
 			.andExpect(jsonPath("$.data.trackingId").doesNotExist())
 			.andExpect(jsonPath("$.data.sessionId").doesNotExist())
 			.andReturn();
@@ -71,6 +75,19 @@ class AdPublicControllerTest {
 				.param("placement", "route-result-bottom")
 				.header("If-None-Match", first.getResponse().getHeader("ETag")))
 			.andExpect(status().isNotModified());
+	}
+
+	@Test
+	@DisplayName("예약 종료 시각이 없으면 endsAt을 null로 반환한다")
+	void returnsNullEndsAtWithoutScheduledExpiry() throws Exception {
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+		insertPlacement("route-result-bottom");
+		insertCreative("open-ended", "route-result-bottom", now.minusHours(1), null, true);
+
+		mockMvc.perform(get("/api/ads/active")
+				.param("placement", "route-result-bottom"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.endsAt").value(org.hamcrest.Matchers.nullValue()));
 	}
 
 	@Test
@@ -85,7 +102,7 @@ class AdPublicControllerTest {
 	@Test
 	@DisplayName("소재 응답 필드가 바뀌면 같은 creative도 ETag가 바뀐다")
 	void changesEtagWhenCreativeContentChanges() throws Exception {
-		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC).withNano(0);
 		insertPlacement("route-result-bottom");
 		insertCreative("active", "route-result-bottom", now.minusHours(1), now.plusHours(1), true);
 
@@ -96,16 +113,46 @@ class AdPublicControllerTest {
 
 		jdbcTemplate.update("""
 			UPDATE ad_creatives
-			SET image_url=?
+			SET ends_at=?
 			WHERE id=?
-			""", "https://cdn.easysubway.example/ads/active-v2.png", "active");
+			""", now.plusHours(2), "active");
 
 		mockMvc.perform(get("/api/ads/active")
 				.param("placement", "route-result-bottom")
 				.header("If-None-Match", first.getResponse().getHeader("ETag")))
 			.andExpect(status().isOk())
 			.andExpect(header().string("ETag", org.hamcrest.Matchers.not(first.getResponse().getHeader("ETag"))))
-			.andExpect(jsonPath("$.data.imageUrl").value("https://cdn.easysubway.example/ads/active-v2.png"));
+			.andExpect(jsonPath("$.data.endsAt")
+				.value(now.plusHours(2).toInstant(ZoneOffset.UTC).toString()));
+	}
+
+	@Test
+	@DisplayName("이전 표현 ETag는 endsAt이 추가된 응답을 304로 만들지 않는다")
+	void changesEtagWhenActiveResponseRepresentationChanges() throws Exception {
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC).withNano(0);
+		LocalDateTime startsAt = now.minusHours(1);
+		LocalDateTime endsAt = now.plusHours(1);
+		insertPlacement("route-result-bottom");
+		insertCreative("active", "route-result-bottom", startsAt, endsAt, true);
+		String legacyFingerprint = String.join("@",
+			"route-result-bottom",
+			"active",
+			"https://cdn.easysubway.example/ads/active.png",
+			"https://partner.example/active",
+			"상록수 제휴",
+			"상록수 제휴 광고",
+			String.valueOf(startsAt),
+			String.valueOf(endsAt));
+		String legacyEtag = "\""
+			+ DigestUtils.md5DigestAsHex(legacyFingerprint.getBytes(StandardCharsets.UTF_8))
+			+ "\"";
+
+		mockMvc.perform(get("/api/ads/active")
+				.param("placement", "route-result-bottom")
+				.header("If-None-Match", legacyEtag))
+			.andExpect(status().isOk())
+			.andExpect(header().string("ETag", org.hamcrest.Matchers.not(legacyEtag)))
+			.andExpect(jsonPath("$.data.endsAt").value(endsAt.toInstant(ZoneOffset.UTC).toString()));
 	}
 
 	@Test
