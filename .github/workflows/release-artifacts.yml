@@ -192,16 +192,19 @@ jobs:
           EASYSUBWAY_ANDROID_STORE_PASSWORD: ci-release-password
           EASYSUBWAY_ANDROID_KEY_ALIAS: ci-release
           EASYSUBWAY_ANDROID_KEY_PASSWORD: ci-release-password
+          DEPLOY_PUBLIC_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
         run: |
           set -euo pipefail
           flutter pub get
           ../../tools/mobile/validate-release-dart-defines.sh \
+            --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
+            --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
@@ -362,10 +365,13 @@ jobs:
       - name: Android Production RC Artifact / Build production signed app bundle
         working-directory: apps/mobile
         shell: bash
+        env:
+          DEPLOY_PUBLIC_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
         run: |
           set -euo pipefail
           flutter pub get
           ../../tools/mobile/validate-release-dart-defines.sh \
+            --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
@@ -377,6 +383,7 @@ jobs:
             --dart-define=EASYSUBWAY_DATAPACK_CHANNEL="${EASYSUBWAY_DATAPACK_CHANNEL}" \
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
+            --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
