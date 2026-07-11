@@ -52,7 +52,7 @@ body.admin-v3 {
 	min-height: 100vh;
 	padding: 22px 14px;
 	background: var(--admin-sidebar-bg);
-	color: #cfe1de;
+	color: #dbe3e9;
 }
 
 .admin-brand {
@@ -73,7 +73,7 @@ body.admin-v3 {
 
 .admin-brand span {
 	margin-top: 3px;
-	color: #92aca8;
+	color: #8a9aa0;
 	font-size: 12px;
 	font-weight: var(--admin-w-medium);
 	letter-spacing: 0.02em;
@@ -85,7 +85,7 @@ body.admin-v3 {
 
 .admin-nav-group p {
 	margin: 0 0 6px 12px;
-	color: #7f9b97;
+	color: #7c949a;
 	font-size: 12px;
 	font-weight: var(--admin-w-strong);
 }
@@ -97,7 +97,7 @@ body.admin-v3 {
 	padding: 0 12px;
 	border-left: 3px solid transparent;
 	border-radius: var(--admin-radius-control);
-	color: #cfe1de;
+	color: #dbe3e9;
 	font-size: 14px;
 	font-weight: var(--admin-w-medium);
 	text-decoration: none;
