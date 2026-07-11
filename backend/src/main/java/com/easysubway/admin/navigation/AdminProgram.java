@@ -19,6 +19,7 @@ public enum AdminProgram {
 	CODES("a-codes", "운영·분석", "공통코드", "/admin/codes/page", AdminPermission.OPERATIONS_MANAGE),
 	INCIDENTS("a-incidents", "운영·분석", "장애관리", "/admin/incidents/page", AdminPermission.OPERATIONS_MANAGE),
 	SERVICE_NOTICES("a-service-notices", "운영·분석", "운행 공지", "/admin/notices/page", AdminPermission.OPERATIONS_MANAGE),
+	ADS("a-ads", "운영·분석", "광고 소재", "/admin/ads/page", AdminPermission.OPERATIONS_MANAGE),
 	ROUTE_SEARCHES("a-route-searches", "운영·분석", "경로 검색 분석", "/admin/routes/searches/page", AdminPermission.ADMIN_VIEW),
 	ROUTE_FEEDBACK("a-route-feedback", "운영·분석", "경로 피드백 분석", "/admin/routes/feedback/page", AdminPermission.ADMIN_VIEW),
 	DATAPACK_PIPELINE("a-datapack-pipeline", "데이터팩", "파이프라인 개요", "/admin/datapack/pipeline/page", AdminPermission.DATAPACK_READ),

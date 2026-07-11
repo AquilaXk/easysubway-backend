@@ -108,7 +108,7 @@ class DataSourceSnapshotAdminPageController {
 		HttpServletRequest request
 	) {
 		normalizationRunCommandService.requestRun(snapshotId, form.toCommand());
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_NORMALIZATION_RUN",

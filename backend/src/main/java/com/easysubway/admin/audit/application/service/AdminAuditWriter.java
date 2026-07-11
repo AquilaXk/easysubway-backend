@@ -103,7 +103,7 @@ public class AdminAuditWriter {
 		writeAudit(authentication, request, AdminAuditEventType.INCIDENT_CHANGE, "INCIDENT", targetId, action, outcome, reason);
 	}
 
-	public void datapackCommand(
+	public void adminAction(
 		Authentication authentication,
 		HttpServletRequest request,
 		String targetType,

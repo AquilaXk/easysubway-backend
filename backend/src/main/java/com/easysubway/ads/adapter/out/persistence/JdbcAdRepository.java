@@ -7,6 +7,7 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -42,7 +43,7 @@ class JdbcAdRepository implements AdRepository {
 		try {
 			return Optional.ofNullable(jdbcTemplate.queryForObject("""
 				SELECT c.id, c.placement_id, c.image_url, c.landing_url, c.advertiser_name,
-				       c.alt_text, c.starts_at, c.ends_at
+				       c.alt_text, c.starts_at, c.ends_at, c.enabled
 				FROM ad_creatives c
 				JOIN ad_placements p ON p.id = c.placement_id
 				WHERE c.placement_id = ?
@@ -56,6 +57,107 @@ class JdbcAdRepository implements AdRepository {
 		} catch (EmptyResultDataAccessException exception) {
 			return Optional.empty();
 		}
+	}
+
+	@Override
+	public List<AdCreative> findAll() {
+		return jdbcTemplate.query("""
+			SELECT id, placement_id, image_url, landing_url, advertiser_name,
+			       alt_text, starts_at, ends_at, enabled
+			FROM ad_creatives
+			ORDER BY placement_id, starts_at DESC, id
+			""", CREATIVE_ROW_MAPPER);
+	}
+
+	@Override
+	public Optional<AdCreative> findById(String creativeId) {
+		return findById(creativeId, "");
+	}
+
+	@Override
+	public Optional<AdCreative> findByIdForUpdate(String creativeId) {
+		return findById(creativeId, " FOR UPDATE");
+	}
+
+	private Optional<AdCreative> findById(String creativeId, String lockClause) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject("""
+				SELECT id, placement_id, image_url, landing_url, advertiser_name,
+				       alt_text, starts_at, ends_at, enabled
+				FROM ad_creatives
+				WHERE id = ?
+				""" + lockClause, CREATIVE_ROW_MAPPER, creativeId));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	@Override
+	public void lockPlacement(String placementId) {
+		jdbcTemplate.queryForObject(
+			"SELECT id FROM ad_placements WHERE id = ? FOR UPDATE",
+			String.class,
+			placementId);
+	}
+
+	@Override
+	public void insert(AdCreative creative) {
+		insertCreative(creative);
+	}
+
+	@Override
+	public void save(AdCreative creative) {
+		if (updateCreative(creative) > 0) {
+			return;
+		}
+		insertCreative(creative);
+	}
+
+	private void insertCreative(AdCreative creative) {
+		jdbcTemplate.update("""
+			INSERT INTO ad_creatives (
+				id, placement_id, image_url, landing_url, advertiser_name,
+				alt_text, starts_at, ends_at, enabled
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+			""",
+			creative.id(), creative.placementId(), creative.imageUrl(), creative.landingUrl(),
+			creative.advertiserName(), creative.altText(), creative.startsAt(), creative.endsAt(), creative.enabled());
+	}
+
+	@Override
+	public boolean setEnabled(String creativeId, boolean enabled) {
+		return jdbcTemplate.update("UPDATE ad_creatives SET enabled = ? WHERE id = ?", enabled, creativeId) == 1;
+	}
+
+	@Override
+	public boolean hasEnabledOverlap(
+		String placementId,
+		String excludedCreativeId,
+		LocalDateTime startsAt,
+		LocalDateTime endsAt
+	) {
+		Long count;
+		if (endsAt == null) {
+			count = jdbcTemplate.queryForObject("""
+				SELECT COUNT(*)
+				FROM ad_creatives
+				WHERE placement_id = ?
+				  AND id <> ?
+				  AND enabled = TRUE
+				  AND (ends_at IS NULL OR ends_at > ?)
+				""", Long.class, placementId, excludedCreativeId, startsAt);
+		} else {
+			count = jdbcTemplate.queryForObject("""
+				SELECT COUNT(*)
+				FROM ad_creatives
+				WHERE placement_id = ?
+				  AND id <> ?
+				  AND enabled = TRUE
+				  AND starts_at < ?
+				  AND (ends_at IS NULL OR ends_at > ?)
+				""", Long.class, placementId, excludedCreativeId, endsAt, startsAt);
+		}
+		return count != null && count > 0;
 	}
 
 	@Override
@@ -124,6 +226,17 @@ class JdbcAdRepository implements AdRepository {
 		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
 	}
 
+	private int updateCreative(AdCreative creative) {
+		return jdbcTemplate.update("""
+			UPDATE ad_creatives
+			SET placement_id = ?, image_url = ?, landing_url = ?, advertiser_name = ?,
+			    alt_text = ?, starts_at = ?, ends_at = ?, enabled = ?
+			WHERE id = ?
+			""",
+			creative.placementId(), creative.imageUrl(), creative.landingUrl(), creative.advertiserName(),
+			creative.altText(), creative.startsAt(), creative.endsAt(), creative.enabled(), creative.id());
+	}
+
 	private static AdCreative mapCreative(ResultSet resultSet, int rowNumber) throws SQLException {
 		return new AdCreative(
 			resultSet.getString("id"),
@@ -133,7 +246,8 @@ class JdbcAdRepository implements AdRepository {
 			resultSet.getString("advertiser_name"),
 			resultSet.getString("alt_text"),
 			resultSet.getTimestamp("starts_at").toLocalDateTime(),
-			resultSet.getTimestamp("ends_at") == null ? null : resultSet.getTimestamp("ends_at").toLocalDateTime());
+			resultSet.getTimestamp("ends_at") == null ? null : resultSet.getTimestamp("ends_at").toLocalDateTime(),
+			resultSet.getBoolean("enabled"));
 	}
 
 	private enum DatabaseDialect {

@@ -97,7 +97,7 @@ class AliasQuarantineAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.reviewAlias(aliasId, form.toCommand("APPROVED", authentication.getName()));
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_ALIAS",
@@ -134,7 +134,7 @@ class AliasQuarantineAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.reviewAlias(aliasId, form.toCommand("REJECTED", authentication.getName()));
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_ALIAS",
@@ -155,7 +155,7 @@ class AliasQuarantineAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.resolveQuarantine(recordId, form.toCommand(authentication.getName()));
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_QUARANTINE",

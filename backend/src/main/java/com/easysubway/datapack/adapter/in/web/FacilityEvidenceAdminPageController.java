@@ -81,7 +81,7 @@ class FacilityEvidenceAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.reviewEvidence(evidenceId, form.toCommand());
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_FACILITY_EVIDENCE",

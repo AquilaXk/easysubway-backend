@@ -187,7 +187,7 @@ public class SecurityConfig {
 					AdminPermission.DATAPACK_PRODUCTION_APPROVE.authority(),
 					AdminPermission.DATAPACK_ROLLBACK.authority()
 				)
-				.requestMatchers("/admin/codes/**", "/admin/incidents/**", "/admin/notices/**")
+				.requestMatchers("/admin/codes/**", "/admin/incidents/**", "/admin/notices/**", "/admin/ads/**")
 				.hasAuthority(AdminPermission.OPERATIONS_MANAGE.authority())
 				.requestMatchers("/admin/audits/privacy/**")
 				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())

@@ -1,0 +1,102 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<title>광고 소재</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar('a-ads')}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1>광고 소재</h1>
+			<p>경로 결과와 역 상세 하단에 노출할 광고 소재를 등록하고 활성화합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel" aria-labelledby="ad-form-title">
+		<h2 id="ad-form-title">소재 등록·수정</h2>
+		<form method="post" th:action="@{/admin/ads}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<label for="creative-id">Creative ID</label>
+			<input id="creative-id" name="id" required maxlength="64" pattern="(?!\.{1,2}$)[A-Za-z0-9._\-]{1,64}">
+			<label for="placement-id">노출 위치</label>
+			<select id="placement-id" name="placementId" required>
+				<option value="route-result-bottom">경로 결과 하단</option>
+				<option value="station-detail-bottom">역 상세 하단</option>
+			</select>
+			<label for="advertiser-name">광고주</label>
+			<input id="advertiser-name" name="advertiserName" required maxlength="255">
+			<label for="image-url">이미지 URL</label>
+			<input id="image-url" name="imageUrl" type="url" required maxlength="1000">
+			<label for="landing-url">랜딩 URL</label>
+			<input id="landing-url" name="landingUrl" type="url" required maxlength="1000">
+			<label for="alt-text">대체텍스트</label>
+			<textarea id="alt-text" name="altText" required maxlength="500" rows="2"></textarea>
+			<label for="starts-at">시작 시각(UTC Instant)</label>
+			<input id="starts-at" name="startsAt" required placeholder="2026-07-11T00:00:00Z">
+			<label for="ends-at">종료 시각(UTC Instant)</label>
+			<input id="ends-at" name="endsAt" placeholder="2026-07-12T00:00:00Z">
+			<label for="save-reason">변경 사유</label>
+			<input id="save-reason" name="reason" required maxlength="500">
+			<button type="submit">저장</button>
+		</form>
+	</section>
+
+	<section class="admin-panel" aria-labelledby="ad-list-title">
+		<h2 id="ad-list-title">등록 소재</h2>
+		<table>
+			<thead>
+			<tr>
+				<th scope="col">Creative ID</th>
+				<th scope="col">노출 위치</th>
+				<th scope="col">광고주</th>
+				<th scope="col">이미지</th>
+				<th scope="col">랜딩</th>
+				<th scope="col">대체텍스트</th>
+				<th scope="col">시작</th>
+				<th scope="col">종료</th>
+				<th scope="col">상태·액션</th>
+			</tr>
+			</thead>
+			<tbody>
+			<tr th:if="${creatives.isEmpty()}">
+				<td colspan="9">등록된 광고 소재가 없습니다.</td>
+			</tr>
+			<tr th:each="creative : ${creatives}">
+				<th scope="row" th:text="${creative.id}">creative-id</th>
+				<td th:text="${creative.placementId}">route-result-bottom</td>
+				<td th:text="${creative.advertiserName}">광고주</td>
+				<td><a th:href="${creative.imageUrl}" rel="noopener noreferrer"
+				       th:aria-label="${creative.id + ' ' + creative.advertiserName + ' 이미지 열기'}">이미지 열기</a></td>
+				<td><a th:href="${creative.landingUrl}" rel="noopener noreferrer"
+				       th:aria-label="${creative.id + ' ' + creative.advertiserName + ' 랜딩 페이지 열기'}">랜딩 열기</a></td>
+				<td th:text="${creative.altText}">대체텍스트</td>
+				<td th:text="${creative.startsAt}">2026-07-11T00:00</td>
+				<td th:text="${creative.endsAt != null ? creative.endsAt : '-'}">-</td>
+				<td>
+					<span th:text="${creative.enabled ? '활성' : '비활성'}">비활성</span>
+					<form method="post"
+					      th:action="${creative.enabled} ? @{/admin/ads/{id}/disable(id=${creative.id})} : @{/admin/ads/{id}/enable(id=${creative.id})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<label>변경 사유 <input name="reason" required maxlength="500"></label>
+						<button type="submit" th:text="${creative.enabled ? '비활성화' : '활성화'}">활성화</button>
+					</form>
+				</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>

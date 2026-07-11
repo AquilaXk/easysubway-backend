@@ -81,7 +81,7 @@ class ManualOverrideLedgerAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.request(form.toCommand(authentication.getName()));
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_MANUAL_OVERRIDE",
@@ -129,7 +129,7 @@ class ManualOverrideLedgerAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.approve(overrideId, form.toCommand(authentication.getName()));
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_MANUAL_OVERRIDE",
@@ -150,7 +150,7 @@ class ManualOverrideLedgerAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.expire(overrideId, form.toCommand(authentication.getName()));
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_MANUAL_OVERRIDE",

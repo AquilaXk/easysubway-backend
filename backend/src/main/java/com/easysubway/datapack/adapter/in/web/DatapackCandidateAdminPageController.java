@@ -97,7 +97,7 @@ class DatapackCandidateAdminPageController {
 		HttpServletRequest request
 	) {
 		commandService.rerunGates(candidateId, form.toCommand());
-		auditWriter.datapackCommand(
+		auditWriter.adminAction(
 			authentication,
 			request,
 			"DATAPACK_CANDIDATE",

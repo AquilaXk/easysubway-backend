@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.sql.Timestamp;
 import java.util.List;
 import org.flywaydb.core.Flyway;
+import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
@@ -64,7 +65,8 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48");
+		assertAdPlacementsSeeded(jdbcTemplate);
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
@@ -134,7 +136,43 @@ class DatabaseMigrationContainerTest {
 			.load()
 			.migrate();
 
-		assertSnapshotSourceForeignKeysRejectMismatch(new JdbcTemplate(dataSource));
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		assertAdPlacementsSeeded(jdbcTemplate);
+		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
+	}
+
+	@Test
+	@DisplayName("PostgreSQL V48은 기존 placement의 운영 표시명과 비활성 상태를 보존한다")
+	void postgresqlAdPlacementSeedPreservesExistingRow() {
+		String schema = "ad_seed_" + System.nanoTime();
+		var dataSource = new DriverManagerDataSource(
+			POSTGRES.getJdbcUrl(),
+			POSTGRES.getUsername(),
+			POSTGRES.getPassword()
+		);
+		migrateToV47(dataSource, "classpath:db/migration/postgresql", schema);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate.update("INSERT INTO " + schema + ".ad_placements (id, display_name, enabled) VALUES (?, ?, FALSE)",
+			"route-result-bottom", "운영자 지정 경로 슬롯");
+
+		migrate(dataSource, "classpath:db/migration/postgresql", schema);
+
+		assertPreservedPlacement(jdbcTemplate, schema);
+	}
+
+	@Test
+	@DisplayName("H2 V48은 기존 placement의 운영 표시명과 비활성 상태를 보존한다")
+	void h2AdPlacementSeedPreservesExistingRow() {
+		String database = "jdbc:h2:mem:ad-seed-preserve;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE";
+		var dataSource = new DriverManagerDataSource(database, "sa", "");
+		migrateToV47(dataSource, "classpath:db/migration/h2", null);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate.update("INSERT INTO ad_placements (id, display_name, enabled) VALUES (?, ?, FALSE)",
+			"route-result-bottom", "운영자 지정 경로 슬롯");
+
+		migrate(dataSource, "classpath:db/migration/h2", null);
+
+		assertPreservedPlacement(jdbcTemplate, null);
 	}
 
 	@Test
@@ -231,6 +269,46 @@ class DatabaseMigrationContainerTest {
 			""", String.class);
 	}
 
+	private void assertAdPlacementsSeeded(JdbcTemplate jdbcTemplate) {
+		assertThat(jdbcTemplate.queryForList("""
+			SELECT id
+			FROM ad_placements
+			WHERE enabled = TRUE
+			ORDER BY id
+			""", String.class))
+			.containsExactly("route-result-bottom", "station-detail-bottom");
+	}
+
+	private void assertPreservedPlacement(JdbcTemplate jdbcTemplate, String schema) {
+		String table = schema == null ? "ad_placements" : schema + ".ad_placements";
+		List<Object> placement = jdbcTemplate.queryForObject(
+			"SELECT display_name, enabled FROM " + table + " WHERE id = ?",
+			(resultSet, rowNumber) -> List.of(resultSet.getString("display_name"), resultSet.getBoolean("enabled")),
+			"route-result-bottom");
+		assertThat(placement)
+			.containsExactly("운영자 지정 경로 슬롯", false);
+	}
+
+	private void migrateToV47(javax.sql.DataSource dataSource, String location, String schema) {
+		flyway(dataSource, location, schema)
+			.target(MigrationVersion.fromVersion("47"))
+			.load()
+			.migrate();
+	}
+
+	private void migrate(javax.sql.DataSource dataSource, String location, String schema) {
+		flyway(dataSource, location, schema).load().migrate();
+	}
+
+	private org.flywaydb.core.api.configuration.FluentConfiguration flyway(
+		javax.sql.DataSource dataSource,
+		String location,
+		String schema
+	) {
+		var configuration = Flyway.configure().dataSource(dataSource).locations(location);
+		return schema == null ? configuration : configuration.schemas(schema).defaultSchema(schema);
+	}
+
 	private List<String> successfulMigrationVersions(JdbcTemplate jdbcTemplate) {
 		return jdbcTemplate.queryForList("""
 			SELECT version
@@ -263,12 +341,14 @@ class DatabaseMigrationContainerTest {
 	private void assertPostgresqlSnapshotRawEvidenceConstraintsAreStaged(JdbcTemplate jdbcTemplate) {
 		assertThat(jdbcTemplate.queryForList("""
 			SELECT conname
-			FROM pg_constraint
+			FROM pg_constraint constraint_row
+			JOIN pg_namespace namespace_row ON namespace_row.oid = constraint_row.connamespace
 			WHERE conname IN (
 				'chk_data_source_snapshots_credential_redacted',
 				'chk_data_source_snapshots_raw_object_uri',
 				'chk_data_source_snapshots_raw_retention'
 			)
+				AND namespace_row.nspname = 'public'
 				AND convalidated = false
 			ORDER BY conname
 			""", String.class))

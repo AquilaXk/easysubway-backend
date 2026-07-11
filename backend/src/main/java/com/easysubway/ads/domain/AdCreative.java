@@ -10,6 +10,7 @@ public record AdCreative(
 	String advertiserName,
 	String altText,
 	LocalDateTime startsAt,
-	LocalDateTime endsAt
+	LocalDateTime endsAt,
+	boolean enabled
 ) {
 }
