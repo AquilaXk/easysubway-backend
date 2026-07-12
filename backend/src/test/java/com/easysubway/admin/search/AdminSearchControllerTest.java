@@ -7,6 +7,8 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.authorization.AdminPermission;
+import java.util.regex.Matcher;
+import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +25,10 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @AutoConfigureMockMvc
 @DisplayName("관리자 통합 검색")
 class AdminSearchControllerTest {
+
+	// nav.admin-sidebar(id="admin-primary-nav") 블록만 잘라내 트리거가 그 안에 있는지 구조적으로 검증한다.
+	private static final Pattern ADMIN_SIDEBAR_NAV = Pattern.compile(
+		"<nav class=\"admin-sidebar\" id=\"admin-primary-nav\".*?</nav>", Pattern.DOTALL);
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -100,8 +106,8 @@ class AdminSearchControllerTest {
 	}
 
 	@Test
-	@DisplayName("topbar에 커맨드 팔레트 트리거가 렌더되고 no-JS는 검색 페이지로 이동한다")
-	void topbarRendersCommandPalette() throws Exception {
+	@DisplayName("사이드바에 커맨드 팔레트 트리거가 렌더되고 no-JS는 검색 페이지로 이동한다")
+	void sidebarRendersCommandPalette() throws Exception {
 		String html = mockMvc.perform(get("/admin/search")
 				.param("q", "제보")
 				.with(httpBasic("admin-test", "admin-test-password")))
@@ -117,6 +123,17 @@ class AdminSearchControllerTest {
 			.contains("id=\"palette-results\"")
 			// no-JS fallback: 트리거는 검색 전용 페이지로 이동
 			.contains("href=\"/admin/search\"");
+
+		// 트리거가 topbar가 아니라 사이드바(nav.admin-sidebar) 내부에 실제로 위치하는지 구조적으로 검증한다.
+		Matcher navMatcher = ADMIN_SIDEBAR_NAV.matcher(html);
+		assertThat(navMatcher.find())
+			.as("nav.admin-sidebar(id=admin-primary-nav) 블록을 찾을 수 없습니다")
+			.isTrue();
+		String sidebarNavHtml = navMatcher.group();
+
+		assertThat(sidebarNavHtml)
+			.as("사이드바 nav 내부에 퀵서치·커맨드 팔레트 트리거가 있어야 합니다")
+			.contains("class=\"admin-sidebar-quicksearch command-palette-trigger\"");
 	}
 
 	@Test

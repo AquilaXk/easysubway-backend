@@ -13,7 +13,7 @@ body.admin-v3 {
 
 .admin-shell {
 	display: grid;
-	grid-template-columns: 260px minmax(0, 1fr);
+	grid-template-columns: 240px minmax(0, 1fr);
 	min-height: 100vh;
 }
 
@@ -49,14 +49,18 @@ body.admin-v3 {
 	position: sticky;
 	top: 0;
 	align-self: start;
-	min-height: 100vh;
-	padding: 22px 14px;
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	height: 100dvh;
+	padding: 22px 0;
+	border-right: 1px solid var(--admin-border);
 	background: var(--admin-sidebar-bg);
 	color: var(--admin-ink-2);
 }
 
 .admin-brand {
-	padding: 4px 10px 22px;
+	padding: 4px 24px 22px;
 }
 
 .admin-brand strong,
@@ -79,36 +83,75 @@ body.admin-v3 {
 	letter-spacing: 0.02em;
 }
 
+/* 퀵서치(#1981): 사이드바 최상단, 기존 커맨드 팔레트 트리거를 이 자리로 재배치했다. */
+.admin-sidebar-quicksearch {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	margin: 0 24px 18px;
+	padding: 0 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-bg);
+	color: var(--admin-ink-3);
+	font-size: 13px;
+	text-decoration: none;
+}
+
+.admin-sidebar-quicksearch span:nth-child(2) {
+	flex: 1;
+}
+
+.admin-sidebar-quicksearch kbd {
+	padding: 1px 6px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: 4px;
+	font-size: 11px;
+	color: var(--admin-ink-2);
+}
+
+.admin-nav-scroll {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+
 .admin-nav-group {
 	margin-top: 18px;
 }
 
-.admin-nav-group p {
-	margin: 0 0 6px 12px;
+.admin-nav-group-label {
+	margin: 0 0 6px 24px;
 	color: var(--admin-ink-3);
-	font-size: 12px;
+	font-size: 11px;
 	font-weight: var(--admin-w-strong);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
 }
 
-.admin-nav-group a {
+.admin-nav-item {
 	display: flex;
 	align-items: center;
 	min-height: 38px;
-	padding: 0 12px;
-	border-left: 3px solid transparent;
-	border-radius: var(--admin-radius-control);
+	padding: 0 24px 0 30px;
+	border-radius: 0;
+	border-left: 2px solid transparent;
 	color: var(--admin-ink-2);
 	font-size: 14px;
 	font-weight: var(--admin-w-medium);
 	text-decoration: none;
 }
 
-.admin-nav-group a:hover {
-	background: var(--admin-accent-soft);
+.admin-nav-item:hover {
+	border-radius: 0;
+	border-left-color: var(--admin-border-strong);
+	background: var(--admin-sidebar-accent);
 	color: var(--admin-ink);
 }
 
-.admin-nav-group a.is-active {
+.admin-nav-item.is-active {
+	border-radius: 0;
 	border-left-color: var(--admin-accent);
 	background: var(--admin-sidebar-accent);
 	color: var(--admin-ink);
@@ -210,9 +253,9 @@ body.admin-v3 {
 
 .admin-page-head h1 {
 	margin: 0;
-	font-size: 30px;
+	font-size: 34px;
 	font-weight: var(--admin-w-title);
-	line-height: 1.18;
+	line-height: 1.16;
 	letter-spacing: 0;
 }
 
@@ -1311,7 +1354,7 @@ body.admin-v3 {
 	/* no-JS 기본: 사이드바가 본문 위에 스택으로 보인다(전 기능 접근 가능). */
 	.admin-sidebar {
 		position: static;
-		min-height: auto;
+		height: auto;
 		max-height: 44vh;
 		overflow-y: auto;
 	}
@@ -1410,7 +1453,7 @@ body.admin-v3 {
 	font-size: 12px;
 }
 
-/* breadcrumb(#1738) */
+/* breadcrumb(#1738): 페이지 헤더 위 eyebrow 경로 텍스트로 겸용(#1981) — 작고 흐린 톤 유지. */
 .admin-v3 .admin-breadcrumb ol {
 	display: flex;
 	flex-wrap: wrap;
@@ -1419,8 +1462,10 @@ body.admin-v3 {
 	list-style: none;
 	margin: 0 0 12px;
 	padding: 0;
-	color: var(--admin-ink-2);
-	font-size: 13px;
+	color: var(--admin-ink-3);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	letter-spacing: 0.01em;
 }
 
 .admin-v3 .admin-breadcrumb li:not(:first-child)::before {
@@ -1442,33 +1487,9 @@ body.admin-v3 {
 	color: var(--admin-ink);
 }
 
-/* 커맨드 팔레트(#1738) */
-.admin-v3 .command-palette {
-	margin-bottom: 10px;
-}
-
-.admin-v3 .command-palette-trigger {
-	display: inline-flex;
-	align-items: center;
-	gap: 8px;
-	min-height: 36px;
-	padding: 0 12px;
-	border: 1px solid var(--admin-border);
-	border-radius: var(--admin-radius-control);
-	background: var(--admin-surface);
-	color: var(--admin-ink-2);
-	text-decoration: none;
-	font-size: 13px;
-}
-
-.admin-v3 .command-palette-trigger kbd {
-	padding: 1px 6px;
-	border: 1px solid var(--admin-border-strong);
-	border-radius: 4px;
-	font-size: 11px;
-	color: var(--admin-ink-2);
-}
-
+/* 커맨드 팔레트(#1738): 트리거 스타일은 사이드바 퀵서치(#1981, .admin-sidebar-quicksearch)로
+   재배치됐다. command-palette-trigger 클래스는 마커로만 남아 있고(회귀 가드 테스트가 참조)
+   시각 스타일은 admin-sidebar-quicksearch가 담당한다. */
 .command-palette-overlay {
 	position: fixed;
 	inset: 0;
