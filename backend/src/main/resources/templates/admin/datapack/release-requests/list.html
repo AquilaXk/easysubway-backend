@@ -17,9 +17,20 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>release request</h1>
-			<p>게시 대상 candidate를 골라 release request를 요청하고, 다른 관리자가 승인합니다. 승인 이후 단계(워크플로 자동 트리거)는 후속 범위입니다.</p>
+			<p>게시 대상 candidate를 골라 release request를 요청하고, 다른 관리자가 승인합니다. 승인 후 production 게이트는 수동 dispatch로 실행합니다.</p>
 		</div>
 	</header>
+
+	<section class="admin-panel">
+		<h2>수동 dispatch 필요</h2>
+		<p>승인된 요청은 아래 명령의 경로 표시를 실제 evidence 파일로 바꾼 뒤 실행합니다.</p>
+		<pre><code>gh workflow run datapack-release.yml \
+  --ref main \
+  -f mode=production-publish \
+  -f targetChannel=production \
+  -f modeArgs='{"buildSpecPath":"&lt;빌드 스펙 경로&gt;","releaseRequestId":"&lt;릴리스 요청 ID&gt;","releaseRequestPath":"&lt;릴리스 요청 파일 경로&gt;","androidEvidencePath":"&lt;Android 증거 경로&gt;","strictRouteRegressionPath":"&lt;경로 회귀 증거 경로&gt;"}'</code></pre>
+		<p><strong>candidate 등록:</strong> 현재 candidate 생성·등록 경로는 없습니다. 이 화면은 <code>datapack_candidates</code>에 이미 등록된 <code>PROMOTED</code> 행만 읽습니다. 등록되지 않은 candidate를 추정하거나 DB에 직접 넣지 말고 release request 생성을 중단합니다.</p>
+	</section>
 
 	<section class="admin-panel">
 		<h2>release request 생성</h2>

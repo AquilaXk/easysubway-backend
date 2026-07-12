@@ -62,7 +62,18 @@ class DatapackReleaseRequestAdminPageControllerTest {
 			.contains("candidate-stable-9")
 			.contains("name=\"candidateId\"")
 			.contains("name=\"targetChannel\"")
-			.contains("name=\"commandToken\"");
+			.contains("name=\"commandToken\"")
+			.contains("href=\"/admin/datapack/release-requests/page\"")
+			.contains("수동 dispatch 필요")
+			.contains("gh workflow run datapack-release.yml")
+			.contains("mode=production-publish")
+			.contains("targetChannel=production")
+			.contains("buildSpecPath")
+			.contains("releaseRequestId")
+			.contains("releaseRequestPath")
+			.contains("androidEvidencePath")
+			.contains("strictRouteRegressionPath")
+			.contains("현재 candidate 생성·등록 경로는 없습니다");
 	}
 
 	@Test
