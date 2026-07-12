@@ -44,21 +44,28 @@
 		</a>
 	</section>
 
-	<!-- 핵심 카드: 숫자 + 7일 스파크라인 + 전일 대비. 카드 전체가 해당 화면으로 이동. -->
-	<div class="dashboard-cards">
-		<a th:each="card : ${cards}" class="dashboard-card" th:href="@{${card.href}}">
-			<span class="dashboard-card-title" th:text="${card.title}">제목</span>
-			<strong class="dashboard-card-value" th:text="${card.value}">0</strong>
-			<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
-			     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
-			     aria-label="최근 7일 추이" focusable="false">
-				<polyline th:attr="points=${card.sparkPoints}" fill="none"
-				          stroke="currentColor" stroke-width="1.5"></polyline>
-			</svg>
-			<span class="dashboard-card-delta" th:classappend="${' is-' + card.deltaTone}"
-			      th:text="${card.deltaLabel}">전일 대비</span>
-		</a>
-	</div>
+	<!-- 핵심 지표 패널: 1px 보더 플랫 패널(#1983) 하나 안에 지표 셀을 1px 내부 구분선으로 분할.
+	     각 셀 = 흐린 라벨 + 큰 숫자(tabular-nums) + 파랑 스파크라인 + 상태 3색 델타.
+	     셀 전체가 해당 화면으로 이동(a 태그 유지). -->
+	<section class="admin-panel dashboard-metric-panel" aria-labelledby="dashboard-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="dashboard-metric-panel-title">핵심 지표</h2>
+		</div>
+		<div class="dashboard-cards">
+			<a th:each="card : ${cards}" class="dashboard-card metric-cell" th:href="@{${card.href}}">
+				<span class="dashboard-card-title" th:text="${card.title}">제목</span>
+				<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
+				<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
+				     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
+				     aria-label="최근 7일 추이" focusable="false">
+					<polyline th:attr="points=${card.sparkPoints}" fill="none"
+					          stroke="currentColor" stroke-width="1.5"></polyline>
+				</svg>
+				<span class="dashboard-card-delta" th:classappend="${' is-' + card.deltaTone}"
+				      th:text="${card.deltaLabel}">전일 대비</span>
+			</a>
+		</div>
+	</section>
 
 	<!-- 추이 섹션: 기간(7/30/90) 라인 차트 2개. 기간 버튼이 이 컨테이너를 htmx로 부분 갱신한다. -->
 	<div id="dashboard-trends">
@@ -109,12 +116,16 @@
 
 	<div class="admin-grid-2">
 		<section class="admin-panel" th:if="${adminProgramIds.contains('a-reports')}">
-			<h2>먼저 확인할 제보</h2>
+			<div class="admin-panel-head">
+				<h2>먼저 확인할 제보</h2>
+			</div>
 			<p class="summary">확인할 제보는 제보 확인 대기열에서 상태·사진·위치를 함께 확인합니다.</p>
 			<a class="admin-btn" th:href="@{/admin/reports/page}">제보 확인 대기열 열기</a>
 		</section>
 		<section class="admin-panel" tabindex="0" aria-labelledby="dashboard-health-title">
-			<h2 id="dashboard-health-title">운영 이상 신호</h2>
+			<div class="admin-panel-head">
+				<h2 id="dashboard-health-title">운영 이상 신호</h2>
+			</div>
 			<table>
 				<tbody>
 				<tr><th scope="row">서비스 상태</th><td th:text="|${dashboard.healthStatus} (${dashboard.serviceName})|">UP</td></tr>

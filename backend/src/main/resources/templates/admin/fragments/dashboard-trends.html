@@ -23,7 +23,9 @@
 
 	<div class="trend-charts">
 		<section th:each="trend : ${trends}" class="admin-panel trend-chart-panel">
-			<h2 th:text="${trend.title}">추이</h2>
+			<div class="admin-panel-head">
+				<h2 th:text="${trend.title}">추이</h2>
+			</div>
 			<div class="trend-canvas-wrap">
 				<canvas th:id="${trend.id}" class="trend-canvas" role="img"
 				        th:attr="aria-label=|${trend.title} 최근 ${trendDays}일 추이|,data-chart=${trend.json}"></canvas>

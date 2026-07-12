@@ -50,7 +50,7 @@ class AdminDashboardPageTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("class=\"dashboard-card\"")
+			.contains("class=\"dashboard-card metric-cell\"")
 			.contains("확인할 제보")
 			.contains("href=\"/admin/reports/page\"")
 			.contains("dashboard-spark")

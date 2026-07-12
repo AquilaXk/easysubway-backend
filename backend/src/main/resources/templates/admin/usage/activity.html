@@ -21,28 +21,33 @@
 		</div>
 	</header>
 
-	<div class="metric-grid" aria-label="사용자 활동 요약">
-		<div class="metric">
-			<span>최근 7일 활성 사용자</span>
-			<strong th:text="${summary.totalActiveUsers}">0</strong>
+	<section class="admin-panel usage-metric-panel" aria-labelledby="usage-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="usage-metric-panel-title">사용자 활동 요약</h2>
 		</div>
-		<div class="metric">
-			<span>API 요청</span>
-			<strong th:text="${summary.totalApiRequests}">0</strong>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>최근 7일 활성 사용자</span>
+				<strong class="cell-num" th:text="${summary.totalActiveUsers}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>API 요청</span>
+				<strong class="cell-num" th:text="${summary.totalApiRequests}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>오류 응답</span>
+				<strong class="cell-num" th:text="${summary.totalApiErrors}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>API 오류율</span>
+				<strong class="cell-num" th:text="${summary.apiErrorRatePercent}">0.0%</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>평균 응답 시간</span>
+				<strong class="cell-num" th:text="${summary.averageApiResponseTimeLabel}">0ms</strong>
+			</div>
 		</div>
-		<div class="metric">
-			<span>오류 응답</span>
-			<strong th:text="${summary.totalApiErrors}">0</strong>
-		</div>
-		<div class="metric">
-			<span>API 오류율</span>
-			<strong th:text="${summary.apiErrorRatePercent}">0.0%</strong>
-		</div>
-		<div class="metric">
-			<span>평균 응답 시간</span>
-			<strong th:text="${summary.averageApiResponseTimeLabel}">0ms</strong>
-		</div>
-	</div>
+	</section>
 
 	<div class="api-error-alert" th:classappend="${summary.apiErrorAlertClass}">
 		<strong>API 오류율 상태: <span th:text="${summary.apiErrorAlertLabel}">정상</span></strong>
@@ -65,17 +70,24 @@
 			   download>CSV 내보내기</a>
 		</p>
 
-		<div class="metric-grid" aria-label="전 기간 대비 증감">
-			<div th:each="card : ${comparisons}" class="metric" th:classappend="${'tone-' + card.tone}">
-				<span th:text="${card.label}">지표</span>
-				<strong th:text="${card.currentLabel}">0</strong>
-				<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+		<section class="admin-panel usage-comparison-panel" aria-labelledby="usage-comparison-panel-title">
+			<div class="admin-panel-head">
+				<h2 id="usage-comparison-panel-title">전 기간 대비 증감</h2>
 			</div>
-		</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
 
 		<div class="trend-charts">
-			<section class="admin-panel trend-chart-panel">
-				<h2 th:text="|활성 사용자·API 오류율 최근 ${trendDays}일 추이|">활성 사용자·API 오류율 추이</h2>
+			<section class="admin-panel trend-chart-panel" aria-labelledby="usage-trend-panel-title">
+				<div class="admin-panel-head">
+					<h2 id="usage-trend-panel-title" th:text="|활성 사용자·API 오류율 최근 ${trendDays}일 추이|">활성 사용자·API 오류율 추이</h2>
+				</div>
 				<div class="trend-canvas-wrap">
 					<canvas id="user-activity-trend-canvas" class="trend-canvas" role="img"
 					        th:attr="aria-label=|사용 현황 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>

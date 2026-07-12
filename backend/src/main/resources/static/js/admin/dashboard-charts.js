@@ -11,11 +11,13 @@
 		return value || fallback;
 	}
 
+	// 팔레트(#1983): 무채색(잉크 계열) + 파랑 액센트 + 상태 3색만 사용한다. 장식적 초록·빨강
+	// 조합 대신 1번 시리즈는 파랑(주 지표), 2번은 잉크 톤(보조 지표)으로 구분한다.
 	var PALETTE = [
-		tokenColor('--admin-good', '#0a705a'),
-		tokenColor('--admin-danger', '#b42318'),
-		tokenColor('--admin-chart-series', '#2f6f9f'),
-		tokenColor('--admin-warn', '#9a5600')
+		tokenColor('--admin-accent', '#006fd6'),
+		tokenColor('--admin-ink-2', '#29484b'),
+		tokenColor('--admin-ink-3', '#466467'),
+		tokenColor('--admin-danger', '#b42318')
 	];
 
 	function renderChart(canvas) {

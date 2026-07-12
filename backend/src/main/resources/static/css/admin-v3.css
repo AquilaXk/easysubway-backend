@@ -487,6 +487,40 @@ body.admin-v3 {
 	line-height: 1.45;
 }
 
+/* 전 기간 대비 증감 카드(#1744)의 tone — 상태 3색(#1983)으로 델타를 표시한다. */
+.admin-v3 .metric.tone-good em {
+	color: var(--admin-good);
+}
+
+.admin-v3 .metric.tone-bad em {
+	color: var(--admin-danger);
+}
+
+.admin-v3 .metric.tone-neutral em {
+	color: var(--admin-ink-3);
+}
+
+/* 패널 안의 지표 셀(#1983): .admin-panel 안 .metric-grid는 카드 개별 보더 대신
+   .metric-cell 상단 1px 구분선으로만 나뉜다(auto-fit 그리드는 열 수가 가변적이라
+   좌측 구분선 기반 "행의 첫 열" 판정이 불가능하므로 상단 구분선 방식을 쓴다). */
+.admin-v3 .admin-panel .metric-grid {
+	gap: 0;
+}
+
+.admin-v3 .admin-panel .metric.metric-cell {
+	border: 0;
+	border-top: 1px solid var(--admin-border);
+	border-radius: 0;
+	box-shadow: none;
+	background: transparent;
+	padding: 14px 18px;
+}
+
+.admin-v3 .admin-panel .metric.metric-cell:first-child {
+	border-top: 0;
+	padding-top: 4px;
+}
+
 .admin-v3 .alert {
 	border-left: 3px solid var(--admin-border-strong);
 }
@@ -1024,7 +1058,8 @@ body.admin-v3 {
 	padding: 18px;
 }
 
-.admin-panel h2 {
+.admin-panel h2,
+.admin-panel h3 {
 	margin: 0 0 12px;
 	padding: 0;
 	background: transparent;
@@ -1801,28 +1836,36 @@ body.admin-v3 {
 	font-size: 12px;
 }
 
+/* 핵심 지표 그리드(#1983): .admin-panel 하나 안에서 3열 반응형(최대 3열)으로 배치하고,
+   카드 자체는 보더·그림자 없이 .metric-cell 좌측 1px 구분선으로만 나뉜다(패널 보더 중복 방지).
+   좁은 화면에서는 하단 미디어쿼리로 2열 → 1열로 줄어든다(각 행 첫 열은 구분선 제외). */
 .dashboard-cards {
 	display: grid;
-	grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-	gap: 14px;
-	margin-bottom: 20px;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0;
 }
 
 .dashboard-card {
 	display: flex;
 	flex-direction: column;
 	gap: 6px;
-	padding: 16px 18px;
-	border: 1px solid var(--admin-border);
-	border-radius: var(--admin-radius-card);
-	background: var(--admin-surface);
-	box-shadow: var(--admin-shadow-card);
+	padding: 4px 18px;
 	text-decoration: none;
 	color: var(--admin-ink);
 }
 
-.dashboard-card:hover {
-	border-color: var(--admin-border-strong);
+.dashboard-card.metric-cell {
+	border-left: 1px solid var(--admin-border);
+	padding-left: 18px;
+}
+
+/* 각 행의 첫 열(3열 그리드 기준 3n+1)은 좌측 구분선 없이 패널 안쪽 여백만 유지. */
+.dashboard-card.metric-cell:nth-child(3n+1) {
+	border-left: 0;
+}
+
+.dashboard-card:hover .dashboard-card-title {
+	color: var(--admin-accent);
 }
 
 .dashboard-card-title {
@@ -1892,6 +1935,7 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
+.batch-history-charts,
 .trend-charts {
 	display: grid;
 	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
@@ -1899,11 +1943,13 @@ body.admin-v3 {
 	margin-bottom: 20px;
 }
 
+.batch-history-canvas-wrap,
 .trend-canvas-wrap {
 	position: relative;
 	height: 240px;
 }
 
+.batch-history-canvas,
 .trend-canvas {
 	width: 100%;
 	height: 100%;
@@ -2105,4 +2151,37 @@ body.admin-v3 {
 	background: var(--admin-accent-soft);
 	border-radius: 0 var(--admin-radius-control) var(--admin-radius-control) 0;
 	font-weight: var(--admin-w-medium);
+}
+
+/* 핵심 지표 그리드 반응형(#1983): 900px 이하 2열, 768px 이하 1열. 각 행의 첫 열은
+   좌측 구분선을 빼고, 1열에서는 상단 구분선으로 전환한다. */
+@media (max-width: 900px) {
+	.dashboard-cards {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.dashboard-card.metric-cell:nth-child(3n+1) {
+		border-left: 1px solid var(--admin-border);
+	}
+
+	.dashboard-card.metric-cell:nth-child(2n+1) {
+		border-left: 0;
+	}
+}
+
+@media (max-width: 768px) {
+	.dashboard-cards {
+		grid-template-columns: 1fr;
+	}
+
+	.dashboard-card.metric-cell {
+		border-left: 0;
+		border-top: 1px solid var(--admin-border);
+		padding-top: 12px;
+	}
+
+	.dashboard-card.metric-cell:first-child {
+		border-top: 0;
+		padding-top: 4px;
+	}
 }

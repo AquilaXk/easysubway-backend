@@ -21,48 +21,53 @@
 		</div>
 	</header>
 
-	<div class="metric-grid" aria-label="전체 데이터 품질 요약">
-		<div class="metric">
-			<span>전체 역</span>
-			<strong th:text="${summary.totalStations}">0</strong>
+	<section class="admin-panel quality-metric-panel" aria-labelledby="quality-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="quality-metric-panel-title">전체 데이터 품질 요약</h2>
 		</div>
-		<div class="metric">
-			<span>전체 출구</span>
-			<strong th:text="${summary.totalExits}">0</strong>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>전체 역</span>
+				<strong class="cell-num" th:text="${summary.totalStations}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>전체 출구</span>
+				<strong class="cell-num" th:text="${summary.totalExits}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>전체 시설</span>
+				<strong class="cell-num" th:text="${summary.totalFacilities}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>확인 필요한 시설</span>
+				<strong class="cell-num" th:text="${summary.needsVerificationFacilityCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>갱신 지연 시설</span>
+				<strong class="cell-num" th:text="${summary.delayedFacilityStatusCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>확인일 없는 역</span>
+				<strong class="cell-num" th:text="${summary.missingStationVerificationDateCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>전체 제보</span>
+				<strong class="cell-num" th:text="${summary.totalReportCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>확인 완료</span>
+				<strong class="cell-num" th:text="${summary.verifiedReportCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>확인 대기</span>
+				<strong class="cell-num" th:text="${summary.pendingReportCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>제보 확인률</span>
+				<strong class="cell-num" th:text="|${summary.reportVerificationRatePercent}%|">0%</strong>
+			</div>
 		</div>
-		<div class="metric">
-			<span>전체 시설</span>
-			<strong th:text="${summary.totalFacilities}">0</strong>
-		</div>
-		<div class="metric">
-			<span>확인 필요한 시설</span>
-			<strong th:text="${summary.needsVerificationFacilityCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>갱신 지연 시설</span>
-			<strong th:text="${summary.delayedFacilityStatusCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>확인일 없는 역</span>
-			<strong th:text="${summary.missingStationVerificationDateCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>전체 제보</span>
-			<strong th:text="${summary.totalReportCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>확인 완료</span>
-			<strong th:text="${summary.verifiedReportCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>확인 대기</span>
-			<strong th:text="${summary.pendingReportCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>제보 확인률</span>
-			<strong th:text="|${summary.reportVerificationRatePercent}%|">0%</strong>
-		</div>
-	</div>
+	</section>
 
 	<section th:if="${datapackReleaseSummary != null}">
 		<h2>데이터팩 Release readiness</h2>

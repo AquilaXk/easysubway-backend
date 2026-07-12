@@ -19,7 +19,8 @@
 	};
 
 	function barColor(status) {
-		return COLORS[status] || tokenColor('--admin-chart-series', '#2f6f9f');
+		// 상태 매핑 밖(알 수 없는 상태)은 장식적 색 대신 무채색 잉크 톤으로 폴백한다(#1983).
+		return COLORS[status] || tokenColor('--admin-ink-3', '#466467');
 	}
 
 	function renderChart(canvas) {
