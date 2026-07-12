@@ -52,7 +52,7 @@ body.admin-v3 {
 	min-height: 100vh;
 	padding: 22px 14px;
 	background: var(--admin-sidebar-bg);
-	color: #dbe3e9;
+	color: var(--admin-ink-2);
 }
 
 .admin-brand {
@@ -65,7 +65,7 @@ body.admin-v3 {
 }
 
 .admin-brand strong {
-	color: #fff;
+	color: var(--admin-ink);
 	font-size: 17px;
 	font-weight: var(--admin-w-title);
 	line-height: 1.25;
@@ -73,7 +73,7 @@ body.admin-v3 {
 
 .admin-brand span {
 	margin-top: 3px;
-	color: #8a9aa0;
+	color: var(--admin-ink-3);
 	font-size: 12px;
 	font-weight: var(--admin-w-medium);
 	letter-spacing: 0.02em;
@@ -85,7 +85,7 @@ body.admin-v3 {
 
 .admin-nav-group p {
 	margin: 0 0 6px 12px;
-	color: #7c949a;
+	color: var(--admin-ink-3);
 	font-size: 12px;
 	font-weight: var(--admin-w-strong);
 }
@@ -97,21 +97,21 @@ body.admin-v3 {
 	padding: 0 12px;
 	border-left: 3px solid transparent;
 	border-radius: var(--admin-radius-control);
-	color: #dbe3e9;
+	color: var(--admin-ink-2);
 	font-size: 14px;
 	font-weight: var(--admin-w-medium);
 	text-decoration: none;
 }
 
 .admin-nav-group a:hover {
-	background: rgba(255, 255, 255, 0.05);
-	color: #fff;
+	background: var(--admin-accent-soft);
+	color: var(--admin-ink);
 }
 
 .admin-nav-group a.is-active {
-	border-left-color: var(--admin-sidebar-accent);
-	background: rgba(255, 255, 255, 0.07);
-	color: #fff;
+	border-left-color: var(--admin-accent);
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-ink);
 	font-weight: var(--admin-w-strong);
 }
 
@@ -426,7 +426,7 @@ body.admin-v3 {
 }
 
 .admin-v3 .alert-dismiss:hover {
-	background: rgba(22, 48, 47, 0.08);
+	background: color-mix(in srgb, var(--admin-ink) 8%, transparent);
 }
 
 /* 표준 테이블 검색 툴바·정렬 헤더(#1737) */
@@ -585,8 +585,8 @@ body.admin-v3 {
 
 /* 키보드로 이동한 행 강조(#1740): 상세 링크에 포커스가 들어오면 행 전체를 표시 */
 .admin-v3 .report-row:focus-within {
-	background: var(--admin-surface-2, rgba(22, 48, 47, 0.06));
-	outline: 2px solid var(--admin-accent, #1f6f6a);
+	background: var(--admin-surface-2, color-mix(in srgb, var(--admin-ink) 6%, transparent));
+	outline: 2px solid var(--admin-accent);
 	outline-offset: -2px;
 }
 
@@ -619,17 +619,17 @@ body.admin-v3 {
 	display: flex;
 	align-items: center;
 	justify-content: center;
-	background: rgba(22, 48, 47, 0.35);
+	background: color-mix(in srgb, var(--admin-ink) 35%, transparent);
 }
 
 .admin-v3 .shortcut-help-panel {
 	background: var(--admin-surface);
 	border: 1px solid var(--admin-border);
-	border-radius: 10px;
+	border-radius: var(--admin-radius-card);
 	padding: 20px 24px;
 	max-width: 360px;
 	width: calc(100% - 32px);
-	box-shadow: 0 12px 32px rgba(0, 0, 0, 0.18);
+	box-shadow: none;
 }
 
 .admin-v3 .shortcut-help-panel h2 {
@@ -670,14 +670,14 @@ body.admin-v3 {
 	padding: 8px 14px;
 	border: 1px solid transparent;
 	border-bottom: none;
-	border-radius: 8px 8px 0 0;
+	border-radius: var(--admin-radius-control) var(--admin-radius-control) 0 0;
 	color: var(--admin-ink-2);
 	text-decoration: none;
 	font-size: 14px;
 }
 
 .admin-v3 .hub-tabs a:hover {
-	background: var(--admin-surface-2, rgba(22, 48, 47, 0.05));
+	background: var(--admin-surface-2, color-mix(in srgb, var(--admin-ink) 5%, transparent));
 }
 
 .admin-v3 .hub-tabs a.is-active {
@@ -695,8 +695,8 @@ body.admin-v3 {
 	min-width: 18px;
 	height: 18px;
 	padding: 0 5px;
-	border-radius: 9px;
-	background: var(--admin-accent, #1f6f6a);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-accent);
 	color: #fff;
 	font-size: 11px;
 	font-weight: 600;
@@ -718,8 +718,8 @@ body.admin-v3 {
 	min-width: 22px;
 	height: 20px;
 	padding: 0 7px;
-	border-radius: 10px;
-	background: var(--admin-accent, #1f6f6a);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-accent);
 	color: #fff;
 	font-size: 12px;
 	font-weight: 600;
@@ -727,7 +727,7 @@ body.admin-v3 {
 }
 
 .admin-v3 .count-badge.is-warn {
-	background: var(--admin-warn, #b4690e);
+	background: var(--admin-warn);
 }
 
 .admin-v3 .bulk-actionbar {
@@ -816,7 +816,7 @@ body.admin-v3 {
 	border-left: 3px solid var(--admin-border-strong);
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
-	box-shadow: 0 4px 14px rgba(22, 48, 47, 0.12);
+	box-shadow: none;
 }
 
 .toast-region .toast-item.is-good {
@@ -850,7 +850,7 @@ body.admin-v3 {
 .admin-drawer-backdrop {
 	position: absolute;
 	inset: 0;
-	background: rgba(22, 48, 47, 0.35);
+	background: color-mix(in srgb, var(--admin-ink) 35%, transparent);
 }
 
 .admin-drawer-panel {
@@ -862,7 +862,7 @@ body.admin-v3 {
 	overflow-y: auto;
 	background: var(--admin-surface);
 	border-left: 1px solid var(--admin-border);
-	box-shadow: -8px 0 24px rgba(22, 48, 47, 0.14);
+	box-shadow: none;
 	padding: 16px 20px;
 }
 
@@ -1346,7 +1346,7 @@ body.admin-v3 {
 		transform: translateX(-100%);
 		transition: transform 0.2s ease;
 		z-index: 90;
-		box-shadow: 0 0 40px rgba(22, 48, 47, 0.35);
+		box-shadow: none;
 	}
 
 	.has-js.sidebar-open .admin-sidebar {
@@ -1357,7 +1357,7 @@ body.admin-v3 {
 		position: fixed;
 		inset: 0;
 		z-index: 80;
-		background: rgba(22, 48, 47, 0.4);
+		background: color-mix(in srgb, var(--admin-ink) 40%, transparent);
 	}
 }
 
@@ -1482,7 +1482,7 @@ body.admin-v3 {
 .command-palette-backdrop {
 	position: absolute;
 	inset: 0;
-	background: rgba(22, 48, 47, 0.35);
+	background: color-mix(in srgb, var(--admin-ink) 35%, transparent);
 }
 
 .command-palette-panel {
@@ -1491,7 +1491,7 @@ body.admin-v3 {
 	background: var(--admin-surface);
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
-	box-shadow: 0 12px 32px rgba(22, 48, 47, 0.2);
+	box-shadow: none;
 	padding: 12px;
 }
 
@@ -1537,7 +1537,7 @@ body.admin-v3 {
 	min-width: 18px;
 	height: 18px;
 	padding: 0 5px;
-	border-radius: 9px;
+	border-radius: var(--admin-radius-control);
 	background: var(--admin-danger);
 	color: #fff;
 	font-size: 11px;
@@ -1556,7 +1556,7 @@ body.admin-v3 {
 	background: var(--admin-surface);
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
-	box-shadow: 0 12px 32px rgba(22, 48, 47, 0.2);
+	box-shadow: none;
 	padding: 12px;
 }
 
@@ -1809,7 +1809,7 @@ body.admin-v3 {
 }
 
 .admin-v3 .card-sparkline polyline {
-	stroke: #b3261e;
+	stroke: var(--admin-danger);
 	stroke-width: 1.5;
 	vector-effect: non-scaling-stroke;
 }
@@ -1824,13 +1824,13 @@ body.admin-v3 {
 }
 
 .admin-v3 .section-hint {
-	color: #5f6b7a;
+	color: var(--admin-ink-2);
 	font-size: 13px;
 	margin: 4px 0 12px;
 }
 
 .admin-v3 .table-summary {
-	color: #384250;
+	color: var(--admin-ink);
 	font-size: 14px;
 	margin: 12px 0;
 }
@@ -1843,30 +1843,30 @@ body.admin-v3 {
 .admin-v3 .status-badge {
 	display: inline-block;
 	padding: 2px 8px;
-	border-radius: 10px;
+	border-radius: var(--admin-radius-card);
 	font-size: 12px;
-	background: #eef1f5;
-	color: #384250;
+	background: var(--admin-header-bg);
+	color: var(--admin-ink);
 }
 
 .admin-v3 .status-badge.tone-ok {
-	background: #e4f4ea;
-	color: #1f7a44;
+	background: var(--admin-good-soft);
+	color: var(--admin-good);
 }
 
 .admin-v3 .status-badge.tone-failure {
-	background: #fbe6e6;
-	color: #b3261e;
+	background: var(--admin-danger-soft);
+	color: var(--admin-danger);
 }
 
 .admin-v3 .status-badge.tone-pending {
-	background: #fff2da;
-	color: #9a5600;
+	background: var(--admin-warn-soft);
+	color: var(--admin-warn);
 }
 
 .admin-v3 .row-detail summary {
 	cursor: pointer;
-	color: #2456b3;
+	color: var(--admin-accent);
 }
 
 .admin-v3 .row-detail-list {
@@ -1877,7 +1877,7 @@ body.admin-v3 {
 }
 
 .admin-v3 .row-detail-list dt {
-	color: #5f6b7a;
+	color: var(--admin-ink-2);
 	font-size: 13px;
 }
 
@@ -1904,14 +1904,14 @@ body.admin-v3 {
 	align-items: center;
 	gap: 12px;
 	text-decoration: none;
-	color: #384250;
+	color: var(--admin-ink);
 	padding: 4px 8px;
 	border-radius: 6px;
 }
 
 .admin-v3 .breakdown-bars a:hover,
 .admin-v3 .breakdown-bars a[aria-current="true"] {
-	background: #eef4ff;
+	background: var(--admin-accent-soft);
 }
 
 .admin-v3 .breakdown-bar {
@@ -1920,7 +1920,7 @@ body.admin-v3 {
 }
 
 .admin-v3 .breakdown-bar rect {
-	fill: #b3261e;
+	fill: var(--admin-danger);
 }
 
 .admin-v3 .breakdown-count {
@@ -1942,7 +1942,7 @@ body.admin-v3 {
 	margin: 12px 0;
 	padding: 10px 14px;
 	border-radius: var(--admin-radius-control);
-	background: #fff2da;
+	background: var(--admin-warn-soft);
 	color: var(--admin-warn);
 	font-size: 13px;
 }

@@ -40,7 +40,7 @@ input:focus-visible {
 
 .desktop-sidebar {
 	background: var(--admin-sidebar-bg);
-	color: #dbe3e9;
+	color: var(--admin-ink-2);
 	padding: 20px 14px;
 	display: flex;
 	flex-direction: column;
@@ -57,7 +57,7 @@ input:focus-visible {
 .desktop-brand strong,
 .desktop-user strong {
 	display: block;
-	color: #fff;
+	color: var(--admin-ink);
 	font-size: 15px;
 	font-weight: var(--admin-w-title);
 }
@@ -66,7 +66,7 @@ input:focus-visible {
 .desktop-user span {
 	display: block;
 	margin-top: 3px;
-	color: #8a9aa0;
+	color: var(--admin-ink-3);
 	font-size: 11px;
 	font-weight: var(--admin-w-medium);
 }
@@ -79,7 +79,7 @@ input:focus-visible {
 
 .nav-group {
 	margin: 8px 12px 4px;
-	color: #7c949a;
+	color: var(--admin-ink-3);
 	font-size: 11px;
 	font-weight: var(--admin-w-strong);
 	letter-spacing: .04em;
@@ -93,26 +93,26 @@ input:focus-visible {
 	border-left: 3px solid transparent;
 	border-radius: var(--admin-radius-control);
 	padding: 0 12px;
-	color: #dbe3e9;
+	color: var(--admin-ink-2);
 	font-size: 13px;
 	font-weight: var(--admin-w-medium);
 }
 
 .nav-link:hover {
-	background: rgba(255, 255, 255, 0.05);
-	color: #fff;
+	background: var(--admin-accent-soft);
+	color: var(--admin-ink);
 }
 
 .nav-link.active {
-	border-left-color: var(--admin-sidebar-accent);
-	background: rgba(255, 255, 255, 0.07);
-	color: #fff;
+	border-left-color: var(--admin-accent);
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-ink);
 	font-weight: var(--admin-w-strong);
 }
 
 .desktop-user {
 	margin-top: auto;
-	border-top: 1px solid rgba(255, 255, 255, .1);
+	border-top: 1px solid var(--admin-border);
 	padding-top: 14px;
 }
 
@@ -122,8 +122,8 @@ input:focus-visible {
 	border-radius: var(--admin-radius-control);
 	display: grid;
 	place-items: center;
-	background: rgba(255, 255, 255, .11);
-	color: #fff;
+	background: var(--admin-accent-soft);
+	color: var(--admin-ink);
 	font-size: 11px;
 	font-weight: var(--admin-w-strong);
 }

@@ -1,34 +1,37 @@
 :root {
-	/* 표면 — 플랫한 중립 배경, 카드는 얇은 테두리 + 미세 그림자 */
-	--admin-bg: #f6f8f9;
-	--admin-surface: #ffffff;
-	--admin-border: #dbe3e9;
-	--admin-border-strong: #c8d3dc;
-	--admin-header-bg: #f6f8f9;
+	/* 표면 — 플랫한 중립 배경, 카드는 얇은 테두리만(그림자 0) */
+	--admin-bg: #F6F8F9;
+	--admin-surface: #FFFFFF;
+	--admin-border: #DBE3E9;
+	--admin-border-strong: #006FD6;
+	--admin-header-bg: #F6F8F9;
 
 	/* 텍스트 — 중립 그레이 위계 */
-	--admin-ink: #102a2c;
-	--admin-ink-2: #29484b;
-	--admin-ink-3: #8a9aa0;
+	--admin-ink: #102A2C;
+	--admin-ink-2: #29484B;
+	--admin-ink-3: #466467;
 
 	/* 브랜드 액센트 1계열 + 의미 상태색 */
-	--admin-accent: #2a2f31;
-	--admin-accent-soft: #eef1f2;
-	--admin-sidebar-bg: #102a2c;
-	--admin-sidebar-accent: #dbe3e9;
-	--admin-primary: #2a2f31;
-	--admin-primary-hover: #1a1d1e;
-	--admin-good: #0a705a;
-	--admin-warn: #9a5600;
-	--admin-danger: #b42318;
+	--admin-accent: #006FD6;
+	--admin-accent-soft: rgba(0, 111, 214, 0.08);
+	--admin-sidebar-bg: #FFFFFF;
+	--admin-sidebar-accent: #F6F8F9;
+	--admin-primary: #006FD6;
+	--admin-primary-hover: color-mix(in srgb, #006FD6 85%, #000);
+	--admin-good: #0A705A;
+	--admin-warn: #9A5600;
+	--admin-danger: #B42318;
+	--admin-good-soft: #F0FBF7;
+	--admin-warn-soft: #FFF0D1;
+	--admin-danger-soft: #FFE8E6;
 	--admin-chart-series: #2f6f9f; /* 차트 보조 시리즈색(상태 의미 없음) */
 
 	/* radius — 2단계 토큰(컨트롤/카드) */
 	--admin-radius-control: 8px;
-	--admin-radius-card: 12px;
+	--admin-radius-card: 8px;
 
-	/* 그림자 — 미세 그림자 1종 */
-	--admin-shadow-card: 0 1px 2px rgba(7, 27, 47, 0.06);
+	/* 그림자 — 사용 안 함(플랫) */
+	--admin-shadow-card: none;
 
 	/* 타이포 위계 */
 	--admin-w-body: 500;
