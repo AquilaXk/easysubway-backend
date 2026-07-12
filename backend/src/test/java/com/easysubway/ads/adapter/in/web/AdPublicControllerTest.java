@@ -26,7 +26,8 @@ import org.springframework.util.DigestUtils;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
-	"easysubway.admin.password=admin-test-password"
+	"easysubway.admin.password=admin-test-password",
+	"easysubway.ads.event-daily-cap=2"
 })
 @AutoConfigureMockMvc
 @DisplayName("무추적 광고 공개 API")
@@ -175,6 +176,29 @@ class AdPublicControllerTest {
 			WHERE event_date=? AND placement_id=? AND creative_id=? AND event_type=?
 			""", Integer.class, LocalDate.now(ZoneOffset.UTC), "route-result-bottom", "active", "IMPRESSION");
 		Assertions.assertThat(count).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("일일 cap을 넘긴 valid event도 204이고 count는 cap에 고정된다")
+	void silentlyDropsEventsBeyondDailyCap() throws Exception {
+		LocalDateTime now = LocalDateTime.now(ZoneOffset.UTC);
+		insertPlacement("route-result-bottom");
+		insertCreative("active", "route-result-bottom", now.minusHours(1), now.plusHours(1), true);
+
+		for (int attempt = 0; attempt < 3; attempt++) {
+			mockMvc.perform(post("/api/ads/events")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content("""
+						{"placement":"route-result-bottom","creativeId":"active","eventType":"IMPRESSION"}
+						"""))
+				.andExpect(status().isNoContent());
+		}
+
+		Assertions.assertThat(jdbcTemplate.queryForObject(
+			"SELECT event_count FROM ad_event_daily WHERE placement_id = ? AND creative_id = ? AND event_type = ?",
+			Integer.class,
+			"route-result-bottom", "active", "IMPRESSION"))
+			.isEqualTo(2);
 	}
 
 	@Test

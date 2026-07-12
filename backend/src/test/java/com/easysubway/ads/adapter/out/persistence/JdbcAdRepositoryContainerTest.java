@@ -4,12 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.ads.application.service.AdService;
 import com.easysubway.ads.domain.AdCreative;
+import com.easysubway.ads.domain.AdEventType;
 import com.easysubway.common.error.InvalidRequestException;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.CyclicBarrier;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -43,7 +47,7 @@ class JdbcAdRepositoryContainerTest {
 	void managesCreativeLifecycleOnPostgresql() {
 		var dataSource = migratedDataSource();
 		var jdbcTemplate = new JdbcTemplate(dataSource);
-		var repository = new JdbcAdRepository(jdbcTemplate);
+		var repository = new JdbcAdRepository(jdbcTemplate, 1_000_000);
 		LocalDateTime startsAt = LocalDateTime.parse("2026-07-11T00:00:00");
 		jdbcTemplate.update("""
 			INSERT INTO ad_placements (id, display_name, enabled)
@@ -86,7 +90,7 @@ class JdbcAdRepositoryContainerTest {
 			INSERT INTO ad_placements (id, display_name, enabled)
 			VALUES ('route-result-bottom', '경로 결과 하단', TRUE)
 			""");
-		var repository = new JdbcAdRepository(new UpdateBarrierJdbcTemplate(dataSource));
+		var repository = new JdbcAdRepository(new UpdateBarrierJdbcTemplate(dataSource), 1_000_000);
 		var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 		LocalDateTime startsAt = LocalDateTime.parse("2026-07-11T00:00:00");
 		AdCreative first = creative("동시 광고주 A", startsAt);
@@ -114,7 +118,7 @@ class JdbcAdRepositoryContainerTest {
 			VALUES ('route-result-bottom', '경로 결과 하단', TRUE),
 			       ('station-detail-bottom', '역 상세 하단', TRUE)
 			""");
-		var repository = new JdbcAdRepository(jdbcTemplate);
+		var repository = new JdbcAdRepository(jdbcTemplate, 1_000_000);
 		var service = new AdService(repository, "https://assets.easysubway.example");
 		var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 		LocalDateTime startsAt = LocalDateTime.parse("2026-07-11T00:00:00");
@@ -154,14 +158,14 @@ class JdbcAdRepositoryContainerTest {
 			       ('station-detail-bottom', '역 상세 하단', TRUE)
 			""");
 		LocalDateTime startsAt = LocalDateTime.parse("2026-07-11T00:00:00");
-		var regularRepository = new JdbcAdRepository(jdbcTemplate);
+		var regularRepository = new JdbcAdRepository(jdbcTemplate, 1_000_000);
 		AdCreative creative = creative(
 			"event-creative", "광고주", startsAt, startsAt.plusHours(2), false);
 		regularRepository.save(creative);
 		var creativeLocked = new CountDownLatch(1);
 		var eventPlacementLocked = new CountDownLatch(1);
 		var adminRepository = new JdbcAdRepository(new AdminLockOrderJdbcTemplate(
-			dataSource, creativeLocked, eventPlacementLocked));
+			dataSource, creativeLocked, eventPlacementLocked), 1_000_000);
 		var adminService = new AdService(adminRepository, "https://assets.easysubway.example");
 		var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 
@@ -201,6 +205,78 @@ class JdbcAdRepositoryContainerTest {
 			"SELECT event_count FROM ad_event_daily WHERE creative_id = ?",
 			Integer.class,
 			creative.id())).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("absent-row 동시 event UPSERT는 예외 없이 cap에 정확히 도달한다")
+	void concurrentEventsFromAbsentRowStopExactlyAtCap() throws Exception {
+		assertConcurrentEventsStopExactlyAtCap(false);
+	}
+
+	@Test
+	@DisplayName("cap-1 동시 event UPSERT는 예외 없이 cap에 정확히 도달한다")
+	void concurrentEventsFromCapMinusOneStopExactlyAtCap() throws Exception {
+		assertConcurrentEventsStopExactlyAtCap(true);
+	}
+
+	private void assertConcurrentEventsStopExactlyAtCap(boolean seedToCapMinusOne) throws Exception {
+		int cap = 5;
+		int workers = 8;
+		var dataSource = migratedDataSource();
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		var repository = new JdbcAdRepository(jdbcTemplate, cap);
+		LocalDateTime startsAt = LocalDateTime.parse("2026-07-12T00:00:00");
+		jdbcTemplate.update("""
+			INSERT INTO ad_placements (id, display_name, enabled)
+			VALUES ('route-result-bottom', '경로 결과 하단', TRUE)
+			""");
+		repository.save(creative("capped-event", "광고주", startsAt, startsAt.plusDays(1), true));
+		LocalDate eventDate = LocalDate.of(2026, 7, 12);
+		if (seedToCapMinusOne) {
+			for (int count = 1; count < cap; count++) {
+				repository.incrementEvent(
+					"route-result-bottom", "capped-event", AdEventType.IMPRESSION, eventDate);
+			}
+		}
+
+		var ready = new CountDownLatch(workers);
+		var start = new CountDownLatch(1);
+		var executor = Executors.newFixedThreadPool(workers);
+		var failures = new ArrayList<Throwable>();
+		try {
+			var futures = java.util.stream.IntStream.range(0, workers)
+				.mapToObj(ignored -> executor.submit(() -> {
+					ready.countDown();
+					if (!start.await(5, TimeUnit.SECONDS)) {
+						throw new IllegalStateException("event start latch timed out");
+					}
+					repository.incrementEvent(
+						"route-result-bottom", "capped-event", AdEventType.IMPRESSION, eventDate);
+					return null;
+				}))
+				.toList();
+			assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+			start.countDown();
+			for (var future : futures) {
+				try {
+					future.get(5, TimeUnit.SECONDS);
+				} catch (ExecutionException exception) {
+					failures.add(exception.getCause());
+				}
+			}
+		} finally {
+			start.countDown();
+			executor.shutdownNow();
+			assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
+
+		assertThat(failures).isEmpty();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT event_count FROM ad_event_daily WHERE event_date = ? AND creative_id = ?",
+			Integer.class,
+			eventDate,
+			"capped-event"))
+			.isEqualTo(cap);
 	}
 
 	private Throwable save(

@@ -30,6 +30,8 @@ spring:
       initialize-schema: never
 
 easysubway:
+  ads:
+    event-daily-cap: ${EASYSUBWAY_ADS_EVENT_DAILY_CAP}
   report:
     receipt-token-pepper: ${EASYSUBWAY_REPORT_RECEIPT_PEPPER:${EASYSUBWAY_REPORT_RECEIPT_TOKEN_PEPPER:}}
     abuse-control:

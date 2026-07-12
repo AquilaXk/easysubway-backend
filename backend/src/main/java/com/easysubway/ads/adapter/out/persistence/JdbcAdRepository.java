@@ -11,7 +11,7 @@ import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
 import org.springframework.jdbc.core.ConnectionCallback;
@@ -27,15 +27,23 @@ class JdbcAdRepository implements AdRepository {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final DatabaseDialect databaseDialect;
+	private final int eventDailyCap;
 
 	@Autowired
-	JdbcAdRepository(DataSource dataSource) {
-		this(new JdbcTemplate(dataSource));
+	JdbcAdRepository(
+		DataSource dataSource,
+		@Value("${easysubway.ads.event-daily-cap:0}") int eventDailyCap
+	) {
+		this(new JdbcTemplate(dataSource), eventDailyCap);
 	}
 
-	JdbcAdRepository(JdbcTemplate jdbcTemplate) {
+	JdbcAdRepository(JdbcTemplate jdbcTemplate, int eventDailyCap) {
+		if (eventDailyCap < 0) {
+			throw new IllegalArgumentException("eventDailyCap must not be negative");
+		}
 		this.jdbcTemplate = jdbcTemplate;
 		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
+		this.eventDailyCap = eventDailyCap;
 	}
 
 	@Override
@@ -163,6 +171,9 @@ class JdbcAdRepository implements AdRepository {
 	@Override
 	@Transactional
 	public void incrementEvent(String placementId, String creativeId, AdEventType eventType, LocalDate eventDate) {
+		if (eventDailyCap == 0) {
+			return;
+		}
 		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
 			incrementEventWithPostgresql(placementId, creativeId, eventType, eventDate);
 			return;
@@ -176,16 +187,16 @@ class JdbcAdRepository implements AdRepository {
 		AdEventType eventType,
 		LocalDate eventDate
 	) {
-		try {
-			jdbcTemplate.update("""
-				INSERT INTO ad_event_daily (event_date, placement_id, creative_id, event_type, event_count)
-				VALUES (?, ?, ?, ?, 1)
-				ON CONFLICT (event_date, placement_id, creative_id, event_type)
-				DO UPDATE SET event_count = ad_event_daily.event_count + 1
-				""", eventDate, placementId, creativeId, eventType.name());
-		} catch (DataIntegrityViolationException exception) {
-			// Unknown or mismatched ad ids are ignored so the public event endpoint stays anonymous and non-fatal.
-		}
+		jdbcTemplate.update("""
+			INSERT INTO ad_event_daily (event_date, placement_id, creative_id, event_type, event_count)
+			SELECT ?, p.id, c.id, ?, 1
+			FROM ad_placements p
+			JOIN ad_creatives c ON c.placement_id = p.id
+			WHERE p.id = ? AND c.id = ?
+			ON CONFLICT (event_date, placement_id, creative_id, event_type)
+			DO UPDATE SET event_count = ad_event_daily.event_count + 1
+			WHERE ad_event_daily.event_count < ?
+			""", eventDate, eventType.name(), placementId, creativeId, eventDailyCap);
 	}
 
 	private void incrementEventWithUpdateInsert(
@@ -198,23 +209,26 @@ class JdbcAdRepository implements AdRepository {
 			UPDATE ad_event_daily
 			SET event_count = event_count + 1
 			WHERE event_date = ? AND placement_id = ? AND creative_id = ? AND event_type = ?
-			""", eventDate, placementId, creativeId, eventType.name());
+			  AND event_count < ?
+			""", eventDate, placementId, creativeId, eventType.name(), eventDailyCap);
 		if (updated > 0) {
 			return;
 		}
 		try {
 			jdbcTemplate.update("""
 				INSERT INTO ad_event_daily (event_date, placement_id, creative_id, event_type, event_count)
-				VALUES (?, ?, ?, ?, 1)
-				""", eventDate, placementId, creativeId, eventType.name());
+				SELECT ?, p.id, c.id, ?, 1
+				FROM ad_placements p
+				JOIN ad_creatives c ON c.placement_id = p.id
+				WHERE p.id = ? AND c.id = ?
+				""", eventDate, eventType.name(), placementId, creativeId);
 		} catch (DuplicateKeyException exception) {
 			jdbcTemplate.update("""
 				UPDATE ad_event_daily
 				SET event_count = event_count + 1
 				WHERE event_date = ? AND placement_id = ? AND creative_id = ? AND event_type = ?
-				""", eventDate, placementId, creativeId, eventType.name());
-		} catch (DataIntegrityViolationException exception) {
-			// Unknown or mismatched ad ids are ignored so the public event endpoint stays anonymous and non-fatal.
+				  AND event_count < ?
+				""", eventDate, placementId, creativeId, eventType.name(), eventDailyCap);
 		}
 	}
 
