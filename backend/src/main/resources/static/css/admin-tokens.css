@@ -26,9 +26,10 @@
 	--admin-danger-soft: #FFE8E6;
 	--admin-chart-series: #2f6f9f; /* 차트 보조 시리즈색(상태 의미 없음) */
 
-	/* radius — 2단계 토큰(컨트롤/카드) */
+	/* radius — 2단계 토큰(컨트롤/카드) + 뱃지·칩 전용 */
 	--admin-radius-control: 8px;
 	--admin-radius-card: 8px;
+	--admin-radius-badge: 4px;
 
 	/* 그림자 — 사용 안 함(플랫) */
 	--admin-shadow-card: none;

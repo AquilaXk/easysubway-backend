@@ -26,7 +26,7 @@
 
 	<section class="admin-panel">
 		<h2>기본 정보</h2>
-		<table>
+		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">source id</th><td th:text="${snapshot.sourceId}">source-id</td></tr>
 			<tr><th scope="row">provider</th><td th:text="${snapshot.provider}">provider</td></tr>
@@ -41,7 +41,7 @@
 
 	<section class="admin-panel">
 		<h2>상태</h2>
-		<table>
+		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">snapshot status</th><td th:text="${snapshot.snapshotStatus}">LOCKED</td></tr>
 			<tr><th scope="row">schema status</th><td th:text="${snapshot.schemaStatus}">PASS</td></tr>
@@ -57,7 +57,7 @@
 
 	<section class="admin-panel">
 		<h2>Evidence</h2>
-		<table>
+		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">raw sha256</th><td th:text="${snapshot.rawSha256}">sha256</td></tr>
 			<tr><th scope="row">raw object uri</th><td th:text="${snapshot.rawObjectUri}">s3://bucket/object.json</td></tr>

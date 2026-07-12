@@ -13,6 +13,15 @@
 // app.js는 defer라 이 시점에 document.body가 존재한다.
 document.body.classList.add('has-js');
 
+// x-show FOUC 방지(#1982 리뷰 반영): has-js 스코프 CSS로 Alpine 초기화 전 순간을 가려두고,
+// Alpine이 실제로 모든 x-show를 최초 평가한 뒤(alpine:initialized) 이 클래스를 붙여 CSS 숨김을
+// 해제한다. 그 시점부터는 x-show가 설정하는 인라인 style이 표시 여부를 전담한다.
+// 이 훅이 없으면 Alpine의 x-show 구현(_x_doShow)이 인라인 display만 제거하고 값을 넣지 않아,
+// CSS의 has-js 규칙이 계속 이겨 선택 후에도 bulk bar가 영원히 숨겨지는 회귀가 생긴다.
+document.addEventListener('alpine:initialized', function () {
+	document.body.classList.add('has-js-ready');
+});
+
 document.addEventListener('alpine:init', function () {
 	// 반응형 사이드바 토글(#1738): ≤1024px에서 사이드바를 오프캔버스로 여닫는다.
 	// 사이드바 표시는 body.sidebar-open 클래스가, 백드롭은 open 프로퍼티(x-show)가 함께 반영한다.

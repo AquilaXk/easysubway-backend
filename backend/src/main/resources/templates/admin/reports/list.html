@@ -247,7 +247,7 @@
 				</tr>
 				</tbody>
 			</table>
-			<div class="bulk-actionbar">
+			<div class="bulk-actionbar" x-show="hasSelection">
 				<span class="bulk-count" x-text="selectionLabel">선택한 신고 일괄 처리</span>
 				<button type="submit" name="decision" value="ACCEPT">선택 승인</button>
 				<button type="submit" name="decision" value="REJECT">선택 반려</button>
