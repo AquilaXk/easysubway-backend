@@ -1,6 +1,19 @@
 // Operator report charts read the adjacent fallback table, so no inline JSON is needed.
 (function () {
-	var COLORS = ['#0f6b52', '#b3402c', '#2f6f9f', '#8a5a00'];
+	function tokenColor(name, fallback) {
+		if (typeof getComputedStyle !== 'function') {
+			return fallback;
+		}
+		var value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		return value || fallback;
+	}
+
+	var COLORS = [
+		tokenColor('--admin-good', '#0a705a'),
+		tokenColor('--admin-danger', '#b42318'),
+		tokenColor('--admin-chart-series', '#2f6f9f'),
+		tokenColor('--admin-warn', '#9a5600')
+	];
 
 	function tableData(canvas) {
 		var tableId = canvas.getAttribute('data-operator-chart-table');

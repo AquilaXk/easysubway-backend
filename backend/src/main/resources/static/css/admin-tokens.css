@@ -21,6 +21,7 @@
 	--admin-good: #0a705a;
 	--admin-warn: #9a5600;
 	--admin-danger: #b42318;
+	--admin-chart-series: #2f6f9f; /* 차트 보조 시리즈색(상태 의미 없음) */
 
 	/* radius — 2단계 토큰(컨트롤/카드) */
 	--admin-radius-control: 8px;

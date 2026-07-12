@@ -4,10 +4,22 @@
 // htmx 부분 갱신(자동 갱신 폴링)으로 새 canvas가 들어오면 afterSwap에서 다시 그린다.
 // Chart.js가 없거나 JSON이 없으면 조용히 넘어가고 details 안 데이터 표가 대체한다.
 (function () {
-	var COLORS = { COMPLETED: '#0f6b52', FAILED: '#b3402c', RUNNING: '#8a5a00' };
+	function tokenColor(name, fallback) {
+		if (typeof getComputedStyle !== 'function') {
+			return fallback;
+		}
+		var value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		return value || fallback;
+	}
+
+	var COLORS = {
+		COMPLETED: tokenColor('--admin-good', '#0a705a'),
+		FAILED: tokenColor('--admin-danger', '#b42318'),
+		RUNNING: tokenColor('--admin-warn', '#9a5600')
+	};
 
 	function barColor(status) {
-		return COLORS[status] || '#2f6f9f';
+		return COLORS[status] || tokenColor('--admin-chart-series', '#2f6f9f');
 	}
 
 	function renderChart(canvas) {

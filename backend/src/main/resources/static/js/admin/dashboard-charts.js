@@ -3,7 +3,20 @@
 // 기간 버튼이 htmx로 #dashboard-trends를 부분 갱신하면 새 canvas가 들어오므로 afterSwap에서
 // 다시 그린다. Chart.js가 없거나 JSON이 없으면 조용히 넘어가고 details 안 데이터 표가 대체한다.
 (function () {
-	var PALETTE = ['#0f6b52', '#b3402c', '#2f6f9f', '#8a5a00'];
+	function tokenColor(name, fallback) {
+		if (typeof getComputedStyle !== 'function') {
+			return fallback;
+		}
+		var value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
+		return value || fallback;
+	}
+
+	var PALETTE = [
+		tokenColor('--admin-good', '#0a705a'),
+		tokenColor('--admin-danger', '#b42318'),
+		tokenColor('--admin-chart-series', '#2f6f9f'),
+		tokenColor('--admin-warn', '#9a5600')
+	];
 
 	function renderChart(canvas) {
 		if (!window.Chart) {
