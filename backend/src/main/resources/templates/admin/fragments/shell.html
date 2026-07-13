@@ -71,15 +71,17 @@
 		</button>
 		<div class="admin-sidebar-backdrop" x-cloak x-show="open" x-on:click="close"></div>
 	</div>
+	<!--
+	  상단바 상단 행(#2047): 좌측 컨텍스트(브랜드 + 통합 관리자) / 우측 알림 벨 + 사용자 메뉴 드롭다운.
+	  aria-label과 클래스는 접근성 스모크 테스트가 고정한다(관리자 실행 환경).
+	-->
 	<div class="admin-topbar-row" aria-label="관리자 실행 환경">
-		<div class="admin-topbar-meta">
-			<span class="admin-env-badge"
-			      th:classappend="${' is-' + (adminShell != null ? adminShell.environmentTone : 'development')}"
-			      th:text="${adminShell != null ? adminShell.environmentLabel : 'DEV'}">DEV</span>
-			<span>관리자 <strong th:text="${adminShell != null ? adminShell.username : 'anonymous'}">admin</strong></span>
-			<span>권한 <strong th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</strong></span>
+		<div class="admin-topbar-context">
+			<strong class="admin-topbar-brand">쉬운 지하철</strong>
+			<span class="admin-topbar-sep" aria-hidden="true">/</span>
+			<span class="admin-topbar-scope">통합 관리자</span>
 		</div>
-		<div class="admin-topbar-meta">
+		<div class="admin-topbar-actions">
 			<!--
 			  알림 센터(#1738): topbar 벨. 벨을 누르면 요약 패널이 열린다(Cmd 없이 클릭으로).
 			  live 영역은 alertCenter 컴포넌트가 60초마다 htmx로 /admin/alerts를 폴링해 채운다.
@@ -94,16 +96,61 @@
 				</a>
 				<div id="admin-alert-live" class="admin-alert-live"></div>
 			</div>
-			<span>revision <strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong></span>
-			<span>master data <strong th:text="${adminShell != null ? adminShell.masterDataVersion : 'unknown'}">unknown</strong></span>
-			<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
-			      th:action="@{/admin/logout}"
-			      method="post"
-			      aria-label="관리자 로그아웃">
-				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-				<button type="submit">로그아웃</button>
-			</form>
+			<!--
+			  사용자 메뉴 드롭다운(#2047): 이름·권한 요약을 트리거로, 열면 계정 정보와 로그아웃 폼을 담는다.
+			  로그아웃은 CSRF POST 폼이라 폼·토큰을 그대로 드롭다운 안으로 옮겼다(접근성 테스트가
+			  aria-label·action·_csrf를 고정). CSP 빌드라 디렉티브에는 메서드·게터 이름만 넣는다.
+			  no-JS: 트리거는 계정 링크로 동작하고 폼은 항상 렌더되어 접근 가능하다.
+			-->
+			<div class="admin-user-menu" x-data="userMenu"
+			     x-on:keydown.escape.window="closeFromKeyboard" x-on:click.outside="close">
+				<button type="button" class="admin-user-menu-trigger" x-ref="trigger"
+				        x-on:click="toggle" aria-haspopup="dialog"
+				        x-bind:aria-expanded="ariaExpanded" aria-controls="admin-user-menu-panel"
+				        aria-label="사용자 메뉴">
+					<span class="admin-user-menu-name" th:text="${adminShell != null ? adminShell.username : 'anonymous'}">admin</span>
+					<span class="admin-user-menu-role" th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</span>
+					<span class="admin-user-menu-caret" aria-hidden="true"></span>
+				</button>
+				<div id="admin-user-menu-panel" class="admin-user-menu-panel" x-show="open"
+				     role="dialog" aria-label="사용자 메뉴">
+					<dl class="admin-user-menu-info">
+						<dt>계정</dt>
+						<dd th:text="${adminShell != null ? adminShell.username : 'anonymous'}">admin</dd>
+						<dt>권한</dt>
+						<dd th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</dd>
+					</dl>
+					<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
+					      th:action="@{/admin/logout}"
+					      method="post"
+					      aria-label="관리자 로그아웃">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<button type="submit" class="admin-user-menu-logout">로그아웃</button>
+					</form>
+				</div>
+			</div>
 		</div>
+	</div>
+	<!--
+	  상태 스트립(#2047): 환경 배지 + 라벨드 항목. 정적·무채색·비인터랙티브 시각(버튼 아님).
+	  각 항목은 title 툴팁으로 의미를 설명한다. 사용자 신원(계정·역할)은 상단 사용자 메뉴가 전담하므로
+	  이 스트립에는 권한 개수 등 내부 RBAC 표기를 두지 않는다(#2047 후속 오너 지시).
+	-->
+	<div class="admin-status-strip" aria-label="실행 환경 상태">
+		<span class="admin-env-badge"
+		      th:classappend="${' is-' + (adminShell != null ? adminShell.environmentTone : 'development')}"
+		      title="현재 관리자 콘솔이 실행 중인 배포 환경"
+		      th:text="${adminShell != null ? adminShell.environmentLabel : 'DEV'}">DEV</span>
+		<span class="admin-status-item"
+		      title="관리자 콘솔 빌드 리비전(배포 식별자)">
+			<span class="admin-status-label">리비전</span>
+			<strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong>
+		</span>
+		<span class="admin-status-item"
+		      title="현재 적재된 마스터데이터(역·시설 참조 팩) 버전">
+			<span class="admin-status-label">마스터데이터</span>
+			<strong th:text="${adminShell != null ? adminShell.masterDataVersion : 'unknown'}">unknown</strong>
+		</span>
 	</div>
 </div>
 <div th:fragment="contentStart" id="admin-content" class="admin-content-anchor" tabindex="-1"></div>

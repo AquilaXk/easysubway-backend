@@ -8,6 +8,7 @@ import java.util.stream.Collectors;
 import org.springframework.core.env.Environment;
 import org.springframework.security.authentication.AnonymousAuthenticationToken;
 import org.springframework.security.core.Authentication;
+import org.springframework.security.core.GrantedAuthority;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ModelAttribute;
 
@@ -48,7 +49,7 @@ class AdminNavigationAdvice {
 			environmentLabel(),
 			environmentTone(),
 			username,
-			rolesLabel(authentication),
+			roleLabel(authentication),
 			environment.getProperty("easysubway.admin.revision", "local"),
 			environment.getProperty("easysubway.admin.master-data-version", "unknown")
 		);
@@ -80,21 +81,22 @@ class AdminNavigationAdvice {
 		return Arrays.stream(environment.getActiveProfiles()).toList();
 	}
 
-	private static String rolesLabel(Authentication authentication) {
+	// 사용자 신원 표기는 역할 등급(ROLE_*)만 노출한다. 세부 RBAC 권한(authority) 개수는
+	// 내부 구현 상세라 상단바에 드러내지 않는다(#2047 후속 오너 지시).
+	private static String roleLabel(Authentication authentication) {
 		if (!isAuthenticated(authentication)) {
 			return "권한 없음";
 		}
-		List<String> authorities = authentication.getAuthorities().stream()
-			.map(authority -> authority.getAuthority().replaceFirst("^ROLE_", ""))
+		List<String> roles = authentication.getAuthorities().stream()
+			.map(GrantedAuthority::getAuthority)
+			.filter(authority -> authority.startsWith("ROLE_"))
+			.map(authority -> authority.substring("ROLE_".length()))
 			.sorted(Comparator.naturalOrder())
 			.toList();
-		if (authorities.isEmpty()) {
+		if (roles.isEmpty()) {
 			return "권한 없음";
 		}
-		if (authorities.size() == 1) {
-			return authorities.get(0);
-		}
-		return authorities.get(0) + " 외 " + (authorities.size() - 1) + "개";
+		return String.join(", ", roles);
 	}
 
 	private static boolean isAuthenticated(Authentication authentication) {

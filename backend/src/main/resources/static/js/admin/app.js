@@ -45,6 +45,38 @@ document.addEventListener('alpine:init', function () {
 		};
 	});
 
+	// 사용자 메뉴 드롭다운(#2047): 상단바 우측 트리거를 누르면 계정 정보·로그아웃을 담은
+	// 드롭다운이 열린다. sidebarToggle/alertCenter와 동일한 명명 컴포넌트 패턴 — CSP 빌드라
+	// 메서드·게터 이름만 디렉티브에 넣는다. 진화형 향상: JS가 없으면 트리거는 계정 페이지 링크로
+	// 동작하고 로그아웃 폼은 드롭다운 안에 그대로 렌더되어 접근 가능하다.
+	Alpine.data('userMenu', function () {
+		return {
+			open: false,
+			get ariaExpanded() {
+				return this.open ? 'true' : 'false';
+			},
+			toggle: function () {
+				this.open = !this.open;
+			},
+			// close()는 상태만 닫고 포커스는 건드리지 않는다. 외부 클릭(x-on:click.outside)은 이
+			// close()만 호출하므로, 사용자가 메뉴 밖의 다른 입력란을 눌러 닫힐 때 포커스를 트리거로
+			// 빼앗지 않는다(#2049 리뷰: 포커스 도둑질 방지).
+			close: function () {
+				this.open = false;
+			},
+			// Esc(x-on:keydown.escape.window)로 닫을 때만 트리거로 포커스를 복원한다. 열려 있을 때만
+			// 동작해 이미 닫힌 상태의 전역 Esc가 포커스를 트리거로 끌어오지 않게 하고, 패널 내부(로그아웃
+			// 버튼)에 포커스가 남은 채 닫혀 display:none 요소에 포커스가 갇히는 문제를 키보드 경로에서만 막는다.
+			closeFromKeyboard: function () {
+				if (!this.open) {
+					return;
+				}
+				this.close();
+				this.$refs.trigger?.focus();
+			},
+		};
+	});
+
 	// 관리자 플래시/토스트 알림: JS가 있으면 닫기 버튼으로 사라진다. 없으면 그대로 표시된다.
 	Alpine.data('dismissibleAlert', function () {
 		return {

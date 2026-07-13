@@ -175,6 +175,8 @@ body.admin-v3 {
 	scroll-margin-top: 16px;
 }
 
+/* 상단바(#2047): 상단 행(컨텍스트 / 알림·사용자 메뉴) + 하단 상태 스트립. 상단 행만 1px 보더
+   플랫 패널이고, 상태 스트립은 그 아래 얇은 구분선 위의 무채색 라벨드 항목 줄이다. */
 .admin-topbar-row {
 	display: flex;
 	flex-wrap: wrap;
@@ -188,23 +190,67 @@ body.admin-v3 {
 	box-shadow: var(--admin-shadow-card);
 }
 
-.admin-topbar-meta {
+.admin-topbar-context {
 	display: flex;
-	flex-wrap: wrap;
-	gap: 6px 12px;
-	align-items: center;
-	color: var(--admin-ink-2);
-	font-size: 13px;
-	font-weight: var(--admin-w-medium);
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
+	font-size: 14px;
 }
 
-.admin-topbar-meta > span:not(:first-child)::before {
-	content: "·";
-	margin-right: 12px;
+.admin-topbar-brand {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-topbar-sep {
 	color: var(--admin-ink-3);
 }
 
-.admin-topbar-meta strong {
+.admin-topbar-scope {
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-topbar-actions {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+/* 상태 스트립: 정적·무채색·비인터랙티브. 각 항목은 라벨 + 값으로 의미를 드러내고, title 툴팁으로
+   상세를 설명한다. 버튼처럼 보이지 않도록 배경·보더 없이 얇은 구분선(·) 만으로 구분한다. */
+.admin-status-strip {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 14px;
+	margin-top: 8px;
+	padding: 0 2px;
+	font-size: 13px;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-status-item {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	cursor: default;
+}
+
+.admin-status-item + .admin-status-item::before,
+.admin-status-strip .admin-env-badge + .admin-status-item::before {
+	content: "·";
+	margin-right: 8px;
+	color: var(--admin-ink-3);
+}
+
+.admin-status-label {
+	color: var(--admin-ink-3);
+}
+
+.admin-status-item strong {
 	color: var(--admin-ink);
 	font-weight: var(--admin-w-strong);
 }
@@ -369,6 +415,18 @@ body.admin-v3 {
 .admin-v3 section,
 .admin-card {
 	overflow-x: auto;
+}
+
+/* 플랫 섹션(#2047, 오너 확정 2026-07-13): 1px 보더 패널은 핵심 지표 묶음·데이터 표·폼에만 두고,
+   보조 섹션(출시 준비·먼저 확인할 제보·운영 이상 신호 등)은 박스를 벗겨 제목+제목 아래 얇은 1px
+   구분선(.admin-panel-head의 border-bottom)+여백으로 그룹핑한다. 앱 원칙 "블록 금지 → 행+구분선+여백" 계승. */
+.admin-v3 section.admin-section-flat {
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	overflow-x: visible;
 }
 
 .admin-v3 th,
@@ -1240,24 +1298,49 @@ body.admin-v3 {
 	font-weight: var(--admin-w-body);
 }
 
-.admin-v3 .blocker-summary {
+/* blocker 내역(#2047 오너 지적): 구분선은 그룹 경계에만, 원자 항목 사이엔 금지.
+   전체 blocker(소계)는 굵기+상단 여백으로 위계만, 세부는 선 없는 촘촘한 key-value 목록. */
+.admin-v3 .blocker-total {
+	margin: 16px 0 8px;
+	font-size: 14px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink);
+}
+
+/* 전역 .admin-v3 dl(그리드 + dt/dd border-top)을 명시적으로 해제한다 — 원자 항목 사이 선 금지.
+   폭은 촘촘한 목록으로 읽히도록 제한하고, 라벨 좌·값 우(tabular-nums) 정렬만 준다. */
+.admin-v3 dl.blocker-breakdown {
+	display: block;
+	grid-template-columns: none;
+	max-width: 420px;
 	margin: 0 0 16px;
-	padding: 0;
-	list-style: none;
 	font-size: 14px;
 }
 
-.admin-v3 .blocker-summary li {
-	padding: 9px 0;
-	border-top: 1px solid var(--admin-border);
-	color: var(--admin-ink-2);
-	font-weight: var(--admin-w-medium);
+.admin-v3 dl.blocker-breakdown > div {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 3px 0;
 }
 
-.admin-v3 .blocker-summary li:first-child {
+.admin-v3 dl.blocker-breakdown dt,
+.admin-v3 dl.blocker-breakdown dd {
+	padding: 0;
 	border-top: 0;
+}
+
+.admin-v3 dl.blocker-breakdown dt {
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-body);
+}
+
+.admin-v3 dl.blocker-breakdown dd {
+	margin: 0;
 	color: var(--admin-ink);
-	font-weight: var(--admin-w-strong);
+	font-variant-numeric: tabular-nums;
+	font-weight: var(--admin-w-medium);
 }
 
 .admin-v3 section > p.empty,
@@ -1520,7 +1603,9 @@ body.admin-v3 {
 		display: block;
 	}
 
-	.admin-sidebar-toggle {
+	/* 데스크톱 base 규칙(.admin-v3 .admin-sidebar-toggle, 0,2,0)이 소스상 이 미디어 블록보다
+	   뒤에 있어 동일 명시도면 base가 이긴다. nav-control을 끼워 명시도를 (0,3,0)으로 올려 노출한다. */
+	.admin-v3 .admin-sidebar-nav-control .admin-sidebar-toggle {
 		display: inline-flex;
 	}
 
@@ -1790,12 +1875,116 @@ body.admin-v3 {
 	border: 0;
 }
 
-/* 반응형 사이드바 토글(#1738): 데스크톱(>1024px)에서는 숨긴다. ≤1024px 규칙에서 노출한다. */
+/* 사용자 메뉴 드롭다운(#2047): 상단바 우측 트리거 + 계정/로그아웃 패널. alert-center와 동일한
+   앵커드 드롭다운 규격(1px 보더·그림자 0·radius ≤8). 트리거는 무채색이고, 활성(열림) 표시는
+   보더를 액센트로 바꿔 파랑을 주 상호작용에만 쓴다는 원칙을 지킨다. */
+.admin-user-menu {
+	position: relative;
+	display: inline-flex;
+}
+
+/* 트리거는 정적 라벨성 유틸 버튼이므로 파랑 채움을 벗긴다. .admin-v3 button(0,1,1)이 파랑
+   배경을 강제하므로 셀렉터 명시도를 .admin-v3 .admin-user-menu-trigger(0,2,0)로 올려 이긴다. */
+.admin-v3 .admin-user-menu-trigger {
+	display: inline-flex;
+	flex-direction: column;
+	align-items: flex-end;
+	gap: 1px;
+	min-height: 36px;
+	padding: 4px 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	cursor: pointer;
+	line-height: 1.2;
+}
+
+.admin-v3 .admin-user-menu-trigger:hover {
+	background: var(--admin-bg);
+}
+
+.admin-v3 .admin-user-menu-trigger[aria-expanded="true"] {
+	border-color: var(--admin-accent);
+}
+
+.admin-user-menu-name {
+	font-size: 13px;
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-user-menu-role {
+	font-size: 11px;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-user-menu-caret {
+	display: none;
+}
+
+.admin-user-menu-panel {
+	position: absolute;
+	top: calc(100% + 8px);
+	right: 0;
+	z-index: 70;
+	width: min(280px, 90vw);
+	padding: 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: none;
+}
+
+/* no-JS 폴백(#2049 리뷰): x-cloak 대신 has-js 초기화 창에서만 패널을 숨긴다. JS가 있으면
+   alpine:initialized 이후 x-show(open)의 인라인 display가 전담하고, JS가 없으면(has-js 미부착)
+   이 규칙이 걸리지 않아 계정 정보·로그아웃 폼이 그대로 노출된다(bulk-actionbar와 동일 패턴). */
+.admin-v3.has-js:not(.has-js-ready) .admin-user-menu-panel {
+	display: none;
+}
+
+.admin-user-menu-info {
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 6px 12px;
+	margin: 0 0 12px;
+	padding: 0 0 12px;
+	border-bottom: 1px solid var(--admin-border);
+	font-size: 13px;
+}
+
+.admin-user-menu-info dt {
+	color: var(--admin-ink-3);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-user-menu-info dd {
+	margin: 0;
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+/* 로그아웃은 주 액션이 아니므로 파랑 채움을 벗기고 고스트(무채색 surface·1px 보더·잉크색)로 둔다. */
+.admin-v3 .admin-user-menu-logout {
+	width: 100%;
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	color: var(--admin-ink);
+}
+
+.admin-v3 .admin-user-menu-logout:hover {
+	background: var(--admin-bg);
+}
+
+/* 반응형 사이드바 토글(#1738, 명시도 버그 수정 #2047): 데스크톱(>1024px)에서는 숨긴다.
+   .admin-v3 button(0,1,1)이 display:inline-flex와 파랑 배경을 강제하므로, 토글 셀렉터를
+   .admin-v3 .admin-sidebar-toggle(0,2,0)로 올려 데스크톱 완전 숨김과 고스트 스타일(무채색
+   surface 배경·1px 보더·잉크색, 파랑 아님)을 확실히 이기게 한다. ≤1024px 규칙에서 노출한다. */
 .admin-sidebar-nav-control {
 	display: contents;
 }
 
-.admin-sidebar-toggle {
+.admin-v3 .admin-sidebar-toggle {
 	display: none;
 	align-items: center;
 	justify-content: center;
@@ -1841,11 +2030,21 @@ body.admin-v3 {
 	text-decoration: none;
 }
 
-.dashboard-urgent {
+/* 긴급 신호(#2047 폴리시): 박스+틴트 콜아웃을 제거하고 플랫 행+1px 구분선으로 나열한다.
+   .admin-v3 section 박스(보더 4면·radius·surface)를 명시적으로 벗겨(플랫), 상단 1px로 목록을 열고
+   각 항목 하단 1px로 구분한다. 컨테이너 border-bottom과 마지막 항목 border-bottom이 겹쳐 하단 선이
+   이중으로 보이던 문제를 컨테이너 박스 제거로 해소한다(#2047 리뷰). 상태는 좌측 얇은(2px) 마커로만. */
+.admin-v3 .dashboard-urgent {
 	display: flex;
-	flex-wrap: wrap;
-	gap: 10px;
+	flex-direction: column;
 	margin-bottom: 16px;
+	border: 0;
+	border-top: 1px solid var(--admin-border);
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	overflow-x: visible;
 }
 
 .dashboard-urgent-item {
@@ -1853,12 +2052,14 @@ body.admin-v3 {
 	flex-direction: column;
 	gap: 2px;
 	padding: 10px 14px;
-	border: 1px solid var(--admin-border);
-	border-left-width: 3px;
-	border-radius: var(--admin-radius-control);
-	background: var(--admin-surface);
+	border-bottom: 1px solid var(--admin-border);
+	border-left: 2px solid transparent;
 	text-decoration: none;
 	color: var(--admin-ink);
+}
+
+.dashboard-urgent-item:hover {
+	background: var(--admin-bg);
 }
 
 .dashboard-urgent-item.tone-warning {
@@ -1947,6 +2148,13 @@ body.admin-v3 {
 	font-size: 13px;
 }
 
+/* 핵심 지표 패널 ↔ 기간 토글 사이 여백(#2047): #dashboard-trends는 section이 아니라 div라
+   section+section 자동 간격을 못 받으므로, 추이 섹션 상단에 명시 여백을 준다(붙어 보이는 문제).
+   대시보드 전용 스코프(#dashboard-trends)로 좁혀 usage·routes·notifications 화면에는 파급하지 않는다. */
+#dashboard-trends .dashboard-trends-section {
+	margin-top: 24px;
+}
+
 .trend-periods {
 	display: flex;
 	gap: 8px;
@@ -1979,6 +2187,16 @@ body.admin-v3 {
 	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
 	gap: 16px;
 	margin-bottom: 20px;
+	/* 두 추이 패널의 세로 시작 위치를 맞춘다(#2047): 한 패널 제목이 길어도 위쪽 라인을 정렬한다. */
+	align-items: start;
+}
+
+/* 그리드 안 두 차트 패널의 세로 시작 위치 정렬(#2047): .admin-v3 section + section의
+   margin-top:24px가 두 번째 패널(section 인접 형제)에만 붙어 24px 아래로 밀려 top이 어긋났다.
+   차트 그리드는 gap으로 간격을 주므로 인접 형제 margin을 0으로 되돌려 두 패널 top을 일치시킨다. */
+.batch-history-charts > section + section,
+.trend-charts > section + section {
+	margin-top: 0;
 }
 
 .batch-history-canvas-wrap,

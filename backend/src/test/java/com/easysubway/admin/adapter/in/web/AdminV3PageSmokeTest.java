@@ -428,9 +428,11 @@ class AdminV3PageSmokeTest {
 			.contains("id=\"admin-content\"")
 			.doesNotContain("<main id=\"admin-content\"")
 			.contains("DEV")
-			.contains("관리자 <strong>")
-			.contains("revision <strong>local</strong>")
-			.contains("master data <strong>unknown</strong>")
+			.contains("class=\"admin-user-menu-name\">admin-user</span>")
+			.contains("<span class=\"admin-status-label\">리비전</span>")
+			.contains("<strong>local</strong>")
+			.contains("<span class=\"admin-status-label\">마스터데이터</span>")
+			.contains("<strong>unknown</strong>")
 			.contains(expectedText);
 		assertThat(html.indexOf("href=\"#admin-content\""))
 			.isLessThan(html.indexOf("class=\"admin-shell\""));

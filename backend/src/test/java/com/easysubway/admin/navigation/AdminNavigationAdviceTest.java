@@ -22,6 +22,7 @@ class AdminNavigationAdviceTest {
 		TestingAuthenticationToken authentication = new TestingAuthenticationToken(
 			"ops-admin",
 			"ignored",
+			"ROLE_ADMIN",
 			"admin.security.audit",
 			"admin.view"
 		);
@@ -31,9 +32,28 @@ class AdminNavigationAdviceTest {
 		assertThat(shell.environmentLabel()).isEqualTo("PRODUCTION");
 		assertThat(shell.environmentTone()).isEqualTo("production");
 		assertThat(shell.username()).isEqualTo("ops-admin");
-		assertThat(shell.rolesLabel()).isEqualTo("admin.security.audit 외 1개");
+		assertThat(shell.rolesLabel()).isEqualTo("ADMIN");
 		assertThat(shell.revision()).isEqualTo("main-20260627");
 		assertThat(shell.masterDataVersion()).isEqualTo("datapack-20260627");
+	}
+
+	@Test
+	@DisplayName("역할 등급이 여러 개면 콤마로 정렬해 이어붙이고, 세부 RBAC 권한(authority) 개수는 드러내지 않는다")
+	void rolesLabelHidesPermissionAuthorityCount() {
+		MockEnvironment environment = new MockEnvironment();
+		TestingAuthenticationToken authentication = new TestingAuthenticationToken(
+			"ops-admin",
+			"ignored",
+			"ROLE_OPERATOR",
+			"ROLE_ADMIN",
+			"admin.security.audit",
+			"admin.view",
+			"admin.push.send"
+		);
+
+		AdminNavigationAdvice.AdminShell shell = new AdminNavigationAdvice(environment).adminShell(authentication);
+
+		assertThat(shell.rolesLabel()).isEqualTo("ADMIN, OPERATOR");
 	}
 
 	@Test

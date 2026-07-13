@@ -62,10 +62,10 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 			.contains("candidate-previous-stable")
 			.contains("production promote 차단: blocker 9건")
 			.contains("전체 blocker 9건")
-			.contains("alias 1")
-			.contains("quarantine 1")
-			.contains("manual override 1")
-			.contains("route gate 1")
+			.contains("<dt>alias</dt><dd>1</dd>")
+			.contains("<dt>quarantine</dt><dd>1</dd>")
+			.contains("<dt>manual override</dt><dd>1</dd>")
+			.contains("<dt>route gate</dt><dd>1</dd>")
 			.contains("manifest signature")
 			.doesNotContain("name=\"commandToken\"")
 			.doesNotContain("serviceKey");
@@ -204,9 +204,9 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 
 		assertThat(html)
 			.contains("전체 blocker 9건")
-			.contains("manual override 1")
+			.contains("<dt>manual override</dt><dd>1</dd>")
 			.doesNotContain("전체 blocker 10건")
-			.doesNotContain("manual override 2");
+			.doesNotContain("<dt>manual override</dt><dd>2</dd>");
 	}
 
 	@Test
