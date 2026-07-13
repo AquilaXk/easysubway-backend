@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "repository-api-catalog-contract",
+  "runtimeExposure": "forbidden",
+  "commands": {
+    "list": "node tools/ci/api-catalog.mjs list [--kind <kind>] [--query <text>] [--json]",
+    "show": "node tools/ci/api-catalog.mjs show <id> [--json]",
+    "validate": "node tools/ci/api-catalog.mjs validate"
+  },
+  "sources": [
+    "spring-request-mappings",
+    "openapi-contracts",
+    "external-provider-metadata",
+    "outbound-runtime-integrations"
+  ],
+  "secretPolicy": "environment-variable-names-only; credential-values-and-private-evidence-forbidden",
+  "excludedKinds": [
+    "package-registry-traffic",
+    "generic-cli-control-plane-calls",
+    "terraform-provider-internals",
+    "documentation-links",
+    "advertisement-landing-links",
+    "map-deep-links"
+  ]
+}

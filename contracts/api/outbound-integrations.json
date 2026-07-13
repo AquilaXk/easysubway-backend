@@ -1,0 +1,61 @@
+{
+  "schemaVersion": 1,
+  "operations": [
+    {
+      "id": "integration:datapack-artifact-download",
+      "method": "GET",
+      "endpointRef": "manifest-entry:url",
+      "auth": "signed-manifest-and-artifact-hash",
+      "source": "apps/mobile/lib/core/datapack/data_pack_updater.dart"
+    },
+    {
+      "id": "integration:datapack-manifest",
+      "method": "GET",
+      "endpointRef": "config:EASYSUBWAY_DATA_PACK_BASE_URL/catalog/current.json",
+      "auth": "signed-manifest-verification",
+      "source": "apps/mobile/lib/core/datapack/data_pack_client.dart"
+    },
+    {
+      "id": "integration:github-datapack-workflow-dispatch",
+      "method": "POST",
+      "endpointRef": "config:easysubway.datapack.github-api-base-url(default=https://api.github.com)/repos/AquilaXk/easysubway/actions/workflows/datapack-release.yml/dispatches",
+      "auth": "env:EASYSUBWAY_GITHUB_ACTIONS_DISPATCH_TOKEN",
+      "source": "backend/src/main/java/com/easysubway/datapack/adapter/out/github/GithubWorkflowDispatchAdapter.java"
+    },
+    {
+      "id": "integration:mobile-ad-creative-image",
+      "method": "GET",
+      "endpointRef": "response-field:GET /api/ads/active.data.imageUrl",
+      "auth": "credential-free",
+      "source": "apps/mobile/lib/features/ads/active_ad_banner.dart"
+    },
+    {
+      "id": "integration:mobile-report-photo-upload",
+      "method": "PUT",
+      "endpointRef": "response-field:POST /api/v1/report-uploads.data.uploadUrl",
+      "auth": "response-provided-signed-headers",
+      "source": "apps/mobile/lib/facility_report.dart"
+    },
+    {
+      "id": "integration:report-object-delete",
+      "method": "DELETE",
+      "endpointRef": "config:EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT/{bucket}/{objectKey}",
+      "auth": "aws-sigv4-env",
+      "source": "backend/src/main/java/com/easysubway/report/adapter/out/storage/ObjectStorageFacilityReportPhotoStorage.java"
+    },
+    {
+      "id": "integration:report-object-get",
+      "method": "GET",
+      "endpointRef": "config:EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT/{bucket}/{objectKey}",
+      "auth": "aws-sigv4-env",
+      "source": "backend/src/main/java/com/easysubway/report/adapter/out/storage/ObjectStorageFacilityReportPhotoStorage.java"
+    },
+    {
+      "id": "integration:report-object-put",
+      "method": "PUT",
+      "endpointRef": "config:EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT/{bucket}/{objectKey}",
+      "auth": "aws-sigv4-env",
+      "source": "backend/src/main/java/com/easysubway/report/adapter/out/storage/ObjectStorageFacilityReportPhotoStorage.java"
+    }
+  ]
+}
