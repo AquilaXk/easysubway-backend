@@ -4,7 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.realtime.adapter.out.persistence.InMemoryRealtimeMappingPort;
+import com.easysubway.realtime.application.port.out.RealtimeArrivalArchivePort;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
+import com.easysubway.realtime.application.port.out.RealtimeProviderCallQuotaPort;
+import com.easysubway.realtime.domain.RealtimeArrivalObservation;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
@@ -15,21 +18,39 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 @DisplayName("실시간 gateway cache와 fallback 정책")
 class RealtimeGatewayServiceTest {
+
+	@Test
+	@DisplayName("Spring constructor는 archive와 shared quota 포트를 필수 의존성으로 받는다")
+	void springConstructorRequiresProductionSafetyPorts() {
+		var parameterTypes = Arrays.stream(RealtimeGatewayService.class.getConstructors())
+			.filter(constructor -> constructor.isAnnotationPresent(Autowired.class))
+			.findFirst()
+			.map(constructor -> List.of(constructor.getParameterTypes()))
+			.orElseThrow();
+
+		assertThat(parameterTypes)
+			.contains(RealtimeArrivalArchivePort.class, RealtimeProviderCallQuotaPort.class)
+			.contains(Executor.class)
+			.doesNotContain(Optional.class);
+	}
 
 	@Test
 	@DisplayName("provider의 TOPIS 로컬(KST) recptnDt는 경계에서 ISO providerReceivedAt으로 정규화되어 emit된다")
@@ -78,6 +99,171 @@ class RealtimeGatewayServiceTest {
 		assertThat(first.status()).hasToString("FRESH");
 		assertThat(second.status()).hasToString("FRESH");
 		assertThat(provider.arrivalCalls).hasValue(1);
+	}
+
+	@Test
+	@DisplayName("fresh provider 도착 관측은 한 번 보존하고 cache hit에서는 추가 저장하지 않는다")
+	void archivesFreshArrivalsWithoutExtraProviderCalls() {
+		CountingProvider provider = new CountingProvider();
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			archive
+		);
+
+		RealtimeArrivalResult first = service.arrivals(sangnoksuQuery());
+		RealtimeArrivalResult cached = service.arrivals(sangnoksuQuery());
+
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(cached.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(archive.saveCalls).hasValue(1);
+		assertThat(archive.observations).singleElement().satisfies((observation) -> {
+			assertThat(observation.providerId()).isEqualTo("seoul-topis");
+			assertThat(observation.stationId()).isEqualTo("station-sangnoksu");
+			assertThat(observation.lineId()).isEqualTo("seoul-4");
+			assertThat(observation.providerLineId()).isEqualTo("1004");
+			assertThat(observation.providerStationId()).isEqualTo("1004000448");
+			assertThat(observation.trainNo()).isEqualTo("4123");
+			assertThat(observation.rawEtaSeconds()).isEqualTo(180);
+			assertThat(observation.adjustedEtaSeconds()).isEqualTo(180);
+			assertThat(observation.providerObservedAt()).isEqualTo(Instant.parse("2026-06-26T08:00:00Z"));
+			assertThat(observation.backendReceivedAt()).isEqualTo(Instant.parse("2026-06-26T08:00:00Z"));
+			assertThat(observation.retainedUntil()).isEqualTo(Instant.parse("2026-07-26T08:00:00Z"));
+		});
+	}
+
+	@Test
+	@DisplayName("운영 archive 저장은 fresh 응답 경로와 분리된다")
+	void dispatchesArchiveWithoutBlockingFreshResponse() {
+		CountingProvider provider = new CountingProvider();
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		CapturingExecutor executor = new CapturingExecutor();
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			archive,
+			(providerId, now, zone, perMinute, perDay) -> true,
+			1,
+			800,
+			executor
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(archive.saveCalls).hasValue(0);
+		executor.runPending();
+		assertThat(archive.saveCalls).hasValue(1);
+	}
+
+	@Test
+	@DisplayName("archive executor가 작업을 거부해도 fresh 응답과 cache는 유지된다")
+	void archiveDispatchRejectionDoesNotBreakFreshResponse() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			new CapturingArrivalArchive(),
+			(providerId, now, zone, perMinute, perDay) -> true,
+			1,
+			800,
+			command -> { throw new IllegalStateException("archive executor unavailable"); }
+		);
+
+		RealtimeArrivalResult first = service.arrivals(sangnoksuQuery());
+		RealtimeArrivalResult cached = service.arrivals(sangnoksuQuery());
+
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(cached.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(service.providerHealthSnapshot().archiveFailureCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("도착 관측 archive 실패는 fresh 응답을 막지 않고 health counter에 기록한다")
+	void archiveFailureDoesNotBreakFreshResponse() {
+		RealtimeArrivalArchivePort failingArchive = new RealtimeArrivalArchivePort() {
+			@Override
+			public void saveAll(List<RealtimeArrivalObservation> observations) {
+				throw new IllegalStateException("archive unavailable");
+			}
+
+			@Override
+			public int deleteExpired(Instant now) {
+				return 0;
+			}
+		};
+		RealtimeGatewayService service = service(
+			new CountingProvider(),
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			failingArchive
+		);
+
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(service.providerHealthSnapshot().archiveFailureCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("archive 관측 생성 실패는 fresh 응답과 cache를 막지 않는다")
+	void archiveObservationFailureDoesNotBreakFreshResponse() {
+		RealtimeProvider provider = query -> List.of(new RealtimeArrival(
+			"4", "상록수", "당고개", "상행", "", 180, "3분 후", "전역 출발", "2026-06-26T08:00:00Z"
+		));
+		CapturingArrivalArchive archive = new CapturingArrivalArchive();
+		RealtimeGatewayService service = service(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			archive
+		);
+
+		RealtimeArrivalResult first = service.arrivals(sangnoksuQuery());
+		RealtimeArrivalResult cached = service.arrivals(sangnoksuQuery());
+
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(cached.status()).hasToString("FRESH");
+		assertThat(first.arrivals()).hasSize(1);
+		assertThat(archive.saveCalls).hasValue(0);
+		assertThat(service.providerHealthSnapshot().archiveFailureCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("quota store 장애는 provider를 호출하지 않고 unavailable로 닫는다")
+	void quotaStoreFailureFailsClosedWithoutProviderCall() {
+		CountingProvider provider = new CountingProvider();
+		RealtimeProviderCallQuotaPort failingQuota = (providerId, now, zone, perMinute, perDay) -> {
+			throw new IllegalStateException("quota store unavailable");
+		};
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			RealtimeArrivalArchivePort.NO_OP,
+			failingQuota,
+			1,
+			800
+		);
+
+		RealtimeArrivalResult arrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult positions = service.trainPositions(line4Query());
+
+		assertThat(arrivals.status()).hasToString("UNAVAILABLE");
+		assertThat(arrivals.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
+		assertThat(positions.status()).hasToString("UNAVAILABLE");
+		assertThat(positions.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
+		assertThat(provider.arrivalCalls).hasValue(0);
+		assertThat(provider.trainPositionCalls).hasValue(0);
 	}
 
 	@Test
@@ -998,6 +1184,15 @@ class RealtimeGatewayServiceTest {
 		RealtimeProvider provider,
 		Clock clock,
 		RealtimeMappingPort mappingPort,
+		RealtimeArrivalArchivePort archivePort
+	) {
+		return new RealtimeGatewayService(provider, clock, mappingPort, archivePort);
+	}
+
+	private RealtimeGatewayService service(
+		RealtimeProvider provider,
+		Clock clock,
+		RealtimeMappingPort mappingPort,
 		RealtimeProviderControl control
 	) {
 		return new RealtimeGatewayService(provider, clock, mappingPort, control);
@@ -1153,6 +1348,36 @@ class RealtimeGatewayServiceTest {
 				"당고개",
 				providerReceivedAt
 			));
+		}
+	}
+
+	private static final class CapturingArrivalArchive implements RealtimeArrivalArchivePort {
+		private final AtomicInteger saveCalls = new AtomicInteger();
+		private List<RealtimeArrivalObservation> observations = List.of();
+
+		@Override
+		public void saveAll(List<RealtimeArrivalObservation> observations) {
+			saveCalls.incrementAndGet();
+			this.observations = List.copyOf(observations);
+		}
+
+		@Override
+		public int deleteExpired(Instant now) {
+			return 0;
+		}
+	}
+
+	private static final class CapturingExecutor implements Executor {
+		private Runnable pending;
+
+		@Override
+		public void execute(Runnable command) {
+			pending = command;
+		}
+
+		private void runPending() {
+			assertThat(pending).isNotNull();
+			pending.run();
 		}
 	}
 

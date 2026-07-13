@@ -1,0 +1,79 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "seoul-topis-guarded-production-evidence",
+  "issue": 1416,
+  "status": "PASS",
+  "reviewedAt": "2026-07-13",
+  "decisionKo": "서울 열린데이터광장 기본 1,000회/일 한도 안에서 1회/분·800회/일 hard cap으로 서울 TOPIS 실시간 overlay를 승인한다.",
+  "officialEvidence": {
+    "termsUrl": "https://data.seoul.go.kr/etc/accessTerms.do",
+    "quotaGuideUrl": "https://data.seoul.go.kr/together/guide/useGuide.do",
+    "quotaFaqUrl": "https://data.seoul.go.kr/together/notice/faqList.do",
+    "arrivalDatasetUrl": "https://data.seoul.go.kr/dataList/OA-12764/F/1/datasetView.do",
+    "trainPositionDatasetUrl": "https://data.seoul.go.kr/dataList/OA-12601/A/1/datasetView.do",
+    "license": "KOGL-1"
+  },
+  "quota": {
+    "providerDefaultDailyLimit": 1000,
+    "runtimeDailyHardLimit": 800,
+    "runtimePerMinuteHardLimit": 1,
+    "galleryReviewStatus": "PENDING_CAPACITY_ENHANCEMENT_NOT_REQUIRED_FOR_GUARDED_USE"
+  },
+  "liveSamples": [
+    {
+      "capability": "ARRIVALS",
+      "path": "tools/realtime/fixtures/seoul-topis-arrivals.sample.json",
+      "sha256": "faf66484f765de250a3a64958aeaa7012a1f204d0c144128d399ba2b47afe2e7",
+      "providerResultCode": "INFO-000",
+      "rowCount": 1
+    },
+    {
+      "capability": "TRAIN_POSITIONS",
+      "path": "tools/realtime/fixtures/seoul-topis-train-positions.sample.json",
+      "sha256": "e69692b28c41a501c3b9883b7b36b66e157c0da5c98508502c96e44b3b9110bf",
+      "providerResultCode": "INFO-000",
+      "rowCount": 1
+    }
+  ],
+  "runtime": {
+    "providerFreshnessSeconds": 90,
+    "cacheTtlSeconds": 20,
+    "staleCacheTtlSeconds": 120,
+    "requestCoalescing": true,
+    "delayCorrectionField": "recptnDt",
+    "mappingTables": [
+      "realtime_provider_line_mappings",
+      "realtime_provider_station_mappings",
+      "realtime_provider_trip_mappings"
+    ]
+  },
+  "archive": {
+    "table": "realtime_arrival_observations",
+    "retentionDays": 30,
+    "purgeSchedule": "0 20 3 * * *",
+    "purgeZone": "UTC",
+    "purgeImplementation": "backend/src/main/java/com/easysubway/realtime/adapter/in/scheduler/RealtimeArrivalArchiveRetentionScheduler.java",
+    "extraProviderCallsForArchive": 0,
+    "rawResponseStored": false,
+    "credentialStored": false,
+    "userIdentifierStored": false,
+    "migrations": [
+      "backend/src/main/resources/db/migration/h2/V49__realtime_arrival_observations.sql",
+      "backend/src/main/resources/db/migration/postgresql/V49__realtime_arrival_observations.sql"
+    ]
+  },
+  "fallback": {
+    "outOfProviderScopeEtaSource": "PLANNED",
+    "staleAsFreshAllowed": false,
+    "silentFallbackAllowed": false
+  },
+  "verification": {
+    "gatewayTest": "backend/src/test/java/com/easysubway/realtime/application/RealtimeGatewayServiceTest.java",
+    "archiveTest": "backend/src/test/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeArrivalArchiveRepositoryTest.java",
+    "contractTest": "tools/realtime/seoul-topis-provider-contract.test.mjs"
+  },
+  "releaseClaim": {
+    "commercialRealtimeRouteClaimAllowed": false,
+    "reasonKo": "#1621 권역별 provider 범위와 상위 #1414 release gate는 별도로 통과해야 한다."
+  }
+}

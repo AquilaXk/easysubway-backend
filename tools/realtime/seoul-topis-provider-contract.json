@@ -2,8 +2,16 @@
   "schemaVersion": 1,
   "providerId": "seoul-topis",
   "displayName": "서울 TOPIS 지하철 실시간 provider",
-  "contractStatus": "spike-contract",
+  "contractStatus": "production-guarded-default-quota",
   "retrievedAt": "2026-06-25",
+  "quotaPolicy": {
+    "providerDefaultDailyLimit": 1000,
+    "runtimeDailyHardLimit": 800,
+    "runtimePerMinuteHardLimit": 1,
+    "galleryReviewStatus": "PENDING_CAPACITY_ENHANCEMENT_NOT_REQUIRED_FOR_GUARDED_USE",
+    "sharedQuotaStore": "realtime_provider_call_quota_state",
+    "productionUseAllowed": true
+  },
   "officialSources": [
     {
       "capability": "ARRIVALS",
@@ -26,8 +34,7 @@
       "datasetName": "서울시 지하철 실시간 열차 위치정보",
       "observedDataUpdatedAt": "2026-06-25",
       "license": "KOGL-1",
-      "sourceInventoryStatus": "candidate-only",
-      "gap": "production source inventory에는 아직 train position sourceDomain이 없으므로 provider adapter 구현 전에 source inventory entry 또는 coverage gap을 별도 확정한다",
+      "sourceInventoryStatus": "production-approved",
       "notes": [
         "열차 위치는 정밀 GPS 좌표가 아니라 노선/역 기반 운영 상태 snapshot으로 취급한다",
         "과거 실시간 데이터는 제공하지 않는다"
