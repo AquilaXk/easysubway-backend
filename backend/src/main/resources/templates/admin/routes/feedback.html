@@ -21,24 +21,29 @@
 		</div>
 	</header>
 
-	<div class="metric-grid" aria-label="경로 피드백 요약">
-		<div class="metric">
-			<span>전체 피드백</span>
-			<strong th:text="${summary.totalCount}">0</strong>
+	<section class="admin-panel" aria-labelledby="route-feedback-metric-title">
+		<div class="admin-panel-head">
+			<h2 id="route-feedback-metric-title">경로 피드백 요약</h2>
 		</div>
-		<div class="metric">
-			<span>도움이 됨</span>
-			<strong th:text="${summary.helpfulCount}">0</strong>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>전체 피드백</span>
+				<strong class="cell-num" th:text="${summary.totalCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>도움이 됨</span>
+				<strong class="cell-num" th:text="${summary.helpfulCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>도움이 안 됨</span>
+				<strong class="cell-num" th:text="${summary.notHelpfulCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>현장 차단</span>
+				<strong class="cell-num" th:text="${summary.blockedByRealWorldCount}">0</strong>
+			</div>
 		</div>
-		<div class="metric">
-			<span>도움이 안 됨</span>
-			<strong th:text="${summary.notHelpfulCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>현장 차단</span>
-			<strong th:text="${summary.blockedByRealWorldCount}">0</strong>
-		</div>
-	</div>
+	</section>
 
 	<div id="route-feedback-trends" th:fragment="trends" class="dashboard-trends-section">
 		<div class="trend-periods" role="group" aria-label="추이 기간 선택">
@@ -55,13 +60,18 @@
 			   download>CSV 내보내기</a>
 		</p>
 
-		<div class="metric-grid" aria-label="전 기간 대비 증감">
-			<div th:each="card : ${comparisons}" class="metric" th:classappend="${'tone-' + card.tone}">
-				<span th:text="${card.label}">지표</span>
-				<strong th:text="${card.currentLabel}">0</strong>
-				<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+		<section class="admin-panel" aria-labelledby="route-feedback-comparison-title">
+			<div class="admin-panel-head">
+				<h2 id="route-feedback-comparison-title">전 기간 대비 증감</h2>
 			</div>
-		</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
 
 		<div class="trend-charts">
 			<section class="admin-panel trend-chart-panel">

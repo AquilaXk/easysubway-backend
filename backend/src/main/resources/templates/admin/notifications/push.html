@@ -21,44 +21,49 @@
 		</div>
 	</header>
 
-	<div class="metric-grid" aria-label="푸시 알림 outbox 요약">
-		<div class="metric">
-			<span>전체 알림</span>
-			<strong th:text="${summary.totalCount}">0</strong>
+	<section class="admin-panel" aria-labelledby="push-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="push-metric-panel-title">푸시 알림 outbox 요약</h2>
 		</div>
-		<div class="metric">
-			<span>대기 중</span>
-			<strong th:text="${summary.pendingCount}">0</strong>
+		<div class="metric-grid">
+			<div class="metric metric-cell">
+				<span>전체 알림</span>
+				<strong class="cell-num" th:text="${summary.totalCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>대기 중</span>
+				<strong class="cell-num" th:text="${summary.pendingCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 완료</span>
+				<strong class="cell-num" th:text="${summary.sentCount}">0</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 실패</span>
+				<strong class="cell-num" th:text="${summary.failedCount}">0</strong>
+				<svg th:if="${failedSparkline != ''}" class="card-sparkline" viewBox="0 0 100 24"
+				     preserveAspectRatio="none" role="img" aria-label="발송 실패 최근 7일 추이">
+					<polyline th:attr="points=${failedSparkline}" fill="none"></polyline>
+				</svg>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 시도</span>
+				<strong class="cell-num" th:text="${summary.deliveryAttemptCount}">0</strong>
+				<svg th:if="${attemptedSparkline != ''}" class="card-sparkline" viewBox="0 0 100 24"
+				     preserveAspectRatio="none" role="img" aria-label="발송 시도 최근 7일 추이">
+					<polyline th:attr="points=${attemptedSparkline}" fill="none"></polyline>
+				</svg>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 성공률</span>
+				<strong class="cell-num" th:text="${summary.successRateLabel}">0.0%</strong>
+			</div>
+			<div class="metric metric-cell">
+				<span>발송 실패율</span>
+				<strong class="cell-num" th:text="${summary.failureRateLabel}">0.0%</strong>
+			</div>
 		</div>
-		<div class="metric">
-			<span>발송 완료</span>
-			<strong th:text="${summary.sentCount}">0</strong>
-		</div>
-		<div class="metric">
-			<span>발송 실패</span>
-			<strong th:text="${summary.failedCount}">0</strong>
-			<svg th:if="${failedSparkline != ''}" class="card-sparkline" viewBox="0 0 100 24"
-			     preserveAspectRatio="none" role="img" aria-label="발송 실패 최근 7일 추이">
-				<polyline th:attr="points=${failedSparkline}" fill="none"></polyline>
-			</svg>
-		</div>
-		<div class="metric">
-			<span>발송 시도</span>
-			<strong th:text="${summary.deliveryAttemptCount}">0</strong>
-			<svg th:if="${attemptedSparkline != ''}" class="card-sparkline" viewBox="0 0 100 24"
-			     preserveAspectRatio="none" role="img" aria-label="발송 시도 최근 7일 추이">
-				<polyline th:attr="points=${attemptedSparkline}" fill="none"></polyline>
-			</svg>
-		</div>
-		<div class="metric">
-			<span>발송 성공률</span>
-			<strong th:text="${summary.successRateLabel}">0.0%</strong>
-		</div>
-		<div class="metric">
-			<span>발송 실패율</span>
-			<strong th:text="${summary.failureRateLabel}">0.0%</strong>
-		</div>
-	</div>
+	</section>
 
 	<p th:class="'delivery-alert ' + ${summary.failureAlertClass}"
 	   th:text="${summary.failureAlertLabel} + ': ' + ${summary.failureAlertDescription}">
@@ -88,13 +93,18 @@
 			   download>CSV 내보내기</a>
 		</p>
 
-		<div class="metric-grid" aria-label="전 기간 대비 증감">
-			<div th:each="card : ${comparisons}" class="metric" th:classappend="${'tone-' + card.tone}">
-				<span th:text="${card.label}">지표</span>
-				<strong th:text="${card.currentLabel}">0</strong>
-				<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+		<section class="admin-panel" aria-labelledby="push-comparison-panel-title">
+			<div class="admin-panel-head">
+				<h2 id="push-comparison-panel-title">전 기간 대비 증감</h2>
 			</div>
-		</div>
+			<div class="metric-grid">
+				<div th:each="card : ${comparisons}" class="metric metric-cell" th:classappend="${'tone-' + card.tone}">
+					<span th:text="${card.label}">지표</span>
+					<strong class="cell-num" th:text="${card.currentLabel}">0</strong>
+					<em th:text="${'직전 ' + card.previousLabel + ' · ' + card.deltaPercentLabel}">직전 대비</em>
+				</div>
+			</div>
+		</section>
 
 		<div class="trend-charts">
 			<section class="admin-panel trend-chart-panel">

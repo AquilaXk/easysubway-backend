@@ -21,12 +21,17 @@
 		</div>
 	</header>
 
-	<div class="metric-grid">
-		<div class="metric"><span>애플리케이션</span><strong th:text="${health.status}">UP</strong><em th:text="${health.service}">service</em></div>
-		<div class="metric"><span>푸시 대기</span><strong th:text="${push.pendingCount}">0</strong><em th:text="|실패 ${push.failedCount}건|">실패 0건</em></div>
-		<div class="metric"><span>API 요청</span><strong th:text="${usage.totalApiRequests}">0</strong><em th:text="|오류율 ${usage.apiErrorRatePercent()}|">오류율 0.0%</em></div>
-		<div class="metric"><span>평균 응답</span><strong th:text="${usage.averageApiResponseTimeLabel()}">0ms</strong><em>최근 활동 집계 기준</em></div>
-	</div>
+	<section class="admin-panel" aria-labelledby="system-metric-panel-title">
+		<div class="admin-panel-head">
+			<h2 id="system-metric-panel-title">시스템 요약</h2>
+		</div>
+		<div class="metric-grid">
+			<div class="metric metric-cell"><span>애플리케이션</span><strong th:text="${health.status}">UP</strong><em th:text="${health.service}">service</em></div>
+			<div class="metric metric-cell"><span>푸시 대기</span><strong class="cell-num" th:text="${push.pendingCount}">0</strong><em th:text="|실패 ${push.failedCount}건|">실패 0건</em></div>
+			<div class="metric metric-cell"><span>API 요청</span><strong class="cell-num" th:text="${usage.totalApiRequests}">0</strong><em th:text="|오류율 ${usage.apiErrorRatePercent()}|">오류율 0.0%</em></div>
+			<div class="metric metric-cell"><span>평균 응답</span><strong th:text="${usage.averageApiResponseTimeLabel()}">0ms</strong><em>최근 활동 집계 기준</em></div>
+		</div>
+	</section>
 
 	<section>
 		<h2>컴포넌트 상태</h2>
@@ -68,7 +73,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${runs.isEmpty()}">
-				<td colspan="8">최근 데이터 수집 실행이 없습니다.</td>
+				<td class="empty" colspan="8">
+					<div th:replace="~{admin/fragments/empty-state :: panel('최근 데이터 수집 실행이 없습니다.', '수집이 실행되면 여기에 표시됩니다.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="run : ${runs}">
 				<td th:text="${run.runId}">run-id</td>

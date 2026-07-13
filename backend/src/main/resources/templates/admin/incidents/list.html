@@ -21,7 +21,7 @@
 		</div>
 	</header>
 
-	<section>
+	<section class="admin-panel">
 		<h2>Health 연결</h2>
 		<p th:text="${'현재 health: ' + healthStatus}">현재 health: UP</p>
 		<form th:if="${healthStatus != 'UP'}" method="post" th:action="@{/admin/incidents/health}">
@@ -31,9 +31,9 @@
 		</form>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>Incident 생성</h2>
-		<form method="post" th:action="@{/admin/incidents}">
+		<form class="admin-form" method="post" th:action="@{/admin/incidents}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<label>심각도
@@ -81,7 +81,9 @@
 			</thead>
 			<tbody>
 			<tr th:if="${incidents.isEmpty()}">
-				<td colspan="9">최근 incident가 없습니다.</td>
+				<td class="empty" colspan="9">
+					<div th:replace="~{admin/fragments/empty-state :: panel('최근 incident가 없습니다.', '접수되면 여기에 표시됩니다.')}"></div>
+				</td>
 			</tr>
 			<tr th:each="incident : ${incidents}">
 				<td th:text="${incident.incidentId}">INC-1</td>

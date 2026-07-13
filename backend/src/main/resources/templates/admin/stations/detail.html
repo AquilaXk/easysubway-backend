@@ -48,12 +48,17 @@
 		<div class="hub-panel">
 			<!-- 개요 -->
 			<th:block th:if="${activeTab == 'overview'}">
-				<div class="metric-grid">
-					<div class="metric"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">정보 확인 중</strong></div>
-					<div class="metric"><span>접근성 시설</span><strong th:text="${facilityCount}">0</strong></div>
-					<div class="metric"><span>구조 자료</span><strong th:text="${layoutSourceCount}">0</strong></div>
-					<div class="metric"><span>노드 / 간선</span><strong th:text="|${routeNodeCount} / ${routeEdgeCount}|">0 / 0</strong></div>
-				</div>
+				<section class="admin-panel" aria-labelledby="station-overview-metric-title">
+					<div class="admin-panel-head">
+						<h2 id="station-overview-metric-title">역 요약</h2>
+					</div>
+					<div class="metric-grid">
+						<div class="metric metric-cell"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">정보 확인 중</strong></div>
+						<div class="metric metric-cell"><span>접근성 시설</span><strong class="cell-num" th:text="${facilityCount}">0</strong></div>
+						<div class="metric metric-cell"><span>구조 자료</span><strong class="cell-num" th:text="${layoutSourceCount}">0</strong></div>
+						<div class="metric metric-cell"><span>노드 / 간선</span><strong th:text="|${routeNodeCount} / ${routeEdgeCount}|">0 / 0</strong></div>
+					</div>
+				</section>
 
 				<section class="admin-panel">
 					<h2>역 주요 정보</h2>

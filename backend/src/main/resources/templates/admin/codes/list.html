@@ -21,9 +21,9 @@
 		</div>
 	</header>
 
-	<section>
+	<section class="admin-panel">
 		<h2>Group</h2>
-		<form method="get" th:action="@{/admin/codes/page}">
+		<form class="admin-form" method="get" th:action="@{/admin/codes/page}">
 			<label for="code-group-filter">Group</label>
 			<select id="code-group-filter" name="groupCode">
 				<option th:each="group : ${groups}"
@@ -49,6 +49,11 @@
 			</tr>
 			</thead>
 			<tbody>
+			<tr th:if="${codes.isEmpty()}">
+				<td class="empty" colspan="6">
+					<div th:replace="~{admin/fragments/empty-state :: panel('등록된 코드가 없습니다.', '선택한 Group에 코드가 없습니다. 아래에서 코드를 추가하세요.')}"></div>
+				</td>
+			</tr>
 			<tr th:each="code : ${codes}">
 				<td th:text="${code.code}">DUPLICATE</td>
 				<td th:text="${code.displayName}">중복 제보</td>
@@ -68,9 +73,9 @@
 		<div th:replace="~{admin/fragments/pagination :: pager('공통코드 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>Code 추가·수정</h2>
-		<form method="post" th:action="@{/admin/codes}">
+		<form class="admin-form" method="post" th:action="@{/admin/codes}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<input type="hidden" name="groupCode" th:value="${selectedGroup}">
