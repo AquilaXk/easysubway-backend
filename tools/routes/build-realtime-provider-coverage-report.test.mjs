@@ -125,6 +125,10 @@ test("3상태 resolution은 지원률과 조사완결률을 분리하고 PLANNED
     supportedRatio: 1 / 3,
     terminalResolutionRatio: 2 / 3,
   });
+  assert.deepEqual(report.resolutionGate, {
+    allRequirementsResolved: false,
+    reasonCode: "REALTIME_REQUIREMENTS_MISSING",
+  });
   assert.equal(report.claimGate.nationwideRealtimeSupportAllowed, false);
   assert.equal(report.claimGate.reasonCode, "REALTIME_REQUIREMENTS_NOT_ALL_SUPPORTED");
   assert.deepEqual(report.capabilityMetadata.map(({ effectiveCapability }) => effectiveCapability), [
@@ -132,6 +136,35 @@ test("3상태 resolution은 지원률과 조사완결률을 분리하고 PLANNED
     "PLANNED",
     "UNKNOWN",
   ]);
+});
+
+test("지원과 공식 미지원만 있으면 실시간 전국 claim과 별개로 조사는 완결된다", () => {
+  const report = buildRealtimeProviderCoverageReport({
+    coverageRequirements: [
+      {
+        regionId: "capital",
+        operatorId: "seoul-metro",
+        lineId: "seoul-2",
+        sourceDomain: "realtime_arrivals",
+        state: "SUPPORTED",
+        fallback: "NONE",
+      },
+      {
+        regionId: "busan",
+        operatorId: "busan-transportation",
+        lineId: "busan-1",
+        sourceDomain: "realtime_arrivals",
+        state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+        fallback: "UNSUPPORTED_REGION",
+      },
+    ],
+  });
+
+  assert.deepEqual(report.resolutionGate, {
+    allRequirementsResolved: true,
+    reasonCode: "ALL_REALTIME_REQUIREMENTS_RESOLVED",
+  });
+  assert.equal(report.claimGate.nationwideRealtimeSupportAllowed, false);
 });
 
 test("중복 requirement와 미지원 REALTIME fallback은 거부한다", () => {

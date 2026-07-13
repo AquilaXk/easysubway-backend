@@ -39,6 +39,7 @@ export function buildRealtimeProviderCoverageReport(input) {
   const missingCount = coverageRequirements.filter(({ state }) => state === "MISSING").length;
   const requirementCount = coverageRequirements.length;
   const nationwideRealtimeSupportAllowed = requirementCount > 0 && supportedCount === requirementCount;
+  const allRequirementsResolved = requirementCount > 0 && missingCount === 0;
 
   return {
     schemaVersion: 1,
@@ -67,6 +68,14 @@ export function buildRealtimeProviderCoverageReport(input) {
       missingCount,
       supportedRatio: ratio(supportedCount, requirementCount),
       terminalResolutionRatio: ratio(supportedCount + explicitlyUnsupportedCount, requirementCount),
+    },
+    resolutionGate: {
+      allRequirementsResolved,
+      reasonCode: allRequirementsResolved
+        ? "ALL_REALTIME_REQUIREMENTS_RESOLVED"
+        : requirementCount === 0
+          ? "NO_REALTIME_REQUIREMENTS"
+          : "REALTIME_REQUIREMENTS_MISSING",
     },
     capabilityMetadata: coverageRequirements.map((requirement) => ({
       regionId: requirement.regionId,

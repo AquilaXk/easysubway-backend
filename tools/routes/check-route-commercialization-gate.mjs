@@ -190,6 +190,10 @@ function validateCoverage(gate, report, failures) {
   if (number(report.freshness?.staleAsFreshCount) > 0) {
     failures.push("realtimeCoverage stale-as-fresh count exceeds 0");
   }
+  if (gate.realtimeCoverage.requireTerminalRegionalResolution
+    && report.resolutionGate?.allRequirementsResolved !== true) {
+    failures.push("realtimeCoverage regional requirements must all have terminal decisions");
+  }
   if (!Number.isFinite(Number(report.freshness?.staleCount))) {
     failures.push("realtimeCoverage stale count must be reported");
   }
