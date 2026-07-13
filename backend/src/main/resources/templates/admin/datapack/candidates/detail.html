@@ -28,7 +28,7 @@
 	<section class="admin-panel">
 		<h2>게이트 체크리스트</h2>
 		<p class="summary" th:text="${evidenceBundle.productionPromoteReason()}">production promote 상태</p>
-		<table>
+		<table class="static-table">
 			<thead>
 			<tr>
 				<th scope="col">게이트</th>
@@ -100,7 +100,7 @@
 		</dl>
 		<details>
 			<summary>sha 원문 보기</summary>
-			<table>
+			<table class="static-table">
 				<tbody>
 				<tr><th scope="row">buildSpec</th><td th:text="${candidate.buildSpecSha256}">sha</td></tr>
 				<tr><th scope="row">sourceInventory</th><td th:text="${candidate.sourceInventorySha256}">sha</td></tr>
@@ -115,7 +115,7 @@
 
 	<section class="admin-panel">
 		<h2>입력 원장</h2>
-		<table>
+		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">원천 스냅샷 ids</th><td th:text="${candidateInput.sourceSnapshotIds}">snapshot ids</td></tr>
 			<tr><th scope="row">승인 별칭 원장 hash</th><td><span th:title="${candidateInput.approvedAliasLedgerHash}" th:text="${candidateInput.approvedAliasLedgerHashShort()}">sha</span></td></tr>
@@ -128,7 +128,7 @@
 
 	<section class="admin-panel">
 		<h2>게이트 재실행</h2>
-		<form method="post" th:action="@{'/admin/datapack/candidates/' + ${candidate.id} + '/rerun-gates'}">
+		<form class="admin-form" method="post" th:action="@{'/admin/datapack/candidates/' + ${candidate.id} + '/rerun-gates'}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<input type="hidden" name="idempotencyKey" th:value="${'candidate-rerun-' + candidate.id}">

@@ -34,7 +34,7 @@
 
 	<section class="admin-panel">
 		<h2>release request 생성</h2>
-		<form method="post" th:action="@{/admin/datapack/release-requests}">
+		<form class="admin-form" method="post" th:action="@{/admin/datapack/release-requests}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<label>
@@ -59,7 +59,7 @@
 
 	<section class="admin-panel">
 		<h2>release request 목록</h2>
-		<table>
+		<table class="static-table">
 			<thead>
 			<tr>
 				<th scope="col">approval</th>
@@ -76,7 +76,7 @@
 			</thead>
 			<tbody>
 			<tr th:if="${requests.isEmpty()}">
-				<td colspan="10">release request가 없습니다.</td>
+				<td colspan="10"><div th:replace="~{admin/fragments/empty-state :: panel('release request가 없습니다.', '후보를 선택해 release request를 생성해 보세요.')}"></div></td>
 			</tr>
 			<tr th:each="request : ${requests}">
 				<td th:text="${request.approvalId}">approval</td>

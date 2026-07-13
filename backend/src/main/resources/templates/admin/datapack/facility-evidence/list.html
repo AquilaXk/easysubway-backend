@@ -48,7 +48,7 @@
 				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
 			</div>
 		</div>
-		<table>
+		<table class="static-table">
 			<thead>
 			<tr>
 				<th scope="col">station</th>
@@ -100,7 +100,7 @@
 				<td th:text="${row.conflictStatus}">NONE</td>
 				<td th:text="${row.manualOverrideId}">-</td>
 				<td>
-					<form method="post" th:action="@{'/admin/datapack/facility-evidence/' + ${row.id} + '/review'}">
+					<form class="admin-form" method="post" th:action="@{'/admin/datapack/facility-evidence/' + ${row.id} + '/review'}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="idempotencyKey" th:value="${'facility-review-' + row.id}">

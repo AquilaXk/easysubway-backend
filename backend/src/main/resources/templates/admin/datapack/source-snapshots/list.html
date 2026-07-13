@@ -21,7 +21,7 @@
 		</div>
 	</header>
 
-	<section>
+	<section class="admin-panel">
 		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/source-snapshots/page}"
 		      role="search" aria-label="원천 스냅샷 검색">
 			<input type="search" name="query" th:value="${filter.queryValue}"
@@ -52,7 +52,7 @@
 				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
 			</div>
 		</div>
-		<table>
+		<table class="static-table">
 			<thead>
 			<tr>
 				<th scope="col">스냅샷</th>

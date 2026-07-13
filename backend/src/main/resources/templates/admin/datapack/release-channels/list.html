@@ -53,7 +53,7 @@
 				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
 			</div>
 		</div>
-		<table>
+		<table class="static-table">
 			<thead>
 			<tr>
 				<th scope="col">channel</th>
@@ -96,7 +96,7 @@
 						<summary th:text="${'승격 승인 (' + channel.channel + ')'}">승격 승인</summary>
 						<p class="meta"
 						   th:text="${'대상 채널 ' + channel.channel + ' · 현재 후보 ' + channel.candidateId + '. 확인하면 승격 요청이 접수됩니다(게시 워크플로 자동 트리거는 #1694 범위).'}">영향</p>
-						<form method="post" th:action="@{/admin/datapack/release-channels/{channel}/promote(channel=${channel.channel})}">
+						<form class="admin-form" method="post" th:action="@{/admin/datapack/release-channels/{channel}/promote(channel=${channel.channel})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
@@ -136,7 +136,7 @@
 						<summary th:text="${'rollback (' + channel.channel + ')'}">rollback</summary>
 						<p class="meta"
 						   th:text="${'대상 채널 ' + channel.channel + ' · rollback 대상 ' + channel.previousStableCandidateId + '. 확인하면 이전 안정 후보로 되돌립니다.'}">영향</p>
-						<form method="post" th:action="@{/admin/datapack/release-channels/{channel}/rollback(channel=${channel.channel})}">
+						<form class="admin-form" method="post" th:action="@{/admin/datapack/release-channels/{channel}/rollback(channel=${channel.channel})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
@@ -176,7 +176,7 @@
 
 	<section class="admin-panel">
 		<h2>채널 이벤트</h2>
-		<table>
+		<table class="static-table">
 			<thead>
 			<tr>
 				<th scope="col">event</th>

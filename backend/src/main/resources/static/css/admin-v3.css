@@ -1082,6 +1082,44 @@ body.admin-v3 {
 	justify-self: start;
 }
 
+/* 폼 섹션 그룹핑(#1986, 오너 지시 2026-07-13) — 긴 폼을 논리 섹션으로 분리.
+   단일 컬럼 원칙 유지, 섹션 소제목 + 상단 구분선으로 그룹을 나눈다. */
+.admin-form-section {
+	display: grid;
+	gap: 14px;
+	padding-top: 20px;
+	border-top: 1px solid var(--admin-border);
+}
+
+.admin-form-section:first-child {
+	padding-top: 0;
+	border-top: 0;
+}
+
+.admin-panel .admin-form-section-title {
+	margin: 0;
+	font-size: 13px;
+	font-weight: var(--admin-w-strong);
+	color: var(--admin-ink-2);
+	text-transform: uppercase;
+	letter-spacing: 0.02em;
+}
+
+/* 값이 짧은 필드를 2열로 묶는 옵션(오너 지시: select 등 짧은 필드는 2열 그리드 허용).
+   라벨 상단 정렬 유지, 좁은 화면에서는 1열 폴백. */
+.admin-form-row-2 {
+	display: grid;
+	grid-template-columns: 1fr 1fr;
+	gap: 12px;
+	align-items: start;
+}
+
+@media (max-width: 720px) {
+	.admin-form-row-2 {
+		grid-template-columns: 1fr;
+	}
+}
+
 .login-screen {
 	display: grid;
 	min-height: 100vh;
