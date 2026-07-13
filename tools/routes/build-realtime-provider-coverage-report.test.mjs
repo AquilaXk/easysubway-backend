@@ -83,3 +83,84 @@ test("writes realtime provider coverage report json", async () => {
   assert.equal(report.schemaVersion, 1);
   assert.equal(report.mapping.failureRate, 0);
 });
+
+test("3상태 resolution은 지원률과 조사완결률을 분리하고 PLANNED를 REALTIME claim으로 세지 않는다", () => {
+  const report = buildRealtimeProviderCoverageReport({
+    stationLinePairs: [],
+    samples: [],
+    coverageRequirements: [
+      {
+        regionId: "capital",
+        operatorId: "operator-a",
+        lineId: "line-a",
+        sourceDomain: "realtime_arrivals",
+        state: "SUPPORTED",
+        fallback: "NONE",
+      },
+      {
+        regionId: "busan",
+        operatorId: "operator-b",
+        lineId: "line-b",
+        sourceDomain: "realtime_arrivals",
+        state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+        fallback: "PLANNED",
+        userMessageKo: "이 노선은 실시간 도착 정보를 아직 제공하지 않아요.",
+      },
+      {
+        regionId: "daejeon",
+        operatorId: "operator-c",
+        lineId: "line-c",
+        sourceDomain: "realtime_arrivals",
+        state: "MISSING",
+        fallback: "UNSUPPORTED_REGION",
+      },
+    ],
+  });
+
+  assert.deepEqual(report.coverageResolution, {
+    requirementCount: 3,
+    supportedCount: 1,
+    explicitlyUnsupportedCount: 1,
+    missingCount: 1,
+    supportedRatio: 1 / 3,
+    terminalResolutionRatio: 2 / 3,
+  });
+  assert.equal(report.claimGate.nationwideRealtimeSupportAllowed, false);
+  assert.equal(report.claimGate.reasonCode, "REALTIME_REQUIREMENTS_NOT_ALL_SUPPORTED");
+  assert.deepEqual(report.capabilityMetadata.map(({ effectiveCapability }) => effectiveCapability), [
+    "REALTIME",
+    "PLANNED",
+    "UNKNOWN",
+  ]);
+});
+
+test("중복 requirement와 미지원 REALTIME fallback은 거부한다", () => {
+  const requirement = {
+    regionId: "capital",
+    operatorId: "operator-a",
+    lineId: "line-a",
+    sourceDomain: "realtime_arrivals",
+    state: "SUPPORTED",
+    fallback: "NONE",
+  };
+  assert.throws(
+    () => buildRealtimeProviderCoverageReport({
+      stationLinePairs: [],
+      samples: [],
+      coverageRequirements: [requirement, requirement],
+    }),
+    /duplicate coverage requirement/,
+  );
+  assert.throws(
+    () => buildRealtimeProviderCoverageReport({
+      stationLinePairs: [],
+      samples: [],
+      coverageRequirements: [{
+        ...requirement,
+        state: "EXPLICITLY_UNSUPPORTED_WITH_EVIDENCE",
+        fallback: "REALTIME",
+      }],
+    }),
+    /unsupported coverage requirement must not use REALTIME fallback/,
+  );
+});
