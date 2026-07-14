@@ -5,13 +5,17 @@ import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummary
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase.ReleaseReadinessRow;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase.StationReleaseBlockerRow;
 import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase.StationReleaseBlockerSummary;
+import com.easysubway.datapack.domain.DatapackFreshness;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -19,13 +23,16 @@ import org.springframework.stereotype.Repository;
 public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackReleaseBlockerSummaryUseCase {
 
 	private final JdbcTemplate jdbcTemplate;
+	private final Clock clock;
 
 	@Autowired
-	public JdbcDatapackReleaseBlockerSummaryRepository(DataSource dataSource) {
+	public JdbcDatapackReleaseBlockerSummaryRepository(DataSource dataSource, ObjectProvider<Clock> clockProvider) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
+		this.clock = clockProvider.getIfAvailable(Clock::systemUTC);
 	}
 
 	public DatapackReleaseBlockerSummary summarize() {
+		LocalDateTime evaluationAt = LocalDateTime.now(clock);
 		Optional<CandidateGateSummary> candidate = latestCandidate();
 		long candidateGateBlockers = candidate.map(CandidateGateSummary::blockerCount).orElse(0L);
 		long aliasBlockers = count("""
@@ -39,8 +46,9 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			FROM source_quarantine_records
 			WHERE resolution_status = 'OPEN'
 			""");
+		long sourceFreshnessBlockers = countSourceFreshnessBlockers(candidate, evaluationAt);
 		long manualOverrideBlockers = countManualOverrideBlockers();
-		long facilityBlockers = countFacilityBlockers(null);
+		long facilityBlockers = countFacilityBlockers(null, evaluationAt);
 		long routeGateBlockers = countRouteGateBlockers(null);
 		EvidenceBundleSummary evidenceBundle = evidenceBundle(candidate);
 		ManifestSignatureSummary manifestSignature = evidenceBundle.manifestSignature();
@@ -48,6 +56,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		long totalBlockers = candidateGateBlockers
 			+ aliasBlockers
 			+ quarantineBlockers
+			+ sourceFreshnessBlockers
 			+ manualOverrideBlockers
 			+ facilityBlockers
 			+ routeGateBlockers
@@ -66,6 +75,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			candidateGateBlockers,
 			aliasBlockers,
 			quarantineBlockers,
+			sourceFreshnessBlockers,
 			manualOverrideBlockers,
 			facilityBlockers,
 			routeGateBlockers,
@@ -74,6 +84,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 				candidate,
 				aliasBlockers,
 				quarantineBlockers,
+				sourceFreshnessBlockers,
 				manualOverrideBlockers,
 				facilityBlockers,
 				routeGateBlockers,
@@ -85,7 +96,8 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 	}
 
 	public StationReleaseBlockerSummary summarizeStation(String stationId) {
-		long facilityBlockers = countFacilityBlockers(stationId);
+		LocalDateTime evaluationAt = LocalDateTime.now(clock);
+		long facilityBlockers = countFacilityBlockers(stationId, evaluationAt);
 		long routeGateBlockers = countRouteGateBlockers(stationId);
 		long facilityEvidenceRows = countFacilityEvidenceRows(stationId);
 		long routeEvidenceRows = countRouteEvidenceRows(stationId);
@@ -131,6 +143,7 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 		Optional<CandidateGateSummary> candidate,
 		long aliasBlockers,
 		long quarantineBlockers,
+		long sourceFreshnessBlockers,
 		long manualOverrideBlockers,
 		long facilityBlockers,
 		long routeGateBlockers,
@@ -149,6 +162,14 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			+ evidenceBundle.androidBlocker();
 		return List.of(
 			new ReleaseReadinessRow("Source coverage", statusFor(sourceBlockers), sourceBlockers, sourceNote(aliasBlockers, quarantineBlockers)),
+			new ReleaseReadinessRow(
+				"Source freshness",
+				candidate.isEmpty() ? "확인 필요" : statusFor(sourceFreshnessBlockers),
+				sourceFreshnessBlockers,
+				candidate.isEmpty()
+					? "source snapshot 없음"
+					: sourceFreshnessBlockers > 0 ? "SOURCE_SNAPSHOT_EXPIRED" : "latest source snapshots"
+			),
 			new ReleaseReadinessRow("Validator", statusFor(validatorBlockers), validatorBlockers, "SQLite integrity / validator gates"),
 			new ReleaseReadinessRow("Facility evidence", statusFor(facilityBlockers), facilityBlockers, "strict route eligible facility evidence"),
 			new ReleaseReadinessRow("Route gate", statusFor(routeBlockers), routeBlockers, "ENTRY/EXIT/TRANSFER and generated connector gates"),
@@ -205,8 +226,38 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			""");
 	}
 
-	private long countFacilityBlockers(String stationId) {
-		return countWithOptionalStation("""
+	private long countSourceFreshnessBlockers(Optional<CandidateGateSummary> candidate, LocalDateTime evaluationAt) {
+		if (candidate.isEmpty()) {
+			return 0L;
+		}
+		List<String> snapshotIds = jdbcTemplate.query("""
+			SELECT source_snapshot_ids
+			FROM datapack_candidate_inputs
+			WHERE candidate_id = ?
+			""", (resultSet, rowNumber) -> resultSet.getString("source_snapshot_ids"), candidate.get().candidateId())
+			.stream()
+			.flatMap(value -> Arrays.stream(value.split(",")))
+			.map(String::trim)
+			.filter(value -> !value.isEmpty())
+			.distinct()
+			.toList();
+		if (snapshotIds.isEmpty()) {
+			return 1L;
+		}
+		String placeholders = String.join(", ", snapshotIds.stream().map(ignored -> "?").toList());
+		List<LocalDateTime> expiresAtValues = jdbcTemplate.query(
+			"SELECT freshness_expires_at FROM data_source_snapshots WHERE snapshot_id IN (" + placeholders + ")",
+			(resultSet, rowNumber) -> resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
+			snapshotIds.toArray()
+		);
+		long missingSnapshotBlockers = snapshotIds.size() - expiresAtValues.size();
+		return missingSnapshotBlockers + expiresAtValues.stream()
+			.filter(expiresAt -> DatapackFreshness.isStale(evaluationAt, expiresAt))
+			.count();
+	}
+
+	private long countFacilityBlockers(String stationId, LocalDateTime evaluationAt) {
+		return countWithOptionalStationAndEvaluationAt("""
 			SELECT COUNT(*)
 			FROM facility_evidence
 			WHERE (
@@ -214,8 +265,9 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 				OR evidence_kind = 'UNKNOWN_PENDING_REVIEW'
 				OR operational_status IN ('UNKNOWN', 'CHECK_REQUIRED')
 				OR conflict_status = 'UNRESOLVED'
+				OR freshness_expires_at <= ?
 			)
-			""", stationId);
+			""", stationId, evaluationAt);
 	}
 
 	private long countRouteGateBlockers(String stationId) {
@@ -254,6 +306,24 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			return count(baseSql);
 		}
 		Long result = jdbcTemplate.queryForObject(baseSql + " AND station_id = ?", Long.class, stationId);
+		return result == null ? 0L : result;
+	}
+
+	private long countWithOptionalStationAndEvaluationAt(
+		String baseSql,
+		String stationId,
+		LocalDateTime evaluationAt
+	) {
+		if (stationId == null) {
+			Long result = jdbcTemplate.queryForObject(baseSql, Long.class, evaluationAt);
+			return result == null ? 0L : result;
+		}
+		Long result = jdbcTemplate.queryForObject(
+			baseSql + " AND station_id = ?",
+			Long.class,
+			evaluationAt,
+			stationId
+		);
 		return result == null ? 0L : result;
 	}
 

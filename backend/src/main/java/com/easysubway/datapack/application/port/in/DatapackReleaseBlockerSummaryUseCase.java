@@ -23,6 +23,7 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 		long candidateGateBlockers,
 		long aliasBlockers,
 		long quarantineBlockers,
+		long sourceFreshnessBlockers,
 		long manualOverrideBlockers,
 		long facilityBlockers,
 		long routeGateBlockers,
@@ -50,8 +51,10 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 				0,
 				0,
 				0,
+				0,
 				List.of(
 					new ReleaseReadinessRow("Source coverage", "확인 필요", 0, "candidate 없음"),
+					new ReleaseReadinessRow("Source freshness", "확인 필요", 0, "source snapshot 없음"),
 					new ReleaseReadinessRow("Validator", "확인 필요", 0, "candidate 없음"),
 					new ReleaseReadinessRow("Facility evidence", "확인 필요", 0, "candidate 없음"),
 					new ReleaseReadinessRow("Route gate", "확인 필요", 0, "candidate 없음"),

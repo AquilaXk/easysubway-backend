@@ -5,12 +5,20 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.datapack.application.port.in.DatapackReleaseBlockerSummaryUseCase;
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
+import org.springframework.context.annotation.Primary;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
@@ -20,6 +28,7 @@ import org.springframework.test.web.servlet.MockMvc;
 	"easysubway.admin.password=admin-test-password"
 })
 @AutoConfigureMockMvc
+@Import(DatapackReleaseBlockerSummaryAdminPageTest.FixedClockConfig.class)
 @DisplayName("관리자 데이터팩 release blocker 요약")
 class DatapackReleaseBlockerSummaryAdminPageTest {
 
@@ -36,12 +45,16 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	@Autowired
 	private JdbcTemplate jdbcTemplate;
 
+	@Autowired
+	private DatapackReleaseBlockerSummaryUseCase blockerSummaryUseCase;
+
 	@BeforeEach
 	void setUp() {
 		clearDatapackTables();
 		insertSourceSnapshot();
 		insertPreviousCandidate();
 		insertCandidate();
+		insertCandidateInput();
 		insertEvidenceBundle();
 		insertProductionChannel();
 		insertAliasQuarantineOverride();
@@ -172,6 +185,11 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	@DisplayName("데이터팩 근거가 없으면 release readiness는 집계 전 상태를 보여준다")
 	void releaseReadinessFallsBackWhenDatapackEvidenceIsEmpty() throws Exception {
 		clearDatapackTables();
+		var summary = blockerSummaryUseCase.summarize();
+		var sourceFreshness = summary.readinessRows().stream()
+			.filter(row -> "Source freshness".equals(row.label()))
+			.findFirst()
+			.orElseThrow();
 
 		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
 		String qualityHtml = getAdminHtml("/admin/data-quality/page");
@@ -193,6 +211,8 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 			.contains("확인 필요 0건")
 			.contains("집계 전")
 			.doesNotContain("PASS 0건");
+		assertThat(sourceFreshness.status()).isEqualTo("확인 필요");
+		assertThat(sourceFreshness.note()).isEqualTo("source snapshot 없음");
 	}
 
 	@Test
@@ -225,6 +245,88 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 			.contains("Manual override")
 			.contains("FAIL")
 			.contains("확인 필요");
+	}
+
+	@Test
+	@DisplayName("source snapshot이 평가 시각에 만료되면 저장 상태와 무관하게 release를 차단한다")
+	void sourceSnapshotExpiryBoundaryBlocksRelease() throws Exception {
+		jdbcTemplate.update("""
+			UPDATE data_source_snapshots
+			SET freshness_expires_at = '2026-07-06 03:00:00'
+			WHERE snapshot_id = 'snapshot-release-blocked'
+			""");
+
+		String dashboardHtml = getAdminHtml("/admin/dashboard/page");
+		String qualityHtml = getAdminHtml("/admin/data-quality/page");
+		String pipelineHtml = getAdminHtml("/admin/datapack/pipeline/page");
+
+		assertThat(dashboardHtml)
+			.contains("production promote 차단: blocker 10건")
+			.contains("전체 blocker 10건")
+			.doesNotContain("production promote 가능")
+			.doesNotContain(">READY</span>");
+		assertThat(qualityHtml)
+			.contains("Source freshness")
+			.contains("SOURCE_SNAPSHOT_EXPIRED")
+			.contains("FAIL");
+		assertThat(pipelineHtml)
+			.contains("원천 스냅샷")
+			.contains("blocker 1건");
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("latest candidate 입력이 아닌 만료 snapshot은 release freshness blocker에서 제외한다")
+	void unrelatedExpiredSnapshotDoesNotBlockLatestCandidate() {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				row_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
+				schema_fingerprint, snapshot_status, schema_status, license_status,
+				fetch_status, redistribution_allowed, credential_redacted,
+				freshness_expires_at, raw_retention_expires_at
+			)
+			VALUES (
+				'snapshot-unrelated-realtime', 'topis-arrival', 'TOPIS',
+				'2026-07-06 02:00:00', '2026-07-06 02:00:00', 10, ?, 's3://raw/unrelated',
+				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', FALSE, TRUE,
+				'2026-07-06 02:01:30', '2026-07-07 02:00:00'
+			)
+			""", SHA_D, SHA_E, SHA_F);
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isZero();
+	}
+
+	@Test
+	@DisplayName("latest candidate가 존재하지 않는 snapshot을 참조하면 freshness를 fail closed한다")
+	void missingCandidateSnapshotBlocksRelease() {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidate_inputs
+			SET source_snapshot_ids = 'snapshot-missing'
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("latest candidate 입력 row가 없으면 freshness를 fail closed한다")
+	void missingCandidateInputBlocksRelease() {
+		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs WHERE candidate_id = 'candidate-release-blocked'");
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("latest candidate의 snapshot ID가 비어 있으면 freshness를 fail closed한다")
+	void emptyCandidateSnapshotIdsBlockRelease() {
+		jdbcTemplate.update("""
+			UPDATE datapack_candidate_inputs
+			SET source_snapshot_ids = ''
+			WHERE candidate_id = 'candidate-release-blocked'
+			""");
+
+		assertThat(blockerSummaryUseCase.summarize().sourceFreshnessBlockers()).isEqualTo(1);
 	}
 
 	@Test
@@ -289,7 +391,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				'snapshot-release-blocked', 'kric-station-elevator', 'KRIC',
 				'2026-06-29 03:00:00', '2026-06-28 03:00:00', 10, ?, 's3://raw/snapshot',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
-				'2026-07-06 03:00:00', '2026-09-29 03:00:00'
+				'2026-07-07 03:00:00', '2026-09-29 03:00:00'
 			)
 			""", SHA_A, SHA_B, SHA_C);
 	}
@@ -308,6 +410,18 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				'FAIL', 'PASS', 'FAIL', 'PENDING', 'READY_FOR_APPROVAL',
 				'2026-06-29 03:30:00')
 			""", SHA_A, SHA_B, SHA_C, SHA_D, SHA_E, SHA_F, "1".repeat(64));
+	}
+
+	private void insertCandidateInput() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_candidate_inputs (
+				id, candidate_id, source_snapshot_ids, approved_alias_ledger_hash,
+				facility_evidence_ledger_hash, route_evidence_ledger_hash,
+				approved_override_set_hash, created_at
+			)
+			VALUES ('candidate-input-release-blocked', 'candidate-release-blocked',
+				'snapshot-release-blocked', ?, ?, ?, ?, '2026-06-29 03:31:00')
+			""", SHA_A, SHA_B, SHA_C, SHA_D);
 	}
 
 	private void insertPreviousCandidate() {
@@ -435,7 +549,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				'WHEELCHAIR_LIFT', 'UNKNOWN_PENDING_REVIEW', 'kric-station-elevator',
 				'snapshot-release-blocked', ?, 'STATIC_LOCATION', 'UNKNOWN',
 				'UNKNOWN', '2026-06-29 03:34:00', '2026-06-29 03:34:00',
-				'2026-07-06 03:34:00', 40, FALSE, 'UNKNOWN_PENDING_REVIEW',
+				'2026-07-07 03:34:00', 40, FALSE, 'UNKNOWN_PENDING_REVIEW',
 				'NONE', '2026-06-29 03:34:00')
 			""", SHA_A);
 		jdbcTemplate.update("""
@@ -450,5 +564,15 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 				'GENERATED', 'GENERATED', '2026-06-29 03:35:00', ?, FALSE,
 				'GENERATED_CONNECTOR', '2026-06-29 03:35:00')
 			""", SHA_B);
+	}
+
+	@TestConfiguration
+	static class FixedClockConfig {
+
+		@Bean
+		@Primary
+		Clock datapackFreshnessTestClock() {
+			return Clock.fixed(Instant.parse("2026-07-06T03:00:00Z"), ZoneOffset.UTC);
+		}
 	}
 }

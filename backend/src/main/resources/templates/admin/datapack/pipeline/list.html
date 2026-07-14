@@ -62,7 +62,7 @@
 					<span class="datapack-pipeline-label" th:text="${node.label}">단계</span>
 					<span class="datapack-pipeline-badge"
 					      th:classappend="${node.blocked} ? ' bad' : ' good'"
-					      th:text="${node.blocked} ? ('blocker ' + node.blockerCount + '건') : '통과'">통과</span>
+					      th:text="${node.blocked ? 'blocker ' + node.blockerCount + '건' : '통과'}">통과</span>
 					<span class="meta" th:text="${node.drillLabel}">이동</span>
 				</a>
 			</li>
@@ -82,7 +82,7 @@
 			<tbody>
 			<tr th:each="node : ${pipeline.stages}" th:classappend="${node.blocked} ? ' is-blocked'">
 				<td th:text="${node.label}">단계</td>
-				<td th:text="${node.blocked} ? node.blockerCount : 0">0</td>
+				<td th:text="${node.blocked ? node.blockerCount : 0}">0</td>
 				<td><a th:href="@{${node.drillUrl}}" th:text="${node.drillLabel}">이동</a></td>
 			</tr>
 			</tbody>

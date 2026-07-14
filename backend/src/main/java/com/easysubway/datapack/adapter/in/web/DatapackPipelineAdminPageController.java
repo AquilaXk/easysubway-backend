@@ -74,7 +74,7 @@ class DatapackPipelineAdminPageController {
 				? "/admin/datapack/candidates/" + summary.candidateId() + "/page"
 				: "/admin/datapack/candidates/page";
 			List<StageNode> stages = List.of(
-				stage(1, "원천 스냅샷", 0,
+				stage(1, "원천 스냅샷", summary.sourceFreshnessBlockers(),
 					url("/admin/datapack/source-snapshots/page", candidateId, sourceSnapshotId, null),
 					"원천 스냅샷 목록"),
 				stage(2, "후보 생성", 0, candidateDrill, hasCandidate ? "후보 상세" : "후보 목록"),
