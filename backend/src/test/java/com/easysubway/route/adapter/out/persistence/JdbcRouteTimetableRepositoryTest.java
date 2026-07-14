@@ -26,6 +26,7 @@ class JdbcRouteTimetableRepositoryTest {
 		jdbcTemplate.execute("DROP ALL OBJECTS");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		repository = new JdbcRouteTimetableRepository(jdbcTemplate);
 	}
 
@@ -55,6 +56,36 @@ class JdbcRouteTimetableRepositoryTest {
 		insertTimetableRows();
 
 		assertThat(repository.hasRouteTimetable()).isTrue();
+	}
+
+	@Test
+	@DisplayName("만료된 ITX admission은 요청 시점 snapshot과 availability에서 제외한다")
+	void excludesExpiredItxRowsAtRequestTime() {
+		insertTimetableRows();
+		insertItxRows("2000-01-01T00:00:00Z");
+
+		var timetable = repository.loadRouteTimetable();
+
+		assertThat(repository.hasRouteTimetable()).isTrue();
+		assertThat(timetable.transitTrips()).extracting("id").containsExactly("trip-seoul-4-0900");
+		assertThat(timetable.transitStopTimes()).extracting("tripId").containsOnly("trip-seoul-4-0900");
+		assertThat(repository.timetableCacheKey()).isEqualTo("SUBWAY_ONLY");
+	}
+
+	@Test
+	@DisplayName("ITX admission freshness 상태가 바뀌면 timetable cache key도 바뀐다")
+	void changesCacheKeyWhenItxAdmissionExpires() {
+		insertItxRows("2999-01-01T00:00:00Z");
+		String freshKey = repository.timetableCacheKey();
+
+		jdbcTemplate.update("""
+			UPDATE route_service_artifact_evidence
+			SET fresh_until = '2000-01-01T00:00:00Z'
+			WHERE service_class = 'ITX_CHEONGCHUN'
+			""");
+
+		assertThat(freshKey).startsWith("ITX_CHEONGCHUN:");
+		assertThat(repository.timetableCacheKey()).isEqualTo("SUBWAY_ONLY");
 	}
 
 	@Test
@@ -118,5 +149,39 @@ class JdbcRouteTimetableRepositoryTest {
 			INSERT INTO transit_frequencies (trip_id, start_time_seconds, headway_seconds, end_time_seconds, exact_times)
 			VALUES ('trip-seoul-4-0900', 32400, 600, 36000, FALSE)
 			""");
+	}
+
+	private void insertItxRows(String freshUntil) {
+		jdbcTemplate.update("""
+			INSERT INTO service_calendars (
+				service_id, start_date, end_date, timezone,
+				monday, tuesday, wednesday, thursday, friday, saturday, sunday
+			) VALUES ('itx-weekday', '20260701', '20991231', 'Asia/Seoul', TRUE, TRUE, TRUE, TRUE, TRUE, FALSE, FALSE)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name)
+			VALUES ('route-itx', 'Asia/Seoul', 'line-k2', 'ITX-청춘', '청량리-춘천', '춘천 방면')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_trips (
+				id, route_id, service_id, service_pattern, service_class,
+				service_day_start_seconds, trip_headsign, direction_id
+			) VALUES ('trip-itx', 'route-itx', 'itx-weekday', 'EXPRESS', 'ITX_CHEONGCHUN', 0, '춘천', 'down')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_stop_times (
+				trip_id, stop_sequence, station_id, line_id,
+				pickup_type, drop_off_type, arrival_seconds, departure_seconds
+			) VALUES
+				('trip-itx', 1, 'station-cheongnyangni', 'line-k2', 0, 0, 32400, 32400),
+				('trip-itx', 2, 'station-chuncheon', 'line-k2', 0, 0, 36000, 36000)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO route_service_artifact_evidence (
+				service_class, timetable_artifact_id, timetable_artifact_sha256,
+				canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				admission_status, admission_eligible, fresh_until, source_issue
+			) VALUES ('ITX_CHEONGCHUN', 'itx-test', ?, 'capital', ?, ?, 'ADMITTED', TRUE, ?, 2116)
+			""", "a".repeat(64), "b".repeat(64), "c".repeat(64), freshUntil);
 	}
 }

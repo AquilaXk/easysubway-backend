@@ -35,8 +35,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private final LoadRouteTimetablePort routeTimetablePort;
 	private final RouteTimetableRaptorPlanner timetableRaptorPlanner = new RouteTimetableRaptorPlanner();
 	private final boolean timetableRequired;
-	private volatile RouteTimetable cachedRouteTimetable;
-	private volatile java.util.Set<String> cachedCoveredStationIds;
+	private volatile TimetableSnapshot cachedTimetableSnapshot;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
 		this(routeSearchUseCase, RouteTimetable::empty, false);
@@ -123,16 +122,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	}
 
 	private RouteTimetable routeTimetable() {
-		RouteTimetable snapshot = cachedRouteTimetable;
-		if (snapshot != null) {
-			return snapshot;
-		}
-		synchronized (this) {
-			if (cachedRouteTimetable == null) {
-				cachedRouteTimetable = routeTimetablePort.loadRouteTimetable();
-			}
-			return cachedRouteTimetable;
-		}
+		return timetableSnapshot().timetable();
 	}
 
 	private boolean timetableCovers(SearchRouteV2Command command) {
@@ -145,18 +135,34 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	}
 
 	private java.util.Set<String> coveredStationIds() {
-		java.util.Set<String> snapshot = cachedCoveredStationIds;
-		if (snapshot != null) {
+		return timetableSnapshot().coveredStationIds();
+	}
+
+	private TimetableSnapshot timetableSnapshot() {
+		String cacheKey = routeTimetablePort.timetableCacheKey();
+		TimetableSnapshot snapshot = cachedTimetableSnapshot;
+		if (snapshot != null && snapshot.cacheKey().equals(cacheKey)) {
 			return snapshot;
 		}
 		synchronized (this) {
-			if (cachedCoveredStationIds == null) {
-				cachedCoveredStationIds = routeTimetable().transitStopTimes().stream()
+			cacheKey = routeTimetablePort.timetableCacheKey();
+			snapshot = cachedTimetableSnapshot;
+			if (snapshot == null || !snapshot.cacheKey().equals(cacheKey)) {
+				RouteTimetable timetable = routeTimetablePort.loadRouteTimetable();
+				java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
 					.map(LoadRouteTimetablePort.TransitStopTime::stationId)
 					.collect(java.util.stream.Collectors.toUnmodifiableSet());
+				cachedTimetableSnapshot = new TimetableSnapshot(cacheKey, timetable, coveredStationIds);
 			}
-			return cachedCoveredStationIds;
+			return cachedTimetableSnapshot;
 		}
+	}
+
+	private record TimetableSnapshot(
+		String cacheKey,
+		RouteTimetable timetable,
+		java.util.Set<String> coveredStationIds
+	) {
 	}
 
 	private SearchRouteV2Command rankingCommand(SearchRouteV2Command command) {

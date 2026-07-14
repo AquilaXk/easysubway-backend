@@ -9,6 +9,10 @@ public interface LoadRouteTimetablePort {
 
 	RouteTimetable loadRouteTimetable();
 
+	default String timetableCacheKey() {
+		return "STATIC";
+	}
+
 	default boolean hasRouteTimetable() {
 		RouteTimetable timetable = loadRouteTimetable();
 		return !timetable.transitTrips().isEmpty() && !timetable.transitStopTimes().isEmpty();

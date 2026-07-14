@@ -1549,6 +1549,21 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 timetable cache key 변경 시 snapshot을 다시 읽는다")
+	void routeV2PlannerReloadsTimetableWhenCacheKeyChanges() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
+		var timetablePort = new CountingRouteTimetablePort();
+		var planner = new RouteV2Planner(routeSearchService, timetablePort);
+
+		planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+		timetablePort.expireItxAdmission();
+		planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(timetablePort.loadCount()).isEqualTo(2);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 접근성 차단 경로를 BLOCKED_ACCESSIBILITY status로 반환한다")
 	void routeV2PlannerReturnsBlockedAccessibilityStatus() {
 		var planner = routeV2Planner(new StairOnlyTransitMasterPort());
@@ -3015,6 +3030,7 @@ class RouteSearchServiceTest {
 
 	private static class CountingRouteTimetablePort implements LoadRouteTimetablePort {
 		private int loadCount;
+		private String cacheKey = "ITX_CHEONGCHUN:2999-01-01T00:00:00Z";
 
 		@Override
 		public boolean hasRouteTimetable() {
@@ -3025,6 +3041,15 @@ class RouteSearchServiceTest {
 		public LoadRouteTimetablePort.RouteTimetable loadRouteTimetable() {
 			loadCount += 1;
 			return routeTimetablePort().loadRouteTimetable();
+		}
+
+		@Override
+		public String timetableCacheKey() {
+			return cacheKey;
+		}
+
+		void expireItxAdmission() {
+			cacheKey = "SUBWAY_ONLY";
 		}
 
 		int loadCount() {

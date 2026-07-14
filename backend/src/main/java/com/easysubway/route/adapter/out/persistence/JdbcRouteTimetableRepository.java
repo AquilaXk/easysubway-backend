@@ -2,10 +2,13 @@ package com.easysubway.route.adapter.out.persistence;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import java.time.Instant;
 import java.time.LocalDate;
+import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
+import java.util.Optional;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -35,20 +38,41 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	@Override
 	public boolean hasRouteTimetable() {
+		String tripFilter = activeItxFreshUntil().isPresent()
+			? ""
+			: "AND t.service_class <> 'ITX_CHEONGCHUN'";
 		return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
 			"""
 				SELECT CASE
-					WHEN EXISTS (SELECT 1 FROM transit_trips)
-						AND EXISTS (SELECT 1 FROM transit_stop_times)
+					WHEN EXISTS (
+						SELECT 1 FROM transit_trips t
+						WHERE EXISTS (SELECT 1 FROM transit_stop_times s WHERE s.trip_id = t.id)
+						%s
+					)
 					THEN TRUE ELSE FALSE
 				END
-				""",
+				""".formatted(tripFilter),
 			Boolean.class
 		));
 	}
 
 	@Override
+	public String timetableCacheKey() {
+		return activeItxFreshUntil()
+			.map(value -> "ITX_CHEONGCHUN:" + value.toInstant())
+			.orElse("SUBWAY_ONLY");
+	}
+
+	@Override
 	public RouteTimetable loadRouteTimetable() {
+		boolean includeItx = activeItxFreshUntil().isPresent();
+		String tripFilter = includeItx ? "" : "WHERE service_class <> 'ITX_CHEONGCHUN'";
+		String childTripFilter = includeItx ? "" : """
+			WHERE EXISTS (
+				SELECT 1 FROM transit_trips t
+				WHERE t.id = trip_id AND t.service_class <> 'ITX_CHEONGCHUN'
+			)
+			""";
 		return new RouteTimetable(
 			jdbcTemplate.query(
 				"""
@@ -102,8 +126,9 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 				"""
 					SELECT id, route_id, service_id, trip_headsign, direction_id, service_pattern, service_day_start_seconds
 					FROM transit_trips
+					%s
 					ORDER BY id
-					""",
+					""".formatted(tripFilter),
 				(resultSet, rowNumber) -> new TransitTrip(
 					resultSet.getString("id"),
 					resultSet.getString("route_id"),
@@ -119,8 +144,9 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					SELECT trip_id, stop_sequence, station_id, line_id, arrival_seconds, departure_seconds,
 						pickup_type, drop_off_type
 					FROM transit_stop_times
+					%s
 					ORDER BY trip_id, stop_sequence
-					""",
+					""".formatted(childTripFilter),
 				(resultSet, rowNumber) -> new TransitStopTime(
 					resultSet.getString("trip_id"),
 					resultSet.getInt("stop_sequence"),
@@ -136,8 +162,9 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 				"""
 					SELECT trip_id, start_time_seconds, end_time_seconds, headway_seconds, exact_times
 					FROM transit_frequencies
+					%s
 					ORDER BY trip_id, start_time_seconds
-					""",
+					""".formatted(childTripFilter),
 				(resultSet, rowNumber) -> new TransitFrequency(
 					resultSet.getString("trip_id"),
 					resultSet.getInt("start_time_seconds"),
@@ -148,6 +175,35 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 			),
 			loadFeedEndDate()
 		);
+	}
+
+	private Optional<OffsetDateTime> activeItxFreshUntil() {
+		return jdbcTemplate.query(
+			"""
+				SELECT fresh_until
+				FROM route_service_artifact_evidence
+				WHERE service_class = 'ITX_CHEONGCHUN'
+					AND admission_status = 'ADMITTED'
+					AND admission_eligible = TRUE
+					AND EXISTS (
+						SELECT 1 FROM transit_trips
+						WHERE service_class = 'ITX_CHEONGCHUN'
+					)
+				""",
+			(resultSet, rowNumber) -> resultSet.getString("fresh_until")
+		).stream().findFirst().flatMap(JdbcRouteTimetableRepository::freshOffsetDateTime);
+	}
+
+	private static Optional<OffsetDateTime> freshOffsetDateTime(String value) {
+		if (value == null || value.isBlank()) {
+			return Optional.empty();
+		}
+		try {
+			OffsetDateTime parsed = OffsetDateTime.parse(value);
+			return parsed.toInstant().isAfter(Instant.now()) ? Optional.of(parsed) : Optional.empty();
+		} catch (DateTimeParseException exception) {
+			return Optional.empty();
+		}
 	}
 
 	private LocalDate loadFeedEndDate() {

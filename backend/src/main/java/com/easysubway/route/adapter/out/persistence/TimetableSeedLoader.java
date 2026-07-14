@@ -5,8 +5,12 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
 import java.sql.Connection;
+import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.sql.Statement;
+import java.time.Instant;
+import java.time.OffsetDateTime;
+import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.zip.GZIPInputStream;
 import javax.sql.DataSource;
@@ -41,38 +45,106 @@ public class TimetableSeedLoader implements ApplicationRunner {
 	private final DataSource dataSource;
 	private final TransactionTemplate transactionTemplate;
 	private final Resource seedResource;
+	private final boolean includesItxSeed;
 
 	public TimetableSeedLoader(
 		LoadRouteTimetablePort routeTimetablePort,
 		DataSource dataSource,
 		PlatformTransactionManager transactionManager,
-		@Value("${easysubway.timetable.seed.resource:classpath:timetable/line4-timetable-seed.sql.gz}") Resource seedResource
+		@Value("${easysubway.timetable.seed.resource:classpath:timetable/line4-timetable-seed.sql.gz}") Resource seedResource,
+		@Value("${easysubway.timetable.seed.includes-itx:false}") boolean includesItxSeed
 	) {
 		this.routeTimetablePort = routeTimetablePort;
 		this.dataSource = dataSource;
 		this.transactionTemplate = new TransactionTemplate(transactionManager);
 		this.seedResource = seedResource;
+		this.includesItxSeed = includesItxSeed;
 	}
 
 	@Override
 	public void run(ApplicationArguments args) {
+		boolean existingItx = validateRouteServiceAdmission();
 		if (routeTimetablePort.hasRouteTimetable()) {
+			existingItx = validateRouteServiceAdmission();
+			if (includesItxSeed && !existingItx) {
+				throw new IllegalStateException(
+					"additive ITX timetable seed is not supported while another timetable is present");
+			}
+			if (!includesItxSeed && existingItx) {
+				throw new IllegalStateException(
+					"easysubway.timetable.seed.includes-itx=false cannot activate existing ITX-청춘 rows");
+			}
 			log.info("transit timetable already present; skipping seed load");
 			return;
 		}
 		List<String> statements = readStatements(seedResource);
 		try {
-			transactionTemplate.executeWithoutResult(status -> executeBatch(statements));
+			transactionTemplate.executeWithoutResult(status -> {
+				executeBatch(statements);
+				boolean loadedItx = validateRouteServiceAdmission();
+				if (includesItxSeed != loadedItx) {
+					throw new IllegalStateException(
+						"easysubway.timetable.seed.includes-itx=" + includesItxSeed
+							+ " must match ITX-청춘 timetable rows");
+				}
+			});
 		} catch (RuntimeException exception) {
 			// 다중 replica 동시 배포 경쟁: 다른 인스턴스가 먼저 적재하면 이 배치는 PK/싱글턴 충돌로 실패한다.
 			// 실패 후 이미 적재됐으면(경쟁 loser) 관용 처리한다(부팅 crash loop 방지). 아니면 실제 오류로 재던진다.
 			if (routeTimetablePort.hasRouteTimetable()) {
-				log.info("transit timetable was seeded concurrently by another instance; batch failure is benign");
-				return;
+				boolean concurrentlyLoadedItx = validateRouteServiceAdmission();
+				if (includesItxSeed == concurrentlyLoadedItx) {
+					log.info("transit timetable was seeded concurrently by another instance; batch failure is benign");
+					return;
+				}
 			}
 			throw exception;
 		}
 		log.info("transit timetable seeded from {} ({} statements)", seedResource, statements.size());
+	}
+
+	private boolean validateRouteServiceAdmission() {
+		Connection connection = DataSourceUtils.getConnection(dataSource);
+		try (Statement statement = connection.createStatement()) {
+			try (ResultSet count = statement.executeQuery("""
+				SELECT COUNT(*) AS row_count
+				FROM transit_trips
+				WHERE service_class = 'ITX_CHEONGCHUN'
+				""")) {
+					count.next();
+					if (count.getInt("row_count") == 0) {
+						return false;
+				}
+			}
+			try (ResultSet rows = statement.executeQuery("""
+					SELECT admission_status, admission_eligible, fresh_until
+					FROM route_service_artifact_evidence
+					WHERE service_class = 'ITX_CHEONGCHUN'
+					""")) {
+				if (!rows.next()
+					|| !"ADMITTED".equals(rows.getString("admission_status"))
+					|| !rows.getBoolean("admission_eligible")
+					|| !isFresh(rows.getString("fresh_until"))) {
+					throw new IllegalStateException("ITX-청춘 timetable seed requires ADMITTED evidence with valid freshness");
+				}
+			}
+			return true;
+		} catch (SQLException exception) {
+			throw new IllegalStateException("ITX-청춘 timetable seed admission validation failed", exception);
+		} finally {
+			DataSourceUtils.releaseConnection(connection, dataSource);
+		}
+	}
+
+	private static boolean isFresh(String value) {
+		if (value == null || value.isBlank()) {
+			return false;
+		}
+		try {
+			return OffsetDateTime.parse(value).toInstant().isAfter(Instant.now());
+		} catch (DateTimeParseException exception) {
+			return false;
+		}
 	}
 
 	private void executeBatch(List<String> statements) {

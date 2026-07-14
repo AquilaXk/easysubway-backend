@@ -120,6 +120,7 @@ class DatabaseMigrationContainerTest {
 		assertManualOverrideProductionGuards(jdbcTemplate);
 		assertRouteEdgeEvidenceStrictRouteGuards(jdbcTemplate);
 		assertDatapackPermissionMatrix(jdbcTemplate);
+		assertRouteServiceIdentityHashGuards(jdbcTemplate);
 	}
 
 	@Test
@@ -241,6 +242,23 @@ class DatabaseMigrationContainerTest {
 			.migrate();
 
 		assertFacilityEvidenceStrictRouteGuards(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration도 route service artifact hash 형식을 차단한다")
+	void h2MigrationRejectsUnsafeRouteServiceIdentityHashes() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:route-service-identity-hashes;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		Flyway.configure()
+			.dataSource(dataSource)
+			.locations("classpath:db/migration/h2")
+			.load()
+			.migrate();
+
+		assertRouteServiceIdentityHashGuards(new JdbcTemplate(dataSource));
 	}
 
 	@Test
@@ -851,5 +869,41 @@ class DatabaseMigrationContainerTest {
 			strictRouteEligible,
 			blockerReason
 		);
+	}
+
+	private void assertRouteServiceIdentityHashGuards(JdbcTemplate jdbcTemplate) {
+		String validHash = "a".repeat(64);
+		assertThatThrownBy(() -> insertRouteServiceIdentity(jdbcTemplate, "short", validHash, validHash))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteServiceIdentity(
+			jdbcTemplate, "g".repeat(64), validHash, validHash))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteServiceIdentity(jdbcTemplate, validHash, "short", validHash))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteServiceIdentity(
+			jdbcTemplate, validHash, "g".repeat(64), validHash))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteServiceIdentity(jdbcTemplate, validHash, validHash, "short"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertRouteServiceIdentity(
+			jdbcTemplate, validHash, validHash, "g".repeat(64)))
+			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertRouteServiceIdentity(
+		JdbcTemplate jdbcTemplate,
+		String timetableHash,
+		String canonicalPackHash,
+		String canonicalPackSqliteHash
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO route_service_artifact_evidence (
+				service_class, timetable_artifact_id, timetable_artifact_sha256,
+				canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				admission_status, admission_eligible, fresh_until, source_issue
+			)
+			VALUES ('ITX_CHEONGCHUN', 'invalid-hash-test', ?, 'capital', ?, ?,
+				'MISSING', FALSE, NULL, 2116)
+			""", timetableHash, canonicalPackHash, canonicalPackSqliteHash);
 	}
 }

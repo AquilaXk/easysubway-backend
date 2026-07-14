@@ -42,6 +42,7 @@ class RouteTimetableRaptorPlannerLine4PlannedTest {
 		jdbc.execute("DROP ALL OBJECTS");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/test/resources/timetable/line4-corridor-slice-seed.sql'");
 		timetable = new JdbcRouteTimetableRepository(dataSource).loadRouteTimetable();
 	}
