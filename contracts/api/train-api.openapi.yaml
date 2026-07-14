@@ -1,0 +1,87 @@
+openapi: 3.0.3
+info:
+  title: EasySubway train search API
+  version: 1.0.0
+paths:
+  /api/v1/trains/stations:
+    get:
+      parameters:
+        - name: trainType
+          in: query
+          schema:
+            $ref: "#/components/schemas/TrainType"
+      responses:
+        "200":
+          description: supported train station catalog
+        "400":
+          $ref: "#/components/responses/UnsupportedTrainType"
+        "503":
+          $ref: "#/components/responses/TrainSearchUnavailable"
+  /api/v1/trains/search:
+    get:
+      parameters:
+        - name: trainType
+          in: query
+          schema:
+            $ref: "#/components/schemas/TrainType"
+      responses:
+        "200":
+          description: supported train journeys
+        "400":
+          $ref: "#/components/responses/UnsupportedTrainType"
+        "503":
+          $ref: "#/components/responses/TrainSearchUnavailable"
+components:
+  responses:
+    UnsupportedTrainType:
+      description: ITX_CHEONGCHUN, stale deep link, or unknown train type
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TrainSearchErrorEnvelope"
+          example:
+            success: false
+            data:
+              code: TRAIN_SEARCH_UNSUPPORTED_TRAIN_TYPE
+            message: 지원하지 않는 열차종입니다.
+    TrainSearchUnavailable:
+      description: train-search runtime remains deferred to issue 2094
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TrainSearchErrorEnvelope"
+          example:
+            success: false
+            data:
+              code: TRAIN_SEARCH_UNAVAILABLE
+            message: 기차검색은 아직 사용할 수 없습니다.
+  schemas:
+    TrainType:
+      type: string
+      enum:
+        - KTX
+        - KTX_SANCHEON
+        - SRT
+        - ITX_MAUM
+        - ITX_SAEMAEUL
+        - SAEMAEUL
+        - MUGUNGHWA
+        - NURIRO
+    TrainSearchError:
+      type: object
+      required: [code]
+      properties:
+        code:
+          type: string
+          enum: [TRAIN_SEARCH_UNSUPPORTED_TRAIN_TYPE, TRAIN_SEARCH_UNAVAILABLE]
+    TrainSearchErrorEnvelope:
+      type: object
+      required: [success, data, message]
+      properties:
+        success:
+          type: boolean
+          enum: [false]
+        data:
+          $ref: "#/components/schemas/TrainSearchError"
+        message:
+          type: string
