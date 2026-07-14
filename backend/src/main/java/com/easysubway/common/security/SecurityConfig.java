@@ -23,6 +23,7 @@ import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
+import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
 import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
@@ -293,6 +294,29 @@ public class SecurityConfig {
 
 	@Bean
 	@Order(4)
+	@Profile("!prod & !staging & !release & !prod-like")
+	SecurityFilterChain routeSearchSecurityFilterChain(HttpSecurity http) throws Exception {
+		return http
+			.securityMatcher(
+				"/api/v1/routes/search",
+				"/api/v2/routes/search",
+				"/api/v2/routes/*/refresh"
+			)
+			.csrf(AbstractHttpConfigurer::disable)
+			.authorizeHttpRequests(authorize -> authorize
+				.requestMatchers(
+					HttpMethod.POST,
+					"/api/v1/routes/search",
+					"/api/v2/routes/search",
+					"/api/v2/routes/*/refresh"
+				).permitAll()
+				.anyRequest().denyAll()
+			)
+			.build();
+	}
+
+	@Bean
+	@Order(5)
 	SecurityFilterChain publicSecurityFilterChain(HttpSecurity http) throws Exception {
 		// 신고/관리자/운영 matcher 밖의 새 경로가 실수로 공개되지 않도록 기본 차단한다.
 		return http
@@ -300,9 +324,6 @@ public class SecurityConfig {
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(
 					HttpMethod.POST,
-					"/api/v1/routes/search",
-					"/api/v2/routes/search",
-					"/api/v2/routes/*/refresh",
 					"/api/ads/events"
 				).permitAll()
 				.requestMatchers(
