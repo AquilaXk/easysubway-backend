@@ -80,7 +80,7 @@ class JdbcFacilityReportReviewAuditRepositoryTest {
 		assertThat(audits)
 			.extracting(FacilityReportReviewAudit::id)
 			.containsExactly("audit-old", "audit-new");
-		assertThat(audits.get(0)).satisfies(audit -> {
+		assertThat(audits.getFirst()).satisfies(audit -> {
 			assertThat(audit.reportId()).isEqualTo("report-target");
 			assertThat(audit.reviewerId()).isEqualTo("admin-reviewer");
 			assertThat(audit.decision()).isEqualTo(FacilityReportReviewDecision.ACCEPT);

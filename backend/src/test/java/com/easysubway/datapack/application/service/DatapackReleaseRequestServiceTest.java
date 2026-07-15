@@ -99,7 +99,7 @@ class DatapackReleaseRequestServiceTest {
 		assertThat(status(created.approvalId())).isEqualTo("DISPATCHED");
 		assertThat(dispatchIdempotencyKey(created.approvalId())).isEqualTo(created.approvalId());
 		assertThat(dispatchPort.commands()).hasSize(1);
-		var command = dispatchPort.commands().get(0);
+		var command = dispatchPort.commands().getFirst();
 		assertThat(command.targetChannel()).isEqualTo("staging");
 		assertThat(command.releaseRequestId()).isEqualTo(created.approvalId());
 		assertThat(command.buildSpecPath()).isEqualTo("tools/datapack/fixtures/candidate-build-spec.json");

@@ -139,7 +139,7 @@ class FieldVerificationServiceTest {
 				"field-verification-sadang-restroom",
 				"field-verification-sadang-elevator"
 			);
-		assertThat(histories.get(0)).satisfies(history -> {
+		assertThat(histories.getFirst()).satisfies(history -> {
 			assertThat(history.sessionId()).isEqualTo("field-verification-sadang-2026-06");
 			assertThat(history.stationId()).isEqualTo("station-sadang");
 			assertThat(history.previousStatus()).isEqualTo(FieldVerificationStatus.PLANNED);
@@ -177,8 +177,8 @@ class FieldVerificationServiceTest {
 			"admin-user"
 		));
 
-		String sadangHistoryId = service.listStationChangeHistory("station-sadang").get(0).id();
-		String sangnoksuHistoryId = service.listStationChangeHistory("station-sangnoksu").get(0).id();
+		String sadangHistoryId = service.listStationChangeHistory("station-sadang").getFirst().id();
+		String sangnoksuHistoryId = service.listStationChangeHistory("station-sangnoksu").getFirst().id();
 
 		assertThat(sadangHistoryId).isNotEqualTo(sangnoksuHistoryId);
 	}

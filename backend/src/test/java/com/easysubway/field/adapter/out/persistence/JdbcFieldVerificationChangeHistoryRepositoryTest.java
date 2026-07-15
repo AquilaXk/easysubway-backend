@@ -81,7 +81,7 @@ class JdbcFieldVerificationChangeHistoryRepositoryTest {
 		assertThat(histories)
 			.extracting(FieldVerificationChangeHistory::id)
 			.containsExactly("history-new", "history-old");
-		assertThat(histories.get(0)).satisfies(history -> {
+		assertThat(histories.getFirst()).satisfies(history -> {
 			assertThat(history.sessionId()).isEqualTo("field-verification-sadang-2026-06");
 			assertThat(history.itemId()).isEqualTo("field-verification-sadang-restroom");
 			assertThat(history.previousStatus()).isEqualTo(FieldVerificationStatus.PLANNED);

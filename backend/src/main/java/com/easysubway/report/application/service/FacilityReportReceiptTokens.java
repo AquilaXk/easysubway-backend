@@ -4,6 +4,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.SecureRandom;
 import java.util.Base64;
+import java.util.HexFormat;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 
@@ -11,6 +12,7 @@ class FacilityReportReceiptTokens {
 
 	private static final int TOKEN_BYTES = 32;
 	private static final String HMAC_ALGORITHM = "HmacSHA256";
+	private static final HexFormat HEX = HexFormat.of();
 
 	private final String pepper;
 	private final SecureRandom secureRandom;
@@ -77,11 +79,7 @@ class FacilityReportReceiptTokens {
 	}
 
 	private String hex(byte[] bytes) {
-		StringBuilder builder = new StringBuilder(bytes.length * 2);
-		for (byte value : bytes) {
-			builder.append(String.format("%02x", value & 0xff));
-		}
-		return builder.toString();
+		return HEX.formatHex(bytes);
 	}
 
 	record IssuedReceiptToken(String token, String hash) {
