@@ -79,7 +79,11 @@ public class SecurityConfig {
 		// 서비스 토큰(Bearer)만 인증하고 stateless·CSRF off. 토큰 미설정이면 인증이 주입되지
 		// 않아 전면 거부(자동화 dormant = 안전 기본값). admin 세션은 이 체인에 닿지 못한다.
 		return http
-			.securityMatcher("/admin/api/datapack/release-requests/**", "/admin/api/datapack/release-callbacks")
+			.securityMatcher(
+				"/admin/api/datapack/release-requests/**",
+				"/admin/api/datapack/rollback-approvals/**",
+				"/admin/api/datapack/release-callbacks"
+			)
 			.csrf(csrf -> csrf.disable())
 			.sessionManagement(sm -> sm.sessionCreationPolicy(
 				org.springframework.security.config.http.SessionCreationPolicy.STATELESS))

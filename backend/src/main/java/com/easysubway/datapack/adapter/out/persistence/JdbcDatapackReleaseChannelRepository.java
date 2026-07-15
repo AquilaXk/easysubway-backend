@@ -56,6 +56,17 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 			""", this::mapEvent, limit);
 	}
 
+	public Optional<ReleaseChannelEventRow> findEventById(String id) {
+		return jdbcTemplate.query("""
+			SELECT id, channel, previous_candidate_id, next_candidate_id,
+				previous_manifest_sha256, next_manifest_sha256, operation_type,
+				operation_status, requested_by, approved_by, reason,
+				idempotency_key, workflow_run_url, created_at
+			FROM datapack_release_channel_events
+			WHERE id = ?
+			""", this::mapEvent, id).stream().findFirst();
+	}
+
 	@Override
 	public Optional<ReleaseChannelEvent> findEventByIdempotencyKey(String channel, String idempotencyKey) {
 		return jdbcTemplate.query("""
