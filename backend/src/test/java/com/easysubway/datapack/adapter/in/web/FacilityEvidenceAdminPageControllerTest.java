@@ -119,14 +119,14 @@ class FacilityEvidenceAdminPageControllerTest {
 	private void insertSnapshot() {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
-				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
 			VALUES ('snapshot-kric-20260629', 'kric-station-elevator', '국가철도공단',
-				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345,
+				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345, 12345,
 				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')

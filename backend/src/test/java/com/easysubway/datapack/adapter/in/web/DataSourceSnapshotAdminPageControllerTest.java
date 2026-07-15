@@ -41,6 +41,9 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @AutoConfigureMockMvc
 @DisplayName("관리자 데이터팩 source snapshot 화면")
 class DataSourceSnapshotAdminPageControllerTest {
+	private static final String GOVERNANCE_POLICY_VERSION = "2026-07-15";
+	private static final String GOVERNANCE_POLICY_SHA256 = "ebc469886bbc11af62629d2d55129e2d27bdcabec300dcc268bb73d546fe2128";
+	private static final String RAW_RETENTION_EXPIRES_AT = "2026-09-28T03:00:00";
 
 	@Autowired
 	private MockMvc mockMvc;
@@ -64,14 +67,15 @@ class DataSourceSnapshotAdminPageControllerTest {
 		jdbcTemplate.update("DELETE FROM data_source_snapshots");
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
-				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
 			VALUES ('snapshot-kric-20260629', 'kric-station-elevator', '국가철도공단',
-				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 12345,
+				'2026-06-29 03:00:00', '2026-06-28 00:00:00', NULL, NULL, 12345, 12345,
 				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'이전 snapshot 대비 +12 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')
@@ -153,6 +157,23 @@ class DataSourceSnapshotAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("root source snapshot 폼은 diff 입력을 필수로 강제하지 않는다")
+	void rootSourceSnapshotFormDoesNotRequireDiff() throws Exception {
+		String html = mockMvc.perform(get("/admin/datapack/source-snapshots/snapshot-kric-20260629/page")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("name=\"diffSummary\"")
+			.contains("name=\"diffSummaryJson\"")
+			.doesNotContain("name=\"diffSummary\" required")
+			.doesNotContain("name=\"diffSummaryJson\" required");
+	}
+
+	@Test
 	@DisplayName("source run 권한 관리자는 redacted LOCKED snapshot을 저장한다")
 	void sourceRunAdminCreatesLockedSnapshot() throws Exception {
 		mockMvc.perform(post("/admin/datapack/source-snapshots")
@@ -168,6 +189,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 				.param("retrievedAt", "2026-06-30T03:00:00")
 				.param("sourceUpdatedAt", "2026-06-29T00:00:00")
 				.param("rowCount", "12357")
+				.param("coverageCount", "12357")
 				.param("rawSha256", "d".repeat(64))
 				.param("rawObjectUri", "s3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260630.json")
 				.param("redactedRequestFingerprint", "e".repeat(64))
@@ -179,8 +201,11 @@ class DataSourceSnapshotAdminPageControllerTest {
 				.param("credentialRedacted", "true")
 				.param("previousSnapshotId", "snapshot-kric-20260629")
 				.param("diffSummary", "이전 snapshot 대비 +12 rows")
-				.param("freshnessExpiresAt", "2026-07-07T03:00:00")
-				.param("rawRetentionExpiresAt", "2026-09-30T03:00:00")
+				.param("diffSummaryJson", "{\"status\":\"CHANGED\",\"rawHashChanged\":true,\"schemaHashChanged\":true,\"requestHashChanged\":true,\"sourceUpdatedAtChanged\":true,\"rowDelta\":12,\"coverageDelta\":12}")
+				.param("freshnessExpiresAt", "2026-09-28T03:00:00")
+				.param("rawRetentionExpiresAt", RAW_RETENTION_EXPIRES_AT)
+				.param("governancePolicyVersion", GOVERNANCE_POLICY_VERSION)
+				.param("governancePolicySha256", GOVERNANCE_POLICY_SHA256)
 				.param("reason", "official source refresh")
 				.param("idempotencyKey", "source-snapshot-1162-20260630"))
 			.andExpect(status().is3xxRedirection())
@@ -250,6 +275,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 				.param("retrievedAt", "2026-06-30T03:00:00")
 				.param("sourceUpdatedAt", "2026-06-29T00:00:00")
 				.param("rowCount", "12357")
+				.param("coverageCount", "12357")
 				.param("rawSha256", "d".repeat(64))
 				.param("rawObjectUri", "s3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260630.json")
 				.param("redactedRequestFingerprint", "e".repeat(64))
@@ -261,8 +287,11 @@ class DataSourceSnapshotAdminPageControllerTest {
 				.param("credentialRedacted", "true")
 				.param("previousSnapshotId", "snapshot-kric-20260629")
 				.param("diffSummary", "이전 snapshot 대비 +12 rows")
-				.param("freshnessExpiresAt", "2026-07-07T03:00:00")
-				.param("rawRetentionExpiresAt", "2026-09-30T03:00:00")
+				.param("diffSummaryJson", "{\"status\":\"CHANGED\",\"rawHashChanged\":true,\"schemaHashChanged\":true,\"requestHashChanged\":true,\"sourceUpdatedAtChanged\":true,\"rowDelta\":12,\"coverageDelta\":12}")
+				.param("freshnessExpiresAt", "2026-09-28T03:00:00")
+				.param("rawRetentionExpiresAt", RAW_RETENTION_EXPIRES_AT)
+				.param("governancePolicyVersion", GOVERNANCE_POLICY_VERSION)
+				.param("governancePolicySha256", GOVERNANCE_POLICY_SHA256)
 				.param("reason", "official source refresh")
 				.param("idempotencyKey", "source-snapshot-1162-20260630"))
 			.andExpect(status().is3xxRedirection())
@@ -349,22 +378,26 @@ class DataSourceSnapshotAdminPageControllerTest {
 	private void insertSecondSnapshot() {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
-				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
-				raw_retention_expires_at
+				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
 			)
 			VALUES ('snapshot-kric-20260630', 'kric-station-elevator', '국가철도공단',
-				'2026-06-30 03:00:00', '2026-06-29 00:00:00', 12357,
+				'2026-06-30 03:00:00', '2026-06-29 00:00:00',
+				'2026-06-30 03:00:00', NULL, 12357, 12357,
 				?, 's3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260630.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
 				'snapshot-kric-20260629', '이전 snapshot 대비 +12 rows',
-				'2026-07-07 03:00:00', '2026-09-30 03:00:00')
+				'{"status":"CHANGED","rawHashChanged":true,"schemaHashChanged":true,"requestHashChanged":true,"sourceUpdatedAtChanged":true,"rowDelta":12,"coverageDelta":12}',
+				'2026-09-28 03:00:00', '2026-09-28 03:00:00', '2026-07-15', ?)
 			""",
 			"d".repeat(64),
 			"e".repeat(64),
-			"f".repeat(64)
+			"f".repeat(64),
+			GOVERNANCE_POLICY_SHA256
 		);
 	}
 

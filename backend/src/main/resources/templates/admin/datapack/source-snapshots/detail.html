@@ -32,9 +32,13 @@
 			<tr><th scope="row">provider</th><td th:text="${snapshot.provider}">provider</td></tr>
 			<tr><th scope="row">retrieved at</th><td th:text="${snapshot.retrievedAt}">2026-06-29T03:00</td></tr>
 			<tr><th scope="row">source updated at</th><td th:text="${snapshot.sourceUpdatedAt}">2026-06-28T00:00</td></tr>
+			<tr><th scope="row">freshness basis at</th><td th:text="${snapshot.freshnessBasisAt}">2026-06-28T00:00</td></tr>
+			<tr><th scope="row">provider valid until</th><td th:text="${snapshot.providerValidUntil}">2026-07-28T00:00</td></tr>
 			<tr><th scope="row">row count</th><td th:text="${snapshot.rowCount}">0</td></tr>
+			<tr><th scope="row">coverage count</th><td th:text="${snapshot.coverageCount}">0</td></tr>
 			<tr><th scope="row">previous snapshot</th><td th:text="${snapshot.previousSnapshotId}">-</td></tr>
 			<tr><th scope="row">diff summary</th><td th:text="${snapshot.diffSummary}">-</td></tr>
+			<tr><th scope="row">diff summary JSON</th><td th:text="${snapshot.diffSummaryJson}">-</td></tr>
 			</tbody>
 		</table>
 	</section>
@@ -51,6 +55,8 @@
 			<tr><th scope="row">credential redacted</th><td th:text="${snapshot.credentialRedactedLabel()}">credential redacted</td></tr>
 			<tr><th scope="row">freshness expires</th><td th:text="${snapshot.freshnessExpiresAt}">2026-07-06T03:00</td></tr>
 			<tr><th scope="row">raw retention</th><td th:text="${snapshot.rawRetentionExpiresAt}">2026-09-29T03:00</td></tr>
+			<tr><th scope="row">governance policy version</th><td th:text="${snapshot.governancePolicyVersion}">-</td></tr>
+			<tr><th scope="row">governance policy sha256</th><td th:text="${snapshot.governancePolicySha256}">-</td></tr>
 			</tbody>
 		</table>
 	</section>
@@ -98,8 +104,20 @@
 					<input name="sourceUpdatedAt" type="datetime-local">
 				</label>
 				<label>
+					freshness basis at (retrievedAt 이외 기준만 입력)
+					<input name="freshnessBasisAt" type="datetime-local">
+				</label>
+				<label>
+					provider valid until (policy 필수 source만 입력)
+					<input name="providerValidUntil" type="datetime-local">
+				</label>
+				<label>
 					row count
 					<input name="rowCount" type="number" min="0" required>
+				</label>
+				<label>
+					coverage count
+					<input name="coverageCount" type="number" min="0" required>
 				</label>
 			</div>
 			<div class="admin-form-section">
@@ -160,7 +178,11 @@
 				</label>
 				<label>
 					diff summary
-					<input name="diffSummary" required>
+					<input name="diffSummary">
+				</label>
+				<label>
+					diff summary JSON
+					<textarea name="diffSummaryJson"></textarea>
 				</label>
 				<label>
 					freshness expires at
@@ -169,6 +191,14 @@
 				<label>
 					raw retention expires at
 					<input name="rawRetentionExpiresAt" type="datetime-local" required>
+				</label>
+				<label>
+					governance policy version
+					<input name="governancePolicyVersion" required>
+				</label>
+				<label>
+					governance policy sha256
+					<input name="governancePolicySha256" minlength="64" maxlength="64" required>
 				</label>
 				<label>
 					reason

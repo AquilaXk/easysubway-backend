@@ -281,14 +281,14 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
 				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
-				row_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
+				row_count, coverage_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
 				schema_fingerprint, snapshot_status, schema_status, license_status,
 				fetch_status, redistribution_allowed, credential_redacted,
 				freshness_expires_at, raw_retention_expires_at
 			)
 			VALUES (
 				'snapshot-unrelated-realtime', 'topis-arrival', 'TOPIS',
-				'2026-07-06 02:00:00', '2026-07-06 02:00:00', 10, ?, 's3://raw/unrelated',
+				'2026-07-06 02:00:00', '2026-07-06 02:00:00', 10, 10, ?, 's3://raw/unrelated',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', FALSE, TRUE,
 				'2026-07-06 02:01:30', '2026-07-07 02:00:00'
 			)
@@ -382,14 +382,14 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
 				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
-				row_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
+				row_count, coverage_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
 				schema_fingerprint, snapshot_status, schema_status, license_status,
 				fetch_status, redistribution_allowed, credential_redacted,
 				freshness_expires_at, raw_retention_expires_at
 			)
 			VALUES (
 				'snapshot-release-blocked', 'kric-station-elevator', 'KRIC',
-				'2026-06-29 03:00:00', '2026-06-28 03:00:00', 10, ?, 's3://raw/snapshot',
+				'2026-06-29 03:00:00', '2026-06-28 03:00:00', 10, 10, ?, 's3://raw/snapshot',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE,
 				'2026-07-07 03:00:00', '2026-09-29 03:00:00'
 			)

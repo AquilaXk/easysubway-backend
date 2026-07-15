@@ -4,6 +4,7 @@ import com.easysubway.datapack.domain.DataSourceSnapshot;
 import com.easysubway.datapack.domain.InvalidDataSourceSnapshotException;
 import java.sql.ResultSet;
 import java.sql.SQLException;
+import java.sql.Types;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.List;
@@ -12,13 +13,16 @@ import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DuplicateKeyException;
 import org.springframework.dao.EmptyResultDataAccessException;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.SqlParameterValue;
 import org.springframework.stereotype.Repository;
 
 @Repository
 public class JdbcDataSourceSnapshotRepository {
 
 	private final JdbcTemplate jdbcTemplate;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcDataSourceSnapshotRepository(DataSource dataSource) {
@@ -27,6 +31,7 @@ public class JdbcDataSourceSnapshotRepository {
 
 	JdbcDataSourceSnapshotRepository(JdbcTemplate jdbcTemplate) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	public DataSourceSnapshot saveSnapshot(DataSourceSnapshot snapshot) {
@@ -47,11 +52,12 @@ public class JdbcDataSourceSnapshotRepository {
 	public Optional<DataSourceSnapshot> loadSnapshot(String snapshotId) {
 		try {
 			return Optional.ofNullable(jdbcTemplate.queryForObject("""
-				SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+					freshness_basis_at, provider_valid_until, row_count, coverage_count,
 					raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 					snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-					credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
-					raw_retention_expires_at
+					credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+					raw_retention_expires_at, governance_policy_version, governance_policy_sha256
 				FROM data_source_snapshots
 				WHERE snapshot_id = ?
 				""", this::mapSnapshot, snapshotId));
@@ -60,13 +66,79 @@ public class JdbcDataSourceSnapshotRepository {
 		}
 	}
 
-	public List<DataSourceSnapshot> listRecentSnapshots(int limit, int offset) {
+	public void lockSourceLineage(String sourceId) {
+		if (databaseDialect == DatabaseDialect.H2) {
+			jdbcTemplate.update("MERGE INTO datapack_source_lineage_locks (source_id) KEY (source_id) VALUES (?)", sourceId);
+		} else {
+			jdbcTemplate.update("""
+				INSERT INTO datapack_source_lineage_locks (source_id)
+				VALUES (?)
+				ON CONFLICT (source_id) DO NOTHING
+				""", sourceId);
+		}
+		jdbcTemplate.queryForObject("""
+			SELECT source_id
+			FROM datapack_source_lineage_locks
+			WHERE source_id = ?
+			FOR UPDATE
+			""", String.class, sourceId);
+	}
+
+	private static DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
+	}
+
+	public Optional<DataSourceSnapshot> findHeadBySourceIdForUpdate(String sourceId) {
+		try {
+			return Optional.ofNullable(jdbcTemplate.queryForObject("""
+				SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+					freshness_basis_at, provider_valid_until, row_count, coverage_count,
+					raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+					snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
+					credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+					raw_retention_expires_at, governance_policy_version, governance_policy_sha256
+				FROM data_source_snapshots
+				WHERE source_id = ?
+				ORDER BY retrieved_at DESC, snapshot_id DESC
+				LIMIT 1
+				FOR UPDATE
+				""", this::mapSnapshot, sourceId));
+		} catch (EmptyResultDataAccessException exception) {
+			return Optional.empty();
+		}
+	}
+
+	public List<DataSourceSnapshot> findChildren(String previousSnapshotId) {
 		return jdbcTemplate.query("""
-			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
-				raw_retention_expires_at
+				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
+			FROM data_source_snapshots
+			WHERE previous_snapshot_id = ?
+			ORDER BY snapshot_id ASC
+			""", this::mapSnapshot, previousSnapshotId);
+	}
+
+	public List<DataSourceSnapshot> listRecentSnapshots(int limit, int offset) {
+		return jdbcTemplate.query("""
+			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
+				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
 			FROM data_source_snapshots
 			ORDER BY retrieved_at DESC, snapshot_id ASC
 			LIMIT ? OFFSET ?
@@ -82,11 +154,12 @@ public class JdbcDataSourceSnapshotRepository {
 		int offset
 	) {
 		StringBuilder sql = new StringBuilder("""
-			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+			SELECT snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
-				raw_retention_expires_at
+				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
 			FROM data_source_snapshots
 			""");
 		List<String> predicates = new ArrayList<>();
@@ -150,20 +223,24 @@ public class JdbcDataSourceSnapshotRepository {
 	private void insert(DataSourceSnapshot snapshot) {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
-				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at,
+				freshness_basis_at, provider_valid_until, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
-				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
-				raw_retention_expires_at
+				credential_redacted, previous_snapshot_id, diff_summary, diff_summary_json, freshness_expires_at,
+				raw_retention_expires_at, governance_policy_version, governance_policy_sha256
 			)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			""",
 			snapshot.snapshotId(),
 			snapshot.sourceId(),
 			snapshot.provider(),
 			snapshot.retrievedAt(),
 			snapshot.sourceUpdatedAt(),
+			snapshot.freshnessBasisAt(),
+			snapshot.providerValidUntil(),
 			snapshot.rowCount(),
+			snapshot.coverageCount(),
 			snapshot.rawSha256(),
 			snapshot.rawObjectUri(),
 			snapshot.redactedRequestFingerprint(),
@@ -176,20 +253,34 @@ public class JdbcDataSourceSnapshotRepository {
 			snapshot.credentialRedacted(),
 			snapshot.previousSnapshotId(),
 			snapshot.diffSummary(),
+			jsonParameter(snapshot.diffSummaryJson()),
 			snapshot.freshnessExpiresAt(),
-			snapshot.rawRetentionExpiresAt()
+			snapshot.rawRetentionExpiresAt(),
+			snapshot.governancePolicyVersion(),
+			snapshot.governancePolicySha256()
 		);
+	}
+
+	private Object jsonParameter(String value) {
+		return databaseDialect == DatabaseDialect.POSTGRESQL
+			? new SqlParameterValue(Types.OTHER, value)
+			: value;
 	}
 
 	private DataSourceSnapshot mapSnapshot(ResultSet resultSet, int rowNumber) throws SQLException {
 		var sourceUpdatedAt = resultSet.getTimestamp("source_updated_at");
+		var freshnessBasisAt = resultSet.getTimestamp("freshness_basis_at");
+		var providerValidUntil = resultSet.getTimestamp("provider_valid_until");
 		return new DataSourceSnapshot(
 			resultSet.getString("snapshot_id"),
 			resultSet.getString("source_id"),
 			resultSet.getString("provider"),
 			resultSet.getTimestamp("retrieved_at").toLocalDateTime(),
 			sourceUpdatedAt == null ? null : sourceUpdatedAt.toLocalDateTime(),
+			freshnessBasisAt == null ? null : freshnessBasisAt.toLocalDateTime(),
+			providerValidUntil == null ? null : providerValidUntil.toLocalDateTime(),
 			resultSet.getInt("row_count"),
+			resultSet.getInt("coverage_count"),
 			resultSet.getString("raw_sha256"),
 			resultSet.getString("raw_object_uri"),
 			resultSet.getString("redacted_request_fingerprint"),
@@ -202,8 +293,11 @@ public class JdbcDataSourceSnapshotRepository {
 			resultSet.getBoolean("credential_redacted"),
 			resultSet.getString("previous_snapshot_id"),
 			resultSet.getString("diff_summary"),
+			resultSet.getString("diff_summary_json"),
 			resultSet.getTimestamp("freshness_expires_at").toLocalDateTime(),
-			resultSet.getTimestamp("raw_retention_expires_at").toLocalDateTime()
+			resultSet.getTimestamp("raw_retention_expires_at").toLocalDateTime(),
+			resultSet.getString("governance_policy_version"),
+			resultSet.getString("governance_policy_sha256")
 		);
 	}
 

@@ -104,3 +104,12 @@ tasks.named('test') {
 	// 기본 512MB를 넘어선다. 포크 테스트 JVM 힙을 2g로 상향(전체 스위트·CI 공통 OOM 방지).
 	maxHeapSize = '2g'
 }
+
+tasks.named('processResources') {
+	from('../tools/datapack/source-governance-policy.json') {
+		into 'datapack'
+	}
+	from('../apps/mobile/release/datapack-freshness-sla.json') {
+		into 'datapack'
+	}
+}

@@ -89,14 +89,14 @@ class RouteGateMatrixAdminPageControllerTest {
 	private void insertSnapshot() {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
-				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count, coverage_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed,
 				credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at,
 				raw_retention_expires_at
 			)
 			VALUES ('snapshot-route-20260629', 'route-source-a', '수도권 운영기관',
-				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 400,
+				'2026-06-29 03:00:00', '2026-06-28 00:00:00', 400, 400,
 				?, 's3://easysubway-datapack-sources/route-source-a/snapshot-route-20260629.json',
 				?, ?, 'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL,
 				'route edge evidence +3 rows', '2026-07-06 03:00:00', '2026-09-29 03:00:00')

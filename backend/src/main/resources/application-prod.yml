@@ -21,6 +21,8 @@ spring:
   flyway:
     enabled: true
     locations: classpath:db/migration/postgresql
+    postgresql:
+      transactional-lock: false
     # 기존 운영 DB는 schema만 있고 Flyway 이력이 없을 수 있어 최초 전환 시 baseline으로 수렴시킨다.
     baseline-on-migrate: true
     baseline-version: 1

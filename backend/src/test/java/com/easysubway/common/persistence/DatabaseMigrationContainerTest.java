@@ -33,10 +33,7 @@ class DatabaseMigrationContainerTest {
 			POSTGRES.getUsername(),
 			POSTGRES.getPassword()
 		);
-		var flyway = Flyway.configure()
-			.dataSource(dataSource)
-			.locations("classpath:db/migration/postgresql")
-			.load();
+		var flyway = flyway(dataSource, "classpath:db/migration/postgresql", null).load();
 
 		var result = flyway.migrate();
 
@@ -49,6 +46,7 @@ class DatabaseMigrationContainerTest {
 				"facility_reports",
 				"push_notification_outbox",
 				"data_source_snapshots",
+				"datapack_source_lineage_locks",
 				"datapack_normalization_runs",
 				"datapack_normalized_outputs",
 				"datapack_candidates",
@@ -65,12 +63,23 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56");
+		assertThat(jdbcTemplate.queryForObject("""
+			SELECT COUNT(*)
+			FROM pg_index i
+			JOIN pg_class c ON c.oid = i.indexrelid
+			JOIN pg_namespace n ON n.oid = c.relnamespace
+			WHERE c.relname IN ('uq_data_source_snapshots_previous_child', 'uq_data_source_snapshots_source_root')
+				AND n.nspname = 'public'
+				AND i.indisvalid = TRUE
+				AND i.indisready = TRUE
+			""", Integer.class)).isEqualTo(2);
 		assertAdPlacementsSeeded(jdbcTemplate);
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
 				"fk_facility_report_review_audits_report",
 				"fk_data_source_snapshots_previous",
+				"fk_data_source_snapshots_previous_source",
 				"fk_datapack_normalization_runs_snapshot_source",
 				"fk_datapack_normalized_outputs_run",
 				"fk_external_alias_approvals_snapshot_source",
@@ -100,6 +109,9 @@ class DatabaseMigrationContainerTest {
 				"chk_data_source_snapshots_credential_redacted",
 				"chk_data_source_snapshots_raw_object_uri",
 				"chk_data_source_snapshots_raw_retention",
+				"chk_data_source_snapshots_coverage_count",
+				"chk_data_source_snapshots_governance_pair",
+				"chk_data_source_snapshots_previous_not_self",
 				"chk_facility_evidence_strict_route",
 				"chk_manual_overrides_approval_state",
 				"chk_manual_overrides_effective_window",
@@ -115,6 +127,8 @@ class DatabaseMigrationContainerTest {
 		assertNormalizationRunGuards(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
 		assertSnapshotRawEvidencePolicyGuards(jdbcTemplate);
+		assertSnapshotGovernanceGuards(jdbcTemplate);
+		assertPostgresqlSnapshotLineageIsAppendOnly(jdbcTemplate);
 		assertPostgresqlSnapshotRawEvidenceConstraintsAreStaged(jdbcTemplate);
 		assertFacilityEvidenceStrictRouteGuards(jdbcTemplate);
 		assertManualOverrideProductionGuards(jdbcTemplate);
@@ -140,6 +154,30 @@ class DatabaseMigrationContainerTest {
 		var jdbcTemplate = new JdbcTemplate(dataSource);
 		assertAdPlacementsSeeded(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
+		assertSnapshotGovernanceGuards(jdbcTemplate);
+	}
+
+	@Test
+	@DisplayName("H2 V52는 기존 source의 다중 root lineage가 있으면 migration을 중단한다")
+	void h2GovernanceMigrationRejectsExistingMultipleRoots() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:datapack-multiple-roots;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		flyway(dataSource, "classpath:db/migration/h2", null)
+			.target(MigrationVersion.fromVersion("50"))
+			.load()
+			.migrate();
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		insertLegacySnapshotBeforeGovernance(jdbcTemplate, "legacy-root-a", "legacy-source");
+		insertLegacySnapshotBeforeGovernance(jdbcTemplate, "legacy-root-b", "legacy-source");
+
+		assertThatThrownBy(() -> migrate(dataSource, "classpath:db/migration/h2", null))
+			.isInstanceOf(org.flywaydb.core.api.FlywayException.class)
+			.hasMessageContaining("V52__datapack_source_governance.sql")
+			.rootCause()
+			.hasMessageContaining("uq_data_source_snapshots_source_root");
 	}
 
 	@Test
@@ -407,7 +445,10 @@ class DatabaseMigrationContainerTest {
 		String location,
 		String schema
 	) {
-		var configuration = Flyway.configure().dataSource(dataSource).locations(location);
+		var configuration = Flyway.configure()
+			.configuration(java.util.Map.of("flyway.postgresql.transactional.lock", "false"))
+			.dataSource(dataSource)
+			.locations(location);
 		return schema == null ? configuration : configuration.schemas(schema).defaultSchema(schema);
 	}
 
@@ -542,6 +583,32 @@ class DatabaseMigrationContainerTest {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (
 				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				coverage_count, raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status,
+				redistribution_allowed, credential_redacted, previous_snapshot_id,
+				diff_summary, freshness_expires_at, raw_retention_expires_at
+			)
+			VALUES (?, ?, 'KRIC', '2026-06-29 00:00:00', NULL, 1, 1, ?, ?, ?, ?,
+				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL, NULL,
+				'2026-07-06 00:00:00', '2026-09-29 00:00:00')
+			""",
+			snapshotId,
+			sourceId,
+			"a".repeat(64),
+			"s3://evidence/" + snapshotId,
+			"b".repeat(64),
+			"c".repeat(64)
+		);
+	}
+
+	private void insertLegacySnapshotBeforeGovernance(
+		JdbcTemplate jdbcTemplate,
+		String snapshotId,
+		String sourceId
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
 				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
 				snapshot_status, schema_status, license_status, fetch_status,
 				redistribution_allowed, credential_redacted, previous_snapshot_id,
@@ -557,6 +624,90 @@ class DatabaseMigrationContainerTest {
 			"s3://evidence/" + snapshotId,
 			"b".repeat(64),
 			"c".repeat(64)
+		);
+	}
+
+	private void assertSnapshotGovernanceGuards(JdbcTemplate jdbcTemplate) {
+		insertSnapshot(jdbcTemplate, "lineage-root", "lineage-source");
+		assertThatThrownBy(() -> insertSnapshot(jdbcTemplate, "lineage-second-root", "lineage-source"))
+			.isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> insertSnapshotChild(
+			jdbcTemplate,
+			"lineage-cross-source",
+			"other-source",
+			"lineage-root"
+		)).isInstanceOf(DataAccessException.class);
+
+		insertSnapshotChild(jdbcTemplate, "lineage-child", "lineage-source", "lineage-root");
+		assertThatThrownBy(() -> insertSnapshotChild(
+			jdbcTemplate,
+			"lineage-fork",
+			"lineage-source",
+			"lineage-root"
+		)).isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			UPDATE data_source_snapshots
+			SET governance_policy_version = '2026-07-15'
+			WHERE snapshot_id = 'lineage-root'
+			""")).isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			UPDATE data_source_snapshots
+			SET governance_policy_sha256 = ?
+			WHERE snapshot_id = 'lineage-root'
+			""", "d".repeat(64))).isInstanceOf(DataAccessException.class);
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			UPDATE data_source_snapshots
+			SET coverage_count = -1
+			WHERE snapshot_id = 'lineage-root'
+			""")).isInstanceOf(DataAccessException.class);
+	}
+
+	private void assertPostgresqlSnapshotLineageIsAppendOnly(JdbcTemplate jdbcTemplate) {
+		assertThatThrownBy(() -> insertSnapshotChild(
+			jdbcTemplate,
+			"lineage-self",
+			"lineage-self-source",
+			"lineage-self"
+		)).isInstanceOf(DataAccessException.class);
+
+		insertSnapshot(jdbcTemplate, "lineage-cycle-root", "lineage-cycle-source");
+		insertSnapshotChild(jdbcTemplate, "lineage-cycle-child", "lineage-cycle-source", "lineage-cycle-root");
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			UPDATE data_source_snapshots
+			SET previous_snapshot_id = 'lineage-cycle-child'
+			WHERE snapshot_id = 'lineage-cycle-root'
+			""")).isInstanceOf(DataAccessException.class);
+	}
+
+	private void insertSnapshotChild(
+		JdbcTemplate jdbcTemplate,
+		String snapshotId,
+		String sourceId,
+		String previousSnapshotId
+	) {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count,
+				coverage_count, raw_sha256, raw_object_uri, redacted_request_fingerprint,
+				schema_fingerprint, snapshot_status, schema_status, license_status,
+				fetch_status, redistribution_allowed, credential_redacted,
+				previous_snapshot_id, diff_summary, diff_summary_json,
+				freshness_expires_at, raw_retention_expires_at,
+				governance_policy_version, governance_policy_sha256
+			)
+			VALUES (?, ?, 'KRIC', '2026-06-30 00:00:00', NULL, 2, 2, ?, ?, ?, ?,
+				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, ?, 'CHANGED',
+				'{"status":"CHANGED"}', '2026-07-07 00:00:00', '2026-09-30 00:00:00',
+				'2026-07-15', ?)
+			""",
+			snapshotId,
+			sourceId,
+			"a".repeat(64),
+			"s3://evidence/" + snapshotId,
+			"b".repeat(64),
+			"c".repeat(64),
+			previousSnapshotId,
+			"d".repeat(64)
 		);
 	}
 

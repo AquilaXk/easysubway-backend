@@ -36,6 +36,7 @@ class JdbcPushNotificationOutboxRepositoryContainerTest {
 			POSTGRES.getPassword()
 		);
 		Flyway.configure()
+			.configuration(java.util.Map.of("flyway.postgresql.transactional.lock", "false"))
 			.dataSource(dataSource)
 			.locations("classpath:db/migration/postgresql")
 			.load()

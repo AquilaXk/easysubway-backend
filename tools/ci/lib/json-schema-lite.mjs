@@ -5,6 +5,7 @@ const SUPPORTED = new Set([
   "const",
   "description",
   "enum",
+  "format",
   "items",
   "minItems",
   "minimum",
@@ -50,10 +51,54 @@ function validateScalar(schema, value, path, errors) {
   if (schema.type === "string" && schema.pattern && !new RegExp(schema.pattern).test(value)) {
     errors.push(`${path}: pattern ${schema.pattern} 불일치`);
   }
+  if (schema.type === "string" && schema.format && !matchesFormat(schema.format, value)) {
+    errors.push(`${path}: format ${schema.format} 불일치`);
+  }
   if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum) {
     errors.push(`${path}: minimum ${schema.minimum} 미만`);
   }
   return false;
+}
+
+function matchesFormat(format, value) {
+  if (format === "date") {
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(value)) return false;
+    const date = new Date(`${value}T00:00:00.000Z`);
+    return Number.isFinite(date.getTime()) && date.toISOString().slice(0, 10) === value;
+  }
+  if (format === "date-time") {
+    const match = /^(\d{4})-(\d{2})-(\d{2})T(\d{2}):(\d{2}):(\d{2})(?:\.\d+)?(Z|[+-]\d{2}:\d{2})$/.exec(value);
+    if (!match) return false;
+    const [year, month, day, hour, minute, second] = match.slice(1, 7).map(Number);
+    const offset = match[7];
+    const maxDay = [31, isLeapYear(year) ? 29 : 28, 31, 30, 31, 30, 31, 31, 30, 31, 30, 31][month - 1];
+    if (month < 1 || month > 12 || day < 1 || day > maxDay
+      || hour > 23 || minute > 59 || second > 59) return false;
+    if (offset !== "Z") {
+      const [offsetHour, offsetMinute] = offset.slice(1).split(":").map(Number);
+      if (offsetHour > 23 || offsetMinute > 59) return false;
+    }
+    return true;
+  }
+  if (format === "uri") {
+    if (!isRawUri(value)) return false;
+    try {
+      const parsed = new URL(value);
+      return parsed.protocol !== "";
+    } catch {
+      return false;
+    }
+  }
+  throw new Error(`json-schema-lite: 미지원 format '${format}'`);
+}
+
+function isRawUri(value) {
+  return /^[A-Za-z0-9:/?#\[\]@!$&'()*+,;=._~%\-]+$/.test(value)
+    && !/%(?![0-9A-Fa-f]{2})/.test(value);
+}
+
+function isLeapYear(year) {
+  return year % 4 === 0 && (year % 100 !== 0 || year % 400 === 0);
 }
 
 function validateObject(schema, value, path, errors) {
@@ -89,6 +134,10 @@ function validateArray(schema, value, path, errors) {
 }
 
 function matchesType(type, value) {
+  if (Array.isArray(type)) {
+    if (type.length === 0) throw new Error("json-schema-lite: type 배열은 비어 있을 수 없습니다");
+    return type.map((candidate) => matchesType(candidate, value)).some(Boolean);
+  }
   switch (type) {
     case "object":
       return value !== null && typeof value === "object" && !Array.isArray(value);
@@ -102,6 +151,8 @@ function matchesType(type, value) {
       return typeof value === "number" && Number.isFinite(value);
     case "boolean":
       return typeof value === "boolean";
+    case "null":
+      return value === null;
     default:
       throw new Error(`json-schema-lite: 미지원 type '${type}'`);
   }

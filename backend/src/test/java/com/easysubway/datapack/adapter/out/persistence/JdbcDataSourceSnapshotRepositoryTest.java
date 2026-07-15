@@ -34,7 +34,10 @@ class JdbcDataSourceSnapshotRepositoryTest {
 				provider VARCHAR(120) NOT NULL,
 				retrieved_at TIMESTAMP NOT NULL,
 				source_updated_at TIMESTAMP,
+				freshness_basis_at TIMESTAMP,
+				provider_valid_until TIMESTAMP,
 				row_count INTEGER NOT NULL,
+				coverage_count INTEGER,
 				raw_sha256 VARCHAR(64) NOT NULL,
 				raw_object_uri VARCHAR(1000) NOT NULL,
 				redacted_request_fingerprint VARCHAR(64) NOT NULL,
@@ -47,8 +50,11 @@ class JdbcDataSourceSnapshotRepositoryTest {
 				credential_redacted BOOLEAN NOT NULL,
 				previous_snapshot_id VARCHAR(120),
 				diff_summary VARCHAR(1000),
+				diff_summary_json CLOB,
 				freshness_expires_at TIMESTAMP NOT NULL,
-				raw_retention_expires_at TIMESTAMP NOT NULL
+				raw_retention_expires_at TIMESTAMP NOT NULL,
+				governance_policy_version VARCHAR(32),
+				governance_policy_sha256 VARCHAR(64)
 			)
 			""");
 		repository = new JdbcDataSourceSnapshotRepository(jdbcTemplate);
@@ -151,6 +157,46 @@ class JdbcDataSourceSnapshotRepositoryTest {
 		)))
 			.isInstanceOf(InvalidDataSourceSnapshotException.class)
 			.hasMessageContaining("rawObjectUri");
+		for (String rawObjectUri : java.util.List.of(
+			"s3://easysubway-datapack-sources/raw/../victim.json",
+			"s3://easysubway-datapack-sources/raw/%2e%2e/victim.json",
+			"s3://easysubway-datapack-sources:4444/raw/victim.json"
+		)) {
+			assertThatThrownBy(() -> repository.saveSnapshot(lockedSnapshot(
+				"snapshot-uri-dot-segment",
+				"a".repeat(64),
+				13,
+				rawObjectUri,
+				true
+			)))
+				.isInstanceOf(InvalidDataSourceSnapshotException.class)
+				.hasMessageContaining("rawObjectUri");
+		}
+		assertThat(repository.saveSnapshot(lockedSnapshot(
+			"snapshot-uri-unicode",
+			"a".repeat(64),
+			13,
+			"s3://easysubway-datapack-sources/raw/%ED%95%9C%EA%B8%80%20file.json",
+			true
+		))).isNotNull();
+	}
+
+	@Test
+	@DisplayName("root와 child는 previous·diff 두 필드를 같은 형태로 요구한다")
+	void rootAndChildRequireMatchingDiffFields() {
+		var root = lockedSnapshot("snapshot-root", "a".repeat(64), 13);
+
+		assertThatThrownBy(() -> repository.saveSnapshot(withLineage(root, null, "unexpected", null)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("diffSummary");
+		assertThatThrownBy(() -> repository.saveSnapshot(withLineage(
+			root,
+			"snapshot-parent",
+			null,
+			"{\"status\":\"CHANGED\"}"
+		)))
+			.isInstanceOf(InvalidDataSourceSnapshotException.class)
+			.hasMessageContaining("diffSummary");
 	}
 
 	@Test
@@ -209,6 +255,9 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			"국가철도공단",
 			LocalDateTime.of(2026, 6, 29, 3, 0, 0, 123456789),
 			LocalDateTime.of(2026, 6, 28, 0, 0, 0, 987654321),
+			null,
+			null,
+			rowCount,
 			rowCount,
 			rawSha256,
 			rawObjectUri,
@@ -221,9 +270,30 @@ class JdbcDataSourceSnapshotRepositoryTest {
 			true,
 			credentialRedacted,
 			null,
-			"initial snapshot",
+			null,
+			null,
 			LocalDateTime.of(2026, 7, 6, 3, 0, 0, 555555555),
-			LocalDateTime.of(2026, 9, 29, 3, 0, 0, 555555555)
+			LocalDateTime.of(2026, 9, 29, 3, 0, 0, 555555555),
+			"2026-07-15",
+			"e".repeat(64)
+		);
+	}
+
+	private DataSourceSnapshot withLineage(
+		DataSourceSnapshot snapshot,
+		String previousSnapshotId,
+		String diffSummary,
+		String diffSummaryJson
+	) {
+		return new DataSourceSnapshot(
+			snapshot.snapshotId(), snapshot.sourceId(), snapshot.provider(), snapshot.retrievedAt(),
+			snapshot.sourceUpdatedAt(), snapshot.freshnessBasisAt(), snapshot.providerValidUntil(),
+			snapshot.rowCount(), snapshot.coverageCount(), snapshot.rawSha256(),
+			snapshot.rawObjectUri(), snapshot.redactedRequestFingerprint(), snapshot.schemaFingerprint(),
+			snapshot.snapshotStatus(), snapshot.schemaStatus(), snapshot.licenseStatus(), snapshot.fetchStatus(),
+			snapshot.redistributionAllowed(), snapshot.credentialRedacted(), previousSnapshotId, diffSummary,
+			diffSummaryJson, snapshot.freshnessExpiresAt(), snapshot.rawRetentionExpiresAt(),
+			snapshot.governancePolicyVersion(), snapshot.governancePolicySha256()
 		);
 	}
 }

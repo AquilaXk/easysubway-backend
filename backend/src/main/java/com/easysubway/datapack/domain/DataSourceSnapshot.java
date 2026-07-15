@@ -1,9 +1,14 @@
 package com.easysubway.datapack.domain;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.net.URI;
 import java.net.URISyntaxException;
 import java.time.LocalDateTime;
 import java.time.temporal.ChronoUnit;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.regex.Pattern;
 
 public record DataSourceSnapshot(
@@ -12,7 +17,10 @@ public record DataSourceSnapshot(
 	String provider,
 	LocalDateTime retrievedAt,
 	LocalDateTime sourceUpdatedAt,
+	LocalDateTime freshnessBasisAt,
+	LocalDateTime providerValidUntil,
 	int rowCount,
+	int coverageCount,
 	String rawSha256,
 	String rawObjectUri,
 	String redactedRequestFingerprint,
@@ -25,11 +33,15 @@ public record DataSourceSnapshot(
 	boolean credentialRedacted,
 	String previousSnapshotId,
 	String diffSummary,
+	String diffSummaryJson,
 	LocalDateTime freshnessExpiresAt,
-	LocalDateTime rawRetentionExpiresAt
+	LocalDateTime rawRetentionExpiresAt,
+	String governancePolicyVersion,
+	String governancePolicySha256
 ) {
 
 	private static final Pattern SHA256 = Pattern.compile("[0-9a-f]{64}");
+	private static final ObjectMapper OBJECT_MAPPER = new ObjectMapper();
 
 	public DataSourceSnapshot {
 		snapshotId = requireText(snapshotId, "snapshotId");
@@ -40,8 +52,13 @@ public record DataSourceSnapshot(
 		}
 		retrievedAt = normalizeTimestamp(retrievedAt);
 		sourceUpdatedAt = normalizeTimestamp(sourceUpdatedAt);
+		freshnessBasisAt = normalizeTimestamp(freshnessBasisAt);
+		providerValidUntil = normalizeTimestamp(providerValidUntil);
 		if (rowCount < 0) {
 			throw new InvalidDataSourceSnapshotException("rowCount must be zero or positive.");
+		}
+		if (coverageCount < 0) {
+			throw new InvalidDataSourceSnapshotException("coverageCount must be zero or positive.");
 		}
 		rawSha256 = requireSha256(rawSha256, "rawSha256");
 		rawObjectUri = requireText(rawObjectUri, "rawObjectUri");
@@ -53,6 +70,7 @@ public record DataSourceSnapshot(
 		fetchStatus = requireText(fetchStatus, "fetchStatus");
 		previousSnapshotId = trimToNull(previousSnapshotId);
 		diffSummary = trimToNull(diffSummary);
+		diffSummaryJson = canonicalJson(diffSummaryJson);
 		if (freshnessExpiresAt == null) {
 			throw new InvalidDataSourceSnapshotException("freshnessExpiresAt is required.");
 		}
@@ -61,6 +79,8 @@ public record DataSourceSnapshot(
 			throw new InvalidDataSourceSnapshotException("rawRetentionExpiresAt is required.");
 		}
 		rawRetentionExpiresAt = normalizeTimestamp(rawRetentionExpiresAt);
+		governancePolicyVersion = trimToNull(governancePolicyVersion);
+		governancePolicySha256 = trimToNull(governancePolicySha256);
 	}
 
 	public void requireRawEvidenceWritePolicy() {
@@ -70,6 +90,14 @@ public record DataSourceSnapshot(
 		requireCredentialFreeRawObjectUri(rawObjectUri);
 		if (!rawRetentionExpiresAt.isAfter(retrievedAt)) {
 			throw new InvalidDataSourceSnapshotException("rawRetentionExpiresAt must be after retrievedAt.");
+		}
+		requireText(governancePolicyVersion, "governancePolicyVersion");
+		requireSha256(governancePolicySha256, "governancePolicySha256");
+		if ((previousSnapshotId == null) != (diffSummary == null)
+			|| (previousSnapshotId == null) != (diffSummaryJson == null)) {
+			throw new InvalidDataSourceSnapshotException(
+				"first snapshot must omit diffSummary and diffSummaryJson; later snapshots must include both."
+			);
 		}
 	}
 
@@ -103,6 +131,8 @@ public record DataSourceSnapshot(
 			|| uri.getRawPath() == null
 			|| uri.getRawPath().isBlank()
 			|| "/".equals(uri.getRawPath())
+			|| uri.getPort() != -1
+			|| !isCanonicalObjectPath(uri.getPath())
 			|| trimmed.contains("@")
 			|| uri.getRawQuery() != null
 			|| uri.getRawUserInfo() != null
@@ -111,11 +141,55 @@ public record DataSourceSnapshot(
 		}
 	}
 
+	private static boolean isCanonicalObjectPath(String decodedPath) {
+		if (decodedPath == null || !decodedPath.startsWith("/") || decodedPath.length() == 1) {
+			return false;
+		}
+		for (String segment : decodedPath.substring(1).split("/", -1)) {
+			if (segment.isEmpty() || ".".equals(segment) || "..".equals(segment)
+				|| segment.codePoints().anyMatch(Character::isISOControl)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
 	private static String trimToNull(String value) {
 		if (value == null || value.isBlank()) {
 			return null;
 		}
 		return value.trim();
+	}
+
+	private static String canonicalJson(String value) {
+		String trimmed = trimToNull(value);
+		if (trimmed == null) {
+			return null;
+		}
+		try {
+			return OBJECT_MAPPER.writeValueAsString(sortJson(OBJECT_MAPPER.readTree(trimmed)));
+		} catch (JsonProcessingException exception) {
+			throw new InvalidDataSourceSnapshotException("diffSummaryJson must be valid JSON.");
+		}
+	}
+
+	private static JsonNode sortJson(JsonNode value) {
+		if (value.isObject()) {
+			var sorted = OBJECT_MAPPER.createObjectNode();
+			var fields = new ArrayList<String>();
+			value.fieldNames().forEachRemaining(fields::add);
+			fields.sort(Comparator.naturalOrder());
+			for (String field : fields) {
+				sorted.set(field, sortJson(value.get(field)));
+			}
+			return sorted;
+		}
+		if (value.isArray()) {
+			var sorted = OBJECT_MAPPER.createArrayNode();
+			value.forEach(entry -> sorted.add(sortJson(entry)));
+			return sorted;
+		}
+		return value;
 	}
 
 	private static LocalDateTime normalizeTimestamp(LocalDateTime value) {

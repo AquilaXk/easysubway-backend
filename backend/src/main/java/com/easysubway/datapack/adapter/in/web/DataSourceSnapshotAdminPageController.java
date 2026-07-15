@@ -126,7 +126,10 @@ class DataSourceSnapshotAdminPageController {
 		String provider,
 		LocalDateTime retrievedAt,
 		LocalDateTime sourceUpdatedAt,
+		LocalDateTime freshnessBasisAt,
+		LocalDateTime providerValidUntil,
 		int rowCount,
+		int coverageCount,
 		String rawSha256,
 		String rawObjectUri,
 		String redactedRequestFingerprint,
@@ -139,8 +142,11 @@ class DataSourceSnapshotAdminPageController {
 		boolean credentialRedacted,
 		String previousSnapshotId,
 		String diffSummary,
+		String diffSummaryJson,
 		LocalDateTime freshnessExpiresAt,
-		LocalDateTime rawRetentionExpiresAt
+		LocalDateTime rawRetentionExpiresAt,
+		String governancePolicyVersion,
+		String governancePolicySha256
 	) {
 
 		static SourceSnapshotRow from(DataSourceSnapshot snapshot) {
@@ -150,7 +156,10 @@ class DataSourceSnapshotAdminPageController {
 				snapshot.provider(),
 				snapshot.retrievedAt(),
 				snapshot.sourceUpdatedAt(),
+				snapshot.freshnessBasisAt(),
+				snapshot.providerValidUntil(),
 				snapshot.rowCount(),
+				snapshot.coverageCount(),
 				snapshot.rawSha256(),
 				snapshot.rawObjectUri(),
 				snapshot.redactedRequestFingerprint(),
@@ -163,8 +172,11 @@ class DataSourceSnapshotAdminPageController {
 				snapshot.credentialRedacted(),
 				valueOrDash(snapshot.previousSnapshotId()),
 				valueOrDash(snapshot.diffSummary()),
+				valueOrDash(snapshot.diffSummaryJson()),
 				snapshot.freshnessExpiresAt(),
-				snapshot.rawRetentionExpiresAt()
+				snapshot.rawRetentionExpiresAt(),
+				valueOrDash(snapshot.governancePolicyVersion()),
+				valueOrDash(snapshot.governancePolicySha256())
 			);
 		}
 
@@ -190,7 +202,10 @@ class DataSourceSnapshotAdminPageController {
 		String provider,
 		LocalDateTime retrievedAt,
 		LocalDateTime sourceUpdatedAt,
+		LocalDateTime freshnessBasisAt,
+		LocalDateTime providerValidUntil,
 		int rowCount,
+		int coverageCount,
 		String rawSha256,
 		String rawObjectUri,
 		String redactedRequestFingerprint,
@@ -202,8 +217,11 @@ class DataSourceSnapshotAdminPageController {
 		boolean credentialRedacted,
 		String previousSnapshotId,
 		String diffSummary,
+		String diffSummaryJson,
 		LocalDateTime freshnessExpiresAt,
 		LocalDateTime rawRetentionExpiresAt,
+		String governancePolicyVersion,
+		String governancePolicySha256,
 		String reason,
 		String idempotencyKey
 	) {
@@ -215,7 +233,10 @@ class DataSourceSnapshotAdminPageController {
 				provider,
 				retrievedAt,
 				sourceUpdatedAt,
+				freshnessBasisAt,
+				providerValidUntil,
 				rowCount,
+				coverageCount,
 				rawSha256,
 				rawObjectUri,
 				redactedRequestFingerprint,
@@ -227,8 +248,11 @@ class DataSourceSnapshotAdminPageController {
 				credentialRedacted,
 				previousSnapshotId,
 				diffSummary,
+				diffSummaryJson,
 				freshnessExpiresAt,
 				rawRetentionExpiresAt,
+				governancePolicyVersion,
+				governancePolicySha256,
 				requestedBy,
 				reason,
 				idempotencyKey
