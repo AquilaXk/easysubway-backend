@@ -236,6 +236,7 @@ jobs:
           else
             printf 'mapping=not-generated\n' > release-artifacts/android/mapping.txt
           fi
+          aab_payload_sha256="$(node ../../tools/release/hash-android-bundle-payload.mjs --aab release-artifacts/android/app-release.aab)"
           {
             echo "commit=${GITHUB_SHA}"
             echo "artifact=app-release.aab"
@@ -251,6 +252,8 @@ jobs:
             echo "play_generated_apk_device_matrix_evidence=blocked_until_play_generated_apk_device_matrix_gate_is_satisfied"
             echo "post_launch_operations_review_evidence=blocked_until_post_launch_operations_review_gate_is_satisfied"
             echo "support_incident_response_evidence=blocked_until_support_incident_response_gate_is_satisfied"
+            echo "supportContactSetSha256=${EASYSUBWAY_SUPPORT_CONTACT_SET_SHA256}"
+            echo "aabPayloadSha256=${aab_payload_sha256}"
             echo "abuse_penetration_rehearsal_evidence=blocked_until_abuse_penetration_rehearsal_gate_is_satisfied"
             echo "toolchain_policy=apps/mobile/release/signed-release-artifact-gate.json"
           } > release-artifacts/android/release-metadata.txt
@@ -414,6 +417,9 @@ jobs:
           cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
           cp release/android-16kb-page-size-gate.json release-artifacts/android/android-16kb-page-size-gate.json
           cp release/android-rc-store-evidence.json release-artifacts/android/android-rc-store-evidence.json
+          cp release/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
+          cp release/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
+          cp release/operations-observability-gate.json release-artifacts/android/operations-observability-gate.json
           cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
           cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
@@ -425,6 +431,7 @@ jobs:
           version_name="${version_line%%+*}"
           version_code="${version_line##*+}"
           aab_sha256="$(sha256sum release-artifacts/android/app-release.aab | awk '{print $1}')"
+          aab_payload_sha256="$(node ../../tools/release/hash-android-bundle-payload.mjs --aab release-artifacts/android/app-release.aab)"
           data_pack_manifest_sha256="$(sha256sum assets/datapacks/metro_map_pack/manifest.json | awk '{print $1}')"
           {
             echo "gitSha=${GITHUB_SHA}"
@@ -437,7 +444,9 @@ jobs:
             echo "versionCode=${version_code}"
             echo "packageId=com.easysubway.app"
             echo "aabSha256=${aab_sha256}"
+            echo "aabPayloadSha256=${aab_payload_sha256}"
             echo "dataPackManifestSha256=${data_pack_manifest_sha256}"
+            echo "supportContactSetSha256=${EASYSUBWAY_SUPPORT_CONTACT_SET_SHA256}"
             echo "dataPackChannel=${EASYSUBWAY_DATAPACK_CHANNEL}"
             echo "routeContractVersion=route-map-contract-v1"
             echo "realtimeContractVersion=seoul-topis-schema-v1"
@@ -597,10 +606,19 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-artifacts/backend
+          shopt -s nullglob
+          boot_jar=(backend/build/libs/*.jar)
+          if [[ "${#boot_jar[@]}" -ne 1 ]]; then
+            echo "expected exactly one backend bootJar, found ${#boot_jar[@]}" >&2
+            exit 1
+          fi
+          cp "${boot_jar[0]}" release-artifacts/backend/backend-boot.jar
           docker image inspect easysubway-backend:${{ github.sha }} > release-artifacts/backend/image-inspect.json
+          backend_artifact_sha256="$(sha256sum release-artifacts/backend/backend-boot.jar | awk '{print $1}')"
           {
             echo "commit=${GITHUB_SHA}"
             echo "image=easysubway-backend:${GITHUB_SHA}"
+            echo "backendArtifactSha256=${backend_artifact_sha256}"
             echo "dockerfile=backend/Dockerfile"
             echo "compose=infra/docker-compose.yml"
           } > release-artifacts/backend/release-metadata.txt
@@ -661,7 +679,6 @@ jobs:
             --repo-root .
             --app-root apps/mobile
             --data-pack-manifest apps/mobile/assets/datapacks/metro_map_pack/manifest.json
-            --output release-artifacts/rc/rc-evidence-manifest.json
             --evidence-root ".codex/evidence/release/rc-evidence-manifest/${GITHUB_SHA}/"
             --device local_android_emulator
             --android-version android-15-or-16
@@ -669,22 +686,59 @@ jobs:
             --gate-status productionDatapack=BLOCKED_EXTERNAL
             --gate-status playGeneratedApkDeviceMatrix=BLOCKED_EXTERNAL
             --gate-status backendOperations=BLOCKED_EXTERNAL
-            --gate-status postLaunchOperations=BLOCKED_EXTERNAL
             --gate-status androidReleaseQuality=BLOCKED_EXTERNAL
             --gate-status abusePenetrationRehearsal=BLOCKED_EXTERNAL
           )
           android_artifact_source="none"
           if [[ -f release-artifacts/downloaded/android-production-rc/app-release.aab ]]; then
             generator_args+=(--aab release-artifacts/downloaded/android-production-rc/app-release.aab)
+            generator_args+=(--android-release-metadata release-artifacts/downloaded/android-production-rc/release-metadata.txt)
             android_artifact_source="easysubway-android-production-rc-${GITHUB_SHA}"
           elif [[ -f release-artifacts/downloaded/android/app-release.aab ]]; then
             generator_args+=(--aab release-artifacts/downloaded/android/app-release.aab)
+            generator_args+=(--android-release-metadata release-artifacts/downloaded/android/release-metadata.txt)
             android_artifact_source="easysubway-android-release-${GITHUB_SHA}"
           fi
-          if [[ -f release-artifacts/downloaded/backend/image-inspect.json ]]; then
+          if [[ -f release-artifacts/downloaded/backend/backend-boot.jar ]]; then
+            generator_args+=(--backend-artifact release-artifacts/downloaded/backend/backend-boot.jar)
+          elif [[ -f release-artifacts/downloaded/backend/image-inspect.json ]]; then
             generator_args+=(--backend-image-inspect release-artifacts/downloaded/backend/image-inspect.json)
           fi
-          node tools/release/generate-rc-evidence-manifest.mjs "${generator_args[@]}"
+          node tools/release/generate-rc-evidence-manifest.mjs \
+            "${generator_args[@]}" \
+            --output release-artifacts/rc/rc-evidence-manifest-preliminary.json \
+            --gate-status postLaunchOperations=BLOCKED_EXTERNAL
+          if [[ "${android_artifact_source}" == easysubway-android-production-rc-* ]]; then
+            node tools/ops/generate-operations-phase-a-summary.mjs \
+              --rc-manifest release-artifacts/rc/rc-evidence-manifest-preliminary.json \
+              --summary release-artifacts/rc/operations-phase-a-summary.json \
+              --status-output release-artifacts/rc/operations-phase-a-status.txt
+            IFS= read -r operations_status < release-artifacts/rc/operations-phase-a-status.txt
+            if [[ "${operations_status}" == "SATISFIED" ]]; then
+              node tools/ops/validate-operations-release-summary.mjs \
+                --summary release-artifacts/rc/operations-phase-a-summary.json \
+                --rc-manifest release-artifacts/rc/rc-evidence-manifest-preliminary.json \
+                --require-pass
+            elif [[ "${operations_status}" != "BLOCKED_EXTERNAL" ]]; then
+              echo "unexpected operations Phase A status: ${operations_status}" >&2
+              exit 1
+            fi
+          else
+            operations_status=BLOCKED_EXTERNAL
+            printf 'BLOCKED_EXTERNAL\n' > release-artifacts/rc/operations-phase-a-status.txt
+          fi
+          operations_evidence_args=(--evidence-status "post_launch_operations=${operations_status}")
+          if [[ "${operations_status}" == "SATISFIED" ]]; then
+            operations_evidence_args+=(--evidence-path post_launch_operations=release-artifacts/rc/operations-phase-a-summary.json)
+          fi
+          node tools/release/generate-rc-evidence-manifest.mjs \
+            "${generator_args[@]}" \
+            "${operations_evidence_args[@]}" \
+            --output release-artifacts/rc/rc-evidence-manifest.json \
+            --gate-status "postLaunchOperations=${operations_status}"
+          cp apps/mobile/release/post-launch-operations-review-gate.json release-artifacts/rc/post-launch-operations-review-gate.json
+          cp apps/mobile/release/support-incident-response-gate.json release-artifacts/rc/support-incident-response-gate.json
+          cp apps/mobile/release/operations-observability-gate.json release-artifacts/rc/operations-observability-gate.json
           cp apps/mobile/release/rc-evidence-manifest-contract.json release-artifacts/rc/rc-evidence-manifest-contract.json
           {
             echo "commit=${GITHUB_SHA}"

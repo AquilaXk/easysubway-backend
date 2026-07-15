@@ -113,3 +113,8 @@ tasks.named('processResources') {
 		into 'datapack'
 	}
 }
+
+tasks.named('bootJar') {
+	preserveFileTimestamps = false
+	reproducibleFileOrder = true
+}
