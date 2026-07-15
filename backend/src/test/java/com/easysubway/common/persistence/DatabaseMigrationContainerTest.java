@@ -65,7 +65,7 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51");
 		assertAdPlacementsSeeded(jdbcTemplate);
 		assertThat(foreignKeyNames(jdbcTemplate))
 			.contains(
@@ -174,6 +174,41 @@ class DatabaseMigrationContainerTest {
 		migrate(dataSource, "classpath:db/migration/h2", null);
 
 		assertPreservedPlacement(jdbcTemplate, null);
+	}
+
+	@Test
+	@DisplayName("PostgreSQL V51은 참조되지 않은 route search result만 삭제한다")
+	void postgresqlV51PurgesOnlyUnreferencedRouteSearchResults() {
+		String schema = "route_purge_" + System.nanoTime();
+		var dataSource = new DriverManagerDataSource(
+			POSTGRES.getJdbcUrl(),
+			POSTGRES.getUsername(),
+			POSTGRES.getPassword()
+		);
+		migrateToV50(dataSource, "classpath:db/migration/postgresql", schema);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		seedRoutePurgeFixture(jdbcTemplate, schema);
+
+		migrate(dataSource, "classpath:db/migration/postgresql", schema);
+
+		assertRoutePurgeResult(jdbcTemplate, schema);
+	}
+
+	@Test
+	@DisplayName("H2 V51은 참조되지 않은 route search result만 삭제한다")
+	void h2V51PurgesOnlyUnreferencedRouteSearchResults() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:route-purge;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		migrateToV50(dataSource, "classpath:db/migration/h2", null);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		seedRoutePurgeFixture(jdbcTemplate, null);
+
+		migrate(dataSource, "classpath:db/migration/h2", null);
+
+		assertRoutePurgeResult(jdbcTemplate, null);
 	}
 
 	@Test
@@ -312,6 +347,55 @@ class DatabaseMigrationContainerTest {
 			.target(MigrationVersion.fromVersion("47"))
 			.load()
 			.migrate();
+	}
+
+	private void migrateToV50(javax.sql.DataSource dataSource, String location, String schema) {
+		flyway(dataSource, location, schema)
+			.target(MigrationVersion.fromVersion("50"))
+			.load()
+			.migrate();
+	}
+
+	private void seedRoutePurgeFixture(JdbcTemplate jdbcTemplate, String schema) {
+		String prefix = schema == null ? "" : schema + ".";
+		for (String routeSearchId : List.of("favorite-route", "station-route", "feedback-route", "unreferenced-route")) {
+			jdbcTemplate.update("""
+				INSERT INTO %sroute_search_results (
+					route_search_id, origin_station_id, origin_station_name,
+					destination_station_id, destination_station_name, mobility_type,
+					status, line_id, line_name, score, steps_json, warnings_json,
+					blocked_reasons_json, created_at
+				) VALUES (?, 'origin', 'Origin', 'destination', 'Destination', 'SENIOR',
+					'FOUND', 'line', 'Line', 100, '[]', '[]', '[]', CURRENT_TIMESTAMP)
+				""".formatted(prefix), routeSearchId);
+		}
+		jdbcTemplate.update("""
+			INSERT INTO %sfavorite_routes (
+				user_id, route_search_id, origin_station_id, origin_station_name,
+				destination_station_id, destination_station_name, mobility_type,
+				status, line_id, line_name, score, steps_json, warnings_json,
+				blocked_reasons_json, route_created_at, added_at
+			) VALUES ('favorite-user', 'favorite-route', 'origin', 'Origin',
+				'destination', 'Destination', 'SENIOR', 'FOUND', 'line', 'Line',
+				100, '[]', '[]', '[]', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+			""".formatted(prefix));
+		jdbcTemplate.update("""
+			INSERT INTO %sfavorite_route_stations (user_id, route_search_id, station_id)
+			VALUES ('station-user', 'station-route', 'station')
+			""".formatted(prefix));
+		jdbcTemplate.update("""
+			INSERT INTO %sroute_feedbacks (
+				feedback_id, route_search_id, user_id, rating, comment, created_at
+			) VALUES ('feedback', 'feedback-route', 'feedback-user', 'HELPFUL', '', CURRENT_TIMESTAMP)
+			""".formatted(prefix));
+	}
+
+	private void assertRoutePurgeResult(JdbcTemplate jdbcTemplate, String schema) {
+		String prefix = schema == null ? "" : schema + ".";
+		assertThat(jdbcTemplate.queryForList(
+			"SELECT route_search_id FROM " + prefix + "route_search_results ORDER BY route_search_id",
+			String.class
+		)).containsExactly("favorite-route", "feedback-route", "station-route");
 	}
 
 	private void migrate(javax.sql.DataSource dataSource, String location, String schema) {
