@@ -28,7 +28,7 @@ class EgovPaginationViewTest {
 				org.assertj.core.groups.Tuple.tuple(3, "4"),
 				org.assertj.core.groups.Tuple.tuple(4, "5")
 			);
-		assertThat(view.pageLinks().get(0).current()).isTrue();
+		assertThat(view.pageLinks().getFirst().current()).isTrue();
 	}
 
 	@Test
@@ -54,7 +54,7 @@ class EgovPaginationViewTest {
 		assertThat(view.hasPrevious()).isTrue();
 		assertThat(view.hasNext()).isFalse();
 		assertThat(view.nextPage()).isEqualTo(4);
-		assertThat(view.pageLinks().get(view.pageLinks().size() - 1).current()).isTrue();
+		assertThat(view.pageLinks().getLast().current()).isTrue();
 	}
 
 	@Test
@@ -76,7 +76,7 @@ class EgovPaginationViewTest {
 
 		assertThat(view.page()).isEqualTo(4);
 		assertThat(view.hasNext()).isFalse();
-		assertThat(view.pageLinks().get(view.pageLinks().size() - 1).page()).isEqualTo(4);
+		assertThat(view.pageLinks().getLast().page()).isEqualTo(4);
 	}
 
 	@Test
@@ -139,7 +139,7 @@ class EgovPaginationViewTest {
 		assertThat(view.hasPrevious()).isTrue();
 		assertThat(view.hasNext()).isFalse();
 		assertThat(view.previousPage()).isEqualTo(2);
-		assertThat(view.pageLinks().get(view.pageLinks().size() - 1).current()).isTrue();
+		assertThat(view.pageLinks().getLast().current()).isTrue();
 	}
 
 	@Test

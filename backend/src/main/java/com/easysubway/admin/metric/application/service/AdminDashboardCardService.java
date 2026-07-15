@@ -26,7 +26,7 @@ public class AdminDashboardCardService {
 
 	public DashboardCard card(String title, String href, String metricKey, double currentValue, String valueLabel) {
 		AdminMetricChart chart = metricQueryService.chart(List.of(metricKey), SPARK_DAYS);
-		List<Double> values = chart.series().isEmpty() ? List.of() : chart.series().get(0).values();
+		List<Double> values = chart.series().isEmpty() ? List.of() : chart.series().getFirst().values();
 		String sparkPoints = AdminMetricSparkline.points(values, SPARK_WIDTH, SPARK_HEIGHT);
 		Delta delta = delta(values, currentValue);
 		return new DashboardCard(
@@ -59,7 +59,7 @@ public class AdminDashboardCardService {
 		if (magnitude == Math.rint(magnitude)) {
 			return String.valueOf((long) magnitude);
 		}
-		return String.format("%.1f", magnitude);
+		return "%.1f".formatted(magnitude);
 	}
 
 	/**

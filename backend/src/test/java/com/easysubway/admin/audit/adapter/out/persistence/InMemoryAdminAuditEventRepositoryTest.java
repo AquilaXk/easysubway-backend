@@ -63,7 +63,7 @@ class InMemoryAdminAuditEventRepositoryTest {
 		repository.save(event(AdminAuditEventType.ADMIN_ACTION, "admin-a", AdminAuditOutcome.SUCCESS,
 			"REPORT", "report-1", "업무 맥락", base));
 		AdminAuditEvent stored = repository.search(
-			new AdminAuditQuery(null, null, null, null, null, null, false, 0, 10)).get(0);
+			new AdminAuditQuery(null, null, null, null, null, null, false, 0, 10)).getFirst();
 
 		assertThat(repository.findById(stored.id(), null, false)).isPresent();
 		assertThat(repository.findById(stored.id(), AdminAuditEventType.PRIVACY_READ, false)).isEmpty();

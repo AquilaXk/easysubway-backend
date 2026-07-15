@@ -63,7 +63,7 @@ class AdminNavigationAdvice {
 		if (profiles.contains("prod")) {
 			return "PRODUCTION";
 		}
-		return profiles.isEmpty() ? "DEV" : profiles.get(0).toUpperCase(java.util.Locale.ROOT);
+		return profiles.isEmpty() ? "DEV" : profiles.getFirst().toUpperCase(java.util.Locale.ROOT);
 	}
 
 	private String environmentTone() {

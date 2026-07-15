@@ -23,7 +23,7 @@ public class AdminCommandTokenService {
 			String token = UUID.randomUUID().toString();
 			tokens.add(token);
 			while (tokens.size() > MAX_TOKENS_PER_SESSION) {
-				tokens.remove(tokens.iterator().next());
+				tokens.removeFirst();
 			}
 			return token;
 		}

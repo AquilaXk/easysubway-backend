@@ -247,7 +247,7 @@ class AdminOperationsPageController {
 		if (requested != null && groups.stream().anyMatch(group -> group.groupCode().equals(requested))) {
 			return requested;
 		}
-		return groups.isEmpty() ? "" : groups.get(0).groupCode();
+		return groups.isEmpty() ? "" : groups.getFirst().groupCode();
 	}
 
 	private static String ownerOrPrincipal(String owner, Principal principal) {

@@ -38,8 +38,8 @@ class AdminSavedViewServiceTest {
 
 		var views = service.listViews("admin-1", "a-reports");
 		assertThat(views).hasSize(1);
-		assertThat(views.get(0).viewId()).isEqualTo("view-1");
-		assertThat(views.get(0).queryParams()).isEqualTo("status=SUBMITTED&sort=created_at,asc");
+		assertThat(views.getFirst().viewId()).isEqualTo("view-1");
+		assertThat(views.getFirst().queryParams()).isEqualTo("status=SUBMITTED&sort=created_at,asc");
 	}
 
 	@Test

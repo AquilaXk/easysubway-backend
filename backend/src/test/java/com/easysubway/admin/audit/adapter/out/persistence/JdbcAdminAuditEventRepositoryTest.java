@@ -117,7 +117,7 @@ class JdbcAdminAuditEventRepositoryTest {
 
 		AdminAuditEvent pivot = repository.search(
 				new AdminAuditQuery(null, "admin-a", null, "a-3", null, null, false, 0, 10))
-			.get(0);
+			.getFirst();
 
 		assertThat(repository.findById(pivot.id(), null, false)).isPresent();
 		assertThat(repository.findById(pivot.id(), AdminAuditEventType.PRIVACY_READ, false)).isEmpty();

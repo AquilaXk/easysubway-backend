@@ -58,7 +58,7 @@ class AdminIncidentServiceTest {
 				AdminIncidentStatus.MONITORING,
 				AdminIncidentStatus.RESOLVED
 			);
-		assertThat(timeline.get(0).isInitial()).isTrue();
+		assertThat(timeline.getFirst().isInitial()).isTrue();
 	}
 
 	@Test

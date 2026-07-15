@@ -220,7 +220,7 @@ class AdminAuditPageControllerTest {
 		Long privacyId = auditEventRepository.search(
 				new com.easysubway.admin.audit.application.AdminAuditQuery(
 					null, "alice", null, null, null, null, false, 0, 10))
-			.get(0)
+			.getFirst()
 			.id();
 
 		// 개인정보 조회 로그 화면(상세 포함)은 개인정보 로그 권한을 요구한다 — AUDIT_READ로는 접근 불가.

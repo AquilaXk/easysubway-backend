@@ -73,7 +73,7 @@ class AdminBatchOperationServiceTest {
 			.containsExactly("COMPLETED", "FAILED");
 		assertThat(master.successCount()).isEqualTo(1);
 		assertThat(master.failureCount()).isEqualTo(1);
-		assertThat(master.executions().get(0).durationMillis()).isEqualTo(60_000L);
+		assertThat(master.executions().getFirst().durationMillis()).isEqualTo(60_000L);
 	}
 
 	@Test

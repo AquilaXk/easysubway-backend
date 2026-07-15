@@ -76,7 +76,7 @@ class ServiceNoticeAdminPageControllerTest {
 
 		var notices = repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC));
 		assertThat(notices).hasSize(1);
-		String noticeId = notices.get(0).id();
+		String noticeId = notices.getFirst().id();
 		assertThat(auditRecorded("PUBLISH_NOTICE", noticeId)).isTrue();
 
 		String populatedPage = mockMvc.perform(get("/admin/notices/page")

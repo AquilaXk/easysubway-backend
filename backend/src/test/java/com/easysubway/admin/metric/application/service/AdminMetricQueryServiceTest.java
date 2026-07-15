@@ -34,7 +34,7 @@ class AdminMetricQueryServiceTest {
 		// 직전 7일 [06-23, 06-29]: 06-29=60, 나머지 결측 → 60
 		save(AdminMetricKeys.ROUTE_SEARCHES, TODAY.minusDays(7), 60);
 
-		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.ROUTE_SEARCHES), 7).get(0);
+		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.ROUTE_SEARCHES), 7).getFirst();
 
 		assertThat(comparison.current()).isEqualTo(150.0);
 		assertThat(comparison.previous()).isEqualTo(60.0);
@@ -52,7 +52,7 @@ class AdminMetricQueryServiceTest {
 		save(AdminMetricKeys.ROUTE_BLOCKED_RATE, TODAY.minusDays(2), 20);
 		save(AdminMetricKeys.ROUTE_BLOCKED_RATE, TODAY.minusDays(7), 10);
 
-		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.ROUTE_BLOCKED_RATE), 7).get(0);
+		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.ROUTE_BLOCKED_RATE), 7).getFirst();
 
 		assertThat(comparison.current()).isCloseTo(25.0, within(0.001));
 		assertThat(comparison.previous()).isCloseTo(10.0, within(0.001));
@@ -64,7 +64,7 @@ class AdminMetricQueryServiceTest {
 	void undefinedPercentWhenPreviousIsZero() {
 		save(AdminMetricKeys.USERS_ACTIVE, TODAY, 30);
 
-		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.USERS_ACTIVE), 7).get(0);
+		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.USERS_ACTIVE), 7).getFirst();
 
 		assertThat(comparison.current()).isEqualTo(30.0);
 		assertThat(comparison.previous()).isEqualTo(0.0);

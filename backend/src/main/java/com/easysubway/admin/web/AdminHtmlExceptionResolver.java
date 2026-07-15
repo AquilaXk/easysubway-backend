@@ -45,53 +45,50 @@ class AdminHtmlExceptionResolver implements HandlerExceptionResolver, Ordered {
 	private record AdminHtmlError(int status, String title, String message, String detail) {
 
 		static AdminHtmlError from(Exception exception) {
-			if (exception instanceof MasterDataWriteNotAllowedException) {
-				return new AdminHtmlError(
+			return switch (exception) {
+				case MasterDataWriteNotAllowedException error -> new AdminHtmlError(
 					HttpStatus.LOCKED.value(),
 					"읽기 전용 마스터 데이터",
 					"현재 운영 마스터 데이터는 저장할 수 없습니다.",
-					exception.getMessage()
+					error.getMessage()
 				);
-			}
-			if (exception instanceof ResourceNotFoundException) {
-				return new AdminHtmlError(
+				case ResourceNotFoundException error -> new AdminHtmlError(
 					HttpStatus.NOT_FOUND.value(),
 					"대상을 찾을 수 없습니다",
-					exception.getMessage(),
+					error.getMessage(),
 					"목록으로 돌아가 최신 상태를 다시 확인해 주세요."
 				);
-			}
-			if (exception instanceof ConflictException) {
-				return new AdminHtmlError(
+				case ConflictException error -> new AdminHtmlError(
 					HttpStatus.CONFLICT.value(),
 					"요청이 최신 상태와 충돌했습니다",
-					exception.getMessage(),
+					error.getMessage(),
 					"화면을 새로고침한 뒤 다시 시도해 주세요."
 				);
-			}
-			if (exception instanceof InvalidRequestException
-				|| exception instanceof MethodArgumentTypeMismatchException) {
-				return new AdminHtmlError(
+				case InvalidRequestException error -> new AdminHtmlError(
 					HttpStatus.BAD_REQUEST.value(),
 					"입력값을 확인해야 합니다",
-					exception.getMessage(),
+					error.getMessage(),
 					"입력한 값을 확인한 뒤 다시 제출해 주세요."
 				);
-			}
-			if (exception instanceof ErrorResponse errorResponse) {
-				return new AdminHtmlError(
+				case MethodArgumentTypeMismatchException error -> new AdminHtmlError(
+					HttpStatus.BAD_REQUEST.value(),
+					"입력값을 확인해야 합니다",
+					error.getMessage(),
+					"입력한 값을 확인한 뒤 다시 제출해 주세요."
+				);
+				case ErrorResponse errorResponse -> new AdminHtmlError(
 					errorResponse.getStatusCode().value(),
 					errorTitle(errorResponse.getStatusCode().value()),
 					"관리자 요청 형식이 올바르지 않습니다.",
 					exception.getMessage()
 				);
-			}
-			return new AdminHtmlError(
-				HttpStatus.INTERNAL_SERVER_ERROR.value(),
-				"요청을 처리하지 못했습니다",
-				"관리자 요청 처리 중 오류가 발생했습니다.",
-				"잠시 후 다시 시도하고, 문제가 반복되면 운영 로그를 확인해 주세요."
-			);
+				default -> new AdminHtmlError(
+					HttpStatus.INTERNAL_SERVER_ERROR.value(),
+					"요청을 처리하지 못했습니다",
+					"관리자 요청 처리 중 오류가 발생했습니다.",
+					"잠시 후 다시 시도하고, 문제가 반복되면 운영 로그를 확인해 주세요."
+				);
+			};
 		}
 
 		private static String errorTitle(int status) {

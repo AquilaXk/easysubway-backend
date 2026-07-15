@@ -76,7 +76,7 @@ class ServiceNoticeAdminApiControllerTest {
 
 		List<ServiceNotice> active = repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC));
 		assertThat(active).hasSize(1);
-		assertThat(auditRecorded("PUBLISH_NOTICE", active.get(0).id())).isTrue();
+		assertThat(auditRecorded("PUBLISH_NOTICE", active.getFirst().id())).isTrue();
 	}
 
 	@Test

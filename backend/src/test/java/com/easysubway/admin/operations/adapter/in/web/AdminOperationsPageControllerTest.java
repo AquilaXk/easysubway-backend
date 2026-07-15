@@ -214,7 +214,7 @@ class AdminOperationsPageControllerTest {
 		openIncident("database DOWN");
 
 		String incidentId = auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 1)
-			.get(0)
+			.getFirst()
 			.targetId();
 
 		assertThat(incidentId).startsWith("INC-");

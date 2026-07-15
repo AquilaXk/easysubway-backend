@@ -142,7 +142,7 @@ class AdminOverviewPageController {
 		}
 		if (visible.contains(AdminProgram.ROUTE_SEARCHES)) {
 			cards.add(dashboardCardService.card("경로 차단률", AdminProgram.ROUTE_SEARCHES.path(),
-				AdminMetricKeys.ROUTE_BLOCKED_RATE, blockedRate, String.format("%.1f%%", blockedRate)));
+				AdminMetricKeys.ROUTE_BLOCKED_RATE, blockedRate, "%.1f%%".formatted(blockedRate)));
 		}
 		if (visible.contains(AdminProgram.PUSH)) {
 			cards.add(dashboardCardService.card("푸시 실패", AdminProgram.PUSH.path(),
@@ -178,7 +178,7 @@ class AdminOverviewPageController {
 				List.of(AdminMetricKeys.ROUTE_BLOCKED_RATE, AdminMetricKeys.API_ERROR_RATE), days));
 		model.addAttribute("trends", trends);
 		// 정규화된 실제 기간(허용 밖 입력은 서비스가 7로 되돌리므로 첫 차트에서 읽는다).
-		model.addAttribute("trendDays", trends.get(0).data().days());
+		model.addAttribute("trendDays", trends.getFirst().data().days());
 	}
 
 	private TrendChart trendChart(String id, String title, List<String> keys, int days) {
@@ -235,7 +235,7 @@ class AdminOverviewPageController {
 		if (summary.totalCount() == 0) {
 			return "0.0%";
 		}
-		return String.format("%.1f%%", (double) summary.blockedCount() * 100 / summary.totalCount());
+		return "%.1f%%".formatted((double) summary.blockedCount() * 100 / summary.totalCount());
 	}
 
 	record DashboardView(
