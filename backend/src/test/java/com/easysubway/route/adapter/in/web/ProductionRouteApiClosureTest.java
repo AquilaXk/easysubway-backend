@@ -128,7 +128,7 @@ class ProductionRouteApiClosureTest {
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(body);
 		if (includeMarkers) {
-			request.header("Forwarded", "for=" + HEADER_MARKERS.get(0))
+			request.header("Forwarded", "for=" + HEADER_MARKERS.getFirst())
 				.header("X-Forwarded-For", HEADER_MARKERS.get(1))
 				.header("X-Real-IP", HEADER_MARKERS.get(2));
 		}

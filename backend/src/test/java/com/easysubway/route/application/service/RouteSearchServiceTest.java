@@ -113,11 +113,11 @@ class RouteSearchServiceTest {
 		assertThat(result.steps())
 			.extracting("stepType")
 			.containsExactly("entry", "ride", "exit");
-		assertThat(result.steps().get(0).estimatedMinutes()).isEqualTo(5);
-		assertThat(result.steps().get(0).distanceMeters()).isEqualTo(180);
-		assertThat(result.steps().get(0).includesStairs()).isFalse();
-		assertThat(result.steps().get(0).stairAccessState()).isEqualTo("UNKNOWN");
-		assertThat(result.steps().get(0).requiresAccessibilityCheck()).isTrue();
+		assertThat(result.steps().getFirst().estimatedMinutes()).isEqualTo(5);
+		assertThat(result.steps().getFirst().distanceMeters()).isEqualTo(180);
+		assertThat(result.steps().getFirst().includesStairs()).isFalse();
+		assertThat(result.steps().getFirst().stairAccessState()).isEqualTo("UNKNOWN");
+		assertThat(result.steps().getFirst().requiresAccessibilityCheck()).isTrue();
 		assertThat(result.steps().get(1).estimatedMinutes()).isGreaterThan(0);
 		assertThat(result.steps().get(1).requiresAccessibilityCheck()).isFalse();
 		assertThat(result.warnings())
@@ -134,7 +134,7 @@ class RouteSearchServiceTest {
 			MobilityType.STROLLER
 		));
 
-		String warningJson = new ObjectMapper().writeValueAsString(result.warnings().get(0));
+		String warningJson = new ObjectMapper().writeValueAsString(result.warnings().getFirst());
 
 		assertThat(warningJson).contains("\"code\":\"LOW_DATA_CONFIDENCE\"");
 		assertThat(warningJson).doesNotContain("message");
@@ -647,7 +647,7 @@ class RouteSearchServiceTest {
 		assertThat(results)
 			.extracting(RouteSearchResult::transferCount)
 			.containsExactly(1, 0);
-		assertThat(results.get(0).steps())
+		assertThat(results.getFirst().steps())
 			.filteredOn(step -> "transfer".equals(step.stepType()))
 			.extracting("fromStationId")
 			.containsExactly("station-transfer");
@@ -732,7 +732,7 @@ class RouteSearchServiceTest {
 		assertThat(results)
 			.extracting(RouteSearchResult::routeSearchId)
 			.doesNotHaveDuplicates();
-		assertThat(results.get(0).steps())
+		assertThat(results.getFirst().steps())
 			.filteredOn(step -> "transfer".equals(step.stepType()))
 			.extracting("fromStationId")
 			.containsExactly("station-step-free-transfer");
@@ -1850,7 +1850,7 @@ class RouteSearchServiceTest {
 		assertThat(stairOnlyResult.warnings())
 			.extracting("code")
 			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
-		assertThat(stairOnlyResult.steps().get(0).includesStairs()).isTrue();
+		assertThat(stairOnlyResult.steps().getFirst().includesStairs()).isTrue();
 		assertThat(stairOnlyResult.steps().get(1).includesStairs()).isFalse();
 		assertThat(stairOnlyResult.steps().get(2).includesStairs()).isTrue();
 		assertThat(stairOnlyResult.steps())

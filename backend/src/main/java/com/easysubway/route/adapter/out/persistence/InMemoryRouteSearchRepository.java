@@ -27,6 +27,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.SequencedMap;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Repository;
 
@@ -41,8 +42,9 @@ public class InMemoryRouteSearchRepository
 	private static final String DELETED_USER_ID = "deleted-user";
 	private static final String DELETED_COMMENT = "사용자 데이터 삭제로 경로 피드백 내용이 삭제되었습니다.";
 
-	private final Map<String, RouteSearchResult> routeSearches = new LinkedHashMap<>();
-	private final Map<String, RouteFeedback> routeFeedbacks = new LinkedHashMap<>();
+	// LinkedHashMap의 삽입 순서를 저장 순서로 삼아, 한도 초과 시 가장 먼저 저장된 항목부터 제거한다.
+	private final SequencedMap<String, RouteSearchResult> routeSearches = new LinkedHashMap<>();
+	private final SequencedMap<String, RouteFeedback> routeFeedbacks = new LinkedHashMap<>();
 
 	@Override
 	public Optional<RouteSearchResult> loadRouteSearch(String routeSearchId) {
@@ -281,16 +283,14 @@ public class InMemoryRouteSearchRepository
 	private void evictOldestRouteSearches() {
 		// 공개 API 요청으로 생성되는 임시 결과가 프로세스 메모리에 무한히 쌓이지 않게 한다.
 		while (routeSearches.size() > MAX_STORED_ROUTE_SEARCHES) {
-			String oldestRouteSearchId = routeSearches.keySet().iterator().next();
-			routeSearches.remove(oldestRouteSearchId);
+			routeSearches.pollFirstEntry();
 		}
 	}
 
 	private void evictOldestRouteFeedbacks() {
 		// 피드백은 운영 DB 전환 전까지 임시 보관하되 공개 요청으로 메모리가 무한 증가하지 않게 한다.
 		while (routeFeedbacks.size() > MAX_STORED_ROUTE_FEEDBACKS) {
-			String oldestFeedbackId = routeFeedbacks.keySet().iterator().next();
-			routeFeedbacks.remove(oldestFeedbackId);
+			routeFeedbacks.pollFirstEntry();
 		}
 	}
 

@@ -211,7 +211,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 			"SELECT feed_end_date FROM transit_feed_info LIMIT 1",
 			(resultSet, rowNumber) -> parseFeedEndDate(resultSet.getString("feed_end_date"))
 		);
-		return rows.isEmpty() ? null : rows.get(0);
+		return rows.isEmpty() ? null : rows.getFirst();
 	}
 
 	private static LocalDate parseFeedEndDate(String value) {

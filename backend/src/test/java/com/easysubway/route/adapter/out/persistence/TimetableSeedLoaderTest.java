@@ -252,14 +252,13 @@ class TimetableSeedLoaderTest {
 	}
 
 	private Resource itxSeed(String admissionStatus, boolean admissionEligible, String freshUntil) {
-		return new ByteArrayResource((
-			"INSERT INTO service_calendars (service_id, start_date, end_date, timezone, monday, tuesday, wednesday, thursday, friday, saturday, sunday) VALUES ('itx-weekday','20260714','20260721','Asia/Seoul',TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,FALSE);\n"
-			+ "INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('itx-down','Asia/Seoul','line-54a7b980b7c3','ITX-청춘','','down');\n"
-			+ "INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','test-only-itx','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','capital','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc','"
-			+ admissionStatus + "'," + admissionEligible + ",'" + freshUntil + "',2116);\n"
-			+ "INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES ('itx-1','itx-down','itx-weekday','EXPRESS','ITX_CHEONGCHUN',0,'춘천','down');\n"
-			+ "INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('itx-1',1,'station-b819702fa7d9','line-54a7b980b7c3',0,0,28800,28860);\n"
-		).getBytes()) {
+		return new ByteArrayResource("""
+			INSERT INTO service_calendars (service_id, start_date, end_date, timezone, monday, tuesday, wednesday, thursday, friday, saturday, sunday) VALUES ('itx-weekday','20260714','20260721','Asia/Seoul',TRUE,TRUE,TRUE,TRUE,TRUE,FALSE,FALSE);
+			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('itx-down','Asia/Seoul','line-54a7b980b7c3','ITX-청춘','','down');
+			INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','test-only-itx','aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa','capital','bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb','cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc','%s',%s,'%s',2116);
+			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES ('itx-1','itx-down','itx-weekday','EXPRESS','ITX_CHEONGCHUN',0,'춘천','down');
+			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('itx-1',1,'station-b819702fa7d9','line-54a7b980b7c3',0,0,28800,28860);
+			""".formatted(admissionStatus, admissionEligible, freshUntil).getBytes()) {
 			@Override
 			public String getFilename() {
 				return "itx-seed.sql";

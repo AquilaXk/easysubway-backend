@@ -287,7 +287,7 @@ class RouteSearchController {
 			List<LegDto> legs = LegDto.fromSteps(result.steps(), departureTime, result.mobilityType(), mobilityPreset);
 			OffsetDateTime plannedArrivalTime = legs.isEmpty()
 				? departureTime
-				: OffsetDateTime.parse(legs.get(legs.size() - 1).plannedArrivalTime());
+				: OffsetDateTime.parse(legs.getLast().plannedArrivalTime());
 			int durationSeconds = Math.toIntExact(Duration.between(departureTime, plannedArrivalTime).toSeconds());
 			return new ItineraryDto(
 				result.routeSearchId() + "-primary",

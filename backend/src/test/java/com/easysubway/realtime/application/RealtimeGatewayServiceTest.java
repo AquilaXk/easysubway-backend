@@ -76,7 +76,7 @@ class RealtimeGatewayServiceTest {
 		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
 
 		assertThat(result.arrivals()).hasSize(1);
-		RealtimeArrival arrival = result.arrivals().get(0);
+		RealtimeArrival arrival = result.arrivals().getFirst();
 		// 하류(resolver)가 Instant.parse 가능한 ISO로 정규화 → drop 버그의 근본(포맷 누출) 차단.
 		assertThat(Instant.parse(arrival.providerReceivedAt())).isEqualTo(Instant.parse("2026-06-26T08:00:00Z"));
 		// v1 표시용 수신지연 보정은 유지: 150 - 20초 delay = 130.
@@ -378,8 +378,8 @@ class RealtimeGatewayServiceTest {
 		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
 
 		assertThat(result.status()).hasToString("FRESH");
-		assertThat(result.arrivals().get(0).etaSeconds()).isEqualTo(150);
-		assertThat(result.arrivals().get(0).message()).isEqualTo("3분 후");
+		assertThat(result.arrivals().getFirst().etaSeconds()).isEqualTo(150);
+		assertThat(result.arrivals().getFirst().message()).isEqualTo("3분 후");
 	}
 
 	@Test
@@ -1041,8 +1041,8 @@ class RealtimeGatewayServiceTest {
 			List<RealtimeArrival> arrivals = provider.arrivals(sangnoksuQuery());
 
 			assertThat(arrivals).hasSize(1);
-			assertThat(arrivals.get(0).stationName()).isEqualTo("상록수");
-			assertThat(arrivals.get(0).message()).isEqualTo("3분 후");
+			assertThat(arrivals.getFirst().stationName()).isEqualTo("상록수");
+			assertThat(arrivals.getFirst().message()).isEqualTo("3분 후");
 		} finally {
 			if (previous == null) {
 				System.clearProperty("spring.profiles.active");
@@ -1068,7 +1068,7 @@ class RealtimeGatewayServiceTest {
 		List<RealtimeArrival> arrivals = provider.arrivals(sangnoksuQuery());
 
 		assertThat(arrivals).hasSize(1);
-		assertThat(arrivals.get(0).stationName()).isEqualTo("상록수");
+		assertThat(arrivals.getFirst().stationName()).isEqualTo("상록수");
 	}
 
 	@Test
@@ -1160,8 +1160,8 @@ class RealtimeGatewayServiceTest {
 		);
 
 		assertThat(arrivals).hasSize(1);
-		assertThat(arrivals.get(0).destination()).isEqualTo("오이도행 - 중앙방면");
-		assertThat(arrivals.get(0).servicePattern()).isEqualTo("급행");
+		assertThat(arrivals.getFirst().destination()).isEqualTo("오이도행 - 중앙방면");
+		assertThat(arrivals.getFirst().servicePattern()).isEqualTo("급행");
 	}
 
 	private RealtimeQuery sangnoksuQuery() {
