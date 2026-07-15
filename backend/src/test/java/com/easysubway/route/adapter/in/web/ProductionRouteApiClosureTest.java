@@ -63,7 +63,8 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 	"easysubway.report.upload.bucket=easysubway-report-uploads",
 	"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",
 	"easysubway.report.upload.object-storage-secret-key=prod-object-storage-secret-key-with-enough-entropy",
-	"easysubway.report.upload.object-storage-region=ap-northeast-2"
+	"easysubway.report.upload.object-storage-region=ap-northeast-2",
+	"easysubway.route-v2.play-integrity.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 })
 @ActiveProfiles("prod")
 @AutoConfigureMockMvc

@@ -47,6 +47,7 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",
 			"easysubway.report.upload.object-storage-secret-key=prod-object-storage-secret-key-with-enough-entropy",
 			"easysubway.report.upload.object-storage-region=ap-northeast-2",
+			"easysubway.route-v2.play-integrity.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			"management.endpoint.health.show-details=always"
 		}
 	)
@@ -93,6 +94,7 @@ class EasySubwayBackendApplicationTests {
 			"EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY=prod-object-storage-access-key",
 			"EASYSUBWAY_OBJECT_STORAGE_SECRET_KEY=prod-object-storage-secret-key-with-enough-entropy",
 			"EASYSUBWAY_OBJECT_STORAGE_REGION=ap-northeast-2",
+			"EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			"management.endpoint.health.show-details=always"
 		}
 	)
