@@ -380,6 +380,33 @@ class DatapackReleaseReconciliationServiceTest {
 		verify(callbackService).reconcile(second, secondIdentity);
 	}
 
+	@Test
+	@DisplayName("prelaunch RC identity의 유실 callback을 signed catalog identity로 수렴한다")
+	void reconcilesPrelaunchReleaseCandidateIdentity() {
+		var manifestSha256 = System.getenv().getOrDefault(
+			"EASYSUBWAY_PRELAUNCH_MANIFEST_SHA256", SHA);
+		var releaseSequence = Long.parseLong(
+			System.getenv().getOrDefault("EASYSUBWAY_PRELAUNCH_RELEASE_SEQUENCE", "42"));
+		assertThat(manifestSha256).matches("^[a-f0-9]{64}$");
+		assertThat(releaseSequence).isPositive();
+		var requestId = "prelaunch-" + manifestSha256;
+		var delivery = DatapackReleaseDelivery.pending(
+			requestId, releaseSequence, manifestSha256, "production", "prelaunch-candidate",
+			"c".repeat(64), "d".repeat(64), T0);
+		var identity = new CatalogIdentity(
+			releaseSequence, manifestSha256, "production", requestId, true, "b".repeat(64));
+		when(catalog.findByRequest("production", requestId))
+			.thenReturn(java.util.Optional.of(identity));
+		when(catalog.fetchCurrent("production")).thenReturn(identity);
+
+		service.reconcile(delivery, T0.plusMinutes(10));
+
+		verify(callbackService).reconcile(delivery, identity);
+		System.out.println("{\"artifactKind\":\"backend-datapack-reconciliation-evidence\","
+			+ "\"status\":\"PASS\",\"manifestSha256\":\"" + manifestSha256 + "\","
+			+ "\"releaseSequence\":" + releaseSequence + ",\"convergedWithinTenMinutes\":true}");
+	}
+
 	private static DatapackReleaseDelivery delivery() {
 		return DatapackReleaseDelivery.pending(
 			"request-2057", 42, SHA, "production", "candidate-2057",
