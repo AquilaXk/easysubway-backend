@@ -202,14 +202,18 @@ jobs:
           flutter pub get
           ../../tools/mobile/validate-release-dart-defines.sh \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
+            --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_LOCATION_TERMS_URL="${EASYSUBWAY_LOCATION_TERMS_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
+            --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_LOCATION_TERMS_URL="${EASYSUBWAY_LOCATION_TERMS_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
@@ -384,7 +388,9 @@ jobs:
           flutter pub get
           ../../tools/mobile/validate-release-dart-defines.sh \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
+            --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_LOCATION_TERMS_URL="${EASYSUBWAY_LOCATION_TERMS_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
@@ -398,7 +404,9 @@ jobs:
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
+            --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
+            --dart-define=EASYSUBWAY_LOCATION_TERMS_URL="${EASYSUBWAY_LOCATION_TERMS_URL}" \
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \

@@ -10,4 +10,14 @@ class PrivacyPolicyPageController {
 	String privacyPolicy() {
 		return "legal/privacy";
 	}
+
+	@GetMapping({ "/terms", "/easysubway/terms" })
+	String terms() {
+		return "legal/terms";
+	}
+
+	@GetMapping({ "/location-terms", "/easysubway/location-terms" })
+	String locationTerms() {
+		return "legal/location-terms";
+	}
 }

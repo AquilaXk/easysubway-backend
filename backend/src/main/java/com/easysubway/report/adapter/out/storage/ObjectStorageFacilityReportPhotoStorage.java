@@ -16,9 +16,11 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.net.http.HttpResponse.BodyHandlers;
+import java.net.http.HttpTimeoutException;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
@@ -27,6 +29,11 @@ import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import java.util.TreeMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.ScheduledFuture;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -45,6 +52,8 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	private static final String HMAC_ALGORITHM = "HmacSHA256";
 	private static final String SIGNING_ALGORITHM = "AWS4-HMAC-SHA256";
 	private static final String OBJECT_KEY_PREFIX = "facility-reports/";
+	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(5);
+	private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(10);
 	private static final DateTimeFormatter DATE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd")
 		.withZone(ZoneOffset.UTC);
 	private static final DateTimeFormatter DATE_TIME_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd'T'HHmmss'Z'")
@@ -58,6 +67,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 	private final long maxBytes;
 	private final HttpClient httpClient;
 	private final Clock clock;
+	private final Duration requestTimeout;
 
 	@Autowired
 	public ObjectStorageFacilityReportPhotoStorage(
@@ -68,7 +78,17 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		@Value("${easysubway.report.upload.object-storage-secret-key:}") String secretKey,
 		@Value("${easysubway.report.upload.object-storage-region:us-east-1}") String region
 	) {
-		this(endpoint, bucket, maxBytes, accessKey, secretKey, region, HttpClient.newHttpClient(), Clock.systemUTC());
+		this(
+			endpoint,
+			bucket,
+			maxBytes,
+			accessKey,
+			secretKey,
+			region,
+			HttpClient.newBuilder().connectTimeout(CONNECT_TIMEOUT).build(),
+			Clock.systemUTC(),
+			REQUEST_TIMEOUT
+		);
 	}
 
 	ObjectStorageFacilityReportPhotoStorage(
@@ -81,6 +101,20 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		HttpClient httpClient,
 		Clock clock
 	) {
+		this(endpoint, bucket, maxBytes, accessKey, secretKey, region, httpClient, clock, REQUEST_TIMEOUT);
+	}
+
+	ObjectStorageFacilityReportPhotoStorage(
+		String endpoint,
+		String bucket,
+		long maxBytes,
+		String accessKey,
+		String secretKey,
+		String region,
+		HttpClient httpClient,
+		Clock clock,
+		Duration requestTimeout
+	) {
 		this.endpoint = requireText(endpoint, "운영 object storage endpoint 설정이 필요합니다.");
 		this.bucket = requireText(bucket, "운영 report upload bucket 설정이 필요합니다.");
 		this.maxBytes = maxBytes;
@@ -89,6 +123,10 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		this.region = requireText(region, "운영 object storage region 설정이 필요합니다.");
 		this.httpClient = httpClient;
 		this.clock = clock;
+		if (requestTimeout == null || requestTimeout.isZero() || requestTimeout.isNegative()) {
+			throw new IllegalArgumentException("Object storage request timeout must be positive");
+		}
+		this.requestTimeout = requestTimeout;
 	}
 
 	@Override
@@ -127,7 +165,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 			if (contentLength > maxBytes) {
 				throw oversizedPhoto();
 			}
-			byte[] bytes = readBounded(responseBody);
+			byte[] bytes = readBoundedWithTimeout(responseBody);
 			String contentType = response.headers()
 				.firstValue("content-type")
 				.map(value -> value.split(";", 2)[0].trim().toLowerCase(Locale.ROOT))
@@ -202,6 +240,7 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 		);
 		HttpRequest.Builder builder = HttpRequest.newBuilder()
 			.uri(URI.create(endpoint.replaceAll("/+$", "") + canonicalUri))
+			.timeout(requestTimeout)
 			.header("Authorization", authorization)
 			.header("x-amz-content-sha256", payloadHash)
 			.header("x-amz-date", dateTime);
@@ -252,6 +291,42 @@ public class ObjectStorageFacilityReportPhotoStorage implements
 			output.write(buffer, 0, readBytes);
 		}
 		return output.toByteArray();
+	}
+
+	private byte[] readBoundedWithTimeout(InputStream inputStream) throws IOException {
+		AtomicBoolean timedOut = new AtomicBoolean(false);
+		ScheduledExecutorService timeoutExecutor = Executors.newSingleThreadScheduledExecutor(task -> {
+			Thread thread = new Thread(task, "facility-report-photo-body-timeout");
+			thread.setDaemon(true);
+			return thread;
+		});
+		ScheduledFuture<?> timeout = timeoutExecutor.schedule(() -> {
+			timedOut.set(true);
+			try {
+				inputStream.close();
+			} catch (IOException ignored) {
+				// The read path below reports the timeout with a stable exception type.
+			}
+		}, Math.max(1L, requestTimeout.toMillis()), TimeUnit.MILLISECONDS);
+		try {
+			byte[] bytes = readBounded(inputStream);
+			if (timedOut.get()) {
+				throw new HttpTimeoutException("Timed out while reading facility report photo object");
+			}
+			return bytes;
+		} catch (IOException exception) {
+			if (!timedOut.get() || exception instanceof HttpTimeoutException) {
+				throw exception;
+			}
+			HttpTimeoutException timeoutException = new HttpTimeoutException(
+				"Timed out while reading facility report photo object"
+			);
+			timeoutException.initCause(exception);
+			throw timeoutException;
+		} finally {
+			timeout.cancel(false);
+			timeoutExecutor.shutdownNow();
+		}
 	}
 
 	private InvalidFacilityReportException oversizedPhoto() {

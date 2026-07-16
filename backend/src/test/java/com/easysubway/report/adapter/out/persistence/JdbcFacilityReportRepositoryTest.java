@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.report.application.port.in.FacilityReportListQuery;
@@ -11,7 +12,9 @@ import com.easysubway.report.domain.FacilityReportSummary;
 import com.easysubway.report.domain.FacilityReportType;
 import java.math.BigDecimal;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -325,6 +328,97 @@ class JdbcFacilityReportRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("사용자 데이터 삭제는 사진 객체 삭제 실패를 성공으로 숨기지 않고 재시도할 수 있다")
+	void anonymizeFacilityReportsByUserIdPropagatesPhotoDeletionFailure() {
+		var targetReport = submittedReport("report-1", "anonymous-user-1", 9);
+		repository.saveReport(targetReport);
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, objectKey -> {
+			throw new IllegalStateException("object storage unavailable");
+		});
+
+		assertThatThrownBy(() -> repository.anonymizeFacilityReportsByUserId("anonymous-user-1"))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("object storage unavailable");
+		FacilityReport pendingDeletion = repository.loadReport(targetReport.id()).orElseThrow();
+		assertThat(pendingDeletion.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(pendingDeletion.description())
+			.isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(pendingDeletion.photoObjectKey()).isEqualTo(targetReport.photoObjectKey());
+		assertThat(pendingDeletion.latitude()).isNull();
+		assertThat(pendingDeletion.receiptTokenHash()).isNull();
+
+		var deletedPhotoObjectKeys = new ArrayList<String>();
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, deletedPhotoObjectKeys::add);
+		assertThat(repository.purgePersonalDataCreatedBefore(
+			LocalDateTime.of(2026, 6, 17, 10, 0)
+		)).isZero();
+		assertThat(deletedPhotoObjectKeys).containsExactly(targetReport.photoObjectKey());
+		assertThat(repository.loadReport(targetReport.id()).orElseThrow().photoObjectKey()).isNull();
+	}
+
+	@Test
+	@DisplayName("사용자 데이터 삭제는 일부 사진 삭제 후 실패해도 완료한 키와 남은 재시도 키를 구분한다")
+	void anonymizeFacilityReportsByUserIdPersistsPartialPhotoDeletionProgress() {
+		var firstReport = submittedReport("report-1", "anonymous-user-1", 8);
+		var secondReport = submittedReport("report-2", "anonymous-user-1", 9);
+		repository.saveReport(firstReport);
+		repository.saveReport(secondReport);
+		String firstObjectKey = "facility-reports/report-1/original.jpg";
+		String secondObjectKey = "facility-reports/report-2/original.jpg";
+		jdbcTemplate.update(
+			"UPDATE facility_reports SET photo_object_key = ? WHERE report_id = ?",
+			firstObjectKey,
+			firstReport.id()
+		);
+		jdbcTemplate.update(
+			"UPDATE facility_reports SET photo_object_key = ? WHERE report_id = ?",
+			secondObjectKey,
+			secondReport.id()
+		);
+		var deletedPhotoObjectKeys = new ArrayList<String>();
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, objectKey -> {
+			if (objectKey.equals(secondObjectKey)) {
+				throw new IllegalStateException("object storage unavailable");
+			}
+			deletedPhotoObjectKeys.add(objectKey);
+		});
+
+		assertThatThrownBy(() -> repository.anonymizeFacilityReportsByUserId("anonymous-user-1"))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("object storage unavailable");
+
+		assertThat(deletedPhotoObjectKeys).containsExactly(firstObjectKey);
+		FacilityReport firstAnonymized = repository.loadReport(firstReport.id()).orElseThrow();
+		FacilityReport secondPending = repository.loadReport(secondReport.id()).orElseThrow();
+		assertThat(firstAnonymized.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(firstAnonymized.photoObjectKey()).isNull();
+		assertThat(secondPending.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(secondPending.photoObjectKey()).isEqualTo(secondObjectKey);
+	}
+
+	@Test
+	@DisplayName("사용자 데이터 삭제는 다른 사용자의 과거 사진 삭제 backlog를 동기 재시도하지 않는다")
+	void anonymizeFacilityReportsByUserIdDeletesOnlyTargetUserPhotoObjects() {
+		var targetReport = submittedReport("report-target", "anonymous-user-1", 8);
+		var backlogReport = submittedReport("report-backlog", "anonymous-user-2", 8);
+		repository.saveReport(targetReport);
+		repository.saveReport(backlogReport);
+		jdbcTemplate.update(
+			"UPDATE facility_reports SET user_id = ? WHERE report_id = ?",
+			FacilityReport.ANONYMIZED_USER_ID,
+			backlogReport.id()
+		);
+		var deletedPhotoObjectKeys = new ArrayList<String>();
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, deletedPhotoObjectKeys::add);
+
+		repository.anonymizeFacilityReportsByUserId("anonymous-user-1");
+
+		assertThat(deletedPhotoObjectKeys).containsExactly(targetReport.photoObjectKey());
+		assertThat(repository.loadReport(backlogReport.id()).orElseThrow().photoObjectKey())
+			.isEqualTo(backlogReport.photoObjectKey());
+	}
+
+	@Test
 	@DisplayName("사용자 데이터 삭제 요청은 검수 완료 신고의 검수 정보를 유지한다")
 	void anonymizeFacilityReportsByUserIdKeepsReviewedReportMetadata() {
 		repository.saveReport(submittedReport("report-0", "anonymous-user-2", 8));
@@ -347,6 +441,222 @@ class JdbcFacilityReportRepositoryTest {
 		assertThat(anonymizedReport.status()).isEqualTo(targetReport.status());
 		assertThat(anonymizedReport.reviewedAt()).isEqualTo(targetReport.reviewedAt());
 		assertThat(anonymizedReport.reviewedBy()).isEqualTo(targetReport.reviewedBy());
+	}
+
+	@Test
+	@DisplayName("1년 보관 상한이 지난 신고는 운영 통계만 남기고 개인정보를 파기한다")
+	void purgePersonalDataCreatedBeforeKeepsOnlyOperationalMetadata() {
+		var deletedPhotoObjectKeys = new ArrayList<String>();
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, deletedPhotoObjectKeys::add);
+		var expiredReport = submittedReport("report-expired", "anonymous-user-1", 8);
+		var retainedReport = submittedReport("report-retained", "anonymous-user-2", 10);
+		repository.saveReport(expiredReport);
+		repository.saveReport(retainedReport);
+
+		int purged = repository.purgePersonalDataCreatedBefore(
+			LocalDateTime.of(2026, 6, 17, 9, 0)
+		);
+
+		assertThat(purged).isEqualTo(1);
+		FacilityReport anonymized = repository.loadReport("report-expired").orElseThrow();
+		assertThat(anonymized.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(anonymized.description()).isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(anonymized.photoObjectKey()).isNull();
+		assertThat(anonymized.photoThumbnailObjectKey()).isNull();
+		assertThat(anonymized.latitude()).isNull();
+		assertThat(anonymized.longitude()).isNull();
+		assertThat(anonymized.stationId()).isEqualTo(expiredReport.stationId());
+		assertThat(anonymized.facilityId()).isEqualTo(expiredReport.facilityId());
+		assertThat(anonymized.status()).isEqualTo(expiredReport.status());
+		assertThat(deletedPhotoObjectKeys).containsExactly(expiredReport.photoObjectKey());
+		assertThat(repository.loadReport("report-retained")).contains(retainedReport);
+	}
+
+	@Test
+	@DisplayName("과거 익명 신고도 보관 상한이 지나면 남아 있는 개인정보를 파기한다")
+	void purgePersonalDataCreatedBeforeClearsLegacyAnonymizedReportPersonalData() {
+		var legacyReport = submittedReport("report-legacy", "legacy-guest", 8);
+		repository.saveReport(legacyReport);
+		jdbcTemplate.update(
+			"UPDATE facility_reports SET user_id = ? WHERE report_id = ?",
+			FacilityReport.ANONYMIZED_USER_ID,
+			legacyReport.id()
+		);
+
+		int purged = repository.purgePersonalDataCreatedBefore(
+			LocalDateTime.of(2026, 6, 17, 9, 0)
+		);
+
+		assertThat(purged).isEqualTo(1);
+		FacilityReport anonymized = repository.loadReport(legacyReport.id()).orElseThrow();
+		assertThat(anonymized.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(anonymized.description()).isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(anonymized.photoFileName()).isNull();
+		assertThat(anonymized.photoContentType()).isNull();
+		assertThat(anonymized.photoObjectKey()).isNull();
+		assertThat(anonymized.latitude()).isNull();
+		assertThat(anonymized.longitude()).isNull();
+	}
+
+	@Test
+	@DisplayName("파기 전에 읽은 신고를 다시 저장해도 개인정보는 복원되지 않는다")
+	void saveReportDoesNotRestorePurgedPersonalDataFromStaleAggregate() {
+		var originalReport = submittedReport("report-stale", "anonymous-user-1", 8);
+		repository.saveReport(originalReport);
+		FacilityReport staleReport = repository.loadReport(originalReport.id()).orElseThrow();
+		repository.purgePersonalDataCreatedBefore(LocalDateTime.of(2026, 6, 17, 9, 0));
+		var staleResolvedReport = new FacilityReport(
+			staleReport.id(),
+			staleReport.publicReceiptCode(),
+			staleReport.userId(),
+			staleReport.stationId(),
+			staleReport.facilityId(),
+			staleReport.reportType(),
+			staleReport.description(),
+			staleReport.photoFileName(),
+			staleReport.photoContentType(),
+			staleReport.photoObjectKey(),
+			staleReport.photoThumbnailObjectKey(),
+			staleReport.photoSha256(),
+			staleReport.photoSizeBytes(),
+			staleReport.latitude(),
+			staleReport.longitude(),
+			staleReport.duplicateOfReportId(),
+			FacilityReportStatus.RESOLVED,
+			staleReport.createdAt(),
+			LocalDateTime.of(2026, 6, 17, 10, 0),
+			"admin-user",
+			staleReport.clientSubmissionId(),
+			staleReport.receiptTokenHash()
+		);
+
+		FacilityReport returned = repository.saveReport(staleResolvedReport);
+
+		FacilityReport saved = repository.loadReport(originalReport.id()).orElseThrow();
+		assertThat(returned).isEqualTo(saved);
+		assertThat(returned.description()).isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(saved.status()).isEqualTo(FacilityReportStatus.RESOLVED);
+		assertThat(saved.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(saved.description()).isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(saved.photoFileName()).isNull();
+		assertThat(saved.photoContentType()).isNull();
+		assertThat(saved.photoObjectKey()).isNull();
+		assertThat(saved.latitude()).isNull();
+		assertThat(saved.longitude()).isNull();
+		assertThat(saved.clientSubmissionId()).isNull();
+		assertThat(saved.receiptTokenHash()).isNull();
+	}
+
+	@Test
+	@DisplayName("파기 전에 읽은 신고를 검수 저장해도 개인정보는 복원되지 않는다")
+	void saveReviewedReportDoesNotRestorePurgedPersonalDataFromStaleAggregate() {
+		var originalReport = submittedReport("report-stale-review", "anonymous-user-1", 8);
+		repository.saveReport(originalReport);
+		FacilityReport staleReport = repository.loadReport(originalReport.id()).orElseThrow();
+		repository.purgePersonalDataCreatedBefore(LocalDateTime.of(2026, 6, 17, 9, 0));
+		var staleReviewedReport = new FacilityReport(
+			staleReport.id(),
+			staleReport.publicReceiptCode(),
+			staleReport.userId(),
+			staleReport.stationId(),
+			staleReport.facilityId(),
+			staleReport.reportType(),
+			staleReport.description(),
+			staleReport.photoFileName(),
+			staleReport.photoContentType(),
+			staleReport.photoObjectKey(),
+			staleReport.photoThumbnailObjectKey(),
+			staleReport.photoSha256(),
+			staleReport.photoSizeBytes(),
+			staleReport.latitude(),
+			staleReport.longitude(),
+			staleReport.duplicateOfReportId(),
+			FacilityReportStatus.ACCEPTED,
+			staleReport.createdAt(),
+			LocalDateTime.of(2026, 6, 17, 10, 0),
+			"admin-user",
+			staleReport.clientSubmissionId(),
+			staleReport.receiptTokenHash()
+		);
+
+		var savedResult = repository.saveReviewedReportIfStatus(
+			staleReviewedReport,
+			FacilityReportStatus.SUBMITTED
+		);
+
+		assertThat(savedResult).isPresent();
+		FacilityReport saved = savedResult.orElseThrow();
+		assertThat(saved.status()).isEqualTo(FacilityReportStatus.ACCEPTED);
+		assertThat(saved.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(saved.description()).isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(saved.photoObjectKey()).isNull();
+		assertThat(saved.latitude()).isNull();
+		assertThat(saved.longitude()).isNull();
+		assertThat(saved.clientSubmissionId()).isNull();
+		assertThat(saved.receiptTokenHash()).isNull();
+	}
+
+	@Test
+	@DisplayName("사진 객체 하나의 삭제 실패를 격리하고 나머지를 처리한 뒤 재시도한다")
+	void purgePersonalDataIsolatesPhotoDeletionFailureAndRetainsRetryState() {
+		var expiredReport = submittedReport("report-expired", "anonymous-user-1", 8);
+		var followingReport = submittedReport("report-following", "anonymous-user-2", 8);
+		repository.saveReport(expiredReport);
+		repository.saveReport(followingReport);
+		var deletedPhotoObjectKeys = new ArrayList<String>();
+		var firstDeletion = new AtomicBoolean(true);
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, objectKey -> {
+			if (firstDeletion.getAndSet(false)) {
+				throw new IllegalStateException("object storage unavailable");
+			}
+			deletedPhotoObjectKeys.add(objectKey);
+		});
+		LocalDateTime cutoff = LocalDateTime.of(2026, 6, 17, 9, 0);
+
+		assertThat(repository.purgePersonalDataCreatedBefore(cutoff)).isEqualTo(2);
+
+		FacilityReport pendingDeletion = repository.loadReport("report-expired").orElseThrow();
+		assertThat(pendingDeletion.userId()).isEqualTo(FacilityReport.ANONYMIZED_USER_ID);
+		assertThat(pendingDeletion.description())
+			.isEqualTo("사용자 데이터 삭제로 신고 내용이 삭제되었습니다.");
+		assertThat(pendingDeletion.photoFileName()).isNull();
+		assertThat(pendingDeletion.photoContentType()).isNull();
+		assertThat(pendingDeletion.photoObjectKey()).isEqualTo(expiredReport.photoObjectKey());
+		assertThat(pendingDeletion.latitude()).isNull();
+		assertThat(pendingDeletion.receiptTokenHash()).isNull();
+		assertThat(repository.loadReport("report-following").orElseThrow().photoObjectKey()).isNull();
+		assertThat(deletedPhotoObjectKeys).containsExactly(followingReport.photoObjectKey());
+
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, deletedPhotoObjectKeys::add);
+		assertThat(repository.purgePersonalDataCreatedBefore(cutoff)).isZero();
+		assertThat(repository.loadReport("report-expired").orElseThrow().photoObjectKey()).isNull();
+		assertThat(deletedPhotoObjectKeys)
+			.containsExactly(followingReport.photoObjectKey(), expiredReport.photoObjectKey());
+	}
+
+	@Test
+	@DisplayName("사진 삭제 대기열은 한 건이 실패해도 100건 이후의 행까지 한 번씩 처리한다")
+	void purgePersonalDataScansEveryPhotoDeletionBatchDespiteEarlierFailure() {
+		for (int index = 0; index <= 100; index++) {
+			repository.saveReport(submittedReport(
+				"report-%03d".formatted(index),
+				"anonymous-user-%03d".formatted(index),
+				8
+			));
+		}
+		var firstDeletion = new AtomicBoolean(true);
+		repository = new JdbcFacilityReportRepository(jdbcTemplate, objectKey -> {
+			if (firstDeletion.getAndSet(false)) {
+				throw new IllegalStateException("object storage unavailable");
+			}
+		});
+
+		assertThat(repository.purgePersonalDataCreatedBefore(
+			LocalDateTime.of(2026, 6, 17, 9, 0)
+		)).isEqualTo(101);
+
+		assertThat(repository.loadReport("report-000").orElseThrow().photoObjectKey()).isNotNull();
+		assertThat(repository.loadReport("report-100").orElseThrow().photoObjectKey()).isNull();
 	}
 
 	@Test

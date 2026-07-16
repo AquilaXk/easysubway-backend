@@ -5,6 +5,7 @@ import com.easysubway.report.application.port.in.FacilityReportListQuery;
 import com.easysubway.report.application.port.in.FacilityReportPageRequest;
 import com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort;
 import com.easysubway.report.application.port.out.LoadFacilityReportPort;
+import com.easysubway.report.application.port.out.PurgeFacilityReportPersonalDataPort;
 import com.easysubway.report.application.port.out.SaveFacilityReportPort;
 import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.FacilityReportSummary;
@@ -18,12 +19,15 @@ import java.sql.SQLException;
 import java.time.Duration;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.EnumMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
 import javax.sql.DataSource;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.EmptyResultDataAccessException;
@@ -36,9 +40,12 @@ import org.springframework.stereotype.Repository;
 public class JdbcFacilityReportRepository implements
 	LoadFacilityReportPort,
 	SaveFacilityReportPort,
-	AnonymizeUserFacilityReportPort {
+	AnonymizeUserFacilityReportPort,
+	PurgeFacilityReportPersonalDataPort {
 
+	private static final Logger log = LoggerFactory.getLogger(JdbcFacilityReportRepository.class);
 	private static final String DELETED_DESCRIPTION = "사용자 데이터 삭제로 신고 내용이 삭제되었습니다.";
+	private static final int PHOTO_DELETION_RETRY_BATCH_SIZE = 100;
 
 	private final JdbcTemplate jdbcTemplate;
 	private final DatabaseDialect databaseDialect;
@@ -508,7 +515,8 @@ public class JdbcFacilityReportRepository implements
 	@Override
 	public FacilityReport saveReport(FacilityReport report) {
 		upsertReport(report);
-		return report;
+		return loadReport(report.id())
+			.orElseThrow(() -> new IllegalStateException("Saved facility report is missing: " + report.id()));
 	}
 
 	@Override
@@ -516,6 +524,10 @@ public class JdbcFacilityReportRepository implements
 		FacilityReport report,
 		FacilityReportStatus expectedStatus
 	) {
+		int anonymizedUpdatedCount = updateAnonymizedReportOperationalFields(report, expectedStatus);
+		if (anonymizedUpdatedCount > 0) {
+			return loadReport(report.id());
+		}
 		int updatedCount = jdbcTemplate.update(
 			"""
 				UPDATE facility_reports
@@ -541,6 +553,7 @@ public class JdbcFacilityReportRepository implements
 					receipt_token_hash = ?
 				WHERE report_id = ?
 					AND status = ?
+					AND user_id <> ?
 				""",
 			report.publicReceiptCode(),
 			report.userId(),
@@ -563,8 +576,12 @@ public class JdbcFacilityReportRepository implements
 			report.clientSubmissionId(),
 			report.receiptTokenHash(),
 			report.id(),
-			expectedStatus.name()
+			expectedStatus.name(),
+			FacilityReport.ANONYMIZED_USER_ID
 		);
+		if (updatedCount == 0) {
+			updatedCount = updateAnonymizedReportOperationalFields(report, expectedStatus);
+		}
 		if (updatedCount == 0) {
 			return Optional.empty();
 		}
@@ -573,7 +590,7 @@ public class JdbcFacilityReportRepository implements
 
 	@Override
 	public int anonymizeFacilityReportsByUserId(String userId) {
-		List<String> photoObjectKeys = loadPhotoObjectKeysByUserId(userId);
+		List<AnonymizedPhotoObjects> targetPhotoObjects = loadPhotoObjectsByUserId(userId);
 		int anonymizedCount = jdbcTemplate.update(
 			"""
 				UPDATE facility_reports
@@ -581,8 +598,6 @@ public class JdbcFacilityReportRepository implements
 					description = ?,
 					photo_file_name = NULL,
 					photo_content_type = NULL,
-					photo_object_key = NULL,
-					photo_thumbnail_object_key = NULL,
 					photo_sha256 = NULL,
 					photo_size_bytes = NULL,
 					latitude = NULL,
@@ -595,43 +610,222 @@ public class JdbcFacilityReportRepository implements
 			DELETED_DESCRIPTION,
 			userId
 		);
-		if (anonymizedCount > 0) {
-			photoObjectKeys.forEach(deleteFacilityReportPhotoPort::deleteFacilityReportPhoto);
-		}
+		deleteUserRequestedPhotoObjects(targetPhotoObjects);
 		return anonymizedCount;
 	}
 
-	private List<String> loadPhotoObjectKeysByUserId(String userId) {
+	private void deleteUserRequestedPhotoObjects(List<AnonymizedPhotoObjects> targetPhotoObjects) {
+		for (AnonymizedPhotoObjects objects : targetPhotoObjects) {
+			deletePrimaryPhotoObject(objects.reportId(), objects.primaryObjectKey());
+			deleteThumbnailPhotoObject(objects.reportId(), objects.thumbnailObjectKey());
+		}
+	}
+
+	@Override
+	public int purgePersonalDataCreatedBefore(LocalDateTime cutoff) {
+		int purgedCount = jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET user_id = ?,
+					description = ?,
+					photo_file_name = NULL,
+					photo_content_type = NULL,
+					photo_sha256 = NULL,
+					photo_size_bytes = NULL,
+					latitude = NULL,
+					longitude = NULL,
+					client_submission_id = NULL,
+					receipt_token_hash = NULL
+				WHERE created_at < ?
+					AND (
+						user_id <> ?
+						OR description IS NULL
+						OR description <> ?
+						OR photo_file_name IS NOT NULL
+						OR photo_content_type IS NOT NULL
+						OR photo_sha256 IS NOT NULL
+						OR photo_size_bytes IS NOT NULL
+						OR latitude IS NOT NULL
+						OR longitude IS NOT NULL
+						OR client_submission_id IS NOT NULL
+						OR receipt_token_hash IS NOT NULL
+					)
+				""",
+			FacilityReport.ANONYMIZED_USER_ID,
+			DELETED_DESCRIPTION,
+			cutoff,
+			FacilityReport.ANONYMIZED_USER_ID,
+			DELETED_DESCRIPTION
+		);
+		deletePendingAnonymizedPhotoObjects();
+		return purgedCount;
+	}
+
+	private void deletePendingAnonymizedPhotoObjects() {
+		AnonymizedPhotoObjects cursor = null;
+		while (true) {
+			List<AnonymizedPhotoObjects> pendingObjects = loadPendingAnonymizedPhotoObjectsAfter(cursor);
+			if (pendingObjects.isEmpty()) {
+				return;
+			}
+			deletePendingPhotoObjects(pendingObjects);
+			cursor = pendingObjects.get(pendingObjects.size() - 1);
+			if (pendingObjects.size() < PHOTO_DELETION_RETRY_BATCH_SIZE) {
+				return;
+			}
+		}
+	}
+
+	private List<AnonymizedPhotoObjects> loadPendingAnonymizedPhotoObjectsAfter(
+		AnonymizedPhotoObjects cursor
+	) {
+		if (cursor == null) {
+			return jdbcTemplate.query(
+				"""
+					SELECT report_id,
+						created_at,
+						photo_object_key,
+						photo_thumbnail_object_key
+					FROM facility_reports
+					WHERE user_id = ?
+						AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+					ORDER BY created_at ASC, report_id ASC
+					LIMIT ?
+					""",
+				this::mapAnonymizedPhotoObjects,
+				FacilityReport.ANONYMIZED_USER_ID,
+				PHOTO_DELETION_RETRY_BATCH_SIZE
+			);
+		}
 		return jdbcTemplate.query(
 			"""
-				SELECT photo_object_key,
+				SELECT report_id,
+					created_at,
+					photo_object_key,
 					photo_thumbnail_object_key
 				FROM facility_reports
 				WHERE user_id = ?
 					AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+					AND (created_at > ? OR (created_at = ? AND report_id > ?))
+				ORDER BY created_at ASC, report_id ASC
+				LIMIT ?
 				""",
-			resultSet -> {
-				java.util.ArrayList<String> objectKeys = new java.util.ArrayList<>();
-				while (resultSet.next()) {
-					addObjectKey(objectKeys, resultSet.getString("photo_object_key"));
-					addObjectKey(objectKeys, resultSet.getString("photo_thumbnail_object_key"));
-				}
-				return List.copyOf(objectKeys);
-			},
+			this::mapAnonymizedPhotoObjects,
+			FacilityReport.ANONYMIZED_USER_ID,
+			cursor.createdAt(),
+			cursor.createdAt(),
+			cursor.reportId(),
+			PHOTO_DELETION_RETRY_BATCH_SIZE
+		);
+	}
+
+	private List<AnonymizedPhotoObjects> loadPhotoObjectsByUserId(String userId) {
+		return jdbcTemplate.query(
+			"""
+				SELECT report_id,
+					created_at,
+					photo_object_key,
+					photo_thumbnail_object_key
+				FROM facility_reports
+				WHERE user_id = ?
+					AND (photo_object_key IS NOT NULL OR photo_thumbnail_object_key IS NOT NULL)
+				ORDER BY created_at ASC, report_id ASC
+				""",
+			this::mapAnonymizedPhotoObjects,
 			userId
 		);
 	}
 
-	private void addObjectKey(List<String> objectKeys, String objectKey) {
-		if (objectKey != null && !objectKey.isBlank()) {
-			objectKeys.add(objectKey);
+	private AnonymizedPhotoObjects mapAnonymizedPhotoObjects(ResultSet resultSet, int rowNumber)
+		throws SQLException {
+		return new AnonymizedPhotoObjects(
+			resultSet.getString("report_id"),
+			resultSet.getObject("created_at", LocalDateTime.class),
+			resultSet.getString("photo_object_key"),
+			resultSet.getString("photo_thumbnail_object_key")
+		);
+	}
+
+	private void deletePendingPhotoObjects(List<AnonymizedPhotoObjects> pendingObjects) {
+		for (AnonymizedPhotoObjects objects : pendingObjects) {
+			tryDeletePendingPhotoObject(
+				() -> deletePrimaryPhotoObject(objects.reportId(), objects.primaryObjectKey()),
+				"primary"
+			);
+			tryDeletePendingPhotoObject(
+				() -> deleteThumbnailPhotoObject(objects.reportId(), objects.thumbnailObjectKey()),
+				"thumbnail"
+			);
 		}
 	}
 
+	private void tryDeletePendingPhotoObject(Runnable deletion, String kind) {
+		try {
+			deletion.run();
+		} catch (RuntimeException exception) {
+			log.warn(
+				"Failed to delete anonymized facility report {} photo; it remains queued for retry",
+				kind,
+				exception
+			);
+		}
+	}
+
+	private void deletePrimaryPhotoObject(String reportId, String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(objectKey);
+		jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET photo_object_key = NULL
+				WHERE report_id = ?
+					AND user_id = ?
+					AND photo_object_key = ?
+				""",
+			reportId,
+			FacilityReport.ANONYMIZED_USER_ID,
+			objectKey
+		);
+	}
+
+	private void deleteThumbnailPhotoObject(String reportId, String objectKey) {
+		if (objectKey == null || objectKey.isBlank()) {
+			return;
+		}
+		deleteFacilityReportPhotoPort.deleteFacilityReportPhoto(objectKey);
+		jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET photo_thumbnail_object_key = NULL
+				WHERE report_id = ?
+					AND user_id = ?
+					AND photo_thumbnail_object_key = ?
+				""",
+			reportId,
+			FacilityReport.ANONYMIZED_USER_ID,
+			objectKey
+		);
+	}
+
+	private record AnonymizedPhotoObjects(
+		String reportId,
+		LocalDateTime createdAt,
+		String primaryObjectKey,
+		String thumbnailObjectKey
+	) {
+	}
+
 	private void upsertReport(FacilityReport report) {
+		if (updateAnonymizedReportOperationalFields(report) > 0) {
+			return;
+		}
 		if (databaseDialect == DatabaseDialect.H2) {
 			if (updateReportPreservingCreatedAt(report) == 0) {
-				insertReport(report);
+				if (updateAnonymizedReportOperationalFields(report) == 0) {
+					insertReport(report);
+				}
 			}
 			return;
 		}
@@ -640,7 +834,7 @@ public class JdbcFacilityReportRepository implements
 
 	private void upsertReportWithPostgresql(FacilityReport report) {
 		// 확인 상태 갱신과 재저장을 같은 SQL 경로로 처리해 운영 저장소의 행 단위 일관성을 유지한다.
-		jdbcTemplate.update(
+		int updatedCount = jdbcTemplate.update(
 			"""
 				INSERT INTO facility_reports (
 					report_id,
@@ -688,9 +882,13 @@ public class JdbcFacilityReportRepository implements
 					reviewed_by = EXCLUDED.reviewed_by,
 					client_submission_id = EXCLUDED.client_submission_id,
 					receipt_token_hash = EXCLUDED.receipt_token_hash
+				WHERE facility_reports.user_id <> ?
 				""",
-			reportParameters(report)
+			append(reportParameters(report), FacilityReport.ANONYMIZED_USER_ID)
 		);
+		if (updatedCount == 0) {
+			updateAnonymizedReportOperationalFields(report);
+		}
 	}
 
 	private int updateReportPreservingCreatedAt(FacilityReport report) {
@@ -718,6 +916,7 @@ public class JdbcFacilityReportRepository implements
 					client_submission_id = ?,
 					receipt_token_hash = ?
 				WHERE report_id = ?
+					AND user_id <> ?
 				""",
 			report.publicReceiptCode(),
 			report.userId(),
@@ -739,7 +938,53 @@ public class JdbcFacilityReportRepository implements
 			report.reviewedBy(),
 			report.clientSubmissionId(),
 			report.receiptTokenHash(),
-			report.id()
+			report.id(),
+			FacilityReport.ANONYMIZED_USER_ID
+		);
+	}
+
+	private int updateAnonymizedReportOperationalFields(FacilityReport report) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?
+				WHERE report_id = ?
+					AND user_id = ?
+				""",
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.id(),
+			FacilityReport.ANONYMIZED_USER_ID
+		);
+	}
+
+	private int updateAnonymizedReportOperationalFields(
+		FacilityReport report,
+		FacilityReportStatus expectedStatus
+	) {
+		return jdbcTemplate.update(
+			"""
+				UPDATE facility_reports
+				SET duplicate_of_report_id = ?,
+					status = ?,
+					reviewed_at = ?,
+					reviewed_by = ?
+				WHERE report_id = ?
+					AND status = ?
+					AND user_id = ?
+				""",
+			report.duplicateOfReportId(),
+			report.status().name(),
+			report.reviewedAt(),
+			report.reviewedBy(),
+			report.id(),
+			expectedStatus.name(),
+			FacilityReport.ANONYMIZED_USER_ID
 		);
 	}
 
@@ -847,6 +1092,12 @@ public class JdbcFacilityReportRepository implements
 			report.clientSubmissionId(),
 			report.receiptTokenHash()
 		};
+	}
+
+	private Object[] append(Object[] parameters, Object value) {
+		Object[] appended = Arrays.copyOf(parameters, parameters.length + 1);
+		appended[parameters.length] = value;
+		return appended;
 	}
 
 	private FacilityReportSummary mapFacilityReportSummary(ResultSet resultSet, int rowNumber) throws SQLException {

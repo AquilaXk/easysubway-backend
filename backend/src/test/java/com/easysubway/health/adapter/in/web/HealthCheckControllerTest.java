@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -97,19 +98,50 @@ class HealthCheckControllerTest {
 	@Test
 	@DisplayName("개인정보처리방침 공개 페이지를 인증 없이 노출한다")
 	void privacyPolicyPageIsPublic() throws Exception {
-		mockMvc.perform(get("/easysubway/privacy"))
-			.andExpect(status().isOk())
-			.andExpect(result -> assertThat(result.getResponse().getContentAsString())
-				.contains(
-					"쉬운 지하철 개인정보처리방침",
-					"처리하는 개인정보 항목과 목적",
-					"제3자 제공, 처리 위탁, 추적",
-					"외부 지도 도보 길안내",
-					"카카오맵 앱/웹",
-					"권리 행사와 삭제 요청",
-					"개인정보 보호책임자",
-					"privacy@aquilaxk.site"
-				));
+		for (String path : List.of("/privacy", "/easysubway/privacy")) {
+			mockMvc.perform(get(path))
+				.andExpect(status().isOk())
+				.andExpect(result -> assertThat(result.getResponse().getContentType())
+					.contains("text/html", "UTF-8"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.contains(
+						"쉬운 지하철 개인정보처리방침",
+						"처리하는 개인정보 항목과 목적",
+							"제3자 제공, 처리 위탁 및 추적",
+						"외부 지도 도보 길안내",
+						"카카오맵 앱",
+						"카카오맵 웹",
+							"이용자 및 법정대리인의 권리",
+						"개인정보 보호책임자",
+						"privacy@aquilaxk.site"
+					));
+		}
+	}
+
+	@Test
+	@DisplayName("서비스 이용약관 공개 페이지를 두 경로에서 인증 없이 노출한다")
+	void termsPageIsPublic() throws Exception {
+		for (String path : List.of("/terms", "/easysubway/terms")) {
+			mockMvc.perform(get(path))
+				.andExpect(status().isOk())
+				.andExpect(result -> assertThat(result.getResponse().getContentType())
+					.contains("text/html", "UTF-8"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.contains("쉬운 지하철 서비스 이용약관", "서비스의 내용", "현장 안내를 우선"));
+		}
+	}
+
+	@Test
+	@DisplayName("위치정보 이용약관 공개 페이지를 두 경로에서 인증 없이 노출한다")
+	void locationTermsPageIsPublic() throws Exception {
+		for (String path : List.of("/location-terms", "/easysubway/location-terms")) {
+			mockMvc.perform(get(path))
+				.andExpect(status().isOk())
+				.andExpect(result -> assertThat(result.getResponse().getContentType())
+					.contains("text/html", "UTF-8"))
+				.andExpect(result -> assertThat(result.getResponse().getContentAsString())
+					.contains("쉬운 지하철 위치정보 이용약관", "제 4 조 (위치기반서비스의 내용)", "카카오맵 앱", "카카오맵 웹"));
+		}
 	}
 
 	@Test
