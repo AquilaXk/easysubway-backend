@@ -142,6 +142,10 @@ function validateV2Semantics(summary, gate, catalog) {
   const pass = summary.status === "PASS";
   if (pass) for (const field of gate.summaryContract.requiredFields.rootAdditionalForPass) if (!(field in summary)) fail("SUMMARY_ID_SET_MISMATCH",`$.${field}`,"pass-required");
   if (summary.artifactIdentity !== undefined) validateIdentity(summary.artifactIdentity,gate,"$.artifactIdentity","SUMMARY_V2_SCHEMA_INVALID");
+  if (summary.artifactIdentity === undefined &&
+      ((summary.evidence?.length ?? 0) > 0 || (summary.productionLikeEvidence?.length ?? 0) > 0)) {
+    fail("SUMMARY_IDENTITY_INVALID","$.artifactIdentity","evidence-root-artifact-identity");
+  }
   const evidencePaths = new Set();
   if (summary.evidence !== undefined) validateEvidence(summary.evidence,catalog.matrixEvidenceIds,"$.evidence",pass,gate,summary.artifactIdentity,evidencePaths);
   if (summary.productionLikeEvidence !== undefined) validateEvidence(summary.productionLikeEvidence,catalog.productionLikeEvidenceIds,"$.productionLikeEvidence",pass,gate,summary.artifactIdentity,evidencePaths);

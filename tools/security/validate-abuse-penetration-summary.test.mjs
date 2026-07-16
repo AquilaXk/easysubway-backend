@@ -146,11 +146,23 @@ test("A RED v2 matrix cases are bound to the complete root artifact identity", (
       error.rule === "matrix-case-root-artifact-identity",
   );
 });
+test("A RED v2 evidence collections require the complete root artifact identity", () => {
+  for (const collection of ["evidence", "productionLikeEvidence"]) {
+    const summary = schemaV2Blocked(gate, "FAIL");
+    summary[collection] = [structuredClone(freshV2Pass()[collection][0])];
+    assert.throws(
+      () => validateAbusePenetrationSummary(summary, gate),
+      (error) => error.code === "SUMMARY_IDENTITY_INVALID" &&
+        error.path === "$.artifactIdentity" &&
+        error.rule === "evidence-root-artifact-identity",
+    );
+  }
+});
 test("A RED direct schema rejects every missing required and extra field", () => {
   const requiredByKind = {
     root: ["schemaVersion", "releaseGate", "issue", "status", "rawInvocationStored", "redactionPolicyId"],
     artifactIdentity: ["gitSha", "versionCode", "androidApplicationId", "dataPackManifestSha256"],
-    evidence: ["evidenceId", "result", "localEvidencePath"], matrix: ["matrixId", "result", "findingCounts", "cases"],
+    evidence: ["evidenceId", "result", "localEvidencePath", "artifactIdentitySha256"], matrix: ["matrixId", "result", "findingCounts", "cases"],
     findingCounts: ["critical", "high", "medium", "low"],
     mediumFindingDisposition: ["ownerAlias", "fixPlanEvidencePath"],
     case: ["procedureId", "targetAlias", "expectedStatus", "observedStatus", "redactionResult", "localEvidencePath", "artifactIdentitySha256"],
