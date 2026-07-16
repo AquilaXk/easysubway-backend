@@ -19,19 +19,26 @@ import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.core.env.Environment;
 import org.springframework.core.env.Profiles;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 @Service
 public class RouteV2Planner implements RouteV2SearchUseCase {
 
+	private static final Logger log = LoggerFactory.getLogger(RouteV2Planner.class);
 	private static final String PLANNER_ADR = "tools/routes/route-algorithm-v2-adr.json";
 	private static final int RANKING_CANDIDATE_LIMIT = 3;
 
@@ -40,40 +47,57 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private final RouteTimetableRaptorPlanner timetableRaptorPlanner = new RouteTimetableRaptorPlanner();
 	private final boolean timetableRequired;
 	private final boolean legacyPersistenceAllowed;
+	private final Counter timetableCacheHit;
+	private final Counter timetableCacheMiss;
+	private final AtomicBoolean timetableCacheHitLogged = new AtomicBoolean();
+	private final AtomicBoolean timetableCacheMissLogged = new AtomicBoolean();
 	private volatile TimetableSnapshot cachedTimetableSnapshot;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
-		this(routeSearchUseCase, RouteTimetable::empty, false, true);
+		this(routeSearchUseCase, RouteTimetable::empty, false, true, new SimpleMeterRegistry());
 	}
 
 	@Autowired
 	public RouteV2Planner(
 		RouteSearchUseCase routeSearchUseCase,
 		ObjectProvider<LoadRouteTimetablePort> routeTimetablePortProvider,
-		Environment environment
+		Environment environment,
+		MeterRegistry meterRegistry
 	) {
 		this(
 			routeSearchUseCase,
 			routeTimetablePortProvider.getIfAvailable(),
 			true,
-			!environment.acceptsProfiles(Profiles.of("prod", "staging", "release", "prod-like"))
+			!environment.acceptsProfiles(Profiles.of("prod", "staging", "release", "prod-like")),
+			meterRegistry
 		);
 	}
 
 	RouteV2Planner(RouteSearchUseCase routeSearchUseCase, LoadRouteTimetablePort routeTimetablePort) {
-		this(routeSearchUseCase, routeTimetablePort, true, false);
+		this(routeSearchUseCase, routeTimetablePort, true, false, new SimpleMeterRegistry());
+	}
+
+	RouteV2Planner(
+		RouteSearchUseCase routeSearchUseCase,
+		LoadRouteTimetablePort routeTimetablePort,
+		MeterRegistry meterRegistry
+	) {
+		this(routeSearchUseCase, routeTimetablePort, true, false, meterRegistry);
 	}
 
 	private RouteV2Planner(
 		RouteSearchUseCase routeSearchUseCase,
 		LoadRouteTimetablePort routeTimetablePort,
 		boolean timetableRequired,
-		boolean legacyPersistenceAllowed
+		boolean legacyPersistenceAllowed,
+		MeterRegistry meterRegistry
 	) {
 		this.routeSearchUseCase = routeSearchUseCase;
 		this.routeTimetablePort = routeTimetablePort == null ? RouteTimetable::empty : routeTimetablePort;
 		this.timetableRequired = timetableRequired && routeTimetablePort != null;
 		this.legacyPersistenceAllowed = legacyPersistenceAllowed;
+		this.timetableCacheHit = cacheCounter(meterRegistry, "hit");
+		this.timetableCacheMiss = cacheCounter(meterRegistry, "miss");
 	}
 
 	@Override
@@ -189,12 +213,14 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		String cacheKey = routeTimetablePort.timetableCacheKey();
 		TimetableSnapshot snapshot = cachedTimetableSnapshot;
 		if (snapshot != null && snapshot.cacheKey().equals(cacheKey)) {
+			recordTimetableCache(timetableCacheHit, timetableCacheHitLogged, "hit", cacheKey);
 			return snapshot;
 		}
 		synchronized (this) {
 			cacheKey = routeTimetablePort.timetableCacheKey();
 			snapshot = cachedTimetableSnapshot;
 			if (snapshot == null || !snapshot.cacheKey().equals(cacheKey)) {
+				recordTimetableCache(timetableCacheMiss, timetableCacheMissLogged, "miss", cacheKey);
 				LoadRouteTimetablePort.RouteTimetableSnapshot loaded = routeTimetablePort.loadRouteTimetableSnapshot();
 				RouteTimetable timetable = loaded.timetable();
 				java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
@@ -208,7 +234,26 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				);
 				return cachedTimetableSnapshot;
 			}
+			recordTimetableCache(timetableCacheHit, timetableCacheHitLogged, "hit", cacheKey);
 			return cachedTimetableSnapshot;
+		}
+	}
+
+	private static Counter cacheCounter(MeterRegistry registry, String result) {
+		return Counter.builder("easysubway.route.v2.timetable.cache")
+			.tag("result", result)
+			.register(registry);
+	}
+
+	private static void recordTimetableCache(
+		Counter counter,
+		AtomicBoolean firstLog,
+		String result,
+		String cacheKey
+	) {
+		counter.increment();
+		if (firstLog.compareAndSet(false, true)) {
+			log.info("route V2 timetable cache result={} key={}", result, cacheKey);
 		}
 	}
 

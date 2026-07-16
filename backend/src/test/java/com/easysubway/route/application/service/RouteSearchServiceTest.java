@@ -66,6 +66,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -1598,12 +1599,17 @@ class RouteSearchServiceTest {
 		var repository = new InMemoryRouteSearchRepository();
 		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
 		var timetablePort = new CountingRouteTimetablePort();
-		var planner = new RouteV2Planner(routeSearchService, timetablePort);
+		var registry = new SimpleMeterRegistry();
+		var planner = new RouteV2Planner(routeSearchService, timetablePort, registry);
 
 		planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 		planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
 		assertThat(timetablePort.loadCount()).isEqualTo(1);
+		assertThat(registry.get("easysubway.route.v2.timetable.cache")
+			.tag("result", "miss").counter().count()).isEqualTo(1);
+		assertThat(registry.get("easysubway.route.v2.timetable.cache")
+			.tag("result", "hit").counter().count()).isEqualTo(1);
 	}
 
 	@Test
