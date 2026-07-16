@@ -25,6 +25,10 @@ on:
         options:
           - none
           - internal
+      datapack_run_id:
+        description: Data Pack Release run ID for the same Git SHA (required for production RC identity)
+        type: string
+        required: false
 
 concurrency:
   group: release-artifacts-${{ github.workflow }}-${{ github.ref }}
@@ -479,7 +483,9 @@ jobs:
   play-internal-upload:
     name: Play internal track upload
     runs-on: ubuntu-latest
-    needs: android-production-rc-release
+    needs:
+      - android-production-rc-release
+      - rc-evidence-manifest
     permissions:
       contents: read
     # Google Play allows only one active edit per app; serialize uploads and
@@ -489,7 +495,7 @@ jobs:
       cancel-in-progress: false
     # Shares the android-production-rc environment approval gate. Opt-in only:
     # play_upload=internal keeps the default build-only flow unchanged (#1689).
-    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.android_rc_signing_mode == 'production-upload-key' && inputs.play_upload == 'internal' && needs.android-production-rc-release.result == 'success' }}
+    if: ${{ github.event_name == 'workflow_dispatch' && github.ref == 'refs/heads/main' && inputs.android_rc_signing_mode == 'production-upload-key' && inputs.play_upload == 'internal' && needs.android-production-rc-release.result == 'success' && needs.rc-evidence-manifest.result == 'success' }}
     environment:
       name: android-production-rc
     steps:
@@ -644,6 +650,7 @@ jobs:
       - android-production-rc-release
       - backend-release
     permissions:
+      actions: read
       contents: read
     if: ${{ always() && (needs.android-release.result == 'success' || needs.android-production-rc-release.result == 'success' || needs.backend-release.result == 'success') }}
 
@@ -674,24 +681,113 @@ jobs:
           name: easysubway-backend-release-${{ github.sha }}
           path: release-artifacts/downloaded/backend
 
+      - name: RC Evidence Manifest / Download production data pack artifact
+        if: ${{ inputs.datapack_run_id != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: easysubway-datapacks-${{ github.sha }}
+          path: release-artifacts/downloaded/datapack
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.datapack_run_id }}
+
+      - name: RC Evidence Manifest / Restore production data pack validation environment
+        if: ${{ inputs.datapack_run_id != '' }}
+        shell: bash
+        env:
+          EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
+        run: |
+          set -euo pipefail
+          if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
+            echo "EASYSUBWAY_ENV is required for production data pack signature validation" >&2
+            exit 1
+          fi
+          rc_env_file="${RUNNER_TEMP}/easysubway-rc-evidence.env"
+          umask 077
+          printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${rc_env_file}"
+          node tools/ci/validate-store-privacy-env.mjs \
+            --env-file "${rc_env_file}" \
+            --github-env "${GITHUB_ENV}" \
+            --require-android-rc-production
+          rm -f "${rc_env_file}"
+
+      - name: RC Evidence Manifest / Select finalized production data pack
+        if: ${{ inputs.datapack_run_id != '' }}
+        run: |
+          set -euo pipefail
+          node tools/release/select-rc-datapack-artifact.mjs \
+            --artifact-root release-artifacts/downloaded/datapack \
+            --output-root release-artifacts/downloaded/datapack-selected
+
+      - name: RC Evidence Manifest / Revalidate current production data pack
+        if: ${{ inputs.datapack_run_id != '' }}
+        run: |
+          set -euo pipefail
+          node tools/datapack/validate-remote-datapack-artifact.mjs \
+            --manifest-url "${EASYSUBWAY_DATA_PACK_BASE_URL%/}/catalog/current.json" \
+            --expected-manifest release-artifacts/downloaded/datapack-selected/current.json \
+            --output "${RUNNER_TEMP}/rc-current-datapack-validation" \
+            --require-production
+
       - name: RC Evidence Manifest / Generate manifest
         shell: bash
+        env:
+          ANDROID_RC_SIGNING_MODE: ${{ inputs.android_rc_signing_mode }}
+          DATAPACK_RUN_ID: ${{ inputs.datapack_run_id }}
+          PLAY_UPLOAD: ${{ inputs.play_upload }}
         run: |
           set -euo pipefail
           mkdir -p release-artifacts/rc
+          data_pack_manifest=apps/mobile/assets/datapacks/metro_map_pack/manifest.json
+          data_pack_artifact=apps/mobile/assets/datapacks/capital.sqlite.gz
+          data_pack_fallback_artifact="${data_pack_artifact}"
+          data_pack_release_decision=""
+          if [[ "${ANDROID_RC_SIGNING_MODE}" == production-upload-key && -z "${DATAPACK_RUN_ID}" ]]; then
+            echo "datapack_run_id is required for production RC identity" >&2
+            exit 1
+          fi
+          if [[ -n "${DATAPACK_RUN_ID}" ]]; then
+            data_pack_manifest=release-artifacts/downloaded/datapack-selected/current.json
+            data_pack_artifact=release-artifacts/downloaded/datapack-selected/active.sqlite.gz
+            data_pack_fallback_artifact=release-artifacts/downloaded/datapack-selected/fallback.sqlite.gz
+            data_pack_release_decision=release-artifacts/downloaded/datapack-selected/release-decision.json
+          fi
           generator_args=(
             --repo-root .
             --app-root apps/mobile
-            --data-pack-manifest apps/mobile/assets/datapacks/metro_map_pack/manifest.json
+            --git-sha "${GITHUB_SHA}"
+            --verify-github-sha true
+            --data-pack-manifest "${data_pack_manifest}"
+            --data-pack-artifact "${data_pack_artifact}"
+            --data-pack-fallback-artifact "${data_pack_fallback_artifact}"
             --evidence-root ".codex/evidence/release/rc-evidence-manifest/${GITHUB_SHA}/"
             --device local_android_emulator
             --android-version android-15-or-16
+          )
+          if [[ -n "${DATAPACK_RUN_ID}" ]]; then
+            generator_args+=(
+              --data-pack-release-decision "${data_pack_release_decision}"
+              --require-production-data-pack-binding true
+            )
+          fi
+          blocked_evidence_args=(
             --gate-status androidRcEvidence=BLOCKED_EXTERNAL
             --gate-status productionDatapack=BLOCKED_EXTERNAL
             --gate-status playGeneratedApkDeviceMatrix=BLOCKED_EXTERNAL
             --gate-status backendOperations=BLOCKED_EXTERNAL
             --gate-status androidReleaseQuality=BLOCKED_EXTERNAL
             --gate-status abusePenetrationRehearsal=BLOCKED_EXTERNAL
+            --gate-status scopeCoverage=BLOCKED_EXTERNAL
+            --gate-status strictArtifactValidation=BLOCKED_EXTERNAL
+            --gate-status routeAccessibilityQuality=BLOCKED_EXTERNAL
+            --gate-status appSchemaCompatibility=BLOCKED_EXTERNAL
+            --gate-status stagedRollout=BLOCKED_EXTERNAL
+            --gate-status publicClaims=BLOCKED_EXTERNAL
+            --datapack-gate-status source_admission=BLOCKED_EXTERNAL
+            --datapack-gate-status source_governance=BLOCKED_EXTERNAL
+            --datapack-gate-status freshness_conditional_publish=BLOCKED_EXTERNAL
+            --datapack-gate-status rollback_rescue=BLOCKED_EXTERNAL
+            --datapack-gate-status device_performance=BLOCKED_EXTERNAL
+            --datapack-gate-status callback_reconciliation=BLOCKED_EXTERNAL
           )
           android_artifact_source="none"
           if [[ -f release-artifacts/downloaded/android-production-rc/app-release.aab ]]; then
@@ -710,18 +806,18 @@ jobs:
           fi
           node tools/release/generate-rc-evidence-manifest.mjs \
             "${generator_args[@]}" \
-            --output release-artifacts/rc/rc-evidence-manifest-preliminary.json \
-            --gate-status postLaunchOperations=BLOCKED_EXTERNAL
+            --phase CANDIDATE \
+            --output release-artifacts/rc/candidate-context.json
           if [[ "${android_artifact_source}" == easysubway-android-production-rc-* ]]; then
             node tools/ops/generate-operations-phase-a-summary.mjs \
-              --rc-manifest release-artifacts/rc/rc-evidence-manifest-preliminary.json \
+              --rc-manifest release-artifacts/rc/candidate-context.json \
               --summary release-artifacts/rc/operations-phase-a-summary.json \
               --status-output release-artifacts/rc/operations-phase-a-status.txt
             IFS= read -r operations_status < release-artifacts/rc/operations-phase-a-status.txt
             if [[ "${operations_status}" == "SATISFIED" ]]; then
               node tools/ops/validate-operations-release-summary.mjs \
                 --summary release-artifacts/rc/operations-phase-a-summary.json \
-                --rc-manifest release-artifacts/rc/rc-evidence-manifest-preliminary.json \
+                --rc-manifest release-artifacts/rc/candidate-context.json \
                 --require-pass
             elif [[ "${operations_status}" != "BLOCKED_EXTERNAL" ]]; then
               echo "unexpected operations Phase A status: ${operations_status}" >&2
@@ -732,21 +828,31 @@ jobs:
             printf 'BLOCKED_EXTERNAL\n' > release-artifacts/rc/operations-phase-a-status.txt
           fi
           operations_evidence_args=(--evidence-status "post_launch_operations=${operations_status}")
+          operations_gate_args=(--gate-status "postLaunchOperations=${operations_status}")
+          final_readiness_args=()
+          if [[ "${PLAY_UPLOAD}" == internal ]]; then
+            final_readiness_args+=(--require-pre-play-upload-ready true)
+          fi
           if [[ "${operations_status}" == "SATISFIED" ]]; then
             operations_evidence_args+=(--evidence-path post_launch_operations=release-artifacts/rc/operations-phase-a-summary.json)
+            operations_gate_args+=(--gate-evidence postLaunchOperations=release-artifacts/rc/operations-phase-a-summary.json)
           fi
           node tools/release/generate-rc-evidence-manifest.mjs \
             "${generator_args[@]}" \
+            "${blocked_evidence_args[@]}" \
             "${operations_evidence_args[@]}" \
-            --output release-artifacts/rc/rc-evidence-manifest.json \
-            --gate-status "postLaunchOperations=${operations_status}"
+            "${operations_gate_args[@]}" \
+            "${final_readiness_args[@]}" \
+            --phase FINAL \
+            --candidate-context release-artifacts/rc/candidate-context.json \
+            --output release-artifacts/rc/final-readiness.json
           cp apps/mobile/release/post-launch-operations-review-gate.json release-artifacts/rc/post-launch-operations-review-gate.json
           cp apps/mobile/release/support-incident-response-gate.json release-artifacts/rc/support-incident-response-gate.json
           cp apps/mobile/release/operations-observability-gate.json release-artifacts/rc/operations-observability-gate.json
           cp apps/mobile/release/rc-evidence-manifest-contract.json release-artifacts/rc/rc-evidence-manifest-contract.json
           {
             echo "commit=${GITHUB_SHA}"
-            echo "manifest=rc-evidence-manifest.json"
+            echo "manifest=final-readiness.json"
             echo "android_artifact_source=${android_artifact_source}"
             echo "backend_artifact_source=easysubway-backend-release-${GITHUB_SHA}"
           } > release-artifacts/rc/release-metadata.txt
