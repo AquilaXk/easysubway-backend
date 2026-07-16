@@ -293,6 +293,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Android Production RC Artifact / Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
       - name: Android Production RC Artifact / Set up Java
         uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
         with:
@@ -659,6 +664,11 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+
+      - name: RC Evidence Manifest / Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
 
       - name: RC Evidence Manifest / Download Android artifact
         if: ${{ needs.android-release.result == 'success' }}
