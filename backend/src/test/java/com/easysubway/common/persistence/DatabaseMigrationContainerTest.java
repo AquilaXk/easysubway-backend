@@ -77,9 +77,12 @@ class DatabaseMigrationContainerTest {
 				"route_v2_sessions",
 				"route_v2_states",
 				"transit_master_overrides",
-				"transit_master_override_audits"
+				"transit_master_override_audits",
+				"timetable_snapshot_lock",
+				"timetable_snapshot_history",
+				"timetable_snapshot_active"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i
@@ -111,7 +114,8 @@ class DatabaseMigrationContainerTest {
 				"fk_datapack_release_channels_candidate",
 				"fk_datapack_release_channels_previous_candidate",
 				"fk_datapack_release_channel_events_channel",
-				"fk_datapack_release_channel_events_next_candidate"
+				"fk_datapack_release_channel_events_next_candidate",
+				"fk_timetable_snapshot_active_history"
 			);
 		assertThat(checkConstraintNames(jdbcTemplate))
 			.contains(
@@ -144,7 +148,10 @@ class DatabaseMigrationContainerTest {
 				"chk_datapack_release_delivery_sequence",
 				"chk_datapack_release_channels_operation",
 				"chk_datapack_release_channels_rollback_target",
-				"chk_datapack_release_channel_events_operation"
+				"chk_datapack_release_channel_events_operation",
+				"chk_timetable_snapshot_lock_singleton",
+				"chk_timetable_snapshot_counts",
+				"chk_timetable_snapshot_active_singleton"
 			);
 		assertNormalizationRunGuards(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
@@ -157,6 +164,7 @@ class DatabaseMigrationContainerTest {
 		assertRouteEdgeEvidenceStrictRouteGuards(jdbcTemplate);
 		assertDatapackPermissionMatrix(jdbcTemplate);
 		assertRouteServiceIdentityHashGuards(jdbcTemplate);
+		assertRouteServiceSourceIssueGuards(jdbcTemplate);
 		assertRouteV2AllowlistSchema(jdbcTemplate);
 	}
 
@@ -436,7 +444,9 @@ class DatabaseMigrationContainerTest {
 			.load()
 			.migrate();
 
-		assertRouteServiceIdentityHashGuards(new JdbcTemplate(dataSource));
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		assertRouteServiceIdentityHashGuards(jdbcTemplate);
+		assertRouteServiceSourceIssueGuards(jdbcTemplate);
 	}
 
 	@Test
@@ -1290,6 +1300,27 @@ class DatabaseMigrationContainerTest {
 		assertThatThrownBy(() -> insertRouteServiceIdentity(
 			jdbcTemplate, validHash, validHash, "g".repeat(64)))
 			.isInstanceOf(DataAccessException.class);
+	}
+
+	private void assertRouteServiceSourceIssueGuards(JdbcTemplate jdbcTemplate) {
+		String validHash = "a".repeat(64);
+		jdbcTemplate.update("""
+			INSERT INTO route_service_artifact_evidence (
+				service_class, timetable_artifact_id, timetable_artifact_sha256,
+				canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				admission_status, admission_eligible, fresh_until, source_issue
+			) VALUES ('ITX_CHEONGCHUN', 'issue-2135-test', ?, 'capital', ?, ?,
+				'MISSING', FALSE, NULL, 2135)
+			""", validHash, validHash, validHash);
+		jdbcTemplate.update("DELETE FROM route_service_artifact_evidence WHERE service_class = 'ITX_CHEONGCHUN'");
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			INSERT INTO route_service_artifact_evidence (
+				service_class, timetable_artifact_id, timetable_artifact_sha256,
+				canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				admission_status, admission_eligible, fresh_until, source_issue
+			) VALUES ('ITX_CHEONGCHUN', 'invalid-source-issue-test', ?, 'capital', ?, ?,
+				'MISSING', FALSE, NULL, 9999)
+			""", validHash, validHash, validHash)).isInstanceOf(DataAccessException.class);
 	}
 
 	private void insertRouteServiceIdentity(

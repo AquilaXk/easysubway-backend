@@ -3,6 +3,7 @@ package com.easysubway.route.adapter.out.persistence;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -26,6 +27,7 @@ class TimetableSeedLoaderConditionTest {
 			.withBean(PlatformTransactionManager.class,
 				() -> new DataSourceTransactionManager(
 					new DriverManagerDataSource("jdbc:h2:mem:seed-cond;DB_CLOSE_DELAY=-1", "sa", "")))
+			.withBean(ObjectMapper.class, ObjectMapper::new)
 			.withUserConfiguration(TimetableSeedLoader.class);
 	}
 

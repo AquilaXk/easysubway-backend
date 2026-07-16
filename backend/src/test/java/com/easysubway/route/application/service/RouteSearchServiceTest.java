@@ -1194,6 +1194,20 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 A→B→A 전환에서도 같은 트랜잭션에서 읽은 snapshot identity를 사용한다")
+	void routeV2PlannerLoadsSnapshotIdentityAndRowsAtomicallyAcrossAbaSwitch() {
+		var port = new AbaSwitchingRouteTimetablePort();
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), port);
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
+		assertThat(plan.timetableArtifactId()).isEqualTo("snapshot-b");
+		assertThat(port.atomicLoadCount()).isOne();
+		assertThat(port.legacyLoadCount()).isZero();
+	}
+
+	@Test
 	@DisplayName("V2 planner는 시간표 개정 유효기간이 지난 데이터를 STALE_TIMETABLE로 강등하고 PLANNED를 만들지 않는다")
 	void routeV2PlannerDemotesExpiredTimetableRevisionToStaleTimetable() {
 		var planner = new RouteV2Planner(
@@ -1593,7 +1607,7 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("V2 planner는 timetable cache key 변경 시 snapshot을 다시 읽는다")
+	@DisplayName("V2 planner는 동일 freshness라도 snapshot SHA가 바뀌면 시간표를 다시 읽는다")
 	void routeV2PlannerReloadsTimetableWhenCacheKeyChanges() {
 		var repository = new InMemoryRouteSearchRepository();
 		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
@@ -1601,7 +1615,7 @@ class RouteSearchServiceTest {
 		var planner = new RouteV2Planner(routeSearchService, timetablePort);
 
 		planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
-		timetablePort.expireItxAdmission();
+		timetablePort.replaceSnapshotAtSameFreshness();
 		planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
 		assertThat(timetablePort.loadCount()).isEqualTo(2);
@@ -3075,7 +3089,7 @@ class RouteSearchServiceTest {
 
 	private static class CountingRouteTimetablePort implements LoadRouteTimetablePort {
 		private int loadCount;
-		private String cacheKey = "ITX_CHEONGCHUN:2999-01-01T00:00:00Z";
+		private String cacheKey = "a".repeat(64) + "2999-01-01T00:00:00Z";
 
 		@Override
 		public boolean hasRouteTimetable() {
@@ -3093,12 +3107,56 @@ class RouteSearchServiceTest {
 			return cacheKey;
 		}
 
-		void expireItxAdmission() {
-			cacheKey = "SUBWAY_ONLY";
+		void replaceSnapshotAtSameFreshness() {
+			cacheKey = "b".repeat(64) + "2999-01-01T00:00:00Z";
 		}
 
 		int loadCount() {
 			return loadCount;
+		}
+	}
+
+	private static class AbaSwitchingRouteTimetablePort implements LoadRouteTimetablePort {
+		private int atomicLoadCount;
+		private int legacyLoadCount;
+
+		@Override
+		public boolean hasRouteTimetable() {
+			return true;
+		}
+
+		@Override
+		public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
+			atomicLoadCount += 1;
+			return new RouteTimetableSnapshot(
+				"b".repeat(64) + "2999-01-01T00:00:00Z",
+				"snapshot-b",
+				routeTimetablePort().loadRouteTimetable()
+			);
+		}
+
+		@Override
+		public LoadRouteTimetablePort.RouteTimetable loadRouteTimetable() {
+			legacyLoadCount += 1;
+			return routeTimetablePort().loadRouteTimetable();
+		}
+
+		@Override
+		public String timetableCacheKey() {
+			return "a".repeat(64) + "2999-01-01T00:00:00Z";
+		}
+
+		@Override
+		public Optional<String> activeItxTimetableArtifactId() {
+			return Optional.of("snapshot-a");
+		}
+
+		int atomicLoadCount() {
+			return atomicLoadCount;
+		}
+
+		int legacyLoadCount() {
+			return legacyLoadCount;
 		}
 	}
 

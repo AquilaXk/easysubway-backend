@@ -34,6 +34,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -139,6 +140,17 @@ class ProductionRouteApiClosureTest {
 			"LICENSED",
 			List.of("MEETS_DEVICE_INTEGRITY")
 		));
+	}
+
+	@AfterEach
+	void clearTimetableSnapshotFixture() {
+		jdbcTemplate.update("DELETE FROM timetable_snapshot_active");
+		jdbcTemplate.update("DELETE FROM timetable_snapshot_history");
+		jdbcTemplate.update("DELETE FROM route_service_artifact_evidence");
+		jdbcTemplate.update("DELETE FROM transit_stop_times WHERE trip_id = 'itx-closure-trip'");
+		jdbcTemplate.update("DELETE FROM transit_trips WHERE id = 'itx-closure-trip'");
+		jdbcTemplate.update("DELETE FROM transit_routes WHERE id = 'itx-closure-route'");
+		jdbcTemplate.update("DELETE FROM service_calendars WHERE service_id = 'itx-closure-service'");
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -249,6 +261,30 @@ class ProductionRouteApiClosureTest {
 		verifyNoInteractions(routeV2SearchUseCase);
 	}
 
+	@ParameterizedTest(name = "{0}")
+	@MethodSource("invalidTimetableStates")
+	@DisplayName("stale·schema-invalid·lineage mismatch snapshot은 exact 503으로 fail closed한다")
+	void invalidTimetableSnapshotFailsClosed(String state) throws Exception {
+		String token = switch (state) {
+			case "stale" -> "G".repeat(43);
+			case "schema-invalid" -> "H".repeat(43);
+			default -> "I".repeat(43);
+		};
+		insertSession(token, 0);
+		insertActiveTimetableSnapshot(state);
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.code").value("ITX_TIMETABLE_UNAVAILABLE"));
+
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
 	@Test
 	@DisplayName("유효 session의 station 위반은 timetable 부재보다 먼저 exact 422다")
 	void invalidStationPrecedesMissingTimetable() throws Exception {
@@ -307,6 +343,61 @@ class ProductionRouteApiClosureTest {
 		);
 	}
 
+	private void insertActiveTimetableSnapshot(String state) {
+		String freshUntil = state.equals("stale") ? "2000-01-01T00:00:00Z" : "2999-01-01T00:00:00Z";
+		String schemaIdentity = state.equals("schema-invalid") ? "invalid" : "backend-timetable-snapshot-v1";
+		String evidencePackHash = state.equals("lineage-mismatch") ? "9".repeat(64) : "b".repeat(64);
+		jdbcTemplate.update("""
+			INSERT INTO service_calendars (
+				service_id, start_date, end_date, timezone,
+				monday, tuesday, wednesday, thursday, friday, saturday, sunday
+			) VALUES ('itx-closure-service', '20260101', '29991231', 'Asia/Seoul',
+				TRUE, TRUE, TRUE, TRUE, TRUE, TRUE, TRUE)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name)
+			VALUES ('itx-closure-route', 'Asia/Seoul', 'line-54a7b980b7c3', 'ITX-청춘', '', 'down')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_trips (
+				id, route_id, service_id, service_pattern, service_class,
+				service_day_start_seconds, trip_headsign, direction_id
+			) VALUES ('itx-closure-trip', 'itx-closure-route', 'itx-closure-service', 'EXPRESS',
+				'ITX_CHEONGCHUN', 0, '춘천', 'down')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_stop_times (
+				trip_id, stop_sequence, station_id, line_id,
+				pickup_type, drop_off_type, arrival_seconds, departure_seconds
+			) VALUES ('itx-closure-trip', 1, 'station-sangnoksu', 'line-54a7b980b7c3', 0, 0, 0, 0)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO route_service_artifact_evidence (
+				service_class, timetable_artifact_id, timetable_artifact_sha256,
+				canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				admission_status, admission_eligible, fresh_until, source_issue
+			) VALUES ('ITX_CHEONGCHUN', 'itx-closure-artifact', ?, 'capital', ?, ?,
+				'ADMITTED', TRUE, ?, 2135)
+			""", "a".repeat(64), evidencePackHash, "c".repeat(64), freshUntil);
+		jdbcTemplate.update("""
+			INSERT INTO timetable_snapshot_history (
+				snapshot_sha256, snapshot_id, schema_identity, fresh_until,
+				source_artifact_id, source_artifact_sha256, completeness_evidence_sha256,
+				canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				canonical_station_version, canonical_station_set_sha256, canonical_station_member_count,
+				source_lineage_sha256, evidence_hash,
+				calendar_count, route_count, trip_count, stop_time_count
+			) VALUES (?, 'snapshot-closure', ?, ?, 'itx-closure-artifact', ?, ?, ?, ?, ?, ?, 1, ?, ?, 1, 1, 1, 1)
+			""",
+			"1".repeat(64), schemaIdentity, freshUntil, "a".repeat(64), "d".repeat(64),
+			"b".repeat(64), "c".repeat(64), "sha256:" + "e".repeat(64), "e".repeat(64),
+			"f".repeat(64), "2".repeat(64));
+		jdbcTemplate.update(
+			"INSERT INTO timetable_snapshot_active (singleton_id, snapshot_sha256) VALUES (1, ?)",
+			"1".repeat(64)
+		);
+	}
+
 	private String routeV2Body() {
 		return """
 			{
@@ -333,6 +424,10 @@ class ProductionRouteApiClosureTest {
 				""".formatted(PAYLOAD_MARKER), true),
 			Arguments.of("/api/v2/routes/route-search-marker/refresh", "{}", false)
 		);
+	}
+
+	private static Stream<String> invalidTimetableStates() {
+		return Stream.of("stale", "schema-invalid", "lineage-mismatch");
 	}
 
 	private static RouteSearchResult routeSearchResult() {

@@ -2,7 +2,7 @@ package com.easysubway.route.adapter.out.persistence;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import java.time.Instant;
+import java.time.Clock;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.format.DateTimeFormatter;
@@ -16,42 +16,45 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Isolation;
 import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 @Profile("prod | staging | release | prod-like")
-@Transactional(readOnly = true)
+@Transactional(readOnly = true, isolation = Isolation.REPEATABLE_READ)
 public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private static final Logger log = LoggerFactory.getLogger(JdbcRouteTimetableRepository.class);
 
 	private final JdbcTemplate jdbcTemplate;
+	private final Clock clock;
 
 	@Autowired
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
-		this(new JdbcTemplate(dataSource));
+		this(new JdbcTemplate(dataSource), Clock.systemUTC());
 	}
 
 	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate) {
+		this(jdbcTemplate, Clock.systemUTC());
+	}
+
+	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate, Clock clock) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.clock = clock;
 	}
 
 	@Override
 	public boolean hasRouteTimetable() {
-		String tripFilter = activeItxFreshUntil().isPresent()
-			? ""
-			: "AND t.service_class <> 'ITX_CHEONGCHUN'";
-		return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+		return activeItxArtifact().isPresent() && Boolean.TRUE.equals(jdbcTemplate.queryForObject(
 			"""
 				SELECT CASE
 					WHEN EXISTS (
 						SELECT 1 FROM transit_trips t
 						WHERE EXISTS (SELECT 1 FROM transit_stop_times s WHERE s.trip_id = t.id)
-						%s
 					)
 					THEN TRUE ELSE FALSE
 				END
-				""".formatted(tripFilter),
+				""",
 			Boolean.class
 		));
 	}
@@ -59,30 +62,54 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	@Override
 	public String timetableCacheKey() {
 		return activeItxArtifact()
-			.map(artifact -> "ITX_CHEONGCHUN:" + artifact.id() + ":" + artifact.freshUntil())
-			.orElse("SUBWAY_ONLY");
+			.map(artifact -> artifact.snapshotSha256() + artifact.freshUntil())
+			.orElse("UNAVAILABLE");
 	}
 
 	@Override
 	public Optional<String> activeItxTimetableArtifactId() {
-		return activeItxArtifact().map(ItxArtifact::id);
+		return activeItxArtifact().map(ItxArtifact::snapshotId);
+	}
+
+	@Override
+	public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
+		return activeItxArtifact()
+			.map(artifact -> new RouteTimetableSnapshot(
+				artifact.snapshotSha256() + artifact.freshUntil(),
+				artifact.snapshotId(),
+				loadRouteTimetable()
+			))
+			.orElseGet(() -> new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty()));
 	}
 
 	private Optional<ItxArtifact> activeItxArtifact() {
 		return jdbcTemplate.query(
 			"""
-				SELECT timetable_artifact_id, fresh_until
-				FROM route_service_artifact_evidence
-				WHERE service_class = 'ITX_CHEONGCHUN'
-					AND admission_status = 'ADMITTED'
-					AND admission_eligible = TRUE
+				SELECT h.snapshot_sha256, h.snapshot_id, h.fresh_until
+				FROM timetable_snapshot_active a
+				JOIN timetable_snapshot_history h ON h.snapshot_sha256 = a.snapshot_sha256
+				JOIN route_service_artifact_evidence e
+					ON e.service_class = 'ITX_CHEONGCHUN'
+					AND e.timetable_artifact_id = h.source_artifact_id
+					AND e.timetable_artifact_sha256 = h.source_artifact_sha256
+					AND e.canonical_pack_id = 'capital'
+					AND e.canonical_pack_sha256 = h.canonical_pack_sha256
+					AND e.canonical_pack_sqlite_sha256 = h.canonical_pack_sqlite_sha256
+					AND e.fresh_until = h.fresh_until
+					AND e.admission_status = 'ADMITTED'
+					AND e.admission_eligible = TRUE
+					AND e.source_issue = 2135
+				WHERE a.singleton_id = 1
+					AND h.schema_identity = 'backend-timetable-snapshot-v1'
 					AND EXISTS (
-						SELECT 1 FROM transit_trips
-						WHERE service_class = 'ITX_CHEONGCHUN'
+						SELECT 1 FROM transit_trips t
+						WHERE t.service_class = 'ITX_CHEONGCHUN'
+							AND EXISTS (SELECT 1 FROM transit_stop_times s WHERE s.trip_id = t.id)
 					)
 				""",
 			(resultSet, rowNumber) -> new ItxArtifact(
-				resultSet.getString("timetable_artifact_id"),
+				resultSet.getString("snapshot_sha256"),
+				resultSet.getString("snapshot_id"),
 				resultSet.getString("fresh_until")
 			)
 		).stream().filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent()).findFirst();
@@ -90,14 +117,6 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	@Override
 	public RouteTimetable loadRouteTimetable() {
-		boolean includeItx = activeItxFreshUntil().isPresent();
-		String tripFilter = includeItx ? "" : "WHERE service_class <> 'ITX_CHEONGCHUN'";
-		String childTripFilter = includeItx ? "" : """
-			WHERE EXISTS (
-				SELECT 1 FROM transit_trips t
-				WHERE t.id = trip_id AND t.service_class <> 'ITX_CHEONGCHUN'
-			)
-			""";
 		return new RouteTimetable(
 			jdbcTemplate.query(
 				"""
@@ -151,9 +170,8 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 				"""
 					SELECT id, route_id, service_id, trip_headsign, direction_id, service_pattern, service_day_start_seconds
 					FROM transit_trips
-					%s
 					ORDER BY id
-					""".formatted(tripFilter),
+					""",
 				(resultSet, rowNumber) -> new TransitTrip(
 					resultSet.getString("id"),
 					resultSet.getString("route_id"),
@@ -169,9 +187,8 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					SELECT trip_id, stop_sequence, station_id, line_id, arrival_seconds, departure_seconds,
 						pickup_type, drop_off_type
 					FROM transit_stop_times
-					%s
 					ORDER BY trip_id, stop_sequence
-					""".formatted(childTripFilter),
+					""",
 				(resultSet, rowNumber) -> new TransitStopTime(
 					resultSet.getString("trip_id"),
 					resultSet.getInt("stop_sequence"),
@@ -187,9 +204,8 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 				"""
 					SELECT trip_id, start_time_seconds, end_time_seconds, headway_seconds, exact_times
 					FROM transit_frequencies
-					%s
 					ORDER BY trip_id, start_time_seconds
-					""".formatted(childTripFilter),
+					""",
 				(resultSet, rowNumber) -> new TransitFrequency(
 					resultSet.getString("trip_id"),
 					resultSet.getInt("start_time_seconds"),
@@ -202,23 +218,19 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 		);
 	}
 
-	private Optional<OffsetDateTime> activeItxFreshUntil() {
-		return activeItxArtifact().flatMap(artifact -> freshOffsetDateTime(artifact.freshUntil()));
-	}
-
-	private static Optional<OffsetDateTime> freshOffsetDateTime(String value) {
+	private Optional<OffsetDateTime> freshOffsetDateTime(String value) {
 		if (value == null || value.isBlank()) {
 			return Optional.empty();
 		}
 		try {
 			OffsetDateTime parsed = OffsetDateTime.parse(value);
-			return parsed.toInstant().isAfter(Instant.now()) ? Optional.of(parsed) : Optional.empty();
+			return parsed.toInstant().isAfter(clock.instant()) ? Optional.of(parsed) : Optional.empty();
 		} catch (DateTimeParseException exception) {
 			return Optional.empty();
 		}
 	}
 
-	private record ItxArtifact(String id, String freshUntil) {
+	private record ItxArtifact(String snapshotSha256, String snapshotId, String freshUntil) {
 	}
 
 	private LocalDate loadFeedEndDate() {

@@ -195,20 +195,18 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			cacheKey = routeTimetablePort.timetableCacheKey();
 			snapshot = cachedTimetableSnapshot;
 			if (snapshot == null || !snapshot.cacheKey().equals(cacheKey)) {
-				for (int attempt = 0; attempt < 2; attempt++) {
-					cacheKey = routeTimetablePort.timetableCacheKey();
-					String artifactId = routeTimetablePort.activeItxTimetableArtifactId().orElse(null);
-					RouteTimetable timetable = routeTimetablePort.loadRouteTimetable();
-					if (!cacheKey.equals(routeTimetablePort.timetableCacheKey())) {
-						continue;
-					}
-					java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
-						.map(LoadRouteTimetablePort.TransitStopTime::stationId)
-						.collect(java.util.stream.Collectors.toUnmodifiableSet());
-					cachedTimetableSnapshot = new TimetableSnapshot(cacheKey, timetable, coveredStationIds, artifactId);
-					return cachedTimetableSnapshot;
-				}
-				return new TimetableSnapshot("UNSTABLE", RouteTimetable.empty(), java.util.Set.of(), null);
+				LoadRouteTimetablePort.RouteTimetableSnapshot loaded = routeTimetablePort.loadRouteTimetableSnapshot();
+				RouteTimetable timetable = loaded.timetable();
+				java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
+					.map(LoadRouteTimetablePort.TransitStopTime::stationId)
+					.collect(java.util.stream.Collectors.toUnmodifiableSet());
+				cachedTimetableSnapshot = new TimetableSnapshot(
+					loaded.cacheKey(),
+					timetable,
+					coveredStationIds,
+					loaded.timetableArtifactId()
+				);
+				return cachedTimetableSnapshot;
 			}
 			return cachedTimetableSnapshot;
 		}

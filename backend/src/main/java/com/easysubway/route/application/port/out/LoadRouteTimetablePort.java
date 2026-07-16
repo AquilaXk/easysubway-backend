@@ -10,6 +10,15 @@ public interface LoadRouteTimetablePort {
 
 	RouteTimetable loadRouteTimetable();
 
+	/** Mutable implementations override this to read identity and rows in one transaction. */
+	default RouteTimetableSnapshot loadRouteTimetableSnapshot() {
+		return new RouteTimetableSnapshot(
+			timetableCacheKey(),
+			activeItxTimetableArtifactId().orElse(null),
+			loadRouteTimetable()
+		);
+	}
+
 	default String timetableCacheKey() {
 		return "STATIC";
 	}
@@ -21,6 +30,9 @@ public interface LoadRouteTimetablePort {
 
 	default Optional<String> activeItxTimetableArtifactId() {
 		return Optional.empty();
+	}
+
+	record RouteTimetableSnapshot(String cacheKey, String timetableArtifactId, RouteTimetable timetable) {
 	}
 
 	record RouteTimetable(

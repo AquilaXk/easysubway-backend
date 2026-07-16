@@ -87,6 +87,7 @@ easysubway:
   timetable:
     seed:
       enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}
+      includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}
   route-v2:
     origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}
     session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}
