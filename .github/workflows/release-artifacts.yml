@@ -871,6 +871,10 @@ jobs:
           operations_evidence_args=(--evidence-status "post_launch_operations=${operations_status}")
           operations_gate_args=(--gate-status "postLaunchOperations=${operations_status}")
           final_readiness_args=()
+          if [[ "${PLAY_UPLOAD}" == internal && "${operations_status}" != "SATISFIED" ]]; then
+            echo "Play internal upload requires SATISFIED operations Phase A evidence" >&2
+            exit 1
+          fi
           if [[ "${PLAY_UPLOAD}" == internal ]]; then
             final_readiness_args+=(--require-pre-play-upload-ready true)
           fi
