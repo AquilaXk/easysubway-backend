@@ -29,6 +29,10 @@ on:
         description: Data Pack Release run ID for the same Git SHA (required for production RC identity)
         type: string
         required: false
+      callback_reconciliation_run_id:
+        description: Callback reconciliation evidence run ID for the same final RC identity
+        type: string
+        required: false
 
 concurrency:
   group: release-artifacts-${{ github.workflow }}-${{ github.ref }}
@@ -708,6 +712,15 @@ jobs:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           run-id: ${{ inputs.datapack_run_id }}
 
+      - name: RC Evidence Manifest / Download callback reconciliation evidence
+        if: ${{ inputs.callback_reconciliation_run_id != '' }}
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: datapack-callback-reconciliation-evidence-${{ github.sha }}
+          path: release-artifacts/downloaded/callback-reconciliation
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          run-id: ${{ inputs.callback_reconciliation_run_id }}
+
       - name: RC Evidence Manifest / Restore production data pack validation environment
         if: ${{ inputs.datapack_run_id != '' }}
         shell: bash
@@ -750,6 +763,7 @@ jobs:
         shell: bash
         env:
           ANDROID_RC_SIGNING_MODE: ${{ inputs.android_rc_signing_mode }}
+          CALLBACK_RECONCILIATION_RUN_ID: ${{ inputs.callback_reconciliation_run_id }}
           DATAPACK_RUN_ID: ${{ inputs.datapack_run_id }}
           PLAY_UPLOAD: ${{ inputs.play_upload }}
         run: |
@@ -805,8 +819,17 @@ jobs:
             --datapack-gate-status freshness_conditional_publish=BLOCKED_EXTERNAL
             --datapack-gate-status rollback_rescue=BLOCKED_EXTERNAL
             --datapack-gate-status device_performance=BLOCKED_EXTERNAL
-            --datapack-gate-status callback_reconciliation=BLOCKED_EXTERNAL
           )
+          if [[ -n "${CALLBACK_RECONCILIATION_RUN_ID}" ]]; then
+            blocked_evidence_args+=(
+              --datapack-gate-status callback_reconciliation=SATISFIED
+              --datapack-gate-evidence callback_reconciliation=release-artifacts/downloaded/callback-reconciliation/callback-reconciliation-gate-evidence.json
+            )
+          else
+            blocked_evidence_args+=(
+              --datapack-gate-status callback_reconciliation=BLOCKED_EXTERNAL
+            )
+          fi
           android_artifact_source="none"
           if [[ -f release-artifacts/downloaded/android-production-rc/app-release.aab ]]; then
             generator_args+=(--aab release-artifacts/downloaded/android-production-rc/app-release.aab)

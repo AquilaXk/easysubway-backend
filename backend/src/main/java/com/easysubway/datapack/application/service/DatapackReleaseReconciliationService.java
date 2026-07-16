@@ -75,7 +75,8 @@ public class DatapackReleaseReconciliationService {
 							"ERROR", "RECONCILIATION_ERROR", now);
 					} else {
 						markClaimed(delivery, State.RETRY_SCHEDULED, delivery.attempts() + 1,
-							now.plusMinutes(5), "ERROR", "RECONCILIATION_ERROR", now);
+							nextAttemptBeforeDeadline(delivery, now),
+							"ERROR", "RECONCILIATION_ERROR", now);
 					}
 				} catch (IllegalStateException lostClaim) {
 					// lease가 이미 다른 worker로 넘어갔으면 새 owner가 처리한다.
@@ -149,10 +150,20 @@ public class DatapackReleaseReconciliationService {
 					null, "UNAVAILABLE", "CATALOG_UNAVAILABLE", now);
 			} else {
 				markClaimed(delivery, State.RETRY_SCHEDULED,
-					delivery.attempts() + 1, now.plusMinutes(5), "UNAVAILABLE",
+					delivery.attempts() + 1, nextAttemptBeforeDeadline(delivery, now), "UNAVAILABLE",
 					"CATALOG_UNAVAILABLE", now);
 			}
 		}
+	}
+
+	private static LocalDateTime nextAttemptBeforeDeadline(
+		DatapackReleaseDelivery delivery,
+		LocalDateTime now
+	) {
+		var nextAttempt = now.plusMinutes(5);
+		return nextAttempt.isAfter(delivery.deadLetterDeadline())
+			? delivery.deadLetterDeadline()
+			: nextAttempt;
 	}
 
 	private void terminateSupersededRequest(DatapackReleaseDelivery delivery, LocalDateTime now) {

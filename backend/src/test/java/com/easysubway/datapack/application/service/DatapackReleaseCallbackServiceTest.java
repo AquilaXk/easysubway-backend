@@ -267,6 +267,21 @@ class DatapackReleaseCallbackServiceTest {
 	}
 
 	@Test
+	@DisplayName("존재하지 않는 release request callback은 자동 적용 없이 DEAD_LETTER로 보존한다")
+	void missingRequestDeadLetters() {
+		String signature = computeSignature("PASS");
+
+		assertThat(service.receive(command("PASS", signature)).status())
+			.isEqualTo("MISSING_REQUEST");
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT state FROM datapack_release_deliveries", String.class))
+			.isEqualTo("DEAD_LETTER");
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT sanitized_detail FROM datapack_release_deliveries", String.class))
+			.isEqualTo("RELEASE_REQUEST_MISSING");
+	}
+
+	@Test
 	@DisplayName("더 최신 서명 release가 있으면 늦은 PASS callback을 적용하지 않는다")
 	void stalePassCallbackCannotPublishOrPromote() {
 		insertRow("DISPATCHED");

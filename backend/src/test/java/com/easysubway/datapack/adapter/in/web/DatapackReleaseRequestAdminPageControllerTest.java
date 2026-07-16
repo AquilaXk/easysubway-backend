@@ -8,7 +8,12 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrl;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
+import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.datapack.application.port.out.DatapackWorkflowDispatchPort;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -38,6 +43,8 @@ class DatapackReleaseRequestAdminPageControllerTest {
 	private JdbcTemplate jdbcTemplate;
 	@Autowired
 	private StubDispatchPort dispatchPort;
+	@Autowired
+	private AdminAuditEventRepository auditEventRepository;
 
 	@BeforeEach
 	void setUp() {
@@ -271,6 +278,79 @@ class DatapackReleaseRequestAdminPageControllerTest {
 			.doesNotContain("callback-secret");
 	}
 
+	@Test
+	@DisplayName("production approve 관리자는 dead letter를 repair하고 before/after·identity hash를 감사한다")
+	void manuallyRepairsDeliveryWithAudit() throws Exception {
+		String idempotencyKey = insertDelivery("DEAD_LETTER");
+
+		mockMvc.perform(post("/admin/datapack/release-deliveries/{idempotencyKey}/repair", idempotencyKey)
+				.with(csrf()).with(commandToken())
+				.with(user("repair-operator").authorities(
+					new SimpleGrantedAuthority("admin.datapack.production.approve")))
+				.param("reason", "catalog outage recovered"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/admin/datapack/release-requests/page"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT state FROM datapack_release_deliveries WHERE idempotency_key=?",
+			String.class, idempotencyKey)).isEqualTo("RETRY_SCHEDULED");
+		var audit = auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 100).stream()
+			.filter(event -> event.actor().equals("repair-operator")
+				&& event.action().equals("MANUAL_REPAIR"))
+			.findFirst().orElseThrow();
+		assertThat(audit.targetType()).isEqualTo("DATAPACK_RELEASE_DELIVERY");
+		assertThat(audit.targetId()).isEqualTo(sha256(idempotencyKey));
+		assertThat(audit.action()).isEqualTo("MANUAL_REPAIR");
+		assertThat(audit.reason())
+			.contains("before=DEAD_LETTER")
+			.contains("after=RETRY_SCHEDULED")
+			.contains("operatorReason=catalog outage recovered")
+			.doesNotContain(idempotencyKey);
+	}
+
+	@Test
+	@DisplayName("delivery repair는 production approve 권한과 안전한 사유를 요구한다")
+	void manualRepairRequiresAuthorityAndSanitizedReason() throws Exception {
+		String idempotencyKey = insertDelivery("DEAD_LETTER");
+
+		mockMvc.perform(post("/admin/datapack/release-deliveries/{idempotencyKey}/repair", idempotencyKey)
+				.with(csrf()).with(commandToken())
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read")))
+				.param("reason", "catalog recovered"))
+			.andExpect(status().isForbidden());
+
+		try {
+			mockMvc.perform(post("/admin/datapack/release-deliveries/{idempotencyKey}/repair", idempotencyKey)
+				.with(csrf()).with(commandToken())
+				.with(user("repair-invalid").authorities(
+					new SimpleGrantedAuthority("admin.datapack.production.approve")))
+				.param("reason", " "));
+		} catch (Exception expected) {
+			// invalid command is fail-closed and transactionally leaves the delivery unchanged
+		}
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT state FROM datapack_release_deliveries WHERE idempotency_key=?",
+			String.class, idempotencyKey)).isEqualTo("DEAD_LETTER");
+	}
+
+	@Test
+	@DisplayName("repair 가능한 delivery만 수동 repair 폼을 렌더한다")
+	void rendersRepairFormOnlyForRepairableDelivery() throws Exception {
+		String deadLetter = insertDelivery("DEAD_LETTER");
+		String delivered = insertDelivery("DELIVERED", "rr-delivered-2", 43, "b".repeat(64));
+
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("/admin/datapack/release-deliveries/" + deadLetter + "/repair")
+			.doesNotContain("/admin/datapack/release-deliveries/" + delivered + "/repair")
+			.doesNotContain("Authorization")
+			.doesNotContain("Bearer")
+			.doesNotContain("callback-secret");
+	}
+
 	private void insertReleaseRequest(String approvalId, String status, String workflowRunUrl) {
 		jdbcTemplate.update("""
 			INSERT INTO datapack_release_request (
@@ -282,6 +362,31 @@ class DatapackReleaseRequestAdminPageControllerTest {
 				?, ?, 'alice', 'bob', ?, ?, ?, '2026-07-06 03:00:00', '2026-07-06 03:05:00', '2026-07-06 03:05:00')
 			""",
 			approvalId, SHA, SHA, SHA, status, approvalId, workflowRunUrl);
+	}
+
+	private String insertDelivery(String state) {
+		return insertDelivery(state, "rr-delivery-repair", 42, SHA);
+	}
+
+	private String insertDelivery(String state, String requestId, long sequence, String manifestSha256) {
+		String idempotencyKey = requestId + ":" + sequence + ":" + manifestSha256;
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256, channel,
+			 candidate_id, payload_sha256, signature_sha256, state, attempts, next_attempt_at,
+			 reconcile_deadline, dead_letter_deadline, http_class, sanitized_detail,
+			 created_at, updated_at)
+			VALUES (?, ?, ?, ?, 'production', 'candidate-stable-9', ?, ?, ?, 4, NULL,
+			 '2026-07-06 03:10:00', '2026-07-06 04:10:00', 'UNAVAILABLE',
+			 'CATALOG_UNAVAILABLE', '2026-07-06 03:00:00', '2026-07-06 04:10:00')
+			""", idempotencyKey, requestId, sequence, manifestSha256,
+			"c".repeat(64), "d".repeat(64), state);
+		return idempotencyKey;
+	}
+
+	private static String sha256(String value) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256")
+			.digest(value.getBytes(StandardCharsets.UTF_8)));
 	}
 
 	private void insertCandidate(String id, String version) {

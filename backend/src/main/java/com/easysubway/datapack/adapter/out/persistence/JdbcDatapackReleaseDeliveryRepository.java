@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.core.RowMapper;
 import org.springframework.stereotype.Repository;
+import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDeliveryRepository {
@@ -174,6 +175,27 @@ public class JdbcDatapackReleaseDeliveryRepository implements DatapackReleaseDel
 			""", state.name(), attempts, ts(nextAttemptAt), httpClass, detail, ts(now),
 			idempotencyKey, owner);
 		if (changed != 1) throw new IllegalStateException("delivery claim is no longer owned");
+	}
+
+	@Override
+	@Transactional
+	public ManualRepair scheduleManualRepair(String idempotencyKey, LocalDateTime now) {
+		var delivery = findByIdempotencyKey(idempotencyKey)
+			.orElseThrow(() -> new IllegalArgumentException("delivery not found"));
+		var before = delivery.state();
+		if (before != State.RECONCILIATION_REQUIRED && before != State.DEAD_LETTER) {
+			throw new IllegalStateException("delivery state is not repairable: " + before);
+		}
+		int changed = jdbcTemplate.update("""
+			UPDATE datapack_release_deliveries
+			SET state='RETRY_SCHEDULED', next_attempt_at=?, claimed_at=NULL, claim_owner=NULL, updated_at=?
+			WHERE idempotency_key=? AND state=?
+			""", ts(now), ts(now), idempotencyKey, before.name());
+		if (changed != 1) {
+			throw new IllegalStateException("delivery changed while manual repair was scheduled");
+		}
+		return new ManualRepair(before, findByIdempotencyKey(idempotencyKey)
+			.orElseThrow(() -> new IllegalStateException("delivery disappeared after manual repair")));
 	}
 
 	public List<DatapackReleaseDelivery> findRecent(int limit) {

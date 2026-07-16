@@ -159,6 +159,10 @@ class DatapackReleaseReconciliationServiceTest {
 		verify(repository).mark(delivery.idempotencyKey(), State.RETRY_SCHEDULED, 1,
 			T0.plusMinutes(15), "UNAVAILABLE", "CATALOG_UNAVAILABLE", T0.plusMinutes(10));
 
+		service.reconcile(delivery, T0.plusMinutes(69));
+		verify(repository).mark(delivery.idempotencyKey(), State.RETRY_SCHEDULED, 1,
+			T0.plusMinutes(70), "UNAVAILABLE", "CATALOG_UNAVAILABLE", T0.plusMinutes(69));
+
 		service.reconcile(delivery, T0.plusMinutes(70));
 		verify(repository).mark(delivery.idempotencyKey(), State.DEAD_LETTER, 0, null,
 			"UNAVAILABLE", "CATALOG_UNAVAILABLE", T0.plusMinutes(70));

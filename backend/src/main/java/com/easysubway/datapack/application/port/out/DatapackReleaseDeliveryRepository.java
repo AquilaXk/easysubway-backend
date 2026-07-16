@@ -15,5 +15,8 @@ public interface DatapackReleaseDeliveryRepository {
 		String httpClass, String detail, LocalDateTime now);
 	void markClaimed(String idempotencyKey, String owner, State state, int attempts,
 		LocalDateTime nextAttemptAt, String httpClass, String detail, LocalDateTime now);
+	ManualRepair scheduleManualRepair(String idempotencyKey, LocalDateTime now);
 	List<DatapackReleaseDelivery> findRecent(int limit);
+
+	record ManualRepair(State before, DatapackReleaseDelivery after) { }
 }

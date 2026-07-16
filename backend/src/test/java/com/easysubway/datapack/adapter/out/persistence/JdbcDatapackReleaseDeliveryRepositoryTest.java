@@ -133,6 +133,39 @@ class JdbcDatapackReleaseDeliveryRepositoryTest {
 			.get().extracting(DatapackReleaseDelivery::claimOwner).isNull();
 	}
 
+	@Test
+	@DisplayName("수동 repair는 dead letter를 즉시 retry로 전환하고 release identity를 보존한다")
+	void manuallyRepairsDeadLetterWithoutChangingIdentity() {
+		var delivery = repository.upsertSameDelivery(pending(SHA));
+		repository.mark(delivery.idempotencyKey(), DatapackReleaseDelivery.State.DEAD_LETTER,
+			4, null, "UNAVAILABLE", "CATALOG_UNAVAILABLE", T0.plusMinutes(70));
+
+		var repaired = repository.scheduleManualRepair(delivery.idempotencyKey(), T0.plusMinutes(71));
+
+		assertThat(repaired.before()).isEqualTo(DatapackReleaseDelivery.State.DEAD_LETTER);
+		assertThat(repaired.after().state()).isEqualTo(DatapackReleaseDelivery.State.RETRY_SCHEDULED);
+		assertThat(repaired.after().nextAttemptAt()).isEqualTo(T0.plusMinutes(71));
+		assertThat(repaired.after().attempts()).isEqualTo(4);
+		assertThat(repaired.after().idempotencyKey()).isEqualTo(delivery.idempotencyKey());
+		assertThat(repaired.after().manifestSha256()).isEqualTo(delivery.manifestSha256());
+		assertThat(repaired.after().claimedAt()).isNull();
+		assertThat(repaired.after().claimOwner()).isNull();
+	}
+
+	@Test
+	@DisplayName("수동 repair는 정상·이미 retry 중인 delivery를 변경하지 않는다")
+	void rejectsManualRepairForIneligibleState() {
+		var delivery = repository.upsertSameDelivery(pending(SHA));
+
+		assertThatThrownBy(() -> repository.scheduleManualRepair(
+			delivery.idempotencyKey(), T0.plusMinutes(1)))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("not repairable");
+		assertThat(repository.findByIdempotencyKey(delivery.idempotencyKey()))
+			.get().extracting(DatapackReleaseDelivery::state)
+			.isEqualTo(DatapackReleaseDelivery.State.PENDING);
+	}
+
 	private static DatapackReleaseDelivery pending(String manifestSha256) {
 		return pending(manifestSha256, "c".repeat(64), "d".repeat(64));
 	}

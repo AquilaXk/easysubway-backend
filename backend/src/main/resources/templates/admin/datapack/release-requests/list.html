@@ -128,10 +128,10 @@
 			<thead><tr>
 				<th scope="col">request / sequence</th><th scope="col">channel / state</th>
 				<th scope="col">attempt / HTTP</th><th scope="col">deadlines</th>
-				<th scope="col">evidence hash</th><th scope="col">blocker</th>
+				<th scope="col">evidence hash</th><th scope="col">blocker</th><th scope="col">repair</th>
 			</tr></thead>
 			<tbody>
-			<tr th:if="${deliveries.isEmpty()}"><td colspan="6">callback delivery가 없습니다.</td></tr>
+			<tr th:if="${deliveries.isEmpty()}"><td colspan="7">callback delivery가 없습니다.</td></tr>
 			<tr th:each="delivery : ${deliveries}">
 				<td th:text="${delivery.releaseRequestId + ' / ' + delivery.releaseSequence}">request</td>
 				<td th:text="${delivery.channel + ' / ' + delivery.state}">state</td>
@@ -139,6 +139,16 @@
 				<td><time th:text="${delivery.nextAttemptAt}">next attempt</time> / <time th:text="${delivery.reconcileDeadline}">reconcile</time> / <time th:text="${delivery.deadLetterDeadline}">dead letter</time></td>
 				<td><code th:text="${delivery.payloadSha256}">payload hash</code><br><code th:text="${delivery.signatureSha256}">signature hash</code></td>
 				<td th:text="${delivery.detail ?: '-'}">blocker</td>
+				<td>
+					<form th:if="${delivery.repairable}" method="post"
+						  th:action="@{/admin/datapack/release-deliveries/{idempotencyKey}/repair(idempotencyKey=${delivery.idempotencyKey})}">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+						<label>repair reason <input name="reason" required maxlength="200"></label>
+						<button type="submit">수동 repair</button>
+					</form>
+					<span th:unless="${delivery.repairable}">-</span>
+				</td>
 			</tr>
 			</tbody>
 		</table>
