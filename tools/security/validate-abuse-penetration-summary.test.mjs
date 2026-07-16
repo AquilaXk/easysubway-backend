@@ -16,15 +16,26 @@ const root = path.resolve(import.meta.dirname, "../..");
 const gatePath = path.join(root, "apps/mobile/release/abuse-penetration-rehearsal-gate.json");
 const gate = JSON.parse(readFileSync(gatePath, "utf8"));
 
-const schemaV2EvidencePath = ".codex/evidence/security/abuse-penetration-rehearsal/run/redacted.json";
+const schemaV2EvidenceRoot = `.codex/evidence/security/abuse-penetration-rehearsal/${"a".repeat(40)}`;
+const schemaV2EvidencePath = `${schemaV2EvidenceRoot}/redacted.json`;
 const schemaV2Identity = Object.freeze({
   gitSha: "a".repeat(40), versionCode: 10001, androidApplicationId: "com.easysubway.app",
   dataPackManifestSha256: "b".repeat(64), aabSha256: "c".repeat(64),
   generatedApkSha256: "d".repeat(64), backendImageDigest: `sha256:${"e".repeat(64)}`,
   backendArtifactSha256: "f".repeat(64),
 });
+function schemaV2IdentitySha256(identity = schemaV2Identity) {
+  return createHash("sha256")
+    .update(JSON.stringify(Object.fromEntries(Object.entries(identity).sort(([left], [right]) => left.localeCompare(right)))))
+    .digest("hex");
+}
 function schemaV2Evidence(evidenceId) {
-  return { evidenceId, result: "PASS", localEvidencePath: schemaV2EvidencePath };
+  return {
+    evidenceId,
+    result: "PASS",
+    localEvidencePath: `${schemaV2EvidenceRoot}/${evidenceId}.json`,
+    artifactIdentitySha256: schemaV2IdentitySha256(),
+  };
 }
 function schemaV2Blocked(gateValue = gate, status = "BLOCKED_EXTERNAL") {
   return { schemaVersion: 2, releaseGate: gateValue.releaseGate, issue: gateValue.issue, status,
@@ -42,6 +53,7 @@ function schemaV2Pass(gateValue = gate, withDisposition = true) {
         procedureId: `${matrixId}.${caseId}`, targetAlias: `target.${matrixId}`,
         expectedStatus: matrix.expectedStatusByCase[caseId][0], observedStatus: matrix.expectedStatusByCase[caseId][0],
         redactionResult: "PASS", localEvidencePath: schemaV2EvidencePath,
+        artifactIdentitySha256: schemaV2IdentitySha256(),
       })),
     })),
   });
@@ -65,6 +77,75 @@ function schemaV2Nodes(summary) {
 function schemaV2Validate(summary, gateValue = gate) {
   return validateSchema(buildAbusePenetrationSummaryV2Schema(gateValue), summary);
 }
+
+test("A RED Route V2 ingress cases are part of the validated matrix catalog", () => {
+  const catalog = deriveSummaryCatalog(gate);
+  assert.ok(catalog.matrixIds.includes("routeV2IngressAbuse"));
+  assert.ok(catalog.procedureIds.includes("routeV2IngressAbuse.gateway_token_limiter"));
+});
+
+test("A RED v2 PASS evidence is bound to the root artifact identity", () => {
+  const summary = schemaV2Pass();
+  assert.equal(schemaV2Validate(summary).ok, true);
+  summary.productionLikeEvidence[0].artifactIdentitySha256 = "0".repeat(64);
+  assert.throws(
+    () => validateAbusePenetrationSummary(summary, gate, true),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" && error.path.endsWith(".artifactIdentitySha256"),
+  );
+  const stale = schemaV2Pass();
+  stale.productionLikeEvidence[0].localEvidencePath = ".codex/evidence/security/abuse-penetration-rehearsal/older-rc/result.json";
+  assert.throws(
+    () => validateAbusePenetrationSummary(stale, gate, true),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" && error.path.endsWith(".localEvidencePath"),
+  );
+  const duplicate = schemaV2Pass();
+  duplicate.productionLikeEvidence[1].localEvidencePath = duplicate.productionLikeEvidence[0].localEvidencePath;
+  assert.throws(
+    () => validateAbusePenetrationSummary(duplicate, gate, true),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" && error.rule === "duplicate-evidence-path",
+  );
+  const crossCollectionDuplicate = schemaV2Pass();
+  crossCollectionDuplicate.productionLikeEvidence[0].localEvidencePath =
+    crossCollectionDuplicate.evidence[0].localEvidencePath;
+  assert.throws(
+    () => validateAbusePenetrationSummary(crossCollectionDuplicate, gate, true),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" && error.rule === "duplicate-evidence-path",
+  );
+  const traversed = schemaV2Pass();
+  traversed.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/../older-rc/result.json`;
+  assert.throws(
+    () => validateAbusePenetrationSummary(traversed, gate, true),
+    (error) => error.code === "SUMMARY_V2_SCHEMA_INVALID" ||
+      (error.code === "SUMMARY_IDENTITY_INVALID" && error.rule === "root-git-sha-path"),
+  );
+  const staleCase = schemaV2Pass();
+  staleCase.matrices.find((matrix) => matrix.matrixId === "routeV2IngressAbuse")
+    .cases[0].localEvidencePath =
+      `.codex/evidence/security/abuse-penetration-rehearsal/${"f".repeat(40)}/result.json`;
+  assert.throws(
+    () => validateAbusePenetrationSummary(staleCase, gate, true),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" && error.rule === "root-git-sha-path",
+  );
+});
+test("A RED v2 matrix cases are bound to the complete root artifact identity", () => {
+  const summary = schemaV2Pass();
+  assert.equal(schemaV2Validate(summary).ok, true);
+  summary.matrices[0].cases[0].artifactIdentitySha256 = "0".repeat(64);
+  assert.throws(
+    () => validateAbusePenetrationSummary(summary, gate, true),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" &&
+      error.path.endsWith(".artifactIdentitySha256") &&
+      error.rule === "root-artifact-identity-digest",
+  );
+  const unbound = schemaV2Blocked(gate, "FAIL");
+  unbound.matrices = [freshV2Pass().matrices[0]];
+  assert.throws(
+    () => validateAbusePenetrationSummary(unbound, gate),
+    (error) => error.code === "SUMMARY_IDENTITY_INVALID" &&
+      error.path === "$.artifactIdentity" &&
+      error.rule === "matrix-case-root-artifact-identity",
+  );
+});
 test("A RED direct schema rejects every missing required and extra field", () => {
   const requiredByKind = {
     root: ["schemaVersion", "releaseGate", "issue", "status", "rawInvocationStored", "redactionPolicyId"],
@@ -72,7 +153,7 @@ test("A RED direct schema rejects every missing required and extra field", () =>
     evidence: ["evidenceId", "result", "localEvidencePath"], matrix: ["matrixId", "result", "findingCounts", "cases"],
     findingCounts: ["critical", "high", "medium", "low"],
     mediumFindingDisposition: ["ownerAlias", "fixPlanEvidencePath"],
-    case: ["procedureId", "targetAlias", "expectedStatus", "observedStatus", "redactionResult", "localEvidencePath"],
+    case: ["procedureId", "targetAlias", "expectedStatus", "observedStatus", "redactionResult", "localEvidencePath", "artifactIdentitySha256"],
   };
   for (const [kind, fields] of Object.entries(requiredByKind)) {
     for (const field of fields) {
@@ -183,14 +264,23 @@ test("A RED direct schema requires valid release gate identity", () => {
 const gateHashBefore = createHash("sha256").update(readFileSync(gatePath)).digest("hex");
 const statusBefore = execFileSync("git", ["status", "--short", "--untracked-files=all"], { cwd: root, encoding: "utf8" });
 function freshV2Pass(gateValue = gate) { return structuredClone(schemaV2Pass(gateValue, false)); }
+function rebindEvidenceToIdentity(summary) {
+  const digest = schemaV2IdentitySha256(summary.artifactIdentity);
+  for (const item of [...summary.evidence, ...summary.productionLikeEvidence]) item.artifactIdentitySha256 = digest;
+  for (const matrix of summary.matrices) {
+    for (const caseItem of matrix.cases) caseItem.artifactIdentitySha256 = digest;
+  }
+}
 function v1Minimal(status = "BLOCKED_EXTERNAL") {
   return { schemaVersion: 1, releaseGate: gate.releaseGate, issue: gate.issue, status };
 }
 function v1Optional() {
   const matrix = gate.rehearsalMatrices.adCounterInflation;
+  const v1Evidence = schemaV2Evidence(gate.productionLikeEvidencePolicy.requiredForClosing[0]);
+  delete v1Evidence.artifactIdentitySha256;
   return Object.assign(v1Minimal("FAIL"), {
     artifactIdentity: structuredClone(schemaV2Identity),
-    productionLikeEvidence: [schemaV2Evidence(gate.productionLikeEvidencePolicy.requiredForClosing[0])],
+    productionLikeEvidence: [v1Evidence],
     matrices: [{ matrixId: "adCounterInflation", scenarioId: matrix.scenarioId,
       artifactIdentity: structuredClone(schemaV2Identity), commandOrManualCheck: "sanitized local rehearsal",
       findingCounts: { critical: 0, high: 0, medium: 0, low: 0 }, result: "FAIL",
@@ -303,7 +393,8 @@ test("B RED v2 procedure target expected and observed status mapping is exact", 
   await rejectSummary(t, freshV2Pass(), (s) => { s.matrices[0].cases[0].targetAlias = `target.${s.matrices[1].matrixId}`; }, "SUMMARY_PROCEDURE_MAPPING_INVALID", { requirePass: true });
   await rejectSummary(t, freshV2Pass(), (s) => { s.matrices[0].cases[0].expectedStatus = 599; }, "SUMMARY_PROCEDURE_MAPPING_INVALID", { requirePass: true });
   await rejectSummary(t, freshV2Pass(), (s) => { s.matrices[0].cases[0].observedStatus = -1; }, "SUMMARY_PROCEDURE_MAPPING_INVALID", { requirePass: true });
-  const failed = schemaV2Blocked(gate, "FAIL"); failed.matrices = [freshV2Pass().matrices[0]];
+  const failed = schemaV2Blocked(gate, "FAIL"); failed.artifactIdentity = structuredClone(schemaV2Identity);
+  failed.matrices = [freshV2Pass().matrices[0]];
   failed.matrices[0].result = "FAIL"; failed.matrices[0].cases[0].observedStatus = -1;
   await runSummary(t, failed);
 });
@@ -311,6 +402,7 @@ test("B RED v2 identity base fields and digest groups are exact", async (t) => {
   for (const field of ["gitSha", "versionCode", "androidApplicationId", "dataPackManifestSha256"])
     await rejectSummary(t, freshV2Pass(), (s) => { delete s.artifactIdentity[field]; }, "SUMMARY_V2_SCHEMA_INVALID", { requirePass: true });
   const oneEach = freshV2Pass(); delete oneEach.artifactIdentity.generatedApkSha256; delete oneEach.artifactIdentity.backendImageDigest;
+  rebindEvidenceToIdentity(oneEach);
   await runSummary(t, oneEach, { requirePass: true });
   const bothEach = freshV2Pass(); await runSummary(t, bothEach, { requirePass: true });
   await rejectSummary(t, freshV2Pass(), (s) => { delete s.artifactIdentity.aabSha256; delete s.artifactIdentity.generatedApkSha256; }, "SUMMARY_IDENTITY_INVALID", { requirePass: true });
@@ -334,7 +426,8 @@ test("B RED v2 accepts cross-matrix shared root evidence and unordered arrays", 
   await runSummary(t, summary, { requirePass: true, gateValue: syntheticGate });
 });
 test("B RED v2 FAIL allows observed mismatch and BLOCKED allows omissions", async (t) => {
-  const failed = schemaV2Blocked(gate, "FAIL"); failed.matrices = [freshV2Pass().matrices[0]];
+  const failed = schemaV2Blocked(gate, "FAIL"); failed.artifactIdentity = structuredClone(schemaV2Identity);
+  failed.matrices = [freshV2Pass().matrices[0]];
   failed.matrices[0].result = "FAIL"; failed.matrices[0].cases[0].observedStatus = -1; await runSummary(t, failed);
   await runSummary(t, schemaV2Blocked());
   await assert.rejects(runSummary(t, failed, { requirePass: true }), /SUMMARY_REQUIRE_PASS_FAILED/);
@@ -396,7 +489,7 @@ test("B RED privacy allows every controlled id and approved relative evidence pa
   await runSummary(t, freshV2Pass(), { requirePass: true });
   const encodedBenign = Buffer.from(["sanitized", " normal", " evidence"].join(""), "utf8").toString("base64url");
   const encodedSummary = freshV2Pass();
-  encodedSummary.evidence[0].localEvidencePath = `.codex/evidence/security/abuse-penetration-rehearsal/${encodedBenign}.json`;
+  encodedSummary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/${encodedBenign}.json`;
   await runSummary(t, encodedSummary, { requirePass: true });
   const legacy = v1Optional(); legacy.matrices[0].commandOrManualCheck = "sanitized local rehearsal";
   legacy.matrices[0].redactionNotes = "sanitized values removed";
@@ -410,7 +503,7 @@ test("B RED privacy rejects canonical Base64url sensitive evidence-path segments
   const sensitive = ["ht", "tp", ":", "//", "19", "2", ".0.2.42"].join("");
   const encoded = Buffer.from(sensitive, "utf8").toString("base64url");
   const summary = freshV2Pass();
-  summary.evidence[0].localEvidencePath = `.codex/evidence/security/abuse-penetration-rehearsal/${encoded}.json`;
+  summary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/${encoded}.json`;
   await assert.rejects(runSummary(t, summary, { requirePass: true }), (error) => {
     assert.match(error.stderr, /SUMMARY_PRIVACY_VIOLATION/);
     assert.equal(error.stderr.includes(sensitive), false);
@@ -424,7 +517,7 @@ test("B RED privacy rejects canonical standard Base64 split across allowed evide
   const encoded = Buffer.from(`${prefix}${sensitive}`, "utf8").toString("base64");
   assert.equal(encoded.includes("/"), true);
   const summary = freshV2Pass();
-  summary.evidence[0].localEvidencePath = `.codex/evidence/security/abuse-penetration-rehearsal/${encoded}.json`;
+  summary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/${encoded}.json`;
   await assert.rejects(runSummary(t, summary, { requirePass: true }), (error) => {
     assert.match(error.stderr, /SUMMARY_PRIVACY_VIOLATION/);
     assert.equal(error.stderr.includes(sensitive), false);
@@ -434,7 +527,7 @@ test("B RED privacy rejects canonical standard Base64 split across allowed evide
 
 test("B RED privacy allows benign multi-segment evidence paths", async (t) => {
   const summary = freshV2Pass();
-  summary.evidence[0].localEvidencePath = ".codex/evidence/security/abuse-penetration-rehearsal/run/nested/redacted.json";
+  summary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/nested/redacted.json`;
   await runSummary(t, summary, { requirePass: true });
 });
 
@@ -443,7 +536,7 @@ test("B RED privacy rejects a sixth nested Base64url network-shaped evidence seg
   const encoded = Array.from({ length: 6 }, (_, index) => index)
     .reduce((value) => Buffer.from(value, "utf8").toString("base64url"), sensitive);
   const summary = freshV2Pass();
-  summary.evidence[0].localEvidencePath = `.codex/evidence/security/abuse-penetration-rehearsal/${encoded}.json`;
+  summary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/${encoded}.json`;
   await assert.rejects(runSummary(t, summary, { requirePass: true }), (error) => {
     assert.match(error.stderr, /SUMMARY_PRIVACY_VIOLATION/);
     assert.equal(error.stderr.includes(sensitive), false);
@@ -454,7 +547,7 @@ test("B RED privacy rejects a sixth nested Base64url network-shaped evidence seg
 test("B RED privacy rejects an allowed evidence path exceeding the UTF-8 byte bound without echo", async (t) => {
   const oversized = "a".repeat(4097);
   const summary = freshV2Pass();
-  summary.evidence[0].localEvidencePath = `.codex/evidence/security/abuse-penetration-rehearsal/${oversized}.json`;
+  summary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/${oversized}.json`;
   await assert.rejects(runSummary(t, summary, { requirePass: true }), (error) => {
     assert.match(error.stderr, /SUMMARY_PRIVACY_VIOLATION/);
     assert.equal(error.stderr.includes(oversized), false);
@@ -466,7 +559,7 @@ test("B RED privacy allows a benign Base64url value decoded at the maximum decod
   const encoded = Array.from({ length: 8 }, (_, index) => index)
     .reduce((value) => Buffer.from(value, "utf8").toString("base64url"), "sanitized evidence");
   const summary = freshV2Pass();
-  summary.evidence[0].localEvidencePath = `.codex/evidence/security/abuse-penetration-rehearsal/${encoded}.json`;
+  summary.evidence[0].localEvidencePath = `${schemaV2EvidenceRoot}/${encoded}.json`;
   await runSummary(t, summary, { requirePass: true });
 });
 

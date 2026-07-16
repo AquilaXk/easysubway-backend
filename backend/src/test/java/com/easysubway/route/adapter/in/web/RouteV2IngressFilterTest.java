@@ -84,6 +84,42 @@ class RouteV2IngressFilterTest {
 	}
 
 	@Test
+	@DisplayName("만료 session은 exact 401이고 controller를 호출하지 않는다")
+	void sessionFilterRejectsExpiredSession() throws Exception {
+		RouteV2AccessStore store = mock(RouteV2AccessStore.class);
+		var request = request("/api/v2/routes/search");
+		request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + "D".repeat(43));
+		when(store.consumeSession(anyString(), eq(NOW)))
+			.thenReturn(new SessionUse(SessionStatus.EXPIRED, "route:v2:itx", NOW.minusSeconds(1)));
+		var response = new MockHttpServletResponse();
+		FilterChain chain = mock(FilterChain.class);
+
+		filter(store).doFilter(request, response, chain);
+
+		assertThat(response.getStatus()).isEqualTo(401);
+		assertThat(response.getContentAsString()).contains("\"code\":\"ROUTE_SESSION_REQUIRED\"");
+		verify(chain, never()).doFilter(request, response);
+	}
+
+	@Test
+	@DisplayName("다른 scope session은 exact 422이고 controller를 호출하지 않는다")
+	void sessionFilterRejectsWrongScope() throws Exception {
+		RouteV2AccessStore store = mock(RouteV2AccessStore.class);
+		var request = request("/api/v2/routes/search");
+		request.addHeader(HttpHeaders.AUTHORIZATION, "Bearer " + "E".repeat(43));
+		when(store.consumeSession(anyString(), eq(NOW)))
+			.thenReturn(new SessionUse(SessionStatus.VALID, "route:v2:subway", NOW.plusSeconds(600)));
+		var response = new MockHttpServletResponse();
+		FilterChain chain = mock(FilterChain.class);
+
+		filter(store).doFilter(request, response, chain);
+
+		assertThat(response.getStatus()).isEqualTo(422);
+		assertThat(response.getContentAsString()).contains("\"code\":\"ROUTE_SCOPE_INVALID\"");
+		verify(chain, never()).doFilter(request, response);
+	}
+
+	@Test
 	@DisplayName("유효 session만 scope를 확인한 뒤 controller로 전달한다")
 	void sessionFilterAllowsValidScopedSession() throws Exception {
 		RouteV2AccessStore store = mock(RouteV2AccessStore.class);

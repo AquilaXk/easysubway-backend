@@ -263,6 +263,10 @@ jobs:
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
         run: docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
 
+      - name: Repository CI / Run Route V2 gateway integration
+        if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.contracts == 'true' || needs.changes.outputs.backend == 'true' }}
+        run: tools/test/run-route-v2-gateway-integration.sh
+
       - name: Repository CI / Validate issue forms
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
         run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts f }' .github/ISSUE_TEMPLATE/*.yml

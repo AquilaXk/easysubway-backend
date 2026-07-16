@@ -131,6 +131,7 @@ function evidenceSchema(contract, ids) {
     evidenceId: typedField(contract, "evidence", "evidenceId", { enum: ids }),
     result: typedField(contract, "evidence", "result", { enum: contract.resultValues }),
     localEvidencePath: pathField(contract, "evidence", "localEvidencePath"),
+    artifactIdentitySha256: typedField(contract, "evidence", "artifactIdentitySha256"),
   }, contract.requiredFields.evidence);
 }
 
@@ -153,6 +154,7 @@ export function buildAbusePenetrationSummaryV2Schema(gate, catalog = deriveSumma
     expectedStatus: typed("case", "expectedStatus"), observedStatus: typed("case", "observedStatus"),
     redactionResult: typed("case", "redactionResult", { enum: contract.redactionResultValues }),
     localEvidencePath: pathValue("case", "localEvidencePath"),
+    artifactIdentitySha256: typed("case", "artifactIdentitySha256"),
   }, required.case);
   const matrix = objectSchema({
     matrixId: typed("matrix", "matrixId", { enum: catalog.matrixIds }),

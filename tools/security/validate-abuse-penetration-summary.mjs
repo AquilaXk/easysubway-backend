@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
@@ -109,19 +110,47 @@ function validateLegacyV1(summary, gate, requirePass) {
     }
   });
 }
-function validateEvidence(items, allowed, path, requireExact, gate) {
+function artifactIdentitySha256(identity) {
+  const canonical = Object.fromEntries(Object.keys(identity).sort().map((field) => [field, identity[field]]));
+  return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
+}
+function validateIdentityEvidencePath(value, identity, path) {
+  if (identity === undefined) return;
+  const expectedPathPrefix = `.codex/evidence/security/abuse-penetration-rehearsal/${identity.gitSha}/`;
+  if (!value.startsWith(expectedPathPrefix)) {
+    fail("SUMMARY_IDENTITY_INVALID",path,"root-git-sha-path");
+  }
+}
+function validateEvidence(items, allowed, path, requireExact, gate, identity, paths) {
   const actual = uniqueIds(items,"evidenceId",new Set(allowed),path);
   if (requireExact) exactSet(actual,allowed,path);
-  items.forEach((item,index) => { if (!gate.summaryContract.resultValues.includes(item.result)) fail("SUMMARY_V2_SCHEMA_INVALID",`${path}[${index}].result`,"controlled-result"); if (requireExact && item.result !== "PASS") fail("SUMMARY_ID_SET_MISMATCH",`${path}[${index}].result`,"pass-result"); });
+  const expectedIdentitySha256 = identity === undefined ? undefined : artifactIdentitySha256(identity);
+  items.forEach((item,index) => {
+    if (!gate.summaryContract.resultValues.includes(item.result)) fail("SUMMARY_V2_SCHEMA_INVALID",`${path}[${index}].result`,"controlled-result");
+    if (requireExact && item.result !== "PASS") fail("SUMMARY_ID_SET_MISMATCH",`${path}[${index}].result`,"pass-result");
+    if (expectedIdentitySha256 !== undefined && item.artifactIdentitySha256 !== expectedIdentitySha256) {
+      fail("SUMMARY_IDENTITY_INVALID",`${path}[${index}].artifactIdentitySha256`,"root-artifact-identity-digest");
+    }
+    validateIdentityEvidencePath(item.localEvidencePath,identity,`${path}[${index}].localEvidencePath`);
+    if (paths.has(item.localEvidencePath)) {
+      fail("SUMMARY_IDENTITY_INVALID",`${path}[${index}].localEvidencePath`,"duplicate-evidence-path");
+    }
+    paths.add(item.localEvidencePath);
+  });
 }
 function validateV2Semantics(summary, gate, catalog) {
   const pass = summary.status === "PASS";
   if (pass) for (const field of gate.summaryContract.requiredFields.rootAdditionalForPass) if (!(field in summary)) fail("SUMMARY_ID_SET_MISMATCH",`$.${field}`,"pass-required");
   if (summary.artifactIdentity !== undefined) validateIdentity(summary.artifactIdentity,gate,"$.artifactIdentity","SUMMARY_V2_SCHEMA_INVALID");
-  if (summary.evidence !== undefined) validateEvidence(summary.evidence,catalog.matrixEvidenceIds,"$.evidence",pass,gate);
-  if (summary.productionLikeEvidence !== undefined) validateEvidence(summary.productionLikeEvidence,catalog.productionLikeEvidenceIds,"$.productionLikeEvidence",pass,gate);
+  const evidencePaths = new Set();
+  if (summary.evidence !== undefined) validateEvidence(summary.evidence,catalog.matrixEvidenceIds,"$.evidence",pass,gate,summary.artifactIdentity,evidencePaths);
+  if (summary.productionLikeEvidence !== undefined) validateEvidence(summary.productionLikeEvidence,catalog.productionLikeEvidenceIds,"$.productionLikeEvidence",pass,gate,summary.artifactIdentity,evidencePaths);
   if (summary.matrices === undefined) return;
+  if (summary.artifactIdentity === undefined && summary.matrices.some((matrix) => matrix.cases.length > 0)) {
+    fail("SUMMARY_IDENTITY_INVALID","$.artifactIdentity","matrix-case-root-artifact-identity");
+  }
   const matrixIds = uniqueIds(summary.matrices,"matrixId",new Set(catalog.matrixIds),"$.matrices");
+  const expectedIdentitySha256 = summary.artifactIdentity === undefined ? undefined : artifactIdentitySha256(summary.artifactIdentity);
   const procedureSets = [];
   for (let index=0; index<summary.matrices.length; index+=1) {
     const item=summary.matrices[index]; const path=`$.matrices[${index}]`; validateCounts(item,gate,path,2);
@@ -131,6 +160,10 @@ function validateV2Semantics(summary, gate, catalog) {
     const procedures = uniqueIds(item.cases,"procedureId",new Set(catalog.procedureIds),`${path}.cases`);
     for (let caseIndex=0; caseIndex<item.cases.length; caseIndex+=1) {
       const caseItem=item.cases[caseIndex]; const mapping=catalog.procedureById[caseItem.procedureId]; const casePath=`${path}.cases[${caseIndex}]`;
+      if (expectedIdentitySha256 !== undefined && caseItem.artifactIdentitySha256 !== expectedIdentitySha256) {
+        fail("SUMMARY_IDENTITY_INVALID",`${casePath}.artifactIdentitySha256`,"root-artifact-identity-digest");
+      }
+      validateIdentityEvidencePath(caseItem.localEvidencePath,summary.artifactIdentity,`${casePath}.localEvidencePath`);
       if (mapping.matrixId!==item.matrixId || mapping.targetAlias!==caseItem.targetAlias || !mapping.expectedStatuses.includes(caseItem.expectedStatus)) fail("SUMMARY_PROCEDURE_MAPPING_INVALID",casePath,"procedure-mapping");
       if (pass && (caseItem.observedStatus!==caseItem.expectedStatus || caseItem.redactionResult!=="PASS")) fail("SUMMARY_PROCEDURE_MAPPING_INVALID",casePath,"pass-case");
     }
