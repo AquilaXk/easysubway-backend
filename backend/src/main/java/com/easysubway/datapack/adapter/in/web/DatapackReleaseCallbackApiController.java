@@ -31,6 +31,9 @@ public class DatapackReleaseCallbackApiController {
             body.schemaVersion(),
             body.artifactKind(),
             body.releaseRequestId(),
+            body.releaseSequence(),
+            body.channel(),
+            body.idempotencyKey(),
             body.workflowRunUrl(),
             body.manifestSha256(),
             body.sqliteSha256(),
@@ -43,6 +46,13 @@ public class DatapackReleaseCallbackApiController {
             verifier != null ? verifier.value() : null
         );
         var result = service.receive(cmd);
+        if ("MISSING_REQUEST".equals(result.status())) {
+            return ResponseEntity.notFound().build();
+        }
+        if ("DEAD_LETTER".equals(result.status())) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).body(Map.of(
+				"status", result.status(), "idempotentReplay", result.idempotentReplay()));
+		}
         return ResponseEntity.ok(Map.of(
             "status", result.status(),
             "idempotentReplay", result.idempotentReplay()
@@ -72,6 +82,9 @@ public class DatapackReleaseCallbackApiController {
         int schemaVersion,
         String artifactKind,
         String releaseRequestId,
+        long releaseSequence,
+        String channel,
+        String idempotencyKey,
         String workflowRunUrl,
         String manifestSha256,
         String sqliteSha256,

@@ -16,6 +16,8 @@ public interface DatapackReleaseChannelCommandPort {
 
 	boolean candidateHasPassingReleaseEvidence(String candidateId, String evidenceBundleSha256);
 
+	Optional<PassingReleaseEvidence> findPassingReleaseEvidence(String candidateId);
+
 	void updateChannel(
 		String channel,
 		String nextCandidateId,
@@ -73,5 +75,8 @@ public interface DatapackReleaseChannelCommandPort {
 		boolean rollbackAvailable,
 		String lastOperationStatus
 	) {
+	}
+
+	record PassingReleaseEvidence(String evidenceBundleSha256, String workflowRunUrl) {
 	}
 }

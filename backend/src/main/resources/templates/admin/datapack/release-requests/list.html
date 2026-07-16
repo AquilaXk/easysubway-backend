@@ -121,6 +121,28 @@
 			</tbody>
 		</table>
 	</section>
+
+	<section class="admin-panel">
+		<h2>callback delivery / reconciliation</h2>
+		<table class="static-table">
+			<thead><tr>
+				<th scope="col">request / sequence</th><th scope="col">channel / state</th>
+				<th scope="col">attempt / HTTP</th><th scope="col">deadlines</th>
+				<th scope="col">evidence hash</th><th scope="col">blocker</th>
+			</tr></thead>
+			<tbody>
+			<tr th:if="${deliveries.isEmpty()}"><td colspan="6">callback delivery가 없습니다.</td></tr>
+			<tr th:each="delivery : ${deliveries}">
+				<td th:text="${delivery.releaseRequestId + ' / ' + delivery.releaseSequence}">request</td>
+				<td th:text="${delivery.channel + ' / ' + delivery.state}">state</td>
+				<td th:text="${delivery.attempts + ' / ' + (delivery.httpClass ?: '-')}">attempt</td>
+				<td><time th:text="${delivery.nextAttemptAt}">next attempt</time> / <time th:text="${delivery.reconcileDeadline}">reconcile</time> / <time th:text="${delivery.deadLetterDeadline}">dead letter</time></td>
+				<td><code th:text="${delivery.payloadSha256}">payload hash</code><br><code th:text="${delivery.signatureSha256}">signature hash</code></td>
+				<td th:text="${delivery.detail ?: '-'}">blocker</td>
+			</tr>
+			</tbody>
+		</table>
+	</section>
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>

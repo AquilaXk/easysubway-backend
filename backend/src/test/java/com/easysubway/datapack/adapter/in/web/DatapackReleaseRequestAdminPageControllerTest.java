@@ -41,6 +41,7 @@ class DatapackReleaseRequestAdminPageControllerTest {
 
 	@BeforeEach
 	void setUp() {
+		jdbcTemplate.update("DELETE FROM datapack_release_deliveries");
 		jdbcTemplate.update("DELETE FROM datapack_release_request");
 		jdbcTemplate.update("DELETE FROM datapack_candidate_inputs");
 		jdbcTemplate.update("DELETE FROM datapack_candidates");
@@ -235,6 +236,39 @@ class DatapackReleaseRequestAdminPageControllerTest {
 		assertThat(html)
 			.contains("rr-failed-3/retry-dispatch")
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/9001");
+	}
+
+	@Test
+	@DisplayName("목록은 sanitized callback delivery와 reconciliation blocker를 렌더한다")
+	void listRendersSanitizedDeliveryEvidence() throws Exception {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256, channel,
+			 candidate_id, payload_sha256, signature_sha256, state, attempts, next_attempt_at,
+			 reconcile_deadline, dead_letter_deadline, http_class, sanitized_detail,
+			 created_at, updated_at)
+			VALUES (?, 'rr-delivery-1', 42, ?, 'production', 'candidate-stable-9', ?, ?,
+			 'RECONCILIATION_REQUIRED', 4, '2026-07-06 03:08:00',
+			 '2026-07-06 03:10:00', '2026-07-06 04:10:00', '5XX',
+			 'CALLBACK_RECONCILIATION_REQUIRED', '2026-07-06 03:00:00', '2026-07-06 03:01:00')
+			""", "rr-delivery-1:42:" + SHA, SHA, "b".repeat(64), "c".repeat(64));
+
+		String html = mockMvc.perform(get("/admin/datapack/release-requests/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			.contains("RECONCILIATION_REQUIRED")
+			.contains("CALLBACK_RECONCILIATION_REQUIRED")
+			.contains("5XX")
+			.contains("2026-07-06T03:08")
+			.contains("2026-07-06T03:10")
+			.contains("2026-07-06T04:10")
+			.contains("b".repeat(64))
+			.contains("c".repeat(64))
+			.doesNotContain("Authorization")
+			.doesNotContain("Bearer")
+			.doesNotContain("callback-secret");
 	}
 
 	private void insertReleaseRequest(String approvalId, String status, String workflowRunUrl) {

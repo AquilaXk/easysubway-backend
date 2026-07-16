@@ -128,6 +128,19 @@ public class JdbcDatapackReleaseChannelRepository implements DatapackReleaseChan
 	}
 
 	@Override
+	public Optional<PassingReleaseEvidence> findPassingReleaseEvidence(String candidateId) {
+		return jdbcTemplate.query("""
+			SELECT evidence_bundle_sha256, workflow_run_url FROM datapack_release_evidence_bundles
+			WHERE candidate_id = ?
+			  AND validator_status = 'PASS'
+			  AND route_regression_status = 'PASS'
+			  AND manifest_signature_status = 'PASS'
+			  AND android_evidence_status = 'PASS'
+			""", (rs, rowNum) -> new PassingReleaseEvidence(rs.getString(1), rs.getString(2)),
+			candidateId).stream().findFirst();
+	}
+
+	@Override
 	public void updateChannel(
 		String channel,
 		String nextCandidateId,

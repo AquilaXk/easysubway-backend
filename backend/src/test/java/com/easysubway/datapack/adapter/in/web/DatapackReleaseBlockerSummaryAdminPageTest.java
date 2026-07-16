@@ -149,6 +149,72 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	}
 
 	@Test
+	@DisplayName("미확정 production callback은 rollout readiness를 차단한다")
+	void pendingCallbackBlocksReadiness() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256,
+			 channel, candidate_id, payload_sha256, signature_sha256, state, attempts,
+			 next_attempt_at, reconcile_deadline, dead_letter_deadline, created_at, updated_at)
+			VALUES (?, 'request-blocked', 42, ?, 'production', 'candidate-release-blocked',
+			 ?, ?, 'RECONCILIATION_REQUIRED', 4, '2026-07-06 03:00:00',
+			 '2026-07-06 03:00:00', '2026-07-06 04:00:00',
+			 '2026-07-06 02:50:00', '2026-07-06 03:00:00')
+			""", "request-blocked:42:" + SHA_A, SHA_A, SHA_B, SHA_C);
+
+		var callback = blockerSummaryUseCase.summarize().readinessRows().stream()
+			.filter(row -> "Callback reconciliation".equals(row.label()))
+			.findFirst().orElseThrow();
+		assertThat(callback.blockerCount()).isEqualTo(1);
+		assertThat(callback.note()).isEqualTo("CALLBACK_RECONCILIATION_REQUIRED");
+		assertThat(callback.status()).isEqualTo("FAIL");
+	}
+
+	@Test
+	@DisplayName("후속 release로 해소된 stale dead-letter는 readiness를 차단하지 않는다")
+	void supersededStaleCallbackDoesNotBlockReadiness() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_deliveries (
+			 idempotency_key, release_request_id, release_sequence, manifest_sha256,
+			 channel, candidate_id, payload_sha256, signature_sha256, state, attempts,
+			 reconcile_deadline, dead_letter_deadline, http_class, sanitized_detail,
+			 created_at, updated_at)
+			VALUES (?, 'request-superseded', 41, ?, 'production', 'candidate-release-blocked',
+			 ?, ?, 'DEAD_LETTER', 1, '2026-07-06 03:00:00', '2026-07-06 04:00:00',
+			 'STALE', 'CURRENT_RELEASE_ADVANCED', '2026-07-06 02:50:00', '2026-07-06 03:00:00')
+			""", "request-superseded:41:" + SHA_A, SHA_A, SHA_B, SHA_C);
+
+		var callback = blockerSummaryUseCase.summarize().readinessRows().stream()
+			.filter(row -> "Callback reconciliation".equals(row.label()))
+			.findFirst().orElseThrow();
+
+		assertThat(callback.blockerCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("기한이 지난 production request에 delivery 행이 없으면 rollout readiness를 차단한다")
+	void missingCallbackDeliveryBlocksReadiness() {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_request (
+			 approval_id, candidate_id, scope_id, target_channel,
+			 build_spec_sha256, source_snapshot_set_hash, approved_ledger_hash,
+			 requested_by, approved_by, status, dispatch_idempotency_key, workflow_run_url,
+			 created_at, approved_at, updated_at, promote_outcome, promote_detail)
+			VALUES ('request-without-delivery', 'candidate-release-blocked', 'capital_pilot_android_v1',
+			 'production', ?, ?, ?, 'requester', 'approver', 'DISPATCHED', 'dispatch-2057',
+			 'https://github.com/AquilaXk/easysubway/actions/runs/2057',
+			 '2026-07-06 02:00:00', '2026-07-06 02:00:00', '2026-07-06 02:00:00', NULL, NULL)
+			""", SHA_A, SHA_B, SHA_C);
+
+		var callback = blockerSummaryUseCase.summarize().readinessRows().stream()
+			.filter(row -> "Callback reconciliation".equals(row.label()))
+			.findFirst().orElseThrow();
+
+		assertThat(callback.blockerCount()).isEqualTo(1);
+		assertThat(callback.note()).isEqualTo("CALLBACK_RECONCILIATION_REQUIRED");
+	}
+
+	@Test
 	@DisplayName("datapack read 권한이 없으면 통합 대시보드 release blocker 요약을 숨긴다")
 	void dashboardHidesDatapackReleaseBlockerSummaryWithoutDatapackRead() throws Exception {
 		String html = getAdminHtmlWithoutDatapackRead("/admin/dashboard/page");
@@ -364,6 +430,8 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 	}
 
 	private void clearDatapackTables() {
+		jdbcTemplate.update("DELETE FROM datapack_release_deliveries");
+		jdbcTemplate.update("DELETE FROM datapack_release_request");
 		jdbcTemplate.update("DELETE FROM datapack_release_channel_events");
 		jdbcTemplate.update("DELETE FROM datapack_release_channels");
 		jdbcTemplate.update("DELETE FROM datapack_release_evidence_bundles");

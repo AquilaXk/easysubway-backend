@@ -60,6 +60,7 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 					new ReleaseReadinessRow("Route gate", "확인 필요", 0, "candidate 없음"),
 					new ReleaseReadinessRow("Android evidence", "확인 필요", 0, "candidate 없음"),
 					new ReleaseReadinessRow("Manifest signature", "확인 필요", 0, "candidate 없음"),
+					new ReleaseReadinessRow("Callback reconciliation", "확인 필요", 0, "delivery 없음"),
 					new ReleaseReadinessRow("Manual override", "확인 필요", 0, "candidate 없음")
 				),
 				null

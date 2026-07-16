@@ -34,7 +34,8 @@ class DatapackAdminSecurityNegativeTest {
 		"/admin/datapack/manual-overrides/page",
 		"/admin/datapack/candidates/page",
 		"/admin/datapack/candidates/candidate-missing/page",
-		"/admin/datapack/release-channels/page"
+		"/admin/datapack/release-channels/page",
+		"/admin/datapack/release-requests/page"
 	})
 	@DisplayName("datapack read 권한 없는 관리자는 데이터팩 운영 화면에 접근할 수 없다")
 	void datapackAdminPagesRequireDatapackReadPermission(String path) throws Exception {

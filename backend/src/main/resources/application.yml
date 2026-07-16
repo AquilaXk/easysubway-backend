@@ -88,6 +88,9 @@ easysubway:
     build-spec-path: ${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH:tools/datapack/fixtures/candidate-build-spec.json}
     # 워크플로→backend 콜백 payload HMAC 서명 키. 미설정이면 빈 키로 초기화해 모든 콜백이 거부된다(안전 기본값).
     callback-hmac-key: ${EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY:}
+    catalog-base-url: ${EASYSUBWAY_DATAPACK_CATALOG_BASE_URL:}
+    signing-public-key-pem: ${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:}
+    signing-key-id: ${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID:production-v1}
   notifications:
     push:
       delivery:

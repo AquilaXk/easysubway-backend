@@ -2,6 +2,8 @@ package com.easysubway.datapack.adapter.in.web;
 
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackCandidateRepository;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackCandidateRepository.CandidateRow;
+import com.easysubway.datapack.application.port.out.DatapackReleaseDeliveryRepository;
+import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository;
 import com.easysubway.datapack.application.service.DatapackReleaseRequestService;
 import com.easysubway.datapack.application.service.DatapackReleaseRequestService.CreateReleaseRequestCommand;
@@ -22,21 +24,25 @@ class DatapackReleaseRequestAdminPageController {
 
 	private static final int CANDIDATE_LIMIT = 20;
 	private static final int REQUEST_LIMIT = 20;
+	private static final int DELIVERY_LIMIT = 20;
 	// 릴리스 요청 대상은 승인/승격을 통과한 candidate만(미승인·실패 후보의 게시 경로 차단).
 	private static final Set<String> RELEASE_ELIGIBLE_CANDIDATE_STATUSES = Set.of("APPROVED", "PROMOTED");
 
 	private final JdbcDatapackCandidateRepository candidateRepository;
 	private final DatapackReleaseRequestRepository releaseRequestRepository;
 	private final DatapackReleaseRequestService releaseRequestService;
+	private final DatapackReleaseDeliveryRepository deliveryRepository;
 
 	DatapackReleaseRequestAdminPageController(
 		JdbcDatapackCandidateRepository candidateRepository,
 		DatapackReleaseRequestRepository releaseRequestRepository,
-		DatapackReleaseRequestService releaseRequestService
+		DatapackReleaseRequestService releaseRequestService,
+		DatapackReleaseDeliveryRepository deliveryRepository
 	) {
 		this.candidateRepository = candidateRepository;
 		this.releaseRequestRepository = releaseRequestRepository;
 		this.releaseRequestService = releaseRequestService;
+		this.deliveryRepository = deliveryRepository;
 	}
 
 	@GetMapping("/admin/datapack/release-requests/page")
@@ -49,7 +55,21 @@ class DatapackReleaseRequestAdminPageController {
 		model.addAttribute("requests", releaseRequestRepository.findRecent(REQUEST_LIMIT).stream()
 			.map(ReleaseRequestView::from)
 			.toList());
+		model.addAttribute("deliveries", deliveryRepository.findRecent(DELIVERY_LIMIT).stream()
+			.map(DeliveryView::from).toList());
 		return "admin/datapack/release-requests/list";
+	}
+
+	record DeliveryView(String releaseRequestId, long releaseSequence, String channel, String state,
+		int attempts, LocalDateTime nextAttemptAt, LocalDateTime reconcileDeadline,
+		LocalDateTime deadLetterDeadline, String httpClass, String detail,
+		String payloadSha256, String signatureSha256) {
+		static DeliveryView from(DatapackReleaseDelivery delivery) {
+			return new DeliveryView(delivery.releaseRequestId(), delivery.releaseSequence(),
+				delivery.channel(), delivery.state().name(), delivery.attempts(), delivery.nextAttemptAt(),
+				delivery.reconcileDeadline(), delivery.deadLetterDeadline(), delivery.httpClass(),
+				delivery.sanitizedDetail(), delivery.payloadSha256(), delivery.signatureSha256());
+		}
 	}
 
 	@PostMapping("/admin/datapack/release-requests")

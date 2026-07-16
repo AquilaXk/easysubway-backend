@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore;
+import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseDeliveryRepository;
+import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.RouteV2Session;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.SessionStatus;
 import com.zaxxer.hikari.HikariDataSource;
@@ -20,6 +22,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -60,6 +64,7 @@ class DatabaseMigrationContainerTest {
 				"datapack_candidates",
 				"datapack_candidate_inputs",
 				"datapack_release_evidence_bundles",
+				"datapack_release_deliveries",
 				"datapack_release_channels",
 				"datapack_release_channel_events",
 				"external_alias_approvals",
@@ -74,7 +79,7 @@ class DatabaseMigrationContainerTest {
 				"transit_master_overrides",
 				"transit_master_override_audits"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i
@@ -135,6 +140,8 @@ class DatabaseMigrationContainerTest {
 				"chk_datapack_candidates_gate_status",
 				"chk_datapack_candidates_approval_status",
 				"chk_datapack_release_evidence_status",
+				"chk_datapack_release_delivery_state",
+				"chk_datapack_release_delivery_sequence",
 				"chk_datapack_release_channels_operation",
 				"chk_datapack_release_channels_rollback_target",
 				"chk_datapack_release_channel_events_operation"
@@ -151,6 +158,35 @@ class DatabaseMigrationContainerTest {
 		assertDatapackPermissionMatrix(jdbcTemplate);
 		assertRouteServiceIdentityHashGuards(jdbcTemplate);
 		assertRouteV2AllowlistSchema(jdbcTemplate);
+	}
+
+	@Test
+	@DisplayName("PostgreSQL transaction 안의 동일 callback replay는 오류 없이 한 row로 수렴한다")
+	void postgresqlCallbackReplayIsIdempotentInsideTransaction() {
+		String schema = "datapack_callback_replay_" + System.nanoTime();
+		var migrationDataSource = new DriverManagerDataSource(
+			POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+		migrate(migrationDataSource, "classpath:db/migration/postgresql", schema);
+		try (var dataSource = new HikariDataSource()) {
+			dataSource.setJdbcUrl(POSTGRES.getJdbcUrl());
+			dataSource.setUsername(POSTGRES.getUsername());
+			dataSource.setPassword(POSTGRES.getPassword());
+			dataSource.setSchema(schema);
+			var jdbcTemplate = new JdbcTemplate(dataSource);
+			var repository = new JdbcDatapackReleaseDeliveryRepository(jdbcTemplate);
+			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+			var now = java.time.LocalDateTime.parse("2026-07-16T00:00:00");
+			var delivery = DatapackReleaseDelivery.pending(
+				"request-2057", 42, "a".repeat(64), "production", "candidate-2057",
+				"b".repeat(64), "c".repeat(64), now);
+
+			transaction.executeWithoutResult(ignored -> {
+				repository.upsertSameDelivery(delivery);
+				repository.upsertSameDelivery(delivery);
+				assertThat(jdbcTemplate.queryForObject(
+					"SELECT COUNT(*) FROM datapack_release_deliveries", Integer.class)).isEqualTo(1);
+			});
+		}
 	}
 
 	@Test
