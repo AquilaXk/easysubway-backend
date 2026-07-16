@@ -87,7 +87,7 @@
 <main>
 	<header>
 		<h1>쉬운 지하철 개인정보처리방침</h1>
-		<p class="meta">시행일: 2026년 6월 28일</p>
+		<p class="meta">시행일: 2026년 7월 16일</p>
 		<p>
 			쉬운 지하철(easysubway)은 교통약자가 도시철도를 더 쉽게 이용할 수 있도록 역, 시설, 경로, 신고 기능을 제공합니다.
 			이 문서는 앱에서 처리하는 개인정보, 보관 기준, 삭제 요청 방법, 문의 창구를 설명합니다.
@@ -111,7 +111,7 @@
 				<td>주변 역 검색과 출구 도보 길안내 시작 좌표는 저장하지 않고, 신고 위치는 신고 처리와 운영 확인에 필요한 기간 동안 보관</td>
 			</tr>
 			<tr>
-				<td>역·경로 검색어, 최근 검색, 즐겨찾기</td>
+				<td>역 검색어, 최근 검색, 즐겨찾기</td>
 				<td>역 검색, 경로 안내, 자주 보는 역·시설·경로 표시</td>
 				<td>기기 또는 서버에 저장된 값은 사용자가 삭제하거나 데이터 삭제를 요청할 때까지 보관</td>
 			</tr>
@@ -135,6 +135,49 @@
 	</section>
 
 	<section>
+		<h2>SUBWAY와 선택형 ITX-청춘 경로 검색</h2>
+		<p>
+			SUBWAY 경로 검색은 단말 안에서만 처리하며 서버로 전송하지 않습니다.
+			ITX-청춘 경로 검색은 사용자가 직접 선택할 때만 서버 기능을 사용하며, 사용자 행동을 tracking에 사용하지 않습니다.
+		</p>
+		<p>
+			ITX 경로 세션을 만들 때 앱은 Google Play Integrity에 requestHash를 보내고,
+			Google은 무결성 확인을 위해 앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태와
+			기기 attestation 정보를 암호화해 처리합니다.
+			이 정보는 Google의 Play Integrity 고정 보관 정책을 따르며 Google이 제3자에게 전송하지 않습니다.
+			그 뒤 앱은 integrityToken과 128-bit clientNonce를 쉬운 지하철 backend로 전송하고,
+			backend는 검증을 위해 raw integrityToken을 Google Play Integrity decode API로 전송합니다.
+			쉬운 지하철 backend의 경로 세션·상태는 사용자·기기·계정 ID와 연결하지 않지만, 위 Google 처리 범위는 이 backend 비연결 경계와 구분됩니다.
+		</p>
+		<p>
+			backend는 raw integrityToken을 저장하지 않고, 검증 후 발급한 Route V2 세션 token의 SHA-256, scope, issuedAt, expiresAt, requestCount를 논리적으로 10분 동안,
+			raw nonce 대신 nonce SHA-256을 논리적으로 2분 동안 저장합니다.
+			정상 동작 중 만료 데이터는 기본 5분 주기 purge로 물리 삭제하므로 세션은 발급 후 약 15분 이내,
+			nonce 해시는 수신 후 약 7분 이내 삭제됩니다.
+			ITX 경로 요청의 실제 JSON에는 originStationId, destinationStationId, departureTime,
+			mobilityType, mobilityPreset, constraintMode, useRealtime, maxTransfers, alternativeCount가 포함됩니다.
+		</p>
+		<p>
+			경로 상태 DB에는 routeStateId, 출발역·도착역 ID, backend가 정한 transport scope, 요청 출발 시각,
+			계산된 itinerary JSON, timetable artifact ID, createdAt, plannedArrivalAt, expiresAt을 저장합니다.
+			mobilityPreset은 itinerary JSON의 보행 구간 appliedPreset에도 포함되므로 이 이동 조건 처리는 ephemeral로 표시하지 않습니다.
+			논리 보관 기간은 <code>min(createdAt+6h, max(createdAt+30m, plannedArrivalAt+30m))</code>로
+			생성 시각부터 최소 30분, 최대 6시간이며, 정상 동작 중 물리 삭제는 expiresAt 뒤 5분 이내입니다.
+		</p>
+		<p>
+			backend는 raw integrityToken, raw nonce, Integrity payload·verdict를 DB에 저장하거나 로그에 남기지 않으며,
+			Route V2는 raw 검색어와 좌표를 요청으로 보내거나 저장하지 않습니다.
+			별도로 gateway는 요청 제한을 위해 IP의 이진 표현인 <code>$binary_remote_addr</code>와
+			Bearer 세션 token이 든 <code>$http_authorization</code>을 Nginx shared memory key로 처리합니다.
+			이 상태는 요청이 끝난 뒤에도 shared memory에 남을 수 있어 ephemeral 처리로 분류하지 않습니다.
+			고정 TTL은 없으며, zone 메모리가 부족할 때 LRU 방식으로 퇴출되고
+			최종적으로 gateway process 또는 shared-memory zone 수명 종료 시 삭제됩니다. 설정의 <code>10m</code>은 보관 기간이 아니라 zone 용량입니다.
+			이 key 값은 DB나 access log에는 저장하지 않습니다. 제한 응답 로그에는 고정 event·scope·status만 남고 key 값은 포함하지 않습니다.
+			세션과 경로 응답에는 <code>private, no-store</code> cache 정책을 적용합니다.
+		</p>
+	</section>
+
+	<section>
 		<h2>민감한 상태 정보</h2>
 		<p>
 			쉬운 지하철은 장애, 임신, 질병, 부상 여부를 증명하는 서류나 진단정보를 요구하지 않습니다.
@@ -146,7 +189,7 @@
 		<h2>보관, 전송, 파기</h2>
 		<p>
 				즐겨찾기, 최근 검색, 앱 설정, 신고 초안, 설치된 이동 정보 기록은 기본적으로 사용자 기기에 보관됩니다.
-			신고 제출이나 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
+			신고 제출, 선택형 ITX-청춘 경로 검색, 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
 			보관 목적이 끝나거나 삭제 요청 처리가 완료된 개인정보는 복구하기 어렵게 삭제하거나 식별 가능성을 줄입니다.
 		</p>
 	</section>
