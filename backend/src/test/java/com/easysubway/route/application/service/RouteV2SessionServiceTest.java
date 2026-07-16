@@ -10,6 +10,7 @@ import static org.mockito.Mockito.when;
 
 import com.easysubway.route.application.port.out.PlayIntegrityDecoder;
 import com.easysubway.route.application.port.out.PlayIntegrityDecoder.PlayIntegrityVerdict;
+import com.easysubway.route.application.port.out.PlayIntegrityProviderUnavailableException;
 import com.easysubway.route.application.port.out.RouteV2AccessStore;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.RouteV2Session;
 import java.time.Clock;
@@ -128,6 +129,17 @@ class RouteV2SessionServiceTest {
 		when(store.claimNonceAndSaveSession(any(), eq(NOW.plusSeconds(120)), eq(NOW), any())).thenReturn(false);
 		assertThatThrownBy(() -> service.issue("integrity-token", NONCE))
 			.isInstanceOf(RouteSessionAttestationRejectedException.class);
+	}
+
+	@Test
+	@DisplayName("provider 인증·권한·네트워크 장애는 invalid attestation과 구분한다")
+	void exposesProviderUnavailabilityWithoutLeakingDetails() {
+		when(decoder.decode("integrity-token"))
+			.thenThrow(new PlayIntegrityProviderUnavailableException(new IllegalStateException("provider-secret")));
+
+		assertThatThrownBy(() -> service.issue("integrity-token", NONCE))
+			.isInstanceOf(RouteSessionAttestationUnavailableException.class)
+			.hasMessageNotContaining("provider-secret");
 	}
 
 	private void assertRejected(PlayIntegrityVerdict verdict) {

@@ -3,27 +3,39 @@ package com.easysubway.route.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
+import com.easysubway.route.application.port.out.PlayIntegrityDecoder;
+import com.easysubway.route.application.port.out.PlayIntegrityDecoder.PlayIntegrityVerdict;
+import com.easysubway.route.application.service.RouteV2SessionService;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteRefreshStatus;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
+import com.easysubway.transit.domain.StationNotFoundException;
+import java.sql.Timestamp;
+import java.time.Instant;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.stream.Stream;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
+import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.Arguments;
@@ -64,6 +76,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 	"easysubway.report.upload.object-storage-access-key=prod-object-storage-access-key",
 	"easysubway.report.upload.object-storage-secret-key=prod-object-storage-secret-key-with-enough-entropy",
 	"easysubway.report.upload.object-storage-region=ap-northeast-2",
+	"easysubway.route-v2.origin-secret=route-v2-origin-test-secret",
 	"easysubway.route-v2.play-integrity.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA"
 })
 @ActiveProfiles("prod")
@@ -94,6 +107,9 @@ class ProductionRouteApiClosureTest {
 	@MockitoBean
 	private RouteV2SearchUseCase routeV2SearchUseCase;
 
+	@MockitoBean
+	private PlayIntegrityDecoder playIntegrityDecoder;
+
 	@BeforeEach
 	void setUpCurrentReachableResponses() {
 		RouteSearchResult route = routeSearchResult();
@@ -113,6 +129,16 @@ class ProductionRouteApiClosureTest {
 				List.of()
 			)
 		);
+		when(playIntegrityDecoder.decode(anyString())).thenReturn(new PlayIntegrityVerdict(
+			"com.easysubway.app",
+			"SVOaIn_B5rcm1TVIPIEozQ_iGimOCakTxKuH3iXlD18",
+			Instant.now(),
+			"com.easysubway.app",
+			"PLAY_RECOGNIZED",
+			List.of("A".repeat(43)),
+			"LICENSED",
+			List.of("MEETS_DEVICE_INTEGRITY")
+		));
 	}
 
 	@ParameterizedTest(name = "{0}")
@@ -137,7 +163,7 @@ class ProductionRouteApiClosureTest {
 		mockMvc.perform(request)
 			.andExpect(status().isForbidden());
 
-		assertThat(applicationContext.containsBean("routeSearchController")).isFalse();
+		assertThat(applicationContext.containsBean("routeSearchController")).isTrue();
 		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_search_results", Long.class))
 			.isEqualTo(before);
 		verifyNoInteractions(routeSearchUseCase, routeV2SearchUseCase);
@@ -146,6 +172,154 @@ class ProductionRouteApiClosureTest {
 				.doesNotContain(PAYLOAD_MARKER)
 				.doesNotContain(HEADER_MARKERS);
 		}
+	}
+
+	@Test
+	@DisplayName("gateway origin 증명과 유효 attestation이면 10분 session을 발급한다")
+	void issuesSessionThroughGatewayOnly() throws Exception {
+		int sessionsBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_v2_sessions", Integer.class);
+		int noncesBefore = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_v2_nonce_replays", Integer.class);
+		mockMvc.perform(post("/api/v2/routes/session")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{"integrityToken":"integrity-token","clientNonce":"AAAAAAAAAAAAAAAAAAAAAA"}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.token").isString())
+			.andExpect(jsonPath("$.scope").value("route:v2:itx"));
+
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_v2_sessions", Integer.class))
+			.isEqualTo(sessionsBefore + 1);
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_v2_nonce_replays", Integer.class))
+			.isEqualTo(noncesBefore + 1);
+	}
+
+	@Test
+	@DisplayName("direct-origin Route V2는 handler와 DB write 전에 exact 403으로 거부한다")
+	void directOriginRouteV2IsForbiddenBeforeHandler() throws Exception {
+		long before = jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_v2_sessions", Long.class);
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body()))
+			.andExpect(status().isForbidden())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.code").value("ROUTE_ORIGIN_FORBIDDEN"));
+
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM route_v2_sessions", Long.class)).isEqualTo(before);
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
+	@Test
+	@DisplayName("gateway 경유 Route V2의 session 없음은 exact 401이다")
+	void gatewayRouteV2RequiresSession() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body()))
+			.andExpect(status().isUnauthorized())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.code").value("ROUTE_SESSION_REQUIRED"));
+
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
+	@Test
+	@DisplayName("유효 session은 카운트한 뒤 timetable artifact 없음에 exact 503으로 fail closed한다")
+	void missingTimetableFailsClosedAfterCountingSession() throws Exception {
+		String token = "D".repeat(43);
+		insertSession(token, 0);
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.code").value("ITX_TIMETABLE_UNAVAILABLE"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT request_count FROM route_v2_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			RouteV2SessionService.tokenHash(token)
+		)).isEqualTo(1);
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
+	@Test
+	@DisplayName("유효 session의 station 위반은 timetable 부재보다 먼저 exact 422다")
+	void invalidStationPrecedesMissingTimetable() throws Exception {
+		String token = "F".repeat(43);
+		insertSession(token, 0);
+		doThrow(new StationNotFoundException())
+			.when(routeSearchUseCase)
+			.validateRouteSearch(argThat(command -> "missing-station".equals(command.originStationId())));
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body().replace("station-sangnoksu", "missing-station")))
+			.andExpect(status().isUnprocessableEntity())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.code").value("ROUTE_SCOPE_INVALID"));
+
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT request_count FROM route_v2_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			RouteV2SessionService.tokenHash(token)
+		)).isEqualTo(1);
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
+	@Test
+	@DisplayName("session 전체 50회 초과는 integer Retry-After와 exact 429다")
+	void sessionLifetimeLimitReturnsExact429() throws Exception {
+		String token = "E".repeat(43);
+		insertSession(token, 50);
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body()))
+			.andExpect(status().isTooManyRequests())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(header().string("Retry-After", org.hamcrest.Matchers.matchesPattern("^[0-9]+$")))
+			.andExpect(jsonPath("$.code").value("ROUTE_RATE_LIMITED"));
+
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
+	private void insertSession(String token, int requestCount) {
+		Instant now = Instant.now();
+		jdbcTemplate.update("""
+			INSERT INTO route_v2_sessions (token_sha256, scope, issued_at, expires_at, request_count)
+			VALUES (?, 'route:v2:itx', ?, ?, ?)
+			""",
+			RouteV2SessionService.tokenHash(token),
+			Timestamp.from(now.minusSeconds(1)),
+			Timestamp.from(now.plusSeconds(600)),
+			requestCount
+		);
+	}
+
+	private String routeV2Body() {
+		return """
+			{
+			  "originStationId": "station-sangnoksu",
+			  "destinationStationId": "station-sadang",
+			  "departureTime": "2026-07-15T09:15:00+09:00",
+			  "mobilityType": "SENIOR",
+			  "constraintMode": "ALLOW_WITH_WARNINGS",
+			  "useRealtime": false,
+			  "maxTransfers": 3,
+			  "alternativeCount": 3
+			}
+			""";
 	}
 
 	private static Stream<Arguments> closedEndpoints() {
@@ -157,18 +331,6 @@ class ProductionRouteApiClosureTest {
 				  "mobilityType": "WHEELCHAIR"
 				}
 				""".formatted(PAYLOAD_MARKER), true),
-			Arguments.of("/api/v2/routes/search", """
-				{
-				  "originStationId": "station-sangnoksu",
-				  "destinationStationId": "station-sadang",
-				  "departureTime": "2026-07-15T09:15:00+09:00",
-				  "mobilityType": "SENIOR",
-				  "constraintMode": "ALLOW_WITH_WARNINGS",
-				  "useRealtime": false,
-				  "maxTransfers": 3,
-				  "alternativeCount": 3
-				}
-				""", false),
 			Arguments.of("/api/v2/routes/route-search-marker/refresh", "{}", false)
 		);
 	}

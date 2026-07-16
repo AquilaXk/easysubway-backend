@@ -2,6 +2,7 @@ package com.easysubway.route.application.port.out;
 
 import java.time.LocalDate;
 import java.util.List;
+import java.util.Optional;
 
 public interface LoadRouteTimetablePort {
 
@@ -16,6 +17,10 @@ public interface LoadRouteTimetablePort {
 	default boolean hasRouteTimetable() {
 		RouteTimetable timetable = loadRouteTimetable();
 		return !timetable.transitTrips().isEmpty() && !timetable.transitStopTimes().isEmpty();
+	}
+
+	default Optional<String> activeItxTimetableArtifactId() {
+		return Optional.empty();
 	}
 
 	record RouteTimetable(

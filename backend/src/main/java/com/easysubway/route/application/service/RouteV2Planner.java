@@ -3,10 +3,12 @@ package com.easysubway.route.application.service;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2PlanSource;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
@@ -23,6 +25,8 @@ import java.util.Comparator;
 import java.util.List;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.core.env.Environment;
+import org.springframework.core.env.Profiles;
 import org.springframework.stereotype.Service;
 
 @Service
@@ -35,84 +39,138 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private final LoadRouteTimetablePort routeTimetablePort;
 	private final RouteTimetableRaptorPlanner timetableRaptorPlanner = new RouteTimetableRaptorPlanner();
 	private final boolean timetableRequired;
+	private final boolean legacyPersistenceAllowed;
 	private volatile TimetableSnapshot cachedTimetableSnapshot;
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
-		this(routeSearchUseCase, RouteTimetable::empty, false);
+		this(routeSearchUseCase, RouteTimetable::empty, false, true);
 	}
 
 	@Autowired
 	public RouteV2Planner(
 		RouteSearchUseCase routeSearchUseCase,
-		ObjectProvider<LoadRouteTimetablePort> routeTimetablePortProvider
+		ObjectProvider<LoadRouteTimetablePort> routeTimetablePortProvider,
+		Environment environment
 	) {
-		this(routeSearchUseCase, routeTimetablePortProvider.getIfAvailable(), true);
+		this(
+			routeSearchUseCase,
+			routeTimetablePortProvider.getIfAvailable(),
+			true,
+			!environment.acceptsProfiles(Profiles.of("prod", "staging", "release", "prod-like"))
+		);
 	}
 
 	RouteV2Planner(RouteSearchUseCase routeSearchUseCase, LoadRouteTimetablePort routeTimetablePort) {
-		this(routeSearchUseCase, routeTimetablePort, true);
+		this(routeSearchUseCase, routeTimetablePort, true, false);
 	}
 
 	private RouteV2Planner(
 		RouteSearchUseCase routeSearchUseCase,
 		LoadRouteTimetablePort routeTimetablePort,
-		boolean timetableRequired
+		boolean timetableRequired,
+		boolean legacyPersistenceAllowed
 	) {
 		this.routeSearchUseCase = routeSearchUseCase;
 		this.routeTimetablePort = routeTimetablePort == null ? RouteTimetable::empty : routeTimetablePort;
 		this.timetableRequired = timetableRequired && routeTimetablePort != null;
+		this.legacyPersistenceAllowed = legacyPersistenceAllowed;
 	}
 
 	@Override
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
-			if (timetableRequired && canUseTimetableRaptor(command) && timetableCovers(command)) {
-				if (timetableRaptorPlanner.isFeedStale(command, routeTimetable())) {
-					return new RouteV2Plan(List.of(), List.of(RouteV2Status.STALE_TIMETABLE), PLANNER_ADR);
+			TimetableSnapshot snapshot = timetableRequired
+				&& canUseTimetableRaptor(command)
+				&& routeTimetablePort.hasRouteTimetable()
+				? timetableSnapshot()
+				: null;
+			if (snapshot != null && timetableCovers(command, snapshot)) {
+				if (timetableRaptorPlanner.isFeedStale(command, snapshot.timetable())) {
+					return timetablePlan(List.of(), List.of(RouteV2Status.STALE_TIMETABLE), snapshot);
 				}
 				SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 				routeSearchUseCase.validateRouteSearch(searchRouteCommand);
 				List<RouteSearchResult> timetableItineraries = timetableRaptorPlanner.search(
 					rankingCommand(command),
-					routeTimetable()
+					snapshot.timetable()
 				);
 				if (timetableItineraries.isEmpty()) {
-					return noTimetableServicePlan(command);
+					return noTimetableServicePlan(command, snapshot);
 				}
-				timetableItineraries = routeSearchUseCase.stabilizeTimetableRouteCandidates(
+				var stabilizedCandidates = routeSearchUseCase.stabilizeTimetableRouteCandidatesWithSource(
 					searchRouteCommand,
 					RANKING_CANDIDATE_LIMIT,
 					command.alternativeCount(),
 					timetableItineraries,
 					candidates -> rankTimetableItineraries(candidates, command.alternativeCount())
 				);
-				return new RouteV2Plan(timetableItineraries, statusesOf(timetableItineraries, command.useRealtime()), PLANNER_ADR);
+				timetableItineraries = stabilizedCandidates.itineraries();
+				if (stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN) {
+					timetableItineraries = routeSearchUseCase.applyRealtimeToTimetableCandidates(
+						searchRouteCommand,
+						timetableItineraries
+					);
+				}
+				return new RouteV2Plan(
+					timetableItineraries,
+					statusesOf(timetableItineraries, command.useRealtime()),
+					PLANNER_ADR,
+					null,
+					stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN
+						? RouteV2PlanSource.TIMETABLE_RAPTOR
+						: RouteV2PlanSource.LEGACY_GRAPH,
+					stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN
+						? snapshot.timetableArtifactId()
+						: null
+				);
 			}
 			rejectUnsupportedMobilityPreset(command);
 			SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
-			List<RouteSearchResult> itineraries = routeSearchUseCase.searchRouteAlternatives(
-				searchRouteCommand,
-				command.alternativeCount()
-			);
+			List<RouteSearchResult> itineraries = legacyPersistenceAllowed
+				? routeSearchUseCase.searchRouteAlternatives(searchRouteCommand, command.alternativeCount())
+				: routeSearchUseCase.planRouteAlternatives(searchRouteCommand, command.alternativeCount());
 			return new RouteV2Plan(
 				itineraries,
 				statusesOf(itineraries, command.useRealtime()),
-				PLANNER_ADR
+				PLANNER_ADR,
+				null,
+				RouteV2PlanSource.LEGACY_GRAPH
 			);
 		} catch (RouteNotFoundException exception) {
 			return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR);
 		}
 	}
 
-	private RouteV2Plan noTimetableServicePlan(SearchRouteV2Command command) {
-		OffsetDateTime nextServiceTime = timetableRaptorPlanner.nextServiceTime(command, routeTimetable()).orElse(null);
-		return new RouteV2Plan(List.of(), List.of(RouteV2Status.NO_TIMETABLE_SERVICE), PLANNER_ADR, nextServiceTime);
+	private RouteV2Plan noTimetableServicePlan(SearchRouteV2Command command, TimetableSnapshot snapshot) {
+		OffsetDateTime nextServiceTime = timetableRaptorPlanner.nextServiceTime(command, snapshot.timetable()).orElse(null);
+		return new RouteV2Plan(
+			List.of(),
+			List.of(RouteV2Status.NO_TIMETABLE_SERVICE),
+			PLANNER_ADR,
+			nextServiceTime,
+			RouteV2PlanSource.TIMETABLE_RAPTOR,
+			snapshot.timetableArtifactId()
+		);
+	}
+
+	private RouteV2Plan timetablePlan(
+		List<RouteSearchResult> itineraries,
+		List<RouteV2Status> statuses,
+		TimetableSnapshot snapshot
+	) {
+		return new RouteV2Plan(
+			itineraries,
+			statuses,
+			PLANNER_ADR,
+			null,
+			RouteV2PlanSource.TIMETABLE_RAPTOR,
+			snapshot.timetableArtifactId()
+		);
 	}
 
 	private boolean canUseTimetableRaptor(SearchRouteV2Command command) {
 		return command.constraintMode() != ConstraintMode.STRICT_STEP_FREE
-			&& command.mobilityType() != MobilityType.WHEELCHAIR
-			&& (!command.useRealtime() || !routeSearchUseCase.supportsRealtimeOverlay());
+			&& command.mobilityType() != MobilityType.WHEELCHAIR;
 	}
 
 	private void rejectUnsupportedMobilityPreset(SearchRouteV2Command command) {
@@ -121,21 +179,10 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		}
 	}
 
-	private RouteTimetable routeTimetable() {
-		return timetableSnapshot().timetable();
-	}
-
-	private boolean timetableCovers(SearchRouteV2Command command) {
-		if (!routeTimetablePort.hasRouteTimetable()) {
-			return false;
-		}
-		java.util.Set<String> covered = coveredStationIds();
+	private boolean timetableCovers(SearchRouteV2Command command, TimetableSnapshot snapshot) {
+		java.util.Set<String> covered = snapshot.coveredStationIds();
 		return covered.contains(command.originStationId())
 			&& covered.contains(command.destinationStationId());
-	}
-
-	private java.util.Set<String> coveredStationIds() {
-		return timetableSnapshot().coveredStationIds();
 	}
 
 	private TimetableSnapshot timetableSnapshot() {
@@ -148,11 +195,20 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			cacheKey = routeTimetablePort.timetableCacheKey();
 			snapshot = cachedTimetableSnapshot;
 			if (snapshot == null || !snapshot.cacheKey().equals(cacheKey)) {
-				RouteTimetable timetable = routeTimetablePort.loadRouteTimetable();
-				java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
-					.map(LoadRouteTimetablePort.TransitStopTime::stationId)
-					.collect(java.util.stream.Collectors.toUnmodifiableSet());
-				cachedTimetableSnapshot = new TimetableSnapshot(cacheKey, timetable, coveredStationIds);
+				for (int attempt = 0; attempt < 2; attempt++) {
+					cacheKey = routeTimetablePort.timetableCacheKey();
+					String artifactId = routeTimetablePort.activeItxTimetableArtifactId().orElse(null);
+					RouteTimetable timetable = routeTimetablePort.loadRouteTimetable();
+					if (!cacheKey.equals(routeTimetablePort.timetableCacheKey())) {
+						continue;
+					}
+					java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
+						.map(LoadRouteTimetablePort.TransitStopTime::stationId)
+						.collect(java.util.stream.Collectors.toUnmodifiableSet());
+					cachedTimetableSnapshot = new TimetableSnapshot(cacheKey, timetable, coveredStationIds, artifactId);
+					return cachedTimetableSnapshot;
+				}
+				return new TimetableSnapshot("UNSTABLE", RouteTimetable.empty(), java.util.Set.of(), null);
 			}
 			return cachedTimetableSnapshot;
 		}
@@ -161,7 +217,8 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private record TimetableSnapshot(
 		String cacheKey,
 		RouteTimetable timetable,
-		java.util.Set<String> coveredStationIds
+		java.util.Set<String> coveredStationIds,
+		String timetableArtifactId
 	) {
 	}
 

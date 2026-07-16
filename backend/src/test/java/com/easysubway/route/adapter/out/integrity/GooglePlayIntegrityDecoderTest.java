@@ -1,6 +1,7 @@
 package com.easysubway.route.adapter.out.integrity;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
@@ -9,12 +10,15 @@ import static org.springframework.test.web.client.match.MockRestRequestMatchers.
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.header;
 import static org.springframework.test.web.client.match.MockRestRequestMatchers.requestTo;
 import static org.springframework.test.web.client.response.MockRestResponseCreators.withSuccess;
+import static org.springframework.test.web.client.response.MockRestResponseCreators.withStatus;
 
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.easysubway.route.application.port.out.PlayIntegrityProviderUnavailableException;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
 import org.springframework.http.MediaType;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.client.SimpleClientHttpRequestFactory;
 import org.springframework.test.web.client.MockRestServiceServer;
 import org.springframework.test.util.ReflectionTestUtils;
@@ -92,6 +96,33 @@ class GooglePlayIntegrityDecoderTest {
 		assertThat(verdict.certificateSha256Digests()).containsExactly("certificate-digest");
 		assertThat(verdict.appLicensingVerdict()).isEqualTo("LICENSED");
 		assertThat(verdict.deviceRecognitionVerdicts()).containsExactly("MEETS_DEVICE_INTEGRITY");
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("invalid token 400은 attestation 거부용 빈 verdict로 변환한다")
+	void mapsInvalidTokenToRejectedVerdict() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		server.expect(requestTo("https://playintegrity.googleapis.com/v1/com.easysubway.app:decodeIntegrityToken"))
+			.andRespond(withStatus(HttpStatus.BAD_REQUEST));
+		var decoder = new GooglePlayIntegrityDecoder(builder.build(), new ObjectMapper(), () -> "google-access-token");
+
+		assertThat(decoder.decode("invalid-token").requestPackageName()).isNull();
+		server.verify();
+	}
+
+	@Test
+	@DisplayName("provider 인증·권한 장애는 invalid token과 구분한다")
+	void reportsProviderUnavailability() {
+		RestClient.Builder builder = RestClient.builder();
+		MockRestServiceServer server = MockRestServiceServer.bindTo(builder).build();
+		server.expect(requestTo("https://playintegrity.googleapis.com/v1/com.easysubway.app:decodeIntegrityToken"))
+			.andRespond(withStatus(HttpStatus.FORBIDDEN));
+		var decoder = new GooglePlayIntegrityDecoder(builder.build(), new ObjectMapper(), () -> "google-access-token");
+
+		assertThatThrownBy(() -> decoder.decode("integrity-token"))
+			.isInstanceOf(PlayIntegrityProviderUnavailableException.class);
 		server.verify();
 	}
 }

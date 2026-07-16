@@ -10,6 +10,9 @@ import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
+import com.easysubway.route.adapter.in.web.RouteV2IngressSecurity;
+import com.easysubway.route.adapter.in.web.RouteV2Metrics;
+import com.easysubway.route.application.port.out.RouteV2AccessStore;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -21,6 +24,7 @@ import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
@@ -294,6 +298,19 @@ public class SecurityConfig {
 			)
 			.httpBasic(Customizer.withDefaults())
 			.build();
+	}
+
+	@Bean
+	@Order(4)
+	@Profile("prod | staging | release | prod-like")
+	@ConditionalOnBean(RouteV2AccessStore.class)
+	SecurityFilterChain routeV2IngressSecurityFilterChain(
+		HttpSecurity http,
+		RouteV2AccessStore routeV2AccessStore,
+		RouteV2Metrics routeV2Metrics,
+		@Value("${easysubway.route-v2.origin-secret:}") String originSecret
+	) throws Exception {
+		return RouteV2IngressSecurity.configure(http, routeV2AccessStore, routeV2Metrics, originSecret);
 	}
 
 	@Bean

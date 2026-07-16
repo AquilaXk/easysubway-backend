@@ -2,6 +2,8 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSelection;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
@@ -185,9 +187,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 	}
 
 	public List<RouteSearchResult> searchRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
-		return buildRouteSearchAlternatives(command, alternativeCount).stream()
+		return planRouteAlternatives(command, alternativeCount).stream()
 			.map(saveRouteSearchPort::saveRouteSearch)
 			.toList();
+	}
+
+	@Override
+	public List<RouteSearchResult> planRouteAlternatives(SearchRouteCommand command, int alternativeCount) {
+		return buildRouteSearchAlternatives(command, alternativeCount);
 	}
 
 	@Override
@@ -222,26 +229,93 @@ public class RouteSearchService implements RouteSearchUseCase {
 		List<RouteSearchResult> timetableResults,
 		UnaryOperator<List<RouteSearchResult>> selectCandidates
 	) {
+		return stabilizeTimetableRouteCandidatesWithSource(
+			command,
+			candidateCount,
+			alternativeCount,
+			timetableResults,
+			selectCandidates
+		).itineraries();
+	}
+
+	@Override
+	public TimetableCandidateSelection stabilizeTimetableRouteCandidatesWithSource(
+		SearchRouteCommand command,
+		int candidateCount,
+		int alternativeCount,
+		List<RouteSearchResult> timetableResults,
+		UnaryOperator<List<RouteSearchResult>> selectCandidates
+	) {
 		try {
-			List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(command, candidateCount);
+			List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(
+				withoutRealtime(command),
+				candidateCount
+			);
 			List<RouteSearchResult> selectedAccessibilityCheckedResults = selectCandidates.apply(accessibilityCheckedResults);
 			if (selectedAccessibilityCheckedResults.stream().anyMatch(this::hasAccessibilitySignal)) {
-				return selectedAccessibilityCheckedResults.stream()
-					.map(saveRouteSearchPort::saveRouteSearch)
-					.toList();
+				return new TimetableCandidateSelection(
+					selectedAccessibilityCheckedResults,
+					TimetableCandidateSource.LEGACY_ACCESSIBILITY_CHECK
+				);
 			}
 		} catch (RouteNotFoundException | StationNotFoundException exception) {
 			// Timetable coverage can lead legacy graph coverage while #1400 closes the production graph gap.
 			log.debug("Legacy graph could not stabilize timetable route {} -> {}", command.originStationId(), command.destinationStationId(), exception);
 		}
-		return selectCandidates.apply(timetableResults)
-			.stream()
-			.map(this::storedTimetableRouteResult)
-			.map(saveRouteSearchPort::saveRouteSearch)
+		return new TimetableCandidateSelection(
+			selectCandidates.apply(timetableResults)
+				.stream()
+				.map(this::ephemeralTimetableRouteResult)
+				.toList(),
+			TimetableCandidateSource.TIMETABLE_SCAN
+		);
+	}
+
+	private SearchRouteCommand withoutRealtime(SearchRouteCommand command) {
+		return new SearchRouteCommand(
+			command.originStationId(),
+			command.destinationStationId(),
+			command.mobilityType(),
+			command.constraintMode(),
+			command.maxTransfers(),
+			command.departureTime(),
+			false
+		);
+	}
+
+	@Override
+	public List<RouteSearchResult> applyRealtimeToTimetableCandidates(
+		SearchRouteCommand command,
+		List<RouteSearchResult> timetableResults
+	) {
+		if (!command.useRealtime()) {
+			return List.copyOf(timetableResults);
+		}
+		return timetableResults.stream()
+			.map(result -> withSteps(result, realtimeAwareRouteSteps(command, result.steps())))
 			.toList();
 	}
 
-	private RouteSearchResult storedTimetableRouteResult(RouteSearchResult routeSearchResult) {
+	private RouteSearchResult withSteps(RouteSearchResult result, List<RouteStep> steps) {
+		return new RouteSearchResult(
+			result.routeSearchId(),
+			result.originStationId(),
+			result.originStationName(),
+			result.destinationStationId(),
+			result.destinationStationName(),
+			result.mobilityType(),
+			result.status(),
+			result.lineId(),
+			result.lineName(),
+			result.score(),
+			steps,
+			result.warnings(),
+			result.blockedReasons(),
+			result.createdAt()
+		);
+	}
+
+	private RouteSearchResult ephemeralTimetableRouteResult(RouteSearchResult routeSearchResult) {
 		Station origin = loadActiveStation(routeSearchResult.originStationId());
 		Station destination = loadActiveStation(routeSearchResult.destinationStationId());
 		return new RouteSearchResult(

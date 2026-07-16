@@ -37,6 +37,13 @@
       "source": "apps/mobile/lib/facility_report.dart"
     },
     {
+      "id": "integration:play-integrity-token-decode",
+      "method": "POST",
+      "endpointRef": "constant:https://playintegrity.googleapis.com/v1/com.easysubway.app:decodeIntegrityToken",
+      "auth": "env:EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64",
+      "source": "backend/src/main/java/com/easysubway/route/adapter/out/integrity/GooglePlayIntegrityDecoder.java"
+    },
+    {
       "id": "integration:report-object-delete",
       "method": "DELETE",
       "endpointRef": "config:EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT/{bucket}/{objectKey}",

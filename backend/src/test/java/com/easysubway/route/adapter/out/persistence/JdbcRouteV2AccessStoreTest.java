@@ -58,7 +58,7 @@ class JdbcRouteV2AccessStoreTest {
 				transport_scope VARCHAR(40) NOT NULL,
 				requested_departure_at TIMESTAMP WITH TIME ZONE NOT NULL,
 				itinerary_json TEXT NOT NULL,
-				timetable_artifact_id VARCHAR(160) NOT NULL,
+				timetable_artifact_id VARCHAR(200) NOT NULL,
 				created_at TIMESTAMP WITH TIME ZONE NOT NULL,
 				planned_arrival_at TIMESTAMP WITH TIME ZONE NOT NULL,
 				expires_at TIMESTAMP WITH TIME ZONE NOT NULL
@@ -196,7 +196,23 @@ class JdbcRouteV2AccessStoreTest {
 		assertThat(store.loadState("existing", NOW).orElseThrow().expiresAt()).isEqualTo(originalExpiry);
 	}
 
+	@Test
+	@DisplayName("임시 상태는 admitted timetable artifact ID의 200자 계약을 보존한다")
+	void savesMaximumLengthTimetableArtifactId() {
+		String artifactId = "a".repeat(200);
+		RouteV2State state = state("artifact-boundary", NOW.plusSeconds(1800), artifactId);
+
+		store.saveState(state);
+
+		assertThat(store.loadState("artifact-boundary", NOW).orElseThrow().timetableArtifactId())
+			.isEqualTo(artifactId);
+	}
+
 	private RouteV2State state(String id, Instant expiresAt) {
+		return state(id, expiresAt, "timetable-rc-1");
+	}
+
+	private RouteV2State state(String id, Instant expiresAt, String timetableArtifactId) {
 		return new RouteV2State(
 			id,
 			"station-origin",
@@ -204,7 +220,7 @@ class JdbcRouteV2AccessStoreTest {
 			"SUBWAY_AND_ITX_CHEONGCHUN",
 			NOW,
 			"{\"itineraries\":[]}",
-			"timetable-rc-1",
+			timetableArtifactId,
 			NOW,
 			NOW.plusSeconds(600),
 			expiresAt

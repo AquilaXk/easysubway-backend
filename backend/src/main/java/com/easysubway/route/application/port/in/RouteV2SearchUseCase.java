@@ -75,21 +75,48 @@ public interface RouteV2SearchUseCase {
 		List<RouteSearchResult> itineraries,
 		List<RouteV2Status> statuses,
 		String plannerAdr,
-		OffsetDateTime nextServiceTime
+		OffsetDateTime nextServiceTime,
+		RouteV2PlanSource source,
+		String timetableArtifactId
 	) {
 		public RouteV2Plan(
 			List<RouteSearchResult> itineraries,
 			List<RouteV2Status> statuses,
 			String plannerAdr
 		) {
-			this(itineraries, statuses, plannerAdr, null);
+			this(itineraries, statuses, plannerAdr, null, RouteV2PlanSource.LEGACY_GRAPH, null);
+		}
+
+		public RouteV2Plan(
+			List<RouteSearchResult> itineraries,
+			List<RouteV2Status> statuses,
+			String plannerAdr,
+			OffsetDateTime nextServiceTime
+		) {
+			this(itineraries, statuses, plannerAdr, nextServiceTime, RouteV2PlanSource.LEGACY_GRAPH, null);
+		}
+
+		public RouteV2Plan(
+			List<RouteSearchResult> itineraries,
+			List<RouteV2Status> statuses,
+			String plannerAdr,
+			OffsetDateTime nextServiceTime,
+			RouteV2PlanSource source
+		) {
+			this(itineraries, statuses, plannerAdr, nextServiceTime, source, null);
 		}
 
 		public RouteV2Plan {
 			itineraries = List.copyOf(Objects.requireNonNull(itineraries, "itineraries must not be null"));
 			statuses = List.copyOf(Objects.requireNonNull(statuses, "statuses must not be null"));
 			Objects.requireNonNull(plannerAdr, "plannerAdr must not be null");
+			Objects.requireNonNull(source, "source must not be null");
 		}
+	}
+
+	enum RouteV2PlanSource {
+		TIMETABLE_RAPTOR,
+		LEGACY_GRAPH
 	}
 
 	enum RouteV2Status {

@@ -89,6 +89,22 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("동일 freshness에서도 ITX artifact identity가 바뀌면 cache key가 바뀐다")
+	void changesCacheKeyWhenItxArtifactIdentityChanges() {
+		insertItxRows("2999-01-01T00:00:00Z");
+		String firstKey = repository.timetableCacheKey();
+
+		jdbcTemplate.update("""
+			UPDATE route_service_artifact_evidence
+			SET timetable_artifact_id = 'itx-replacement'
+			WHERE service_class = 'ITX_CHEONGCHUN'
+			""");
+
+		assertThat(firstKey).contains("itx-test");
+		assertThat(repository.timetableCacheKey()).contains("itx-replacement").isNotEqualTo(firstKey);
+	}
+
+	@Test
 	@DisplayName("transit_feed_info 행이 있으면 feed_end_date를 LocalDate로 매핑한다")
 	void loadRouteTimetableMapsFeedEndDateWhenPresent() {
 		jdbcTemplate.update("INSERT INTO transit_feed_info (id, feed_end_date) VALUES (1, '20261231')");

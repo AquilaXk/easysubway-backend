@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.route.application.port.out.PlayIntegrityDecoder;
 import com.easysubway.route.application.port.out.PlayIntegrityDecoder.PlayIntegrityVerdict;
+import com.easysubway.route.application.port.out.PlayIntegrityProviderUnavailableException;
 import com.easysubway.route.application.port.out.RouteV2AccessStore;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.RouteV2Session;
 import java.nio.charset.StandardCharsets;
@@ -73,6 +74,8 @@ public class RouteV2SessionService {
 		PlayIntegrityVerdict verdict;
 		try {
 			verdict = decoder.decode(integrityToken);
+		} catch (PlayIntegrityProviderUnavailableException exception) {
+			throw new RouteSessionAttestationUnavailableException(exception);
 		} catch (RuntimeException exception) {
 			throw new RouteSessionAttestationRejectedException(exception);
 		}

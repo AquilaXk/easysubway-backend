@@ -7,6 +7,7 @@ import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
+import com.easysubway.route.application.service.ProductionRouteV2Support;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaConfidence;
@@ -34,22 +35,43 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
-import org.springframework.context.annotation.Profile;
+import org.springframework.beans.factory.ObjectProvider;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
-@Profile("!prod & !staging & !release & !prod-like")
 @RestController
 class RouteSearchController {
 
 	private final RouteSearchUseCase routeSearchUseCase;
 	private final RouteV2SearchUseCase routeV2SearchUseCase;
+	private final ProductionRouteV2Support productionSupport;
 
 	RouteSearchController(RouteSearchUseCase routeSearchUseCase, RouteV2SearchUseCase routeV2SearchUseCase) {
+		this(routeSearchUseCase, routeV2SearchUseCase, (ProductionRouteV2Support) null);
+	}
+
+	@Autowired
+	RouteSearchController(
+		RouteSearchUseCase routeSearchUseCase,
+		RouteV2SearchUseCase routeV2SearchUseCase,
+		ObjectProvider<ProductionRouteV2Support> productionSupport
+	) {
+		this(routeSearchUseCase, routeV2SearchUseCase, productionSupport.getIfAvailable());
+	}
+
+	private RouteSearchController(
+		RouteSearchUseCase routeSearchUseCase,
+		RouteV2SearchUseCase routeV2SearchUseCase,
+		ProductionRouteV2Support productionSupport
+	) {
 		this.routeSearchUseCase = routeSearchUseCase;
 		this.routeV2SearchUseCase = routeV2SearchUseCase;
+		this.productionSupport = productionSupport;
 	}
 
 	@PostMapping("/api/v1/routes/search")
@@ -58,10 +80,40 @@ class RouteSearchController {
 	}
 
 	@PostMapping("/api/v2/routes/search")
-	ApiResponse<RouteSearchV2Response> searchRouteV2(@Valid @RequestBody RouteSearchV2Request request) {
+	ResponseEntity<ApiResponse<RouteSearchV2Response>> searchRouteV2(@Valid @RequestBody RouteSearchV2Request request) {
 		OffsetDateTime departureTime = request.parsedDepartureTime();
+		if (productionSupport != null) {
+			routeSearchUseCase.validateRouteSearch(request.toValidationCommand());
+			productionSupport.requireTimetableArtifact();
+		}
 		RouteV2Plan plan = routeV2SearchUseCase.search(request.toV2Command(departureTime));
-		return ApiResponse.ok(RouteSearchV2Response.from(plan, request, departureTime));
+		String timetableArtifactId = productionSupport == null ? null : productionSupport.requireUsablePlan(plan);
+		RouteSearchV2Response response = RouteSearchV2Response.from(plan, request, departureTime);
+		saveProductionState(request, departureTime, response, timetableArtifactId);
+		return ResponseEntity.ok()
+			.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
+			.body(ApiResponse.ok(response));
+	}
+
+	private void saveProductionState(
+		RouteSearchV2Request request,
+		OffsetDateTime departureTime,
+		RouteSearchV2Response response,
+		String timetableArtifactId
+	) {
+		if (productionSupport == null || response.itineraries().isEmpty()) {
+			return;
+		}
+		ItineraryDto first = response.itineraries().get(0);
+		productionSupport.saveState(
+			first.itineraryId(),
+			request.originStationId(),
+			request.destinationStationId(),
+			departureTime.toInstant(),
+			response.itineraries(),
+			timetableArtifactId,
+			OffsetDateTime.parse(first.plannedArrivalTime()).toInstant()
+		);
 	}
 
 	@PostMapping("/api/v2/routes/{routeSearchId}/refresh")
@@ -180,6 +232,15 @@ class RouteSearchController {
 				Boolean.TRUE.equals(useRealtime),
 				maxTransfers,
 				alternativeCount
+			);
+		}
+
+		SearchRouteCommand toValidationCommand() {
+			return new SearchRouteCommand(
+				originStationId,
+				destinationStationId,
+				mobilityType,
+				parseConstraintMode(mobilityType, constraintMode)
 			);
 		}
 
