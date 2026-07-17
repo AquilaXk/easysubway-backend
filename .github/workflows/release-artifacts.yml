@@ -864,6 +864,16 @@ jobs:
               --canary-result release-artifacts/downloaded/backend/planner-canary-result.json \
               --output release-artifacts/rc/planner-success-evidence.json
           fi
+          # #1414 #2099 fragment. Mobile이 실제로 소비한 RC identity와 E1/E7/E8/E9 시나리오
+          # 근거(tracked widget/contract test·request 직렬화 소스)를 같은 candidate-context로 emit한다.
+          # planner step과 동일하게 입력 artifact 존재를 먼저 확인한다(verdict 단계는 이 파일이
+          # 없어도 fail-closed로 처리하므로 이 job이 강제로 실패하지 않는다).
+          if [[ -f release-artifacts/rc/candidate-context.json ]]; then
+            node tools/release/build-mobile-consumption-evidence.mjs \
+              --candidate-context release-artifacts/rc/candidate-context.json \
+              --repo-root . \
+              --output release-artifacts/rc/mobile-consumption-evidence.json
+          fi
           if [[ "${android_artifact_source}" == easysubway-android-production-rc-* ]]; then
             node tools/ops/generate-operations-phase-a-summary.mjs \
               --rc-manifest release-artifacts/rc/candidate-context.json \
@@ -906,6 +916,24 @@ jobs:
             --phase FINAL \
             --candidate-context release-artifacts/rc/candidate-context.json \
             --output release-artifacts/rc/final-readiness.json
+          # #1414 route/datapack 통합 판정. same-RC identity로 E1~E9 matrix를 결합한다.
+          # planner(#2098)/mobile(#2099) evidence는 이 job에서 candidate-context 기준으로 생성해
+          # 바로 연결한다. route-map(#2068) evidence는 아직 identity+provenance+integrationScenarios
+          # 스키마를 emit하는 tracked producer가 없어(route-map-android-evidence는 별개의 프레임/메모리
+          # 성능 evidence 스키마) --route-map-evidence를 연결하지 않는다 — 날조 대신 verdict의 E1을
+          # PENDING으로 남긴다.
+          verdict_args=(
+            --rc-manifest release-artifacts/rc/final-readiness.json
+          )
+          if [[ -f release-artifacts/rc/planner-success-evidence.json ]]; then
+            verdict_args+=(--planner-evidence release-artifacts/rc/planner-success-evidence.json)
+          fi
+          if [[ -f release-artifacts/rc/mobile-consumption-evidence.json ]]; then
+            verdict_args+=(--mobile-evidence release-artifacts/rc/mobile-consumption-evidence.json)
+          fi
+          node tools/release/generate-route-integration-verdict.mjs \
+            "${verdict_args[@]}" \
+            --output release-artifacts/rc/route-integration-verdict.json
           cp apps/mobile/release/post-launch-operations-review-gate.json release-artifacts/rc/post-launch-operations-review-gate.json
           cp apps/mobile/release/support-incident-response-gate.json release-artifacts/rc/support-incident-response-gate.json
           cp apps/mobile/release/operations-observability-gate.json release-artifacts/rc/operations-observability-gate.json
