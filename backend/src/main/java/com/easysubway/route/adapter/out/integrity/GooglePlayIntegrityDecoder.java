@@ -26,7 +26,7 @@ import org.springframework.web.client.RestClientException;
 import org.springframework.web.client.RestClientResponseException;
 
 @Component
-@Profile("prod | staging | release | prod-like")
+@Profile("(prod | staging | release | prod-like) & !capacity-evidence")
 public class GooglePlayIntegrityDecoder implements PlayIntegrityDecoder {
 
 	private static final String DECODE_URL =
