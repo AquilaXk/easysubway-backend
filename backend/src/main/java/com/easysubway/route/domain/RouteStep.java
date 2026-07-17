@@ -24,7 +24,13 @@ public record RouteStep(
 	String providerObservedAt,
 	String gatewayReceivedAt,
 	String servedAt,
-	Integer walkSeconds
+	Integer walkSeconds,
+	String tripId,
+	String trainNo,
+	String serviceClass,
+	String servicePattern,
+	String plannedDepartureTime,
+	String plannedArrivalTime
 ) {
 	public RouteStep {
 		stairAccessState = stairAccessState == null || stairAccessState.isBlank()
@@ -35,6 +41,36 @@ public record RouteStep(
 		confidenceLabel = confidenceLabel == null || confidenceLabel.isBlank() ? "확인 필요" : confidenceLabel;
 		reasonCodes = reasonCodes == null ? List.of() : List.copyOf(reasonCodes);
 		walkSeconds = walkSeconds == null || walkSeconds < 0 ? null : walkSeconds;
+	}
+
+	public RouteStep(
+		int sequence,
+		String stepType,
+		String title,
+		String description,
+		String lineId,
+		String lineName,
+		String fromStationId,
+		String toStationId,
+		int estimatedMinutes,
+		int distanceMeters,
+		boolean includesStairs,
+		String stairAccessState,
+		boolean requiresAccessibilityCheck,
+		String timeSource,
+		String distanceSource,
+		String confidenceLabel,
+		List<String> reasonCodes,
+		String providerSnapshotId,
+		String providerObservedAt,
+		String gatewayReceivedAt,
+		String servedAt,
+		Integer walkSeconds
+	) {
+		this(sequence, stepType, title, description, lineId, lineName, fromStationId, toStationId,
+			estimatedMinutes, distanceMeters, includesStairs, stairAccessState, requiresAccessibilityCheck,
+			timeSource, distanceSource, confidenceLabel, reasonCodes, providerSnapshotId, providerObservedAt,
+			gatewayReceivedAt, servedAt, walkSeconds, null, null, null, null, null, null);
 	}
 
 	public RouteStep(

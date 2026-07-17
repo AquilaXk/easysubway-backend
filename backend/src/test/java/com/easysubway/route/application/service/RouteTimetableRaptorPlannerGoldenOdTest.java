@@ -59,6 +59,7 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V62__route_v2_planner_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/test/resources/timetable/line4-corridor-slice-seed.sql'");
 		timetable = new JdbcRouteTimetableRepository(dataSource).loadRouteTimetable();
 	}
@@ -76,6 +77,13 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 		// K4422 상록수 07:00→사당 07:37:30 = 37.5분 승차 leg (모든 leg가 시간표 PLANNED).
 		assertThat(rideMinutes(best)).isBetween(35, 40);
 		assertThat(best.steps()).allMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource()));
+		var ride = best.steps().stream().filter(step -> "ride".equals(step.stepType())).findFirst().orElseThrow();
+		assertThat(ride.tripId()).isEqualTo("route-seoul-4-down-K4422-8");
+		assertThat(ride.trainNo()).isNull();
+		assertThat(ride.serviceClass()).isEqualTo("SUBWAY");
+		assertThat(ride.servicePattern()).isEqualTo("EXPRESS");
+		assertThat(ride.plannedDepartureTime()).isEqualTo("2026-07-06T07:00:00+09:00");
+		assertThat(ride.plannedArrivalTime()).isEqualTo("2026-07-06T07:37:30+09:00");
 	}
 
 	@Test

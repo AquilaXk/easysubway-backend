@@ -1,6 +1,8 @@
 package com.easysubway.route.adapter.in.web;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -12,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlannerIdentity;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ConstraintMode;
@@ -23,9 +26,12 @@ import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.Arrays;
 import java.util.List;
+import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -49,6 +55,9 @@ class RouteSearchV2ControllerTest {
 	@Autowired
 	private MockMvc mockMvc;
 
+	@Autowired
+	private ObjectMapper objectMapper;
+
 	@MockitoBean
 	private RouteSearchUseCase routeSearchUseCase;
 
@@ -57,12 +66,22 @@ class RouteSearchV2ControllerTest {
 		when(routeSearchUseCase.supportsRealtimeOverlay()).thenReturn(true);
 	}
 
+	@Test
+	@DisplayName("Route V2 request에는 일반·급행 직접 선택 필드가 없다")
+	void routeSearchV2RequestHasNoServicePatternSelector() throws Exception {
+		var fields = Arrays.stream(Class.forName(
+			"com.easysubway.route.adapter.in.web.RouteSearchController$RouteSearchV2Request"
+		).getRecordComponents()).map(java.lang.reflect.RecordComponent::getName).toList();
+
+		assertThat(fields).doesNotContain("servicePattern", "expressOnly", "trainType");
+	}
+
 	@TestConfiguration
 	static class RouteTimetableTestConfiguration {
 
 		@Bean
 		LoadRouteTimetablePort routeTimetablePort() {
-			return () -> new LoadRouteTimetablePort.RouteTimetable(
+			var timetable = new LoadRouteTimetablePort.RouteTimetable(
 				List.of(new LoadRouteTimetablePort.ServiceCalendar(
 					"weekday-2026",
 					true,
@@ -118,6 +137,39 @@ class RouteSearchV2ControllerTest {
 				),
 				List.of()
 			);
+			return new LoadRouteTimetablePort() {
+				@Override
+				public RouteTimetable loadRouteTimetable() {
+					return timetable;
+				}
+
+				@Override
+				public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
+					return new RouteTimetableSnapshot(
+						"snapshot-cache",
+						"snapshot-test",
+						plannerIdentity(),
+						timetable
+					);
+				}
+
+				@Override
+				public Optional<String> activeItxTimetableArtifactId() {
+					return Optional.of("snapshot-test");
+				}
+			};
+		}
+
+		private static PlannerIdentity plannerIdentity() {
+			return new PlannerIdentity(
+				"a".repeat(64),
+				"b".repeat(64),
+				"c".repeat(64),
+				"sha256:" + "d".repeat(64),
+				"d".repeat(64),
+				"e".repeat(64),
+				"f".repeat(64)
+			);
 		}
 	}
 
@@ -160,7 +212,8 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.statuses[0]").value("FOUND"))
 			.andExpect(jsonPath("$.data.statuses[1]").value("REALTIME_UNAVAILABLE_PLANNED_USED"))
 			.andExpect(jsonPath("$.data.statuses[2]").value("BLOCKED_ACCESSIBILITY"))
-			.andExpect(jsonPath("$.data.itineraries[0].itineraryId").value("route-search-1-primary"))
+			.andExpect(jsonPath("$.data.itineraries[0].itineraryId")
+				.value(org.hamcrest.Matchers.startsWith("route-v2-state-")))
 			.andExpect(jsonPath("$.data.itineraries[0].status").value("FOUND"))
 			.andExpect(jsonPath("$.data.itineraries[0].plannedArrivalTime").value("2026-06-30T09:22:00+09:00"))
 			.andExpect(jsonPath("$.data.itineraries[0].realtimeArrivalTime").doesNotExist())
@@ -188,6 +241,98 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].commercialEtaEligible").value(false))
 			.andExpect(jsonPath("$.data.itineraries[1].status").value("BLOCKED_ACCESSIBILITY"))
 			.andExpect(jsonPath("$.data.itineraries[2]").doesNotExist());
+	}
+
+	@Test
+	@DisplayName("동일한 V2 요청도 persisted itinerary ID는 매번 고유하다")
+	void routeSearchV2UsesUniqueItineraryIdPerRequest() throws Exception {
+		when(routeSearchUseCase.searchRouteAlternatives(any(), eq(1))).thenReturn(List.of(foundRouteSearch()));
+		String body = """
+			{
+			  "originStationId": "station-sangnoksu",
+			  "destinationStationId": "station-sadang",
+			  "departureTime": "2026-06-30T09:15:00+09:00",
+			  "mobilityType": "WHEELCHAIR",
+			  "constraintMode": "STRICT_STEP_FREE",
+			  "useRealtime": false,
+			  "maxTransfers": 1,
+			  "alternativeCount": 1
+			}
+			""";
+
+		String first = mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+		String second = mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON).content(body))
+			.andExpect(status().isOk()).andReturn().getResponse().getContentAsString();
+
+		String firstId = objectMapper.readTree(first).at("/data/itineraries/0/itineraryId").asText();
+		String secondId = objectMapper.readTree(second).at("/data/itineraries/0/itineraryId").asText();
+		assertThat(firstId).startsWith("route-v2-state-").isNotEqualTo(secondId);
+	}
+
+	@Test
+	@DisplayName("Route V2는 objective·official fare와 RIDE trip class/pattern을 보존한다")
+	void routeSearchV2ReturnsPlannerObjectiveFareAndTypedRideMetadata() throws Exception {
+		when(routeSearchUseCase.searchRouteAlternatives(argThat(command ->
+			command.constraintMode() == ConstraintMode.STRICT_STEP_FREE
+		), eq(1))).thenReturn(List.of(foundTypedTimetableRouteSearch()));
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "transportScope": "SUBWAY_AND_ITX_CHEONGCHUN",
+					  "objective": "FASTEST",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "STRICT_STEP_FREE",
+					  "useRealtime": false,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.transportScope").value("SUBWAY_AND_ITX_CHEONGCHUN"))
+			.andExpect(jsonPath("$.data.objective").value("FASTEST"))
+			.andExpect(jsonPath("$.data.itineraries[0].objectiveTags[0]").value("FASTEST"))
+			.andExpect(jsonPath("$.data.itineraries[0].officialFare.adultFareWon").value(1_950))
+			.andExpect(jsonPath("$.data.itineraries[0].officialFare.currency").value("KRW"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].tripId").doesNotExist())
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].serviceClass").doesNotExist())
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].tripId").value("trip-seoul-4-K4422"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].trainNo").value("K4422"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].serviceClass").value("SUBWAY"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].servicePattern").value("EXPRESS"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].plannedDepartureTime").value("2026-06-30T09:20:00+09:00"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].plannedArrivalTime").value("2026-06-30T09:30:30+09:00"));
+	}
+
+	@Test
+	@DisplayName("authenticated ITX endpoint는 SUBWAY transport scope를 거부한다")
+	void routeSearchV2RejectsSubwayOnlyTransportScope() throws Exception {
+		mockMvc.perform(post("/api/v2/routes/search")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "originStationId": "station-sangnoksu",
+					  "destinationStationId": "station-sadang",
+					  "departureTime": "2026-06-30T09:15:00+09:00",
+					  "transportScope": "SUBWAY",
+					  "objective": "FASTEST",
+					  "mobilityType": "STROLLER",
+					  "constraintMode": "STRICT_STEP_FREE",
+					  "useRealtime": false,
+					  "maxTransfers": 1,
+					  "alternativeCount": 1
+					}
+					"""))
+			.andExpect(status().isBadRequest());
+
+		verifyNoInteractions(routeSearchUseCase);
 	}
 
 	@Test
@@ -240,6 +385,10 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.statuses[0]").value("NO_TIMETABLE_SERVICE"))
 			.andExpect(jsonPath("$.data.nextServiceTime").value("2026-07-02T09:00:00+09:00"))
+			.andExpect(jsonPath("$.data.plannerIdentity.timetableSnapshotSha256").value("a".repeat(64)))
+			.andExpect(jsonPath("$.data.plannerIdentity.canonicalPackSha256").value("b".repeat(64)))
+			.andExpect(jsonPath("$.data.plannerIdentity.canonicalStationSetSha256").value("d".repeat(64)))
+			.andExpect(jsonPath("$.data.plannerIdentity.sourceLineageSha256").value("e".repeat(64)))
 			.andExpect(jsonPath("$.data.itineraries").isEmpty());
 	}
 
@@ -842,6 +991,47 @@ class RouteSearchV2ControllerTest {
 			List.of(),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	private RouteSearchResult foundTypedTimetableRouteSearch() {
+		return new RouteSearchResult(
+			"route-search-typed",
+			"station-sangnoksu",
+			"상록수",
+			"station-sadang",
+			"사당",
+			MobilityType.STROLLER,
+			RouteSearchStatus.FOUND,
+			"line-4",
+			"수도권 4호선",
+			18,
+			List.of(
+				new RouteStep(1, "entry", "진입", "진입", "line-4", "수도권 4호선",
+					"station-sangnoksu", "station-sangnoksu", 5, 180, false, "UNKNOWN", true,
+					"PLANNED", "TIMETABLE", "LOW", List.of(), null, null, null, null, 240,
+					null, null, null, null, "2026-06-30T09:15:00+09:00", "2026-06-30T09:20:00+09:00"),
+				new RouteStep(2, "ride", "승차", "승차", "line-4", "수도권 4호선",
+					"station-sangnoksu", "station-sadang", 11, 0, false, "UNKNOWN", false,
+					"PLANNED", "TIMETABLE", "LOW", List.of(), null, null, null, null, null,
+					"trip-seoul-4-K4422", "K4422", "SUBWAY", "EXPRESS",
+					"2026-06-30T09:20:00+09:00", "2026-06-30T09:30:30+09:00"),
+				new RouteStep(3, "exit", "하차", "하차", "line-4", "수도권 4호선",
+					"station-sadang", "station-sadang", 3, 120, false, "UNKNOWN", true,
+					"PLANNED", "TIMETABLE", "LOW", List.of(), null, null, null, null, 180,
+					null, null, null, null, "2026-06-30T09:30:30+09:00", "2026-06-30T09:33:30+09:00")
+			),
+			List.of(),
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 15),
+			List.of("FASTEST"),
+			new RouteSearchResult.OfficialFare(
+				1_950,
+				"KRW",
+				"SUM_OF_OFFICIAL_RIDE_OD_FARES",
+				List.of("seoul-metro-official-od-fares"),
+				List.of("seoul-metro-official-od-fares-20260712")
+			)
 		);
 	}
 

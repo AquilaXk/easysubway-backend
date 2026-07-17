@@ -16,12 +16,14 @@ import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
+import com.easysubway.route.domain.RouteSearchResult.OfficialFare;
 import java.time.Duration;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
@@ -35,7 +37,7 @@ class RouteTimetableRaptorPlanner {
 
 	private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
 	private static final int SERVICE_DAY_CUTOFF_HOUR = 3;
-	private static final int PARETO_LIMIT = 3;
+	private static final int PARETO_LIMIT = 4;
 	private static final int ENTRY_DURATION_SECONDS = 240;
 	private static final int ENTRY_DISTANCE_METERS = 180;
 	private static final int TRANSFER_DURATION_SECONDS = 360;
@@ -47,8 +49,8 @@ class RouteTimetableRaptorPlanner {
 		ServiceDay serviceDay = serviceDay(command);
 		return scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds()).labels().stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(Math.min(command.alternativeCount(), PARETO_LIMIT))
-			.map(label -> toRouteSearchResult(command, label, serviceDay))
+			.limit(candidateLimit(command))
+			.map(label -> toRouteSearchResult(command, label, serviceDay, timetable))
 			.toList();
 	}
 
@@ -234,7 +236,7 @@ class RouteTimetableRaptorPlanner {
 		List<Label> destinationLabels = labels.getOrDefault(command.destinationStationId(), List.of()).stream()
 			.filter(label -> !label.path().isEmpty())
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(PARETO_LIMIT)
+			.limit(candidateLimit(command))
 			.toList();
 		return new ScanResult(serviceDay, destinationLabels);
 	}
@@ -302,7 +304,17 @@ class RouteTimetableRaptorPlanner {
 		}
 		kept.add(candidate);
 		kept.sort(RouteTimetableRaptorPlanner::compareLabels);
-		labels.put(candidate.stationId(), List.copyOf(kept.stream().limit(PARETO_LIMIT).toList()));
+		List<Label> bestByBoardings = new ArrayList<>();
+		for (Label label : kept) {
+			if (bestByBoardings.stream().noneMatch(existing -> existing.boardings() == label.boardings())) {
+				bestByBoardings.add(label);
+			}
+		}
+		labels.put(candidate.stationId(), List.copyOf(bestByBoardings.stream().limit(PARETO_LIMIT).toList()));
+	}
+
+	private static int candidateLimit(SearchRouteV2Command command) {
+		return Math.max(command.alternativeCount(), command.maxTransfers() + 1);
 	}
 
 	private static boolean dominates(Label left, Label right) {
@@ -330,7 +342,12 @@ class RouteTimetableRaptorPlanner {
 		return List.copyOf(next);
 	}
 
-	private static RouteSearchResult toRouteSearchResult(SearchRouteV2Command command, Label label, ServiceDay serviceDay) {
+	private static RouteSearchResult toRouteSearchResult(
+		SearchRouteV2Command command,
+		Label label,
+		ServiceDay serviceDay,
+		RouteTimetable timetable
+	) {
 		List<RouteStep> steps = new ArrayList<>();
 		int sequence = 1;
 		int boardingSlackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
@@ -349,7 +366,9 @@ class RouteTimetableRaptorPlanner {
 			firstLeg.lineName(),
 			waitMinutesBeforeBoarding(label.startSeconds(), firstLeg.from().departureSeconds(), entryDurationSeconds, boardingSlackSeconds),
 			ENTRY_DISTANCE_METERS,
-			entryDurationSeconds
+			entryDurationSeconds,
+			serviceTime(serviceDay, label.startSeconds()),
+			serviceTime(serviceDay, firstLeg.from().departureSeconds())
 		));
 		sequence += 1;
 		for (int index = 0; index < path.size(); index += 1) {
@@ -365,7 +384,9 @@ class RouteTimetableRaptorPlanner {
 					leg.lineName(),
 					waitMinutesBeforeBoarding(previousLeg.to().arrivalSeconds(), leg.from().departureSeconds(), transferDurationSeconds, boardingSlackSeconds),
 					TRANSFER_DISTANCE_METERS,
-					transferDurationSeconds
+					transferDurationSeconds,
+					serviceTime(serviceDay, previousLeg.to().arrivalSeconds()),
+					serviceTime(serviceDay, leg.from().departureSeconds())
 				));
 				sequence += 1;
 			}
@@ -386,7 +407,19 @@ class RouteTimetableRaptorPlanner {
 				false,
 				EtaSource.PLANNED.name(),
 				"TIMETABLE",
-				"시간표"
+				"시간표",
+				List.of(),
+				null,
+				null,
+				null,
+				null,
+				null,
+				leg.tripId(),
+				leg.trip().trainNo(),
+				leg.trip().serviceClass(),
+				leg.trip().servicePattern(),
+				serviceTime(serviceDay, leg.from().departureSeconds()),
+				serviceTime(serviceDay, leg.to().arrivalSeconds())
 			));
 			sequence += 1;
 		}
@@ -399,7 +432,9 @@ class RouteTimetableRaptorPlanner {
 			lastLeg.lineName(),
 			(int) Math.ceil(exitDurationSeconds / 60.0),
 			EXIT_DISTANCE_METERS,
-			exitDurationSeconds
+			exitDurationSeconds,
+			serviceTime(serviceDay, lastLeg.to().arrivalSeconds()),
+			serviceTime(serviceDay, lastLeg.to().arrivalSeconds() + exitDurationSeconds)
 		));
 		return new RouteSearchResult(
 			"route-v2-raptor-" + serviceDay.date() + "-" + command.originStationId() + "-" + command.destinationStationId()
@@ -416,7 +451,31 @@ class RouteTimetableRaptorPlanner {
 			List.copyOf(steps),
 			List.of(),
 			List.of(),
-			LocalDateTime.of(serviceDay.date(), java.time.LocalTime.MIDNIGHT).plusSeconds(label.startSeconds())
+			LocalDateTime.of(serviceDay.date(), java.time.LocalTime.MIDNIGHT).plusSeconds(label.startSeconds()),
+			List.of(),
+			officialFare(timetable, path)
+		);
+	}
+
+	private static OfficialFare officialFare(RouteTimetable timetable, List<RideLeg> path) {
+		List<LoadRouteTimetablePort.OfficialFare> selected = new ArrayList<>();
+		for (RideLeg leg : path) {
+			var fare = timetable.officialFares().stream()
+				.filter(candidate -> candidate.tripId().equals(leg.tripId()))
+				.filter(candidate -> candidate.originStationId().equals(leg.from().stationId()))
+				.filter(candidate -> candidate.destinationStationId().equals(leg.to().stationId()))
+				.findFirst();
+			if (fare.isEmpty()) {
+				return null;
+			}
+			selected.add(fare.get());
+		}
+		return new OfficialFare(
+			selected.stream().mapToInt(LoadRouteTimetablePort.OfficialFare::adultFareWon).sum(),
+			"KRW",
+			"SUM_OF_OFFICIAL_RIDE_OD_FARES",
+			selected.stream().map(LoadRouteTimetablePort.OfficialFare::sourceId).distinct().sorted().toList(),
+			selected.stream().map(LoadRouteTimetablePort.OfficialFare::sourceSnapshotId).distinct().sorted().toList()
 		);
 	}
 
@@ -438,7 +497,9 @@ class RouteTimetableRaptorPlanner {
 		String lineName,
 		int estimatedMinutes,
 		int distanceMeters,
-		int walkSeconds
+		int walkSeconds,
+		String plannedDepartureTime,
+		String plannedArrivalTime
 	) {
 		return new RouteStep(
 			sequence,
@@ -462,8 +523,21 @@ class RouteTimetableRaptorPlanner {
 			null,
 			null,
 			null,
-			walkSeconds
+			walkSeconds,
+			null,
+			null,
+			null,
+			null,
+			plannedDepartureTime,
+			plannedArrivalTime
 		);
+	}
+
+	private static String serviceTime(ServiceDay serviceDay, int seconds) {
+		return serviceDay.date().atStartOfDay(SERVICE_ZONE)
+			.plusSeconds(seconds)
+			.toOffsetDateTime()
+			.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
 	}
 
 	private static int waitMinutesBeforeBoarding(

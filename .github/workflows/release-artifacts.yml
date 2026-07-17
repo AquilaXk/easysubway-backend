@@ -615,6 +615,15 @@ jobs:
         working-directory: backend
         run: ./gradlew bootJar --no-daemon
 
+      - name: Backend Release Image / Generate Route V2 planner canary
+        working-directory: backend
+        env:
+          EASYSUBWAY_PLANNER_SUCCESS_OUTPUT: ../release-artifacts/backend/planner-canary-result.json
+          EASYSUBWAY_CANONICAL_PACK_PATH: ../apps/mobile/assets/datapacks/capital.sqlite.gz
+        run: >-
+          ./gradlew test --no-daemon
+          --tests com.easysubway.route.application.service.RouteSearchServiceTest.routeV2PlannerProducesSyntheticCanaryResult
+
       - name: Backend Release Image / Build and inspect image
         shell: bash
         run: |
@@ -849,6 +858,12 @@ jobs:
             "${generator_args[@]}" \
             --phase CANDIDATE \
             --output release-artifacts/rc/candidate-context.json
+          if [[ -f release-artifacts/downloaded/backend/planner-canary-result.json ]]; then
+            node tools/release/build-planner-success-evidence.mjs \
+              --candidate-context release-artifacts/rc/candidate-context.json \
+              --canary-result release-artifacts/downloaded/backend/planner-canary-result.json \
+              --output release-artifacts/rc/planner-success-evidence.json
+          fi
           if [[ "${android_artifact_source}" == easysubway-android-production-rc-* ]]; then
             node tools/ops/generate-operations-phase-a-summary.mjs \
               --rc-manifest release-artifacts/rc/candidate-context.json \

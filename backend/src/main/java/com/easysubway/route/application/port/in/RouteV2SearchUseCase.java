@@ -1,6 +1,7 @@
 package com.easysubway.route.application.port.in;
 
 import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlannerIdentity;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
@@ -22,8 +23,26 @@ public interface RouteV2SearchUseCase {
 		ConstraintMode constraintMode,
 		boolean useRealtime,
 		int maxTransfers,
-		int alternativeCount
+		int alternativeCount,
+		RouteTransportScope transportScope,
+		RouteObjective objective
 	) {
+		public SearchRouteV2Command(
+			String originStationId,
+			String destinationStationId,
+			OffsetDateTime departureTime,
+			MobilityType mobilityType,
+			MobilityPreset mobilityPreset,
+			ConstraintMode constraintMode,
+			boolean useRealtime,
+			int maxTransfers,
+			int alternativeCount
+		) {
+			this(originStationId, destinationStationId, departureTime, mobilityType, mobilityPreset,
+				constraintMode, useRealtime, maxTransfers, alternativeCount,
+				RouteTransportScope.SUBWAY_AND_ITX_CHEONGCHUN, RouteObjective.FASTEST);
+		}
+
 		public SearchRouteV2Command(
 			String originStationId,
 			String destinationStationId,
@@ -56,6 +75,8 @@ public interface RouteV2SearchUseCase {
 				? ProfileWalkTimeCalculator.presetFor(mobilityType)
 				: mobilityPreset;
 			Objects.requireNonNull(constraintMode, "constraintMode must not be null");
+			Objects.requireNonNull(transportScope, "transportScope must not be null");
+			Objects.requireNonNull(objective, "objective must not be null");
 			if (maxTransfers < 0) {
 				throw new IllegalArgumentException("maxTransfers must not be negative");
 			}
@@ -71,20 +92,31 @@ public interface RouteV2SearchUseCase {
 		}
 	}
 
+	enum RouteTransportScope {
+		SUBWAY,
+		SUBWAY_AND_ITX_CHEONGCHUN
+	}
+
+	enum RouteObjective {
+		FASTEST,
+		FEWEST_TRANSFERS
+	}
+
 	record RouteV2Plan(
 		List<RouteSearchResult> itineraries,
 		List<RouteV2Status> statuses,
 		String plannerAdr,
 		OffsetDateTime nextServiceTime,
 		RouteV2PlanSource source,
-		String timetableArtifactId
+		String timetableArtifactId,
+		PlannerIdentity plannerIdentity
 	) {
 		public RouteV2Plan(
 			List<RouteSearchResult> itineraries,
 			List<RouteV2Status> statuses,
 			String plannerAdr
 		) {
-			this(itineraries, statuses, plannerAdr, null, RouteV2PlanSource.LEGACY_GRAPH, null);
+			this(itineraries, statuses, plannerAdr, null, RouteV2PlanSource.LEGACY_GRAPH, null, null);
 		}
 
 		public RouteV2Plan(
@@ -93,7 +125,7 @@ public interface RouteV2SearchUseCase {
 			String plannerAdr,
 			OffsetDateTime nextServiceTime
 		) {
-			this(itineraries, statuses, plannerAdr, nextServiceTime, RouteV2PlanSource.LEGACY_GRAPH, null);
+			this(itineraries, statuses, plannerAdr, nextServiceTime, RouteV2PlanSource.LEGACY_GRAPH, null, null);
 		}
 
 		public RouteV2Plan(
@@ -103,7 +135,18 @@ public interface RouteV2SearchUseCase {
 			OffsetDateTime nextServiceTime,
 			RouteV2PlanSource source
 		) {
-			this(itineraries, statuses, plannerAdr, nextServiceTime, source, null);
+			this(itineraries, statuses, plannerAdr, nextServiceTime, source, null, null);
+		}
+
+		public RouteV2Plan(
+			List<RouteSearchResult> itineraries,
+			List<RouteV2Status> statuses,
+			String plannerAdr,
+			OffsetDateTime nextServiceTime,
+			RouteV2PlanSource source,
+			String timetableArtifactId
+		) {
+			this(itineraries, statuses, plannerAdr, nextServiceTime, source, timetableArtifactId, null);
 		}
 
 		public RouteV2Plan {

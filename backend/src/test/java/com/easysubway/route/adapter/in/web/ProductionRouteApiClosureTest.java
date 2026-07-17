@@ -312,6 +312,27 @@ class ProductionRouteApiClosureTest {
 	}
 
 	@Test
+	@DisplayName("유효 session의 SUBWAY-only transport scope는 exact 422다")
+	void invalidTransportScopeReturnsExact422() throws Exception {
+		String token = "J".repeat(43);
+		insertSession(token, 0);
+
+		mockMvc.perform(post("/api/v2/routes/search")
+				.header("X-EasySubway-Origin-Verify", "route-v2-origin-test-secret")
+				.header("Authorization", "Bearer " + token)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(routeV2Body().replace(
+					"\"departureTime\"",
+					"\"transportScope\":\"SUBWAY\",\"departureTime\""
+				)))
+			.andExpect(status().isUnprocessableEntity())
+			.andExpect(header().string("Cache-Control", "private, no-store"))
+			.andExpect(jsonPath("$.code").value("ROUTE_SCOPE_INVALID"));
+
+		verifyNoInteractions(routeV2SearchUseCase);
+	}
+
+	@Test
 	@DisplayName("session 전체 50회 초과는 integer Retry-After와 exact 429다")
 	void sessionLifetimeLimitReturnsExact429() throws Exception {
 		String token = "E".repeat(43);

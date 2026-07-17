@@ -155,6 +155,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 	private void deleteCurrentSnapshot() {
 		for (String table : List.of(
 			"transit_frequencies",
+			"transit_trip_official_fares",
 			"transit_stop_times",
 			"transit_trips",
 			"transit_routes",
@@ -180,6 +181,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		assertCount("transit_routes", evidence.routeCount());
 		assertCount("transit_trips", evidence.tripCount());
 		assertCount("transit_stop_times", evidence.stopTimeCount());
+		assertCount("transit_trip_official_fares", evidence.officialFareCount());
 		assertCount("route_service_artifact_evidence", 1);
 		assertQueryCount(
 			"SELECT COUNT(*) FROM transit_trips WHERE service_class = 'SUBWAY'",
@@ -436,7 +438,8 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		int subwayTripCount,
 		int subwayStopTimeCount,
 		int itxTripCount,
-		int itxStopTimeCount
+		int itxStopTimeCount,
+		int officialFareCount
 	) {
 
 		static SnapshotEvidence from(ObjectNode node, ObjectMapper mapper, Clock clock) {
@@ -493,7 +496,8 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				positiveInteger(counts, "subwayTrips"),
 				positiveInteger(counts, "subwayStopTimes"),
 				positiveInteger(counts, "itxTrips"),
-				positiveInteger(counts, "itxStopTimes")
+				positiveInteger(counts, "itxStopTimes"),
+				positiveInteger(counts, "officialFares")
 			);
 			if (!"ITX_CHEONGCHUN".equals(text(service, "serviceId"))
 				|| !"line-54a7b980b7c3".equals(text(service, "canonicalLineId"))

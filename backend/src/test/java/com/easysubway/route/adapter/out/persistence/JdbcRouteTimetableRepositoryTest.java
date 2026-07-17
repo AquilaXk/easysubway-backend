@@ -31,6 +31,7 @@ class JdbcRouteTimetableRepositoryTest {
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V61__timetable_snapshot_state.sql'");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V62__route_v2_planner_identity.sql'");
 		repository = new JdbcRouteTimetableRepository(
 			jdbcTemplate,
 			Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC)
@@ -127,6 +128,16 @@ class JdbcRouteTimetableRepositoryTest {
 			.orElseThrow();
 
 		assertThat(itxTrip.servicePattern()).isEqualTo("EXPRESS");
+		assertThat(itxTrip.serviceClass()).isEqualTo("ITX_CHEONGCHUN");
+		assertThat(itxTrip.trainNo()).isEqualTo("2001");
+		assertThat(timetable.officialFares()).singleElement().satisfies(fare -> {
+			assertThat(fare.tripId()).isEqualTo("trip-itx");
+			assertThat(fare.originStationId()).isEqualTo("station-cheongnyangni");
+			assertThat(fare.destinationStationId()).isEqualTo("station-chuncheon");
+			assertThat(fare.adultFareWon()).isEqualTo(9_800);
+			assertThat(fare.currency()).isEqualTo("KRW");
+			assertThat(fare.sourceId()).isEqualTo("tago-train-schedule-fares");
+		});
 		assertThat(passThrough.pickupType()).isOne();
 		assertThat(passThrough.dropOffType()).isOne();
 	}
@@ -141,6 +152,15 @@ class JdbcRouteTimetableRepositoryTest {
 
 		assertThat(snapshot.cacheKey()).isEqualTo("a".repeat(64) + "2999-01-01T00:00:00Z");
 		assertThat(snapshot.timetableArtifactId()).isEqualTo("snapshot-test");
+		assertThat(snapshot.plannerIdentity()).satisfies(identity -> {
+			assertThat(identity.timetableSnapshotSha256()).isEqualTo("a".repeat(64));
+			assertThat(identity.canonicalPackSha256()).isEqualTo("b".repeat(64));
+			assertThat(identity.canonicalPackSqliteSha256()).isEqualTo("c".repeat(64));
+			assertThat(identity.canonicalStationVersion()).isEqualTo("sha256:" + "e".repeat(64));
+			assertThat(identity.canonicalStationSetSha256()).isEqualTo("e".repeat(64));
+			assertThat(identity.sourceLineageSha256()).isEqualTo("f".repeat(64));
+			assertThat(identity.evidenceHash()).isEqualTo("1".repeat(64));
+		});
 		assertThat(snapshot.timetable().transitTrips()).extracting("id")
 			.contains("trip-seoul-4-0900", "trip-itx");
 	}
@@ -242,6 +262,7 @@ class JdbcRouteTimetableRepositoryTest {
 				service_day_start_seconds, trip_headsign, direction_id
 			) VALUES ('trip-itx', 'route-itx', 'itx-weekday', 'EXPRESS', 'ITX_CHEONGCHUN', 0, '춘천', 'down')
 			""");
+		jdbcTemplate.update("UPDATE transit_trips SET train_no = '2001' WHERE id = 'trip-itx'");
 		jdbcTemplate.update("""
 			INSERT INTO transit_stop_times (
 				trip_id, stop_sequence, station_id, line_id,
@@ -250,6 +271,15 @@ class JdbcRouteTimetableRepositoryTest {
 				('trip-itx', 1, 'station-cheongnyangni', 'line-k2', 0, 0, 32400, 32400),
 				('trip-itx', 2, 'station-gapyeong-pass', 'line-k2', 1, 1, 34200, 34200),
 				('trip-itx', 3, 'station-chuncheon', 'line-k2', 0, 0, 36000, 36000)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_trip_official_fares (
+				trip_id, origin_station_id, destination_station_id, adult_fare_won,
+				currency, source_id, source_snapshot_id
+			) VALUES (
+				'trip-itx', 'station-cheongnyangni', 'station-chuncheon', 9800,
+				'KRW', 'tago-train-schedule-fares', 'itx-test'
+			)
 			""");
 		jdbcTemplate.update("""
 			INSERT INTO route_service_artifact_evidence (

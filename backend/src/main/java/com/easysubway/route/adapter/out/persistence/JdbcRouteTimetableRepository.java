@@ -77,6 +77,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 			.map(artifact -> new RouteTimetableSnapshot(
 				artifact.snapshotSha256() + artifact.freshUntil(),
 				artifact.snapshotId(),
+				artifact.plannerIdentity(),
 				loadRouteTimetable()
 			))
 			.orElseGet(() -> new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty()));
@@ -85,7 +86,10 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	private Optional<ItxArtifact> activeItxArtifact() {
 		return jdbcTemplate.query(
 			"""
-				SELECT h.snapshot_sha256, h.snapshot_id, h.fresh_until
+				SELECT h.snapshot_sha256, h.snapshot_id, h.fresh_until,
+					h.canonical_pack_sha256, h.canonical_pack_sqlite_sha256,
+					h.canonical_station_version, h.canonical_station_set_sha256,
+					h.source_lineage_sha256, h.evidence_hash
 				FROM timetable_snapshot_active a
 				JOIN timetable_snapshot_history h ON h.snapshot_sha256 = a.snapshot_sha256
 				JOIN route_service_artifact_evidence e
@@ -110,7 +114,16 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 			(resultSet, rowNumber) -> new ItxArtifact(
 				resultSet.getString("snapshot_sha256"),
 				resultSet.getString("snapshot_id"),
-				resultSet.getString("fresh_until")
+				resultSet.getString("fresh_until"),
+				new PlannerIdentity(
+					resultSet.getString("snapshot_sha256"),
+					resultSet.getString("canonical_pack_sha256"),
+					resultSet.getString("canonical_pack_sqlite_sha256"),
+					resultSet.getString("canonical_station_version"),
+					resultSet.getString("canonical_station_set_sha256"),
+					resultSet.getString("source_lineage_sha256"),
+					resultSet.getString("evidence_hash")
+				)
 			)
 		).stream().filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent()).findFirst();
 	}
@@ -168,7 +181,8 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 			),
 			jdbcTemplate.query(
 				"""
-					SELECT id, route_id, service_id, trip_headsign, direction_id, service_pattern, service_day_start_seconds
+					SELECT id, route_id, service_id, trip_headsign, direction_id, service_class, service_pattern,
+						train_no, service_day_start_seconds
 					FROM transit_trips
 					ORDER BY id
 					""",
@@ -178,7 +192,9 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					resultSet.getString("service_id"),
 					resultSet.getString("trip_headsign"),
 					resultSet.getString("direction_id"),
+					resultSet.getString("service_class"),
 					resultSet.getString("service_pattern"),
+					resultSet.getString("train_no"),
 					resultSet.getInt("service_day_start_seconds")
 				)
 			),
@@ -214,6 +230,23 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					resultSet.getBoolean("exact_times")
 				)
 			),
+			jdbcTemplate.query(
+				"""
+					SELECT trip_id, origin_station_id, destination_station_id, adult_fare_won,
+						currency, source_id, source_snapshot_id
+					FROM transit_trip_official_fares
+					ORDER BY trip_id, origin_station_id, destination_station_id
+					""",
+				(resultSet, rowNumber) -> new OfficialFare(
+					resultSet.getString("trip_id"),
+					resultSet.getString("origin_station_id"),
+					resultSet.getString("destination_station_id"),
+					resultSet.getInt("adult_fare_won"),
+					resultSet.getString("currency"),
+					resultSet.getString("source_id"),
+					resultSet.getString("source_snapshot_id")
+				)
+			),
 			loadFeedEndDate()
 		);
 	}
@@ -230,7 +263,12 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 		}
 	}
 
-	private record ItxArtifact(String snapshotSha256, String snapshotId, String freshUntil) {
+	private record ItxArtifact(
+		String snapshotSha256,
+		String snapshotId,
+		String freshUntil,
+		PlannerIdentity plannerIdentity
+	) {
 	}
 
 	private LocalDate loadFeedEndDate() {

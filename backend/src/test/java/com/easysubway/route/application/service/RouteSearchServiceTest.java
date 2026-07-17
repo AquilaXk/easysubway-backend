@@ -55,17 +55,27 @@ import com.easysubway.transit.domain.StationLine;
 import com.easysubway.transit.domain.StationNotFoundException;
 import com.easysubway.transit.domain.SubwayLine;
 import com.easysubway.transit.domain.TransitOperator;
+import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.math.BigDecimal;
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
 import java.util.ArrayList;
+import java.util.Collections;
+import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.zip.GZIPInputStream;
+import java.util.zip.GZIPOutputStream;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -1195,6 +1205,160 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("V2 planner는 빠른 환승과 늦은 직통을 objective별 대표로 결정한다")
+	void routeV2PlannerSelectsOneRepresentativePerObjective() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), objectiveRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.itineraries()).hasSize(2);
+		assertThat(plan.itineraries().get(0).transferCount()).isOne();
+		assertThat(plan.itineraries().get(0).objectiveTags()).containsExactly("FASTEST");
+		assertThat(plan.itineraries().get(0).officialFare().adultFareWon()).isEqualTo(2_500);
+		assertThat(plan.itineraries().get(0).steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("serviceClass")
+			.contains("ITX_CHEONGCHUN");
+		assertThat(plan.itineraries().get(1).transferCount()).isZero();
+		assertThat(plan.itineraries().get(1).objectiveTags()).containsExactly("FEWEST_TRANSFERS");
+		assertThat(plan.itineraries().get(1).officialFare().adultFareWon()).isEqualTo(2_000);
+	}
+
+	@Test
+	@DisplayName("V2 objective 대표는 요청한 alternativeCount를 넘지 않는다")
+	void routeV2PlannerCapsObjectiveRepresentativesByAlternativeCount() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), objectiveRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 1));
+
+		assertThat(plan.itineraries()).singleElement().satisfies(itinerary ->
+			assertThat(itinerary.objectiveTags()).containsExactly("FASTEST"));
+	}
+
+	@Test
+	@DisplayName("V2 FEWEST_TRANSFERS는 세 빠른 환승 후보 뒤의 느린 직통도 보존한다")
+	void routeV2PlannerPreservesSlowDirectCandidateForFewestTransfers() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), objectiveOverflowRouteTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 3, 2));
+
+		assertThat(plan.itineraries()).hasSize(2);
+		assertThat(plan.itineraries().getFirst().transferCount()).isEqualTo(3);
+		assertThat(plan.itineraries().getLast().transferCount()).isZero();
+		assertThat(plan.itineraries().getLast().objectiveTags()).containsExactly("FEWEST_TRANSFERS");
+	}
+
+	@Test
+	@DisplayName("V2 objective 결과는 candidate row 순서가 바뀌어도 결정적이다")
+	void routeV2PlannerRankingIsDeterministicAcrossCandidateOrder() {
+		var original = objectiveRouteTimetablePort().loadRouteTimetable();
+		var trips = new ArrayList<>(original.transitTrips());
+		var stopTimes = new ArrayList<>(original.transitStopTimes());
+		var fares = new ArrayList<>(original.officialFares());
+		Collections.reverse(trips);
+		Collections.reverse(stopTimes);
+		Collections.reverse(fares);
+		LoadRouteTimetablePort reversed = () -> new LoadRouteTimetablePort.RouteTimetable(
+			original.serviceCalendars(), original.serviceCalendarDates(), original.transitRoutes(),
+			trips, stopTimes, original.transitFrequencies(), fares, original.feedEndDate()
+		);
+		var command = routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3);
+
+		var first = new RouteV2Planner(legacySearchMustNotBeCalled(), () -> original).search(command);
+		var second = new RouteV2Planner(legacySearchMustNotBeCalled(), reversed).search(command);
+
+		assertThat(second.itineraries())
+			.extracting("routeSearchId", "objectiveTags", "officialFare")
+			.containsExactlyElementsOf(first.itineraries().stream()
+				.map(result -> tuple(result.routeSearchId(), result.objectiveTags(), result.officialFare()))
+				.toList());
+	}
+
+	@Test
+	@DisplayName("signed RC가 소비할 deterministic planner canary JSON을 생성할 수 있다")
+	void routeV2PlannerProducesSyntheticCanaryResult() throws Exception {
+		var delegate = objectiveRouteTimetablePort();
+		byte[] canonicalPack = canonicalPackBytes();
+		byte[] canonicalSqlite;
+		try (var input = new GZIPInputStream(new ByteArrayInputStream(canonicalPack))) {
+			canonicalSqlite = input.readAllBytes();
+		}
+		var identity = new LoadRouteTimetablePort.PlannerIdentity(
+			"a".repeat(64), sha256(canonicalPack), sha256(canonicalSqlite), "sha256:" + "d".repeat(64),
+			"d".repeat(64), "e".repeat(64), "f".repeat(64)
+		);
+		var port = new LoadRouteTimetablePort() {
+			@Override
+			public RouteTimetable loadRouteTimetable() {
+				return delegate.loadRouteTimetable();
+			}
+
+			@Override
+			public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
+				return new RouteTimetableSnapshot("rc-snapshot", "rc-timetable-artifact", identity, loadRouteTimetable());
+			}
+
+			@Override
+			public Optional<String> activeItxTimetableArtifactId() {
+				return Optional.of("rc-timetable-artifact");
+			}
+		};
+		var plan = new RouteV2Planner(legacySearchMustNotBeCalled(), port)
+			.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
+		assertThat(plan.plannerIdentity()).isEqualTo(identity);
+		assertThat(plan.itineraries()).hasSize(2).allSatisfy(itinerary -> {
+			assertThat(itinerary.officialFare()).isNotNull();
+			assertThat(itinerary.objectiveTags()).isNotEmpty();
+		});
+
+		String output = System.getenv("EASYSUBWAY_PLANNER_SUCCESS_OUTPUT");
+		if (output != null && !output.isBlank()) {
+			Path outputPath = Path.of(output);
+			Files.createDirectories(outputPath.getParent());
+			new ObjectMapper().findAndRegisterModules().writerWithDefaultPrettyPrinter().writeValue(
+				outputPath.toFile(),
+				Map.of(
+					"schemaVersion", 1,
+					"artifactKind", "route-v2-planner-canary-result",
+					"sourceIssue", 2098,
+					"transportScope", "SUBWAY_AND_ITX_CHEONGCHUN",
+					"objective", "FASTEST",
+					"plan", plan
+				)
+			);
+		}
+	}
+
+	private static byte[] canonicalPackBytes() throws Exception {
+		String packPath = System.getenv("EASYSUBWAY_CANONICAL_PACK_PATH");
+		if (packPath != null && !packPath.isBlank()) {
+			return Files.readAllBytes(Path.of(packPath));
+		}
+		var output = new ByteArrayOutputStream();
+		try (var gzip = new GZIPOutputStream(output)) {
+			gzip.write("route-v2-planner-canary-fixture".getBytes(StandardCharsets.UTF_8));
+		}
+		return output.toByteArray();
+	}
+
+	private static String sha256(byte[] value) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+	}
+
+	@Test
+	@DisplayName("V2 planner는 두 objective가 같은 경로면 한 itinerary에 dual tag를 부여한다")
+	void routeV2PlannerDeduplicatesSameObjectiveRepresentative() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), routeTimetablePort());
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.itineraries()).singleElement().satisfies(itinerary ->
+			assertThat(itinerary.objectiveTags()).containsExactly("FASTEST", "FEWEST_TRANSFERS"));
+	}
+
+	@Test
 	@DisplayName("V2 planner는 A→B→A 전환에서도 같은 트랜잭션에서 읽은 snapshot identity를 사용한다")
 	void routeV2PlannerLoadsSnapshotIdentityAndRowsAtomicallyAcrossAbaSwitch() {
 		var port = new AbaSwitchingRouteTimetablePort();
@@ -1247,7 +1411,7 @@ class RouteSearchServiceTest {
 
 		var first = firstPlan.itineraries().getFirst();
 		var second = secondPlan.itineraries().getFirst();
-		assertThat(first.routeSearchId()).isNotEqualTo(second.routeSearchId());
+		assertThat(first.routeSearchId()).isEqualTo(second.routeSearchId());
 		assertThat(first.originStationName()).isEqualTo("출발역");
 		assertThat(first.destinationStationName()).isEqualTo("도착역");
 		assertThat(first.createdAt()).isEqualTo(LocalDate.of(2026, 6, 13).atTime(18, 0));
@@ -1496,8 +1660,40 @@ class RouteSearchServiceTest {
 		assertThat(plan.itineraries().getFirst().estimatedDurationSeconds()).isEqualTo(1920);
 		assertThat(plan.itineraries().getFirst().steps())
 			.filteredOn(step -> "ride".equals(step.stepType()))
-			.extracting("lineName", "fromStationId", "toStationId", "estimatedMinutes")
-			.containsExactly(tuple("테스트 완행", "station-a", "station-b", 20));
+			.extracting("lineName", "fromStationId", "toStationId", "estimatedMinutes", "serviceClass", "servicePattern")
+			.containsExactly(tuple("테스트 완행", "station-a", "station-b", 20, "SUBWAY", "LOCAL"));
+	}
+
+	@Test
+	@DisplayName("V2 planner는 대기 포함 실제 도착이 빠르면 EXPRESS를 선택한다")
+	void routeV2PlannerSelectsExpressOnlyWhenActuallyFaster() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), entrySlackRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T08:55:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, false, 1, 3
+		));
+
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("tripId", "serviceClass", "servicePattern")
+			.containsExactly(tuple("express-0904", "SUBWAY", "EXPRESS"));
+	}
+
+	@Test
+	@DisplayName("V2 planner는 EXPRESS 통과역을 승하차 후보로 만들지 않는다")
+	void routeV2PlannerRejectsBoardingAtExpressPassThroughStation() {
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), expressSkipRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T08:55:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, false, 1, 3
+		));
+
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting("tripId", "servicePattern", "toStationId")
+			.containsExactly(tuple("local-0906", "LOCAL", "station-b"));
 	}
 
 	@Test
@@ -3034,6 +3230,35 @@ class RouteSearchServiceTest {
 		);
 	}
 
+	private static LoadRouteTimetablePort expressSkipRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-07-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"
+			)),
+			List.of(),
+			List.of(new LoadRouteTimetablePort.TransitRoute(
+				"route-line", "line-test", "T", "테스트 노선", "도착 방면", "Asia/Seoul"
+			)),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip(
+					"express-0904", "route-line", "weekday-2026", "도착", "0", "EXPRESS", 0
+				),
+				new LoadRouteTimetablePort.TransitTrip(
+					"local-0906", "route-line", "weekday-2026", "도착", "0", "LOCAL", 0
+				)
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("express-0904", 1, "station-a", "line-test", 32640, 32640, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("express-0904", 2, "station-c", "line-test", 33240, 33240, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("local-0906", 1, "station-a", "line-test", 32760, 32760, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("local-0906", 2, "station-b", "line-test", 33060, 33060, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("local-0906", 3, "station-c", "line-test", 33660, 33660, 0, 0)
+			),
+			List.of()
+		);
+	}
+
 	private static LoadRouteTimetablePort removedCalendarDateRouteTimetablePort() {
 		return () -> {
 			var timetable = routeTimetable(
@@ -3168,6 +3393,81 @@ class RouteSearchServiceTest {
 
 	private static LoadRouteTimetablePort transferRouteTimetablePort() {
 		return transferRouteTimetablePort(33780);
+	}
+
+	private static LoadRouteTimetablePort objectiveRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-07-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul"
+			)),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.TransitRoute("route-direct", "line-direct", "D", "직통", "도착 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("route-a", "line-a", "A", "A", "환승 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("route-b", "line-b", "B", "B", "도착 방면", "Asia/Seoul")
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip("trip-direct", "route-direct", "weekday-2026", "도착", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("trip-a", "route-a", "weekday-2026", "환승", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-b", "route-b", "weekday-2026", "도착", "0",
+					"ITX_CHEONGCHUN", "EXPRESS", "2001", 0
+				)
+			),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 1, "station-a", "line-direct", 32820, 32820, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 2, "station-b", "line-direct", 34200, 34200, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-a", 1, "station-a", "line-a", 32820, 32820, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-a", 2, "station-transfer", "line-a", 33000, 33000, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-b", 1, "station-transfer", "line-b", 33600, 33600, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-b", 2, "station-b", "line-b", 33900, 33900, 0, 0)
+			),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.OfficialFare("trip-direct", "station-a", "station-b", 2_000, "KRW", "official", "snapshot"),
+				new LoadRouteTimetablePort.OfficialFare("trip-a", "station-a", "station-transfer", 1_000, "KRW", "official", "snapshot"),
+				new LoadRouteTimetablePort.OfficialFare("trip-b", "station-transfer", "station-b", 1_500, "KRW", "official", "snapshot")
+			),
+			null
+		);
+	}
+
+	private static LoadRouteTimetablePort objectiveOverflowRouteTimetablePort() {
+		List<LoadRouteTimetablePort.TransitRoute> routes = new ArrayList<>();
+		List<LoadRouteTimetablePort.TransitTrip> trips = new ArrayList<>();
+		List<LoadRouteTimetablePort.TransitStopTime> stopTimes = new ArrayList<>();
+		List<LoadRouteTimetablePort.OfficialFare> fares = new ArrayList<>();
+		int[] arrivals = {40_000, 39_000, 38_000, 37_000};
+		for (int transfers = 0; transfers <= 3; transfers += 1) {
+			int legs = transfers + 1;
+			int departure = 33_000;
+			for (int leg = 0; leg < legs; leg += 1) {
+				String id = transfers + "-" + leg;
+				String routeId = "route-" + id;
+				String tripId = "trip-" + id;
+				String from = leg == 0 ? "station-a" : "station-" + transfers + "-" + leg;
+				String to = leg == legs - 1 ? "station-b" : "station-" + transfers + "-" + (leg + 1);
+				int arrival = leg == legs - 1 ? arrivals[transfers] : departure + 60;
+				routes.add(new LoadRouteTimetablePort.TransitRoute(
+					routeId, "line-" + id, id, id, "도착 방면", "Asia/Seoul"));
+				trips.add(new LoadRouteTimetablePort.TransitTrip(
+					tripId, routeId, "weekday-2026", "도착", "0", "SUBWAY", "LOCAL", null, 0));
+				stopTimes.add(new LoadRouteTimetablePort.TransitStopTime(
+					tripId, 1, from, "line-" + id, departure, departure, 0, 0));
+				stopTimes.add(new LoadRouteTimetablePort.TransitStopTime(
+					tripId, 2, to, "line-" + id, arrival, arrival, 0, 0));
+				fares.add(new LoadRouteTimetablePort.OfficialFare(
+					tripId, from, to, 1_000, "KRW", "official", "snapshot"));
+				departure = arrival + 600;
+			}
+		}
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-07-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(), routes, trips, stopTimes, List.of(), fares, null
+		);
 	}
 
 	private static LoadRouteTimetablePort overtakenNextServiceRouteTimetablePort() {

@@ -47,6 +47,7 @@ class TimetableSeedLoaderTest {
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V61__timetable_snapshot_state.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V62__route_v2_planner_identity.sql'");
 	}
 
 	@Test
@@ -226,6 +227,8 @@ class TimetableSeedLoaderTest {
 		assertThat(jdbc.queryForObject(
 			"SELECT COUNT(*) FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'", Integer.class))
 			.isEqualTo(140);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trip_official_fares", Integer.class))
+			.isEqualTo(3686);
 	}
 
 	@Test
@@ -283,6 +286,7 @@ class TimetableSeedLoaderTest {
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('itx-trip-%1$s',1,'station-itx-origin-%1$s','line-54a7b980b7c3',0,0,200,200);
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('itx-trip-%1$s',2,'station-itx-pass-%1$s','line-54a7b980b7c3',1,1,250,250);
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('%6$s',3,'station-itx-terminal-%1$s','line-54a7b980b7c3',0,0,300,300);
+			INSERT INTO transit_trip_official_fares (trip_id, origin_station_id, destination_station_id, adult_fare_won, currency, source_id, source_snapshot_id) VALUES ('itx-trip-%1$s','station-itx-origin-%1$s','station-itx-terminal-%1$s',9800,'KRW','official','snapshot-%1$s');
 			""".formatted(
 			suffix,
 			sourceHash,
@@ -330,6 +334,7 @@ class TimetableSeedLoaderTest {
 		counts.put("subwayStopTimes", 1);
 		counts.put("itxTrips", 1);
 		counts.put("itxStopTimes", 3);
+		counts.put("officialFares", 1);
 		counts.put("routeServiceEvidence", 1);
 		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
 		return new SnapshotResource(namedResource(gzipBytes, "snapshot.sql.gz"), jsonResource(evidence, "evidence.json"));
@@ -430,6 +435,9 @@ class TimetableSeedLoaderTest {
 			Integer.class,
 			"itx-trip-" + suffix
 		)).containsExactly(0, 1, 0);
+		assertThat(jdbc.queryForList(
+			"SELECT source_snapshot_id FROM transit_trip_official_fares", String.class))
+			.containsExactly("snapshot-" + suffix);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isOne();
 	}
 

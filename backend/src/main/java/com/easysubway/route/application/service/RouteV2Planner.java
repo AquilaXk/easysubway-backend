@@ -10,6 +10,8 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRoute
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2PlanSource;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteObjective;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteTransportScope;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.domain.ConstraintMode;
@@ -103,6 +105,9 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	@Override
 	public RouteV2Plan search(SearchRouteV2Command command) {
 		try {
+			if (command.transportScope() != RouteTransportScope.SUBWAY_AND_ITX_CHEONGCHUN) {
+				throw new InvalidRequestException("authenticated Route V2는 지하철·ITX-청춘 통합 검색만 지원합니다.");
+			}
 			TimetableSnapshot snapshot = timetableRequired
 				&& canUseTimetableRaptor(command)
 				&& routeTimetablePort.hasRouteTimetable()
@@ -126,7 +131,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 					RANKING_CANDIDATE_LIMIT,
 					command.alternativeCount(),
 					timetableItineraries,
-					candidates -> rankTimetableItineraries(candidates, command.alternativeCount())
+					List::copyOf
 				);
 				timetableItineraries = stabilizedCandidates.itineraries();
 				if (stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN) {
@@ -135,6 +140,11 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 						timetableItineraries
 					);
 				}
+				timetableItineraries = rankTimetableItineraries(
+					timetableItineraries,
+					command.objective(),
+					command.alternativeCount()
+				);
 				return new RouteV2Plan(
 					timetableItineraries,
 					statusesOf(timetableItineraries, command.useRealtime()),
@@ -145,6 +155,9 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 						: RouteV2PlanSource.LEGACY_GRAPH,
 					stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN
 						? snapshot.timetableArtifactId()
+						: null,
+					stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN
+						? snapshot.plannerIdentity()
 						: null
 				);
 			}
@@ -173,7 +186,8 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			PLANNER_ADR,
 			nextServiceTime,
 			RouteV2PlanSource.TIMETABLE_RAPTOR,
-			snapshot.timetableArtifactId()
+			snapshot.timetableArtifactId(),
+			snapshot.plannerIdentity()
 		);
 	}
 
@@ -188,7 +202,8 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			PLANNER_ADR,
 			null,
 			RouteV2PlanSource.TIMETABLE_RAPTOR,
-			snapshot.timetableArtifactId()
+			snapshot.timetableArtifactId(),
+			snapshot.plannerIdentity()
 		);
 	}
 
@@ -230,7 +245,8 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 					loaded.cacheKey(),
 					timetable,
 					coveredStationIds,
-					loaded.timetableArtifactId()
+					loaded.timetableArtifactId(),
+					loaded.plannerIdentity()
 				);
 				return cachedTimetableSnapshot;
 			}
@@ -261,7 +277,8 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		String cacheKey,
 		RouteTimetable timetable,
 		java.util.Set<String> coveredStationIds,
-		String timetableArtifactId
+		String timetableArtifactId,
+		LoadRouteTimetablePort.PlannerIdentity plannerIdentity
 	) {
 	}
 
@@ -275,17 +292,61 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			command.constraintMode(),
 			command.useRealtime(),
 			command.maxTransfers(),
-			RANKING_CANDIDATE_LIMIT
+			RANKING_CANDIDATE_LIMIT,
+			command.transportScope(),
+			command.objective()
 		);
 	}
 
-	private List<RouteSearchResult> rankTimetableItineraries(List<RouteSearchResult> itineraries, int alternativeCount) {
-		return itineraries.stream()
-			.sorted(Comparator.comparingInt(RouteSearchResult::estimatedDurationSeconds)
-				.thenComparingInt(RouteSearchResult::transferCount)
-				.thenComparingInt(this::accessibilityRiskScore))
-			.limit(alternativeCount)
-			.toList();
+	private List<RouteSearchResult> rankTimetableItineraries(
+		List<RouteSearchResult> itineraries,
+		RouteObjective requestedObjective,
+		int alternativeCount
+	) {
+		if (itineraries.isEmpty()) {
+			return List.of();
+		}
+		Comparator<RouteSearchResult> fastest = Comparator
+			.comparingLong(this::plannedArrivalEpochSecond)
+			.thenComparingInt(RouteSearchResult::transferCount)
+			.thenComparingInt(this::accessibilityRiskScore)
+			.thenComparing(RouteSearchResult::routeSearchId);
+		Comparator<RouteSearchResult> fewestTransfers = Comparator
+			.comparingInt(RouteSearchResult::transferCount)
+			.thenComparingLong(this::plannedArrivalEpochSecond)
+			.thenComparingInt(this::accessibilityRiskScore)
+			.thenComparing(RouteSearchResult::routeSearchId);
+		RouteSearchResult fastestItinerary = itineraries.stream().min(fastest).orElseThrow();
+		RouteSearchResult fewestTransferItinerary = itineraries.stream().min(fewestTransfers).orElseThrow();
+		if (fastestItinerary.routeSearchId().equals(fewestTransferItinerary.routeSearchId())) {
+			return List.of(withObjectiveTags(fastestItinerary, List.of("FASTEST", "FEWEST_TRANSFERS")));
+		}
+		RouteSearchResult fastestResult = withObjectiveTags(fastestItinerary, List.of("FASTEST"));
+		RouteSearchResult fewestResult = withObjectiveTags(fewestTransferItinerary, List.of("FEWEST_TRANSFERS"));
+		List<RouteSearchResult> representatives = requestedObjective == RouteObjective.FASTEST
+			? List.of(fastestResult, fewestResult)
+			: List.of(fewestResult, fastestResult);
+		return representatives.stream().limit(alternativeCount).toList();
+	}
+
+	private long plannedArrivalEpochSecond(RouteSearchResult itinerary) {
+		return itinerary.steps().stream()
+			.map(RouteStep::plannedArrivalTime)
+			.filter(value -> value != null && !value.isBlank())
+			.reduce((left, right) -> right)
+			.map(OffsetDateTime::parse)
+			.map(value -> value.toInstant().getEpochSecond())
+			.orElseGet(() -> itinerary.createdAt().atOffset(java.time.ZoneOffset.ofHours(9))
+				.plusSeconds(itinerary.estimatedDurationSeconds()).toInstant().getEpochSecond());
+	}
+
+	private RouteSearchResult withObjectiveTags(RouteSearchResult result, List<String> objectiveTags) {
+		return new RouteSearchResult(
+			result.routeSearchId(), result.originStationId(), result.originStationName(),
+			result.destinationStationId(), result.destinationStationName(), result.mobilityType(),
+			result.status(), result.lineId(), result.lineName(), result.score(), result.steps(),
+			result.warnings(), result.blockedReasons(), result.createdAt(), objectiveTags, result.officialFare()
+		);
 	}
 
 	private int accessibilityRiskScore(RouteSearchResult itinerary) {

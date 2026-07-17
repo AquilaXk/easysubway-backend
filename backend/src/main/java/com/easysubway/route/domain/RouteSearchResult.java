@@ -20,8 +20,50 @@ public record RouteSearchResult(
 	List<RouteStep> steps,
 	List<RouteWarning> warnings,
 	List<String> blockedReasons,
-	LocalDateTime createdAt
+	LocalDateTime createdAt,
+	List<String> objectiveTags,
+	OfficialFare officialFare
 ) {
+	public RouteSearchResult(
+		String routeSearchId,
+		String originStationId,
+		String originStationName,
+		String destinationStationId,
+		String destinationStationName,
+		MobilityType mobilityType,
+		RouteSearchStatus status,
+		String lineId,
+		String lineName,
+		int score,
+		List<RouteStep> steps,
+		List<RouteWarning> warnings,
+		List<String> blockedReasons,
+		LocalDateTime createdAt
+	) {
+		this(routeSearchId, originStationId, originStationName, destinationStationId, destinationStationName,
+			mobilityType, status, lineId, lineName, score, steps, warnings, blockedReasons, createdAt,
+			List.of(), null);
+	}
+
+	public RouteSearchResult {
+		objectiveTags = objectiveTags == null ? List.of() : List.copyOf(objectiveTags);
+	}
+
+	public record OfficialFare(
+		int adultFareWon,
+		String currency,
+		String policy,
+		List<String> sourceIds,
+		List<String> sourceSnapshotIds
+	) {
+		public OfficialFare {
+			if (adultFareWon <= 0 || !"KRW".equals(currency) || !"SUM_OF_OFFICIAL_RIDE_OD_FARES".equals(policy)) {
+				throw new IllegalArgumentException("route official fare is invalid");
+			}
+			sourceIds = List.copyOf(sourceIds);
+			sourceSnapshotIds = List.copyOf(sourceSnapshotIds);
+		}
+	}
 
 	@JsonProperty("recommendationReasons")
 	public List<String> recommendationReasons() {

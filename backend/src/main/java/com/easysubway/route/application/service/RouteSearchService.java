@@ -311,7 +311,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 			steps,
 			result.warnings(),
 			result.blockedReasons(),
-			result.createdAt()
+			result.createdAt(),
+			result.objectiveTags(),
+			result.officialFare()
 		);
 	}
 
@@ -319,7 +321,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		Station origin = loadActiveStation(routeSearchResult.originStationId());
 		Station destination = loadActiveStation(routeSearchResult.destinationStationId());
 		return new RouteSearchResult(
-			newRouteSearchId(),
+			routeSearchResult.routeSearchId(),
 			routeSearchResult.originStationId(),
 			origin.nameKo(),
 			routeSearchResult.destinationStationId(),
@@ -332,7 +334,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 			routeSearchResult.steps(),
 			routeSearchResult.warnings(),
 			routeSearchResult.blockedReasons(),
-			LocalDateTime.now(clock)
+			LocalDateTime.now(clock),
+			routeSearchResult.objectiveTags(),
+			routeSearchResult.officialFare()
 		);
 	}
 
@@ -1375,7 +1379,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 			overlay.providerSnapshotId(),
 			formatInstant(overlay.providerObservedAt()),
 			formatInstant(overlay.gatewayReceivedAt()),
-			formatInstant(Instant.now(clock))
+			formatInstant(Instant.now(clock)),
+			step.walkSeconds(),
+			step.tripId(),
+			step.trainNo(),
+			step.serviceClass(),
+			step.servicePattern(),
+			step.plannedDepartureTime(),
+			step.plannedArrivalTime()
 		);
 	}
 

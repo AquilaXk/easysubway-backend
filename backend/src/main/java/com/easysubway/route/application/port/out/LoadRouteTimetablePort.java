@@ -32,7 +32,26 @@ public interface LoadRouteTimetablePort {
 		return Optional.empty();
 	}
 
-	record RouteTimetableSnapshot(String cacheKey, String timetableArtifactId, RouteTimetable timetable) {
+	record RouteTimetableSnapshot(
+		String cacheKey,
+		String timetableArtifactId,
+		PlannerIdentity plannerIdentity,
+		RouteTimetable timetable
+	) {
+		public RouteTimetableSnapshot(String cacheKey, String timetableArtifactId, RouteTimetable timetable) {
+			this(cacheKey, timetableArtifactId, null, timetable);
+		}
+	}
+
+	record PlannerIdentity(
+		String timetableSnapshotSha256,
+		String canonicalPackSha256,
+		String canonicalPackSqliteSha256,
+		String canonicalStationVersion,
+		String canonicalStationSetSha256,
+		String sourceLineageSha256,
+		String evidenceHash
+	) {
 	}
 
 	record RouteTimetable(
@@ -42,6 +61,7 @@ public interface LoadRouteTimetablePort {
 		List<TransitTrip> transitTrips,
 		List<TransitStopTime> transitStopTimes,
 		List<TransitFrequency> transitFrequencies,
+		List<OfficialFare> officialFares,
 		// GTFS feed_info.feed_end_date (개정 유효 종료일). null이면 개정 유효기간 미선언이므로 STALE 강등하지 않는다.
 		LocalDate feedEndDate
 	) {
@@ -51,9 +71,23 @@ public interface LoadRouteTimetablePort {
 			List<TransitRoute> transitRoutes,
 			List<TransitTrip> transitTrips,
 			List<TransitStopTime> transitStopTimes,
+			List<TransitFrequency> transitFrequencies,
+			LocalDate feedEndDate
+		) {
+			this(serviceCalendars, serviceCalendarDates, transitRoutes, transitTrips, transitStopTimes,
+				transitFrequencies, List.of(), feedEndDate);
+		}
+
+		public RouteTimetable(
+			List<ServiceCalendar> serviceCalendars,
+			List<ServiceCalendarDate> serviceCalendarDates,
+			List<TransitRoute> transitRoutes,
+			List<TransitTrip> transitTrips,
+			List<TransitStopTime> transitStopTimes,
 			List<TransitFrequency> transitFrequencies
 		) {
-			this(serviceCalendars, serviceCalendarDates, transitRoutes, transitTrips, transitStopTimes, transitFrequencies, null);
+			this(serviceCalendars, serviceCalendarDates, transitRoutes, transitTrips, transitStopTimes,
+				transitFrequencies, List.of(), null);
 		}
 
 		public RouteTimetable {
@@ -63,10 +97,11 @@ public interface LoadRouteTimetablePort {
 			transitTrips = List.copyOf(transitTrips);
 			transitStopTimes = List.copyOf(transitStopTimes);
 			transitFrequencies = List.copyOf(transitFrequencies);
+			officialFares = List.copyOf(officialFares);
 		}
 
 		public static RouteTimetable empty() {
-			return new RouteTimetable(List.of(), List.of(), List.of(), List.of(), List.of(), List.of());
+			return new RouteTimetable(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null);
 		}
 	}
 
@@ -117,11 +152,52 @@ public interface LoadRouteTimetablePort {
 		String serviceId,
 		String tripHeadsign,
 		String directionId,
+		String serviceClass,
 		String servicePattern,
+		String trainNo,
 		int serviceDayStartSeconds
 	) {
+		public TransitTrip(
+			String id,
+			String routeId,
+			String serviceId,
+			String tripHeadsign,
+			String directionId,
+			String servicePattern,
+			int serviceDayStartSeconds
+		) {
+			this(id, routeId, serviceId, tripHeadsign, directionId, "SUBWAY", servicePattern, null,
+				serviceDayStartSeconds);
+		}
+
 		public TransitTrip {
+			if (!"SUBWAY".equals(serviceClass) && !"ITX_CHEONGCHUN".equals(serviceClass)) {
+				throw new IllegalArgumentException("transit_trips.service_class is invalid");
+			}
+			if (!"LOCAL".equals(servicePattern) && !"EXPRESS".equals(servicePattern)) {
+				throw new IllegalArgumentException("transit_trips.service_pattern is invalid");
+			}
+			if ("ITX_CHEONGCHUN".equals(serviceClass) && !"EXPRESS".equals(servicePattern)) {
+				throw new IllegalArgumentException("ITX_CHEONGCHUN must use EXPRESS service_pattern");
+			}
+			trainNo = trainNo == null || trainNo.isBlank() ? null : trainNo;
 			requireServiceDaySeconds(serviceDayStartSeconds, "transit_trips.service_day_start_seconds");
+		}
+	}
+
+	record OfficialFare(
+		String tripId,
+		String originStationId,
+		String destinationStationId,
+		int adultFareWon,
+		String currency,
+		String sourceId,
+		String sourceSnapshotId
+	) {
+		public OfficialFare {
+			if (adultFareWon <= 0 || !"KRW".equals(currency)) {
+				throw new IllegalArgumentException("official fare must be positive KRW");
+			}
 		}
 	}
 
