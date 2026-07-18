@@ -8,6 +8,7 @@ import com.easysubway.notice.domain.ServiceNotice;
 import jakarta.servlet.http.HttpServletRequest;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.core.Authentication;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -42,12 +43,13 @@ class ServiceNoticeAdminApiController {
 	}
 
 	@PostMapping("/admin/notices/{id}/unpublish")
+	@Transactional
 	ResponseEntity<ApiResponse<Void>> unpublish(
 		@PathVariable String id,
 		Authentication authentication,
 		HttpServletRequest httpRequest
 	) {
-		service.unpublish(id);
+		service.unpublish(id, authentication.getName());
 		auditWriter.noticeChange(
 			authentication, httpRequest, id, "UNPUBLISH_NOTICE",
 			AdminAuditOutcome.SUCCESS, "service notice unpublished");

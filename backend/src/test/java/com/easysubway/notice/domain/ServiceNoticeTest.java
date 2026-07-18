@@ -77,4 +77,57 @@ class ServiceNoticeTest {
 		);
 		assertThat(notice.scopeValue()).isNull();
 	}
+
+	@Test
+	@DisplayName("새로 만든 공지는 게시 중단 상태가 아니다")
+	void freshNoticeIsNotUnpublished() {
+		ServiceNotice notice = notice(PUBLISHED, EXPIRES);
+		assertThat(notice.isUnpublished()).isFalse();
+		assertThat(notice.unpublishedAt()).isNull();
+		assertThat(notice.unpublishedBy()).isNull();
+	}
+
+	@Test
+	@DisplayName("게시 중단은 상태만 남기고 원장 필드는 보존한다")
+	void unpublishRetainsOriginalFields() {
+		ServiceNotice notice = notice(PUBLISHED, null);
+		LocalDateTime at = LocalDateTime.parse("2026-07-06T13:00:00");
+
+		ServiceNotice unpublished = notice.unpublish(at, "operator-b");
+
+		assertThat(unpublished.isUnpublished()).isTrue();
+		assertThat(unpublished.unpublishedAt()).isEqualTo(at);
+		assertThat(unpublished.unpublishedBy()).isEqualTo("operator-b");
+		assertThat(unpublished.id()).isEqualTo(notice.id());
+		assertThat(unpublished.publishedBy()).isEqualTo(notice.publishedBy());
+		assertThat(unpublished.publishedAt()).isEqualTo(notice.publishedAt());
+	}
+
+	@Test
+	@DisplayName("게시 중단된 공지는 창(window) 안이라도 활성이 아니다")
+	void unpublishedNoticeIsNeverActive() {
+		ServiceNotice notice = notice(PUBLISHED, EXPIRES)
+			.unpublish(LocalDateTime.parse("2026-07-06T13:00:00"), "operator-b");
+		assertThat(notice.isActiveAt(LocalDateTime.parse("2026-07-06T14:00:00"))).isFalse();
+	}
+
+	@Test
+	@DisplayName("이미 게시 중단된 공지는 다시 게시 중단할 수 없다")
+	void doubleUnpublishRejected() {
+		ServiceNotice unpublished = notice(PUBLISHED, null)
+			.unpublish(LocalDateTime.parse("2026-07-06T13:00:00"), "operator-b");
+		assertThatThrownBy(() -> unpublished.unpublish(
+			LocalDateTime.parse("2026-07-06T14:00:00"), "operator-c"))
+			.isInstanceOf(IllegalStateException.class);
+	}
+
+	@Test
+	@DisplayName("unpublishedAt과 unpublishedBy는 함께 있거나 함께 없어야 한다")
+	void unpublishStateMustBeConsistent() {
+		assertThatThrownBy(() -> new ServiceNotice(
+			"n1", ServiceNoticeScope.ALL, null, "제목", "본문",
+			ServiceNoticeSeverity.INFO, PUBLISHED, null, "operator-a",
+			LocalDateTime.parse("2026-07-06T13:00:00"), null))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
 }

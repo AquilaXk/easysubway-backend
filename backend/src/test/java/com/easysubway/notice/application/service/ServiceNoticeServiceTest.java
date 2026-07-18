@@ -1,7 +1,10 @@
 package com.easysubway.notice.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.common.error.ConflictException;
+import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.notice.application.port.out.ServiceNoticeRepository;
 import com.easysubway.notice.domain.ServiceNotice;
 import com.easysubway.notice.domain.ServiceNoticeScope;
@@ -53,8 +56,16 @@ class ServiceNoticeServiceTest {
 		}
 
 		@Override
-		public void deleteById(String id) {
-			stored.removeIf(n -> n.id().equals(id));
+		public boolean unpublish(String id, LocalDateTime unpublishedAt, String unpublishedBy) {
+			ServiceNotice existing = stored.stream()
+				.filter(n -> n.id().equals(id))
+				.findFirst()
+				.orElse(null);
+			if (existing == null || existing.isUnpublished()) {
+				return false;
+			}
+			save(existing.unpublish(unpublishedAt, unpublishedBy));
+			return true;
 		}
 	}
 
@@ -95,8 +106,8 @@ class ServiceNoticeServiceTest {
 	}
 
 	@Test
-	@DisplayName("즉시 내리기는 해당 공지를 제거한다")
-	void unpublishRemovesNotice() {
+	@DisplayName("게시 중단은 row를 보존하고 활성 조회에서만 제외한다")
+	void unpublishKeepsRowButHidesFromActive() {
 		ServiceNotice published = service.publish(
 			new PublishNoticeCommand(
 				ServiceNoticeScope.ALL, null, "전체", "본문",
@@ -105,8 +116,52 @@ class ServiceNoticeServiceTest {
 			"operator-a"
 		);
 
-		service.unpublish(published.id());
+		service.unpublish(published.id(), "operator-b");
 
-		assertThat(repository.findById(published.id())).isEmpty();
+		ServiceNotice stored = repository.findById(published.id()).orElseThrow();
+		assertThat(stored.isUnpublished()).isTrue();
+		assertThat(stored.unpublishedBy()).isEqualTo("operator-b");
+		assertThat(stored.unpublishedAt()).isEqualTo(NOW);
+		assertThat(service.activeNotices()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("게시 중단된 공지도 최근 이력 조회에는 남는다")
+	void unpublishedNoticeStaysInHistory() {
+		ServiceNotice published = service.publish(
+			new PublishNoticeCommand(
+				ServiceNoticeScope.ALL, null, "전체", "본문",
+				ServiceNoticeSeverity.INFO, null
+			),
+			"operator-a"
+		);
+
+		service.unpublish(published.id(), "operator-b");
+
+		assertThat(repository.findRecent(50)).extracting(ServiceNotice::id)
+			.contains(published.id());
+	}
+
+	@Test
+	@DisplayName("없는 공지 게시 중단은 404(ResourceNotFoundException)")
+	void unpublishMissingNoticeNotFound() {
+		assertThatThrownBy(() -> service.unpublish("missing", "operator-a"))
+			.isInstanceOf(ResourceNotFoundException.class);
+	}
+
+	@Test
+	@DisplayName("두 번째 게시 중단은 409(ConflictException)")
+	void secondUnpublishConflicts() {
+		ServiceNotice published = service.publish(
+			new PublishNoticeCommand(
+				ServiceNoticeScope.ALL, null, "전체", "본문",
+				ServiceNoticeSeverity.INFO, null
+			),
+			"operator-a"
+		);
+		service.unpublish(published.id(), "operator-b");
+
+		assertThatThrownBy(() -> service.unpublish(published.id(), "operator-c"))
+			.isInstanceOf(ConflictException.class);
 	}
 }

@@ -96,8 +96,50 @@ class ServiceNoticeAdminPageControllerTest {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/admin/notices/page"));
 
-		assertThat(repository.findById(noticeId)).isEmpty();
+		var stored = repository.findById(noticeId).orElseThrow();
+		assertThat(stored.isUnpublished()).isTrue();
+		assertThat(repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC)))
+			.extracting(com.easysubway.notice.domain.ServiceNotice::id)
+			.doesNotContain(noticeId);
 		assertThat(auditRecorded("UNPUBLISH_NOTICE", noticeId)).isTrue();
+
+		String historyPage = mockMvc.perform(get("/admin/notices/page")
+				.with(operationsManager()))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+		assertThat(historyPage).contains("2호선 지연");
+	}
+
+	@Test
+	@DisplayName("두 번째 게시 중단은 409로 닫는다")
+	void secondUnpublishRejectedAsConflict() throws Exception {
+		mockMvc.perform(post("/admin/notices/page")
+				.with(csrf())
+				.with(commandToken())
+				.with(operationsManager())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("scope", "ALL")
+				.param("severity", "INFO")
+				.param("title", "전체 공지")
+				.param("body", "본문"))
+			.andExpect(status().is3xxRedirection());
+
+		String noticeId = repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC))
+			.getFirst().id();
+
+		mockMvc.perform(post("/admin/notices/{id}/unpublish/page", noticeId)
+				.with(csrf())
+				.with(commandToken())
+				.with(operationsManager())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED))
+			.andExpect(status().is3xxRedirection());
+
+		mockMvc.perform(post("/admin/notices/{id}/unpublish/page", noticeId)
+				.with(csrf())
+				.with(commandToken())
+				.with(operationsManager())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED))
+			.andExpect(status().isConflict());
 	}
 
 	@Test

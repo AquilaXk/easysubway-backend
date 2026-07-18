@@ -3,7 +3,6 @@ package com.easysubway.notice.adapter.in.web;
 import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.error.InvalidRequestException;
-import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.notice.application.port.out.ServiceNoticeRepository;
 import com.easysubway.notice.application.service.PublishNoticeCommand;
 import com.easysubway.notice.application.service.ServiceNoticeService;
@@ -76,10 +75,7 @@ class ServiceNoticeAdminPageController {
 		Authentication authentication,
 		HttpServletRequest request
 	) {
-		if (repository.findById(id).isEmpty()) {
-			throw new ResourceNotFoundException("운행 공지를 찾을 수 없습니다: " + id);
-		}
-		service.unpublish(id);
+		service.unpublish(id, authentication.getName());
 		auditWriter.noticeChange(
 			authentication, request, id, "UNPUBLISH_NOTICE",
 			AdminAuditOutcome.SUCCESS, "service notice unpublished");

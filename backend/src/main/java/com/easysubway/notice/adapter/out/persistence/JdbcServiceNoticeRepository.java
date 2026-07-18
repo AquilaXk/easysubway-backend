@@ -25,7 +25,9 @@ public class JdbcServiceNoticeRepository implements ServiceNoticeRepository {
 		ServiceNoticeSeverity.valueOf(rs.getString("severity")),
 		toLdt(rs.getTimestamp("published_at")),
 		toLdt(rs.getTimestamp("expires_at")),
-		rs.getString("published_by"));
+		rs.getString("published_by"),
+		toLdt(rs.getTimestamp("unpublished_at")),
+		rs.getString("unpublished_by"));
 
 	private final JdbcTemplate jdbcTemplate;
 
@@ -37,17 +39,21 @@ public class JdbcServiceNoticeRepository implements ServiceNoticeRepository {
 	public void save(ServiceNotice notice) {
 		int updated = jdbcTemplate.update(
 			"UPDATE service_notice SET scope=?, scope_value=?, title=?, body=?, severity=?,"
-				+ " published_at=?, expires_at=?, published_by=? WHERE id=?",
+				+ " published_at=?, expires_at=?, published_by=?, unpublished_at=?, unpublished_by=?"
+				+ " WHERE id=?",
 			notice.scope().name(), notice.scopeValue(), notice.title(), notice.body(),
 			notice.severity().name(), Timestamp.valueOf(notice.publishedAt()),
-			toTimestamp(notice.expiresAt()), notice.publishedBy(), notice.id());
+			toTimestamp(notice.expiresAt()), notice.publishedBy(),
+			toTimestamp(notice.unpublishedAt()), notice.unpublishedBy(), notice.id());
 		if (updated == 0) {
 			jdbcTemplate.update(
 				"INSERT INTO service_notice (id, scope, scope_value, title, body, severity,"
-					+ " published_at, expires_at, published_by) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)",
+					+ " published_at, expires_at, published_by, unpublished_at, unpublished_by)"
+					+ " VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)",
 				notice.id(), notice.scope().name(), notice.scopeValue(), notice.title(),
 				notice.body(), notice.severity().name(), Timestamp.valueOf(notice.publishedAt()),
-				toTimestamp(notice.expiresAt()), notice.publishedBy());
+				toTimestamp(notice.expiresAt()), notice.publishedBy(),
+				toTimestamp(notice.unpublishedAt()), notice.unpublishedBy());
 		}
 	}
 
@@ -65,7 +71,7 @@ public class JdbcServiceNoticeRepository implements ServiceNoticeRepository {
 	public List<ServiceNotice> findActiveAt(LocalDateTime now) {
 		Timestamp at = Timestamp.valueOf(now);
 		return jdbcTemplate.query(
-			"SELECT * FROM service_notice WHERE published_at <= ?"
+			"SELECT * FROM service_notice WHERE unpublished_at IS NULL AND published_at <= ?"
 				+ " AND (expires_at IS NULL OR expires_at > ?) ORDER BY published_at DESC",
 			ROW_MAPPER, at, at);
 	}
@@ -78,8 +84,12 @@ public class JdbcServiceNoticeRepository implements ServiceNoticeRepository {
 	}
 
 	@Override
-	public void deleteById(String id) {
-		jdbcTemplate.update("DELETE FROM service_notice WHERE id=?", id);
+	public boolean unpublish(String id, LocalDateTime unpublishedAt, String unpublishedBy) {
+		int updated = jdbcTemplate.update(
+			"UPDATE service_notice SET unpublished_at=?, unpublished_by=?"
+				+ " WHERE id=? AND unpublished_at IS NULL",
+			Timestamp.valueOf(unpublishedAt), unpublishedBy, id);
+		return updated == 1;
 	}
 
 	private static Timestamp toTimestamp(LocalDateTime value) {

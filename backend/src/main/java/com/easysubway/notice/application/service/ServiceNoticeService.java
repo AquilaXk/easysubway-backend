@@ -1,5 +1,7 @@
 package com.easysubway.notice.application.service;
 
+import com.easysubway.common.error.ConflictException;
+import com.easysubway.common.error.ResourceNotFoundException;
 import com.easysubway.notice.application.port.out.ServiceNoticeRepository;
 import com.easysubway.notice.domain.ServiceNotice;
 import com.easysubway.notice.domain.ServiceNoticeSeverity;
@@ -59,7 +61,18 @@ public class ServiceNoticeService {
 		return notice;
 	}
 
-	public void unpublish(String id) {
-		repository.deleteById(id);
+	/**
+	 * 공지를 게시 중단(soft-unpublish)한다. 원장 row는 보존하고 상태만 바꾼다.
+	 * 대상이 없으면 404, 이미 게시 중단됐거나 그 사이 다른 관리자가 먼저 중단했으면 409다.
+	 */
+	public void unpublish(String id, String unpublishedBy) {
+		ServiceNotice notice = repository.findById(id)
+			.orElseThrow(() -> new ResourceNotFoundException("운행 공지를 찾을 수 없습니다: " + id));
+		if (notice.isUnpublished()) {
+			throw new ConflictException("이미 게시 중단된 공지입니다: " + id);
+		}
+		if (!repository.unpublish(id, LocalDateTime.now(clock), unpublishedBy)) {
+			throw new ConflictException("이미 게시 중단된 공지입니다: " + id);
+		}
 	}
 }

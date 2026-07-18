@@ -76,10 +76,41 @@ class JdbcServiceNoticeRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("deleteById는 공지를 제거한다")
-	void deletes() {
+	@DisplayName("unpublish는 row를 보존하고 게시 중단 상태를 왕복한다")
+	void unpublishKeepsRowAndPersistsState() {
 		repository.save(notice("n3", ServiceNoticeSeverity.INFO, NOW.minusHours(1), null));
-		repository.deleteById("n3");
-		assertThat(repository.findById("n3")).isEmpty();
+
+		boolean flipped = repository.unpublish("n3", NOW, "operator-b");
+
+		assertThat(flipped).isTrue();
+		ServiceNotice stored = repository.findById("n3").orElseThrow();
+		assertThat(stored.isUnpublished()).isTrue();
+		assertThat(stored.unpublishedAt()).isEqualTo(NOW);
+		assertThat(stored.unpublishedBy()).isEqualTo("operator-b");
+	}
+
+	@Test
+	@DisplayName("게시 중단된 공지는 findActiveAt에서 빠지지만 findRecent에는 남는다")
+	void unpublishedExcludedFromActiveButKeptInRecent() {
+		repository.save(notice("n4", ServiceNoticeSeverity.INFO, NOW.minusHours(1), null));
+		repository.unpublish("n4", NOW, "operator-b");
+
+		assertThat(repository.findActiveAt(NOW)).extracting(ServiceNotice::id).doesNotContain("n4");
+		assertThat(repository.findRecent(50)).extracting(ServiceNotice::id).contains("n4");
+	}
+
+	@Test
+	@DisplayName("두 번째 unpublish는 바뀐 row가 없어 false를 준다")
+	void secondUnpublishReturnsFalse() {
+		repository.save(notice("n5", ServiceNoticeSeverity.INFO, NOW.minusHours(1), null));
+
+		assertThat(repository.unpublish("n5", NOW, "operator-b")).isTrue();
+		assertThat(repository.unpublish("n5", NOW.plusHours(1), "operator-c")).isFalse();
+	}
+
+	@Test
+	@DisplayName("없는 공지 unpublish는 false를 준다")
+	void unpublishMissingReturnsFalse() {
+		assertThat(repository.unpublish("missing", NOW, "operator-b")).isFalse();
 	}
 }

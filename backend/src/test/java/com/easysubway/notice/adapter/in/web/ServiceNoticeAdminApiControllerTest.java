@@ -1,6 +1,10 @@
 package com.easysubway.notice.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -8,6 +12,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
+import com.easysubway.admin.audit.application.service.AdminAuditWriter;
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.notice.application.port.out.ServiceNoticeRepository;
@@ -25,6 +30,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -43,10 +49,18 @@ class ServiceNoticeAdminApiControllerTest {
 	private JdbcTemplate jdbcTemplate;
 	@Autowired
 	private InMemoryAdminAuditEventRepository auditEventRepository;
+	@MockitoSpyBean
+	private AdminAuditWriter auditWriter;
 
 	@BeforeEach
 	void setUp() {
 		jdbcTemplate.update("DELETE FROM service_notice");
+	}
+
+	private void saveActiveNotice(String id) {
+		repository.save(new ServiceNotice(id, ServiceNoticeScope.ALL, null,
+			"전체 공지", "본문", ServiceNoticeSeverity.INFO,
+			LocalDateTime.now(ZoneOffset.UTC).minusHours(1), null, "operator-a"));
 	}
 
 	private boolean auditRecorded(String action, String targetId) {
@@ -80,19 +94,76 @@ class ServiceNoticeAdminApiControllerTest {
 	}
 
 	@Test
-	@DisplayName("즉시 내리기는 공지를 제거하고 audit에 기록한다")
-	void unpublishRemovesAndAudits() throws Exception {
-		repository.save(new ServiceNotice("n1", ServiceNoticeScope.ALL, null,
-			"전체 공지", "본문", ServiceNoticeSeverity.INFO,
-			LocalDateTime.now(java.time.ZoneOffset.UTC).minusHours(1), null, "operator-a"));
+	@DisplayName("게시 중단은 row를 보존하고 활성에서 제외하며 audit에 기록한다")
+	void unpublishSoftUnpublishesAndAudits() throws Exception {
+		saveActiveNotice("n1");
 
 		mockMvc.perform(post("/admin/notices/n1/unpublish")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf()))
 			.andExpect(status().isOk());
 
-		assertThat(repository.findById("n1")).isEmpty();
+		ServiceNotice stored = repository.findById("n1").orElseThrow();
+		assertThat(stored.isUnpublished()).isTrue();
+		assertThat(stored.unpublishedBy()).isEqualTo("admin-user");
+		assertThat(repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC)))
+			.extracting(ServiceNotice::id).doesNotContain("n1");
 		assertThat(auditRecorded("UNPUBLISH_NOTICE", "n1")).isTrue();
+	}
+
+	@Test
+	@DisplayName("없는 공지 게시 중단은 404다")
+	void unpublishMissingNoticeNotFound() throws Exception {
+		mockMvc.perform(post("/admin/notices/missing/unpublish")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf()))
+			.andExpect(status().isNotFound());
+
+		assertThat(auditRecorded("UNPUBLISH_NOTICE", "missing")).isFalse();
+	}
+
+	@Test
+	@DisplayName("두 번째 게시 중단은 409이고 audit을 남기지 않는다")
+	void secondUnpublishConflicts() throws Exception {
+		saveActiveNotice("n1");
+
+		mockMvc.perform(post("/admin/notices/n1/unpublish")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf()))
+			.andExpect(status().isOk());
+
+		mockMvc.perform(post("/admin/notices/n1/unpublish")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf()))
+			.andExpect(status().isConflict());
+
+		long unpublishAudits = auditEventRepository
+			.findRecent(AdminAuditEventType.ADMIN_ACTION, 100).stream()
+			.filter(event -> "SERVICE_NOTICE".equals(event.targetType())
+				&& "UNPUBLISH_NOTICE".equals(event.action())
+				&& "n1".equals(event.targetId()))
+			.count();
+		assertThat(unpublishAudits).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("audit append가 실패하면 게시 중단 상태도 함께 rollback된다")
+	void auditFailureRollsBackUnpublish() {
+		saveActiveNotice("n1");
+		doThrow(new RuntimeException("audit down"))
+			.when(auditWriter)
+			.noticeChange(any(), any(), eq("n1"), eq("UNPUBLISH_NOTICE"), any(), any());
+
+		assertThatThrownBy(() -> mockMvc.perform(post("/admin/notices/n1/unpublish")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf()))
+			.andReturn())
+			.hasRootCauseMessage("audit down");
+
+		ServiceNotice stored = repository.findById("n1").orElseThrow();
+		assertThat(stored.isUnpublished()).isFalse();
+		assertThat(repository.findActiveAt(LocalDateTime.now(ZoneOffset.UTC)))
+			.extracting(ServiceNotice::id).contains("n1");
 	}
 
 	@Test
