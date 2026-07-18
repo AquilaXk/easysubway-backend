@@ -4,6 +4,7 @@ import com.easysubway.route.application.port.out.PlayIntegrityDecoder;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Clock;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
 import java.util.List;
@@ -21,6 +22,16 @@ final class CapacityEvidencePlayIntegrityDecoder implements PlayIntegrityDecoder
 	private static final String PACKAGE_NAME = "com.easysubway.app";
 	private static final Base64.Encoder BASE64_URL = Base64.getUrlEncoder().withoutPadding();
 	private static final Base64.Decoder BASE64_URL_DECODER = Base64.getUrlDecoder();
+	// A genuine Play Integrity verdict's timestamp always precedes the caller's own
+	// "now" snapshot (Google verifies the token before it ever reaches us). This
+	// synthetic decoder must preserve that invariant: RouteV2SessionService.issue()
+	// captures its own `now` BEFORE calling decoder.decode(), so if decode() stamps
+	// the verdict with the current instant, that timestamp is always strictly AFTER
+	// the caller's `now` (real time only moves forward) and
+	// validateVerdict()'s `verdict.requestTimestamp().isAfter(now)` freshness check
+	// rejects every single session — 100% reproducible, unrelated to attestation
+	// crypto. Backdating by a small safety margin restores the natural ordering.
+	static final Duration TIMESTAMP_SAFETY_MARGIN = Duration.ofMillis(100);
 
 	private final byte[] attestationKey;
 	private final String certificateDigest;
@@ -54,7 +65,7 @@ final class CapacityEvidencePlayIntegrityDecoder implements PlayIntegrityDecoder
 			return new PlayIntegrityVerdict(
 				PACKAGE_NAME,
 				requestHash(parts[0]),
-				clock.instant(),
+				clock.instant().minus(TIMESTAMP_SAFETY_MARGIN),
 				PACKAGE_NAME,
 				"PLAY_RECOGNIZED",
 				List.of(certificateDigest),
