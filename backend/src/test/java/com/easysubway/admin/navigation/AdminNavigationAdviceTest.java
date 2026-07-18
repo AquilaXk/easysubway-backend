@@ -3,6 +3,11 @@ package com.easysubway.admin.navigation;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.util.Arrays;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
+import java.util.List;
+import java.util.Map;
+import java.util.stream.Collectors;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
@@ -151,5 +156,85 @@ class AdminNavigationAdviceTest {
 		// id와 path는 surface 정본이므로 중복 없이 유일해야 한다.
 		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::id).distinct().count()).isEqualTo(29);
 		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::path).distinct().count()).isEqualTo(29);
+	}
+
+	// #2277 V6-05: 7개 workspace와 §7 workspace→program 매핑을 source assertion으로 문자 그대로 고정한다.
+	// 29개 program을 정확히 한 workspace에 배정하며 중복·누락은 grouping 결과가 기대 map과 달라 실패한다.
+	// workspace 내부 program 순서(§7 표 나열 순 = AdminProgram 선언 순)도 List.equals로 함께 고정한다.
+	@Test
+	@DisplayName("AdminWorkspace는 7개 업무 영역과 §7 program 매핑을 중복·누락 없이 문자 그대로 고정한다")
+	void adminWorkspaceMappingPinsSectionSevenContract() {
+		assertThat(AdminWorkspace.values()).hasSize(7);
+		for (AdminWorkspace workspace : AdminWorkspace.values()) {
+			assertThat(workspace.id()).as("%s id", workspace.name()).isNotBlank();
+			assertThat(workspace.displayName()).as("%s displayName", workspace.name()).isNotBlank();
+		}
+
+		// §7 표시명(문자 그대로).
+		assertThat(AdminWorkspace.OVERVIEW.displayName()).isEqualTo("개요");
+		assertThat(AdminWorkspace.ACCESSIBILITY_DATA.displayName()).isEqualTo("역·접근성 데이터");
+		assertThat(AdminWorkspace.OPERATIONS.displayName()).isEqualTo("운영");
+		assertThat(AdminWorkspace.COMMUNICATIONS.displayName()).isEqualTo("커뮤니케이션");
+		assertThat(AdminWorkspace.ANALYTICS.displayName()).isEqualTo("분석");
+		assertThat(AdminWorkspace.DATAPACK.displayName()).isEqualTo("데이터팩");
+		assertThat(AdminWorkspace.SYSTEM_AUDIT.displayName()).isEqualTo("시스템·감사");
+
+		// §7 workspace → 포함 program(문자 그대로, 순서까지).
+		Map<AdminWorkspace, List<AdminProgram>> expected = new LinkedHashMap<>();
+		expected.put(AdminWorkspace.OVERVIEW, List.of(AdminProgram.DASHBOARD));
+		expected.put(AdminWorkspace.ACCESSIBILITY_DATA, List.of(
+			AdminProgram.STATIONS, AdminProgram.FACILITIES, AdminProgram.LAYOUT_EDITOR,
+			AdminProgram.REPORTS, AdminProgram.QUALITY, AdminProgram.FIELD));
+		expected.put(AdminWorkspace.OPERATIONS, List.of(
+			AdminProgram.COLLECTIONS, AdminProgram.BATCHES, AdminProgram.INCIDENTS));
+		expected.put(AdminWorkspace.COMMUNICATIONS, List.of(
+			AdminProgram.SERVICE_NOTICES, AdminProgram.ADS, AdminProgram.PUSH));
+		expected.put(AdminWorkspace.ANALYTICS, List.of(
+			AdminProgram.ROUTE_SEARCHES, AdminProgram.ROUTE_FEEDBACK, AdminProgram.USAGE));
+		expected.put(AdminWorkspace.DATAPACK, List.of(
+			AdminProgram.DATAPACK_PIPELINE, AdminProgram.DATAPACK_SOURCE_SNAPSHOTS,
+			AdminProgram.DATAPACK_ALIAS_QUARANTINE, AdminProgram.DATAPACK_FACILITY_EVIDENCE,
+			AdminProgram.DATAPACK_ROUTE_GATES, AdminProgram.DATAPACK_MANUAL_OVERRIDES,
+			AdminProgram.DATAPACK_CANDIDATES, AdminProgram.DATAPACK_RELEASE_CHANNELS,
+			AdminProgram.DATAPACK_RELEASE_REQUESTS));
+		expected.put(AdminWorkspace.SYSTEM_AUDIT, List.of(
+			AdminProgram.CODES, AdminProgram.SYSTEM, AdminProgram.AUDITS, AdminProgram.PRIVACY_AUDITS));
+
+		Map<AdminWorkspace, List<AdminProgram>> actual = Arrays.stream(AdminProgram.values())
+			.collect(Collectors.groupingBy(
+				AdminProgram::workspace,
+				() -> new EnumMap<>(AdminWorkspace.class),
+				Collectors.toList()));
+
+		assertThat(actual).isEqualTo(expected);
+		// 29개 program이 정확히 한 workspace에 배정된다(중복·누락 0).
+		assertThat(actual.values().stream().mapToInt(List::size).sum()).isEqualTo(29);
+		assertThat(actual.keySet()).containsExactlyInAnyOrder(AdminWorkspace.values());
+		for (AdminProgram program : AdminProgram.values()) {
+			assertThat(program.workspace()).as("%s workspace", program.name()).isNotNull();
+		}
+	}
+
+	// #2277 V6-05: shell IA. permission 필터(visibleTo) 뒤 program이 0개인 workspace는 렌더 목록에서
+	// 제외하고, 남은 workspace는 AdminWorkspace enum 선언 순서로 정렬한다. admin.view만 가진 관리자는
+	// OVERVIEW·ACCESSIBILITY_DATA·ANALYTICS 3개만 보고 나머지 4개는 program이 없어 제외된다.
+	@Test
+	@DisplayName("adminWorkspaces는 program이 0개인 workspace를 제외하고 enum 순서로 렌더한다")
+	void adminWorkspacesDropsEmptyWorkspacesAndKeepsEnumOrder() {
+		TestingAuthenticationToken viewer = new TestingAuthenticationToken("viewer", "ignored", "admin.view");
+
+		List<AdminNavigationAdvice.AdminWorkspaceSection> sections =
+			new AdminNavigationAdvice(new MockEnvironment()).adminWorkspaces(viewer);
+
+		assertThat(sections)
+			.extracting(AdminNavigationAdvice.AdminWorkspaceSection::label)
+			.containsExactly("개요", "역·접근성 데이터", "분석");
+		assertThat(sections).allSatisfy(section -> assertThat(section.programs()).isNotEmpty());
+		assertThat(sections)
+			.filteredOn(section -> section.label().equals("역·접근성 데이터"))
+			.singleElement()
+			.satisfies(section -> assertThat(section.programs())
+				.extracting(AdminProgram::id)
+				.containsExactly("a-stations", "a-facilities", "a-quality"));
 	}
 }

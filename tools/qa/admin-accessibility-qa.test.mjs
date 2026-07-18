@@ -85,6 +85,26 @@ test("admin accessibility QA script captures login NONE and RETRY_WARNING public
   assert.match(source, /&& adminExpectedStateOk\s*\n\s*&& operatorExpectedStateOk/);
 });
 
+// #2277 V6-05: workspace disclosure가 현재 위치를 담은 영역만 기본 펼침하는지 keyboard smoke가 검사한다.
+test("admin accessibility QA script verifies workspace disclosure defaults to current only", () => {
+  assert.match(source, /check: "nav-workspace-disclosure"/);
+  assert.match(source, /\.admin-nav-workspace-toggle\[aria-expanded="false"\]/);
+  assert.match(source, /workspaceDisclosure\.expanded === 1/);
+  assert.match(source, /workspaceDisclosure\.collapsed === workspaceDisclosure\.total - 1/);
+  assert.match(source, /workspace disclosure did not default to only the current workspace expanded/);
+});
+
+// #2277 리뷰: 현재 위치가 없는 페이지가 전 영역 펼침으로 폴백하는지 QA 하네스가 실제로 검증하는 계약.
+test("admin accessibility QA script verifies no-current page falls back to all workspaces expanded", () => {
+  assert.match(source, /check: "nav-workspace-no-current-disclosure"/);
+  assert.match(source, /\/admin\/search/);
+  assert.match(source, /is-no-current/);
+  assert.match(source, /disclosure\.expanded === disclosure\.total/);
+  assert.match(source, /disclosure\.visiblePrograms === disclosure\.total/);
+  assert.match(source, /no-current page did not fall back to all workspaces expanded/);
+  assert.match(source, /await noCurrentWorkspaceDisclosure\(page, baseUrl, report\)/);
+});
+
 test("admin accessibility QA script verifies admin-table-scroll keyboard and focus outline", () => {
   assert.match(source, /keyboardTableCheck/);
   assert.match(source, /admin-table-scroll/);

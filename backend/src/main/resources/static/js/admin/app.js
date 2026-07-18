@@ -49,6 +49,31 @@ document.addEventListener('alpine:init', function () {
 	// 드롭다운이 열린다. sidebarToggle/alertCenter와 동일한 명명 컴포넌트 패턴 — CSP 빌드라
 	// 메서드·게터 이름만 디렉티브에 넣는다. 진화형 향상: JS가 없으면 트리거는 계정 페이지 링크로
 	// 동작하고 로그아웃 폼은 드롭다운 안에 그대로 렌더되어 접근 가능하다.
+	// 업무 영역(workspace) disclosure(#2277): 사이드바를 7개 업무 영역 아코디언으로 접는다.
+	// 서버는 모든 영역을 펼친 채(no-JS 폴백) 렌더하고, JS가 있으면 data-current="true"(현재 위치를
+	// 담은 영역)만 펼치고 나머지는 접는다. 각 영역은 독립 x-data라 하나를 열어도 다른 영역은 그대로다.
+	// 진화형 향상 — JS가 없으면 모든 영역이 펼쳐진 채 남아 허용 program 전부에 접근할 수 있다.
+	// CSP 빌드 규약: x-on/x-bind에는 메서드·게터 이름만 쓴다.
+	Alpine.data('navWorkspace', function () {
+		return {
+			expanded: true,
+			init: function () {
+				// 현재 위치가 없는 페이지(sidebar('')로 렌더되는 검색·알림·오류 등)는 서버가
+				// .admin-nav-scroll에 is-no-current를 붙인다. 이때 어떤 영역도 data-current="true"가
+				// 아니어서 전 영역이 접히는 회귀를 막기 위해 전 영역 펼침으로 폴백한다(#2277 리뷰).
+				var scroll = this.$el.closest('.admin-nav-scroll');
+				var noCurrent = scroll ? scroll.classList.contains('is-no-current') : false;
+				this.expanded = noCurrent || this.$el.dataset.current === 'true';
+			},
+			get ariaExpanded() {
+				return this.expanded ? 'true' : 'false';
+			},
+			toggle: function () {
+				this.expanded = !this.expanded;
+			},
+		};
+	});
+
 	Alpine.data('userMenu', function () {
 		return {
 			open: false,

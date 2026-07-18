@@ -200,6 +200,62 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
+	@DisplayName("sidebar는 workspace disclosure로 렌더하고 현재 위치 workspace만 펼치며 빈 workspace는 제외한다")
+	void adminSidebarRendersWorkspaceDisclosure() throws Exception {
+		// admin.view만 가진 관리자는 program이 있는 workspace(개요·역·접근성 데이터·분석)만 보고
+		// program이 0개인 workspace(운영·커뮤니케이션·데이터팩·시스템·감사)는 렌더되지 않는다(#2277 §7·§8).
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		// 렌더되는 workspace는 고유 disclosure 토큰(aria-controls)으로, 빈 workspace는 그 토큰의 부재로
+		// 단언한다 — 다른 화면 텍스트에 우연히 섞일 수 있는 라벨 substring("분석" 등) 대신 고유 토큰을 쓴다.
+		assertThat(html)
+			.contains("class=\"admin-nav-workspace-toggle\"")
+			.contains("aria-controls=\"admin-workspace-overview\"")
+			.contains("aria-controls=\"admin-workspace-accessibility-data\"")
+			.contains("aria-controls=\"admin-workspace-analytics\"")
+			.doesNotContain("aria-controls=\"admin-workspace-operations\"")
+			.doesNotContain("aria-controls=\"admin-workspace-communications\"")
+			.doesNotContain("aria-controls=\"admin-workspace-datapack\"")
+			.doesNotContain("aria-controls=\"admin-workspace-system-audit\"");
+
+		// 현재 위치(대시보드)를 담은 workspace만 data-current="true"로 렌더돼 JS가 이 영역만 펼친다.
+		// no-JS 폴백을 위해 서버는 toggle에 aria-expanded="true"를 정적으로 붙여 모든 program을 노출한다.
+		assertThat(html)
+			.contains("is-current")
+			.contains("data-current=\"true\"")
+			.contains("data-current=\"false\"")
+			.contains("aria-expanded=\"true\"")
+			// 현재 위치가 있는 페이지는 no-current 폴백 표식을 붙이지 않는다(현재 영역만 펼침 유지).
+			.doesNotContain("class=\"admin-nav-scroll is-no-current\"");
+	}
+
+	@Test
+	@DisplayName("현재 위치 없는 페이지(검색)는 nav-scroll에 is-no-current를 붙여 JS 폴백으로 전 영역을 펼친다")
+	void adminSidebarFallsBackToAllExpandedWhenNoWorkspaceIsCurrent() throws Exception {
+		// 검색 페이지는 sidebar('')로 렌더돼 어떤 workspace도 현재 위치가 아니다. 서버가 이 상태를
+		// .admin-nav-scroll에 is-no-current로 표식하면, JS(navWorkspace init)가 전 영역 펼침으로 폴백해
+		// program 링크가 접혀 사라지는 회귀(#2277 리뷰)를 막는다. no-JS는 정적 펼침을 그대로 유지한다.
+		String html = mockMvc.perform(get("/admin/search")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("class=\"admin-nav-scroll is-no-current\"")
+			.contains("aria-controls=\"admin-workspace-overview\"")
+			.contains("href=\"/admin/dashboard/page\"")
+			.contains("data-current=\"false\"")
+			.doesNotContain("data-current=\"true\"");
+	}
+
+	@Test
 	@DisplayName("전체 permission 관리자는 모든 관리자 program을 볼 수 있다")
 	void fullPermissionAdminSeesAllPrograms() throws Exception {
 		String html = mockMvc.perform(get("/admin/dashboard/page")

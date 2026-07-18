@@ -81,17 +81,73 @@
 	overflow-y: auto;
 }
 
-.admin-nav-group {
-	margin-top: 18px;
+/* 업무 영역(workspace) disclosure(#2277): 옛 그룹 라벨을 접기 버튼으로 대체한다. 시각 언어는 유지
+   (무채색·플랫·radius 0·shadow 0). program 목록은 x-show가, 헤더 상태는 aria-expanded가 정본이다. */
+.admin-nav-workspace {
+	margin-top: 10px;
 }
 
-.admin-nav-group-label {
-	margin: 0 0 6px 24px;
+/* 헤더는 정적 라벨성 disclosure 버튼이므로 파랑 채움을 벗긴다. .admin-v3 button(0,1,1)이 파랑
+   배경·흰 글씨를 강제하므로 셀렉터 명시도를 .admin-v3 .admin-nav-workspace-toggle(0,2,0)로 올려
+   이긴다(.admin-user-menu-trigger·.admin-sidebar-toggle와 동일한 라벨성 버튼 리셋 패턴). */
+.admin-v3 .admin-nav-workspace-toggle {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 8px;
+	width: 100%;
+	min-height: 44px;
+	margin: 0;
+	padding: 0 24px;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
 	color: var(--admin-ink-3);
 	font-size: 11px;
 	font-weight: var(--admin-w-strong);
 	letter-spacing: 0.04em;
 	text-transform: uppercase;
+	text-align: left;
+	cursor: pointer;
+}
+
+.admin-v3 .admin-nav-workspace-toggle:hover {
+	background: transparent;
+	color: var(--admin-ink-2);
+}
+
+.admin-nav-workspace.is-current .admin-nav-workspace-name {
+	color: var(--admin-ink);
+}
+
+/* 접힘/펼침 표시 caret: 순수 CSS 삼각형(무채색). 펼침=아래(기본), 접힘(aria-expanded=false)=왼쪽. */
+.admin-nav-workspace-caret {
+	flex: none;
+	width: 0;
+	height: 0;
+	border-left: 4px solid transparent;
+	border-right: 4px solid transparent;
+	border-top: 5px solid currentcolor;
+	transition: transform 0.15s ease;
+}
+
+.admin-nav-workspace-toggle[aria-expanded="false"] .admin-nav-workspace-caret {
+	transform: rotate(-90deg);
+}
+
+.admin-nav-workspace-programs {
+	display: flex;
+	flex-direction: column;
+	padding-bottom: 4px;
+}
+
+/* 펼침 전 flash 방지(#2277): JS 초기화 창(has-js, has-js-ready 이전)에서만 현재 위치가 아닌 영역의
+   program 목록을 숨긴다. has-js-ready 이후로는 navWorkspace의 x-show 인라인 display가 전담하고,
+   no-JS(has-js 미부착)는 이 규칙이 걸리지 않아 모든 영역이 펼쳐진 채 유지된다(폴백).
+   현재 위치가 없는 페이지(.admin-nav-scroll.is-no-current, #2277 리뷰)는 가드에서 제외해 전 영역을
+   펼친 채 유지한다 — is-current가 하나도 없어 모든 영역이 숨겨지는 회귀를 막는다. */
+.admin-v3.has-js:not(.has-js-ready) .admin-nav-scroll:not(.is-no-current) .admin-nav-workspace:not(.is-current) .admin-nav-workspace-programs {
+	display: none;
 }
 
 .admin-nav-item {

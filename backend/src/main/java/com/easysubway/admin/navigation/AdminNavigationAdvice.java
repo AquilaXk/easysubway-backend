@@ -2,6 +2,7 @@ package com.easysubway.admin.navigation;
 
 import java.util.Arrays;
 import java.util.Comparator;
+import java.util.EnumMap;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
@@ -28,17 +29,24 @@ class AdminNavigationAdvice {
 			.collect(Collectors.toUnmodifiableSet());
 	}
 
-	@ModelAttribute("adminProgramGroups")
-	List<AdminProgramGroup> adminProgramGroups(Authentication authentication) {
-		return AdminProgram.visibleTo(authentication).stream()
+	// #2277 (V6-05): shell IA를 7개 업무 영역(workspace)으로 묶는다. permission 필터(visibleTo) 뒤
+	// 프로그램이 0개인 workspace는 목록에서 제외해 렌더하지 않는다. workspace 순서는 enum 선언 순서를,
+	// 각 workspace 내부 program 순서는 AdminProgram 선언 순서를 따른다(EnumMap + groupingBy가 유지).
+	@ModelAttribute("adminWorkspaces")
+	List<AdminWorkspaceSection> adminWorkspaces(Authentication authentication) {
+		var grouped = AdminProgram.visibleTo(authentication).stream()
 			.collect(Collectors.groupingBy(
-				AdminProgram::groupLabel,
-				java.util.LinkedHashMap::new,
+				AdminProgram::workspace,
+				() -> new EnumMap<AdminWorkspace, List<AdminProgram>>(AdminWorkspace.class),
 				Collectors.toList()
+			));
+		return Arrays.stream(AdminWorkspace.values())
+			.filter(grouped::containsKey)
+			.map(workspace -> new AdminWorkspaceSection(
+				workspace.id(),
+				workspace.displayName(),
+				grouped.get(workspace)
 			))
-			.entrySet()
-			.stream()
-			.map(entry -> new AdminProgramGroup(entry.getKey(), entry.getValue()))
 			.toList();
 	}
 
@@ -105,7 +113,9 @@ class AdminNavigationAdvice {
 			&& !(authentication instanceof AnonymousAuthenticationToken);
 	}
 
-	record AdminProgramGroup(String label, List<AdminProgram> programs) {
+	// #2277 (V6-05): shell 사이드바가 렌더하는 업무 영역 섹션. id는 disclosure의 aria-controls 대상
+	// element id를, programs는 permission 필터를 통과한(0개가 아닌) 해당 workspace의 program을 담는다.
+	record AdminWorkspaceSection(String id, String label, List<AdminProgram> programs) {
 	}
 
 	record AdminShell(

@@ -44,14 +44,45 @@
 			</div>
 		</div>
 	</div>
-	<div class="admin-nav-scroll">
-		<div class="admin-nav-group" th:each="group : ${adminProgramGroups}">
-			<p class="admin-nav-group-label" th:text="${group.label}">메뉴 그룹</p>
-			<a th:each="program : ${group.programs}"
-			   class="admin-nav-item"
-			   th:classappend="${active == program.id} ? ' is-active'"
-			   th:href="@{${program.path}}"
-			   th:text="${program.label}">메뉴</a>
+	<!--
+	  업무 영역(workspace) IA(#2277): permission 필터를 통과한 program을 7개 업무 영역으로 묶어
+	  disclosure로 렌더한다. 서버는 모든 영역을 펼친 채 내보내(no-JS는 허용 program 전부 표시),
+	  JS가 있으면 navWorkspace 컴포넌트가 현재 위치(active)를 담은 영역만 펼치고 나머지는 접는다.
+	  펼침 전 순간의 flash는 admin-shell.css의 has-js:not(has-js-ready) 규칙이 가린다. CSP 빌드라
+	  x-on/x-bind에는 메서드·게터 이름만 쓴다. program이 0개인 영역은 advice가 목록에서 제외한다.
+	-->
+	<!--
+	  현재 위치 없음 폴백(#2277 리뷰): active가 permission 필터를 통과한 어떤 program에도 없으면
+	  (예: sidebar('')로 호출되는 검색·알림·오류 페이지) 현재 위치를 담은 영역이 하나도 없어 JS가 전
+	  영역을 접어버리는 회귀가 생긴다. 서버가 이 상태를 is-no-current로 표식해, FOUC 가드(admin-shell.css)와
+	  navWorkspace init이 전 영역 펼침으로 폴백하게 한다. no-JS는 has-js가 없어 이 표식과 무관하게 정적
+	  펼침을 유지한다. 판정은 adminProgramIds(렌더되는 workspace program id 집합)의 active 포함 여부로 한다
+	  — 각 program은 정확히 하나의 렌더 workspace에 속하므로 이는 "현재 workspace 존재"와 동치다.
+	  adminProgramIds가 null인 경로(권한 컨텍스트 없는 오류 페이지)도 폴백 상태로 안전하게 처리한다. -->
+	<div class="admin-nav-scroll"
+	     th:with="hasCurrentWorkspace=${adminProgramIds != null and adminProgramIds.contains(active)}"
+	     th:classappend="${hasCurrentWorkspace} ? '' : 'is-no-current'">
+		<div class="admin-nav-workspace"
+		     th:each="workspace : ${adminWorkspaces}"
+		     th:with="isCurrent=${#lists.contains(workspace.programs.![id], active)}"
+		     th:classappend="${isCurrent} ? ' is-current'"
+		     th:attr="data-current=${isCurrent}"
+		     x-data="navWorkspace">
+			<button type="button" class="admin-nav-workspace-toggle" aria-expanded="true"
+			        x-on:click="toggle" x-bind:aria-expanded="ariaExpanded"
+			        th:attr="aria-controls=${'admin-workspace-' + workspace.id}">
+				<!-- aria-expanded="true"는 no-JS 정적 상태(모든 영역 펼침). JS는 x-bind로 실제 상태를 덮어쓴다. -->
+				<span class="admin-nav-workspace-name" th:text="${workspace.label}">업무 영역</span>
+				<span class="admin-nav-workspace-caret" aria-hidden="true"></span>
+			</button>
+			<div class="admin-nav-workspace-programs" th:id="${'admin-workspace-' + workspace.id}"
+			     x-show="expanded">
+				<a th:each="program : ${workspace.programs}"
+				   class="admin-nav-item"
+				   th:classappend="${active == program.id} ? ' is-active'"
+				   th:href="@{${program.path}}"
+				   th:text="${program.label}">메뉴</a>
+			</div>
 		</div>
 	</div>
 </nav>

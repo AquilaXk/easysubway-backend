@@ -150,6 +150,9 @@ class AdminAccessibilitySmokeTest {
 			.contains("href=\"#admin-content\"")
 			.contains("class=\"admin-shell\"")
 			.contains("aria-label=\"통합 관리자 화면\"")
+			// #2277: sidebar는 workspace disclosure로 렌더되고, no-JS 폴백을 위해 toggle은 정적
+			// aria-expanded="true"로 모든 허용 program을 노출한다.
+			.contains("class=\"admin-nav-workspace-toggle\"")
 			.contains("class=\"admin-topbar-row\" aria-label=\"관리자 실행 환경\"")
 			.contains("id=\"admin-content\" class=\"admin-content-anchor\" tabindex=\"-1\"")
 			.contains("<main class=\"admin-main\">")

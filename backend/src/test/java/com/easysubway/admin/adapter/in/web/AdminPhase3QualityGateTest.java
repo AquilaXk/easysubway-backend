@@ -73,6 +73,8 @@ class AdminPhase3QualityGateTest {
 				.contains("href=\"#admin-content\"")
 				.contains("class=\"admin-shell\"")
 				.contains("id=\"admin-content\"")
+				// #2277: 모든 admin surface가 workspace disclosure shell을 유지한다.
+				.contains("class=\"admin-nav-workspace-toggle\"")
 				.contains("aria-label=\"관리자 로그아웃\"")
 				.doesNotContain("cdn.jsdelivr.net")
 				.doesNotContain("unpkg.com")
