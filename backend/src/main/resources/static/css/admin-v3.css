@@ -2271,7 +2271,7 @@ body.admin-v3 {
 .trend-periods a.is-active {
 	border-color: var(--admin-accent);
 	background: var(--admin-accent-soft);
-	color: var(--admin-accent);
+	color: var(--admin-accent-ink);
 	font-weight: var(--admin-w-strong);
 }
 

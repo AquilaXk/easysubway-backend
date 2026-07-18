@@ -14,6 +14,8 @@
 	/* 브랜드 액센트 1계열 + 의미 상태색 */
 	--admin-accent: #006FD6;
 	--admin-accent-soft: rgba(0, 111, 214, 0.08);
+	/* accent-soft 배경 위 텍스트용 어둠 파생(#2288): hue 유지, accent-soft 렌더 배경(#e2edf6) 위 4.5:1 이상 AA 충족 */
+	--admin-accent-ink: color-mix(in srgb, var(--admin-accent) 90%, #000);
 	--admin-sidebar-bg: #FFFFFF;
 	--admin-sidebar-accent: #F6F8F9;
 	--admin-primary: #006FD6;
