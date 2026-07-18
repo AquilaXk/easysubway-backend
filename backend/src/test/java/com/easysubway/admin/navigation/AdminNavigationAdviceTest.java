@@ -2,6 +2,7 @@ package com.easysubway.admin.navigation;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import java.util.Arrays;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.env.MockEnvironment;
@@ -118,5 +119,37 @@ class AdminNavigationAdviceTest {
 		assertThat(shell.rolesLabel()).isEqualTo("권한 없음");
 		assertThat(shell.revision()).isEqualTo("local");
 		assertThat(shell.masterDataVersion()).isEqualTo("unknown");
+	}
+
+	// #2272 V6-00: 관리자 화면 inventory를 source assertion으로 고정한다. 조사 수치를 하드코딩하지 않고
+	// enum 자체에서 세어 29개 surface와 각 항목의 id·path·permission 완결성을 검증한다. route·permission·
+	// behavior(visibleTo())는 변경하지 않으며 v6 이관 중 화면 수가 흔들리면 이 테스트가 실패해야 한다.
+	@Test
+	@DisplayName("AdminProgram은 29개 관리자 surface를 고정하고 각 항목은 id·path·permission을 모두 갖는다")
+	void adminProgramRegistryPinsAdminSurfaceInventory() {
+		assertThat(AdminProgram.values()).hasSize(29);
+
+		for (AdminProgram program : AdminProgram.values()) {
+			assertThat(program.id())
+				.as("%s id", program.name())
+				.isNotBlank();
+			assertThat(program.path())
+				.as("%s path", program.name())
+				.startsWith("/admin/")
+				.endsWith("/page");
+			assertThat(program.permission())
+				.as("%s permission", program.name())
+				.isNotNull();
+			assertThat(program.groupLabel())
+				.as("%s groupLabel", program.name())
+				.isNotBlank();
+			assertThat(program.label())
+				.as("%s label", program.name())
+				.isNotBlank();
+		}
+
+		// id와 path는 surface 정본이므로 중복 없이 유일해야 한다.
+		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::id).distinct().count()).isEqualTo(29);
+		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::path).distinct().count()).isEqualTo(29);
 	}
 }

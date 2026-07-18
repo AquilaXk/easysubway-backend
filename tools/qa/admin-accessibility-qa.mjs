@@ -13,29 +13,39 @@ export const VIEWPORTS = [
   { name: "mobile-390", width: 390, height: 844 },
 ];
 
-export const ADMIN_PAGES = [
-  ["/admin/dashboard/page", "dashboard"],
-  ["/admin/reports/page", "reports"],
-  ["/admin/stations/page", "stations"],
-  ["/admin/stations/station-sangnoksu/page", "station-hub"],
-  ["/admin/facilities/page", "facilities"],
-  ["/admin/data-collections/page", "collections"],
-  ["/admin/batches/page", "batches"],
-  ["/admin/incidents/page", "incidents"],
-  ["/admin/routes/searches/page", "route-searches"],
-  ["/admin/routes/feedback/page", "route-feedback"],
-  ["/admin/datapack/pipeline/page", "datapack-pipeline"],
-  ["/admin/audits/page", "audits"],
-  ["/admin/audits/privacy/page", "privacy-audits"],
+// #2272 V6-00: QA surface inventory. 각 admin/operator surface에 archetype, owner sub-issue
+// (V6-07~V6-10), permission, no-JS path를 데이터로 고정한다. 항목이 하나라도 누락되면
+// admin-accessibility-qa.test.mjs의 "0 missing" 계약과 repository-contract.test.mjs의 catalog
+// 대응 계약이 실패한다. route·permission·no-JS 계약의 정본은 AdminProgram.visibleTo()와 API
+// catalog GET page route이며 이 표는 그것을 인용할 뿐 변경하지 않는다. noJsPath는 no-JS pass가
+// 실제로 방문하는 경로(= url)를 고정한다.
+export const ADMIN_SURFACE_INVENTORY = [
+  { url: "/admin/dashboard/page", name: "dashboard", archetype: "overview-dashboard", ownerSubIssue: "V6-09", permission: "ADMIN_VIEW", noJsPath: "/admin/dashboard/page" },
+  { url: "/admin/reports/page", name: "reports", archetype: "queue-review", ownerSubIssue: "V6-08", permission: "REPORT_REVIEW", noJsPath: "/admin/reports/page" },
+  { url: "/admin/stations/page", name: "stations", archetype: "master-list", ownerSubIssue: "V6-07", permission: "ADMIN_VIEW", noJsPath: "/admin/stations/page" },
+  { url: "/admin/stations/station-sangnoksu/page", name: "station-hub", archetype: "detail-hub", ownerSubIssue: "V6-07", permission: "ADMIN_VIEW", noJsPath: "/admin/stations/station-sangnoksu/page" },
+  { url: "/admin/facilities/page", name: "facilities", archetype: "master-list", ownerSubIssue: "V6-07", permission: "ADMIN_VIEW", noJsPath: "/admin/facilities/page" },
+  { url: "/admin/data-collections/page", name: "collections", archetype: "operations-list", ownerSubIssue: "V6-10", permission: "DATA_OPERATE", noJsPath: "/admin/data-collections/page" },
+  { url: "/admin/batches/page", name: "batches", archetype: "operations-list", ownerSubIssue: "V6-10", permission: "DATA_OPERATE", noJsPath: "/admin/batches/page" },
+  { url: "/admin/incidents/page", name: "incidents", archetype: "operations-list", ownerSubIssue: "V6-10", permission: "OPERATIONS_MANAGE", noJsPath: "/admin/incidents/page" },
+  { url: "/admin/routes/searches/page", name: "route-searches", archetype: "analytics-list", ownerSubIssue: "V6-10", permission: "ADMIN_VIEW", noJsPath: "/admin/routes/searches/page" },
+  { url: "/admin/routes/feedback/page", name: "route-feedback", archetype: "analytics-list", ownerSubIssue: "V6-10", permission: "ADMIN_VIEW", noJsPath: "/admin/routes/feedback/page" },
+  { url: "/admin/datapack/pipeline/page", name: "datapack-pipeline", archetype: "datapack-pipeline", ownerSubIssue: "V6-09", permission: "DATAPACK_READ", noJsPath: "/admin/datapack/pipeline/page" },
+  { url: "/admin/audits/page", name: "audits", archetype: "audit-log", ownerSubIssue: "V6-10", permission: "AUDIT_READ", noJsPath: "/admin/audits/page" },
+  { url: "/admin/audits/privacy/page", name: "privacy-audits", archetype: "audit-log", ownerSubIssue: "V6-10", permission: "PRIVACY_LOG_READ", noJsPath: "/admin/audits/privacy/page" },
 ];
 
-export const OPERATOR_PAGES = [
-  ["/operator/accessibility-report/page", "operator-accessibility"],
-  ["/operator/repeated-broken-facilities/page", "operator-repeated-broken"],
-  ["/operator/data-collection-failures/page", "operator-collection-failures"],
-  ["/operator/route-feedback-report/page", "operator-route-feedback"],
-  ["/operator/push-notification-report/page", "operator-push"],
+export const OPERATOR_SURFACE_INVENTORY = [
+  { url: "/operator/accessibility-report/page", name: "operator-accessibility", archetype: "operator-report", ownerSubIssue: "V6-10", permission: "ROLE_OPERATOR_ADMIN", noJsPath: "/operator/accessibility-report/page" },
+  { url: "/operator/repeated-broken-facilities/page", name: "operator-repeated-broken", archetype: "operator-report", ownerSubIssue: "V6-10", permission: "ROLE_OPERATOR_ADMIN", noJsPath: "/operator/repeated-broken-facilities/page" },
+  { url: "/operator/data-collection-failures/page", name: "operator-collection-failures", archetype: "operator-report", ownerSubIssue: "V6-10", permission: "ROLE_OPERATOR_ADMIN", noJsPath: "/operator/data-collection-failures/page" },
+  { url: "/operator/route-feedback-report/page", name: "operator-route-feedback", archetype: "operator-report", ownerSubIssue: "V6-10", permission: "ROLE_OPERATOR_ADMIN", noJsPath: "/operator/route-feedback-report/page" },
+  { url: "/operator/push-notification-report/page", name: "operator-push", archetype: "operator-report", ownerSubIssue: "V6-10", permission: "ROLE_OPERATOR_ADMIN", noJsPath: "/operator/push-notification-report/page" },
 ];
+
+export const ADMIN_PAGES = ADMIN_SURFACE_INVENTORY.map((surface) => [surface.url, surface.name]);
+
+export const OPERATOR_PAGES = OPERATOR_SURFACE_INVENTORY.map((surface) => [surface.url, surface.name]);
 
 // #1988: text 200% reflow/clipping evidence는 대표 5화면에서만 수집한다.
 export const TEXT_SCALE_FACTOR = 2;

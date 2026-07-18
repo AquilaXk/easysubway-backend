@@ -6,6 +6,18 @@ import java.util.Arrays;
 import java.util.List;
 import org.springframework.security.core.Authentication;
 
+/**
+ * 관리자 콘솔의 화면(surface) 정본 레지스트리.
+ *
+ * <p>#2272 (Admin UX v6 / V6-00) inventory 고정: 이 enum은 29개 관리자 surface를 정의하며 그 수와 각
+ * 항목의 {@code id}/{@code path}/{@code permission} 완결성은 {@code AdminNavigationAdviceTest}에서
+ * source assertion으로 검증된다. operator surface(login 1 + report 5 = 6)는 별개 경계로
+ * {@code AdminPhase3QualityGateTest}가 고정한다. route, {@link #visibleTo(Authentication)} permission,
+ * behavior는 v6 이관 과정에서 변경하지 않는다.
+ *
+ * <p>Non-scope (V6-00에서 도입하지 않음, 상위 sub-issue 소관): dark mode 테마 전환, pinned/recent 메뉴,
+ * {@code statusAuto} enum 전환. 이 항목들은 supersession ledger에만 기록하고 여기서 필드·상태를 추가하지 않는다.
+ */
 public enum AdminProgram {
 	DASHBOARD("a-dashboard", "접속·개요", "통합 대시보드", "/admin/dashboard/page", AdminPermission.ADMIN_VIEW),
 	STATIONS("a-stations", "역·시설 마스터", "역 목록", "/admin/stations/page", AdminPermission.ADMIN_VIEW),

@@ -48,6 +48,11 @@ class AdminPhase3QualityGateTest {
 		"/operator/push-notification-report/page"
 	);
 
+	// #2272 V6-00: operator surface는 login 1개와 report 5개로 고정한다.
+	private static final List<String> OPERATOR_LOGIN_PAGES = List.of(
+		"/operator/login"
+	);
+
 	@Autowired
 	private MockMvc mockMvc;
 
@@ -119,6 +124,36 @@ class AdminPhase3QualityGateTest {
 					.header("Accept", "text/html"))
 				.andExpect(status().isNoContent())
 				.andExpect(header().string("HX-Refresh", "true"));
+		}
+	}
+
+	// #2272 V6-00: operator surface 수를 source assertion으로 고정한다. login 1개 + report 5개 = 6개이며
+	// admin surface(AdminProgram 29개)와 별개 경계다. v6 이관 중 이 분할이 흔들리면 테스트가 실패해야 한다.
+	@Test
+	@DisplayName("operator surface는 login 1개와 report 5개로 고정된다")
+	void operatorSurfaceInventoryIsPinnedToLoginAndReports() throws Exception {
+		assertThat(OPERATOR_LOGIN_PAGES).hasSize(1);
+		assertThat(OPERATOR_PAGES).hasSize(5);
+		assertThat(OPERATOR_LOGIN_PAGES.size() + OPERATOR_PAGES.size()).isEqualTo(6);
+
+		assertThat(OPERATOR_LOGIN_PAGES).allSatisfy(path -> assertThat(path).startsWith("/operator/"));
+		assertThat(OPERATOR_PAGES)
+			.allSatisfy(path -> assertThat(path).startsWith("/operator/").endsWith("/page"))
+			.doesNotContainAnyElementsOf(OPERATOR_LOGIN_PAGES);
+
+		for (String path : OPERATOR_LOGIN_PAGES) {
+			String html = mockMvc.perform(get(path))
+				.andExpect(status().isOk())
+				.andExpect(header().string("Content-Security-Policy", containsString("script-src 'self'")))
+				.andReturn()
+				.getResponse()
+				.getContentAsString();
+
+			assertThat(html)
+				.as(path)
+				.contains("class=\"login-card\"")
+				.contains("아이디")
+				.contains("비밀번호");
 		}
 	}
 

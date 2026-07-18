@@ -4,6 +4,25 @@ import test from "node:test";
 
 const source = readFileSync(new URL("./admin-accessibility-qa.mjs", import.meta.url), "utf8");
 
+// #2272 V6-00: inventory 항목을 source에서 파싱한다. 모듈을 import하면 playwright 런타임 의존이
+// unit test로 새므로(설치 없이도 실행돼야 함) 기존 text 기반 계약 방식을 유지한다.
+function parseSurfaceInventory(exportName) {
+  const blockMatch = source.match(new RegExp(`export const ${exportName} = \\[([\\s\\S]*?)\\];`));
+  assert.ok(blockMatch, `${exportName} 블록을 찾지 못했다`);
+  const entryRegex =
+    /\{\s*url:\s*"([^"]+)",\s*name:\s*"([^"]+)",\s*archetype:\s*"([^"]+)",\s*ownerSubIssue:\s*"([^"]+)",\s*permission:\s*"([^"]+)",\s*noJsPath:\s*"([^"]+)"\s*\}/g;
+  return [...blockMatch[1].matchAll(entryRegex)].map(
+    ([, url, name, archetype, ownerSubIssue, permission, noJsPath]) => ({
+      url,
+      name,
+      archetype,
+      ownerSubIssue,
+      permission,
+      noJsPath,
+    }),
+  );
+}
+
 test("admin accessibility QA script covers Phase 3 required routes and viewports", () => {
   for (const expected of [
     "/admin/dashboard/page",
@@ -93,6 +112,46 @@ test("admin accessibility QA script fails on serious and critical axe violations
   assert.match(source, /impact === "critical"/);
   assert.match(source, /impact === "serious"/);
   assert.match(source, /throw new Error\(`blocking axe violations/);
+});
+
+// #2272 V6-00: 화면 inventory·permission·no-JS·archetype·owner sub-issue 고정.
+test("admin/operator QA surface inventory pins archetype/owner/permission/no-JS with 0 missing fields", () => {
+  const REQUIRED_FIELDS = ["url", "name", "archetype", "ownerSubIssue", "permission", "noJsPath"];
+  const OWNER_SUB_ISSUES = new Set(["V6-07", "V6-08", "V6-09", "V6-10"]);
+  const adminSurfaces = parseSurfaceInventory("ADMIN_SURFACE_INVENTORY");
+  const operatorSurfaces = parseSurfaceInventory("OPERATOR_SURFACE_INVENTORY");
+  const surfaces = [...adminSurfaces, ...operatorSurfaces];
+
+  const missing = [];
+  for (const surface of surfaces) {
+    for (const field of REQUIRED_FIELDS) {
+      if (typeof surface[field] !== "string" || surface[field].length === 0) {
+        missing.push(`${surface.url ?? "?"}:${field}`);
+      }
+    }
+    if (!OWNER_SUB_ISSUES.has(surface.ownerSubIssue)) {
+      missing.push(`${surface.url}:ownerSubIssue=${surface.ownerSubIssue}`);
+    }
+    // no-JS pass가 실제 방문하는 경로는 surface url과 같아야 한다(placeholder 경로 금지).
+    if (surface.noJsPath !== surface.url) {
+      missing.push(`${surface.url}:noJsPath!=url`);
+    }
+  }
+  // owner·permission·archetype·no-JS path 중 하나라도 없으면 V6-01 착수를 차단한다(#2272 §8).
+  assert.deepEqual(missing, [], `surface inventory missing fields: ${missing.join(", ")}`);
+
+  assert.equal(adminSurfaces.length, 13);
+  assert.equal(operatorSurfaces.length, 5);
+
+  // 파생된 ADMIN_PAGES/OPERATOR_PAGES가 inventory url/name에서 나오는지 source로 고정한다.
+  assert.match(source, /export const ADMIN_PAGES = ADMIN_SURFACE_INVENTORY\.map\(\(surface\) => \[surface\.url, surface\.name\]\);/);
+  assert.match(source, /export const OPERATOR_PAGES = OPERATOR_SURFACE_INVENTORY\.map\(\(surface\) => \[surface\.url, surface\.name\]\);/);
+
+  // 모든 operator surface owner는 V6-10(나머지 admin·operator·auth/feedback 이관)이다.
+  for (const surface of operatorSurfaces) {
+    assert.equal(surface.ownerSubIssue, "V6-10", `${surface.url} operator owner must be V6-10`);
+    assert.equal(surface.permission, "ROLE_OPERATOR_ADMIN");
+  }
 });
 
 test("admin accessibility QA script fails non-success page responses", () => {
