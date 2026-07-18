@@ -127,12 +127,18 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				if (timetableItineraries.isEmpty()) {
 					return noTimetableServicePlan(command, snapshot);
 				}
+				// #2095/#2286: 인증 Route V2는 SUBWAY_AND_ITX_CHEONGCHUN scope만 받고(위에서 강제)
+				// prod 게이트가 TIMETABLE_RAPTOR 출처만 허용하므로, 레거시 그래프 우선 시도를
+				// 건너뛰고 항상 RAPTOR(TIMETABLE_SCAN)를 쓴다. ITX pilot 역처럼 STATION_LINES로
+				// 연결됐지만 접근성 시설 데이터가 없는 역은 레거시 그래프가 채택될 경우
+				// timetableArtifactId가 null이 돼 prod 게이트에서 503으로 막힌다.
 				var stabilizedCandidates = routeSearchUseCase.stabilizeTimetableRouteCandidatesWithSource(
 					searchRouteCommand,
 					RANKING_CANDIDATE_LIMIT,
 					command.alternativeCount(),
 					timetableItineraries,
-					List::copyOf
+					List::copyOf,
+					false
 				);
 				timetableItineraries = stabilizedCandidates.itineraries();
 				if (stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN) {

@@ -58,7 +58,8 @@ public interface RouteSearchUseCase {
 		int candidateCount,
 		int alternativeCount,
 		List<RouteSearchResult> timetableResults,
-		UnaryOperator<List<RouteSearchResult>> selectCandidates
+		UnaryOperator<List<RouteSearchResult>> selectCandidates,
+		boolean legacyGraphCandidateAllowed
 	) {
 		return new TimetableCandidateSelection(
 			stabilizeTimetableRouteCandidates(

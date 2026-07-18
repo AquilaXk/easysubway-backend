@@ -8,6 +8,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
@@ -1505,6 +1506,32 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("legacyGraphCandidateAllowed=true면 접근성 신호가 있는 레거시 결과를 LEGACY_ACCESSIBILITY_CHECK로 채택한다")
+	void stabilizeTimetableRouteCandidatesWithSourceAdoptsLegacyWhenAllowedAndAccessibilitySignalPresent() {
+		// #2292 Minor 2: RouteV2Planner가 legacyGraphCandidateAllowed=false로 고정 호출하게
+		// 되면서 stabilizeTimetableRouteCandidatesWithSource(..., true)의 원래 동작(접근성
+		// 신호가 있는 레거시 결과를 채택)을 직접 검증하는 테스트가 없어졌다. 이 메서드 자체의
+		// 계약은 살아있음을 고정한다.
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new StairOnlyTransitMasterPort(), CLOCK);
+
+		var selection = routeSearchService.stabilizeTimetableRouteCandidatesWithSource(
+			new SearchRouteCommand("station-a", "station-b", MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, 1),
+			3,
+			1,
+			List.of(routeSearchResultWithAccessState("route-timetable", "AVAILABLE", false)),
+			List::copyOf,
+			true
+		);
+
+		assertThat(selection.source()).isEqualTo(TimetableCandidateSource.LEGACY_ACCESSIBILITY_CHECK);
+		assertThat(selection.itineraries()).isNotEmpty();
+		assertThat(selection.itineraries().getFirst().warnings())
+			.extracting("code")
+			.contains(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
 	@DisplayName("V2 planner는 legacy graph가 놓친 시간표 경로를 NO_TIMETABLE_SERVICE로 버리지 않는다")
 	void routeV2PlannerKeepsTimetableRouteWhenLegacyGraphMisses() {
 		var repository = new InMemoryRouteSearchRepository();
@@ -1551,20 +1578,85 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("V2 planner는 stair-only 위험이 있으면 시간표 scan보다 접근성 warning을 보존한다")
-	void routeV2PlannerPreservesAccessibilityWarningsBeforeTimetableScan() {
+	@DisplayName("V2 planner는 stair-only 위험이 있어도 레거시 그래프로 새치기하지 않고 시간표 scan을 그대로 쓰되 접근성 경고는 재부착한다")
+	void routeV2PlannerAlwaysPrefersTimetableScanEvenWithLegacyAccessibilitySignal() {
+		// #2095/#2286/#2292: 인증 Route V2(prod 게이트가 TIMETABLE_RAPTOR 출처만 허용)는
+		// 접근성 warning이 있어도 레거시 그래프를 먼저 시도하지 않는다 — 레거시가 채택되면
+		// timetableArtifactId가 null이 돼 그 게이트에서 막히기 때문이다(ITX pilot 역처럼
+		// STATION_LINES는 있지만 접근성 시설 데이터가 없는 역에서 실제로 발생했다). 다만
+		// RAPTOR 자체는 접근성 시설 데이터를 참조하지 않으므로, RouteSearchService가
+		// ephemeralTimetableRouteResult()에서 레거시와 같은 기준(hasStairOnlyAccess/
+		// routeWarnings, 같은 LoadTransitMasterPort 데이터)으로 STAIR_ONLY_ACCESS 경고를
+		// 재부착한다 — source는 TIMETABLE_RAPTOR로 유지하면서 접근성 경고 정보는 잃지 않는다.
+		var delegate = routeTimetablePort();
+		var port = new LoadRouteTimetablePort() {
+			@Override
+			public RouteTimetable loadRouteTimetable() {
+				return delegate.loadRouteTimetable();
+			}
+
+			@Override
+			public String timetableCacheKey() {
+				return "ITX_CHEONGCHUN:artifact-legacy-conflict:2999-01-01T00:00:00Z";
+			}
+
+			@Override
+			public Optional<String> activeItxTimetableArtifactId() {
+				return Optional.of("artifact-legacy-conflict");
+			}
+		};
 		var repository = new InMemoryRouteSearchRepository();
 		var routeSearchService = new RouteSearchService(repository, repository, new StairOnlyTransitMasterPort(), CLOCK);
-		var planner = new RouteV2Planner(routeSearchService, routeTimetablePort());
+		var planner = new RouteV2Planner(routeSearchService, port);
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
-		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.LEGACY_GRAPH);
-		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.STATIC_BACKEND_ESTIMATE);
+		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
+		assertThat(plan.timetableArtifactId()).isEqualTo("artifact-legacy-conflict");
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
 		assertThat(plan.itineraries().getFirst().warnings())
 			.extracting("code")
 			.containsExactly(RouteWarningCode.STAIR_ONLY_ACCESS);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 출구 데이터가 없는 역을 지나는 RAPTOR itinerary에 LOW_DATA_CONFIDENCE만 부착하고 STAIR_ONLY_ACCESS는 지어내지 않는다")
+	void routeV2PlannerAttachesLowDataConfidenceNotStairOnlyForNoExitDataStationsOnTimetableScan() {
+		// #2292 2라운드 리뷰: 위 flip 테스트(StairOnlyTransitMasterPort)는 "출구는 있지만
+		// 계단뿐"인 실데이터만 검증한다. 이 PR을 유발한 실제 시나리오는 ITX pilot 역처럼
+		// 출구 데이터 자체가 없는 역이고, 이 경우 STAIR_ONLY_ACCESS를 지어내면 안 된다(근거
+		// 없는 과잉 경고) — LOW_DATA_CONFIDENCE만 붙어야 레거시(hasStairOnlyAccess/
+		// hasLowAccessibilityData)와 동일한 기준이다.
+		var delegate = routeTimetablePort();
+		var port = new LoadRouteTimetablePort() {
+			@Override
+			public RouteTimetable loadRouteTimetable() {
+				return delegate.loadRouteTimetable();
+			}
+
+			@Override
+			public String timetableCacheKey() {
+				return "ITX_CHEONGCHUN:artifact-no-exit-data:2999-01-01T00:00:00Z";
+			}
+
+			@Override
+			public Optional<String> activeItxTimetableArtifactId() {
+				return Optional.of("artifact-no-exit-data");
+			}
+		};
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new NoExitDataTransitMasterPort(), CLOCK);
+		var planner = new RouteV2Planner(routeSearchService, port);
+
+		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
+
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
+		assertThat(plan.timetableArtifactId()).isEqualTo("artifact-no-exit-data");
+		assertThat(plan.itineraries().getFirst().warnings())
+			.extracting("code")
+			.containsExactly(RouteWarningCode.LOW_DATA_CONFIDENCE);
 	}
 
 	@Test
@@ -3967,6 +4059,18 @@ class RouteSearchServiceTest {
 
 		@Override
 		public List<RouteEdge> loadRouteEdges() {
+			return List.of();
+		}
+	}
+
+	// #2292 2라운드 리뷰: 이 PR을 유발한 실제 시나리오 — ITX pilot 역처럼 출구 데이터 자체가
+	// 없는 역(StairOnlyTransitMasterPort처럼 "출구는 있지만 계단뿐"이 아니라 출구 레코드가
+	// 아예 없음). hasStairOnlyAccess()는 exits.isEmpty()면 근거 없이 stairs-only로 단정하지
+	// 않고 false를 반환하며, hasLowAccessibilityData()는 exits.isEmpty()면 true를 반환한다.
+	private static class NoExitDataTransitMasterPort extends StairOnlyTransitMasterPort {
+
+		@Override
+		public List<StationExit> loadStationExits() {
 			return List.of();
 		}
 	}

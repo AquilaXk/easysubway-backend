@@ -52,6 +52,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -234,7 +235,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 			candidateCount,
 			alternativeCount,
 			timetableResults,
-			selectCandidates
+			selectCandidates,
+			true
 		).itineraries();
 	}
 
@@ -244,23 +246,37 @@ public class RouteSearchService implements RouteSearchUseCase {
 		int candidateCount,
 		int alternativeCount,
 		List<RouteSearchResult> timetableResults,
-		UnaryOperator<List<RouteSearchResult>> selectCandidates
+		UnaryOperator<List<RouteSearchResult>> selectCandidates,
+		boolean legacyGraphCandidateAllowed
 	) {
-		try {
-			List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(
-				withoutRealtime(command),
-				candidateCount
-			);
-			List<RouteSearchResult> selectedAccessibilityCheckedResults = selectCandidates.apply(accessibilityCheckedResults);
-			if (selectedAccessibilityCheckedResults.stream().anyMatch(this::hasAccessibilitySignal)) {
-				return new TimetableCandidateSelection(
-					selectedAccessibilityCheckedResults,
-					TimetableCandidateSource.LEGACY_ACCESSIBILITY_CHECK
+		// #2095/#2286: ITX-청춘 인증 Route V2 검색(legacyGraphCandidateAllowed=false로 호출하는
+		// RouteV2Planner)은 prod 게이트(ProductionRouteV2Support.requireUsablePlan)가 항상
+		// TIMETABLE_RAPTOR 출처만 허용한다. ITX pilot 역처럼 STATION_LINES로는 연결됐지만
+		// 접근성 시설 데이터가 없는 역은 레거시 그래프에서 거의 항상
+		// hasAccessibilitySignal=true가 돼 레거시가 채택되고, 그 결과 timetableArtifactId가
+		// null이 돼 prod 게이트에서 503으로 막힌다. #1400 레거시 그래프 우선 시도(접근성
+		// 신호가 있으면 레거시 결과를 채택) 자체는 legacyGraphCandidateAllowed=true(인터페이스
+		// 기본값)로 남겨뒀다 — 다만 현재 stabilizeTimetableRouteCandidatesWithSource의 실제
+		// 호출자는 RouteV2Planner(false) 하나뿐이라 이 true 경로를 쓰는 프로덕션 호출자는
+		// 없다(dead in prod). API 호환성과 향후 SUBWAY 전용(비-ITX) 호출자가 생길 경우를
+		// 대비해 보존한다.
+		if (legacyGraphCandidateAllowed) {
+			try {
+				List<RouteSearchResult> accessibilityCheckedResults = buildRouteSearchAlternatives(
+					withoutRealtime(command),
+					candidateCount
 				);
+				List<RouteSearchResult> selectedAccessibilityCheckedResults = selectCandidates.apply(accessibilityCheckedResults);
+				if (selectedAccessibilityCheckedResults.stream().anyMatch(this::hasAccessibilitySignal)) {
+					return new TimetableCandidateSelection(
+						selectedAccessibilityCheckedResults,
+						TimetableCandidateSource.LEGACY_ACCESSIBILITY_CHECK
+					);
+				}
+			} catch (RouteNotFoundException | StationNotFoundException exception) {
+				// Timetable coverage can lead legacy graph coverage while #1400 closes the production graph gap.
+				log.debug("Legacy graph could not stabilize timetable route {} -> {}", command.originStationId(), command.destinationStationId(), exception);
 			}
-		} catch (RouteNotFoundException | StationNotFoundException exception) {
-			// Timetable coverage can lead legacy graph coverage while #1400 closes the production graph gap.
-			log.debug("Legacy graph could not stabilize timetable route {} -> {}", command.originStationId(), command.destinationStationId(), exception);
 		}
 		return new TimetableCandidateSelection(
 			selectCandidates.apply(timetableResults)
@@ -332,12 +348,52 @@ public class RouteSearchService implements RouteSearchUseCase {
 			routeSearchResult.lineName(),
 			routeSearchResult.score(),
 			routeSearchResult.steps(),
-			routeSearchResult.warnings(),
+			timetableAccessibilityWarnings(routeSearchResult),
 			routeSearchResult.blockedReasons(),
 			LocalDateTime.now(clock),
 			routeSearchResult.objectiveTags(),
 			routeSearchResult.officialFare()
 		);
+	}
+
+	// #2095/#2292: RouteV2Planner가 항상 RAPTOR(TIMETABLE_SCAN)를 쓰도록 바뀌면서(레거시 그래프
+	// 우선 시도 생략, stabilizeTimetableRouteCandidatesWithSource의
+	// legacyGraphCandidateAllowed=false) 레거시 buildRouteSearchAlternatives()가 부착하던
+	// 접근성 경고(LOW_DATA_CONFIDENCE/STAIR_ONLY_ACCESS/STALE_ACCESSIBILITY_DATA)가 RAPTOR
+	// 결과에는 전혀 붙지 않게 됐다 — RAPTOR는 시간표 데이터만 참조하고
+	// LoadTransitMasterPort의 출구·시설 데이터를 보지 않기 때문이다. WHEELCHAIR·
+	// STRICT_STEP_FREE는 canUseTimetableRaptor()가 false라 애초에 이 경로를 타지 않고
+	// 레거시로 차단·경고까지 그대로 받으므로 무영향이지만(blocksStairOnlyAccess는 이 두
+	// 프로필에서만 true — RouteProfileWeight 참고), PREFER_STEP_FREE 등 "선호"만 하는
+	// 프로필은 경고 없이 통과해버려 접근성 정보가 유실됐다. 레거시와 동일한 기준
+	// (hasStairOnlyAccess/routeWarnings, 같은 LoadTransitMasterPort 출구·시설 데이터)을
+	// RAPTOR itinerary의 승차·환승·하차 역(진입역 + 각 ride 하차역 — 레거시의
+	// accessibilityStationIds와 동일한 의미)에 그대로 적용해 재부착한다. 완화도 과잉 경고도
+	// 아니고, RAPTOR가 이미 채운 warnings가 있으면 보존한 채 합친다.
+	private List<RouteWarning> timetableAccessibilityWarnings(RouteSearchResult routeSearchResult) {
+		List<String> accessibilityStationIds = timetableAccessibilityStationIds(routeSearchResult);
+		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
+		List<RouteWarning> computedWarnings = routeWarnings(accessibilityStationIds, stairOnlyAccess);
+		if (routeSearchResult.warnings().isEmpty()) {
+			return computedWarnings;
+		}
+		var merged = new LinkedHashSet<>(routeSearchResult.warnings());
+		merged.addAll(computedWarnings);
+		return List.copyOf(merged);
+	}
+
+	// 레거시 MultiTransferRoute.accessibilityStationIds()와 동일한 의미: 진입역(origin) +
+	// 매 환승·하차 지점(각 "ride" 스텝의 도착역, 마지막은 destination) — 실제로 타고 내리는
+	// 역만 확인 대상이다. RAPTOR가 만드는 "ride" 스텝은 한 노선을 탄 구간 전체(승차→하차)를
+	// 하나로 묶으므로 toStationId가 곧 환승·최종 하차역이다.
+	private List<String> timetableAccessibilityStationIds(RouteSearchResult routeSearchResult) {
+		List<String> stationIds = new ArrayList<>();
+		stationIds.add(routeSearchResult.originStationId());
+		routeSearchResult.steps().stream()
+			.filter(step -> "ride".equals(step.stepType()))
+			.map(RouteStep::toStationId)
+			.forEach(stationIds::add);
+		return List.copyOf(stationIds);
 	}
 
 	private List<RouteSearchResult> buildRouteSearchAlternatives(SearchRouteCommand command, int alternativeCount) {
