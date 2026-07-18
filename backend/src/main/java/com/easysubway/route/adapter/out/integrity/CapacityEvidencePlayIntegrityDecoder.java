@@ -9,6 +9,7 @@ import java.util.HexFormat;
 import java.util.List;
 import javax.crypto.Mac;
 import javax.crypto.spec.SecretKeySpec;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
@@ -25,6 +26,7 @@ final class CapacityEvidencePlayIntegrityDecoder implements PlayIntegrityDecoder
 	private final String certificateDigest;
 	private final Clock clock;
 
+	@Autowired
 	CapacityEvidencePlayIntegrityDecoder(
 		@Value("${easysubway.route-v2.capacity-evidence.attestation-key:}") String attestationKey,
 		@Value("${easysubway.route-v2.play-integrity.certificate-sha256:}") String certificateDigest
