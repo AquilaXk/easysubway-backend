@@ -222,6 +222,7 @@ class FacilityReportAdminPageControllerTest {
 			.contains("신고 급증")
 			.contains("시설 신고 확인")
 			.doesNotContain("상태·사진·위치·접수일 기준으로 제보를 확인 대기열에 배치합니다.")
+			.contains("class=\"danger\" type=\"submit\" name=\"decision\" value=\"REJECT\">선택 반려")
 			.contains("점검 필요")
 			.contains("신고가 평소보다 많습니다")
 			.containsPattern("최근 24시간 신고 \\d+건");

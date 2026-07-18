@@ -141,6 +141,52 @@ class AdminDesignGuardTest {
 		assertThat(css).containsPattern(singleDivider);
 	}
 
+	@Test
+	@DisplayName("mobile topbar는 flat chrome과 44px action target을 유지한다")
+	void mobileTopbarUsesFlatChromeAndAccessibleTargets() throws IOException {
+		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+		String shell = read("backend/src/main/resources/templates/admin/fragments/shell.html");
+
+		assertThat(css)
+			.contains(".admin-v3 .admin-sidebar-toggle,")
+			.contains(".admin-v3 .admin-alert-bell,")
+			.contains(".admin-v3 .admin-user-menu-trigger,")
+			.contains(".admin-v3 .admin-topbar-logout {")
+			.contains("min-width: 44px;")
+			.contains("min-height: 44px;")
+			.contains("border-radius: 0;")
+			.contains("background: transparent;")
+			.contains("box-shadow: none;");
+		assertThat(shell)
+			.contains("class=\"admin-topbar-logout-form\"")
+			.contains("class=\"admin-topbar-logout\" aria-label=\"로그아웃\"");
+		Matcher alertTrigger = Pattern.compile("<a class=\"admin-alert-bell\"[^>]*>").matcher(shell);
+		assertThat(alertTrigger.find()).as("alert bell trigger가 존재한다").isTrue();
+		assertThat(alertTrigger.group()).doesNotContain("aria-haspopup");
+		Matcher userTrigger = Pattern.compile("<button[^>]*class=\"admin-user-menu-trigger\"[^>]*>")
+			.matcher(shell);
+		assertThat(userTrigger.find()).as("user menu trigger가 존재한다").isTrue();
+		assertThat(userTrigger.group()).doesNotContain("aria-haspopup");
+		Matcher userPanel = Pattern.compile("<div[^>]*id=\"admin-user-menu-panel\"[^>]*>").matcher(shell);
+		assertThat(userPanel.find()).as("user menu panel이 존재한다").isTrue();
+		assertThat(userPanel.group())
+			.contains("role=\"region\"")
+			.doesNotContain("role=\"dialog\"");
+	}
+
+	@Test
+	@DisplayName("기존 mobile metric divider는 1열에서 단일 top border를 유지한다")
+	void mobileMetricDividerKeepsSingleTopBorder() throws IOException {
+		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+
+		assertThat(css)
+			.contains(".dashboard-card.metric-cell {")
+			.contains("border-left: 0;")
+			.contains("border-top: 1px solid var(--admin-border);")
+			.contains(".dashboard-card.metric-cell:first-child {")
+			.contains("border-top: 0;");
+	}
+
 	private static String read(String path) throws IOException {
 		return Files.readString(ROOT.resolve(path));
 	}

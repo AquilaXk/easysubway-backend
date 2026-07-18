@@ -155,11 +155,20 @@ class AdminAccessibilitySmokeTest {
 			.contains("<main class=\"admin-main\">")
 			.contains("<h1>" + expectedHeading + "</h1>")
 			.contains("aria-label=\"관리자 로그아웃\"")
+			.contains("class=\"admin-topbar-logout-form\"")
 			.contains("action=\"/admin/logout\"")
 			.contains("name=\"_csrf\"")
 			.doesNotContain("<main id=\"admin-content\"");
 		assertThat(html.indexOf("href=\"#admin-content\"")).isLessThan(html.indexOf("class=\"admin-shell\""));
 		assertThat(html.indexOf("class=\"admin-topbar-row\"")).isLessThan(html.indexOf("id=\"admin-content\""));
+		assertThat(html.indexOf("class=\"admin-sidebar-nav-control\""))
+			.isLessThan(html.indexOf("class=\"admin-topbar-brand\""));
+		assertThat(html.indexOf("class=\"admin-topbar-brand\""))
+			.isLessThan(html.indexOf("class=\"admin-alert-center\""));
+		assertThat(html.indexOf("class=\"admin-alert-center\""))
+			.isLessThan(html.indexOf("class=\"admin-user-menu\""));
+		assertThat(html.indexOf("class=\"admin-user-menu\""))
+			.isLessThan(html.indexOf("class=\"admin-topbar-logout-form\""));
 		assertThat(html.indexOf("id=\"admin-content\"")).isLessThan(html.indexOf("<header class=\"admin-page-head\">"));
 	}
 

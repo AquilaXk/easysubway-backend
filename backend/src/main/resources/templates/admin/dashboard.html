@@ -18,7 +18,7 @@
 		<div>
 			<h1>통합 대시보드</h1>
 		</div>
-		<div class="admin-actions">
+		<div class="admin-actions admin-dashboard-snapshot-actions">
 			<span th:if="${snapshotStatus == null}" class="admin-status warn">지표 집계 대기</span>
 			<span th:if="${snapshotStatus != null and snapshotStatus.success}" class="admin-status good">지표 집계 정상</span>
 			<span th:if="${snapshotStatus != null and !snapshotStatus.success}" class="admin-status bad">지표 집계 실패</span>

@@ -218,6 +218,10 @@ body.admin-v3 {
 	gap: 10px;
 }
 
+.admin-topbar-logout-form {
+	margin: 0;
+}
+
 /* 상태 스트립: 정적·무채색·비인터랙티브. 각 항목은 라벨 + 값으로 의미를 드러내고, title 툴팁으로
    상세를 설명한다. 버튼처럼 보이지 않도록 배경·보더 없이 얇은 구분선(·) 만으로 구분한다. */
 .admin-status-strip {
@@ -318,6 +322,11 @@ body.admin-v3 {
 	flex-wrap: wrap;
 	gap: 8px;
 	justify-content: flex-end;
+}
+
+.admin-dashboard-snapshot-actions {
+	align-items: center;
+	min-height: 44px;
 }
 
 .admin-btn,
@@ -1602,7 +1611,22 @@ body.admin-v3 {
 	}
 
 	.admin-topbar-row {
-		display: grid;
+		display: flex;
+		padding: 0 0 10px;
+		border: 0;
+		border-bottom: 1px solid var(--admin-border);
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.admin-topbar-context {
+		flex: 1 1 190px;
+		align-items: center;
+	}
+
+	.admin-topbar-actions {
+		flex: 0 1 auto;
 	}
 
 	.admin-grid-2,
@@ -1614,6 +1638,14 @@ body.admin-v3 {
 	   뒤에 있어 동일 명시도면 base가 이긴다. nav-control을 끼워 명시도를 (0,3,0)으로 올려 노출한다. */
 	.admin-v3 .admin-sidebar-nav-control .admin-sidebar-toggle {
 		display: inline-flex;
+		border: 0;
+		border-radius: 0;
+		background: transparent;
+	}
+
+	.admin-dashboard-snapshot-actions {
+		margin-top: 10px;
+		justify-content: flex-start;
 	}
 
 	/* JS 있으면 오프캔버스: 사이드바를 화면 밖에 두고 토글로 연다(body.sidebar-open). */
@@ -1781,8 +1813,8 @@ body.admin-v3 {
 	display: inline-flex;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 44px;
+	height: 44px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-surface);
@@ -1882,7 +1914,7 @@ body.admin-v3 {
 	border: 0;
 }
 
-/* 사용자 메뉴 드롭다운(#2047): 상단바 우측 트리거 + 계정/로그아웃 패널. alert-center와 동일한
+/* 사용자 메뉴 드롭다운(#2047): 상단바 우측 트리거 + 계정 정보 패널. alert-center와 동일한
    앵커드 드롭다운 규격(1px 보더·그림자 0·radius ≤8). 트리거는 무채색이고, 활성(열림) 표시는
    보더를 액센트로 바꿔 파랑을 주 상호작용에만 쓴다는 원칙을 지킨다. */
 .admin-user-menu {
@@ -1897,7 +1929,7 @@ body.admin-v3 {
 	flex-direction: column;
 	align-items: flex-end;
 	gap: 1px;
-	min-height: 36px;
+	min-height: 44px;
 	padding: 4px 10px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-control);
@@ -1945,7 +1977,7 @@ body.admin-v3 {
 
 /* no-JS 폴백(#2049 리뷰): x-cloak 대신 has-js 초기화 창에서만 패널을 숨긴다. JS가 있으면
    alpine:initialized 이후 x-show(open)의 인라인 display가 전담하고, JS가 없으면(has-js 미부착)
-   이 규칙이 걸리지 않아 계정 정보·로그아웃 폼이 그대로 노출된다(bulk-actionbar와 동일 패턴). */
+   이 규칙이 걸리지 않아 계정 정보가 그대로 노출된다. */
 .admin-v3.has-js:not(.has-js-ready) .admin-user-menu-panel {
 	display: none;
 }
@@ -1954,9 +1986,8 @@ body.admin-v3 {
 	display: grid;
 	grid-template-columns: max-content 1fr;
 	gap: 6px 12px;
-	margin: 0 0 12px;
-	padding: 0 0 12px;
-	border-bottom: 1px solid var(--admin-border);
+	margin: 0;
+	padding: 0;
 	font-size: 13px;
 }
 
@@ -1971,16 +2002,25 @@ body.admin-v3 {
 	font-weight: var(--admin-w-strong);
 }
 
-/* 로그아웃은 주 액션이 아니므로 파랑 채움을 벗기고 고스트(무채색 surface·1px 보더·잉크색)로 둔다. */
-.admin-v3 .admin-user-menu-logout {
-	width: 100%;
+/* topbar 로그아웃은 독립 neutral action이며 account dialog와 별개로 항상 접근 가능하다. */
+.admin-v3 .admin-topbar-logout {
+	min-width: 44px;
+	min-height: 44px;
 	background: var(--admin-surface);
 	border: 1px solid var(--admin-border);
 	color: var(--admin-ink);
 }
 
-.admin-v3 .admin-user-menu-logout:hover {
+.admin-v3 .admin-topbar-logout:hover {
 	background: var(--admin-bg);
+}
+
+.admin-v3 .admin-sidebar-toggle,
+.admin-v3 .admin-alert-bell,
+.admin-v3 .admin-user-menu-trigger,
+.admin-v3 .admin-topbar-logout {
+	min-width: 44px;
+	min-height: 44px;
 }
 
 /* 반응형 사이드바 토글(#1738, 명시도 버그 수정 #2047): 데스크톱(>1024px)에서는 숨긴다.
@@ -1995,8 +2035,8 @@ body.admin-v3 {
 	display: none;
 	align-items: center;
 	justify-content: center;
-	width: 36px;
-	height: 36px;
+	width: 44px;
+	height: 44px;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-surface);

@@ -74,9 +74,12 @@ class AdminAlertControllerTest {
 		assertThat(html)
 			.contains("class=\"admin-alert-center\"")
 			.contains("x-data=\"alertCenter\"")
-			.contains("id=\"admin-alert-live\"")
+			.contains("aria-controls=\"admin-alert-live\"")
+			.contains("id=\"admin-alert-live\" class=\"admin-alert-live\" role=\"region\" aria-label=\"알림 센터\"")
+			.doesNotContain("class=\"admin-alert-bell\" aria-haspopup=\"dialog\"")
 			// no-JS fallback: 벨은 알림 전용 페이지로 이동
 			.contains("href=\"/admin/alerts\"");
+		assertThat(html).containsOnlyOnce("role=\"region\" aria-label=\"알림 센터\"");
 	}
 
 	@Test
