@@ -50,6 +50,13 @@ class AdminDesignGuardTest {
 	private static final Pattern BORDER_RADIUS_PX = Pattern.compile(
 		"border-radius\\s*:\\s*([^;]*)", Pattern.CASE_INSENSITIVE);
 	private static final Pattern PX_LITERAL = Pattern.compile("(\\d+)px");
+	private static final Pattern TABLE_TAG = Pattern.compile("<table\\b");
+	private static final Pattern CONDITIONAL_TABLE = Pattern.compile("<table\\b[^>]*\\bth:if=");
+	private static final Pattern ACCESSIBLE_TABLE_WRAPPER = Pattern.compile(
+		"<div class=\"admin-table-scroll\" tabindex=\"0\" role=\"group\"\\s+"
+			+ "aria-label=\"가로로 스크롤 가능한 [^\"]*표\"[^>]*>\\s*<table\\b",
+		Pattern.DOTALL);
+	private static final Pattern TABLE_WRAPPER_CLOSE = Pattern.compile("</table>\\s*</div>");
 
 	@Test
 	@DisplayName("금지된 초록·청록 계열 hex가 없다")
@@ -185,6 +192,83 @@ class AdminDesignGuardTest {
 			.contains("border-top: 1px solid var(--admin-border);")
 			.contains(".dashboard-card.metric-cell:first-child {")
 			.contains("border-top: 0;");
+	}
+
+	@Test
+	@DisplayName("모든 admin table은 조건과 접근성 이름을 소유한 명시적 scroll wrapper를 사용한다")
+	void adminTablesUseExplicitAccessibleScrollWrappers() throws IOException {
+		Path templates = ROOT.resolve("backend/src/main/resources/templates/admin");
+		List<String> violations = new ArrayList<>();
+		int totalTables = 0;
+		try (var paths = Files.walk(templates)) {
+			for (Path path : paths.filter(file -> file.toString().endsWith(".html")).toList()) {
+				String html = Files.readString(path);
+				int tables = count(TABLE_TAG, html);
+				if (tables == 0) {
+					continue;
+				}
+				totalTables += tables;
+				int wrappers = count(ACCESSIBLE_TABLE_WRAPPER, html);
+				int wrapperCloses = count(TABLE_WRAPPER_CLOSE, html);
+				int conditionalTables = count(CONDITIONAL_TABLE, html);
+				if (tables != wrappers || tables != wrapperCloses || conditionalTables != 0) {
+					violations.add(ROOT.relativize(path) + ": tables=" + tables
+						+ ", wrappers=" + wrappers + ", closes=" + wrapperCloses
+						+ ", conditionalTables=" + conditionalTables);
+				}
+			}
+		}
+
+		assertThat(totalTables).as("admin table inventory가 비어 있지 않다").isPositive();
+		assertThat(violations)
+			.as("wrapper 없는 admin table 또는 wrapper 밖 th:if: %s", violations)
+			.isEmpty();
+	}
+
+	@Test
+	@DisplayName("table wrapper만 horizontal scroll을 소유하고 sticky header·첫 열을 유지한다")
+	void tableWrapperOwnsHorizontalScrollAndStickyCells() throws IOException {
+		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+
+		assertThat(css)
+			.contains(".admin-table-scroll {")
+			.contains("max-block-size: min(70vh, 640px);")
+			.contains("overflow: auto;")
+			.contains(".admin-v3 .admin-table-scroll:focus-visible {")
+			.contains(".admin-table-scroll th:first-child,")
+			.contains(".admin-table-scroll td:first-child:not([colspan]) {")
+			.contains("position: sticky;")
+			.contains("left: 0;")
+			.contains(".admin-table-scroll thead th:first-child {");
+		assertThat(rule(css, "html,\\s*body\\.admin-v3")).contains("overflow-x: hidden;");
+		assertThat(rule(css, "\\.admin-main")).doesNotContain("overflow-x: auto;");
+		assertThat(rule(css, "\\.admin-v3 section,\\s*\\.admin-card"))
+			.doesNotContain("overflow-x: auto;");
+		assertThat(rule(css, "\\.admin-v3 th"))
+			.doesNotContain("position: sticky;")
+			.doesNotContain("top: 0;");
+		assertThat(rule(css, "\\.admin-v3 thead th"))
+			.contains("position: sticky;")
+			.contains("top: 0;");
+		assertThat(rule(css,
+			"\\.admin-v3 \\.admin-table-scroll table\\.static-table tbody tr:hover "
+				+ "td:first-child:not\\(\\[colspan\\]\\)"))
+			.contains("background: var(--admin-surface);");
+	}
+
+	private static int count(Pattern pattern, String source) {
+		int count = 0;
+		Matcher matcher = pattern.matcher(source);
+		while (matcher.find()) {
+			count++;
+		}
+		return count;
+	}
+
+	private static String rule(String css, String selectorPattern) {
+		Matcher matcher = Pattern.compile(selectorPattern + "\\s*\\{([^}]*)}", Pattern.DOTALL).matcher(css);
+		assertThat(matcher.find()).as("CSS rule이 존재한다: %s", selectorPattern).isTrue();
+		return matcher.group(1);
 	}
 
 	private static String read(String path) throws IOException {

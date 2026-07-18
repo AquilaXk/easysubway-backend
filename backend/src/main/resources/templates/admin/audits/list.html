@@ -87,7 +87,9 @@
 				   download>JSON 내보내기</a>
 			</p>
 
-			<table th:if="${!events.isEmpty()}">
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!events.isEmpty()}">
+			<table>
 				<caption class="sr-only" th:text="${title}">감사 이벤트</caption>
 				<thead>
 				<tr>
@@ -125,6 +127,7 @@
 				</tr>
 				</tbody>
 			</table>
+			</div>
 
 			<div th:if="${events.isEmpty()}"
 			     th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 감사 이벤트가 없습니다.', '필터를 변경하거나 기간을 넓혀 보세요.')}"></div>

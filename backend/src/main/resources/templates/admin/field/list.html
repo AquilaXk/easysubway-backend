@@ -21,6 +21,8 @@
 		</div>
 	</header>
 
+	<div class="admin-table-scroll" tabindex="0" role="group"
+	     aria-label="가로로 스크롤 가능한 데이터 표">
 	<table>
 		<thead>
 		<tr>
@@ -53,6 +55,7 @@
 		</tr>
 		</tbody>
 	</table>
+	</div>
 		<div th:replace="~{admin/fragments/pagination :: pager('현장 확인 목록 페이지', ${page}, ${paginationLinks})}"></div>
 </main>
 </div>

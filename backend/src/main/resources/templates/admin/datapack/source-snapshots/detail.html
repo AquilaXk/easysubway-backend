@@ -26,6 +26,8 @@
 
 	<section class="admin-panel">
 		<h2>기본 정보</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">source id</th><td th:text="${snapshot.sourceId}">source-id</td></tr>
@@ -41,10 +43,13 @@
 			<tr><th scope="row">diff summary JSON</th><td th:text="${snapshot.diffSummaryJson}">-</td></tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section class="admin-panel">
 		<h2>상태</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">snapshot status</th><td th:text="${snapshot.snapshotStatus}">LOCKED</td></tr>
@@ -59,10 +64,13 @@
 			<tr><th scope="row">governance policy sha256</th><td th:text="${snapshot.governancePolicySha256}">-</td></tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section class="admin-panel">
 		<h2>Evidence</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">raw sha256</th><td th:text="${snapshot.rawSha256}">sha256</td></tr>
@@ -71,6 +79,7 @@
 			<tr><th scope="row">schema fingerprint</th><td th:text="${snapshot.schemaFingerprint}">sha256</td></tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section class="admin-panel">

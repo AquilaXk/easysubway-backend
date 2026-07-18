@@ -53,6 +53,8 @@
 				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
 			</div>
 		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 배포 채널 표">
 		<table class="static-table">
 			<thead>
 			<tr>
@@ -172,10 +174,13 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section class="admin-panel">
 		<h2>채널 이벤트</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 채널 이벤트 표">
 		<table class="static-table">
 			<thead>
 			<tr>
@@ -217,6 +222,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 </main>
 </div>

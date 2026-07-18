@@ -171,6 +171,8 @@
 				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 				<input type="hidden" name="returnTo" th:value="${currentListHref}">
+				<div class="admin-table-scroll" tabindex="0" role="group"
+				     aria-label="가로로 스크롤 가능한 데이터 표">
 				<table x-bind:class="tableClass">
 				<thead>
 				<tr>
@@ -246,6 +248,7 @@
 				</tr>
 				</tbody>
 			</table>
+				</div>
 			<div class="bulk-actionbar" x-show="hasSelection">
 				<span class="bulk-count" x-text="selectionLabel">선택한 신고 일괄 처리</span>
 				<button type="submit" name="decision" value="ACCEPT">선택 승인</button>

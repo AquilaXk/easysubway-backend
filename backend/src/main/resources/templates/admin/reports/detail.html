@@ -97,7 +97,9 @@
 	<section>
 		<h2>감사 이력</h2>
 		<p th:if="${reviewAudits.isEmpty()}">없음</p>
-		<table th:if="${!reviewAudits.isEmpty()}">
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!reviewAudits.isEmpty()}">
+		<table>
 			<thead>
 			<tr>
 				<th>확인한 사람</th>
@@ -117,13 +119,16 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section>
 		<h2>같은 시설 신고</h2>
 		<!-- 같은 역·시설의 다른 신고(#1740): 판정 전 반복 신고 맥락을 준다. 읽기 전용 목록으로 #1163 병합과 독립. -->
 		<p th:if="${sameFacilityReports.isEmpty()}">같은 시설의 다른 신고가 없습니다.</p>
-		<table th:if="${!sameFacilityReports.isEmpty()}">
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!sameFacilityReports.isEmpty()}">
+		<table>
 			<thead>
 			<tr>
 				<th scope="col">상태</th>
@@ -143,6 +148,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<form class="review-form"

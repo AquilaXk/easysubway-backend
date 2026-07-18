@@ -4,6 +4,11 @@
 	box-sizing: border-box;
 }
 
+html,
+body.admin-v3 {
+	overflow-x: hidden;
+}
+
 body.admin-v3 {
 	margin: 0;
 	background: var(--admin-bg);
@@ -164,7 +169,7 @@ body.admin-v3 {
 	max-width: none;
 	margin: 0;
 	padding: 28px 30px 48px;
-	overflow-x: auto;
+	overflow-x: visible;
 }
 
 .admin-topbar {
@@ -415,7 +420,6 @@ body.admin-v3 {
 }
 
 .admin-v3 table {
-	overflow: hidden;
 	width: 100%;
 	min-width: 620px;
 	border-collapse: collapse;
@@ -423,7 +427,21 @@ body.admin-v3 {
 
 .admin-v3 section,
 .admin-card {
-	overflow-x: auto;
+	overflow-x: visible;
+}
+
+.admin-table-scroll {
+	max-width: 100%;
+	max-block-size: min(70vh, 640px);
+	overflow: auto;
+	overscroll-behavior-inline: contain;
+	scrollbar-gutter: stable;
+	isolation: isolate;
+}
+
+.admin-v3 .admin-table-scroll:focus-visible {
+	outline: 3px solid #ffbf47;
+	outline-offset: 3px;
 }
 
 /* 플랫 섹션(#2047, 오너 확정 2026-07-13): 1px 보더 패널은 핵심 지표 묶음·데이터 표·폼에만 두고,
@@ -449,18 +467,34 @@ body.admin-v3 {
 }
 
 .admin-v3 th {
-	position: sticky;
-	top: 0;
-	z-index: 1;
 	background: var(--admin-header-bg);
 	color: var(--admin-ink-2);
 	font-size: 13px;
 	font-weight: var(--admin-w-medium);
 }
 
+.admin-v3 thead th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
 .admin-v3 td {
 	color: var(--admin-ink);
 	font-weight: var(--admin-w-body);
+}
+
+.admin-table-scroll th:first-child,
+.admin-table-scroll td:first-child:not([colspan]) {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	background: var(--admin-surface);
+}
+
+.admin-table-scroll thead th:first-child {
+	z-index: 3;
+	background: var(--admin-header-bg);
 }
 
 .admin-v3 tbody tr {
@@ -472,8 +506,17 @@ body.admin-v3 {
 	background: var(--admin-header-bg);
 }
 
+.admin-v3 .admin-table-scroll tbody tr:hover td:first-child:not([colspan]) {
+	background: var(--admin-header-bg);
+}
+
 .admin-v3 tbody tr[aria-selected="true"],
 .admin-v3 tbody tr.is-selected {
+	background: var(--admin-accent-soft);
+}
+
+.admin-v3 .admin-table-scroll tbody tr[aria-selected="true"] td:first-child:not([colspan]),
+.admin-v3 .admin-table-scroll tbody tr.is-selected td:first-child:not([colspan]) {
 	background: var(--admin-accent-soft);
 }
 
@@ -493,6 +536,10 @@ body.admin-v3 {
 
 .admin-v3 table.static-table tbody tr:hover {
 	background: transparent;
+}
+
+.admin-v3 .admin-table-scroll table.static-table tbody tr:hover td:first-child:not([colspan]) {
+	background: var(--admin-surface);
 }
 
 .admin-v3 tbody tr:last-child td {
@@ -1676,7 +1723,7 @@ body.admin-v3 {
 	}
 }
 
-/* ≤768px: 표준 테이블 밀도를 좁힌다(가로 스크롤은 table min-width + section overflow-x가 담당). */
+/* ≤768px: 표준 테이블 밀도를 좁힌다(table min-width + admin-table-scroll이 scroll을 담당). */
 @media (max-width: 768px) {
 	.admin-v3 th,
 	.admin-v3 td {

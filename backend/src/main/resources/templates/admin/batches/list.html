@@ -24,6 +24,8 @@
 
 	<section>
 		<h2>허용된 배치 작업</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table>
 			<thead>
 			<tr>
@@ -55,6 +57,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<div id="batch-live" th:fragment="live">
@@ -75,6 +78,8 @@
 				<p th:if="${history.isEmpty()}">실행 이력이 없습니다.</p>
 				<details class="batch-history-details" th:if="${!history.isEmpty()}">
 					<summary>데이터 표로 보기</summary>
+					<div class="admin-table-scroll" tabindex="0" role="group"
+					     aria-label="가로로 스크롤 가능한 데이터 표">
 					<table>
 						<thead>
 						<tr>
@@ -91,6 +96,7 @@
 						</tr>
 						</tbody>
 					</table>
+					</div>
 				</details>
 			</section>
 		</div>
@@ -98,6 +104,8 @@
 
 	<section>
 		<h2>최근 배치 실행</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table>
 			<thead>
 			<tr>
@@ -153,6 +161,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 		<div th:replace="~{admin/fragments/pagination :: pager('배치 실행 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</section>
 	</div>

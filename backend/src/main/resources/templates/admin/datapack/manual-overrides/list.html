@@ -92,6 +92,8 @@
 				<span class="filter-chip" th:if="${filter.hasQuery()}" th:text="${'검색 ' + filter.queryValue}">검색</span>
 			</div>
 		</div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 수동 오버라이드 표">
 		<table class="static-table">
 			<thead>
 			<tr>
@@ -178,6 +180,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 </main>
 </div>

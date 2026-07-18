@@ -94,6 +94,8 @@
 		<!-- sha·workflow 상세 13행은 기본 접힘으로 격하(추세·요약을 앞세운다). -->
 		<details class="dashboard-details">
 			<summary>상세 해시·워크플로 보기</summary>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 데이터 표">
 			<table>
 				<tbody>
 				<tr><th scope="row">scope</th><td th:text="${datapackReleaseSummary.scopeId}">scope</td></tr>
@@ -112,6 +114,7 @@
 				<tr><th scope="row">manifest signature</th><td th:text="${datapackReleaseSummary.manifestBlockers}">0</td></tr>
 				</tbody>
 			</table>
+			</div>
 		</details>
 	</section>
 
@@ -127,6 +130,8 @@
 			<div class="admin-panel-head">
 				<h2 id="dashboard-health-title">운영 이상 신호</h2>
 			</div>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 데이터 표">
 			<table>
 				<tbody>
 				<tr><th scope="row">서비스 상태</th><td th:text="|${dashboard.healthStatus} (${dashboard.serviceName})|">UP</td></tr>
@@ -134,6 +139,7 @@
 				<tr><th scope="row">API 오류율</th><td th:text="${dashboard.apiErrorRate}">0.0%</td></tr>
 				</tbody>
 			</table>
+			</div>
 		</section>
 	</div>
 </main>

@@ -28,6 +28,8 @@
 	<section class="admin-panel">
 		<h2>게이트 체크리스트</h2>
 		<p class="summary" th:text="${evidenceBundle.productionPromoteReason()}">production promote 상태</p>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<thead>
 			<tr>
@@ -62,6 +64,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section class="admin-panel">
@@ -100,6 +103,8 @@
 		</dl>
 		<details>
 			<summary>sha 원문 보기</summary>
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 데이터 표">
 			<table class="static-table">
 				<tbody>
 				<tr><th scope="row">buildSpec</th><td th:text="${candidate.buildSpecSha256}">sha</td></tr>
@@ -110,11 +115,14 @@
 				<tr><th scope="row">evidenceBundle</th><td th:text="${evidenceBundle.evidenceBundleSha256}">sha</td></tr>
 				</tbody>
 			</table>
+			</div>
 		</details>
 	</section>
 
 	<section class="admin-panel">
 		<h2>입력 원장</h2>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<tbody>
 			<tr><th scope="row">원천 스냅샷 ids</th><td th:text="${candidateInput.sourceSnapshotIds}">snapshot ids</td></tr>
@@ -124,6 +132,7 @@
 			<tr><th scope="row">승인 오버라이드 세트 hash</th><td><span th:title="${candidateInput.approvedOverrideSetHash}" th:text="${candidateInput.approvedOverrideSetHashShort()}">sha</span></td></tr>
 			</tbody>
 		</table>
+		</div>
 	</section>
 
 	<section class="admin-panel">

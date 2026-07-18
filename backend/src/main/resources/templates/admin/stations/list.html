@@ -50,6 +50,8 @@
 			<button type="submit">검색</button>
 		</form>
 
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table>
 			<thead>
 			<tr>
@@ -104,6 +106,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 		<div th:replace="~{admin/fragments/pagination :: pager('역 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</div>
 </main>

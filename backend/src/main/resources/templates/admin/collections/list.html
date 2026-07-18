@@ -39,6 +39,8 @@
 		<div class="admin-auto-refresh" hidden x-data="autoRefresh"
 		     data-refresh-url="/admin/data-collections/page/live" data-refresh-target="#collection-live"
 		     data-refresh-interval="10000" th:attr="data-refresh-active=${hasRunning} ? 'true' : 'false'"></div>
+		<div class="admin-table-scroll" tabindex="0" role="group"
+		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table>
 			<thead>
 			<tr>
@@ -96,6 +98,7 @@
 			</tr>
 			</tbody>
 		</table>
+		</div>
 		<div th:replace="~{admin/fragments/pagination :: pager('데이터 수집 실행 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</section>
 </main>
