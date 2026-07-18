@@ -7,6 +7,7 @@ import com.easysubway.admin.operations.application.port.out.AdminIncidentReposit
 import com.easysubway.admin.operations.domain.AdminIncident;
 import com.easysubway.admin.operations.domain.AdminIncidentStatus;
 import com.easysubway.admin.operations.domain.AdminIncidentTransition;
+import com.easysubway.common.error.ConflictException;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
@@ -114,8 +115,11 @@ public class AdminIncidentService {
 		}
 		AdminIncidentStatus fromStatus = incident.status();
 		LocalDateTime now = LocalDateTime.now(clock);
-		AdminIncident updated = repository.save(
-			incident.transitionTo(target, now, target.isResolved() ? resolution : null));
+		AdminIncident updated = incident.transitionTo(target, now, target.isResolved() ? resolution : null);
+		if (!repository.compareAndSetStatus(updated, fromStatus)) {
+			throw new ConflictException(
+				"다른 담당자가 먼저 상태를 변경했습니다. 최신 상태를 다시 확인한 뒤 전이해 주세요.");
+		}
 		repository.saveTransition(new AdminIncidentTransition(
 			incidentId,
 			fromStatus,

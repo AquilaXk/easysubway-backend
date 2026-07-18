@@ -10,6 +10,7 @@ import com.easysubway.admin.operations.application.service.AdminIncidentService.
 import com.easysubway.admin.operations.domain.AdminIncident;
 import com.easysubway.admin.operations.domain.AdminIncidentStatus;
 import com.easysubway.admin.operations.domain.AdminIncidentTransition;
+import com.easysubway.common.error.ConflictException;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.health.domain.HealthComponent;
 import com.easysubway.health.domain.HealthStatus;
@@ -59,6 +60,43 @@ class AdminIncidentServiceTest {
 				AdminIncidentStatus.RESOLVED
 			);
 		assertThat(timeline.getFirst().isInitial()).isTrue();
+	}
+
+	@Test
+	@DisplayName("상반된 동시 전이는 compare-and-set로 정확히 하나만 성공하고 나머지는 충돌로 거부된다")
+	void concurrentOpposingTransitionsKeepExactlyOneWinner() {
+		var repository = new RacingIncidentRepository();
+		var service = new AdminIncidentService(
+			repository, new AdminCommonCodeService(new InMemoryAdminCommonCodeRepository()));
+		AdminIncident opened = service.open(
+			new OpenAdminIncidentCommand("MAJOR", "RECEIVED", "HEALTH", "database DOWN", "ops", null, null));
+		String id = opened.incidentId();
+		service.transition(id, "IN_PROGRESS", "ops", null, null);
+		service.transition(id, "MONITORING", "ops", null, null);
+
+		// 운영자 B가 MONITORING을 읽고 조치 중 재개를 시도하는 창(window)에서,
+		// 운영자 A가 먼저 종결(상반된 전이)을 커밋한다.
+		repository.commitInNextCasWindow(() -> service.transition(id, "RESOLVED", "opsA", null, "DB 복구"));
+
+		assertThatThrownBy(() -> service.transition(id, "IN_PROGRESS", "opsB", "재개 시도", null))
+			.isInstanceOf(ConflictException.class)
+			.hasMessageContaining("다른 담당자가 먼저 상태를 변경");
+
+		AdminIncident current = repository.findById(id).orElseThrow();
+		assertThat(current.status()).isEqualTo(AdminIncidentStatus.RESOLVED);
+
+		List<AdminIncidentTransition> timeline = service.listTransitions(id);
+		// 충돌로 거부된 B의 전이(IN_PROGRESS 재개)는 기록되지 않는다.
+		assertThat(timeline)
+			.extracting(AdminIncidentTransition::toStatus)
+			.containsExactly(
+				AdminIncidentStatus.RECEIVED,
+				AdminIncidentStatus.IN_PROGRESS,
+				AdminIncidentStatus.MONITORING,
+				AdminIncidentStatus.RESOLVED
+			);
+		// current 상태는 항상 history 마지막 to_status와 일치한다.
+		assertThat(timeline.getLast().toStatus()).isEqualTo(current.status());
 	}
 
 	@Test
@@ -149,5 +187,28 @@ class AdminIncidentServiceTest {
 
 	private AdminIncident openReceived() {
 		return service.open(new OpenAdminIncidentCommand("MAJOR", "RECEIVED", "HEALTH", "database DOWN", "ops", null, null));
+	}
+
+	/**
+	 * compare-and-set 창에서 상반된 동시 전이를 결정적으로 재현하는 저장소.
+	 * 다음 {@code compareAndSetStatus} 호출 직전에 예약된 경쟁 write를 한 번 실행한다.
+	 */
+	private static final class RacingIncidentRepository extends InMemoryAdminIncidentRepository {
+
+		private Runnable pendingConcurrentCommit;
+
+		void commitInNextCasWindow(Runnable concurrentCommit) {
+			this.pendingConcurrentCommit = concurrentCommit;
+		}
+
+		@Override
+		public boolean compareAndSetStatus(AdminIncident next, AdminIncidentStatus expectedStatus) {
+			if (pendingConcurrentCommit != null) {
+				Runnable concurrentCommit = pendingConcurrentCommit;
+				pendingConcurrentCommit = null;
+				concurrentCommit.run();
+			}
+			return super.compareAndSetStatus(next, expectedStatus);
+		}
 	}
 }

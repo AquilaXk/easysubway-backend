@@ -102,6 +102,22 @@ public class JdbcAdminIncidentRepository implements AdminIncidentRepository {
 	}
 
 	@Override
+	public boolean compareAndSetStatus(AdminIncident next, AdminIncidentStatus expectedStatus) {
+		int updated = jdbcTemplate.update("""
+			UPDATE admin_incidents
+			SET status = ?, resolved_at = ?, resolution = ?, updated_at = CURRENT_TIMESTAMP
+			WHERE incident_id = ? AND status = ?
+			""",
+			next.status().name(),
+			next.resolvedAt(),
+			next.resolution(),
+			next.incidentId(),
+			expectedStatus.name()
+		);
+		return updated == 1;
+	}
+
+	@Override
 	public void saveTransition(AdminIncidentTransition transition) {
 		jdbcTemplate.update("""
 			INSERT INTO admin_incident_transitions (incident_id, from_status, to_status, changed_at, changed_by, note)

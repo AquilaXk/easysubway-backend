@@ -45,6 +45,54 @@ class JdbcAdminIncidentRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("compare-and-set는 기대 상태가 맞을 때만 갱신하고, 상반된 동시 전이의 뒤늦은 요청은 영향 행 0으로 거부한다")
+	void compareAndSetStatusAppliesOnlyWhenExpectedStatusMatches() {
+		var dataSource = incidentDataSource();
+		var repository = new JdbcAdminIncidentRepository(dataSource);
+		AdminIncident monitoring = repository.save(new AdminIncident(
+			"INC-1", "MAJOR", AdminIncidentStatus.MONITORING, "HEALTH", "database DOWN", "ops",
+			OPENED_AT, null, null, null, null));
+
+		// 운영자 A: MONITORING → RESOLVED compare-and-set 성공
+		boolean resolvedApplied = repository.compareAndSetStatus(
+			monitoring.transitionTo(AdminIncidentStatus.RESOLVED, OPENED_AT.plusMinutes(1), "DB 복구"),
+			AdminIncidentStatus.MONITORING);
+		assertThat(resolvedApplied).isTrue();
+
+		AdminIncident afterResolve = repository.findById("INC-1").orElseThrow();
+		assertThat(afterResolve.status()).isEqualTo(AdminIncidentStatus.RESOLVED);
+		assertThat(afterResolve.resolvedAt()).isEqualTo(OPENED_AT.plusMinutes(1));
+		assertThat(afterResolve.resolution()).isEqualTo("DB 복구");
+
+		// 운영자 B: 여전히 MONITORING인 줄 알고 재개(IN_PROGRESS)를 시도 → 기대 상태 불일치로 거부
+		boolean reopenApplied = repository.compareAndSetStatus(
+			monitoring.transitionTo(AdminIncidentStatus.IN_PROGRESS, OPENED_AT.plusMinutes(2), null),
+			AdminIncidentStatus.MONITORING);
+		assertThat(reopenApplied).isFalse();
+
+		// 거부된 요청은 어떤 필드도 바꾸지 않는다.
+		assertThat(repository.findById("INC-1").orElseThrow())
+			.satisfies(incident -> {
+				assertThat(incident.status()).isEqualTo(AdminIncidentStatus.RESOLVED);
+				assertThat(incident.resolution()).isEqualTo("DB 복구");
+			});
+	}
+
+	@Test
+	@DisplayName("존재하지 않는 incident의 compare-and-set는 새 행을 만들지 않고 거부한다")
+	void compareAndSetStatusDoesNotInsertMissingIncident() {
+		var dataSource = incidentDataSource();
+		var repository = new JdbcAdminIncidentRepository(dataSource);
+
+		boolean applied = repository.compareAndSetStatus(new AdminIncident(
+			"INC-MISSING", "MAJOR", AdminIncidentStatus.IN_PROGRESS, "HEALTH", "database DOWN", "ops",
+			OPENED_AT, null, null, null, null), AdminIncidentStatus.RECEIVED);
+
+		assertThat(applied).isFalse();
+		assertThat(repository.findById("INC-MISSING")).isEmpty();
+	}
+
+	@Test
 	@DisplayName("여러 incident 전이 이력을 단일 벌크 조회로 읽는다")
 	void findsTransitionsInBulk() {
 		var dataSource = incidentDataSource();

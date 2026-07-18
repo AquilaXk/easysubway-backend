@@ -11,6 +11,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEventRepository;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
+import com.easysubway.admin.operations.adapter.out.persistence.InMemoryAdminIncidentRepository;
+import com.easysubway.admin.operations.domain.AdminIncident;
+import com.easysubway.admin.operations.domain.AdminIncidentStatus;
 import jakarta.servlet.http.HttpSession;
 import java.util.List;
 import java.util.regex.Matcher;
@@ -20,6 +23,9 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
@@ -41,6 +47,9 @@ class AdminOperationsPageControllerTest {
 
 	@Autowired
 	private InMemoryAdminAuditEventRepository auditEventRepository;
+
+	@Autowired
+	private ConflictSimulatingIncidentRepository incidentRepository;
 
 	@Test
 	@DisplayName("공통코드 화면은 group filter와 enabled/disabled code를 표시한다")
@@ -236,6 +245,43 @@ class AdminOperationsPageControllerTest {
 				assertThat(event.reason()).startsWith("resolutionLength=");
 				assertThat(event.reason()).doesNotContain("secret");
 			});
+	}
+
+	@Test
+	@DisplayName("동시 전이 충돌 시 전이 요청은 409와 복구 안내를 반환하고 성공 전이·audit을 남기지 않는다")
+	void incidentTransitionConflictReturns409WithoutSuccessAudit() throws Exception {
+		openIncident("database DOWN");
+		String incidentId = auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 1)
+			.getFirst()
+			.targetId();
+
+		// 다른 세션이 먼저 상태를 바꾼 것처럼 다음 compare-and-set를 충돌로 만든다.
+		incidentRepository.simulateNextConflict();
+
+		String conflictHtml = mockMvc.perform(post("/admin/incidents/{incidentId}/transition", incidentId)
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.with(commandToken("/admin/incidents/page"))
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("targetStatus", "IN_PROGRESS")
+				.param("note", "재개 시도"))
+			.andExpect(status().isConflict())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(conflictHtml)
+			.contains("요청이 최신 상태와 충돌했습니다")
+			.contains("화면을 새로고침한 뒤 다시 시도해 주세요");
+
+		// 충돌 요청은 성공 전이 audit(TRANSITION_INCIDENT)을 남기지 않는다. OPEN_INCIDENT만 존재한다.
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.INCIDENT_CHANGE, 10))
+			.extracting(event -> event.action())
+			.containsExactly("OPEN_INCIDENT");
+
+		// 상태는 여전히 접수(RECEIVED)이며 다음 전이 버튼(IN_PROGRESS)이 그대로 노출된다.
+		String html = getAdminHtml("/admin/incidents/page", new MockHttpSession());
+		assertThat(html).contains("name=\"targetStatus\" value=\"IN_PROGRESS\"");
 	}
 
 	@Test
@@ -455,5 +501,37 @@ class AdminOperationsPageControllerTest {
 			return mockHttpSession;
 		}
 		return new MockHttpSession();
+	}
+
+	@TestConfiguration
+	static class ConflictRepositoryConfig {
+
+		@Bean
+		@Primary
+		ConflictSimulatingIncidentRepository conflictSimulatingIncidentRepository() {
+			return new ConflictSimulatingIncidentRepository();
+		}
+	}
+
+	/**
+	 * 다음 compare-and-set 호출을 한 번 충돌(영향 행 0)로 만들어, 다른 세션이 먼저 상태를 바꾼 상황을
+	 * 결정적으로 재현하는 인메모리 저장소.
+	 */
+	static class ConflictSimulatingIncidentRepository extends InMemoryAdminIncidentRepository {
+
+		private volatile boolean conflictNext;
+
+		void simulateNextConflict() {
+			this.conflictNext = true;
+		}
+
+		@Override
+		public boolean compareAndSetStatus(AdminIncident next, AdminIncidentStatus expectedStatus) {
+			if (conflictNext) {
+				conflictNext = false;
+				return false;
+			}
+			return super.compareAndSetStatus(next, expectedStatus);
+		}
 	}
 }

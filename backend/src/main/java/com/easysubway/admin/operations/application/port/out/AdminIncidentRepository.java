@@ -1,6 +1,7 @@
 package com.easysubway.admin.operations.application.port.out;
 
 import com.easysubway.admin.operations.domain.AdminIncident;
+import com.easysubway.admin.operations.domain.AdminIncidentStatus;
 import com.easysubway.admin.operations.domain.AdminIncidentTransition;
 import java.util.Collection;
 import java.util.List;
@@ -18,6 +19,23 @@ public interface AdminIncidentRepository {
 	Optional<AdminIncident> findById(String incidentId);
 
 	AdminIncident save(AdminIncident incident);
+
+	/**
+	 * incident_id와 {@code expectedStatus}가 모두 일치하는 행만 {@code next} 상태로 갱신하는 compare-and-set.
+	 * 동시 전이로 기대 상태가 이미 바뀌었으면(영향 행 0) 아무 것도 바꾸지 않고 {@code false}를 돌려준다.
+	 *
+	 * <p>기본 구현은 읽고-검사-쓰기라 단일 스레드 컨텍스트(테스트·인메모리 프로파일)의 의미만 보장한다.
+	 * 실제 운영 동시성 정합은 이 메서드를 원자적 조건부 UPDATE로 override하는 저장소가 책임진다.
+	 */
+	default boolean compareAndSetStatus(AdminIncident next, AdminIncidentStatus expectedStatus) {
+		return findById(next.incidentId())
+			.filter(current -> current.status() == expectedStatus)
+			.map(current -> {
+				save(next);
+				return true;
+			})
+			.orElse(false);
+	}
 
 	void saveTransition(AdminIncidentTransition transition);
 
