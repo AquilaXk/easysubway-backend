@@ -11,6 +11,7 @@ import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2PlanSource;
 import com.easysubway.route.application.port.in.SubmitRouteFeedbackCommand;
@@ -73,6 +74,9 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
@@ -1370,6 +1374,38 @@ class RouteSearchServiceTest {
 		assertThat(plan.timetableArtifactId()).isEqualTo("snapshot-b");
 		assertThat(port.atomicLoadCount()).isOne();
 		assertThat(port.legacyLoadCount()).isZero();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 concurrent artifact 교체 중 구·신 snapshot을 섞지 않는다")
+	void routeV2PlannerPublishesOnlyCompleteOldOrNewCompiledSnapshotDuringReplacement() throws Exception {
+		var port = new ConcurrentSwitchingRouteTimetablePort();
+		var planner = new RouteV2Planner(legacySearchMustNotBeCalled(), port);
+
+		List<RouteV2Plan> plans;
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var oldPlan = executor.submit(() -> planner.search(routeV2Command(
+				ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3)));
+			assertThat(port.awaitOldLoadStarted()).isTrue();
+			port.use("b");
+			var newPlan = executor.submit(() -> planner.search(routeV2Command(
+				ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3)));
+			port.releaseOldLoad();
+			plans = List.of(oldPlan.get(10, TimeUnit.SECONDS), newPlan.get(10, TimeUnit.SECONDS));
+		}
+
+		var observed = plans.stream().map(plan -> List.of(
+			plan.timetableArtifactId(),
+			plan.itineraries().getFirst().steps().stream()
+				.filter(step -> "ride".equals(step.stepType()))
+				.findFirst()
+				.orElseThrow()
+				.tripId()
+		)).toList();
+		assertThat(observed).containsExactlyInAnyOrder(
+			List.of("artifact-a", "trip-a"),
+			List.of("artifact-b", "trip-b")
+		);
 	}
 
 	@Test
@@ -3388,6 +3424,76 @@ class RouteSearchServiceTest {
 
 		int legacyLoadCount() {
 			return legacyLoadCount;
+		}
+	}
+
+	private static class ConcurrentSwitchingRouteTimetablePort implements LoadRouteTimetablePort {
+
+		private volatile RouteTimetableSnapshot active = snapshot("a");
+		private final CountDownLatch oldLoadStarted = new CountDownLatch(1);
+		private final CountDownLatch releaseOldLoad = new CountDownLatch(1);
+		private final AtomicInteger oldLoadBlocksRemaining = new AtomicInteger(1);
+
+		@Override
+		public boolean hasRouteTimetable() {
+			return true;
+		}
+
+		@Override
+		public RouteTimetable loadRouteTimetable() {
+			return active.timetable();
+		}
+
+		@Override
+		public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
+			RouteTimetableSnapshot loaded = active;
+			if ("artifact-a".equals(loaded.timetableArtifactId())
+				&& oldLoadBlocksRemaining.compareAndSet(1, 0)) {
+				oldLoadStarted.countDown();
+				try {
+					if (!releaseOldLoad.await(5, TimeUnit.SECONDS)) {
+						throw new AssertionError("old timetable load release timed out");
+					}
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("old timetable load interrupted", exception);
+				}
+			}
+			return loaded;
+		}
+
+		@Override
+		public String timetableCacheKey() {
+			return active.cacheKey();
+		}
+
+		void use(String version) {
+			active = snapshot(version);
+		}
+
+		boolean awaitOldLoadStarted() throws InterruptedException {
+			return oldLoadStarted.await(5, TimeUnit.SECONDS);
+		}
+
+		void releaseOldLoad() {
+			releaseOldLoad.countDown();
+		}
+
+		private static RouteTimetableSnapshot snapshot(String version) {
+			String tripId = "trip-" + version;
+			return new RouteTimetableSnapshot(
+				"cache-" + version,
+				"artifact-" + version,
+				routeTimetable(
+					List.of(
+						new LoadRouteTimetablePort.TransitStopTime(
+							tripId, 1, "station-a", "seoul-4", 32820, 32820, 0, 0),
+						new LoadRouteTimetablePort.TransitStopTime(
+							tripId, 2, "station-b", "seoul-4", 33420, 33420, 0, 0)
+					),
+					List.of()
+				)
+			);
 		}
 	}
 

@@ -14,6 +14,7 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteObject
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteTransportScope;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.CompiledTimetable;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
@@ -114,14 +115,14 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				? timetableSnapshot()
 				: null;
 			if (snapshot != null && timetableCovers(command, snapshot)) {
-				if (timetableRaptorPlanner.isFeedStale(command, snapshot.timetable())) {
+				if (timetableRaptorPlanner.isFeedStale(command, snapshot.compiledTimetable())) {
 					return timetablePlan(List.of(), List.of(RouteV2Status.STALE_TIMETABLE), snapshot);
 				}
 				SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 				routeSearchUseCase.validateRouteSearch(searchRouteCommand);
 				List<RouteSearchResult> timetableItineraries = timetableRaptorPlanner.search(
 					rankingCommand(command),
-					snapshot.timetable()
+					snapshot.compiledTimetable()
 				);
 				if (timetableItineraries.isEmpty()) {
 					return noTimetableServicePlan(command, snapshot);
@@ -179,7 +180,10 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	}
 
 	private RouteV2Plan noTimetableServicePlan(SearchRouteV2Command command, TimetableSnapshot snapshot) {
-		OffsetDateTime nextServiceTime = timetableRaptorPlanner.nextServiceTime(command, snapshot.timetable()).orElse(null);
+		OffsetDateTime nextServiceTime = timetableRaptorPlanner.nextServiceTime(
+			command,
+			snapshot.compiledTimetable()
+		).orElse(null);
 		return new RouteV2Plan(
 			List.of(),
 			List.of(RouteV2Status.NO_TIMETABLE_SERVICE),
@@ -238,17 +242,16 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				recordTimetableCache(timetableCacheMiss, timetableCacheMissLogged, "miss", cacheKey);
 				LoadRouteTimetablePort.RouteTimetableSnapshot loaded = routeTimetablePort.loadRouteTimetableSnapshot();
 				RouteTimetable timetable = loaded.timetable();
-				java.util.Set<String> coveredStationIds = timetable.transitStopTimes().stream()
-					.map(LoadRouteTimetablePort.TransitStopTime::stationId)
-					.collect(java.util.stream.Collectors.toUnmodifiableSet());
-				cachedTimetableSnapshot = new TimetableSnapshot(
+				CompiledTimetable compiledTimetable = timetableRaptorPlanner.compile(timetable);
+				TimetableSnapshot replacement = new TimetableSnapshot(
 					loaded.cacheKey(),
-					timetable,
-					coveredStationIds,
+					compiledTimetable,
+					compiledTimetable.coveredStationIds(),
 					loaded.timetableArtifactId(),
 					loaded.plannerIdentity()
 				);
-				return cachedTimetableSnapshot;
+				cachedTimetableSnapshot = replacement;
+				return replacement;
 			}
 			recordTimetableCache(timetableCacheHit, timetableCacheHitLogged, "hit", cacheKey);
 			return cachedTimetableSnapshot;
@@ -275,7 +278,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 
 	private record TimetableSnapshot(
 		String cacheKey,
-		RouteTimetable timetable,
+		CompiledTimetable compiledTimetable,
 		java.util.Set<String> coveredStationIds,
 		String timetableArtifactId,
 		LoadRouteTimetablePort.PlannerIdentity plannerIdentity
