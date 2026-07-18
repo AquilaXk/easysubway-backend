@@ -1,0 +1,447 @@
+/*
+ * admin-data.css — V6-04 CSS 책임 분리(#2276): 데이터·페이지 뷰(통합 대시보드 카드·핵심 지표 그리드·추이 차트·발송 이력·감사 콘솔·분포 막대 등).
+ * 데이터 밀도가 높은 화면 전용 스타일을 소유한다. import 순서상 마지막 레이어다.
+ */
+
+/* 통합 대시보드(#1739): 긴급 줄 → 핵심 카드(스파크라인·전일 대비) → 추이 → 상세. */
+.admin-panel-head {
+	display: flex;
+	align-items: baseline;
+	justify-content: space-between;
+	gap: 12px;
+	padding-bottom: 12px;
+	margin-bottom: 16px;
+	border-bottom: 1px solid var(--admin-border);
+}
+
+/* 지표 셀 분할용 1px 구분선 유틸리티(#1982) — .metric-grid 내부 셀 경계 */
+.admin-v3 .admin-panel-divider {
+	border-top: 1px solid var(--admin-border);
+}
+
+.admin-v3 .metric-cell + .metric-cell {
+	border-left: 1px solid var(--admin-border);
+	padding-left: 16px;
+}
+
+.admin-v3 .admin-link {
+	color: var(--admin-accent);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+}
+
+/* 긴급 신호(#2047 폴리시): 박스+틴트 콜아웃을 제거하고 플랫 행+1px 구분선으로 나열한다.
+   .admin-v3 section 박스(보더 4면·radius·surface)를 명시적으로 벗겨(플랫), 상단 1px로 목록을 열고
+   각 항목 하단 1px로 구분한다. 컨테이너 border-bottom과 마지막 항목 border-bottom이 겹쳐 하단 선이
+   이중으로 보이던 문제를 컨테이너 박스 제거로 해소한다(#2047 리뷰). 상태는 좌측 얇은(2px) 마커로만. */
+.admin-v3 .dashboard-urgent {
+	display: flex;
+	flex-direction: column;
+	margin-bottom: 16px;
+	border: 0;
+	border-top: 1px solid var(--admin-border);
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+	padding: 0;
+	overflow-x: visible;
+}
+
+.dashboard-urgent-item {
+	display: flex;
+	flex-direction: column;
+	gap: 2px;
+	padding: 10px 14px;
+	border-bottom: 1px solid var(--admin-border);
+	border-left: 2px solid transparent;
+	text-decoration: none;
+	color: var(--admin-ink);
+}
+
+.dashboard-urgent-item:hover {
+	background: var(--admin-bg);
+}
+
+.dashboard-urgent-item.tone-warning {
+	border-left-color: var(--admin-warn);
+}
+
+.dashboard-urgent-item.tone-failure {
+	border-left-color: var(--admin-danger);
+}
+
+.dashboard-urgent-item small {
+	color: var(--admin-ink-2);
+	font-size: 12px;
+}
+
+/* 핵심 지표 그리드(#1983): .admin-panel 하나 안에서 3열 반응형(최대 3열)으로 배치하고,
+   카드 자체는 보더·그림자 없이 .metric-cell 좌측 1px 구분선으로만 나뉜다(패널 보더 중복 방지).
+   좁은 화면에서는 하단 미디어쿼리로 2열 → 1열로 줄어든다(각 행 첫 열은 구분선 제외). */
+.dashboard-cards {
+	display: grid;
+	grid-template-columns: repeat(3, minmax(0, 1fr));
+	gap: 0;
+}
+
+.dashboard-card {
+	display: flex;
+	flex-direction: column;
+	gap: 6px;
+	padding: 4px 18px;
+	text-decoration: none;
+	color: var(--admin-ink);
+}
+
+/* 셀 좌측 구분선 base(#1983): 명시도를 .admin-v3(0,3,0)로 올려 utility 구분선
+   (.admin-v3 .metric-cell + .metric-cell, 0,3,0)과 동률로 맞춘다. 첫 열(:nth-child)·반응형
+   1열(768px override) 규칙이 소스상 이 base보다 뒤에 와 동률 소스순서로 이겨 좌측 선을 벗긴다(#2298 리뷰). */
+.admin-v3 .dashboard-card.metric-cell {
+	border-left: 1px solid var(--admin-border);
+	padding-left: 18px;
+}
+
+/* 각 행의 첫 열(3열 그리드 기준 3n+1)은 좌측 구분선 없이 패널 안쪽 여백만 유지. */
+.dashboard-card.metric-cell:nth-child(3n+1) {
+	border-left: 0;
+}
+
+.dashboard-card:hover .dashboard-card-title {
+	color: var(--admin-accent);
+}
+
+.dashboard-card-title {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	font-weight: var(--admin-w-medium);
+}
+
+.dashboard-card-value {
+	font-size: 28px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.1;
+}
+
+.dashboard-spark {
+	width: 100%;
+	height: 24px;
+	color: var(--admin-accent);
+}
+
+.dashboard-card-delta {
+	font-size: 12px;
+	color: var(--admin-ink-2);
+}
+
+.dashboard-card-delta.is-up {
+	color: var(--admin-danger);
+}
+
+.dashboard-card-delta.is-down {
+	color: var(--admin-good);
+}
+
+.dashboard-details {
+	margin-top: 12px;
+}
+
+.dashboard-details summary {
+	cursor: pointer;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+}
+
+/* 핵심 지표 패널 ↔ 기간 토글 사이 여백(#2047): #dashboard-trends는 section이 아니라 div라
+   section+section 자동 간격을 못 받으므로, 추이 섹션 상단에 명시 여백을 준다(붙어 보이는 문제).
+   대시보드 전용 스코프(#dashboard-trends)로 좁혀 usage·routes·notifications 화면에는 파급하지 않는다. */
+#dashboard-trends .dashboard-trends-section {
+	margin-top: 24px;
+}
+
+.trend-periods {
+	display: flex;
+	gap: 8px;
+	margin-bottom: 12px;
+}
+
+.trend-periods a {
+	min-height: 32px;
+	display: inline-flex;
+	align-items: center;
+	padding: 0 12px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	color: var(--admin-ink-2);
+	text-decoration: none;
+	font-size: 13px;
+}
+
+.trend-periods a.is-active {
+	border-color: var(--admin-accent);
+	background: var(--admin-accent-soft);
+	color: var(--admin-accent-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.batch-history-charts,
+.trend-charts {
+	display: grid;
+	grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+	gap: 16px;
+	margin-bottom: 20px;
+	/* 두 추이 패널의 세로 시작 위치를 맞춘다(#2047): 한 패널 제목이 길어도 위쪽 라인을 정렬한다. */
+	align-items: start;
+}
+
+/* 그리드 안 두 차트 패널의 세로 시작 위치 정렬(#2047): .admin-v3 section + section의
+   margin-top:24px가 두 번째 패널(section 인접 형제)에만 붙어 24px 아래로 밀려 top이 어긋났다.
+   차트 그리드는 gap으로 간격을 주므로 인접 형제 margin을 0으로 되돌려 두 패널 top을 일치시킨다. */
+.batch-history-charts > section + section,
+.trend-charts > section + section {
+	margin-top: 0;
+}
+
+.batch-history-canvas-wrap,
+.trend-canvas-wrap {
+	position: relative;
+	height: 240px;
+}
+
+.batch-history-canvas,
+.trend-canvas {
+	width: 100%;
+	height: 100%;
+}
+
+/* 발송 이력 콘솔(#1746) */
+.admin-v3 .card-sparkline {
+	display: block;
+	width: 100%;
+	height: 24px;
+	margin-top: 6px;
+}
+
+.admin-v3 .card-sparkline polyline {
+	stroke: var(--admin-danger);
+	stroke-width: 1.5;
+	vector-effect: non-scaling-stroke;
+}
+
+.admin-v3 .metric .card-sparkline polyline {
+	fill: none;
+}
+
+.admin-v3 .delivery-alert-link {
+	margin: -8px 0 12px;
+	font-size: 14px;
+}
+
+.admin-v3 .section-hint {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	margin: 4px 0 12px;
+}
+
+.admin-v3 .table-summary {
+	color: var(--admin-ink);
+	font-size: 14px;
+	margin: 12px 0;
+}
+
+.admin-v3 .table-summary .filter-clear {
+	margin-left: 6px;
+	font-size: 13px;
+}
+
+.admin-v3 .status-badge {
+	display: inline-block;
+	padding: 2px 8px;
+	border-radius: var(--admin-radius-badge);
+	font-size: 12px;
+	background: var(--admin-header-bg);
+	color: var(--admin-ink);
+}
+
+.admin-v3 .status-badge.tone-ok {
+	background: var(--admin-good-soft);
+	color: var(--admin-good);
+}
+
+.admin-v3 .status-badge.tone-failure {
+	background: var(--admin-danger-soft);
+	color: var(--admin-danger);
+}
+
+.admin-v3 .status-badge.tone-pending {
+	background: var(--admin-warn-soft);
+	color: var(--admin-warn);
+}
+
+.admin-v3 .row-detail summary {
+	cursor: pointer;
+	color: var(--admin-accent);
+}
+
+.admin-v3 .row-detail-list {
+	margin: 8px 0 0;
+	display: grid;
+	grid-template-columns: max-content 1fr;
+	gap: 4px 12px;
+}
+
+.admin-v3 .row-detail-list dt {
+	color: var(--admin-ink-2);
+	font-size: 13px;
+}
+
+.admin-v3 .row-detail-list dd {
+	margin: 0;
+	font-size: 13px;
+}
+
+.admin-v3 .failure-breakdown {
+	margin: 16px 0;
+}
+
+.admin-v3 .breakdown-bars {
+	list-style: none;
+	margin: 8px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 6px;
+}
+
+.admin-v3 .breakdown-bars a {
+	display: grid;
+	grid-template-columns: minmax(140px, 1fr) 2fr max-content;
+	align-items: center;
+	gap: 12px;
+	text-decoration: none;
+	color: var(--admin-ink);
+	padding: 4px 8px;
+	border-radius: 6px;
+}
+
+.admin-v3 .breakdown-bars a:hover,
+.admin-v3 .breakdown-bars a[aria-current="true"] {
+	background: var(--admin-accent-soft);
+}
+
+.admin-v3 .breakdown-bar {
+	width: 100%;
+	height: 12px;
+}
+
+.admin-v3 .breakdown-bar rect {
+	fill: var(--admin-danger);
+}
+
+.admin-v3 .breakdown-count {
+	font-variant-numeric: tabular-nums;
+	text-align: right;
+}
+
+/* 감사 콘솔(#1747): 필터 체크박스·점검 배너·상세 타임라인 */
+.admin-v3 .toolbar-check {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--admin-ink-2);
+	white-space: nowrap;
+}
+
+.admin-v3 .compliance-banner {
+	margin: 12px 0;
+	padding: 10px 14px;
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-warn-soft);
+	color: var(--admin-warn);
+	font-size: 13px;
+}
+
+.admin-v3 .compliance-banner .filter-quick {
+	margin-left: 8px;
+	color: var(--admin-warn);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 td.reason-missing,
+.admin-v3 dd.reason-missing {
+	color: var(--admin-danger);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .target-link {
+	margin-left: 8px;
+	font-size: 13px;
+	color: var(--admin-accent);
+}
+
+.admin-v3 .audit-timeline {
+	margin-top: 24px;
+}
+
+.admin-v3 .timeline {
+	list-style: none;
+	margin: 12px 0 0;
+	padding: 0;
+	display: grid;
+	gap: 2px;
+	border-left: 2px solid var(--admin-border-strong);
+}
+
+.admin-v3 .timeline li {
+	display: grid;
+	grid-template-columns: max-content 1fr max-content;
+	align-items: center;
+	gap: 12px;
+	padding: 6px 12px;
+	font-size: 13px;
+}
+
+.admin-v3 .timeline .timeline-time {
+	color: var(--admin-ink-3);
+	font-variant-numeric: tabular-nums;
+}
+
+.admin-v3 .timeline .timeline-current {
+	background: var(--admin-accent-soft);
+	border-radius: 0 var(--admin-radius-control) var(--admin-radius-control) 0;
+	font-weight: var(--admin-w-medium);
+}
+
+/* 핵심 지표 그리드 반응형(#1983): 900px 이하 2열, 768px 이하 1열. 각 행의 첫 열은
+   좌측 구분선을 빼고, 1열에서는 상단 구분선으로 전환한다. */
+@media (max-width: 900px) {
+	.dashboard-cards {
+		grid-template-columns: repeat(2, minmax(0, 1fr));
+	}
+
+	.dashboard-card.metric-cell:nth-child(3n+1) {
+		border-left: 1px solid var(--admin-border);
+	}
+
+	.dashboard-card.metric-cell:nth-child(2n+1) {
+		border-left: 0;
+	}
+}
+
+@media (max-width: 768px) {
+	.dashboard-cards {
+		grid-template-columns: 1fr;
+	}
+
+	.admin-v3 .dashboard-card.metric-cell {
+		border-left: 0;
+		border-top: 1px solid var(--admin-border);
+		padding-top: 12px;
+	}
+
+	.admin-v3 .dashboard-card.metric-cell:first-child {
+		border-top: 0;
+		padding-top: 4px;
+	}
+}

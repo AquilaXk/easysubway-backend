@@ -1,3 +1,10 @@
+/*
+ * admin-tokens.css — V6-04 CSS 책임 분리(#2276)의 token 레이어. import 순서상 가장 먼저 로드된다
+ * (admin-v3.css: tokens → foundation → shell → components → data, operator-v3.css도 이 파일만 공유 import).
+ * 아래 `--admin-*` 이름은 admin/operator 콘솔의 모든 consumer가 참조하는 compatibility alias다 —
+ * 모든 화면 이관이 끝나기 전에는 어떤 이름도 제거하지 않는다(#2276 §7·§8). 값·이름 변경은 소비자 회귀를
+ * 유발할 수 있으므로, 새 semantic token은 추가하되 기존 이름은 alias로 보존한다.
+ */
 :root {
 	/* 표면 — 플랫한 중립 배경, 카드는 얇은 테두리만(그림자 0) */
 	--admin-bg: #F6F8F9;

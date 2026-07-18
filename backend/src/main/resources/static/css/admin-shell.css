@@ -1,0 +1,364 @@
+/*
+ * admin-shell.css — V6-04 CSS 책임 분리(#2276): 관리자 앱 프레임(셸 grid·사이드바·브랜드·퀵서치·네비·본문·상단바·상태 스트립·페이지 헤더).
+ * 화면 공용 셸 chrome을 소유한다(기본 grid와 반응형 앱 프레임 규칙 단일 소유, #2298 리뷰). tokens → foundation 다음, components 이전 순서로 admin-v3.css가 import한다.
+ */
+
+.admin-shell {
+	display: grid;
+	grid-template-columns: 240px minmax(0, 1fr);
+	min-height: 100vh;
+}
+
+.admin-sidebar {
+	position: sticky;
+	top: 0;
+	align-self: start;
+	display: flex;
+	flex-direction: column;
+	height: 100vh;
+	height: 100dvh;
+	padding: 22px 0;
+	border-right: 1px solid var(--admin-border);
+	background: var(--admin-sidebar-bg);
+	color: var(--admin-ink-2);
+}
+
+.admin-brand {
+	padding: 4px 24px 22px;
+}
+
+.admin-brand strong,
+.admin-brand span {
+	display: block;
+}
+
+.admin-brand strong {
+	color: var(--admin-ink);
+	font-size: 17px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.25;
+}
+
+.admin-brand span {
+	margin-top: 3px;
+	color: var(--admin-ink-3);
+	font-size: 12px;
+	font-weight: var(--admin-w-medium);
+	letter-spacing: 0.02em;
+}
+
+/* 퀵서치(#1981): 사이드바 최상단, 기존 커맨드 팔레트 트리거를 이 자리로 재배치했다. */
+.admin-sidebar-quicksearch {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 36px;
+	margin: 0 24px 18px;
+	padding: 0 10px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-bg);
+	color: var(--admin-ink-3);
+	font-size: 13px;
+	text-decoration: none;
+}
+
+.admin-sidebar-quicksearch span:nth-child(2) {
+	flex: 1;
+}
+
+.admin-sidebar-quicksearch kbd {
+	padding: 1px 6px;
+	border: 1px solid var(--admin-border-strong);
+	border-radius: 4px;
+	font-size: 11px;
+	color: var(--admin-ink-2);
+}
+
+.admin-nav-scroll {
+	flex: 1;
+	min-height: 0;
+	overflow-y: auto;
+}
+
+.admin-nav-group {
+	margin-top: 18px;
+}
+
+.admin-nav-group-label {
+	margin: 0 0 6px 24px;
+	color: var(--admin-ink-3);
+	font-size: 11px;
+	font-weight: var(--admin-w-strong);
+	letter-spacing: 0.04em;
+	text-transform: uppercase;
+}
+
+.admin-nav-item {
+	display: flex;
+	align-items: center;
+	min-height: 38px;
+	padding: 0 24px 0 30px;
+	border-radius: 0;
+	border-left: 2px solid transparent;
+	color: var(--admin-ink-2);
+	font-size: 14px;
+	font-weight: var(--admin-w-medium);
+	text-decoration: none;
+}
+
+.admin-nav-item:hover {
+	border-radius: 0;
+	border-left-color: var(--admin-border-strong);
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-ink);
+}
+
+.admin-nav-item.is-active {
+	border-radius: 0;
+	border-left-color: var(--admin-accent);
+	background: var(--admin-sidebar-accent);
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-main {
+	min-width: 0;
+	width: 100%;
+	max-width: none;
+	margin: 0;
+	padding: 28px 30px 48px;
+	overflow-x: visible;
+}
+
+.admin-topbar {
+	margin-bottom: 16px;
+}
+
+.admin-content-anchor {
+	scroll-margin-top: 16px;
+}
+
+/* 상단바(#2047): 상단 행(컨텍스트 / 알림·사용자 메뉴) + 하단 상태 스트립. 상단 행만 1px 보더
+   플랫 패널이고, 상태 스트립은 그 아래 얇은 구분선 위의 무채색 라벨드 항목 줄이다. */
+.admin-topbar-row {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 10px 16px;
+	align-items: center;
+	justify-content: space-between;
+	padding: 11px 14px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+	background: var(--admin-surface);
+	box-shadow: var(--admin-shadow-card);
+}
+
+.admin-topbar-context {
+	display: flex;
+	align-items: baseline;
+	gap: 8px;
+	min-width: 0;
+	font-size: 14px;
+}
+
+.admin-topbar-brand {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-topbar-sep {
+	color: var(--admin-ink-3);
+}
+
+.admin-topbar-scope {
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-topbar-actions {
+	display: flex;
+	align-items: center;
+	gap: 10px;
+}
+
+.admin-topbar-logout-form {
+	margin: 0;
+}
+
+/* 상태 스트립: 정적·무채색·비인터랙티브. 각 항목은 라벨 + 값으로 의미를 드러내고, title 툴팁으로
+   상세를 설명한다. 버튼처럼 보이지 않도록 배경·보더 없이 얇은 구분선(·) 만으로 구분한다. */
+.admin-status-strip {
+	display: flex;
+	flex-wrap: wrap;
+	align-items: center;
+	gap: 6px 14px;
+	margin-top: 8px;
+	padding: 0 2px;
+	font-size: 13px;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-status-item {
+	display: inline-flex;
+	align-items: baseline;
+	gap: 6px;
+	cursor: default;
+}
+
+.admin-status-item + .admin-status-item::before,
+.admin-status-strip .admin-env-badge + .admin-status-item::before {
+	content: "·";
+	margin-right: 8px;
+	color: var(--admin-ink-3);
+}
+
+.admin-status-label {
+	color: var(--admin-ink-3);
+}
+
+.admin-status-item strong {
+	color: var(--admin-ink);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-env-badge,
+.admin-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	color: var(--admin-ink-2);
+	font-weight: var(--admin-w-strong);
+}
+
+.admin-env-badge::before,
+.admin-status::before {
+	content: "";
+	border-radius: 50%;
+	background: currentcolor;
+}
+
+.admin-env-badge {
+	font-size: 12px;
+}
+
+.admin-env-badge::before {
+	width: 6px;
+	height: 6px;
+}
+
+.admin-env-badge.is-production {
+	color: var(--admin-danger);
+}
+
+.admin-env-badge.is-staging,
+.admin-env-badge.is-development {
+	color: var(--admin-ink-2);
+}
+
+.admin-page-head {
+	display: flex;
+	gap: 16px;
+	align-items: flex-start;
+	justify-content: space-between;
+	margin-bottom: 18px;
+}
+
+.admin-page-head h1 {
+	margin: 0;
+	font-size: 34px;
+	font-weight: var(--admin-w-title);
+	line-height: 1.16;
+	letter-spacing: 0;
+}
+
+.admin-page-head p {
+	margin: 6px 0 0;
+	color: var(--admin-ink-2);
+	font-size: 15px;
+	font-weight: var(--admin-w-body);
+	line-height: 1.45;
+}
+
+.admin-actions {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	justify-content: flex-end;
+}
+
+.admin-dashboard-snapshot-actions {
+	align-items: center;
+	min-height: 44px;
+}
+
+/* 반응형 앱 프레임(#2298 리뷰): 셸 grid·사이드바·본문·상단바·페이지 헤더의 반응형 규칙을
+   components에서 이 파일로 이관해 앱 프레임 단일 소유권을 복원한다. 컴포넌트 소유 selector
+   (.admin-grid-2·.admin-sidebar-toggle·.admin-sidebar-backdrop)의 반응형 규칙은 base와 함께
+   components에 남겨 cascade 순서를 유지한다. */
+@media (max-width: 1024px) {
+	.admin-shell {
+		grid-template-columns: 1fr;
+	}
+
+	/* no-JS 기본: 사이드바가 본문 위에 스택으로 보인다(전 기능 접근 가능). */
+	.admin-sidebar {
+		position: static;
+		height: auto;
+		max-height: 44vh;
+		overflow-y: auto;
+	}
+
+	.admin-main {
+		padding: 22px 16px 36px;
+	}
+
+	.admin-topbar-row {
+		display: flex;
+		padding: 0 0 10px;
+		border: 0;
+		border-bottom: 1px solid var(--admin-border);
+		border-radius: 0;
+		background: transparent;
+		box-shadow: none;
+	}
+
+	.admin-topbar-context {
+		flex: 1 1 190px;
+		align-items: center;
+	}
+
+	.admin-topbar-actions {
+		flex: 0 1 auto;
+	}
+
+	.admin-page-head {
+		display: block;
+	}
+
+	.admin-dashboard-snapshot-actions {
+		margin-top: 10px;
+		justify-content: flex-start;
+	}
+
+	/* JS 있으면 오프캔버스: 사이드바를 화면 밖에 두고 토글로 연다(body.sidebar-open). */
+	.has-js .admin-sidebar {
+		position: fixed;
+		top: 0;
+		left: 0;
+		bottom: 0;
+		width: min(280px, 82vw);
+		min-height: 100vh;
+		max-height: none;
+		overflow-y: auto;
+		transform: translateX(-100%);
+		transition: transform 0.2s ease;
+		z-index: 90;
+		box-shadow: none;
+	}
+
+	.has-js.sidebar-open .admin-sidebar {
+		transform: translateX(0);
+	}
+}

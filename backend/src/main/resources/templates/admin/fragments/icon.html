@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>관리자 아이콘 fragment</title>
+</head>
+<body>
+<!--
+  관리자 아이콘 fragment(V6-04, #2276): 프로젝트 소유 정적 sprite(/icons/admin-symbols.svg)의 symbol을
+  <use>로 참조해 렌더한다. 외부 라이브러리 vendor 금지, 무채색·심플 라인 아이콘만 사용한다.
+  렌더 svg는 aria-hidden="true" focusable="false"로 보조기술에서 감추고, 접근 가능한 이름(라벨)은 이
+  아이콘을 감싸는 button/link가 소유한다(예: aria-label). CSP default-src 'self'라 same-origin sprite
+  참조는 허용되며 no-JS 환경에서도 렌더된다.
+  사용: <svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
+        <span th:replace="~{admin/fragments/icon :: icon('menu')}"></span>
+  name은 sprite inventory(search·menu·alert·close·account·logout·chevron-down·check·warning·error·info·more·copy) 중 하나.
+-->
+<svg th:fragment="icon(name)" class="admin-icon" viewBox="0 0 20 20" width="20" height="20"
+     aria-hidden="true" focusable="false">
+	<use th:attr="href=|@{/icons/admin-symbols.svg}#${name}|" href="/icons/admin-symbols.svg#search"></use>
+</svg>
+</body>
+</html>

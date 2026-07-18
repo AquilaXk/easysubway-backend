@@ -1,4 +1,9 @@
 @import url("/css/admin-tokens.css");
+/*
+ * operator-v3.css — operator 콘솔 전용 스타일. V6-04(#2276)에서 admin CSS가 4책임(foundation/shell/
+ * components/data)으로 분리됐지만, operator는 그중 어떤 레이어도 공유하지 않고 token 레이어(admin-tokens.css)
+ * 만 공유 import한다. 이 shared import 계약은 유지한다(자체 토큰 변수 선언 금지 — OperatorUiV4ContractTest).
+ */
 
 
 * {

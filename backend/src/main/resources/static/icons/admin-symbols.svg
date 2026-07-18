@@ -1,0 +1,66 @@
+<svg xmlns="http://www.w3.org/2000/svg" aria-hidden="true" focusable="false" style="display: none">
+  <!--
+    admin-symbols.svg — V6-04(#2276) 프로젝트 소유 정적 아이콘 sprite.
+    외부 라이브러리를 vendor하지 않고 보편적 기하학 라인 아이콘만 최소하게 담는다(무채색·심플 원칙).
+    inventory 13개 고정: search, menu, alert, close, account, logout, chevron-down, check,
+    warning, error, info, more, copy. 각 symbol은 viewBox="0 0 20 20" · fill="none" ·
+    stroke="currentColor" · stroke-width="1.75" · round linecap/linejoin을 사용한다.
+    렌더 svg의 accessible name은 이 sprite를 <use>로 부르는 button/link가 소유한다(fragments/icon.html).
+  -->
+  <symbol id="search" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="9" cy="9" r="5.5" />
+    <line x1="13.5" y1="13.5" x2="17" y2="17" />
+  </symbol>
+  <symbol id="menu" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="3" y1="6" x2="17" y2="6" />
+    <line x1="3" y1="10" x2="17" y2="10" />
+    <line x1="3" y1="14" x2="17" y2="14" />
+  </symbol>
+  <symbol id="alert" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 3c-2.5 0-4 1.8-4 4.2 0 3.3-1.2 4.4-1.7 4.9-.2.2-.1.6.2.6h11c.3 0 .4-.4.2-.6-.5-.5-1.7-1.6-1.7-4.9C14 4.8 12.5 3 10 3Z" />
+    <path d="M8.3 15.4a1.8 1.8 0 0 0 3.4 0" />
+  </symbol>
+  <symbol id="close" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="5" y1="5" x2="15" y2="15" />
+    <line x1="15" y1="5" x2="5" y2="15" />
+  </symbol>
+  <symbol id="account" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10" cy="7" r="3" />
+    <path d="M4.5 16.5c0-3 2.5-4.5 5.5-4.5s5.5 1.5 5.5 4.5" />
+  </symbol>
+  <symbol id="logout" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M12 4H5v12h7" />
+    <path d="M9 10h8" />
+    <path d="M14 7l3 3-3 3" />
+  </symbol>
+  <symbol id="chevron-down" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M5 8l5 5 5-5" />
+  </symbol>
+  <symbol id="check" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 10.5l4 4 8-8" />
+  </symbol>
+  <symbol id="warning" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M10 3.5 2.8 16h14.4L10 3.5Z" />
+    <line x1="10" y1="8.5" x2="10" y2="11.5" />
+    <line x1="10" y1="13.8" x2="10" y2="13.8" />
+  </symbol>
+  <symbol id="error" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10" cy="10" r="7" />
+    <line x1="7.5" y1="7.5" x2="12.5" y2="12.5" />
+    <line x1="12.5" y1="7.5" x2="7.5" y2="12.5" />
+  </symbol>
+  <symbol id="info" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10" cy="10" r="7" />
+    <line x1="10" y1="9.2" x2="10" y2="13.5" />
+    <line x1="10" y1="6.6" x2="10" y2="6.6" />
+  </symbol>
+  <symbol id="more" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <line x1="5" y1="10" x2="5" y2="10" />
+    <line x1="10" y1="10" x2="10" y2="10" />
+    <line x1="15" y1="10" x2="15" y2="10" />
+  </symbol>
+  <symbol id="copy" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="7" y="7" width="9" height="9" rx="1.5" />
+    <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v7A1.5 1.5 0 0 0 4.5 14H6" />
+  </symbol>
+</svg>

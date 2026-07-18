@@ -384,6 +384,7 @@ public class SecurityConfig {
 					"/js/**",
 					"/vendor/**",
 					"/images/**",
+					"/icons/**",
 					"/webjars/**"
 				).permitAll()
 				.anyRequest().denyAll()

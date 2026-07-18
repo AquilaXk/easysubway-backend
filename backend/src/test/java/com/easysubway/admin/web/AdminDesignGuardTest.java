@@ -6,8 +6,11 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
+import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -18,10 +21,22 @@ class AdminDesignGuardTest {
 
 	private static final Path ROOT = Path.of("..").toAbsolutePath().normalize();
 
+	// V6-04(#2276): admin-v3.css는 4책임 파일의 import manifest이므로 선언은 아래 4개 파일이 소유한다.
+	private static final String CSS_TOKENS = "backend/src/main/resources/static/css/admin-tokens.css";
+	private static final String CSS_FOUNDATION = "backend/src/main/resources/static/css/admin-foundation.css";
+	private static final String CSS_SHELL = "backend/src/main/resources/static/css/admin-shell.css";
+	private static final String CSS_COMPONENTS = "backend/src/main/resources/static/css/admin-components.css";
+	private static final String CSS_DATA = "backend/src/main/resources/static/css/admin-data.css";
+	private static final String CSS_ADMIN_V3 = "backend/src/main/resources/static/css/admin-v3.css";
+	private static final String CSS_OPERATOR = "backend/src/main/resources/static/css/operator-v3.css";
+
+	// import 순서(tokens → foundation → shell → components → data)를 그대로 소유하는 4책임 파일.
+	private static final List<String> RESPONSIBILITY_FILES = List.of(
+		CSS_FOUNDATION, CSS_SHELL, CSS_COMPONENTS, CSS_DATA);
+
+	// 색·shadow·radius 스캔 대상: token 레이어 + 4책임 레이어 + operator(공유 token consumer).
 	private static final List<String> CSS_FILES = List.of(
-		"backend/src/main/resources/static/css/admin-tokens.css",
-		"backend/src/main/resources/static/css/admin-v3.css",
-		"backend/src/main/resources/static/css/operator-v3.css");
+		CSS_TOKENS, CSS_FOUNDATION, CSS_SHELL, CSS_COMPONENTS, CSS_DATA, CSS_OPERATOR);
 
 	// 초록/청록 계열(및 이전 무채색·상태 리터럴) 하드코딩 금지 목록. 대소문자 무시.
 	private static final Pattern FORBIDDEN_HEX = Pattern.compile(
@@ -57,6 +72,62 @@ class AdminDesignGuardTest {
 			+ "aria-label=\"가로로 스크롤 가능한 [^\"]*표\"[^>]*>\\s*<table\\b",
 		Pattern.DOTALL);
 	private static final Pattern TABLE_WRAPPER_CLOSE = Pattern.compile("</table>\\s*</div>");
+
+	@Test
+	@DisplayName("admin-v3.css는 tokens → foundation → shell → components → data import manifest다")
+	void adminV3IsImportManifest() throws IOException {
+		List<String> lines = new ArrayList<>();
+		for (String line : read(CSS_ADMIN_V3).split("\n", -1)) {
+			String trimmed = line.trim();
+			if (!trimmed.isEmpty()) {
+				lines.add(trimmed);
+			}
+		}
+		assertThat(lines).containsExactly(
+			"@import url(\"/css/admin-tokens.css\");",
+			"@import url(\"/css/admin-foundation.css\");",
+			"@import url(\"/css/admin-shell.css\");",
+			"@import url(\"/css/admin-components.css\");",
+			"@import url(\"/css/admin-data.css\");");
+	}
+
+	@Test
+	@DisplayName("CSS 선언은 네 책임 파일에 단일 owner로 존재하고 중복 block이 없다")
+	void responsibilityFilesOwnDeclarationsWithoutDuplication() throws IOException {
+		Map<String, Set<String>> ownerFiles = new LinkedHashMap<>();
+		for (String path : RESPONSIBILITY_FILES) {
+			List<String> blocks = topLevelBlocks(read(path));
+			assertThat(blocks).as("%s는 선언을 소유한다", path).isNotEmpty();
+			for (String block : blocks) {
+				ownerFiles.computeIfAbsent(block, key -> new TreeSet<>()).add(path);
+			}
+		}
+		List<String> duplicated = new ArrayList<>();
+		for (Map.Entry<String, Set<String>> entry : ownerFiles.entrySet()) {
+			if (entry.getValue().size() > 1) {
+				duplicated.add(entry.getValue() + " → " + entry.getKey());
+			}
+		}
+		assertThat(duplicated)
+			.as("둘 이상의 책임 파일이 소유한 중복 선언 block: %s", duplicated)
+			.isEmpty();
+	}
+
+	@Test
+	@DisplayName("버튼·panel chrome canonical 명시 class가 존재한다")
+	void canonicalButtonAndPanelClassesExist() throws IOException {
+		String css = bundle();
+		assertThat(css)
+			.as("강조 버튼 명시 class(primary)")
+			.contains(".admin-v3 button.primary")
+			.contains(".admin-btn.primary");
+		assertThat(css)
+			.as("danger 버튼 명시 class")
+			.contains(".admin-v3 button.danger");
+		assertThat(css)
+			.as("panel chrome 명시 class")
+			.contains(".admin-card");
+	}
 
 	@Test
 	@DisplayName("금지된 초록·청록 계열 hex가 없다")
@@ -131,7 +202,7 @@ class AdminDesignGuardTest {
 	@Test
 	@DisplayName("신고 보조 panel은 flat chrome과 단일 divider만 사용한다")
 	void reportSupportPanelsUseFlatChromeWithSingleDivider() throws IOException {
-		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+		String css = bundle();
 		Pattern flatPanels = Pattern.compile(
 			"\\.admin-v3 \\.surge-alert,\\s*\\.admin-v3 \\.processing-time \\{"
 				+ "[^}]*border: 0;[^}]*border-radius: 0;[^}]*background: transparent;"
@@ -151,7 +222,7 @@ class AdminDesignGuardTest {
 	@Test
 	@DisplayName("mobile topbar는 flat chrome과 44px action target을 유지한다")
 	void mobileTopbarUsesFlatChromeAndAccessibleTargets() throws IOException {
-		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+		String css = bundle();
 		String shell = read("backend/src/main/resources/templates/admin/fragments/shell.html");
 
 		assertThat(css)
@@ -184,7 +255,7 @@ class AdminDesignGuardTest {
 	@Test
 	@DisplayName("기존 mobile metric divider는 1열에서 단일 top border를 유지한다")
 	void mobileMetricDividerKeepsSingleTopBorder() throws IOException {
-		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+		String css = bundle();
 
 		assertThat(css)
 			.contains(".dashboard-card.metric-cell {")
@@ -228,7 +299,7 @@ class AdminDesignGuardTest {
 	@Test
 	@DisplayName("table wrapper만 horizontal scroll을 소유하고 sticky header·첫 열을 유지한다")
 	void tableWrapperOwnsHorizontalScrollAndStickyCells() throws IOException {
-		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+		String css = bundle();
 
 		assertThat(css)
 			.contains(".admin-table-scroll {")
@@ -269,6 +340,44 @@ class AdminDesignGuardTest {
 		Matcher matcher = Pattern.compile(selectorPattern + "\\s*\\{([^}]*)}", Pattern.DOTALL).matcher(css);
 		assertThat(matcher.find()).as("CSS rule이 존재한다: %s", selectorPattern).isTrue();
 		return matcher.group(1);
+	}
+
+	// 4책임 파일을 import 순서(foundation → shell → components → data)로 이어붙인 실효 스타일시트.
+	// admin-v3.css의 @import가 만드는 cascade와 동일한 선언 집합을 검증 대상으로 삼는다.
+	private static String bundle() throws IOException {
+		StringBuilder sb = new StringBuilder();
+		for (String path : RESPONSIBILITY_FILES) {
+			sb.append(read(path)).append("\n");
+		}
+		return sb.toString();
+	}
+
+	// 주석을 제거한 뒤 depth 0의 balanced {..} block을 selector와 함께 추출한다(@media 등 중첩은 한 block).
+	private static List<String> topLevelBlocks(String css) {
+		String noComments = css.replaceAll("(?s)/\\*.*?\\*/", "");
+		List<String> blocks = new ArrayList<>();
+		int depth = 0;
+		int blockStart = 0;
+		int selStart = 0;
+		for (int i = 0; i < noComments.length(); i++) {
+			char c = noComments.charAt(i);
+			if (c == '{') {
+				if (depth == 0) {
+					blockStart = selStart;
+				}
+				depth++;
+			} else if (c == '}') {
+				depth--;
+				if (depth == 0) {
+					String block = noComments.substring(blockStart, i + 1).trim().replaceAll("\\s+", " ");
+					if (!block.isEmpty()) {
+						blocks.add(block);
+					}
+					selStart = i + 1;
+				}
+			}
+		}
+		return blocks;
 	}
 
 	private static String read(String path) throws IOException {
