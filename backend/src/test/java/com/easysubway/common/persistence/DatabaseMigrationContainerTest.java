@@ -10,23 +10,31 @@ import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.RouteV2Session;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.SessionStatus;
+import com.easysubway.train.adapter.out.persistence.JdbcTrainSearchCache;
+import com.easysubway.train.application.TrainSearchCache.CachedLeg;
 import com.zaxxer.hikari.HikariDataSource;
 import java.sql.Timestamp;
 import java.time.Instant;
+import java.time.Duration;
+import java.time.ZoneId;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.dao.DataAccessException;
+import org.springframework.aop.framework.ProxyFactory;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.transaction.annotation.AnnotationTransactionAttributeSource;
+import org.springframework.transaction.interceptor.TransactionInterceptor;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -83,9 +91,12 @@ class DatabaseMigrationContainerTest {
 				"transit_master_override_audits",
 				"timetable_snapshot_lock",
 				"timetable_snapshot_history",
-				"timetable_snapshot_active"
+				"timetable_snapshot_active",
+				"train_catalog_cache",
+				"train_search_cache",
+				"train_provider_call_quota_state"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i
@@ -154,7 +165,12 @@ class DatabaseMigrationContainerTest {
 				"chk_datapack_release_channel_events_operation",
 				"chk_timetable_snapshot_lock_singleton",
 				"chk_timetable_snapshot_counts",
-				"chk_timetable_snapshot_active_singleton"
+				"chk_timetable_snapshot_active_singleton",
+				"chk_train_catalog_cache_hash",
+				"chk_train_catalog_cache_expiry",
+				"chk_train_search_cache_payload",
+				"chk_train_search_cache_lease",
+				"chk_train_provider_call_quota_counts"
 			);
 		assertNormalizationRunGuards(jdbcTemplate);
 		assertSnapshotSourceForeignKeysRejectMismatch(jdbcTemplate);
@@ -197,6 +213,88 @@ class DatabaseMigrationContainerTest {
 				assertThat(jdbcTemplate.queryForObject(
 					"SELECT COUNT(*) FROM datapack_release_deliveries", Integer.class)).isEqualTo(1);
 			});
+		}
+	}
+
+	@Test
+	@DisplayName("PostgreSQL 기차검색 cache는 lease 경쟁과 KST quota window를 원자적으로 조정한다")
+	void postgresqlTrainSearchCacheCoordinatesLeaseAndQuota() throws Exception {
+		String schema = "train_search_cache_" + System.nanoTime();
+		var migrationDataSource = new DriverManagerDataSource(
+			POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+		migrate(migrationDataSource, "classpath:db/migration/postgresql", schema);
+		try (var dataSource = new HikariDataSource()) {
+			dataSource.setJdbcUrl(POSTGRES.getJdbcUrl());
+			dataSource.setUsername(POSTGRES.getUsername());
+			dataSource.setPassword(POSTGRES.getPassword());
+			dataSource.setSchema(schema);
+			var target = new JdbcTrainSearchCache(dataSource);
+			var factory = new ProxyFactory(target);
+			factory.setProxyTargetClass(true);
+			factory.addAdvice(new TransactionInterceptor(
+				new DataSourceTransactionManager(dataSource),
+				new AnnotationTransactionAttributeSource()
+			));
+			var repository = (JdbcTrainSearchCache) factory.getProxy();
+			var jdbcTemplate = new JdbcTemplate(dataSource);
+
+			int callers = 8;
+			var ready = new CountDownLatch(callers);
+			var start = new CountDownLatch(1);
+			var acquired = new AtomicInteger();
+			var failed = new AtomicInteger();
+			var executor = Executors.newFixedThreadPool(callers);
+			try {
+				for (int index = 0; index < callers; index++) {
+					String owner = "owner-" + index;
+					executor.submit(() -> {
+						ready.countDown();
+						start.await();
+						try {
+							if (repository.tryAcquireLease("shared", owner, Instant.EPOCH, Duration.ofSeconds(15))) {
+								acquired.incrementAndGet();
+							}
+						} catch (RuntimeException exception) {
+							failed.incrementAndGet();
+						}
+						return null;
+					});
+				}
+				assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+				start.countDown();
+				executor.shutdown();
+				assertThat(executor.awaitTermination(10, TimeUnit.SECONDS)).isTrue();
+				assertThat(failed).hasValue(0);
+				assertThat(acquired).hasValue(1);
+			} finally {
+				executor.shutdownNow();
+			}
+
+			ZoneId korea = ZoneId.of("Asia/Seoul");
+			assertThat(repository.tryAcquireProviderCall("tago-train", korea, 1, 1)).isTrue();
+			assertThat(repository.tryAcquireProviderCall("tago-train", korea, 1, 1)).isFalse();
+			jdbcTemplate.update("""
+				UPDATE train_provider_call_quota_state
+				SET minute_window = minute_window - 1, minute_calls = 99,
+					day_window = day_window - 1, daily_calls = 99
+				WHERE provider_id = 'tago-train'
+				""");
+			assertThat(repository.tryAcquireProviderCall("tago-train", korea, 1, 1)).isTrue();
+			assertThat(jdbcTemplate.queryForMap("""
+				SELECT minute_calls, daily_calls FROM train_provider_call_quota_state
+				WHERE provider_id = 'tago-train'
+				"""))
+				.containsEntry("minute_calls", 1)
+				.containsEntry("daily_calls", 1);
+
+			Instant observedAt = Instant.parse("2026-07-19T00:00:00Z");
+			var leg = new CachedLeg(
+				"owned", "{}", "[]", "a".repeat(64), observedAt, observedAt.plusSeconds(300));
+			assertThat(repository.tryAcquireLease("owned", "owner-a", observedAt, Duration.ofSeconds(15))).isTrue();
+			assertThat(repository.storeLegAndRelease("owned", "owner-b", leg)).isFalse();
+			assertThat(repository.storeLegAndRelease("owned", "owner-a", leg)).isTrue();
+			assertThat(repository.freshLeg("owned", observedAt.plusSeconds(1))).contains(leg);
+			assertThat(repository.tryAcquireLease("owned", "owner-c", observedAt, Duration.ofSeconds(15))).isFalse();
 		}
 	}
 
