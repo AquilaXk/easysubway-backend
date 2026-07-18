@@ -1,0 +1,60 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<title>관리자 목록 툴바</title>
+</head>
+<body>
+<!--
+  목록 툴바 공통 계약(V6-06 #2278): 검색·필터·저장된 뷰·보기 설정을 하나의 toolbar로 모은다.
+  - direct control은 5개 이하다: 검색 입력·검색 버튼·저장된 뷰·필터 시트 트리거·보기 설정 시트 트리거.
+  - compact(≤768px)에서는 필터·보기 설정을 시트로 접는다. 시트 트리거는 x-cloak라 JS가 없으면 숨고,
+    시트 내용(.admin-toolbar-sheet)은 그대로 인라인 노출돼 no-JS form/link 폴백이 유지된다.
+  - 시트는 x-on:click.outside(close)로 닫아도 상태만 바꾸고 입력을 버리지 않는다. Esc는 트리거로 포커스를 복원한다.
+  - 검색은 method=get form + hx-get으로 HTMX와 full request가 같은 URL·결과를 만든다. query parameter·sort·page
+    size는 hidden으로 보존해 검색이 다른 필터를 덮어쓰지 않는다.
+  - CSP 빌드 규약: x-on/x-bind에는 listToolbar 컴포넌트의 메서드·게터 이름만 넣는다(인라인 표현식 금지).
+  파라미터: basePath(GET/hx-get URL), resultsId(htmx target id), search(검색 필드 설정 map),
+  savedViews·filters·viewSettings(각 영역 마크업 fragment, 없으면 ~{} 전달).
+-->
+<div class="admin-list-toolbar" x-data="listToolbar" role="search"
+     aria-label="목록 검색·필터·보기 설정"
+     th:fragment="toolbar(basePath, resultsId, search, savedViews, filters, viewSettings)">
+	<!-- 1·2: 검색 입력 + 검색 버튼(항상 direct). keyword live search는 300ms debounce, no-JS는 form GET 제출. -->
+	<form class="admin-list-toolbar-search" method="get" th:action="@{${basePath}}"
+	      th:attr="hx-get=@{${basePath}},hx-target='#' + ${resultsId}"
+	      hx-swap="outerHTML" hx-push-url="true"
+	      hx-trigger="submit, keyup changed delay:300ms">
+		<input type="search" th:name="${search.name}" th:value="${search.value}"
+		       th:placeholder="${search.placeholder}" th:aria-label="${search.label}" autocomplete="off">
+		<th:block th:if="${search.hidden}">
+			<input type="hidden" th:each="param : ${search.hidden}"
+			       th:name="${param.key}" th:value="${param.value}">
+		</th:block>
+		<button type="submit">검색</button>
+	</form>
+
+	<!-- 3: 저장된 뷰(계정별 스냅샷). 적용은 htmx/no-JS 링크, 저장·기본·삭제는 command token + CSRF POST. -->
+	<th:block th:if="${savedViews}" th:replace="${savedViews}"></th:block>
+
+	<!-- 4: 필터 — wide에서는 인라인, compact에서는 시트로 접는다. 트리거는 x-cloak(no-JS 숨김). -->
+	<button type="button" class="admin-toolbar-sheet-trigger admin-toolbar-filter-trigger" x-cloak
+	        x-ref="filterTrigger" x-on:click="toggleFilter" x-bind:aria-expanded="filterExpanded"
+	        aria-controls="admin-toolbar-filter-sheet">필터</button>
+	<div class="admin-toolbar-sheet admin-toolbar-filter-sheet" id="admin-toolbar-filter-sheet"
+	     role="group" aria-label="필터" x-bind:class="filterSheetClass"
+	     x-on:click.outside="closeFilter" x-on:keydown.escape.window="closeFilterFromKeyboard">
+		<th:block th:if="${filters}" th:replace="${filters}"></th:block>
+	</div>
+
+	<!-- 5: 보기 설정 — 순수 표시 설정이라 검색 form 밖에 둔다. compact에서는 시트로 접는다. -->
+	<button type="button" class="admin-toolbar-sheet-trigger admin-toolbar-view-trigger" x-cloak
+	        x-ref="viewTrigger" x-on:click="toggleView" x-bind:aria-expanded="viewExpanded"
+	        aria-controls="admin-toolbar-view-sheet">보기 설정</button>
+	<div class="admin-toolbar-sheet admin-toolbar-view-sheet" id="admin-toolbar-view-sheet"
+	     role="group" aria-label="보기 설정" x-bind:class="viewSheetClass"
+	     x-on:click.outside="closeView" x-on:keydown.escape.window="closeViewFromKeyboard">
+		<th:block th:if="${viewSettings}" th:replace="${viewSettings}"></th:block>
+	</div>
+</div>
+</body>
+</html>

@@ -445,3 +445,91 @@
 		padding-top: 4px;
 	}
 }
+
+/* 목록 툴바 공통 계약(#2278 V6-06): 검색·필터·저장된 뷰·보기 설정을 하나의 toolbar 행으로 모은다.
+   list-toolbar.html fragment가 소비하는 데이터/목록 레이아웃 규칙이라 data 레이어가 소유한다(시각 언어 불변). */
+.admin-list-toolbar {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+	margin-bottom: 12px;
+}
+
+.admin-list-toolbar-search {
+	display: flex;
+	gap: 8px;
+	align-items: center;
+	margin: 0;
+}
+
+.admin-list-toolbar-search input[type="search"] {
+	flex: 1;
+	min-width: 0;
+}
+
+/* 필터·보기 설정 시트: wide(기본)에서는 인라인 노출, compact에서는 트리거로 여닫는 시트로 접는다.
+   시트 내용은 기본 노출이라 no-JS(트리거 x-cloak 숨김)에서도 form/link가 그대로 동작한다. */
+.admin-toolbar-sheet {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 12px;
+	align-items: center;
+}
+
+/* 시트 트리거는 wide에서 숨긴다(인라인 노출이라 불필요). compact + JS에서만 노출한다. */
+.admin-toolbar-sheet-trigger {
+	display: none;
+}
+
+/* 첫 식별자 열 외에 "필요한 action 열"만 우측 sticky로 고정하는 유틸리티(#2278 §7).
+   wrapper(.admin-table-scroll)만 가로 overflow를 소유한다는 계약을 그대로 따른다. */
+.admin-table-scroll th.cell-sticky-action,
+.admin-table-scroll td.cell-sticky-action:not([colspan]) {
+	position: sticky;
+	right: 0;
+	z-index: 2;
+	background: var(--admin-surface);
+}
+
+.admin-table-scroll thead th.cell-sticky-action {
+	z-index: 3;
+	background: var(--admin-header-bg);
+}
+
+/* 첫 열 sticky와 동일 패턴(admin-components.css)으로 행 hover·선택 배경을 sticky action 열에도
+   동기화한다. 동기화하지 않으면 sticky 열만 hover/선택 배경이 어긋나 보인다(#2301 리뷰). */
+.admin-v3 .admin-table-scroll tbody tr:hover td.cell-sticky-action:not([colspan]) {
+	background: var(--admin-header-bg);
+}
+
+.admin-v3 .admin-table-scroll tbody tr[aria-selected="true"] td.cell-sticky-action:not([colspan]),
+.admin-v3 .admin-table-scroll tbody tr.is-selected td.cell-sticky-action:not([colspan]) {
+	background: var(--admin-accent-soft);
+}
+
+/* compact: 필터·보기 설정을 시트로 접는다. JS가 있을 때만(has-js) 트리거를 노출하고 시트를 접어
+   direct control을 5개 이하로 유지한다. no-JS(has-js 미부착)는 시트 내용이 인라인으로 남는다. */
+@media (max-width: 768px) {
+	.admin-v3.has-js .admin-toolbar-sheet-trigger {
+		display: inline-flex;
+		min-height: 32px;
+		align-items: center;
+		padding: 0 12px;
+		border: 1px solid var(--admin-border);
+		border-radius: var(--admin-radius-control);
+		background: var(--admin-surface);
+		color: var(--admin-ink-2);
+		font-size: 13px;
+		cursor: pointer;
+	}
+
+	.admin-v3.has-js .admin-toolbar-sheet {
+		display: none;
+		flex-basis: 100%;
+	}
+
+	.admin-v3.has-js .admin-toolbar-sheet.is-open {
+		display: flex;
+	}
+}

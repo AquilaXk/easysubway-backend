@@ -327,6 +327,91 @@ class AdminDesignGuardTest {
 			.contains("background: var(--admin-surface);");
 	}
 
+	@Test
+	@DisplayName("표 영역 fragment는 #2071 admin-table-scroll wrapper 계약을 단일 소비한다")
+	void tableRegionFragmentConsumesAccessibleScrollWrapperContract() throws IOException {
+		String fragment = read("backend/src/main/resources/templates/admin/fragments/table-region.html");
+
+		// wrapper·table·close·조건부 table 계약을 admin table 가드와 동일 규칙으로 고정한다.
+		assertThat(count(TABLE_TAG, fragment)).as("table 정확히 1개").isEqualTo(1);
+		assertThat(count(ACCESSIBLE_TABLE_WRAPPER, fragment)).as("접근성 scroll wrapper 1개").isEqualTo(1);
+		assertThat(count(TABLE_WRAPPER_CLOSE, fragment)).as("wrapper close 1개").isEqualTo(1);
+		assertThat(count(CONDITIONAL_TABLE, fragment)).as("table에 th:if 금지").isZero();
+
+		assertThat(fragment)
+			.as("region fragment 시그니처")
+			.contains("th:fragment=\"region(caption, head, rows)\"")
+			// wrapper만 overflow를 소유한다는 계약을 확인하는 표준 aria-label
+			.contains("aria-label=\"가로로 스크롤 가능한 데이터 표\"")
+			// caption·head·rows를 화면이 주입한다
+			.contains("th:text=\"${caption}\"")
+			.contains("th:insert=\"${head}\"")
+			.contains("th:insert=\"${rows}\"");
+	}
+
+	@Test
+	@DisplayName("목록 툴바 fragment는 direct control 5개 이하와 시트·no-JS·포커스 복원 계약을 갖는다")
+	void listToolbarFragmentPinsUnifiedToolbarContract() throws IOException {
+		String fragment = read("backend/src/main/resources/templates/admin/fragments/list-toolbar.html");
+		String appJs = read("backend/src/main/resources/static/js/admin/app.js");
+
+		// 단일 toolbar 루트에 검색·저장된 뷰·필터·보기 설정을 모은다.
+		assertThat(count(Pattern.compile("class=\"admin-list-toolbar\""), fragment))
+			.as("toolbar 루트 1개").isEqualTo(1);
+		assertThat(fragment)
+			.contains("th:fragment=\"toolbar(basePath, resultsId, search, savedViews, filters, viewSettings)\"")
+			.contains("x-data=\"listToolbar\"");
+
+		// direct control ≤5: 검색 입력 1 + 검색 버튼 1 + 저장된 뷰 zone 1 + 필터 트리거 1 + 보기 설정 트리거 1.
+		assertThat(count(Pattern.compile("type=\"search\""), fragment)).as("검색 입력 1개").isEqualTo(1);
+		assertThat(count(Pattern.compile("<button type=\"submit\">검색</button>"), fragment))
+			.as("검색 버튼 1개").isEqualTo(1);
+		assertThat(count(Pattern.compile("class=\"admin-toolbar-sheet-trigger"), fragment))
+			.as("시트 트리거 2개(필터·보기 설정)").isEqualTo(2);
+
+		// HTMX와 full request가 같은 URL·결과: method=get form + hx-get.
+		assertThat(fragment)
+			.contains("method=\"get\"")
+			.contains("hx-get=@{${basePath}}")
+			// query parameter·sort·page size 보존용 hidden
+			.contains("type=\"hidden\"");
+
+		// 저장된 뷰·필터·보기 설정은 화면이 주입하고, 없으면 렌더하지 않는다(no-JS form/link 유지).
+		assertThat(fragment)
+			.contains("th:replace=\"${savedViews}\"")
+			.contains("th:replace=\"${filters}\"")
+			.contains("th:replace=\"${viewSettings}\"");
+
+		// 시트 트리거는 x-cloak라 no-JS에서 숨고, 시트는 outside close(입력 미유실)와 Esc 포커스 복원을 갖는다.
+		assertThat(fragment)
+			.contains("x-cloak")
+			.contains("x-bind:aria-expanded=\"filterExpanded\"")
+			.contains("x-bind:aria-expanded=\"viewExpanded\"")
+			.contains("aria-controls=\"admin-toolbar-filter-sheet\"")
+			.contains("aria-controls=\"admin-toolbar-view-sheet\"")
+			.contains("x-on:click.outside=\"closeFilter\"")
+			.contains("x-on:click.outside=\"closeView\"")
+			.contains("x-on:keydown.escape.window=\"closeFilterFromKeyboard\"")
+			.contains("x-on:keydown.escape.window=\"closeViewFromKeyboard\"")
+			.contains("x-bind:class=\"filterSheetClass\"")
+			.contains("x-bind:class=\"viewSheetClass\"");
+
+		// app.js listToolbar 컴포넌트: close는 상태만 닫고(입력 미유실), keyboard close만 포커스를 복원한다.
+		assertThat(appJs)
+			.contains("Alpine.data('listToolbar'")
+			.contains("closeFilterFromKeyboard")
+			.contains("closeViewFromKeyboard")
+			.contains("this.$refs.filterTrigger?.focus();")
+			.contains("this.$refs.viewTrigger?.focus();");
+
+		// listener 중복 등록 0: 시트 로직은 Alpine 디렉티브로만 선언하고 수동 리스너·폴링을 쓰지 않는다.
+		String listToolbarBlock = appJs.substring(appJs.indexOf("Alpine.data('listToolbar'"));
+		assertThat(listToolbarBlock)
+			.as("listToolbar 컴포넌트는 수동 addEventListener·setInterval를 등록하지 않는다")
+			.doesNotContain("addEventListener")
+			.doesNotContain("setInterval");
+	}
+
 	private static int count(Pattern pattern, String source) {
 		int count = 0;
 		Matcher matcher = pattern.matcher(source);

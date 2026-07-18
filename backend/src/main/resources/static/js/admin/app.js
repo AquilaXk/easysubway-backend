@@ -546,4 +546,56 @@ document.addEventListener('alpine:init', function () {
 			},
 		};
 	});
+
+	// 목록 툴바 시트(#2278 V6-06): compact에서 필터·보기 설정을 시트로 여닫는다. 진화형 향상 —
+	// JS가 없으면 시트 트리거(x-cloak)는 숨고 시트 내용은 인라인으로 남아 form/link가 그대로 동작한다.
+	// userMenu와 동일한 포커스 정책: close()는 상태만 닫아 외부 클릭(x-on:click.outside) 시 포커스를
+	// 트리거로 빼앗지 않고(입력 미유실), Esc(closeFromKeyboard)로 닫을 때만 트리거로 포커스를 복원한다.
+	// 리스너는 Alpine 디렉티브(x-on)로만 선언해 컴포넌트가 교체될 때 자동 정리된다 — 수동 addEventListener나
+	// 폴링이 없어 htmx 부분 갱신으로 툴바가 다시 렌더돼도 리스너가 중복 등록되지 않는다.
+	// CSP 빌드 규약: x-on/x-bind에는 메서드·게터 이름만 쓴다.
+	Alpine.data('listToolbar', function () {
+		return {
+			filterOpen: false,
+			viewOpen: false,
+			get filterExpanded() {
+				return this.filterOpen ? 'true' : 'false';
+			},
+			get viewExpanded() {
+				return this.viewOpen ? 'true' : 'false';
+			},
+			get filterSheetClass() {
+				return this.filterOpen ? 'is-open' : '';
+			},
+			get viewSheetClass() {
+				return this.viewOpen ? 'is-open' : '';
+			},
+			toggleFilter: function () {
+				this.filterOpen = !this.filterOpen;
+			},
+			toggleView: function () {
+				this.viewOpen = !this.viewOpen;
+			},
+			closeFilter: function () {
+				this.filterOpen = false;
+			},
+			closeView: function () {
+				this.viewOpen = false;
+			},
+			closeFilterFromKeyboard: function () {
+				if (!this.filterOpen) {
+					return;
+				}
+				this.filterOpen = false;
+				this.$refs.filterTrigger?.focus();
+			},
+			closeViewFromKeyboard: function () {
+				if (!this.viewOpen) {
+					return;
+				}
+				this.viewOpen = false;
+				this.$refs.viewTrigger?.focus();
+			},
+		};
+	});
 });

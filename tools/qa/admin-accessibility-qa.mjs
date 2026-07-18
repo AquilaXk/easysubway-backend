@@ -162,6 +162,24 @@ function finalizeReport(report) {
       nodes: 0,
     });
   }
+  // #2278 V6-06: 목록 툴바 시트 계약을 위반으로 편입한다. body가 가로 overflow를 소유하거나(§9),
+  // 툴바가 있는데 outside close가 입력을 버리거나, Esc(window 스코프, #2301 리뷰)가 시트를 실제로
+  // 닫지 못하거나(is-open 잔존) 포커스를 복원하지 못하면 실패를 표면화한다.
+  const listToolbar = report.keyboard.find((entry) => entry.check === "list-toolbar-sheet");
+  if (listToolbar
+    && (listToolbar.bodyOverflowX0 === false
+      || (listToolbar.present === true
+        && listToolbar.sheetPresent === true
+        && (listToolbar.inputPreserved === false
+          || listToolbar.sheetClosed === false
+          || listToolbar.focusRestored === false)))) {
+    blockingViolations.push({
+      page: "/admin/reports/page",
+      id: "list-toolbar-sheet",
+      impact: "serious",
+      nodes: 0,
+    });
+  }
   const criticalViolations = blockingViolations.filter((violation) => violation.impact === "critical");
   const seriousViolations = blockingViolations.filter((violation) => violation.impact === "serious");
   report.summary = {
@@ -196,6 +214,7 @@ async function runJsPass(browser, baseUrl, outputDir, adminUser, adminPassword, 
   await captureAxTree(page, outputDir, report);
   await noCurrentWorkspaceDisclosure(page, baseUrl, report);
   await keyboardTableCheck(page, baseUrl, report);
+  await listToolbarSheetCheck(page, baseUrl, report);
   await textScalePass(page, baseUrl, outputDir, report, ADMIN_TEXT_SCALE_PAGES);
   await context.close();
 
@@ -557,6 +576,88 @@ async function keyboardTableCheck(page, baseUrl, report) {
     outlineStyle: focusState ? focusState.outlineStyle : null,
     outlineWidth: focusState ? focusState.outlineWidth : null,
     outlineVisible,
+  });
+}
+
+// #2278 V6-06: 목록 툴바 시트 계약. compact viewport에서 (1) body가 가로 overflow를 소유하지 않는지(§9),
+// (2) 툴바가 있으면 direct control 수·시트 outside close 입력 미유실·Esc 포커스 복원을 검사한다.
+// 화면 이관(V6-07~10) 전에는 툴바가 아직 없어 present:false로 no-op이며 body overflow만 기록한다.
+// wrapper(.admin-table-scroll)만 가로 overflow를 소유한다는 #2071 계약과 결이 같다.
+async function listToolbarSheetCheck(page, baseUrl, report) {
+  await page.setViewportSize(VIEWPORTS.find((viewport) => viewport.name === "mobile-390"));
+  const response = await page.goto(`${baseUrl}/admin/reports/page`, { waitUntil: "networkidle" });
+  await assertOk(page, "/admin/reports/page", response);
+  await page.waitForSelector("body.has-js-ready", { timeout: 2000 }).catch(() => {});
+
+  const base = await page.evaluate(() => {
+    const doc = document.documentElement;
+    const bodyOverflowX0 = document.body.scrollWidth <= document.body.clientWidth + 1
+      && doc.scrollWidth <= doc.clientWidth + 1;
+    const toolbar = document.querySelector(".admin-list-toolbar");
+    if (!toolbar) {
+      return { present: false, bodyOverflowX0 };
+    }
+    const directControls = Array.from(
+      toolbar.querySelectorAll("input:not([type=\"hidden\"]), button, select, a, textarea"),
+    ).filter((element) => !element.closest(".admin-toolbar-sheet")).length;
+    return { present: true, bodyOverflowX0, directControls };
+  });
+
+  if (!base.present) {
+    report.keyboard.push({ check: "list-toolbar-sheet", ...base });
+    return;
+  }
+
+  // 시트 outside close가 입력을 버리지 않는지: 시트 입력에 값을 넣고 트리거로 열었다 바깥을 눌러 닫은 뒤
+  // 값이 보존되는지 확인한다. Esc는 트리거로 포커스를 복원해야 한다(focus restore).
+  const sheet = await page.evaluate(() => {
+    const trigger = document.querySelector(".admin-toolbar-filter-trigger");
+    const sheetInput = document.querySelector(".admin-toolbar-filter-sheet input, .admin-toolbar-filter-sheet select");
+    if (!trigger || !sheetInput) {
+      return { sheetPresent: false };
+    }
+    if (sheetInput.tagName.toLowerCase() === "input" && sheetInput.type !== "checkbox") {
+      sheetInput.value = "보존-확인";
+    }
+    return { sheetPresent: true, savedValue: sheetInput.value ?? null };
+  });
+
+  let inputPreserved = null;
+  let sheetClosed = null;
+  let focusRestored = null;
+  if (sheet.sheetPresent) {
+    await page.click(".admin-toolbar-filter-trigger");
+    await page.click("h1");
+    await page.waitForTimeout(100);
+    inputPreserved = await page.evaluate((expected) => {
+      const sheetInput = document.querySelector(".admin-toolbar-filter-sheet input, .admin-toolbar-filter-sheet select");
+      return sheetInput ? sheetInput.value === expected : false;
+    }, sheet.savedValue);
+    await page.click(".admin-toolbar-filter-trigger");
+    // window 스코프 Esc(#2301 리뷰)는 시트 내부 포커스와 무관하게 발화하므로, 시트 내부 컨트롤에
+    // 포커스를 둔 채로 Esc를 눌러도 닫히는지까지 확인한다.
+    await page.evaluate(() => {
+      const sheetInput = document.querySelector(".admin-toolbar-filter-sheet input, .admin-toolbar-filter-sheet select");
+      sheetInput?.focus();
+    });
+    await page.keyboard.press("Escape");
+    await page.waitForTimeout(100);
+    const afterEscape = await page.evaluate(() => ({
+      sheetClosed: !document.querySelector(".admin-toolbar-filter-sheet")?.classList.contains("is-open"),
+      focusRestored: Boolean(document.activeElement
+        && document.activeElement.classList.contains("admin-toolbar-filter-trigger")),
+    }));
+    sheetClosed = afterEscape.sheetClosed;
+    focusRestored = afterEscape.focusRestored;
+  }
+
+  report.keyboard.push({
+    check: "list-toolbar-sheet",
+    ...base,
+    sheetPresent: sheet.sheetPresent,
+    inputPreserved,
+    sheetClosed,
+    focusRestored,
   });
 }
 

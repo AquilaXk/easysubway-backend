@@ -120,6 +120,27 @@ test("admin accessibility QA script verifies admin-table-scroll keyboard and foc
   assert.match(source, /id: "login-public-state-expectation"/);
 });
 
+// #2278 V6-06: 목록 툴바 시트 계약을 QA 하네스가 검사하는지 source로 고정한다.
+test("admin accessibility QA script verifies list toolbar sheet body overflow and focus restore", () => {
+  assert.match(source, /async function listToolbarSheetCheck\(page, baseUrl, report\)/);
+  assert.match(source, /await listToolbarSheetCheck\(page, baseUrl, report\)/);
+  assert.match(source, /check: "list-toolbar-sheet"/);
+  // body가 가로 overflow를 소유하지 않는지(§9) 측정한다.
+  assert.match(source, /bodyOverflowX0/);
+  assert.match(source, /document\.body\.scrollWidth <= document\.body\.clientWidth \+ 1/);
+  // 시트 outside close 입력 미유실·Esc 시트 실제 닫힘(is-open 제거)·포커스 복원을 이중 단언으로 검사한다.
+  assert.match(source, /inputPreserved/);
+  assert.match(source, /sheetClosed/);
+  assert.match(source, /focusRestored/);
+  assert.match(source, /admin-toolbar-filter-trigger/);
+  // direct control 수를 시트 밖 요소만 세어 기록한다.
+  assert.match(source, /directControls/);
+  // 계약 실패가 blocking 위반으로 표면화되는지 고정한다.
+  assert.match(source, /id: "list-toolbar-sheet"/);
+  assert.match(source, /listToolbar\.bodyOverflowX0 === false/);
+  assert.match(source, /listToolbar\.sheetClosed === false/);
+});
+
 test("admin accessibility QA script records manual-only screen reader and contrast work", () => {
   assert.match(source, /VoiceOver reading flow/);
   assert.match(source, /high-contrast visual inspection/);
