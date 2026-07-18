@@ -101,17 +101,17 @@ class AdminE2EFlowTest {
 				.user("admin-user")
 				.password("wrong-password"))
 			.andExpect(status().is3xxRedirection())
-			.andExpect(redirectedUrl("/admin/login?error"));
+			.andExpect(redirectedUrl("/admin/login"));
 		mockMvc.perform(formLogin("/admin/login")
 				.user("admin-user")
 				.password("wrong-password"))
 			.andExpect(status().is3xxRedirection())
-			.andExpect(redirectedUrl("/admin/login?error"));
+			.andExpect(redirectedUrl("/admin/login"));
 		mockMvc.perform(formLogin("/admin/login")
 				.user("admin-user")
 				.password("admin-test-password"))
 			.andExpect(status().is3xxRedirection())
-			.andExpect(redirectedUrl("/admin/login?error"));
+			.andExpect(redirectedUrl("/admin/login"));
 
 		assertThat(identityRepository.findByLoginId("admin-user").orElseThrow().failedLoginCount()).isEqualTo(2);
 		assertThat(identityRepository.audits())

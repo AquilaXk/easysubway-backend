@@ -74,6 +74,11 @@ public class SecurityConfig {
 	}
 
 	@Bean
+	LoginNoticeFlash loginNoticeFlash() {
+		return new LoginNoticeFlash();
+	}
+
+	@Bean
 	@Order(0)
 	SecurityFilterChain datapackWorkflowApiSecurityFilterChain(
 		HttpSecurity http,
@@ -104,6 +109,7 @@ public class SecurityConfig {
 		HttpSecurity http,
 		AdminOperatorAuditFilter auditFilter,
 		AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler,
+		LoginNoticeFlash loginNoticeFlash,
 		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
 	) throws Exception {
 		// 관리자 확인 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
@@ -230,6 +236,7 @@ public class SecurityConfig {
 			)
 			.formLogin(form -> form
 				.loginPage("/admin/login")
+				.failureHandler(loginNoticeFlash)
 				.defaultSuccessUrl("/admin/dashboard/page", true)
 				.permitAll()
 			)
@@ -249,6 +256,7 @@ public class SecurityConfig {
 	SecurityFilterChain operatorSecurityFilterChain(
 		HttpSecurity http,
 		AdminOperatorAuditFilter auditFilter,
+		LoginNoticeFlash loginNoticeFlash,
 		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
 	) throws Exception {
 		// 운영기관 전용 화면은 전역 관리자와 별도 역할로 분리해 이후 기관별 범위 제한을 붙일 수 있게 한다.
@@ -276,6 +284,7 @@ public class SecurityConfig {
 			)
 			.formLogin(form -> form
 				.loginPage("/operator/login")
+				.failureHandler(loginNoticeFlash)
 				.defaultSuccessUrl("/operator/accessibility-report/page", true)
 				.permitAll()
 			)

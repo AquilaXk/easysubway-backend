@@ -41,8 +41,10 @@ class OperatorLoginPageControllerTest {
 			.contains("운영기관 포털")
 			.contains("아이디")
 			.contains("비밀번호")
-			.contains("안전하게 로그인")
-			.contains("name=\"_csrf\"");
+			.contains(">로그인</button>")
+			.contains("name=\"_csrf\"")
+			.doesNotContain("안전하게 로그인")
+			.doesNotContain("기관 담당자에게 발급된 계정으로 접근성 보고서를 확인하세요.");
 	}
 
 	@Test
