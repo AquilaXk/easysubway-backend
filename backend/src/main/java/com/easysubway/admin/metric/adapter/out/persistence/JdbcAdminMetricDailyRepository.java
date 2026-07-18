@@ -11,6 +11,7 @@ import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
 
@@ -19,6 +20,7 @@ import org.springframework.stereotype.Repository;
 public class JdbcAdminMetricDailyRepository implements AdminMetricDailyRepository {
 
 	private final JdbcTemplate jdbcTemplate;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	JdbcAdminMetricDailyRepository(DataSource dataSource) {
@@ -27,27 +29,49 @@ public class JdbcAdminMetricDailyRepository implements AdminMetricDailyRepositor
 
 	JdbcAdminMetricDailyRepository(JdbcTemplate jdbcTemplate) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.databaseDialect = detectDatabaseDialect(jdbcTemplate);
 	}
 
 	@Override
 	public void save(AdminMetricDaily metric) {
-		// dialect 무관 upsert: 먼저 UPDATE, 없으면 INSERT. (지표 키, 날짜) 재실행이 멱등하다.
-		int updated = jdbcTemplate.update(
-			"UPDATE admin_metric_daily SET metric_value = ?, dimensions = ? WHERE metric_key = ? AND metric_date = ?",
-			metric.value(),
-			metric.dimensions(),
-			metric.metricKey(),
-			metric.metricDate()
-		);
-		if (updated == 0) {
-			jdbcTemplate.update(
-				"INSERT INTO admin_metric_daily (metric_key, metric_date, metric_value, dimensions) VALUES (?, ?, ?, ?)",
-				metric.metricKey(),
-				metric.metricDate(),
-				metric.value(),
-				metric.dimensions()
-			);
+		// 원자적 upsert(#2273): 한 문장으로 처리해 (지표 키, 날짜) 동시 저장 경합에도 PK 충돌 없이 한 행만
+		// 남기고, 재실행은 값을 덮어써 멱등하다. ON CONFLICT(PostgreSQL)/MERGE KEY(H2)는 방언별 표기만
+		// 다를 뿐 같은 원자 동작을 보장한다. H2는 ON CONFLICT 문법을 파싱하지 못해 방언으로 분기한다.
+		if (databaseDialect == DatabaseDialect.POSTGRESQL) {
+			upsertWithOnConflict(metric);
+			return;
 		}
+		upsertWithMergeKey(metric);
+	}
+
+	private void upsertWithOnConflict(AdminMetricDaily metric) {
+		jdbcTemplate.update(
+			"""
+				INSERT INTO admin_metric_daily (metric_key, metric_date, metric_value, dimensions)
+				VALUES (?, ?, ?, ?)
+				ON CONFLICT (metric_key, metric_date) DO UPDATE
+				SET metric_value = EXCLUDED.metric_value,
+					dimensions = EXCLUDED.dimensions
+				""",
+			metric.metricKey(),
+			metric.metricDate(),
+			metric.value(),
+			metric.dimensions()
+		);
+	}
+
+	private void upsertWithMergeKey(AdminMetricDaily metric) {
+		jdbcTemplate.update(
+			"""
+				MERGE INTO admin_metric_daily (metric_key, metric_date, metric_value, dimensions)
+				KEY (metric_key, metric_date)
+				VALUES (?, ?, ?, ?)
+				""",
+			metric.metricKey(),
+			metric.metricDate(),
+			metric.value(),
+			metric.dimensions()
+		);
 	}
 
 	@Override
@@ -91,5 +115,19 @@ public class JdbcAdminMetricDailyRepository implements AdminMetricDailyRepositor
 			rs.getDouble("metric_value"),
 			rs.getString("dimensions")
 		);
+	}
+
+	// 원자적 upsert 문법이 방언별로 달라(ON CONFLICT vs MERGE KEY) 저장 시 분기하기 위해 감지한다.
+	private static DatabaseDialect detectDatabaseDialect(JdbcTemplate jdbcTemplate) {
+		DatabaseDialect dialect = jdbcTemplate.execute((ConnectionCallback<DatabaseDialect>) connection -> {
+			String productName = connection.getMetaData().getDatabaseProductName();
+			return "H2".equalsIgnoreCase(productName) ? DatabaseDialect.H2 : DatabaseDialect.POSTGRESQL;
+		});
+		return dialect == null ? DatabaseDialect.POSTGRESQL : dialect;
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 }

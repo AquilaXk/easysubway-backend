@@ -3,6 +3,7 @@ package com.easysubway.admin.metric.application.service;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
+import com.easysubway.admin.metric.domain.AdminMetricKeys.AdminMetricKind;
 import java.time.Clock;
 import java.time.LocalDate;
 import java.util.Collection;
@@ -67,10 +68,14 @@ public class AdminMetricQueryService {
 	}
 
 	/**
-	 * 지표 키별로 최근 기간과 직전 동일 기간의 합계를 비교해 증감을 계산한다("어제보다 나빠졌는가"에 즉답).
+	 * 지표 키별로 최근 기간과 직전 동일 기간을 비교해 증감을 계산한다("어제보다 나빠졌는가"에 즉답).
 	 *
-	 * <p>기간은 7/30/90일로 정규화한다. 스냅샷이 없는 날은 0으로 본다(경계 안정). 증감률은
-	 * 직전 기간 합계가 0이면 정의하지 않는다(null): 0에서의 증가는 비율로 표현할 수 없다.
+	 * <p>집계 의미는 지표 종류가 정한다(#2273): {@code DAILY_COUNTER}만 {@code [from, to]} 기간
+	 * 합계로 비교하고, {@code GAUGE}·{@code RATE}·{@code ROLLING_WINDOW}는 누계·비율·이동 기간이라
+	 * 합산이 중복이므로 기간 내 최신 스냅샷끼리 비교한다.
+	 *
+	 * <p>기간은 7/30/90일로 정규화한다. 증감률은 직전 기간 값이 0이면 정의하지 않는다(null):
+	 * 0에서의 증가는 비율로 표현할 수 없다.
 	 */
 	public List<AdminMetricComparison> compare(Collection<String> requestedKeys, int requestedDays) {
 		int days = ALLOWED_DAYS.contains(requestedDays) ? requestedDays : DEFAULT_DAYS;
@@ -88,38 +93,54 @@ public class AdminMetricQueryService {
 		return keys.stream()
 			.map(key -> {
 				Map<LocalDate, Double> valuesByDate = byKey.getOrDefault(key, Map.of());
-				boolean rate = AdminMetricKeys.isRate(key);
-				double current = aggregate(valuesByDate, currentFrom, today, rate);
-				double previous = aggregate(valuesByDate, previousFrom, previousTo, rate);
+				AdminMetricKind kind = AdminMetricKeys.kind(key);
+				double current = aggregate(valuesByDate, currentFrom, today, kind);
+				double previous = aggregate(valuesByDate, previousFrom, previousTo, kind);
+				boolean previousPresent = hasSnapshot(valuesByDate, previousFrom, previousTo);
 				Double deltaPercent = previous == 0.0 ? null : (current - previous) * 100 / previous;
 				return new AdminMetricComparison(
-					key, AdminMetricKeys.label(key), days, current, previous, current - previous, deltaPercent);
+					key, AdminMetricKeys.label(key), days, current, previous, current - previous, deltaPercent,
+					previousPresent);
 			})
 			.toList();
 	}
 
 	/**
-	 * 기간 집계: 건수 지표는 합계(결측일 0), 비율·평균 지표는 값이 있는 날의 평균(결측일 제외)으로 모은다.
-	 * 비율을 합산하면(예: 7일 차단률 합) 무의미하므로 평균으로 본다.
+	 * 지표 종류별 기간 집계(#2273). 일별 counter만 기간 합계(결측일 0)로 모으고, 누계·비율·이동
+	 * 기간 지표는 기간 내 최신 스냅샷 값을 그대로 쓴다(스냅샷이 하나도 없으면 0).
 	 */
-	private static double aggregate(Map<LocalDate, Double> valuesByDate, LocalDate from, LocalDate to, boolean rate) {
-		if (!rate) {
-			return from.datesUntil(to.plusDays(1))
+	private static double aggregate(
+		Map<LocalDate, Double> valuesByDate, LocalDate from, LocalDate to, AdminMetricKind kind) {
+		return switch (kind) {
+			case DAILY_COUNTER -> from.datesUntil(to.plusDays(1))
 				.mapToDouble(date -> valuesByDate.getOrDefault(date, 0.0))
 				.sum();
+			case GAUGE, RATE, ROLLING_WINDOW -> latestSnapshot(valuesByDate, from, to);
+		};
+	}
+
+	/** 기간 {@code [from, to]} 안에서 가장 최근 날짜의 스냅샷 값. 값이 하나도 없으면 0. */
+	private static double latestSnapshot(Map<LocalDate, Double> valuesByDate, LocalDate from, LocalDate to) {
+		for (LocalDate date = to; !date.isBefore(from); date = date.minusDays(1)) {
+			Double value = valuesByDate.get(date);
+			if (value != null) {
+				return value;
+			}
 		}
-		double[] present = from.datesUntil(to.plusDays(1))
-			.filter(valuesByDate::containsKey)
-			.mapToDouble(valuesByDate::get)
-			.toArray();
-		if (present.length == 0) {
-			return 0.0;
+		return 0.0;
+	}
+
+	/**
+	 * 기간 {@code [from, to]} 안에 스냅샷이 하나라도 있는지 여부. 집계값이 0.0이어도 실측된 0인지
+	 * 스냅샷 자체가 없어 0으로 채운 것인지 구분한다(#2273: "실측 0"과 "직전 없음" 구분).
+	 */
+	private static boolean hasSnapshot(Map<LocalDate, Double> valuesByDate, LocalDate from, LocalDate to) {
+		for (LocalDate date = from; !date.isAfter(to); date = date.plusDays(1)) {
+			if (valuesByDate.containsKey(date)) {
+				return true;
+			}
 		}
-		double sum = 0.0;
-		for (double value : present) {
-			sum += value;
-		}
-		return sum / present.length;
+		return false;
 	}
 
 	private static List<String> normalizeKeys(Collection<String> requestedKeys) {
@@ -152,10 +173,12 @@ public class AdminMetricQueryService {
 	 * @param key          지표 키
 	 * @param label        한글 표시 라벨
 	 * @param days         비교 기간(일)
-	 * @param current      최근 기간 합계(결측일 0)
-	 * @param previous     직전 동일 기간 합계(결측일 0)
-	 * @param delta        current - previous
-	 * @param deltaPercent 증감률(%), 직전 기간이 0이면 null(정의 불가)
+	 * @param current         최근 기간 집계(일별 counter는 합계, 그 외는 기간 내 최신 스냅샷)
+	 * @param previous        직전 동일 기간 집계(집계 방식은 current와 동일)
+	 * @param delta           current - previous
+	 * @param deltaPercent    증감률(%), 직전 기간이 0이면 null(정의 불가)
+	 * @param previousPresent 직전 기간에 스냅샷이 하나라도 있었는지. previous가 0.0일 때 실측된 0인지
+	 *                        (true) 스냅샷 부재로 0으로 채운 것인지(false)를 구분한다(#2273)
 	 */
 	public record AdminMetricComparison(
 		String key,
@@ -164,7 +187,8 @@ public class AdminMetricQueryService {
 		double current,
 		double previous,
 		double delta,
-		Double deltaPercent
+		Double deltaPercent,
+		boolean previousPresent
 	) {
 
 		public boolean improved(boolean higherIsBetter) {

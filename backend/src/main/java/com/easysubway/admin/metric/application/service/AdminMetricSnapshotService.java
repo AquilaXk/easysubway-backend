@@ -22,6 +22,7 @@ import java.util.Map;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 /**
  * 일별 지표 스냅샷 집계(#1739). 대시보드가 즉석 계산하던 값과 <b>같은 use case</b>에서 뽑아
@@ -92,7 +93,13 @@ public class AdminMetricSnapshotService {
 		this.clock = clock;
 	}
 
-	/** 오늘 날짜로 스냅샷을 집계한다(스케줄러·수동 재실행 진입점). */
+	/**
+	 * 오늘 날짜로 스냅샷을 집계한다(스케줄러·수동 재실행 진입점).
+	 *
+	 * <p>{@link #snapshot(LocalDate)}를 내부 호출하므로, 프록시 자기호출로 트랜잭션이 새지 않도록
+	 * 이 진입점에도 {@link Transactional}을 둔다(#2273). 한 실행의 모든 지표 write가 한 트랜잭션이다.
+	 */
+	@Transactional
 	public void snapshotToday() {
 		snapshot(LocalDate.now(clock));
 	}
@@ -100,7 +107,11 @@ public class AdminMetricSnapshotService {
 	/**
 	 * 주어진 날짜로 지표를 집계해 upsert한다. 실패는 상태 홀더에 기록하고 예외를 다시 던진다
 	 * (스케줄러·엔드포인트가 로깅/응답을 처리).
+	 *
+	 * <p>한 실행의 모든 지표 write를 한 트랜잭션으로 묶어, 한 지표 저장이 실패하면 같은 실행에서
+	 * 앞서 저장한 지표까지 전부 rollback한다(#2273). 상태 홀더 기록은 DB 밖이라 rollback되지 않는다.
 	 */
+	@Transactional
 	public void snapshot(LocalDate date) {
 		try {
 			Map<FacilityReportStatus, Long> reportCounts = facilityReportUseCase.countReportsByStatus();

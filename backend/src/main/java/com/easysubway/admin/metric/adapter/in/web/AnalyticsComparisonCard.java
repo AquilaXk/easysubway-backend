@@ -24,10 +24,21 @@ public record AnalyticsComparisonCard(
 			comparison.label(),
 			formatValue(comparison.current()),
 			formatValue(comparison.previous()),
-			comparison.deltaPercent() == null ? "직전 없음" : "%+.1f%%".formatted(comparison.deltaPercent()),
+			deltaPercentLabel(comparison),
 			tone,
 			comparison.delta() > 0
 		);
+	}
+
+	/**
+	 * 증감률 표시 문구. 직전 기간에 스냅샷이 없으면 "직전 없음", 직전 실측값이 0이라 증감률이 정의
+	 * 불가하면 "기준 0 — 증가율 산정 불가"로 구분한다(#2273: 실측 0과 스냅샷 부재 구분).
+	 */
+	private static String deltaPercentLabel(AdminMetricComparison comparison) {
+		if (comparison.deltaPercent() != null) {
+			return "%+.1f%%".formatted(comparison.deltaPercent());
+		}
+		return comparison.previousPresent() ? "기준 0 — 증가율 산정 불가" : "직전 없음";
 	}
 
 	private static String formatValue(double value) {

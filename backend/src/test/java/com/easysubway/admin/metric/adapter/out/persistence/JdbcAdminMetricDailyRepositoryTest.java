@@ -6,6 +6,11 @@ import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
+import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -77,5 +82,40 @@ class JdbcAdminMetricDailyRepositoryTest {
 		assertThat(range)
 			.extracting(AdminMetricDaily::metricDate)
 			.containsExactly(LocalDate.of(2026, 7, 4));
+	}
+
+	@Test
+	@DisplayName("같은 키·날짜를 여러 스레드가 동시에 저장해도 원자적 upsert로 한 행만 남는다")
+	void concurrentSaveKeepsSingleRow() throws InterruptedException {
+		LocalDate date = LocalDate.of(2026, 7, 5);
+		int threadCount = 8;
+		ExecutorService pool = Executors.newFixedThreadPool(threadCount);
+		CountDownLatch ready = new CountDownLatch(threadCount);
+		CountDownLatch start = new CountDownLatch(1);
+		CountDownLatch done = new CountDownLatch(threadCount);
+		CopyOnWriteArrayList<Throwable> errors = new CopyOnWriteArrayList<>();
+
+		for (int i = 0; i < threadCount; i++) {
+			double value = i;
+			pool.execute(() -> {
+				ready.countDown();
+				try {
+					start.await();
+					repository.save(AdminMetricDaily.scalar("route.searches", date, value));
+				} catch (Throwable throwable) {
+					errors.add(throwable);
+				} finally {
+					done.countDown();
+				}
+			});
+		}
+
+		assertThat(ready.await(5, TimeUnit.SECONDS)).isTrue();
+		start.countDown();
+		assertThat(done.await(10, TimeUnit.SECONDS)).isTrue();
+		pool.shutdownNow();
+
+		assertThat(errors).isEmpty();
+		assertThat(repository.findByKeysAndDateRange(List.of("route.searches"), date, date)).hasSize(1);
 	}
 }
