@@ -77,7 +77,9 @@ class DataQualityAdminPageControllerTest {
 		assertThat(html)
 			.contains("데이터 품질 대시보드")
 			.contains("전체 역")
-			.contains(">2<")
+			// #2095: InMemoryTransitMasterRepository에 ITX-청춘 pilot 정차역 14곳이
+			// 추가돼 전체 역 수가 2에서 16으로 늘었다.
+			.contains(">16<")
 			.contains("전체 출구")
 			.contains("전체 시설")
 			.contains(">3<")

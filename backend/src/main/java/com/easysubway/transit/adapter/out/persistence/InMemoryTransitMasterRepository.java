@@ -67,7 +67,27 @@ public class InMemoryTransitMasterRepository implements
 
 	private static final List<SubwayLine> LINES = List.of(
 		new SubwayLine("seoul-4", "seoul-metro", "수도권 4호선", "#00A5DE", "수도권", "4", true),
-		new SubwayLine("suin-bundang", "korail", "수인분당선", "#F5A200", "수도권", "K1", true)
+		new SubwayLine("suin-bundang", "korail", "수인분당선", "#F5A200", "수도권", "K1", true),
+		// ITX-청춘(경춘선) pilot 노선 — 위 14개 pilot 정차역을 연결한다(#2095 PR #2286
+		// 리뷰 지적: 역만 있고 노선·역-노선 연결이 없어 강원권 노선/운영기관 집계가
+		// 부정확하게 0으로 나오는 orphan 상태였다). color는 tools/route-map/route-map-line-colors.json
+		// ("수도권 경춘": #0c8e72, 출처 위키백과 틀:한국 철도 노선색)에서 그대로 가져온
+		// 실데이터다. region은 "강원권"으로 뒀다 — 이 노선은 수도권(11역)과 강원권(3역)에
+		// 걸쳐 있지만 SubwayLine.region은 단일 값만 담을 수 있어 두 지역을 동시에 표현할
+		// 수 없다. 수도권은 이미 seoul-4/suin-bundang으로 lineCount가 채워져 있었던 반면
+		// 강원권은 이 노선이 연결되기 전까지 0이었던(=orphan 증상 그 자체였던) 쪽이라
+		// region="강원권"으로 둬 그 불일치를 직접 해소했다. lineCode는 Korail이 경춘선에
+		// suin-bundang의 "K1"급으로 공식 부여한 짧은 코드를 이 저장소 소스에서 확인하지
+		// 못해 지어내지 않고 빈 문자열로 뒀다(강원권 집계·capacity 어디에도 쓰이지 않는
+		// 순수 표시용 필드).
+		//
+		// 운영기관(TransitOperator) 쪽은 이 PR에서 건드리지 않았다 — korail은 이미 존재하는
+		// 단일 실제 법인이고 그 region 필드는 suin-bundang 때부터 "수도권"으로 고정돼 있다.
+		// 강원권 operatorCount를 억지로 채우려고 "korail-gangwon" 같은 실재하지 않는 두 번째
+		// 운영기관을 만들어내는 것은 조직을 지어내는 것이라 하지 않았다 — 강원권
+		// operatorCount=0은 "이 스키마가 단일-지역 운영기관만 표현할 수 있다"는 알려진
+		// 한계이지 데이터 누락이 아니다.
+		new SubwayLine("itx-cheongchun", "korail", "ITX-청춘", "#0c8e72", "강원권", "", true)
 	);
 
 	private static final List<Station> STATIONS = List.of(
@@ -94,12 +114,94 @@ public class InMemoryTransitMasterRepository implements
 			DataSourceType.OFFICIAL_FILE,
 			LocalDate.of(2026, 6, 12),
 			true
-		)
+		),
+		// ITX-청춘(경춘선) pilot 정차역 14곳 — Route V2 capacity evidence(#2095)가 검증하는
+		// pilot scope. id·이름·정차 순서는 tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json
+		// (stationRosters, providerStationId·providerStationName·canonicalStationId·corridorSequence,
+		// 원출처 data.go.kr 열린데이터광장 KRIC API — 같은 소스의
+		// korail-itx-cheongchun-station-sequence-20260713.json officialSourceUrl 참고)에서
+		// 그대로 가져왔고, production 격리 클론의 실제 transit_stop_times/transit_trips
+		// (service_class='ITX_CHEONGCHUN') stop_sequence 순서와 대조해 일치를 확인했다
+		// (#2095). nameEn은 국립국어원 로마자 표기법(코레일 역명판 표기와 동일) 표준 변환이다.
+		// region은 행정구역 기준(가평까지 경기도=수도권, 강촌부터 강원도=강원권)이며 정밀
+		// 좌표가 아니므로 창작이 아니다.
+		//
+		// 위도·경도는 이 datapack 소스에 없어 만들어내지 않고 0,0을 자리표시자로 쓴다.
+		// 이 클래스는 !prod 프로필이지만, prod에서 활성화되는
+		// JdbcTransitMasterOverrideRepository가 loadStations()를 오버라이드하지 않고
+		// UnavailableTransitMasterRepository를 거쳐 이 STATIONS를 그대로 상속하므로,
+		// 이 0,0은 dev 격리에 머물지 않고 prod seed까지 그대로 도달한다(예: 관리자
+		// 역 상세/편집 화면에 0/0으로 노출됨). null을 쓰면 TransitMasterService의
+		// "인근 역 검색"(distanceMeters())이 이 14역에 대해 NullPointerException을
+		// 내므로 그 대안은 아니다. 현재는 capacity 스크립트가 검증하는 Route V2
+		// search 경로(RouteV2Planner)도, 공개 nearby-search 엔드포인트도 이 14역의
+		// 좌표를 소비하지 않아(loadActiveStation()은 존재·active 여부만 확인) 무해하지만,
+		// #2098 real data-pack adapter로 실좌표가 반입되기 전에 nearby-search가 이
+		// 데이터에 배선되면 0,0이 실제 위치로 오응답에 섞여들 수 있는 잠복 리스크가
+		// 있다는 점은 명시해둔다. 실좌표 반입은 #2098 범위다.
+		itxCheongchunPilotStation("station-8aa315864466", "용산", "Yongsan"),
+		itxCheongchunPilotStation("station-c0679b9a6cf8", "옥수", "Oksu"),
+		itxCheongchunPilotStation("station-e5cf592cf355", "왕십리", "Wangsimni"),
+		itxCheongchunPilotStation("station-b819702fa7d9", "청량리", "Cheongnyangni"),
+		itxCheongchunPilotStation("station-83bcb1eae340", "상봉", "Sangbong"),
+		itxCheongchunPilotStation("station-b52ac4dfe64e", "퇴계원", "Toegyewon"),
+		itxCheongchunPilotStation("station-2ccf5647f7f7", "사릉", "Sareung"),
+		itxCheongchunPilotStation("station-f3d9c93ba7d6", "평내호평", "Pyeongnae-Hopyeong"),
+		itxCheongchunPilotStation("station-661ff65ea040", "마석", "Maseok"),
+		itxCheongchunPilotStation("station-6c1f50a5aa3b", "청평", "Cheongpyeong"),
+		itxCheongchunPilotStation("station-4f6045ff9103", "가평", "Gapyeong"),
+		itxCheongchunPilotStation("station-30ba86472e55", "강촌", "Gangchon", "강원권"),
+		itxCheongchunPilotStation("station-d5e344125b52", "남춘천", "Namchuncheon", "강원권"),
+		itxCheongchunPilotStation("station-dd14cfb89cbc", "춘천", "Chuncheon", "강원권")
 	);
+
+	private static Station itxCheongchunPilotStation(String id, String nameKo, String nameEn) {
+		return itxCheongchunPilotStation(id, nameKo, nameEn, "수도권");
+	}
+
+	private static Station itxCheongchunPilotStation(String id, String nameKo, String nameEn, String region) {
+		return new Station(
+			id,
+			nameKo,
+			nameEn,
+			region,
+			BigDecimal.ZERO,
+			BigDecimal.ZERO,
+			DataQualityLevel.LEVEL_1,
+			DataSourceType.OFFICIAL_FILE,
+			LocalDate.of(2026, 7, 15),
+			true
+		);
+	}
 
 	private static final List<StationLine> STATION_LINES = List.of(
 		new StationLine("station-sangnoksu", "seoul-4", "448", 48, "당고개 방면 / 오이도 방면"),
-		new StationLine("station-sadang", "seoul-4", "433", 33, "당고개 방면 / 오이도 방면")
+		new StationLine("station-sadang", "seoul-4", "433", 33, "당고개 방면 / 오이도 방면"),
+		// stationCode는 tools/datapack/sources/itx-cheongchun-source-timetable-20260715152903681.json
+		// stationRosters의 providerStationId(KRIC 제공 역 식별자)를 그대로 썼다 — seoul-4의
+		// "448" 같은 노선도 상 공식 역번호 체계와는 다른 provider 고유 코드이지만, 실제로
+		// KRIC API가 발급한 값이라 지어낸 것은 아니다. sequence는 같은 소스의
+		// corridorSequence(광운대·대성리·백양리·김유정 등 완행 전용역을 포함한 경춘선 전체
+		// 정차 순서)를 그대로 썼다 — RouteSearchService의 RAPTOR 그래프는 같은 lineId의
+		// 역이면 sequence 값과 무관하게 모두 직접 연결(1구간)로 취급하고, sequence는
+		// 비용 추정(Math.abs 차이)에만 쓰인다. 그래서 1..14로 다시 매기지 않고 실제
+		// corridorSequence를 그대로 둔 편이 건너뛴 완행 전용역만큼의 물리적 거리를 더
+		// 정확히 반영한다. platformInfo는 seoul-4 예시(노선의 양방향 종점 방면)와 같은
+		// 형식으로 "용산 방면 / 춘천 방면"을 모든 역에 공통 적용했다.
+		new StationLine("station-8aa315864466", "itx-cheongchun", "NAT010032", 1, "용산 방면 / 춘천 방면"),
+		new StationLine("station-c0679b9a6cf8", "itx-cheongchun", "NAT130070", 2, "용산 방면 / 춘천 방면"),
+		new StationLine("station-e5cf592cf355", "itx-cheongchun", "NAT130104", 3, "용산 방면 / 춘천 방면"),
+		new StationLine("station-b819702fa7d9", "itx-cheongchun", "NAT130126", 4, "용산 방면 / 춘천 방면"),
+		new StationLine("station-83bcb1eae340", "itx-cheongchun", "NAT020040", 7, "용산 방면 / 춘천 방면"),
+		new StationLine("station-b52ac4dfe64e", "itx-cheongchun", "NAT140098", 12, "용산 방면 / 춘천 방면"),
+		new StationLine("station-2ccf5647f7f7", "itx-cheongchun", "NAT140133", 13, "용산 방면 / 춘천 방면"),
+		new StationLine("station-f3d9c93ba7d6", "itx-cheongchun", "NAT140214", 15, "용산 방면 / 춘천 방면"),
+		new StationLine("station-661ff65ea040", "itx-cheongchun", "NAT140277", 17, "용산 방면 / 춘천 방면"),
+		new StationLine("station-6c1f50a5aa3b", "itx-cheongchun", "NAT140436", 19, "용산 방면 / 춘천 방면"),
+		new StationLine("station-4f6045ff9103", "itx-cheongchun", "NAT140576", 21, "용산 방면 / 춘천 방면"),
+		new StationLine("station-30ba86472e55", "itx-cheongchun", "NAT140701", 24, "용산 방면 / 춘천 방면"),
+		new StationLine("station-d5e344125b52", "itx-cheongchun", "NAT140840", 26, "용산 방면 / 춘천 방면"),
+		new StationLine("station-dd14cfb89cbc", "itx-cheongchun", "NAT140873", 27, "용산 방면 / 춘천 방면")
 	);
 
 	private static final List<StationExit> STATION_EXITS = List.of(

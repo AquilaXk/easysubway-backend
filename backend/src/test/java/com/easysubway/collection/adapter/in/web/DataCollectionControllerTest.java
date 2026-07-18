@@ -59,7 +59,10 @@ class DataCollectionControllerTest {
 			.andExpect(jsonPath("$.data.source").value("TRANSIT_MASTER"))
 			.andExpect(jsonPath("$.data.status").value("COMPLETED"))
 			.andExpect(jsonPath("$.data.requestedBy").value("admin-user"))
-			.andExpect(jsonPath("$.data.collectedCount").value(14))
+			// #2095: InMemoryTransitMasterRepository에 ITX-청춘 pilot 정차역 14곳과
+			// 이를 연결하는 ITX-청춘 노선(LINES 1건)·STATION_LINES 14건이 추가돼
+			// 수집 건수가 28에서 43(=28+1+14)으로 늘었다.
+			.andExpect(jsonPath("$.data.collectedCount").value(43))
 			.andExpect(jsonPath("$.data.retryable").value(false))
 			.andExpect(jsonPath("$.data.steps[0].name").value("FETCH"))
 			.andExpect(jsonPath("$.data.steps[0].status").value("COMPLETED"))

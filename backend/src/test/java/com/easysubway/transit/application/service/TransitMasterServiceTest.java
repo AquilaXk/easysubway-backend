@@ -77,34 +77,53 @@ class TransitMasterServiceTest {
 	@Test
 	@DisplayName("지역 목록은 활성 운영기관과 노선과 역 수를 집계한다")
 	void listRegionsSummarizesActiveMasterDataCounts() {
+		// #2095: InMemoryTransitMasterRepository에 ITX-청춘 pilot 정차역 14곳이
+		// 추가돼(수도권 11 + 강원권 3) region 목록·집계가 늘었다. ITX-청춘 노선을
+		// LINES에 추가하고 14역을 STATION_LINES로 연결해 강원권 lineCount는 1이
+		// 됐다. operatorCount는 여전히 0인데, ITX-청춘 운영기관인 한국철도공사가
+		// 이미 수인분당선으로 "수도권" TransitOperator에 등록돼 있고 SubwayLine/
+		// TransitOperator 스키마가 단일 region만 표현할 수 있어, 강원권 전용
+		// "korail-gangwon" 같은 실재하지 않는 운영기관을 지어내지 않았기 때문이다.
 		var regions = service.listRegions();
 
 		assertThat(regions)
 			.extracting("name")
-			.containsExactly("수도권");
-		var region = regions.getFirst();
-		assertThat(region.operatorCount()).isEqualTo(2);
-		assertThat(region.lineCount()).isEqualTo(2);
-		assertThat(region.stationCount()).isEqualTo(2);
-		assertThat(region.dataQualityCounts())
-			.containsEntry(DataQualityLevel.LEVEL_1, 2L);
+			.containsExactly("강원권", "수도권");
+
+		var gangwon = regions.get(0);
+		assertThat(gangwon.operatorCount()).isZero();
+		assertThat(gangwon.lineCount()).isEqualTo(1);
+		assertThat(gangwon.stationCount()).isEqualTo(3);
+		assertThat(gangwon.dataQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_1, 3L);
+
+		var metro = regions.get(1);
+		assertThat(metro.operatorCount()).isEqualTo(2);
+		assertThat(metro.lineCount()).isEqualTo(2);
+		assertThat(metro.stationCount()).isEqualTo(13);
+		assertThat(metro.dataQualityCounts())
+			.containsEntry(DataQualityLevel.LEVEL_1, 13L);
 	}
 
 	@Test
 	@DisplayName("운영기관 식별자로 노선을 필터링한다")
 	void listLinesCanFilterByOperatorId() {
+		// #2095: ITX-청춘 노선(운영기관 한국철도공사)이 LINES에 추가돼
+		// korail 필터 결과에 suin-bundang과 함께 포함된다.
 		var lines = service.listLines("korail");
 
 		assertThat(lines)
 			.extracting("id")
-			.containsExactly("suin-bundang");
+			.containsExactly("suin-bundang", "itx-cheongchun");
 	}
 
 	@Test
 	@DisplayName("역 검색은 한글 이름과 영문 이름을 모두 찾는다")
 	void searchStationsMatchesKoreanAndEnglishNames() {
+		// "sang"은 #2095에서 추가된 ITX-청춘 pilot 역 "Sangbong"(상봉)과도 매치되므로,
+		// station-sangnoksu만 고유하게 가리키는 "sangnok"으로 질의한다.
 		var koreanMatches = service.searchStations(new StationSearchCommand("상록수", null));
-		var englishMatches = service.searchStations(new StationSearchCommand("sang", null));
+		var englishMatches = service.searchStations(new StationSearchCommand("sangnok", null));
 
 		assertThat(koreanMatches).hasSize(1);
 		assertThat(englishMatches).hasSize(1);

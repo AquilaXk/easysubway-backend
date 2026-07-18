@@ -46,10 +46,13 @@ class DataQualityControllerTest {
 				.with(httpBasic("admin-user", "admin-test-password")))
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
-			.andExpect(jsonPath("$.data.totalStations").value(2))
+			// #2095: InMemoryTransitMasterRepository에 ITX-청춘 pilot 정차역 14곳이
+			// 추가돼(모두 LEVEL_1) 역 수·품질 집계가 2에서 16으로 늘었다. exits/facilities는
+			// 기존 station-sangnoksu/station-sadang에만 연결돼 있어 그대로다.
+			.andExpect(jsonPath("$.data.totalStations").value(16))
 			.andExpect(jsonPath("$.data.totalExits").value(3))
 			.andExpect(jsonPath("$.data.totalFacilities").value(3))
-			.andExpect(jsonPath("$.data.stationQualityCounts.LEVEL_1").value(2))
+			.andExpect(jsonPath("$.data.stationQualityCounts.LEVEL_1").value(16))
 			.andExpect(jsonPath("$.data.exitConfidenceCounts.HIGH").value(2))
 			.andExpect(jsonPath("$.data.exitConfidenceCounts.MEDIUM").value(1))
 			.andExpect(jsonPath("$.data.facilityConfidenceCounts.HIGH").value(1))
