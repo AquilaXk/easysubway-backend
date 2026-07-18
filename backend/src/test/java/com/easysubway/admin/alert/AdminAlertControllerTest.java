@@ -40,7 +40,8 @@ class AdminAlertControllerTest {
 		assertThat(html)
 			.contains("<!doctype html>")
 			.contains("알림 센터")
-			.contains("admin-sidebar");
+			.contains("admin-sidebar")
+			.doesNotContain("신고 급증·푸시 실패·배치 실패·데이터팩 blocker를 한 곳에서 확인합니다.");
 	}
 
 	@Test

@@ -1442,7 +1442,14 @@ body.admin-v3 {
 	align-items: center;
 	margin-bottom: 18px;
 	padding: 16px 18px;
-	border-left: 3px solid var(--admin-border-strong);
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-v3 .surge-alert + .processing-time {
+	border-top: 1px solid var(--admin-border);
 }
 
 .admin-v3 .surge-alert h2,

@@ -51,6 +51,8 @@ class AdminDashboardPageTest {
 
 		assertThat(html)
 			.contains("class=\"dashboard-card metric-cell\"")
+			.contains("통합 대시보드")
+			.doesNotContain("지금 급한 것 → 추세 → 상세 순으로 신고·시설·경로·알림·시스템을 모읍니다.")
 			.contains("확인할 제보")
 			.contains("href=\"/admin/reports/page\"")
 			.contains("dashboard-spark")

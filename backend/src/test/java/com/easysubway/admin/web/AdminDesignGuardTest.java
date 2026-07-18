@@ -121,6 +121,26 @@ class AdminDesignGuardTest {
 			.isEmpty();
 	}
 
+	@Test
+	@DisplayName("신고 보조 panel은 flat chrome과 단일 divider만 사용한다")
+	void reportSupportPanelsUseFlatChromeWithSingleDivider() throws IOException {
+		String css = read("backend/src/main/resources/static/css/admin-v3.css");
+		Pattern flatPanels = Pattern.compile(
+			"\\.admin-v3 \\.surge-alert,\\s*\\.admin-v3 \\.processing-time \\{"
+				+ "[^}]*border: 0;[^}]*border-radius: 0;[^}]*background: transparent;"
+				+ "[^}]*box-shadow: none;",
+			Pattern.DOTALL
+		);
+		Pattern singleDivider = Pattern.compile(
+			"\\.admin-v3 \\.surge-alert \\+ \\.processing-time \\{"
+				+ "[^}]*border-top: 1px solid var\\(--admin-border\\);",
+			Pattern.DOTALL
+		);
+
+		assertThat(css).containsPattern(flatPanels);
+		assertThat(css).containsPattern(singleDivider);
+	}
+
 	private static String read(String path) throws IOException {
 		return Files.readString(ROOT.resolve(path));
 	}
