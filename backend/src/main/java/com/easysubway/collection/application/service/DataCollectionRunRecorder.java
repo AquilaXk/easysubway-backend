@@ -108,10 +108,7 @@ public class DataCollectionRunRecorder {
 	}
 
 	private String failureMessageOf(RuntimeException exception) {
-		if (exception.getMessage() == null || exception.getMessage().isBlank()) {
-			return exception.getClass().getSimpleName();
-		}
-		return exception.getMessage();
+		return DataCollectionFailureDetailSanitizer.operatorSafe(exception);
 	}
 
 	private static void validate(TransitMasterCollectionSnapshot snapshot, List<DataCollectionRunStep> steps) {

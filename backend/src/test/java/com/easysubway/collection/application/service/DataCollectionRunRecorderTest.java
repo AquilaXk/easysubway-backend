@@ -144,12 +144,50 @@ class DataCollectionRunRecorderTest {
 		assertThat(run.status()).isEqualTo(DataCollectionStatus.FAILED);
 		assertThat(run.requestedBy()).isEqualTo("admin-user");
 		assertThat(run.completedAt()).isEqualTo(LocalDateTime.of(2026, 6, 14, 11, 0));
-		assertThat(run.failureMessage()).isEqualTo("loader down");
+		assertThat(run.failureMessage())
+			.contains("IllegalStateException", "보호 정책")
+			.doesNotContain("loader down");
 		assertThat(run.retryable()).isTrue();
 		assertThat(run.operatorAction()).isEqualTo("일시 오류일 수 있습니다. 실패 사유를 확인한 뒤 같은 수집 대상을 다시 실행하세요.");
 		assertThat(run.steps())
 			.extracting("name", "status", "failureMessage")
-			.containsExactly(tuple("FETCH", DataCollectionStepStatus.FAILED, "loader down"));
+			.containsExactly(tuple("FETCH", DataCollectionStepStatus.FAILED, run.failureMessage()));
+	}
+
+	@Test
+	@DisplayName("수집 실패의 raw Throwable message는 형태와 관계없이 run과 step에 저장하지 않는다")
+	void recordTransitMasterRunSanitizesSensitiveFailureDetail() {
+		var failingRepository = new InMemoryDataCollectionRunRepository();
+		String rawFailure = "api key: sk-live-example password value hunter2 client secret is example "
+			+ "jdbc:postgresql://admin:secret-value@db.example/prod "
+			+ "upstream returned {\"customer\":\"raw provider payload\"} "
+			+ "x".repeat(1_100);
+		var failingRecorder = new DataCollectionRunRecorder(
+			() -> {
+				throw new IllegalStateException(rawFailure);
+			},
+			failingRepository,
+			CLOCK
+		);
+
+		assertThatThrownBy(() -> failingRecorder.recordTransitMasterRun("collection-sensitive", "admin-user"))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage(rawFailure);
+
+		DataCollectionRun run = failingRepository.loadRun("collection-sensitive").orElseThrow();
+		assertThat(run.failureMessage())
+			.hasSizeLessThanOrEqualTo(500)
+			.contains("보호 정책")
+			.doesNotContain(
+				"sk-live-example",
+				"hunter2",
+				"client secret is",
+				"admin:secret-value",
+				"raw provider payload"
+			);
+		assertThat(run.steps()).singleElement()
+			.extracting("failureMessage")
+			.isEqualTo(run.failureMessage());
 	}
 
 	@Test

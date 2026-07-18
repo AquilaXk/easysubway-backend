@@ -26,6 +26,7 @@ public enum AdminRbacRole {
 	DATA_OPERATOR(
 		AdminPermission.ADMIN_VIEW,
 		AdminPermission.DATA_OPERATE,
+		AdminPermission.BATCH_RUN,
 		AdminPermission.BATCH_RETRY,
 		AdminPermission.OPERATIONS_MANAGE,
 		AdminPermission.DATAPACK_READ,

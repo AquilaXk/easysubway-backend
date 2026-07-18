@@ -27,6 +27,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.MediaType;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -37,6 +38,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 	"easysubway.user.password=user-test-password"
 })
 @AutoConfigureMockMvc
+@DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @DisplayName("관리자 데이터 수집 배치 화면")
 class DataCollectionAdminPageControllerTest {
 
@@ -127,6 +129,20 @@ class DataCollectionAdminPageControllerTest {
 	}
 
 	@Test
+	@DisplayName("기존 데이터 수집 실행 endpoint도 같은 source RUNNING claim을 우회하지 못한다")
+	void pageRunRejectsRunningSource() throws Exception {
+		saveDataCollectionRunPort.saveRun(runningRun("running-run"));
+
+		mockMvc.perform(post("/admin/data-collections/page/run")
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.with(commandToken("/admin/data-collections/page"))
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("source", "TRANSIT_MASTER"))
+			.andExpect(status().isBadRequest());
+	}
+
+	@Test
 	@DisplayName("데이터 수집 실행 목록은 page size와 현재 페이지를 링크에 표시한다")
 	void dataCollectionPageShowsPaginationLinks() throws Exception {
 		runTransitMasterCollection();
@@ -202,7 +218,7 @@ class DataCollectionAdminPageControllerTest {
 	}
 
 	private DataCollectionRun runningRun(String runId) {
-		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		LocalDateTime now = LocalDateTime.now();
 		return new DataCollectionRun(
 			runId,
 			DataCollectionSource.TRANSIT_MASTER,

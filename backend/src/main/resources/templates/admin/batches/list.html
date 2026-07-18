@@ -31,6 +31,7 @@
 				<th scope="col">Spring Batch job</th>
 				<th scope="col">이름</th>
 				<th scope="col">재처리 정책</th>
+				<th scope="col">신규 실행</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -39,6 +40,18 @@
 				<td th:text="${job.jobName}">transitMasterCollectionJob</td>
 				<td th:text="${job.label}">도시철도 마스터 수집</td>
 				<td th:text="${job.retryEnabled ? '실패·retryable 실행만 허용' : '재처리 불가'}">실패·retryable 실행만 허용</td>
+				<td>
+					<details class="admin-run-confirm">
+						<summary th:text="${job.running ? '실행 중' : '새로 실행…'}">새로 실행…</summary>
+						<p class="meta" th:text="|대상: ${job.label}. 확인하면 새 수집 실행이 시작됩니다.|">영향</p>
+						<form th:action="@{'/admin/batches/' + ${job.id} + '/run'}" method="post">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="runRequested" value="true">
+							<button type="submit" th:disabled="${job.running}">실행 확인</button>
+						</form>
+					</details>
+				</td>
 			</tr>
 			</tbody>
 		</table>

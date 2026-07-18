@@ -14,6 +14,7 @@ import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 
@@ -41,6 +42,14 @@ public class AdminBatchOperationService {
 
 	public List<DataCollectionRun> listExecutions(int limit, int offset) {
 		return loadDataCollectionRunPort.loadRecentRuns(limit, offset);
+	}
+
+	public Set<DataCollectionSource> runningSources() {
+		return listJobs()
+			.stream()
+			.filter(job -> loadDataCollectionRunPort.loadRunningRun(job.source()).isPresent())
+			.map(AdminBatchJob::source)
+			.collect(Collectors.toSet());
 	}
 
 	/**
@@ -108,6 +117,14 @@ public class AdminBatchOperationService {
 			|| failedRun.status() != DataCollectionStatus.FAILED
 			|| !failedRun.retryable()) {
 			throw new InvalidDataCollectionException("재처리할 수 없는 배치 실행입니다.");
+		}
+		return dataCollectionUseCase.runCollection(new RunDataCollectionCommand(job.source(), requestedBy));
+	}
+
+	public DataCollectionRun run(String jobId, String requestedBy) {
+		AdminBatchJob job = AdminBatchJob.require(jobId);
+		if (loadDataCollectionRunPort.loadRunningRun(job.source()).isPresent()) {
+			throw new InvalidDataCollectionException("같은 수집 대상이 이미 실행 중입니다.");
 		}
 		return dataCollectionUseCase.runCollection(new RunDataCollectionCommand(job.source(), requestedBy));
 	}

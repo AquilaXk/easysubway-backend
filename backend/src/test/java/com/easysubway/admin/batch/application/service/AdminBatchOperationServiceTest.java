@@ -16,6 +16,7 @@ import java.time.LocalDateTime;
 import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -24,10 +25,12 @@ class AdminBatchOperationServiceTest {
 
 	private final InMemoryDataCollectionRunRepository repository = new InMemoryDataCollectionRunRepository();
 	private final AtomicReference<RunDataCollectionCommand> retriedCommand = new AtomicReference<>();
+	private final AtomicInteger runCount = new AtomicInteger();
 	private final DataCollectionUseCase useCase = new DataCollectionUseCase() {
 		@Override
 		public DataCollectionRun runCollection(RunDataCollectionCommand command) {
 			retriedCommand.set(command);
+			runCount.incrementAndGet();
 			DataCollectionRun retried = completedRun("retry-run");
 			repository.saveRun(retried);
 			return retried;
@@ -44,6 +47,28 @@ class AdminBatchOperationServiceTest {
 		}
 	};
 	private final AdminBatchOperationService service = new AdminBatchOperationService(repository, useCase);
+
+	@Test
+	@DisplayName("registry job은 최초 실행과 성공 후 재실행을 허용한다")
+	void runAllowsInitialAndSubsequentExecution() {
+		service.run("transit-master-collection", "admin-user");
+		service.run("transit-master-collection", "admin-user");
+
+		assertThat(runCount).hasValue(2);
+		assertThat(retriedCommand.get().source()).isEqualTo(DataCollectionSource.TRANSIT_MASTER);
+		assertThat(retriedCommand.get().requestedBy()).isEqualTo("admin-user");
+	}
+
+	@Test
+	@DisplayName("같은 source가 RUNNING이면 use case 호출 전에 신규 실행을 거부한다")
+	void runRejectsRunningSourceBeforeUseCase() {
+		repository.saveRun(runningRun("running-run"));
+
+		assertThatThrownBy(() -> service.run("transit-master-collection", "admin-user"))
+			.isInstanceOf(InvalidDataCollectionException.class)
+			.hasMessage("같은 수집 대상이 이미 실행 중입니다.");
+		assertThat(runCount).hasValue(0);
+	}
 
 	@Test
 	@DisplayName("registry에 있는 실패·retryable 실행만 재처리한다")
@@ -120,6 +145,22 @@ class AdminBatchOperationServiceTest {
 			retryable,
 			"원인 확인 후 재처리하세요.",
 			List.of(new DataCollectionRunStep("FETCH", DataCollectionStepStatus.FAILED, null, null, null, 0, "source timeout"))
+		);
+	}
+
+	private DataCollectionRun runningRun(String runId) {
+		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		return new DataCollectionRun(
+			runId,
+			DataCollectionSource.TRANSIT_MASTER,
+			DataCollectionStatus.RUNNING,
+			"batch-test",
+			now,
+			null,
+			0,
+			null,
+			false,
+			"실행 중"
 		);
 	}
 }

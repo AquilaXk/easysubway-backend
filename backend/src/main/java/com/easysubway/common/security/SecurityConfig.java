@@ -160,6 +160,8 @@ public class SecurityConfig {
 					"/admin/notifications/**"
 				)
 				.hasAuthority(AdminPermission.DATA_OPERATE.authority())
+				.requestMatchers(HttpMethod.POST, "/admin/batches/*/run")
+				.hasAuthority(AdminPermission.BATCH_RUN.authority())
 				.requestMatchers(HttpMethod.POST, "/admin/batches/**")
 				.hasAuthority(AdminPermission.BATCH_RETRY.authority())
 				.requestMatchers(HttpMethod.GET, "/admin/batches/**")

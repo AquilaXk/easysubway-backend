@@ -13,6 +13,7 @@ import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEven
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.collection.application.port.out.SaveDataCollectionRunPort;
+import com.easysubway.collection.application.port.out.LoadDataCollectionRunPort;
 import com.easysubway.collection.domain.DataCollectionRun;
 import com.easysubway.collection.domain.DataCollectionRunStep;
 import com.easysubway.collection.domain.DataCollectionSource;
@@ -52,7 +53,152 @@ class AdminBatchPageControllerTest {
 	private SaveDataCollectionRunPort saveDataCollectionRunPort;
 
 	@Autowired
+	private LoadDataCollectionRunPort loadDataCollectionRunPort;
+
+	@Autowired
 	private InMemoryAdminAuditEventRepository auditEventRepository;
+
+	@Test
+	@DisplayName("BATCH_RUN 권한이 있는 관리자는 배치를 최초 실행하고 성공 후 다시 실행하며 audit을 남긴다")
+	void adminRunsBatchTwiceAndWritesAudit() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+
+		for (int attempt = 0; attempt < 2; attempt++) {
+			String token = commandTokenFrom(getAdminHtml("/admin/batches/page", session));
+			mockMvc.perform(post("/admin/batches/transit-master-collection/run")
+					.session(session)
+					.with(httpBasic("admin-user", "admin-test-password"))
+					.with(csrf())
+					.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+					.param("commandToken", token)
+					.param("runRequested", "true"))
+				.andExpect(status().is3xxRedirection())
+				.andExpect(header().string("Location", "/admin/batches/page"));
+		}
+
+		assertThat(loadDataCollectionRunPort.loadRecentRuns(10)).hasSize(2);
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 2))
+			.hasSize(2)
+			.allSatisfy(event -> {
+				assertThat(event.action()).isEqualTo("RUN_BATCH_JOB");
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.SUCCESS);
+			});
+	}
+
+	@Test
+	@DisplayName("배치 신규 실행 폼은 같은 command token 재전송을 409로 차단한다")
+	void runRejectsRepeatedCommandToken() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		String token = commandTokenFrom(getAdminHtml("/admin/batches/page", session));
+
+		for (int attempt = 0; attempt < 2; attempt++) {
+			var result = mockMvc.perform(post("/admin/batches/transit-master-collection/run")
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", token)
+				.param("runRequested", "true"));
+			if (attempt == 0) {
+				result.andExpect(status().is3xxRedirection());
+			} else {
+				result.andExpect(status().isConflict());
+			}
+		}
+
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 2))
+			.singleElement()
+			.satisfies(event -> assertThat(event.action()).isEqualTo("RUN_BATCH_JOB"));
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.ADMIN_ACTION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.action()).isEqualTo("POST /admin/batches/{jobId}/run");
+			});
+	}
+
+	@Test
+	@DisplayName("배치 신규 실행 실패 audit은 원본 예외 메시지와 입력값을 저장하지 않는다")
+	void runFailureAuditDoesNotExposeExceptionMessage() throws Exception {
+		String privateJobId = "private-sql-token";
+
+		mockMvc.perform(post("/admin/batches/{jobId}/run", privateJobId)
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.with(commandToken("/admin/batches/page"))
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("runRequested", "true"))
+			.andExpect(status().isBadRequest());
+
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.reason())
+					.contains("errorType=InvalidDataCollectionException", "detail=배치 실행 실패")
+					.doesNotContain(privateJobId);
+			});
+	}
+
+	@Test
+	@DisplayName("RUNNING source는 신규 실행 버튼을 비활성화하고 강제 POST도 실패 audit과 함께 거부한다")
+	void runningSourceDisablesAndRejectsRun() throws Exception {
+		saveDataCollectionRunPort.saveRun(runningRun("running-run"));
+		saveDataCollectionRunPort.saveRun(completedRun("newer-completed-run"));
+		MockHttpSession session = new MockHttpSession();
+		String html = getAdminHtml("/admin/batches/page", session);
+
+		assertThat(html)
+			.contains("/admin/batches/transit-master-collection/run")
+			.contains("name=\"runRequested\"")
+			.contains("disabled=\"disabled\"");
+
+		mockMvc.perform(post("/admin/batches/transit-master-collection/run")
+				.session(session)
+				.with(httpBasic("admin-user", "admin-test-password"))
+				.with(csrf())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("commandToken", commandTokenFrom(html))
+				.param("runRequested", "true"))
+			.andExpect(status().isBadRequest());
+
+		assertThat(auditEventRepository.findRecent(AdminAuditEventType.BATCH_OPERATION, 1))
+			.singleElement()
+			.satisfies(event -> {
+				assertThat(event.action()).isEqualTo("RUN_BATCH_JOB");
+				assertThat(event.outcome()).isEqualTo(AdminAuditOutcome.FAILURE);
+				assertThat(event.reason()).contains("이미 실행 중");
+			});
+	}
+
+	@Test
+	@DisplayName("BATCH_RUN 권한이 없으면 신규 실행 entrypoint에 접근할 수 없다")
+	void runRequiresBatchRunPermission() throws Exception {
+		mockMvc.perform(post("/admin/batches/transit-master-collection/run")
+				.with(user("operator").authorities(new SimpleGrantedAuthority("admin.data.operate")))
+				.with(csrf())
+				.with(commandToken("/admin/batches/page"))
+				.param("runRequested", "true"))
+			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("BATCH_RUN만 가진 관리자는 신규 실행할 수 있고 BATCH_RETRY만 가진 관리자는 거부된다")
+	void runSecurityMatcherUsesBatchRunPermissionIndependently() throws Exception {
+		mockMvc.perform(post("/admin/batches/transit-master-collection/run")
+				.with(user("batch-runner").authorities(new SimpleGrantedAuthority("admin.batch.run")))
+				.with(csrf())
+				.with(commandToken("/admin/batches/page"))
+				.param("runRequested", "true"))
+			.andExpect(status().is3xxRedirection());
+
+		mockMvc.perform(post("/admin/batches/transit-master-collection/run")
+				.with(user("batch-retry-operator").authorities(new SimpleGrantedAuthority("admin.batch.retry")))
+				.with(csrf())
+				.with(commandToken("/admin/batches/page"))
+				.param("runRequested", "true"))
+			.andExpect(status().isForbidden());
+	}
 
 	@Test
 	@DisplayName("관리자는 허용 batch registry와 실패 step, 재처리 버튼을 확인한다")
