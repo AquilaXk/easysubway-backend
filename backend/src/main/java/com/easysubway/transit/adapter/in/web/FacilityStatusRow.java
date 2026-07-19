@@ -48,16 +48,7 @@ record FacilityStatusRow(
 	}
 
 	private static String typeLabel(AccessibilityFacilityType type) {
-		return switch (type) {
-			case ELEVATOR -> "엘리베이터";
-			case ESCALATOR -> "에스컬레이터";
-			case WHEELCHAIR_LIFT -> "휠체어 리프트";
-			case RAMP -> "경사로";
-			case ACCESSIBLE_TOILET -> "장애인 화장실";
-			case TOILET -> "화장실";
-			case NURSING_ROOM -> "수유실";
-			case CUSTOMER_CENTER -> "고객센터";
-		};
+		return type.label();
 	}
 
 	private static String confidenceLabel(DataConfidenceLevel confidence) {
@@ -69,12 +60,10 @@ record FacilityStatusRow(
 		};
 	}
 
+	// #2313 F1: 출처 유형 표시 라벨의 단일 원본은 DataSourceType.label()이다. 이전에는 공식 계열
+	// (OFFICIAL_API/OFFICIAL_FILE/OPERATOR_PAGE)을 "공식 안내"로 묶어, 역 상세의 label() 표시와
+	// 시설 요약 표시가 같은 출처인데 다른 문구로 보이는 불일치가 있었다 — label()에 위임해 해소한다.
 	private static String sourceLabel(com.easysubway.transit.domain.DataSourceType sourceType) {
-		return switch (sourceType) {
-			case ADMIN_VERIFIED -> "관리자 확인";
-			case OFFICIAL_API, OFFICIAL_FILE, OPERATOR_PAGE -> "공식 안내";
-			case USER_REPORT -> "사용자 제보";
-			case PARTNER_FEED -> "제휴기관 안내";
-		};
+		return sourceType.label();
 	}
 }

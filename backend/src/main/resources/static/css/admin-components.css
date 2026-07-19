@@ -892,6 +892,10 @@
 	color: var(--admin-danger);
 }
 
+.admin-status.info {
+	color: var(--admin-ink-2);
+}
+
 .admin-grid-2 {
 	display: grid;
 	grid-template-columns: minmax(0, 1fr) minmax(320px, 0.62fr);

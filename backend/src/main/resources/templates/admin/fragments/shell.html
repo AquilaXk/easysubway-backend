@@ -247,7 +247,7 @@
 	        crossorigin="anonymous" defer></script>
 </th:block>
 <span th:fragment="status(text, tone)" class="admin-status"
-      th:classappend="${tone == 'good'} ? ' good' : (${tone == 'bad'} ? ' bad' : (${tone == 'warn'} ? ' warn' : ''))"
+      th:classappend="${tone == 'good'} ? ' good' : (${tone == 'bad'} ? ' bad' : (${tone == 'warn'} ? ' warn' : (${tone == 'info'} ? ' info' : '')))"
       th:text="${text}">상태</span>
 <span th:fragment="statusAuto(label)" class="admin-status"
       th:classappend="${label == null ? '' :

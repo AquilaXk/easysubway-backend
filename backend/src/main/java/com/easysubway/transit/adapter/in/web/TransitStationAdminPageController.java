@@ -540,7 +540,7 @@ class TransitStationAdminPageController {
 				String.valueOf(stationWithLines.station().latitude()),
 				String.valueOf(stationWithLines.station().longitude()),
 				TransitStationAdminPageController.qualityLabel(stationWithLines.station().dataQualityLevel()),
-				stationWithLines.station().dataSourceType().name(),
+				stationWithLines.station().dataSourceType().label(),
 				String.valueOf(stationWithLines.station().lastVerifiedAt())
 			);
 		}
@@ -649,7 +649,7 @@ class TransitStationAdminPageController {
 				facility.id(),
 				facility.name(),
 				facility.type(),
-				facility.type().name(),
+				facility.type().label(),
 				facility.exitId(),
 				facility.floorFrom(),
 				facility.floorTo(),

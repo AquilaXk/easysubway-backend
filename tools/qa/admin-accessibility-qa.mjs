@@ -198,12 +198,12 @@ function finalizeReport(report) {
       nodes: 0,
     });
   }
-  // V6-07 #2279: 마스터 목록 상태 신호 계약을 위반으로 편입한다. 첫 식별자 열이 sticky가 아니거나,
-  // 상태 셀에 비색 아이콘(또는 텍스트) 신호가 없거나(색 단독), 헤더 scope 연결이 없으면 실패를 표면화한다.
+  // V6-07 #2279 / #2313: 마스터 목록 상태 신호 계약을 위반으로 편입한다. 첫 식별자 열이 sticky가 아니거나,
+  // 상태 셀(.admin-status)에 비색 신호인 상태 텍스트가 병기되지 않거나(색 단독 ● 점만 존재), 헤더 scope
+  // 연결이 없으면 실패를 표면화한다.
   const statusSignal = report.keyboard.find((entry) => entry.check === "master-list-status-signal");
   if (statusSignal
     && (statusSignal.stickyIdentifier === false
-      || statusSignal.statusHasIcon === false
       || statusSignal.statusHasText === false
       || statusSignal.scopedHeaders === 0)) {
     blockingViolations.push({
@@ -710,10 +710,12 @@ async function keyboardTableCheck(page, baseUrl, report) {
   });
 }
 
-// V6-07 #2279: 마스터 목록 상태 신호 계약. 이관된 master-list(역 목록)를 mobile-390에서 열어
-// (1) 첫 식별자 열이 sticky로 고정되는지, (2) 상태가 색 단독이 아니라 아이콘(비색 신호)+텍스트를
-// 함께 갖는지, (3) 표 헤더가 scope로 연결되는지 검사한다. 하나라도 어기면 finalizeReport가 위반으로
-// 편입해 exit code로 실패를 표면화한다(§9 식별자·주의·품질 즉시 접근, badge accessible name).
+// V6-07 #2279 / #2313: 마스터 목록 상태 신호 계약. 이관된 master-list(역 목록)를 mobile-390에서 열어
+// (1) 첫 식별자 열이 sticky로 고정되는지, (2) 상태가 색 단독이 아닌지 — #2313에서 상태 표현을
+// .admin-status(● 점 + 상태 텍스트)로 단일화했으므로, 색으로만 구분되는 ● 점 옆에 상태 텍스트가
+// 항상 병기되는지로 판정한다(WCAG 1.4.1 색 단독 금지: 비색 신호 = 상태 텍스트), (3) 표 헤더가
+// scope로 연결되는지 검사한다. 하나라도 어기면 finalizeReport가 위반으로 편입해 exit code로 실패를
+// 표면화한다(§9 식별자·주의·품질 즉시 접근, badge accessible name).
 async function masterListStatusSignalCheck(page, baseUrl, report) {
   await page.setViewportSize(VIEWPORTS.find((viewport) => viewport.name === "mobile-390"));
   const response = await page.goto(`${baseUrl}/admin/stations/page`, { waitUntil: "networkidle" });
@@ -722,13 +724,13 @@ async function masterListStatusSignalCheck(page, baseUrl, report) {
   const signal = await page.evaluate(() => {
     const firstCell = document.querySelector(".admin-table-scroll tbody td:first-child");
     const stickyIdentifier = firstCell ? getComputedStyle(firstCell).position === "sticky" : false;
-    const statusCells = Array.from(document.querySelectorAll(".admin-table-scroll .data-status"));
-    const statusHasIcon = statusCells.length > 0
-      && statusCells.every((cell) => cell.querySelector("svg.admin-icon") !== null);
+    const statusCells = Array.from(document.querySelectorAll(".admin-table-scroll .admin-status"));
+    // 색 단독 금지의 유일한 비색 신호는 상태 텍스트다. ● 점은 ::before 색상 신호이므로 textContent에
+    // 잡히지 않는다 — 모든 상태 셀이 비어있지 않은 텍스트 라벨을 병기해야 통과한다.
     const statusHasText = statusCells.length > 0
       && statusCells.every((cell) => (cell.textContent || "").trim().length > 0);
     const scopedHeaders = document.querySelectorAll(".admin-table-scroll thead th[scope=\"col\"]").length;
-    return { stickyIdentifier, statusCells: statusCells.length, statusHasIcon, statusHasText, scopedHeaders };
+    return { stickyIdentifier, statusCells: statusCells.length, statusHasText, scopedHeaders };
   });
 
   report.keyboard.push({ check: "master-list-status-signal", ...signal });

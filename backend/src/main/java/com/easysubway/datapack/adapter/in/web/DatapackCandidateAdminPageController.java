@@ -267,9 +267,9 @@ class DatapackCandidateAdminPageController {
 
 		public String productionPromoteReason() {
 			if (productionPromoteAllowed()) {
-				return "production promote 가능";
+				return "프로덕션 반영 가능";
 			}
-			return "production promote 차단: evidence bundle PASS 필요";
+			return "프로덕션 반영 차단: 증거 번들 PASS 필요";
 		}
 	}
 

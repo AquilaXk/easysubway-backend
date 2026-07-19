@@ -116,15 +116,15 @@
 			<strong th:text="${datapackReleaseSummary.candidateId}">candidate-id</strong>
 			<span th:replace="~{admin/fragments/shell :: status(${datapackReleaseSummary.status}, ${datapackReleaseSummary.status == 'READY' || datapackReleaseSummary.status == 'PASS' ? 'good' : (datapackReleaseSummary.status == 'FAIL' ? 'bad' : 'warn')})}">FAIL</span>
 		</p>
-		<p class="summary" th:text="${datapackReleaseSummary.productionPromoteReason()}">production promote 차단: blocker 0건</p>
-		<!-- blocker 내역(#2047 오너 지적): 원자 항목 사이 구분선 제거 → 촘촘한 key-value 목록(라벨 좌·값 우,
-		     값 tabular-nums). "전체 blocker N건"은 소계라 굵기·상단 여백으로만 위계를 준다(선 없음). -->
-		<p class="blocker-total" th:text="|전체 blocker ${datapackReleaseSummary.totalBlockers}건|">전체 blocker 0건</p>
+		<p class="summary" th:text="${datapackReleaseSummary.productionPromoteReason()}">프로덕션 반영 차단: 차단 요인 0건</p>
+		<!-- 차단 요인 내역(#2047 오너 지적): 원자 항목 사이 구분선 제거 → 촘촘한 key-value 목록(라벨 좌·값 우,
+		     값 tabular-nums). "전체 차단 요인 N건"은 소계라 굵기·상단 여백으로만 위계를 준다(선 없음). -->
+		<p class="blocker-total" th:text="|전체 차단 요인 ${datapackReleaseSummary.totalBlockers}건|">전체 차단 요인 0건</p>
 		<dl class="blocker-breakdown">
-			<div><dt>alias</dt><dd th:text="${datapackReleaseSummary.aliasBlockers}">0</dd></div>
-			<div><dt>quarantine</dt><dd th:text="${datapackReleaseSummary.quarantineBlockers}">0</dd></div>
-			<div><dt>manual override</dt><dd th:text="${datapackReleaseSummary.manualOverrideBlockers}">0</dd></div>
-			<div><dt>route gate</dt><dd th:text="${datapackReleaseSummary.routeGateBlockers}">0</dd></div>
+			<div><dt>별칭</dt><dd th:text="${datapackReleaseSummary.aliasBlockers}">0</dd></div>
+			<div><dt>격리</dt><dd th:text="${datapackReleaseSummary.quarantineBlockers}">0</dd></div>
+			<div><dt>수동 오버라이드</dt><dd th:text="${datapackReleaseSummary.manualOverrideBlockers}">0</dd></div>
+			<div><dt>경로 게이트</dt><dd th:text="${datapackReleaseSummary.routeGateBlockers}">0</dd></div>
 		</dl>
 		<!-- sha·workflow 상세 13행은 기본 접힘으로 격하(추세·요약을 앞세운다). -->
 		<details class="dashboard-details">
@@ -133,20 +133,20 @@
 			     aria-label="가로로 스크롤 가능한 데이터 표">
 			<table>
 				<tbody>
-				<tr><th scope="row">scope</th><td th:text="${datapackReleaseSummary.scopeId}">scope</td></tr>
-				<tr><th scope="row">source snapshot set</th><td th:text="${datapackReleaseSummary.sourceSnapshotSetHash}">sha</td></tr>
-				<tr><th scope="row">manifest</th><td th:text="${datapackReleaseSummary.manifestSha256}">sha</td></tr>
-				<tr><th scope="row">evidence bundle</th><td th:text="${datapackReleaseSummary.evidenceBundleSha256}">sha</td></tr>
-				<tr><th scope="row">evidence workflow</th><td th:text="${datapackReleaseSummary.evidenceWorkflowRunUrl}">workflow</td></tr>
-				<tr><th scope="row">production current</th><td th:text="${datapackReleaseSummary.productionCandidateId}">candidate</td></tr>
-				<tr><th scope="row">rollback target</th><td th:text="${datapackReleaseSummary.rollbackCandidateId}">candidate</td></tr>
-				<tr><th scope="row">candidate gate</th><td th:text="${datapackReleaseSummary.candidateGateBlockers}">0</td></tr>
-				<tr><th scope="row">alias</th><td th:text="${datapackReleaseSummary.aliasBlockers}">0</td></tr>
-				<tr><th scope="row">quarantine</th><td th:text="${datapackReleaseSummary.quarantineBlockers}">0</td></tr>
-				<tr><th scope="row">manual override</th><td th:text="${datapackReleaseSummary.manualOverrideBlockers}">0</td></tr>
-				<tr><th scope="row">facility evidence</th><td th:text="${datapackReleaseSummary.facilityBlockers}">0</td></tr>
-				<tr><th scope="row">route gate</th><td th:text="${datapackReleaseSummary.routeGateBlockers}">0</td></tr>
-				<tr><th scope="row">manifest signature</th><td th:text="${datapackReleaseSummary.manifestBlockers}">0</td></tr>
+				<tr><th scope="row">범위</th><td th:text="${datapackReleaseSummary.scopeId}">범위</td></tr>
+				<tr><th scope="row">원천 스냅샷 세트</th><td th:text="${datapackReleaseSummary.sourceSnapshotSetHash}">sha</td></tr>
+				<tr><th scope="row">매니페스트</th><td th:text="${datapackReleaseSummary.manifestSha256}">sha</td></tr>
+				<tr><th scope="row">증거 번들</th><td th:text="${datapackReleaseSummary.evidenceBundleSha256}">sha</td></tr>
+				<tr><th scope="row">증거 워크플로</th><td th:text="${datapackReleaseSummary.evidenceWorkflowRunUrl}">workflow</td></tr>
+				<tr><th scope="row">현재 프로덕션</th><td th:text="${datapackReleaseSummary.productionCandidateId}">candidate</td></tr>
+				<tr><th scope="row">롤백 대상</th><td th:text="${datapackReleaseSummary.rollbackCandidateId}">candidate</td></tr>
+				<tr><th scope="row">후보 게이트</th><td th:text="${datapackReleaseSummary.candidateGateBlockers}">0</td></tr>
+				<tr><th scope="row">별칭</th><td th:text="${datapackReleaseSummary.aliasBlockers}">0</td></tr>
+				<tr><th scope="row">격리</th><td th:text="${datapackReleaseSummary.quarantineBlockers}">0</td></tr>
+				<tr><th scope="row">수동 오버라이드</th><td th:text="${datapackReleaseSummary.manualOverrideBlockers}">0</td></tr>
+				<tr><th scope="row">시설 근거</th><td th:text="${datapackReleaseSummary.facilityBlockers}">0</td></tr>
+				<tr><th scope="row">경로 게이트</th><td th:text="${datapackReleaseSummary.routeGateBlockers}">0</td></tr>
+				<tr><th scope="row">매니페스트 서명</th><td th:text="${datapackReleaseSummary.manifestBlockers}">0</td></tr>
 				</tbody>
 			</table>
 			</div>

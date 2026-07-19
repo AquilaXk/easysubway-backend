@@ -90,7 +90,7 @@ class DatapackCandidateAdminPageControllerTest {
 			.contains("증거 번들 sha256")
 			.contains("sha 원문 보기")
 			.contains("복사")
-			.contains("production promote 가능")
+			.contains("프로덕션 반영 가능")
 			.contains("name=\"commandToken\"")
 			.contains("게이트 재실행")
 			.doesNotContain("production 승인")

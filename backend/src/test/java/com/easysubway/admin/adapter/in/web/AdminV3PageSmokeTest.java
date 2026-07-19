@@ -62,11 +62,10 @@ class AdminV3PageSmokeTest {
 			.contains("/admin/stations/station-sangnoksu/page?tab=facilities")
 			.contains("/admin/reports/page?station=station-sangnoksu");
 
-		// V6-07 #2279: 현재 상태는 text+icon+color(색 단독 금지), 상태 변경 열은 우측 sticky action,
-		// 갱신일은 상대 시간 + 정확한 날짜 병기, 공통 표 영역(table-region) 계약을 소비한다.
+		// #2313 PR②: 현재 상태는 상태 텍스트(.admin-status, ● 점 + 텍스트)로 표시한다. 상태 변경 열은
+		// 우측 sticky action, 갱신일은 상대 시간 + 정확한 날짜 병기, 공통 표 영역(table-region) 계약을 소비한다.
 		assertThat(html)
-			.contains("class=\"data-status")
-			.contains("/icons/admin-symbols.svg#")
+			.contains("class=\"admin-status")
 			.contains("class=\"cell-sticky-action\"")
 			.contains("class=\"data-verified-relative\"")
 			.contains("가로로 스크롤 가능한 데이터 표");
@@ -100,12 +99,12 @@ class AdminV3PageSmokeTest {
 			// 상록수 역 링크가 상세 허브로 연결된다.
 			.contains("/admin/stations/station-sangnoksu/page");
 
-		// V6-07 #2279: 데이터 품질은 text+icon+color(색 단독 금지), 마지막 확인은 상대 시간 + 정확한 날짜
-		// 병기, 식별자 링크가 상세 이동을 소유해 중복 상세 버튼(admin-btn)을 제거, 공통 표 영역을 소비한다.
+		// #2313 PR②: 데이터 품질은 상태 텍스트(.admin-status, ● 점 + 텍스트)로 표시한다. 마지막 확인은
+		// 상대 시간 + 정확한 날짜 병기, 식별자 링크가 상세 이동을 소유해 중복 상세 버튼(admin-btn)을 제거,
+		// 공통 표 영역을 소비한다.
 		assertThat(html)
 			.contains("데이터 품질")
-			.contains("class=\"data-status")
-			.contains("/icons/admin-symbols.svg#")
+			.contains("class=\"admin-status")
 			.contains("class=\"data-verified-relative\"")
 			.contains("가로로 스크롤 가능한 데이터 표")
 			.doesNotContain(">상세</a>");

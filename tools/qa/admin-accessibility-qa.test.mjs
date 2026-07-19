@@ -161,23 +161,25 @@ test("admin accessibility QA script verifies list toolbar sheet body overflow an
   assert.match(source, /listToolbar\.sheetClosed === false/);
 });
 
-// V6-07 #2279: 마스터 목록 상태 신호(sticky 식별자·비색 상태 아이콘+텍스트·헤더 scope) 계약을 source로 고정한다.
+// V6-07 #2279 / #2313: 마스터 목록 상태 신호(sticky 식별자·비색 상태 텍스트·헤더 scope) 계약을 source로 고정한다.
+// #2313에서 상태 표현이 .admin-status(● 점 + 상태 텍스트)로 단일화되어 비색 신호 판정 기준이
+// 아이콘 존재에서 상태 텍스트 병기로 바뀌었다.
 test("admin accessibility QA script verifies master-list sticky identifier and non-color status signal", () => {
   assert.match(source, /async function masterListStatusSignalCheck\(page, baseUrl, report\)/);
   assert.match(source, /await masterListStatusSignalCheck\(page, baseUrl, report\)/);
   assert.match(source, /check: "master-list-status-signal"/);
   // 첫 식별자 열 sticky 고정을 실제 computed style로 판정한다.
   assert.match(source, /getComputedStyle\(firstCell\)\.position === "sticky"/);
-  // 상태가 색 단독이 아니라 아이콘(비색 신호)+텍스트를 함께 갖는지 검사한다.
-  assert.match(source, /cell\.querySelector\("svg\.admin-icon"\)/);
-  assert.match(source, /statusHasIcon/);
+  // 상태 셀은 .admin-status(● 점 + 텍스트) 계약을 대상으로 한다.
+  assert.match(source, /querySelectorAll\("\.admin-table-scroll \.admin-status"\)/);
+  // 색 단독이 아니라 비색 신호인 상태 텍스트가 항상 병기되는지 검사한다.
   assert.match(source, /statusHasText/);
   // 표 헤더 scope 연결을 센다.
   assert.match(source, /thead th\[scope=/);
   // 계약 실패가 blocking 위반으로 표면화되는지 고정한다.
   assert.match(source, /id: "master-list-status-signal"/);
   assert.match(source, /statusSignal\.stickyIdentifier === false/);
-  assert.match(source, /statusSignal\.statusHasIcon === false/);
+  assert.match(source, /statusSignal\.statusHasText === false/);
 });
 
 // V6-08 #2280: 신고 대기열 action·photo 경계(승인 primary·반려 danger·사진 fail closed) 계약을 source로 고정한다.

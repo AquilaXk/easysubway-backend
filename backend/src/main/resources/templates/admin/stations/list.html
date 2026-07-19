@@ -119,16 +119,10 @@
 						<span th:unless="${station.attentionFacilityCount > 0}" class="meta">0</span>
 					</td>
 					<td>
-						<!-- 데이터 품질: 텍스트 + 아이콘 + 색으로 상태를 전한다(색 단독 표현 금지). -->
-						<th:block th:with="qtone=${station.qualityLabel == '고장·공사 반영' ? 'good'
-						                     : (station.qualityLabel == '정보 확인 중' ? 'warn' : 'info')},
-						                   qicon=${station.qualityLabel == '고장·공사 반영' ? 'check'
-						                     : (station.qualityLabel == '정보 확인 중' ? 'warning' : 'info')}">
-							<span class="data-status" th:classappend="|tone-${qtone}|">
-								<svg th:replace="~{admin/fragments/icon :: icon(${qicon})}"></svg>
-								<span th:text="${station.qualityLabel}">정보 확인 중</span>
-							</span>
-						</th:block>
+						<!-- 데이터 품질: 상태 텍스트(● 점 + 텍스트)로 상태를 전한다. "정보 확인 중" 등 진행 중
+						     단계는 경고가 아니라 중립(info) 톤으로, "고장·공사 반영"만 완료(good) 톤으로 표시한다. -->
+						<span th:replace="~{admin/fragments/shell :: status(${station.qualityLabel},
+						         ${station.qualityLabel == '고장·공사 반영' ? 'good' : 'info'})}">정보 확인 중</span>
 					</td>
 					<td th:text="${station.lineNames}">4호선</td>
 					<td th:text="${station.region}">수도권</td>

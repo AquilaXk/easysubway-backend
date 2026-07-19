@@ -58,9 +58,9 @@ class TransitFacilityAdminPageControllerTest {
 			.contains("최근 확인된 정보")
 			.contains("name=\"status\"")
 			.contains("name=\"_csrf\"")
-			// V6-07 #2279: 상태는 text+icon+color(색 단독 금지)로, 갱신일은 상대 시간 + 정확한 날짜 병기로 렌더한다.
-			.contains("class=\"data-status")
-			.contains("/icons/admin-symbols.svg#")
+			// #2313 PR②: 상태는 상태 텍스트(.admin-status, ● 점 + 텍스트)로, 갱신일은 상대 시간 + 정확한 날짜
+			// 병기로 렌더한다.
+			.contains("class=\"admin-status")
 			.contains("class=\"data-verified-relative\"");
 	}
 
