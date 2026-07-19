@@ -173,25 +173,33 @@
 		-->
 		<div id="push-history" th:fragment="historyResults"
 		     hx-target="#push-history" hx-swap="outerHTML" hx-push-url="true">
-			<form class="table-toolbar" method="get" th:action="@{/admin/notifications/push/page/history}"
-			      role="search" aria-label="발송 이력 검색"
-			      hx-target="#push-history" hx-swap="outerHTML" hx-push-url="true"
-			      th:attr="hx-get=@{/admin/notifications/push/page/history}"
-			      hx-trigger="submit, change, keyup changed delay:300ms">
-				<input type="search" name="keyword" th:value="${historyKeyword}"
-				       placeholder="제목·본문 검색" aria-label="발송 내용 검색" autocomplete="off">
-				<select name="status" aria-label="발송 상태 필터">
-					<option th:each="opt : ${historyStatusOptions}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">상태 전체</option>
-				</select>
-				<select name="type" aria-label="알림 유형 필터">
-					<option th:each="opt : ${historyTypeOptions}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">유형 전체</option>
-				</select>
-				<input type="date" name="from" th:value="${historyFrom}" aria-label="발송 기간 시작">
-				<input type="date" name="to" th:value="${historyTo}" aria-label="발송 기간 종료">
-				<button type="submit">검색</button>
-			</form>
+			<!-- V6-06 공통 툴바(#2282 V6-10 이관): 검색은 direct, 상태·유형·기간 필터는 필터 시트로 접고
+			     활성 필터를 search.hidden으로 보존한다(#2279 null-safe get('hidden')). #1746 발송 이력 필터
+			     컨텍스트·hx-target·no-JS 폴백 계약 불변. 저장된 뷰·보기 설정 없음 → ~{}. -->
+			<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
+			         '/admin/notifications/push/page/history', 'push-history',
+			         ${ {'name':'keyword','value':historyKeyword,'placeholder':'제목·본문 검색','label':'발송 내용 검색',
+			            'hidden': {'status':historySelectedStatus,'type':historySelectedType,
+			                       'from':historyFrom,'to':historyTo}} },
+			         ~{}, ~{::pushHistoryFilters}, ~{})}">
+				<form th:fragment="pushHistoryFilters" class="admin-toolbar-form" method="get"
+				      th:action="@{/admin/notifications/push/page/history}" role="group" aria-label="상태·유형·기간 필터"
+				      th:attr="hx-get=@{/admin/notifications/push/page/history}" hx-target="#push-history"
+				      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+					<input type="hidden" name="keyword" th:value="${historyKeyword}">
+					<select name="status" aria-label="발송 상태 필터">
+						<option th:each="opt : ${historyStatusOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">상태 전체</option>
+					</select>
+					<select name="type" aria-label="알림 유형 필터">
+						<option th:each="opt : ${historyTypeOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">유형 전체</option>
+					</select>
+					<input type="date" name="from" th:value="${historyFrom}" aria-label="발송 기간 시작">
+					<input type="date" name="to" th:value="${historyTo}" aria-label="발송 기간 종료">
+					<button type="submit">필터 적용</button>
+				</form>
+			</div>
 
 			<p class="table-summary" aria-live="polite">
 				전체 <strong th:text="${historyTotal}">0</strong>건
@@ -261,8 +269,7 @@
 						<td th:text="${#temporals.format(row.createdAt, 'yyyy-MM-dd HH:mm')}">2026-07-06 09:00</td>
 						<td th:text="${row.typeLabel}">제보 처리 상태</td>
 						<td>
-							<span class="status-badge" th:classappend="${'tone-' + row.statusTone}"
-							      th:text="${row.statusLabel}">발송 완료</span>
+							<span th:replace="~{admin/fragments/shell :: status(${row.statusLabel}, ${row.statusTone == 'failure'} ? 'bad' : (${row.statusTone == 'pending'} ? 'warn' : 'good'))}">발송 완료</span>
 						</td>
 						<td th:text="${row.maskedUserId}">ano••••</td>
 						<td th:text="${row.title}">알림 제목</td>

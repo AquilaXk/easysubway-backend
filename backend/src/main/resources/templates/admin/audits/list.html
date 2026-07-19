@@ -36,33 +36,41 @@
 		-->
 		<div id="audit-results" th:fragment="auditResults"
 		     hx-target="#audit-results" hx-swap="outerHTML" hx-push-url="true">
-			<form class="table-toolbar" method="get" th:action="@{${basePath}}"
-			      role="search" aria-label="감사 이벤트 검색"
-			      hx-target="#audit-results" hx-swap="outerHTML" hx-push-url="true"
-			      th:attr="hx-get=@{${basePath}}"
-			      hx-trigger="submit, change, keyup changed delay:300ms">
-				<input type="search" name="keyword" th:value="${keyword}"
-				       placeholder="target 검색(유형·ID)" aria-label="target 검색" autocomplete="off">
-				<select th:if="${!privacyMode}" name="eventType" aria-label="이벤트 유형 필터">
-					<option th:each="opt : ${eventTypeOptions}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">유형 전체</option>
-				</select>
-				<select name="actor" aria-label="actor 필터">
-					<option th:each="opt : ${actorOptions}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">actor 전체</option>
-				</select>
-				<select name="outcome" aria-label="결과 필터">
-					<option th:each="opt : ${outcomeOptions}" th:value="${opt.value}"
-					        th:text="${opt.label}" th:selected="${opt.selected}">결과 전체</option>
-				</select>
-				<input type="date" name="from" th:value="${from}" aria-label="발생 기간 시작">
-				<input type="date" name="to" th:value="${to}" aria-label="발생 기간 종료">
-				<label class="toolbar-check">
-					<input type="checkbox" name="reasonMissing" value="true" th:checked="${reasonMissing}">
-					<span>사유 없는 조회만</span>
-				</label>
-				<button type="submit">검색</button>
-			</form>
+			<!-- V6-06 공통 툴바(#2282 V6-10 이관): 검색은 항상 direct, 유형·actor·결과·기간·사유 필터는 필터 시트로
+			     접힌다. 검색 form은 활성 필터를 hidden(search.hidden)으로 보존해 키워드 검색이 필터를 덮어쓰지 않는다
+			     (#2279 null-safe get('hidden')). 저장된 뷰·보기 설정은 이 화면에 없어 ~{}를 전달한다. -->
+			<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
+			         ${basePath}, 'audit-results',
+			         ${ {'name':'keyword','value':keyword,'placeholder':'target 검색(유형·ID)','label':'target 검색',
+			            'hidden': {'eventType':selectedEventType,'actor':selectedActor,'outcome':selectedOutcome,
+			                       'from':from,'to':to,'reasonMissing':reasonMissing}} },
+			         ~{}, ~{::auditFilters}, ~{})}">
+				<form th:fragment="auditFilters" class="admin-toolbar-form" method="get"
+				      th:action="@{${basePath}}" role="group" aria-label="유형·actor·결과·기간·사유 필터"
+				      th:attr="hx-get=@{${basePath}}" hx-target="#audit-results"
+				      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+					<input type="hidden" name="keyword" th:value="${keyword}">
+					<select th:if="${!privacyMode}" name="eventType" aria-label="이벤트 유형 필터">
+						<option th:each="opt : ${eventTypeOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">유형 전체</option>
+					</select>
+					<select name="actor" aria-label="actor 필터">
+						<option th:each="opt : ${actorOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">actor 전체</option>
+					</select>
+					<select name="outcome" aria-label="결과 필터">
+						<option th:each="opt : ${outcomeOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">결과 전체</option>
+					</select>
+					<input type="date" name="from" th:value="${from}" aria-label="발생 기간 시작">
+					<input type="date" name="to" th:value="${to}" aria-label="발생 기간 종료">
+					<label class="toolbar-check">
+						<input type="checkbox" name="reasonMissing" value="true" th:checked="${reasonMissing}">
+						<span>사유 없는 조회만</span>
+					</label>
+					<button type="submit">필터 적용</button>
+				</form>
+			</div>
 
 			<p class="table-summary" aria-live="polite">
 				전체 <strong th:text="${total}">0</strong>건
@@ -114,8 +122,7 @@
 						<span class="meta" th:text="${event.targetId}">id</span></td>
 					<td th:text="${event.action}">action</td>
 					<td>
-						<span class="status-badge" th:classappend="${'tone-' + event.outcomeTone}"
-						      th:text="${event.outcomeLabel}">성공</span>
+						<span th:replace="~{admin/fragments/shell :: status(${event.outcomeLabel}, ${event.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 					</td>
 					<td th:class="${privacyMode and event.reasonMissing} ? 'reason-missing'"
 					    th:text="${event.reason}">-</td>

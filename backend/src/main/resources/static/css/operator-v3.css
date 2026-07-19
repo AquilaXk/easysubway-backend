@@ -263,8 +263,9 @@ input:focus-visible {
 	gap: 12px;
 }
 
+/* #2282 V6-10: panel은 더 이상 가로 overflow를 소유하지 않는다. 표는 operator-table-scroll
+   wrapper만 소유한다(admin #2071과 동일 원칙 — 이중 scroll container 금지). */
 .panel {
-	overflow-x: auto;
 	border: 1px solid var(--admin-border);
 	border-radius: var(--admin-radius-card);
 	background: var(--admin-surface);
@@ -370,6 +371,41 @@ input:focus-visible {
 .numeric {
 	text-align: right;
 	font-weight: var(--admin-w-strong);
+}
+
+/* 표 scroll wrapper(#2282 V6-10, admin #2071과 동일 원칙): wrapper만 가로 overflow를 소유하고
+   첫 식별자 열과 thead를 sticky로 고정한다. panel·section은 overflow를 갖지 않는다. */
+.operator-table-scroll {
+	max-width: 100%;
+	max-block-size: min(70vh, 640px);
+	overflow: auto;
+	overscroll-behavior-inline: contain;
+	scrollbar-gutter: stable;
+	isolation: isolate;
+}
+
+.operator-table-scroll:focus-visible {
+	outline: 3px solid #ffbf47;
+	outline-offset: 3px;
+}
+
+.operator-table-scroll thead th {
+	position: sticky;
+	top: 0;
+	z-index: 1;
+}
+
+.operator-table-scroll th:first-child,
+.operator-table-scroll td:first-child:not([colspan]) {
+	position: sticky;
+	left: 0;
+	z-index: 2;
+	background: var(--admin-surface);
+}
+
+.operator-table-scroll thead th:first-child {
+	z-index: 3;
+	background: var(--admin-header-bg);
 }
 
 .status {

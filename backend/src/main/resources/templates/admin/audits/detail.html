@@ -44,8 +44,7 @@
 				<dd th:text="${event.action}">action</dd>
 				<dt>결과</dt>
 				<dd>
-					<span class="status-badge" th:classappend="${'tone-' + event.outcomeTone}"
-					      th:text="${event.outcomeLabel}">성공</span>
+					<span th:replace="~{admin/fragments/shell :: status(${event.outcomeLabel}, ${event.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 				</dd>
 				<dt>target</dt>
 				<dd>
@@ -72,20 +71,17 @@
 				<li th:each="row : ${timelineBefore}">
 					<span class="timeline-time" th:text="${row.occurredAt}">시각</span>
 					<span class="timeline-action" th:text="${row.action}">action</span>
-					<span class="status-badge" th:classappend="${'tone-' + row.outcomeTone}"
-					      th:text="${row.outcomeLabel}">성공</span>
+					<span th:replace="~{admin/fragments/shell :: status(${row.outcomeLabel}, ${row.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 				</li>
 				<li class="timeline-current" aria-current="true">
 					<span class="timeline-time" th:text="${event.occurredAt}">시각</span>
 					<span class="timeline-action" th:text="${event.action}">현재 이벤트</span>
-					<span class="status-badge" th:classappend="${'tone-' + event.outcomeTone}"
-					      th:text="${event.outcomeLabel}">성공</span>
+					<span th:replace="~{admin/fragments/shell :: status(${event.outcomeLabel}, ${event.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 				</li>
 				<li th:each="row : ${timelineAfter}">
 					<span class="timeline-time" th:text="${row.occurredAt}">시각</span>
 					<span class="timeline-action" th:text="${row.action}">action</span>
-					<span class="status-badge" th:classappend="${'tone-' + row.outcomeTone}"
-					      th:text="${row.outcomeLabel}">성공</span>
+					<span th:replace="~{admin/fragments/shell :: status(${row.outcomeLabel}, ${row.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 				</li>
 			</ol>
 		</section>
