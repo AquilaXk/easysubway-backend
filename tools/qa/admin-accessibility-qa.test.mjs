@@ -160,6 +160,32 @@ test("admin accessibility QA script verifies master-list sticky identifier and n
   assert.match(source, /statusSignal\.statusHasIcon === false/);
 });
 
+// V6-08 #2280: 신고 대기열 action·photo 경계(승인 primary·반려 danger·사진 fail closed) 계약을 source로 고정한다.
+test("admin accessibility QA script verifies report queue action hierarchy and photo fail-closed", () => {
+  assert.match(source, /async function reportQueueActionSignalCheck\(page, baseUrl, report\)/);
+  assert.match(source, /await reportQueueActionSignalCheck\(page, baseUrl, report\)/);
+  assert.match(source, /check: "report-queue-action-signal"/);
+  // 일괄 승인 primary·반려 danger 위계를 실제 DOM class로 판정한다.
+  assert.match(source, /button\[name=\\"decision\\"\]\[value=\\"ACCEPT\\"\]/);
+  assert.match(source, /button\[name=\\"decision\\"\]\[value=\\"REJECT\\"\]/);
+  assert.match(source, /classList\.contains\("primary"\)/);
+  assert.match(source, /classList\.contains\("danger"\)/);
+  // 사진 fail closed: raw object key 미노출(속성값 leak 포함 innerHTML 스캔) + 썸네일은 permission-gated
+  // 원본 endpoint만 참조한다.
+  assert.match(source, /document\.body\.innerHTML \|\| ""\)\.includes\("facility-reports\/"\)/);
+  assert.match(source, /noRawPhotoKey/);
+  assert.match(source, /photoScoped/);
+  // 썸네일 0개 무검증 PASS 위장을 방지하는 photoScopedVerified 신호를 고정한다.
+  assert.match(source, /const photoScopedVerified = thumbs\.length > 0;/);
+  assert.match(source, /photoScopedVerified\s*\n\s*&&\s*thumbs\.every/);
+  // 계약 실패가 blocking 위반으로 표면화되는지 고정한다.
+  assert.match(source, /id: "report-queue-action-signal"/);
+  assert.match(source, /actionSignal\.approvePrimary === false/);
+  assert.match(source, /actionSignal\.rejectDanger === false/);
+  assert.match(source, /actionSignal\.photoScoped === false/);
+  assert.match(source, /actionSignal\.photoScopedVerified === false/);
+});
+
 test("admin accessibility QA script records manual-only screen reader and contrast work", () => {
   assert.match(source, /VoiceOver reading flow/);
   assert.match(source, /high-contrast visual inspection/);

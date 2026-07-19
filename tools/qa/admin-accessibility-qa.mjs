@@ -195,6 +195,25 @@ function finalizeReport(report) {
       nodes: 0,
     });
   }
+  // V6-08 #2280: 신고 대기열 action·photo 경계 계약을 위반으로 편입한다. 일괄 승인이 primary가 아니거나,
+  // 반려가 danger가 아니거나, 사진 셀이 raw object key를 노출하거나 썸네일이 permission-gated endpoint를
+  // 벗어나거나, 사진 셀 검증 자체가 수행되지 않았으면(썸네일 0개, 무검증 PASS 위장 방지) 실패를 표면화한다
+  // (§7 action 체계, §9 photo matrix).
+  const actionSignal = report.keyboard.find((entry) => entry.check === "report-queue-action-signal");
+  if (actionSignal
+    && (actionSignal.bulkbarPresent === false
+      || actionSignal.approvePrimary === false
+      || actionSignal.rejectDanger === false
+      || actionSignal.noRawPhotoKey === false
+      || actionSignal.photoScoped === false
+      || actionSignal.photoScopedVerified === false)) {
+    blockingViolations.push({
+      page: "/admin/reports/page",
+      id: "report-queue-action-signal",
+      impact: "serious",
+      nodes: 0,
+    });
+  }
   const criticalViolations = blockingViolations.filter((violation) => violation.impact === "critical");
   const seriousViolations = blockingViolations.filter((violation) => violation.impact === "serious");
   report.summary = {
@@ -230,6 +249,7 @@ async function runJsPass(browser, baseUrl, outputDir, adminUser, adminPassword, 
   await noCurrentWorkspaceDisclosure(page, baseUrl, report);
   await keyboardTableCheck(page, baseUrl, report);
   await masterListStatusSignalCheck(page, baseUrl, report);
+  await reportQueueActionSignalCheck(page, baseUrl, report);
   await listToolbarSheetCheck(page, baseUrl, report);
   await textScalePass(page, baseUrl, outputDir, report, ADMIN_TEXT_SCALE_PAGES);
   await context.close();
@@ -617,6 +637,44 @@ async function masterListStatusSignalCheck(page, baseUrl, report) {
   });
 
   report.keyboard.push({ check: "master-list-status-signal", ...signal });
+}
+
+// V6-08 #2280: 신고 대기열 action·photo 경계 계약. 이관된 queue-review(신고 목록)를 mobile-390에서 열어
+// (1) 일괄 승인 버튼이 primary, 반려 버튼이 danger로 액션 위계를 명시하는지, (2) 사진 셀이 fail closed인지
+// — raw object key(facility-reports/)를 노출하지 않고 썸네일은 permission-gated endpoint만 참조하는지
+// 검사한다. 하나라도 어기면 finalizeReport가 위반으로 편입해 exit code로 실패를 표면화한다(§7 action 체계·§9 photo matrix).
+async function reportQueueActionSignalCheck(page, baseUrl, report) {
+  await page.setViewportSize(VIEWPORTS.find((viewport) => viewport.name === "mobile-390"));
+  const response = await page.goto(`${baseUrl}/admin/reports/page`, { waitUntil: "networkidle" });
+  await assertOk(page, "/admin/reports/page", response);
+
+  const signal = await page.evaluate(() => {
+    const bulkbar = document.querySelector(".bulk-actionbar");
+    const approve = document.querySelector(".bulk-actionbar button[name=\"decision\"][value=\"ACCEPT\"]");
+    const reject = document.querySelector(".bulk-actionbar button[name=\"decision\"][value=\"REJECT\"]");
+    const approvePrimary = approve ? approve.classList.contains("primary") : false;
+    const rejectDanger = reject ? reject.classList.contains("danger") : false;
+    // 사진 fail closed: 어떤 셀도 raw object key를 노출하지 않고(속성값 leak 포함 innerHTML 스캔),
+    // 썸네일은 permission-gated 원본 endpoint만 가리킨다.
+    const noRawPhotoKey = !(document.body.innerHTML || "").includes("facility-reports/");
+    const thumbs = Array.from(document.querySelectorAll(".report-thumb"));
+    // 썸네일이 0개면 every()가 무검증인데도 true를 반환해 PASS로 위장한다 — photoScopedVerified로 실제
+    // 검증 여부를 분리하고, photoScoped 자체도 미검증 시 fail closed로 false를 반환한다.
+    const photoScopedVerified = thumbs.length > 0;
+    const photoScoped = photoScopedVerified
+      && thumbs.every((anchor) => (anchor.getAttribute("href") || "").includes("/photo/original"));
+    return {
+      bulkbarPresent: Boolean(bulkbar),
+      approvePrimary,
+      rejectDanger,
+      noRawPhotoKey,
+      photoScoped,
+      photoScopedVerified,
+      thumbs: thumbs.length,
+    };
+  });
+
+  report.keyboard.push({ check: "report-queue-action-signal", ...signal });
 }
 
 // #2278 V6-06: 목록 툴바 시트 계약. compact viewport에서 (1) body가 가로 overflow를 소유하지 않는지(§9),

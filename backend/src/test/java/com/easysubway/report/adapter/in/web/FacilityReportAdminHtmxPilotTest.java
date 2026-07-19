@@ -196,6 +196,34 @@ class FacilityReportAdminHtmxPilotTest {
 	}
 
 	@Test
+	@DisplayName("신고 대기열은 V6-06 공통 툴바(list-toolbar)를 소비하고 reportTable 스코프를 컨테이너로 올린다")
+	void reportQueueConsumesUnifiedListToolbar() throws Exception {
+		createReport("툴바 이관 확인 신고");
+
+		String html = mockMvc.perform(get("/admin/reports/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		assertThat(html)
+			// 공통 툴바 루트 + 시트 트리거(필터·보기 설정)를 소비한다.
+			.contains("class=\"admin-list-toolbar\"")
+			.contains("admin-toolbar-filter-sheet")
+			.contains("admin-toolbar-view-sheet")
+			// 유형·사진 필터는 필터 시트 form으로, 밀도·열 표시는 보기 설정 시트로 이관된다.
+			.contains("aria-label=\"유형·사진 필터\"")
+			.contains("class=\"table-viewbar\"")
+			// 보기 설정(밀도·열 표시)이 동작하도록 reportTable 스코프가 컨테이너(#report-results)로 올라간다.
+			.contains("id=\"report-results\"")
+			.contains("x-data=\"reportTable\"")
+			.contains("x-bind:class=\"tableClass\"");
+		// 필터 form은 키워드·상태를 hidden으로 보존해 필터 변경이 검색·상태를 덮어쓰지 않는다(§7 filter binding).
+		assertThat(html.replaceAll("\\s+", " "))
+			.contains("<input type=\"hidden\" name=\"keyword\"")
+			.contains("<input type=\"hidden\" name=\"status\"");
+	}
+
+	@Test
 	@DisplayName("검색·상태 필터 링크는 현재 키워드를 유지한다")
 	void filterLinksPreserveKeyword() throws Exception {
 		String html = mockMvc.perform(get("/admin/reports/page")

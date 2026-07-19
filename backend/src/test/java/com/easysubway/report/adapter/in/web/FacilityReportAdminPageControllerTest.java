@@ -222,6 +222,8 @@ class FacilityReportAdminPageControllerTest {
 			.contains("신고 급증")
 			.contains("시설 신고 확인")
 			.doesNotContain("상태·사진·위치·접수일 기준으로 제보를 확인 대기열에 배치합니다.")
+			// V6-08 #2280 action 체계: 승인 primary, 반려 danger로 위계를 명시한다.
+			.contains("class=\"primary\" type=\"submit\" name=\"decision\" value=\"ACCEPT\">선택 승인")
 			.contains("class=\"danger\" type=\"submit\" name=\"decision\" value=\"REJECT\">선택 반려")
 			.contains("점검 필요")
 			.contains("신고가 평소보다 많습니다")
@@ -253,9 +255,10 @@ class FacilityReportAdminPageControllerTest {
 			.doesNotContain("facility-reports/")
 			.contains("37.302421")
 			.contains("126.866221")
-			.contains("name=\"decision\" value=\"ACCEPT\"")
-			.contains("name=\"decision\" value=\"REJECT\"")
-			.contains("name=\"decision\" value=\"MARK_DUPLICATE\"");
+			// V6-08 #2280 action 체계: 승인 primary, 반려 danger, 중복 처리 secondary로 위계를 명시한다.
+			.contains("class=\"primary\" type=\"submit\" name=\"decision\" value=\"ACCEPT\"")
+			.contains("class=\"danger\" type=\"submit\" name=\"decision\" value=\"REJECT\"")
+			.contains("class=\"secondary\" type=\"submit\" name=\"decision\" value=\"MARK_DUPLICATE\"");
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
 			.singleElement()
 				.satisfies(event -> {

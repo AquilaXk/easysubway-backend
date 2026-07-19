@@ -160,7 +160,8 @@
 			기준 신고 ID
 			<input name="duplicateOfReportId" type="text" autocomplete="off" placeholder="중복 처리할 때 입력" th:value="${reviewForm.duplicateOfReportId}">
 		</label>
-		<button type="submit" name="decision" value="ACCEPT">승인</button>
+		<!-- V6-04 button 계약(V6-08 #2280): 승인 primary, 반려 danger, 중복 처리 secondary로 액션 위계를 명시한다. -->
+		<button class="primary" type="submit" name="decision" value="ACCEPT">승인</button>
 		<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
 		<button class="secondary" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>
 	</form>
