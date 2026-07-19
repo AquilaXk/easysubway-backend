@@ -37,8 +37,8 @@
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
 			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
-			<button type="submit">검색</button>
-			<a class="admin-btn" th:href="@{/admin/datapack/facility-evidence/page}">초기화</a>
+			<button type="submit" class="outline">검색</button>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/facility-evidence/page}">초기화</a>
 		</form>
 		<div class="table-filters" th:if="${filter.active()}">
 			<div class="filter-chips" aria-label="적용된 필터">
@@ -129,7 +129,7 @@
 							<span class="sr-only">검수 사유</span>
 							<input name="reason" value="facility evidence reviewed" required>
 						</label>
-						<button type="submit">검수 저장</button>
+						<button type="submit" class="primary">검수 저장</button>
 					</form>
 				</td>
 			</tr>

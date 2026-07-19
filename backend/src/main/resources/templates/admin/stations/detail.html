@@ -24,8 +24,8 @@
 			</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/stations/{stationId}/layouts/page(stationId=${station.stationId})}">구조·동선 편집</a>
-			<a class="admin-btn" th:href="@{/admin/stations/page}">역 목록</a>
+			<a class="admin-btn outline" th:href="@{/admin/stations/{stationId}/layouts/page(stationId=${station.stationId})}">구조·동선 편집</a>
+			<a class="admin-btn plain" th:href="@{/admin/stations/page}">역 목록</a>
 		</div>
 	</header>
 
@@ -159,7 +159,7 @@
 							<td th:text="${facility.statusLabel}">정상</td>
 							<td th:text="${facility.confidenceLabel}">높음</td>
 							<td>
-								<a class="admin-btn"
+								<a class="admin-btn outline"
 								   th:href="@{/admin/facilities/editor/page(stationId=${station.stationId},facilityId=${facility.facilityId})}">수정</a>
 							</td>
 						</tr>
@@ -176,7 +176,7 @@
 				<section>
 					<div class="hub-panel-head">
 						<h2>제보 이력</h2>
-						<a class="admin-btn" th:href="@{${stationReportsHref}}">전체 제보 보기</a>
+						<a class="admin-btn plain" th:href="@{${stationReportsHref}}">전체 제보 보기</a>
 					</div>
 					<div class="admin-table-scroll" tabindex="0" role="group"
 					     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!stationReports.isEmpty()}">
@@ -213,7 +213,7 @@
 				<section>
 					<div class="hub-panel-head">
 						<h2>현장 확인</h2>
-						<a class="admin-btn" th:href="@{${fieldVerificationHref}}">현장 확인 화면</a>
+						<a class="admin-btn outline" th:href="@{${fieldVerificationHref}}">현장 확인 화면</a>
 					</div>
 					<div th:if="${fieldSession == null}"
 					     th:replace="~{admin/fragments/empty-state :: panel('현장 확인 세션이 없습니다.', '현장 확인 화면에서 확인 일정을 등록하세요.')}"></div>
@@ -264,7 +264,7 @@
 				<section>
 					<div class="hub-panel-head">
 						<h2>구조·동선</h2>
-						<a class="admin-btn" th:href="@{${layoutEditorHref}}">구조·동선 편집</a>
+						<a class="admin-btn outline" th:href="@{${layoutEditorHref}}">구조·동선 편집</a>
 					</div>
 					<h3>구조 자료</h3>
 					<div class="admin-table-scroll" tabindex="0" role="group"

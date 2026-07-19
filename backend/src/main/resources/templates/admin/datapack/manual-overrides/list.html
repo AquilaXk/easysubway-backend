@@ -58,7 +58,7 @@
 					<label>expiresAt <input type="datetime-local" name="expiresAt" th:value="${overrideForm.expiresAt}" required></label>
 				</div>
 			</div>
-			<button type="submit">요청 저장</button>
+			<button type="submit" class="primary">요청 저장</button>
 		</form>
 	</section>
 
@@ -82,8 +82,8 @@
 				<option value="created" th:selected="${filter.selectedSort('created')}">시작 최신순</option>
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
-			<button type="submit">검색</button>
-			<a class="admin-btn" th:href="@{/admin/datapack/manual-overrides/page}">초기화</a>
+			<button type="submit" class="outline">검색</button>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/manual-overrides/page}">초기화</a>
 		</form>
 		<div class="table-filters" th:if="${filter.active()}">
 			<div class="filter-chips" aria-label="적용된 필터">
@@ -164,7 +164,7 @@
 							<span class="sr-only">승인 사유</span>
 							<input name="reason" value="manual override reviewed" required>
 						</label>
-						<button type="submit">승인 저장</button>
+						<button type="submit" class="primary">승인 저장</button>
 					</form>
 					<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/expire'}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
@@ -174,7 +174,7 @@
 							<span class="sr-only">만료 사유</span>
 							<input name="reason" value="manual override expired" required>
 						</label>
-						<button type="submit">만료 저장</button>
+						<button type="submit" class="danger">만료 저장</button>
 					</form>
 				</td>
 			</tr>

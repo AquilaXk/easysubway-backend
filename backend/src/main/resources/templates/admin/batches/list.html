@@ -50,7 +50,7 @@
 							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 							<input type="hidden" name="runRequested" value="true">
-							<button type="submit" th:disabled="${job.running}">실행 확인</button>
+							<button type="submit" class="primary" th:disabled="${job.running}">실행 확인</button>
 						</form>
 					</details>
 				</td>
@@ -152,7 +152,7 @@
 							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 							<input type="hidden" name="retryRequested" value="true">
-							<button type="submit">재처리 확인</button>
+							<button type="submit" class="primary">재처리 확인</button>
 						</form>
 					</details>
 					<span th:unless="${run.retryable}" th:text="${run.retryableLabel()}">불가</span>

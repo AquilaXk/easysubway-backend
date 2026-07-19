@@ -31,7 +31,7 @@
 			       th:checked="${sourceOptionStat.first}">
 			<span th:text="${sourceOption.label + ' 데이터 수집'}">도시철도 마스터 데이터 수집</span>
 		</label>
-		<button type="submit">수집 실행</button>
+		<button type="submit" class="primary">수집 실행</button>
 	</form>
 
 	<section id="collection-live" th:fragment="live">
@@ -89,7 +89,7 @@
 							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 							<input type="hidden" name="source" th:value="${run.source}">
-							<button type="submit">재시도 확인</button>
+							<button type="submit" class="primary">재시도 확인</button>
 						</form>
 					</details>
 					<span th:unless="${run.retryable}" th:text="${run.retryableLabel()}">불필요</span>

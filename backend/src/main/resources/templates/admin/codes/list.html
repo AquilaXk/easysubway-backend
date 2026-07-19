@@ -31,7 +31,7 @@
 				        th:selected="${group.groupCode == selectedGroup}"
 				        th:text="${group.displayName}">신고 반려 사유</option>
 			</select>
-			<button type="submit">조회</button>
+			<button type="submit" class="outline">조회</button>
 		</form>
 	</section>
 
@@ -66,7 +66,7 @@
 					<form th:if="${code.enabled and !code.requiredIncidentCode}" th:action="@{'/admin/codes/' + ${code.groupCode} + '/' + ${code.code} + '/disable'}" method="post">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<button type="submit">비활성화</button>
+						<button type="submit" class="outline">비활성화</button>
 					</form>
 				</td>
 			</tr>
@@ -87,7 +87,7 @@
 			<label>설명 <input name="description"></label>
 			<label>정렬 <input name="sortOrder" type="number" min="0" value="0"></label>
 			<label><input name="enabled" type="checkbox" value="true" checked> 신규 선택 가능</label>
-			<button type="submit">저장</button>
+			<button type="submit" class="primary">저장</button>
 		</form>
 	</section>
 </main>

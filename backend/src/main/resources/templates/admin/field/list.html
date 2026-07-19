@@ -50,7 +50,7 @@
 			<td th:text="|${verification.verifiedCount} / ${verification.itemCount}|">0 / 0</td>
 			<td th:text="${verification.recheckCount}">0</td>
 			<td>
-				<a class="admin-btn" th:href="@{/admin/field-verifications/{stationId}/page(stationId=${verification.stationId})}">상세</a>
+				<a class="admin-btn outline" th:href="@{/admin/field-verifications/{stationId}/page(stationId=${verification.stationId})}">상세</a>
 			</td>
 		</tr>
 		</tbody>

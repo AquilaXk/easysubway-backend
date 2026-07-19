@@ -53,7 +53,7 @@
 					<option value="dev">dev</option>
 				</select>
 			</label>
-			<button type="submit">release request 요청</button>
+			<button type="submit" class="primary">release request 요청</button>
 		</form>
 	</section>
 
@@ -102,14 +102,14 @@
 						  th:action="@{/admin/datapack/release-requests/{approvalId}/approve(approvalId=${request.approvalId})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<button type="submit">승인</button>
+						<button type="submit" class="primary">승인</button>
 					</form>
 					<form th:if="${request.status == 'DISPATCH_FAILED'}"
 						  method="post"
 						  th:action="@{/admin/datapack/release-requests/{approvalId}/retry-dispatch(approvalId=${request.approvalId})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<button type="submit">dispatch 재시도</button>
+						<button type="submit" class="outline">dispatch 재시도</button>
 					</form>
 					<span th:if="${request.status == 'APPROVED'}">수동 실행 필요</span>
 					<span th:if="${request.status == 'PUBLISHED' and request.promoteOutcome == 'REJECTED'}"
@@ -150,7 +150,7 @@
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label>repair reason <input name="reason" required maxlength="200"></label>
-						<button type="submit">수동 repair</button>
+						<button type="submit" class="outline">수동 repair</button>
 					</form>
 					<span th:unless="${delivery.repairable}">-</span>
 				</td>

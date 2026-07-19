@@ -21,7 +21,7 @@
 			<p th:text="${'scope ' + candidate.scopeId + ' · ' + candidate.artifactKind + ' · ' + candidate.version}">scope</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/datapack/pipeline/page}">파이프라인 개요</a>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/pipeline/page}">파이프라인 개요</a>
 		</div>
 	</header>
 
@@ -76,28 +76,28 @@
 			<dd>
 				<span class="sha-inline" th:title="${evidenceBundle.evidenceBundleSha256}"
 				      th:text="${evidenceBundle.evidenceBundleSha256Short()}">sha</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${evidenceBundle.evidenceBundleSha256}">복사</button>
 			</dd>
 			<dt>매니페스트 sha256</dt>
 			<dd>
 				<span class="sha-inline" th:title="${candidate.manifestSha256}"
 				      th:text="${candidate.manifestSha256Short()}">sha</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${candidate.manifestSha256}">복사</button>
 			</dd>
 			<dt>원천 스냅샷 세트 hash</dt>
 			<dd>
 				<span class="sha-inline" th:title="${candidate.sourceSnapshotSetHash}"
 				      th:text="${candidate.sourceSnapshotSetHashShort()}">sha</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${candidate.sourceSnapshotSetHash}">복사</button>
 			</dd>
 			<dt>오버라이드 세트 hash</dt>
 			<dd>
 				<span class="sha-inline" th:title="${candidate.overrideSetHash}"
 				      th:text="${candidate.overrideSetHashShort()}">sha</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${candidate.overrideSetHash}">복사</button>
 			</dd>
 		</dl>
@@ -144,7 +144,7 @@
 			<label>사유
 				<input name="reason" value="candidate gates rerun requested" required>
 			</label>
-			<button type="submit">게이트 재실행</button>
+			<button type="submit" class="primary">게이트 재실행</button>
 		</form>
 	</section>
 </main>

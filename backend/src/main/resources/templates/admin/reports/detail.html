@@ -24,7 +24,7 @@
 			<p>사진·위치·설명·중복 후보·감사 이력을 보고 승인·반려·중복 판정합니다.</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/reports/page}">목록으로</a>
+			<a class="admin-btn plain" th:href="@{/admin/reports/page}">목록으로</a>
 		</div>
 	</header>
 	<h1 class="sr-only">신고 상세</h1>
@@ -54,7 +54,7 @@
 			<dt>시설</dt>
 			<dd th:text="${facilityLabel}">엘리베이터(facility-id)</dd>
 			<dt th:if="${report.correctionOverrideHref != null}">임시 override</dt>
-			<dd th:if="${report.correctionOverrideHref != null}"><a class="admin-btn" th:href="@{__${report.correctionOverrideHref}__}">manual override 요청</a></dd>
+			<dd th:if="${report.correctionOverrideHref != null}"><a class="admin-btn outline" th:href="@{__${report.correctionOverrideHref}__}">manual override 요청</a></dd>
 			<dt>신고자</dt>
 			<dd th:text="${report.userId}">user-id</dd>
 			<dt>좌표</dt>
@@ -160,10 +160,11 @@
 			기준 신고 ID
 			<input name="duplicateOfReportId" type="text" autocomplete="off" placeholder="중복 처리할 때 입력" th:value="${reviewForm.duplicateOfReportId}">
 		</label>
-		<!-- V6-04 button 계약(V6-08 #2280): 승인 primary, 반려 danger, 중복 처리 secondary로 액션 위계를 명시한다. -->
+		<!-- 버튼 위계 계약(V6-08 #2280, outline 이관 #2313): 승인 primary(대표 액션), 반려 danger(파괴적),
+		     중복 처리 outline(보조)로 화면당 filled 1개 원칙을 지킨다. -->
 		<button class="primary" type="submit" name="decision" value="ACCEPT">승인</button>
 		<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
-		<button class="secondary" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>
+		<button class="outline" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>
 	</form>
 	</div>
 </main>

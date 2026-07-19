@@ -255,10 +255,10 @@ class FacilityReportAdminPageControllerTest {
 			.doesNotContain("facility-reports/")
 			.contains("37.302421")
 			.contains("126.866221")
-			// V6-08 #2280 action 체계: 승인 primary, 반려 danger, 중복 처리 secondary로 위계를 명시한다.
+			// 버튼 위계 계약(V6-08 #2280, outline 이관 #2313): 승인 primary, 반려 danger, 중복 처리 outline으로 위계를 명시한다.
 			.contains("class=\"primary\" type=\"submit\" name=\"decision\" value=\"ACCEPT\"")
 			.contains("class=\"danger\" type=\"submit\" name=\"decision\" value=\"REJECT\"")
-			.contains("class=\"secondary\" type=\"submit\" name=\"decision\" value=\"MARK_DUPLICATE\"");
+			.contains("class=\"outline\" type=\"submit\" name=\"decision\" value=\"MARK_DUPLICATE\"");
 		assertThat(auditEventRepository.findRecent(AdminAuditEventType.PRIVACY_READ, 1))
 			.singleElement()
 				.satisfies(event -> {

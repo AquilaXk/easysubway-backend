@@ -55,7 +55,7 @@
 					<option th:each="opt : ${lineOptions}" th:value="${opt.value}"
 					        th:text="${opt.label}" th:selected="${opt.selected}">전체 노선</option>
 				</select>
-				<button type="submit">필터 적용</button>
+				<button type="submit" class="outline admin-filter-apply">필터 적용</button>
 			</form>
 			<form th:fragment="stationView" class="admin-toolbar-form" method="get"
 			      th:action="@{/admin/stations/page}" role="group" aria-label="정렬"
@@ -69,7 +69,7 @@
 					<option value="name_desc" th:selected="${selectedSort == 'name_desc'}">역명 역순</option>
 					<option value="pending" th:selected="${selectedSort == 'pending'}">미확인 제보 많은 순</option>
 				</select>
-				<button type="submit">정렬 적용</button>
+				<button type="submit" class="outline admin-filter-apply">정렬 적용</button>
 			</form>
 		</div>
 

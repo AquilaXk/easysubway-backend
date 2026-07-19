@@ -130,21 +130,21 @@
 			<dd>
 				<span class="sha-inline" th:title="${pipeline.sourceSnapshotSetHash.fullValue}"
 				      th:text="${pipeline.sourceSnapshotSetHash.shortValue}">-</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${pipeline.sourceSnapshotSetHash.fullValue}">복사</button>
 			</dd>
 			<dt>매니페스트 sha256</dt>
 			<dd>
 				<span class="sha-inline" th:title="${pipeline.manifestSha256.fullValue}"
 				      th:text="${pipeline.manifestSha256.shortValue}">-</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${pipeline.manifestSha256.fullValue}">복사</button>
 			</dd>
 			<dt>증거 번들 sha256</dt>
 			<dd>
 				<span class="sha-inline" th:title="${pipeline.evidenceBundleSha256.fullValue}"
 				      th:text="${pipeline.evidenceBundleSha256.shortValue}">-</span>
-				<button type="button" class="tiny-btn" x-data="copyField" x-on:click="copy"
+				<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
 				        th:attr="data-copy-value=${pipeline.evidenceBundleSha256.fullValue}">복사</button>
 			</dd>
 			<dt>증거 워크플로</dt>

@@ -53,7 +53,7 @@
 				만료 시각
 				<input name="expiresAt" type="datetime-local">
 			</label>
-			<button type="submit">공지 발행</button>
+			<button type="submit" class="primary">공지 발행</button>
 		</form>
 	</section>
 
@@ -91,7 +91,7 @@
 					      th:action="@{/admin/notices/{id}/unpublish/page(id=${notice.id})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<button type="submit">즉시 내리기</button>
+						<button type="submit" class="danger">즉시 내리기</button>
 					</form>
 				</td>
 			</tr>

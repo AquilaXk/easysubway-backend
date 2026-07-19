@@ -85,7 +85,7 @@
 					<option th:each="opt : ${photoFilters}" th:value="${opt.value}"
 					        th:text="${opt.label}" th:selected="${opt.selected}">사진 전체</option>
 				</select>
-				<button type="submit">필터 적용</button>
+				<button type="submit" class="outline admin-filter-apply">필터 적용</button>
 			</form>
 			<!-- 보기 설정(보기 설정 시트): 밀도 3단·열 표시 토글·단축키 도움말. reportTable(#report-results
 			     조상 스코프)의 메서드에 바인딩된다. 순수 표시 설정이라 폼 밖에 두어 제출되지 않는다. no-JS는
@@ -125,13 +125,13 @@
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="returnTo" th:value="${currentListHref}">
-						<button type="submit" title="기본으로 지정" aria-label="기본 뷰로 지정">★</button>
+						<button type="submit" class="plain" title="기본으로 지정" aria-label="기본 뷰로 지정">★</button>
 					</form>
 					<form method="post" th:action="@{/admin/saved-views/{id}/delete(id=${view.viewId})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="returnTo" th:value="${currentListHref}">
-						<button type="submit" title="삭제" aria-label="저장된 뷰 삭제">✕</button>
+						<button type="submit" class="plain" title="삭제" aria-label="저장된 뷰 삭제">✕</button>
 					</form>
 				</span>
 			</div>
@@ -145,7 +145,7 @@
 				<label class="save-view-default">
 					<input type="checkbox" name="makeDefault" value="true"> 기본
 				</label>
-				<button type="submit">저장</button>
+				<button type="submit" class="outline">저장</button>
 			</form>
 		</div>
 
@@ -287,7 +287,7 @@
 						<li><kbd>Esc</kbd> 패널 · 도움말 닫기</li>
 						<li><kbd>?</kbd> 이 도움말 열기 / 닫기</li>
 					</ul>
-					<button type="button" x-on:click="hideHelp">닫기</button>
+					<button type="button" class="plain" x-on:click="hideHelp">닫기</button>
 				</div>
 			</div>
 		</div>

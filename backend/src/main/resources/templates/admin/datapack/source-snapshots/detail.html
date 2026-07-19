@@ -20,7 +20,7 @@
 			<p>raw 전문은 노출하지 않고 source snapshot metadata와 evidence 위치만 표시합니다.</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/datapack/source-snapshots/page}">목록</a>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/source-snapshots/page}">목록</a>
 		</div>
 	</header>
 
@@ -218,7 +218,7 @@
 					<input name="idempotencyKey" required>
 				</label>
 			</div>
-			<button type="submit">LOCKED snapshot 저장</button>
+			<button type="submit" class="primary">LOCKED snapshot 저장</button>
 		</form>
 	</section>
 
@@ -247,7 +247,7 @@
 				idempotency key
 				<input name="idempotencyKey" required>
 			</label>
-			<button type="submit">Normalization run 요청</button>
+			<button type="submit" class="outline">Normalization run 요청</button>
 		</form>
 	</section>
 </main>

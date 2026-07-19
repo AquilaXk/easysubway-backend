@@ -41,8 +41,8 @@
 				<option value="candidate" th:selected="${filter.selectedSort('candidate')}">후보 ID순</option>
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
-			<button type="submit">검색</button>
-			<a class="admin-btn" th:href="@{/admin/datapack/candidates/page}">초기화</a>
+			<button type="submit" class="outline">검색</button>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/candidates/page}">초기화</a>
 		</form>
 		<div class="table-filters" th:if="${filter.active()}">
 			<div class="filter-chips" aria-label="적용된 필터">

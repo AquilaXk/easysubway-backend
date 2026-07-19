@@ -28,7 +28,7 @@
 	      th:attr="hx-get=@{/admin/search}" hx-trigger="submit, keyup changed delay:300ms">
 		<input type="search" name="q" th:value="${query}"
 		       placeholder="메뉴·역·제보 검색" aria-label="검색어" autocomplete="off">
-		<button type="submit">검색</button>
+		<button type="submit" class="outline">검색</button>
 	</form>
 
 	<div id="search-results">

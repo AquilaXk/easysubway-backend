@@ -20,8 +20,8 @@
 			<p>시설 종류, 출구, 층, 좌표, 설명, 상태, 확인 상태, 출처를 확인합니다.</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/facilities/editor/page(stationId=${selectedStationId},facilityId='__new')}">새 시설</a>
-			<a class="admin-btn" th:href="@{/admin/facilities/page}">상태판</a>
+			<a class="admin-btn outline" th:href="@{/admin/facilities/editor/page(stationId=${selectedStationId},facilityId='__new')}">새 시설</a>
+			<a class="admin-btn plain" th:href="@{/admin/facilities/page}">상태판</a>
 		</div>
 	</header>
 	<div class="alert warning" th:if="${!masterDataWritable}">
@@ -47,7 +47,7 @@
 						        th:text="${station.stationName}">상록수</option>
 					</select>
 				</label>
-				<button type="submit">역 시설 보기</button>
+				<button type="submit" class="outline">역 시설 보기</button>
 			</form>
 
 			<div class="admin-table-scroll" tabindex="0" role="group"
@@ -65,7 +65,7 @@
 					<td th:text="${facility.facilityName}">엘리베이터</td>
 					<td th:text="${facility.statusLabel}">정상</td>
 					<td>
-						<a class="admin-btn"
+						<a class="admin-btn outline"
 						   th:href="@{/admin/facilities/editor/page(stationId=${selectedStationId},facilityId=${facility.facilityId})}">열기</a>
 					</td>
 				</tr>
@@ -155,7 +155,7 @@
 					<span class="meta">사용자 위치 설명</span>
 					<textarea name="description" th:text="${facilityForm.description}"></textarea>
 				</label>
-				<button type="submit" th:disabled="${!masterDataWritable}" th:text="${selectedFacility == null ? '등록' : '저장'}">저장</button>
+				<button type="submit" class="primary" th:disabled="${!masterDataWritable}" th:text="${selectedFacility == null ? '등록' : '저장'}">저장</button>
 			</form>
 		</section>
 	</div>

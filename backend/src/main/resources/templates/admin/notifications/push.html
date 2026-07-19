@@ -197,7 +197,7 @@
 					</select>
 					<input type="date" name="from" th:value="${historyFrom}" aria-label="발송 기간 시작">
 					<input type="date" name="to" th:value="${historyTo}" aria-label="발송 기간 종료">
-					<button type="submit">필터 적용</button>
+					<button type="submit" class="outline admin-filter-apply">필터 적용</button>
 				</form>
 			</div>
 
@@ -299,7 +299,7 @@
 					<p>선택한 실패 알림을 재발송합니다. 이미 발송 성공한 건은 자동으로 제외되며,
 						한 번에 최대 <strong th:text="${resendLimit}">50</strong>건까지 처리합니다.
 						상한을 넘으면 재발송되지 않으니 나눠서 처리하세요.</p>
-					<button type="submit" x-bind:disabled="submitDisabled">선택한 실패 건 재발송</button>
+					<button type="submit" class="primary" x-bind:disabled="submitDisabled">선택한 실패 건 재발송</button>
 				</details>
 			</form>
 

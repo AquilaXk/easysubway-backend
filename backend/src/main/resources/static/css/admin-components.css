@@ -14,12 +14,15 @@
 }
 
 /*
- * 버튼 primitive(V6-04, #2276): shape·크기·타이포는 이 base가 소유하고, 강조(파랑 채움)는 명시적
- * class(.primary)가 소유하는 게 canonical이다. 아래 base의 `background: var(--admin-primary)`는
- * 화면 이관(V6-07~10) 전까지 유지하는 COMPAT 기본값이다 — class 없는 button/`.admin-btn`이 파랑으로
- * 계속 렌더돼 기존 화면 회귀를 막는다. 화면 owner가 명시적 `.primary`로 이관하면 이 기본값을 neutral로
- * 낮춘다. `.secondary`(warn)·`.danger`는 이미 명시적 class이며, `.primary`는 강조를 명시화하는 canonical
- * 마커다(현재 값은 compat 기본값과 동일). raw 색·shadow 없이 token만 사용한다. */
+ * 버튼 primitive(V6-04 #2276, 위계 3단 확장 V6-13 #2313): shape·크기·타이포는 이 base가 소유하고,
+ * 위계(filled/outline/plain)는 명시적 class(.primary/.outline/.plain)가 소유하는 게 canonical이다.
+ * 아래 base의 `background: var(--admin-primary)`는 화면 이관(V6-07~10) 전까지 유지하는 COMPAT
+ * 기본값이다 — class 없는 button/`.admin-btn`이 파랑으로 계속 렌더돼 기존 화면 회귀를 막는다. 화면
+ * owner가 명시적 class로 이관하면 이 기본값을 neutral로 낮춘다. `.danger`는 파괴적 액션 전용 filled로
+ * 유지한다. 화면당 filled(`.primary`/`.danger`)는 그 화면의 대표 액션 1개가 원칙이고, 나머지 액션은
+ * `.outline`(보조, 테두리만) 또는 `.plain`(내비게이션성, 텍스트/링크형)을 쓴다. 구 `.secondary`(주황
+ * 채움)는 위계가 아닌 또 다른 강조였던 문제로 폐지하고 `.outline`으로 이관했다(#2313, 원 계약 #2280).
+ * raw 색·shadow 없이 token만 사용한다. */
 .admin-btn,
 .admin-v3 button {
 	display: inline-flex;
@@ -46,6 +49,38 @@
 .admin-btn.primary:hover,
 .admin-v3 button.primary:hover {
 	background: var(--admin-primary-hover);
+}
+
+/* 보조 액션 canonical 명시 class(#2313) — 투명 배경 + 테두리, primary보다 무게를 낮추되 버튼 형태(크기)는
+   유지한다. 데이터를 바꾸지만 그 화면의 대표 액션은 아닌 액션, 또는 filled가 이미 다른 버튼에 쓰인
+   화면의 보조 액션에 부여한다. */
+.admin-btn.outline,
+.admin-v3 button.outline {
+	background: transparent;
+	border: 1px solid var(--admin-border-strong);
+	color: var(--admin-ink);
+}
+
+.admin-btn.outline:hover,
+.admin-v3 button.outline:hover {
+	background: var(--admin-accent-soft);
+}
+
+/* 내비게이션성 액션 canonical 명시 class(#2313) — 배경·테두리 없이 .detail-link와 같은 텍스트/링크 톤.
+   목록으로 돌아가기 등, 그 화면의 데이터를 바꾸지 않고 다른 화면으로 이동만 하는 액션에 부여한다. */
+.admin-btn.plain,
+.admin-v3 button.plain {
+	min-height: 24px;
+	padding: 0;
+	background: transparent;
+	color: var(--admin-accent);
+	font-weight: var(--admin-w-strong);
+	text-decoration: none;
+}
+
+.admin-btn.plain:hover,
+.admin-v3 button.plain:hover {
+	text-decoration: underline;
 }
 
 .admin-v3 .tiny-btn {
@@ -1327,8 +1362,16 @@
 	font-weight: var(--admin-w-medium);
 }
 
+/* `.secondary`(주황 채움)는 #2313에서 `.outline`으로 이관되어 폐지했다. 남은 소비자가 있으면
+   outline과 동일한 무게로 렌더되도록 별칭만 유지한다. */
 .admin-v3 button.secondary {
-	background: var(--admin-warn);
+	background: transparent;
+	border: 1px solid var(--admin-border-strong);
+	color: var(--admin-ink);
+}
+
+.admin-v3 button.secondary:hover {
+	background: var(--admin-accent-soft);
 }
 
 .admin-v3 button.danger {

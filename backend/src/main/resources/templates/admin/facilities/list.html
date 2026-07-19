@@ -20,7 +20,7 @@
 			<p>모든 접근성 시설의 상태·확인 상태·갱신일을 필터링하고 즉시 변경합니다.</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/facilities/editor/page}">시설 등록·수정</a>
+			<a class="admin-btn outline" th:href="@{/admin/facilities/editor/page}">시설 등록·수정</a>
 		</div>
 	</header>
 	<p class="summary">역 상세와 경로 안내에 쓰는 시설 상태를 확인하고 수정합니다.</p>
@@ -73,7 +73,7 @@
 					<option th:each="opt : ${stationFilterOptions}" th:value="${opt.value}"
 					        th:text="${opt.label}" th:selected="${opt.selected}">전체 역</option>
 				</select>
-				<button type="submit">필터 적용</button>
+				<button type="submit" class="outline admin-filter-apply">필터 적용</button>
 			</form>
 			<form th:fragment="facilityView" class="admin-toolbar-form" method="get"
 			      th:action="@{/admin/facilities/page}" role="group" aria-label="정렬"
@@ -88,7 +88,7 @@
 					<option value="attention" th:selected="${selectedSort == 'attention'}">확인 필요 먼저</option>
 					<option value="updated" th:selected="${selectedSort == 'updated'}">갱신일 최신순</option>
 				</select>
-				<button type="submit">정렬 적용</button>
+				<button type="submit" class="outline admin-filter-apply">정렬 적용</button>
 			</form>
 		</div>
 
@@ -175,7 +175,7 @@
 									        th:text="${option.label}">정상</option>
 								</select>
 							</label>
-							<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
+							<button type="submit" class="primary" th:disabled="${!masterDataWritable}">저장</button>
 						</form>
 					</td>
 				</tr>

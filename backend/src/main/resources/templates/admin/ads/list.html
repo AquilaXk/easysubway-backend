@@ -46,7 +46,7 @@
 			<input id="ends-at" name="endsAt" placeholder="2026-07-12T00:00:00Z">
 			<label for="save-reason">변경 사유</label>
 			<input id="save-reason" name="reason" required maxlength="500">
-			<button type="submit">저장</button>
+			<button type="submit" class="primary">저장</button>
 		</form>
 	</section>
 
@@ -90,7 +90,7 @@
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<label>변경 사유 <input name="reason" required maxlength="500"></label>
-						<button type="submit" th:text="${creative.enabled ? '비활성화' : '활성화'}">활성화</button>
+						<button type="submit" class="outline" th:text="${creative.enabled ? '비활성화' : '활성화'}">활성화</button>
 					</form>
 				</td>
 			</tr>

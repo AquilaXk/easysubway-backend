@@ -35,7 +35,7 @@
 			<input type="hidden" th:each="hiddenParam : ${search.get('hidden')}"
 			       th:name="${hiddenParam.key}" th:value="${hiddenParam.value}">
 		</th:block>
-		<button type="submit">검색</button>
+		<button type="submit" class="outline">검색</button>
 	</form>
 
 	<!-- 3: 저장된 뷰(계정별 스냅샷). 적용은 htmx/no-JS 링크, 저장·기본·삭제는 command token + CSRF POST. -->

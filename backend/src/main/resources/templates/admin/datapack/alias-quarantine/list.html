@@ -37,8 +37,8 @@
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
 			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
-			<button type="submit">검색</button>
-			<a class="admin-btn" th:href="@{/admin/datapack/alias-quarantine/page}">초기화</a>
+			<button type="submit" class="outline">검색</button>
+			<a class="admin-btn plain" th:href="@{/admin/datapack/alias-quarantine/page}">초기화</a>
 		</form>
 		<div class="table-filters" th:if="${filter.active()}">
 			<div class="filter-chips" aria-label="적용된 필터">
@@ -101,7 +101,7 @@
 							<span class="sr-only">승인 사유</span>
 							<input name="reason" value="official alias reviewed" required>
 						</label>
-						<button type="submit">승인 저장</button>
+						<button type="submit" class="primary">승인 저장</button>
 					</form>
 					<form class="admin-form" method="post" th:action="@{'/admin/datapack/alias-approvals/' + ${alias.id} + '/reject'}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
@@ -111,7 +111,7 @@
 							<span class="sr-only">반려 사유</span>
 							<input name="reason" value="official alias rejected" required>
 						</label>
-						<button type="submit">반려 저장</button>
+						<button type="submit" class="danger">반려 저장</button>
 					</form>
 				</td>
 			</tr>
@@ -181,7 +181,7 @@
 							<span class="sr-only">해결 사유</span>
 							<input name="resolutionReason" value="quarantine reviewed" required>
 						</label>
-						<button type="submit">해결 저장</button>
+						<button type="submit" class="primary">해결 저장</button>
 					</form>
 				</td>
 			</tr>

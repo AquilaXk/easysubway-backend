@@ -364,7 +364,7 @@ class AdminDesignGuardTest {
 
 		// direct control ≤5: 검색 입력 1 + 검색 버튼 1 + 저장된 뷰 zone 1 + 필터 트리거 1 + 보기 설정 트리거 1.
 		assertThat(count(Pattern.compile("type=\"search\""), fragment)).as("검색 입력 1개").isEqualTo(1);
-		assertThat(count(Pattern.compile("<button type=\"submit\">검색</button>"), fragment))
+		assertThat(count(Pattern.compile("<button type=\"submit\" class=\"outline\">검색</button>"), fragment))
 			.as("검색 버튼 1개").isEqualTo(1);
 		assertThat(count(Pattern.compile("class=\"admin-toolbar-sheet-trigger"), fragment))
 			.as("시트 트리거 2개(필터·보기 설정)").isEqualTo(2);

@@ -24,8 +24,8 @@
 			</p>
 		</div>
 		<div class="admin-actions">
-			<a class="admin-btn" th:href="@{/admin/field-verifications/stations/{stationId}/export.csv(stationId=${verification.stationId})}">CSV 내보내기</a>
-			<a class="admin-btn" th:href="@{/admin/field-verifications/page}">목록</a>
+			<a class="admin-btn outline" th:href="@{/admin/field-verifications/stations/{stationId}/export.csv(stationId=${verification.stationId})}">CSV 내보내기</a>
+			<a class="admin-btn plain" th:href="@{/admin/field-verifications/page}">목록</a>
 		</div>
 	</header>
 	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
@@ -84,7 +84,7 @@
 								<textarea name="note"
 								          th:text="${fieldVerificationFailedItemId == item.itemId ? fieldVerificationForm.note : item.note}">메모</textarea>
 							</label>
-							<button type="submit">상태 저장</button>
+							<button type="submit" class="primary">상태 저장</button>
 						</form>
 					</td>
 				</tr>
