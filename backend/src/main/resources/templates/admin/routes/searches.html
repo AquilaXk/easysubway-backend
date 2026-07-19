@@ -91,32 +91,12 @@
 					<canvas id="route-search-trend-canvas" class="trend-canvas" role="img"
 					        th:attr="aria-label=|경로 검색 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
 				</div>
-				<details class="dashboard-details">
-					<summary>데이터 표로 보기</summary>
-					<div class="admin-table-scroll" tabindex="0" role="group"
-					     aria-label="가로로 스크롤 가능한 데이터 표">
-					<table class="static-table">
-						<thead>
-						<tr>
-							<th scope="col">날짜</th>
-							<th th:each="s : ${trendChart.series}" scope="col" th:text="${s.label}">지표</th>
-						</tr>
-						</thead>
-						<tbody>
-						<tr th:each="label, iter : ${trendChart.labels}">
-							<th scope="row" th:text="${label}">날짜</th>
-							<td th:each="s : ${trendChart.series}"
-							    th:text="${s.values[iter.index] != null ? s.values[iter.index] : '—'}">0</td>
-						</tr>
-						</tbody>
-					</table>
-					</div>
-				</details>
+				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
 			</section>
 		</div>
 	</div>
 
-	<section>
+	<section class="admin-panel">
 		<h2>차단 상위 역</h2>
 		<p>차단된 경로 검색에 가장 많이 얽힌 역입니다. 최다 차단 역은 강조됩니다. 역을 눌러 허브로 이동합니다.</p>
 		<div class="admin-table-scroll" tabindex="0" role="group"
@@ -143,7 +123,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>이동 프로필별 검색</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -164,7 +144,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>지역별 사용량</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -187,7 +167,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>차단 사유별 현황</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -208,7 +188,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>ETA source 현황</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -231,7 +211,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>fallback 사유별 현황</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -254,7 +234,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>품질 신호 구분</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -277,7 +257,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>알림 기준</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">

@@ -1,6 +1,7 @@
 /*
  * admin-components.css — V6-04 CSS 책임 분리(#2276): 재사용 UI 프리미티브(버튼·입력·표·카드·패널·폼·알림·토스트·드로어·뱃지·탭·필터·명령 팔레트·알림 센터·사용자 메뉴 등).
- * panel chrome은 명시적 class(.admin-card/.admin-panel)가 canonical이고, class 없는 section/button 기본값은 화면 이관 전까지 유지하는 compat 레이어다(아래 주석 참조).
+ * panel chrome은 명시적 class(.admin-card/.admin-panel/.admin-section-flat)가 canonical이다(bare section compat은 #2313 PR③에서 제거).
+ * class 없는 button 기본값은 화면 이관 전까지 유지하는 compat 레이어다(아래 주석 참조).
  */
 
 .admin-btn,
@@ -130,13 +131,11 @@
 
 /*
  * panel chrome(V6-04, #2276): 명시적 class `.admin-card`(및 `.admin-panel`)가 canonical panel chrome을
- * 소유한다. 같은 block의 class 없는 `.admin-v3 section` 및 다른 요소 selector는 화면 이관(V6-07~10)
- * 전까지 유지하는 COMPAT 경로다 — 기존 화면이 bare `<section>`을 카드로 계속 렌더해 회귀를 막는다.
- * 화면 owner가 명시적 `.admin-card`로 이관하면 이 요소 selector들을 이 block에서 제거한다.
+ * 소유한다. class 없는 bare `<section>` compat 경로는 전 화면 이관 완료로 제거했다(#2313 PR③) — 이제
+ * panel 계열 chrome은 `.admin-card`/`.admin-panel` 명시 class로만 렌더된다.
  * radius·shadow·surface는 모두 token만 사용한다(raw 값 금지). */
 .admin-card,
 .admin-panel,
-.admin-v3 section,
 .admin-v3 table,
 .admin-v3 .metric,
 .admin-v3 .alert,
@@ -155,7 +154,7 @@
 	border-collapse: collapse;
 }
 
-.admin-v3 section,
+.admin-panel,
 .admin-card {
 	overflow-x: visible;
 }
@@ -175,8 +174,11 @@
 }
 
 /* 플랫 섹션(#2047, 오너 확정 2026-07-13): 1px 보더 패널은 핵심 지표 묶음·데이터 표·폼에만 두고,
-   보조 섹션(출시 준비·먼저 확인할 제보·운영 이상 신호 등)은 박스를 벗겨 제목+제목 아래 얇은 1px
-   구분선(.admin-panel-head의 border-bottom)+여백으로 그룹핑한다. 앱 원칙 "블록 금지 → 행+구분선+여백" 계승. */
+   보조 섹션은 박스를 벗겨 제목+제목 아래 얇은 1px 구분선(.admin-panel-head의 border-bottom)+여백으로
+   그룹핑한다. 앱 원칙 "블록 금지 → 행+구분선+여백" 계승. 대시보드 하단 섹션(출시 준비·먼저 확인할
+   제보·운영 이상 신호)은 상단 핵심 지표 카드와 층위를 맞추려 #2313 PR③에서 `.admin-panel`로
+   이관했다 — 현재 소비자는 통합 검색 결과 그룹(search.html)·발송 실패 사유별 분해(notifications/push.html,
+   admin-panel 안 중첩 flat 서브그룹) 등. */
 .admin-v3 section.admin-section-flat {
 	border: 0;
 	border-radius: 0;
@@ -1364,18 +1366,6 @@
 	gap: 8px;
 	min-height: 40px;
 	font-weight: var(--admin-w-medium);
-}
-
-/* `.secondary`(주황 채움)는 #2313에서 `.outline`으로 이관되어 폐지했다. 남은 소비자가 있으면
-   outline과 동일한 무게로 렌더되도록 별칭만 유지한다. */
-.admin-v3 button.secondary {
-	background: transparent;
-	border: 1px solid var(--admin-border-strong);
-	color: var(--admin-ink);
-}
-
-.admin-v3 button.secondary:hover {
-	background: var(--admin-accent-soft);
 }
 
 .admin-v3 button.danger {

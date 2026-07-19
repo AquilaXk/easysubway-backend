@@ -22,7 +22,7 @@
 	</header>
 	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
-	<section>
+	<section class="admin-panel">
 		<h2>허용된 배치 작업</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -64,7 +64,7 @@
 		<div class="admin-auto-refresh" hidden x-data="autoRefresh"
 		     data-refresh-url="/admin/batches/page/live" data-refresh-target="#batch-live"
 		     data-refresh-interval="10000" th:attr="data-refresh-active=${hasRunning} ? 'true' : 'false'"></div>
-	<section>
+	<section class="admin-panel">
 		<h2>잡별 실행 이력</h2>
 		<p>잡별 최근 30회 실행의 소요 시간(ms)과 성공/실패를 막대 차트로 봅니다. Chart.js 미로딩 시 아래 표로 대체됩니다.</p>
 		<div class="batch-history-charts">
@@ -102,7 +102,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>최근 배치 실행</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">

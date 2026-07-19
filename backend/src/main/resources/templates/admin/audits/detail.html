@@ -29,7 +29,7 @@
 			</div>
 		</header>
 
-		<section aria-labelledby="audit-detail-heading">
+		<section class="admin-panel" aria-labelledby="audit-detail-heading">
 			<h2 id="audit-detail-heading">이벤트 상세</h2>
 			<dl class="detail-list">
 				<dt>발생</dt>
@@ -62,7 +62,7 @@
 			</dl>
 		</section>
 
-		<section aria-labelledby="audit-timeline-heading" class="audit-timeline">
+		<section class="admin-panel audit-timeline" aria-labelledby="audit-timeline-heading">
 			<h2 id="audit-timeline-heading" th:text="'같은 담당자(' + ${event.actor} + ') 전후 흐름'">전후 흐름</h2>
 			<p class="section-hint" th:if="${timelineBefore.isEmpty() and timelineAfter.isEmpty()}">
 				이 담당자의 다른 이벤트가 없습니다.

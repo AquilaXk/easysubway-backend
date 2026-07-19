@@ -138,7 +138,7 @@
 		</div>
 	</div>
 
-	<section>
+	<section class="admin-panel">
 		<h2>상태별 알림</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -161,7 +161,7 @@
 		</div>
 	</section>
 
-	<section aria-labelledby="push-history-heading">
+	<section class="admin-panel" aria-labelledby="push-history-heading">
 		<h2 id="push-history-heading">발송 이력</h2>
 		<p class="section-hint">수신자 식별자는 개인정보 보호를 위해 마스킹됩니다. 열람 기록은 감사 로그에 남습니다.</p>
 
@@ -214,7 +214,7 @@
 			  막대는 CSP-safe한 서버 SVG(인라인 style 금지)로 그리며, 각 막대는 사유 드릴다운 링크다.
 			  분해 수치 = 해당 사유로 필터한 목록 건수(같은 질의 공유).
 			-->
-			<section class="failure-breakdown" th:if="${!failureBreakdown.isEmpty()}"
+			<section class="admin-section-flat failure-breakdown" th:if="${!failureBreakdown.isEmpty()}"
 			         aria-labelledby="push-failure-breakdown-heading">
 				<h3 id="push-failure-breakdown-heading">실패 사유별 분해</h3>
 				<ul class="breakdown-bars">

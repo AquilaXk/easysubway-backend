@@ -313,7 +313,7 @@ class AdminDesignGuardTest {
 			.contains(".admin-table-scroll thead th:first-child {");
 		assertThat(rule(css, "html,\\s*body\\.admin-v3")).contains("overflow-x: hidden;");
 		assertThat(rule(css, "\\.admin-main")).doesNotContain("overflow-x: auto;");
-		assertThat(rule(css, "\\.admin-v3 section,\\s*\\.admin-card"))
+		assertThat(rule(css, "\\.admin-panel,\\s*\\.admin-card"))
 			.doesNotContain("overflow-x: auto;");
 		assertThat(rule(css, "\\.admin-v3 th"))
 			.doesNotContain("position: sticky;")

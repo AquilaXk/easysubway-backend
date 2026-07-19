@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>추이 데이터 표 대체</title>
+</head>
+<body>
+<!--
+  단일 트렌드 차트 데이터 표 대체(#2313 SonarCloud 신규 중복 정리): routes/searches·routes/feedback·usage/activity의
+  단일 trend-chart-panel이 각자 인라인으로 들고 있던 동일한 details/table 마크업을 fragment 하나로 추출했다.
+  canvas 차트와 같은 데이터를 no-JS·스크린리더 대체 표로 제공한다(details는 기본 접힘). 계약은
+  AdminMetricChart 모양(series[].label, labels[], series[].values[])의 모델 하나(trendChart)만 받는다.
+-->
+<details th:fragment="table(trendChart)" class="dashboard-details">
+	<summary>데이터 표로 보기</summary>
+	<div class="admin-table-scroll" tabindex="0" role="group"
+	     aria-label="가로로 스크롤 가능한 데이터 표">
+	<table class="static-table">
+		<thead>
+		<tr>
+			<th scope="col">날짜</th>
+			<th th:each="s : ${trendChart.series}" scope="col" th:text="${s.label}">지표</th>
+		</tr>
+		</thead>
+		<tbody>
+		<tr th:each="label, iter : ${trendChart.labels}">
+			<th scope="row" th:text="${label}">날짜</th>
+			<td th:each="s : ${trendChart.series}"
+			    th:text="${s.values[iter.index] != null ? s.values[iter.index] : '—'}">0</td>
+		</tr>
+		</tbody>
+	</table>
+	</div>
+</details>
+</body>
+</html>

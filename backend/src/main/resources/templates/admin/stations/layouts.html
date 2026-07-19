@@ -37,7 +37,7 @@
 	</div>
 	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
-	<section>
+	<section class="admin-panel">
 		<h2>구조도 기준 자료</h2>
 		<p class="empty" th:if="${layoutSources.isEmpty()}">등록된 구조도 기준 자료가 없습니다.</p>
 		<div class="admin-table-scroll" tabindex="0" role="group"
@@ -111,7 +111,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>쉬운 내부 구조도</h2>
 		<p class="empty" th:if="${layouts.isEmpty()}">등록된 쉬운 내부 구조도가 없습니다.</p>
 		<div class="admin-table-scroll" tabindex="0" role="group"
@@ -158,7 +158,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>내부 이동 노드</h2>
 		<p class="empty" th:if="${routeNodes.isEmpty()}">등록된 내부 이동 노드가 없습니다.</p>
 		<div class="admin-table-scroll" tabindex="0" role="group"
@@ -209,7 +209,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>내부 이동 간선</h2>
 		<p class="empty" th:if="${routeEdges.isEmpty()}">등록된 내부 이동 간선이 없습니다.</p>
 		<div class="admin-table-scroll" tabindex="0" role="group"

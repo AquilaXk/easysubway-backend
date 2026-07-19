@@ -80,32 +80,12 @@
 					<canvas id="route-feedback-trend-canvas" class="trend-canvas" role="img"
 					        th:attr="aria-label=|유형별 피드백 최근 ${trendDays}일 추이|,data-chart=${trendJson}"></canvas>
 				</div>
-				<details class="dashboard-details">
-					<summary>데이터 표로 보기</summary>
-					<div class="admin-table-scroll" tabindex="0" role="group"
-					     aria-label="가로로 스크롤 가능한 데이터 표">
-					<table class="static-table">
-						<thead>
-						<tr>
-							<th scope="col">날짜</th>
-							<th th:each="s : ${trendChart.series}" scope="col" th:text="${s.label}">지표</th>
-						</tr>
-						</thead>
-						<tbody>
-						<tr th:each="label, iter : ${trendChart.labels}">
-							<th scope="row" th:text="${label}">날짜</th>
-							<td th:each="s : ${trendChart.series}"
-							    th:text="${s.values[iter.index] != null ? s.values[iter.index] : '—'}">0</td>
-						</tr>
-						</tbody>
-					</table>
-					</div>
-				</details>
+				<div th:replace="~{admin/fragments/trend-chart-table :: table(${trendChart})}"></div>
 			</section>
 		</div>
 	</div>
 
-	<section>
+	<section class="admin-panel">
 		<h2>평점별 피드백</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -128,7 +108,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>최근 현장 차단 신고</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -156,7 +136,7 @@
 		</div>
 	</section>
 
-	<section>
+	<section class="admin-panel">
 		<h2>ETA 보정 bucket</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
