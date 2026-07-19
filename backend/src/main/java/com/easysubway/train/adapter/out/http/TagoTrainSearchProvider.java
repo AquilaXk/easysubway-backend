@@ -392,6 +392,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 
 	private String trainType(String value) {
 		String normalized = value.replaceAll("[^0-9A-Za-z가-힣]", "").toUpperCase(Locale.ROOT);
+		if (normalized.startsWith("KTX산천")) return "KTX_SANCHEON";
 		return TRAIN_TYPES.getOrDefault(normalized, normalized);
 	}
 

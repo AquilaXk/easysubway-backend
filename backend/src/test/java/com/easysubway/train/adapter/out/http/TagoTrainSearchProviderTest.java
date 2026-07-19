@@ -81,8 +81,8 @@ class TagoTrainSearchProviderTest {
 				case "GetVhcleKndList" -> respond(exchange, catalogResponse("""
 					[
 					  {"vehiclekndid":"00","vehiclekndnm":"KTX"},
-					  {"vehiclekndid":"01","vehiclekndnm":"KTX-산천"},
-					  {"vehiclekndid":"10","vehiclekndnm":"KTX-산천"},
+					  {"vehiclekndid":"01","vehiclekndnm":"KTX-산천(A-type)"},
+					  {"vehiclekndid":"10","vehiclekndnm":"KTX-산천(B-type)"},
 					  {"vehiclekndid":"02","vehiclekndnm":"SRT"},
 					  {"vehiclekndid":"03","vehiclekndnm":"ITX-마음"},
 					  {"vehiclekndid":"04","vehiclekndnm":"ITX-새마을"},
