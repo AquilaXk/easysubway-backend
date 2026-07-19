@@ -382,7 +382,7 @@ class DataCollectionServiceTest {
 			DataCollectionSource.TRANSIT_MASTER,
 			DataCollectionStatus.RUNNING,
 			"admin-user",
-			LocalDateTime.of(2026, 7, 18, 12, 0),
+			LocalDateTime.now().minusMinutes(1),
 			null,
 			0,
 			null,
