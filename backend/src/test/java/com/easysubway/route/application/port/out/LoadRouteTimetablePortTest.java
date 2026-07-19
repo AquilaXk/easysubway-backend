@@ -1,8 +1,11 @@
 package com.easysubway.route.application.port.out;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -55,5 +58,19 @@ class LoadRouteTimetablePortTest {
 			0,
 			false
 		)).isInstanceOf(IllegalArgumentException.class);
+	}
+	@Test
+	@DisplayName("접근성 snapshot row는 immutable copy로 보관한다")
+	void routeAccessDataCopiesRows() {
+		var nodes = new ArrayList<>(List.of(
+			new LoadRouteTimetablePort.PathwayNode("node-1", "station-a", "line-a", "PLATFORM")
+		));
+		var accessData = new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(), List.of(), List.of());
+		nodes.clear();
+		assertThat(accessData.pathwayNodes()).hasSize(1);
+		assertThatThrownBy(() -> accessData.pathwayNodes().clear())
+			.isInstanceOf(UnsupportedOperationException.class);
+		assertThat(LoadRouteTimetablePort.RouteTimetable.empty().routeAccessData())
+			.isEqualTo(LoadRouteTimetablePort.RouteAccessData.empty());
 	}
 }

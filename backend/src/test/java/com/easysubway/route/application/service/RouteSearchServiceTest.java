@@ -1584,10 +1584,8 @@ class RouteSearchServiceTest {
 		// 접근성 warning이 있어도 레거시 그래프를 먼저 시도하지 않는다 — 레거시가 채택되면
 		// timetableArtifactId가 null이 돼 그 게이트에서 막히기 때문이다(ITX pilot 역처럼
 		// STATION_LINES는 있지만 접근성 시설 데이터가 없는 역에서 실제로 발생했다). 다만
-		// RAPTOR 자체는 접근성 시설 데이터를 참조하지 않으므로, RouteSearchService가
-		// ephemeralTimetableRouteResult()에서 레거시와 같은 기준(hasStairOnlyAccess/
-		// routeWarnings, 같은 LoadTransitMasterPort 데이터)으로 STAIR_ONLY_ACCESS 경고를
-		// 재부착한다 — source는 TIMETABLE_RAPTOR로 유지하면서 접근성 경고 정보는 잃지 않는다.
+		// canonical access transition이 비어 있어 RAPTOR가 LOW_DATA_CONFIDENCE를 남기고,
+		// 후보 안정화는 레거시 station evidence의 STAIR_ONLY_ACCESS도 보존한다.
 		var delegate = routeTimetablePort();
 		var port = new LoadRouteTimetablePort() {
 			@Override
@@ -1617,7 +1615,7 @@ class RouteSearchServiceTest {
 		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.PLANNED);
 		assertThat(plan.itineraries().getFirst().warnings())
 			.extracting("code")
-			.containsExactly(RouteWarningCode.STAIR_ONLY_ACCESS);
+			.containsExactly(RouteWarningCode.LOW_DATA_CONFIDENCE, RouteWarningCode.STAIR_ONLY_ACCESS);
 	}
 
 	@Test
@@ -1660,17 +1658,35 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
-	@DisplayName("V2 planner는 strict step-free 요청에서 시간표 scan으로 접근성 차단을 우회하지 않는다")
-	void routeV2PlannerKeepsAccessibilityBlockingForStrictStepFreeWithTimetable() {
+	@DisplayName("V2 planner는 strict wheelchair 요청을 RAPTOR에서 BLOCKED_ACCESSIBILITY로 진단한다")
+	void routeV2PlannerDiagnosesStrictWheelchairAccessibilityBlockInRaptor() {
 		var repository = new InMemoryRouteSearchRepository();
-		var routeSearchService = new RouteSearchService(repository, repository, new StairOnlyTransitMasterPort(), CLOCK);
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new StaleAccessibilityFacilityTransitMasterPort(), CLOCK);
 		var planner = new RouteV2Planner(routeSearchService, routeTimetablePort());
 
-		var plan = planner.search(routeV2Command(ConstraintMode.STRICT_STEP_FREE, MobilityType.WHEELCHAIR, 1, 3));
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a",
+			"station-b",
+			OffsetDateTime.parse("2026-07-01T08:59:00+09:00"),
+			MobilityType.WHEELCHAIR,
+			ConstraintMode.STRICT_STEP_FREE,
+			false,
+			1,
+			3
+		));
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.BLOCKED_ACCESSIBILITY);
+		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
 		assertThat(plan.itineraries()).hasSize(1);
-		assertThat(plan.itineraries().getFirst().status()).isEqualTo(RouteSearchStatus.BLOCKED);
+		assertThat(plan.itineraries().getFirst()).satisfies(itinerary -> {
+			assertThat(itinerary.status()).isEqualTo(RouteSearchStatus.BLOCKED);
+			assertThat(itinerary.steps()).isEmpty();
+			assertThat(itinerary.warnings()).extracting("code")
+				.containsExactly(RouteWarningCode.LOW_DATA_CONFIDENCE, RouteWarningCode.STALE_ACCESSIBILITY_DATA);
+			assertThat(itinerary.blockedReasons())
+				.containsExactly("검증된 계단 없는 접근 경로를 확인할 수 없습니다.");
+		});
 	}
 
 	@Test
@@ -4701,7 +4717,7 @@ class RouteSearchServiceTest {
 					AccessibilityFacilityType.ELEVATOR,
 					AccessibilityFacilityStatus.NORMAL,
 					DataConfidenceLevel.HIGH,
-					LocalDate.of(2026, 5, 1)
+					LocalDate.of(2026, 6, 13)
 				),
 				facility(
 					"facility-b-elevator",
@@ -4710,7 +4726,7 @@ class RouteSearchServiceTest {
 					AccessibilityFacilityType.ELEVATOR,
 					AccessibilityFacilityStatus.NORMAL,
 					DataConfidenceLevel.HIGH,
-					LocalDate.of(2026, 6, 13)
+					LocalDate.of(2026, 5, 1)
 				)
 			);
 		}

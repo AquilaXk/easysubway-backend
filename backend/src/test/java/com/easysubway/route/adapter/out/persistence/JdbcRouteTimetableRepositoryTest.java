@@ -27,7 +27,11 @@ class JdbcRouteTimetableRepositoryTest {
 		);
 		jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.execute("DROP ALL OBJECTS");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V16__datapack_source_snapshots.sql'");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V17__datapack_alias_quarantine_ledgers.sql'");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V19__datapack_route_edge_evidence.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
+		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V30__canonical_station_pathways.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbcTemplate.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V61__timetable_snapshot_state.sql'");
@@ -90,7 +94,7 @@ class JdbcRouteTimetableRepositoryTest {
 			WHERE service_class = 'ITX_CHEONGCHUN'
 			""");
 
-		assertThat(freshKey).isEqualTo("a".repeat(64) + "2999-01-01T00:00:00Z");
+		assertThat(freshKey).isEqualTo("a".repeat(64) + "b".repeat(64) + "2999-01-01T00:00:00Z");
 		assertThat(repository.timetableCacheKey()).isEqualTo("UNAVAILABLE");
 	}
 
@@ -106,9 +110,27 @@ class JdbcRouteTimetableRepositoryTest {
 			"f".repeat(64)
 		);
 
-		assertThat(firstKey).isEqualTo("a".repeat(64) + "2999-01-01T00:00:00Z");
+		assertThat(firstKey).isEqualTo("a".repeat(64) + "b".repeat(64) + "2999-01-01T00:00:00Z");
 		assertThat(repository.timetableCacheKey())
-			.isEqualTo("f".repeat(64) + "2999-01-01T00:00:00Z")
+			.isEqualTo("f".repeat(64) + "b".repeat(64) + "2999-01-01T00:00:00Z")
+			.isNotEqualTo(firstKey);
+	}
+	@Test
+	@DisplayName("canonical pack SHA가 바뀌면 cache key가 바뀐다")
+	void changesCacheKeyWhenCanonicalPackShaChanges() {
+		insertItxRows("2999-01-01T00:00:00Z");
+		String firstKey = repository.timetableCacheKey();
+		jdbcTemplate.update(
+			"UPDATE timetable_snapshot_history SET canonical_pack_sha256 = ? WHERE snapshot_sha256 = ?",
+			"9".repeat(64),
+			"a".repeat(64)
+		);
+		jdbcTemplate.update(
+			"UPDATE route_service_artifact_evidence SET canonical_pack_sha256 = ? WHERE service_class = 'ITX_CHEONGCHUN'",
+			"9".repeat(64)
+		);
+		assertThat(repository.timetableCacheKey())
+			.isEqualTo("a".repeat(64) + "9".repeat(64) + "2999-01-01T00:00:00Z")
 			.isNotEqualTo(firstKey);
 	}
 
@@ -150,7 +172,7 @@ class JdbcRouteTimetableRepositoryTest {
 
 		var snapshot = repository.loadRouteTimetableSnapshot();
 
-		assertThat(snapshot.cacheKey()).isEqualTo("a".repeat(64) + "2999-01-01T00:00:00Z");
+		assertThat(snapshot.cacheKey()).isEqualTo("a".repeat(64) + "b".repeat(64) + "2999-01-01T00:00:00Z");
 		assertThat(snapshot.timetableArtifactId()).isEqualTo("snapshot-test");
 		assertThat(snapshot.plannerIdentity()).satisfies(identity -> {
 			assertThat(identity.timetableSnapshotSha256()).isEqualTo("a".repeat(64));
@@ -165,6 +187,28 @@ class JdbcRouteTimetableRepositoryTest {
 			.contains("trip-seoul-4-0900", "trip-itx");
 	}
 
+	@Test
+	@DisplayName("접근성 4개 테이블을 timetable snapshot row로 함께 읽는다")
+	void loadsRouteAccessDataWithTimetableSnapshot() {
+		insertTimetableRows();
+		insertItxRows("2999-01-01T00:00:00Z");
+		insertRouteAccessRows();
+		var access = repository.loadRouteTimetableSnapshot().timetable().routeAccessData();
+		assertThat(access.pathwayNodes()).extracting("id")
+			.containsExactly("node-entry", "node-platform");
+		assertThat(access.pathwayEdges()).singleElement().satisfies(edge -> {
+			assertThat(edge.id()).isEqualTo("edge-entry");
+			assertThat(edge.legacyInternalRouteEdgeId()).isEqualTo("legacy-entry");
+			assertThat(edge.durationSeconds()).isEqualTo(120);
+			assertThat(edge.includesStairs()).isFalse();
+		});
+		assertThat(access.transferRules()).singleElement().satisfies(rule ->
+			assertThat(rule.strictStepFreePathwayEdgeId()).isEqualTo("edge-entry"));
+		assertThat(access.routeEdgeEvidence()).singleElement().satisfies(evidence -> {
+			assertThat(evidence.edgeId()).isEqualTo("legacy-entry");
+			assertThat(evidence.strictRouteEligible()).isTrue();
+		});
+	}
 	@Test
 	@DisplayName("missing·schema-invalid·lineage mismatch active snapshot은 모두 fail closed한다")
 	void rejectsMissingInvalidSchemaAndLineageMismatch() {
@@ -322,5 +366,55 @@ class JdbcRouteTimetableRepositoryTest {
 			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class),
 			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_stop_times", Integer.class)
 		);
+	}
+	private void insertRouteAccessRows() {
+		jdbcTemplate.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, row_count, raw_sha256,
+				raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status,
+				redistribution_allowed, credential_redacted, freshness_expires_at
+			) VALUES (
+				'access-snapshot', 'operator-source', 'operator', CURRENT_TIMESTAMP, 1, ?,
+				'local://access', ?, ?, 'ACTIVE', 'VALID', 'ALLOWED', 'SUCCESS', TRUE, TRUE,
+				TIMESTAMP '2999-01-01 00:00:00'
+			)
+			""", "2".repeat(64), "3".repeat(64), "4".repeat(64));
+		jdbcTemplate.update("""
+			INSERT INTO station_pathway_nodes (id, station_id, line_id, node_type, label)
+			VALUES
+				('node-entry', 'station-sangnoksu', 'seoul-4', 'ENTRANCE', '입구'),
+				('node-platform', 'station-sangnoksu', 'seoul-4', 'PLATFORM', '승강장')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO station_pathway_edges (
+				id, from_node_id, to_node_id, duration_seconds, distance_meters,
+				includes_stairs, provenance_kind, verification_status, legacy_internal_route_edge_id
+			) VALUES (
+				'edge-entry', 'node-entry', 'node-platform', 120, 80,
+				FALSE, 'OFFICIAL_SOURCE', 'VERIFIED', 'legacy-entry'
+			)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transfer_rules (
+				id, from_station_id, from_line_id, to_station_id, to_line_id,
+				transfer_type, min_transfer_seconds, pathway_edge_id,
+				strict_step_free_pathway_edge_id, verification_status
+			) VALUES (
+				'transfer-a', 'station-sangnoksu', 'seoul-4', 'station-sangnoksu', 'seoul-4',
+				'IN_STATION', 120, 'edge-entry', 'edge-entry', 'VERIFIED'
+			)
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO route_edge_evidence (
+				id, station_id, line_id, edge_id, edge_type, source_id, source_snapshot_id,
+				provenance_kind, verification_status, last_verified_at, evidence_hash,
+				strict_route_eligible, created_at
+			) VALUES (
+				'evidence-entry', 'station-sangnoksu', 'seoul-4', 'legacy-entry', 'ENTRY',
+				'operator-source', 'access-snapshot', 'OFFICIAL_SOURCE', 'VERIFIED',
+				CURRENT_TIMESTAMP, ?, TRUE, CURRENT_TIMESTAMP
+			)
+			""", "5".repeat(64));
 	}
 }

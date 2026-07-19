@@ -356,20 +356,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 		);
 	}
 
-	// #2095/#2292: RouteV2Planner가 항상 RAPTOR(TIMETABLE_SCAN)를 쓰도록 바뀌면서(레거시 그래프
-	// 우선 시도 생략, stabilizeTimetableRouteCandidatesWithSource의
-	// legacyGraphCandidateAllowed=false) 레거시 buildRouteSearchAlternatives()가 부착하던
-	// 접근성 경고(LOW_DATA_CONFIDENCE/STAIR_ONLY_ACCESS/STALE_ACCESSIBILITY_DATA)가 RAPTOR
-	// 결과에는 전혀 붙지 않게 됐다 — RAPTOR는 시간표 데이터만 참조하고
-	// LoadTransitMasterPort의 출구·시설 데이터를 보지 않기 때문이다. WHEELCHAIR·
-	// STRICT_STEP_FREE는 canUseTimetableRaptor()가 false라 애초에 이 경로를 타지 않고
-	// 레거시로 차단·경고까지 그대로 받으므로 무영향이지만(blocksStairOnlyAccess는 이 두
-	// 프로필에서만 true — RouteProfileWeight 참고), PREFER_STEP_FREE 등 "선호"만 하는
-	// 프로필은 경고 없이 통과해버려 접근성 정보가 유실됐다. 레거시와 동일한 기준
-	// (hasStairOnlyAccess/routeWarnings, 같은 LoadTransitMasterPort 출구·시설 데이터)을
-	// RAPTOR itinerary의 승차·환승·하차 역(진입역 + 각 ride 하차역 — 레거시의
-	// accessibilityStationIds와 동일한 의미)에 그대로 적용해 재부착한다. 완화도 과잉 경고도
-	// 아니고, RAPTOR가 이미 채운 warnings가 있으면 보존한 채 합친다.
+	// RAPTOR transition warning과 station-level 출구·시설 warning은 근거 범위가 다르다.
+	// 시간표 경로가 지나가는 역에 기존 facility warning을 적용한 뒤, RAPTOR가 선택한
+	// transition warning과 합쳐 pathway row가 아직 표현하지 못하는 station evidence도 보존한다.
 	private List<RouteWarning> timetableAccessibilityWarnings(RouteSearchResult routeSearchResult) {
 		List<String> accessibilityStationIds = timetableAccessibilityStationIds(routeSearchResult);
 		boolean stairOnlyAccess = hasStairOnlyAccess(accessibilityStationIds);
@@ -393,6 +382,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 			.filter(step -> "ride".equals(step.stepType()))
 			.map(RouteStep::toStationId)
 			.forEach(stationIds::add);
+		if (!stationIds.contains(routeSearchResult.destinationStationId())) {
+			stationIds.add(routeSearchResult.destinationStationId());
+		}
 		return List.copyOf(stationIds);
 	}
 

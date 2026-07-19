@@ -62,7 +62,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	@Override
 	public String timetableCacheKey() {
 		return activeItxArtifact()
-			.map(artifact -> artifact.snapshotSha256() + artifact.freshUntil())
+			.map(JdbcRouteTimetableRepository::cacheKey)
 			.orElse("UNAVAILABLE");
 	}
 
@@ -75,7 +75,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
 		return activeItxArtifact()
 			.map(artifact -> new RouteTimetableSnapshot(
-				artifact.snapshotSha256() + artifact.freshUntil(),
+				cacheKey(artifact),
 				artifact.snapshotId(),
 				artifact.plannerIdentity(),
 				loadRouteTimetable()
@@ -247,7 +247,88 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					resultSet.getString("source_snapshot_id")
 				)
 			),
-			loadFeedEndDate()
+			loadFeedEndDate(),
+			loadRouteAccessData()
+		);
+	}
+	private RouteAccessData loadRouteAccessData() {
+		return new RouteAccessData(
+			jdbcTemplate.query(
+				"""
+					SELECT id, station_id, line_id, node_type
+					FROM station_pathway_nodes
+					ORDER BY id
+					""",
+				(resultSet, rowNumber) -> new PathwayNode(
+					resultSet.getString("id"),
+					resultSet.getString("station_id"),
+					resultSet.getString("line_id"),
+					resultSet.getString("node_type")
+				)
+			),
+			jdbcTemplate.query(
+				"""
+					SELECT id, from_node_id, to_node_id, duration_seconds, distance_meters,
+						bidirectional, includes_stairs, reliability_score, accessibility_status,
+						provenance_kind, verification_status, legacy_internal_route_edge_id
+					FROM station_pathway_edges
+					ORDER BY id
+					""",
+				(resultSet, rowNumber) -> new PathwayEdge(
+					resultSet.getString("id"),
+					resultSet.getString("from_node_id"),
+					resultSet.getString("to_node_id"),
+					resultSet.getInt("duration_seconds"),
+					resultSet.getInt("distance_meters"),
+					resultSet.getBoolean("bidirectional"),
+					resultSet.getBoolean("includes_stairs"),
+					resultSet.getInt("reliability_score"),
+					resultSet.getString("accessibility_status"),
+					resultSet.getString("provenance_kind"),
+					resultSet.getString("verification_status"),
+					resultSet.getString("legacy_internal_route_edge_id")
+				)
+			),
+			jdbcTemplate.query(
+				"""
+					SELECT id, from_station_id, from_line_id, to_station_id, to_line_id,
+						transfer_type, min_transfer_seconds, pathway_edge_id,
+						strict_step_free_pathway_edge_id, verification_status
+					FROM transfer_rules
+					ORDER BY id
+					""",
+				(resultSet, rowNumber) -> new TransferRule(
+					resultSet.getString("id"),
+					resultSet.getString("from_station_id"),
+					resultSet.getString("from_line_id"),
+					resultSet.getString("to_station_id"),
+					resultSet.getString("to_line_id"),
+					resultSet.getString("transfer_type"),
+					resultSet.getInt("min_transfer_seconds"),
+					resultSet.getString("pathway_edge_id"),
+					resultSet.getString("strict_step_free_pathway_edge_id"),
+					resultSet.getString("verification_status")
+				)
+			),
+			jdbcTemplate.query(
+				"""
+					SELECT id, station_id, line_id, edge_id, edge_type, provenance_kind,
+						verification_status, strict_route_eligible, blocker_reason
+					FROM route_edge_evidence
+					ORDER BY station_id, line_id, edge_type, id
+					""",
+				(resultSet, rowNumber) -> new RouteEdgeEvidence(
+					resultSet.getString("id"),
+					resultSet.getString("station_id"),
+					resultSet.getString("line_id"),
+					resultSet.getString("edge_id"),
+					resultSet.getString("edge_type"),
+					resultSet.getString("provenance_kind"),
+					resultSet.getString("verification_status"),
+					resultSet.getBoolean("strict_route_eligible"),
+					resultSet.getString("blocker_reason")
+				)
+			)
 		);
 	}
 
@@ -271,6 +352,11 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	) {
 	}
 
+	private static String cacheKey(ItxArtifact artifact) {
+		return artifact.snapshotSha256()
+			+ artifact.plannerIdentity().canonicalPackSha256()
+			+ artifact.freshUntil();
+	}
 	private LocalDate loadFeedEndDate() {
 		List<LocalDate> rows = jdbcTemplate.query(
 			"SELECT feed_end_date FROM transit_feed_info LIMIT 1",

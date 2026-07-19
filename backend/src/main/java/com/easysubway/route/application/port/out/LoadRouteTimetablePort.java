@@ -63,8 +63,22 @@ public interface LoadRouteTimetablePort {
 		List<TransitFrequency> transitFrequencies,
 		List<OfficialFare> officialFares,
 		// GTFS feed_info.feed_end_date (개정 유효 종료일). null이면 개정 유효기간 미선언이므로 STALE 강등하지 않는다.
-		LocalDate feedEndDate
+		LocalDate feedEndDate,
+		RouteAccessData routeAccessData
 	) {
+		public RouteTimetable(
+			List<ServiceCalendar> serviceCalendars,
+			List<ServiceCalendarDate> serviceCalendarDates,
+			List<TransitRoute> transitRoutes,
+			List<TransitTrip> transitTrips,
+			List<TransitStopTime> transitStopTimes,
+			List<TransitFrequency> transitFrequencies,
+			List<OfficialFare> officialFares,
+			LocalDate feedEndDate
+		) {
+			this(serviceCalendars, serviceCalendarDates, transitRoutes, transitTrips, transitStopTimes,
+				transitFrequencies, officialFares, feedEndDate, RouteAccessData.empty());
+		}
 		public RouteTimetable(
 			List<ServiceCalendar> serviceCalendars,
 			List<ServiceCalendarDate> serviceCalendarDates,
@@ -98,13 +112,81 @@ public interface LoadRouteTimetablePort {
 			transitStopTimes = List.copyOf(transitStopTimes);
 			transitFrequencies = List.copyOf(transitFrequencies);
 			officialFares = List.copyOf(officialFares);
+			routeAccessData = routeAccessData == null ? RouteAccessData.empty() : routeAccessData;
 		}
 
 		public static RouteTimetable empty() {
-			return new RouteTimetable(List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null);
+			return new RouteTimetable(
+				List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null, RouteAccessData.empty());
 		}
 	}
 
+	record RouteAccessData(
+		List<PathwayNode> pathwayNodes,
+		List<PathwayEdge> pathwayEdges,
+		List<TransferRule> transferRules,
+		List<RouteEdgeEvidence> routeEdgeEvidence
+	) {
+		public RouteAccessData {
+			pathwayNodes = List.copyOf(pathwayNodes);
+			pathwayEdges = List.copyOf(pathwayEdges);
+			transferRules = List.copyOf(transferRules);
+			routeEdgeEvidence = List.copyOf(routeEdgeEvidence);
+		}
+		public static RouteAccessData empty() {
+			return new RouteAccessData(List.of(), List.of(), List.of(), List.of());
+		}
+	}
+	record PathwayNode(String id, String stationId, String lineId, String nodeType) {
+	}
+		record PathwayEdge(
+			String id,
+			String fromNodeId,
+			String toNodeId,
+		int durationSeconds,
+		int distanceMeters,
+		boolean bidirectional,
+		boolean includesStairs,
+		int reliabilityScore,
+			String accessibilityStatus,
+			String provenanceKind,
+			String verificationStatus,
+			String legacyInternalRouteEdgeId
+		) {
+			public PathwayEdge(
+				String id, String fromNodeId, String toNodeId, int durationSeconds, int distanceMeters,
+				boolean bidirectional, boolean includesStairs, int reliabilityScore,
+				String accessibilityStatus, String provenanceKind, String verificationStatus
+			) {
+				this(id, fromNodeId, toNodeId, durationSeconds, distanceMeters, bidirectional, includesStairs,
+					reliabilityScore, accessibilityStatus, provenanceKind, verificationStatus, id);
+			}
+		}
+	record TransferRule(
+		String id,
+		String fromStationId,
+		String fromLineId,
+		String toStationId,
+		String toLineId,
+		String transferType,
+		int minTransferSeconds,
+		String pathwayEdgeId,
+		String strictStepFreePathwayEdgeId,
+		String verificationStatus
+	) {
+	}
+	record RouteEdgeEvidence(
+		String id,
+		String stationId,
+		String lineId,
+		String edgeId,
+		String edgeType,
+		String provenanceKind,
+		String verificationStatus,
+		boolean strictRouteEligible,
+		String blockerReason
+	) {
+	}
 	record ServiceCalendar(
 		String serviceId,
 		boolean monday,

@@ -1,7 +1,6 @@
 package com.easysubway.route.application.service;
 
 import com.easysubway.common.error.InvalidRequestException;
-import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
@@ -15,7 +14,6 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteTransp
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.CompiledTimetable;
-import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.RouteNotFoundException;
@@ -110,7 +108,6 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				throw new InvalidRequestException("authenticated Route V2는 지하철·ITX-청춘 통합 검색만 지원합니다.");
 			}
 			TimetableSnapshot snapshot = timetableRequired
-				&& canUseTimetableRaptor(command)
 				&& routeTimetablePort.hasRouteTimetable()
 				? timetableSnapshot()
 				: null;
@@ -120,10 +117,13 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				}
 				SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 				routeSearchUseCase.validateRouteSearch(searchRouteCommand);
-				List<RouteSearchResult> timetableItineraries = timetableRaptorPlanner.search(
+				RouteTimetableRaptorPlanner.SearchOutcome searchOutcome = timetableRaptorPlanner.searchWithDiagnostics(
 					rankingCommand(command),
 					snapshot.compiledTimetable()
 				);
+				boolean blockedAccessibility = searchOutcome.blockedAccessibility() != null;
+				List<RouteSearchResult> timetableItineraries = blockedAccessibility
+					? List.of(searchOutcome.blockedAccessibility()) : searchOutcome.itineraries();
 				if (timetableItineraries.isEmpty()) {
 					return noTimetableServicePlan(command, snapshot);
 				}
@@ -141,6 +141,9 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 					false
 				);
 				timetableItineraries = stabilizedCandidates.itineraries();
+				if (blockedAccessibility) {
+					return timetablePlan(timetableItineraries, statusesOf(timetableItineraries, false), snapshot);
+				}
 				if (stabilizedCandidates.source() == TimetableCandidateSource.TIMETABLE_SCAN) {
 					timetableItineraries = routeSearchUseCase.applyRealtimeToTimetableCandidates(
 						searchRouteCommand,
@@ -215,11 +218,6 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			snapshot.timetableArtifactId(),
 			snapshot.plannerIdentity()
 		);
-	}
-
-	private boolean canUseTimetableRaptor(SearchRouteV2Command command) {
-		return command.constraintMode() != ConstraintMode.STRICT_STEP_FREE
-			&& command.mobilityType() != MobilityType.WHEELCHAIR;
 	}
 
 	private void rejectUnsupportedMobilityPreset(SearchRouteV2Command command) {
@@ -315,6 +313,12 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		if (itineraries.isEmpty()) {
 			return List.of();
 		}
+		List<RouteSearchResult> found = itineraries.stream()
+			.filter(itinerary -> itinerary.status() == RouteSearchStatus.FOUND)
+			.toList();
+		if (found.isEmpty()) {
+			return itineraries.stream().limit(alternativeCount).toList();
+		}
 		Comparator<RouteSearchResult> fastest = Comparator
 			.comparingLong(this::plannedArrivalEpochSecond)
 			.thenComparingInt(RouteSearchResult::transferCount)
@@ -325,17 +329,25 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			.thenComparingLong(this::plannedArrivalEpochSecond)
 			.thenComparingInt(this::accessibilityRiskScore)
 			.thenComparing(RouteSearchResult::routeSearchId);
-		RouteSearchResult fastestItinerary = itineraries.stream().min(fastest).orElseThrow();
-		RouteSearchResult fewestTransferItinerary = itineraries.stream().min(fewestTransfers).orElseThrow();
+		RouteSearchResult fastestItinerary = found.stream().min(fastest).orElseThrow();
+		RouteSearchResult fewestTransferItinerary = found.stream().min(fewestTransfers).orElseThrow();
+		List<RouteSearchResult> rankedFound;
 		if (fastestItinerary.routeSearchId().equals(fewestTransferItinerary.routeSearchId())) {
-			return List.of(withObjectiveTags(fastestItinerary, List.of("FASTEST", "FEWEST_TRANSFERS")));
+			rankedFound = List.of(withObjectiveTags(fastestItinerary, List.of("FASTEST", "FEWEST_TRANSFERS")));
+		} else {
+			RouteSearchResult fastestResult = withObjectiveTags(fastestItinerary, List.of("FASTEST"));
+			RouteSearchResult fewestResult = withObjectiveTags(fewestTransferItinerary, List.of("FEWEST_TRANSFERS"));
+			rankedFound = requestedObjective == RouteObjective.FASTEST
+				? List.of(fastestResult, fewestResult)
+				: List.of(fewestResult, fastestResult);
 		}
-		RouteSearchResult fastestResult = withObjectiveTags(fastestItinerary, List.of("FASTEST"));
-		RouteSearchResult fewestResult = withObjectiveTags(fewestTransferItinerary, List.of("FEWEST_TRANSFERS"));
-		List<RouteSearchResult> representatives = requestedObjective == RouteObjective.FASTEST
-			? List.of(fastestResult, fewestResult)
-			: List.of(fewestResult, fastestResult);
-		return representatives.stream().limit(alternativeCount).toList();
+		List<RouteSearchResult> ranked = new ArrayList<>(alternativeCount);
+		rankedFound.stream().limit(alternativeCount).forEach(ranked::add);
+		itineraries.stream()
+			.filter(itinerary -> itinerary.status() != RouteSearchStatus.FOUND)
+			.limit(alternativeCount - ranked.size())
+			.forEach(ranked::add);
+		return List.copyOf(ranked);
 	}
 
 	private long plannedArrivalEpochSecond(RouteSearchResult itinerary) {

@@ -3,6 +3,7 @@ package com.easysubway.route.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -64,6 +65,22 @@ class RouteSearchV2ControllerTest {
 	@BeforeEach
 	void setUpRealtimeOverlayCapability() {
 		when(routeSearchUseCase.supportsRealtimeOverlay()).thenReturn(true);
+		when(routeSearchUseCase.stabilizeTimetableRouteCandidatesWithSource(
+			any(), anyInt(), anyInt(), any(), any(), eq(false)
+		)).thenAnswer(invocation -> {
+			var command = (com.easysubway.route.application.port.in.SearchRouteCommand) invocation.getArgument(0);
+			int alternativeCount = invocation.getArgument(2);
+			List<RouteSearchResult> timetableResults = invocation.getArgument(3);
+			java.util.function.UnaryOperator<List<RouteSearchResult>> selectCandidates = invocation.getArgument(4);
+			List<RouteSearchResult> controllerFixture = routeSearchUseCase.searchRouteAlternatives(
+				command, alternativeCount);
+			return new RouteSearchUseCase.TimetableCandidateSelection(
+				selectCandidates.apply(controllerFixture.isEmpty() ? timetableResults : controllerFixture),
+				RouteSearchUseCase.TimetableCandidateSource.TIMETABLE_SCAN
+			);
+		});
+		when(routeSearchUseCase.applyRealtimeToTimetableCandidates(any(), any()))
+			.thenAnswer(invocation -> invocation.getArgument(1));
 	}
 
 	@Test
@@ -91,7 +108,7 @@ class RouteSearchV2ControllerTest {
 					true,
 					false,
 					false,
-					LocalDate.parse("2026-07-01"),
+					LocalDate.parse("2026-06-30"),
 					LocalDate.parse("2026-12-31"),
 					"Asia/Seoul"
 				)),
@@ -119,8 +136,8 @@ class RouteSearchV2ControllerTest {
 						1,
 						"station-sangnoksu",
 						"seoul-4",
-						32400,
-						32400,
+						33900,
+						33900,
 						0,
 						0
 					),
@@ -129,13 +146,16 @@ class RouteSearchV2ControllerTest {
 						2,
 						"station-sadang",
 						"seoul-4",
-						33000,
-						33000,
+						34500,
+						34500,
 						0,
 						0
 					)
 				),
-				List.of()
+				List.of(),
+				List.of(),
+				null,
+				verifiedAccessData()
 			);
 			return new LoadRouteTimetablePort() {
 				@Override
@@ -169,6 +189,31 @@ class RouteSearchV2ControllerTest {
 				"d".repeat(64),
 				"e".repeat(64),
 				"f".repeat(64)
+			);
+		}
+		private static LoadRouteTimetablePort.RouteAccessData verifiedAccessData() {
+			var entry = new LoadRouteTimetablePort.PathwayEdge(
+				"entry", "entrance", "platform-a", 120, 80, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			var exit = new LoadRouteTimetablePort.PathwayEdge(
+				"exit", "platform-b", "gate", 90, 60, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+			return new LoadRouteTimetablePort.RouteAccessData(
+				List.of(
+					new LoadRouteTimetablePort.PathwayNode("entrance", "station-sangnoksu", null, "ENTRANCE"),
+					new LoadRouteTimetablePort.PathwayNode("platform-a", "station-sangnoksu", "seoul-4", "PLATFORM"),
+					new LoadRouteTimetablePort.PathwayNode("platform-b", "station-sadang", "seoul-4", "PLATFORM"),
+					new LoadRouteTimetablePort.PathwayNode("gate", "station-sadang", null, "EXIT")),
+				List.of(entry, exit),
+				List.of(),
+				List.of(
+					new LoadRouteTimetablePort.RouteEdgeEvidence(
+						"entry-evidence", "station-sangnoksu", "seoul-4", "entry", "ENTRY",
+						"OFFICIAL_SOURCE", "VERIFIED", true, null),
+					new LoadRouteTimetablePort.RouteEdgeEvidence(
+						"exit-evidence", "station-sadang", "seoul-4", "exit", "EXIT",
+						"OFFICIAL_SOURCE", "VERIFIED", true, null)
+				)
 			);
 		}
 	}
@@ -384,7 +429,7 @@ class RouteSearchV2ControllerTest {
 			.andExpect(status().isOk())
 			.andExpect(jsonPath("$.success").value(true))
 			.andExpect(jsonPath("$.data.statuses[0]").value("NO_TIMETABLE_SERVICE"))
-			.andExpect(jsonPath("$.data.nextServiceTime").value("2026-07-02T09:00:00+09:00"))
+			.andExpect(jsonPath("$.data.nextServiceTime").value("2026-07-02T09:25:00+09:00"))
 			.andExpect(jsonPath("$.data.plannerIdentity.timetableSnapshotSha256").value("a".repeat(64)))
 			.andExpect(jsonPath("$.data.plannerIdentity.canonicalPackSha256").value("b".repeat(64)))
 			.andExpect(jsonPath("$.data.plannerIdentity.canonicalStationSetSha256").value("d".repeat(64)))
@@ -839,8 +884,8 @@ class RouteSearchV2ControllerTest {
 	}
 
 	@Test
-	@DisplayName("legacy 경로로 강등되는 V2 요청은 기본값과 다른 mobilityPreset을 거부한다")
-	void nonDefaultRouteSearchV2MobilityPresetOnLegacyPathReturnsBadRequestBeforeSearch() throws Exception {
+	@DisplayName("strict V2 RAPTOR 요청은 명시적 mobilityPreset을 허용한다")
+	void strictRouteSearchV2AllowsExplicitMobilityPresetOnRaptor() throws Exception {
 		mockMvc.perform(post("/api/v2/routes/search")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
@@ -856,12 +901,11 @@ class RouteSearchV2ControllerTest {
 					  "alternativeCount": 1
 					}
 					"""))
-			.andExpect(status().isBadRequest())
+			.andExpect(status().isOk())
 			.andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_JSON))
-			.andExpect(jsonPath("$.success").value(false))
-			.andExpect(jsonPath("$.message").value("보행 프리셋은 RAPTOR 시간표 경로에서만 변경할 수 있습니다."));
-
-		verifyNoInteractions(routeSearchUseCase);
+			.andExpect(jsonPath("$.success").value(true))
+			.andExpect(jsonPath("$.data.mobilityPreset").value("STANDARD"))
+			.andExpect(jsonPath("$.data.statuses[0]").value("FOUND"));
 	}
 
 	@Test
