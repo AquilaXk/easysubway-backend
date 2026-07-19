@@ -1,3 +1,5 @@
+import { isDeepStrictEqual } from "node:util";
+
 const SUPPORTED = new Set([
   "$id",
   "$schema",
@@ -8,12 +10,14 @@ const SUPPORTED = new Set([
   "format",
   "items",
   "minItems",
+  "minLength",
   "minimum",
   "pattern",
   "properties",
   "required",
   "title",
   "type",
+  "uniqueItems",
 ]);
 
 export function validateSchema(schema, value) {
@@ -36,6 +40,7 @@ function assertSupported(schema, path) {
 }
 
 function validateScalar(schema, value, path, errors) {
+  validateMinLengthKeyword(schema, path);
   if (schema.const !== undefined && value !== schema.const) {
     errors.push(`${path}: const ${JSON.stringify(schema.const)} 불일치`);
     return true;
@@ -48,16 +53,34 @@ function validateScalar(schema, value, path, errors) {
     errors.push(`${path}: type ${schema.type} 불일치`);
     return true;
   }
-  if (schema.type === "string" && schema.pattern && !new RegExp(schema.pattern).test(value)) {
-    errors.push(`${path}: pattern ${schema.pattern} 불일치`);
-  }
-  if (schema.type === "string" && schema.format && !matchesFormat(schema.format, value)) {
-    errors.push(`${path}: format ${schema.format} 불일치`);
-  }
+  validateString(schema, value, path, errors);
   if (typeof value === "number" && schema.minimum !== undefined && value < schema.minimum) {
     errors.push(`${path}: minimum ${schema.minimum} 미만`);
   }
   return false;
+}
+
+function validateMinLengthKeyword(schema, path) {
+  if (schema.minLength === undefined) return;
+  if (schema.type !== "string") {
+    throw new Error(`json-schema-lite: minLength 사용 시 type: string 명시 필요 (${path})`);
+  }
+  if (!Number.isInteger(schema.minLength) || schema.minLength < 0) {
+    throw new Error(`json-schema-lite: minLength는 0 이상의 정수여야 합니다 (${path})`);
+  }
+}
+
+function validateString(schema, value, path, errors) {
+  if (schema.type !== "string") return;
+  if (schema.pattern && !new RegExp(schema.pattern).test(value)) {
+    errors.push(`${path}: pattern ${schema.pattern} 불일치`);
+  }
+  if (schema.minLength !== undefined && [...value].length < schema.minLength) {
+    errors.push(`${path}: minLength ${schema.minLength} 미만`);
+  }
+  if (schema.format && !matchesFormat(schema.format, value)) {
+    errors.push(`${path}: format ${schema.format} 불일치`);
+  }
 }
 
 function matchesFormat(format, value) {
@@ -121,14 +144,21 @@ function validateObject(schema, value, path, errors) {
 
 function validateArray(schema, value, path, errors) {
   if (schema.type !== "array") {
-    if (schema.items || schema.minItems !== undefined) {
-      throw new Error(`json-schema-lite: items/minItems 사용 시 type: array 명시 필요 (${path})`);
+    if (schema.items || schema.minItems !== undefined || schema.uniqueItems !== undefined) {
+      throw new Error(`json-schema-lite: items/minItems/uniqueItems 사용 시 type: array 명시 필요 (${path})`);
     }
     return;
   }
   if (!Array.isArray(value)) return;
   if (schema.minItems !== undefined && value.length < schema.minItems) {
     errors.push(`${path}: minItems ${schema.minItems} 미만`);
+  }
+  if (schema.uniqueItems !== undefined && typeof schema.uniqueItems !== "boolean") {
+    throw new Error(`json-schema-lite: uniqueItems는 boolean이어야 합니다 (${path})`);
+  }
+  if (schema.uniqueItems === true && value.some((item, index) =>
+    value.slice(0, index).some((previous) => isDeepStrictEqual(previous, item)))) {
+    errors.push(`${path}: uniqueItems 중복`);
   }
   if (schema.items) value.forEach((item, i) => walk(schema.items, item, dot(path, String(i)), errors));
 }
