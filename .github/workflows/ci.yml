@@ -164,6 +164,270 @@ jobs:
           node tools/ci/check-admin-vendor-integrity.mjs
           npm test --prefix tools/qa
 
+      # #2283 V6-11: admin 관련 경로(backend surface)가 바뀌지 않은 PR은 heavy browser step을
+      # 명시적으로 건너뛰고 성공 종료한다(exit 0). backend 출력은 admin 서버 렌더 화면과 QA 하네스
+      # (tools/qa/** → ci=true → backend=true), 워크플로 변경(ci=true → backend=true)을 모두 포괄한다.
+      - name: Admin QA Gates / Skip actual browser QA (unrelated change)
+        if: ${{ needs.changes.outputs.backend != 'true' }}
+        run: echo "No admin-related (backend) changes; skipping the actual browser accessibility QA step."
+
+      - name: Admin QA Gates / Set up Java for actual browser QA
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Admin QA Gates / Set up Chrome for actual browser QA
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        id: setup-chrome-a11y
+        uses: browser-actions/setup-chrome@086160e580d6e8c142ad5ba29009dcde677c6321
+        with:
+          install-dependencies: true
+
+      - name: Admin QA Gates / Build backend for actual browser QA
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        working-directory: backend
+        run: |
+          set -euo pipefail
+          chmod +x gradlew
+          ./gradlew bootJar --no-daemon
+
+      # #2283 V6-11: backend를 dev/H2로 부팅해 이후 seed·harness 단계가 같은 러너에서 공유한다
+      # (백그라운드 프로세스는 스텝 경계를 넘어 같은 러너 VM에서 유지된다). 임시 admin·operator
+      # 계정 비밀번호는 이 스텝에서 생성·마스킹해 GITHUB_ENV로 다음 스텝에 전달한다(로그에 비밀
+      # 미출력, repository secret 미사용). backend 부팅 실패는 shadow와 무관하게 job을 실패시킨다.
+      - name: Admin QA Gates / Boot backend for actual browser QA
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        env:
+          SPRING_PROFILES_ACTIVE: dev
+          EASYSUBWAY_ADMIN_BASIC_AUTH_ENABLED: "false"
+          ADMIN_QA_OUTPUT_DIR: artifacts/admin-qa
+        run: |
+          set -euo pipefail
+          mkdir -p "${ADMIN_QA_OUTPUT_DIR}"
+
+          admin_user="admin-qa"
+          operator_user="operator-qa"
+          admin_pw="$(openssl rand -hex 24)"
+          operator_pw="$(openssl rand -hex 24)"
+          echo "::add-mask::${admin_pw}"
+          echo "::add-mask::${operator_pw}"
+          {
+            echo "ADMIN_QA_ADMIN_USER=${admin_user}"
+            echo "ADMIN_QA_ADMIN_PASSWORD=${admin_pw}"
+            echo "ADMIN_QA_OPERATOR_USER=${operator_user}"
+            echo "ADMIN_QA_OPERATOR_PASSWORD=${operator_pw}"
+          } >> "${GITHUB_ENV}"
+
+          # pipefail-safe jar 해석: `ls | grep | head` 파이프라인 대신 nullglob 배열로 실제
+          # 파일 존재를 확인하고 -plain.jar(클래스만 담긴 부산물)를 배열 순회로 제외한다.
+          shopt -s nullglob
+          candidate_jars=(backend/build/libs/*.jar)
+          shopt -u nullglob
+          jar=""
+          for candidate in "${candidate_jars[@]}"; do
+            if [[ "${candidate}" != *-plain.jar ]]; then
+              jar="${candidate}"
+              break
+            fi
+          done
+          if [[ -z "${jar}" ]]; then
+            echo "no backend jar found in backend/build/libs (excluding *-plain.jar)"
+            exit 1
+          fi
+          echo "Booting backend (profile=dev, H2 in-memory): ${jar}"
+          EASYSUBWAY_ADMIN_USERNAME="${admin_user}" \
+          EASYSUBWAY_ADMIN_PASSWORD="${admin_pw}" \
+          EASYSUBWAY_OPERATOR_USERNAME="${operator_user}" \
+          EASYSUBWAY_OPERATOR_PASSWORD="${operator_pw}" \
+          nohup java -jar "${jar}" > "${ADMIN_QA_OUTPUT_DIR}/backend-qa.log" 2>&1 &
+          backend_pid=$!
+          disown
+          echo "BACKEND_QA_PID=${backend_pid}" >> "${GITHUB_ENV}"
+
+          # readiness probe(/actuator/health/readiness, permitAll 확인됨 — SecurityConfig.java)로
+          # 좁힌다. liveness만으로는 DB 마이그레이션·빈 초기화가 끝나기 전에도 true가 될 수 있어
+          # readiness가 더 정확한 부팅 완료 신호다(management.endpoint.health.probes.enabled=true).
+          ready=0
+          for _ in $(seq 1 60); do
+            if ! kill -0 "${backend_pid}" 2>/dev/null; then
+              echo "backend process exited before readiness"
+              break
+            fi
+            if curl -fsS http://localhost:8080/actuator/health/readiness >/dev/null 2>&1; then
+              ready=1
+              break
+            fi
+            sleep 3
+          done
+          if [[ "${ready}" != "1" ]]; then
+            echo "backend did not become ready (see backend-qa.log artifact)"
+            exit 1
+          fi
+
+      # #2283 V6-11: browser step 직전 seed 단계. 신고 사진 fail-closed 검사(#2280 V6-08 report-queue
+      # -action-signal)는 dev/H2의 빈 신고 대기열에서 썸네일 0개로 항상 blocking되므로, 공개 API
+      # (POST /api/v1/reports, photoDataBase64 인라인 경로)로 사진 첨부 신고 1건을 시드해 전제를
+      # 확보한다. station-sangnoksu·facility-sangnoksu-elevator-1은 InMemoryTransitMasterRepository가
+      # dev 프로파일에서 항상 시드하는 고정 식별자다(§#2277 AdminAccessibilitySmokeTest와 동일 fixture).
+      # 임의 재시도 없이 단발 요청 실패는 그대로 job을 실패시킨다.
+      - name: Admin QA Gates / Seed CI facility report photo for actual browser QA
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        run: |
+          set -euo pipefail
+          # FacilityReportControllerTest의 VALID_PNG_BASE64와 동일한 1x1 PNG golden fixture(비밀 아님).
+          photo_base64="iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="
+          payload="$(node -e '
+            const [stationId, facilityId, photoBase64] = process.argv.slice(1);
+            process.stdout.write(JSON.stringify({
+              stationId,
+              facilityId,
+              reportType: "BROKEN",
+              description: "CI seed: #2283 browser QA blocking 전제 확보(신고 사진 fail-closed 검사용)",
+              photoFileName: "ci-seed.png",
+              photoContentType: "image/png",
+              photoDataBase64: photoBase64,
+            }));
+          ' "station-sangnoksu" "facility-sangnoksu-elevator-1" "${photo_base64}")"
+          response_file="$(mktemp)"
+          http_code="$(curl -sS -o "${response_file}" -w '%{http_code}' \
+            -u "${ADMIN_QA_ADMIN_USER}:${ADMIN_QA_ADMIN_PASSWORD}" \
+            -H 'Content-Type: application/json' \
+            -X POST http://localhost:8080/api/v1/reports \
+            -d "${payload}")"
+          if [[ "${http_code}" != "201" ]]; then
+            echo "seed report creation failed (HTTP ${http_code})"
+            cat "${response_file}"
+            exit 1
+          fi
+          echo "seeded facility report with photo (HTTP 201)"
+
+      # #2283 V6-11: BLOCKING 승격. shadow 구간(PR #2309 run 29677088560, tested revision
+      # 1fc89cda8ca81b801bb1fe18b21e945b54193df9)에서 seed 단계 포함 blocking 0으로 완주한 것을
+      # 실측한 뒤 continue-on-error 한 줄을 제거해 승격했다(잡 이름·기존 단계는 변경하지 않는다).
+      # backend는 앞선 Boot 단계가 이미 부팅·Seed 단계가 이미 시드했다.
+      - name: Admin QA Gates / Actual browser accessibility QA (shadow)
+        if: ${{ needs.changes.outputs.backend == 'true' }}
+        id: browser-qa
+        env:
+          CHROME_PATH: ${{ steps.setup-chrome-a11y.outputs.chrome-path }}
+          ADMIN_QA_CHROME_NO_SANDBOX: "1"
+          ADMIN_QA_BASE_URL: http://localhost:8080
+          ADMIN_QA_OUTPUT_DIR: artifacts/admin-qa
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: |
+          set -euo pipefail
+          mkdir -p "${ADMIN_QA_OUTPUT_DIR}"
+          cat > "${ADMIN_QA_OUTPUT_DIR}/run-manifest.json" <<EOF
+          {
+            "testedRevision": "${GITHUB_SHA}",
+            "profile": "dev",
+            "database": "h2-in-memory",
+            "seed": "ephemeral env admin/operator bootstrap accounts + 1 seeded facility report photo (never printed)",
+            "viewports": ["desktop-1440", "desktop-1280", "tablet-1024", "mobile-390", "mobile-320"],
+            "textScale": "200%",
+            "reflow": "400% (320px target width)",
+            "command": "node tools/qa/admin-accessibility-qa.mjs --output ${ADMIN_QA_OUTPUT_DIR}",
+            "mode": "blocking"
+          }
+          EOF
+          node tools/qa/admin-accessibility-qa.mjs --output "${ADMIN_QA_OUTPUT_DIR}"
+
+      # #2283 리뷰: backend-qa.log는 artifact로 업로드되므로(actions/upload-artifact는 파일
+      # 내용을 마스킹하지 않는다 — ::add-mask::는 워크플로 로그 스트림에만 적용된다) 생성 비밀
+      # 문자열이 그대로 남을 위험이 있다. 두 대안 중 scrub(치환)을 선택했다: 로그를 아티팩트에서
+      # 제외하는 방법은 부팅 실패 진단에 필요한 Spring 부팅 로그 전체를 잃지만, 알려진 두 개
+      # 생성 비밀(hex 문자열, 정규식 특수문자 없음)만 정확히 치환하면 나머지 진단 정보를 그대로
+      # 보존하면서 유출 경로를 차단할 수 있다.
+      - name: Admin QA Gates / Stop backend for actual browser QA
+        if: ${{ always() && needs.changes.outputs.backend == 'true' }}
+        env:
+          ADMIN_QA_OUTPUT_DIR: artifacts/admin-qa
+        run: |
+          set -euo pipefail
+          if [[ -n "${BACKEND_QA_PID:-}" ]]; then
+            kill "${BACKEND_QA_PID}" 2>/dev/null || true
+          fi
+          log_file="${ADMIN_QA_OUTPUT_DIR}/backend-qa.log"
+          if [[ -f "${log_file}" ]]; then
+            if [[ -n "${ADMIN_QA_ADMIN_PASSWORD:-}" ]]; then
+              sed -i "s/${ADMIN_QA_ADMIN_PASSWORD}/[REDACTED]/g" "${log_file}"
+            fi
+            if [[ -n "${ADMIN_QA_OPERATOR_PASSWORD:-}" ]]; then
+              sed -i "s/${ADMIN_QA_OPERATOR_PASSWORD}/[REDACTED]/g" "${log_file}"
+            fi
+          fi
+
+      - name: Admin QA Gates / Upload actual browser QA artifacts (shadow)
+        if: ${{ always() && needs.changes.outputs.backend == 'true' }}
+        continue-on-error: true
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: admin-accessibility-qa
+          path: artifacts/admin-qa
+          if-no-files-found: warn
+          retention-days: 14
+
+      - name: Admin QA Gates / Summarize actual browser QA (shadow)
+        if: ${{ always() && needs.changes.outputs.backend == 'true' }}
+        env:
+          ADMIN_QA_OUTPUT_DIR: artifacts/admin-qa
+          BROWSER_QA_OUTCOME: ${{ steps.browser-qa.outcome }}
+          TESTED_REVISION: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          {
+            echo "### Admin QA Gates / Actual browser QA"
+            echo ""
+            echo "- Mode: **blocking** (PR #2309 run 29677088560에서 seed 포함 blocking 0 shadow 실측 후 승격)"
+            echo "- Step outcome: \`${BROWSER_QA_OUTCOME}\`"
+            echo "- Tested revision: \`${TESTED_REVISION}\`"
+            echo "- Seed/profile: dev · H2 in-memory · ephemeral env admin/operator 계정"
+            echo "- Coverage: admin+operator route inventory · viewport 1440/1280/1024/390/320 · 200% text · 400% reflow"
+          } >> "${GITHUB_STEP_SUMMARY}"
+          report="${ADMIN_QA_OUTPUT_DIR}/admin-accessibility-qa-report.json"
+          if [[ -f "${report}" ]]; then
+            # #2283 리뷰(CodeRabbit Major): report JSON이 손상·절단돼 있어도 이 단계는 정보성
+            # summary만 남기므로 항상 성공 종료해야 한다. 게이트 판정(blocking exit)은 이미
+            # 앞선 harness 단계(id: browser-qa, continue-on-error 없음 — blocking 승격 완료)가
+            # 자체 exit code로 내렸다. 이 step의 성공/실패는 그 판정을 강화하거나 약화하지 않는다.
+            node -e '
+              const fs = require("fs");
+              const reportPath = process.argv[1];
+              try {
+                const report = JSON.parse(fs.readFileSync(reportPath, "utf8"));
+                const summary = report.summary || {};
+                const blocking = (report.blockingViolations || []).length;
+                const lines = [
+                  "- Blocking violations: **" + blocking + "**",
+                  "- axe critical: " + (summary.criticalAxeViolations ?? "n/a") + " · axe serious: " + (summary.seriousAxeViolations ?? "n/a"),
+                  "- reflow(400%) horizontal-scroll failures: " + (summary.reflowHorizontalScrollFailures ?? "n/a"),
+                  "- screenshots: " + (summary.screenshots ?? "n/a") + " · no-JS pages: " + (summary.noJsPages ?? "n/a"),
+                ];
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+              } catch (error) {
+                let size = "unknown";
+                let head = "";
+                try {
+                  size = String(fs.statSync(reportPath).size);
+                  head = fs.readFileSync(reportPath, "utf8").slice(0, 500);
+                } catch {
+                  // stat/read 자체가 실패해도 fallback summary는 계속 남긴다.
+                }
+                const lines = [
+                  "- Report JSON parse failed (fallback summary): **" + error.message + "**",
+                  "- File size: " + size + " bytes",
+                  "- Head (first 500 chars): " + JSON.stringify(head),
+                ];
+                fs.appendFileSync(process.env.GITHUB_STEP_SUMMARY, lines.join("\n") + "\n");
+              }
+            ' "${report}"
+          else
+            echo "- Report JSON not produced (backend boot or harness failed before report write; see artifact backend-qa.log)." >> "${GITHUB_STEP_SUMMARY}"
+          fi
+
   repository-contracts:
     name: Repository CI
     runs-on: ubuntu-latest

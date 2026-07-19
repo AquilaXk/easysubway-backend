@@ -11,6 +11,9 @@ export const VIEWPORTS = [
   { name: "mobile-768", width: 768, height: 900 },
   { name: "desktop-1440", width: 1440, height: 900 },
   { name: "mobile-390", width: 390, height: 844 },
+  // #2283 V6-11: 최소 지원 폭. WCAG 1.4.10 reflow(1280px @ 400% = 320 CSS px)의 목표 폭이자
+  // 좁은 화면 회귀를 압박하는 명시 viewport. 기존 index 참조(VIEWPORTS[0..2])를 보존하려 끝에 덧붙인다.
+  { name: "mobile-320", width: 320, height: 640 },
 ];
 
 // #2272 V6-00: QA surface inventory. 각 admin/operator surface에 archetype, owner sub-issue
@@ -60,6 +63,17 @@ export const OPERATOR_TEXT_SCALE_PAGES = [
   ["/operator/accessibility-report/page", "operator-accessibility"],
 ];
 
+// #2283 V6-11: WCAG 1.4.10 reflow. 1280px 화면을 400% 확대하면 유효 폭이 320 CSS px가 되므로
+// 320px viewport를 reflow의 목표 폭으로 삼아 대표 화면이 2차원(가로) 스크롤 없이 재배치되는지 검사한다.
+// (문서 스크롤 폭 = 클라이언트 폭 계약. 가로 overflow는 wrapper .admin-table-scroll만 소유한다 — #2071.)
+export const REFLOW_VIEWPORT = "mobile-320";
+export const REFLOW_PAGES = [
+  ["/admin/dashboard/page", "dashboard"],
+  ["/admin/stations/page", "stations"],
+  ["/admin/reports/page", "reports"],
+  ["/admin/datapack/pipeline/page", "datapack-pipeline"],
+];
+
 // #1988: admin·operator 로그인 공개 상태 parity 캡처 대상.
 export const LOGIN_SURFACES = [
   { key: "admin", loginPath: "/admin/login" },
@@ -84,6 +98,9 @@ async function main() {
   const browser = await chromium.launch({
     executablePath: chromePath(),
     headless: process.env.ADMIN_QA_HEADLESS !== "false",
+    // #2283 V6-11: CI ubuntu 러너의 시스템 Chrome은 sandbox 없이 실행해야 launch가 성립한다.
+    // route map 테스트의 ROUTE_MAP_CHROME_NO_SANDBOX 관례와 동일하게 env로만 켜고 로컬 기본값은 sandbox 유지.
+    args: process.env.ADMIN_QA_CHROME_NO_SANDBOX === "1" ? ["--no-sandbox"] : [],
   });
   const report = {
     baseUrl,
@@ -99,6 +116,7 @@ async function main() {
     charts: [],
     axTree: [],
     textScale: [],
+    reflow: [],
     loginStates: [],
     loginParity: null,
   };
@@ -242,6 +260,17 @@ function finalizeReport(report) {
       nodes: 0,
     });
   }
+  // #2283 V6-11: 400% reflow(320px 목표 폭)에서 문서 수준 가로 스크롤이 생긴 대표 화면을 위반으로 편입한다.
+  for (const entry of report.reflow) {
+    if (!entry.noHorizontalScroll) {
+      blockingViolations.push({
+        page: entry.url,
+        id: "reflow-400-horizontal-scroll",
+        impact: "serious",
+        nodes: 0,
+      });
+    }
+  }
   const criticalViolations = blockingViolations.filter((violation) => violation.impact === "critical");
   const seriousViolations = blockingViolations.filter((violation) => violation.impact === "serious");
   report.summary = {
@@ -256,6 +285,8 @@ function finalizeReport(report) {
     // #1988: 수평 스크롤만 세면 overflow:hidden/clip으로 잘린 컨테이너 증거가 사라진다.
     // 각 entry의 clippedContainers를 합산해 clipping 규모를 summary에 보존한다.
     textScaleClippedContainers: report.textScale.reduce((sum, entry) => sum + (entry.clippedContainers || 0), 0),
+    reflowChecks: report.reflow.length,
+    reflowHorizontalScrollFailures: report.reflow.filter((entry) => !entry.noHorizontalScroll).length,
     loginStateCaptures: report.loginStates.length,
     loginParityOk: report.loginParity ? report.loginParity.parity : null,
   };
@@ -281,6 +312,7 @@ async function runJsPass(browser, baseUrl, outputDir, adminUser, adminPassword, 
   await reportQueueActionSignalCheck(page, baseUrl, report);
   await listToolbarSheetCheck(page, baseUrl, report);
   await textScalePass(page, baseUrl, outputDir, report, ADMIN_TEXT_SCALE_PAGES);
+  await reflowPass(page, baseUrl, outputDir, report, REFLOW_PAGES);
   await context.close();
 
   const operatorContext = await browser.newContext({ viewport: VIEWPORTS[0] });
@@ -397,6 +429,40 @@ async function textScalePass(page, baseUrl, outputDir, report, pages) {
         ...metrics,
       });
     }
+  }
+}
+
+// #2283 V6-11: WCAG 1.4.10 reflow. 400% 확대 목표 폭(320 CSS px) viewport에서 대표 화면이
+// 문서 수준 가로 스크롤 없이 재배치되는지 검사한다. noHorizontalScroll이 하나라도 false면
+// finalizeReport가 위반으로 편입해 exit code로 실패를 표면화한다(§9 body overflow·§7 400% reflow).
+async function reflowPass(page, baseUrl, outputDir, report, pages) {
+  const viewport = VIEWPORTS.find((entry) => entry.name === REFLOW_VIEWPORT);
+  await page.setViewportSize(viewport);
+  for (const [url, name] of pages) {
+    const response = await page.goto(`${baseUrl}${url}`, { waitUntil: "networkidle" });
+    await assertOk(page, url, response);
+    const metrics = await page.evaluate(() => {
+      const doc = document.documentElement;
+      return {
+        scrollWidth: doc.scrollWidth,
+        clientWidth: doc.clientWidth,
+        bodyScrollWidth: document.body.scrollWidth,
+        bodyClientWidth: document.body.clientWidth,
+        noHorizontalScroll: doc.scrollWidth <= doc.clientWidth + 1
+          && document.body.scrollWidth <= document.body.clientWidth + 1,
+      };
+    });
+    const screenshot = path.join(outputDir, `reflow-400-${name}-${viewport.name}.png`);
+    await page.screenshot({ path: screenshot, fullPage: true });
+    report.reflow.push({
+      url,
+      name,
+      viewport: viewport.name,
+      zoom: "400%",
+      method: "1280px @ 400% zoom = 320 CSS px 목표 폭을 320 viewport로 근사(WCAG 1.4.10 reflow)",
+      screenshot,
+      ...metrics,
+    });
   }
 }
 

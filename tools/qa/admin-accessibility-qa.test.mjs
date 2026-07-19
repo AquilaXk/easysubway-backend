@@ -39,6 +39,26 @@ test("admin accessibility QA script covers Phase 3 required routes and viewports
   }
 });
 
+// #2283 V6-11: 실제 브라우저 CI 승격에 필요한 320 viewport와 400% reflow 검사 계약을 source로 고정한다.
+test("admin accessibility QA script covers the 320 viewport and 400 percent reflow", () => {
+  // 1440/1280/1024/390/320 전체가 VIEWPORTS에 있어야 한다.
+  assert.match(source, /\{ name: "mobile-320", width: 320, height: 640 \}/);
+  // reflow는 320px 목표 폭에서 문서 수준 가로 스크롤 없음을 검사한다.
+  assert.match(source, /export const REFLOW_VIEWPORT = "mobile-320";/);
+  assert.match(source, /export const REFLOW_PAGES = \[/);
+  assert.match(source, /async function reflowPass\(page, baseUrl, outputDir, report, pages\)/);
+  assert.match(source, /await reflowPass\(page, baseUrl, outputDir, report, REFLOW_PAGES\)/);
+  assert.match(source, /report\.reflow\.push/);
+  assert.match(source, /noHorizontalScroll: doc\.scrollWidth <= doc\.clientWidth \+ 1/);
+  assert.match(source, /document\.body\.scrollWidth <= document\.body\.clientWidth \+ 1/);
+  // reflow 실패가 blocking 위반으로 표면화되고 summary에 집계되는 계약을 고정한다.
+  assert.match(source, /id: "reflow-400-horizontal-scroll"/);
+  assert.match(source, /reflowChecks: report\.reflow\.length/);
+  assert.match(source, /reflowHorizontalScrollFailures: report\.reflow\.filter/);
+  // shadow→blocking 승격 시 CI가 켜는 sandbox 완화 스위치를 env로만 노출한다.
+  assert.match(source, /process\.env\.ADMIN_QA_CHROME_NO_SANDBOX === "1" \? \["--no-sandbox"\] : \[\]/);
+});
+
 test("admin accessibility QA script captures text 200 percent reflow evidence on 1440 and 390", () => {
   assert.match(source, /TEXT_SCALE_FACTOR = 2/);
   assert.match(source, /TEXT_SCALE_VIEWPORTS = \["desktop-1440", "mobile-390"\]/);
