@@ -210,7 +210,7 @@ class TimetableSeedLoaderTest {
 	@Test
 	void trackedCompleteSnapshotLoadsWithExactEvidenceCounts() {
 		TimetableSeedLoader loader = new TimetableSeedLoader(
-			new JdbcRouteTimetableRepository(dataSource),
+			repository(),
 			dataSource,
 			new DataSourceTransactionManager(dataSource),
 			new ClassPathResource("timetable/line4-timetable-seed.sql.gz"),
@@ -235,7 +235,7 @@ class TimetableSeedLoaderTest {
 	void rejectsDisabledItxOrStaleAndTamperedEvidenceBeforeWrites() throws Exception {
 		SnapshotResource snapshot = snapshot("a", false);
 		TimetableSeedLoader disabled = new TimetableSeedLoader(
-			new JdbcRouteTimetableRepository(dataSource),
+			repository(),
 			dataSource,
 			new DataSourceTransactionManager(dataSource),
 			snapshot.seed(),
@@ -261,7 +261,7 @@ class TimetableSeedLoaderTest {
 
 	private TimetableSeedLoader loader(SnapshotResource snapshot) {
 		return new TimetableSeedLoader(
-			new JdbcRouteTimetableRepository(dataSource),
+			repository(),
 			dataSource,
 			new DataSourceTransactionManager(dataSource),
 			snapshot.seed(),
@@ -270,6 +270,10 @@ class TimetableSeedLoaderTest {
 			objectMapper,
 			Clock.fixed(NOW, ZoneOffset.UTC)
 		);
+	}
+
+	private JdbcRouteTimetableRepository repository() {
+		return new JdbcRouteTimetableRepository(jdbc, Clock.fixed(NOW, ZoneOffset.UTC));
 	}
 
 	private SnapshotResource snapshot(String suffix, boolean invalidForeignKey) throws Exception {
