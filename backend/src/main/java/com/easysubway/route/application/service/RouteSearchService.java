@@ -1219,7 +1219,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 			Comparator.comparing(InternalRouteCandidate::cost)
 		);
 		Map<String, InternalRouteCost> bestCostByNodeId = new HashMap<>();
-		queue.add(new InternalRouteCandidate(fromNodeId, InternalRouteCost.ZERO, List.of()));
+		Map<String, RouteEdge> predecessorByNodeId = new HashMap<>();
+		queue.add(new InternalRouteCandidate(fromNodeId, InternalRouteCost.ZERO));
 		bestCostByNodeId.put(fromNodeId, InternalRouteCost.ZERO);
 
 		while (!queue.isEmpty()) {
@@ -1228,17 +1229,27 @@ public class RouteSearchService implements RouteSearchUseCase {
 				continue;
 			}
 			if (current.nodeId().equals(toNodeId)) {
-				return Optional.of(current.path());
+				List<RouteEdge> path = new ArrayList<>();
+				String nodeId = toNodeId;
+				while (!nodeId.equals(fromNodeId)) {
+					RouteEdge edge = predecessorByNodeId.get(nodeId);
+					if (edge == null) {
+						return Optional.empty();
+					}
+					path.add(edge);
+					nodeId = edge.fromNodeId();
+				}
+				java.util.Collections.reverse(path);
+				return Optional.of(List.copyOf(path));
 			}
 			for (RouteEdge edge : edgesByFromNode.getOrDefault(current.nodeId(), List.of())) {
 				InternalRouteCost nextCost = current.cost().plus(internalEdgeCost(edge));
 				if (nextCost.compareTo(bestCostByNodeId.getOrDefault(edge.toNodeId(), InternalRouteCost.MAX)) >= 0) {
 					continue;
 				}
-				List<RouteEdge> nextPath = new ArrayList<>(current.path());
-				nextPath.add(edge);
 				bestCostByNodeId.put(edge.toNodeId(), nextCost);
-				queue.add(new InternalRouteCandidate(edge.toNodeId(), nextCost, List.copyOf(nextPath)));
+				predecessorByNodeId.put(edge.toNodeId(), edge);
+				queue.add(new InternalRouteCandidate(edge.toNodeId(), nextCost));
 			}
 		}
 		return Optional.empty();
@@ -1769,8 +1780,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 
 	private record InternalRouteCandidate(
 		String nodeId,
-		InternalRouteCost cost,
-		List<RouteEdge> path
+		InternalRouteCost cost
 	) {
 	}
 

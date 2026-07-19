@@ -26,6 +26,7 @@ import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -49,6 +50,10 @@ class RouteTimetableRaptorPlanner {
 	private static final int EXIT_DURATION_SECONDS = 180;
 	private static final int EXIT_DISTANCE_METERS = 120;
 	private static final int ACTIVE_SERVICE_DAY_CACHE_SIZE = 8;
+	private static final int LABEL_SLOT_COUNT = PARETO_LIMIT + 1;
+	private static final int UNREACHED = Integer.MAX_VALUE;
+	private static final int[] NO_PATTERNS = new int[0];
+	private final ThreadLocal<ScanWorkspace> scanWorkspaces = ThreadLocal.withInitial(ScanWorkspace::new);
 
 	List<RouteSearchResult> search(SearchRouteV2Command command, RouteTimetable timetable) {
 		return search(command, compile(timetable));
@@ -61,6 +66,15 @@ class RouteTimetableRaptorPlanner {
 			.limit(candidateLimit(command))
 			.map(label -> toRouteSearchResult(command, label, serviceDay, timetable.source()))
 			.toList();
+	}
+
+	ScanMetrics lastScanMetrics() {
+		ScanWorkspace workspace = scanWorkspaces.get();
+		return new ScanMetrics(
+			workspace.expandedRoutes,
+			workspace.expandedTrips,
+			System.identityHashCode(workspace)
+		);
 	}
 
 	boolean isFeedStale(SearchRouteV2Command command, RouteTimetable timetable) {
@@ -232,115 +246,199 @@ class RouteTimetableRaptorPlanner {
 		ServiceDay serviceDay,
 		int startSeconds
 	) {
-		List<ScheduledTrip> trips = timetable.activeServiceDay(serviceDay.date()).trips();
-		if (trips.isEmpty()) {
+		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDay.date());
+		ScanWorkspace workspace = scanWorkspaces.get();
+		workspace.prepare(timetable.stationCount(), timetable.routePatternCount());
+		if (activeServiceDay.trips().isEmpty()) {
 			return new ScanResult(serviceDay, List.of());
 		}
+		int origin = timetable.stationIndex(command.originStationId());
+		int destination = timetable.stationIndex(command.destinationStationId());
+		if (origin < 0 || destination < 0) {
+			return new ScanResult(serviceDay, List.of());
+		}
+		workspace.arrivalSeconds[workspace.slot(0, origin)] = startSeconds;
+		workspace.mark(origin);
 
-		Map<String, List<Label>> labels = new HashMap<>();
-		labels.put(command.originStationId(), List.of(new Label(
-			command.originStationId(),
-			startSeconds,
-			startSeconds,
-			0,
-			List.of()
-		)));
-
-		for (int round = 0; round <= command.maxTransfers(); round += 1) {
-			for (ScheduledTrip trip : trips) {
-				scanTrip(command, labels, trip, round);
+		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
+		int entrySeconds = profiledWalkSeconds(command, ENTRY_DURATION_SECONDS);
+		int transferSeconds = profiledWalkSeconds(command, TRANSFER_DURATION_SECONDS);
+		for (int round = 0; round <= command.maxTransfers() && workspace.markedStopCount > 0; round += 1) {
+			collectMarkedPatterns(timetable, workspace);
+			Arrays.sort(workspace.markedPatterns, 0, workspace.markedPatternCount);
+			for (int index = 0; index < workspace.markedPatternCount; index += 1) {
+				int pattern = workspace.markedPatterns[index];
+				scanPattern(
+					timetable,
+					activeServiceDay,
+					workspace,
+					pattern,
+					workspace.firstMarkedPosition[pattern],
+					round,
+					round == 0 ? entrySeconds : transferSeconds,
+					slackSeconds
+				);
 			}
+			workspace.finishRound();
 		}
 
-		List<Label> destinationLabels = labels.getOrDefault(command.destinationStationId(), List.of()).stream()
-			.filter(label -> !label.path().isEmpty())
+		List<Label> destinationLabels = destinationLabels(
+			command.destinationStationId(), timetable, workspace, destination, startSeconds)
+			.stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.limit(candidateLimit(command))
 			.toList();
 		return new ScanResult(serviceDay, destinationLabels);
 	}
 
-	private void scanTrip(
-		SearchRouteV2Command command,
-		Map<String, List<Label>> labels,
-		ScheduledTrip trip,
-		int round
-	) {
-		Boarding boarding = null;
-		List<TransitStopTime> stopTimes = trip.stopTimes();
-		for (int stopIndex = 0; stopIndex < stopTimes.size(); stopIndex += 1) {
-			TransitStopTime stopTime = stopTimes.get(stopIndex);
-			for (Label label : List.copyOf(labels.getOrDefault(stopTime.stationId(), List.of()))) {
-				if (canBoard(command, label, trip, stopIndex, round) && trip.allowsPickup(stopIndex)) {
-					boarding = betterBoarding(boarding, label, stopIndex);
+	private static void collectMarkedPatterns(CompiledTimetable timetable, ScanWorkspace workspace) {
+		for (int index = 0; index < workspace.markedStopCount; index += 1) {
+			int station = workspace.markedStops[index];
+			for (int pattern : timetable.patternsByStop(station)) {
+				int position = indexOf(timetable.stopsByPattern(pattern), station);
+				if (workspace.firstMarkedPosition[pattern] < 0) {
+					workspace.markedPatterns[workspace.markedPatternCount++] = pattern;
+					workspace.firstMarkedPosition[pattern] = position;
+				} else if (position < workspace.firstMarkedPosition[pattern]) {
+					workspace.firstMarkedPosition[pattern] = position;
 				}
 			}
-			if (boarding == null || stopIndex <= boarding.stopIndex() || !trip.allowsDropOff(stopIndex)) {
-				continue;
+		}
+	}
+
+	private static int indexOf(int[] values, int target) {
+		for (int index = 0; index < values.length; index += 1) {
+			if (values[index] == target) {
+				return index;
 			}
-			addLabel(labels, new Label(
-				stopTime.stationId(),
-				trip.arrivalSeconds(stopIndex),
-				boarding.label().startSeconds(),
-				boarding.label().boardings() + 1,
-				withLeg(boarding.label().path(), new RideLeg(trip, boarding.stopIndex(), stopIndex))
-			));
 		}
+		return -1;
 	}
 
-	private boolean canBoard(SearchRouteV2Command command, Label label, ScheduledTrip trip, int stopIndex, int round) {
-		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
-		int accessSeconds = profiledWalkSeconds(
-			command,
-			label.boardings() > 0 ? TRANSFER_DURATION_SECONDS : ENTRY_DURATION_SECONDS
-		);
-		return label.boardings() == round
-			&& trip.departureSeconds(stopIndex) >= label.timeSeconds() + accessSeconds + slackSeconds;
-	}
-
-	private Boarding betterBoarding(Boarding current, Label label, int stopIndex) {
-		if (current == null || label.timeSeconds() < current.label().timeSeconds()) {
-			return new Boarding(label, stopIndex);
-		}
-		return current;
-	}
-
-	private void addLabel(Map<String, List<Label>> labels, Label candidate) {
-		List<Label> stationLabels = labels.getOrDefault(candidate.stationId(), List.of());
-		if (stationLabels.stream().anyMatch(existing -> sameLabel(existing, candidate) || dominates(existing, candidate))) {
+	private static void scanPattern(
+		CompiledTimetable timetable,
+		ActiveServiceDay activeServiceDay,
+		ScanWorkspace workspace,
+		int pattern,
+		int firstMarkedPosition,
+		int round,
+		int accessSeconds,
+		int slackSeconds
+	) {
+		workspace.expandedRoutes += 1;
+		List<ScheduledTrip> trips = activeServiceDay.tripsByPattern(pattern);
+		if (trips.isEmpty()) {
 			return;
 		}
-		List<Label> kept = new ArrayList<>();
-		for (Label existing : stationLabels) {
-			if (!dominates(candidate, existing)) {
-				kept.add(existing);
+		int[] stops = timetable.stopsByPattern(pattern);
+		ScheduledTrip boardedTrip = null;
+		int boardingPosition = -1;
+		int boardingReadySeconds = UNREACHED;
+		for (int position = firstMarkedPosition; position < stops.length; position += 1) {
+			int station = stops[position];
+			if (boardedTrip != null && position > boardingPosition && boardedTrip.allowsDropOff(position)) {
+				workspace.relax(
+					station,
+					round + 1,
+					boardedTrip.arrivalSeconds(position),
+					boardedTrip.index(),
+					boardingPosition,
+					position
+				);
+			}
+			int readySeconds = workspace.arrivalSeconds[workspace.slot(round, station)];
+			if (readySeconds == UNREACHED) {
+				continue;
+			}
+			int earliestDepartureSeconds = readySeconds + accessSeconds + slackSeconds;
+			if (boardedTrip != null
+				&& readySeconds < boardingReadySeconds
+				&& boardedTrip.allowsPickup(position)
+				&& boardedTrip.departureSeconds(position) >= earliestDepartureSeconds) {
+				boardingPosition = position;
+				boardingReadySeconds = readySeconds;
+			}
+			ScheduledTrip candidate = earliestBoardableTrip(
+				trips,
+				position,
+				earliestDepartureSeconds
+			);
+			if (candidate != null && (boardedTrip == null
+				|| candidate.departureSeconds(position) < boardedTrip.departureSeconds(position)
+				|| (candidate != boardedTrip
+					&& candidate.departureSeconds(position) == boardedTrip.departureSeconds(position)
+					&& candidate.arrivalSeconds(position) <= boardedTrip.arrivalSeconds(position)))) {
+				boardedTrip = candidate;
+				boardingPosition = position;
+				boardingReadySeconds = readySeconds;
+				workspace.expandedTrips += 1;
 			}
 		}
-		kept.add(candidate);
-		kept.sort(RouteTimetableRaptorPlanner::compareLabels);
-		List<Label> bestByBoardings = new ArrayList<>();
-		for (Label label : kept) {
-			if (bestByBoardings.stream().noneMatch(existing -> existing.boardings() == label.boardings())) {
-				bestByBoardings.add(label);
+	}
+
+	private static ScheduledTrip earliestBoardableTrip(
+		List<ScheduledTrip> trips,
+		int stopPosition,
+		int earliestDepartureSeconds
+	) {
+		int low = 0;
+		int high = trips.size();
+		while (low < high) {
+			int middle = (low + high) >>> 1;
+			if (trips.get(middle).departureSeconds(stopPosition) < earliestDepartureSeconds) {
+				low = middle + 1;
+			} else {
+				high = middle;
 			}
 		}
-		labels.put(candidate.stationId(), List.copyOf(bestByBoardings.stream().limit(PARETO_LIMIT).toList()));
+		while (low < trips.size()) {
+			ScheduledTrip trip = trips.get(low++);
+			if (trip.allowsPickup(stopPosition)) {
+				return trip;
+			}
+		}
+		return null;
+	}
+
+	private static List<Label> destinationLabels(
+		String destinationStationId,
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		int destination,
+		int startSeconds
+	) {
+		List<Label> labels = new ArrayList<>(PARETO_LIMIT);
+		for (int boardings = 1; boardings <= PARETO_LIMIT; boardings += 1) {
+			int slot = workspace.slot(boardings, destination);
+			if (workspace.arrivalSeconds[slot] == UNREACHED) {
+				continue;
+			}
+			List<RideLeg> path = new ArrayList<>(boardings);
+			int station = destination;
+			int currentBoardings = boardings;
+			while (currentBoardings > 0) {
+				int currentSlot = workspace.slot(currentBoardings, station);
+				ScheduledTrip trip = timetable.scheduledTrip(workspace.parentTrip[currentSlot]);
+				int boardingPosition = workspace.parentBoardStop[currentSlot];
+				int alightingPosition = workspace.parentAlightStop[currentSlot];
+				path.add(new RideLeg(trip, boardingPosition, alightingPosition));
+				station = timetable.stationIndex(trip.stopTimes().get(boardingPosition).stationId());
+				currentBoardings -= 1;
+			}
+			java.util.Collections.reverse(path);
+			labels.add(new Label(
+				destinationStationId,
+				workspace.arrivalSeconds[slot],
+				startSeconds,
+				boardings,
+				List.copyOf(path)
+			));
+		}
+		return labels;
 	}
 
 	private static int candidateLimit(SearchRouteV2Command command) {
 		return Math.max(command.alternativeCount(), command.maxTransfers() + 1);
-	}
-
-	private static boolean dominates(Label left, Label right) {
-		return left.timeSeconds() <= right.timeSeconds()
-			&& left.boardings() <= right.boardings()
-			&& (left.timeSeconds() < right.timeSeconds() || left.boardings() < right.boardings());
-	}
-
-	private static boolean sameLabel(Label left, Label right) {
-		return left.timeSeconds() == right.timeSeconds()
-			&& left.boardings() == right.boardings()
-			&& left.path().stream().map(RideLeg::tripId).toList().equals(right.path().stream().map(RideLeg::tripId).toList());
 	}
 
 	private static int compareLabels(Label left, Label right) {
@@ -348,12 +446,6 @@ class RouteTimetableRaptorPlanner {
 			.thenComparingInt(Label::boardings)
 			.thenComparingInt(label -> label.path().size())
 			.compare(left, right);
-	}
-
-	private static List<RideLeg> withLeg(List<RideLeg> path, RideLeg leg) {
-		List<RideLeg> next = new ArrayList<>(path);
-		next.add(leg);
-		return List.copyOf(next);
 	}
 
 	private static RouteSearchResult toRouteSearchResult(
@@ -619,7 +711,7 @@ class RouteTimetableRaptorPlanner {
 		List<TransitFrequency> frequencies
 	) {
 		if (frequencies.isEmpty()) {
-			return List.of(new ScheduledTrip(trip, route, stopTimes, new PrimitiveTripTimes(stopTimes)));
+			return List.of(new ScheduledTrip(-1, trip, route, stopTimes, new PrimitiveTripTimes(stopTimes)));
 		}
 		int firstDepartureSeconds = stopTimes.getFirst().departureSeconds();
 		List<ScheduledTrip> scheduledTrips = new ArrayList<>();
@@ -632,7 +724,7 @@ class RouteTimetableRaptorPlanner {
 				 departureSeconds += frequency.headwaySeconds()) {
 				shiftedStopTimes(stopTimes, departureSeconds - firstDepartureSeconds)
 					.ifPresent(shifted -> scheduledTrips.add(
-						new ScheduledTrip(trip, route, shifted, new PrimitiveTripTimes(shifted))));
+						new ScheduledTrip(-1, trip, route, shifted, new PrimitiveTripTimes(shifted))));
 			}
 		}
 		return List.copyOf(scheduledTrips);
@@ -732,8 +824,11 @@ class RouteTimetableRaptorPlanner {
 			}
 			compiledTrips.sort(Comparator.comparing((ScheduledTrip scheduledTrip) -> scheduledTrip.trip().id())
 				.thenComparingInt(scheduledTrip -> scheduledTrip.departureSeconds(0)));
+			for (int index = 0; index < compiledTrips.size(); index += 1) {
+				compiledTrips.set(index, compiledTrips.get(index).withIndex(index));
+			}
 			scheduledTrips = List.copyOf(compiledTrips);
-			CompiledRoutePatterns routePatterns = compileRoutePatterns(scheduledTrips, routeIndex, stationIndex);
+			CompiledRoutePatterns routePatterns = compileRoutePatterns(scheduledTrips, stationIndex);
 			stopsByPattern = routePatterns.stopsByPattern();
 			patternsByStop = invertPatterns(stopsByPattern, stationIndex.size());
 			tripsByPattern = routePatterns.tripsByPattern();
@@ -754,6 +849,10 @@ class RouteTimetableRaptorPlanner {
 			return stationIndex.size();
 		}
 
+		int stationIndex(String stationId) {
+			return stationIndex.getOrDefault(stationId, -1);
+		}
+
 		Set<String> coveredStationIds() {
 			return stationIndex.keySet();
 		}
@@ -768,6 +867,18 @@ class RouteTimetableRaptorPlanner {
 
 		int routePatternCount() {
 			return stopsByPattern.size();
+		}
+
+		int[] stopsByPattern(int pattern) {
+			return stopsByPattern.get(pattern);
+		}
+
+		int[] patternsByStop(int station) {
+			return patternsByStop.getOrDefault(station, NO_PATTERNS);
+		}
+
+		ScheduledTrip scheduledTrip(int index) {
+			return scheduledTrips.get(index);
 		}
 
 		int routePatternTripLinkCount() {
@@ -791,7 +902,16 @@ class RouteTimetableRaptorPlanner {
 			List<ScheduledTrip> activeTrips = scheduledTrips.stream()
 				.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
 				.toList();
-			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips);
+			Map<Integer, List<ScheduledTrip>> activeTripsByPattern = new HashMap<>();
+			for (Map.Entry<Integer, List<ScheduledTrip>> entry : tripsByPattern.entrySet()) {
+				List<ScheduledTrip> patternTrips = entry.getValue().stream()
+					.filter(trip -> activeServiceIds.contains(trip.trip().serviceId()))
+					.toList();
+				if (!patternTrips.isEmpty()) {
+					activeTripsByPattern.put(entry.getKey(), patternTrips);
+				}
+			}
+			ActiveServiceDay compiled = new ActiveServiceDay(activeTrips, Map.copyOf(activeTripsByPattern));
 			activeServiceDays.put(serviceDate, compiled);
 			if (activeServiceDays.size() > ACTIVE_SERVICE_DAY_CACHE_SIZE) {
 				activeServiceDays.remove(activeServiceDays.sequencedKeySet().getFirst());
@@ -836,32 +956,67 @@ class RouteTimetableRaptorPlanner {
 
 		private static CompiledRoutePatterns compileRoutePatterns(
 			List<ScheduledTrip> scheduledTrips,
-			Map<String, Integer> routeIndex,
 			Map<String, Integer> stationIndex
 		) {
-			Map<RoutePatternKey, Integer> patternIds = new LinkedHashMap<>();
+			Map<RoutePatternKey, List<ScheduledTrip>> groupedTrips = new LinkedHashMap<>();
 			Map<Integer, int[]> stopsByPattern = new HashMap<>();
 			Map<Integer, List<ScheduledTrip>> tripsByPattern = new HashMap<>();
 			for (ScheduledTrip trip : scheduledTrips) {
-				Integer denseRoute = routeIndex.get(trip.trip().routeId());
-				if (denseRoute == null || trip.stopTimes().isEmpty()) {
+				if (trip.stopTimes().isEmpty()) {
 					continue;
 				}
 				List<Integer> stationSequence = trip.stopTimes().stream()
 					.map(stopTime -> stationIndex.get(stopTime.stationId()))
 					.toList();
-				RoutePatternKey key = new RoutePatternKey(denseRoute, stationSequence);
-				int patternId = patternIds.computeIfAbsent(key, ignored -> patternIds.size());
-				stopsByPattern.putIfAbsent(
-					patternId,
-					stationSequence.stream().mapToInt(Integer::intValue).toArray()
-				);
-				tripsByPattern.computeIfAbsent(patternId, ignored -> new ArrayList<>()).add(trip);
+				List<Integer> accessSignature = trip.stopTimes().stream()
+					.map(stopTime -> (stopTime.pickupType() << 16) | (stopTime.dropOffType() & 0xffff))
+					.toList();
+				RoutePatternKey key = new RoutePatternKey(trip.trip().routeId(), stationSequence, accessSignature);
+				groupedTrips.computeIfAbsent(key, ignored -> new ArrayList<>()).add(trip);
 			}
-			tripsByPattern.replaceAll((ignored, trips) -> trips.stream()
-				.sorted(Comparator.comparingInt(trip -> trip.departureSeconds(0)))
-				.toList());
+			for (Map.Entry<RoutePatternKey, List<ScheduledTrip>> entry : groupedTrips.entrySet()) {
+				List<List<ScheduledTrip>> nonOvertakingGroups = new ArrayList<>();
+				List<ScheduledTrip> orderedTrips = entry.getValue().stream()
+					.sorted(Comparator.comparingInt((ScheduledTrip trip) -> trip.departureSeconds(0))
+						.thenComparingInt(ScheduledTrip::index))
+					.toList();
+				for (ScheduledTrip trip : orderedTrips) {
+					List<ScheduledTrip> selectedGroup = null;
+					for (List<ScheduledTrip> group : nonOvertakingGroups) {
+						if (canShareScanPattern(group.getLast(), trip)) {
+							selectedGroup = group;
+							break;
+						}
+					}
+					if (selectedGroup == null) {
+						selectedGroup = new ArrayList<>();
+						nonOvertakingGroups.add(selectedGroup);
+					}
+					selectedGroup.add(trip);
+				}
+				for (List<ScheduledTrip> group : nonOvertakingGroups) {
+					int patternId = stopsByPattern.size();
+					stopsByPattern.put(
+						patternId,
+						entry.getKey().stationSequence().stream().mapToInt(Integer::intValue).toArray()
+					);
+					tripsByPattern.put(patternId, List.copyOf(group));
+				}
+			}
 			return new CompiledRoutePatterns(Map.copyOf(stopsByPattern), Map.copyOf(tripsByPattern));
+		}
+
+		private static boolean canShareScanPattern(ScheduledTrip earlier, ScheduledTrip later) {
+			for (int stop = 0; stop < earlier.stopTimes().size(); stop += 1) {
+				if (earlier.arrivalSeconds(stop) > later.arrivalSeconds(stop)
+					|| earlier.departureSeconds(stop) > later.departureSeconds(stop)
+					|| (stop > 0
+						&& earlier.arrivalSeconds(stop) == later.arrivalSeconds(stop)
+						&& later.index() < earlier.index())) {
+					return false;
+				}
+			}
+			return true;
 		}
 
 		private static Map<Integer, int[]> invertPatterns(Map<Integer, int[]> stopsByPattern, int stationCount) {
@@ -901,14 +1056,26 @@ class RouteTimetableRaptorPlanner {
 	static final class ActiveServiceDay {
 
 		private final List<ScheduledTrip> trips;
+		private final Map<Integer, List<ScheduledTrip>> tripsByPattern;
 		private volatile Map<String, List<BoardingStop>> boardingsByStation;
 
-		private ActiveServiceDay(List<ScheduledTrip> trips) {
+		private ActiveServiceDay(List<ScheduledTrip> trips, Map<Integer, List<ScheduledTrip>> tripsByPattern) {
 			this.trips = List.copyOf(trips);
+			this.tripsByPattern = tripsByPattern;
 		}
 
 		private List<ScheduledTrip> trips() {
 			return trips;
+		}
+
+		private List<ScheduledTrip> tripsByPattern(int pattern) {
+			return tripsByPattern.getOrDefault(pattern, List.of());
+		}
+
+		int routePatternTripLinkCount() {
+			return tripsByPattern.values().stream()
+				.mapToInt(List::size)
+				.sum();
 		}
 
 		boolean boardingIndexInitialized() {
@@ -969,6 +1136,121 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
+	private static final class ScanWorkspace {
+
+		private int stationCount;
+		private int[] arrivalSeconds = new int[0];
+		private int[] parentTrip = new int[0];
+		private int[] parentBoardStop = new int[0];
+		private int[] parentAlightStop = new int[0];
+		private int[] markedStops = new int[0];
+		private int[] nextMarkedStops = new int[0];
+		private boolean[] marked = new boolean[0];
+		private boolean[] nextMarked = new boolean[0];
+		private int markedStopCount;
+		private int nextMarkedStopCount;
+		private int[] markedPatterns = new int[0];
+		private int[] firstMarkedPosition = new int[0];
+		private int markedPatternCount;
+		private int expandedRoutes;
+		private int expandedTrips;
+
+		private void prepare(int requiredStationCount, int patternCount) {
+			stationCount = requiredStationCount;
+			int labelSlots = Math.multiplyExact(requiredStationCount, LABEL_SLOT_COUNT);
+			if (arrivalSeconds.length < labelSlots) {
+				arrivalSeconds = new int[labelSlots];
+				parentTrip = new int[labelSlots];
+				parentBoardStop = new int[labelSlots];
+				parentAlightStop = new int[labelSlots];
+			}
+			if (markedStops.length < requiredStationCount) {
+				markedStops = new int[requiredStationCount];
+				nextMarkedStops = new int[requiredStationCount];
+				marked = new boolean[requiredStationCount];
+				nextMarked = new boolean[requiredStationCount];
+			}
+			if (markedPatterns.length < patternCount) {
+				markedPatterns = new int[patternCount];
+				firstMarkedPosition = new int[patternCount];
+			}
+			Arrays.fill(arrivalSeconds, 0, labelSlots, UNREACHED);
+			Arrays.fill(parentTrip, 0, labelSlots, -1);
+			Arrays.fill(parentBoardStop, 0, labelSlots, -1);
+			Arrays.fill(parentAlightStop, 0, labelSlots, -1);
+			Arrays.fill(marked, 0, requiredStationCount, false);
+			Arrays.fill(nextMarked, 0, requiredStationCount, false);
+			Arrays.fill(firstMarkedPosition, 0, patternCount, -1);
+			markedStopCount = 0;
+			nextMarkedStopCount = 0;
+			markedPatternCount = 0;
+			expandedRoutes = 0;
+			expandedTrips = 0;
+		}
+
+		private int slot(int boardings, int station) {
+			return boardings * stationCount + station;
+		}
+
+		private void mark(int station) {
+			if (!marked[station]) {
+				marked[station] = true;
+				markedStops[markedStopCount++] = station;
+			}
+		}
+
+		private void relax(
+			int station,
+			int boardings,
+			int candidateArrivalSeconds,
+			int trip,
+			int boardStop,
+			int alightStop
+		) {
+			int candidateSlot = slot(boardings, station);
+			int existingArrivalSeconds = arrivalSeconds[candidateSlot];
+			if (existingArrivalSeconds < candidateArrivalSeconds) {
+				return;
+			}
+			if (existingArrivalSeconds == candidateArrivalSeconds
+				&& (parentTrip[candidateSlot] < trip
+					|| (parentTrip[candidateSlot] == trip && parentBoardStop[candidateSlot] <= boardStop))) {
+				return;
+			}
+			for (int fewerBoardings = 0; fewerBoardings < boardings; fewerBoardings += 1) {
+				if (arrivalSeconds[slot(fewerBoardings, station)] <= candidateArrivalSeconds) {
+					return;
+				}
+			}
+			arrivalSeconds[candidateSlot] = candidateArrivalSeconds;
+			parentTrip[candidateSlot] = trip;
+			parentBoardStop[candidateSlot] = boardStop;
+			parentAlightStop[candidateSlot] = alightStop;
+			if (!nextMarked[station]) {
+				nextMarked[station] = true;
+				nextMarkedStops[nextMarkedStopCount++] = station;
+			}
+		}
+
+		private void finishRound() {
+			for (int index = 0; index < markedStopCount; index += 1) {
+				marked[markedStops[index]] = false;
+			}
+			for (int index = 0; index < markedPatternCount; index += 1) {
+				firstMarkedPosition[markedPatterns[index]] = -1;
+			}
+			int[] oldMarkedStops = markedStops;
+			markedStops = nextMarkedStops;
+			nextMarkedStops = oldMarkedStops;
+			boolean[] oldMarked = marked;
+			marked = nextMarked;
+			nextMarked = oldMarked;
+			markedStopCount = nextMarkedStopCount;
+			nextMarkedStopCount = 0;
+			markedPatternCount = 0;
+		}
+	}
+
 	private static ServiceDay serviceDay(SearchRouteV2Command command) {
 		ZonedDateTime departure = command.departureTime().atZoneSameInstant(SERVICE_ZONE);
 		LocalDate serviceDate = departure.toLocalDate();
@@ -988,7 +1270,14 @@ class RouteTimetableRaptorPlanner {
 	private record ScanResult(ServiceDay serviceDay, List<Label> labels) {
 	}
 
-	private record RoutePatternKey(int routeIndex, List<Integer> stationSequence) {
+	record ScanMetrics(int expandedRoutes, int expandedTrips, int workspaceIdentity) {
+	}
+
+	private record RoutePatternKey(
+		String routeId,
+		List<Integer> stationSequence,
+		List<Integer> accessSignature
+	) {
 	}
 
 	private record CompiledRoutePatterns(
@@ -1000,15 +1289,17 @@ class RouteTimetableRaptorPlanner {
 	private record Label(String stationId, int timeSeconds, int startSeconds, int boardings, List<RideLeg> path) {
 	}
 
-	private record Boarding(Label label, int stopIndex) {
-	}
-
 	private record ScheduledTrip(
+		int index,
 		TransitTrip trip,
 		TransitRoute route,
 		List<TransitStopTime> stopTimes,
 		PrimitiveTripTimes times
 	) {
+		private ScheduledTrip withIndex(int denseIndex) {
+			return new ScheduledTrip(denseIndex, trip, route, stopTimes, times);
+		}
+
 		private int arrivalSeconds(int stopIndex) {
 			return times.arrivalSeconds(stopIndex);
 		}

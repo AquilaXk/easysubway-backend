@@ -46,6 +46,9 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 	private static final int WARMUPS = 20;
 	private static final int MEASUREMENTS = 100;
 	private static RouteV2Planner planner;
+	private static RouteTimetableRaptorPlanner raptorPlanner;
+	private static int legacyExpandedRoutes;
+	private static int legacyExpandedTrips;
 
 	@BeforeAll
 	static void setUpFixture() throws Exception {
@@ -94,6 +97,12 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 			}
 		};
 		planner = new RouteV2Planner(new NoLegacyRouteSearch(), port);
+		var plannerField = RouteV2Planner.class.getDeclaredField("timetableRaptorPlanner");
+		plannerField.setAccessible(true);
+		raptorPlanner = (RouteTimetableRaptorPlanner) plannerField.get(planner);
+		var compiled = raptorPlanner.compile(timetable);
+		legacyExpandedRoutes = compiled.routePatternCount();
+		legacyExpandedTrips = compiled.activeTripCount(java.time.LocalDate.of(2026, 7, 6));
 	}
 
 	@Test
@@ -161,12 +170,18 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 		}
 		System.out.printf(
 			"BENCHMARK_RAW {\"fixture\":\"%s\",\"fixtureSha256\":\"%s\",\"scenario\":\"%s\","
-				+ "\"warmups\":%d,\"measurements\":%d,\"nanos\":%s,\"allocatedBytes\":%s}%n",
+				+ "\"warmups\":%d,\"measurements\":%d,\"legacyExpandedRoutes\":%d,\"legacyExpandedTrips\":%d,"
+				+ "\"expandedRoutes\":%d,\"expandedTrips\":%d,"
+				+ "\"nanos\":%s,\"allocatedBytes\":%s}%n",
 			FIXTURE,
 			FIXTURE_SHA256,
 			scenario,
 			WARMUPS,
 			MEASUREMENTS,
+			legacyExpandedRoutes,
+			legacyExpandedTrips,
+			raptorPlanner.lastScanMetrics().expandedRoutes(),
+			raptorPlanner.lastScanMetrics().expandedTrips(),
 			Arrays.toString(nanos),
 			Arrays.toString(allocatedBytes)
 		);

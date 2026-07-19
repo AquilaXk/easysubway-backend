@@ -2607,6 +2607,42 @@ class RouteSearchServiceTest {
 	}
 
 	@Test
+	@DisplayName("역 내부 Dijkstra 후보는 경로 리스트를 보관하지 않는다")
+	void internalRouteCandidateDoesNotCarryPathList() {
+		Class<?> candidateType = java.util.Arrays.stream(RouteSearchService.class.getDeclaredClasses())
+			.filter(type -> type.getSimpleName().equals("InternalRouteCandidate"))
+			.findFirst()
+			.orElseThrow();
+
+		assertThat(candidateType.getRecordComponents())
+			.extracting(java.lang.reflect.RecordComponent::getName)
+			.containsExactly("nodeId", "cost");
+	}
+
+	@Test
+	@DisplayName("역 내부 predecessor는 더 짧은 후속 relax의 전체 경로를 순서대로 복원한다")
+	void internalRouteReconstructsLaterShorterRelaxation() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeEdgeService = new RouteSearchService(
+			repository,
+			repository,
+			new LaterShorterInternalTransitMasterPort(),
+			CLOCK
+		);
+
+		var result = routeEdgeService.searchInternalRoute(new SearchInternalRouteCommand(
+			"station-a",
+			"node-station-a-entrance",
+			"node-station-a-platform",
+			MobilityType.STROLLER
+		));
+
+		assertThat(result.steps())
+			.extracting("edgeId")
+			.containsExactly("edge-shortcut", "edge-shortcut-to-merge", "edge-merge-to-platform");
+	}
+
+	@Test
 	@DisplayName("역 내부 이동 경로는 활성 노드와 간선을 단계로 반환한다")
 	void searchInternalRouteReturnsActiveRouteEdgesAsSteps() {
 		var result = service.searchInternalRoute(new SearchInternalRouteCommand(
@@ -4804,6 +4840,37 @@ class RouteSearchServiceTest {
 			return List.of(
 				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "출입구"),
 				routeNode("node-station-a-landing", "station-a", RouteNodeType.CONCOURSE, "중간 지점"),
+				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
+			);
+		}
+	}
+
+	private static class LaterShorterInternalTransitMasterPort extends ExitSummaryAccessibleTransitMasterPort {
+
+		@Override
+		public List<RouteEdge> loadRouteEdges() {
+			return List.of(
+				internalEdge(
+					"edge-long-to-merge", "node-station-a-entrance", "node-station-a-merge",
+					RouteEdgeType.WALKWAY, 100, 100, false),
+				internalEdge(
+					"edge-shortcut", "node-station-a-entrance", "node-station-a-shortcut",
+					RouteEdgeType.WALKWAY, 10, 10, false),
+				internalEdge(
+					"edge-shortcut-to-merge", "node-station-a-shortcut", "node-station-a-merge",
+					RouteEdgeType.WALKWAY, 10, 10, false),
+				internalEdge(
+					"edge-merge-to-platform", "node-station-a-merge", "node-station-a-platform",
+					RouteEdgeType.WALKWAY, 10, 10, false)
+			);
+		}
+
+		@Override
+		public List<RouteNode> loadRouteNodes() {
+			return List.of(
+				routeNode("node-station-a-entrance", "station-a", RouteNodeType.ENTRANCE, "출입구"),
+				routeNode("node-station-a-shortcut", "station-a", RouteNodeType.CONCOURSE, "지름길"),
+				routeNode("node-station-a-merge", "station-a", RouteNodeType.CONCOURSE, "합류점"),
 				routeNode("node-station-a-platform", "station-a", RouteNodeType.PLATFORM, "승강장")
 			);
 		}
