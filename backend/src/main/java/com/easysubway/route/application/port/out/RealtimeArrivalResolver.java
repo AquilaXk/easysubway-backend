@@ -30,10 +30,28 @@ public interface RealtimeArrivalResolver {
 		String fallbackCode,
 		String providerSnapshotId,
 		Instant providerReceivedAt,
-		List<ArrivalCandidate> candidates
+		List<ArrivalCandidate> candidates,
+		List<String> cancelledTrainNos
 	) {
+		public Resolution(
+			ArrivalFreshness status,
+			String fallbackCode,
+			String providerSnapshotId,
+			Instant providerReceivedAt,
+			List<ArrivalCandidate> candidates
+		) {
+			this(status, fallbackCode, providerSnapshotId, providerReceivedAt, candidates, List.of());
+		}
+
 		public Resolution {
+			status = status == null ? ArrivalFreshness.UNAVAILABLE : status;
 			candidates = candidates == null ? List.of() : List.copyOf(candidates);
+			cancelledTrainNos = cancelledTrainNos == null ? List.of() : cancelledTrainNos.stream()
+				.filter(value -> value != null)
+				.map(String::trim)
+				.filter(value -> !value.isEmpty())
+				.distinct()
+				.toList();
 		}
 	}
 }

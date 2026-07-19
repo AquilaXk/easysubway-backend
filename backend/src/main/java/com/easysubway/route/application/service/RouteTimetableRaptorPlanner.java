@@ -1,5 +1,9 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableTripDeparture;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
@@ -26,6 +30,7 @@ import com.easysubway.route.domain.RouteWarningCode;
 import com.easysubway.route.domain.RouteSearchResult.OfficialFare;
 import java.time.Duration;
 import java.time.DayOfWeek;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
@@ -75,20 +80,35 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	List<RouteSearchResult> search(SearchRouteV2Command command, CompiledTimetable timetable) {
+		return search(command, timetable, RealtimeOverlay.empty());
+	}
+
+	List<RouteSearchResult> search(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay
+	) {
 		ServiceDay serviceDay = serviceDay(command);
-		return results(command, timetable, serviceDay,
-			scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds(), false));
+		return results(command, timetable, serviceDay, realtimeOverlay,
+			scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay));
 	}
 	SearchOutcome searchWithDiagnostics(SearchRouteV2Command command, CompiledTimetable timetable) {
+		return searchWithDiagnostics(command, timetable, RealtimeOverlay.empty());
+	}
+	SearchOutcome searchWithDiagnostics(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay
+	) {
 		ServiceDay serviceDay = serviceDay(command);
 		ScanResult found = scanDestinationLabels(
-			command, timetable, serviceDay, serviceDay.departureSeconds(), false);
-		List<RouteSearchResult> itineraries = results(command, timetable, serviceDay, found);
+			command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay);
+		List<RouteSearchResult> itineraries = results(command, timetable, serviceDay, realtimeOverlay, found);
 		if (!itineraries.isEmpty()) {
 			return new SearchOutcome(itineraries, null);
 		}
 		ScanResult diagnostic = scanDestinationLabels(
-			command, timetable, serviceDay, serviceDay.departureSeconds(), true);
+			command, timetable, serviceDay, serviceDay.departureSeconds(), true, realtimeOverlay);
 		if (diagnostic.labels().isEmpty()) {
 			return new SearchOutcome(List.of(), null);
 		}
@@ -98,12 +118,13 @@ class RouteTimetableRaptorPlanner {
 		SearchRouteV2Command command,
 		CompiledTimetable timetable,
 		ServiceDay serviceDay,
+		RealtimeOverlay realtimeOverlay,
 		ScanResult scanResult
 	) {
 		return scanResult.labels().stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.limit(candidateLimit(command))
-			.map(label -> toRouteSearchResult(command, label, serviceDay, timetable))
+			.map(label -> toRouteSearchResult(command, label, serviceDay, timetable, realtimeOverlay))
 			.toList();
 	}
 
@@ -157,6 +178,14 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	Optional<OffsetDateTime> nextServiceTime(SearchRouteV2Command command, CompiledTimetable timetable) {
+		return nextServiceTime(command, timetable, RealtimeOverlay.empty());
+	}
+
+	Optional<OffsetDateTime> nextServiceTime(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay
+	) {
 		ServiceDay serviceDay = serviceDay(command);
 		for (int dayOffset = 0; dayOffset <= 7; dayOffset += 1) {
 			LocalDate candidateServiceDate = serviceDay.date().plusDays(dayOffset);
@@ -165,7 +194,8 @@ class RouteTimetableRaptorPlanner {
 				command,
 				timetable,
 				candidateServiceDate,
-				startSeconds
+				startSeconds,
+				dayOffset == 0 ? realtimeOverlay : RealtimeOverlay.empty()
 			);
 			if (departureSeconds.isPresent()) {
 				return Optional.of(candidateServiceDate.atStartOfDay(SERVICE_ZONE)
@@ -191,7 +221,8 @@ class RouteTimetableRaptorPlanner {
 		SearchRouteV2Command command,
 		CompiledTimetable timetable,
 		LocalDate serviceDate,
-		int startSeconds
+		int startSeconds,
+		RealtimeOverlay realtimeOverlay
 	) {
 		Map<String, List<BoardingStop>> boardingsByStation = timetable.activeServiceDay(serviceDate).boardingsByStation();
 		Map<ReachabilityState, Boolean> reachabilityCache = new HashMap<>();
@@ -201,6 +232,9 @@ class RouteTimetableRaptorPlanner {
 		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
 		for (BoardingStop boardingStop : boardingsByStation.getOrDefault(command.originStationId(), List.of())) {
 			ScheduledTrip trip = boardingStop.trip();
+			if (realtimeOverlay.cancelled(trip)) {
+				continue;
+			}
 			int stopIndex = boardingStop.stopIndex();
 			int boardingLine = timetable.lineIndex(trip.lineId(stopIndex));
 			int entryTransition = origin < 0 || boardingLine < 0 ? -1 : timetable.entryTransition(
@@ -210,7 +244,7 @@ class RouteTimetableRaptorPlanner {
 			}
 			int entrySeconds = profiledWalkSeconds(
 				command, timetable.transitionDurationSeconds(entryTransition));
-			int departureSeconds = trip.departureSeconds(stopIndex);
+			int departureSeconds = realtimeOverlay.departureSeconds(trip, stopIndex);
 			if (!trip.allowsPickup(stopIndex)
 				|| departureSeconds < startSeconds + entrySeconds + slackSeconds) {
 				continue;
@@ -221,11 +255,12 @@ class RouteTimetableRaptorPlanner {
 				boardingsByStation,
 				trip,
 				stopIndex,
-				0,
-				accessProfileBit,
-				new HashSet<>(),
-				reachabilityCache
-			)) {
+					0,
+					accessProfileBit,
+					new HashSet<>(),
+					reachabilityCache,
+					realtimeOverlay
+				)) {
 				firstDepartureSeconds = firstDepartureSeconds == null
 					? departureSeconds
 					: Math.min(firstDepartureSeconds, departureSeconds);
@@ -243,8 +278,12 @@ class RouteTimetableRaptorPlanner {
 		int transfersUsed,
 		int accessProfileBit,
 		Set<ReachabilityState> visiting,
-		Map<ReachabilityState, Boolean> reachabilityCache
+		Map<ReachabilityState, Boolean> reachabilityCache,
+		RealtimeOverlay realtimeOverlay
 	) {
+		if (realtimeOverlay.cancelled(trip)) {
+			return false;
+		}
 		List<TransitStopTime> stopTimes = trip.stopTimes();
 		for (int stopIndex = boardingStopIndex + 1; stopIndex < stopTimes.size(); stopIndex += 1) {
 			TransitStopTime stopTime = stopTimes.get(stopIndex);
@@ -264,12 +303,13 @@ class RouteTimetableRaptorPlanner {
 				timetable,
 				boardingsByStation,
 				stopTime.stationId(),
-				trip.arrivalSeconds(stopIndex),
-				timetable.lineIndex(trip.lineId(stopIndex)),
+					realtimeOverlay.arrivalSeconds(trip, stopIndex),
+					timetable.lineIndex(trip.lineId(stopIndex)),
 				transfersUsed,
 				accessProfileBit,
 				visiting,
-				reachabilityCache
+					reachabilityCache,
+					realtimeOverlay
 			)) {
 				return true;
 			}
@@ -287,7 +327,8 @@ class RouteTimetableRaptorPlanner {
 		int transfersUsed,
 		int accessProfileBit,
 		Set<ReachabilityState> visiting,
-		Map<ReachabilityState, Boolean> reachabilityCache
+		Map<ReachabilityState, Boolean> reachabilityCache,
+		RealtimeOverlay realtimeOverlay
 	) {
 		if (transfersUsed >= command.maxTransfers()) {
 			return false;
@@ -305,6 +346,9 @@ class RouteTimetableRaptorPlanner {
 		try {
 			for (BoardingStop boardingStop : boardingsByStation.getOrDefault(stationId, List.of())) {
 				ScheduledTrip trip = boardingStop.trip();
+				if (realtimeOverlay.cancelled(trip)) {
+					continue;
+				}
 				int stopIndex = boardingStop.stopIndex();
 				int boardingLine = timetable.lineIndex(trip.lineId(stopIndex));
 				int transferTransition = station < 0 || incomingLine < 0 || boardingLine < 0 ? -1
@@ -315,7 +359,8 @@ class RouteTimetableRaptorPlanner {
 				int transferSeconds = profiledWalkSeconds(
 					command, timetable.transitionDurationSeconds(transferTransition));
 				if (!trip.allowsPickup(stopIndex)
-					|| trip.departureSeconds(stopIndex) < readySeconds + transferSeconds + slackSeconds) {
+					|| realtimeOverlay.departureSeconds(trip, stopIndex)
+						< readySeconds + transferSeconds + slackSeconds) {
 					continue;
 				}
 				if (canReachDestinationAfterBoarding(
@@ -327,7 +372,8 @@ class RouteTimetableRaptorPlanner {
 					transfersUsed + 1,
 					accessProfileBit,
 					visiting,
-					reachabilityCache
+					reachabilityCache,
+					realtimeOverlay
 				)) {
 					reachabilityCache.put(state, true);
 					return true;
@@ -345,7 +391,8 @@ class RouteTimetableRaptorPlanner {
 		CompiledTimetable timetable,
 		ServiceDay serviceDay,
 		int startSeconds,
-		boolean ignoreAccessBlocks
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
 	) {
 		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDay.date());
 		ScanWorkspace workspace = scanWorkspaces.get();
@@ -378,7 +425,8 @@ class RouteTimetableRaptorPlanner {
 					slackSeconds,
 					accessProfileBit,
 					command,
-					ignoreAccessBlocks
+					ignoreAccessBlocks,
+					realtimeOverlay
 				);
 			}
 			workspace.finishRound();
@@ -386,7 +434,7 @@ class RouteTimetableRaptorPlanner {
 
 		List<Label> destinationLabels = destinationLabels(
 			command.destinationStationId(), timetable, workspace, destination, startSeconds,
-			accessProfileBit, command, ignoreAccessBlocks)
+			accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay)
 			.stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.limit(candidateLimit(command))
@@ -428,11 +476,18 @@ class RouteTimetableRaptorPlanner {
 		int slackSeconds,
 		int accessProfileBit,
 		SearchRouteV2Command command,
-		boolean ignoreAccessBlocks
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
 	) {
 		workspace.expandedRoutes += 1;
 		List<ScheduledTrip> trips = activeServiceDay.tripsByPattern(pattern);
 		if (trips.isEmpty()) {
+			return;
+		}
+		if (realtimeOverlay.affectsPattern(pattern)) {
+			scanPatternWithRealtime(
+				timetable, workspace, pattern, firstMarkedPosition, round, slackSeconds,
+				accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay, trips);
 			return;
 		}
 		int[] stops = timetable.stopsByPattern(pattern);
@@ -476,7 +531,8 @@ class RouteTimetableRaptorPlanner {
 			);
 			if (candidate != null) {
 				ready = bestReadyBoarding(timetable, workspace, station, boardingLine, round, slackSeconds,
-					accessProfileBit, command, ignoreAccessBlocks, candidate.departureSeconds(position));
+					accessProfileBit, command, ignoreAccessBlocks,
+					candidate.departureSeconds(position));
 					earliestDepartureSeconds = ready.earliestDepartureSeconds();
 			}
 			if (boardedTrip != null && boardedTrip.allowsPickup(position)
@@ -502,6 +558,63 @@ class RouteTimetableRaptorPlanner {
 				boardingReadySlot = ready.readySlot();
 				boardingWarningBits = ready.warningBits();
 				workspace.expandedTrips += 1;
+			}
+		}
+	}
+
+	private static void scanPatternWithRealtime(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		int pattern,
+		int firstMarkedPosition,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		SearchRouteV2Command command,
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay,
+		List<ScheduledTrip> trips
+	) {
+		int[] stops = timetable.stopsByPattern(pattern);
+		for (ScheduledTrip trip : trips) {
+			if (realtimeOverlay.cancelled(trip)) {
+				continue;
+			}
+			int boardingPosition = -1;
+			int boardingEarliestDepartureSeconds = UNREACHED;
+			int boardingAccessTransition = -1;
+			int boardingReadySlot = -1;
+			byte boardingWarningBits = 0;
+			for (int position = firstMarkedPosition; position < stops.length; position += 1) {
+				int station = stops[position];
+				int boardingLine = timetable.lineIndex(trip.lineId(position));
+				if (boardingLine < 0) {
+					continue;
+				}
+				if (boardingPosition >= 0 && position > boardingPosition && trip.allowsDropOff(position)) {
+					workspace.relax(
+						station, round + 1, boardingLine,
+						realtimeOverlay.arrivalSeconds(trip, position), trip.index(),
+						boardingPosition, position, boardingAccessTransition,
+						boardingReadySlot, boardingWarningBits);
+				}
+				if (!trip.allowsPickup(position)) {
+					continue;
+				}
+				int departureSeconds = realtimeOverlay.departureSeconds(trip, position);
+				ReadyBoarding ready = bestReadyBoarding(
+					timetable, workspace, station, boardingLine, round, slackSeconds,
+					accessProfileBit, command, ignoreAccessBlocks, departureSeconds);
+				if (ready != null && (boardingPosition < 0 || compareReadyBoardingKeys(
+					ready.earliestDepartureSeconds(), ready.warningBits(), ready.readySlot(),
+					boardingEarliestDepartureSeconds, boardingWarningBits, boardingReadySlot, true) < 0)) {
+					boardingPosition = position;
+					boardingEarliestDepartureSeconds = ready.earliestDepartureSeconds();
+					boardingAccessTransition = ready.accessTransition();
+					boardingReadySlot = ready.readySlot();
+					boardingWarningBits = ready.warningBits();
+					workspace.expandedTrips += 1;
+				}
 			}
 		}
 	}
@@ -586,7 +699,8 @@ class RouteTimetableRaptorPlanner {
 		int startSeconds,
 		int accessProfileBit,
 		SearchRouteV2Command command,
-		boolean ignoreAccessBlocks
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
 	) {
 		List<Label> labels = new ArrayList<>(PARETO_LIMIT * timetable.lineCount());
 		for (int boardings = 1; boardings <= PARETO_LIMIT; boardings += 1) {
@@ -610,7 +724,7 @@ class RouteTimetableRaptorPlanner {
 						ScheduledTrip trip = timetable.scheduledTrip(workspace.parentTrip[currentSlot]);
 						int boardingPosition = workspace.parentBoardStop[currentSlot];
 						int alightingPosition = workspace.parentAlightStop[currentSlot];
-						path.add(new RideLeg(trip, boardingPosition, alightingPosition));
+						path.add(new RideLeg(trip, boardingPosition, alightingPosition, realtimeOverlay));
 						accessTransitions[currentBoardings - 1] = workspace.parentAccessTransition[currentSlot];
 						currentSlot = workspace.parentLabelSlot[currentSlot];
 						currentBoardings -= 1;
@@ -694,7 +808,8 @@ class RouteTimetableRaptorPlanner {
 		SearchRouteV2Command command,
 		Label label,
 		ServiceDay serviceDay,
-		CompiledTimetable timetable
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay
 	) {
 		List<RouteStep> steps = new ArrayList<>();
 		int sequence = 1;
@@ -744,6 +859,8 @@ class RouteTimetableRaptorPlanner {
 				sequence += 1;
 			}
 			String lineName = leg.lineName();
+			RealtimeEvidence realtimeEvidence = realtimeOverlay.evidence(leg.scheduledTrip());
+			boolean realtime = realtimeEvidence != null;
 			steps.add(new RouteStep(
 				sequence,
 				"ride",
@@ -758,12 +875,12 @@ class RouteTimetableRaptorPlanner {
 				false,
 				"UNKNOWN",
 				false,
-				EtaSource.PLANNED.name(),
+				realtime ? EtaSource.REALTIME.name() : EtaSource.PLANNED.name(),
 				"TIMETABLE",
-				"시간표",
-				List.of(),
-				null,
-				null,
+				realtime ? "실시간" : "시간표",
+				realtime ? List.of("REALTIME_PRE_SCAN_OVERLAY") : List.of(),
+				realtime ? realtimeEvidence.providerSnapshotId() : null,
+				realtime ? formatInstant(realtimeEvidence.providerObservedAt()) : null,
 				null,
 				null,
 				null,
@@ -936,6 +1053,9 @@ class RouteTimetableRaptorPlanner {
 			.toOffsetDateTime()
 			.format(DateTimeFormatter.ISO_OFFSET_DATE_TIME);
 	}
+	private static String formatInstant(Instant instant) {
+		return instant == null ? null : instant.toString();
+	}
 
 	private static int waitMinutesBeforeBoarding(
 		int readySeconds,
@@ -964,6 +1084,187 @@ class RouteTimetableRaptorPlanner {
 
 	CompiledTimetable compile(RouteTimetable timetable) {
 		return new CompiledTimetable(timetable);
+	}
+
+	List<TimetableRealtimeQuery> realtimeQueries(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable
+	) {
+		ServiceDay serviceDay = serviceDay(command);
+		Map<String, List<TimetableTripDeparture>> departuresByLine = new LinkedHashMap<>();
+		for (ScheduledTrip trip : timetable.activeServiceDay(serviceDay.date()).trips()) {
+			if (trip.trip().trainNo() == null) {
+				continue;
+			}
+			for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
+				TransitStopTime stop = trip.stopTimes().get(stopIndex);
+				if (!command.originStationId().equals(stop.stationId()) || !trip.allowsPickup(stopIndex)) {
+					continue;
+				}
+				departuresByLine.computeIfAbsent(stop.lineId(), ignored -> new ArrayList<>())
+					.add(new TimetableTripDeparture(
+						trip.trip().id(),
+						trip.trip().trainNo(),
+						trip.trip().servicePattern(),
+						serviceDay.date().atStartOfDay(SERVICE_ZONE)
+							.plusSeconds(trip.arrivalSeconds(stopIndex)).toInstant(),
+						serviceDay.date().atStartOfDay(SERVICE_ZONE)
+							.plusSeconds(trip.departureSeconds(stopIndex)).toInstant()
+					));
+				break;
+			}
+		}
+		return departuresByLine.entrySet().stream()
+			.map(entry -> new TimetableRealtimeQuery(
+				command.originStationId(), entry.getKey(), command.departureTime().toInstant(), entry.getValue()))
+			.toList();
+	}
+
+	List<TimetableRealtimeQuery> realtimeQueries(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		List<RouteSearchResult> itineraries,
+		List<TimetableRealtimeQuery> queried
+	) {
+		Set<BoardingPoint> queriedPoints = new HashSet<>();
+		for (TimetableRealtimeQuery query : queried) {
+			queriedPoints.add(new BoardingPoint(query.stationId(), query.lineId()));
+		}
+		Map<BoardingPoint, Instant> readyAtByPoint = new LinkedHashMap<>();
+		for (RouteSearchResult itinerary : itineraries) {
+			for (int stepIndex = 0; stepIndex < itinerary.steps().size(); stepIndex += 1) {
+				RouteStep step = itinerary.steps().get(stepIndex);
+				if (!"ride".equals(step.stepType()) || step.fromStationId() == null || step.lineId() == null) {
+					continue;
+				}
+				BoardingPoint point = new BoardingPoint(step.fromStationId(), step.lineId());
+				if (queriedPoints.contains(point)) {
+					continue;
+				}
+				Instant readyAt = realtimeReadyAt(command, itinerary.steps(), stepIndex);
+				readyAtByPoint.merge(point, readyAt, (left, right) -> left.isBefore(right) ? left : right);
+			}
+		}
+		if (readyAtByPoint.isEmpty()) {
+			return List.of();
+		}
+
+		ServiceDay serviceDay = serviceDay(command);
+		Map<BoardingPoint, List<TimetableTripDeparture>> departuresByPoint = new LinkedHashMap<>();
+		readyAtByPoint.keySet().forEach(point -> departuresByPoint.put(point, new ArrayList<>()));
+		for (ScheduledTrip trip : timetable.activeServiceDay(serviceDay.date()).trips()) {
+			if (trip.trip().trainNo() == null) {
+				continue;
+			}
+			for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
+				TransitStopTime stop = trip.stopTimes().get(stopIndex);
+				BoardingPoint point = new BoardingPoint(stop.stationId(), stop.lineId());
+				List<TimetableTripDeparture> departures = departuresByPoint.get(point);
+				if (departures == null || !trip.allowsPickup(stopIndex)) {
+					continue;
+				}
+				departures.add(new TimetableTripDeparture(
+					trip.trip().id(),
+					trip.trip().trainNo(),
+					trip.trip().servicePattern(),
+					serviceDay.date().atStartOfDay(SERVICE_ZONE)
+						.plusSeconds(trip.arrivalSeconds(stopIndex)).toInstant(),
+					serviceDay.date().atStartOfDay(SERVICE_ZONE)
+						.plusSeconds(trip.departureSeconds(stopIndex)).toInstant()
+				));
+			}
+		}
+		return departuresByPoint.entrySet().stream()
+			.filter(entry -> !entry.getValue().isEmpty())
+			.map(entry -> new TimetableRealtimeQuery(
+				entry.getKey().stationId(),
+				entry.getKey().lineId(),
+				readyAtByPoint.get(entry.getKey()),
+				entry.getValue()
+			))
+			.toList();
+	}
+
+	private static Instant realtimeReadyAt(
+		SearchRouteV2Command command,
+		List<RouteStep> steps,
+		int rideStepIndex
+	) {
+		if (rideStepIndex > 0) {
+			RouteStep access = steps.get(rideStepIndex - 1);
+			if (("entry".equals(access.stepType()) || "transfer".equals(access.stepType()))
+				&& access.plannedDepartureTime() != null && access.walkSeconds() != null) {
+				return OffsetDateTime.parse(access.plannedDepartureTime())
+					.plusSeconds(access.walkSeconds() + BoardingSlackPolicy.secondsFor(command.mobilityType()))
+					.toInstant();
+			}
+		}
+		RouteStep ride = steps.get(rideStepIndex);
+		return ride.plannedDepartureTime() == null
+			? command.departureTime().toInstant()
+			: OffsetDateTime.parse(ride.plannedDepartureTime()).toInstant();
+	}
+
+	RealtimeOverlay compileRealtimeOverlay(
+		CompiledTimetable timetable,
+		TimetableRealtimeUpdates realtimeUpdates
+	) {
+		if (realtimeUpdates == null || !realtimeUpdates.available()) {
+			return RealtimeOverlay.empty();
+		}
+		List<IndexedRealtimeUpdate> indexed = new ArrayList<>();
+		Set<Integer> seen = new HashSet<>();
+		Set<Integer> affectedPatterns = new HashSet<>();
+		for (TimetableRealtimeUpdate update : realtimeUpdates.updates()) {
+			int scheduledTripIndex = timetable.uniqueScheduledTripIndex(update.tripId());
+			if (scheduledTripIndex < 0 || !seen.add(scheduledTripIndex)
+				|| !validRealtimeUpdate(timetable.scheduledTrip(scheduledTripIndex), update)) {
+				return RealtimeOverlay.empty();
+			}
+			indexed.add(new IndexedRealtimeUpdate(scheduledTripIndex, update));
+			affectedPatterns.add(timetable.patternOfScheduledTrip(scheduledTripIndex));
+		}
+		indexed.sort(Comparator.comparingInt(IndexedRealtimeUpdate::scheduledTripIndex));
+		int[] tripIndexes = new int[indexed.size()];
+		int[] arrivalDeltas = new int[indexed.size()];
+		int[] departureDeltas = new int[indexed.size()];
+		boolean[] cancelled = new boolean[indexed.size()];
+		RealtimeEvidence[] evidence = new RealtimeEvidence[indexed.size()];
+		for (int index = 0; index < indexed.size(); index += 1) {
+			IndexedRealtimeUpdate value = indexed.get(index);
+			TimetableRealtimeUpdate update = value.update();
+			tripIndexes[index] = value.scheduledTripIndex();
+			arrivalDeltas[index] = update.arrivalDeltaSeconds();
+			departureDeltas[index] = update.departureDeltaSeconds();
+			cancelled[index] = update.cancelled();
+			evidence[index] = new RealtimeEvidence(
+				update.providerSnapshotId(), update.providerObservedAt());
+		}
+		return new RealtimeOverlay(
+			realtimeUpdates.version(), true, tripIndexes, arrivalDeltas, departureDeltas, cancelled, evidence,
+			affectedPatterns.stream().mapToInt(Integer::intValue).sorted().toArray());
+	}
+
+	private static boolean validRealtimeUpdate(ScheduledTrip trip, TimetableRealtimeUpdate update) {
+		if (update.cancelled()) {
+			return true;
+		}
+		int previousDeparture = -1;
+		try {
+			for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
+				int arrival = Math.addExact(trip.arrivalSeconds(stopIndex), update.arrivalDeltaSeconds());
+				int departure = Math.addExact(trip.departureSeconds(stopIndex), update.departureDeltaSeconds());
+				if (arrival < 0 || departure < arrival
+					|| departure >= LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE
+					|| previousDeparture > arrival) {
+					return false;
+				}
+				previousDeparture = departure;
+			}
+			return true;
+		} catch (ArithmeticException exception) {
+			return false;
+		}
 	}
 
 	private static Map<String, TransitRoute> routesById(RouteTimetable timetable) {
@@ -1087,6 +1388,7 @@ class RouteTimetableRaptorPlanner {
 		private final Map<Integer, int[]> stopsByPattern;
 		private final Map<Integer, int[]> patternsByStop;
 		private final Map<Integer, List<ScheduledTrip>> tripsByPattern;
+		private final int[] patternByScheduledTrip;
 		private final Map<DayOfWeek, List<ServiceCalendar>> calendarsByDay;
 		private final Map<LocalDate, List<ServiceCalendarDate>> exceptionsByDate;
 		private final List<ScheduledTrip> scheduledTrips;
@@ -1126,6 +1428,13 @@ class RouteTimetableRaptorPlanner {
 			stopsByPattern = routePatterns.stopsByPattern();
 			patternsByStop = invertPatterns(stopsByPattern, stationIndex.size());
 			tripsByPattern = routePatterns.tripsByPattern();
+			patternByScheduledTrip = new int[scheduledTrips.size()];
+			Arrays.fill(patternByScheduledTrip, -1);
+			for (Map.Entry<Integer, List<ScheduledTrip>> entry : tripsByPattern.entrySet()) {
+				for (ScheduledTrip trip : entry.getValue()) {
+					patternByScheduledTrip[trip.index()] = entry.getKey();
+				}
+			}
 			calendarsByDay = compileCalendarsByDay(source.serviceCalendars());
 			exceptionsByDate = Map.copyOf(source.serviceCalendarDates().stream().collect(
 				java.util.stream.Collectors.groupingBy(
@@ -1210,6 +1519,24 @@ class RouteTimetableRaptorPlanner {
 
 		ScheduledTrip scheduledTrip(int index) {
 			return scheduledTrips.get(index);
+		}
+
+		int uniqueScheduledTripIndex(String tripId) {
+			int selected = -1;
+			for (ScheduledTrip trip : scheduledTrips) {
+				if (!trip.trip().id().equals(tripId)) {
+					continue;
+				}
+				if (selected >= 0) {
+					return -1;
+				}
+				selected = trip.index();
+			}
+			return selected;
+		}
+
+		int patternOfScheduledTrip(int scheduledTripIndex) {
+			return patternByScheduledTrip[scheduledTripIndex];
 		}
 
 		int routePatternTripLinkCount() {
@@ -2050,7 +2377,89 @@ class RouteTimetableRaptorPlanner {
 			itineraries = List.copyOf(itineraries);
 		}
 	}
+	private record BoardingPoint(String stationId, String lineId) {
+	}
 	record ScanMetrics(int expandedRoutes, int expandedTrips, int workspaceIdentity) {
+	}
+
+	static final class RealtimeOverlay {
+
+		private static final RealtimeOverlay EMPTY = new RealtimeOverlay(
+			null, false, new int[0], new int[0], new int[0], new boolean[0], new RealtimeEvidence[0], new int[0]);
+		private final String version;
+		private final boolean available;
+		private final int[] tripIndexes;
+		private final int[] arrivalDeltas;
+		private final int[] departureDeltas;
+		private final boolean[] cancelled;
+		private final RealtimeEvidence[] evidence;
+		private final int[] affectedPatterns;
+
+		private RealtimeOverlay(
+			String version,
+			boolean available,
+			int[] tripIndexes,
+			int[] arrivalDeltas,
+			int[] departureDeltas,
+			boolean[] cancelled,
+			RealtimeEvidence[] evidence,
+			int[] affectedPatterns
+		) {
+			this.version = version;
+			this.available = available;
+			this.tripIndexes = tripIndexes;
+			this.arrivalDeltas = arrivalDeltas;
+			this.departureDeltas = departureDeltas;
+			this.cancelled = cancelled;
+			this.evidence = evidence;
+			this.affectedPatterns = affectedPatterns;
+		}
+
+		static RealtimeOverlay empty() {
+			return EMPTY;
+		}
+
+		String version() {
+			return version;
+		}
+
+		boolean available() {
+			return available;
+		}
+
+		boolean isEmpty() {
+			return tripIndexes.length == 0;
+		}
+
+		boolean affectsPattern(int pattern) {
+			return Arrays.binarySearch(affectedPatterns, pattern) >= 0;
+		}
+
+		int arrivalSeconds(ScheduledTrip trip, int stopIndex) {
+			int entry = entry(trip.index());
+			return entry < 0 ? trip.arrivalSeconds(stopIndex)
+				: Math.addExact(trip.arrivalSeconds(stopIndex), arrivalDeltas[entry]);
+		}
+
+		int departureSeconds(ScheduledTrip trip, int stopIndex) {
+			int entry = entry(trip.index());
+			return entry < 0 ? trip.departureSeconds(stopIndex)
+				: Math.addExact(trip.departureSeconds(stopIndex), departureDeltas[entry]);
+		}
+
+		boolean cancelled(ScheduledTrip trip) {
+			int entry = entry(trip.index());
+			return entry >= 0 && cancelled[entry];
+		}
+
+		RealtimeEvidence evidence(ScheduledTrip trip) {
+			int entry = entry(trip.index());
+			return entry < 0 || cancelled[entry] ? null : evidence[entry];
+		}
+
+		private int entry(int tripIndex) {
+			return Arrays.binarySearch(tripIndexes, tripIndex);
+		}
 	}
 
 	private record RoutePatternKey(
@@ -2116,7 +2525,12 @@ class RouteTimetableRaptorPlanner {
 	private record ReachabilityState(String stationId, int readySeconds, int incomingLine, int transfersUsed) {
 	}
 
-	private record RideLeg(ScheduledTrip scheduledTrip, int fromIndex, int toIndex) {
+	private record RideLeg(
+		ScheduledTrip scheduledTrip,
+		int fromIndex,
+		int toIndex,
+		RealtimeOverlay realtimeOverlay
+	) {
 		TransitTrip trip() {
 			return scheduledTrip.trip();
 		}
@@ -2130,11 +2544,11 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		int departureSeconds() {
-			return scheduledTrip.departureSeconds(fromIndex);
+			return realtimeOverlay.departureSeconds(scheduledTrip, fromIndex);
 		}
 
 		int arrivalSeconds() {
-			return scheduledTrip.arrivalSeconds(toIndex);
+			return realtimeOverlay.arrivalSeconds(scheduledTrip, toIndex);
 		}
 
 		String tripId() {
@@ -2160,5 +2574,11 @@ class RouteTimetableRaptorPlanner {
 			}
 			return route.lineId();
 		}
+	}
+
+	private record IndexedRealtimeUpdate(int scheduledTripIndex, TimetableRealtimeUpdate update) {
+	}
+
+	private record RealtimeEvidence(String providerSnapshotId, Instant providerObservedAt) {
 	}
 }

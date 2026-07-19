@@ -3,6 +3,9 @@ package com.easysubway.route.application.service;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
@@ -14,6 +17,7 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteTransp
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.CompiledTimetable;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.RealtimeOverlay;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.RouteNotFoundException;
@@ -26,7 +30,9 @@ import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
@@ -53,6 +59,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private final AtomicBoolean timetableCacheHitLogged = new AtomicBoolean();
 	private final AtomicBoolean timetableCacheMissLogged = new AtomicBoolean();
 	private volatile TimetableSnapshot cachedTimetableSnapshot;
+	private volatile RealtimeSnapshot cachedRealtimeSnapshot = RealtimeSnapshot.empty();
 
 	public RouteV2Planner(RouteSearchUseCase routeSearchUseCase) {
 		this(routeSearchUseCase, RouteTimetable::empty, false, true, new SimpleMeterRegistry());
@@ -117,15 +124,14 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				}
 				SearchRouteCommand searchRouteCommand = toSearchRouteCommand(command);
 				routeSearchUseCase.validateRouteSearch(searchRouteCommand);
-				RouteTimetableRaptorPlanner.SearchOutcome searchOutcome = timetableRaptorPlanner.searchWithDiagnostics(
-					rankingCommand(command),
-					snapshot.compiledTimetable()
-				);
+				RealtimeSearch realtimeSearch = realtimeSearch(command, snapshot);
+				RealtimeSnapshot realtimeSnapshot = realtimeSearch.snapshot();
+				RouteTimetableRaptorPlanner.SearchOutcome searchOutcome = realtimeSearch.outcome();
 				boolean blockedAccessibility = searchOutcome.blockedAccessibility() != null;
 				List<RouteSearchResult> timetableItineraries = blockedAccessibility
 					? List.of(searchOutcome.blockedAccessibility()) : searchOutcome.itineraries();
 				if (timetableItineraries.isEmpty()) {
-					return noTimetableServicePlan(command, snapshot);
+					return noTimetableServicePlan(command, snapshot, realtimeSnapshot.overlay());
 				}
 				// #2095/#2286: 인증 Route V2는 SUBWAY_AND_ITX_CHEONGCHUN scope만 받고(위에서 강제)
 				// prod 게이트가 TIMETABLE_RAPTOR 출처만 허용하므로, 레거시 그래프 우선 시도를
@@ -188,10 +194,15 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		}
 	}
 
-	private RouteV2Plan noTimetableServicePlan(SearchRouteV2Command command, TimetableSnapshot snapshot) {
+	private RouteV2Plan noTimetableServicePlan(
+		SearchRouteV2Command command,
+		TimetableSnapshot snapshot,
+		RealtimeOverlay realtimeOverlay
+	) {
 		OffsetDateTime nextServiceTime = timetableRaptorPlanner.nextServiceTime(
 			command,
-			snapshot.compiledTimetable()
+			snapshot.compiledTimetable(),
+			realtimeOverlay
 		).orElse(null);
 		return new RouteV2Plan(
 			List.of(),
@@ -262,6 +273,106 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		}
 	}
 
+	private RealtimeSearch realtimeSearch(SearchRouteV2Command command, TimetableSnapshot timetableSnapshot) {
+		var rankingCommand = rankingCommand(command);
+		if (command.useRealtime()) {
+			return realtimeSearch(command, rankingCommand, timetableSnapshot);
+		}
+		RealtimeSnapshot empty = RealtimeSnapshot.empty();
+		return new RealtimeSearch(
+			empty,
+			timetableRaptorPlanner.searchWithDiagnostics(
+				rankingCommand, timetableSnapshot.compiledTimetable(), empty.overlay())
+		);
+	}
+
+	private RealtimeSearch realtimeSearch(
+		SearchRouteV2Command command,
+		SearchRouteV2Command rankingCommand,
+		TimetableSnapshot timetableSnapshot
+	) {
+		List<TimetableRealtimeQuery> queried = new ArrayList<>(
+			timetableRaptorPlanner.realtimeQueries(command, timetableSnapshot.compiledTimetable()));
+		TimetableRealtimeUpdates updates = resolveRealtimeUpdates(queried);
+		RealtimeSnapshot realtimeSnapshot = realtimeSnapshot(timetableSnapshot, updates);
+		RouteTimetableRaptorPlanner.SearchOutcome searchOutcome = timetableRaptorPlanner.searchWithDiagnostics(
+			rankingCommand, timetableSnapshot.compiledTimetable(), realtimeSnapshot.overlay());
+
+		int refinementLimit = RANKING_CANDIDATE_LIMIT * (command.maxTransfers() + 1);
+		for (int pass = 0; pass < refinementLimit && updates.available(); pass += 1) {
+			List<TimetableRealtimeQuery> additions = timetableRaptorPlanner.realtimeQueries(
+				command, timetableSnapshot.compiledTimetable(), searchOutcome.itineraries(), queried);
+			if (additions.isEmpty()) {
+				return new RealtimeSearch(realtimeSnapshot, searchOutcome);
+			}
+			queried.addAll(additions);
+			updates = mergeRealtimeUpdates(updates, resolveRealtimeUpdates(additions));
+			realtimeSnapshot = realtimeSnapshot(timetableSnapshot, updates);
+			searchOutcome = timetableRaptorPlanner.searchWithDiagnostics(
+				rankingCommand, timetableSnapshot.compiledTimetable(), realtimeSnapshot.overlay());
+		}
+		if (updates.available() && !timetableRaptorPlanner.realtimeQueries(
+			command, timetableSnapshot.compiledTimetable(), searchOutcome.itineraries(), queried).isEmpty()) {
+			updates = TimetableRealtimeUpdates.unavailable("REALTIME_REFINEMENT_LIMIT_EXCEEDED");
+			realtimeSnapshot = realtimeSnapshot(timetableSnapshot, updates);
+			searchOutcome = timetableRaptorPlanner.searchWithDiagnostics(
+				rankingCommand, timetableSnapshot.compiledTimetable(), realtimeSnapshot.overlay());
+		}
+		return new RealtimeSearch(realtimeSnapshot, searchOutcome);
+	}
+
+	private TimetableRealtimeUpdates resolveRealtimeUpdates(List<TimetableRealtimeQuery> queries) {
+		TimetableRealtimeUpdates updates = routeSearchUseCase.resolveTimetableRealtime(queries);
+		return updates == null
+			? TimetableRealtimeUpdates.unavailable("REALTIME_OVERLAY_UNAVAILABLE")
+			: updates;
+	}
+
+	private RealtimeSnapshot realtimeSnapshot(
+		TimetableSnapshot timetableSnapshot,
+		TimetableRealtimeUpdates updates
+	) {
+		RealtimeOverlay overlay = timetableRaptorPlanner.compileRealtimeOverlay(
+			timetableSnapshot.compiledTimetable(), updates);
+		RealtimeSnapshot replacement = new RealtimeSnapshot(
+			timetableSnapshot.cacheKey(), overlay.version(), overlay, updates.fallbackCode());
+		// 단일 volatile 참조 교체로 스캔은 구/신 overlay 중 하나만 캡처한다.
+		cachedRealtimeSnapshot = replacement;
+		return replacement;
+	}
+
+	private static TimetableRealtimeUpdates mergeRealtimeUpdates(
+		TimetableRealtimeUpdates current,
+		TimetableRealtimeUpdates addition
+	) {
+		if (!current.available()) {
+			return current;
+		}
+		if (!addition.available()) {
+			return addition;
+		}
+		Map<String, TimetableRealtimeUpdate> updatesByTripId = new LinkedHashMap<>();
+		for (TimetableRealtimeUpdate update : current.updates()) {
+			updatesByTripId.put(update.tripId(), update);
+		}
+		for (TimetableRealtimeUpdate update : addition.updates()) {
+			TimetableRealtimeUpdate previous = updatesByTripId.get(update.tripId());
+			if (previous != null && (previous.cancelled() != update.cancelled()
+				|| previous.arrivalDeltaSeconds() != update.arrivalDeltaSeconds()
+				|| previous.departureDeltaSeconds() != update.departureDeltaSeconds())) {
+				return TimetableRealtimeUpdates.unavailable("CONFLICTING_REALTIME_TRIP_UPDATE");
+			}
+			if (previous == null || previous.providerObservedAt().isBefore(update.providerObservedAt())) {
+				updatesByTripId.put(update.tripId(), update);
+			}
+		}
+		List<TimetableRealtimeUpdate> merged = updatesByTripId.values().stream()
+			.sorted(Comparator.comparing(TimetableRealtimeUpdate::tripId))
+			.toList();
+		return new TimetableRealtimeUpdates(
+			current.version() + "+" + addition.version(), true, merged, null);
+	}
+
 	private static Counter cacheCounter(MeterRegistry registry, String result) {
 		return Counter.builder("easysubway.route.v2.timetable.cache")
 			.tag("result", result)
@@ -286,6 +397,23 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		java.util.Set<String> coveredStationIds,
 		String timetableArtifactId,
 		LoadRouteTimetablePort.PlannerIdentity plannerIdentity
+	) {
+	}
+
+	private record RealtimeSnapshot(
+		String timetableCacheKey,
+		String overlayVersion,
+		RealtimeOverlay overlay,
+		String fallbackCode
+	) {
+		private static RealtimeSnapshot empty() {
+			return new RealtimeSnapshot(null, null, RealtimeOverlay.empty(), null);
+		}
+	}
+
+	private record RealtimeSearch(
+		RealtimeSnapshot snapshot,
+		RouteTimetableRaptorPlanner.SearchOutcome outcome
 	) {
 	}
 
@@ -401,9 +529,20 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		if (!useRealtime || itinerary.status() != RouteSearchStatus.FOUND) {
 			return false;
 		}
-		return itinerary.etaSource() == EtaSource.STATIC_BACKEND_ESTIMATE
-			|| itinerary.etaSource() == EtaSource.PLANNED
-			|| itinerary.etaSource() == EtaSource.FALLBACK;
+		List<RouteStep> rideSteps = itinerary.steps().stream()
+			.filter(step -> "ride".equals(step.stepType()))
+			.toList();
+		if (rideSteps.isEmpty()) {
+			return itinerary.etaSource() == EtaSource.STATIC_BACKEND_ESTIMATE
+				|| itinerary.etaSource() == EtaSource.PLANNED
+				|| itinerary.etaSource() == EtaSource.FALLBACK;
+		}
+		return rideSteps.stream()
+			.anyMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource())
+				|| EtaSource.FALLBACK.name().equals(step.timeSource())
+				|| EtaSource.STATIC_BACKEND_ESTIMATE.name().equals(step.timeSource())
+				|| "ESTIMATED_CONSTANT".equals(step.timeSource())
+				|| "STATIC_BACKEND_V1".equals(step.timeSource()));
 	}
 
 	private RouteV2Status statusOf(RouteSearchResult itinerary) {

@@ -4,6 +4,7 @@ import com.easysubway.route.domain.InternalRouteResult;
 import com.easysubway.route.domain.RouteFeedback;
 import com.easysubway.route.domain.RouteRefreshResult;
 import com.easysubway.route.domain.RouteSearchResult;
+import java.time.Instant;
 import java.util.List;
 import java.util.Objects;
 import java.util.function.UnaryOperator;
@@ -80,6 +81,12 @@ public interface RouteSearchUseCase {
 		return List.copyOf(timetableResults);
 	}
 
+	default TimetableRealtimeUpdates resolveTimetableRealtime(
+		List<TimetableRealtimeQuery> queries
+	) {
+		return TimetableRealtimeUpdates.unavailable("REALTIME_OVERLAY_UNSUPPORTED");
+	}
+
 	default boolean supportsRealtimeOverlay() {
 		return true;
 	}
@@ -105,5 +112,79 @@ public interface RouteSearchUseCase {
 	enum TimetableCandidateSource {
 		TIMETABLE_SCAN,
 		LEGACY_ACCESSIBILITY_CHECK
+	}
+
+	record TimetableRealtimeQuery(
+		String stationId,
+		String lineId,
+		Instant readyAt,
+		List<TimetableTripDeparture> departures
+	) {
+		public TimetableRealtimeQuery {
+			requireText(stationId, "stationId");
+			requireText(lineId, "lineId");
+			Objects.requireNonNull(readyAt, "readyAt must not be null");
+			departures = List.copyOf(Objects.requireNonNull(departures, "departures must not be null"));
+		}
+	}
+
+	record TimetableTripDeparture(
+		String tripId,
+		String trainNo,
+		String servicePattern,
+		Instant scheduledArrivalAt,
+		Instant scheduledDepartureAt
+	) {
+		public TimetableTripDeparture {
+			requireText(tripId, "tripId");
+			requireText(trainNo, "trainNo");
+			Objects.requireNonNull(scheduledArrivalAt, "scheduledArrivalAt must not be null");
+			Objects.requireNonNull(scheduledDepartureAt, "scheduledDepartureAt must not be null");
+		}
+	}
+
+	record TimetableRealtimeUpdate(
+		String tripId,
+		int arrivalDeltaSeconds,
+		int departureDeltaSeconds,
+		boolean cancelled,
+		String providerSnapshotId,
+		Instant providerObservedAt
+	) {
+		public TimetableRealtimeUpdate {
+			requireText(tripId, "tripId");
+			requireText(providerSnapshotId, "providerSnapshotId");
+			Objects.requireNonNull(providerObservedAt, "providerObservedAt must not be null");
+		}
+	}
+
+	record TimetableRealtimeUpdates(
+		String version,
+		boolean available,
+		List<TimetableRealtimeUpdate> updates,
+		String fallbackCode
+	) {
+		public TimetableRealtimeUpdates {
+			updates = List.copyOf(Objects.requireNonNull(updates, "updates must not be null"));
+			if (available && ((version == null || version.isBlank()) || updates.isEmpty())) {
+				throw new IllegalArgumentException("available realtime updates require a version and sparse updates");
+			}
+			if (!available && !updates.isEmpty()) {
+				throw new IllegalArgumentException("unavailable realtime updates must be empty");
+			}
+			if (!available) {
+				requireText(fallbackCode, "fallbackCode");
+			}
+		}
+
+		public static TimetableRealtimeUpdates unavailable(String fallbackCode) {
+			return new TimetableRealtimeUpdates(null, false, List.of(), fallbackCode);
+		}
+	}
+
+	private static void requireText(String value, String fieldName) {
+		if (value == null || value.isBlank()) {
+			throw new IllegalArgumentException(fieldName + " must not be blank");
+		}
 	}
 }

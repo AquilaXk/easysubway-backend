@@ -9,6 +9,8 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableTripDeparture;
 import com.easysubway.route.application.port.in.SearchInternalRouteCommand;
 import com.easysubway.route.application.port.in.SearchRouteCommand;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
@@ -75,6 +77,7 @@ import java.util.HexFormat;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
@@ -1929,7 +1932,8 @@ class RouteSearchServiceTest {
 		));
 
 		// hasRouteTimetable()==false면 게이트가 loadRouteTimetable() 없이 graph 폴백한다(AssertionError 미발생=불변식).
-		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+		assertThat(plan.statuses()).containsExactly(
+			RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
 		assertThat(plan.itineraries()).isNotEmpty();
 	}
 
@@ -2016,7 +2020,8 @@ class RouteSearchServiceTest {
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.first()
 			.satisfies(step -> {
-				assertThat(step.reasonCodes()).containsExactly("MATCHED_REALTIME");
+				assertThat(step.reasonCodes()).containsExactly(
+					"MATCHED_REALTIME", "REALTIME_POST_SCAN_FALLBACK");
 				assertThat(step.providerSnapshotId()).isEqualTo("test-realtime-snapshot");
 				assertThat(step.providerObservedAt()).isEqualTo("2026-07-01T00:08:00Z");
 				assertThat(step.gatewayReceivedAt()).isEqualTo("2026-07-01T00:08:00Z");
@@ -2024,6 +2029,268 @@ class RouteSearchServiceTest {
 			});
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
 		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
+	}
+
+	@Test
+	@DisplayName("V2 planner는 fresh delay를 RAPTOR 전에 반영해 선택 trip 자체를 바꾼다")
+	void routeV2PlannerAppliesFreshDelayBeforeRaptorSelection() {
+		var repository = new InMemoryRouteSearchRepository();
+		var calls = new AtomicInteger();
+		RealtimeArrivalResolver resolver = query -> {
+			calls.incrementAndGet();
+			Instant observedAt = query.readyAt().minusSeconds(30);
+			return new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME,
+				null,
+				"snapshot-pre-scan",
+				observedAt,
+				List.of(new ArrivalCandidate(
+					"train-express", query.lineId(), query.direction(), "도착역", 1_440,
+					query.readyAt().plusSeconds(1_440), observedAt, "EXPRESS",
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH))
+			);
+		};
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new TimetableAlignedRampAccessibleTransitMasterPort(), CLOCK, resolver);
+		var planner = new RouteV2Planner(routeSearchService, preScanRealtimeRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 0, 1));
+
+		assertThat(calls).hasValue(2);
+		assertThat(plan.itineraries()).singleElement().satisfies(itinerary -> {
+			assertThat(itinerary.steps()).filteredOn(step -> "ride".equals(step.stepType()))
+				.extracting("tripId").containsExactly("trip-local");
+			assertThat(itinerary.etaSource()).isEqualTo(EtaSource.FALLBACK);
+			assertThat(itinerary.steps()).filteredOn(step -> "ride".equals(step.stepType()))
+				.extracting("reasonCodes").containsExactly(List.of("NO_USABLE_REALTIME_CANDIDATE"));
+		});
+		assertThat(plan.statuses())
+			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+	}
+
+	@Test
+	@DisplayName("동시 스캔은 원자 교체된 구·신 overlay 중 한 version만 관측한다")
+	void routeV2PlannerObservesOneAtomicRealtimeOverlayVersionPerScan() throws Exception {
+		var repository = new InMemoryRouteSearchRepository();
+		var version = new AtomicInteger();
+		RealtimeArrivalResolver resolver = query -> {
+			boolean old = version.getAndIncrement() % 2 == 0;
+			int etaSeconds = old ? 600 : 660;
+			String snapshotId = old ? "snapshot-old" : "snapshot-new";
+			Instant observedAt = query.readyAt().minusSeconds(30);
+			return new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME, null, snapshotId, observedAt,
+				List.of(new ArrivalCandidate(
+					"train-express", query.lineId(), query.direction(), "도착역", etaSeconds,
+					query.readyAt().plusSeconds(etaSeconds), observedAt, "EXPRESS",
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH)));
+		};
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new TimetableAlignedRampAccessibleTransitMasterPort(), CLOCK, resolver);
+		var planner = new RouteV2Planner(routeSearchService, preScanRealtimeRouteTimetablePort());
+		var command = new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 0, 1);
+
+		List<RouteV2Plan> plans;
+		try (var executor = Executors.newFixedThreadPool(8)) {
+			var tasks = java.util.stream.IntStream.range(0, 64)
+				.mapToObj(ignored -> (java.util.concurrent.Callable<RouteV2Plan>) () -> planner.search(command))
+				.toList();
+			plans = executor.invokeAll(tasks).stream().map(future -> {
+				try {
+					return future.get();
+				} catch (Exception exception) {
+					throw new AssertionError(exception);
+				}
+			}).toList();
+		}
+
+		assertThat(plans).allSatisfy(plan -> {
+			RouteStep ride = plan.itineraries().getFirst().steps().stream()
+				.filter(step -> "ride".equals(step.stepType())).findFirst().orElseThrow();
+			assertThat(ride.providerSnapshotId()).isIn("snapshot-old", "snapshot-new");
+			if ("snapshot-old".equals(ride.providerSnapshotId())) {
+				assertThat(ride.plannedArrivalTime()).isEqualTo("2026-07-01T09:20:00+09:00");
+			} else {
+				assertThat(ride.plannedArrivalTime()).isEqualTo("2026-07-01T09:21:00+09:00");
+			}
+		});
+	}
+
+	@Test
+	@DisplayName("동시 요청은 같은 timetable에서도 다른 출발역의 overlay를 재사용하지 않는다")
+	void routeV2PlannerKeepsRealtimeOverlayRequestLocalAcrossOrigins() throws Exception {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolverBarrier = new CyclicBarrier(2);
+		RealtimeArrivalResolver resolver = query -> {
+			try {
+				resolverBarrier.await(5, TimeUnit.SECONDS);
+			} catch (Exception exception) {
+				throw new AssertionError("realtime resolver barrier failed", exception);
+			}
+			String suffix = query.stationId().substring(query.stationId().lastIndexOf('-') + 1);
+			Instant observedAt = query.readyAt().minusSeconds(30);
+			return new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME, null, "snapshot-" + suffix, observedAt,
+				List.of(new ArrivalCandidate(
+					"train-" + suffix, query.lineId(), query.direction(), "도착역", 600,
+					query.readyAt().plusSeconds(600), observedAt, "LOCAL",
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH)));
+		};
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new DualOriginRealtimeTransitMasterPort(), CLOCK, resolver);
+		var planner = new RouteV2Planner(routeSearchService, dualOriginRealtimeRouteTimetablePort());
+		var commandA = new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 0, 1);
+		var commandC = new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-c", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 0, 1);
+
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var planA = executor.submit(() -> planner.search(commandA));
+			var planC = executor.submit(() -> planner.search(commandC));
+			assertThat(realtimeRide(planA.get()).providerSnapshotId()).isEqualTo("snapshot-a");
+			assertThat(realtimeRide(planC.get()).providerSnapshotId()).isEqualTo("snapshot-c");
+		}
+	}
+
+	private static RouteStep realtimeRide(RouteV2Plan plan) {
+		return plan.itineraries().getFirst().steps().stream()
+			.filter(step -> "ride".equals(step.stepType()))
+			.findFirst()
+			.orElseThrow();
+	}
+
+	@Test
+	@DisplayName("pre-scan realtime은 exact trainNo만 sparse delta로 변환한다")
+	void resolvesExactRealtimeTripForPreScanOverlay() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver();
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new TimetableAlignedRampAccessibleTransitMasterPort(), CLOCK, resolver);
+		Instant scheduledArrival = CLOCK.instant().plusSeconds(60);
+
+		var updates = routeSearchService.resolveTimetableRealtime(List.of(new TimetableRealtimeQuery(
+			"station-a",
+			"seoul-4",
+			CLOCK.instant(),
+			List.of(new TimetableTripDeparture(
+				"trip-live", "train-test", "LOCAL",
+				scheduledArrival, scheduledArrival.plusSeconds(30)
+			))
+		)));
+
+		assertThat(updates.available()).isTrue();
+		assertThat(updates.version()).isEqualTo("test-realtime-snapshot");
+		assertThat(updates.updates()).singleElement().satisfies(update -> {
+			assertThat(update.tripId()).isEqualTo("trip-live");
+			assertThat(update.arrivalDeltaSeconds()).isEqualTo(60);
+			assertThat(update.departureDeltaSeconds()).isEqualTo(60);
+			assertThat(update.cancelled()).isFalse();
+			assertThat(update.providerObservedAt()).isEqualTo(CLOCK.instant().minusSeconds(30));
+		});
+	}
+
+	@Test
+	@DisplayName("여러 탑승점에서 같은 trip을 확인해도 동일한 pre-scan update는 한 번만 유지한다")
+	void deduplicatesConsistentRealtimeTripAcrossQueries() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver();
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new TimetableAlignedRampAccessibleTransitMasterPort(), CLOCK, resolver);
+		var query = new TimetableRealtimeQuery(
+			"station-a", "seoul-4", CLOCK.instant(), List.of(new TimetableTripDeparture(
+				"trip-live", "train-test", "LOCAL",
+				CLOCK.instant().plusSeconds(60), CLOCK.instant().plusSeconds(90))));
+
+		var updates = routeSearchService.resolveTimetableRealtime(List.of(query, query));
+
+		assertThat(updates.available()).isTrue();
+		assertThat(updates.updates()).singleElement()
+			.satisfies(update -> assertThat(update.tripId()).isEqualTo("trip-live"));
+	}
+
+	@Test
+	@DisplayName("pre-scan realtime 묶음 중 하나라도 stale이면 전체 overlay를 적용하지 않는다")
+	void rejectsPartialRealtimeOverlayWhenAnyQueryIsStale() {
+		var repository = new InMemoryRouteSearchRepository();
+		var resolver = new CountingRealtimeArrivalResolver(
+			ArrivalFreshness.FRESH_REALTIME, ArrivalFreshness.STALE_REALTIME);
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new TimetableAlignedRampAccessibleTransitMasterPort(), CLOCK, resolver);
+		var query = new TimetableRealtimeQuery(
+			"station-a", "seoul-4", CLOCK.instant(), List.of(new TimetableTripDeparture(
+				"trip-live", "train-test", "LOCAL",
+				CLOCK.instant().plusSeconds(60), CLOCK.instant().plusSeconds(90))));
+
+		var updates = routeSearchService.resolveTimetableRealtime(List.of(query, query));
+
+		assertThat(updates.available()).isFalse();
+		assertThat(updates.updates()).isEmpty();
+		assertThat(updates.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
+	}
+
+	@Test
+	@DisplayName("stale·unsupported·unavailable realtime은 pre-scan live update로 승격하지 않는다")
+	void rejectsEveryNonFreshRealtimeStatusBeforeScan() {
+		for (ArrivalFreshness status : List.of(
+			ArrivalFreshness.STALE_REALTIME,
+			ArrivalFreshness.UNSUPPORTED,
+			ArrivalFreshness.UNAVAILABLE,
+			ArrivalFreshness.EMPTY_PROVIDER_RESULT
+		)) {
+			var repository = new InMemoryRouteSearchRepository();
+			var routeSearchService = new RouteSearchService(
+				repository,
+				repository,
+				new TimetableAlignedRampAccessibleTransitMasterPort(),
+				CLOCK,
+				new CountingRealtimeArrivalResolver(status)
+			);
+			var updates = routeSearchService.resolveTimetableRealtime(List.of(new TimetableRealtimeQuery(
+				"station-a", "seoul-4", CLOCK.instant(), List.of(new TimetableTripDeparture(
+					"trip-live", "train-test", "LOCAL",
+					CLOCK.instant().plusSeconds(60), CLOCK.instant().plusSeconds(90))))));
+
+			assertThat(updates.available()).as(status.name()).isFalse();
+			assertThat(updates.updates()).as(status.name()).isEmpty();
+		}
+	}
+
+	@Test
+	@DisplayName("명시적 cancel trainNo는 추정 없이 해당 timetable trip의 cancel bit로 변환한다")
+	void resolvesExplicitCancellationForPreScanOverlay() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new TimetableAlignedRampAccessibleTransitMasterPort(),
+			CLOCK,
+			query -> new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME,
+				null,
+				"snapshot-cancel",
+				CLOCK.instant(),
+				List.of(),
+				List.of("  train-cancelled  ")
+			)
+		);
+		var updates = routeSearchService.resolveTimetableRealtime(List.of(new TimetableRealtimeQuery(
+			"station-a", "seoul-4", CLOCK.instant(), List.of(new TimetableTripDeparture(
+				"trip-cancelled", "train-cancelled", "LOCAL",
+				CLOCK.instant().plusSeconds(60), CLOCK.instant().plusSeconds(90))))));
+
+		assertThat(updates.available()).isTrue();
+		assertThat(updates.updates()).singleElement().satisfies(update -> {
+			assertThat(update.tripId()).isEqualTo("trip-cancelled");
+			assertThat(update.cancelled()).isTrue();
+			assertThat(update.arrivalDeltaSeconds()).isZero();
+			assertThat(update.departureDeltaSeconds()).isZero();
+		});
 	}
 
 	@Test
@@ -2066,6 +2333,91 @@ class RouteSearchServiceTest {
 			.filteredOn(step -> "ride".equals(step.stepType()))
 			.extracting("estimatedMinutes")
 			.containsExactly(8, 9);
+	}
+
+	@Test
+	@DisplayName("pre-scan overlay는 후보 경로의 환승 ride까지 최종 스캔 전에 보정한다")
+	void routeV2PlannerAppliesRealtimeToTransferBeforeFinalScan() {
+		var repository = new InMemoryRouteSearchRepository();
+		List<RealtimeArrivalResolver.Query> queries = Collections.synchronizedList(new ArrayList<>());
+		RealtimeArrivalResolver resolver = query -> {
+			queries.add(query);
+			boolean origin = "station-a".equals(query.stationId());
+			Instant observedAt = query.readyAt().minusSeconds(30);
+			return new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME,
+				null,
+				origin ? "snapshot-origin" : "snapshot-transfer",
+				observedAt,
+				List.of(new ArrivalCandidate(
+					origin ? "train-a" : "train-b", query.lineId(), query.direction(), "도착역",
+					origin ? 600 : 60, query.readyAt().plusSeconds(origin ? 600 : 60), observedAt, "LOCAL",
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH)));
+		};
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new OneTransferTransitMasterPort(), CLOCK, resolver);
+		var planner = new RouteV2Planner(routeSearchService, preScanTransferRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 1, 1));
+
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting(RouteStep::timeSource)
+			.containsExactly(EtaSource.REALTIME.name(), EtaSource.REALTIME.name());
+		assertThat(queries).extracting(RealtimeArrivalResolver.Query::stationId)
+			.containsExactly("station-a", "station-transfer");
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.extracting(step -> step.reasonCodes().getLast())
+			.containsExactly("REALTIME_PRE_SCAN_OVERLAY", "REALTIME_PRE_SCAN_OVERLAY");
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.FOUND);
+	}
+
+	@Test
+	@DisplayName("pre-scan overlay는 후보 경로의 취소된 환승 열차를 최종 스캔 전에 제외한다")
+	void routeV2PlannerExcludesCancelledTransferBeforeFinalScan() {
+		var repository = new InMemoryRouteSearchRepository();
+		List<RealtimeArrivalResolver.Query> queries = Collections.synchronizedList(new ArrayList<>());
+		RealtimeArrivalResolver resolver = query -> {
+			queries.add(query);
+			Instant observedAt = query.readyAt().minusSeconds(30);
+			if ("station-transfer".equals(query.stationId())) {
+				return new RealtimeArrivalResolver.Resolution(
+					ArrivalFreshness.FRESH_REALTIME,
+					null,
+					"snapshot-transfer",
+					observedAt,
+					List.of(),
+					List.of("train-b")
+				);
+			}
+			return new RealtimeArrivalResolver.Resolution(
+				ArrivalFreshness.FRESH_REALTIME,
+				null,
+				"snapshot-origin",
+				observedAt,
+				List.of(new ArrivalCandidate(
+					"train-a", query.lineId(), query.direction(), "환승역",
+					600, query.readyAt().plusSeconds(600), observedAt, "LOCAL",
+					ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH
+				))
+			);
+		};
+		var routeSearchService = new RouteSearchService(
+			repository, repository, new OneTransferTransitMasterPort(), CLOCK, resolver);
+		var planner = new RouteV2Planner(routeSearchService, preScanTransferRouteTimetablePort());
+
+		var plan = planner.search(new RouteV2Planner.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 1, 1));
+
+		assertThat(queries).extracting(RealtimeArrivalResolver.Query::stationId)
+			.contains("station-transfer");
+		assertThat(plan.itineraries()).isEmpty();
+		assertThat(plan.statuses()).containsExactly(RouteV2Status.NO_TIMETABLE_SERVICE);
+		assertThat(plan.nextServiceTime()).isEqualTo(OffsetDateTime.parse("2026-07-02T09:09:00+09:00"));
 	}
 
 	@Test
@@ -2176,6 +2528,35 @@ class RouteSearchServiceTest {
 			.first()
 			.satisfies(step -> assertThat(step.reasonCodes())
 				.containsExactly("REALTIME_UNAVAILABLE_PLANNED_USED", "PROVIDER_QUOTA_EXCEEDED"));
+		assertThat(plan.statuses())
+			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
+	}
+
+	@Test
+	@DisplayName("pre-scan·post-scan realtime provider 예외는 planned fallback으로 fail closed한다")
+	void routeV2PlannerFailsClosedWhenRealtimeProviderThrows() {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(
+			repository,
+			repository,
+			new TimetableAlignedRampAccessibleTransitMasterPort(),
+			CLOCK,
+			query -> {
+				throw new IllegalStateException("provider down");
+			}
+		);
+		var planner = new RouteV2Planner(routeSearchService, routeTimetablePort());
+
+		var plan = planner.search(new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE, true, 1, 1));
+
+		assertThat(plan.itineraries().getFirst().etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(plan.itineraries().getFirst().steps())
+			.filteredOn(step -> "ride".equals(step.stepType()))
+			.first()
+			.satisfies(step -> assertThat(step.reasonCodes())
+				.containsExactly("REALTIME_UNAVAILABLE_PLANNED_USED", "REALTIME_PROVIDER_ERROR"));
 		assertThat(plan.statuses())
 			.containsExactly(RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
 	}
@@ -3139,6 +3520,66 @@ class RouteSearchServiceTest {
 		);
 	}
 
+	private static LoadRouteTimetablePort preScanRealtimeRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-07-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-local", "seoul-4", "4", "수도권 4호선", "사당 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-express", "seoul-4", "4", "수도권 4호선", "사당 방면", "Asia/Seoul")),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-local", "route-local", "weekday-2026", "station-b", "0",
+					"SUBWAY", "LOCAL", "train-local", 0),
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-express", "route-express", "weekday-2026", "station-b", "0",
+					"SUBWAY", "EXPRESS", "train-express", 0)),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-local", 1, "station-a", "seoul-4", 32_820, 32_820, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-local", 2, "station-b", "seoul-4", 34_020, 34_020, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-express", 1, "station-a", "seoul-4", 32_940, 32_940, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-express", 2, "station-b", "seoul-4", 33_540, 33_540, 0, 0)),
+			List.of());
+	}
+
+	private static LoadRouteTimetablePort dualOriginRealtimeRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-07-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-a", "seoul-4", "4", "수도권 4호선", "도착 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-c", "seoul-4", "4", "수도권 4호선", "도착 방면", "Asia/Seoul")),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-a", "route-a", "weekday-2026", "station-b", "0",
+					"SUBWAY", "LOCAL", "train-a", 0),
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-c", "route-c", "weekday-2026", "station-b", "0",
+					"SUBWAY", "LOCAL", "train-c", 0)),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-a", 1, "station-a", "seoul-4", 32_940, 32_940, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-a", 2, "station-b", "seoul-4", 33_540, 33_540, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-c", 1, "station-c", "seoul-4", 32_940, 32_940, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-c", 2, "station-b", "seoul-4", 33_540, 33_540, 0, 0)),
+			List.of());
+	}
+
 	// 시간표가 비어있지 않지만(hasRouteTimetable()==true) station-a·station-b는 커버하지 않는 포트.
 	// 커버리지 게이트가 비커버 O/D를 graph 폴백으로 보내는지 검증하는 데 쓴다.
 	private static LoadRouteTimetablePort uncoveredRouteTimetablePort() {
@@ -3643,6 +4084,36 @@ class RouteSearchServiceTest {
 
 	private static LoadRouteTimetablePort transferRouteTimetablePort() {
 		return transferRouteTimetablePort(33780);
+	}
+
+	private static LoadRouteTimetablePort preScanTransferRouteTimetablePort() {
+		return () -> new LoadRouteTimetablePort.RouteTimetable(
+			List.of(new LoadRouteTimetablePort.ServiceCalendar(
+				"weekday-2026", true, true, true, true, true, false, false,
+				LocalDate.parse("2026-07-01"), LocalDate.parse("2026-12-31"), "Asia/Seoul")),
+			List.of(),
+			List.of(
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-line-a", "line-a", "A", "A 노선", "환승 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute(
+					"route-line-b", "line-b", "B", "B 노선", "도착 방면", "Asia/Seoul")),
+			List.of(
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-line-a", "route-line-a", "weekday-2026", "환승", "0",
+					"SUBWAY", "LOCAL", "train-a", 0),
+				new LoadRouteTimetablePort.TransitTrip(
+					"trip-line-b", "route-line-b", "weekday-2026", "도착", "0",
+					"SUBWAY", "LOCAL", "train-b", 0)),
+			List.of(
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-line-a", 1, "station-a", "line-a", 32_940, 32_940, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-line-a", 2, "station-transfer", "line-a", 33_300, 33_300, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-line-b", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime(
+					"trip-line-b", 2, "station-b", "line-b", 34_620, 34_620, 0, 0)),
+			List.of());
 	}
 
 	private static LoadRouteTimetablePort objectiveRouteTimetablePort() {
@@ -4642,6 +5113,44 @@ class RouteSearchServiceTest {
 				new StationLine("station-a", "seoul-4", "101", 1, "상행 / 하행"),
 				new StationLine("station-b", "seoul-4", "102", 2, "상행 / 하행")
 			);
+		}
+	}
+
+	private static class DualOriginRealtimeTransitMasterPort extends TimetableAlignedRampAccessibleTransitMasterPort {
+
+		@Override
+		public List<Station> loadStations() {
+			return List.of(
+				station("station-a", "출발역 A"),
+				station("station-c", "출발역 C"),
+				station("station-b", "도착역"));
+		}
+
+		@Override
+		public List<StationLine> loadStationLines() {
+			return List.of(
+				new StationLine("station-a", "seoul-4", "101", 1, "상행 / 하행"),
+				new StationLine("station-c", "seoul-4", "103", 3, "상행 / 하행"),
+				new StationLine("station-b", "seoul-4", "102", 2, "상행 / 하행"));
+		}
+
+		@Override
+		public List<StationExit> loadStationExits() {
+			return List.of(
+				stepFreeExit("exit-a-1", "station-a"),
+				stepFreeExit("exit-c-1", "station-c"),
+				stepFreeExit("exit-b-1", "station-b"));
+		}
+
+		@Override
+		public List<AccessibilityFacility> loadAccessibilityFacilities() {
+			return List.of(
+				facility("facility-a-elevator", "station-a", "exit-a-1",
+					AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-c-elevator", "station-c", "exit-c-1",
+					AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL),
+				facility("facility-b-elevator", "station-b", "exit-b-1",
+					AccessibilityFacilityType.ELEVATOR, AccessibilityFacilityStatus.NORMAL));
 		}
 	}
 
