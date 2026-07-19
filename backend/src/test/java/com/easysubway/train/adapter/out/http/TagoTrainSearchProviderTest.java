@@ -351,6 +351,73 @@ class TagoTrainSearchProviderTest {
 	}
 
 	@Test
+	void stopsBeforeStartingAnotherHttpCallWhenTheSearchDeadlineExpires() throws Exception {
+		var attempts = new AtomicInteger();
+		var httpClient = mock(HttpClient.class);
+		var clock = mock(Clock.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<String>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenReturn(paginatedResponse("""
+			{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}
+			""", 1));
+		when(httpClient.<String>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			attempts.incrementAndGet();
+			return response;
+		});
+		when(clock.instant()).thenAnswer(ignored -> attempts.get() == 0
+			? Instant.parse("2026-07-19T00:00:00Z")
+			: Instant.parse("2026-07-19T00:00:05Z"));
+		var provider = new TagoTrainSearchProvider(
+			"test-key",
+			JSON,
+			httpClient,
+			clock,
+			URI.create("https://provider.example/"),
+			() -> {},
+			java.time.Duration.ZERO
+		);
+
+		assertThatThrownBy(() -> provider.search(
+			legQuery(LocalDate.parse("2026-07-20"), "KTX", "00"),
+			Instant.parse("2026-07-19T00:00:05Z")
+		))
+			.isInstanceOf(ProviderFailure.class)
+			.hasMessage("TRAIN_SEARCH_UNAVAILABLE");
+		assertThat(attempts).hasValue(1);
+	}
+
+	@Test
+	void recomputesTheHttpTimeoutAfterQuotaWaiting() throws Exception {
+		var attempts = new AtomicInteger();
+		var now = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-07-19T00:00:00Z"));
+		var httpClient = mock(HttpClient.class);
+		var clock = mock(Clock.class);
+		when(clock.instant()).thenAnswer(ignored -> now.get());
+		when(httpClient.<String>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			attempts.incrementAndGet();
+			throw new AssertionError("HTTP send must not start after the deadline");
+		});
+		var provider = new TagoTrainSearchProvider(
+			"test-key",
+			JSON,
+			httpClient,
+			clock,
+			URI.create("https://provider.example/"),
+			() -> now.set(Instant.parse("2026-07-19T00:00:05Z")),
+			java.time.Duration.ZERO
+		);
+
+		assertThatThrownBy(() -> provider.search(
+			legQuery(LocalDate.parse("2026-07-20"), "KTX", "00"),
+			Instant.parse("2026-07-19T00:00:05Z")
+		))
+			.isInstanceOf(ProviderFailure.class)
+			.hasMessage("TRAIN_SEARCH_UNAVAILABLE");
+		assertThat(attempts).hasValue(0);
+	}
+
+	@Test
 	void retriesTransientHttpStatusesOnce() throws Exception {
 		for (int status : java.util.List.of(408, 429, 503)) {
 			var attempts = new AtomicInteger();

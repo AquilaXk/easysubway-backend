@@ -366,6 +366,11 @@ public class SecurityConfig {
 					"/api/v1/trains/search"
 				).permitAll()
 				.requestMatchers(
+					HttpMethod.HEAD,
+					"/api/v1/trains/stations",
+					"/api/v1/trains/search"
+				).permitAll()
+				.requestMatchers(
 					"/api/health",
 					"/actuator/health",
 					"/actuator/health/liveness",

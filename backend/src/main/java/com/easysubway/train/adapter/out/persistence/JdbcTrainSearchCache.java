@@ -16,6 +16,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 public class JdbcTrainSearchCache implements TrainSearchCache {
+	private static final int QUERY_TIMEOUT_SECONDS = 2;
 
 	private final JdbcTemplate jdbcTemplate;
 
@@ -26,6 +27,7 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 
 	JdbcTrainSearchCache(JdbcTemplate jdbcTemplate) {
 		this.jdbcTemplate = jdbcTemplate;
+		this.jdbcTemplate.setQueryTimeout(QUERY_TIMEOUT_SECONDS);
 	}
 
 	@Override

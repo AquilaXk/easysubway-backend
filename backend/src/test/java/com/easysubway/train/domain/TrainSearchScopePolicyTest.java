@@ -3,6 +3,9 @@ package com.easysubway.train.domain;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import java.time.Clock;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -41,6 +44,18 @@ class TrainSearchScopePolicyTest {
 			.contains("KTX")
 			.doesNotContain("ITX_CHEONGCHUN");
 		assertThat(TrainSearchScopePolicy.requireSupported(" KTX ")).isEqualTo("KTX");
+	}
+
+	@Test
+	void serviceDayChangesAtThreeAmInKorea() {
+		assertThat(TrainSearchScopePolicy.currentServiceDay(clockAt("2026-07-19T17:59:59Z")))
+			.isEqualTo(java.time.LocalDate.parse("2026-07-19"));
+		assertThat(TrainSearchScopePolicy.currentServiceDay(clockAt("2026-07-19T18:00:00Z")))
+			.isEqualTo(java.time.LocalDate.parse("2026-07-20"));
+	}
+
+	private Clock clockAt(String instant) {
+		return Clock.fixed(Instant.parse(instant), ZoneOffset.UTC);
 	}
 
 	private record ProviderRow(String departureStation, String arrivalStation, String trainType) {}

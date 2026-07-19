@@ -11,7 +11,15 @@ public interface TrainSearchProvider {
 
 	Catalog catalog();
 
+	default Catalog catalog(Instant deadline) {
+		return catalog();
+	}
+
 	List<Journey> search(LegQuery query);
+
+	default List<Journey> search(LegQuery query, Instant deadline) {
+		return search(query);
+	}
 
 	record Catalog(Instant observedAt, List<Station> stations, List<TrainType> trainTypes) {
 		public Catalog {

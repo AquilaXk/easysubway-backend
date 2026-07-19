@@ -21,9 +21,9 @@ import java.net.http.HttpClient;
 import java.nio.charset.StandardCharsets;
 import java.time.Clock;
 import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
-import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.ResolverStyle;
@@ -43,6 +43,8 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 
 	private static final URI DEFAULT_BASE_URI = URI.create("https://apis.data.go.kr/1613000/TrainInfo/");
 	private static final Duration REQUEST_TIMEOUT = Duration.ofSeconds(5);
+	private static final Duration DEFAULT_SEARCH_BUDGET = Duration.ofSeconds(30);
+	private static final Duration DEFAULT_CATALOG_BUDGET = Duration.ofMinutes(5);
 	private static final Duration RETRY_DELAY = Duration.ofMillis(250);
 	private static final int PAGE_SIZE = 100;
 	private static final int MAX_TOTAL_COUNT = 1_000;
@@ -134,8 +136,13 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 
 	@Override
 	public Catalog catalog() {
+		return catalog(clock.instant().plus(DEFAULT_CATALOG_BUDGET));
+	}
+
+	@Override
+	public Catalog catalog(Instant deadline) {
 		try {
-			return loadCatalog();
+			return loadCatalog(deadline);
 		} catch (ProviderFailure failure) {
 			throw failure;
 		} catch (RuntimeException exception) {
@@ -143,16 +150,16 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		}
 	}
 
-	private Catalog loadCatalog() {
-		List<JsonNode> cities = nonPaginated("GetCtyCodeList", Map.of());
-		List<JsonNode> grades = nonPaginated("GetVhcleKndList", Map.of());
+	private Catalog loadCatalog(Instant deadline) {
+		List<JsonNode> cities = nonPaginated("GetCtyCodeList", Map.of(), deadline);
+		List<JsonNode> grades = nonPaginated("GetVhcleKndList", Map.of(), deadline);
 		if (cities.isEmpty() || grades.isEmpty()) {
 			throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
 		}
 		Map<String, Station> stations = new LinkedHashMap<>();
 		for (JsonNode city : cities) {
 			String cityCode = requiredText(city, "citycode");
-			for (JsonNode station : paginated("GetCtyAcctoTrainSttnList", Map.of("cityCode", cityCode))) {
+			for (JsonNode station : paginated("GetCtyAcctoTrainSttnList", Map.of("cityCode", cityCode), deadline)) {
 				String id = requiredText(station, "nodeid");
 				Station candidate = new Station(id, requiredText(station, "nodename"));
 				Station existing = stations.putIfAbsent(id, candidate);
@@ -191,6 +198,11 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 
 	@Override
 	public List<Journey> search(LegQuery query) {
+		return search(query, clock.instant().plus(DEFAULT_SEARCH_BUDGET));
+	}
+
+	@Override
+	public List<Journey> search(LegQuery query, Instant deadline) {
 		if (query == null
 			|| query.departureStationId() == null
 			|| query.departureStationId().isBlank()
@@ -214,7 +226,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		Map<String, Journey> unique = new LinkedHashMap<>();
 		for (String providerCode : providerCodes) {
 			var providerKeys = new HashSet<String>();
-			for (Journey journey : search(query, providerCode)) {
+			for (Journey journey : search(query, providerCode, deadline)) {
 				String key = journeyKey(journey);
 				if (!providerKeys.add(key)) {
 					throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
@@ -233,10 +245,10 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 			.toList();
 	}
 
-	private List<Journey> search(LegQuery query, String providerCode) {
+	private List<Journey> search(LegQuery query, String providerCode, Instant deadline) {
 		try {
 			return java.util.stream.Stream.of(query.departureDate(), query.departureDate().plusDays(1))
-				.flatMap(calendarDate -> searchCalendarDate(query, providerCode, calendarDate).stream())
+				.flatMap(calendarDate -> searchCalendarDate(query, providerCode, calendarDate, deadline).stream())
 				.sorted(Comparator.comparing(Journey::departureAt)
 					.thenComparing(Journey::arrivalAt)
 					.thenComparing(Journey::trainType)
@@ -249,16 +261,21 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		}
 	}
 
-	private List<Journey> searchCalendarDate(LegQuery query, String providerCode, LocalDate calendarDate) {
+	private List<Journey> searchCalendarDate(
+		LegQuery query,
+		String providerCode,
+		LocalDate calendarDate,
+		Instant deadline
+	) {
 		Map<String, String> parameters = Map.of(
 			"depPlaceId", query.departureStationId(),
 			"arrPlaceId", query.arrivalStationId(),
 			"depPlandTime", PROVIDER_DATE.format(calendarDate),
 			"trainGradeCode", providerCode
 		);
-		return paginated("GetStrtpntAlocFndTrainInfo", parameters).stream()
+		return paginated("GetStrtpntAlocFndTrainInfo", parameters, deadline).stream()
 			.map(row -> journeyForCalendarDate(row, query, calendarDate))
-			.filter(journey -> serviceDay(journey.departureAt()).equals(query.departureDate()))
+			.filter(journey -> TrainSearchScopePolicy.serviceDay(journey.departureAt()).equals(query.departureDate()))
 			.toList();
 	}
 
@@ -354,20 +371,13 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		LocalDate requestedServiceDay
 	) {
 		LocalDate calendarDay = journey.departureAt().toLocalDate();
-		if (serviceDay(journey.departureAt()).equals(requestedServiceDay)) {
+		if (TrainSearchScopePolicy.serviceDay(journey.departureAt()).equals(requestedServiceDay)) {
 			return java.util.stream.Stream.of(journey);
 		}
 		if (calendarDay.equals(requestedServiceDay)) {
 			return java.util.stream.Stream.empty();
 		}
 		throw new IllegalArgumentException("TRAIN_SEARCH_NO_VALID_ROWS");
-	}
-
-	private LocalDate serviceDay(java.time.OffsetDateTime departureAt) {
-		LocalDate calendarDay = departureAt.toLocalDate();
-		return departureAt.toLocalTime().isBefore(LocalTime.of(3, 0))
-			? calendarDay.minusDays(1)
-			: calendarDay;
 	}
 
 	private boolean stationNameMatches(String expected, String actual) {
@@ -408,11 +418,11 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		}
 	}
 
-	private List<JsonNode> nonPaginated(String operation, Map<String, String> parameters) {
-		return itemRows(request(operation, parameters).path("response").path("body"));
+	private List<JsonNode> nonPaginated(String operation, Map<String, String> parameters, Instant deadline) {
+		return itemRows(request(operation, parameters, deadline).path("response").path("body"));
 	}
 
-	private List<JsonNode> paginated(String operation, Map<String, String> parameters) {
+	private List<JsonNode> paginated(String operation, Map<String, String> parameters, Instant deadline) {
 		List<JsonNode> rows = new ArrayList<>();
 		int page = 1;
 		Integer expectedTotalCount = null;
@@ -421,7 +431,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 			Map<String, String> pageParameters = new LinkedHashMap<>(parameters);
 			pageParameters.put("pageNo", Integer.toString(page));
 			pageParameters.put("numOfRows", Integer.toString(PAGE_SIZE));
-			JsonNode body = request(operation, pageParameters).path("response").path("body");
+			JsonNode body = request(operation, pageParameters, deadline).path("response").path("body");
 			int responsePage = requiredInteger(body, "pageNo");
 			int responsePageSize = requiredInteger(body, "numOfRows");
 			int totalCount = requiredInteger(body, "totalCount");
@@ -448,17 +458,13 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		return rows;
 	}
 
-	private JsonNode request(String operation, Map<String, String> parameters) {
+	private JsonNode request(String operation, Map<String, String> parameters, Instant deadline) {
 		if (serviceKey.isBlank()) {
 			throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
 		}
-		HttpRequest request = HttpRequest.newBuilder(uri(operation, parameters))
-				.timeout(REQUEST_TIMEOUT)
-				.GET()
-				.build();
 		HttpResponse<String> response;
 		try {
-			response = sendWithOneRetry(request);
+			response = sendWithOneRetry(uri(operation, parameters), deadline);
 		} catch (IOException exception) {
 			throw new ProviderFailure("TRAIN_SEARCH_UNAVAILABLE");
 		}
@@ -476,16 +482,21 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		}
 	}
 
-	private HttpResponse<String> sendWithOneRetry(HttpRequest request) throws IOException {
+	private HttpResponse<String> sendWithOneRetry(URI uri, Instant deadline) throws IOException {
 		for (int attempt = 0; attempt < 2; attempt++) {
 			try {
 				callBudget.acquire();
+				HttpRequest request = HttpRequest.newBuilder(uri)
+					.timeout(requestTimeout(deadline))
+					.GET()
+					.build();
 				HttpResponse<String> response = httpClient.send(
 					request,
 					HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
 				);
+				requestTimeout(deadline);
 				if (attempt == 0 && retryable(response.statusCode())) {
-					waitBeforeRetry();
+					waitBeforeRetry(deadline);
 					continue;
 				}
 				return response;
@@ -496,18 +507,30 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 				if (attempt == 1) {
 					throw exception;
 				}
-				waitBeforeRetry();
+				waitBeforeRetry(deadline);
 			}
 		}
 		throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
+	}
+
+	private Duration requestTimeout(Instant deadline) {
+		Duration remaining = Duration.between(clock.instant(), deadline);
+		if (remaining.isZero() || remaining.isNegative()) {
+			throw new ProviderFailure("TRAIN_SEARCH_UNAVAILABLE");
+		}
+		return remaining.compareTo(REQUEST_TIMEOUT) < 0 ? remaining : REQUEST_TIMEOUT;
 	}
 
 	private boolean retryable(int status) {
 		return status == 408 || status == 429 || status >= 500;
 	}
 
-	private void waitBeforeRetry() {
+	private void waitBeforeRetry(Instant deadline) {
 		try {
+			Duration remaining = Duration.between(clock.instant(), deadline);
+			if (remaining.compareTo(retryDelay) <= 0) {
+				throw new ProviderFailure("TRAIN_SEARCH_UNAVAILABLE");
+			}
 			Thread.sleep(retryDelay);
 		} catch (InterruptedException exception) {
 			Thread.currentThread().interrupt();

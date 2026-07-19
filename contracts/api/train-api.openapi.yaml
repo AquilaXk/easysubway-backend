@@ -5,36 +5,144 @@ info:
 paths:
   /api/v1/trains/stations:
     get:
+      summary: Search the nationwide passenger-train station catalog
       parameters:
+        - name: query
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 2
         - name: trainType
           in: query
+          required: false
           schema:
             $ref: "#/components/schemas/TrainType"
       responses:
         "200":
-          description: supported train station catalog
+          description: Deterministically ordered matching stations
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Cache-Control:
+              $ref: "#/components/headers/SuccessCacheControl"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationSearchEnvelope"
+        "304":
+          description: The client already has the current station response
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Cache-Control:
+              $ref: "#/components/headers/SuccessCacheControl"
         "400":
           $ref: "#/components/responses/UnsupportedTrainType"
+        "422":
+          $ref: "#/components/responses/InvalidArgument"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/ProviderFailure"
         "503":
           $ref: "#/components/responses/TrainSearchUnavailable"
   /api/v1/trains/search:
     get:
+      summary: Search one-way or round-trip nationwide passenger trains
       parameters:
+        - name: departureStationId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: arrivalStationId
+          in: query
+          required: true
+          schema:
+            type: string
+            minLength: 1
+        - name: departureDate
+          in: query
+          required: true
+          schema:
+            type: string
+            format: date
+        - name: returnDate
+          in: query
+          required: false
+          schema:
+            type: string
+            format: date
         - name: trainType
           in: query
+          required: false
+          description: Omit to search all supported train types.
           schema:
             $ref: "#/components/schemas/TrainType"
       responses:
         "200":
-          description: supported train journeys
+          description: Fresh provider-backed journeys; stale rows are never served
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Cache-Control:
+              $ref: "#/components/headers/SuccessCacheControl"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainSearchEnvelope"
+        "304":
+          description: The client already has the current search response
+          headers:
+            ETag:
+              $ref: "#/components/headers/ETag"
+            Cache-Control:
+              $ref: "#/components/headers/SuccessCacheControl"
         "400":
-          $ref: "#/components/responses/UnsupportedTrainType"
+          description: Malformed date or unsupported train type
+          headers:
+            Cache-Control:
+              $ref: "#/components/headers/NoStore"
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/TrainSearchErrorEnvelope"
+        "422":
+          $ref: "#/components/responses/InvalidArgument"
+        "429":
+          $ref: "#/components/responses/RateLimited"
+        "502":
+          $ref: "#/components/responses/ProviderFailure"
         "503":
           $ref: "#/components/responses/TrainSearchUnavailable"
 components:
+  headers:
+    ETag:
+      description: SHA-256 fingerprint of the canonical response envelope
+      schema:
+        type: string
+    SuccessCacheControl:
+      description: Public freshness policy selected by endpoint and departure date
+      schema:
+        type: string
+    NoStore:
+      description: Error responses must not be cached
+      schema:
+        type: string
+        enum: [no-store]
+    RetryAfter:
+      description: Seconds until the exhausted per-client minute or KST daily rate-limit window resets
+      schema:
+        type: integer
+        minimum: 1
   responses:
     UnsupportedTrainType:
       description: ITX_CHEONGCHUN, stale deep link, or unknown train type
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
       content:
         application/json:
           schema:
@@ -44,8 +152,63 @@ components:
             data:
               code: TRAIN_SEARCH_UNSUPPORTED_TRAIN_TYPE
             message: 지원하지 않는 열차종입니다.
+    InvalidArgument:
+      description: Missing, unknown, identical, past, or inconsistent search input
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TrainSearchErrorEnvelope"
+          example:
+            success: false
+            data:
+              code: TRAIN_SEARCH_INVALID_ARGUMENT
+            message: 검색 조건을 확인해 주세요.
+    RateLimited:
+      description: Per-client minute or KST daily request-cost budget exhausted
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+        Retry-After:
+          $ref: "#/components/headers/RetryAfter"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TrainSearchErrorEnvelope"
+          example:
+            success: false
+            data:
+              code: TRAIN_SEARCH_RATE_LIMITED
+            message: 기차검색 요청이 너무 많습니다. 잠시 후 다시 시도해 주세요.
+    ProviderFailure:
+      description: Provider response or validated rows were unusable
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/TrainSearchErrorEnvelope"
+          examples:
+            providerError:
+              value:
+                success: false
+                data:
+                  code: TRAIN_SEARCH_PROVIDER_ERROR
+                message: 기차 정보 제공기관 응답을 처리하지 못했습니다.
+            noValidRows:
+              value:
+                success: false
+                data:
+                  code: TRAIN_SEARCH_NO_VALID_ROWS
+                message: 유효한 열차 시간표를 확인하지 못했습니다.
     TrainSearchUnavailable:
-      description: train-search runtime remains deferred to issue 2094
+      description: Provider quota, lease, or cache boundary cannot produce a fresh result
+      headers:
+        Cache-Control:
+          $ref: "#/components/headers/NoStore"
       content:
         application/json:
           schema:
@@ -54,7 +217,7 @@ components:
             success: false
             data:
               code: TRAIN_SEARCH_UNAVAILABLE
-            message: 기차검색은 아직 사용할 수 없습니다.
+            message: 기차검색을 일시적으로 사용할 수 없습니다.
   schemas:
     TrainType:
       type: string
@@ -67,15 +230,109 @@ components:
         - SAEMAEUL
         - MUGUNGHWA
         - NURIRO
+    Station:
+      type: object
+      additionalProperties: false
+      required: [id, name]
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    Journey:
+      type: object
+      additionalProperties: false
+      required:
+        - trainNumber
+        - trainType
+        - departureStationId
+        - departureStationName
+        - departureAt
+        - arrivalStationId
+        - arrivalStationName
+        - arrivalAt
+        - durationMinutes
+        - adultFareWon
+      properties:
+        trainNumber:
+          type: string
+        trainType:
+          $ref: "#/components/schemas/TrainType"
+        departureStationId:
+          type: string
+        departureStationName:
+          type: string
+        departureAt:
+          type: string
+          format: date-time
+        arrivalStationId:
+          type: string
+        arrivalStationName:
+          type: string
+        arrivalAt:
+          type: string
+          format: date-time
+        durationMinutes:
+          type: integer
+          minimum: 1
+        adultFareWon:
+          type: integer
+          minimum: 0
+    TrainSearchResult:
+      type: object
+      additionalProperties: false
+      required: [observedAt, outbound, inbound]
+      properties:
+        observedAt:
+          type: string
+          format: date-time
+        outbound:
+          type: array
+          items:
+            $ref: "#/components/schemas/Journey"
+        inbound:
+          type: array
+          items:
+            $ref: "#/components/schemas/Journey"
+    StationSearchEnvelope:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          type: array
+          items:
+            $ref: "#/components/schemas/Station"
+    TrainSearchEnvelope:
+      type: object
+      additionalProperties: false
+      required: [success, data]
+      properties:
+        success:
+          type: boolean
+          enum: [true]
+        data:
+          $ref: "#/components/schemas/TrainSearchResult"
     TrainSearchError:
       type: object
+      additionalProperties: false
       required: [code]
       properties:
         code:
           type: string
-          enum: [TRAIN_SEARCH_UNSUPPORTED_TRAIN_TYPE, TRAIN_SEARCH_UNAVAILABLE]
+          enum:
+            - TRAIN_SEARCH_INVALID_ARGUMENT
+            - TRAIN_SEARCH_UNSUPPORTED_TRAIN_TYPE
+            - TRAIN_SEARCH_RATE_LIMITED
+            - TRAIN_SEARCH_PROVIDER_ERROR
+            - TRAIN_SEARCH_NO_VALID_ROWS
+            - TRAIN_SEARCH_UNAVAILABLE
     TrainSearchErrorEnvelope:
       type: object
+      additionalProperties: false
       required: [success, data, message]
       properties:
         success:

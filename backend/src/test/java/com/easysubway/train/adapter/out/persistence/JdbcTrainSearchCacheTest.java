@@ -69,6 +69,11 @@ class JdbcTrainSearchCacheTest {
 	}
 
 	@Test
+	void boundsEveryCacheStatementWithAQueryTimeout() {
+		assertThat(jdbcTemplate.getQueryTimeout()).isEqualTo(2);
+	}
+
+	@Test
 	void leaseHasSingleOwnerAndOnlyOwnerCanRelease() {
 		Instant now = Instant.parse("2026-07-19T00:00:00Z");
 		assertThat(repository.tryAcquireLease("key", "owner-a", now, Duration.ofSeconds(15))).isTrue();
