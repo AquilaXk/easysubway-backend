@@ -44,6 +44,12 @@ class TimetableSeedLoaderTest {
 		jdbc = new JdbcTemplate(dataSource);
 		jdbc.execute("DROP ALL OBJECTS");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V16__datapack_source_snapshots.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V17__datapack_alias_quarantine_ledgers.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V23__datapack_source_snapshot_raw_evidence_policy.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V52__datapack_source_governance.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V19__datapack_route_edge_evidence.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V30__canonical_station_pathways.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V61__timetable_snapshot_state.sql'");
@@ -209,18 +215,7 @@ class TimetableSeedLoaderTest {
 
 	@Test
 	void trackedCompleteSnapshotLoadsWithExactEvidenceCounts() {
-		TimetableSeedLoader loader = new TimetableSeedLoader(
-			repository(),
-			dataSource,
-			new DataSourceTransactionManager(dataSource),
-			new ClassPathResource("timetable/line4-timetable-seed.sql.gz"),
-			new ClassPathResource("timetable/server-timetable-snapshot-evidence.json"),
-			true,
-			objectMapper,
-			Clock.fixed(NOW, ZoneOffset.UTC)
-		);
-
-		loader.run(null);
+		trackedLoader().run(null);
 
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class)).isEqualTo(1035);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_stop_times", Integer.class)).isEqualTo(34070);
@@ -229,6 +224,38 @@ class TimetableSeedLoaderTest {
 			.isEqualTo(140);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trip_official_fares", Integer.class))
 			.isEqualTo(3686);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM station_pathway_nodes", Integer.class)).isEqualTo(4);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM station_pathway_edges", Integer.class)).isEqualTo(4);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transfer_rules", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM route_edge_evidence", Integer.class)).isEqualTo(4);
+	}
+
+	@Test
+	void trackedCompleteSnapshotRejectsMismatchedExistingSourceSnapshot() {
+		jdbc.update("""
+			INSERT INTO data_source_snapshots (
+				snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count, coverage_count,
+				raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint,
+				snapshot_status, schema_status, license_status, fetch_status,
+				redistribution_allowed, credential_redacted, previous_snapshot_id, diff_summary,
+				freshness_expires_at, raw_retention_expires_at
+			) VALUES (
+				'seoul-metro-accessibility-capital-admission-20260712', 'seoul-metro-accessibility',
+				'서울교통공사', '2026-07-12 00:00:00', '2026-07-12 00:00:00', 1, 1,
+				?, 's3://easysubway-datapack-sources/seoul-metro-accessibility/20260712.json', ?, ?,
+				'LOCKED', 'PASS', 'PASS', 'SUCCESS', TRUE, TRUE, NULL, NULL,
+				'2099-08-01 00:00:00', '2099-10-01 00:00:00'
+			)
+			""", "0".repeat(64), "1".repeat(64), "2".repeat(64));
+
+		assertThatThrownBy(() -> trackedLoader().run(null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("transit timetable snapshot activation failed");
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT raw_sha256 FROM data_source_snapshots", String.class))
+			.isEqualTo("0".repeat(64));
 	}
 
 	@Test
@@ -257,9 +284,27 @@ class TimetableSeedLoaderTest {
 			.isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("evidence");
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
+
+		ObjectNode mismatchedAccessibility;
+		try (var input = snapshot.evidence().getInputStream()) {
+			mismatchedAccessibility = (ObjectNode) objectMapper.readTree(input);
+		}
+		mismatchedAccessibility.withObject("/accessibilitySource")
+			.put("materializedSqlSha256", "0".repeat(64));
+		mismatchedAccessibility.remove("evidenceHash");
+		mismatchedAccessibility.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(mismatchedAccessibility)));
+		SnapshotResource mismatchedSnapshot = new SnapshotResource(
+			snapshot.seed(),
+			jsonResource(mismatchedAccessibility, "mismatched-accessibility.json")
+		);
+		assertThatThrownBy(() -> loader(mismatchedSnapshot).run(null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("does not match seed bytes");
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
 	}
 
 	private TimetableSeedLoader loader(SnapshotResource snapshot) {
+		Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 		return new TimetableSeedLoader(
 			repository(),
 			dataSource,
@@ -268,12 +313,26 @@ class TimetableSeedLoaderTest {
 			snapshot.evidence(),
 			true,
 			objectMapper,
-			Clock.fixed(NOW, ZoneOffset.UTC)
+			clock
 		);
 	}
 
 	private JdbcRouteTimetableRepository repository() {
 		return new JdbcRouteTimetableRepository(jdbc, Clock.fixed(NOW, ZoneOffset.UTC));
+	}
+
+	private TimetableSeedLoader trackedLoader() {
+		Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
+		return new TimetableSeedLoader(
+			repository(),
+			dataSource,
+			new DataSourceTransactionManager(dataSource),
+			new ClassPathResource("timetable/line4-timetable-seed.sql.gz"),
+			new ClassPathResource("timetable/server-timetable-snapshot-evidence.json"),
+			true,
+			objectMapper,
+			clock
+		);
 	}
 
 	private SnapshotResource snapshot(String suffix, boolean invalidForeignKey) throws Exception {
@@ -291,6 +350,11 @@ class TimetableSeedLoaderTest {
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('itx-trip-%1$s',2,'station-itx-pass-%1$s','line-54a7b980b7c3',1,1,250,250);
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('%6$s',3,'station-itx-terminal-%1$s','line-54a7b980b7c3',0,0,300,300);
 			INSERT INTO transit_trip_official_fares (trip_id, origin_station_id, destination_station_id, adult_fare_won, currency, source_id, source_snapshot_id) VALUES ('itx-trip-%1$s','station-itx-origin-%1$s','station-itx-terminal-%1$s',9800,'KRW','official','snapshot-%1$s');
+			INSERT INTO data_source_snapshots (snapshot_id, source_id, provider, retrieved_at, source_updated_at, row_count, raw_sha256, raw_object_uri, redacted_request_fingerprint, schema_fingerprint, snapshot_status, schema_status, license_status, fetch_status, redistribution_allowed, credential_redacted, previous_snapshot_id, diff_summary, freshness_expires_at, raw_retention_expires_at, coverage_count) SELECT 'access-snapshot-%1$s','access-source-%1$s','operator','2026-07-01 00:00:00','2026-07-01 00:00:00',1,'%3$s','s3://fixture/access','%3$s','%3$s','LOCKED','PASS','PASS','SUCCESS',TRUE,TRUE,NULL,NULL,'2026-12-31 00:00:00','2027-01-31 00:00:00',1 WHERE NOT EXISTS (SELECT 1 FROM data_source_snapshots WHERE snapshot_id = 'access-snapshot-%1$s');
+			INSERT INTO station_pathway_nodes (id, station_id, line_id, node_type, label) VALUES ('access-concourse-%1$s','station-subway-%1$s',NULL,'CONCOURSE','concourse');
+			INSERT INTO station_pathway_nodes (id, station_id, line_id, node_type, label) VALUES ('access-platform-%1$s','station-subway-%1$s','seoul-4','PLATFORM','platform');
+			INSERT INTO station_pathway_edges (id, from_node_id, to_node_id, edge_type, duration_seconds, distance_meters, bidirectional, includes_stairs, reliability_score, accessibility_status, source_id, source_snapshot_id, provider_record_hash, provenance_kind, verification_status, last_verified_at, evidence_hash, legacy_internal_route_edge_id) VALUES ('access-edge-%1$s','access-concourse-%1$s','access-platform-%1$s','ENTRY',90,100,FALSE,FALSE,100,'AVAILABLE','access-source-%1$s','access-snapshot-%1$s','%3$s','OFFICIAL_SOURCE','VERIFIED','2026-07-01 00:00:00','%3$s','access-edge-%1$s');
+			INSERT INTO route_edge_evidence (id, station_id, line_id, edge_id, edge_type, source_id, source_snapshot_id, provenance_kind, verification_status, last_verified_at, evidence_hash, strict_route_eligible, blocker_reason, created_at) VALUES ('route-evidence-%1$s','station-subway-%1$s','seoul-4','access-edge-%1$s','ENTRY','access-source-%1$s','access-snapshot-%1$s','OFFICIAL_SOURCE','VERIFIED','2026-07-01 00:00:00','%3$s',TRUE,NULL,'2026-07-01 00:00:00');
 			""".formatted(
 			suffix,
 			sourceHash,
@@ -324,6 +388,10 @@ class TimetableSeedLoaderTest {
 		canonical.put("id", "capital");
 		canonical.put("sha256", "b".repeat(64));
 		canonical.put("sqliteSha256", "c".repeat(64));
+		ObjectNode accessibility = evidence.putObject("accessibilitySource");
+		int accessibilityOffset = sql.indexOf("INSERT INTO data_source_snapshots ");
+		accessibility.put("materializedSqlSha256", sha256(
+			sql.substring(accessibilityOffset).getBytes(StandardCharsets.UTF_8)));
 		ObjectNode stationSet = evidence.putObject("canonicalStationSet");
 		stationSet.put("version", "sha256:" + "e".repeat(64));
 		stationSet.put("sha256", "e".repeat(64));
@@ -340,6 +408,10 @@ class TimetableSeedLoaderTest {
 		counts.put("itxStopTimes", 3);
 		counts.put("officialFares", 1);
 		counts.put("routeServiceEvidence", 1);
+		counts.put("stationPathwayNodes", 2);
+		counts.put("stationPathwayEdges", 1);
+		counts.put("transferRules", 0);
+		counts.put("routeEdgeEvidence", 1);
 		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
 		return new SnapshotResource(namedResource(gzipBytes, "snapshot.sql.gz"), jsonResource(evidence, "evidence.json"));
 	}
@@ -378,6 +450,10 @@ class TimetableSeedLoaderTest {
 		evidence.put("snapshotSqlByteSize", itxOnlySqlBytes.length);
 		evidence.put("snapshotGzipSha256", sha256(itxOnlyGzipBytes));
 		evidence.put("snapshotGzipByteSize", itxOnlyGzipBytes.length);
+		evidence.withObject("/accessibilitySource").put(
+			"materializedSqlSha256",
+			sha256(sql.substring(sql.indexOf("INSERT INTO data_source_snapshots ")).getBytes(StandardCharsets.UTF_8))
+		);
 		evidence.withObject("/rowCounts").put("trips", 1).put("stopTimes", 3);
 		evidence.remove("evidenceHash");
 		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
@@ -408,6 +484,10 @@ class TimetableSeedLoaderTest {
 		evidence.put("snapshotSqlByteSize", invalidSqlBytes.length);
 		evidence.put("snapshotGzipSha256", sha256(invalidGzipBytes));
 		evidence.put("snapshotGzipByteSize", invalidGzipBytes.length);
+		evidence.withObject("/accessibilitySource").put(
+			"materializedSqlSha256",
+			sha256(sql.substring(sql.indexOf("INSERT INTO data_source_snapshots ")).getBytes(StandardCharsets.UTF_8))
+		);
 		evidence.remove("evidenceHash");
 		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
 		return new SnapshotResource(
@@ -442,6 +522,12 @@ class TimetableSeedLoaderTest {
 		assertThat(jdbc.queryForList(
 			"SELECT source_snapshot_id FROM transit_trip_official_fares", String.class))
 			.containsExactly("snapshot-" + suffix);
+		assertThat(jdbc.queryForList("SELECT id FROM station_pathway_nodes ORDER BY id", String.class))
+			.containsExactly("access-concourse-" + suffix, "access-platform-" + suffix);
+		assertThat(jdbc.queryForList("SELECT id FROM station_pathway_edges", String.class))
+			.containsExactly("access-edge-" + suffix);
+		assertThat(jdbc.queryForList("SELECT id FROM route_edge_evidence", String.class))
+			.containsExactly("route-evidence-" + suffix);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isOne();
 	}
 

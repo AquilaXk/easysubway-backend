@@ -154,6 +154,10 @@ public class TimetableSeedLoader implements ApplicationRunner {
 
 	private void deleteCurrentSnapshot() {
 		for (String table : List.of(
+			"route_edge_evidence",
+			"transfer_rules",
+			"station_pathway_edges",
+			"station_pathway_nodes",
 			"transit_frequencies",
 			"transit_trip_official_fares",
 			"transit_stop_times",
@@ -183,6 +187,10 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		assertCount("transit_stop_times", evidence.stopTimeCount());
 		assertCount("transit_trip_official_fares", evidence.officialFareCount());
 		assertCount("route_service_artifact_evidence", 1);
+		assertCount("station_pathway_nodes", evidence.stationPathwayNodeCount());
+		assertCount("station_pathway_edges", evidence.stationPathwayEdgeCount());
+		assertCount("transfer_rules", evidence.transferRuleCount());
+		assertCount("route_edge_evidence", evidence.routeEdgeEvidenceCount());
 		assertQueryCount(
 			"SELECT COUNT(*) FROM transit_trips WHERE service_class = 'SUBWAY'",
 			evidence.subwayTripCount(),
@@ -365,7 +373,8 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			if (!evidence.snapshotSha256().equals(sha256(sqlBytes))
 				|| evidence.snapshotSqlByteSize() != sqlBytes.length
 				|| !evidence.snapshotGzipSha256().equals(sha256(rawSeedBytes))
-				|| evidence.snapshotGzipByteSize() != rawSeedBytes.length) {
+				|| evidence.snapshotGzipByteSize() != rawSeedBytes.length
+				|| !evidence.accessibilityMaterializedSqlSha256().equals(accessibilitySqlSha256(sqlBytes))) {
 				throw new IllegalStateException("timetable snapshot evidence does not match seed bytes");
 			}
 			List<String> lines = new String(sqlBytes, StandardCharsets.UTF_8).lines()
@@ -405,6 +414,15 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		}
 	}
 
+	private static String accessibilitySqlSha256(byte[] sqlBytes) {
+		String sql = new String(sqlBytes, StandardCharsets.UTF_8);
+		int offset = sql.indexOf("INSERT INTO data_source_snapshots ");
+		if (offset < 0) {
+			throw new IllegalStateException("timetable snapshot accessibility SQL is missing");
+		}
+		return sha256(sql.substring(offset).getBytes(StandardCharsets.UTF_8));
+	}
+
 	enum ActivationResult {
 		ACTIVATED,
 		NO_CHANGE
@@ -430,6 +448,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		String canonicalStationSetSha256,
 		int canonicalStationMemberCount,
 		String sourceLineageSha256,
+		String accessibilityMaterializedSqlSha256,
 		String evidenceHash,
 		int calendarCount,
 		int routeCount,
@@ -439,7 +458,11 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		int subwayStopTimeCount,
 		int itxTripCount,
 		int itxStopTimeCount,
-		int officialFareCount
+		int officialFareCount,
+		int stationPathwayNodeCount,
+		int stationPathwayEdgeCount,
+		int transferRuleCount,
+		int routeEdgeEvidenceCount
 	) {
 
 		static SnapshotEvidence from(ObjectNode node, ObjectMapper mapper, Clock clock) {
@@ -461,6 +484,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			JsonNode source = object(node, "sourceArtifact");
 			JsonNode service = object(node, "serviceIdentity");
 			JsonNode canonical = object(node, "canonicalPackIdentity");
+			JsonNode accessibility = object(node, "accessibilitySource");
 			JsonNode stations = object(node, "canonicalStationSet");
 			JsonNode counts = object(node, "rowCounts");
 			String freshUntil = text(node, "freshUntil");
@@ -488,6 +512,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				hash(stations, "sha256"),
 				positiveInteger(stations, "memberCount"),
 				hash(node, "sourceLineageSha256"),
+				hash(accessibility, "materializedSqlSha256"),
 				evidenceHash,
 				positiveInteger(counts, "calendars"),
 				positiveInteger(counts, "routes"),
@@ -497,7 +522,11 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				positiveInteger(counts, "subwayStopTimes"),
 				positiveInteger(counts, "itxTrips"),
 				positiveInteger(counts, "itxStopTimes"),
-				positiveInteger(counts, "officialFares")
+				positiveInteger(counts, "officialFares"),
+				nonNegativeInteger(counts, "stationPathwayNodes"),
+				nonNegativeInteger(counts, "stationPathwayEdges"),
+				nonNegativeInteger(counts, "transferRules"),
+				nonNegativeInteger(counts, "routeEdgeEvidence")
 			);
 			if (!"ITX_CHEONGCHUN".equals(text(service, "serviceId"))
 				|| !"line-54a7b980b7c3".equals(text(service, "canonicalLineId"))
@@ -538,6 +567,14 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			int value = integer(node, field);
 			if (value <= 0) {
 				throw new IllegalStateException("timetable snapshot evidence count is invalid: " + field);
+			}
+			return value;
+		}
+
+		private static int nonNegativeInteger(JsonNode node, String field) {
+			int value = integer(node, field);
+			if (value < 0) {
+				throw new IllegalStateException("timetable snapshot evidence field is invalid: " + field);
 			}
 			return value;
 		}
