@@ -18,6 +18,7 @@ import java.time.Instant;
 import java.time.Duration;
 import java.time.ZoneId;
 import java.time.LocalDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -287,7 +288,10 @@ class DatabaseMigrationContainerTest {
 				.containsEntry("minute_calls", 1)
 				.containsEntry("daily_calls", 1);
 
-			Instant observedAt = Instant.parse("2026-07-19T00:00:00Z");
+			// freshLeg/tryAcquireLease는 저장소의 CURRENT_TIMESTAMP(실시간 DB 시계)와 expires_at을
+			// 비교하므로 관측 시각을 실행 시점 기준 상대 시각으로 고정해 시간 의존성을 제거한다.
+			// 초 단위 절삭으로 DB 타임스탬프 정밀도에 따른 round-trip 불일치(contains(leg))도 방지한다.
+			Instant observedAt = Instant.now().truncatedTo(ChronoUnit.SECONDS);
 			var leg = new CachedLeg(
 				"owned", "{}", "[]", "a".repeat(64), observedAt, observedAt.plusSeconds(300));
 			assertThat(repository.tryAcquireLease("owned", "owner-a", observedAt, Duration.ofSeconds(15))).isTrue();
