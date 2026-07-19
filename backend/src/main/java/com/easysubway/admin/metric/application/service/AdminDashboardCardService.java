@@ -30,7 +30,7 @@ public class AdminDashboardCardService {
 		String sparkPoints = AdminMetricSparkline.points(values, SPARK_WIDTH, SPARK_HEIGHT);
 		Delta delta = delta(values, currentValue);
 		return new DashboardCard(
-			title, valueLabel, href, sparkPoints, delta.label(), delta.tone(), SPARK_WIDTH, SPARK_HEIGHT);
+			title, metricKey, valueLabel, href, sparkPoints, delta.label(), delta.tone(), SPARK_WIDTH, SPARK_HEIGHT);
 	}
 
 	// 전일(마지막 인덱스 직전의 가장 최근 비결측 스냅샷) 대비 증감. 이력이 없으면 증감을 비운다.
@@ -64,6 +64,9 @@ public class AdminDashboardCardService {
 
 	/**
 	 * @param title      카드 제목
+	 * @param metricKey  지표 키({@link com.easysubway.admin.metric.domain.AdminMetricKeys}). 카드의
+	 *                   의미 정체성이라 headline/disclosure 격하를 index가 아닌 지표 의미로 판정하는
+	 *                   근거로 쓴다(#2306 리뷰). 표시용 {@code data-metric-key}로도 노출된다.
 	 * @param value      현재 값 표시 문자열
 	 * @param href       카드 전체 클릭 시 이동할 화면
 	 * @param sparkPoints SVG polyline points(비면 스파크라인 생략)
@@ -74,6 +77,7 @@ public class AdminDashboardCardService {
 	 */
 	public record DashboardCard(
 		String title,
+		String metricKey,
 		String value,
 		String href,
 		String sparkPoints,

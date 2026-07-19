@@ -3,11 +3,13 @@ package com.easysubway.admin.adapter.in.web;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.httpBasic;
+import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.admin.authorization.AdminPermission;
 import com.easysubway.admin.metric.application.port.out.AdminMetricDailyRepository;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
@@ -20,6 +22,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.mock.web.MockHttpSession;
+import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(properties = {
@@ -58,6 +61,55 @@ class AdminDashboardPageTest {
 			.contains("href=\"/admin/reports/page\"")
 			.contains("dashboard-spark")
 			.contains("<polyline");
+	}
+
+	@Test
+	@DisplayName("핵심 지표는 대표 KPI 3개를 headline으로 노출하고 나머지는 disclosure로 격하한다")
+	void foregroundsThreeRepresentativeKpisWithRestInDisclosure() throws Exception {
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		// 기간 표기 명확화(headline 의미 희석 해소): 값=현재, 스파크라인=최근 7일, 델타=전일 대비.
+		assertThat(html)
+			.contains("현재 값 · 최근 7일 스파크라인 · 전일 대비")
+			// 대표 KPI 3개(시점·비율)는 headline, 4번째(누계 총량인 푸시 실패)는 disclosure로 격하.
+			.contains("class=\"dashboard-details dashboard-more\"")
+			.contains("나머지 지표")
+			.contains("확인 필요 시설")
+			.contains("경로 차단률")
+			.contains("푸시 실패");
+	}
+
+	@Test
+	@DisplayName("권한 부분집합(ADMIN_VIEW+DATA_OPERATE, REPORT_REVIEW 없음)에서도 누계 카드(푸시 실패)는 headline이 아니라 disclosure로 격하된다")
+	void demotesCumulativeCardEvenWhenHeadlineWouldFillWithoutIt() throws Exception {
+		// REPORT_REVIEW가 없으면 대표 제보 카드가 빠져 남는 카드가 3개(시설·차단률·푸시 실패)가 된다.
+		// index 기반이면 3개가 전부 headline이라 누계 총량인 푸시 실패가 headline으로 승격되는 결함(#2306
+		// 리뷰). 지표 의미(metric key) 기반 격하는 index와 무관하게 누계 카드를 항상 disclosure로 내린다.
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(user("dataop").authorities(
+					new SimpleGrantedAuthority(AdminPermission.ADMIN_VIEW.authority()),
+					new SimpleGrantedAuthority(AdminPermission.DATA_OPERATE.authority()))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		int disclosureAt = html.indexOf("class=\"dashboard-details dashboard-more\"");
+		assertThat(disclosureAt).as("누계 카드를 담는 disclosure 블록이 존재해야 한다").isGreaterThan(-1);
+		// 카드 정체성은 data-metric-key로 판정한다(서술 코멘트 텍스트에 의존하지 않게).
+		String headline = html.substring(0, disclosureAt);
+		String disclosure = html.substring(disclosureAt);
+		assertThat(headline)
+			.contains("data-metric-key=\"" + AdminMetricKeys.FACILITIES_NEEDS_VERIFICATION + "\"")
+			.contains("data-metric-key=\"" + AdminMetricKeys.ROUTE_BLOCKED_RATE + "\"")
+			.doesNotContain("data-metric-key=\"" + AdminMetricKeys.REPORTS_PENDING + "\"")
+			.doesNotContain("data-metric-key=\"" + AdminMetricKeys.PUSH_FAILED + "\"");
+		assertThat(disclosure).contains("data-metric-key=\"" + AdminMetricKeys.PUSH_FAILED + "\"");
 	}
 
 	@Test

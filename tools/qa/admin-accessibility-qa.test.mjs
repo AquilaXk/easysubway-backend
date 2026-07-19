@@ -186,6 +186,37 @@ test("admin accessibility QA script verifies report queue action hierarchy and p
   assert.match(source, /actionSignal\.photoScopedVerified === false/);
 });
 
+// #2281 V6-09: 통합 대시보드 KPI 상태 계층(대표 3개 headline·나머지 disclosure·기간 표기 caption) 계약을 source로 고정한다.
+test("admin accessibility QA script verifies dashboard KPI hierarchy and disclosure", () => {
+  assert.match(source, /async function dashboardKpiHierarchyCheck\(page, baseUrl, report\)/);
+  assert.match(source, /await dashboardKpiHierarchyCheck\(page, baseUrl, report\)/);
+  assert.match(source, /check: "dashboard-kpi-hierarchy"/);
+  // 대표 KPI 3개만 headline으로 노출하는지 headline 그리드 카드 수로 판정한다.
+  assert.match(source, /:scope > \.dashboard-cards/);
+  assert.match(source, /headlineCards/);
+  // 나머지는 native details(.dashboard-more)로 격하돼 keyboard·no-JS에서 접근 가능한지 검사한다.
+  assert.match(source, /\.dashboard-more/);
+  assert.match(source, /disclosureIsDetails/);
+  // 기간 표기 caption(값=현재·스파크라인=최근 7일·델타=전일)이 headline 의미 희석을 없애는지 검사한다.
+  assert.match(source, /captionPresent/);
+  // #2306 리뷰: headline 카드 정체성(metric key)을 data-metric-key로 읽어 누계 카드가 headline에
+  // 없는지(cumulativeInHeadline) 판정하고, 카드가 정체성을 노출하는지(headlineMetricKeysPresent) 검사한다.
+  assert.match(source, /data-metric-key/);
+  assert.match(source, /const CUMULATIVE_METRIC_KEY = "push\.failed";/);
+  assert.match(source, /cumulativeInHeadline/);
+  assert.match(source, /headlineMetricKeysPresent/);
+  // 계약 실패가 blocking 위반으로 표면화되는지 고정한다.
+  assert.match(source, /id: "dashboard-kpi-hierarchy"/);
+  assert.match(source, /kpiHierarchy\.headlineCards > 3/);
+  assert.match(source, /kpiHierarchy\.captionPresent === false/);
+  assert.match(source, /kpiHierarchy\.disclosureIsDetails !== true/);
+  assert.match(source, /kpiHierarchy\.cumulativeInHeadline === true/);
+  assert.match(source, /kpiHierarchy\.headlineMetricKeysPresent === false/);
+  // #2306 리뷰: check entry 부재(pass 미실행/신호 미기록)를 false-green으로 통과시키지 않는다.
+  assert.match(source, /if \(!kpiHierarchy\)/);
+  assert.match(source, /id: "dashboard-kpi-hierarchy-missing"/);
+});
+
 test("admin accessibility QA script records manual-only screen reader and contrast work", () => {
   assert.match(source, /VoiceOver reading flow/);
   assert.match(source, /high-contrast visual inspection/);

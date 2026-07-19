@@ -152,6 +152,12 @@
 	font-size: 13px;
 }
 
+/* 나머지 KPI disclosure(#2281 V6-09): 대표 3개 아래로 격하된 지표를 접어 둔다. 펼치면 headline과
+   같은 카드 그리드(.dashboard-cards)를 재사용하되 요약과 카드 사이 상단 여백만 준다(구분선·시각 언어 불변). */
+.dashboard-more[open] .dashboard-cards {
+	margin-top: 12px;
+}
+
 /* 핵심 지표 패널 ↔ 기간 토글 사이 여백(#2047): #dashboard-trends는 section이 아니라 div라
    section+section 자동 간격을 못 받으므로, 추이 섹션 상단에 명시 여백을 준다(붙어 보이는 문제).
    대시보드 전용 스코프(#dashboard-trends)로 좁혀 usage·routes·notifications 화면에는 파급하지 않는다. */

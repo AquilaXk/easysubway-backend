@@ -64,7 +64,10 @@ class DatapackPipelineAdminPageControllerTest {
 			.contains("별칭·격리")
 			.contains("매니페스트 서명")
 			.contains("채널 승격")
-			.contains("게이트 6종 + 서명")
+			// 게이트 매트릭스·서명 상세는 details로 격하하되 keyboard·no-JS에서 접근 가능하다(#2281 V6-09).
+			.contains("<summary><h2>게이트 6종 + 서명</h2></summary>")
+			.contains("<summary><h2>서명·증거</h2></summary>")
+			.contains("class=\"dashboard-details\"")
 			.contains("복사")
 			.contains("snapshot-kric-20260629")
 			.contains("/admin/datapack/source-snapshots/page?candidateId=candidate-capital-1&amp;sourceSnapshotId=snapshot-kric-20260629,snapshot-route-20260629")

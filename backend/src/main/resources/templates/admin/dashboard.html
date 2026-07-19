@@ -43,15 +43,29 @@
 		</a>
 	</section>
 
-	<!-- 핵심 지표 패널: 1px 보더 플랫 패널(#1983) 하나 안에 지표 셀을 1px 내부 구분선으로 분할.
-	     각 셀 = 흐린 라벨 + 큰 숫자(tabular-nums) + 파랑 스파크라인 + 상태 3색 델타.
-	     셀 전체가 해당 화면으로 이동(a 태그 유지). -->
-	<section class="admin-panel dashboard-metric-panel" aria-labelledby="dashboard-metric-panel-title">
+	<!-- 핵심 지표 패널(#2281 V6-09): 시점·비율 대표 KPI만 headline으로 노출하고 누계 총량 지표는
+	     disclosure로 격하해 urgent state를 먼저 식별하게 한다. 각 셀 = 흐린 라벨 + 큰 숫자(tabular-nums)
+	     + 파랑 스파크라인 + 상태 3색 델타. 셀 전체가 해당 화면으로 이동(a 태그 유지).
+	     격하 판정은 index가 아니라 지표 의미(metric key)로 한다(#2306 리뷰): index 기준은 REPORT_REVIEW가
+	     없어 대표 제보 카드가 빠진 권한 부분집합에서 남은 세 카드가 전부 headline이 되어 누계 총량 카드가
+	     headline으로 잘못 승격됐다. 누계 총량 지표(AdminMetricKeys의 누계 총량 키)는 권한·카드 수와 무관하게
+	     항상 disclosure로 내린다. 남는 headline이 세 개 미만인 role에서도 3열 그리드가 좌측 정렬로 자연스럽게
+	     채워진다.
+	     기간 표기 명확화(#2293 리뷰 이관): 큰 숫자는 "현재 값", 스파크라인은 "최근 7일 추이", 델타는
+	     "전일 대비"임을 caption으로 못 박아 누계·시점 값이 아래 추이 기간 셀렉터(7/30/90)에 딸린
+	     수치로 읽히는 headline 의미 희석을 없앤다. -->
+	<section class="admin-panel dashboard-metric-panel" aria-labelledby="dashboard-metric-panel-title"
+	         th:with="headlineCards=${cards.?[metricKey != T(com.easysubway.admin.metric.domain.AdminMetricKeys).PUSH_FAILED]},
+	                  moreCards=${cards.?[metricKey == T(com.easysubway.admin.metric.domain.AdminMetricKeys).PUSH_FAILED]}">
 		<div class="admin-panel-head">
 			<h2 id="dashboard-metric-panel-title">핵심 지표</h2>
 		</div>
+		<p class="section-hint">현재 값 · 최근 7일 스파크라인 · 전일 대비. 기간 추이는 아래 추이 섹션에서 봅니다.</p>
+		<!-- headline: 시점·비율 대표 KPI. data-metric-key로 카드의 지표 정체성을 노출한다(격하 근거·QA 계약). -->
 		<div class="dashboard-cards">
-			<a th:each="card : ${cards}" class="dashboard-card metric-cell" th:href="@{${card.href}}">
+			<a th:each="card : ${headlineCards}"
+			   class="dashboard-card metric-cell" th:href="@{${card.href}}"
+			   th:attr="data-metric-key=${card.metricKey}">
 				<span class="dashboard-card-title" th:text="${card.title}">제목</span>
 				<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
 				<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
@@ -64,6 +78,27 @@
 				      th:text="${card.deltaLabel}">전일 대비</span>
 			</a>
 		</div>
+		<!-- 누계 총량 KPI는 disclosure로 격하. native details라 keyboard·no-JS에서 그대로 펼칠 수 있고,
+		     셀 마크업은 headline과 동일 계약을 유지한다. -->
+		<details class="dashboard-details dashboard-more" th:if="${!moreCards.isEmpty()}">
+			<summary th:text="|나머지 지표 ${moreCards.size()}개 보기|">나머지 지표 보기</summary>
+			<div class="dashboard-cards">
+				<a th:each="card : ${moreCards}"
+				   class="dashboard-card metric-cell" th:href="@{${card.href}}"
+				   th:attr="data-metric-key=${card.metricKey}">
+					<span class="dashboard-card-title" th:text="${card.title}">제목</span>
+					<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
+					<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
+					     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
+					     aria-label="최근 7일 추이" focusable="false">
+						<polyline th:attr="points=${card.sparkPoints}" fill="none"
+						          stroke="currentColor" stroke-width="1.5"></polyline>
+					</svg>
+					<span class="dashboard-card-delta" th:classappend="${' is-' + card.deltaTone}"
+					      th:text="${card.deltaLabel}">전일 대비</span>
+				</a>
+			</div>
+		</details>
 	</section>
 
 	<!-- 추이 섹션: 기간(7/30/90) 라인 차트 2개. 기간 버튼이 이 컨테이너를 htmx로 부분 갱신한다. -->

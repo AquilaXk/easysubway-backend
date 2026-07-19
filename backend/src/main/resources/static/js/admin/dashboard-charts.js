@@ -20,18 +20,32 @@
 		tokenColor('--admin-danger', '#b42318')
 	];
 
+	// #2281 V6-09: 차트를 그리지 못하면(Chart.js 부재·JSON 파싱 실패) 같은 값의 대체 표
+	// (details.dashboard-details "데이터 표로 보기")를 펼쳐 동일 데이터를 즉시 보이게 한다.
+	// 표 값은 서버가 canvas data-chart와 같은 소스로 렌더해 chart와 항상 일치한다.
+	function revealFallbackTable(canvas) {
+		var section = canvas.closest('section');
+		var fallback = section && section.querySelector('details.dashboard-details');
+		if (fallback) {
+			fallback.open = true;
+		}
+	}
+
 	function renderChart(canvas) {
 		if (!window.Chart) {
+			revealFallbackTable(canvas);
 			return;
 		}
 		var raw = canvas.getAttribute('data-chart');
 		if (!raw) {
+			revealFallbackTable(canvas);
 			return;
 		}
 		var data;
 		try {
 			data = JSON.parse(raw);
 		} catch (error) {
+			revealFallbackTable(canvas);
 			return;
 		}
 		if (canvas.chartInstance) {
@@ -67,8 +81,30 @@
 		scope.querySelectorAll('canvas.trend-canvas').forEach(renderChart);
 	}
 
+	// #2281 V6-09: 지표 수동 재집계 중복 실행 방지. snapshotToday()는 멱등이지만 더블클릭이 중복 POST를
+	// 낸다. 첫 제출에서 버튼을 비활성화(자리·크기 그대로 두어 layout stability 유지, aria-busy로 진행 표시)해
+	// 중복 실행을 막는다. no-JS에서는 이 가드 없이 폼이 그대로 한 번 제출된다.
+	function guardSnapshotRerun() {
+		var form = document.querySelector('.admin-dashboard-snapshot-actions form');
+		if (!form) {
+			return;
+		}
+		form.addEventListener('submit', function () {
+			if (form.getAttribute('data-submitting') === 'true') {
+				return;
+			}
+			form.setAttribute('data-submitting', 'true');
+			var button = form.querySelector('button[type="submit"]');
+			if (button) {
+				button.setAttribute('aria-busy', 'true');
+				button.disabled = true;
+			}
+		});
+	}
+
 	document.addEventListener('DOMContentLoaded', function () {
 		renderAll(document);
+		guardSnapshotRerun();
 	});
 	document.body.addEventListener('htmx:afterSwap', function (event) {
 		renderAll(event.target);
