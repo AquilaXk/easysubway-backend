@@ -28,6 +28,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.BeforeEach;
@@ -57,14 +58,57 @@ class TrainSearchServiceTest {
 	@Test
 	void joinsConcurrentMissesIntoOneProviderSearch() throws Exception {
 		provider.blockSearch = true;
-		var first = CompletableFuture.supplyAsync(() -> service.search(criteria(null)));
-		assertThat(provider.searchStarted.await(5, TimeUnit.SECONDS)).isTrue();
-		var second = CompletableFuture.supplyAsync(() -> service.search(criteria(null)));
-		assertThat(cache.secondLegRead.await(5, TimeUnit.SECONDS)).isTrue();
-		provider.continueSearch.countDown();
+		var pool = Executors.newFixedThreadPool(2);
+		try {
+			var first = CompletableFuture.supplyAsync(() -> service.search(criteria(null)), pool);
+			assertThat(provider.searchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			var second = CompletableFuture.supplyAsync(() -> service.search(criteria(null)), pool);
+			assertThat(cache.secondLegRead.await(5, TimeUnit.SECONDS)).isTrue();
+			provider.continueSearch.countDown();
 
-		assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(second.get(5, TimeUnit.SECONDS));
-		assertThat(provider.searchCalls).hasValue(1);
+			assertThat(first.get(5, TimeUnit.SECONDS)).isEqualTo(second.get(5, TimeUnit.SECONDS));
+			assertThat(provider.searchCalls).hasValue(1);
+		} finally {
+			provider.continueSearch.countDown();
+			pool.shutdownNow();
+			assertThat(pool.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
+	}
+
+	@Test
+	void threeNodesShareOneProviderCallThroughTheDatabaseLease() throws Exception {
+		var mapper = new ObjectMapper().registerModule(new JavaTimeModule());
+		var clock = Clock.fixed(NOW, ZoneOffset.UTC);
+		var firstNode = new TrainSearchService(
+			provider, cache, mapper, clock, Thread::sleep, () -> "node-a"
+		);
+		var secondNode = new TrainSearchService(
+			provider, cache, mapper, clock, Thread::sleep, () -> "node-b"
+		);
+		var thirdNode = new TrainSearchService(
+			provider, cache, mapper, clock, Thread::sleep, () -> "node-c"
+		);
+		provider.blockSearch = true;
+		var pool = Executors.newFixedThreadPool(3);
+		try {
+			var first = CompletableFuture.supplyAsync(() -> firstNode.search(criteria(null)), pool);
+			assertThat(provider.searchStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			var second = CompletableFuture.supplyAsync(() -> secondNode.search(criteria(null)), pool);
+			var third = CompletableFuture.supplyAsync(() -> thirdNode.search(criteria(null)), pool);
+			assertThat(cache.followerLeaseAttempts.await(5, TimeUnit.SECONDS)).isTrue();
+			provider.continueSearch.countDown();
+
+			assertThat(List.of(
+				first.get(5, TimeUnit.SECONDS),
+				second.get(5, TimeUnit.SECONDS),
+				third.get(5, TimeUnit.SECONDS)
+			)).allMatch(first.join()::equals);
+			assertThat(provider.searchCalls).hasValue(1);
+		} finally {
+			provider.continueSearch.countDown();
+			pool.shutdownNow();
+			assertThat(pool.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
+		}
 	}
 
 	@Test
@@ -372,17 +416,20 @@ class TrainSearchServiceTest {
 	@Test
 	void catalogMissDoesNotWaitOnAnotherProviderCallMonitor() throws Exception {
 		provider.blockCatalog = true;
-		var first = CompletableFuture.supplyAsync(service::catalog);
-		assertThat(provider.catalogStarted.await(5, TimeUnit.SECONDS)).isTrue();
-		var second = CompletableFuture.supplyAsync(service::catalog);
-
+		var pool = Executors.newFixedThreadPool(2);
 		try {
+			var first = CompletableFuture.supplyAsync(service::catalog, pool);
+			assertThat(provider.catalogStarted.await(5, TimeUnit.SECONDS)).isTrue();
+			var second = CompletableFuture.supplyAsync(service::catalog, pool);
 			assertThatThrownBy(() -> second.get(1, TimeUnit.SECONDS))
 				.isInstanceOf(ExecutionException.class)
 				.hasCauseInstanceOf(TrainSearchService.TrainSearchFailure.class);
-		} finally {
 			provider.continueCatalog.countDown();
 			first.get(5, TimeUnit.SECONDS);
+		} finally {
+			provider.continueCatalog.countDown();
+			pool.shutdownNow();
+			assertThat(pool.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 		}
 	}
 
@@ -655,6 +702,8 @@ class TrainSearchServiceTest {
 		private final Map<String, Duration> leaseTtls = new ConcurrentHashMap<>();
 		private final AtomicInteger freshLegCalls = new AtomicInteger();
 		private final CountDownLatch secondLegRead = new CountDownLatch(1);
+		private final CountDownLatch followerLeaseAttempts = new CountDownLatch(2);
+		private final java.util.Set<String> followerLeaseOwners = ConcurrentHashMap.newKeySet();
 		private volatile boolean failCatalogRead;
 		private volatile boolean denyLeases;
 		private volatile Runnable beforeCatalogReturn = () -> {};
@@ -684,7 +733,9 @@ class TrainSearchServiceTest {
 			leaseTtls.put(key, ttl);
 			beforeLeaseAcquire.run();
 			if (denyLeases) return false;
-			return leases.putIfAbsent(key, owner) == null;
+			boolean acquired = leases.putIfAbsent(key, owner) == null;
+			if (!acquired && followerLeaseOwners.add(owner)) followerLeaseAttempts.countDown();
+			return acquired;
 		}
 
 		@Override
