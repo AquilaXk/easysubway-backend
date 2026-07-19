@@ -180,6 +180,21 @@ function finalizeReport(report) {
       nodes: 0,
     });
   }
+  // V6-07 #2279: 마스터 목록 상태 신호 계약을 위반으로 편입한다. 첫 식별자 열이 sticky가 아니거나,
+  // 상태 셀에 비색 아이콘(또는 텍스트) 신호가 없거나(색 단독), 헤더 scope 연결이 없으면 실패를 표면화한다.
+  const statusSignal = report.keyboard.find((entry) => entry.check === "master-list-status-signal");
+  if (statusSignal
+    && (statusSignal.stickyIdentifier === false
+      || statusSignal.statusHasIcon === false
+      || statusSignal.statusHasText === false
+      || statusSignal.scopedHeaders === 0)) {
+    blockingViolations.push({
+      page: "/admin/stations/page",
+      id: "master-list-status-signal",
+      impact: "serious",
+      nodes: 0,
+    });
+  }
   const criticalViolations = blockingViolations.filter((violation) => violation.impact === "critical");
   const seriousViolations = blockingViolations.filter((violation) => violation.impact === "serious");
   report.summary = {
@@ -214,6 +229,7 @@ async function runJsPass(browser, baseUrl, outputDir, adminUser, adminPassword, 
   await captureAxTree(page, outputDir, report);
   await noCurrentWorkspaceDisclosure(page, baseUrl, report);
   await keyboardTableCheck(page, baseUrl, report);
+  await masterListStatusSignalCheck(page, baseUrl, report);
   await listToolbarSheetCheck(page, baseUrl, report);
   await textScalePass(page, baseUrl, outputDir, report, ADMIN_TEXT_SCALE_PAGES);
   await context.close();
@@ -577,6 +593,30 @@ async function keyboardTableCheck(page, baseUrl, report) {
     outlineWidth: focusState ? focusState.outlineWidth : null,
     outlineVisible,
   });
+}
+
+// V6-07 #2279: 마스터 목록 상태 신호 계약. 이관된 master-list(역 목록)를 mobile-390에서 열어
+// (1) 첫 식별자 열이 sticky로 고정되는지, (2) 상태가 색 단독이 아니라 아이콘(비색 신호)+텍스트를
+// 함께 갖는지, (3) 표 헤더가 scope로 연결되는지 검사한다. 하나라도 어기면 finalizeReport가 위반으로
+// 편입해 exit code로 실패를 표면화한다(§9 식별자·주의·품질 즉시 접근, badge accessible name).
+async function masterListStatusSignalCheck(page, baseUrl, report) {
+  await page.setViewportSize(VIEWPORTS.find((viewport) => viewport.name === "mobile-390"));
+  const response = await page.goto(`${baseUrl}/admin/stations/page`, { waitUntil: "networkidle" });
+  await assertOk(page, "/admin/stations/page", response);
+
+  const signal = await page.evaluate(() => {
+    const firstCell = document.querySelector(".admin-table-scroll tbody td:first-child");
+    const stickyIdentifier = firstCell ? getComputedStyle(firstCell).position === "sticky" : false;
+    const statusCells = Array.from(document.querySelectorAll(".admin-table-scroll .data-status"));
+    const statusHasIcon = statusCells.length > 0
+      && statusCells.every((cell) => cell.querySelector("svg.admin-icon") !== null);
+    const statusHasText = statusCells.length > 0
+      && statusCells.every((cell) => (cell.textContent || "").trim().length > 0);
+    const scopedHeaders = document.querySelectorAll(".admin-table-scroll thead th[scope=\"col\"]").length;
+    return { stickyIdentifier, statusCells: statusCells.length, statusHasIcon, statusHasText, scopedHeaders };
+  });
+
+  report.keyboard.push({ check: "master-list-status-signal", ...signal });
 }
 
 // #2278 V6-06: 목록 툴바 시트 계약. compact viewport에서 (1) body가 가로 overflow를 소유하지 않는지(§9),

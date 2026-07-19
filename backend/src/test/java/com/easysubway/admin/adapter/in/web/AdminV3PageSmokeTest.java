@@ -62,6 +62,15 @@ class AdminV3PageSmokeTest {
 			.contains("/admin/stations/station-sangnoksu/page?tab=facilities")
 			.contains("/admin/reports/page?station=station-sangnoksu");
 
+		// V6-07 #2279: 현재 상태는 text+icon+color(색 단독 금지), 상태 변경 열은 우측 sticky action,
+		// 갱신일은 상대 시간 + 정확한 날짜 병기, 공통 표 영역(table-region) 계약을 소비한다.
+		assertThat(html)
+			.contains("class=\"data-status")
+			.contains("/icons/admin-symbols.svg#")
+			.contains("class=\"cell-sticky-action\"")
+			.contains("class=\"data-verified-relative\"")
+			.contains("가로로 스크롤 가능한 데이터 표");
+
 		String fragment = mockMvc.perform(get("/admin/facilities/page")
 				.param("sort", "attention")
 				.header("HX-Request", "true")
@@ -90,6 +99,16 @@ class AdminV3PageSmokeTest {
 			.contains("확인 필요 시설")
 			// 상록수 역 링크가 상세 허브로 연결된다.
 			.contains("/admin/stations/station-sangnoksu/page");
+
+		// V6-07 #2279: 데이터 품질은 text+icon+color(색 단독 금지), 마지막 확인은 상대 시간 + 정확한 날짜
+		// 병기, 식별자 링크가 상세 이동을 소유해 중복 상세 버튼(admin-btn)을 제거, 공통 표 영역을 소비한다.
+		assertThat(html)
+			.contains("데이터 품질")
+			.contains("class=\"data-status")
+			.contains("/icons/admin-symbols.svg#")
+			.contains("class=\"data-verified-relative\"")
+			.contains("가로로 스크롤 가능한 데이터 표")
+			.doesNotContain(">상세</a>");
 
 		// 정렬·지역 파라미터가 페이지네이션/툴바에 유지된다(htmx 부분 갱신도 같은 필터 공유).
 		String sorted = mockMvc.perform(get("/admin/stations/page")

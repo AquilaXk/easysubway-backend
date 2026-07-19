@@ -13,6 +13,11 @@
   - 검색은 method=get form + hx-get으로 HTMX와 full request가 같은 URL·결과를 만든다. query parameter·sort·page
     size는 hidden으로 보존해 검색이 다른 필터를 덮어쓰지 않는다.
   - CSP 빌드 규약: x-on/x-bind에는 listToolbar 컴포넌트의 메서드·게터 이름만 넣는다(인라인 표현식 금지).
+  - hidden 보존 맵(search.hidden)은 항상 ${search.get('hidden')} 메서드 호출로 읽는다(#2279 리뷰 수정). 점(.)
+    프로퍼티 접근(${search.hidden})은 Spring MapAccessor.read()가 "값이 null이고 키도 없음"을 MapAccessException으로
+    던지는 케이스라 caller가 hidden 키를 아예 안 넣으면 500이 난다. get('hidden')은 Map 인터페이스의 평범한
+    public 메서드 호출이라 키 부재·null 모두 예외 없이 null을 돌려준다(null-safe). 반복 변수명은 Thymeleaf가
+    자동 부여하는 웹 변수 'param'과 충돌하지 않도록 hiddenParam으로 둔다("such name is a reserved word" 방지).
   파라미터: basePath(GET/hx-get URL), resultsId(htmx target id), search(검색 필드 설정 map),
   savedViews·filters·viewSettings(각 영역 마크업 fragment, 없으면 ~{} 전달).
 -->
@@ -26,9 +31,9 @@
 	      hx-trigger="submit, keyup changed delay:300ms">
 		<input type="search" th:name="${search.name}" th:value="${search.value}"
 		       th:placeholder="${search.placeholder}" th:aria-label="${search.label}" autocomplete="off">
-		<th:block th:if="${search.hidden}">
-			<input type="hidden" th:each="param : ${search.hidden}"
-			       th:name="${param.key}" th:value="${param.value}">
+		<th:block th:if="${search.get('hidden')}">
+			<input type="hidden" th:each="hiddenParam : ${search.get('hidden')}"
+			       th:name="${hiddenParam.key}" th:value="${hiddenParam.value}">
 		</th:block>
 		<button type="submit">검색</button>
 	</form>

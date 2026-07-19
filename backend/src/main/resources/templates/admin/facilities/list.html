@@ -35,99 +35,151 @@
 	<div th:replace="~{admin/fragments/form-errors :: summary}"></div>
 
 	<!--
-	  시설 상태판 표준 테이블(#1741): 검색·유형·상태·역 필터 툴바 + 표 + 페이지네이션을 facilityResults로 묶는다.
+	  시설 상태판 표준 테이블(#1741, V6-07 #2279 이관): 검색·필터·정렬을 V6-06 공통 툴바(list-toolbar)로,
+	  표는 공통 표 영역(table-region)으로 소비한다. 390px 첫 화면에서 sticky 첫 식별자 열(시설)과 바로 뒤
+	  현재 상태(주의)·역·확인 상태(데이터 품질)가 즉시 보이고, 나머지 열은 가로 스크롤로 접근한다.
+	  상태 변경 form 열만 우측 sticky(action)로 고정한다.
 	  JS 있으면 htmx가 이 컨테이너만 교체하고 URL을 push, 없으면 form GET·링크가 전체 페이지로 동작한다.
 	-->
 	<div id="facility-results" th:fragment="facilityResults"
 	     hx-target="#facility-results" hx-swap="outerHTML" hx-push-url="true">
-		<form class="table-toolbar" method="get" th:action="@{/admin/facilities/page}"
-		      role="search" aria-label="시설 검색"
-		      hx-target="#facility-results" hx-swap="outerHTML" hx-push-url="true"
-		      th:attr="hx-get=@{/admin/facilities/page}"
-		      hx-trigger="submit, change, keyup changed delay:300ms">
-			<input type="search" name="query" th:value="${searchKeyword}"
-			       placeholder="시설·역 이름 검색" aria-label="시설·역 이름 검색" autocomplete="off">
-			<select name="type" aria-label="유형 필터">
-				<option th:each="opt : ${typeOptions}" th:value="${opt.value}"
-				        th:text="${opt.label}" th:selected="${opt.selected}">전체 유형</option>
-			</select>
-			<select name="status" aria-label="상태 필터">
-				<option value="" th:selected="${selectedStatus == null}">전체 상태</option>
-				<option th:each="option : ${statusOptions}" th:value="${option.value}"
-				        th:text="${option.label}" th:selected="${option.value == selectedStatus}">정상</option>
-			</select>
-			<select name="stationId" aria-label="역 필터">
-				<option th:each="opt : ${stationFilterOptions}" th:value="${opt.value}"
-				        th:text="${opt.label}" th:selected="${opt.selected}">전체 역</option>
-			</select>
-			<select name="sort" aria-label="정렬">
-				<option value="" th:selected="${selectedSort == null}">역명순</option>
-				<option value="attention" th:selected="${selectedSort == 'attention'}">확인 필요 먼저</option>
-				<option value="updated" th:selected="${selectedSort == 'updated'}">갱신일 최신순</option>
-			</select>
-			<button type="submit">검색</button>
-		</form>
 
-		<div class="admin-table-scroll" tabindex="0" role="group"
-		     aria-label="가로로 스크롤 가능한 데이터 표">
-		<table>
-			<thead>
-			<tr>
-				<th scope="col">시설</th>
-				<th scope="col">역</th>
-				<th scope="col">현재 상태</th>
-				<th scope="col">확인 상태</th>
-				<th scope="col">갱신일</th>
-				<th scope="col">제보</th>
-				<th scope="col">상태 변경</th>
-			</tr>
-			</thead>
-			<tbody>
-			<tr th:if="${facilities.isEmpty()}">
-				<td colspan="7">
-					<div th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 시설이 없습니다.', '검색어·유형·상태·역 필터를 조정해 보세요.')}"></div>
-				</td>
-			</tr>
-			<tr th:each="facility : ${facilities}">
-				<td>
-					<span th:text="${facility.facilityName}">1번 출구 엘리베이터</span>
-					<span class="meta" th:text="${facility.typeLabel}">엘리베이터</span>
-				</td>
-				<td>
-					<a th:href="@{/admin/stations/{stationId}/page(stationId=${facility.stationId},tab='facilities')}"
-					   th:text="${facility.stationName}">상록수</a>
-				</td>
-				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${facility.statusLabel})}">정상</span></td>
-				<td>
-					<span th:text="${facility.confidenceLabel}">최근 확인된 정보</span>
-					<span class="meta" th:text="${facility.sourceLabel}">공식 안내</span>
-				</td>
-				<td th:text="${facility.lastUpdatedAt}">2026-06-12</td>
-				<td>
-					<!-- 관련 제보: 이 시설의 역으로 필터된 제보 대기열(#1740)로 이동한다. -->
-					<a th:href="@{/admin/reports/page(station=${facility.stationId})}"
-					   th:attr="aria-label=|${facility.stationName} 제보 보기|">제보 보기</a>
-				</td>
-				<td>
-					<form th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
-					      method="post">
-						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<label>
-							<span class="meta">변경할 상태</span>
-							<select name="status">
-								<option th:each="option : ${statusOptions}"
-								        th:value="${option.value}"
-								        th:selected="${option.value == facility.status}"
-								        th:text="${option.label}">정상</option>
-							</select>
-						</label>
-						<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
-					</form>
-				</td>
-			</tr>
-			</tbody>
-		</table>
+		<!-- V6-06 공통 툴바: 검색은 항상 direct, 유형·상태·역 필터는 필터 시트, 정렬은 보기 설정 시트로 접힌다.
+		     각 영역 form은 나머지 파라미터를 hidden으로 보존한다. -->
+		<!-- 검색 form의 필터·정렬 보존용 hidden(search.hidden, #2279 리뷰 반영): list-toolbar.html이
+		     ${search.get('hidden')} 메서드 호출로 null-safe하게 읽고 hiddenParam으로 반복하므로, 여기서 유형·
+		     상태·역·정렬을 그대로 전달해 키워드 검색이 활성 필터를 덮어쓰지 않게 한다(§7 filter binding 불변). -->
+		<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
+		         '/admin/facilities/page', 'facility-results',
+		         ${ {'name':'query','value':searchKeyword,'placeholder':'시설·역 이름 검색','label':'시설·역 이름 검색',
+		            'hidden': {'type':selectedType,'status':selectedStatus,'stationId':selectedStationFilter,'sort':selectedSort}} },
+		         ~{}, ~{::facilityFilters}, ~{::facilityView})}">
+			<form th:fragment="facilityFilters" class="admin-toolbar-form" method="get"
+			      th:action="@{/admin/facilities/page}" role="group" aria-label="유형·상태·역 필터"
+			      th:attr="hx-get=@{/admin/facilities/page}" hx-target="#facility-results"
+			      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+				<input type="hidden" name="query" th:value="${searchKeyword}">
+				<input type="hidden" name="sort" th:value="${selectedSort}">
+				<select name="type" aria-label="유형 필터">
+					<option th:each="opt : ${typeOptions}" th:value="${opt.value}"
+					        th:text="${opt.label}" th:selected="${opt.selected}">전체 유형</option>
+				</select>
+				<select name="status" aria-label="상태 필터">
+					<option value="" th:selected="${selectedStatus == null}">전체 상태</option>
+					<option th:each="option : ${statusOptions}" th:value="${option.value}"
+					        th:text="${option.label}" th:selected="${option.value == selectedStatus}">정상</option>
+				</select>
+				<select name="stationId" aria-label="역 필터">
+					<option th:each="opt : ${stationFilterOptions}" th:value="${opt.value}"
+					        th:text="${opt.label}" th:selected="${opt.selected}">전체 역</option>
+				</select>
+				<button type="submit">필터 적용</button>
+			</form>
+			<form th:fragment="facilityView" class="admin-toolbar-form" method="get"
+			      th:action="@{/admin/facilities/page}" role="group" aria-label="정렬"
+			      th:attr="hx-get=@{/admin/facilities/page}" hx-target="#facility-results"
+			      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+				<input type="hidden" name="query" th:value="${searchKeyword}">
+				<input type="hidden" name="type" th:value="${selectedType}">
+				<input type="hidden" name="status" th:value="${selectedStatus}">
+				<input type="hidden" name="stationId" th:value="${selectedStationFilter}">
+				<select name="sort" aria-label="정렬">
+					<option value="" th:selected="${selectedSort == null}">역명순</option>
+					<option value="attention" th:selected="${selectedSort == 'attention'}">확인 필요 먼저</option>
+					<option value="updated" th:selected="${selectedSort == 'updated'}">갱신일 최신순</option>
+				</select>
+				<button type="submit">정렬 적용</button>
+			</form>
+		</div>
+
+		<!-- V6-06 공통 표 영역: wrapper(.admin-table-scroll)만 가로 overflow를 소유하고, 첫 식별자 열은
+		     sticky, 상태 변경 form 열은 우측 sticky(action)다. head·rows 마크업만 주입한다. -->
+		<div th:replace="~{admin/fragments/table-region :: region(
+		         '시설 상태 표', ~{::facilityTableHead}, ~{::facilityTableRows})}">
+			<th:block th:fragment="facilityTableHead">
+				<tr>
+					<th scope="col">시설</th>
+					<th scope="col">현재 상태</th>
+					<th scope="col">역</th>
+					<th scope="col">확인 상태</th>
+					<th scope="col">갱신일</th>
+					<th scope="col">제보</th>
+					<th scope="col" class="cell-sticky-action">상태 변경</th>
+				</tr>
+			</th:block>
+			<th:block th:fragment="facilityTableRows">
+				<tr th:if="${facilities.isEmpty()}">
+					<td colspan="7">
+						<div th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 시설이 없습니다.', '검색어·유형·상태·역 필터를 조정해 보세요.')}"></div>
+					</td>
+				</tr>
+				<tr th:each="facility : ${facilities}">
+					<td>
+						<span th:text="${facility.facilityName}">1번 출구 엘리베이터</span>
+						<span class="meta" th:text="${facility.typeLabel}">엘리베이터</span>
+					</td>
+					<td>
+						<!-- 현재 상태: 텍스트 + 아이콘 + 색으로 상태를 전한다(색 단독 표현 금지). -->
+						<th:block th:with="ftone=${facility.status.name() == 'NORMAL' or facility.status.name() == 'ADMIN_VERIFIED' ? 'good'
+						                     : (facility.status.name() == 'BROKEN' or facility.status.name() == 'CLOSED' ? 'bad' : 'warn')},
+						                   ficon=${facility.status.name() == 'NORMAL' or facility.status.name() == 'ADMIN_VERIFIED' ? 'check'
+						                     : (facility.status.name() == 'BROKEN' or facility.status.name() == 'CLOSED' ? 'error' : 'warning')}">
+							<span class="data-status" th:classappend="|tone-${ftone}|">
+								<svg th:replace="~{admin/fragments/icon :: icon(${ficon})}"></svg>
+								<span th:text="${facility.statusLabel}">정상</span>
+							</span>
+						</th:block>
+					</td>
+					<td>
+						<a th:href="@{/admin/stations/{stationId}/page(stationId=${facility.stationId},tab='facilities')}"
+						   th:text="${facility.stationName}">상록수</a>
+					</td>
+					<td>
+						<!-- 확인 상태: 데이터 품질(신뢰도)과 출처를 함께 보여준다. -->
+						<span th:text="${facility.confidenceLabel}">최근 확인된 정보</span>
+						<span class="meta" th:text="${facility.sourceLabel}">공식 안내</span>
+					</td>
+					<td>
+						<!-- 갱신일: 상대 시간 + 정확한 날짜 병기. lastUpdatedAt은 LocalDate라 표시 계층에서
+						     상대 시간을 계산한다. 값이 없으면 '기록 없음'으로만 표기한다(placeholder 데이터 없음). -->
+						<th:block th:if="${facility.lastUpdatedAt != null}"
+						          th:with="daysAgo=${T(java.time.temporal.ChronoUnit).DAYS.between(facility.lastUpdatedAt, T(java.time.LocalDate).now())}">
+							<span class="data-verified">
+								<span class="data-verified-relative"
+								      th:title="${#temporals.format(facility.lastUpdatedAt, 'yyyy-MM-dd')}"
+								      th:text="${daysAgo le 0 ? '오늘' : (daysAgo == 1 ? '어제'
+								        : (daysAgo lt 7 ? daysAgo + '일 전'
+								        : (daysAgo lt 31 ? daysAgo / 7 + '주 전'
+								        : (daysAgo lt 365 ? daysAgo / 30 + '개월 전' : daysAgo / 365 + '년 전'))))}">3일 전</span>
+								<span class="meta" th:text="${#temporals.format(facility.lastUpdatedAt, 'yyyy-MM-dd')}">2026-06-12</span>
+							</span>
+						</th:block>
+						<span th:unless="${facility.lastUpdatedAt != null}" class="meta">기록 없음</span>
+					</td>
+					<td>
+						<!-- 관련 제보: 이 시설의 역으로 필터된 제보 대기열(#1740)로 이동한다. -->
+						<a th:href="@{/admin/reports/page(station=${facility.stationId})}"
+						   th:attr="aria-label=|${facility.stationName} 제보 보기|">제보 보기</a>
+					</td>
+					<td class="cell-sticky-action">
+						<form th:action="@{/admin/facilities/{facilityId}/page/status(facilityId=${facility.facilityId})}"
+						      method="post">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<label>
+								<span class="meta">변경할 상태</span>
+								<select name="status">
+									<option th:each="option : ${statusOptions}"
+									        th:value="${option.value}"
+									        th:selected="${option.value == facility.status}"
+									        th:text="${option.label}">정상</option>
+								</select>
+							</label>
+							<button type="submit" th:disabled="${!masterDataWritable}">저장</button>
+						</form>
+					</td>
+				</tr>
+			</th:block>
 		</div>
 		<div th:replace="~{admin/fragments/pagination :: pager('시설 상태 목록 페이지', ${page}, ${paginationLinks})}"></div>
 	</div>

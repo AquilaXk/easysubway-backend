@@ -508,6 +508,63 @@
 	background: var(--admin-accent-soft);
 }
 
+/* 시트 안 필터·정렬 form(V6-07 #2279): 시트가 소유하는 no-JS/HTMX form의 컨트롤을 인라인으로 배치한다.
+   시각 언어(무채색·flat·radius≤8)는 기존 폼 컨트롤 토큰을 그대로 상속한다. */
+.admin-toolbar-form {
+	display: flex;
+	flex-wrap: wrap;
+	gap: 8px;
+	align-items: center;
+	margin: 0;
+}
+
+/* 목록 상태 셀(V6-07 #2279): 상태를 텍스트 + 아이콘 + 색으로 함께 전한다(색 단독 표현 금지).
+   아이콘은 프로젝트 sprite(check·warning·error·info)를 currentColor로 그리므로 tone class의 색을
+   그대로 물려받는다. 시각 언어는 기존 상태색 토큰 범위 안에서만 쓴다. */
+.admin-v3 .data-status {
+	display: inline-flex;
+	align-items: center;
+	gap: 6px;
+	font-size: 13px;
+	color: var(--admin-ink);
+	white-space: nowrap;
+}
+
+.admin-v3 .data-status .admin-icon {
+	width: 16px;
+	height: 16px;
+	flex: none;
+}
+
+.admin-v3 .data-status.tone-good {
+	color: var(--admin-good);
+}
+
+.admin-v3 .data-status.tone-warn {
+	color: var(--admin-warn);
+}
+
+.admin-v3 .data-status.tone-bad {
+	color: var(--admin-danger);
+}
+
+.admin-v3 .data-status.tone-info {
+	color: var(--admin-ink-2);
+}
+
+/* 마지막 확인/갱신일 셀(V6-07 #2279): 상대 시간을 위, 정확한 날짜를 아래(meta)로 병기한다.
+   상대 시간에는 정확한 날짜를 title로도 달아 hover·스크린리더에서 절대 시각을 확인할 수 있다. */
+.admin-v3 .data-verified {
+	display: inline-flex;
+	flex-direction: column;
+	line-height: 1.3;
+}
+
+.admin-v3 .data-verified-relative {
+	color: var(--admin-ink);
+	font-variant-numeric: tabular-nums;
+}
+
 /* compact: 필터·보기 설정을 시트로 접는다. JS가 있을 때만(has-js) 트리거를 노출하고 시트를 접어
    direct control을 5개 이하로 유지한다. no-JS(has-js 미부착)는 시트 내용이 인라인으로 남는다. */
 @media (max-width: 768px) {
