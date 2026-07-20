@@ -535,6 +535,27 @@ jobs:
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.contracts == 'true' || needs.changes.outputs.backend == 'true' }}
         run: tools/test/run-route-v2-gateway-integration.sh
 
+      - name: Repository CI / Lint GitHub Actions workflows
+        if: ${{ needs.changes.outputs.ci == 'true' }}
+        shell: bash
+        env:
+          # #2396: job 수준 env에서 runner context를 쓰는 등 context availability·표현식·스키마
+          # 오류를 PR 단계에서 사전 차단한다. 커스텀 self-hosted 러너 라벨은 .github/actionlint.yaml에 등록.
+          ACTIONLINT_VERSION: "1.7.12"
+          ACTIONLINT_SHA256: "8aca8db96f1b94770f1b0d72b6dddcb1ebb8123cb3712530b08cc387b349a3d8"
+          # 사전 존재하는 info/style 수준 shellcheck 잡음은 게이트 대상에서 제외하고
+          # warning 이상(실제 셸 결함)만 실패시킨다.
+          SHELLCHECK_OPTS: --severity=warning
+        run: |
+          set -euo pipefail
+          tarball="actionlint_${ACTIONLINT_VERSION}_linux_amd64.tar.gz"
+          url="https://github.com/rhysd/actionlint/releases/download/v${ACTIONLINT_VERSION}/${tarball}"
+          workdir="$(mktemp -d)"
+          curl --proto '=https' --tlsv1.2 -fsSL "${url}" -o "${workdir}/${tarball}"
+          echo "${ACTIONLINT_SHA256}  ${workdir}/${tarball}" | sha256sum --check --status
+          tar -xzf "${workdir}/${tarball}" -C "${workdir}" actionlint
+          "${workdir}/actionlint" -color
+
       - name: Repository CI / Validate issue forms
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
         run: ruby -e 'require "yaml"; ARGV.each { |f| YAML.load_file(f); puts f }' .github/ISSUE_TEMPLATE/*.yml
