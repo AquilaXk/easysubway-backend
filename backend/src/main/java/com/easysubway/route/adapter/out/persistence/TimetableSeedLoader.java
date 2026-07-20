@@ -109,9 +109,27 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			if (result == null) {
 				throw new IllegalStateException("snapshot transaction returned no result");
 			}
+			logActivationFreshness(candidate.evidence());
 			return result;
 		} catch (RuntimeException exception) {
 			throw new IllegalStateException("transit timetable snapshot activation failed", exception);
+		}
+	}
+
+	/**
+	 * 시간 기반 만료(freshUntil)는 last-known-good snapshot 활성화를 막지 않는다. 만료 상태로 기동하면
+	 * degraded 운용(경로검색 503, 나머지 정상)임을 경고 로그로 남기고, 실제 만료 판정은 런타임에서 재평가한다.
+	 */
+	private void logActivationFreshness(SnapshotEvidence evidence) {
+		OffsetDateTime freshUntil = OffsetDateTime.parse(evidence.freshUntil());
+		if (freshUntil.toInstant().isAfter(clock.instant())) {
+			log.info("transit timetable snapshot is fresh until {}", freshUntil);
+		} else {
+			log.warn(
+				"transit timetable snapshot expired at {}; activated last-known-good snapshot and route search "
+					+ "will serve 503 until a fresh snapshot is admitted (integrity verified, freshness degraded)",
+				freshUntil
+			);
 		}
 	}
 
@@ -146,7 +164,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				candidate.evidence().snapshotSha256()
 			);
 		}
-		if (!routeTimetablePort.hasRouteTimetable()) {
+		if (!routeTimetablePort.hasActivatableRouteTimetable()) {
 			throw new IllegalStateException("activated snapshot is not readable by the runtime repository");
 		}
 		return ActivationResult.ACTIVATED;
@@ -369,7 +387,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			if (!(parsed instanceof ObjectNode evidenceNode)) {
 				throw new IllegalStateException("timetable snapshot evidence must be an object");
 			}
-			SnapshotEvidence evidence = SnapshotEvidence.from(evidenceNode, objectMapper, clock);
+			SnapshotEvidence evidence = SnapshotEvidence.from(evidenceNode, objectMapper);
 			if (!evidence.snapshotSha256().equals(sha256(sqlBytes))
 				|| evidence.snapshotSqlByteSize() != sqlBytes.length
 				|| !evidence.snapshotGzipSha256().equals(sha256(rawSeedBytes))
@@ -465,7 +483,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		int routeEdgeEvidenceCount
 	) {
 
-		static SnapshotEvidence from(ObjectNode node, ObjectMapper mapper, Clock clock) {
+		static SnapshotEvidence from(ObjectNode node, ObjectMapper mapper) {
 			String evidenceHash = text(node, "evidenceHash");
 			ObjectNode withoutHash = node.deepCopy();
 			withoutHash.remove("evidenceHash");
@@ -488,10 +506,9 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			JsonNode stations = object(node, "canonicalStationSet");
 			JsonNode counts = object(node, "rowCounts");
 			String freshUntil = text(node, "freshUntil");
+			// 형식 무결성만 부팅 시 강제한다. 시간 기반 만료는 부팅을 막지 않고 런타임에서 재평가한다.
 			try {
-				if (!OffsetDateTime.parse(freshUntil).toInstant().isAfter(clock.instant())) {
-					throw new IllegalStateException("timetable snapshot evidence is stale");
-				}
+				OffsetDateTime.parse(freshUntil);
 			} catch (DateTimeParseException exception) {
 				throw new IllegalStateException("timetable snapshot evidence freshness is invalid", exception);
 			}

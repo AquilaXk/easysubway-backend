@@ -32,6 +32,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 class TimetableSeedLoaderTest {
 
 	private static final Instant NOW = Instant.parse("2026-07-16T00:00:00Z");
+	private static final Instant STALE_NOW = Instant.parse("2026-07-21T00:00:00Z");
 	private static final String FRESH_UNTIL = "2026-07-20T00:00:00+09:00";
 	private final ObjectMapper objectMapper = new ObjectMapper();
 	private DriverManagerDataSource dataSource;
@@ -259,7 +260,7 @@ class TimetableSeedLoaderTest {
 	}
 
 	@Test
-	void rejectsDisabledItxOrStaleAndTamperedEvidenceBeforeWrites() throws Exception {
+	void rejectsDisabledItxAndTamperedEvidenceBeforeWrites() throws Exception {
 		SnapshotResource snapshot = snapshot("a", false);
 		TimetableSeedLoader disabled = new TimetableSeedLoader(
 			repository(),
@@ -274,15 +275,17 @@ class TimetableSeedLoaderTest {
 		assertThatThrownBy(() -> disabled.run(null)).isInstanceOf(IllegalStateException.class)
 			.hasMessageContaining("includes-itx");
 
-		ObjectNode stale;
+		// freshUntil은 evidenceHash로 보호되는 무결성 필드다. 재해시 없이 변조하면 부팅 hard fail을 유지한다.
+		ObjectNode tamperedFreshness;
 		try (var input = snapshot.evidence().getInputStream()) {
-			stale = (ObjectNode) objectMapper.readTree(input);
+			tamperedFreshness = (ObjectNode) objectMapper.readTree(input);
 		}
-		stale.put("freshUntil", "2000-01-01T00:00:00Z");
-		SnapshotResource staleSnapshot = new SnapshotResource(snapshot.seed(), jsonResource(stale, "stale.json"));
-		assertThatThrownBy(() -> loader(staleSnapshot).run(null))
+		tamperedFreshness.put("freshUntil", "2000-01-01T00:00:00Z");
+		SnapshotResource tamperedSnapshot = new SnapshotResource(
+			snapshot.seed(), jsonResource(tamperedFreshness, "tampered-freshness.json"));
+		assertThatThrownBy(() -> loader(tamperedSnapshot).run(null))
 			.isInstanceOf(IllegalStateException.class)
-			.hasMessageContaining("evidence");
+			.hasMessageContaining("hash");
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
 
 		ObjectNode mismatchedAccessibility;
@@ -303,10 +306,44 @@ class TimetableSeedLoaderTest {
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
 	}
 
+	@Test
+	void staleSnapshotBootsAsLastKnownGoodAndDegradesRouteSearchAtRuntime() throws Exception {
+		SnapshotResource snapshot = snapshot("a", false);
+
+		// freshUntil이 이미 지난 시각에 기동해도 컨텍스트를 죽이지 않고 last-known-good snapshot을 활성화한다.
+		assertThat(staleLoader(snapshot).activateSeed(snapshot.seed(), snapshot.evidence()))
+			.isEqualTo(TimetableSeedLoader.ActivationResult.ACTIVATED);
+		assertSnapshotRows("a");
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isOne();
+
+		// 런타임 재평가: 재활성화 없이 clock만으로 serving 여부가 갈린다. 만료 clock은 경로검색 게이트를 fail closed한다.
+		JdbcRouteTimetableRepository stale = new JdbcRouteTimetableRepository(jdbc, Clock.fixed(STALE_NOW, ZoneOffset.UTC));
+		assertThat(stale.activeItxTimetableArtifactId()).isEmpty();
+		assertThat(stale.hasRouteTimetable()).isFalse();
+		// 만료 상태여도 활성화 시점 readability는 여전히 통과한다(무결성·구조는 정상, freshness만 강등).
+		assertThat(stale.hasActivatableRouteTimetable()).isTrue();
+		// 동일 데이터를 신선 clock으로 보면 정상 serving된다(회귀).
+		assertThat(repository().activeItxTimetableArtifactId()).contains("snapshot-a");
+	}
+
 	private TimetableSeedLoader loader(SnapshotResource snapshot) {
 		Clock clock = Clock.fixed(NOW, ZoneOffset.UTC);
 		return new TimetableSeedLoader(
 			repository(),
+			dataSource,
+			new DataSourceTransactionManager(dataSource),
+			snapshot.seed(),
+			snapshot.evidence(),
+			true,
+			objectMapper,
+			clock
+		);
+	}
+
+	private TimetableSeedLoader staleLoader(SnapshotResource snapshot) {
+		Clock clock = Clock.fixed(STALE_NOW, ZoneOffset.UTC);
+		return new TimetableSeedLoader(
+			new JdbcRouteTimetableRepository(jdbc, clock),
 			dataSource,
 			new DataSourceTransactionManager(dataSource),
 			snapshot.seed(),

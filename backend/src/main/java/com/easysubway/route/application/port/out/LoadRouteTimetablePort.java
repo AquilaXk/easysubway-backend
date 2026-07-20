@@ -28,6 +28,14 @@ public interface LoadRouteTimetablePort {
 		return !timetable.transitTrips().isEmpty() && !timetable.transitStopTimes().isEmpty();
 	}
 
+	/**
+	 * 활성화 시점 readability 검사: 활성 snapshot 행이 구조적으로 읽을 수 있으면 true다. 시간 기반 만료(freshUntil)는
+	 * 여기서 판정하지 않는다 — 만료된 last-known-good snapshot도 활성화(기동)는 가능해야 하고, 만료 강등은 serving 경로가 담당한다.
+	 */
+	default boolean hasActivatableRouteTimetable() {
+		return hasRouteTimetable();
+	}
+
 	default Optional<String> activeItxTimetableArtifactId() {
 		return Optional.empty();
 	}

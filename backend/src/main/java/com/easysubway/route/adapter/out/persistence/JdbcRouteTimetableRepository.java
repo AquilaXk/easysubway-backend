@@ -45,7 +45,16 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	@Override
 	public boolean hasRouteTimetable() {
-		return activeItxArtifact().isPresent() && Boolean.TRUE.equals(jdbcTemplate.queryForObject(
+		return activeItxArtifact().isPresent() && hasReadableTransitTrips();
+	}
+
+	@Override
+	public boolean hasActivatableRouteTimetable() {
+		return admissibleItxArtifact().isPresent() && hasReadableTransitTrips();
+	}
+
+	private boolean hasReadableTransitTrips() {
+		return Boolean.TRUE.equals(jdbcTemplate.queryForObject(
 			"""
 				SELECT CASE
 					WHEN EXISTS (
@@ -84,6 +93,12 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	}
 
 	private Optional<ItxArtifact> activeItxArtifact() {
+		return admissibleItxArtifact()
+			.filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent());
+	}
+
+	// 시간 기반 freshness를 제외한 lineage·schema 적격성만 판정한다(활성화 시점 readability 검사용).
+	private Optional<ItxArtifact> admissibleItxArtifact() {
 		return jdbcTemplate.query(
 			"""
 				SELECT h.snapshot_sha256, h.snapshot_id, h.fresh_until,
@@ -125,7 +140,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 					resultSet.getString("evidence_hash")
 				)
 			)
-		).stream().filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent()).findFirst();
+		).stream().findFirst();
 	}
 
 	@Override
