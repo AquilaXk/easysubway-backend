@@ -196,6 +196,10 @@
 	vertical-align: top;
 	font-size: 14px;
 	line-height: 1.45;
+	/* 한글 어절 단위 줄바꿈(#2349 PR⑩a) — 좁은 컬럼에서 낱글자 단위 세로 줄바꿈("접/수/됨")을 막는다.
+	   공백 없는 긴 값이 keep-all로 줄바꿈 불가능해질 때만 overflow-wrap: anywhere가 칸 안에서 끊는다. */
+	word-break: keep-all;
+	overflow-wrap: anywhere;
 }
 
 .admin-v3 th {
@@ -581,6 +585,7 @@
 .admin-v3 .select-col {
 	width: 36px;
 	text-align: center;
+	white-space: nowrap;
 }
 
 /* 신고 사진 썸네일(#1740): 목록에서 첨부 미리보기, 클릭 시 원본으로 이동 */
@@ -904,6 +909,8 @@
 
 .admin-status {
 	font-size: 13px;
+	/* 표 셀 안에서 상태·SLA 경과 뱃지(shell::status/statusAuto 공용)가 세로로 꺾이지 않게 한다(#2349 PR⑩a). */
+	white-space: nowrap;
 }
 
 .admin-status::before {
@@ -1185,6 +1192,8 @@
 	color: var(--admin-accent);
 	font-weight: var(--admin-w-strong);
 	text-decoration: none;
+	/* 표 행 액션 링크("상세 보기")가 좁은 컬럼에서 세로로 꺾이지 않게 한다(#2349 PR⑩a). */
+	white-space: nowrap;
 }
 
 .admin-v3 .detail-link:hover,

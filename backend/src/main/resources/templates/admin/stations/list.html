@@ -80,13 +80,13 @@
 			<th:block th:fragment="stationTableHead">
 				<tr>
 					<th scope="col">역</th>
-					<th scope="col">미확인 제보</th>
-					<th scope="col">확인 필요 시설</th>
+					<th scope="col" class="cell-num">미확인 제보</th>
+					<th scope="col" class="cell-num">확인 필요 시설</th>
 					<th scope="col">데이터 품질</th>
 					<th scope="col">노선</th>
 					<th scope="col">지역</th>
-					<th scope="col">출구 / 시설 / 자료</th>
-					<th scope="col">노드 / 간선</th>
+					<th scope="col" class="cell-num">출구 / 시설 / 자료</th>
+					<th scope="col" class="cell-num">노드 / 간선</th>
 					<th scope="col">마지막 확인</th>
 				</tr>
 			</th:block>
@@ -102,7 +102,7 @@
 						<a th:href="@{/admin/stations/{stationId}/page(stationId=${station.stationId})}"
 						   th:text="${station.stationName}">상록수</a>
 					</td>
-					<td>
+					<td class="cell-num">
 						<!-- 미확인 제보 뱃지: 대기(SUBMITTED+UNDER_REVIEW) 건수. 0이면 표시하지 않는다. -->
 						<a th:if="${station.pendingReportCount > 0}" class="count-badge"
 						   th:href="@{/admin/reports/page(station=${station.stationId})}"
@@ -110,7 +110,7 @@
 						   th:attr="aria-label=|${station.stationName} 미확인 제보 ${station.pendingReportCount}건|">0</a>
 						<span th:unless="${station.pendingReportCount > 0}" class="meta">0</span>
 					</td>
-					<td>
+					<td class="cell-num">
 						<!-- 확인 필요 시설 뱃지: 고장·공사·폐쇄·확인 필요·사용자 제보 시설 수. 클릭 시 역 필터 시설 상태판. -->
 						<a th:if="${station.attentionFacilityCount > 0}" class="count-badge is-warn"
 						   th:href="@{/admin/facilities/page(stationId=${station.stationId},sort='attention')}"
@@ -126,8 +126,8 @@
 					</td>
 					<td th:text="${station.lineNames}">4호선</td>
 					<td th:text="${station.region}">수도권</td>
-					<td th:text="|${station.exitCount} / ${station.facilityCount} / ${station.layoutSourceCount}|">0 / 0 / 0</td>
-					<td th:text="|${station.routeNodeCount} / ${station.routeEdgeCount}|">0 / 0</td>
+					<td class="cell-num" th:text="|${station.exitCount} / ${station.facilityCount} / ${station.layoutSourceCount}|">0 / 0 / 0</td>
+					<td class="cell-num" th:text="|${station.routeNodeCount} / ${station.routeEdgeCount}|">0 / 0</td>
 					<td>
 						<!-- 마지막 확인: 상대 시간 + 정확한 날짜 병기(색 단독 금지 아님, 시간 정보). lastVerifiedAt은 뷰모델에서
 						     ISO 문자열(yyyy-MM-dd)로 직렬화돼 오므로 표시 계층에서 LocalDate로 되돌려 상대 시간을 계산한다.

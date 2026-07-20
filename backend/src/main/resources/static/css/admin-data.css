@@ -524,8 +524,15 @@
 	align-items: center;
 }
 
-/* 시트 트리거는 wide에서 숨긴다(인라인 노출이라 불필요). compact + JS에서만 노출한다. */
-.admin-toolbar-sheet-trigger {
+/* 시트 트리거는 wide에서 숨긴다(인라인 노출이라 불필요). compact + JS에서만 노출한다.
+   #2349 PR⑩a 실측: 셀렉터를 `.admin-toolbar-sheet-trigger` 단독(specificity 0,1,0)으로 두면
+   admin-components.css의 `.admin-v3 button` 버튼 base(specificity 0,1,1, class 없는 button
+   compat 포함)가 더 높은 specificity로 이겨 display:none이 wide에서 무효화된다 — 트리거가
+   숨겨지지 않고 compat 파랑 filled 배경까지 그대로 노출돼(1440) 필터·보기 설정 버튼이 filled로
+   보이는 원인이었다(390은 아래 has-js 컴팩트 규칙이 specificity로 이겨 정상 outline풍으로 렌더).
+   `.admin-v3` 접두를 붙여 specificity를 0,2,0으로 올려 `.admin-v3 button`을 항상 이기게 해서
+   wide에서는 트리거가 원래 설계대로 숨겨지고 compact에서만 노출되는 단일 위계로 정리한다. */
+.admin-v3 .admin-toolbar-sheet-trigger {
 	display: none;
 }
 
