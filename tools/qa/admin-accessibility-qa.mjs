@@ -162,11 +162,21 @@ function finalizeReport(report) {
       && tableKeyboard.scrolledRight
       && tableKeyboard.scrolledBackLeft
       && tableKeyboard.outlineVisible)) {
+    // #2349: nodes:0만 남기면 4개 불리언 중 무엇이 false였는지 로그에 안 남아 flake 진단이 불가능했다.
+    // 실패한 불리언과 실측 scrollLeft 값을 위반 객체에 실어 다음 간헐 실패 때 원인이 로그로 남게 한다.
     blockingViolations.push({
       page: "/admin/stations/page",
       id: "admin-table-scroll-keyboard",
       impact: "serious",
       nodes: 0,
+      tabFocusable: tableKeyboard.tabFocusable,
+      scrolledRight: tableKeyboard.scrolledRight,
+      scrolledBackLeft: tableKeyboard.scrolledBackLeft,
+      outlineVisible: tableKeyboard.outlineVisible,
+      maxScrollLeft: tableKeyboard.maxScrollLeft,
+      startScrollLeft: tableKeyboard.startScrollLeft,
+      afterRight: tableKeyboard.afterRight,
+      afterLeft: tableKeyboard.afterLeft,
     });
   }
   // #1988: 로그인 공개 상태 기대치 미충족(허위 parity의 근원)도 위반으로 편입한다.
@@ -675,22 +685,78 @@ async function keyboardTableCheck(page, baseUrl, report) {
     };
   });
 
-  // Chromium 키보드 스크롤은 smooth 애니메이션이라 press 직후 scrollLeft가 아직 0일 수 있다. 정착 대기.
-  await page.keyboard.press("ArrowRight");
-  await page.keyboard.press("ArrowRight");
-  await page.waitForTimeout(300);
-  const afterRight = await page.evaluate(() => {
-    const element = document.querySelector(".admin-table-scroll");
-    return element ? element.scrollLeft : null;
-  });
-  await page.keyboard.press("ArrowLeft");
-  await page.waitForTimeout(300);
-  const afterLeft = await page.evaluate(() => {
-    const element = document.querySelector(".admin-table-scroll");
-    return element ? element.scrollLeft : null;
-  });
-
+  // Chromium 키보드 스크롤은 smooth 애니메이션이라 press 직후 scrollLeft가 아직 0일 수 있고,
+  // CI 러너가 느리면 고정 대기(300ms)로는 정착 전에 측정해 scrolledRight가 false로 뒤집힌다(#2349 flake).
+  // 고정 대기 대신 scrollLeft 변화를 상한까지 poll하고, 안 움직이면 Arrow 키를 몇 회 더 눌러 재시도한다.
+  // 검사 계약(키보드로 실제 스크롤돼야 통과)은 그대로다 — 최종 afterRight/afterLeft가 실제 변해야 참이 된다.
+  const SCROLL_SETTLE_TIMEOUT_MS = 4000;
+  const SCROLL_MAX_ATTEMPTS = 4;
+  const maxScrollLeft = focusState ? focusState.maxScrollLeft : null;
   const startScrollLeft = focusState ? focusState.startScrollLeft : null;
+
+  const readScrollLeft = () =>
+    page.evaluate(() => {
+      const element = document.querySelector(".admin-table-scroll");
+      return element ? element.scrollLeft : null;
+    });
+
+  let afterRight = startScrollLeft;
+  let afterLeft = startScrollLeft;
+  // maxScrollLeft가 0이면 스크롤 여지가 없어(정상적으로는 발생하지 않음) 눌러도 움직이지 않는다.
+  // 기존 의미(스크롤 불가 → scrolledRight/scrolledBackLeft false → 위반)를 유지하되, 부질없는
+  // 상한 대기 반복을 피하려고 스크롤 여지가 있을 때만 키 입력·정착 대기를 수행한다.
+  if (maxScrollLeft != null && maxScrollLeft > 0) {
+    for (let attempt = 0;
+      attempt < SCROLL_MAX_ATTEMPTS
+        && !(afterRight != null && startScrollLeft != null && afterRight > startScrollLeft);
+      attempt += 1) {
+      await page.keyboard.press("ArrowRight");
+      try {
+        await page.waitForFunction(
+          (baseline) => {
+            const element = document.querySelector(".admin-table-scroll");
+            return Boolean(element) && element.scrollLeft > baseline;
+          },
+          startScrollLeft ?? 0,
+          { timeout: SCROLL_SETTLE_TIMEOUT_MS, polling: 50 },
+        );
+      } catch (error) {
+        if (error.name !== "TimeoutError") {
+          throw error;
+        }
+        // 정착 타임아웃: 다음 attempt에서 ArrowRight를 한 번 더 눌러 재시도한다.
+      }
+      afterRight = await readScrollLeft();
+    }
+
+    afterLeft = afterRight;
+    // ArrowRight 실패(스크롤 불가) 시 ArrowLeft 루프 스킵, 판정 결과 불변 유지
+    if (afterRight != null && startScrollLeft != null && afterRight > startScrollLeft) {
+      for (let attempt = 0;
+        attempt < SCROLL_MAX_ATTEMPTS
+          && !(afterLeft != null && afterRight != null && afterLeft < afterRight);
+        attempt += 1) {
+        await page.keyboard.press("ArrowLeft");
+        try {
+          await page.waitForFunction(
+            (ceiling) => {
+              const element = document.querySelector(".admin-table-scroll");
+              return Boolean(element) && element.scrollLeft < ceiling;
+            },
+            afterRight ?? 0,
+            { timeout: SCROLL_SETTLE_TIMEOUT_MS, polling: 50 },
+          );
+        } catch (error) {
+          if (error.name !== "TimeoutError") {
+            throw error;
+          }
+          // 정착 타임아웃: 다음 attempt에서 ArrowLeft를 한 번 더 눌러 재시도한다.
+        }
+        afterLeft = await readScrollLeft();
+      }
+    }
+  }
+
   const outlineVisible = Boolean(
     focusState
     && focusState.outlineStyle
@@ -701,7 +767,10 @@ async function keyboardTableCheck(page, baseUrl, report) {
   report.keyboard.push({
     check: "admin-table-scroll-keyboard",
     tabFocusable,
-    maxScrollLeft: focusState ? focusState.maxScrollLeft : null,
+    maxScrollLeft,
+    startScrollLeft,
+    afterRight,
+    afterLeft,
     scrolledRight: afterRight != null && startScrollLeft != null && afterRight > startScrollLeft,
     scrolledBackLeft: afterLeft != null && afterRight != null && afterLeft < afterRight,
     outlineStyle: focusState ? focusState.outlineStyle : null,
