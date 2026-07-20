@@ -212,7 +212,7 @@ class AdminBatchPageController {
 			return new HistoryCell(
 				execution.startedAt().toString(),
 				statusLabel(execution.status()),
-				execution.durationMillis() == null ? "-" : execution.durationMillis() + "ms"
+				execution.durationMillis() == null ? "—" : execution.durationMillis() + "ms"
 			);
 		}
 
@@ -326,7 +326,7 @@ class AdminBatchPageController {
 		}
 
 		public String completedAtLabel() {
-			return completedAt == null ? "-" : completedAt.toString();
+			return completedAt == null ? "—" : completedAt.toString();
 		}
 
 		public String retryableLabel() {
@@ -359,6 +359,6 @@ class AdminBatchPageController {
 	}
 
 	private static String valueOrDash(String value) {
-		return value == null || value.isBlank() ? "-" : value;
+		return value == null || value.isBlank() ? "—" : value;
 	}
 }

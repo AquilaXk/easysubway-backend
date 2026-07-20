@@ -39,7 +39,9 @@
 
 	<section class="admin-panel">
 		<h2>구조도 기준 자료</h2>
-		<p class="empty" th:if="${layoutSources.isEmpty()}">등록된 구조도 기준 자료가 없습니다.</p>
+		<div th:if="${layoutSources.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 구조도 기준 자료가 없습니다.', '아래 표의 등록 폼에서 기준 자료를 추가하세요.')}"></div>
+		</div>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!layoutSources.isEmpty()}">
 		<table>
@@ -113,7 +115,9 @@
 
 	<section class="admin-panel">
 		<h2>쉬운 내부 구조도</h2>
-		<p class="empty" th:if="${layouts.isEmpty()}">등록된 쉬운 내부 구조도가 없습니다.</p>
+		<div th:if="${layouts.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 쉬운 내부 구조도가 없습니다.', '구조도 기준 자료를 먼저 등록한 뒤 구조도를 추가하세요.')}"></div>
+		</div>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!layouts.isEmpty()}">
 		<table>
@@ -160,7 +164,9 @@
 
 	<section class="admin-panel">
 		<h2>내부 이동 노드</h2>
-		<p class="empty" th:if="${routeNodes.isEmpty()}">등록된 내부 이동 노드가 없습니다.</p>
+		<div th:if="${routeNodes.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 내부 이동 노드가 없습니다.', '아래 표의 등록 폼에서 노드를 추가하세요.')}"></div>
+		</div>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!routeNodes.isEmpty()}">
 		<table>
@@ -211,7 +217,9 @@
 
 	<section class="admin-panel">
 		<h2>내부 이동 간선</h2>
-		<p class="empty" th:if="${routeEdges.isEmpty()}">등록된 내부 이동 간선이 없습니다.</p>
+		<div th:if="${routeEdges.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('등록된 내부 이동 간선이 없습니다.', '내부 이동 노드를 먼저 등록한 뒤 간선을 추가하세요.')}"></div>
+		</div>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!routeEdges.isEmpty()}">
 		<table>

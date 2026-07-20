@@ -37,7 +37,7 @@
 		</thead>
 		<tbody>
 		<tr th:if="${verifications.isEmpty()}">
-				<td colspan="7">현장 확인 기록이 없습니다.</td>
+				<td colspan="7"><div th:replace="~{admin/fragments/empty-state :: panel('현장 확인 기록이 없습니다.', '확인 대상이 등록되면 여기에 표시됩니다.')}"></div></td>
 		</tr>
 		<tr th:each="verification : ${verifications}">
 			<td>

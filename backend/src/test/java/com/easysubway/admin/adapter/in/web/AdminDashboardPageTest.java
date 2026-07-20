@@ -128,8 +128,10 @@ class AdminDashboardPageTest {
 	}
 
 	@Test
-	@DisplayName("추이 섹션은 차트 canvas와 접근성 대체 표·기간 선택을 렌더한다")
+	@DisplayName("추이 섹션은 스냅샷이 있으면 차트 canvas와 접근성 대체 표·기간 선택을 렌더한다")
 	void rendersTrendChartsWithAltTable() throws Exception {
+		seedAllTrendMetrics();
+
 		String html = mockMvc.perform(get("/admin/dashboard/page")
 				.with(httpBasic("admin-test", "admin-test-password")))
 			.andExpect(status().isOk())
@@ -143,12 +145,16 @@ class AdminDashboardPageTest {
 			.contains("data-chart=")
 			.contains("role=\"img\"")
 			.contains("데이터 표로 보기")
-			.contains("/js/admin/dashboard-charts.js");
+			.contains("/js/admin/dashboard-charts.js")
+			.as("데이터가 있으면 빈 상태를 렌더하지 않는다(#2327 회귀 금지)")
+			.doesNotContain("아직 집계된 추이가 없습니다.");
 	}
 
 	@Test
 	@DisplayName("기간 버튼은 HX-Request로 추이 fragment만 부분 갱신한다")
 	void trendsHxFragmentSwitchesPeriod() throws Exception {
+		seedAllTrendMetrics();
+
 		String fragment = mockMvc.perform(get("/admin/dashboard/trends")
 				.param("days", "30")
 				.header("HX-Request", "true")
@@ -162,6 +168,21 @@ class AdminDashboardPageTest {
 			.contains("class=\"trend-canvas\"")
 			.doesNotContain("<!doctype html>")
 			.doesNotContain("admin-sidebar");
+	}
+
+	// 조회 기간 내 스냅샷이 전무할 때 canvas 대신 empty-state를 렌더하는 분기(#2327)는
+	// AdminV3PageSmokeTest#dashboardTrendsRenderEmptyStateWhenNoMetricSnapshot(별도 컨텍스트, 스냅샷
+	// 미기록 상태 보장)과 AdminMetricQueryServiceTest(서비스 단위)에서 고정한다. 이 클래스는 테스트
+	// 메서드 간 DB 상태가 공유(롤백 없음)돼 순서에 따라 스냅샷 유무가 달라지므로, "전무" 단정 테스트는
+	// 여기 두지 않는다.
+
+	// 추이 섹션이 참조하는 4개 지표 키(REPORTS_RECENT_24H·REPORTS_PENDING·ROUTE_BLOCKED_RATE·
+	// API_ERROR_RATE) 모두에 오늘자 스냅샷을 채워 두 추이 패널이 모두 데이터를 갖게 한다(#2327).
+	private void seedAllTrendMetrics() {
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now(), 5));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now(), 3));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.ROUTE_BLOCKED_RATE, LocalDate.now(), 12));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.API_ERROR_RATE, LocalDate.now(), 1));
 	}
 
 	private String issueCommandToken(MockHttpSession session) throws Exception {

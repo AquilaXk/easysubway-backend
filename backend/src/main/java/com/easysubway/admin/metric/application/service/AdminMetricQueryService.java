@@ -10,6 +10,7 @@ import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Set;
 import org.springframework.beans.factory.ObjectProvider;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -157,6 +158,11 @@ public class AdminMetricQueryService {
 	 * @param series 지표 키별 시계열
 	 */
 	public record AdminMetricChart(int days, List<String> labels, List<AdminMetricSeries> series) {
+
+		/** 조회 기간 내 모든 시리즈가 결측(null)이면 true — 빈 상태 렌더 분기(#2327)에 쓰인다. */
+		public boolean empty() {
+			return series.stream().allMatch(s -> s.values().stream().allMatch(Objects::isNull));
+		}
 	}
 
 	/**

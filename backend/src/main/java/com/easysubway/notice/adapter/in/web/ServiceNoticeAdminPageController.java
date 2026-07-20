@@ -139,7 +139,7 @@ class ServiceNoticeAdminPageController {
 			return new ServiceNoticeView(
 				notice.id(),
 				notice.scope().name(),
-				notice.scopeValue() == null ? "-" : notice.scopeValue(),
+				notice.scopeValue() == null ? "—" : notice.scopeValue(),
 				notice.title(),
 				notice.body(),
 				notice.severity().name(),

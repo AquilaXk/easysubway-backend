@@ -54,11 +54,11 @@
 				</dd>
 				<dt>사유</dt>
 				<dd th:class="${privacyMode and event.reasonMissing} ? 'reason-missing'"
-				    th:text="${event.reason}">-</dd>
+				    th:text="${event.reason}">—</dd>
 				<dt>요청 ID</dt>
-				<dd th:text="${event.requestId}">-</dd>
+				<dd th:text="${event.requestId}">—</dd>
 				<dt>클라이언트 IP</dt>
-				<dd th:text="${event.clientIp}">-</dd>
+				<dd th:text="${event.clientIp}">—</dd>
 			</dl>
 		</section>
 

@@ -96,7 +96,9 @@
 
 	<section class="admin-panel">
 		<h2>감사 이력</h2>
-		<p th:if="${reviewAudits.isEmpty()}">없음</p>
+		<div th:if="${reviewAudits.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('확인 이력이 없습니다.', '제보를 승인·반려하면 여기에 기록됩니다.')}"></div>
+		</div>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!reviewAudits.isEmpty()}">
 		<table>
@@ -125,7 +127,9 @@
 	<section class="admin-panel">
 		<h2>같은 시설 신고</h2>
 		<!-- 같은 역·시설의 다른 신고(#1740): 판정 전 반복 신고 맥락을 준다. 읽기 전용 목록으로 #1163 병합과 독립. -->
-		<p th:if="${sameFacilityReports.isEmpty()}">같은 시설의 다른 신고가 없습니다.</p>
+		<div th:if="${sameFacilityReports.isEmpty()}">
+			<div th:replace="~{admin/fragments/empty-state :: panel('같은 시설의 다른 신고가 없습니다.', '같은 시설에 신고가 접수되면 여기에 표시됩니다.')}"></div>
+		</div>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!sameFacilityReports.isEmpty()}">
 		<table>

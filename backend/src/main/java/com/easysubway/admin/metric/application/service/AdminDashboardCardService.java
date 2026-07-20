@@ -33,7 +33,8 @@ public class AdminDashboardCardService {
 			title, metricKey, valueLabel, href, sparkPoints, delta.label(), delta.tone(), SPARK_WIDTH, SPARK_HEIGHT);
 	}
 
-	// 전일(마지막 인덱스 직전의 가장 최근 비결측 스냅샷) 대비 증감. 이력이 없으면 증감을 비운다.
+	// 전일(마지막 인덱스 직전의 가장 최근 비결측 스냅샷) 대비 증감. 이력이 없으면 델타 영역 자체를
+	// 비운다(null) — "전일 데이터 없음"을 카드마다 반복 노출하는 대신 화면이 영역을 렌더하지 않는다(#2327).
 	private static Delta delta(List<Double> values, double currentValue) {
 		Double previous = null;
 		for (int index = values.size() - 2; index >= 0; index--) {
@@ -43,7 +44,7 @@ public class AdminDashboardCardService {
 			}
 		}
 		if (previous == null) {
-			return new Delta("전일 데이터 없음", "flat");
+			return new Delta(null, null);
 		}
 		double diff = currentValue - previous;
 		if (Math.abs(diff) < 0.05) {
@@ -70,8 +71,8 @@ public class AdminDashboardCardService {
 	 * @param value      현재 값 표시 문자열
 	 * @param href       카드 전체 클릭 시 이동할 화면
 	 * @param sparkPoints SVG polyline points(비면 스파크라인 생략)
-	 * @param deltaLabel 전일 대비 설명
-	 * @param deltaTone  up·down·flat
+	 * @param deltaLabel 전일 대비 설명. 비교 가능한 전일 스냅샷이 없으면 null(화면이 델타 영역을 생략한다, #2327)
+	 * @param deltaTone  up·down·flat. deltaLabel이 null이면 함께 null
 	 * @param sparkWidth SVG viewBox 너비
 	 * @param sparkHeight SVG viewBox 높이
 	 */

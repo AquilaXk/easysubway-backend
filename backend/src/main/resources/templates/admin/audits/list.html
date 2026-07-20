@@ -125,7 +125,7 @@
 						<span th:replace="~{admin/fragments/shell :: status(${event.outcomeLabel}, ${event.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 					</td>
 					<td th:class="${privacyMode and event.reasonMissing} ? 'reason-missing'"
-					    th:text="${event.reason}">-</td>
+					    th:text="${event.reason}">—</td>
 					<td>
 						<a th:href="@{${detailBase} + '/' + ${event.id}}"
 						   th:attr="hx-get=@{${detailBase} + '/' + ${event.id}}"
@@ -136,8 +136,9 @@
 			</table>
 			</div>
 
-			<div th:if="${events.isEmpty()}"
-			     th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 감사 이벤트가 없습니다.', '필터를 변경하거나 기간을 넓혀 보세요.')}"></div>
+			<div th:if="${events.isEmpty()}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 감사 이벤트가 없습니다.', '필터를 변경하거나 기간을 넓혀 보세요.')}"></div>
+			</div>
 
 			<div th:replace="~{admin/fragments/pagination :: pager(${paginationLabel}, ${page}, ${paginationLinks})}"></div>
 		</div>

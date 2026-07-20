@@ -144,14 +144,14 @@ class DataCollectionAdminPageController {
 
 		public String failureLabel() {
 			if (failureMessage == null || failureMessage.isBlank()) {
-				return "-";
+				return "—";
 			}
 			return failureMessage;
 		}
 
 		public String completedAtLabel() {
 			if (completedAt == null) {
-				return "-";
+				return "—";
 			}
 			return completedAt.toString();
 		}
@@ -196,7 +196,7 @@ class DataCollectionAdminPageController {
 
 		private static String valueOrDash(String value) {
 			if (value == null || value.isBlank()) {
-				return "-";
+				return "—";
 			}
 			return value;
 		}

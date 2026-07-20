@@ -1,0 +1,29 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<title>대시보드 KPI 카드 fragment</title>
+</head>
+<body>
+<!--
+  대시보드 KPI 카드(#2071/#2327). headline·moreCards(누계 총량 disclosure) 두 목록이 동일 계약의
+  셀 마크업을 공유한다 — 별도 fragment로 추출해 두 곳에서 반복 유지보수·회귀(SonarCloud 중복 게이트)를
+  막는다. data-metric-key로 카드의 지표 정체성을 노출한다(격하 근거·QA 계약).
+  사용: <a th:replace="~{admin/fragments/dashboard-card :: card(${card})}"></a>
+-->
+<a th:fragment="card(card)" class="dashboard-card metric-cell" th:href="@{${card.href}}"
+   th:attr="data-metric-key=${card.metricKey}">
+	<span class="dashboard-card-title" th:text="${card.title}">제목</span>
+	<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
+	<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
+	     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
+	     aria-label="최근 7일 추이" focusable="false">
+		<polyline th:attr="points=${card.sparkPoints}" fill="none"
+		          stroke="currentColor" stroke-width="1.5"></polyline>
+	</svg>
+	<span th:if="${card.deltaLabel != null}" class="dashboard-card-delta"
+	      th:classappend="${' is-' + card.deltaTone}"
+	      th:text="${card.deltaLabel}">전일 대비</span>
+</a>
+</body>
+</html>

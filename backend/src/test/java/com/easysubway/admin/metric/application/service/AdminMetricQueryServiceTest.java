@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.easysubway.admin.metric.adapter.in.web.AnalyticsComparisonCard;
 import com.easysubway.admin.metric.adapter.out.persistence.InMemoryAdminMetricDailyRepository;
+import com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart;
 import com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricComparison;
 import com.easysubway.admin.metric.domain.AdminMetricDaily;
 import com.easysubway.admin.metric.domain.AdminMetricKeys;
@@ -142,6 +143,24 @@ class AdminMetricQueryServiceTest {
 		AdminMetricComparison comparison = service.compare(List.of(AdminMetricKeys.ROUTE_SEARCHES), 30).getFirst();
 
 		assertThat(comparison.days()).isEqualTo(30);
+	}
+
+	@Test
+	@DisplayName("조회 기간 내 스냅샷이 하나도 없으면 차트는 비어 있다(#2327 빈 상태 분기)")
+	void chartIsEmptyWhenNoSnapshotInPeriod() {
+		AdminMetricChart chart = service.chart(List.of(AdminMetricKeys.ROUTE_SEARCHES), 7);
+
+		assertThat(chart.empty()).isTrue();
+	}
+
+	@Test
+	@DisplayName("조회 기간 내 스냅샷이 하나라도 있으면 차트는 비어 있지 않다(#2327 빈 상태 분기)")
+	void chartIsNotEmptyWhenAnySnapshotInPeriod() {
+		save(AdminMetricKeys.ROUTE_SEARCHES, TODAY, 42);
+
+		AdminMetricChart chart = service.chart(List.of(AdminMetricKeys.ROUTE_SEARCHES), 7);
+
+		assertThat(chart.empty()).isFalse();
 	}
 
 	@Test

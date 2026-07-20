@@ -183,7 +183,7 @@ class AdminOverviewPageController {
 
 	private TrendChart trendChart(String id, String title, List<String> keys, int days) {
 		AdminMetricChart chart = metricQueryService.chart(keys, days);
-		return new TrendChart(id, title, chart, toJson(chart));
+		return new TrendChart(id, title, chart, toJson(chart), chart.empty());
 	}
 
 	// Chart.js가 읽을 데이터 섬(JSON). 직렬화 실패 시 빈 차트로 안전 폴백.
@@ -195,7 +195,11 @@ class AdminOverviewPageController {
 		}
 	}
 
-	record TrendChart(String id, String title, AdminMetricChart data, String json) {
+	// empty는 조회 기간 내 데이터가 전무한지(#2327) — dashboard-trends fragment가 canvas 대신 empty-state를
+	// 렌더하는 분기에 쓴다. 파생 메서드가 아니라 canonical record 컴포넌트로 둔 이유: SpringEL 프로퍼티 접근
+	// (${trend.empty})은 package-private 클래스에서 일반 getter(isXxx) reflection을 "public 클래스만" 허용해
+	// 실패하지만, record 컴포넌트 accessor는 별도 특례 경로로 접근 가능하다.
+	record TrendChart(String id, String title, AdminMetricChart data, String json, boolean empty) {
 	}
 
 	// 지표 스냅샷 수동 재실행(#1739). 스케줄과 별개로 지금 즉시 오늘 집계를 다시 돌린다(멱등).

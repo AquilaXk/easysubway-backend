@@ -10,6 +10,10 @@
   새로고침하고, JS에서는 hx-get으로 #dashboard-trends만 부분 갱신한다.
   차트 데이터는 canvas data-chart(JSON)에 실려 dashboard-charts.js가 Chart.js로 그린다.
   접근성: canvas는 role=img + aria-label, 같은 데이터를 details 안 표로 제공(no-JS 대체 겸용).
+  빈 상태(#2327): 조회 기간 내 데이터가 전무하면(trend.empty) 빈 격자 캔버스 대신 표준 empty-state를
+  렌더한다 — "왜 비었고 무엇을 하면 채워지는지"(재집계 실행 시 오늘부터 누적)를 안내한다. 데이터가
+  1일치라도 있으면 기존 차트 렌더 그대로(회귀 금지). htmx 부분 갱신 경로도 이 fragment를 그대로
+  재사용하므로 동일 분기가 적용된다.
 -->
 <div th:fragment="section" class="dashboard-trends-section">
 	<div class="trend-periods" role="group" aria-label="추이 기간 선택">
@@ -26,6 +30,10 @@
 			<div class="admin-panel-head">
 				<h2 th:text="${trend.title}">추이</h2>
 			</div>
+			<div th:if="${trend.empty}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('아직 집계된 추이가 없습니다.', '지표 집계가 실행되면 오늘부터 데이터가 누적됩니다.')}"></div>
+			</div>
+			<th:block th:unless="${trend.empty}">
 			<div class="trend-canvas-wrap">
 				<canvas th:id="${trend.id}" class="trend-canvas" role="img"
 				        th:attr="aria-label=|${trend.title} 최근 ${trendDays}일 추이|,data-chart=${trend.json}"></canvas>
@@ -51,6 +59,7 @@
 				</table>
 				</div>
 			</details>
+			</th:block>
 		</section>
 	</div>
 </div>

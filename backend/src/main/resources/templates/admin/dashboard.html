@@ -61,42 +61,21 @@
 			<h2 id="dashboard-metric-panel-title">핵심 지표</h2>
 		</div>
 		<p class="section-hint">현재 값 · 최근 7일 스파크라인 · 전일 대비. 기간 추이는 아래 추이 섹션에서 봅니다.</p>
-		<!-- headline: 시점·비율 대표 KPI. data-metric-key로 카드의 지표 정체성을 노출한다(격하 근거·QA 계약). -->
+		<!-- headline: 시점·비율 대표 KPI. data-metric-key로 카드의 지표 정체성을 노출한다(격하 근거·QA 계약).
+		     셀 마크업은 admin/fragments/dashboard-card :: card로 추출해 moreCards와 공유한다(SonarCloud 중복 게이트 회피 겸 유지보수 단일화). -->
 		<div class="dashboard-cards">
-			<a th:each="card : ${headlineCards}"
-			   class="dashboard-card metric-cell" th:href="@{${card.href}}"
-			   th:attr="data-metric-key=${card.metricKey}">
-				<span class="dashboard-card-title" th:text="${card.title}">제목</span>
-				<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
-				<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
-				     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
-				     aria-label="최근 7일 추이" focusable="false">
-					<polyline th:attr="points=${card.sparkPoints}" fill="none"
-					          stroke="currentColor" stroke-width="1.5"></polyline>
-				</svg>
-				<span class="dashboard-card-delta" th:classappend="${' is-' + card.deltaTone}"
-				      th:text="${card.deltaLabel}">전일 대비</span>
-			</a>
+			<th:block th:each="card : ${headlineCards}">
+				<a th:replace="~{admin/fragments/dashboard-card :: card(${card})}"></a>
+			</th:block>
 		</div>
 		<!-- 누계 총량 KPI는 disclosure로 격하. native details라 keyboard·no-JS에서 그대로 펼칠 수 있고,
-		     셀 마크업은 headline과 동일 계약을 유지한다. -->
+		     셀 마크업은 headline과 동일 계약을 유지한다(공유 fragment). -->
 		<details class="dashboard-details dashboard-more" th:if="${!moreCards.isEmpty()}">
 			<summary th:text="|나머지 지표 ${moreCards.size()}개 보기|">나머지 지표 보기</summary>
 			<div class="dashboard-cards">
-				<a th:each="card : ${moreCards}"
-				   class="dashboard-card metric-cell" th:href="@{${card.href}}"
-				   th:attr="data-metric-key=${card.metricKey}">
-					<span class="dashboard-card-title" th:text="${card.title}">제목</span>
-					<strong class="dashboard-card-value cell-num" th:text="${card.value}">0</strong>
-					<svg th:if="${!card.sparkPoints.isEmpty()}" class="dashboard-spark"
-					     viewBox="0 0 100 24" preserveAspectRatio="none" role="img"
-					     aria-label="최근 7일 추이" focusable="false">
-						<polyline th:attr="points=${card.sparkPoints}" fill="none"
-						          stroke="currentColor" stroke-width="1.5"></polyline>
-					</svg>
-					<span class="dashboard-card-delta" th:classappend="${' is-' + card.deltaTone}"
-					      th:text="${card.deltaLabel}">전일 대비</span>
-				</a>
+				<th:block th:each="card : ${moreCards}">
+					<a th:replace="~{admin/fragments/dashboard-card :: card(${card})}"></a>
+				</th:block>
 			</div>
 		</details>
 	</section>

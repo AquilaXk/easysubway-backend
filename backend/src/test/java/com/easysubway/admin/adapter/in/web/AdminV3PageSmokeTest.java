@@ -274,6 +274,37 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
+	@DisplayName("지표 스냅샷이 없으면 대시보드 추이 차트는 빈 canvas 대신 empty-state를 렌더한다(#2327)")
+	void dashboardTrendsRenderEmptyStateWhenNoMetricSnapshot() throws Exception {
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.as("스냅샷이 없는 기본 상태는 두 추이 패널 모두 empty-state로 대체된다")
+			.contains("아직 집계된 추이가 없습니다.")
+			.contains("지표 집계가 실행되면 오늘부터 데이터가 누적됩니다.")
+			.doesNotContain("class=\"trend-canvas\"");
+
+		String fragment = mockMvc.perform(get("/admin/dashboard/trends")
+				.param("days", "30")
+				.header("HX-Request", "true")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(fragment)
+			.as("htmx 부분 갱신 경로도 동일하게 빈 상태로 분기한다")
+			.contains("아직 집계된 추이가 없습니다.")
+			.doesNotContain("class=\"trend-canvas\"");
+	}
+
+	@Test
 	@DisplayName("전체 permission 관리자는 모든 관리자 program을 볼 수 있다")
 	void fullPermissionAdminSeesAllPrograms() throws Exception {
 		String html = mockMvc.perform(get("/admin/dashboard/page")

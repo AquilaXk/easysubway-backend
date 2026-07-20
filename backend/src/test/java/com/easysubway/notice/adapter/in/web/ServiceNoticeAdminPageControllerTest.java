@@ -58,7 +58,7 @@ class ServiceNoticeAdminPageControllerTest {
 		assertThat(emptyPage)
 			.contains("운행 공지")
 			.contains("name=\"commandToken\"")
-			.contains("공지 없음");
+			.contains("등록된 공지가 없습니다.");
 
 		mockMvc.perform(post("/admin/notices/page")
 				.with(csrf())

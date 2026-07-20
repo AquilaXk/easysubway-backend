@@ -326,7 +326,7 @@ class AdminOperationsPageController {
 				incident.summary(),
 				incident.owner(),
 				String.valueOf(incident.openedAt()),
-				incident.resolvedAt() == null ? "-" : String.valueOf(incident.resolvedAt()),
+				incident.resolvedAt() == null ? "—" : String.valueOf(incident.resolvedAt()),
 				incident.resolution(),
 				!incident.status().isResolved(),
 				incident.stationId(),
@@ -352,7 +352,7 @@ class AdminOperationsPageController {
 
 		static TransitionRow from(AdminIncidentTransition transition) {
 			return new TransitionRow(
-				transition.isInitial() ? "-" : transition.fromStatus().label(),
+				transition.isInitial() ? "—" : transition.fromStatus().label(),
 				transition.toStatus().label(),
 				String.valueOf(transition.changedAt()),
 				transition.changedBy(),

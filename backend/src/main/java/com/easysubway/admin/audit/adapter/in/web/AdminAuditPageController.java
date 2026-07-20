@@ -326,14 +326,14 @@ class AdminAuditPageController {
 				AuditLabels.outcome(event.outcome()),
 				event.outcome() == AdminAuditOutcome.FAILURE ? "failure" : "ok",
 				orDash(event.reason()),
-				// 사유 누락은 표시 문자열("-")이 아니라 실제 도메인 값(null·공백)으로 판정한다.
+				// 사유 누락은 표시 문자열("—")이 아니라 실제 도메인 값(null·공백)으로 판정한다.
 				event.reason() == null || event.reason().isBlank(),
 				event.occurredAt().toString()
 			);
 		}
 
 		private static String orDash(String value) {
-			return value == null || value.isBlank() ? "-" : value;
+			return value == null || value.isBlank() ? "—" : value;
 		}
 	}
 }

@@ -116,7 +116,7 @@
 				<td th:text="${row.blockedCount}">0</td>
 			</tr>
 			<tr th:if="${#lists.isEmpty(blockedStationRankings)}">
-				<td colspan="3">차단된 경로 검색이 없습니다.</td>
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('차단된 경로 검색이 없습니다.', '경로 검색이 차단되면 자동으로 집계됩니다.')}"></div></td>
 			</tr>
 			</tbody>
 		</table>

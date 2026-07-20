@@ -132,7 +132,9 @@
 						</tbody>
 					</table>
 					</div>
-					<p th:if="${exits.isEmpty()}">등록된 출구가 없습니다.</p>
+					<div th:if="${exits.isEmpty()}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('등록된 출구가 없습니다.', '구조·동선 편집에서 출구를 추가하세요.')}"></div>
+					</div>
 				</section>
 
 				<section class="admin-panel">
@@ -166,8 +168,9 @@
 						</tbody>
 					</table>
 					</div>
-					<div th:if="${facilities.isEmpty()}"
-					     th:replace="~{admin/fragments/empty-state :: panel('등록된 접근성 시설이 없습니다.', '구조·동선 편집에서 시설을 추가하세요.')}"></div>
+					<div th:if="${facilities.isEmpty()}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('등록된 접근성 시설이 없습니다.', '구조·동선 편집에서 시설을 추가하세요.')}"></div>
+					</div>
 				</section>
 			</th:block>
 
@@ -203,8 +206,9 @@
 						</tbody>
 					</table>
 					</div>
-					<div th:if="${stationReports.isEmpty()}"
-					     th:replace="~{admin/fragments/empty-state :: panel('이 역의 제보가 없습니다.', '접수되면 여기와 제보 대기열에 함께 표시됩니다.')}"></div>
+					<div th:if="${stationReports.isEmpty()}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('이 역의 제보가 없습니다.', '접수되면 여기와 제보 대기열에 함께 표시됩니다.')}"></div>
+					</div>
 				</section>
 			</th:block>
 
@@ -215,8 +219,9 @@
 						<h2>현장 확인</h2>
 						<a class="admin-btn outline" th:href="@{${fieldVerificationHref}}">현장 확인 화면</a>
 					</div>
-					<div th:if="${fieldSession == null}"
-					     th:replace="~{admin/fragments/empty-state :: panel('현장 확인 세션이 없습니다.', '현장 확인 화면에서 확인 일정을 등록하세요.')}"></div>
+					<div th:if="${fieldSession == null}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('현장 확인 세션이 없습니다.', '현장 확인 화면에서 확인 일정을 등록하세요.')}"></div>
+					</div>
 					<div th:if="${fieldSession != null}">
 						<div class="admin-table-scroll" tabindex="0" role="group"
 						     aria-label="가로로 스크롤 가능한 데이터 표">
@@ -254,7 +259,9 @@
 							</tbody>
 						</table>
 						</div>
-						<p th:if="${fieldHistory.isEmpty()}">상태 변경 이력이 없습니다.</p>
+						<div th:if="${fieldHistory.isEmpty()}">
+							<div th:replace="~{admin/fragments/empty-state :: panel('상태 변경 이력이 없습니다.', '현장 확인이 접수되면 여기에 표시됩니다.')}"></div>
+						</div>
 					</div>
 				</section>
 			</th:block>
@@ -286,7 +293,9 @@
 						</tbody>
 					</table>
 					</div>
-					<p th:if="${layoutSources.isEmpty()}">등록된 구조 자료가 없습니다.</p>
+					<div th:if="${layoutSources.isEmpty()}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('등록된 구조 자료가 없습니다.', '구조·동선 편집에서 자료를 추가하세요.')}"></div>
+					</div>
 
 					<h3>동선 노드 / 간선</h3>
 					<div class="admin-table-scroll" tabindex="0" role="group"
@@ -308,7 +317,9 @@
 						</tbody>
 					</table>
 					</div>
-					<p th:if="${routeNodes.isEmpty()}">등록된 동선 노드가 없습니다.</p>
+					<div th:if="${routeNodes.isEmpty()}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('등록된 동선 노드가 없습니다.', '구조·동선 편집에서 노드를 추가하세요.')}"></div>
+					</div>
 					<div class="admin-table-scroll" tabindex="0" role="group"
 					     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!routeEdges.isEmpty()}">
 					<table>
@@ -327,6 +338,9 @@
 						</tr>
 						</tbody>
 					</table>
+					</div>
+					<div th:if="${routeEdges.isEmpty()}">
+						<div th:replace="~{admin/fragments/empty-state :: panel('등록된 동선 간선이 없습니다.', '구조·동선 편집에서 간선을 추가하세요.')}"></div>
 					</div>
 				</section>
 			</th:block>

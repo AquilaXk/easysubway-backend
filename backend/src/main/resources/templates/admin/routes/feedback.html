@@ -129,7 +129,7 @@
 				<td th:text="${row.mobilityTypeLabel}">고령자</td>
 			</tr>
 			<tr th:if="${#lists.isEmpty(summary.recentBlockedFeedbacks)}">
-				<td colspan="4">최근 현장 차단 신고가 없습니다.</td>
+				<td colspan="4"><div th:replace="~{admin/fragments/empty-state :: panel('최근 현장 차단 신고가 없습니다.', '현장 차단 신고가 접수되면 자동으로 집계됩니다.')}"></div></td>
 			</tr>
 			</tbody>
 		</table>
@@ -161,7 +161,7 @@
 				<td th:text="${row.count}">0</td>
 			</tr>
 			<tr th:if="${#lists.isEmpty(summary.etaCalibrationBuckets)}">
-				<td colspan="6">opt-in ETA 보정 피드백이 없습니다.</td>
+				<td colspan="6"><div th:replace="~{admin/fragments/empty-state :: panel('opt-in ETA 보정 피드백이 없습니다.', 'opt-in 피드백이 접수되면 자동으로 집계됩니다.')}"></div></td>
 			</tr>
 			</tbody>
 		</table>

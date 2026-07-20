@@ -303,8 +303,9 @@
 				</details>
 			</form>
 
-			<div th:if="${historyRows.isEmpty()}"
-			     th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 발송 이력이 없습니다.', '필터를 변경하거나 기간을 넓혀 보세요.')}"></div>
+			<div th:if="${historyRows.isEmpty()}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('조건에 맞는 발송 이력이 없습니다.', '필터를 변경하거나 기간을 넓혀 보세요.')}"></div>
+			</div>
 
 			<div th:replace="~{admin/fragments/pagination :: pager('발송 이력 페이지', ${historyPage}, ${historyPaginationLinks})}"></div>
 		</div>

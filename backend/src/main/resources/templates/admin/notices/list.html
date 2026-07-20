@@ -76,7 +76,7 @@
 			</thead>
 			<tbody>
 			<tr th:if="${notices.isEmpty()}">
-				<td colspan="8">공지 없음</td>
+				<td colspan="8"><div th:replace="~{admin/fragments/empty-state :: panel('등록된 공지가 없습니다.', '아래 등록 폼에서 공지를 추가하세요.')}"></div></td>
 			</tr>
 			<tr th:each="notice : ${notices}">
 				<td th:text="${notice.title}">제목</td>
@@ -84,7 +84,7 @@
 				<td th:text="${notice.severity}">INFO</td>
 				<td th:text="${notice.body}">본문</td>
 				<td th:text="${notice.publishedAt}">2026-07-09T10:00</td>
-				<td th:text="${notice.expiresAt != null ? notice.expiresAt : '-'}">-</td>
+				<td th:text="${notice.expiresAt != null ? notice.expiresAt : '—'}">—</td>
 				<td th:text="${notice.publishedBy}">operator</td>
 				<td>
 					<form method="post"

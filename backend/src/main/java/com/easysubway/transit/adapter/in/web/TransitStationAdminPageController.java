@@ -500,7 +500,7 @@ class TransitStationAdminPageController {
 			return new StationRow(
 				stationWithLines.station().id(),
 				stationWithLines.station().nameKo(),
-				stationWithLines.lines().stream().map(line -> line.name()).reduce((a, b) -> a + ", " + b).orElse("-"),
+				stationWithLines.lines().stream().map(line -> line.name()).reduce((a, b) -> a + ", " + b).orElse("—"),
 				stationWithLines.station().region(),
 				TransitStationAdminPageController.qualityLabel(stationWithLines.station().dataQualityLevel()),
 				String.valueOf(stationWithLines.station().lastVerifiedAt()),
@@ -535,7 +535,7 @@ class TransitStationAdminPageController {
 			return new StationDetail(
 				stationWithLines.station().id(),
 				stationWithLines.station().nameKo(),
-				stationWithLines.lines().stream().map(line -> line.name()).reduce((a, b) -> a + ", " + b).orElse("-"),
+				stationWithLines.lines().stream().map(line -> line.name()).reduce((a, b) -> a + ", " + b).orElse("—"),
 				stationWithLines.station().region(),
 				String.valueOf(stationWithLines.station().latitude()),
 				String.valueOf(stationWithLines.station().longitude()),

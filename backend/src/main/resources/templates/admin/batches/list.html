@@ -75,7 +75,9 @@
 					<canvas th:id="${history.canvasId}" class="batch-history-canvas" role="img"
 					        th:attr="aria-label=|${history.label} 최근 실행 소요 시간 추이|,data-chart=${history.json}"></canvas>
 				</div>
-				<p th:if="${history.isEmpty()}">실행 이력이 없습니다.</p>
+				<div th:if="${history.isEmpty()}">
+					<div th:replace="~{admin/fragments/empty-state :: panel('실행 이력이 없습니다.', '이 잡이 실행되면 여기에 표시됩니다.')}"></div>
+				</div>
 				<details class="batch-history-details" th:if="${!history.isEmpty()}">
 					<summary>데이터 표로 보기</summary>
 					<div class="admin-table-scroll" tabindex="0" role="group"
@@ -122,7 +124,7 @@
 			</thead>
 			<tbody>
 			<tr th:if="${runs.isEmpty()}">
-				<td colspan="9">최근 배치 실행이 없습니다.</td>
+				<td colspan="9"><div th:replace="~{admin/fragments/empty-state :: panel('최근 배치 실행이 없습니다.', '배치가 실행되면 여기에 표시됩니다.')}"></div></td>
 			</tr>
 			<tr th:each="run : ${runs}">
 				<td th:text="${run.runId}">run-id</td>
@@ -130,14 +132,14 @@
 				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${run.statusLabel})}">실패</span></td>
 				<td th:text="${run.requestedBy}">admin</td>
 				<td th:text="${run.startedAt}">2026-06-27T00:00</td>
-				<td th:text="${run.completedAtLabel()}">-</td>
+				<td th:text="${run.completedAtLabel()}">—</td>
 				<td>
 					<ul>
 						<li th:each="step : ${run.steps}">
 							<strong th:text="${step.name}">FETCH</strong>
 							<span th:text="${step.statusLabel}">실패</span>
 							<span th:text="${'건수 ' + step.recordCount}">건수 0</span>
-							<span th:text="${step.failureMessage}">-</span>
+							<span th:text="${step.failureMessage}">—</span>
 						</li>
 					</ul>
 				</td>
