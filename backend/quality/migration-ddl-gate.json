@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "gateId": "backend-migration-ddl-compat",
+  "issue": "#2365",
+  "baselineVersion": 66,
+  "scannedDirectory": "backend/src/main/resources/db/migration/postgresql",
+  "excludedDirectories": [
+    "backend/src/main/resources/db/migration/h2"
+  ],
+  "note": "blue/green standby+promotion 배포는 standby가 구 canonical과 동일한 live Postgres에 대해 부팅하므로 모든 마이그레이션이 expand/contract(순수 additive) 계약을 지켜야 한다. baselineVersion(V66)까지는 게이트 도입 전 기존 마이그레이션으로 grandfather 처리하고, baseline 초과 신규 파일에서 파괴적 DDL을 fail closed로 탐지한다. h2 디렉토리는 테스트 전용 스키마라 라이브 배포 대상이 아니므로 검사에서 제외한다.",
+  "allowlistEntryFormat": {
+    "file": "V<n>__<name>.sql",
+    "reason": "이 파괴적 마이그레이션이 안전한 이유(contract 단계 조건 등)",
+    "approval": "승인 근거 (이슈/PR 링크)"
+  },
+  "allowlist": []
+}
