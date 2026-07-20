@@ -173,10 +173,12 @@
 			<span class="admin-status-label">리비전</span>
 			<strong th:text="${adminShell != null ? adminShell.revision : 'local'}">local</strong>
 		</span>
+		<!-- 마스터데이터 raw 값 정리(#2349 PR⑨): 미상 값(env 미설정 시 서버 기본값 "unknown")을
+		     그대로 노출하지 않고 "—"로 표시한다. 실제 값 판정 로직(AdminNavigationAdvice)은 불변, 표시만 바꾼다. -->
 		<span class="admin-status-item"
 		      title="현재 적재된 마스터데이터(역·시설 참조 팩) 버전">
 			<span class="admin-status-label">마스터데이터</span>
-			<strong th:text="${adminShell != null ? adminShell.masterDataVersion : 'unknown'}">unknown</strong>
+			<strong th:text="${adminShell != null and adminShell.masterDataVersion != null and adminShell.masterDataVersion != 'unknown'} ? ${adminShell.masterDataVersion} : '—'">—</strong>
 		</span>
 	</div>
 </div>

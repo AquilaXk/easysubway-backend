@@ -22,7 +22,7 @@
 			<label for="password">비밀번호</label>
 			<input id="password" name="password" type="password" autocomplete="current-password" required>
 		</div>
-		<button class="login-submit" type="submit">로그인</button>
+		<button class="login-submit primary" type="submit">로그인</button>
 		<div class="login-note"
 		     role="alert"
 		     th:if="${loginNotice == T(com.easysubway.common.security.LoginNotice).RETRY_WARNING}">아이디 또는 비밀번호를 확인하고 다시 시도해 주세요.</div>

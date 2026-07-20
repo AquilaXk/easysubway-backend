@@ -232,6 +232,17 @@
 	font-weight: var(--admin-w-medium);
 }
 
+/* 브랜드 중복 제거(#2349 PR⑨): 사이드바가 상시 노출되는 데스크톱(>1024px)에서는 사이드바
+   브랜드(.admin-brand)가 이미 "쉬운 지하철 / 통합 관리자"를 보여주므로 topbar 브랜드 표기를
+   숨긴다. 사이드바가 off-canvas로 바뀌는 ≤1024px에서는 topbar가 유일한 브랜드 표시가 되므로
+   아래 미디어 쿼리(반응형 앱 프레임)가 다시 노출한다. 접근성 스모크가 고정하는 클래스·aria-label은
+   그대로 두고 display만 바꾼다. */
+.admin-topbar-brand,
+.admin-topbar-sep,
+.admin-topbar-scope {
+	display: none;
+}
+
 .admin-topbar-actions {
 	display: flex;
 	align-items: center;
@@ -383,6 +394,13 @@
 	.admin-topbar-context {
 		flex: 1 1 190px;
 		align-items: center;
+	}
+
+	/* ≤1024px는 사이드바가 off-canvas라 topbar 브랜드가 유일한 브랜드 표시가 된다(#2349 PR⑨). */
+	.admin-topbar-brand,
+	.admin-topbar-sep,
+	.admin-topbar-scope {
+		display: inline;
 	}
 
 	.admin-topbar-actions {

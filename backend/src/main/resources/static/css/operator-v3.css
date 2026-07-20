@@ -607,13 +607,14 @@ input:focus-visible {
 	font-weight: var(--admin-w-strong);
 }
 
+/* retry warning(#2349 PR⑨): admin 로그인과 동일한 warn 톤 정합(NONE/RETRY_WARNING parity 계약). */
 .login-note {
 	margin-top: 18px;
 	padding-top: 16px;
-	border-top: 1px solid var(--admin-border);
-	color: var(--admin-ink-2);
+	border-top: 1px solid var(--admin-warn);
+	color: var(--admin-warn);
 	font-size: 12px;
-	font-weight: var(--admin-w-body);
+	font-weight: var(--admin-w-strong);
 	line-height: 1.5;
 }
 

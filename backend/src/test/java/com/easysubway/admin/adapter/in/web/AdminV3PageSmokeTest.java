@@ -554,7 +554,8 @@ class AdminV3PageSmokeTest {
 			.contains("<span class=\"admin-status-label\">리비전</span>")
 			.contains("<strong>local</strong>")
 			.contains("<span class=\"admin-status-label\">마스터데이터</span>")
-			.contains("<strong>unknown</strong>")
+			// #2349 PR⑨: env 미설정 시 서버 기본값("unknown")을 raw로 노출하지 않고 "—"로 표시한다.
+			.contains("<strong>—</strong>")
 			.contains(expectedText);
 		assertThat(html.indexOf("href=\"#admin-content\""))
 			.isLessThan(html.indexOf("class=\"admin-shell\""));

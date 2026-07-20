@@ -1062,12 +1062,16 @@
 	margin-top: 18px;
 }
 
+/* retry warning(#2349 PR⑨): 로그인 재시도 안내는 role="alert"인데도 설명문(.login-card p)과
+   같은 무채색 톤이라 오류 상태로 식별되지 않았다. 기존 하단 구분선 블록 패턴은 유지하고,
+   상태 컴포넌트(.admin-status/.status)와 같은 warn 톤(색+글자 강조)만 병기한다. */
 .login-note {
 	margin-top: 18px;
 	padding-top: 16px;
-	border-top: 1px solid var(--admin-border);
-	color: var(--admin-ink-2);
+	border-top: 1px solid var(--admin-warn);
+	color: var(--admin-warn);
 	font-size: 13px;
+	font-weight: var(--admin-w-strong);
 }
 
 .sr-only {
@@ -1752,17 +1756,19 @@
 	font-weight: var(--admin-w-strong);
 }
 
-/* topbar 로그아웃은 독립 neutral action이며 account dialog와 별개로 항상 접근 가능하다. */
+/* topbar 로그아웃은 독립 neutral action이며 account dialog와 별개로 항상 접근 가능하다.
+   자주 쓰지 않는 액션이라 계정 메뉴(상시 노출 박스 트리거)와 동급 박스로 보이지 않도록 위계를
+   낮춘다(#2349 PR⑨) — 기본 상태는 보더·채움 없는 텍스트 톤이고, 44px 터치 타깃은 아래 결합
+   셀렉터(min-width/min-height)가 여백만으로 공급한다. */
 .admin-v3 .admin-topbar-logout {
-	min-width: 44px;
-	min-height: 44px;
-	background: var(--admin-surface);
-	border: 1px solid var(--admin-border);
-	color: var(--admin-ink);
+	background: transparent;
+	border: 1px solid transparent;
+	color: var(--admin-ink-2);
 }
 
 .admin-v3 .admin-topbar-logout:hover {
-	background: var(--admin-bg);
+	border-color: var(--admin-border);
+	color: var(--admin-ink);
 }
 
 .admin-v3 .admin-sidebar-toggle,
