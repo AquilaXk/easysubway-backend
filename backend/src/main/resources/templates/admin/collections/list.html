@@ -77,7 +77,7 @@
 				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${run.statusLabel})}">완료</span></td>
 				<td th:text="${run.requestedBy}">admin-user</td>
 				<td th:text="${run.startedAt}">2026-06-15T10:00:00</td>
-				<td th:text="${run.completedAtLabel()}">2026-06-15T10:01:00</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${run.completedAtLabel()}, '없음')}">2026-06-15T10:01:00</td>
 				<td th:text="${run.collectedCount}">13</td>
 				<td>
 					<details class="admin-step-accordion" th:attr="open=${run.failedStepCount() > 0} ? 'open' : null">

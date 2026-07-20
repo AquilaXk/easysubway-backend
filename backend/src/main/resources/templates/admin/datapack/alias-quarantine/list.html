@@ -88,8 +88,8 @@
 				<td th:text="${alias.approvalStatus}">PENDING</td>
 				<td th:text="${alias.requestedBy}">qa</td>
 				<td>
-					<span th:text="${alias.approvedBy}">-</span>
-					<span th:text="${alias.approvedAt}">-</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${alias.approvedBy}, '미상')}">-</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${alias.approvedAt}, '미상')}">-</span>
 				</td>
 				<td><span th:title="${alias.evidenceHash}" th:text="${#strings.abbreviate(alias.evidenceHash, 11)}">sha256</span></td>
 				<td>
@@ -155,13 +155,13 @@
 				<td th:text="${record.reasonCode}">ALIAS_CONFLICT</td>
 				<td th:text="${record.severity}">P1</td>
 				<td th:text="${record.resolutionStatus}">OPEN</td>
-				<td th:text="${record.latestResolution}">-</td>
-				<td th:text="${record.latestCanonicalEntity}">-</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${record.latestResolution}, '미상')}">-</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${record.latestCanonicalEntity}, '미상')}">-</td>
 				<td>
-					<span th:text="${record.resolvedBy}">-</span>
-					<span th:text="${record.resolvedAt}">-</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${record.resolvedBy}, '미상')}">-</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${record.resolvedAt}, '미상')}">-</span>
 				</td>
-				<td th:text="${record.redactedExcerpt}">redacted excerpt</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${record.redactedExcerpt}, '미상')}">redacted excerpt</td>
 				<td>
 					<form class="admin-form" method="post" th:action="@{'/admin/datapack/quarantine-records/' + ${record.id} + '/resolve'}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">

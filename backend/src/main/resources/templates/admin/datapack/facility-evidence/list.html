@@ -78,7 +78,7 @@
 			</tr>
 			<tr th:each="row : ${evidenceRows}">
 				<td th:text="${row.stationId}">station-id</td>
-				<td th:text="${row.lineId}">line-id</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${row.lineId}, '미상')}">line-id</td>
 				<td th:text="${row.facilityType}">ELEVATOR</td>
 				<td th:text="${row.evidenceKind}">EXISTS</td>
 				<td th:text="${row.installationStatus}">INSTALLED</td>

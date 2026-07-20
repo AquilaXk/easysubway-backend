@@ -213,30 +213,33 @@ class ManualOverrideLedgerAdminPageController {
 		}
 	}
 
+	// 표시 라벨 한국어화(#2349 PR⑩g addendum) — API/DB 상태 키(approvalStatus·conflictStatus)는 영문을 유지하고
+	// 이 메서드가 반환하는 화면 표시 값만 한국어로 옮긴다. "충돌 미해결"은 facility-evidence·manual-overrides
+	// 상태 필터 옵션과, "승인 대기"는 candidates 상태 필터 옵션과 동일 어휘를 맞춘다.
 	private static String productionStatus(ManualOverrideRow row) {
 		if ("EXPIRED".equals(row.approvalStatus())) {
-			return "expired";
+			return "만료됨";
 		}
 		if ("SUPERSEDED".equals(row.approvalStatus()) || hasText(row.supersededBy())) {
-			return "superseded";
+			return "대체됨";
 		}
 		if ("REJECTED".equals(row.approvalStatus())) {
-			return "rejected";
+			return "반려됨";
 		}
 		if ("UNRESOLVED".equals(row.conflictStatus())) {
-			return "unresolved conflict";
+			return "충돌 미해결";
 		}
 		if (row.strictRouteEligible() && !hasText(row.routeSafetyApprovedBy())) {
-			return "route safety approval missing";
+			return "노선 안전 승인 필요";
 		}
 		if (!"APPROVED".equals(row.approvalStatus())) {
-			return "approval pending";
+			return "승인 대기";
 		}
 		if (!hasText(row.approvedBy()) || row.approvedAt() == null) {
-			return "approval missing";
+			return "승인 정보 누락";
 		}
 		if (row.requestedBy().equals(row.approvedBy())) {
-			return "requester approver same";
+			return "요청자·승인자 동일";
 		}
 		return "candidate 가능";
 	}

@@ -128,7 +128,7 @@
 					<span th:text="${row.entityId}">entity-id</span>
 				</td>
 				<td th:text="${row.fieldName}">field</td>
-				<td th:text="${row.beforeValue}">before</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${row.beforeValue}, '미상')}">before</td>
 				<td th:text="${row.afterValue}">after</td>
 				<td>
 					<span th:text="${row.reasonCode}">FIELD_CHECK</span>
@@ -140,8 +140,8 @@
 				</td>
 				<td th:text="${row.requestedBy}">requester</td>
 				<td>
-					<span th:text="${row.approvedBy}">approver</span>
-					<span th:text="${row.approvedAt}">approved-at</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${row.approvedBy}, '미상')}">approver</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${row.approvedAt}, '미상')}">—</span>
 				</td>
 				<td th:text="${row.approvalStatus}">APPROVED</td>
 				<td th:text="${row.conflictStatus}">NONE</td>

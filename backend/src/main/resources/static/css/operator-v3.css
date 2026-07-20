@@ -384,6 +384,23 @@ input:focus-visible {
 	font-weight: var(--admin-w-strong);
 }
 
+/* 지역별 데이터 품질 표 지역 열 어절 유지(#2349 PR⑩g finding 3): keep-all + overflow-wrap: anywhere만으로는
+   1024 폭에서 지역 열이 좁아지면 "강원권" 같은 공백 없는 3자 지역명도 anywhere가 글자 단위로 끊는다("강원/권").
+   지역명은 모두 "OO권" 형태로 짧아 nowrap으로 어절을 통째로 유지해도 열 폭 부담이 없다. 다른 표에는 영향 없게
+   이 표에만 붙는 .region-quality-table로 스코프를 좁힌다. */
+.region-quality-table td:first-child {
+	white-space: nowrap;
+}
+
+/* 지역별 데이터 품질 표 숫자 열 낱자리 줄바꿈 방지(#2349 PR⑩g addendum): 8열이 절반 폭 패널(desktop-grid-2)에
+   빽빽이 들어차면 헤더("역", "노선" 등)가 white-space: nowrap이어도 auto 표 레이아웃이 overflow-wrap: anywhere를
+   가진 숫자 값을 열 최소폭 계산에 사용해 "456" 같은 정수를 "4/5/6"으로 세로로 쪼갠다(1024 폭 실측). 지역 열을
+   제외한 숫자 값 열은 모두 정수라 nowrap으로 통째로 유지해도 열 폭 부담이 없다. 다른 operator 5화면 표는 실측 결과
+   동일 증상이 재현되지 않아 이 표에만 스코프를 좁힌다. */
+.region-quality-table td:not(:first-child) {
+	white-space: nowrap;
+}
+
 /* 빈 상태 표준화(#2349 PR⑩e, admin td.empty와 동일 원칙): colspan 메시지 셀이 last-child 우측 정렬을
    상속해 붕괴하는 것을 막고 admin/fragments 빈 상태 문법(.empty-state)과 정렬을 맞춘다. */
 .data-table td.empty {

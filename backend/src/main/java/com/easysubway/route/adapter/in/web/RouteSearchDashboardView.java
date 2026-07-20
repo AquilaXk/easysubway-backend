@@ -147,7 +147,7 @@ public record RouteSearchDashboardView(
 	private static String fallbackReasonLabel(String reason) {
 		return switch (reason) {
 			case "PROVIDER_OUTAGE_OR_STALE_REALTIME" -> "provider 장애 또는 stale realtime";
-			case "ROUTE_GRAPH_OR_STRICT_ACCESSIBILITY_BLOCK" -> "route graph/accessibility data quality failure";
+			case "ROUTE_GRAPH_OR_STRICT_ACCESSIBILITY_BLOCK" -> "경로 그래프·접근성 데이터 품질 실패";
 			case "LOW_DATA_CONFIDENCE" -> "낮은 데이터 신뢰도";
 			case "STALE_ACCESSIBILITY_DATA" -> "오래된 접근성 데이터";
 			case "STRICT_STAIR_ONLY_ACCESS" -> "strict 조건 계단 전용 경로";

@@ -111,6 +111,8 @@ class RouteSearchAdminPageControllerTest {
 			.contains("차단 사유")
 			.contains("계단 없는 역 접근 경로를 확인할 수 없습니다.")
 			.contains(">2<")
+			.contains("경로 그래프·접근성 데이터 품질 실패")
+			.doesNotContain("route graph/accessibility data quality failure")
 			.doesNotContain("route-search-blocked-1");
 	}
 
