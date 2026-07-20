@@ -54,11 +54,11 @@
 				</dd>
 				<dt>사유</dt>
 				<dd th:class="${privacyMode and event.reasonMissing} ? 'reason-missing'"
-				    th:text="${event.reason}">—</dd>
+				    th:insert="~{admin/fragments/missing-value :: value(${event.reason}, '미상')}">—</dd>
 				<dt>요청 ID</dt>
-				<dd th:text="${event.requestId}">—</dd>
+				<dd th:insert="~{admin/fragments/missing-value :: value(${event.requestId}, '미상')}">—</dd>
 				<dt>클라이언트 IP</dt>
-				<dd th:text="${event.clientIp}">—</dd>
+				<dd th:insert="~{admin/fragments/missing-value :: value(${event.clientIp}, '미상')}">—</dd>
 			</dl>
 		</section>
 

@@ -132,14 +132,14 @@
 				<td><span th:replace="~{admin/fragments/shell :: statusAuto(${run.statusLabel})}">실패</span></td>
 				<td th:text="${run.requestedBy}">admin</td>
 				<td th:text="${run.startedAt}">2026-06-27T00:00</td>
-				<td th:text="${run.completedAtLabel()}">—</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${run.completedAtLabel()}, '없음')}">—</td>
 				<td>
 					<ul>
 						<li th:each="step : ${run.steps}">
 							<strong th:text="${step.name}">FETCH</strong>
 							<span th:text="${step.statusLabel}">실패</span>
 							<span th:text="${'건수 ' + step.recordCount}">건수 0</span>
-							<span th:text="${step.failureMessage}">—</span>
+							<span th:insert="~{admin/fragments/missing-value :: value(${step.failureMessage}, '미상')}">—</span>
 						</li>
 					</ul>
 				</td>

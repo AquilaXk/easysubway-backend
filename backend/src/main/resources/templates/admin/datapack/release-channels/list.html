@@ -85,9 +85,9 @@
 					<span th:title="${channel.manifestSha256}" th:text="${#strings.abbreviate(channel.manifestSha256, 11)}">sha</span>
 				</td>
 				<td>
-					<span th:text="${channel.previousStableCandidateId}">previous candidate</span>
-					<span th:text="${channel.previousStableCandidateVersion}">previous version</span>
-					<span th:title="${channel.previousManifestSha256}" th:text="${#strings.abbreviate(channel.previousManifestSha256, 11)}">previous sha</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${channel.previousStableCandidateId}, '미상')}">previous candidate</span>
+					<span th:insert="~{admin/fragments/missing-value :: value(${channel.previousStableCandidateVersion}, '미상')}">previous version</span>
+					<span th:title="${channel.previousManifestSha256}" th:insert="~{admin/fragments/missing-value :: value(${#strings.abbreviate(channel.previousManifestSha256, 11)}, '미상')}">previous sha</span>
 				</td>
 				<td th:text="${channel.rollbackLabel}">rollback 가능</td>
 				<td>
@@ -217,7 +217,7 @@
 					<span th:text="${event.approvedBy}">approved</span>
 					<span th:text="${event.reason}">reason</span>
 				</td>
-				<td th:text="${event.workflowRunUrl}">workflow</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${event.workflowRunUrl}, '미상')}">workflow</td>
 				<td th:text="${event.createdAt}">2026-06-29T03:10</td>
 			</tr>
 			</tbody>

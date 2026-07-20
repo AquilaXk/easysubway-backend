@@ -82,7 +82,7 @@
 				       th:aria-label="${creative.id + ' ' + creative.advertiserName + ' 랜딩 페이지 열기'}">랜딩 열기</a></td>
 				<td th:text="${creative.altText}">대체텍스트</td>
 				<td th:text="${creative.startsAt}">2026-07-11T00:00</td>
-				<td th:text="${creative.endsAt != null ? creative.endsAt : '—'}">—</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${creative.endsAt}, '없음')}">—</td>
 				<td>
 					<span th:text="${creative.enabled ? '활성' : '비활성'}">비활성</span>
 					<form method="post"

@@ -71,7 +71,7 @@
 		<h2>증거·산출물</h2>
 		<dl class="admin-meta-list">
 			<dt>증거 워크플로</dt>
-			<dd th:text="${evidenceBundle.workflowRunUrl}">workflow</dd>
+			<dd th:insert="~{admin/fragments/missing-value :: value(${evidenceBundle.workflowRunUrl}, '미상')}">workflow</dd>
 			<dt>증거 번들 sha256</dt>
 			<dd>
 				<span class="sha-inline" th:title="${evidenceBundle.evidenceBundleSha256}"

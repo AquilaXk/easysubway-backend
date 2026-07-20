@@ -555,7 +555,8 @@ class AdminV3PageSmokeTest {
 			.contains("<strong>local</strong>")
 			.contains("<span class=\"admin-status-label\">마스터데이터</span>")
 			// #2349 PR⑨: env 미설정 시 서버 기본값("unknown")을 raw로 노출하지 않고 "—"로 표시한다.
-			.contains("<strong>—</strong>")
+			// #2349 PR⑩b: "—" 단독 표시는 스크린리더가 대시 문자로만 읽으므로 sr-only 텍스트를 병기한다.
+			.contains("<strong><span aria-hidden=\"true\">—</span><span class=\"sr-only\">미상</span></strong>")
 			.contains(expectedText);
 		assertThat(html.indexOf("href=\"#admin-content\""))
 			.isLessThan(html.indexOf("class=\"admin-shell\""));

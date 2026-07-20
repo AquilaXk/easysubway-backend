@@ -152,8 +152,9 @@ class DatapackCandidateAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(detailHtml)
-			.contains("<dd>—</dd>")
-			.doesNotContain("<dd>-</dd>");
+			.contains("<dd><span aria-hidden=\"true\">—</span><span class=\"sr-only\">미상</span></dd>")
+			.doesNotContain("<dd>-</dd>")
+			.doesNotContain("<dd>—</dd>");
 	}
 
 	@Test

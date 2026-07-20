@@ -125,7 +125,7 @@
 						<span th:replace="~{admin/fragments/shell :: status(${event.outcomeLabel}, ${event.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 					</td>
 					<td th:class="${privacyMode and event.reasonMissing} ? 'reason-missing'"
-					    th:text="${event.reason}">—</td>
+					    th:insert="~{admin/fragments/missing-value :: value(${event.reason}, '미상')}">—</td>
 					<td>
 						<a th:href="@{${detailBase} + '/' + ${event.id}}"
 						   th:attr="hx-get=@{${detailBase} + '/' + ${event.id}}"

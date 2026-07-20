@@ -611,6 +611,19 @@ input:focus-visible {
 	font-weight: var(--admin-w-strong);
 }
 
+/* 결측값 스크린리더 텍스트(#2349 PR⑩b): admin-components.css .sr-only와 동일 정의. */
+.sr-only {
+	position: absolute;
+	width: 1px;
+	height: 1px;
+	padding: 0;
+	margin: -1px;
+	overflow: hidden;
+	clip: rect(0, 0, 0, 0);
+	white-space: nowrap;
+	border: 0;
+}
+
 /* retry warning(#2349 PR⑨): admin 로그인과 동일한 warn 톤 정합(NONE/RETRY_WARNING parity 계약). */
 .login-note {
 	margin-top: 18px;

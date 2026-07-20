@@ -174,7 +174,7 @@ class AdminDashboardTriagePanelTest {
 		String html = fetchDashboard();
 
 		assertThat(html)
-			.contains("<strong>—</strong>")
+			.contains("<strong><span aria-hidden=\"true\">—</span><span class=\"sr-only\">미상</span></strong>")
 			.doesNotContain("<strong>-</strong>");
 	}
 

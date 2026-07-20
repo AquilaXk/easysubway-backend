@@ -75,12 +75,13 @@
 								<strong th:text="${step.name}">FETCH</strong>
 								<span th:text="${step.statusLabel}">완료</span>
 								<span th:text="${'건수 ' + step.recordCount}">건수 14</span>
-								<span th:if="${step.failed}" class="admin-step-failure" th:text="${step.failureMessage}">—</span>
+								<span th:if="${step.failed}" class="admin-step-failure"><th:block
+								      th:insert="~{admin/fragments/missing-value :: value(${step.failureMessage}, '미상')}">—</th:block></span>
 							</li>
 						</ol>
 					</details>
 				</td>
-				<td th:text="${run.failureLabel()}">—</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${run.failureLabel()}, '미상')}">—</td>
 				<td>
 					<details th:if="${run.retryable}" class="admin-retry-confirm">
 						<summary>재시도…</summary>

@@ -25,8 +25,8 @@
 		<tbody>
 		<tr th:each="label, iter : ${trendChart.labels}">
 			<th scope="row" th:text="${label}">날짜</th>
-			<td th:each="s : ${trendChart.series}"
-			    th:text="${s.values[iter.index] != null ? s.values[iter.index] : '—'}">0</td>
+			<td th:each="s : ${trendChart.series}"><th:block
+			    th:insert="~{admin/fragments/missing-value :: value(${s.values[iter.index]}, '미상')}">0</th:block></td>
 		</tr>
 		</tbody>
 	</table>

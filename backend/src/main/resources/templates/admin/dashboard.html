@@ -119,7 +119,7 @@
 			<p class="summary">
 				<!-- 후보가 없으면 candidateId는 "-" placeholder다. 상태 뱃지 앞 "- ●"로 겹쳐 보이던
 				     잔존 표기를 결측 규칙(—)으로 정리한다(#2349). -->
-				<strong th:text="${datapackReleaseSummary.candidateId == '-'} ? '—' : ${datapackReleaseSummary.candidateId}">candidate-id</strong>
+				<strong th:insert="~{admin/fragments/missing-value :: value(${datapackReleaseSummary.candidateId == '-' ? null : datapackReleaseSummary.candidateId}, '미상')}">candidate-id</strong>
 				<span th:replace="~{admin/fragments/shell :: status(${datapackReleaseSummary.status}, ${datapackReleaseSummary.status == 'READY' || datapackReleaseSummary.status == 'PASS' ? 'good' : (datapackReleaseSummary.status == 'FAIL' ? 'bad' : 'warn')})}">FAIL</span>
 			</p>
 			<p class="summary" th:text="${datapackReleaseSummary.productionPromoteReason()}">프로덕션 반영 차단: 차단 요인 0건</p>

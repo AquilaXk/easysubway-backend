@@ -149,8 +149,9 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("<td>—</td>")
-			.doesNotContain("<td>-</td>");
+			.contains("<td><span aria-hidden=\"true\">—</span><span class=\"sr-only\">미상</span></td>")
+			.doesNotContain("<td>-</td>")
+			.doesNotContain("<td>—</td>");
 	}
 
 	private void insertCandidate(String id, String version) {

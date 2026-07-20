@@ -84,7 +84,7 @@
 				<td th:text="${notice.severity}">INFO</td>
 				<td th:text="${notice.body}">본문</td>
 				<td th:text="${notice.publishedAt}">2026-07-09T10:00</td>
-				<td th:text="${notice.expiresAt != null ? notice.expiresAt : '—'}">—</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${notice.expiresAt}, '없음')}">—</td>
 				<td th:text="${notice.publishedBy}">operator</td>
 				<td>
 					<form method="post"

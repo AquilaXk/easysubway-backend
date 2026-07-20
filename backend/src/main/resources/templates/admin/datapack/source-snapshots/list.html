@@ -87,7 +87,7 @@
 					<span th:text="${snapshot.fetchStatus}">SUCCESS</span>
 				</td>
 				<td><span th:title="${snapshot.rawSha256}" th:text="${#strings.abbreviate(snapshot.rawSha256, 11)}">sha256</span></td>
-				<td th:text="${snapshot.diffSummary}">—</td>
+				<td th:insert="~{admin/fragments/missing-value :: value(${snapshot.diffSummary}, '미상')}">—</td>
 				<td>
 					<a class="detail-link"
 					   th:href="@{/admin/datapack/source-snapshots/{snapshotId}/page(snapshotId=${snapshot.snapshotId})}">보기</a>
