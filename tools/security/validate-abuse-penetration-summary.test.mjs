@@ -10,6 +10,7 @@ import test from "node:test";
 import { validateSchema } from "../ci/lib/json-schema-lite.mjs";
 import { buildAbusePenetrationSummaryV2Schema, deriveSummaryCatalog } from "./abuse-penetration-summary-schema.mjs";
 import { validateAbusePenetrationSummary } from "./validate-abuse-penetration-summary.mjs";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
@@ -26,7 +27,7 @@ const schemaV2Identity = Object.freeze({
 });
 function schemaV2IdentitySha256(identity = schemaV2Identity) {
   return createHash("sha256")
-    .update(JSON.stringify(Object.fromEntries(Object.entries(identity).sort(([left], [right]) => left.localeCompare(right)))))
+    .update(JSON.stringify(Object.fromEntries(Object.entries(identity).sort(([left], [right]) => codepointCompare(left, right)))))
     .digest("hex");
 }
 function schemaV2Evidence(evidenceId) {

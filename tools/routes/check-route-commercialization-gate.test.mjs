@@ -855,7 +855,7 @@ test("route commercialization gate requires out-of-station allowlist evidence", 
 test("route commercialization gate sorts checked reports with an explicit comparator", async () => {
   const source = await readFile("tools/routes/check-route-commercialization-gate.mjs", "utf8");
 
-  assert.match(source, /Object\.keys\(reports\)\.sort\(\([^)]*\) => [^)]*localeCompare/);
+  assert.match(source, /Object\.keys\(reports\)\.sort\(\([^)]*\) => codepointCompare\(/);
 });
 
 async function writeFixtureSet(reports) {

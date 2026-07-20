@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile, writeFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   main(process.argv.slice(2)).catch((error) => {
@@ -139,7 +140,7 @@ function requiredString(value, label) {
 
 function uniqueKeys(rows, field) {
   return [...new Set(rows.map((row) => row[field]).filter((value) => value != null && value !== ""))]
-    .sort((left, right) => `${left}`.localeCompare(`${right}`));
+    .sort((left, right) => codepointCompare(`${left}`, `${right}`));
 }
 
 function aggregateScope(key, field, pairs, samples) {

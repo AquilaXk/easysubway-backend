@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   try {
@@ -50,7 +51,7 @@ async function main(argv) {
     schemaVersion: 1,
     gate: "route-commercialization",
     status: failures.length > 0 ? "FAIL" : "PASS",
-    checkedReports: Object.keys(reports).sort((left, right) => left.localeCompare(right)),
+    checkedReports: Object.keys(reports).sort((left, right) => codepointCompare(left, right)),
     failures,
   };
 }
