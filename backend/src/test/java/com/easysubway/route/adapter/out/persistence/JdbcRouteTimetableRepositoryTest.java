@@ -83,6 +83,54 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("break-glass override가 켜지면 만료된 active snapshot도 서빙한다")
+	void breakGlassOverrideServesExpiredSnapshot() {
+		insertTimetableRows();
+		insertItxRows("2000-01-01T00:00:00Z");
+
+		var override = new JdbcRouteTimetableRepository(
+			jdbcTemplate,
+			Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC),
+			true
+		);
+
+		assertThat(override.hasRouteTimetable()).isTrue();
+		assertThat(override.activeItxTimetableArtifactId()).contains("snapshot-test");
+		assertThat(override.timetableCacheKey()).isNotEqualTo("UNAVAILABLE");
+	}
+
+	@Test
+	@DisplayName("break-glass override여도 무결성(schema·lineage) 실패는 계속 fail closed한다")
+	void breakGlassOverrideDoesNotBypassIntegrity() {
+		insertTimetableRows();
+		insertItxRows("2000-01-01T00:00:00Z");
+
+		var override = new JdbcRouteTimetableRepository(
+			jdbcTemplate,
+			Clock.fixed(Instant.parse("2026-07-16T00:00:00Z"), ZoneOffset.UTC),
+			true
+		);
+		assertThat(override.activeItxTimetableArtifactId()).contains("snapshot-test");
+
+		jdbcTemplate.update(
+			"UPDATE timetable_snapshot_history SET schema_identity = 'invalid' WHERE snapshot_sha256 = ?",
+			"a".repeat(64)
+		);
+		assertThat(override.activeItxTimetableArtifactId()).isEmpty();
+
+		jdbcTemplate.update(
+			"UPDATE timetable_snapshot_history SET schema_identity = 'backend-timetable-snapshot-v1' "
+				+ "WHERE snapshot_sha256 = ?",
+			"a".repeat(64)
+		);
+		jdbcTemplate.update(
+			"UPDATE route_service_artifact_evidence SET canonical_pack_sha256 = ? WHERE service_class = 'ITX_CHEONGCHUN'",
+			"9".repeat(64)
+		);
+		assertThat(override.activeItxTimetableArtifactId()).isEmpty();
+	}
+
+	@Test
 	@DisplayName("ITX admission freshness 상태가 바뀌면 timetable cache key도 바뀐다")
 	void changesCacheKeyWhenItxAdmissionExpires() {
 		insertItxRows("2999-01-01T00:00:00Z");

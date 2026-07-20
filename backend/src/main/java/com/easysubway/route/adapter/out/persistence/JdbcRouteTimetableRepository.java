@@ -13,6 +13,7 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.stereotype.Repository;
@@ -28,19 +29,34 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
+	// break-glass override: 활성 시 시간 기반 freshness 필터만 우회해 만료 snapshot도 서빙한다.
+	// 무결성(lineage·schema·출처)은 admissibleItxArtifact()가 계속 강제하므로 우회 대상이 아니다.
+	private final boolean breakGlass;
 
 	@Autowired
+	public JdbcRouteTimetableRepository(
+		DataSource dataSource,
+		@Value("${easysubway.timetable.freshness.break-glass:false}") boolean breakGlass
+	) {
+		this(new JdbcTemplate(dataSource), Clock.systemUTC(), breakGlass);
+	}
+
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
-		this(new JdbcTemplate(dataSource), Clock.systemUTC());
+		this(new JdbcTemplate(dataSource), Clock.systemUTC(), false);
 	}
 
 	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate) {
-		this(jdbcTemplate, Clock.systemUTC());
+		this(jdbcTemplate, Clock.systemUTC(), false);
 	}
 
 	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate, Clock clock) {
+		this(jdbcTemplate, clock, false);
+	}
+
+	JdbcRouteTimetableRepository(JdbcTemplate jdbcTemplate, Clock clock, boolean breakGlass) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.clock = clock;
+		this.breakGlass = breakGlass;
 	}
 
 	@Override
@@ -93,8 +109,13 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	}
 
 	private Optional<ItxArtifact> activeItxArtifact() {
-		return admissibleItxArtifact()
-			.filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent());
+		Optional<ItxArtifact> admissible = admissibleItxArtifact();
+		if (breakGlass) {
+			// break-glass override 활성: 시간 기반 freshness 필터만 우회해 만료 snapshot도 서빙한다.
+			// admissibleItxArtifact()가 lineage·schema·출처 검증을 이미 통과시킨 행만 반환하므로 무결성은 우회되지 않는다.
+			return admissible;
+		}
+		return admissible.filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent());
 	}
 
 	// 시간 기반 freshness를 제외한 lineage·schema 적격성만 판정한다(활성화 시점 readability 검사용).
