@@ -1,6 +1,7 @@
 package com.easysubway.admin.identity.application.service;
 
 import com.easysubway.admin.authorization.AdminAuthorization;
+import com.easysubway.admin.authorization.AdminRbacRole;
 import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
 import com.easysubway.admin.identity.domain.AdminIdentity;
@@ -9,6 +10,7 @@ import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.ArrayList;
 import java.util.Locale;
+import java.util.Set;
 import org.springframework.security.core.userdetails.User;
 import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.security.core.userdetails.UserDetailsPasswordService;
@@ -16,6 +18,24 @@ import org.springframework.security.core.userdetails.UserDetailsService;
 import org.springframework.security.core.userdetails.UsernameNotFoundException;
 
 public class AdminIdentityUserDetailsService implements UserDetailsService, UserDetailsPasswordService {
+
+	// RBAC 권한이 배선되지 않은 소비 경로(3-인자 편의 생성자)를 위한 명시적 no-op 구현.
+	// port가 단일 조회 함수가 아니라 seed/revoke 쓰기까지 포함하므로 람다로 대체할 수 없다.
+	private static final AdminRbacAuthorityRepository NO_ADMIN_RBAC_AUTHORITIES =
+		new AdminRbacAuthorityRepository() {
+			@Override
+			public Set<String> findPermissionAuthorities(String loginId) {
+				return Set.of();
+			}
+
+			@Override
+			public void seedRole(String loginId, AdminRbacRole role) {
+			}
+
+			@Override
+			public void revokeStaleBootstrapRoles(Set<String> activeBootstrapLoginIds) {
+			}
+		};
 
 	private final AdminIdentityRepository adminIdentityRepository;
 	private final AdminRbacAuthorityRepository adminRbacAuthorityRepository;
@@ -27,7 +47,7 @@ public class AdminIdentityUserDetailsService implements UserDetailsService, User
 		UserDetailsService fallbackUserDetailsService,
 		Clock clock
 	) {
-		this(adminIdentityRepository, loginId -> java.util.Set.of(), fallbackUserDetailsService, clock);
+		this(adminIdentityRepository, NO_ADMIN_RBAC_AUTHORITIES, fallbackUserDetailsService, clock);
 	}
 
 	public AdminIdentityUserDetailsService(

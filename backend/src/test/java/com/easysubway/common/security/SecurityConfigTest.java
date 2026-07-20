@@ -7,10 +7,12 @@ import com.easysubway.admin.audit.adapter.out.persistence.InMemoryAdminAuditEven
 import com.easysubway.admin.authorization.adapter.out.persistence.InMemoryAdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.adapter.out.persistence.InMemoryAdminIdentityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
+import com.easysubway.admin.identity.application.service.AdminIdentityUserDetailsService;
 import com.easysubway.admin.identity.domain.AdminIdentity;
 import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
+import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -30,6 +32,7 @@ import org.springframework.security.authentication.UsernamePasswordAuthenticatio
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
 import org.springframework.security.core.GrantedAuthority;
 import org.springframework.security.core.userdetails.UserDetailsService;
+import org.springframework.security.core.userdetails.UsernameNotFoundException;
 import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 
 @DisplayName("보안 설정")
@@ -254,6 +257,164 @@ class SecurityConfigTest {
 					.extracting(GrantedAuthority::getAuthority)
 					.containsExactly("ROLE_ADMIN");
 			});
+	}
+
+	@Test
+	@DisplayName("env 지정 관리자 계정은 선존재 영속 계정이어도 부팅 시 RBAC SUPER_ADMIN role seed로 관리자 권한을 얻는다")
+	void envAdminSeedsSuperAdminRoleForPreexistingUnmanagedIdentity() {
+		var securityConfig = new SecurityConfig();
+		var adminRepository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var environment = new MockEnvironment();
+		LocalDateTime now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		adminRepository.save(new AdminIdentity(
+			"env-admin",
+			"영속 관리자",
+			null,
+			passwordEncoder.encode("admin-password"),
+			AdminIdentityAuthMethod.LOCAL,
+			AdminIdentityRole.ADMIN,
+			AdminIdentityStatus.ACTIVE,
+			0,
+			null,
+			now,
+			null,
+			false,
+			null,
+			false,
+			now,
+			now
+		));
+
+		var beforeSeed = new AdminIdentityUserDetailsService(
+			adminRepository,
+			rbacRepository,
+			username -> {
+				throw new UsernameNotFoundException(username);
+			},
+			Clock.systemUTC()
+		);
+		assertThat(beforeSeed.loadUserByUsername("env-admin").getAuthorities())
+			.extracting(GrantedAuthority::getAuthority)
+			.containsExactly("ROLE_ADMIN");
+
+		UserDetailsService userDetailsService = securityConfig.userDetailsService(
+			"env-admin",
+			"admin-password",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			"",
+			true,
+			"",
+			"",
+			adminRepository,
+			rbacRepository,
+			passwordEncoder,
+			environment
+		);
+
+		assertThat(rbacRepository.findPermissionAuthorities("env-admin"))
+			.contains(
+				"admin.view",
+				"admin.report.review",
+				"admin.master.edit",
+				"admin.field.operate",
+				"admin.data.operate",
+				"admin.security.audit",
+				"admin.security.admin"
+			);
+		assertThat(userDetailsService.loadUserByUsername("env-admin").getAuthorities())
+			.extracting(GrantedAuthority::getAuthority)
+			.contains(
+				"ROLE_ADMIN",
+				"admin.view",
+				"admin.report.review",
+				"admin.master.edit",
+				"admin.field.operate",
+				"admin.data.operate",
+				"admin.security.audit",
+				"admin.security.admin"
+			);
+	}
+
+	@Test
+	@DisplayName("env 관리자 RBAC role seed는 여러 번 부팅해도 중복 없이 멱등하다")
+	void envAdminSuperAdminRoleSeedIsIdempotentAcrossReboots() {
+		var securityConfig = new SecurityConfig();
+		var adminRepository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var environment = new MockEnvironment();
+
+		securityConfig.userDetailsService(
+			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			adminRepository, rbacRepository, passwordEncoder, environment
+		);
+		Set<String> afterFirstBoot = rbacRepository.findPermissionAuthorities("env-admin");
+
+		securityConfig.userDetailsService(
+			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			adminRepository, rbacRepository, passwordEncoder, environment
+		);
+		Set<String> afterSecondBoot = rbacRepository.findPermissionAuthorities("env-admin");
+
+		assertThat(afterSecondBoot).isEqualTo(afterFirstBoot);
+		assertThat(afterSecondBoot).contains("admin.view", "admin.security.admin");
+	}
+
+	@Test
+	@DisplayName("env에서 관리자 계정이 제거되면 부팅 시 bootstrap-seeded SUPER_ADMIN role을 회수한다")
+	void envAdminBootstrapRoleIsRevokedWhenCredentialRemoved() {
+		var securityConfig = new SecurityConfig();
+		var adminRepository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var environment = new MockEnvironment();
+
+		securityConfig.userDetailsService(
+			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			adminRepository, rbacRepository, passwordEncoder, environment
+		);
+		assertThat(rbacRepository.findPermissionAuthorities("env-admin")).contains("admin.security.admin");
+
+		// env에서 관리자 계정 설정이 사라진 채 부팅한다.
+		securityConfig.userDetailsService(
+			"", "", "", "", "", "", "", "", "", true, "", "",
+			adminRepository, rbacRepository, passwordEncoder, environment
+		);
+
+		assertThat(rbacRepository.findPermissionAuthorities("env-admin")).isEmpty();
+	}
+
+	@Test
+	@DisplayName("bootstrap 회수는 운영자가 수동 부여한 RBAC 권한을 보존한다")
+	void bootstrapRevokePreservesManuallyGrantedAuthorities() {
+		var securityConfig = new SecurityConfig();
+		var adminRepository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var environment = new MockEnvironment();
+		// 운영자가 별도 계정에 수동 부여한 권한.
+		rbacRepository.replacePermissionAuthorities("manual-admin", Set.of("admin.view", "admin.report.review"));
+
+		securityConfig.userDetailsService(
+			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			adminRepository, rbacRepository, passwordEncoder, environment
+		);
+		// env 계정 제거 후 재부팅해도 수동 부여 권한은 회수되지 않는다.
+		securityConfig.userDetailsService(
+			"", "", "", "", "", "", "", "", "", true, "", "",
+			adminRepository, rbacRepository, passwordEncoder, environment
+		);
+
+		assertThat(rbacRepository.findPermissionAuthorities("manual-admin"))
+			.containsExactlyInAnyOrder("admin.view", "admin.report.review");
+		assertThat(rbacRepository.findPermissionAuthorities("env-admin")).isEmpty();
 	}
 
 	@Test

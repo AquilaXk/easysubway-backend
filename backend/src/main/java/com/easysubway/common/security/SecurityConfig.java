@@ -1,6 +1,7 @@
 package com.easysubway.common.security;
 
 import com.easysubway.admin.authorization.AdminPermission;
+import com.easysubway.admin.authorization.AdminRbacRole;
 import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository;
 import com.easysubway.admin.authorization.application.port.out.AdminRbacAuthorityRepository;
 import com.easysubway.admin.identity.application.port.out.AdminIdentityRepository;
@@ -58,6 +59,24 @@ import org.springframework.security.web.util.matcher.IpAddressMatcher;
 @EnableWebSecurity
 @EnableMethodSecurity
 public class SecurityConfig {
+
+	// RBAC 권한이 배선되지 않은 편의 오버로드(테스트 지원 경로)를 위한 명시적 no-op 구현.
+	// port가 조회뿐 아니라 seed/revoke 쓰기까지 포함하므로 단일 함수 람다로 대체할 수 없다.
+	private static final AdminRbacAuthorityRepository NO_ADMIN_RBAC_AUTHORITIES =
+		new AdminRbacAuthorityRepository() {
+			@Override
+			public Set<String> findPermissionAuthorities(String loginId) {
+				return Set.of();
+			}
+
+			@Override
+			public void seedRole(String loginId, AdminRbacRole role) {
+			}
+
+			@Override
+			public void revokeStaleBootstrapRoles(Set<String> activeBootstrapLoginIds) {
+			}
+		};
 
 	// 관리자·operator 콘솔 CSP: 모든 스크립트·스타일은 self-host(static/vendor·static/css)만 허용한다.
 	// Alpine는 CSP 빌드라 'unsafe-eval' 불필요, 인라인 스크립트·핸들러는 전면 금지(진화형 향상 원칙).
@@ -467,7 +486,8 @@ public class SecurityConfig {
 		LocalDateTime now = LocalDateTime.now(Clock.systemUTC());
 		Set<String> activeBootstrapLoginIds = new LinkedHashSet<>();
 		if (!adminUsername.isBlank() && !adminPassword.isBlank()) {
-			activeBootstrapLoginIds.add(normalizeLoginId(adminUsername));
+			String adminLoginId = normalizeLoginId(adminUsername);
+			activeBootstrapLoginIds.add(adminLoginId);
 			bootstrapIdentity(adminIdentityRepository, passwordEncoder, adminPassword, localIdentity(
 				adminUsername,
 				"관리자",
@@ -475,6 +495,9 @@ public class SecurityConfig {
 				AdminIdentityRole.ADMIN,
 				now
 			), now);
+			// env로 지정된 관리자 계정은 이미 영속돼 있어도(비밀번호 동일 no-op 경로 포함)
+			// RBAC SUPER_ADMIN role 할당을 보증해 미배정 403을 해소한다. 멱등 seed다.
+			adminRbacAuthorityRepository.seedRole(adminLoginId, AdminRbacRole.SUPER_ADMIN);
 		}
 		if (!operatorUsername.isBlank() && !operatorPassword.isBlank()) {
 			activeBootstrapLoginIds.add(normalizeLoginId(operatorUsername));
@@ -496,6 +519,9 @@ public class SecurityConfig {
 			), now);
 		}
 		adminIdentityRepository.disableStaleBootstrapIdentities(activeBootstrapLoginIds, now);
+		// disableStale와 대칭으로, active bootstrap 계정 목록에 없는 bootstrap-seeded RBAC role을
+		// 회수한다. 수동 부여 role은 보존한다(provenance로 구분).
+		adminRbacAuthorityRepository.revokeStaleBootstrapRoles(activeBootstrapLoginIds);
 		var users = new ConcurrentUserDetailsManager();
 		if (!userUsername.isBlank() && !userPassword.isBlank()) {
 			users.createUser(User.withUsername(userUsername)
@@ -542,7 +568,7 @@ public class SecurityConfig {
 			basicAuthExceptionOwner,
 			basicAuthExceptionExpiresAt,
 			adminIdentityRepository,
-			loginId -> Set.of(),
+			NO_ADMIN_RBAC_AUTHORITIES,
 			passwordEncoder,
 			environment
 		);
