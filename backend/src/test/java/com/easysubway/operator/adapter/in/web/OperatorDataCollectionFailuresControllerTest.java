@@ -103,7 +103,7 @@ class OperatorDataCollectionFailuresControllerTest {
 			.andExpect(jsonPath("$.data.rows[0].runId").doesNotExist())
 			.andExpect(jsonPath("$.data.rows[0].requestedBy").doesNotExist())
 			.andExpect(jsonPath("$.data.rows[1].statusLabel").value("완료"))
-			.andExpect(jsonPath("$.data.rows[1].failureMessage").value("-"))
+			.andExpect(jsonPath("$.data.rows[1].failureMessage").value("—"))
 			.andExpect(jsonPath("$.data.rows[1].retryable").value(false));
 	}
 

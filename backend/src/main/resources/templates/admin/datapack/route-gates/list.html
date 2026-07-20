@@ -80,7 +80,7 @@
 				<td th:text="${row.edgeType}">ENTRY</td>
 				<td th:text="${row.verificationStatus}">VERIFIED</td>
 				<td th:text="${row.provenanceKind}">OFFICIAL_SOURCE</td>
-				<td th:text="${row.generatedConnector ? 'generated connector' : '-'}">-</td>
+				<td th:text="${row.generatedConnector ? 'generated connector' : '—'}">—</td>
 				<td>
 					<span th:text="${row.sourceId}">source-id</span>
 					<span th:text="${row.sourceSnapshotId}">snapshot-id</span>
@@ -88,7 +88,7 @@
 				<td th:text="${row.lastVerifiedAt}">2026-06-29T03:00</td>
 				<td><span th:title="${row.evidenceHash}" th:text="${#strings.abbreviate(row.evidenceHash, 11)}">sha256</span></td>
 				<td th:text="${row.strictRouteLabel}">strict 가능</td>
-				<td th:text="${row.blockerReason}">-</td>
+				<td th:text="${row.blockerReason}">—</td>
 			</tr>
 			</tbody>
 		</table>

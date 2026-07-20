@@ -24,7 +24,7 @@
 
 			<div class="alert-banner" th:classappend="${report.freshnessAlertClass}">
 				<strong>데이터 갱신 상태: <span th:text="${report.freshnessAlertLabel}">점검 필요</span></strong>
-				<span>최신 완료 수집: <b th:text="${report.latestCompletedAtLabel}">-</b></span>
+				<span>최신 완료 수집: <b th:text="${report.latestCompletedAtLabel}">—</b></span>
 				<p th:text="${report.freshnessAlertDescription}">데이터 수집 완료 기록이 없습니다.</p>
 			</div>
 
@@ -32,7 +32,7 @@
 				<div class="metric"><span>전체 수집 실행</span><strong th:text="${report.totalRunCount}">0</strong></div>
 				<div class="metric"><span>실패 실행</span><strong th:text="${report.failedRunCount}">0</strong></div>
 				<div class="metric"><span>재시도 가능</span><strong th:text="${report.retryableRunCount}">0</strong></div>
-				<div class="metric"><span>최신 완료</span><strong th:text="${report.latestCompletedAtLabel}">-</strong></div>
+				<div class="metric"><span>최신 완료</span><strong th:text="${report.latestCompletedAtLabel}">—</strong></div>
 			</div>
 
 			<form class="table-toolbar" method="get" action="/operator/data-collection-failures/page">

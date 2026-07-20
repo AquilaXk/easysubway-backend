@@ -112,7 +112,7 @@ class AliasQuarantineAdminPageController {
 	private static boolean aliasStatusMatches(AliasApprovalView alias, String status) {
 		return switch (status) {
 			case "ALL" -> true;
-			case "BLOCKER" -> !"APPROVED".equals(alias.approvalStatus()) && "-".equals(alias.supersededBy());
+			case "BLOCKER" -> !"APPROVED".equals(alias.approvalStatus()) && "—".equals(alias.supersededBy());
 			default -> status.equals(alias.approvalStatus());
 		};
 	}
@@ -241,17 +241,17 @@ class AliasQuarantineAdminPageController {
 
 	private static String entityOrDash(String type, String id) {
 		if (type == null || type.isBlank() || id == null || id.isBlank()) {
-			return "-";
+			return "—";
 		}
 		return type + ":" + id;
 	}
 
 	private static String valueOrDash(Object value) {
 		if (value == null) {
-			return "-";
+			return "—";
 		}
-		if (value instanceof String text && text.isBlank()) {
-			return "-";
+		if (value instanceof String text && (text.isBlank() || "-".equals(text))) {
+			return "—";
 		}
 		return value.toString();
 	}

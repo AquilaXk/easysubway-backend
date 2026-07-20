@@ -116,6 +116,21 @@ class FacilityEvidenceAdminPageControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	@DisplayName("strict 제외 사유 입력 필드는 표시용 '—' 대신 저장된 원본 사유로 prefill 된다")
+	void strictRouteEligibleReasonFormPrefillsRawValueNotDisplayDash() throws Exception {
+		String html = mockMvc.perform(get("/admin/datapack/facility-evidence/page")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("value=\"운행 상태 확인 필요\" placeholder=\"strict 제외 사유\"")
+			.doesNotContain("value=\"—\" placeholder=\"strict 제외 사유\"");
+	}
+
 	private void insertSnapshot() {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (

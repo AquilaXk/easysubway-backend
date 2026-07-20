@@ -134,7 +134,7 @@
 						<button type="submit" class="primary">production 승인</button>
 						</form>
 					</details>
-					<details class="admin-promote-confirm" th:if="${channel.previousStableCandidateId != '-'}">
+					<details class="admin-promote-confirm" th:if="${channel.previousStableCandidateId != '—'}">
 						<summary th:text="${'rollback (' + channel.channel + ')'}">rollback</summary>
 						<p class="meta"
 						   th:text="${'대상 채널 ' + channel.channel + ' · rollback 대상 ' + channel.previousStableCandidateId + '. 확인하면 이전 안정 후보로 되돌립니다.'}">영향</p>

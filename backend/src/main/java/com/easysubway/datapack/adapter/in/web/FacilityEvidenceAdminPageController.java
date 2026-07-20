@@ -124,6 +124,7 @@ class FacilityEvidenceAdminPageController {
 		boolean strictRouteEligible,
 		String strictRouteLabel,
 		String strictRouteReason,
+		String strictRouteReasonRaw,
 		String conflictStatus,
 		String manualOverrideId
 	) {
@@ -148,6 +149,7 @@ class FacilityEvidenceAdminPageController {
 				row.strictRouteEligible(),
 				row.strictRouteEligible() ? "strict 가능" : "strict 불가",
 				valueOrDash(row.strictRouteEligibleReason()),
+				row.strictRouteEligibleReason(),
 				row.conflictStatus(),
 				valueOrDash(row.manualOverrideId())
 			);
@@ -162,8 +164,8 @@ class FacilityEvidenceAdminPageController {
 	}
 
 	private static String valueOrDash(String value) {
-		if (value == null || value.isBlank()) {
-			return "-";
+		if (value == null || value.isBlank() || "-".equals(value)) {
+			return "—";
 		}
 		return value;
 	}

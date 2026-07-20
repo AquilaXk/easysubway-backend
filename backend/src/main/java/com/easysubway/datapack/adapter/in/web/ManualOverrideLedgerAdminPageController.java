@@ -246,7 +246,7 @@ class ManualOverrideLedgerAdminPageController {
 	}
 
 	private static String valueOrDash(String value) {
-		return hasText(value) ? value : "-";
+		return hasText(value) && !"-".equals(value) ? value : "—";
 	}
 
 	record ManualOverrideRequestForm(

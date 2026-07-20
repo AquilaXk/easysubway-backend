@@ -147,13 +147,13 @@
 				<td th:text="${row.conflictStatus}">NONE</td>
 				<td>
 					<span th:text="${row.strictRouteEligible ? 'strict 요청' : 'strict 아님'}">strict 아님</span>
-					<span th:text="${row.routeSafetyApprovedBy}">-</span>
+					<span th:text="${row.routeSafetyApprovedBy}">—</span>
 				</td>
 				<td>
 					<span th:text="${row.effectiveFrom}">2026-06-29T03:00</span>
 					<span th:text="${row.expiresAt}">2026-07-29T03:00</span>
 				</td>
-				<td th:text="${row.supersededBy}">-</td>
+				<td th:text="${row.supersededBy}">—</td>
 				<td th:text="${row.productionStatus}">candidate 가능</td>
 				<td>
 					<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/approve'}">

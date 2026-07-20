@@ -128,6 +128,60 @@ class DatapackCandidateAdminPageControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	@DisplayName("증거 워크플로 URL이 내부 sentinel '-'이면 상세 화면에는 '—'으로 표시된다")
+	void evidenceWorkflowUrlDashSentinelDisplaysAsEmDash() throws Exception {
+		jdbcTemplate.update("DELETE FROM datapack_release_evidence_bundles");
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_evidence_bundles (
+				id, candidate_id, evidence_bundle_sha256, workflow_run_url,
+				validator_status, route_regression_status, manifest_signature_status,
+				android_evidence_status, created_at
+			)
+			VALUES ('evidence-bundle-1', 'candidate-capital-1', ?, '-',
+				'PASS', 'PASS', 'PASS', 'PASS', '2026-06-29 03:02:00')
+			""",
+			"5".repeat(64)
+		);
+
+		String detailHtml = mockMvc.perform(get("/admin/datapack/candidates/candidate-capital-1/page")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(detailHtml)
+			.contains("<dd>—</dd>")
+			.doesNotContain("<dd>-</dd>");
+	}
+
+	@Test
+	@DisplayName("valueOrDash/shortHash는 내부 sentinel '-'을 표시용 '—'으로 변환한다")
+	void viewUtilitiesConvertDashSentinelToDisplayDash() throws Exception {
+		assertThat(invokeValueOrDash("-")).isEqualTo("—");
+		assertThat(invokeValueOrDash(null)).isEqualTo("—");
+		assertThat(invokeValueOrDash("  ")).isEqualTo("—");
+		assertThat(invokeValueOrDash("abc123")).isEqualTo("abc123");
+
+		assertThat(invokeShortHash("-")).isEqualTo("—");
+		assertThat(invokeShortHash("—")).isEqualTo("—");
+		assertThat(invokeShortHash(null)).isEqualTo("—");
+		assertThat(invokeShortHash("a".repeat(64))).isEqualTo("a".repeat(8) + "…");
+	}
+
+	private static String invokeValueOrDash(String value) throws Exception {
+		var method = DatapackCandidateAdminPageController.class.getDeclaredMethod("valueOrDash", String.class);
+		method.setAccessible(true);
+		return (String) method.invoke(null, value);
+	}
+
+	private static String invokeShortHash(String value) throws Exception {
+		var method = DatapackCandidateAdminPageController.class.getDeclaredMethod("shortHash", String.class);
+		method.setAccessible(true);
+		return (String) method.invoke(null, value);
+	}
+
 	private void insertCandidate() {
 		jdbcTemplate.update("""
 			INSERT INTO datapack_candidates (

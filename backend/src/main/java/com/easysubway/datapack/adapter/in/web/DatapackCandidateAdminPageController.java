@@ -205,7 +205,7 @@ class DatapackCandidateAdminPageController {
 		}
 
 		static CandidateInputView empty(String candidateId) {
-			return new CandidateInputView("-", candidateId, "-", "-", "-", "-", "-", null);
+			return new CandidateInputView("—", candidateId, "—", "—", "—", "—", "—", null);
 		}
 
 		public String approvedAliasLedgerHashShort() {
@@ -252,7 +252,7 @@ class DatapackCandidateAdminPageController {
 		}
 
 		static EvidenceBundleView empty(String candidateId) {
-			return new EvidenceBundleView("-", candidateId, "-", "-", "-", "-", "-", "-", null);
+			return new EvidenceBundleView("—", candidateId, "—", "—", "—", "—", "—", "—", null);
 		}
 
 		public String evidenceBundleSha256Short() {
@@ -296,15 +296,15 @@ class DatapackCandidateAdminPageController {
 	}
 
 	private static String valueOrDash(String value) {
-		if (value == null || value.isBlank()) {
-			return "-";
+		if (value == null || value.isBlank() || "-".equals(value)) {
+			return "—";
 		}
 		return value;
 	}
 
 	private static String shortHash(String value) {
-		if (value == null || value.isBlank() || "-".equals(value)) {
-			return "-";
+		if (value == null || value.isBlank() || "-".equals(value) || "—".equals(value)) {
+			return "—";
 		}
 		return value.length() <= 8 ? value : value.substring(0, 8) + "…";
 	}

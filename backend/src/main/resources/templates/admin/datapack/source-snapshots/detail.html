@@ -38,9 +38,9 @@
 			<tr><th scope="row">provider valid until</th><td th:text="${snapshot.providerValidUntil}">2026-07-28T00:00</td></tr>
 			<tr><th scope="row">row count</th><td th:text="${snapshot.rowCount}">0</td></tr>
 			<tr><th scope="row">coverage count</th><td th:text="${snapshot.coverageCount}">0</td></tr>
-			<tr><th scope="row">previous snapshot</th><td th:text="${snapshot.previousSnapshotId}">-</td></tr>
-			<tr><th scope="row">diff summary</th><td th:text="${snapshot.diffSummary}">-</td></tr>
-			<tr><th scope="row">diff summary JSON</th><td th:text="${snapshot.diffSummaryJson}">-</td></tr>
+			<tr><th scope="row">previous snapshot</th><td th:text="${snapshot.previousSnapshotId}">—</td></tr>
+			<tr><th scope="row">diff summary</th><td th:text="${snapshot.diffSummary}">—</td></tr>
+			<tr><th scope="row">diff summary JSON</th><td th:text="${snapshot.diffSummaryJson}">—</td></tr>
 			</tbody>
 		</table>
 		</div>
@@ -60,8 +60,8 @@
 			<tr><th scope="row">credential redacted</th><td th:text="${snapshot.credentialRedactedLabel()}">credential redacted</td></tr>
 			<tr><th scope="row">freshness expires</th><td th:text="${snapshot.freshnessExpiresAt}">2026-07-06T03:00</td></tr>
 			<tr><th scope="row">raw retention</th><td th:text="${snapshot.rawRetentionExpiresAt}">2026-09-29T03:00</td></tr>
-			<tr><th scope="row">governance policy version</th><td th:text="${snapshot.governancePolicyVersion}">-</td></tr>
-			<tr><th scope="row">governance policy sha256</th><td th:text="${snapshot.governancePolicySha256}">-</td></tr>
+			<tr><th scope="row">governance policy version</th><td th:text="${snapshot.governancePolicyVersion}">—</td></tr>
+			<tr><th scope="row">governance policy sha256</th><td th:text="${snapshot.governancePolicySha256}">—</td></tr>
 			</tbody>
 		</table>
 		</div>

@@ -212,15 +212,15 @@ class DatapackReleaseChannelAdminPageController {
 				row.approvedBy(),
 				row.reason(),
 				row.idempotencyKey(),
-				row.workflowRunUrl(),
+				valueOrDash(row.workflowRunUrl()),
 				row.createdAt()
 			);
 		}
 	}
 
 	private static String valueOrDash(String value) {
-		if (value == null || value.isBlank()) {
-			return "-";
+		if (value == null || value.isBlank() || "-".equals(value)) {
+			return "—";
 		}
 		return value;
 	}

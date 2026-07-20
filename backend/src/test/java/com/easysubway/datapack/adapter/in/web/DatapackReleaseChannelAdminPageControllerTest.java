@@ -122,6 +122,37 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			.andExpect(status().isForbidden());
 	}
 
+	@Test
+	@DisplayName("이벤트 워크플로 URL이 내부 sentinel '-'이면 화면에는 '—'으로 표시된다")
+	void eventWorkflowUrlDashSentinelDisplaysAsEmDash() throws Exception {
+		jdbcTemplate.update("""
+			INSERT INTO datapack_release_channel_events (
+				id, channel, previous_candidate_id, next_candidate_id,
+				previous_manifest_sha256, next_manifest_sha256, operation_type,
+				operation_status, requested_by, approved_by, reason,
+				idempotency_key, workflow_run_url, created_at
+			)
+			VALUES ('event-production-2', 'production', 'candidate-stable-3',
+				'candidate-stable-4', ?, ?, 'PROMOTE', 'PASS',
+				'data-operator', 'release-approver', 'approval-1163',
+				'idempotency-production-1163', '-', '2026-06-29 03:11:00')
+			""",
+			"1".repeat(64),
+			"0".repeat(64)
+		);
+
+		String html = mockMvc.perform(get("/admin/datapack/release-channels/page")
+				.with(user("datapack-viewer").authorities(new SimpleGrantedAuthority("admin.datapack.read"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("<td>—</td>")
+			.doesNotContain("<td>-</td>");
+	}
+
 	private void insertCandidate(String id, String version) {
 		jdbcTemplate.update("""
 			INSERT INTO datapack_candidates (

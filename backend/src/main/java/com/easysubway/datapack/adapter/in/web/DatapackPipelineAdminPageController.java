@@ -103,7 +103,7 @@ class DatapackPipelineAdminPageController {
 				summary.scopeId(),
 				summary.status(),
 				statusTone(summary.status()),
-				summary.candidateCreatedAt() == null ? "-" : summary.candidateCreatedAt().toString(),
+				summary.candidateCreatedAt() == null ? "—" : summary.candidateCreatedAt().toString(),
 				Sha.of(summary.sourceSnapshotSetHash()),
 				Sha.of(summary.manifestSha256()),
 				Sha.of(summary.evidenceBundleSha256()),
@@ -133,7 +133,7 @@ class DatapackPipelineAdminPageController {
 
 		private static String shortHash(String value) {
 			if (value == null || value.isBlank() || "-".equals(value)) {
-				return "-";
+				return "—";
 			}
 			return value.length() <= 8 ? value : value.substring(0, 8) + "…";
 		}
@@ -162,7 +162,7 @@ class DatapackPipelineAdminPageController {
 
 		static Sha of(String value) {
 			if (value == null || value.isBlank() || "-".equals(value)) {
-				return new Sha("-", "-");
+				return new Sha("—", "—");
 			}
 			String shortValue = value.length() <= 8 ? value : value.substring(0, 8) + "…";
 			return new Sha(shortValue, value);

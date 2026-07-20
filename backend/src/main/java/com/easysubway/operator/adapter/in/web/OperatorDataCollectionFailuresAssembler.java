@@ -66,7 +66,7 @@ class OperatorDataCollectionFailuresAssembler {
 			rows.size(),
 			failedRunCount,
 			retryableRunCount,
-			latestCompletedAt.map(OperatorDataCollectionFailuresAssembler::timeLabel).orElse("-"),
+			latestCompletedAt.map(OperatorDataCollectionFailuresAssembler::timeLabel).orElse("—"),
 			freshnessAlertLabel(latestCompletedAt),
 			freshnessAlertDescription(latestCompletedAt),
 			freshnessAlertClass(latestCompletedAt),
@@ -162,10 +162,10 @@ class OperatorDataCollectionFailuresAssembler {
 	}
 
 	private static String timeLabel(LocalDateTime value) {
-		return value == null ? "-" : value.toString();
+		return value == null ? "—" : value.toString();
 	}
 
 	private static String failureLabel(String value) {
-		return value == null || value.isBlank() ? "-" : value;
+		return value == null || value.isBlank() ? "—" : value;
 	}
 }
