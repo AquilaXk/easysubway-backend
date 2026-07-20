@@ -387,6 +387,13 @@
 	color: var(--admin-ink-3);
 }
 
+/* tone-bad는 전 기간 대비 증감 델타(em) 전용 색상 규약이다. 그 규약을 공유하지 않는 부가
+   메모(em)까지 물들이지 않도록 명시 클래스로 중립색을 되돌린다(#2349 PR⑩d, datapack
+   파이프라인 "총 차단 요인" 카드의 생성 시각 메모). */
+.admin-v3 .metric em.metric-note {
+	color: var(--admin-ink-2);
+}
+
 /* 패널 안의 지표 셀(#1983): .admin-panel 안 .metric-grid는 카드 개별 보더 대신
    .metric-cell 상단 1px 구분선으로만 나뉜다(auto-fit 그리드는 열 수가 가변적이라
    좌측 구분선 기반 "행의 첫 열" 판정이 불가능하므로 상단 구분선 방식을 쓴다). */

@@ -27,7 +27,9 @@
 			<div class="metric metric-cell">
 				<span>후보</span>
 				<strong><span th:title="${pipeline.candidateId}" th:insert="~{admin/fragments/missing-value :: value(${pipeline.candidateIdShort}, '미상')}">—</span></strong>
-				<em th:text="${'범위 ' + pipeline.scopeId}">범위</em>
+				<em>범위
+					<span th:insert="~{admin/fragments/missing-value :: value(${pipeline.scopeId != '-' ? pipeline.scopeId : null}, '미상')}">scope</span>
+				</em>
 			</div>
 			<div class="metric metric-cell">
 				<span>상태</span>
@@ -37,17 +39,19 @@
 			<div class="metric metric-cell" th:classappend="${pipeline.totalBlockers > 0} ? ' tone-bad'">
 				<span>총 차단 요인</span>
 				<strong class="cell-num" th:text="${pipeline.totalBlockers}">0</strong>
-				<em th:text="${'생성 ' + pipeline.candidateCreatedAt}">생성 시각</em>
+				<em class="metric-note" th:if="${pipeline.candidateCreatedAt != '—'}" th:text="${'생성 ' + pipeline.candidateCreatedAt}">생성 시각</em>
 			</div>
 			<div class="metric metric-cell">
 				<span>후보 입력 스냅샷</span>
-				<strong><span th:title="${pipeline.sourceSnapshotIds}" th:text="${pipeline.firstSourceSnapshotId}">-</span></strong>
-				<em th:text="${pipeline.sourceSnapshotIds}">snapshot ids</em>
+				<strong><span th:title="${pipeline.sourceSnapshotIds}" th:insert="~{admin/fragments/missing-value :: value(${pipeline.firstSourceSnapshotId != '-' ? pipeline.firstSourceSnapshotId : null}, '미상')}">-</span></strong>
+				<em><span th:insert="~{admin/fragments/missing-value :: value(${pipeline.sourceSnapshotIds != '-' ? pipeline.sourceSnapshotIds : null}, '미상')}">snapshot ids</span></em>
 			</div>
 			<div class="metric metric-cell">
 				<span>프로덕션 / 롤백</span>
-				<strong th:text="${pipeline.productionCandidateId}">-</strong>
-				<em th:text="${'롤백 ' + pipeline.rollbackCandidateId}">롤백</em>
+				<strong><span th:insert="~{admin/fragments/missing-value :: value(${pipeline.productionCandidateId != '-' ? pipeline.productionCandidateId : null}, '미상')}">-</span></strong>
+				<em>롤백
+					<span th:insert="~{admin/fragments/missing-value :: value(${pipeline.rollbackCandidateId != '-' ? pipeline.rollbackCandidateId : null}, '미상')}">rollback</span>
+				</em>
 			</div>
 		</div>
 	</section>
@@ -60,9 +64,7 @@
 			    th:classappend="${node.blocked} ? ' is-blocked'">
 				<a th:href="@{${node.drillUrl}}">
 					<span class="datapack-pipeline-label" th:text="${node.label}">단계</span>
-					<span class="datapack-pipeline-badge"
-					      th:classappend="${node.blocked} ? ' bad' : ' good'"
-					      th:text="${node.blocked ? '차단 요인 ' + node.blockerCount + '건' : '통과'}">통과</span>
+					<span th:replace="~{admin/fragments/shell :: status(${node.blocked ? '차단 요인 ' + node.blockerCount + '건' : '통과'}, ${node.blocked ? 'bad' : 'good'})}">통과</span>
 					<span class="meta" th:text="${node.drillLabel}">이동</span>
 				</a>
 			</li>
@@ -84,7 +86,7 @@
 			<tbody>
 			<tr th:each="node : ${pipeline.stages}" th:classappend="${node.blocked} ? ' is-blocked'">
 				<td th:text="${node.label}">단계</td>
-				<td th:text="${node.blocked ? node.blockerCount : 0}">0</td>
+				<td><span th:replace="~{admin/fragments/shell :: status(${node.blocked ? node.blockerCount + '건' : '0건'}, ${node.blocked ? 'bad' : 'good'})}">0건</span></td>
 				<td><a th:href="@{${node.drillUrl}}" th:text="${node.drillLabel}">이동</a></td>
 			</tr>
 			</tbody>

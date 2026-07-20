@@ -17,7 +17,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>경로 검색 분석</h1>
-			<p>경로 탐색 성공·차단률과 route quality 운영 신호를 분석합니다.</p>
+			<p>경로 탐색 성공·차단률과 경로 품질 운영 신호를 분석합니다.</p>
 		</div>
 	</header>
 
@@ -44,9 +44,9 @@
 				<em>전체 검색 중 차단 비율</em>
 			</div>
 			<div class="metric metric-cell">
-				<span>route_not_found_rate</span>
+				<span>경로 미탐색률 <code>route_not_found_rate</code></span>
 				<strong class="cell-num" th:text="${summary.routeNotFoundRateLabel}">0.0%</strong>
-				<em>route graph·strict 접근성 차단 비율</em>
+				<em>경로 그래프·엄격 접근성 조건에 따른 차단 비율</em>
 			</div>
 		</div>
 	</section>
@@ -139,6 +139,9 @@
 				<td th:text="${row.label}">고령자</td>
 				<td th:text="${row.count}">0</td>
 			</tr>
+			<tr th:if="${#lists.isEmpty(summary.mobilityTypeRows)}">
+				<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('이동 프로필별 검색 집계가 없습니다.', '경로 검색이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
 			</tbody>
 		</table>
 		</div>
@@ -162,6 +165,9 @@
 				<td th:text="${row.originCount}">0</td>
 				<td th:text="${row.destinationCount}">0</td>
 			</tr>
+			<tr th:if="${#lists.isEmpty(summary.regionUsageRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('지역별 사용량 집계가 없습니다.', '경로 검색이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
 			</tbody>
 		</table>
 		</div>
@@ -183,19 +189,22 @@
 				<td th:text="${row.reason}">계단 없는 역 접근 경로를 확인할 수 없습니다.</td>
 				<td th:text="${row.count}">0</td>
 			</tr>
+			<tr th:if="${#lists.isEmpty(summary.blockedReasonRows)}">
+				<td colspan="2"><div th:replace="~{admin/fragments/empty-state :: panel('차단 사유별 집계가 없습니다.', '경로 검색이 차단되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
 			</tbody>
 		</table>
 		</div>
 	</section>
 
 	<section class="admin-panel">
-		<h2>ETA source 현황</h2>
+		<h2>도착 예정 출처 현황</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">ETA source</th>
+				<th scope="col">도착 예정 출처</th>
 				<th scope="col">설명</th>
 				<th scope="col">건수</th>
 			</tr>
@@ -206,19 +215,22 @@
 				<td th:text="${row.label}">시간표 기준</td>
 				<td th:text="${row.count}">0</td>
 			</tr>
+			<tr th:if="${#lists.isEmpty(summary.etaSourceRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('도착 예정 출처 집계가 없습니다.', '경로 검색이 접수되면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
 			</tbody>
 		</table>
 		</div>
 	</section>
 
 	<section class="admin-panel">
-		<h2>fallback 사유별 현황</h2>
+		<h2>대체 경로 사유별 현황</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">fallback 사유</th>
+				<th scope="col">대체 경로 사유</th>
 				<th scope="col">설명</th>
 				<th scope="col">건수</th>
 			</tr>
@@ -228,6 +240,9 @@
 				<td th:text="${row.reason}">PROVIDER_OUTAGE_OR_STALE_REALTIME</td>
 				<td th:text="${row.label}">provider 장애 또는 stale realtime</td>
 				<td th:text="${row.count}">0</td>
+			</tr>
+			<tr th:if="${#lists.isEmpty(summary.fallbackReasonRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('대체 경로 사유별 집계가 없습니다.', '경로 검색에 대체 경로가 적용되면 자동으로 집계됩니다.')}"></div></td>
 			</tr>
 			</tbody>
 		</table>
@@ -252,6 +267,9 @@
 				<td th:text="${row.label}">route graph/data quality</td>
 				<td th:text="${row.count}">0</td>
 			</tr>
+			<tr th:if="${#lists.isEmpty(summary.routeQualitySignalRows)}">
+				<td colspan="3"><div th:replace="~{admin/fragments/empty-state :: panel('품질 신호 집계가 없습니다.', '경로 품질 신호가 발생하면 자동으로 집계됩니다.')}"></div></td>
+			</tr>
 			</tbody>
 		</table>
 		</div>
@@ -264,16 +282,16 @@
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">metric</th>
-				<th scope="col">threshold</th>
+				<th scope="col">지표</th>
+				<th scope="col">기준</th>
 				<th scope="col">대응</th>
 			</tr>
 			</thead>
 			<tbody>
 			<tr th:each="row : ${summary.alertThresholdRows}">
-				<td th:text="${row.metric}">route_not_found_rate</td>
+				<td><span th:text="${row.metricLabel}">경로 미탐색률</span> <code th:text="${row.metric}">route_not_found_rate</code></td>
 				<td th:text="${row.threshold}">&gt;= 2.0%</td>
-				<td th:text="${row.action}">route graph/strict accessibility source review</td>
+				<td th:text="${row.action}">경로 그래프·엄격 접근성 데이터 소스 검수</td>
 			</tr>
 			</tbody>
 		</table>

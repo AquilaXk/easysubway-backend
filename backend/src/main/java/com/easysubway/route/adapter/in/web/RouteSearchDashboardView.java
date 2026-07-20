@@ -80,7 +80,7 @@ public record RouteSearchDashboardView(
 	public record RouteQualitySignalRow(String signal, String label, long count) {
 	}
 
-	public record AlertThresholdRow(String metric, String threshold, String action) {
+	public record AlertThresholdRow(String metric, String metricLabel, String threshold, String action) {
 	}
 
 	private static String percentageLabel(long numerator, long denominator) {
@@ -108,7 +108,7 @@ public record RouteSearchDashboardView(
 			return "차단된 경로 검색 없이 처리되고 있습니다.";
 		}
 		if (blockedCount * 100 >= totalCount * 20) {
-			return "경로 차단율이 높아 이동 정보와 접근성 경로 조건을 확인하세요.";
+			return "경로 차단률이 높아 이동 정보와 접근성 경로 조건을 확인하세요.";
 		}
 		return "일부 경로가 차단되어 차단 사유를 확인하세요.";
 	}
@@ -168,18 +168,21 @@ public record RouteSearchDashboardView(
 		return List.of(
 			new AlertThresholdRow(
 				"route_not_found_rate",
+				"경로 미탐색률",
 				">= 2.0%",
-				"route graph/strict accessibility source review"
+				"경로 그래프·엄격 접근성 데이터 소스 검수"
 			),
 			new AlertThresholdRow(
 				"PROVIDER_OUTAGE_OR_STALE_REALTIME",
+				fallbackReasonLabel("PROVIDER_OUTAGE_OR_STALE_REALTIME"),
 				"> 0",
-				"realtime provider health 확인"
+				"실시간 제공자 상태 확인"
 			),
 			new AlertThresholdRow(
 				"LOW_DATA_CONFIDENCE",
+				fallbackReasonLabel("LOW_DATA_CONFIDENCE"),
 				"> 0",
-				"data quality source 검수"
+				"데이터 품질 소스 검수"
 			)
 		);
 	}

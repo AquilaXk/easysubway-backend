@@ -74,15 +74,15 @@ class RouteSearchAdminPageControllerTest {
 			.contains("출발 검색")
 			.contains("도착 검색")
 			.contains("수도권")
-			.contains("ETA source 현황")
+			.contains("도착 예정 출처 현황")
 			.contains("FALLBACK")
 			.contains("provider 지연/장애 fallback")
-			.contains("fallback 사유별 현황")
+			.contains("대체 경로 사유별 현황")
 			.contains("LOW_DATA_CONFIDENCE")
 			.contains("품질 신호 구분")
 			.contains("PROVIDER_OUTAGE")
 			.contains("알림 기준")
-			.contains("route graph/strict accessibility source review")
+			.contains("경로 그래프·엄격 접근성 데이터 소스 검수")
 			.doesNotContain("routeSearchId")
 			.doesNotContain("station-sangnoksu");
 	}

@@ -137,7 +137,7 @@
 	</section>
 
 	<section class="admin-panel">
-		<h2>ETA 보정 bucket</h2>
+		<h2>도착 예정 보정 구간</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
@@ -146,7 +146,7 @@
 				<th scope="col">이동 프로필</th>
 				<th scope="col">제약</th>
 				<th scope="col">ETA 출처</th>
-				<th scope="col">Offset bucket</th>
+				<th scope="col">보정 구간</th>
 				<th scope="col">검토 작업</th>
 				<th scope="col">건수</th>
 			</tr>
@@ -161,7 +161,7 @@
 				<td th:text="${row.count}">0</td>
 			</tr>
 			<tr th:if="${#lists.isEmpty(summary.etaCalibrationBuckets)}">
-				<td colspan="6"><div th:replace="~{admin/fragments/empty-state :: panel('opt-in ETA 보정 피드백이 없습니다.', 'opt-in 피드백이 접수되면 자동으로 집계됩니다.')}"></div></td>
+				<td colspan="6"><div th:replace="~{admin/fragments/empty-state :: panel('수집 동의(opt-in) ETA 보정 피드백이 없습니다.', '수집 동의(opt-in) 피드백이 접수되면 자동으로 집계됩니다.')}"></div></td>
 			</tr>
 			</tbody>
 		</table>
