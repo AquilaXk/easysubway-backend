@@ -874,6 +874,16 @@ jobs:
               --repo-root . \
               --output release-artifacts/rc/mobile-consumption-evidence.json
           fi
+          # #1018 마지막 DoD의 #2056 fragment. Play Data Safety 폼(answerMatrix), 공개 개인정보
+          # 처리방침, runtime 수집 inventory 세 tracked 원본의 machine-auditable 일치 판정을 같은
+          # candidate-context RC identity에 결속해 emit한다. planner/mobile step과 동일하게 입력
+          # artifact 존재를 먼저 확인하고, 불일치는 producer가 fail-closed로 BLOCKED 처리한다.
+          if [[ -f release-artifacts/rc/candidate-context.json ]]; then
+            node tools/release/build-privacy-consistency-evidence.mjs \
+              --candidate-context release-artifacts/rc/candidate-context.json \
+              --repo-root . \
+              --output release-artifacts/rc/store-privacy-consistency-evidence.json
+          fi
           if [[ "${android_artifact_source}" == easysubway-android-production-rc-* ]]; then
             node tools/ops/generate-operations-phase-a-summary.mjs \
               --rc-manifest release-artifacts/rc/candidate-context.json \
