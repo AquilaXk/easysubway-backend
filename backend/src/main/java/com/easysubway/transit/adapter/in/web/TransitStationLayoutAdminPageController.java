@@ -447,7 +447,7 @@ class TransitStationLayoutAdminPageController {
 		static RouteNodeRow from(RouteNode node) {
 			return new RouteNodeRow(
 				node.id(),
-				node.type().name(),
+				node.type().label(),
 				node.name(),
 				node.floor(),
 				node.layoutId(),
@@ -489,7 +489,7 @@ class TransitStationLayoutAdminPageController {
 				edge.id(),
 				edge.fromNodeId(),
 				edge.toNodeId(),
-				edge.type().name(),
+				edge.type().label(),
 				edge.distanceMeters(),
 				edge.distanceMeters() + "m",
 				edge.estimatedSeconds(),

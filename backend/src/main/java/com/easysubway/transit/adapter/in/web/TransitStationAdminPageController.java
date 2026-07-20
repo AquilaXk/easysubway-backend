@@ -689,7 +689,7 @@ class TransitStationAdminPageController {
 	record RouteNodeRow(String nodeName, String nodeType, String floor) {
 
 		static RouteNodeRow from(RouteNode node) {
-			return new RouteNodeRow(node.name(), node.type().name(), node.floor());
+			return new RouteNodeRow(node.name(), node.type().label(), node.floor());
 		}
 	}
 
@@ -698,7 +698,7 @@ class TransitStationAdminPageController {
 		static RouteEdgeRow from(RouteEdge edge) {
 			return new RouteEdgeRow(
 				edge.fromNodeId() + " → " + edge.toNodeId(),
-				edge.type().name(),
+				edge.type().label(),
 				edge.reliabilityScore()
 			);
 		}

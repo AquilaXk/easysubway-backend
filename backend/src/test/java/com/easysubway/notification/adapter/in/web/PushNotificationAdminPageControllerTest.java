@@ -96,7 +96,12 @@ class PushNotificationAdminPageControllerTest {
 			.contains("전 기간 대비 증감")
 			.contains("push-trend-canvas")
 			.contains("발송 시도·실패")
-			.contains("/js/admin/dashboard-charts.js");
+			.contains("/js/admin/dashboard-charts.js")
+			// admin/fragments/trend-chart-table :: table(trendChart) no-JS 대체 표 렌더 계약(#2349).
+			.contains("class=\"static-table\"")
+			.contains("<th scope=\"col\">날짜</th>")
+			.contains("<th scope=\"col\">푸시 시도</th>")
+			.contains("<th scope=\"col\">푸시 실패</th>");
 	}
 
 	@Test

@@ -45,6 +45,23 @@ class AdminV3PageSmokeTest {
 	}
 
 	@Test
+	@DisplayName("역 상세 구조·동선 탭은 내부 이동 노드/간선 유형을 한글 라벨로 표시한다")
+	void stationDetailStructureTabRendersRouteNodeAndEdgeTypeLabels() throws Exception {
+		String html = mockMvc.perform(get("/admin/stations/station-sangnoksu/page?tab=structure")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn().getResponse().getContentAsString();
+
+		// TransitStationAdminPageController.RouteNodeRow/RouteEdgeRow가 node.type().label()을 쓰는
+		// 표시 계약을 고정한다(#2349). enum.name() 원문(ELEVATOR/WALK)이 노출되면 회귀다.
+		assertThat(html)
+			.contains("<td>엘리베이터</td>")
+			.contains("<td>도보</td>")
+			.doesNotContain("<td>ELEVATOR</td>")
+			.doesNotContain("<td>WALK</td>");
+	}
+
+	@Test
 	@DisplayName("시설 상태판은 유형·상태·역 필터 툴바와 제보·허브 크로스링크를 렌더한다")
 	void facilityStatusBoardRendersV4ToolbarAndCrossLinks() throws Exception {
 		String html = mockMvc.perform(get("/admin/facilities/page")
