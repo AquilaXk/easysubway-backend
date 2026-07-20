@@ -233,6 +233,15 @@
 	background: var(--admin-header-bg);
 }
 
+/* 역 목록 표 역명 열 어절 유지(#2349 PR⑩j): keep-all + overflow-wrap: anywhere만으로는 390 첫 화면에서
+   sticky 첫 열(역명) 폭이 좁아지면 "남춘천"·"상록수" 같은 공백 없는 역명이 anywhere가 글자 단위로
+   끊는다("남춘/천", "상록/수"). sticky 계약(.admin-table-scroll td:first-child)은 그대로 유지한 채 폭만
+   역명에 맞춰 늘어나도 되므로 nowrap을 더한다. 다른 admin 목록 표는 이번 스코프 밖이라 역 목록
+   결과 영역(#station-results)으로 좁힌다. */
+#station-results .admin-table-scroll td:first-child:not([colspan]) {
+	white-space: nowrap;
+}
+
 .admin-v3 tbody tr {
 	height: 44px;
 }
