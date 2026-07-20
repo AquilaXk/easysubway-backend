@@ -13,6 +13,7 @@ import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
 import com.easysubway.route.adapter.in.web.RouteV2IngressSecurity;
 import com.easysubway.route.adapter.in.web.RouteV2Metrics;
 import com.easysubway.route.application.port.out.RouteV2AccessStore;
+import jakarta.servlet.DispatcherType;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.LocalDate;
@@ -356,6 +357,15 @@ public class SecurityConfig {
 		return http
 			.csrf(AbstractHttpConfigurer::disable)
 			.authorizeHttpRequests(authorize -> authorize
+				// 컨테이너의 ERROR dispatch만 허용한다(경로 /error를 REQUEST로 여는 것이 아니다).
+				// permitAll인 정적/공개 경로가 리소스 부재로 404를 내면(예: 파비콘 자산 미제공
+				// /favicon.ico) 컨테이너가 /error로 ERROR dispatch를 forward하는데, Spring Security 6는
+				// 이 dispatch도 필터링하므로 원래 404가 이 체인의 anyRequest().denyAll()에 걸려 403으로
+				// 뒤바뀌었다(#2349). DispatcherType.ERROR를 허용해 원래 상태코드(404 등)가 그대로 렌더되게
+				// 한다. 직접 외부 GET /error(REQUEST dispatch)는 이 matcher에 걸리지 않아 여전히
+				// denyAll(403)에 남으므로 /error가 공개 조회 표면이 되지 않는다. 보호 경로도 여전히 각
+				// 요청이 AuthorizationFilter의 denyAll에서 먼저 차단돼 handler·/error에 닿지 못한다.
+				.dispatcherTypeMatchers(DispatcherType.ERROR).permitAll()
 				.requestMatchers(
 					HttpMethod.POST,
 					"/api/ads/events"

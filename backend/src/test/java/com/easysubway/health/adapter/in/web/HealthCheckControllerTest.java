@@ -17,6 +17,10 @@ import org.springframework.boot.test.autoconfigure.actuate.observability.AutoCon
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.web.client.TestRestTemplate;
+import org.springframework.boot.test.web.server.LocalServerPort;
+import org.springframework.http.HttpStatus;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest(
@@ -36,6 +40,12 @@ class HealthCheckControllerTest {
 
 	@Autowired
 	private StatusAggregator statusAggregator;
+
+	@Autowired
+	private TestRestTemplate restTemplate;
+
+	@LocalServerPort
+	private int port;
 
 	@Test
 	@DisplayName("공통 응답 형식으로 API 헬스체크를 반환한다")
@@ -149,5 +159,28 @@ class HealthCheckControllerTest {
 	void unknownBackendPathIsDeniedByDefault() throws Exception {
 		mockMvc.perform(get("/api/v1/internal-unlisted-resource"))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("파비콘 자산이 없어도 /favicon.ico는 금지(403)가 아니라 실제 컨테이너에서 404로 응답한다(#2349)")
+	void faviconRequestIsNotForbiddenWhenAssetIsAbsent() {
+		// #2349 회귀의 진짜 가드: 컨테이너 ERROR dispatch는 MockMvc로 재현되지 않으므로 실제 포트에
+		// 요청한다. 파비콘 정적 자산이 없어 404가 나면 컨테이너가 /error로 ERROR dispatch를 forward하고,
+		// dispatcherTypeMatchers(ERROR).permitAll() 덕분에 원래 404가 403으로 뒤바뀌지 않고 그대로 렌더된다.
+		ResponseEntity<String> response = restTemplate.getForEntity(
+			"http://localhost:" + port + "/favicon.ico", String.class);
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.NOT_FOUND);
+		assertThat(response.getStatusCode().value()).isNotEqualTo(403);
+	}
+
+	@Test
+	@DisplayName("직접 외부 요청 /error는 공개 조회 표면이 아니라 기본 차단(403)으로 남는다(#2349)")
+	void directErrorRequestStaysForbidden() {
+		// dispatcherTypeMatchers(ERROR)는 컨테이너 ERROR dispatch만 허용하므로, 직접 외부
+		// GET /error(REQUEST dispatch)는 여전히 공개 체인 anyRequest().denyAll()에 걸려 403이다.
+		// /error가 실수로 공개 조회 표면이 되지 않음을 실제 컨테이너 요청으로 고정한다.
+		ResponseEntity<String> response = restTemplate.getForEntity(
+			"http://localhost:" + port + "/error", String.class);
+		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
 	}
 }
