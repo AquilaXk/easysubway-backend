@@ -76,6 +76,47 @@
 	font-size: 12px;
 }
 
+/* 확인 필요 통합 카드(#2349): 트리아지 최우선 영역. 상태 톤 구분 없이 플랫 행+1px 구분선만 쓴다
+   (긴급 신호와 달리 심각도가 아니라 "해야 할 일" 목록이라 tone 마커를 붙이지 않는다). */
+.dashboard-triage-list {
+	list-style: none;
+	margin: 0;
+	padding: 0;
+}
+
+.dashboard-triage-list li + li {
+	border-top: 1px solid var(--admin-border);
+}
+
+.dashboard-triage-list a {
+	display: flex;
+	align-items: center;
+	justify-content: space-between;
+	gap: 12px;
+	padding: 10px 2px;
+	text-decoration: none;
+	color: var(--admin-ink);
+}
+
+.dashboard-triage-list a:hover .dashboard-triage-label {
+	color: var(--admin-accent);
+}
+
+.dashboard-triage-count {
+	font-variant-numeric: tabular-nums;
+}
+
+/* 전부 0건일 때 카드 대신 보여주는 한 줄 상태 텍스트(#2349). 인접 섹션과 리듬을 맞춘다. */
+.dashboard-triage-empty {
+	margin: 0 0 24px;
+}
+
+/* 데이터팩 출시 준비 | 운영 이상 신호 2열(#2349): 데이터팩 권한이 없는 계정은 운영 이상 신호만
+   단독 폭으로 렌더한다. */
+.dashboard-readiness-grid.is-single {
+	grid-template-columns: 1fr;
+}
+
 /* 핵심 지표 그리드(#1983): .admin-panel 하나 안에서 3열 반응형(최대 3열)으로 배치하고,
    카드 자체는 보더·그림자 없이 .metric-cell 좌측 1px 구분선으로만 나뉜다(패널 보더 중복 방지).
    좁은 화면에서는 하단 미디어쿼리로 2열 → 1열로 줄어든다(각 행 첫 열은 구분선 제외). */

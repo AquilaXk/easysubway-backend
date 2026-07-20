@@ -176,7 +176,7 @@ class AdminAlertServiceTest {
 		return new DatapackReleaseBlockerSummary(
 			"candidate", "scope", "sourceHash", "manifestHash", "evidenceHash", "workflowUrl",
 			"prodCandidate", "rollbackCandidate", "검토 필요",
-			totalBlockers, 0, 0, 0, 0, 0, 0, 0, 0,
+			totalBlockers, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0,
 			List.of(), LocalDateTime.now());
 	}
 }

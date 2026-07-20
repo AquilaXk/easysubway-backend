@@ -27,6 +27,8 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 		long manualOverrideBlockers,
 		long facilityBlockers,
 		long routeGateBlockers,
+		long callbackReconciliationBlockers,
+		long evidenceBundleBlockers,
 		long manifestBlockers,
 		List<ReleaseReadinessRow> readinessRows,
 		LocalDateTime candidateCreatedAt
@@ -43,6 +45,8 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 				"-",
 				"-",
 				"확인 필요",
+				0,
+				0,
 				0,
 				0,
 				0,

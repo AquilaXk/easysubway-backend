@@ -96,6 +96,8 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 			manualOverrideBlockers,
 			facilityBlockers,
 			routeGateBlockers,
+			callbackReconciliationBlockers,
+			evidenceBundle.otherBlockerCount(),
 			manifestSignature.blockerCount(),
 			readinessRows(
 				candidate,
@@ -454,6 +456,12 @@ public class JdbcDatapackReleaseBlockerSummaryRepository implements DatapackRele
 
 		long androidBlocker() {
 			return statusBlocker(androidEvidenceStatus);
+		}
+
+		// blockerCount() 중 매니페스트 서명(manifestSignature)을 제외한 나머지 증거 번들 차단 요인.
+		// 대시보드 상세 표의 "매니페스트 서명" 행과 중복 집계하지 않기 위해 분리한다(#2352 리뷰).
+		long otherBlockerCount() {
+			return validatorBlocker() + routeRegressionBlocker() + androidBlocker();
 		}
 
 		ManifestSignatureSummary manifestSignature() {
