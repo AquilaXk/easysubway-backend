@@ -2,9 +2,12 @@ package com.easysubway.health.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import io.micrometer.core.instrument.Gauge;
+import io.micrometer.core.instrument.binder.MeterBinder;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
@@ -17,6 +20,9 @@ import org.springframework.boot.test.autoconfigure.actuate.observability.AutoCon
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.SpringBootTest.WebEnvironment;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Import;
 import org.springframework.boot.test.web.client.TestRestTemplate;
 import org.springframework.boot.test.web.server.LocalServerPort;
 import org.springframework.http.HttpStatus;
@@ -29,6 +35,7 @@ import org.springframework.test.web.servlet.MockMvc;
 )
 @AutoConfigureObservability
 @AutoConfigureMockMvc
+@Import(HealthCheckControllerTest.TimetableSnapshotGaugeStubConfig.class)
 @DisplayName("헬스체크 API")
 class HealthCheckControllerTest {
 
@@ -95,14 +102,31 @@ class HealthCheckControllerTest {
 	}
 
 	@Test
-	@DisplayName("Prometheus 액추에이터 지표는 등록하되 공개 접근은 차단한다")
+	@DisplayName("Prometheus 액추에이터 지표는 등록하되 사설망 밖 출처의 접근은 차단한다")
 	void actuatorPrometheusIsNotPublic() throws Exception {
 		assertThat(webEndpointsSupplier.getEndpoints())
 			.extracting(endpoint -> endpoint.getEndpointId().toString())
 			.contains("prometheus");
 
+		// MockMvc 기본 remoteAddr(127.0.0.1 loopback)은 허용 RFC1918 대역이 아니므로 공개/미상 출처와
+		// 동일하게 거부된다 — /actuator/prometheus는 사설망 내부 scrape에만 열린다.
 		mockMvc.perform(get("/actuator/prometheus"))
 			.andExpect(status().isForbidden());
+	}
+
+	@Test
+	@DisplayName("사설망(RFC1918) 출처의 Prometheus scrape는 앱 지표와 함께 200을 반환한다")
+	void actuatorPrometheusIsScrapableFromInternalNetwork() throws Exception {
+		// docker network 내부 Prometheus(backend_app_metrics job, #2376)가 접근하는 사설망 출처를 모사한다.
+		mockMvc.perform(get("/actuator/prometheus")
+				.with(request -> {
+					request.setRemoteAddr("172.18.0.5");
+					return request;
+				}))
+			.andExpect(status().isOk())
+			// alerts.yml의 freshness 경보가 참조하는 라이브 게이지가 실제로 scrape 본문에 렌더링된다.
+			.andExpect(content().string(
+				org.hamcrest.Matchers.containsString("easysubway_timetable_snapshot_remaining_seconds")));
 	}
 
 	@Test
@@ -182,5 +206,19 @@ class HealthCheckControllerTest {
 		ResponseEntity<String> response = restTemplate.getForEntity(
 			"http://localhost:" + port + "/error", String.class);
 		assertThat(response.getStatusCode()).isEqualTo(HttpStatus.FORBIDDEN);
+	}
+
+	// TimetableFreshnessMonitor는 prod|staging|release|prod-like 프로파일에서만 활성화되므로 기본 테스트
+	// 프로파일에서는 remaining-seconds 게이지가 등록되지 않는다. 이 스텁이 동일 이름의 게이지를 미터 레지스트리에
+	// 등록해 /actuator/prometheus 응답이 앱 게이지를 사설망 scrape에 실제로 노출하는지 검증할 수 있게 한다.
+	// 실제 모니터가 이 이름을 렌더링하는지는 TimetableFreshnessMonitorTest에서 별도로 고정한다.
+	@TestConfiguration(proxyBeanMethods = false)
+	static class TimetableSnapshotGaugeStubConfig {
+		@Bean
+		MeterBinder timetableSnapshotRemainingSecondsGaugeStub() {
+			return registry -> Gauge.builder(
+					"easysubway.timetable.snapshot.remaining.seconds", () -> 86400.0)
+				.register(registry);
+		}
 	}
 }

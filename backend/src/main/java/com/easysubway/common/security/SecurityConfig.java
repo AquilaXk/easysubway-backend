@@ -21,6 +21,7 @@ import java.time.LocalDateTime;
 import java.time.ZoneOffset;
 import java.util.Arrays;
 import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
@@ -34,6 +35,8 @@ import org.springframework.core.env.Environment;
 import org.springframework.http.HttpMethod;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.authentication.AuthenticationProvider;
+import org.springframework.security.authorization.AuthorizationDecision;
+import org.springframework.security.authorization.AuthorizationManager;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configuration.EnableWebSecurity;
@@ -45,9 +48,11 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
 import org.springframework.security.web.util.matcher.AntPathRequestMatcher;
+import org.springframework.security.web.util.matcher.IpAddressMatcher;
 
 @Configuration
 @EnableWebSecurity
@@ -68,6 +73,25 @@ public class SecurityConfig {
 			+ "base-uri 'self'; "
 			+ "form-action 'self'; "
 			+ "frame-ancestors 'none'";
+
+	// /actuator/prometheus는 공개하지 않는다. docker compose 내부 DNS로 접근하는 Prometheus scrape(#2376의
+	// backend_app_metrics job)만 통과시키기 위해 사설망(RFC1918) 출처 remoteAddr에 한해 허용하고, 그 밖의
+	// 출처(공개·미상)는 계속 거부한다. nginx 공개 경로에서 /actuator/* 를 이미 차단하므로 외부 트래픽은 이
+	// 체인에 닿기 전에 걸러지고, 이 IP 게이트는 내부 네트워크 우회 접근까지 막는 심층 방어로 둔다.
+	private static final List<IpAddressMatcher> INTERNAL_NETWORK_MATCHERS = List.of(
+		new IpAddressMatcher("10.0.0.0/8"),
+		new IpAddressMatcher("172.16.0.0/12"),
+		new IpAddressMatcher("192.168.0.0/16")
+	);
+
+	private static AuthorizationManager<RequestAuthorizationContext> internalNetworkOnly() {
+		return (authentication, context) -> {
+			String remoteAddr = context.getRequest().getRemoteAddr();
+			boolean internal = remoteAddr != null
+				&& INTERNAL_NETWORK_MATCHERS.stream().anyMatch(matcher -> matcher.matches(remoteAddr));
+			return new AuthorizationDecision(internal);
+		};
+	}
 
 	@Bean
 	AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler() {
@@ -402,6 +426,8 @@ public class SecurityConfig {
 					"/icons/**",
 					"/webjars/**"
 				).permitAll()
+				.requestMatchers(HttpMethod.GET, "/actuator/prometheus")
+				.access(internalNetworkOnly())
 				.anyRequest().denyAll()
 			)
 			.build();

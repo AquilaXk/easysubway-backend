@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import io.micrometer.prometheusmetrics.PrometheusConfig;
+import io.micrometer.prometheusmetrics.PrometheusMeterRegistry;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneId;
@@ -29,6 +31,7 @@ class TimetableFreshnessMonitorTest {
 	private static final String FRESH_UNTIL = "2026-07-20T00:00:00+09:00";
 	private static final String GAUGE = "easysubway.timetable.snapshot.fresh";
 	private static final String BREAK_GLASS_GAUGE = "easysubway.timetable.snapshot.break-glass";
+	private static final String REMAINING_SECONDS_GAUGE = "easysubway.timetable.snapshot.remaining.seconds";
 
 	private JdbcTemplate jdbc;
 	private CapturingAppender logAppender;
@@ -310,6 +313,58 @@ class TimetableFreshnessMonitorTest {
 		monitor.evaluate();
 
 		assertThat(monitor.health().getDetails()).containsEntry("breakGlassReason", "(unspecified)");
+	}
+
+	@Test
+	void remainingSecondsGaugeIsPositiveWhileSnapshotIsFresh() {
+		insertActiveSnapshot(FRESH_UNTIL);
+		MeterRegistry meterRegistry = new SimpleMeterRegistry();
+		// FRESH_UNTIL(2026-07-20T00:00:00+09:00)까지 정확히 하루 전 시각으로 고정.
+		Instant oneDayBefore = Instant.parse("2026-07-18T15:00:00Z");
+		TimetableFreshnessMonitor monitor = monitor(oneDayBefore, meterRegistry);
+
+		monitor.evaluate();
+
+		assertThat(meterRegistry.get(REMAINING_SECONDS_GAUGE).gauge().value()).isEqualTo(86400.0);
+	}
+
+	@Test
+	void remainingSecondsGaugeGoesNegativeAfterExpiry() {
+		insertActiveSnapshot(FRESH_UNTIL);
+		MeterRegistry meterRegistry = new SimpleMeterRegistry();
+		TimetableFreshnessMonitor monitor = monitor(AFTER, meterRegistry);
+
+		monitor.evaluate();
+
+		// 만료 후에는 음수를 노출해 alerts.yml의 `<= 21600` critical 규칙이 발화하도록 한다.
+		assertThat(meterRegistry.get(REMAINING_SECONDS_GAUGE).gauge().value()).isNegative();
+	}
+
+	@Test
+	void remainingSecondsGaugeIsNaNWhenNoActiveSnapshot() {
+		PrometheusMeterRegistry meterRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+		TimetableFreshnessMonitor monitor = monitor(BEFORE, meterRegistry);
+
+		monitor.evaluate();
+
+		// fresh_until을 알 수 없으면 잘못된 만료 경보를 막기 위해 NaN을 내보낸다.
+		assertThat(meterRegistry.get(REMAINING_SECONDS_GAUGE).gauge().value()).isNaN();
+		// scrape 렌더링 계약 고정: NaN 게이지도 <메터명> NaN 라인으로 노출된다(실측 고정). Prometheus는 NaN
+		// 표본을 비교에서 걸러내므로(alerts.test.yml의 NaN 케이스 참조) 이 라인이 있어도 만료 경보는 발화하지 않는다.
+		assertThat(meterRegistry.scrape())
+			.contains("easysubway_timetable_snapshot_remaining_seconds NaN");
+	}
+
+	@Test
+	void remainingSecondsGaugeRendersExpectedPrometheusName() {
+		insertActiveSnapshot(FRESH_UNTIL);
+		PrometheusMeterRegistry meterRegistry = new PrometheusMeterRegistry(PrometheusConfig.DEFAULT);
+		TimetableFreshnessMonitor monitor = monitor(BEFORE, meterRegistry);
+
+		monitor.evaluate();
+
+		// alerts.yml이 참조하는 시계열 이름과 정확히 일치해야 한다(단위 suffix 미부착 확인).
+		assertThat(meterRegistry.scrape()).contains("easysubway_timetable_snapshot_remaining_seconds");
 	}
 
 	private TimetableFreshnessMonitor monitor(Instant now, MeterRegistry meterRegistry) {

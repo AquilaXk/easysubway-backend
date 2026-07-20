@@ -98,6 +98,21 @@ class TimetableFreshnessMonitor implements HealthIndicator {
 				"Timetable freshness break-glass override: 1 when enabled (expired snapshots served without "
 					+ "freshness gating; integrity still enforced), 0 otherwise")
 			.register(meterRegistry);
+		// alerts.yml의 T-24h/T-6h 경보가 참조하는 라이브 시계열. Prometheus 렌더링 시
+		// easysubway_timetable_snapshot_remaining_seconds로 노출된다(baseUnit 미지정 → 메터명을 그대로 변환,
+		// 단위 suffix 미부착). 값 = fresh_until epoch초 − 현재 epoch초(주입 Clock, scrape 시점 실시간 계산)로
+		// 만료 후에는 음수가 되어 `<= 21600` critical 규칙이 발화한다. fresh_until을 알 수 없는 상태
+		// (활성 스냅샷 없음·파싱 불가·평가 오류)에서는 NaN을 내보내 잘못된 만료 경보를 막는다.
+		Gauge.builder("easysubway.timetable.snapshot.remaining.seconds", state, current -> {
+				OffsetDateTime freshUntil = current.get().freshUntil();
+				return freshUntil == null
+					? Double.NaN
+					: (double) (freshUntil.toEpochSecond() - clock.instant().getEpochSecond());
+			})
+			.description(
+				"Seconds until the active timetable snapshot fresh_until deadline (negative once expired); "
+					+ "NaN when there is no active snapshot, an unparsable deadline, or a failed evaluation")
+			.register(meterRegistry);
 	}
 
 	// 스케줄 첫 실행(fixedDelay) 전 창에서 fresh 스냅샷도 UNKNOWN/0으로 오표시되지 않도록 기동 직후 1회 즉시 평가한다.
