@@ -36,17 +36,17 @@
 				<dd th:text="${event.occurredAt}">2026-06-27T00:00</dd>
 				<dt th:if="${!privacyMode}">유형</dt>
 				<dd th:if="${!privacyMode}" th:text="${event.eventTypeLabel}">관리자 작업</dd>
-				<dt>actor</dt>
+				<dt>수행자</dt>
 				<dd th:text="${event.actor}">admin</dd>
 				<dt>권한</dt>
 				<dd th:text="${event.rolePermission}">admin.view</dd>
-				<dt>action</dt>
+				<dt>동작</dt>
 				<dd th:text="${event.action}">action</dd>
 				<dt>결과</dt>
 				<dd>
 					<span th:replace="~{admin/fragments/shell :: status(${event.outcomeLabel}, ${event.outcomeTone == 'failure'} ? 'bad' : 'good')}">성공</span>
 				</dd>
-				<dt>target</dt>
+				<dt>대상</dt>
 				<dd>
 					<span th:text="${event.targetType}">target</span>
 					<span class="meta" th:text="${event.targetId}">id</span>

@@ -462,6 +462,12 @@ class TransitStationAdminPageController {
 		return level.label();
 	}
 
+	// 데이터 품질 tone(#2349 PR⑩c 리뷰 반영): 템플릿이 라벨 문자열("고장·공사 반영")을 직접 비교하지 않도록
+	// severity 기반으로 tone을 미리 계산해 노출한다. VERIFIED만 정상 완료 상태(good)이고 나머지는 진행 중(info)이다.
+	private static String qualityTone(DataQualityLevel level) {
+		return level.severity() == DataQualityLevel.DataQualitySeverity.VERIFIED ? "good" : "info";
+	}
+
 	private static String confidenceLabel(DataConfidenceLevel level) {
 		return switch (level) {
 			case HIGH -> "확인된 정보";
@@ -527,6 +533,7 @@ class TransitStationAdminPageController {
 		String latitude,
 		String longitude,
 		String qualityLabel,
+		String qualityTone,
 		String sourceType,
 		String lastVerifiedAt
 	) {
@@ -540,6 +547,7 @@ class TransitStationAdminPageController {
 				String.valueOf(stationWithLines.station().latitude()),
 				String.valueOf(stationWithLines.station().longitude()),
 				TransitStationAdminPageController.qualityLabel(stationWithLines.station().dataQualityLevel()),
+				TransitStationAdminPageController.qualityTone(stationWithLines.station().dataQualityLevel()),
 				stationWithLines.station().dataSourceType().label(),
 				String.valueOf(stationWithLines.station().lastVerifiedAt())
 			);

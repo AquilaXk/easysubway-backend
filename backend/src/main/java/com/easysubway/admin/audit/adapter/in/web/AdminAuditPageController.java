@@ -246,7 +246,7 @@ class AdminAuditPageController {
 
 	private List<FilterOption> actorOptions(AdminAuditEventType scopeEventType, String selected) {
 		List<FilterOption> options = new ArrayList<>();
-		options.add(new FilterOption("", "actor 전체", selected == null));
+		options.add(new FilterOption("", "수행자 전체", selected == null));
 		for (String actor : auditEventRepository.findDistinctActors(scopeEventType)) {
 			options.add(new FilterOption(actor, actor, actor.equals(selected)));
 		}

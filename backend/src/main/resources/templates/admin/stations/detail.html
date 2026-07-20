@@ -53,7 +53,9 @@
 						<h2 id="station-overview-metric-title">역 요약</h2>
 					</div>
 					<div class="metric-grid">
-						<div class="metric metric-cell"><span>데이터 품질</span><strong th:text="${station.qualityLabel}">정보 확인 중</strong></div>
+						<div class="metric metric-cell"><span>데이터 품질</span>
+							<span th:replace="~{admin/fragments/shell :: status(${station.qualityLabel}, ${station.qualityTone})}">정보 확인 중</span>
+						</div>
 						<div class="metric metric-cell"><span>접근성 시설</span><strong class="cell-num" th:text="${facilityCount}">0</strong></div>
 						<div class="metric metric-cell"><span>구조 자료</span><strong class="cell-num" th:text="${layoutSourceCount}">0</strong></div>
 						<div class="metric metric-cell"><span>노드 / 간선</span><strong th:text="|${routeNodeCount} / ${routeEdgeCount}|">0 / 0</strong></div>
@@ -62,9 +64,9 @@
 
 				<section class="admin-panel">
 					<h2>역 주요 정보</h2>
-					<div class="admin-table-scroll" tabindex="0" role="group"
-					     aria-label="가로로 스크롤 가능한 데이터 표">
-					<table>
+					<!-- kv-table은 640px 스캔 폭 하한을 풀어 가로로 넘치지 않으므로(#2349 PR⑩c) 가로 스크롤
+					     wrapper(tabindex/role/aria-label)가 필요 없다. -->
+					<table class="admin-kv-table">
 						<tbody>
 						<tr><th scope="row">한글 역명</th><td th:text="${station.stationName}">상록수</td></tr>
 						<tr><th scope="row">지역</th><td th:text="${station.region}">수도권</td></tr>
@@ -74,7 +76,6 @@
 						<tr><th scope="row">마지막 확인</th><td th:text="${station.lastVerifiedAt}">2026-06-20</td></tr>
 						</tbody>
 					</table>
-					</div>
 				</section>
 
 				<section class="admin-panel" th:if="${stationReleaseSummary != null}">

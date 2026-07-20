@@ -83,7 +83,9 @@ class DataCollectionAdminPageControllerTest {
 
 		assertThat(html)
 			.contains("데이터 수집 배치")
-			.contains("도시철도 마스터 데이터 수집")
+			// #2349 PR⑩c: 수집 대상이 1개뿐이라 라디오 대신 정적 라벨(run-form-source)로 렌더한다.
+			.contains("run-form-source")
+			.contains("도시철도 마스터")
 			.contains("수집 실행")
 			.contains("최근 실행 기록")
 			.contains("완료")

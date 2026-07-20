@@ -282,6 +282,23 @@
 	border-bottom: 0;
 }
 
+/* 키-값 소형 표 유틸리티(#2349 PR⑩c): th(라벨)/td(값) 2열 요약 표는 다중 컬럼 표의 620px 스캔 폭
+   하한이 필요 없다. 하한을 풀고 라벨 40% · 값 60% 고정 비율로 나눠 값이 넘치면 줄바꿈되게 한다(가로
+   스크롤 요구 대신 줄바꿈 우선 — 대시보드 운영 이상 신호·역 상세 역 주요 정보에서 값이 클리핑되던 문제). */
+.admin-v3 table.admin-kv-table {
+	table-layout: fixed;
+	min-width: 0;
+}
+
+.admin-v3 table.admin-kv-table th {
+	width: 40%;
+}
+
+.admin-v3 table.admin-kv-table td {
+	width: 60%;
+	overflow-wrap: anywhere;
+}
+
 /* 숫자 셀 우정렬 유틸리티(#1982) — 텍스트 셀은 기본 좌정렬 유지 */
 .admin-v3 td.cell-num,
 .admin-v3 th.cell-num {
@@ -336,6 +353,26 @@
 	font-weight: var(--admin-w-body);
 	line-height: 1.45;
 }
+
+/* metric-cell 안의 상태 컴포넌트(#2349 PR⑩c): 역 상세 "데이터 품질"처럼 값이 숫자가 아니라 상태일 때
+   기본 admin-status(13px)는 옆 지표 카드(28px 숫자)와 위계가 너무 벌어진다. metric-cell 스코프에서만
+   확대해 요약 지표로서의 크기 위계를 유지하되, 상태 컴포넌트 자체(점+텍스트)는 그대로 쓴다. */
+.admin-v3 .metric-cell .admin-status {
+	display: inline-flex;
+	margin-top: 8px;
+	font-size: 17px;
+	font-weight: var(--admin-w-title);
+}
+
+.admin-v3 .metric-cell .admin-status::before {
+	width: 9px;
+	height: 9px;
+}
+
+.admin-v3 .metric-cell .admin-status.good { color: var(--admin-good); }
+.admin-v3 .metric-cell .admin-status.warn { color: var(--admin-warn); }
+.admin-v3 .metric-cell .admin-status.bad { color: var(--admin-danger); }
+.admin-v3 .metric-cell .admin-status.info { color: var(--admin-ink-2); }
 
 /* 전 기간 대비 증감 카드(#1744)의 tone — 상태 3색(#1983)으로 델타를 표시한다. */
 .admin-v3 .metric.tone-good em {
@@ -673,17 +710,28 @@
 	font-size: 11px;
 }
 
-/* 역 상세 허브 탭(#1741) */
+/* 역 상세 허브 탭(#1741) — 390에서 5개 탭이 2줄로 랩되던 문제(#2349 PR⑩c)를 가로 스크롤로 해소.
+   flex-wrap 대신 overflow-x: auto + 각 탭 flex: none(줄바꿈·축소 금지)으로 한 줄을 유지하고,
+   스크롤바는 시각적으로만 억제한다(overflow는 유지되므로 마우스·트랙패드·키보드 포커스 이동은 그대로 된다 —
+   포커스된 탭이 뷰포트 밖이면 브라우저가 스크롤 컨테이너를 자동으로 스크롤한다). */
 .admin-v3 .hub-tabs {
 	display: flex;
-	flex-wrap: wrap;
+	flex-wrap: nowrap;
 	gap: 4px;
+	overflow-x: auto;
+	scrollbar-width: none;
+	-ms-overflow-style: none;
 	border-bottom: 1px solid var(--admin-border);
 	margin: 16px 0;
 }
 
+.admin-v3 .hub-tabs::-webkit-scrollbar {
+	display: none;
+}
+
 .admin-v3 .hub-tabs a {
 	display: inline-flex;
+	flex: none;
 	align-items: center;
 	gap: 6px;
 	padding: 8px 14px;
@@ -693,6 +741,7 @@
 	color: var(--admin-ink-2);
 	text-decoration: none;
 	font-size: 14px;
+	white-space: nowrap;
 }
 
 .admin-v3 .hub-tabs a:hover {
@@ -966,6 +1015,13 @@
 
 .admin-form button {
 	justify-self: start;
+}
+
+/* 전폭 폼 필드 제한(#2349 PR⑩c, 스코프: incidents "인시던트 생성"): .admin-form은 기본적으로 패널
+   전체 폭까지 늘어난다. 2열 그리드(.admin-grid-2) 안에 있지 않은 단독 패널 폼은 필드가 ~1100px까지
+   벌어져 가독성이 떨어진다. opt-in 클래스로 640px 상한을 준다(다른 화면의 .admin-form은 영향 없음). */
+.admin-form-narrow {
+	max-width: 640px;
 }
 
 /* 폼 섹션 그룹핑(#1986, 오너 지시 2026-07-13) — 긴 폼을 논리 섹션으로 분리.
@@ -1408,6 +1464,23 @@
 	gap: 8px;
 	min-height: 40px;
 	font-weight: var(--admin-w-medium);
+}
+
+/* 수집 대상 1개짜리 라디오 대체(#2349 PR⑩c): 선택지가 없을 때 .run-form label(라디오+텍스트) 대신
+   쓰는 정적 라벨. .run-form의 flex row 안에서 라디오 label과 같은 높이·정렬로 놓인다. */
+.admin-v3 .run-form-source {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	min-height: 40px;
+}
+
+.admin-v3 .run-form-source strong {
+	font-weight: var(--admin-w-medium);
+}
+
+.admin-v3 .run-form-source .meta {
+	color: var(--admin-ink-2);
 }
 
 .admin-v3 button.danger {

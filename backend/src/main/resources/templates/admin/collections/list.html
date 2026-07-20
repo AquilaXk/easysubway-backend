@@ -24,13 +24,25 @@
 	<form class="run-form" th:action="@{/admin/data-collections/page/run}" method="post">
 		<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 		<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-		<label th:each="sourceOption : ${sourceOptions}">
-			<input type="radio"
-			       name="source"
-			       th:value="${sourceOption.value}"
-			       th:checked="${sourceOptionStat.first}">
-			<span th:text="${sourceOption.label + ' 데이터 수집'}">도시철도 마스터 데이터 수집</span>
-		</label>
+		<!-- 수집 대상 1개 라디오 제거(#2349 PR⑩c): 선택지가 없는 단일 옵션은 라디오로 렌더하지 않는다.
+		     대상이 2개 이상으로 늘면(향후 소스 추가) 라디오 선택 UI로 되돌아간다. 폼 제출 파라미터
+		     계약(name="source")은 두 분기 모두 동일하게 유지한다. -->
+		<th:block th:if="${sourceOptions.size() == 1}">
+			<div class="run-form-source" th:each="sourceOption : ${sourceOptions}">
+				<input type="hidden" name="source" th:value="${sourceOption.value}">
+				<strong th:text="${sourceOption.label}">도시철도 마스터</strong>
+				<span class="meta">데이터 수집</span>
+			</div>
+		</th:block>
+		<th:block th:if="${sourceOptions.size() > 1}">
+			<label th:each="sourceOption : ${sourceOptions}">
+				<input type="radio"
+				       name="source"
+				       th:value="${sourceOption.value}"
+				       th:checked="${sourceOptionStat.first}">
+				<span th:text="${sourceOption.label + ' 데이터 수집'}">도시철도 마스터 데이터 수집</span>
+			</label>
+		</th:block>
 		<button type="submit" class="primary">수집 실행</button>
 	</form>
 

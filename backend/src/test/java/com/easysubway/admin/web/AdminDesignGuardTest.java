@@ -66,6 +66,9 @@ class AdminDesignGuardTest {
 		"border-radius\\s*:\\s*([^;]*)", Pattern.CASE_INSENSITIVE);
 	private static final Pattern PX_LITERAL = Pattern.compile("(\\d+)px");
 	private static final Pattern TABLE_TAG = Pattern.compile("<table\\b");
+	// kv-table 유틸리티(#2349 PR⑩c)는 620px 스캔 폭 하한을 풀어(min-width: 0) 가로로 넘치지 않으므로
+	// 접근성 scroll wrapper 계약(#2071) 대상에서 제외한다.
+	private static final Pattern KV_TABLE_TAG = Pattern.compile("<table class=\"admin-kv-table\"");
 	private static final Pattern CONDITIONAL_TABLE = Pattern.compile("<table\\b[^>]*\\bth:if=");
 	private static final Pattern ACCESSIBLE_TABLE_WRAPPER = Pattern.compile(
 		"<div class=\"admin-table-scroll\" tabindex=\"0\" role=\"group\"\\s+"
@@ -274,7 +277,7 @@ class AdminDesignGuardTest {
 		try (var paths = Files.walk(templates)) {
 			for (Path path : paths.filter(file -> file.toString().endsWith(".html")).toList()) {
 				String html = Files.readString(path);
-				int tables = count(TABLE_TAG, html);
+				int tables = count(TABLE_TAG, html) - count(KV_TABLE_TAG, html);
 				if (tables == 0) {
 					continue;
 				}

@@ -409,6 +409,26 @@
 	font-size: 13px;
 }
 
+/* 권한 컬럼 raw 덤프 방지(#2349 PR⑩c): 콤마 결합 권한 전체 문자열을 "첫 권한 외 N개" 요약 +
+   접힌 details로 담아 행 높이 폭증·우측 클리핑을 없앤다. */
+.admin-v3 .admin-permission-detail summary {
+	cursor: pointer;
+	color: var(--admin-ink);
+}
+
+.admin-v3 .admin-permission-list {
+	margin: 8px 0 0;
+	padding-left: 18px;
+	max-width: 320px;
+	color: var(--admin-ink-2);
+	font-size: 13px;
+	line-height: 1.6;
+	/* 권한 코드는 점(.)으로만 이어져 공백·하이픈 break 기회가 없다. overflow-wrap: anywhere로
+	   강제 줄바꿈해야 표 auto layout이 이 컬럼의 min-content를 가장 긴 권한 코드 폭까지 벌리지 않는다
+	   (그러지 않으면 펼쳤을 때 다른 컬럼이 한글 낱글자 줄바꿈으로 밀린다). */
+	overflow-wrap: anywhere;
+}
+
 .admin-v3 .compliance-banner .filter-quick {
 	margin-left: 8px;
 	color: var(--admin-warn);

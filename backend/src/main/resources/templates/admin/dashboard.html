@@ -177,16 +177,15 @@
 			<div class="admin-panel-head">
 				<h2 id="dashboard-health-title">운영 이상 신호</h2>
 			</div>
-			<div class="admin-table-scroll" tabindex="0" role="group"
-			     aria-label="가로로 스크롤 가능한 데이터 표">
-			<table>
+			<!-- kv-table은 640px 스캔 폭 하한을 풀어 가로로 넘치지 않으므로(#2349 PR⑩c) 가로 스크롤
+			     wrapper(tabindex/role/aria-label)가 필요 없다. -->
+			<table class="admin-kv-table">
 				<tbody>
 				<tr><th scope="row">서비스 상태</th><td th:text="|${dashboard.healthStatus} (${dashboard.serviceName})|">UP</td></tr>
 				<tr><th scope="row">7일 활성 사용자</th><td th:text="${dashboard.activeUsers}">0</td></tr>
 				<tr><th scope="row">API 오류율</th><td th:text="${dashboard.apiErrorRate}">0.0%</td></tr>
 				</tbody>
 			</table>
-			</div>
 		</section>
 	</div>
 </main>

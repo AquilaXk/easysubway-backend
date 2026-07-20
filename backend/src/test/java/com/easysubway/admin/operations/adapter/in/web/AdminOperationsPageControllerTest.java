@@ -176,7 +176,7 @@ class AdminOperationsPageControllerTest {
 			.contains("Major")
 			.contains("접수")
 			.contains("name=\"status\" value=\"RECEIVED\"")
-			.doesNotContain("Health incident 생성");
+			.doesNotContain("서비스 상태 인시던트 생성");
 	}
 
 	@Test
@@ -194,7 +194,7 @@ class AdminOperationsPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("Incident 목록 페이지")
+			.contains("인시던트 목록 페이지")
 			.contains("aria-current=\"page\"")
 			.contains("page=1&amp;size=1")
 			.contains("다음");
@@ -299,9 +299,9 @@ class AdminOperationsPageControllerTest {
 		String fragment = getAdminHtml("/admin/incidents/page/live", new MockHttpSession());
 		assertThat(fragment)
 			.contains("id=\"incident-live\"")
-			.contains("최근 Incident")
+			.contains("최근 인시던트")
 			.doesNotContain("admin-shell")
-			.doesNotContain("Incident 생성");
+			.doesNotContain("인시던트 생성");
 	}
 
 	@Test

@@ -66,7 +66,7 @@
 		     data-refresh-interval="10000" th:attr="data-refresh-active=${hasRunning} ? 'true' : 'false'"></div>
 	<section class="admin-panel">
 		<h2>잡별 실행 이력</h2>
-		<p>잡별 최근 30회 실행의 소요 시간(ms)과 성공/실패를 막대 차트로 봅니다. Chart.js 미로딩 시 아래 표로 대체됩니다.</p>
+		<p>잡별 최근 30회 실행의 소요 시간(ms)과 성공/실패를 막대 차트로 봅니다. 차트를 불러오지 못하면 아래 표로 대체됩니다.</p>
 		<div class="batch-history-charts">
 			<section th:each="history : ${histories}" class="admin-panel batch-history-panel">
 				<h3 th:text="${history.label}">배치 잡</h3>

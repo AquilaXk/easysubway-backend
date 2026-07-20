@@ -41,12 +41,12 @@
 			     (#2279 null-safe get('hidden')). 저장된 뷰·보기 설정은 이 화면에 없어 ~{}를 전달한다. -->
 			<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
 			         ${basePath}, 'audit-results',
-			         ${ {'name':'keyword','value':keyword,'placeholder':'target 검색(유형·ID)','label':'target 검색',
+			         ${ {'name':'keyword','value':keyword,'placeholder':'대상 검색(유형·ID)','label':'대상 검색',
 			            'hidden': {'eventType':selectedEventType,'actor':selectedActor,'outcome':selectedOutcome,
 			                       'from':from,'to':to,'reasonMissing':reasonMissing}} },
 			         ~{}, ~{::auditFilters}, ~{})}">
 				<form th:fragment="auditFilters" class="admin-toolbar-form" method="get"
-				      th:action="@{${basePath}}" role="group" aria-label="유형·actor·결과·기간·사유 필터"
+				      th:action="@{${basePath}}" role="group" aria-label="유형·수행자·결과·기간·사유 필터"
 				      th:attr="hx-get=@{${basePath}}" hx-target="#audit-results"
 				      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
 					<input type="hidden" name="keyword" th:value="${keyword}">
@@ -54,9 +54,9 @@
 						<option th:each="opt : ${eventTypeOptions}" th:value="${opt.value}"
 						        th:text="${opt.label}" th:selected="${opt.selected}">유형 전체</option>
 					</select>
-					<select name="actor" aria-label="actor 필터">
+					<select name="actor" aria-label="수행자 필터">
 						<option th:each="opt : ${actorOptions}" th:value="${opt.value}"
-						        th:text="${opt.label}" th:selected="${opt.selected}">actor 전체</option>
+						        th:text="${opt.label}" th:selected="${opt.selected}">수행자 전체</option>
 					</select>
 					<select name="outcome" aria-label="결과 필터">
 						<option th:each="opt : ${outcomeOptions}" th:value="${opt.value}"
@@ -103,10 +103,10 @@
 				<tr>
 					<th scope="col">발생</th>
 					<th th:if="${!privacyMode}" scope="col">유형</th>
-					<th scope="col">actor</th>
+					<th scope="col">수행자</th>
 					<th scope="col">권한</th>
-					<th scope="col">target</th>
-					<th scope="col">action</th>
+					<th scope="col">대상</th>
+					<th scope="col">동작</th>
 					<th scope="col">결과</th>
 					<th scope="col">사유</th>
 					<th scope="col"><span class="sr-only">상세</span></th>
@@ -117,7 +117,18 @@
 					<td th:text="${event.occurredAt}">2026-06-27T00:00</td>
 					<td th:if="${!privacyMode}" th:text="${event.eventTypeLabel}">관리자 작업</td>
 					<td th:text="${event.actor}">admin</td>
-					<td th:text="${event.rolePermission}">admin.view</td>
+					<!-- 권한 raw 덤프 클리핑(#2349 PR⑩c): rolePermission은 콤마 결합 권한 전체 문자열이라
+					     그대로 셀에 넣으면 행 높이가 폭증하고 우측이 잘린다. 1개면 그대로, 여러 개면
+					     "첫 권한 외 N개" 요약 + 접힌 details로 전체 목록을 담아 행 높이를 정상화한다. -->
+					<td th:with="permList=${#strings.listSplit(event.rolePermission, ',')}">
+						<span th:if="${#lists.size(permList) <= 1}" th:text="${event.rolePermission}">admin.view</span>
+						<details th:if="${#lists.size(permList) > 1}" class="admin-permission-detail">
+							<summary th:text="|${permList[0]} 외 ${#lists.size(permList) - 1}개|">ROLE_ADMIN 외 14개</summary>
+							<ul class="admin-permission-list">
+								<li th:each="perm : ${permList}" th:text="${perm}">perm</li>
+							</ul>
+						</details>
+					</td>
 					<td><span th:text="${event.targetType}">target</span>
 						<span class="meta" th:text="${event.targetId}">id</span></td>
 					<td th:text="${event.action}">action</td>
