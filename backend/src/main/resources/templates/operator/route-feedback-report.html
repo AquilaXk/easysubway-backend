@@ -60,6 +60,10 @@
 						<p>도움됨·도움 안 됨·현장 차단 분포입니다.</p>
 					</div>
 				</div>
+				<div th:if="${summary.totalCount == 0}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('집계된 피드백이 없습니다.', '피드백이 접수되면 분포가 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${summary.totalCount == 0}">
 				<div class="operator-chart-frame">
 					<canvas class="operator-chart-canvas"
 					        data-operator-chart="bar"
@@ -87,6 +91,7 @@
 					</table>
 					</div>
 				</details>
+				</th:block>
 			</section>
 
 			<div class="desktop-grid-2">
@@ -152,7 +157,9 @@
 							<td th:text="${row.mobilityTypeLabel}">고령자</td>
 						</tr>
 						<tr th:if="${#lists.isEmpty(summary.recentBlockedFeedbacks)}">
-							<td colspan="4">최근 현장 차단 신고가 없습니다.</td>
+							<td class="empty" colspan="4">
+								<div th:replace="~{operator/fragments/empty-state :: panel('최근 현장 차단 신고가 없습니다.', '현장 차단 신고가 접수되면 여기에 표시됩니다.')}"></div>
+							</td>
 						</tr>
 						</tbody>
 					</table>

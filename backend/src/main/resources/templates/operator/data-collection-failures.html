@@ -61,6 +61,10 @@
 						<p>완료·실패·실행 중 분포입니다.</p>
 					</div>
 				</div>
+				<div th:if="${report.totalRunCount == 0}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('집계된 수집 실행이 없습니다.', '수집이 실행되면 상태별 분포가 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${report.totalRunCount == 0}">
 				<div class="operator-chart-frame">
 					<canvas class="operator-chart-canvas"
 					        data-operator-chart="bar"
@@ -88,6 +92,7 @@
 					</table>
 					</div>
 				</details>
+				</th:block>
 			</section>
 
 			<section class="panel">
@@ -130,7 +135,9 @@
 						<td th:text="${row.operatorAction}">재시도하세요.</td>
 					</tr>
 					<tr th:if="${#lists.isEmpty(report.rows)}">
-						<td colspan="7">최근 데이터 수집 실행 기록이 없습니다.</td>
+						<td class="empty" colspan="7">
+							<div th:replace="~{operator/fragments/empty-state :: panel('최근 데이터 수집 실행 기록이 없습니다.', '수집이 실행되면 여기에 표시됩니다.')}"></div>
+						</td>
 					</tr>
 					</tbody>
 				</table>

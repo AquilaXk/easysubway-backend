@@ -49,6 +49,10 @@
 						<p>접근성 데이터 품질 분포입니다.</p>
 					</div>
 				</div>
+				<div th:if="${report.totalStations == 0}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('집계된 역이 없습니다.', '역 정보가 등록되면 품질 등급 분포가 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${report.totalStations == 0}">
 				<div class="operator-chart-frame">
 					<canvas class="operator-chart-canvas"
 					        data-operator-chart="bar"
@@ -76,6 +80,7 @@
 					</table>
 					</div>
 				</details>
+				</th:block>
 			</section>
 
 			<div class="desktop-grid-2">
@@ -148,7 +153,10 @@
 							<tr th:each="row : ${report.stationAccessibilityScoreRows}">
 								<td th:text="${row.stationName}">상록수</td>
 								<td th:text="${row.region}">수도권</td>
-								<td th:text="${row.reasonText}">일부 정보는 확인 중이에요</td>
+								<!-- 문체 정합(#2349 PR⑩e finding 20): reasonText는 DataQualityLevel 등 공유 도메인
+								     원본(해요체, 모바일 앱과 공유)을 그대로 담고 있어 원본은 불변, 운영기관 화면
+								     표시 계층(OperatorTextStyle)에서만 합니다체로 바꾼다. -->
+								<td th:text="${T(com.easysubway.operator.adapter.in.web.OperatorTextStyle).declarative(row.reasonText)}">일부 정보는 확인 중입니다</td>
 								<td th:text="${row.score}">0</td>
 							</tr>
 							</tbody>
@@ -178,7 +186,7 @@
 							<tbody>
 							<tr th:each="row : ${report.stationQualityRows}">
 								<td th:text="${row.label}">정보 확인 중</td>
-								<td th:text="${row.description}">주요 정보 확인 중</td>
+								<td th:text="${T(com.easysubway.operator.adapter.in.web.OperatorTextStyle).declarative(row.description)}">주요 정보 확인 중</td>
 								<td th:text="${row.count}">0</td>
 							</tr>
 							</tbody>

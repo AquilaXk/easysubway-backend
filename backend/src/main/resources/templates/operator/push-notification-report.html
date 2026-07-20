@@ -41,6 +41,10 @@
 						<p>대기·완료·실패 건수입니다.</p>
 					</div>
 				</div>
+				<div th:if="${report.totalCount == 0}">
+					<div th:replace="~{operator/fragments/empty-state :: panel('집계된 알림 발송이 없습니다.', '알림이 발송되면 상태별 분포가 여기에 표시됩니다.')}"></div>
+				</div>
+				<th:block th:unless="${report.totalCount == 0}">
 				<div class="operator-chart-frame">
 					<canvas class="operator-chart-canvas"
 					        data-operator-chart="bar"
@@ -68,6 +72,7 @@
 					</table>
 					</div>
 				</details>
+				</th:block>
 			</section>
 
 			<div class="desktop-grid-2">
@@ -109,9 +114,8 @@
 					<div class="source-note" th:if="${report.latestFailureReason != null}" th:text="${report.latestFailureReason}">
 						푸시 발송 처리 중 오류가 발생했습니다. 관리자 점검이 필요합니다.
 					</div>
-					<div class="source-note" th:if="${report.latestFailureReason == null}">
-						최근 실패 없음
-					</div>
+					<div th:if="${report.latestFailureReason == null}"
+					     th:replace="~{operator/fragments/empty-state :: panel('최근 실패 없음', null)}"></div>
 				</section>
 			</div>
 		</main>
