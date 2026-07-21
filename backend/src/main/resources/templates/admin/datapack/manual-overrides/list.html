@@ -17,38 +17,38 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>수동 오버라이드</h1>
-			<p>production candidate 입력 전에 override 요청, 승인, 만료, strict route 안전 승인 상태를 검수합니다.</p>
+			<p>프로덕션 후보 입력 전에 오버라이드 요청·승인·만료·strict 경로 안전 승인 상태를 검수합니다.</p>
 		</div>
 	</header>
 
 	<section class="admin-panel">
-		<h2>Override 요청</h2>
+		<h2>오버라이드 요청</h2>
 		<form class="admin-form" method="post" th:action="@{/admin/datapack/manual-overrides}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 			<input type="hidden" name="idempotencyKey" th:value="${overrideForm.idempotencyKey != null ? overrideForm.idempotencyKey : 'manual-override-request'}">
 			<fieldset>
 				<legend>대상 식별</legend>
-				<label>오버라이드 ID <input name="id" th:value="${overrideForm.id}" placeholder="id" required></label>
+				<label>오버라이드 ID <input name="id" th:value="${overrideForm.id}" placeholder="예: ov-20260722-01" required></label>
 				<div class="admin-form-row-2">
-					<label>대상 유형 <input name="entityType" th:value="${overrideForm.entityType != null ? overrideForm.entityType : 'FACILITY'}" placeholder="entityType" required></label>
-					<label>대상 ID <input name="entityId" th:value="${overrideForm.entityId}" placeholder="entityId" required></label>
+					<label>대상 유형 <input name="entityType" th:value="${overrideForm.entityType != null ? overrideForm.entityType : 'FACILITY'}" placeholder="예: FACILITY" required></label>
+					<label>대상 ID <input name="entityId" th:value="${overrideForm.entityId}" placeholder="예: facility-id" required></label>
 				</div>
-				<label>필드명 <input name="fieldName" th:value="${overrideForm.fieldName}" placeholder="fieldName" required></label>
+				<label>필드명 <input name="fieldName" th:value="${overrideForm.fieldName}" placeholder="예: operatingStatus" required></label>
 			</fieldset>
 			<fieldset>
 				<legend>변경 값</legend>
 				<div class="admin-form-row-2">
-					<label>변경 전 값 <input name="beforeValue" th:value="${overrideForm.beforeValue}" placeholder="beforeValue"></label>
-					<label>변경 후 값 <input name="afterValue" th:value="${overrideForm.afterValue}" placeholder="afterValue" required></label>
+					<label>변경 전 값 <input name="beforeValue" th:value="${overrideForm.beforeValue}" placeholder="예: AVAILABLE"></label>
+					<label>변경 후 값 <input name="afterValue" th:value="${overrideForm.afterValue}" placeholder="예: UNAVAILABLE" required></label>
 				</div>
 			</fieldset>
 			<fieldset>
 				<legend>근거·안전</legend>
-				<label>사유 코드 <input name="reasonCode" th:value="${overrideForm.reasonCode != null ? overrideForm.reasonCode : 'FIELD_CHECK'}" placeholder="reasonCode" required></label>
-				<label>사유 <input name="reason" th:value="${overrideForm.reason}" placeholder="reason" required></label>
-				<label>증거 URI <input name="evidenceUri" th:value="${overrideForm.evidenceUri}" placeholder="evidenceUri" required></label>
-				<label>증거 해시 <input name="evidenceHash" th:value="${overrideForm.evidenceHash}" placeholder="evidenceHash" required></label>
+				<label>사유 코드 <input name="reasonCode" th:value="${overrideForm.reasonCode != null ? overrideForm.reasonCode : 'FIELD_CHECK'}" placeholder="예: FIELD_CHECK" required></label>
+				<label>사유 <input name="reason" th:value="${overrideForm.reason}" placeholder="예: 현장 확인 결과 반영" required></label>
+				<label>증거 URI <input name="evidenceUri" th:value="${overrideForm.evidenceUri}" placeholder="예: https://example.com/evidence.pdf" required></label>
+				<label>증거 해시 <input name="evidenceHash" th:value="${overrideForm.evidenceHash}" placeholder="예: 64자리 SHA-256 해시" required></label>
 				<label>strict 경로 사용 가능 <input type="checkbox" name="strictRouteEligible" value="true" th:checked="${overrideForm.strictRouteEligible}"></label>
 			</fieldset>
 			<fieldset>
@@ -66,7 +66,7 @@
 		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/manual-overrides/page}"
 		      role="search" aria-label="수동 오버라이드 검색">
 			<input type="search" name="query" th:value="${filter.queryValue}"
-			       placeholder="entity·field·reason 검색" aria-label="수동 오버라이드 검색" autocomplete="off">
+			       placeholder="대상·필드·사유 검색" aria-label="수동 오버라이드 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
 				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
@@ -78,7 +78,7 @@
 			</select>
 			<select name="sort" aria-label="정렬">
 				<option value="" th:selected="${filter.selectedSort('')}">운영 차단 우선</option>
-				<option value="entity" th:selected="${filter.selectedSort('entity')}">entity순</option>
+				<option value="entity" th:selected="${filter.selectedSort('entity')}">대상순</option>
 				<option value="created" th:selected="${filter.selectedSort('created')}">시작 최신순</option>
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
@@ -97,22 +97,22 @@
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">id</th>
-				<th scope="col">entity</th>
-				<th scope="col">field</th>
-				<th scope="col">before</th>
-				<th scope="col">after</th>
-				<th scope="col">reason</th>
-				<th scope="col">evidence</th>
-				<th scope="col">requested</th>
-				<th scope="col">approved</th>
-				<th scope="col">status</th>
-				<th scope="col">conflict</th>
+				<th scope="col">ID</th>
+				<th scope="col">대상</th>
+				<th scope="col">필드</th>
+				<th scope="col">변경 전</th>
+				<th scope="col">변경 후</th>
+				<th scope="col">사유</th>
+				<th scope="col">증거</th>
+				<th scope="col">요청</th>
+				<th scope="col">승인</th>
+				<th scope="col">상태</th>
+				<th scope="col">충돌</th>
 				<th scope="col">strict</th>
-				<th scope="col">window</th>
-				<th scope="col">superseded</th>
-				<th scope="col">production</th>
-				<th scope="col">command</th>
+				<th scope="col">유효 기간</th>
+				<th scope="col">대체됨</th>
+				<th scope="col">프로덕션</th>
+				<th scope="col">작업</th>
 			</tr>
 			</thead>
 			<tbody>

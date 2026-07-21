@@ -28,9 +28,9 @@
 			       placeholder="채널·후보·사유 검색" aria-label="배포 채널 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
-				<option value="production" th:selected="${filter.selectedStatus('production')}">production</option>
-				<option value="staging" th:selected="${filter.selectedStatus('staging')}">staging</option>
-				<option value="dev" th:selected="${filter.selectedStatus('dev')}">dev</option>
+				<option value="production" th:selected="${filter.selectedStatus('production')}">프로덕션</option>
+				<option value="staging" th:selected="${filter.selectedStatus('staging')}">스테이징</option>
+				<option value="dev" th:selected="${filter.selectedStatus('dev')}">개발</option>
 				<option value="ROLLBACK_AVAILABLE" th:selected="${filter.selectedStatus('ROLLBACK_AVAILABLE')}">rollback 가능</option>
 				<option value="PROMOTE" th:selected="${filter.selectedStatus('PROMOTE')}">승격</option>
 				<option value="ROLLBACK" th:selected="${filter.selectedStatus('ROLLBACK')}">롤백</option>
@@ -58,14 +58,14 @@
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">channel</th>
-				<th scope="col">current</th>
-				<th scope="col">manifest</th>
-				<th scope="col">rollback target</th>
-				<th scope="col">rollback</th>
-				<th scope="col">last operation</th>
-				<th scope="col">approval</th>
-				<th scope="col">updated</th>
+				<th scope="col">채널</th>
+				<th scope="col">현재</th>
+				<th scope="col">매니페스트</th>
+				<th scope="col">롤백 대상</th>
+				<th scope="col">롤백</th>
+				<th scope="col">최근 작업</th>
+				<th scope="col">승인</th>
+				<th scope="col">갱신</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -75,7 +75,7 @@
 				</td>
 			</tr>
 			<tr th:each="channel : ${channels}">
-				<td th:text="${channel.channel}">production</td>
+				<td th:text="${channel.channel == 'production' ? '프로덕션' : (channel.channel == 'staging' ? '스테이징' : (channel.channel == 'dev' ? '개발' : channel.channel))}">프로덕션</td>
 				<td>
 					<span th:text="${channel.candidateId}">candidate</span>
 					<span th:text="${channel.candidateVersion}">version</span>
@@ -92,7 +92,7 @@
 				<td th:text="${channel.rollbackLabel}">rollback 가능</td>
 				<td>
 					<span th:text="${channel.lastOperationType}">PROMOTE</span>
-					<span th:text="${channel.lastOperationStatus}">PASS</span>
+					<span th:text="${channel.lastOperationStatus == 'PASS' ? '통과' : (channel.lastOperationStatus == 'FAIL' ? '실패' : channel.lastOperationStatus)}">통과</span>
 					<span th:text="${channel.idempotencyKey}">idempotency</span>
 					<details class="admin-promote-confirm">
 						<summary th:text="${'승격 승인 (' + channel.channel + ')'}">승격 승인</summary>
@@ -104,34 +104,35 @@
 						<input type="hidden" name="previousCandidateId" th:value="${channel.candidateId}">
 						<input type="hidden" name="previousManifestSha256" th:value="${channel.manifestSha256}">
 						<label>
-							next candidate
+							다음 후보
 							<input name="nextCandidateId" required>
 						</label>
 						<label>
-							next manifest sha256
+							다음 매니페스트 sha256
 							<input name="nextManifestSha256" minlength="64" maxlength="64" required>
 						</label>
 						<label th:if="${channel.channel == 'production'}">
-							evidence bundle sha256
+							증거 번들 sha256
 							<input name="evidenceBundleSha256" minlength="64" maxlength="64" required>
 						</label>
 						<label>
-							requested by
+							요청자
 							<input name="requestedBy" required>
 						</label>
 						<label>
-							reason
+							사유
 							<input name="reason" required>
 						</label>
 						<label>
-							idempotency key
+							멱등 키
 							<input name="idempotencyKey" required>
 						</label>
 						<label>
-							workflow run URL
+							워크플로 실행 URL
 							<input name="workflowRunUrl" type="url" required>
 						</label>
-						<button type="submit" class="primary">production 승인</button>
+						<button type="submit" class="primary"
+						        th:text="${channel.channel == 'production' ? '프로덕션 승인' : '승격 승인'}">승격 승인</button>
 						</form>
 					</details>
 					<details class="admin-promote-confirm" th:if="${channel.previousStableCandidateId != '—'}">
@@ -184,13 +185,13 @@
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">event</th>
-				<th scope="col">channel</th>
-				<th scope="col">candidate</th>
-				<th scope="col">operation</th>
-				<th scope="col">approval</th>
-				<th scope="col">workflow</th>
-				<th scope="col">created</th>
+				<th scope="col">이벤트</th>
+				<th scope="col">채널</th>
+				<th scope="col">후보</th>
+				<th scope="col">작업</th>
+				<th scope="col">승인</th>
+				<th scope="col">워크플로</th>
+				<th scope="col">생성</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -201,7 +202,7 @@
 			</tr>
 			<tr th:each="event : ${events}">
 				<td th:text="${event.id}">event</td>
-				<td th:text="${event.channel}">production</td>
+				<td th:text="${event.channel == 'production' ? '프로덕션' : (event.channel == 'staging' ? '스테이징' : (event.channel == 'dev' ? '개발' : event.channel))}">프로덕션</td>
 				<td>
 					<span th:text="${event.previousCandidateId}">previous</span>
 					<span th:text="${event.nextCandidateId}">next</span>
@@ -209,7 +210,7 @@
 				</td>
 				<td>
 					<span th:text="${event.operationType}">PROMOTE</span>
-					<span th:text="${event.operationStatus}">PASS</span>
+					<span th:text="${event.operationStatus == 'PASS' ? '통과' : (event.operationStatus == 'FAIL' ? '실패' : event.operationStatus)}">통과</span>
 					<span th:text="${event.idempotencyKey}">idempotency</span>
 				</td>
 				<td>

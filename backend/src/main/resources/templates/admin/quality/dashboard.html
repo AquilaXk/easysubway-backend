@@ -85,7 +85,7 @@
 			<tbody>
 			<tr th:each="row : ${datapackReleaseSummary.readinessRows}">
 				<td th:text="${row.label}">소스 커버리지</td>
-				<td th:text="${row.status}">FAIL</td>
+				<td th:text="${row.status == 'PASS' ? '통과' : (row.status == 'FAIL' ? '실패' : row.status)}">실패</td>
 				<td th:text="${row.blockerCount}">0</td>
 				<td th:text="${row.note}">확인 필요</td>
 			</tr>

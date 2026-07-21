@@ -17,7 +17,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>시설 근거 검토</h1>
-			<p>station x facility type별 source evidence, 상태 의미, strict route 사용 가능 여부를 검수합니다.</p>
+			<p>역×시설 유형별 출처 근거, 상태 의미, strict 경로 사용 가능 여부를 검수합니다.</p>
 		</div>
 	</header>
 
@@ -25,7 +25,7 @@
 		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/facility-evidence/page}"
 		      role="search" aria-label="시설 근거 검색">
 			<input type="search" name="query" th:value="${filter.queryValue}"
-			       placeholder="역·시설·source 검색" aria-label="시설 근거 검색" autocomplete="off">
+			       placeholder="역·시설·출처 검색" aria-label="시설 근거 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
 				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
@@ -53,21 +53,21 @@
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">station</th>
-				<th scope="col">line</th>
-				<th scope="col">facility</th>
-				<th scope="col">evidence</th>
-				<th scope="col">installation</th>
-				<th scope="col">operation</th>
-				<th scope="col">meaning</th>
-				<th scope="col">source</th>
-				<th scope="col">verified</th>
-				<th scope="col">freshness</th>
-				<th scope="col">confidence</th>
+				<th scope="col">역</th>
+				<th scope="col">노선</th>
+				<th scope="col">시설</th>
+				<th scope="col">증거</th>
+				<th scope="col">설치</th>
+				<th scope="col">운영</th>
+				<th scope="col">의미</th>
+				<th scope="col">출처</th>
+				<th scope="col">검증</th>
+				<th scope="col">신선도</th>
+				<th scope="col">신뢰도</th>
 				<th scope="col">strict</th>
-				<th scope="col">conflict</th>
-				<th scope="col">override</th>
-				<th scope="col">command</th>
+				<th scope="col">충돌</th>
+				<th scope="col">오버라이드</th>
+				<th scope="col">작업</th>
 			</tr>
 			</thead>
 			<tbody>

@@ -17,7 +17,7 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>릴리스 요청</h1>
-			<p>게시 대상 후보를 골라 릴리스 요청을 생성하고, 다른 관리자가 승인합니다. 승인 후 production 게이트는 수동 dispatch로 실행합니다.</p>
+			<p>게시 대상 후보를 골라 릴리스 요청을 생성하고, 다른 관리자가 승인합니다. 승인 후 프로덕션 게이트는 수동 dispatch로 실행합니다.</p>
 		</div>
 	</header>
 
@@ -48,9 +48,9 @@
 			<label>
 				대상 채널
 				<select name="targetChannel">
-					<option value="staging">staging</option>
-					<option value="production">production</option>
-					<option value="dev">dev</option>
+					<option value="staging">스테이징</option>
+					<option value="production">프로덕션</option>
+					<option value="dev">개발</option>
 				</select>
 			</label>
 			<button type="submit" class="primary">릴리스 요청 생성</button>
@@ -84,7 +84,7 @@
 				<td th:text="${request.approvalId}">approval</td>
 				<td th:text="${request.candidateId}">candidate</td>
 				<td th:text="${request.scopeId}">scope</td>
-				<td th:text="${request.targetChannel}">staging</td>
+				<td th:text="${request.targetChannel == 'production' ? '프로덕션' : (request.targetChannel == 'staging' ? '스테이징' : (request.targetChannel == 'dev' ? '개발' : request.targetChannel))}">스테이징</td>
 				<td th:text="${request.status}">REQUESTED</td>
 				<td th:text="${request.requestedBy}">requested</td>
 				<td th:text="${request.approvedBy}">approved</td>

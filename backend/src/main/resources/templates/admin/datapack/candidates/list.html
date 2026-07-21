@@ -25,7 +25,7 @@
 		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/candidates/page}"
 		      role="search" aria-label="후보 팩 검색">
 			<input type="search" name="query" th:value="${filter.queryValue}"
-			       placeholder="후보·scope·version 검색" aria-label="후보 팩 검색" autocomplete="off">
+			       placeholder="후보·범위·버전 검색" aria-label="후보 팩 검색" autocomplete="off">
 			<select name="status" aria-label="후보 상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
 				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">게이트 차단</option>
@@ -57,11 +57,11 @@
 			<thead>
 			<tr>
 				<th scope="col">후보</th>
-				<th scope="col">scope</th>
-				<th scope="col">version</th>
-				<th scope="col">approval</th>
-				<th scope="col">gates</th>
-				<th scope="col">hash</th>
+				<th scope="col">범위</th>
+				<th scope="col">버전</th>
+				<th scope="col">승인</th>
+				<th scope="col">게이트</th>
+				<th scope="col">해시</th>
 				<th scope="col">생성</th>
 				<th scope="col">상세</th>
 			</tr>

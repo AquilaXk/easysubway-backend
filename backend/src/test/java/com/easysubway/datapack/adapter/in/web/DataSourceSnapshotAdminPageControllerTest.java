@@ -149,8 +149,8 @@ class DataSourceSnapshotAdminPageControllerTest {
 			.contains("snapshot-kric-20260629")
 			.contains("raw sha256")
 			.contains("s3://easysubway-datapack-sources/kric-station-elevator/snapshot-kric-20260629.json")
-			.contains("credential redacted")
-			.contains("raw retention")
+			.contains("자격증명 마스킹")
+			.contains("원본 보존")
 			.contains("name=\"commandToken\"")
 			.contains("잠금 스냅샷 저장")
 			.doesNotContain("serviceKey");

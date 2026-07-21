@@ -8,6 +8,7 @@ import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
@@ -75,6 +76,19 @@ class AdminDesignGuardTest {
 			+ "aria-label=\"가로로 스크롤 가능한 [^\"]*표\"[^>]*>\\s*<table\\b",
 		Pattern.DOTALL);
 	private static final Pattern TABLE_WRAPPER_CLOSE = Pattern.compile("</table>\\s*</div>");
+
+	// #2425(R1·R11): 데이터팩·공통코드 표 헤더에 남는 영문 필드명 원문 금지 목록. 정확히 일치(trim, 소문자)할 때만
+	// 위반이다 — "provider entity"처럼 여러 단어로 합쳐지거나 한국어가 섞이면(예: "raw sha256", "증거 해시") 잡지 않는다.
+	// strict는 계획상 열 헤더에 그대로 남기는 예외 토큰이라 이 목록에서 제외한다. "ID"(대문자)는 별도로 허용한다.
+	private static final Set<String> FORBIDDEN_TABLE_HEADER_TOKENS = Set.of(
+		"id", "entity", "field", "before", "after", "station", "line", "facility", "evidence",
+		"command", "source", "status", "channel", "current", "scope", "version", "group", "code",
+		"reason", "requested", "approved", "conflict", "window", "superseded", "production",
+		"installation", "operation", "meaning", "verified", "freshness", "confidence", "override",
+		"snapshot", "method", "manifest", "provider", "rows", "edge", "type", "verification",
+		"provenance", "generated", "hash", "gates", "rollback", "approval", "updated", "diff");
+	private static final Pattern STATIC_TH = Pattern.compile("<th\\b([^>]*)>([^<]*)</th>", Pattern.DOTALL);
+	private static final Pattern H2_TAG = Pattern.compile("<h2\\b[^>]*>([^<]*)</h2>", Pattern.DOTALL);
 
 	@Test
 	@DisplayName("admin-v3.css는 tokens → foundation → shell → components → data import manifest다")
@@ -413,6 +427,98 @@ class AdminDesignGuardTest {
 			.as("listToolbar 컴포넌트는 수동 addEventListener·setInterval를 등록하지 않는다")
 			.doesNotContain("addEventListener")
 			.doesNotContain("setInterval");
+	}
+
+	@Test
+	@DisplayName("데이터팩·공통코드 목록 표 헤더는 영문 필드명 원문을 쓰지 않는다")
+	void datapackAndCodesTableHeadersAreKorean() throws IOException {
+		List<Path> targets = new ArrayList<>();
+		Path datapackTemplates = ROOT.resolve("backend/src/main/resources/templates/admin/datapack");
+		try (var paths = Files.walk(datapackTemplates)) {
+			paths.filter(path -> path.toString().endsWith("list.html")).forEach(targets::add);
+		}
+		targets.add(ROOT.resolve("backend/src/main/resources/templates/admin/codes/list.html"));
+
+		List<String> violations = new ArrayList<>();
+		for (Path path : targets) {
+			String html = Files.readString(path);
+			Matcher matcher = STATIC_TH.matcher(html);
+			while (matcher.find()) {
+				String attrs = matcher.group(1);
+				if (attrs.contains("th:text")) {
+					continue;
+				}
+				String text = matcher.group(2).trim();
+				if (text.isEmpty() || text.equals("ID")) {
+					continue;
+				}
+				if (FORBIDDEN_TABLE_HEADER_TOKENS.contains(text.toLowerCase(Locale.ROOT))) {
+					violations.add(ROOT.relativize(path) + ": <th>" + text + "</th>");
+				}
+			}
+		}
+
+		assertThat(violations)
+			.as("영문 필드명 원문 표 헤더(파일: <th>텍스트</th>): %s", violations)
+			.isEmpty();
+	}
+
+	@Test
+	@DisplayName("운영자 섹션 제목에 단독 영문 Group/Code/Override/Evidence 를 쓰지 않는다")
+	void operatorSectionTitlesAreKorean() throws IOException {
+		Set<String> forbiddenExact = Set.of("Group", "Code", "Override 요청", "Evidence");
+		Path templates = ROOT.resolve("backend/src/main/resources/templates/admin");
+		List<String> violations = new ArrayList<>();
+		try (var paths = Files.walk(templates)) {
+			for (Path path : paths.filter(path -> path.toString().endsWith(".html")).toList()) {
+				String html = Files.readString(path);
+				Matcher matcher = H2_TAG.matcher(html);
+				while (matcher.find()) {
+					String text = matcher.group(1).trim();
+					boolean violates = forbiddenExact.contains(text)
+						|| text.startsWith("Code ")
+						|| text.equals("Alias")
+						|| text.startsWith("Alias ");
+					if (violates) {
+						violations.add(ROOT.relativize(path) + ": <h2>" + text + "</h2>");
+					}
+				}
+			}
+		}
+
+		assertThat(violations)
+			.as("영문 단독·혼재 섹션 제목(파일: <h2>텍스트</h2>): %s", violations)
+			.isEmpty();
+	}
+
+	@Test
+	@DisplayName("주 메뉴 토글은 데스크톱 숨김·좁은 화면 topbar leading 계약을 CSS에 유지한다")
+	void sidebarToggleDesktopHiddenNarrowTopbarLeading() throws IOException {
+		String components = read(CSS_COMPONENTS);
+
+		assertThat(components)
+			.as(">1024px 기본: 사이드바 토글 숨김")
+			.containsPattern(Pattern.compile(
+				"\\.admin-v3 \\.admin-sidebar-toggle \\{[^}]*display:\\s*none;", Pattern.DOTALL));
+
+		Matcher narrowMedia = Pattern.compile("@media \\(max-width: 1024px\\)\\s*\\{(.*)", Pattern.DOTALL)
+			.matcher(components);
+		assertThat(narrowMedia.find()).as("≤1024px media query가 존재한다").isTrue();
+		assertThat(narrowMedia.group(1))
+			.as("≤1024px: nav-control 안 토글을 inline-flex(또는 flex)로 노출")
+			.containsPattern(Pattern.compile(
+				"\\.admin-v3 \\.admin-sidebar-nav-control \\.admin-sidebar-toggle \\{[^}]*display:\\s*(inline-flex|flex);",
+				Pattern.DOTALL));
+
+		String shell = read("backend/src/main/resources/templates/admin/fragments/shell.html");
+		assertThat(shell)
+			.as("toggle는 admin-topbar-context 안 첫 컨트롤이다")
+			.containsPattern(Pattern.compile(
+				"<div class=\"admin-topbar-context\">\\s*(?:<!--.*?-->\\s*)?<div class=\"admin-sidebar-nav-control\"",
+				Pattern.DOTALL))
+			.doesNotContain("☰")
+			.contains("icon('menu')")
+			.contains("aria-label=\"주 메뉴 열기·닫기\"");
 	}
 
 	private static int count(Pattern pattern, String source) {

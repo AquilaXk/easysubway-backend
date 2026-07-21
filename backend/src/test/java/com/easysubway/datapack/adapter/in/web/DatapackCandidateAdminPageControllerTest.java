@@ -93,7 +93,7 @@ class DatapackCandidateAdminPageControllerTest {
 			.contains("프로덕션 반영 가능")
 			.contains("name=\"commandToken\"")
 			.contains("게이트 재실행")
-			.doesNotContain("production 승인")
+			.doesNotContain("프로덕션 승인")
 			.doesNotContain("serviceKey");
 	}
 

@@ -25,7 +25,7 @@
 		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/source-snapshots/page}"
 		      role="search" aria-label="원천 스냅샷 검색">
 			<input type="search" name="query" th:value="${filter.queryValue}"
-			       placeholder="스냅샷·source·provider 검색" aria-label="원천 스냅샷 검색" autocomplete="off">
+			       placeholder="스냅샷·출처·제공자 검색" aria-label="원천 스냅샷 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
 				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
@@ -37,7 +37,7 @@
 			<select name="sort" aria-label="정렬">
 				<option value="" th:selected="${filter.selectedSort('')}">수집 최신순</option>
 				<option value="retrieved_asc" th:selected="${filter.selectedSort('retrieved_asc')}">수집 오래된순</option>
-				<option value="source" th:selected="${filter.selectedSort('source')}">source순</option>
+				<option value="source" th:selected="${filter.selectedSort('source')}">출처순</option>
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
 			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
@@ -58,13 +58,13 @@
 			<thead>
 			<tr>
 				<th scope="col">스냅샷</th>
-				<th scope="col">source</th>
-				<th scope="col">provider</th>
+				<th scope="col">출처</th>
+				<th scope="col">제공자</th>
 				<th scope="col">수집</th>
-				<th scope="col">rows</th>
-				<th scope="col">status</th>
+				<th scope="col">행 수</th>
+				<th scope="col">상태</th>
 				<th scope="col">raw sha256</th>
-				<th scope="col">diff</th>
+				<th scope="col">차이</th>
 				<th scope="col">상세</th>
 			</tr>
 			</thead>

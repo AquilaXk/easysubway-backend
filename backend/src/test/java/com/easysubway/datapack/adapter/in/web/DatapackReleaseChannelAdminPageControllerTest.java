@@ -79,7 +79,7 @@ class DatapackReleaseChannelAdminPageControllerTest {
 			.contains("https://github.com/AquilaXk/easysubway/actions/runs/1128")
 			.contains("name=\"commandToken\"")
 			.contains("rollback 실행")
-			.contains("production 승인")
+			.contains("프로덕션 승인")
 			.doesNotContain("serviceKey")
 			.doesNotContain("OBJECT_STORAGE_SECRET");
 	}

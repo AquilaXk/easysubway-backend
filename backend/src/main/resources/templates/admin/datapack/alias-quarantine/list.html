@@ -25,7 +25,7 @@
 		<form class="table-toolbar" method="get" th:action="@{/admin/datapack/alias-quarantine/page}"
 		      role="search" aria-label="별칭·격리 검색">
 			<input type="search" name="query" th:value="${filter.queryValue}"
-			       placeholder="alias·quarantine·station 검색" aria-label="별칭·격리 검색" autocomplete="off">
+			       placeholder="별칭·격리·역 검색" aria-label="별칭·격리 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
 				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
@@ -51,24 +51,24 @@
 	</section>
 
 	<section class="admin-panel">
-		<h2>Alias 검수 큐</h2>
+		<h2>별칭 검수 큐</h2>
 		<div class="admin-table-scroll" tabindex="0" role="group"
 		     aria-label="가로로 스크롤 가능한 데이터 표">
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">id</th>
-				<th scope="col">source</th>
-				<th scope="col">snapshot</th>
-				<th scope="col">provider entity</th>
-				<th scope="col">canonical entity</th>
-				<th scope="col">confidence</th>
-				<th scope="col">method</th>
-				<th scope="col">status</th>
-				<th scope="col">requested</th>
-				<th scope="col">approved</th>
-				<th scope="col">evidence</th>
-				<th scope="col">command</th>
+				<th scope="col">ID</th>
+				<th scope="col">출처</th>
+				<th scope="col">스냅샷</th>
+				<th scope="col">제공 엔티티</th>
+				<th scope="col">정규 엔티티</th>
+				<th scope="col">신뢰도</th>
+				<th scope="col">방법</th>
+				<th scope="col">상태</th>
+				<th scope="col">요청</th>
+				<th scope="col">승인</th>
+				<th scope="col">증거</th>
+				<th scope="col">작업</th>
 			</tr>
 			</thead>
 			<tbody>
@@ -131,18 +131,18 @@
 		<table class="static-table">
 			<thead>
 			<tr>
-				<th scope="col">id</th>
-				<th scope="col">source</th>
-				<th scope="col">snapshot</th>
-				<th scope="col">provider hash</th>
-				<th scope="col">reason</th>
-				<th scope="col">severity</th>
-				<th scope="col">status</th>
-				<th scope="col">latest resolution</th>
-				<th scope="col">canonical</th>
-				<th scope="col">resolved</th>
-				<th scope="col">excerpt</th>
-				<th scope="col">command</th>
+				<th scope="col">ID</th>
+				<th scope="col">출처</th>
+				<th scope="col">스냅샷</th>
+				<th scope="col">제공자 해시</th>
+				<th scope="col">사유</th>
+				<th scope="col">심각도</th>
+				<th scope="col">상태</th>
+				<th scope="col">최근 해결</th>
+				<th scope="col">정규 엔티티</th>
+				<th scope="col">해결</th>
+				<th scope="col">발췌</th>
+				<th scope="col">작업</th>
 			</tr>
 			</thead>
 			<tbody>

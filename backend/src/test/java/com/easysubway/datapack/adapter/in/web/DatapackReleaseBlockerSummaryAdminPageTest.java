@@ -309,7 +309,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 			.contains("Android 증거")
 			.contains("매니페스트 서명")
 			.contains("수동 오버라이드")
-			.contains("FAIL")
+			.contains("실패")
 			.contains("확인 필요");
 	}
 
@@ -334,7 +334,7 @@ class DatapackReleaseBlockerSummaryAdminPageTest {
 		assertThat(qualityHtml)
 			.contains("소스 최신성")
 			.contains("SOURCE_SNAPSHOT_EXPIRED")
-			.contains("FAIL");
+			.contains("실패");
 		assertThat(pipelineHtml)
 			.contains("원천 스냅샷")
 			.contains("차단 요인 1건");
