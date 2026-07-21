@@ -29,8 +29,11 @@
 	      th:attr="hx-get=@{${basePath}},hx-target='#' + ${resultsId}"
 	      hx-swap="outerHTML" hx-push-url="true"
 	      hx-trigger="submit, keyup changed delay:300ms">
-		<input type="search" th:name="${search.name}" th:value="${search.value}"
-		       th:placeholder="${search.placeholder}" th:aria-label="${search.label}" autocomplete="off">
+		<label>
+			<span class="sr-only" th:text="${search.label}">검색</span>
+			<input type="search" th:name="${search.name}" th:value="${search.value}"
+			       th:placeholder="${search.placeholder}" th:aria-label="${search.label}" autocomplete="off">
+		</label>
 		<th:block th:if="${search.get('hidden')}">
 			<input type="hidden" th:each="hiddenParam : ${search.get('hidden')}"
 			       th:name="${hiddenParam.key}" th:value="${hiddenParam.value}">

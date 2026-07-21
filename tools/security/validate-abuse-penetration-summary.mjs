@@ -3,6 +3,7 @@ import { createHash } from "node:crypto";
 import { isIP } from "node:net";
 import { readFile } from "node:fs/promises";
 import { pathToFileURL } from "node:url";
+import { codepointCompare } from "../lib/codepoint-compare.mjs";
 import { validateSchema } from "../ci/lib/json-schema-lite.mjs";
 import { buildAbusePenetrationSummaryV2Schema, deriveSummaryCatalog } from "./abuse-penetration-summary-schema.mjs";
 
@@ -39,7 +40,7 @@ function uniqueIds(items, field, allowed, path, code = "SUMMARY_ID_SET_MISMATCH"
   }
   return result;
 }
-const sorted = (values) => Array.from(values).sort();
+const sorted = (values) => Array.from(values).sort(codepointCompare);
 function exactSet(actual, expected, path) {
   if (JSON.stringify(sorted(actual)) !== JSON.stringify(sorted(expected))) fail("SUMMARY_ID_SET_MISMATCH", path, "exact-set");
 }
@@ -111,7 +112,7 @@ function validateLegacyV1(summary, gate, requirePass) {
   });
 }
 function artifactIdentitySha256(identity) {
-  const canonical = Object.fromEntries(Object.keys(identity).sort().map((field) => [field, identity[field]]));
+  const canonical = Object.fromEntries(Object.keys(identity).sort(codepointCompare).map((field) => [field, identity[field]]));
   return createHash("sha256").update(JSON.stringify(canonical)).digest("hex");
 }
 function validateIdentityEvidencePath(value, identity, path) {

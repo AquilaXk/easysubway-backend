@@ -530,8 +530,15 @@
 	margin: 0;
 }
 
-.admin-list-toolbar-search input[type="search"] {
+/* wrapping <label>가 flex 자식이 되므로(#2420 Sonar InputWithoutLabelCheck) label이 폭을 받고 input이 채운다. */
+.admin-list-toolbar-search > label {
 	flex: 1;
+	min-width: 0;
+	display: block;
+}
+
+.admin-list-toolbar-search input[type="search"] {
+	width: 100%;
 	min-width: 0;
 }
 
