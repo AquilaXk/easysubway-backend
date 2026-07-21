@@ -155,7 +155,7 @@ jobs:
           node-version: "24"
 
       - name: Admin QA Gates / Install pinned QA tools
-        run: npm ci --prefix tools/qa
+        run: npm ci --prefix tools/qa --ignore-scripts
 
       - name: Admin QA Gates / Run static QA gates
         env:

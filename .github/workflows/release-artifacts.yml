@@ -389,7 +389,7 @@ jobs:
           DEPLOY_PUBLIC_API_BASE_URL: ${{ vars.DEPLOY_PUBLIC_API_BASE_URL }}
         run: |
           set -euo pipefail
-          flutter pub get
+          flutter pub get --enforce-lockfile
           ../../tools/mobile/validate-release-dart-defines.sh \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
