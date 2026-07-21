@@ -29,6 +29,7 @@
 		<input type="search" name="q" th:value="${query}"
 		       placeholder="메뉴·역·제보 검색" aria-label="검색어" autocomplete="off">
 		<button type="submit" class="outline">검색</button>
+		<a class="admin-btn plain" th:href="@{/admin/search}">초기화</a>
 	</form>
 
 	<div id="search-results">
@@ -51,7 +52,6 @@
 	</div>
 </main>
 </div>
-<th:block th:replace="~{admin/fragments/shell :: toastRegion}"></th:block>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
 </body>
 </html>

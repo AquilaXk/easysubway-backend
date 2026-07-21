@@ -66,7 +66,7 @@ class DatapackReleaseRequestAdminPageControllerTest {
 			.andReturn().getResponse().getContentAsString();
 
 		assertThat(html)
-			.contains("release request")
+			.contains("릴리스 요청")
 			.contains("candidate-stable-9")
 			.contains("name=\"candidateId\"")
 			.contains("name=\"targetChannel\"")
@@ -81,7 +81,7 @@ class DatapackReleaseRequestAdminPageControllerTest {
 			.contains("releaseRequestPath")
 			.contains("androidEvidencePath")
 			.contains("strictRouteRegressionPath")
-			.contains("현재 candidate 생성·등록 경로는 없습니다");
+			.contains("현재 후보 생성·등록 경로는 없습니다");
 	}
 
 	@Test

@@ -28,7 +28,7 @@
 			       placeholder="역·edge·source 검색" aria-label="경로 게이트 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
-				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
 				<option value="STRICT" th:selected="${filter.selectedStatus('STRICT')}">strict 가능</option>
 				<option value="GENERATED_CONNECTOR" th:selected="${filter.selectedStatus('GENERATED_CONNECTOR')}">생성 connector</option>
 				<option value="UNKNOWN" th:selected="${filter.selectedStatus('UNKNOWN')}">UNKNOWN</option>
@@ -64,7 +64,7 @@
 				<th scope="col">verified</th>
 				<th scope="col">evidence</th>
 				<th scope="col">strict</th>
-				<th scope="col">blocker</th>
+				<th scope="col">차단 요인</th>
 			</tr>
 			</thead>
 			<tbody>

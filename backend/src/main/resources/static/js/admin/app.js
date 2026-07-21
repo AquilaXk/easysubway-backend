@@ -13,6 +13,104 @@
 // app.js는 defer라 이 시점에 document.body가 존재한다.
 document.body.classList.add('has-js');
 
+// 오버레이 포커스 트랩(#2416): 드로어·커맨드 팔레트·알림 패널이 Tab/Shift+Tab을 순환하고
+// 닫을 때 트리거로 포커스를 복원한다. CSP 빌드 Alpine은 표현식을 쓰지 않으므로 공유 헬퍼로 둔다.
+function adminFocusableElements(root) {
+	if (!root) {
+		return [];
+	}
+	var nodes = root.querySelectorAll(
+		'a[href], button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+	);
+	return Array.prototype.filter.call(nodes, function (el) {
+		return !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true';
+	});
+}
+
+function adminTrapTabKey(event, root) {
+	if (event.key !== 'Tab' || !root) {
+		return;
+	}
+	var focusable = adminFocusableElements(root);
+	if (!focusable.length) {
+		event.preventDefault();
+		return;
+	}
+	var first = focusable[0];
+	var last = focusable[focusable.length - 1];
+	if (event.shiftKey) {
+		if (document.activeElement === first || !root.contains(document.activeElement)) {
+			event.preventDefault();
+			last.focus();
+		}
+	} else if (document.activeElement === last || !root.contains(document.activeElement)) {
+		event.preventDefault();
+		first.focus();
+	}
+}
+
+function adminFocusFirst(root) {
+	var focusable = adminFocusableElements(root);
+	if (focusable.length) {
+		focusable[0].focus();
+	} else if (root && root.focus) {
+		root.focus();
+	}
+}
+
+function adminReturnFocus(state, fallbackEl) {
+	var target = state.returnFocus || fallbackEl;
+	state.returnFocus = null;
+	if (target && target.focus) {
+		target.focus();
+	}
+}
+
+// htmx 전역 피드백(#2416): topbar 인디케이터·실패 토스트. no-JS 폴백(form GET·링크)은 그대로다.
+(function initHtmxFeedback() {
+	var indicator = document.getElementById('admin-htmx-indicator');
+	var pendingRequests = 0;
+
+	function setIndicatorBusy(isBusy) {
+		if (!indicator) {
+			return;
+		}
+		indicator.setAttribute('aria-busy', isBusy ? 'true' : 'false');
+	}
+
+	function beginHtmxRequest() {
+		pendingRequests += 1;
+		setIndicatorBusy(true);
+	}
+
+	function endHtmxRequest() {
+		pendingRequests = Math.max(0, pendingRequests - 1);
+		if (pendingRequests === 0) {
+			setIndicatorBusy(false);
+		}
+	}
+
+	if (indicator) {
+		setIndicatorBusy(false);
+		if (window.htmx) {
+			document.body.setAttribute('hx-indicator', '#admin-htmx-indicator');
+			window.htmx.process(document.body);
+		}
+		document.body.addEventListener('htmx:beforeRequest', beginHtmxRequest);
+		document.body.addEventListener('htmx:afterRequest', endHtmxRequest);
+	}
+	document.body.addEventListener('htmx:responseError', function () {
+		window.dispatchEvent(
+			new CustomEvent('admin-toast', {
+				detail: {
+					message: '요청이 실패했습니다. 잠시 후 다시 시도해 주세요.',
+					tone: 'failure',
+				},
+			})
+		);
+	});
+})();
+
 // x-show FOUC 방지(#1982 리뷰 반영): has-js 스코프 CSS로 Alpine 초기화 전 순간을 가려두고,
 // Alpine이 실제로 모든 x-show를 최초 평가한 뒤(alpine:initialized) 이 클래스를 붙여 CSS 숨김을
 // 해제한다. 그 시점부터는 x-show가 설정하는 인라인 style이 표시 여부를 전담한다.
@@ -156,17 +254,34 @@ document.addEventListener('alpine:init', function () {
 	Alpine.data('commandPalette', function () {
 		return {
 			open: false,
+			returnFocus: null,
+			get ariaExpanded() {
+				return this.open ? 'true' : 'false';
+			},
 			show: function () {
+				this.returnFocus = document.activeElement;
 				this.open = true;
-				var input = this.$refs.input;
+				var self = this;
 				this.$nextTick(function () {
+					var input = self.$refs.input;
 					if (input) {
 						input.focus();
 					}
 				});
 			},
 			hide: function () {
+				if (!this.open) {
+					return;
+				}
 				this.open = false;
+				adminReturnFocus(this, this.$refs.trigger);
+			},
+			trapFocusKey: function (event) {
+				if (!this.open) {
+					return;
+				}
+				var panel = this.$root.querySelector('.command-palette-panel');
+				adminTrapTabKey(event, panel || this.$root);
 			},
 			// 입력에서 아래 방향키 → 첫 결과 링크로 포커스 이동.
 			focusResults: function () {
@@ -204,22 +319,27 @@ document.addEventListener('alpine:init', function () {
 	Alpine.data('drawer', function () {
 		return {
 			visible: false,
+			returnFocus: null,
 			open: function () {
+				this.returnFocus = document.activeElement;
 				this.visible = true;
-				var panel = this.$refs.panel;
-				var focusPanel = function () {
-					if (panel) {
-						panel.focus();
-					}
-				};
-				if (this.$nextTick) {
-					this.$nextTick(focusPanel);
-				} else {
-					focusPanel();
-				}
+				var self = this;
+				this.$nextTick(function () {
+					adminFocusFirst(self.$refs.panel || self.$el);
+				});
 			},
 			close: function () {
+				if (!this.visible) {
+					return;
+				}
 				this.visible = false;
+				adminReturnFocus(this, null);
+			},
+			trapFocusKey: function (event) {
+				if (!this.visible) {
+					return;
+				}
+				adminTrapTabKey(event, this.$refs.panel || this.$el);
 			},
 		};
 	});
@@ -232,6 +352,7 @@ document.addEventListener('alpine:init', function () {
 	Alpine.data('alertCenter', function () {
 		return {
 			open: false,
+			returnFocus: null,
 			timer: null,
 			get rootClass() {
 				return this.open ? 'is-open' : '';
@@ -278,10 +399,37 @@ document.addEventListener('alpine:init', function () {
 				}
 			},
 			toggle: function () {
-				this.open = !this.open;
+				if (this.open) {
+					this.closePanel();
+				} else {
+					this.openPanel();
+				}
+			},
+			openPanel: function () {
+				this.returnFocus = document.activeElement;
+				this.open = true;
+				var self = this;
+				this.$nextTick(function () {
+					var panel = self.$root.querySelector('.admin-alert-panel');
+					adminFocusFirst(panel || self.$refs.live);
+				});
+			},
+			closePanel: function () {
+				if (!this.open) {
+					return;
+				}
+				this.open = false;
+				adminReturnFocus(this, this.$refs.trigger);
 			},
 			hide: function () {
-				this.open = false;
+				this.closePanel();
+			},
+			trapFocusKey: function (event) {
+				if (!this.open) {
+					return;
+				}
+				var panel = this.$root.querySelector('.admin-alert-panel');
+				adminTrapTabKey(event, panel || this.$root);
 			},
 		};
 	});
@@ -463,6 +611,8 @@ document.addEventListener('alpine:init', function () {
 			},
 			// 활성 행 하나만 선택 상태로 만들고 일괄 검수 폼을 해당 결정으로 제출한다(단일 처리 시맨틱).
 			// 포커스가 표 밖이면 아무 것도 하지 않는다(첫 행 오처리 방지) — focusedRowLink는 폴백이 없다.
+			// 반려(REJECT)는 details 확인 UI를 연 뒤 확인 버튼에 포커스만 옮긴다 — 단축키로 확인 단계를
+			// 건너뛰지 않는다(#2416 Bugbot). 승인은 기존처럼 즉시 제출한다.
 			processActive: function (decision) {
 				var link = this.focusedRowLink();
 				if (!link) {
@@ -479,6 +629,18 @@ document.addEventListener('alpine:init', function () {
 				var checkbox = row.querySelector('input[name="reportIds"]');
 				if (checkbox) {
 					checkbox.checked = true;
+				}
+				this.recount();
+				if (decision === 'REJECT') {
+					var confirm = form.querySelector('details.admin-action-confirm');
+					var rejectBtn = confirm ? confirm.querySelector('button[value="REJECT"]') : null;
+					if (confirm && rejectBtn) {
+						confirm.open = true;
+						this.$nextTick(function () {
+							rejectBtn.focus();
+						});
+						return;
+					}
 				}
 				var button = form.querySelector('button[value="' + decision + '"]');
 				if (button) {

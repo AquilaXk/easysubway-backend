@@ -15,15 +15,10 @@
 }
 
 /*
- * 버튼 primitive(V6-04 #2276, 위계 3단 확장 V6-13 #2313): shape·크기·타이포는 이 base가 소유하고,
- * 위계(filled/outline/plain)는 명시적 class(.primary/.outline/.plain)가 소유하는 게 canonical이다.
- * 아래 base의 `background: var(--admin-primary)`는 화면 이관(V6-07~10) 전까지 유지하는 COMPAT
- * 기본값이다 — class 없는 button/`.admin-btn`이 파랑으로 계속 렌더돼 기존 화면 회귀를 막는다. 화면
- * owner가 명시적 class로 이관하면 이 기본값을 neutral로 낮춘다. `.danger`는 파괴적 액션 전용 filled로
- * 유지한다. 화면당 filled(`.primary`/`.danger`)는 그 화면의 대표 액션 1개가 원칙이고, 나머지 액션은
- * `.outline`(보조, 테두리만) 또는 `.plain`(내비게이션성, 텍스트/링크형)을 쓴다. 구 `.secondary`(주황
- * 채움)는 위계가 아닌 또 다른 강조였던 문제로 폐지하고 `.outline`으로 이관했다(#2313, 원 계약 #2280).
- * raw 색·shadow 없이 token만 사용한다. */
+ * 버튼 primitive(V6-04 #2276, 위계 3단 #2313·#2416): shape·크기·타이포는 base가 소유하고,
+ * 위계(primary/secondary/tertiary)는 명시 class가 소유한다. 기본값은 secondary(외곽선)다.
+ * `.outline`/`.plain`은 #2313 호환 alias이며 `.secondary`/`.tertiary`와 동일 규칙을 공유한다.
+ * `.danger`는 파괴적 액션 전용 filled다. 화면당 `.primary`는 대표 제출 액션 1개가 원칙이다. */
 .admin-btn,
 .admin-v3 button {
 	display: inline-flex;
@@ -31,20 +26,26 @@
 	justify-content: center;
 	min-height: 40px;
 	padding: 0 14px;
-	border: 0;
-	background: var(--admin-primary);
-	color: #fff;
-	font-size: 14px;
+	border: 1px solid var(--admin-border-strong);
+	background: var(--admin-surface);
+	color: var(--admin-ink);
+	font-size: var(--admin-fs-body);
 	font-weight: var(--admin-w-strong);
 	cursor: pointer;
 	text-decoration: none;
 }
 
-/* 강조 버튼 canonical 명시 class(#2276) — 화면 이관 시 primary 액션에 부여한다. */
+.admin-btn:hover,
+.admin-v3 button:hover {
+	background: var(--admin-accent-soft);
+}
+
+/* primary — 화면(폼)당 대표 제출 액션 1개 */
 .admin-btn.primary,
 .admin-v3 button.primary {
+	border-color: var(--admin-primary);
 	background: var(--admin-primary);
-	color: #fff;
+	color: var(--admin-on-primary);
 }
 
 .admin-btn.primary:hover,
@@ -52,35 +53,42 @@
 	background: var(--admin-primary-hover);
 }
 
-/* 보조 액션 canonical 명시 class(#2313) — 투명 배경 + 테두리, primary보다 무게를 낮추되 버튼 형태(크기)는
-   유지한다. 데이터를 바꾸지만 그 화면의 대표 액션은 아닌 액션, 또는 filled가 이미 다른 버튼에 쓰인
-   화면의 보조 액션에 부여한다. */
+/* secondary — 일반 버튼 기본값·검색·필터·보조 제출 */
+.admin-btn.secondary,
+.admin-v3 button.secondary,
 .admin-btn.outline,
 .admin-v3 button.outline {
-	background: transparent;
+	background: var(--admin-surface);
 	border: 1px solid var(--admin-border-strong);
 	color: var(--admin-ink);
 }
 
+.admin-btn.secondary:hover,
+.admin-v3 button.secondary:hover,
 .admin-btn.outline:hover,
 .admin-v3 button.outline:hover {
 	background: var(--admin-accent-soft);
 }
 
-/* 내비게이션성 액션 canonical 명시 class(#2313) — 배경·테두리 없이 .detail-link와 같은 텍스트/링크 톤.
-   목록으로 돌아가기 등, 그 화면의 데이터를 바꾸지 않고 다른 화면으로 이동만 하는 액션에 부여한다. */
+/* tertiary — 닫기·아이콘·내비게이션성 텍스트 버튼 */
+.admin-btn.tertiary,
+.admin-v3 button.tertiary,
 .admin-btn.plain,
 .admin-v3 button.plain {
 	min-height: 24px;
 	padding: 0;
+	border: 0;
 	background: transparent;
 	color: var(--admin-accent);
 	font-weight: var(--admin-w-strong);
 	text-decoration: none;
 }
 
+.admin-btn.tertiary:hover,
+.admin-v3 button.tertiary:hover,
 .admin-btn.plain:hover,
 .admin-v3 button.plain:hover {
+	background: transparent;
 	text-decoration: underline;
 }
 
@@ -94,11 +102,6 @@
 	display: inline-block;
 	margin-right: 8px;
 	font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
-}
-
-.admin-btn:hover,
-.admin-v3 button:hover {
-	background: var(--admin-primary-hover);
 }
 
 .admin-v3 input,
@@ -455,20 +458,27 @@
 	gap: 12px;
 }
 
-.admin-v3 .alert-dismiss {
+/* tertiary — 알림·토스트·드로어 닫기 */
+.admin-v3 .alert-dismiss,
+.toast-region .toast-dismiss,
+.admin-drawer-close {
 	flex: none;
+	min-height: 24px;
+	padding: 2px 6px;
 	border: 0;
 	background: transparent;
 	color: inherit;
-	font-size: 13px;
+	font-size: var(--admin-fs-caption);
 	line-height: 1;
-	padding: 2px 6px;
 	cursor: pointer;
-	border-radius: 6px;
+	border-radius: var(--admin-radius-control);
 }
 
-.admin-v3 .alert-dismiss:hover {
+.admin-v3 .alert-dismiss:hover,
+.toast-region .toast-dismiss:hover,
+.admin-drawer-close:hover {
 	background: color-mix(in srgb, var(--admin-ink) 8%, transparent);
+	text-decoration: none;
 }
 
 /* 표준 테이블 검색 툴바·정렬 헤더(#1737) */
@@ -482,6 +492,78 @@
 .admin-v3 .table-toolbar input[type="search"] {
 	flex: 1;
 	min-width: 0;
+}
+
+/* htmx 요청 인디케이터(#1736, #2416): includeIndicatorStyles=false이므로 CSS 파일에서 정의한다. */
+.admin-v3 .htmx-indicator {
+	display: none;
+	align-items: center;
+	gap: 6px;
+	font-size: var(--admin-fs-caption);
+	color: var(--admin-ink-3);
+}
+
+.admin-v3 .htmx-request .htmx-indicator,
+.admin-v3 .htmx-request.htmx-indicator {
+	display: inline-flex;
+}
+
+.admin-v3 .admin-htmx-indicator {
+	position: fixed;
+	inset-block-start: calc(var(--admin-topbar-height, 56px) + 8px);
+	inset-inline-end: 16px;
+	z-index: var(--admin-z-overlay, 40);
+	padding: 6px 10px;
+	border-radius: var(--admin-radius-control);
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	box-shadow: var(--admin-shadow-card);
+}
+
+.admin-v3 .admin-htmx-indicator::before {
+	content: "";
+	inline-size: 14px;
+	block-size: 14px;
+	border: 2px solid var(--admin-border);
+	border-block-start-color: var(--admin-accent);
+	border-radius: 50%;
+	animation: admin-htmx-spin 0.8s linear infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+	.admin-v3 .admin-htmx-indicator::before {
+		animation: none;
+		border-block-start-color: var(--admin-accent);
+		opacity: 0.7;
+	}
+}
+
+@keyframes admin-htmx-spin {
+	to {
+		transform: rotate(360deg);
+	}
+}
+
+/* 파괴적 액션 2단 확인(details disclosure, CSP 안전) */
+.admin-v3 .admin-action-confirm {
+	margin-block: 4px;
+}
+
+.admin-v3 .admin-action-confirm summary {
+	cursor: pointer;
+	list-style: none;
+}
+
+.admin-v3 .admin-action-confirm summary::-webkit-details-marker {
+	display: none;
+}
+
+.admin-v3 .admin-action-confirm summary.danger {
+	color: var(--admin-danger);
+}
+
+.admin-v3 .admin-action-confirm .meta {
+	margin-block: 6px 8px;
 }
 
 .admin-v3 table th[aria-sort] a {
@@ -781,7 +863,7 @@
 	padding: 0 5px;
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-accent);
-	color: #fff;
+	color: var(--admin-on-primary);
 	font-size: 11px;
 	font-weight: 600;
 }
@@ -804,7 +886,7 @@
 	padding: 0 7px;
 	border-radius: var(--admin-radius-badge);
 	background: var(--admin-accent);
-	color: #fff;
+	color: var(--admin-on-primary);
 	font-size: 12px;
 	font-weight: 600;
 	text-decoration: none;
@@ -927,15 +1009,6 @@
 	border-left-color: var(--admin-danger);
 }
 
-.toast-region .toast-dismiss {
-	flex: none;
-	border: 0;
-	background: transparent;
-	color: inherit;
-	cursor: pointer;
-	padding: 0 2px;
-}
-
 /* 드로어(사이드 패널, #1737) */
 .admin-drawer {
 	position: fixed;
@@ -966,9 +1039,6 @@
 	position: sticky;
 	top: 0;
 	float: right;
-	border: 0;
-	background: transparent;
-	cursor: pointer;
 	font-size: 16px;
 }
 
@@ -1014,7 +1084,7 @@
 	margin: 0 0 12px;
 	padding: 0;
 	background: transparent;
-	font-size: 18px;
+	font-size: var(--admin-fs-h2);
 	font-weight: var(--admin-w-strong);
 }
 
@@ -1040,8 +1110,26 @@
 	max-width: 640px;
 }
 
-/* 폼 섹션 그룹핑(#1986, 오너 지시 2026-07-13) — 긴 폼을 논리 섹션으로 분리.
-   단일 컬럼 원칙 유지, 섹션 소제목 + 상단 구분선으로 그룹을 나눈다. */
+/* fieldset 그룹(#2416) — 긴 폼을 접근 가능한 논리 블록으로 분리 */
+.admin-form fieldset {
+	margin: 0;
+	padding: 14px 16px;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+}
+
+.admin-form fieldset + fieldset {
+	margin-top: 14px;
+}
+
+.admin-form legend {
+	padding: 0 4px;
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-caption);
+	font-weight: var(--admin-w-strong);
+}
+
+/* 폼 섹션 그룹핑(#1986) — div 기반 레거시; fieldset으로 이관 중 */
 .admin-form-section {
 	display: grid;
 	gap: 14px;
@@ -1304,7 +1392,7 @@
 .admin-v3 .pagination a[aria-current="page"] {
 	border-color: var(--admin-primary);
 	background: var(--admin-primary);
-	color: #fff;
+	color: var(--admin-on-primary);
 }
 
 .admin-v3 .pagination {
@@ -1499,8 +1587,16 @@
 	color: var(--admin-ink-2);
 }
 
-.admin-v3 button.danger {
+.admin-v3 button.danger,
+.admin-btn.danger {
+	border-color: var(--admin-danger);
 	background: var(--admin-danger);
+	color: var(--admin-on-primary);
+}
+
+.admin-v3 button.danger:hover,
+.admin-btn.danger:hover {
+	background: var(--admin-danger-hover);
 }
 
 /* 컴포넌트 소유 selector의 반응형 규칙(#2298 리뷰): 앱 프레임 셸 규칙은 admin-shell.css로
@@ -1525,6 +1621,48 @@
 		inset: 0;
 		z-index: 80;
 		background: color-mix(in srgb, var(--admin-ink) 40%, transparent);
+	}
+
+	/* 오프캔버스 터치 타깃(#2416): ≤1024px에서 페이지네이션·표 액션·일반 버튼이 44×44px 이상. */
+	.admin-v3 .pagination a,
+	.admin-v3 .status-filter a {
+		min-height: 44px;
+	}
+
+	.admin-v3 button,
+	.admin-btn {
+		min-height: 44px;
+	}
+
+	.admin-v3 .tiny-btn {
+		min-height: 44px;
+	}
+
+	.admin-v3 .detail-link {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
+		padding: 0 4px;
+	}
+
+	/* tertiary dismiss·아이콘 버튼(#2416): 데스크톱 24px 유지, ≤1024px에서만 44×44px 터치 타깃. */
+	.admin-v3 .alert-dismiss,
+	.toast-region .toast-dismiss,
+	.admin-drawer-close {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		min-height: 44px;
+		min-width: 44px;
+	}
+
+	.admin-btn.tertiary,
+	.admin-v3 button.tertiary,
+	.admin-btn.plain,
+	.admin-v3 button.plain {
+		display: inline-flex;
+		align-items: center;
+		min-height: 44px;
 	}
 }
 
@@ -1684,7 +1822,7 @@
 	padding: 0 5px;
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-danger);
-	color: #fff;
+	color: var(--admin-on-primary);
 	font-size: 11px;
 	line-height: 18px;
 	text-align: center;

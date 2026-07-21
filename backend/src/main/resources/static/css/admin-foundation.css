@@ -39,7 +39,7 @@ body.admin-v3 {
 	padding: 10px 14px;
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-ink);
-	color: #fff;
+	color: var(--admin-on-primary);
 	font-weight: var(--admin-w-strong);
 	text-decoration: none;
 }

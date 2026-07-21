@@ -91,7 +91,11 @@
 					      th:action="@{/admin/notices/{id}/unpublish/page(id=${notice.id})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<button type="submit" class="danger">즉시 내리기</button>
+						<details class="admin-action-confirm">
+							<summary class="danger">즉시 내리기…</summary>
+							<p class="meta" th:text="|공지 '${notice.title}'을(를) 즉시 내릴까요? 이 작업은 되돌리기 어렵습니다.|">확인</p>
+							<button type="submit" class="danger">즉시 내리기</button>
+						</details>
 					</form>
 				</td>
 			</tr>

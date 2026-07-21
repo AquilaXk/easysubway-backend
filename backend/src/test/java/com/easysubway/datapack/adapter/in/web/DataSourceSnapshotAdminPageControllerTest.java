@@ -152,7 +152,7 @@ class DataSourceSnapshotAdminPageControllerTest {
 			.contains("credential redacted")
 			.contains("raw retention")
 			.contains("name=\"commandToken\"")
-			.contains("LOCKED snapshot 저장")
+			.contains("잠금 스냅샷 저장")
 			.doesNotContain("serviceKey");
 	}
 

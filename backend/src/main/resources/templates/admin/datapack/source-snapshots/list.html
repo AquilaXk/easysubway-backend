@@ -28,11 +28,11 @@
 			       placeholder="스냅샷·source·provider 검색" aria-label="원천 스냅샷 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
-				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
-				<option value="LOCKED" th:selected="${filter.selectedStatus('LOCKED')}">LOCKED</option>
-				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">PASS</option>
-				<option value="SUCCESS" th:selected="${filter.selectedStatus('SUCCESS')}">SUCCESS</option>
-				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">FAIL</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
+				<option value="LOCKED" th:selected="${filter.selectedStatus('LOCKED')}">잠김</option>
+				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">통과</option>
+				<option value="SUCCESS" th:selected="${filter.selectedStatus('SUCCESS')}">성공</option>
+				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">실패</option>
 			</select>
 			<select name="sort" aria-label="정렬">
 				<option value="" th:selected="${filter.selectedSort('')}">수집 최신순</option>

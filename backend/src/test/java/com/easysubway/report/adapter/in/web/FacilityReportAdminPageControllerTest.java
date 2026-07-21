@@ -61,7 +61,7 @@ class FacilityReportAdminPageControllerTest {
 			.getContentAsString();
 
 		assertThat(html)
-			.contains("시설 신고 확인")
+			.contains("제보 확인 대기열")
 			.contains("접수됨")
 			.contains("관리자 목록에서 볼 신고")
 			.contains("/admin/reports/%s/page".formatted(reportId))
@@ -220,7 +220,7 @@ class FacilityReportAdminPageControllerTest {
 
 		assertThat(html)
 			.contains("신고 급증")
-			.contains("시설 신고 확인")
+			.contains("제보 확인 대기열")
 			.doesNotContain("상태·사진·위치·접수일 기준으로 제보를 확인 대기열에 배치합니다.")
 			// V6-08 #2280 action 체계: 승인 primary, 반려 danger로 위계를 명시한다.
 			.contains("class=\"primary\" type=\"submit\" name=\"decision\" value=\"ACCEPT\">선택 승인")

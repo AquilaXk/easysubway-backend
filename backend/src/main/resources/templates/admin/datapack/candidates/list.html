@@ -28,7 +28,7 @@
 			       placeholder="후보·scope·version 검색" aria-label="후보 팩 검색" autocomplete="off">
 			<select name="status" aria-label="후보 상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
-				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">게이트 blocker</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">게이트 차단</option>
 				<option value="READY" th:selected="${filter.selectedStatus('READY')}">승인 대기</option>
 				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">승인됨</option>
 				<option value="PROMOTED" th:selected="${filter.selectedStatus('PROMOTED')}">승격됨</option>

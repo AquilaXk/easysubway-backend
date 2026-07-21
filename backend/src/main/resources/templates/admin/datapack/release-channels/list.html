@@ -32,11 +32,11 @@
 				<option value="staging" th:selected="${filter.selectedStatus('staging')}">staging</option>
 				<option value="dev" th:selected="${filter.selectedStatus('dev')}">dev</option>
 				<option value="ROLLBACK_AVAILABLE" th:selected="${filter.selectedStatus('ROLLBACK_AVAILABLE')}">rollback 가능</option>
-				<option value="PROMOTE" th:selected="${filter.selectedStatus('PROMOTE')}">PROMOTE</option>
-				<option value="ROLLBACK" th:selected="${filter.selectedStatus('ROLLBACK')}">ROLLBACK</option>
-				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">PASS</option>
-				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">FAIL</option>
-				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">PENDING</option>
+				<option value="PROMOTE" th:selected="${filter.selectedStatus('PROMOTE')}">승격</option>
+				<option value="ROLLBACK" th:selected="${filter.selectedStatus('ROLLBACK')}">롤백</option>
+				<option value="PASS" th:selected="${filter.selectedStatus('PASS')}">통과</option>
+				<option value="FAIL" th:selected="${filter.selectedStatus('FAIL')}">실패</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">대기</option>
 			</select>
 			<select name="sort" aria-label="정렬">
 				<option value="" th:selected="${filter.selectedSort('')}">채널 우선순</option>
@@ -137,7 +137,7 @@
 					<details class="admin-promote-confirm" th:if="${channel.previousStableCandidateId != '—'}">
 						<summary th:text="${'rollback (' + channel.channel + ')'}">rollback</summary>
 						<p class="meta"
-						   th:text="${'대상 채널 ' + channel.channel + ' · rollback 대상 ' + channel.previousStableCandidateId + '. 확인하면 이전 안정 후보로 되돌립니다.'}">영향</p>
+						   th:text="${'대상 채널 ' + channel.channel + ' · rollback 대상 ' + channel.previousStableCandidateId + '. rollback을 실행할까요? 이 작업은 되돌리기 어렵습니다.'}">영향</p>
 						<form class="admin-form" method="post" th:action="@{/admin/datapack/release-channels/{channel}/rollback(channel=${channel.channel})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">

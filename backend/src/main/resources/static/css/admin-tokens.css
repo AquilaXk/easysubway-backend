@@ -27,6 +27,8 @@
 	--admin-sidebar-accent: #F6F8F9;
 	--admin-primary: #006FD6;
 	--admin-primary-hover: color-mix(in srgb, #006FD6 85%, #000);
+	--admin-on-primary: #FFFFFF;
+	--admin-danger-hover: color-mix(in srgb, var(--admin-danger) 85%, #000);
 	--admin-good: #0A705A;
 	--admin-warn: #9A5600;
 	--admin-danger: #B42318;
@@ -44,6 +46,10 @@
 	--admin-shadow-card: none;
 
 	/* 타이포 위계 */
+	--admin-fs-h1: 34px;
+	--admin-fs-h2: 18px;
+	--admin-fs-body: 14px;
+	--admin-fs-caption: 13px;
 	--admin-w-body: 500;
 	--admin-w-medium: 600;
 	--admin-w-strong: 700;

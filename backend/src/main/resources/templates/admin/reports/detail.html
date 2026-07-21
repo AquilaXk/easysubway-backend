@@ -167,7 +167,11 @@
 		<!-- 버튼 위계 계약(V6-08 #2280, outline 이관 #2313): 승인 primary(대표 액션), 반려 danger(파괴적),
 		     중복 처리 outline(보조)로 화면당 filled 1개 원칙을 지킨다. -->
 		<button class="primary" type="submit" name="decision" value="ACCEPT">승인</button>
-		<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
+		<details class="admin-action-confirm">
+			<summary class="danger">반려…</summary>
+			<p class="meta">이 신고를 반려할까요? 이 작업은 되돌리기 어렵습니다.</p>
+			<button class="danger" type="submit" name="decision" value="REJECT">반려</button>
+		</details>
 		<button class="outline" type="submit" name="decision" value="MARK_DUPLICATE">중복 처리</button>
 	</form>
 	</div>

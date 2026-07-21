@@ -65,7 +65,7 @@ class AdminAccessibilitySmokeTest {
 		RequestPostProcessor admin = fullAdmin();
 
 		assertAdminShell("/admin/dashboard/page", "통합 대시보드", admin);
-		assertAdminShell("/admin/reports/page", "시설 신고 확인", admin);
+		assertAdminShell("/admin/reports/page", "제보 확인 대기열", admin);
 		assertAdminShell("/admin/facilities/page", "시설 상태판", admin);
 		assertAdminShell("/admin/batches/page", "배치 운영", admin);
 		assertAdminShell("/admin/audits/privacy/page", "개인정보 조회 로그", admin);
@@ -101,6 +101,18 @@ class AdminAccessibilitySmokeTest {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(header().doesNotExist("HX-Refresh"))
 			.andExpect(redirectedUrlPattern("**/operator/login"));
+	}
+
+	@Test
+	@DisplayName("제보 대기열은 드로어 dialog 마크업 계약을 유지한다")
+	void reportsPageKeepsDrawerDialogMarkup() throws Exception {
+		String html = getAdminHtml("/admin/reports/page", new MockHttpSession(), fullAdmin());
+
+		assertThat(html)
+			.contains("class=\"admin-drawer\"")
+			.contains("role=\"dialog\" aria-modal=\"true\" aria-label=\"상세 패널\"")
+			.contains("x-on:keydown=\"trapFocusKey\"")
+			.contains("id=\"admin-drawer-body\"");
 	}
 
 	@Test
@@ -161,6 +173,13 @@ class AdminAccessibilitySmokeTest {
 			.contains("class=\"admin-topbar-logout-form\"")
 			.contains("action=\"/admin/logout\"")
 			.contains("name=\"_csrf\"")
+			// #2416: 커맨드 팔레트·htmx 인디케이터 마크업 계약(포커스 트랩 동작은 JS 런타임).
+			.contains("class=\"command-palette\"")
+			.contains("x-bind:aria-expanded=\"ariaExpanded\"")
+			.contains("id=\"command-palette-overlay\"")
+			.contains("role=\"dialog\" aria-modal=\"true\" aria-label=\"통합 검색\"")
+			.contains("id=\"admin-htmx-indicator\"")
+			.contains("class=\"htmx-indicator admin-htmx-indicator\"")
 			.doesNotContain("<main id=\"admin-content\"");
 		assertThat(html.indexOf("href=\"#admin-content\"")).isLessThan(html.indexOf("class=\"admin-shell\""));
 		assertThat(html.indexOf("class=\"admin-topbar-row\"")).isLessThan(html.indexOf("id=\"admin-content\""));

@@ -28,11 +28,11 @@
 			       placeholder="역·시설·source 검색" aria-label="시설 근거 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
-				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
 				<option value="STRICT" th:selected="${filter.selectedStatus('STRICT')}">strict 가능</option>
 				<option value="UNKNOWN_PENDING_REVIEW" th:selected="${filter.selectedStatus('UNKNOWN_PENDING_REVIEW')}">근거 확인 필요</option>
-				<option value="UNKNOWN" th:selected="${filter.selectedStatus('UNKNOWN')}">UNKNOWN</option>
-				<option value="CHECK_REQUIRED" th:selected="${filter.selectedStatus('CHECK_REQUIRED')}">CHECK_REQUIRED</option>
+				<option value="UNKNOWN" th:selected="${filter.selectedStatus('UNKNOWN')}">상태 미상</option>
+				<option value="CHECK_REQUIRED" th:selected="${filter.selectedStatus('CHECK_REQUIRED')}">확인 필요</option>
 				<option value="UNRESOLVED" th:selected="${filter.selectedStatus('UNRESOLVED')}">충돌 미해결</option>
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
@@ -107,7 +107,7 @@
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="idempotencyKey" th:value="${'facility-review-' + row.id}">
 						<label>
-							<span class="sr-only">strict route eligibility</span>
+							<span class="sr-only">strict 경로 사용 가능 여부</span>
 							<select name="strictRouteEligible">
 								<option value="true" th:selected="${row.strictRouteEligible}">strict 가능</option>
 								<option value="false" th:selected="${!row.strictRouteEligible}">strict 불가</option>
@@ -118,16 +118,16 @@
 							<input name="strictRouteEligibleReason" th:value="${row.strictRouteReasonRaw ?: ''}" placeholder="strict 제외 사유">
 						</label>
 						<label>
-							<span class="sr-only">conflict status</span>
+							<span class="sr-only">충돌 상태</span>
 							<select name="conflictStatus">
-								<option value="NONE" th:selected="${row.conflictStatus == 'NONE'}">NONE</option>
-								<option value="RESOLVED" th:selected="${row.conflictStatus == 'RESOLVED'}">RESOLVED</option>
-								<option value="UNRESOLVED" th:selected="${row.conflictStatus == 'UNRESOLVED'}">UNRESOLVED</option>
+								<option value="NONE" th:selected="${row.conflictStatus == 'NONE'}">충돌 없음</option>
+								<option value="RESOLVED" th:selected="${row.conflictStatus == 'RESOLVED'}">충돌 해결</option>
+								<option value="UNRESOLVED" th:selected="${row.conflictStatus == 'UNRESOLVED'}">충돌 미해결</option>
 							</select>
 						</label>
 						<label>
 							<span class="sr-only">검수 사유</span>
-							<input name="reason" value="facility evidence reviewed" required>
+							<input name="reason" value="시설 근거 검수 완료" required>
 						</label>
 						<button type="submit" class="primary">검수 저장</button>
 					</form>

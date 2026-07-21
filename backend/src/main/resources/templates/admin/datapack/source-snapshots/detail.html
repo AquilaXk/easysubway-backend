@@ -83,7 +83,7 @@
 	</section>
 
 	<section class="admin-panel">
-		<h2>LOCKED snapshot 저장</h2>
+		<h2>잠금 스냅샷 저장</h2>
 		<form class="admin-form" method="post" th:action="@{/admin/datapack/source-snapshots}">
 			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
@@ -218,7 +218,7 @@
 					<input name="idempotencyKey" required>
 				</label>
 			</div>
-			<button type="submit" class="primary">LOCKED snapshot 저장</button>
+			<button type="submit" class="primary">잠금 스냅샷 저장</button>
 		</form>
 	</section>
 

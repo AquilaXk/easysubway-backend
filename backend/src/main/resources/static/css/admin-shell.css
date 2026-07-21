@@ -334,7 +334,7 @@
 
 .admin-page-head h1 {
 	margin: 0;
-	font-size: 34px;
+	font-size: var(--admin-fs-h1);
 	font-weight: var(--admin-w-title);
 	line-height: 1.16;
 	letter-spacing: 0;
@@ -434,5 +434,14 @@
 
 	.has-js.sidebar-open .admin-sidebar {
 		transform: translateX(0);
+	}
+
+	/* 오프캔버스 터치 타깃(#2416): ≤1024px에서 사이드바 링크·퀵서치가 44×44px 이상이 되도록 한다. */
+	.admin-nav-item {
+		min-height: 44px;
+	}
+
+	.admin-sidebar-quicksearch {
+		min-height: 44px;
 	}
 }

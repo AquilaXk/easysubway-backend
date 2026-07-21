@@ -28,12 +28,12 @@
 			       placeholder="alias·quarantine·station 검색" aria-label="별칭·격리 검색" autocomplete="off">
 			<select name="status" aria-label="상태 필터">
 				<option value="ALL" th:selected="${filter.selectedStatus('ALL')}">전체 상태</option>
-				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">blocker</option>
-				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">Alias PENDING</option>
-				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">Alias APPROVED</option>
-				<option value="REJECTED" th:selected="${filter.selectedStatus('REJECTED')}">Alias REJECTED</option>
-				<option value="OPEN" th:selected="${filter.selectedStatus('OPEN')}">Quarantine OPEN</option>
-				<option value="RESOLVED" th:selected="${filter.selectedStatus('RESOLVED')}">Quarantine RESOLVED</option>
+				<option value="BLOCKER" th:selected="${filter.selectedStatus('BLOCKER')}">차단</option>
+				<option value="PENDING" th:selected="${filter.selectedStatus('PENDING')}">별칭 대기</option>
+				<option value="APPROVED" th:selected="${filter.selectedStatus('APPROVED')}">별칭 승인됨</option>
+				<option value="REJECTED" th:selected="${filter.selectedStatus('REJECTED')}">별칭 반려됨</option>
+				<option value="OPEN" th:selected="${filter.selectedStatus('OPEN')}">격리 열림</option>
+				<option value="RESOLVED" th:selected="${filter.selectedStatus('RESOLVED')}">격리 해결됨</option>
 			</select>
 			<input type="hidden" name="candidateId" th:if="${filter.hasCandidate()}" th:value="${filter.candidateValue}">
 			<input type="hidden" name="sourceSnapshotId" th:if="${filter.hasSourceSnapshot()}" th:value="${filter.sourceSnapshotValue}">
@@ -111,7 +111,11 @@
 							<span class="sr-only">반려 사유</span>
 							<input name="reason" value="official alias rejected" required>
 						</label>
-						<button type="submit" class="danger">반려 저장</button>
+						<details class="admin-action-confirm">
+							<summary class="danger">반려…</summary>
+							<p class="meta">이 별칭을 반려할까요? 이 작업은 되돌리기 어렵습니다.</p>
+							<button type="submit" class="danger">반려 저장</button>
+						</details>
 					</form>
 				</td>
 			</tr>
@@ -170,16 +174,16 @@
 						<input type="hidden" name="resolutionStatus" value="ALIAS_APPROVED">
 						<input type="hidden" name="canonicalEntityType" value="STATION">
 						<label>
-							<span class="sr-only">canonical entity id</span>
+							<span class="sr-only">정식 엔티티 ID</span>
 							<input name="canonicalEntityId" placeholder="station-id">
 						</label>
 						<label>
-							<span class="sr-only">evidence hash</span>
+							<span class="sr-only">증거 해시</span>
 							<input name="evidenceHash" placeholder="sha256">
 						</label>
 						<label>
 							<span class="sr-only">해결 사유</span>
-							<input name="resolutionReason" value="quarantine reviewed" required>
+							<input name="resolutionReason" value="격리 검토 완료" required>
 						</label>
 						<button type="submit" class="primary">해결 저장</button>
 					</form>

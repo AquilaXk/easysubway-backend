@@ -6,7 +6,7 @@
 	<!-- htmx는 기본으로 로드 시 인라인 스타일 태그(indicator)를 head에 주입한다. CSP style-src 'self'에서
 	     차단되어 콘솔 위반이 나므로 끈다. htmx-indicator가 필요하면 admin-v3.css에 정의한다(#1736). -->
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>시설 신고 확인</title>
+	<title>제보 확인 대기열</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
 <body class="admin-v3">
@@ -18,7 +18,7 @@
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
-			<h1>시설 신고 확인</h1>
+			<h1>제보 확인 대기열</h1>
 		</div>
 	</header>
 
@@ -125,13 +125,17 @@
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="returnTo" th:value="${currentListHref}">
-						<button type="submit" class="plain" title="기본으로 지정" aria-label="기본 뷰로 지정">★</button>
+						<button type="submit" class="tertiary" title="기본으로 지정" aria-label="기본 뷰로 지정"><span aria-hidden="true">★</span></button>
 					</form>
 					<form method="post" th:action="@{/admin/saved-views/{id}/delete(id=${view.viewId})}">
 						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<input type="hidden" name="returnTo" th:value="${currentListHref}">
-						<button type="submit" class="plain" title="삭제" aria-label="저장된 뷰 삭제">✕</button>
+						<details class="admin-action-confirm">
+							<summary class="tertiary" title="삭제" aria-label="저장된 뷰 삭제 실행"><span aria-hidden="true">✕</span></summary>
+							<p class="meta" th:text="|저장된 뷰 '${view.name}'을(를) 삭제할까요? 이 작업은 되돌리기 어렵습니다.|">확인</p>
+							<button type="submit" class="tertiary" aria-label="저장된 뷰 삭제 실행">삭제 실행</button>
+						</details>
 					</form>
 				</span>
 			</div>
@@ -268,7 +272,11 @@
 				<span class="bulk-count" x-text="selectionLabel">선택한 신고 일괄 처리</span>
 				<!-- V6-04 button 계약(V6-08 #2280): 승인 primary, 반려 danger로 액션 위계를 명시한다. -->
 				<button class="primary" type="submit" name="decision" value="ACCEPT">선택 승인</button>
-				<button class="danger" type="submit" name="decision" value="REJECT">선택 반려</button>
+				<details class="admin-action-confirm">
+					<summary class="danger">선택 반려…</summary>
+					<p class="meta">선택한 신고를 반려할까요? 이 작업은 되돌리기 어렵습니다.</p>
+					<button class="danger" type="submit" name="decision" value="REJECT">선택 반려</button>
+				</details>
 			</div>
 			</form>
 			<!--
@@ -283,11 +291,11 @@
 						<li><kbd>j</kbd> / <kbd>k</kbd> 다음 / 이전 신고</li>
 						<li><kbd>o</kbd> / <kbd>Enter</kbd> 상세 패널 열기</li>
 						<li><kbd>a</kbd> 활성 신고 승인</li>
-						<li><kbd>r</kbd> 활성 신고 반려</li>
+						<li><kbd>r</kbd> 활성 신고 반려 확인 열기</li>
 						<li><kbd>Esc</kbd> 패널 · 도움말 닫기</li>
 						<li><kbd>?</kbd> 이 도움말 열기 / 닫기</li>
 					</ul>
-					<button type="button" class="plain" x-on:click="hideHelp">닫기</button>
+					<button type="button" class="tertiary" x-on:click="hideHelp">닫기</button>
 				</div>
 			</div>
 		</div>
@@ -298,7 +306,6 @@
 	</div>
 </main>
 </div>
-<th:block th:replace="~{admin/fragments/shell :: toastRegion}"></th:block>
 <th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
 </body>
