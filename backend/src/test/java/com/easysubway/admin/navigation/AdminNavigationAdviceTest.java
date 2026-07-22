@@ -130,9 +130,9 @@ class AdminNavigationAdviceTest {
 	// enum 자체에서 세어 29개 surface와 각 항목의 id·path·permission 완결성을 검증한다. route·permission·
 	// behavior(visibleTo())는 변경하지 않으며 v6 이관 중 화면 수가 흔들리면 이 테스트가 실패해야 한다.
 	@Test
-	@DisplayName("AdminProgram은 29개 관리자 surface를 고정하고 각 항목은 id·path·permission을 모두 갖는다")
+	@DisplayName("AdminProgram은 30개 관리자 surface를 고정하고 각 항목은 id·path·permission을 모두 갖는다")
 	void adminProgramRegistryPinsAdminSurfaceInventory() {
-		assertThat(AdminProgram.values()).hasSize(29);
+		assertThat(AdminProgram.values()).hasSize(30);
 
 		for (AdminProgram program : AdminProgram.values()) {
 			assertThat(program.id())
@@ -154,8 +154,8 @@ class AdminNavigationAdviceTest {
 		}
 
 		// id와 path는 surface 정본이므로 중복 없이 유일해야 한다.
-		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::id).distinct().count()).isEqualTo(29);
-		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::path).distinct().count()).isEqualTo(29);
+		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::id).distinct().count()).isEqualTo(30);
+		assertThat(Arrays.stream(AdminProgram.values()).map(AdminProgram::path).distinct().count()).isEqualTo(30);
 	}
 
 	// #2277 V6-05: 7개 workspace와 §7 workspace→program 매핑을 source assertion으로 문자 그대로 고정한다.
@@ -198,7 +198,7 @@ class AdminNavigationAdviceTest {
 			AdminProgram.DATAPACK_CANDIDATES, AdminProgram.DATAPACK_RELEASE_CHANNELS,
 			AdminProgram.DATAPACK_RELEASE_REQUESTS));
 		expected.put(AdminWorkspace.SYSTEM_AUDIT, List.of(
-			AdminProgram.CODES, AdminProgram.SYSTEM, AdminProgram.AUDITS, AdminProgram.PRIVACY_AUDITS));
+			AdminProgram.CODES, AdminProgram.SYSTEM, AdminProgram.AUDITS, AdminProgram.ERROR_EVENTS, AdminProgram.PRIVACY_AUDITS));
 
 		Map<AdminWorkspace, List<AdminProgram>> actual = Arrays.stream(AdminProgram.values())
 			.collect(Collectors.groupingBy(
@@ -207,8 +207,8 @@ class AdminNavigationAdviceTest {
 				Collectors.toList()));
 
 		assertThat(actual).isEqualTo(expected);
-		// 29개 program이 정확히 한 workspace에 배정된다(중복·누락 0).
-		assertThat(actual.values().stream().mapToInt(List::size).sum()).isEqualTo(29);
+		// 30개 program이 정확히 한 workspace에 배정된다(중복·누락 0).
+		assertThat(actual.values().stream().mapToInt(List::size).sum()).isEqualTo(30);
 		assertThat(actual.keySet()).containsExactlyInAnyOrder(AdminWorkspace.values());
 		for (AdminProgram program : AdminProgram.values()) {
 			assertThat(program.workspace()).as("%s workspace", program.name()).isNotNull();

@@ -40,6 +40,7 @@ public enum AdminRbacRole {
 		AdminPermission.SECURITY_ADMIN,
 		AdminPermission.AUDIT_READ,
 		AdminPermission.PRIVACY_LOG_READ,
+		AdminPermission.ERROR_READ,
 		AdminPermission.OPERATIONS_MANAGE,
 		AdminPermission.DATAPACK_READ,
 		AdminPermission.DATAPACK_AUDIT_READ

@@ -256,6 +256,8 @@ public class SecurityConfig {
 				.hasAuthority(AdminPermission.PRIVACY_LOG_READ.authority())
 				.requestMatchers("/admin/audits/**")
 				.hasAuthority(AdminPermission.AUDIT_READ.authority())
+				.requestMatchers("/admin/api/errors", "/admin/api/errors/**", "/admin/errors/**")
+				.hasAuthority(AdminPermission.ERROR_READ.authority())
 				.requestMatchers("/admin/system/**", "/admin/usage/**")
 				.hasAuthority(AdminPermission.SECURITY_AUDIT.authority())
 				.anyRequest().hasAuthority(AdminPermission.ADMIN_VIEW.authority())

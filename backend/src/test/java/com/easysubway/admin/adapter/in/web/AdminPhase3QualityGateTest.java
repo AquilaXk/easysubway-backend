@@ -130,7 +130,7 @@ class AdminPhase3QualityGateTest {
 	}
 
 	// #2272 V6-00: operator surface 수를 source assertion으로 고정한다. login 1개 + report 5개 = 6개이며
-	// admin surface(AdminProgram 29개)와 별개 경계다. v6 이관 중 이 분할이 흔들리면 테스트가 실패해야 한다.
+	// admin surface(AdminProgram 30개)와 별개 경계다. v6 이관 중 이 분할이 흔들리면 테스트가 실패해야 한다.
 	@Test
 	@DisplayName("operator surface는 login 1개와 report 5개로 고정된다")
 	void operatorSurfaceInventoryIsPinnedToLoginAndReports() throws Exception {

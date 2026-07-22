@@ -1,6 +1,8 @@
 package com.easysubway.route.adapter.in.web;
 
+import com.easysubway.admin.errors.application.service.ErrorEventRecorder;
 import com.easysubway.common.error.CorrelationId;
+import com.easysubway.common.error.ErrorCategory;
 import com.easysubway.common.error.ErrorCode;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.route.application.service.ItxTimetableUnavailableException;
@@ -25,14 +27,16 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 @RestControllerAdvice(assignableTypes = {RouteV2SessionController.class, RouteSearchController.class})
 class RouteV2ExceptionHandler {
 	private final RouteV2Metrics metrics;
+	private final ErrorEventRecorder errorEventRecorder;
 
 	RouteV2ExceptionHandler() {
-		this(RouteV2Metrics.noop());
+		this(RouteV2Metrics.noop(), null);
 	}
 
 	@Autowired
-	RouteV2ExceptionHandler(RouteV2Metrics metrics) {
+	RouteV2ExceptionHandler(RouteV2Metrics metrics, ErrorEventRecorder errorEventRecorder) {
 		this.metrics = metrics;
+		this.errorEventRecorder = errorEventRecorder;
 	}
 
 	@ExceptionHandler(RouteSessionAttestationRejectedException.class)
@@ -46,22 +50,30 @@ class RouteV2ExceptionHandler {
 	}
 
 	@ExceptionHandler(RouteSessionAttestationUnavailableException.class)
-	ResponseEntity<RouteV2Error> handleAttestationUnavailable(HttpServletRequest request) {
+	ResponseEntity<RouteV2Error> handleAttestationUnavailable(
+		HttpServletRequest request,
+		RouteSessionAttestationUnavailableException exception
+	) {
 		return error(
 			request,
 			HttpStatus.SERVICE_UNAVAILABLE,
 			ErrorCode.ROUTE_SESSION_ATTESTATION_UNAVAILABLE,
-			"ITX 시간표를 불러올 수 없어요"
+			"ITX 시간표를 불러올 수 없어요",
+			exception
 		);
 	}
 
 	@ExceptionHandler(ItxTimetableUnavailableException.class)
-	ResponseEntity<RouteV2Error> handleTimetableUnavailable(HttpServletRequest request) {
+	ResponseEntity<RouteV2Error> handleTimetableUnavailable(
+		HttpServletRequest request,
+		ItxTimetableUnavailableException exception
+	) {
 		return error(
 			request,
 			HttpStatus.SERVICE_UNAVAILABLE,
 			ErrorCode.ITX_TIMETABLE_UNAVAILABLE,
-			"ITX 시간표를 불러올 수 없어요"
+			"ITX 시간표를 불러올 수 없어요",
+			exception
 		);
 	}
 
@@ -84,8 +96,24 @@ class RouteV2ExceptionHandler {
 		ErrorCode errorCode,
 		String message
 	) {
+		return error(request, status, errorCode, message, null);
+	}
+
+	private ResponseEntity<RouteV2Error> error(
+		HttpServletRequest request,
+		HttpStatus status,
+		ErrorCode errorCode,
+		String message,
+		Throwable exception
+	) {
 		String correlationId = CorrelationId.currentOrCreate(request);
 		metrics.recordResponse(status.value(), errorCode.code());
+		if (errorEventRecorder != null
+			&& exception != null
+			&& errorCode.category() == ErrorCategory.DEPENDENCY
+			&& status.is5xxServerError()) {
+			errorEventRecorder.recordIfNeeded(request, errorCode, exception, correlationId);
+		}
 		return ResponseEntity.status(status)
 			.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
 			.header(CorrelationId.HEADER, correlationId)

@@ -9,11 +9,10 @@ import org.springframework.security.core.Authentication;
 /**
  * 관리자 콘솔의 화면(surface) 정본 레지스트리.
  *
- * <p>#2272 (Admin UX v6 / V6-00) inventory 고정: 이 enum은 29개 관리자 surface를 정의하며 그 수와 각
+ * <p>#2272 (Admin UX v6 / V6-00) inventory 고정: 이 enum은 관리자 surface를 정의하며 그 수와 각
  * 항목의 {@code id}/{@code path}/{@code permission} 완결성은 {@code AdminNavigationAdviceTest}에서
  * source assertion으로 검증된다. operator surface(login 1 + report 5 = 6)는 별개 경계로
- * {@code AdminPhase3QualityGateTest}가 고정한다. route, {@link #visibleTo(Authentication)} permission,
- * behavior는 v6 이관 과정에서 변경하지 않는다.
+ * {@code AdminPhase3QualityGateTest}가 고정한다.
  *
  * <p>Non-scope (V6-00에서 도입하지 않음, 상위 sub-issue 소관): dark mode 테마 전환, pinned/recent 메뉴,
  * {@code statusAuto} enum 전환. 이 항목들은 supersession ledger에만 기록하고 여기서 필드·상태를 추가하지 않는다.
@@ -51,6 +50,7 @@ public enum AdminProgram {
 	USAGE("a-usage", "운영·분석", "사용 현황", "/admin/usage/activity/page", AdminPermission.SECURITY_AUDIT, AdminWorkspace.ANALYTICS),
 	SYSTEM("a-system", "운영·분석", "시스템 상태", "/admin/system/page", AdminPermission.SECURITY_AUDIT, AdminWorkspace.SYSTEM_AUDIT),
 	AUDITS("a-audits", "보안·감사", "관리자 감사", "/admin/audits/page", AdminPermission.AUDIT_READ, AdminWorkspace.SYSTEM_AUDIT),
+	ERROR_EVENTS("a-errors", "보안·감사", "오류 이벤트", "/admin/errors/page", AdminPermission.ERROR_READ, AdminWorkspace.SYSTEM_AUDIT),
 	PRIVACY_AUDITS("a-privacy-audits", "보안·감사", "개인정보 조회 로그", "/admin/audits/privacy/page", AdminPermission.PRIVACY_LOG_READ, AdminWorkspace.SYSTEM_AUDIT);
 
 	private final String id;

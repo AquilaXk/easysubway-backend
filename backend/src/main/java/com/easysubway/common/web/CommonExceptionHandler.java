@@ -1,5 +1,6 @@
 package com.easysubway.common.web;
 
+import com.easysubway.admin.errors.application.service.ErrorEventRecorder;
 import com.easysubway.common.error.ConflictException;
 import com.easysubway.common.error.CorrelationId;
 import com.easysubway.common.error.ErrorCode;
@@ -10,6 +11,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.ConversionNotSupportedException;
 import org.springframework.beans.TypeMismatchException;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
@@ -35,9 +37,16 @@ class CommonExceptionHandler {
 	private static final Logger log = LoggerFactory.getLogger(CommonExceptionHandler.class);
 
 	private final WebMessageResolver messages;
+	private final ErrorEventRecorder errorEventRecorder;
 
 	CommonExceptionHandler(WebMessageResolver messages) {
+		this(messages, null);
+	}
+
+	@Autowired
+	CommonExceptionHandler(WebMessageResolver messages, ErrorEventRecorder errorEventRecorder) {
 		this.messages = messages;
+		this.errorEventRecorder = errorEventRecorder;
 	}
 
 	@ExceptionHandler(HttpMessageNotReadableException.class)
@@ -104,12 +113,34 @@ class CommonExceptionHandler {
 	ResponseEntity<ApiResponse<Void>> handleUnhandled(HttpServletRequest request, Exception exception)
 		throws Exception {
 		if (shouldPropagate(exception)) {
+			recordPropagatedServerError(request, exception);
 			throw exception;
 		}
 		String correlationId = CorrelationId.currentOrCreate(request);
 		log.error("unhandled exception correlationId={}", correlationId, exception);
+		if (errorEventRecorder != null) {
+			errorEventRecorder.recordIfNeeded(request, ErrorCode.INTERNAL_ERROR, exception, correlationId);
+		}
 		return ResponseEntity.status(ErrorCode.INTERNAL_ERROR.httpStatus())
 			.body(ApiResponse.fail(ErrorCode.INTERNAL_ERROR, messages.message("error.internal-error"), correlationId));
+	}
+
+	private void recordPropagatedServerError(HttpServletRequest request, Exception exception) {
+		if (errorEventRecorder == null || !isPropagatedServerError(exception)) {
+			return;
+		}
+		String correlationId = CorrelationId.currentOrCreate(request);
+		errorEventRecorder.recordIfNeeded(request, ErrorCode.INTERNAL_ERROR, exception, correlationId);
+	}
+
+	private static boolean isPropagatedServerError(Exception exception) {
+		if (exception instanceof ConversionNotSupportedException
+			|| exception instanceof HttpMessageNotWritableException) {
+			return true;
+		}
+		// INTERNAL_ERROR(500)와 응답 status가 어긋나지 않도록 500만 기록한다.
+		return exception instanceof ResponseStatusException responseStatusException
+			&& responseStatusException.getStatusCode().value() == HttpStatus.INTERNAL_SERVER_ERROR.value();
 	}
 
 	private ResponseEntity<ApiResponse<Void>> fail(

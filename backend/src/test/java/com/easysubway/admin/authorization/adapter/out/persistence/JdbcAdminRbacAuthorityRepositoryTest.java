@@ -152,7 +152,9 @@ class JdbcAdminRbacAuthorityRepositoryTest {
 			.build();
 		new ResourceDatabasePopulator(
 			new ClassPathResource("db/migration/h2/V10__admin_rbac_menu.sql"),
-			new ClassPathResource("db/migration/h2/V67__admin_user_roles_granted_by.sql")
+			new ClassPathResource("db/migration/h2/V67__admin_user_roles_granted_by.sql"),
+			new ClassPathResource("db/migration/h2/V68__create_error_events.sql"),
+			new ClassPathResource("db/migration/h2/V69__admin_error_events_permission.sql")
 		).execute(dataSource);
 		return dataSource;
 	}

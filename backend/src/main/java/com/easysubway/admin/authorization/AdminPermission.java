@@ -25,7 +25,8 @@ public enum AdminPermission {
 	DATAPACK_STAGING_PROMOTE("admin.datapack.staging.promote"),
 	DATAPACK_PRODUCTION_APPROVE("admin.datapack.production.approve"),
 	DATAPACK_ROLLBACK("admin.datapack.rollback"),
-	DATAPACK_AUDIT_READ("admin.datapack.audit.read");
+	DATAPACK_AUDIT_READ("admin.datapack.audit.read"),
+	ERROR_READ("admin.errors.read");
 
 	private final String authority;
 

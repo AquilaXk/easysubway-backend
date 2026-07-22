@@ -3,7 +3,7 @@ package com.easysubway.admin.navigation;
 /**
  * 관리자 콘솔 shell의 업무 영역(workspace) 정본.
  *
- * <p>#2277 (Admin UX v6 / V6-05): 29개 {@link AdminProgram}을 7개 업무 영역으로 묶어 shell IA를
+ * <p>#2277 (Admin UX v6 / V6-05): {@link AdminProgram}을 7개 업무 영역으로 묶어 shell IA를
  * 구성한다. 각 program은 정확히 하나의 workspace에 배정되며(중복·누락 불가), 그 매핑은
  * {@link AdminProgram#workspace()}가 소유하고 {@code AdminNavigationAdviceTest}가 source assertion으로
  * §7 계약과 문자 그대로 일치하는지 고정한다.

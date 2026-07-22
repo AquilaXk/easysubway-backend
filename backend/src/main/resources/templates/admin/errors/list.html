@@ -1,0 +1,104 @@
+<!doctype html>
+<html lang="ko" xmlns:th="http://www.thymeleaf.org">
+<head>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
+	<title th:text="${title}">오류 이벤트</title>
+	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
+</head>
+<body class="admin-v3">
+<a th:replace="~{admin/fragments/shell :: skipLink}"></a>
+<div class="admin-shell">
+<div th:replace="~{admin/fragments/shell :: sidebar(${activeProgram})}"></div>
+<main class="admin-main">
+	<div th:replace="~{admin/fragments/shell :: topbar}"></div>
+	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
+	<header class="admin-page-head">
+		<div>
+			<h1 th:text="${title}">오류 이벤트</h1>
+			<p>5xx 시스템·의존 오류를 집계해 기간·코드·카테고리로 조회합니다.</p>
+		</div>
+	</header>
+
+	<section class="admin-panel" aria-labelledby="error-events-heading">
+		<h2 id="error-events-heading" class="sr-only">오류 이벤트</h2>
+
+		<div id="error-results" th:fragment="errorResults"
+		     hx-target="#error-results" hx-swap="outerHTML" hx-push-url="true">
+			<div th:replace="~{admin/fragments/list-toolbar :: toolbar(
+			         ${basePath}, 'error-results',
+			         ${ {'name':'code','value':selectedCode,'placeholder':'오류 코드','label':'오류 코드',
+			            'hidden': {'from':from,'to':to,'category':selectedCategory}} },
+			         ~{}, ~{::errorFilters}, ~{})}">
+				<form th:fragment="errorFilters" class="admin-toolbar-form" method="get"
+				      th:action="@{${basePath}}" role="group" aria-label="기간·카테고리 필터"
+				      th:attr="hx-get=@{${basePath}}" hx-target="#error-results"
+				      hx-swap="outerHTML" hx-push-url="true" hx-trigger="change, submit">
+					<input type="hidden" name="code" th:value="${selectedCode}">
+					<input type="date" name="from" th:value="${from}" aria-label="최근 발생 기간 시작">
+					<input type="date" name="to" th:value="${to}" aria-label="최근 발생 기간 종료">
+					<select name="category" aria-label="카테고리 필터">
+						<option th:each="opt : ${categoryOptions}" th:value="${opt.value}"
+						        th:text="${opt.label}" th:selected="${opt.selected}">카테고리 전체</option>
+					</select>
+					<button type="submit" class="outline admin-filter-apply">필터 적용</button>
+				</form>
+			</div>
+
+			<p class="table-summary" aria-live="polite">
+				전체 <strong th:text="${total}">0</strong>건
+			</p>
+
+			<div class="admin-table-scroll" tabindex="0" role="group"
+			     aria-label="가로로 스크롤 가능한 데이터 표" th:if="${!events.isEmpty()}">
+			<table>
+				<caption class="sr-only">오류 이벤트</caption>
+				<thead>
+				<tr>
+					<th scope="col">코드</th>
+					<th scope="col">카테고리</th>
+					<th scope="col">상태</th>
+					<th scope="col">경로</th>
+					<th scope="col">횟수</th>
+					<th scope="col">최초 발생</th>
+					<th scope="col">최근 발생</th>
+					<th scope="col">correlationId</th>
+				</tr>
+				</thead>
+				<tbody>
+				<tr th:each="event : ${events}">
+					<td th:text="${event.code()}">INTERNAL_ERROR</td>
+					<td th:text="${event.category()}">SYSTEM</td>
+					<td th:text="${event.httpStatus()}">500</td>
+					<td>
+						<span th:text="${event.method()}">GET</span>
+						<span th:text="${event.pathPattern()}">/api/example</span>
+					</td>
+					<td th:text="${event.occurrenceCount()}">1</td>
+					<td th:text="${event.firstOccurredAt()}">2026-07-01T00:00:00Z</td>
+					<td th:text="${event.lastOccurredAt()}">2026-07-01T00:00:00Z</td>
+					<td>
+						<code th:text="${event.sampleCorrelationId()}">corr-id</code>
+						<button type="button" class="tiny-btn outline" x-data="copyField" x-on:click="copy"
+						        th:attr="data-copy-value=${event.sampleCorrelationId()}"
+						        th:if="${event.sampleCorrelationId() != null and !#strings.isEmpty(event.sampleCorrelationId())}">복사</button>
+					</td>
+				</tr>
+				</tbody>
+			</table>
+			</div>
+
+			<div th:if="${events.isEmpty()}">
+				<div th:replace="~{admin/fragments/empty-state :: panel('오류 이벤트가 없습니다.', '선택한 기간에 집계된 5xx 오류가 없습니다.')}"></div>
+			</div>
+
+			<div th:replace="~{admin/fragments/pagination :: pager(${paginationLabel}, ${page}, ${paginationLinks})}"></div>
+		</div>
+	</section>
+</main>
+</div>
+<th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
+<th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
+</body>
+</html>
