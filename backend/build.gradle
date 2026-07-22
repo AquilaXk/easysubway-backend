@@ -1,7 +1,21 @@
 plugins {
 	id 'java'
+	id 'jacoco'
+	id 'com.github.spotbugs' version '6.2.2'
 	id 'org.springframework.boot' version '3.5.15'
 	id 'io.spring.dependency-management' version '1.1.7'
+}
+
+jacoco {
+	// Java 21 클래스 파일 계측을 지원하는 안정 버전을 고정한다.
+	toolVersion = '0.8.13'
+}
+
+spotbugs {
+	// 리포트 전용: baseline·억제 정책 정합 전 CI를 붉히지 않는다(#2440).
+	ignoreFailures = true
+	showProgress = false
+	excludeFilter = file('quality/spotbugs-exclude.xml')
 }
 
 configurations {
@@ -106,6 +120,29 @@ tasks.named('test') {
 	// @SpringBootTest 컨텍스트 캐시 누적 + fdl-excel 1만 행 xlsx 메모리 테스트(#1822)로 스위트 힙 수요가
 	// 기본 512MB를 넘어선다. 포크 테스트 JVM 힙을 2g로 상향(전체 스위트·CI 공통 OOM 방지).
 	maxHeapSize = '2g'
+	// 커버리지 측정만 수행한다. 전역 % fail 게이트는 후속 이슈에서 패키지 단위로 검토한다(#2440).
+	finalizedBy tasks.named('jacocoTestReport')
+}
+
+tasks.named('jacocoTestReport') {
+	dependsOn tasks.named('test')
+	reports {
+		xml.required = true
+		html.required = true
+		csv.required = false
+	}
+	classDirectories.setFrom(files(classDirectories.files.collect { classesDir ->
+		fileTree(dir: classesDir, exclude: [
+			'**/*Application.class',
+		])
+	}))
+}
+
+tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	reports {
+		html.required = true
+		xml.required = true
+	}
 }
 
 tasks.named('processResources') {

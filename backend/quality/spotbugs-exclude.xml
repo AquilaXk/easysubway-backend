@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<FindBugsFilter>
+	<!-- Spring Boot 엔트리포인트는 SpotBugs 노이즈가 커서 제외한다. 추가 억제는 spotbugs-suppression-policy.json 근거 필요. -->
+	<Match>
+		<Class name="com.easysubway.EasySubwayBackendApplication"/>
+	</Match>
+</FindBugsFilter>

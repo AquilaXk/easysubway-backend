@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gateId": "backend-static-analysis-feasibility",
   "defaultPolicy": "contract-only-before-enforcement",
-  "enforcementStatus": "deferred_until_p0_release_contracts_stabilize",
+  "enforcementStatus": "partial_report_only_enabled",
   "ciRuntimeBudgetMinutes": {
     "maxAdditionalMinutes": 3,
     "measurementRequiredBeforeEnforcement": true
@@ -20,8 +20,15 @@
     },
     {
       "id": "spotbugs",
-      "enforcement": "not_enabled_in_this_slice",
+      "enforcement": "report_only",
       "firstAllowedGate": "bug_pattern_baseline_after_security_tests",
+      "evidence": {
+        "suppressionPolicy": "backend/quality/spotbugs-suppression-policy.json",
+        "excludeFilter": "backend/quality/spotbugs-exclude.xml",
+        "failMode": "ignoreFailures=true (CI red 금지, HTML/XML 리포트만)",
+        "baselineViolationCount": 194,
+        "ciRuntimeMeasurement": "local 2026-07-22: ./gradlew compileJava spotbugsMain --no-daemon real 18.41s (ignoreFailures=true, findings=194)"
+      },
       "requires": [
         "suppression justification policy",
         "baseline violation count",
@@ -55,8 +62,14 @@
     },
     {
       "id": "jacoco",
-      "enforcement": "not_enabled_in_this_slice",
+      "enforcement": "report_only",
       "firstAllowedGate": "coverage_baseline_after_p0_tests_stabilize",
+      "evidence": {
+        "coverageExclusionPolicy": "backend/quality/jacoco-exclusion-policy.json",
+        "failMode": "no jacocoTestCoverageVerification / no global % fail",
+        "reportPaths": "backend/build/reports/jacoco/test/jacocoTestReport.xml",
+        "ciRuntimeMeasurement": "local 2026-07-22: ./gradlew test --tests '*PackageDependencyRulesTest' jacocoTestReport --no-daemon real 24.19s; report-only no % fail"
+      },
       "requires": [
         "P0 security and route test baseline",
         "coverage exclusion policy",

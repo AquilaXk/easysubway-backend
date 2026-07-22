@@ -1,0 +1,18 @@
+{
+  "schemaVersion": 1,
+  "policyId": "backend-jacoco-exclusion",
+  "reportOnly": true,
+  "globalPercentFailGate": false,
+  "classDirectoryExcludes": [
+    "**/*Application.class"
+  ],
+  "sonarCoverageExclusions": [
+    "backend/src/main/resources/**",
+    "tools/**"
+  ],
+  "deferredExclusions": [
+    "DTO/record packages — 패키지 단위 baseline 확정 후 검토",
+    "Thymeleaf admin view helpers — UI 계약 테스트가 주 검증"
+  ],
+  "notes": "측정 가시화만 허용한다. 전역 coverage %로 PR를 차단하지 않는다."
+}

@@ -1,0 +1,25 @@
+{
+  "schemaVersion": 1,
+  "policyId": "backend-spotbugs-suppression",
+  "failMode": "report_only_ignore_failures",
+  "excludeFilter": "backend/quality/spotbugs-exclude.xml",
+  "allowedSuppressionReasons": [
+    "generated or framework entrypoint noise",
+    "intentional mutable exposure with documented ownership",
+    "false positive with linked SpotBugs bug id"
+  ],
+  "currentBaseline": {
+    "measuredAt": "2026-07-22",
+    "command": "./gradlew spotbugsMain --no-daemon",
+    "bugInstanceCount": 194,
+    "priorityBreakdown": {
+      "2": 194
+    }
+  },
+  "baselineProcess": [
+    "HTML/XML 리포트에서 현재 violation 수를 기록한다",
+    "신규 High/Scary 이슈는 수정하거나 억제 근거를 PR에 남긴다",
+    "ignoreFailures 해제는 baseline 안정화 후 별도 이슈로 한다"
+  ],
+  "notes": "억제는 exclude filter에만 넣고, 사유 없는 광범위 Match는 금지한다."
+}

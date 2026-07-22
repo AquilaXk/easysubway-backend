@@ -703,7 +703,8 @@ jobs:
           set -euo pipefail
           flutter pub get
           flutter analyze
-          flutter test
+          flutter test --coverage
+          node ../../tools/ci/filter-mobile-lcov.mjs --input coverage/lcov.info --output coverage/lcov.info
 
   android:
     name: Android CI
