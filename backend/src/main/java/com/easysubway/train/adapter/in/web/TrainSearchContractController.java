@@ -167,7 +167,7 @@ class TrainSearchContractController {
 	private ResponseEntity<ApiResponse<?>> error(HttpStatus status, String code, String message) {
 		return ResponseEntity.status(status)
 			.cacheControl(NO_STORE)
-			.body(new ApiResponse<>(false, new TrainSearchError(code), message));
+			.body(new ApiResponse<>(false, new TrainSearchError(code), message, null, null));
 	}
 
 	private HttpStatus failureStatus(TrainSearchFailure failure) {

@@ -1,7 +1,6 @@
 package com.easysubway.notice.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
@@ -148,17 +147,17 @@ class ServiceNoticeAdminApiControllerTest {
 
 	@Test
 	@DisplayName("audit append가 실패하면 게시 중단 상태도 함께 rollback된다")
-	void auditFailureRollsBackUnpublish() {
+	void auditFailureRollsBackUnpublish() throws Exception {
 		saveActiveNotice("n1");
 		doThrow(new RuntimeException("audit down"))
 			.when(auditWriter)
 			.noticeChange(any(), any(), eq("n1"), eq("UNPUBLISH_NOTICE"), any(), any());
 
-		assertThatThrownBy(() -> mockMvc.perform(post("/admin/notices/n1/unpublish")
+		mockMvc.perform(post("/admin/notices/n1/unpublish")
 				.with(httpBasic("admin-user", "admin-test-password"))
 				.with(csrf()))
-			.andReturn())
-			.hasRootCauseMessage("audit down");
+			.andExpect(status().isInternalServerError())
+			.andExpect(jsonPath("$.code").value("INTERNAL_ERROR"));
 
 		ServiceNotice stored = repository.findById("n1").orElseThrow();
 		assertThat(stored.isUnpublished()).isFalse();

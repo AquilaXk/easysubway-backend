@@ -4,6 +4,7 @@ import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.error.CorrelationId;
 import jakarta.servlet.http.HttpServletRequest;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
@@ -224,12 +225,18 @@ public class AdminAuditWriter {
 	}
 
 	private static String correlationId(HttpServletRequest request) {
-		String value = request.getHeader("X-Correlation-Id");
+		Object attribute = request.getAttribute(CorrelationId.ATTRIBUTE);
+		String value = attribute instanceof String attr && !attr.isBlank()
+			? attr
+			: request.getHeader(CorrelationId.HEADER);
 		if (value == null || value.isBlank()) {
 			return "missing";
 		}
 		String trimmed = value.trim();
-		return trimmed.matches("[A-Za-z0-9._-]{1,64}") ? trimmed : "invalid";
+		if (!trimmed.matches("[A-Za-z0-9._-]{1,64}")) {
+			return "invalid";
+		}
+		return trimmed;
 	}
 
 	private static String clientIp(HttpServletRequest request) {

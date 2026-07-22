@@ -1,5 +1,6 @@
 package com.easysubway.route.adapter.in.web;
 
+import com.easysubway.common.error.ErrorCode;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -35,8 +36,8 @@ final class RouteV2OriginGateFilter extends OncePerRequestFilter {
 		if (expectedSecret.length == 0
 			|| supplied == null
 			|| !MessageDigest.isEqual(expectedSecret, supplied.getBytes(StandardCharsets.UTF_8))) {
-			metrics.recordResponse(403, "ROUTE_ORIGIN_FORBIDDEN");
-			RouteV2ErrorWriter.write(response, 403, "ROUTE_ORIGIN_FORBIDDEN", "Forbidden");
+			metrics.recordResponse(403, ErrorCode.ROUTE_ORIGIN_FORBIDDEN.code());
+			RouteV2ErrorWriter.write(response, 403, ErrorCode.ROUTE_ORIGIN_FORBIDDEN.code(), "Forbidden");
 			return;
 		}
 		filterChain.doFilter(request, response);

@@ -1,5 +1,7 @@
 package com.easysubway.route.adapter.in.web;
 
+import com.easysubway.common.error.CorrelationId;
+import com.easysubway.common.error.ErrorCode;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.route.application.service.ItxTimetableUnavailableException;
 import com.easysubway.route.application.service.RouteSessionAttestationRejectedException;
@@ -34,26 +36,33 @@ class RouteV2ExceptionHandler {
 	}
 
 	@ExceptionHandler(RouteSessionAttestationRejectedException.class)
-	ResponseEntity<RouteV2Error> handleAttestationRejected() {
+	ResponseEntity<RouteV2Error> handleAttestationRejected(HttpServletRequest request) {
 		return error(
+			request,
 			HttpStatus.FORBIDDEN,
-			"ROUTE_SESSION_ATTESTATION_REJECTED",
+			ErrorCode.ROUTE_SESSION_ATTESTATION_REJECTED,
 			"ITX 시간표를 불러올 수 없어요"
 		);
 	}
 
 	@ExceptionHandler(RouteSessionAttestationUnavailableException.class)
-	ResponseEntity<RouteV2Error> handleAttestationUnavailable() {
+	ResponseEntity<RouteV2Error> handleAttestationUnavailable(HttpServletRequest request) {
 		return error(
+			request,
 			HttpStatus.SERVICE_UNAVAILABLE,
-			"ROUTE_SESSION_ATTESTATION_UNAVAILABLE",
+			ErrorCode.ROUTE_SESSION_ATTESTATION_UNAVAILABLE,
 			"ITX 시간표를 불러올 수 없어요"
 		);
 	}
 
 	@ExceptionHandler(ItxTimetableUnavailableException.class)
-	ResponseEntity<RouteV2Error> handleTimetableUnavailable() {
-		return error(HttpStatus.SERVICE_UNAVAILABLE, "ITX_TIMETABLE_UNAVAILABLE", "ITX 시간표를 불러올 수 없어요");
+	ResponseEntity<RouteV2Error> handleTimetableUnavailable(HttpServletRequest request) {
+		return error(
+			request,
+			HttpStatus.SERVICE_UNAVAILABLE,
+			ErrorCode.ITX_TIMETABLE_UNAVAILABLE,
+			"ITX 시간표를 불러올 수 없어요"
+		);
 	}
 
 	@ExceptionHandler({
@@ -64,18 +73,25 @@ class RouteV2ExceptionHandler {
 	})
 	ResponseEntity<RouteV2Error> handleInvalidRequest(HttpServletRequest request) {
 		if ("/api/v2/routes/session".equals(request.getRequestURI())) {
-			return handleAttestationRejected();
+			return handleAttestationRejected(request);
 		}
-		return error(HttpStatus.UNPROCESSABLE_ENTITY, "ROUTE_SCOPE_INVALID", "지원하지 않는 경로예요");
+		return error(request, HttpStatus.UNPROCESSABLE_ENTITY, ErrorCode.ROUTE_SCOPE_INVALID, "지원하지 않는 경로예요");
 	}
 
-	private ResponseEntity<RouteV2Error> error(HttpStatus status, String code, String message) {
-		metrics.recordResponse(status.value(), code);
+	private ResponseEntity<RouteV2Error> error(
+		HttpServletRequest request,
+		HttpStatus status,
+		ErrorCode errorCode,
+		String message
+	) {
+		String correlationId = CorrelationId.currentOrCreate(request);
+		metrics.recordResponse(status.value(), errorCode.code());
 		return ResponseEntity.status(status)
 			.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-			.body(new RouteV2Error(false, code, message));
+			.header(CorrelationId.HEADER, correlationId)
+			.body(new RouteV2Error(false, errorCode.code(), message, correlationId));
 	}
 
-	private record RouteV2Error(boolean success, String code, String message) {
+	private record RouteV2Error(boolean success, String code, String message, String correlationId) {
 	}
 }

@@ -4,6 +4,7 @@ import com.easysubway.admin.audit.application.port.out.AdminAuditEventRepository
 import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.admin.audit.domain.AdminAuditOutcome;
+import com.easysubway.common.error.CorrelationId;
 import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -141,7 +142,10 @@ class AdminOperatorAuditFilter extends OncePerRequestFilter {
 	}
 
 	private static String correlationId(HttpServletRequest request) {
-		String value = request.getHeader("X-Correlation-Id");
+		Object attribute = request.getAttribute(CorrelationId.ATTRIBUTE);
+		String value = attribute instanceof String attr && !attr.isBlank()
+			? attr
+			: request.getHeader(CorrelationId.HEADER);
 		if (value == null || value.isBlank()) {
 			return "missing";
 		}
