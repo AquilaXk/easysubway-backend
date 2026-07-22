@@ -22,6 +22,11 @@ class CorrelationIdFilter extends OncePerRequestFilter {
 		FilterChain filterChain
 	) throws ServletException, IOException {
 		CorrelationId.bind(request, response);
-		filterChain.doFilter(request, response);
+		CorrelationId.putMdc(CorrelationId.currentOrCreate(request));
+		try {
+			filterChain.doFilter(request, response);
+		} finally {
+			CorrelationId.clearMdc();
+		}
 	}
 }

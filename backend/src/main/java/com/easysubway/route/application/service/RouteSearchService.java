@@ -282,8 +282,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 					);
 				}
 			} catch (RouteNotFoundException | StationNotFoundException exception) {
-				// Timetable coverage can lead legacy graph coverage while #1400 closes the production graph gap.
-				log.debug("Legacy graph could not stabilize timetable route {} -> {}", command.originStationId(), command.destinationStationId(), exception);
+				// Legacy graph fallback: timetable candidates remain usable when the graph cannot
+				// stabilize an accessibility-checked path (#1400 gap). Warn so the gap is visible in prod INFO+.
+				log.warn(
+					"Legacy graph could not stabilize timetable route {} -> {}; continuing with timetable scan",
+					command.originStationId(),
+					command.destinationStationId(),
+					exception
+				);
 			}
 		}
 		return new TimetableCandidateSelection(
@@ -332,7 +338,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 			try {
 				resolution = realtimeArrivalResolver.resolve(preScanRealtimeQuery(query));
 			} catch (RuntimeException exception) {
-				log.debug("Pre-scan realtime overlay query failed for {} / {}", query.stationId(), query.lineId(), exception);
+				// Provider failure is mapped to an explicit unavailable result; warn for ops visibility.
+				log.warn(
+					"Pre-scan realtime overlay query failed for {} / {}; returning unavailable",
+					query.stationId(),
+					query.lineId(),
+					exception
+				);
 				return TimetableRealtimeUpdates.unavailable("REALTIME_PROVIDER_ERROR");
 			}
 			if (resolution.status() != ArrivalFreshness.FRESH_REALTIME
@@ -1176,6 +1188,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 				.stream()
 				.collect(Collectors.toMap(RouteNode::id, Function.identity())));
 		} catch (UnsupportedOperationException ignored) {
+			// Optional adapter path: some RouteNodePort implementations do not expose station nodes.
+			// Empty means "no internal-edge accessibility signal", not a request failure.
 			return Optional.empty();
 		}
 	}
@@ -1520,7 +1534,13 @@ public class RouteSearchService implements RouteSearchUseCase {
 			try {
 				resolution = realtimeArrivalResolver.resolve(realtimeQuery(step, readyAt));
 			} catch (RuntimeException exception) {
-				log.debug("Post-scan realtime fallback query failed for {} / {}", step.fromStationId(), step.lineId(), exception);
+				// Per-step overlay failure falls back to UNAVAILABLE without failing the whole route.
+				log.warn(
+					"Post-scan realtime fallback query failed for {} / {}; step stays unavailable",
+					step.fromStationId(),
+					step.lineId(),
+					exception
+				);
 				resolution = new RealtimeArrivalResolver.Resolution(
 					ArrivalFreshness.UNAVAILABLE,
 					"REALTIME_PROVIDER_ERROR",
@@ -1637,6 +1657,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		try {
 			return loadActiveStation(step.toStationId()).nameKo() + " 방면";
 		} catch (StationNotFoundException ignored) {
+			// Display-only direction label; missing station name must not fail the step overlay.
 			return "";
 		}
 	}
