@@ -1,4 +1,5 @@
 #!/usr/bin/env node
+import { isMainModule } from "../lib/is-main-module.mjs";
 import AxeBuilder from "@axe-core/playwright";
 import { chromium } from "playwright-core";
 import { mkdir, writeFile } from "node:fs/promises";
@@ -1053,7 +1054,7 @@ function parseArgs(args) {
   return options;
 }
 
-if (import.meta.url === `file://${process.argv[1]}`) {
+if (isMainModule(import.meta.url)) {
   main().catch((error) => {
     console.error(error.stack ?? error.message);
     process.exitCode = 1;

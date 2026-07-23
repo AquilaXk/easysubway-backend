@@ -7,7 +7,13 @@ RUN groupadd --system --gid 10001 app && \
 
 WORKDIR /app
 
-COPY --chown=10001:10001 build/libs/*.jar app.jar
+# bootJar만 복사한다. Gradle plain jar(*-plain.jar)는 제외한다.
+COPY --chown=10001:10001 build/libs/ /tmp/jars/
+RUN set -eux; \
+    jar="$(find /tmp/jars -maxdepth 1 -type f -name '*.jar' ! -name '*-plain.jar' | head -n 1)"; \
+    test -n "$jar"; \
+    mv "$jar" /app/app.jar; \
+    rm -rf /tmp/jars
 
 EXPOSE 8080
 
