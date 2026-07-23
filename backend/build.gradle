@@ -57,8 +57,12 @@ dependencyManagement {
 	imports {
 		mavenBom 'org.egovframe.boot:egovframe-boot-starter-parent:5.0.0'
 		mavenBom org.springframework.boot.gradle.plugin.SpringBootPlugin.BOM_COORDINATES
+		// Jackson 2.21.5 — GHSA-5jmj-h7xm-6q6v(CVE-2026-54515) 패치(#2459).
+		mavenBom 'com.fasterxml.jackson:jackson-bom:2.21.5'
 	}
 	dependencies {
+		// PostgreSQL JDBC 42.7.12 — OSV advisory 패치(#2459).
+		dependency 'org.postgresql:postgresql:42.7.12'
 		// Spring Boot BOM이 더 낮게 고정하는 공통 라이브러리는 기존 eGovFrame 기준 보안 패치 버전을 유지한다.
 		// fdl-property가 끌어오는 commons-configuration2 2.11.0은 GHSA-337m-mw94-2v6g(Medium)라 2.15.0으로 상향(#1821).
 		dependency 'org.apache.commons:commons-configuration2:2.15.0'

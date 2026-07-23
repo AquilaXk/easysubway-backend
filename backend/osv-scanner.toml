@@ -1,7 +1,3 @@
 # backend Gradle lockfile 취약점 예외 목록. 예외는 취약점 ID 단위로 좁게, 사유를
-# 명시해 lockfile 옆에 유지한다 — 새 advisory는 계속 PR 게이트에서 실패한다.
-# 수정 버전을 채택하면 해당 항목을 즉시 제거한다.
-
-[[IgnoredVulns]]
-id = "GHSA-5jmj-h7xm-6q6v"
-reason = "jackson-databind 2.21.4 CVE-2026-54515 — 취약 조건 미해당(per-property @JsonIgnoreProperties 제외 + ACCEPT_CASE_INSENSITIVE_PROPERTIES 조합 미사용)이며 수정 버전 미출시(2026-07-07 기준). fix 게시 시 버전 상향으로 대체한다(#1854)."
+# lockfile 옆에 유지한다 — 새 advisory는 PR 게이트에서 실패한다.
+# 새 ignore는 ignoreUntil + reason + tracking 이슈가 필요하다 / New ignores need ignoreUntil + reason + tracking.
