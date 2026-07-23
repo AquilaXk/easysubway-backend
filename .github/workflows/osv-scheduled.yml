@@ -20,8 +20,13 @@ jobs:
       actions: read
       security-events: write
       contents: read
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@9a498708959aeaef5ef730655706c5a1df1edbc2
+    # Same SHA as ci.yml dependency-vulnerability-scan (export-results gate).
+    # Upstream: google/osv-scanner-action#129 / fix PR #130 / commit 3a7550f…
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4
     with:
+      export-results: false
+      upload-sarif: true
+      fail-on-vuln: true
       scan-args: |-
         --lockfile=apps/mobile/pubspec.lock
         --lockfile=apps/mobile/android/app/gradle.lockfile
