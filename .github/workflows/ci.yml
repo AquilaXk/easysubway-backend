@@ -473,7 +473,7 @@ jobs:
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
         env:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
-        run: node --test tools/ci/*.test.mjs tools/ci/lib/*.test.mjs tools/repo/*.test.mjs
+        run: node --test tools/ci/*.test.mjs tools/ci/lib/*.test.mjs tools/repo/*.test.mjs tools/lib/*.test.mjs tools/mobile/*.test.mjs
 
       - name: Repository CI / Validate contracts
         if: ${{ needs.changes.outputs.contracts == 'true' }}
@@ -699,6 +699,17 @@ jobs:
         env:
           EASYSUBWAY_EXPECT_ANDROID_RELEASE_MANIFEST: "true"
         run: node --test --test-name-pattern "모바일 generic catch|모바일 접근성 출시 QA|릴리즈 보안 기준선|모바일 스토어 심사 정보 기준선|모바일 스토어 개인정보 인벤토리|Android 릴리즈 권한|iOS 앱은 개인정보 매니페스트|Android 런처 아이콘" tools/ci/repository-contract.test.mjs
+
+      # tools/mobile의 status voice 인벤토리는 apps/mobile/lib 트리를 실제로 스캔하는
+      # drift 가드다(#2518). repository 게이트의 계약 테스트 스텝에만 배선하면 Dart 전용
+      # PR(mobile=true, repository=false)에서 스킵되어, drift가 green으로 병합되고 실패는
+      # 나중에 무관한 PR에서 터진다. 위 mobile contracts 스텝은 --test-name-pattern으로
+      # 걸러지므로 별도 스텝으로 mobile 게이트에 연결한다.
+      - name: Mobile App CI / Run mobile tool tests
+        if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: node --test tools/mobile/*.test.mjs
 
       - name: Mobile App CI / Run Flutter analyzer and tests
         if: ${{ needs.changes.outputs.mobile == 'true' && steps.scaffold.outputs.present == 'true' }}
