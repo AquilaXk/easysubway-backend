@@ -493,6 +493,12 @@ jobs:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
         run: node --test tools/datapack/*.test.mjs
 
+      # 앱 drift 선언이 바뀌어도(mobile) 팩 자산이 바뀌어도(datapack) 판정이 필요하므로
+      # datapack 테스트 레인보다 트리거 범위를 넓게 잡는다(#2527).
+      - name: Repository CI / Check data pack and app catalog schema parity
+        if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.datapack == 'true' }}
+        run: node tools/ci/check-pack-app-schema-parity.mjs
+
       - name: Repository CI / Set up Chrome for route map tests
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
         id: setup-chrome
