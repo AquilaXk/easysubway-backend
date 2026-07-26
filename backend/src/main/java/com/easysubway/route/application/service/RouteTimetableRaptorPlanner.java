@@ -70,6 +70,14 @@ class RouteTimetableRaptorPlanner {
 	private static final byte WARNING_STAIRS = 1 << 1;
 	private static final byte WARNING_STALE = 1 << 2;
 	private static final int WARNING_STATE_COUNT = 1 << 3;
+	// #2534: PREFER_STEP_FREE의 선호 순서 — 계단 경고 부재가 1순위다(그 모드의 목적). 경고 0개
+	// 후보가 없어도 유일한 무단차 후보가 뽑히도록 경고 수·시간은 그다음 키로 둔다. 표시 정렬과 별개다.
+	private static final Comparator<Label> PREFERRED_WARNING_ORDER = Comparator
+		.comparingInt((Label label) -> (label.warningBits() & WARNING_STAIRS) != 0 ? 1 : 0)
+		.thenComparingInt(label -> warningCount(label.warningBits()))
+		.thenComparingInt(Label::timeSeconds)
+		.thenComparingInt(Label::boardings);
+	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
 	private static final int NON_STRICT_PROFILE_MASK = profileMask(
 		ConstraintMode.PREFER_STEP_FREE, ConstraintMode.ALLOW_WITH_WARNINGS);
@@ -432,13 +440,11 @@ class RouteTimetableRaptorPlanner {
 			workspace.finishRound();
 		}
 
-		List<Label> destinationLabels = destinationLabels(
-			command.destinationStationId(), timetable, workspace, destination, startSeconds,
-			accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay)
-			.stream()
-			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(candidateLimit(command))
-			.toList();
+		List<Label> destinationLabels = limitDestinationLabels(
+			destinationLabels(
+				command.destinationStationId(), timetable, workspace, destination, startSeconds,
+				accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay),
+			command);
 		return new ScanResult(serviceDay, destinationLabels);
 	}
 
@@ -702,9 +708,19 @@ class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
+		// #2534: 스캔은 경고를 Pareto 차원으로 유지하는데(ScanWorkspace.relax의 경고 부분집합 지배),
+		// 추출이 환승 수마다 라벨 1개만 남기면 그 차원이 버려져 PREFER_* 프로파일에서
+		// "느리지만 무단차"인 대안이 소실된다. PREFER_*에서는 경고 상태별 최선 후보를 함께 담고
+		// 지배 판정은 paretoFront가 일괄 처리한다.
+		// 표시 정렬은 compareLabels(시간 우선)로 그대로 두고 여기서는 보존 집합만 넓힌다.
+		boolean preserveWarningAlternatives = prefersStepFree(command);
 		List<Label> labels = new ArrayList<>(PARETO_LIMIT * timetable.lineCount());
+		Label[] bestByWarningState = preserveWarningAlternatives
+			? new Label[WARNING_STATE_COUNT]
+			: NO_WARNING_ALTERNATIVES;
 		for (int boardings = 1; boardings <= PARETO_LIMIT; boardings += 1) {
 			Label bestForBoardings = null;
+			Arrays.fill(bestByWarningState, null);
 			for (int incomingLine = 0; incomingLine < timetable.lineCount(); incomingLine += 1) {
 				int exitTransition = timetable.exitTransition(
 					destination, incomingLine, accessProfileBit, ignoreAccessBlocks);
@@ -745,17 +761,108 @@ class RouteTimetableRaptorPlanner {
 					if (bestForBoardings == null || compareDestinationLabels(candidate, bestForBoardings) < 0) {
 						bestForBoardings = candidate;
 					}
+					if (preserveWarningAlternatives) {
+						int candidateWarningState = Byte.toUnsignedInt(candidate.warningBits());
+						Label incumbent = bestByWarningState[candidateWarningState];
+						if (incumbent == null || compareDestinationLabels(candidate, incumbent) < 0) {
+							bestByWarningState[candidateWarningState] = candidate;
+						}
+					}
 				}
 			}
-			if (bestForBoardings != null) {
-				labels.add(bestForBoardings);
+			if (bestForBoardings == null) {
+				continue;
+			}
+			// 기존 승자를 먼저 담아 동률 정렬(안정 정렬)에서의 표시 순서를 그대로 유지한다.
+			labels.add(bestForBoardings);
+			for (Label candidate : bestByWarningState) {
+				// 버킷 안의 부분집합 지배도 paretoFront(labels, true)가 동일하게 걸러낸다.
+				if (candidate != null && candidate != bestForBoardings) {
+					labels.add(candidate);
+				}
 			}
 		}
-		return labels.stream()
-			.filter(candidate -> labels.stream().noneMatch(other -> other != candidate
-				&& other.boardings() <= candidate.boardings()
-				&& other.timeSeconds() <= candidate.timeSeconds()))
+		return paretoFront(labels, preserveWarningAlternatives);
+	}
+
+	private static List<Label> paretoFront(List<Label> labels, boolean warningDimension) {
+		List<Label> front = new ArrayList<>(labels.size());
+		for (int index = 0; index < labels.size(); index += 1) {
+			Label candidate = labels.get(index);
+			boolean dominated = false;
+			for (int other = 0; other < labels.size() && !dominated; other += 1) {
+				dominated = other != index
+					&& dominates(labels.get(other), candidate, warningDimension, other < index);
+			}
+			if (!dominated) {
+				front.add(candidate);
+			}
+		}
+		return List.copyOf(front);
+	}
+
+	private static boolean dominates(Label other, Label candidate, boolean warningDimension, boolean earlier) {
+		if (other.boardings() > candidate.boardings() || other.timeSeconds() > candidate.timeSeconds()) {
+			return false;
+		}
+		if (!warningDimension) {
+			return true;
+		}
+		if ((other.warningBits() & candidate.warningBits()) != other.warningBits()) {
+			return false;
+		}
+		// 모든 차원이 같은 쌍은 현재 생기지 않는다(버킷 안 라벨은 warningBits가 서로 다르고 버킷
+		// 사이에는 boardings가 다르다). earlier는 향후 중복 라벨이 생길 때의 상호 소거 방어다.
+		return other.boardings() < candidate.boardings()
+			|| other.timeSeconds() < candidate.timeSeconds()
+			|| other.warningBits() != candidate.warningBits()
+			|| earlier;
+	}
+
+	// #2534: 후보가 상한을 넘으면 자리 하나를 선호 후보(PREFERRED_WARNING_ORDER)에 내준다.
+	// 상한(candidateLimit) 자체는 그대로지만 PREFER_STEP_FREE에서는 실제 후보 수가 상한까지
+	// 채워지는 빈도가 높아지므로, 후보당 하류 비용(toRouteSearchResult 재구성·실시간 재계산·
+	// 직렬화)은 최악 상한배까지 늘 수 있다.
+	private static List<Label> limitDestinationLabels(List<Label> labels, SearchRouteV2Command command) {
+		List<Label> ordered = labels.stream()
+			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.toList();
+		int limit = candidateLimit(command);
+		if (ordered.size() <= limit) {
+			return ordered;
+		}
+		List<Label> limited = new ArrayList<>(ordered.subList(0, limit));
+		if (!prefersStepFree(command)) {
+			return List.copyOf(limited);
+		}
+		Label preferred = ordered.stream().min(PREFERRED_WARNING_ORDER).orElseThrow();
+		if (limited.stream().anyMatch(label -> label == preferred)) {
+			return List.copyOf(limited);
+		}
+		int victim = evictableIndex(limited);
+		if (victim < 0) {
+			return List.copyOf(limited);
+		}
+		limited.set(victim, preferred);
+		limited.sort(RouteTimetableRaptorPlanner::compareLabels);
+		return List.copyOf(limited);
+	}
+
+	// 축출 대상에서 두 가지를 뺀다. 인덱스 0(최속 라벨)은 표시 선두 계약이라 어떤 상한에서도
+	// 지키고(상한이 1이면 후보가 없어 교체 자체가 일어나지 않는다), 환승 수가 그 안에서 유일한
+	// 라벨은 해당 환승 수의 유일한 대안이라 건드리지 않는다. 남는 자리가 없으면 -1이다.
+	private static int evictableIndex(List<Label> limited) {
+		for (int index = limited.size() - 1; index >= 1; index -= 1) {
+			int boardings = limited.get(index).boardings();
+			if (limited.stream().filter(label -> label.boardings() == boardings).count() > 1) {
+				return index;
+			}
+		}
+		return -1;
+	}
+
+	private static boolean prefersStepFree(SearchRouteV2Command command) {
+		return command.constraintMode() == ConstraintMode.PREFER_STEP_FREE;
 	}
 	private static int compareDestinationLabels(Label left, Label right) {
 		RideLeg leftLast = left.path().getLast();
