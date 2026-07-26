@@ -149,19 +149,11 @@ class DatapackReleaseRequestAdminPageController {
 		return "redirect:/admin/datapack/release-requests/page";
 	}
 
+	// 승인은 레코드 상태 전이까지다 — 게시 워크플로는 여기서 발화하지 않는다(#2564).
 	@PostMapping("/admin/datapack/release-requests/{approvalId}/approve")
 	@PreAuthorize("hasAuthority('admin.datapack.production.approve')")
 	String approve(@PathVariable("approvalId") String approvalId, Authentication authentication) {
 		releaseRequestService.approve(approvalId, authentication.getName());
-		return "redirect:/admin/datapack/release-requests/page";
-	}
-
-	// 자동 dispatch가 실패한(DISPATCH_FAILED) 승인 건을 재시도한다. 재시도는 production 게시
-	// 워크플로를 재발화하므로 approve와 동일한 production approve 권한을 요구한다(권한 경계 일치).
-	@PostMapping("/admin/datapack/release-requests/{approvalId}/retry-dispatch")
-	@PreAuthorize("hasAuthority('admin.datapack.production.approve')")
-	String retryDispatch(@PathVariable("approvalId") String approvalId) {
-		releaseRequestService.retryDispatch(approvalId);
 		return "redirect:/admin/datapack/release-requests/page";
 	}
 

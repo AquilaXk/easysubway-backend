@@ -15,6 +15,7 @@ import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.datapack.domain.DatapackReleaseDelivery.State;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.Set;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.ObjectProvider;
@@ -32,6 +33,14 @@ import org.springframework.transaction.support.TransactionTemplate;
 public class DatapackReleaseCallbackService {
 
     private static final Logger log = LoggerFactory.getLogger(DatapackReleaseCallbackService.class);
+
+	// 게시 콜백을 수용하는 진행 중 상태. DISPATCHED·DISPATCH_FAILED는 backend dispatch 발화가
+	// 제거된 뒤(#2564) 새로 생기지 않는 이력 상태지만, 남은 행이 수동 게시 결과로 종결될 수
+	// 있도록 APPROVED와 동등하게 수용한다(거부하면 해당 행은 영구 미종결로 남는다).
+	private static final Set<DatapackReleaseRequestStatus> CALLBACK_ACCEPTED_STATUSES = Set.of(
+		DatapackReleaseRequestStatus.APPROVED,
+		DatapackReleaseRequestStatus.DISPATCHED,
+		DatapackReleaseRequestStatus.DISPATCH_FAILED);
 
     private final DatapackReleaseRequestRepository repository;
     private final CallbackSignature signature;
@@ -169,8 +178,7 @@ public class DatapackReleaseCallbackService {
         }
 
         var status = request.status();
-        if (status != DatapackReleaseRequestStatus.APPROVED
-            && status != DatapackReleaseRequestStatus.DISPATCHED) {
+        if (!CALLBACK_ACCEPTED_STATUSES.contains(status)) {
             throw new IllegalStateException("callback not accepted from state: " + status);
         }
 
@@ -222,8 +230,7 @@ public class DatapackReleaseCallbackService {
 		if (request.status() == terminal) {
 			return new CallbackResult(terminal.name(), true);
 		}
-		if (request.status() != DatapackReleaseRequestStatus.APPROVED
-			&& request.status() != DatapackReleaseRequestStatus.DISPATCHED) {
+		if (!CALLBACK_ACCEPTED_STATUSES.contains(request.status())) {
 			throw new IllegalStateException("callback not accepted from state: " + request.status());
 		}
 
@@ -360,8 +367,7 @@ public class DatapackReleaseCallbackService {
 			return new CallbackResult("DEAD_LETTER", false);
 		}
 		if (request.status() != DatapackReleaseRequestStatus.PUBLISHED) {
-			if (request.status() != DatapackReleaseRequestStatus.APPROVED
-				&& request.status() != DatapackReleaseRequestStatus.DISPATCHED) {
+			if (!CALLBACK_ACCEPTED_STATUSES.contains(request.status())) {
 				markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
 					"CONFLICT", "REQUEST_STATE_MISMATCH", now);
 				return new CallbackResult("DEAD_LETTER", false);
@@ -388,8 +394,7 @@ public class DatapackReleaseCallbackService {
 			return new CallbackResult("DEAD_LETTER", false);
 		}
 		if (request.status() != DatapackReleaseRequestStatus.PUBLISHED) {
-			if (request.status() != DatapackReleaseRequestStatus.APPROVED
-				&& request.status() != DatapackReleaseRequestStatus.DISPATCHED) {
+			if (!CALLBACK_ACCEPTED_STATUSES.contains(request.status())) {
 				markClaimed(delivery, State.DEAD_LETTER, delivery.attempts(), null,
 					"CONFLICT", "REQUEST_STATE_MISMATCH", now);
 				return new CallbackResult("DEAD_LETTER", false);

@@ -62,75 +62,51 @@ class DatapackReleaseRequestServiceTest {
 	}
 
 	@Test
-	@DisplayName("findApproved는 미승인=empty, APPROVED(dormant)·DISPATCHED=present, DISPATCH_FAILED=empty")
+	@DisplayName("findApproved는 미승인·종결 상태=empty, APPROVED와 dispatch 계열 이력 행=present")
 	void findApprovedServesApprovedAndDispatched() {
 		// 미승인 → empty
 		var dormant = service.create(cmd("alice"));
 		assertThat(service.findApproved(dormant.approvalId())).isEmpty();
 
-		// dormant 승인(skip) → APPROVED 유지 → present
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.skippedResult());
+		// 승인 → APPROVED → present
 		service.approve(dormant.approvalId(), "bob");
 		assertThat(service.findApproved(dormant.approvalId())).isPresent();
 
-		// 자동 dispatch 성공 → DISPATCHED → 여전히 present(트리거된 워크플로가 페이로드를 fetch해야 함)
+		// 과거 자동 dispatch가 남긴 DISPATCHED 이력 행 → 여전히 present(워크플로가 페이로드를 fetch)
 		var dispatched = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.succeeded("stub ok"));
 		service.approve(dispatched.approvalId(), "bob");
-		assertThat(status(dispatched.approvalId())).isEqualTo("DISPATCHED");
+		setStatus(dispatched.approvalId(), "DISPATCHED");
 		assertThat(service.findApproved(dispatched.approvalId())).isPresent();
 
-		// dispatch 실패 → DISPATCH_FAILED → empty(미발화이므로 서빙 안 함)
+		// DISPATCH_FAILED 이력 행 → present(재시도 수단이 사라졌으므로 수동 게시로 종결할 수 있어야 함)
 		var failed = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.failed("HTTP 500"));
 		service.approve(failed.approvalId(), "bob");
-		assertThat(status(failed.approvalId())).isEqualTo("DISPATCH_FAILED");
-		assertThat(service.findApproved(failed.approvalId())).isEmpty();
+		setStatus(failed.approvalId(), "DISPATCH_FAILED");
+		assertThat(service.findApproved(failed.approvalId())).isPresent();
+
+		// 종결 상태 → empty(더 진행할 게시가 없음)
+		var published = service.create(cmd("alice"));
+		service.approve(published.approvalId(), "bob");
+		setStatus(published.approvalId(), "PUBLISHED");
+		assertThat(service.findApproved(published.approvalId())).isEmpty();
 	}
 
 	@Test
-	@DisplayName("승인 커밋 후 dispatch 성공이면 DISPATCHED로 전이하고 4필드 command를 보낸다")
-	void approveDispatchesAfterCommit() {
+	@DisplayName("승인은 APPROVED 기록까지만 하고 release workflow를 dispatch하지 않는다")
+	void approveDoesNotDispatch() {
 		var created = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.succeeded("stub ok"));
 
-		service.approve(created.approvalId(), "bob");
+		var approved = service.approve(created.approvalId(), "bob");
 
-		assertThat(status(created.approvalId())).isEqualTo("DISPATCHED");
-		assertThat(dispatchIdempotencyKey(created.approvalId())).isEqualTo(created.approvalId());
-		assertThat(dispatchPort.commands()).hasSize(1);
-		var command = dispatchPort.commands().getFirst();
-		assertThat(command.targetChannel()).isEqualTo("staging");
-		assertThat(command.releaseRequestId()).isEqualTo(created.approvalId());
-		assertThat(command.buildSpecPath()).isEqualTo("tools/datapack/fixtures/candidate-build-spec.json");
-	}
-
-	@Test
-	@DisplayName("dispatch 실패면 DISPATCH_FAILED로 전이한다")
-	void approveMarksDispatchFailedOnFailure() {
-		var created = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.failed("HTTP 500"));
-
-		service.approve(created.approvalId(), "bob");
-
-		assertThat(status(created.approvalId())).isEqualTo("DISPATCH_FAILED");
-	}
-
-	@Test
-	@DisplayName("dispatch skip(토큰 미설정)이면 APPROVED 상태를 유지한다")
-	void approveKeepsApprovedWhenDispatchSkipped() {
-		var created = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.skippedResult());
-
-		service.approve(created.approvalId(), "bob");
-
+		assertThat(approved.status().name()).isEqualTo("APPROVED");
 		assertThat(status(created.approvalId())).isEqualTo("APPROVED");
-		assertThat(dispatchPort.commands()).hasSize(1);
+		assertThat(dispatchIdempotencyKey(created.approvalId())).isNull();
+		assertThat(dispatchPort.commands()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("승인 트랜잭션이 롤백되면 dispatch를 호출하지 않는다")
-	void rollbackSuppressesDispatch() {
+	@DisplayName("승인 트랜잭션이 롤백되면 REQUESTED로 남는다")
+	void rollbackKeepsRequested() {
 		var created = service.create(cmd("alice"));
 
 		assertThatThrownBy(() -> txRollbackHelper.approveThenFail(created.approvalId(), "bob"))
@@ -139,33 +115,6 @@ class DatapackReleaseRequestServiceTest {
 
 		assertThat(dispatchPort.commands()).isEmpty();
 		assertThat(status(created.approvalId())).isEqualTo("REQUESTED");
-	}
-
-	@Test
-	@DisplayName("retryDispatch는 DISPATCH_FAILED를 재시도해 성공 시 DISPATCHED로 전이한다")
-	void retryDispatchRecoversFailure() {
-		var created = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.failed("HTTP 500"));
-		service.approve(created.approvalId(), "bob");
-		assertThat(status(created.approvalId())).isEqualTo("DISPATCH_FAILED");
-
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.succeeded("stub ok"));
-		var retried = service.retryDispatch(created.approvalId());
-
-		assertThat(retried.status().name()).isEqualTo("DISPATCHED");
-		assertThat(status(created.approvalId())).isEqualTo("DISPATCHED");
-	}
-
-	@Test
-	@DisplayName("retryDispatch는 DISPATCH_FAILED가 아니면 거절한다")
-	void retryDispatchRejectsNonFailedState() {
-		var created = service.create(cmd("alice"));
-		dispatchPort.willReturn(DatapackWorkflowDispatchPort.DispatchResult.succeeded("stub ok"));
-		service.approve(created.approvalId(), "bob");
-
-		assertThatThrownBy(() -> service.retryDispatch(created.approvalId()))
-			.isInstanceOf(IllegalStateException.class)
-			.hasMessageContaining("DISPATCH_FAILED");
 	}
 
 	private String status(String approvalId) {
@@ -177,6 +126,12 @@ class DatapackReleaseRequestServiceTest {
 		return jdbcTemplate.queryForObject(
 			"SELECT dispatch_idempotency_key FROM datapack_release_request WHERE approval_id = ?",
 			String.class, approvalId);
+	}
+
+	// backend가 더 이상 만들지 않는 dispatch 계열 상태(이력 행)를 read 경로 검증용으로 재현한다.
+	private void setStatus(String approvalId, String status) {
+		jdbcTemplate.update(
+			"UPDATE datapack_release_request SET status = ? WHERE approval_id = ?", status, approvalId);
 	}
 
 	@TestConfiguration
@@ -194,20 +149,15 @@ class DatapackReleaseRequestServiceTest {
 		}
 	}
 
-	/** 명령을 기록하고 다음 결과를 지정 가능한 dispatch 포트 테스트 이중. */
+	/** dispatch 호출을 기록하는 포트 테스트 이중 — 승인 경로가 다시 발화하면 commands가 비지 않는다. */
 	static class RecordingDispatchPort implements DatapackWorkflowDispatchPort {
 
 		private final List<DispatchCommand> commands = new ArrayList<>();
-		private volatile DispatchResult nextResult = DispatchResult.succeeded("stub ok");
 
 		@Override
 		public DispatchResult dispatch(DispatchCommand command) {
 			commands.add(command);
-			return nextResult;
-		}
-
-		void willReturn(DispatchResult result) {
-			this.nextResult = result;
+			return DispatchResult.skippedResult();
 		}
 
 		List<DispatchCommand> commands() {
@@ -216,11 +166,10 @@ class DatapackReleaseRequestServiceTest {
 
 		void reset() {
 			commands.clear();
-			nextResult = DispatchResult.succeeded("stub ok");
 		}
 	}
 
-	/** approve 후 예외를 던져 트랜잭션을 롤백시키는 헬퍼(afterCommit 미발화 검증용). */
+	/** approve 후 예외를 던져 트랜잭션을 롤백시키는 헬퍼. */
 	static class TxRollbackHelper {
 
 		private final DatapackReleaseRequestService service;

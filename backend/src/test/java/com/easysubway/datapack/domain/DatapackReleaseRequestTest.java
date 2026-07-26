@@ -100,6 +100,17 @@ class DatapackReleaseRequestTest {
 	}
 
 	@Test
+	@DisplayName("DISPATCH_FAILED 이력 행은 수동 게시 결과로 PUBLISHED·FAILED까지 종결할 수 있다")
+	void dispatchFailedCanReachTerminal() {
+		var failed = requested("alice").approve("bob", T0).markDispatchFailed("appr-1", T0);
+
+		assertThat(failed.markPublished("https://run/3", AT).status())
+			.isEqualTo(DatapackReleaseRequestStatus.PUBLISHED);
+		assertThat(failed.markFailed("publish BLOCKED_EXTERNAL", AT).status())
+			.isEqualTo(DatapackReleaseRequestStatus.FAILED);
+	}
+
+	@Test
 	@DisplayName("REQUESTED에서 markDispatched는 상태 위반으로 거부한다")
 	void markDispatchedRejectsFromRequested() {
 		assertThatThrownBy(() -> requested("alice").markDispatched("https://gh/run/1", "appr-1", T0))

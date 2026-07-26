@@ -83,6 +83,30 @@ class JdbcDatapackReleaseRequestRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("DISPATCH_FAILED 이력 행도 콜백 유실 복구 후보로 임대한다")
+	void claimsDispatchFailedHistoryRow() {
+		repository.save(DatapackReleaseRequest.requested(
+			"appr-failed", "cand-1", "scope-1", "production",
+			SHA, SHA, SHA, "alice", T0).approve("bob", T0).markDispatchFailed("appr-failed", T0));
+
+		assertThat(repository.claimReconciliationDue(
+			T0.plusMinutes(10), T0.plusMinutes(10), T0.plusMinutes(20), 100))
+				.extracting(DatapackReleaseRequest::approvalId)
+				.containsExactly("appr-failed");
+	}
+
+	@Test
+	@DisplayName("종결된 request는 콜백 유실 복구 후보가 아니다")
+	void skipsTerminalRequests() {
+		repository.save(DatapackReleaseRequest.requested(
+			"appr-published", "cand-1", "scope-1", "production",
+			SHA, SHA, SHA, "alice", T0).approve("bob", T0).markPublished("https://run/1", T0));
+
+		assertThat(repository.claimReconciliationDue(
+			T0.plusMinutes(10), T0.plusMinutes(10), T0.plusMinutes(20), 100)).isEmpty();
+	}
+
+	@Test
 	@DisplayName("동시 reconciliation discovery는 request 한 건을 한 worker에게만 임대한다")
 	void claimsReconciliationCandidateOnce() throws Exception {
 		repository.save(DatapackReleaseRequest.requested(

@@ -14,9 +14,13 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
 
 /**
- * 승인된 release request로 GitHub Actions workflow_dispatch를 트리거한다(TopisRealtimeProvider의
- * java.net.http.HttpClient 패턴). 토큰 미설정이면 skip = 자동화 dormant(안전 기본값).
- * 빌드·게시는 워크플로가 수행하며 backend는 dispatch만 한다(불변 전제).
+ * GitHub Actions workflow_dispatch 어댑터(TopisRealtimeProvider의 java.net.http.HttpClient 패턴).
+ * 토큰 미설정이면 skip = 자동화 dormant(안전 기본값).
+ *
+ * <p>#2564로 release request 승인의 dispatch 발화가 제거되어 application 계층에는 이 포트의
+ * 소비자가 없다 — 릴리스 실행 권위는 git 파일(release-request.json PR 병합)과 GitHub Environment
+ * required reviewer가 가진다. 이 어댑터는 outbound integration 카탈로그 계약이 고정하고 있어
+ * 유지하며, 제거는 카탈로그·CI 계약과 함께 별도로 다룬다.
  */
 @Component
 public class GithubWorkflowDispatchAdapter implements DatapackWorkflowDispatchPort {

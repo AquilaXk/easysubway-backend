@@ -17,18 +17,25 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>릴리스 요청</h1>
-			<p>게시 대상 후보를 골라 릴리스 요청을 생성하고, 다른 관리자가 승인합니다. 승인 후 프로덕션 게이트는 수동 dispatch로 실행합니다.</p>
+			<p>게시 대상 후보를 골라 릴리스 요청을 생성하고, 다른 관리자가 승인합니다. 이 승인은 이력 기록이며 게시를 발화하지 않습니다 — 프로덕션 게이트는 아래 수동 dispatch로 실행합니다.</p>
 		</div>
 	</header>
 
 	<section class="admin-panel">
 		<h2>수동 dispatch 필요</h2>
-		<p>승인된 요청은 아래 명령의 경로 표시를 실제 evidence 파일로 바꾼 뒤 실행합니다.</p>
+		<p>승인된 요청은 아래 명령의 경로 표시를 실제 evidence 파일로 바꾼 뒤 실행합니다. <strong>요청 행의 대상 채널에 맞는 명령을 사용합니다</strong> — <code>production-publish</code>는 <code>targetChannel=production</code>에서만 허용되고 다른 채널로 보내면 워크플로가 즉시 실패합니다.</p>
+		<h3>프로덕션 요청</h3>
 		<pre><code>gh workflow run datapack-release.yml \
   --ref main \
   -f mode=production-publish \
   -f targetChannel=production \
   -f modeArgs='{"buildSpecPath":"&lt;빌드 스펙 경로&gt;","releaseRequestId":"&lt;릴리스 요청 ID&gt;","releaseRequestPath":"&lt;릴리스 요청 파일 경로&gt;","androidEvidencePath":"&lt;Android 증거 경로&gt;","strictRouteRegressionPath":"&lt;경로 회귀 증거 경로&gt;"}'</code></pre>
+		<h3>스테이징 · 개발 요청</h3>
+		<pre><code>gh workflow run datapack-release.yml \
+  --ref main \
+  -f mode=exploratory \
+  -f targetChannel=&lt;staging 또는 dev&gt; \
+  -f modeArgs='{"buildSpecPath":"&lt;빌드 스펙 경로&gt;","releaseRequestId":"&lt;릴리스 요청 ID&gt;","allowGaps":"false"}'</code></pre>
 		<p><strong>후보 등록:</strong> 현재 후보 생성·등록 경로는 없습니다. 이 화면은 <code>datapack_candidates</code>에 이미 등록된 <code>PROMOTED</code> 행만 읽습니다. 등록되지 않은 후보를 추정하거나 DB에 직접 넣지 말고 릴리스 요청 생성을 중단합니다.</p>
 	</section>
 
@@ -105,19 +112,13 @@
 						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 						<button type="submit" class="primary">승인</button>
 					</form>
-					<form th:if="${request.status == 'DISPATCH_FAILED'}"
-						  method="post"
-						  th:action="@{/admin/datapack/release-requests/{approvalId}/retry-dispatch(approvalId=${request.approvalId})}">
-						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<button type="submit" class="outline">dispatch 재시도</button>
-					</form>
 					<span th:if="${request.status == 'APPROVED'}">수동 실행 필요</span>
+					<span th:if="${request.status == 'DISPATCH_FAILED'}">과거 자동 dispatch 실패 — 수동 실행 필요</span>
 					<span th:if="${request.status == 'PUBLISHED' and request.promoteOutcome == 'REJECTED'}"
 						  th:text="'promote 수동 필요 — ' + (${request.promoteDetail} ?: '사유 없음')">promote 수동 필요</span>
 					<span th:if="${request.status != 'REQUESTED'
-						and request.status != 'DISPATCH_FAILED'
 						and request.status != 'APPROVED'
+						and request.status != 'DISPATCH_FAILED'
 						and not (request.status == 'PUBLISHED' and request.promoteOutcome == 'REJECTED')}"><th:block
 					      th:insert="~{admin/fragments/missing-value :: value(null, '미상')}">—</th:block></span>
 				</td>

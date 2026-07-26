@@ -81,11 +81,9 @@ easysubway:
     # 워크플로 전용 서비스 토큰. 미설정이면 조회/콜백 API 체인이 전면 거부(자동화 dormant = 안전 기본값).
     workflow-token: ${EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN:}
     # backend→GitHub Actions workflow_dispatch용 fine-grained PAT.
-    # runbook: 권한은 Actions: write 단일, 만료 1년, 만료 30일 전 갱신. 미설정이면 승인 후 자동
-    # dispatch가 dormant(status=APPROVED 유지, 화면 "수동 실행 필요") — 기존 수동 흐름 무영향(안전 기본값).
+    # runbook: 권한은 Actions: write 단일, 만료 1년, 만료 30일 전 갱신. #2564로 backend 승인의
+    # dispatch 발화가 제거되어 현재 이 토큰을 소비하는 호출 경로는 없다(미설정 유지가 기본값).
     github-actions-dispatch-token: ${EASYSUBWAY_GITHUB_ACTIONS_DISPATCH_TOKEN:}
-    # 승인된 release request로 dispatch할 production build spec의 리포 경로(워크플로 buildSpecPath 입력).
-    build-spec-path: ${EASYSUBWAY_DATAPACK_BUILD_SPEC_PATH:tools/datapack/fixtures/candidate-build-spec.json}
     # 워크플로→backend 콜백 payload HMAC 서명 키. 미설정이면 빈 키로 초기화해 모든 콜백이 거부된다(안전 기본값).
     callback-hmac-key: ${EASYSUBWAY_DATAPACK_CALLBACK_HMAC_KEY:}
     catalog-base-url: ${EASYSUBWAY_DATAPACK_CATALOG_BASE_URL:}

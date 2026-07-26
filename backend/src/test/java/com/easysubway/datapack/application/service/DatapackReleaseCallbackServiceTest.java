@@ -152,6 +152,16 @@ class DatapackReleaseCallbackServiceTest {
     }
 
 	@Test
+	@DisplayName("DISPATCH_FAILED 이력 행도 콜백을 수용해 PUBLISHED로 종결한다")
+	void dispatchFailedRowAcceptsCallback() {
+		insertRow("DISPATCH_FAILED");
+		CallbackResult result = service.receive(command("PASS", computeSignature("PASS")));
+		assertThat(result.status()).isEqualTo("PUBLISHED");
+		assertThat(statusOf()).isEqualTo("PUBLISHED");
+		assertThat(workflowRunUrlOf()).isEqualTo(WORKFLOW_URL);
+	}
+
+	@Test
 	@DisplayName("validator 또는 route regression이 FAIL이면 publishStatus PASS여도 FAILED다")
 	void failedGateCannotPublish() {
 		insertRow("DISPATCHED");

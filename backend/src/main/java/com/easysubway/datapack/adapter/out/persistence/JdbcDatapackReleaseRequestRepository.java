@@ -78,11 +78,14 @@ public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequ
 			ROW_MAPPER, limit);
 	}
 
+	// 콜백 유실 복구(discoverMissing) 대상 = 게시를 기다리는 미종결 상태. DISPATCH_FAILED는
+	// dispatch 발화 제거(#2564) 뒤 새로 생기지 않는 이력 상태지만 그 행도 수동 게시로 종결되므로,
+	// 콜백이 유실되면 같은 안전망으로 복구해야 한다(제외하면 영구 미종결로 남는다).
 	private List<DatapackReleaseRequest> findReconciliationDue(
 		LocalDateTime cutoff, LocalDateTime now, int limit) {
 		return jdbcTemplate.query("""
 			SELECT * FROM datapack_release_request
-			WHERE status IN ('APPROVED', 'DISPATCHED') AND updated_at <= ?
+			WHERE status IN ('APPROVED', 'DISPATCHED', 'DISPATCH_FAILED') AND updated_at <= ?
 			  AND (reconciliation_next_attempt_at IS NULL OR reconciliation_next_attempt_at <= ?)
 			ORDER BY COALESCE(reconciliation_next_attempt_at, updated_at), approval_id
 			LIMIT ?
@@ -98,7 +101,7 @@ public class JdbcDatapackReleaseRequestRepository implements DatapackReleaseRequ
 			int updated = jdbcTemplate.update("""
 				UPDATE datapack_release_request SET reconciliation_next_attempt_at = ?
 				WHERE approval_id = ?
-				  AND status IN ('APPROVED', 'DISPATCHED')
+				  AND status IN ('APPROVED', 'DISPATCHED', 'DISPATCH_FAILED')
 				  AND updated_at <= ?
 				  AND (reconciliation_next_attempt_at IS NULL OR reconciliation_next_attempt_at <= ?)
 				""", toTs(leaseUntil), candidate.approvalId(), toTs(cutoff), toTs(now));
