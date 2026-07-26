@@ -78,43 +78,27 @@ class DatapackReleaseRequestTest {
 	}
 
 	@Test
-	@DisplayName("markDispatched는 APPROVED→DISPATCHED로 전이하고 workflowRunUrl·idempotencyKey를 세팅한다")
-	void markDispatchedTransitions() {
-		var dispatched = requested("alice").approve("bob", T0)
-			.markDispatched("https://gh/run/1", "appr-1", T0);
-		assertThat(dispatched.status()).isEqualTo(DatapackReleaseRequestStatus.DISPATCHED);
-		assertThat(dispatched.workflowRunUrl()).isEqualTo("https://gh/run/1");
-		assertThat(dispatched.dispatchIdempotencyKey()).isEqualTo("appr-1");
-		assertThat(dispatched.approvedBy()).isEqualTo("bob");
-	}
-
-	@Test
-	@DisplayName("markDispatchFailed는 DISPATCH_FAILED로 전이하고, 거기서 markDispatched 재시도가 허용된다")
-	void markDispatchFailedThenRetry() {
-		var failed = requested("alice").approve("bob", T0).markDispatchFailed("appr-1", T0);
-		assertThat(failed.status()).isEqualTo(DatapackReleaseRequestStatus.DISPATCH_FAILED);
-
-		var retried = failed.markDispatched("https://gh/run/2", "appr-1", T0);
-		assertThat(retried.status()).isEqualTo(DatapackReleaseRequestStatus.DISPATCHED);
-		assertThat(retried.workflowRunUrl()).isEqualTo("https://gh/run/2");
+	@DisplayName("이력 행 호환을 위해 유지되는 dispatch 진입 전이는 여전히 허용된다(REQUESTED→DISPATCHED는 불가)")
+	void dispatchEntryTransitionsRemainAllowed() {
+		assertThat(DatapackReleaseRequestStatus.APPROVED
+			.canTransitionTo(DatapackReleaseRequestStatus.DISPATCHED)).isTrue();
+		assertThat(DatapackReleaseRequestStatus.APPROVED
+			.canTransitionTo(DatapackReleaseRequestStatus.DISPATCH_FAILED)).isTrue();
+		assertThat(DatapackReleaseRequestStatus.DISPATCH_FAILED
+			.canTransitionTo(DatapackReleaseRequestStatus.DISPATCHED)).isTrue();
+		assertThat(DatapackReleaseRequestStatus.REQUESTED
+			.canTransitionTo(DatapackReleaseRequestStatus.DISPATCHED)).isFalse();
 	}
 
 	@Test
 	@DisplayName("DISPATCH_FAILED 이력 행은 수동 게시 결과로 PUBLISHED·FAILED까지 종결할 수 있다")
 	void dispatchFailedCanReachTerminal() {
-		var failed = requested("alice").approve("bob", T0).markDispatchFailed("appr-1", T0);
+		var failed = requestIn(DatapackReleaseRequestStatus.DISPATCH_FAILED);
 
 		assertThat(failed.markPublished("https://run/3", AT).status())
 			.isEqualTo(DatapackReleaseRequestStatus.PUBLISHED);
 		assertThat(failed.markFailed("publish BLOCKED_EXTERNAL", AT).status())
 			.isEqualTo(DatapackReleaseRequestStatus.FAILED);
-	}
-
-	@Test
-	@DisplayName("REQUESTED에서 markDispatched는 상태 위반으로 거부한다")
-	void markDispatchedRejectsFromRequested() {
-		assertThatThrownBy(() -> requested("alice").markDispatched("https://gh/run/1", "appr-1", T0))
-			.isInstanceOf(IllegalStateException.class);
 	}
 
 	@Test

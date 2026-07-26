@@ -16,13 +16,6 @@
       "source": "apps/mobile/lib/core/datapack/data_pack_client.dart"
     },
     {
-      "id": "integration:github-datapack-workflow-dispatch",
-      "method": "POST",
-      "endpointRef": "config:easysubway.datapack.github-api-base-url(default=https://api.github.com)/repos/AquilaXk/easysubway/actions/workflows/datapack-release.yml/dispatches",
-      "auth": "env:EASYSUBWAY_GITHUB_ACTIONS_DISPATCH_TOKEN",
-      "source": "backend/src/main/java/com/easysubway/datapack/adapter/out/github/GithubWorkflowDispatchAdapter.java"
-    },
-    {
       "id": "integration:mobile-ad-creative-image",
       "method": "GET",
       "endpointRef": "response-field:GET /api/ads/active.data.imageUrl",

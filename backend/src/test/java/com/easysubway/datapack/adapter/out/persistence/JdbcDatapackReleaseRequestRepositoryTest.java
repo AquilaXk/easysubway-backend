@@ -85,9 +85,10 @@ class JdbcDatapackReleaseRequestRepositoryTest {
 	@Test
 	@DisplayName("DISPATCH_FAILED 이력 행도 콜백 유실 복구 후보로 임대한다")
 	void claimsDispatchFailedHistoryRow() {
-		repository.save(DatapackReleaseRequest.requested(
-			"appr-failed", "cand-1", "scope-1", "production",
-			SHA, SHA, SHA, "alice", T0).approve("bob", T0).markDispatchFailed("appr-failed", T0));
+		// backend가 더 이상 만들지 않는 DISPATCH_FAILED 이력 행을 직접 재현한다.
+		repository.save(new DatapackReleaseRequest(
+			"appr-failed", "cand-1", "scope-1", "production", SHA, SHA, SHA, "alice", "bob",
+			DatapackReleaseRequestStatus.DISPATCH_FAILED, "appr-failed", null, T0, T0, T0, null, null));
 
 		assertThat(repository.claimReconciliationDue(
 			T0.plusMinutes(10), T0.plusMinutes(10), T0.plusMinutes(20), 100))

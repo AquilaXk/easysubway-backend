@@ -62,30 +62,6 @@ public record DatapackReleaseRequest(
 			promoteOutcome, promoteDetail);
 	}
 
-	public DatapackReleaseRequest markDispatched(String workflowRunUrl, String idempotencyKey, LocalDateTime at) {
-		if (!status.canTransitionTo(DatapackReleaseRequestStatus.DISPATCHED)) {
-			throw new IllegalStateException("release request cannot be dispatched from state: " + status);
-		}
-		return new DatapackReleaseRequest(
-			approvalId, candidateId, scopeId, targetChannel,
-			buildSpecSha256, sourceSnapshotSetHash, approvedLedgerHash,
-			requestedBy, approvedBy, DatapackReleaseRequestStatus.DISPATCHED,
-			idempotencyKey, workflowRunUrl, createdAt, approvedAt, at,
-			promoteOutcome, promoteDetail);
-	}
-
-	public DatapackReleaseRequest markDispatchFailed(String idempotencyKey, LocalDateTime at) {
-		if (!status.canTransitionTo(DatapackReleaseRequestStatus.DISPATCH_FAILED)) {
-			throw new IllegalStateException("release request cannot fail dispatch from state: " + status);
-		}
-		return new DatapackReleaseRequest(
-			approvalId, candidateId, scopeId, targetChannel,
-			buildSpecSha256, sourceSnapshotSetHash, approvedLedgerHash,
-			requestedBy, approvedBy, DatapackReleaseRequestStatus.DISPATCH_FAILED,
-			idempotencyKey, workflowRunUrl, createdAt, approvedAt, at,
-			promoteOutcome, promoteDetail);
-	}
-
 	public DatapackReleaseRequest markPublished(String workflowRunUrl, LocalDateTime at) {
 		if (!status.canTransitionTo(DatapackReleaseRequestStatus.PUBLISHED)) {
 			throw new IllegalStateException("release request cannot be published from state: " + status);

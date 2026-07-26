@@ -19,6 +19,7 @@ import com.easysubway.datapack.application.port.out.DatapackReleaseRequestReposi
 import com.easysubway.datapack.domain.DatapackReleaseDelivery;
 import com.easysubway.datapack.domain.DatapackReleaseDelivery.State;
 import com.easysubway.datapack.domain.DatapackReleaseRequest;
+import com.easysubway.datapack.domain.DatapackReleaseRequestStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.time.ZoneOffset;
@@ -36,6 +37,15 @@ class DatapackReleaseReconciliationServiceTest {
 	private final DatapackReleaseCatalogPort catalog = mock();
 	private final DatapackReleaseReconciliationService service =
 		new DatapackReleaseReconciliationService(repository, callbackService, catalog);
+
+	// backend가 더 이상 만들지 않는 DISPATCHED 이력 행. reconciliation은 남은 행을 계속 종결시켜야 한다.
+	private static DatapackReleaseRequest dispatchedHistoryRow() {
+		return new DatapackReleaseRequest(
+			"request-2057", "candidate-2057", "scope", "production",
+			"b".repeat(64), "c".repeat(64), "d".repeat(64), "requester", "approver",
+			DatapackReleaseRequestStatus.DISPATCHED, "dispatch-42", "https://github.com/run/42",
+			T0, T0, T0, null, null);
+	}
 
 	@Test
 	@DisplayName("서명·sequence·hash·channel이 일치하면 callback apply 경로를 재사용한다")
@@ -73,11 +83,7 @@ class DatapackReleaseReconciliationServiceTest {
 	void supersededReleaseTerminatesRequestDiscovery() {
 		var requests = mock(DatapackReleaseRequestRepository.class);
 		var channels = mock(DatapackReleaseChannelCommandPort.class);
-		var dispatched = DatapackReleaseRequest.requested(
-			"request-2057", "candidate-2057", "scope", "production",
-			"b".repeat(64), "c".repeat(64), "d".repeat(64), "requester", T0)
-			.approve("approver", T0)
-			.markDispatched("https://github.com/run/42", "dispatch-42", T0);
+		var dispatched = dispatchedHistoryRow();
 		when(requests.findByApprovalId("request-2057")).thenReturn(java.util.Optional.of(dispatched));
 		when(catalog.fetchCurrent("production")).thenReturn(
 			new CatalogIdentity(43, "e".repeat(64), "production", "", true, "c".repeat(64)));
@@ -173,11 +179,7 @@ class DatapackReleaseReconciliationServiceTest {
 	void discoversLostCallbackFromRequestBinding() {
 		var requests = mock(DatapackReleaseRequestRepository.class);
 		var channels = mock(DatapackReleaseChannelCommandPort.class);
-		var dispatched = DatapackReleaseRequest.requested(
-			"request-2057", "candidate-2057", "scope", "production",
-			"b".repeat(64), "c".repeat(64), "d".repeat(64), "requester", T0)
-			.approve("approver", T0)
-			.markDispatched("https://github.com/run/42", "dispatch-42", T0);
+		var dispatched = dispatchedHistoryRow();
 		when(requests.claimReconciliationDue(T0, T0.plusMinutes(10), T0.plusMinutes(20), 100))
 			.thenReturn(java.util.List.of(dispatched));
 		when(channels.candidateHasManifest("candidate-2057", SHA)).thenReturn(true);
@@ -200,11 +202,7 @@ class DatapackReleaseReconciliationServiceTest {
 	void discoversNoChangeBindingWithCurrentManifestIdentity() {
 		var requests = mock(DatapackReleaseRequestRepository.class);
 		var channels = mock(DatapackReleaseChannelCommandPort.class);
-		var dispatched = DatapackReleaseRequest.requested(
-			"request-2057", "candidate-2057", "scope", "production",
-			"b".repeat(64), "c".repeat(64), "d".repeat(64), "requester", T0)
-			.approve("approver", T0)
-			.markDispatched("https://github.com/run/42", "dispatch-42", T0);
+		var dispatched = dispatchedHistoryRow();
 		when(requests.claimReconciliationDue(T0, T0.plusMinutes(10), T0.plusMinutes(20), 100))
 			.thenReturn(java.util.List.of(dispatched));
 		when(channels.candidateHasManifest("candidate-2057", SHA)).thenReturn(false);
@@ -252,11 +250,7 @@ class DatapackReleaseReconciliationServiceTest {
 	void rejectsLostCallbackForDifferentRequest() {
 		var requests = mock(DatapackReleaseRequestRepository.class);
 		var channels = mock(DatapackReleaseChannelCommandPort.class);
-		var dispatched = DatapackReleaseRequest.requested(
-			"request-2057", "candidate-2057", "scope", "production",
-			"b".repeat(64), "c".repeat(64), "d".repeat(64), "requester", T0)
-			.approve("approver", T0)
-			.markDispatched("https://github.com/run/42", "dispatch-42", T0);
+		var dispatched = dispatchedHistoryRow();
 		when(requests.claimReconciliationDue(T0, T0.plusMinutes(10), T0.plusMinutes(20), 100))
 			.thenReturn(java.util.List.of(dispatched));
 		when(catalog.findByRequest("production", "request-2057"))
@@ -275,11 +269,7 @@ class DatapackReleaseReconciliationServiceTest {
 	void discoversLostCallbackAfterCurrentAdvances() {
 		var requests = mock(DatapackReleaseRequestRepository.class);
 		var channels = mock(DatapackReleaseChannelCommandPort.class);
-		var dispatched = DatapackReleaseRequest.requested(
-			"request-2057", "candidate-2057", "scope", "production",
-			"b".repeat(64), "c".repeat(64), "d".repeat(64), "requester", T0)
-			.approve("approver", T0)
-			.markDispatched("https://github.com/run/42", "dispatch-42", T0);
+		var dispatched = dispatchedHistoryRow();
 		when(requests.claimReconciliationDue(T0, T0.plusMinutes(10), T0.plusMinutes(20), 100))
 			.thenReturn(java.util.List.of(dispatched));
 		when(channels.candidateHasManifest("candidate-2057", SHA)).thenReturn(true);
