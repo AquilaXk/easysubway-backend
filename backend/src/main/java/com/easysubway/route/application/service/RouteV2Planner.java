@@ -25,7 +25,7 @@ import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
-import com.easysubway.route.domain.RouteWarningCode;
+import com.easysubway.route.domain.StairAccess;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -506,7 +506,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	) {
 		if (constraintMode != ConstraintMode.PREFER_STEP_FREE
 			|| representatives.size() >= alternativeCount
-			|| representatives.stream().anyMatch(itinerary -> stairAccess(itinerary) == StairAccess.STEP_FREE)) {
+			|| representatives.stream().anyMatch(itinerary -> StairAccess.ofItinerary(itinerary) == StairAccess.STEP_FREE)) {
 			return Optional.empty();
 		}
 		List<String> representativeIds = representatives.stream()
@@ -520,7 +520,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		return found.stream()
 			// 검증된 무단차 후보만 태깅한다. UNKNOWN 후보를 STEP_FREE_PREFERRED로 붙이면 태그가
 			// 그 후보의 stairAccessState=UNKNOWN·requiresAccessibilityCheck=true와 모순된다.
-			.filter(itinerary -> stairAccess(itinerary) == StairAccess.STEP_FREE)
+			.filter(itinerary -> StairAccess.ofItinerary(itinerary) == StairAccess.STEP_FREE)
 			.filter(itinerary -> !representativeIds.contains(itinerary.routeSearchId()))
 			.map(itinerary -> withObjectiveTags(itinerary, List.of(STEP_FREE_OBJECTIVE_TAG)))
 			// 응답에 편입되는 순간 prod 완결성 계약의 대상이 되고, 어기면 requireUsablePlan()이 plan
@@ -529,25 +529,6 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 			// 실제 응답 형태로 판정한다.
 			.filter(itinerary -> !ProductionRouteV2Support.incompleteFoundItinerary(itinerary))
 			.min(stepFreePreference);
-	}
-
-	// 계단 접근성은 3값이다. 스텝의 stairAccessState가 STAIR_ONLY / STEP_FREE / UNKNOWN으로 갈리고
-	// (RouteTimetableRaptorPlanner의 접근 전이 생성), 미검증 전이는 계단 없음이 아니라 "확인되지 않음"이다.
-	private StairAccess stairAccess(RouteSearchResult itinerary) {
-		if (itinerary.steps().stream().anyMatch(RouteStep::includesStairs)
-			|| itinerary.warnings().stream()
-				.anyMatch(warning -> warning.code() == RouteWarningCode.STAIR_ONLY_ACCESS)) {
-			return StairAccess.STAIR_ONLY;
-		}
-		return itinerary.steps().stream().anyMatch(RouteStep::requiresAccessibilityCheck)
-			? StairAccess.UNKNOWN
-			: StairAccess.STEP_FREE;
-	}
-
-	private enum StairAccess {
-		STEP_FREE,
-		UNKNOWN,
-		STAIR_ONLY
 	}
 
 	private long plannedArrivalEpochSecond(RouteSearchResult itinerary) {

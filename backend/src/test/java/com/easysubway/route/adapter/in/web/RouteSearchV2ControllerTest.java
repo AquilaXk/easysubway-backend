@@ -27,9 +27,12 @@ import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
+import com.easysubway.route.domain.StairAccess;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
@@ -44,6 +47,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
+import org.springframework.test.web.servlet.RequestBuilder;
 
 @SpringBootTest(properties = {
 	"easysubway.admin.username=admin-user",
@@ -518,6 +522,126 @@ class RouteSearchV2ControllerTest {
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.riskLevel").value("MEDIUM"))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.stairCount").value(0))
 			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.unknownAccessibilityCount").value(1));
+	}
+
+	@Test
+	@DisplayName("승차 leg는 계단 개념 비적용이라 경로 계단 판정을 막지 않는다")
+	void routeSearchV2RideLegDoesNotBlockStepFreeJudgment() throws Exception {
+		stubStairAccessRoute("station-stepfree-origin", false, true, List.of());
+
+		mockMvc.perform(stairAccessSearch("station-stepfree-origin"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].stairAccess").value("STEP_FREE"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].stairAccess").value("STEP_FREE"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].stairAccess").value("NOT_APPLICABLE"))
+			// 원자료는 그대로 둔다 — 판정 필드만 새로 싣는다.
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.unknownAccessibilityCount").value(1));
+	}
+
+	@Test
+	@DisplayName("계단 전이가 있으면 경로 계단 판정은 STAIR_ONLY다")
+	void routeSearchV2StairTransitionMakesItineraryStairOnly() throws Exception {
+		stubStairAccessRoute("station-stair-origin", true, true,
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)));
+
+		mockMvc.perform(stairAccessSearch("station-stair-origin"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].stairAccess").value("STAIR_ONLY"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].stairAccess").value("STAIR_ONLY"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].stairAccess").value("NOT_APPLICABLE"));
+	}
+
+	@Test
+	@DisplayName("실제 미확인 사유가 있는 경로는 무단차로 승격되지 않는다")
+	void routeSearchV2DoesNotPromoteUnverifiedRouteToStepFree() throws Exception {
+		stubStairAccessRoute("station-unverified-origin", false, false, List.of(
+			new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA),
+			new RouteWarning(RouteWarningCode.LOW_DATA_CONFIDENCE)
+		));
+
+		mockMvc.perform(stairAccessSearch("station-unverified-origin"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].stairAccess").value("UNKNOWN"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].stairAccess").value("UNKNOWN"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].stairAccess").value("NOT_APPLICABLE"))
+			// 경로 단위 신뢰도 경고는 이 구간에서 확인한 사실을 지우지 않는다. leg마다 복제하면
+			// 검증된 구간까지 미확인으로 뒤집혀 실제로 확인한 것을 잃는다(#2590).
+			.andExpect(jsonPath("$.data.itineraries[0].legs[2].stairAccess").value("STEP_FREE"))
+			// 접근·하차 leg는 판정과 위험 요약이 같은 근거에서 나온다.
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.riskLevel").value("MEDIUM"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.unknownAccessibilityCount").value(1))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[2].accessibilityRisk.riskLevel").value("NONE"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[2].accessibilityRisk.unknownAccessibilityCount").value(0))
+			// 승차 leg는 그렇지 않다. 원자료 stairAccessState가 컬럼 기본값 "UNKNOWN"이라 카운터가
+			// 1로 잡히고 riskLevel도 MEDIUM이 되지만 판정은 NOT_APPLICABLE이다. 이 어긋남이 곧
+			// #2590의 원인이며, 카운터는 응답 형태를 지키려 남긴 자리다. 화면이 카운터가 아니라
+			// 판정과 requiresAccessibilityCheck를 읽는 이유가 여기 있다.
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.unknownAccessibilityCount").value(1))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].accessibilityRisk.riskLevel").value("MEDIUM"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].requiresAccessibilityCheck").value(false))
+			// 신뢰도 사유는 경로 단위 경고이므로 leg 카운터가 아니라 경로 카운터에만 잡힌다.
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].accessibilityRisk.staleDataCount").value(0))
+			.andExpect(jsonPath("$.data.itineraries[0].accessibilityRisk.staleDataCount").value(1));
+	}
+
+	@Test
+	@DisplayName("계단으로 확인된 구간도 근거가 없으면 확인 필요 표기를 함께 싣는다")
+	void routeSearchV2CarriesAccessibilityCheckAlongsideStairJudgment() throws Exception {
+		stubStairAccessRoute("station-stair-origin", true, false, List.of());
+
+		// 계단 사실과 검증 여부는 다른 축이다. 확인 필요 표기를 계단 판정에서 파생하면 계단이 있고
+		// 근거도 없는 — 가장 확인이 필요한 — 조합에서 표기가 사라진다(#2590).
+		mockMvc.perform(stairAccessSearch("station-stair-origin"))
+			.andExpect(status().isOk())
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].stairAccess").value("STAIR_ONLY"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[0].requiresAccessibilityCheck").value(true))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].stairAccess").value("NOT_APPLICABLE"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[1].requiresAccessibilityCheck").value(false))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[2].stairAccess").value("STEP_FREE"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs[2].requiresAccessibilityCheck").value(false));
+	}
+
+	@Test
+	@DisplayName("경로 계단 판정은 leg 판정을 접은 값보다 덜 신중해지지 않는다")
+	void routeSearchV2ItineraryJudgmentIsNeverLessCautiousThanFoldedLegs() throws Exception {
+		stubStairAccessRoute("station-stepfree-origin", false, true, List.of());
+		stubStairAccessRoute("station-stair-origin", true, true,
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)));
+		stubStairAccessRoute("station-unverified-origin", false, false,
+			List.of(new RouteWarning(RouteWarningCode.STALE_ACCESSIBILITY_DATA)));
+
+		for (String originStationId : List.of(
+			"station-stepfree-origin", "station-stair-origin", "station-unverified-origin"
+		)) {
+			JsonNode itinerary = objectMapper.readTree(
+				mockMvc.perform(stairAccessSearch(originStationId))
+					.andExpect(status().isOk())
+					.andReturn().getResponse().getContentAsString()
+			).at("/data/itineraries/0");
+			List<StairAccess> legJudgments = new ArrayList<>();
+			itinerary.at("/legs").forEach(leg -> legJudgments.add(StairAccess.valueOf(leg.get("stairAccess").asText())));
+			StairAccess judged = StairAccess.valueOf(itinerary.get("stairAccess").asText());
+
+			// 일치는 계약이 아니다. 보장하는 것은 한 방향 — 경로 판정이 leg를 접은 값보다
+			// 덜 신중해지지 않는다. 판정 필드를 잃은 화면이 leg로 폴백해도 표시가 실제 근거보다
+			// 강해질 수 없다는 뜻이다.
+			assertThat(judged.merge(StairAccess.ofStepJudgments(legJudgments))).as(originStationId).isEqualTo(judged);
+		}
+	}
+
+	@Test
+	@DisplayName("계단 판정이 없는 BLOCKED 경로는 계단 경고를 그대로 말한다")
+	void routeSearchV2BlockedItineraryReportsStairOnly() throws Exception {
+		when(routeSearchUseCase.searchRouteAlternatives(argThat(command ->
+			"station-blocked-origin".equals(command.originStationId())
+		), eq(1))).thenReturn(List.of(blockedStairAccessRouteSearch()));
+
+		mockMvc.perform(stairAccessSearch("station-blocked-origin"))
+			.andExpect(status().isOk())
+			// leg가 없어 접을 근거가 없지만 STAIR_ONLY_ACCESS 경고는 경로 단위 사실이다.
+			.andExpect(jsonPath("$.data.itineraries[0].status").value("BLOCKED_ACCESSIBILITY"))
+			.andExpect(jsonPath("$.data.itineraries[0].legs").isEmpty())
+			.andExpect(jsonPath("$.data.itineraries[0].stairAccess").value("STAIR_ONLY"));
 	}
 
 	@Test
@@ -1256,6 +1380,147 @@ class RouteSearchV2ControllerTest {
 			),
 			List.of(),
 			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	// 여러 출발지를 한 테스트에서 스텁하면 뒤이은 when() 호출이 null 인자로 mock을 건드리므로
+	// matcher가 null을 견뎌야 한다.
+	private void stubStairAccessRoute(
+		String originStationId,
+		boolean stairEntry,
+		boolean entryVerified,
+		List<RouteWarning> warnings
+	) {
+		when(routeSearchUseCase.searchRouteAlternatives(argThat(command ->
+			command != null && originStationId.equals(command.originStationId())
+		), eq(1))).thenReturn(List.of(stairAccessRouteSearch(originStationId, stairEntry, entryVerified, warnings)));
+	}
+
+	private RequestBuilder stairAccessSearch(String originStationId) {
+		return post("/api/v2/routes/search")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content("""
+				{
+				  "originStationId": "%s",
+				  "destinationStationId": "station-stairaccess-destination",
+				  "departureTime": "2026-06-30T09:15:00+09:00",
+				  "mobilityType": "WHEELCHAIR",
+				  "constraintMode": "ALLOW_WITH_WARNINGS",
+				  "useRealtime": false,
+				  "maxTransfers": 1,
+				  "alternativeCount": 1
+				}
+				""".formatted(originStationId));
+	}
+
+	// 접근성 차단 경로는 스텝 없이 STAIR_ONLY_ACCESS 경고만 남는다(RouteSearchService).
+	private RouteSearchResult blockedStairAccessRouteSearch() {
+		return new RouteSearchResult(
+			"route-search-stair-access-blocked",
+			"station-blocked-origin",
+			"판정 출발역",
+			"station-stairaccess-destination",
+			"판정 도착역",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.BLOCKED,
+			"line-stair-access",
+			"판정 노선",
+			0,
+			List.of(),
+			List.of(new RouteWarning(RouteWarningCode.STAIR_ONLY_ACCESS)),
+			List.of("계단 없는 역 접근 경로를 확인할 수 없습니다."),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	// 접근(전이) → 승차 → 하차(전이) 3단 경로. 승차 step은 실제 플래너와 같은 형태로
+	// includesStairs=false · stairAccessState="UNKNOWN" · requiresAccessibilityCheck=false다.
+	//
+	// 신뢰도 경고를 붙일 때는 entryVerified=false와 짝지어야 플래너가 실제로 낼 수 있는 형태가
+	// 된다. RAPTOR의 전이 검증은 `"VERIFIED".equals(status) && (warningCodes & (LOW|STALE)) == 0`이고
+	// 경로 경고는 실제로 지난 전이들의 warningCodes를 OR한 것이라, LOW/STALE을 낸 전이는 반드시
+	// 미검증 step이 된다.
+	private RouteSearchResult stairAccessRouteSearch(
+		String originStationId,
+		boolean stairEntry,
+		boolean entryVerified,
+		List<RouteWarning> warnings
+	) {
+		return new RouteSearchResult(
+			"route-search-stair-access",
+			originStationId,
+			"판정 출발역",
+			"station-stairaccess-destination",
+			"판정 도착역",
+			MobilityType.WHEELCHAIR,
+			RouteSearchStatus.FOUND,
+			"line-stair-access",
+			"판정 노선",
+			12,
+			List.of(
+				stairAccessTransitionStep(1, "entry", originStationId, stairEntry, entryVerified),
+				new RouteStep(
+					2,
+					"ride",
+					"판정 노선 승차",
+					"시간표 기준으로 이동",
+					"line-stair-access",
+					"판정 노선",
+					originStationId,
+					"station-stairaccess-destination",
+					6,
+					0,
+					false,
+					"UNKNOWN",
+					false,
+					"PLANNED",
+					"TIMETABLE",
+					"시간표",
+					List.of(),
+					null,
+					null,
+					null,
+					null
+				),
+				stairAccessTransitionStep(3, "exit", "station-stairaccess-destination", false, true)
+			),
+			warnings,
+			List.of(),
+			LocalDateTime.of(2026, 6, 30, 9, 0)
+		);
+	}
+
+	// RouteTimetableRaptorPlanner.timetableAccessStep()과 같은 파생을 그대로 쓴다.
+	private RouteStep stairAccessTransitionStep(
+		int sequence,
+		String stepType,
+		String stationId,
+		boolean includesStairs,
+		boolean verified
+	) {
+		return new RouteStep(
+			sequence,
+			stepType,
+			"판정 노선 접근 동선 확인",
+			"시간표 경로의 승하차 접근성과 환승 동선을 확인합니다.",
+			"line-stair-access",
+			"판정 노선",
+			stationId,
+			stationId,
+			2,
+			40,
+			includesStairs,
+			includesStairs ? "STAIR_ONLY" : verified ? "STEP_FREE" : "UNKNOWN",
+			!verified,
+			"PLANNED",
+			"TIMETABLE",
+			verified ? "검증됨" : "확인 필요",
+			List.of(),
+			null,
+			null,
+			null,
+			null,
+			60
 		);
 	}
 

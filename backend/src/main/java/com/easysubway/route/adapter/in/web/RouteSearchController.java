@@ -25,6 +25,7 @@ import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
+import com.easysubway.route.domain.StairAccess;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.NotBlank;
@@ -386,7 +387,8 @@ class RouteSearchController {
 		List<String> objectiveTags,
 		OfficialFareDto officialFare,
 		List<LegDto> legs,
-		boolean commercialEtaEligible
+		boolean commercialEtaEligible,
+		String stairAccess
 	) {
 
 		private static ItineraryDto from(RouteSearchResult result, OffsetDateTime departureTime, String mobilityPreset) {
@@ -395,6 +397,7 @@ class RouteSearchController {
 				? departureTime
 				: OffsetDateTime.parse(legs.getLast().plannedArrivalTime());
 			int durationSeconds = Math.toIntExact(Duration.between(departureTime, plannedArrivalTime).toSeconds());
+			AccessibilityRiskDto accessibilityRisk = AccessibilityRiskDto.from(result);
 			return new ItineraryDto(
 				"route-v2-state-" + UUID.randomUUID(),
 				statusOf(result),
@@ -405,11 +408,12 @@ class RouteSearchController {
 				durationSeconds,
 				result.transferCount(),
 				result.walkingDistanceMeters(),
-				AccessibilityRiskDto.from(result),
+				accessibilityRisk,
 				result.objectiveTags(),
 				OfficialFareDto.from(result.officialFare()),
 				legs,
-				false
+				false,
+				StairAccess.ofItineraryDisplay(result).name()
 			);
 		}
 
@@ -464,7 +468,9 @@ class RouteSearchController {
 			int unknownAccessibilityCount = Math.toIntExact(result.steps().stream()
 				.filter(step -> "UNKNOWN".equals(step.stairAccessState()))
 				.count());
-			// Keep the V2 response shape stable until route warnings expose these signals.
+			// RouteWarningCode에 대응 값이 없어 늘 0인 자리다. 응답 형태를 유지하려 남겨 두되,
+			// 계단 판정은 이 카운터가 아니라 경고 코드를 직접 분류하는 StairAccess가 내린다 —
+			// 새 사유가 생겨도 0에 걸려 무단차 단언을 통과시키는 fail open이 생기지 않는다.
 			int generatedConnectorCount = 0;
 			int staleDataCount = countWarning(result.warnings(), RouteWarningCode.STALE_ACCESSIBILITY_DATA);
 			int lowConfidenceCount = countWarning(result.warnings(), RouteWarningCode.LOW_DATA_CONFIDENCE);
@@ -496,10 +502,13 @@ class RouteSearchController {
 			List<String> reasonCodes = reasonCodesFrom(step);
 			int stairCount = step.includesStairs() ? 1 : 0;
 			int unknownAccessibilityCount = "UNKNOWN".equals(step.stairAccessState()) ? 1 : 0;
-			int generatedConnectorCount = countReason(reasonCodes, "GENERATED_CONNECTOR_UNVERIFIED");
-			int staleDataCount = countReason(reasonCodes, "STALE_ACCESSIBILITY_DATA");
-			int lowConfidenceCount = countReason(reasonCodes, "LOW_DATA_CONFIDENCE");
-			int unavailableFacilityCount = countReason(reasonCodes, "FACILITY_UNAVAILABLE");
+			// reasonCodesFrom(RouteStep)이 만드는 사유는 STAIR_ONLY_ACCESS·ACCESSIBILITY_CHECK_REQUIRED
+			// 둘뿐이라 아래 네 카운터는 leg에서 구조적으로 늘 0이다. 응답 형태를 위해 자리만 유지하며,
+			// 신뢰도 사유를 실제로 반영하는 것은 경로 단위 경고를 분류하는 StairAccess다.
+			int generatedConnectorCount = 0;
+			int staleDataCount = 0;
+			int lowConfidenceCount = 0;
+			int unavailableFacilityCount = 0;
 			String riskLevel = riskLevel(
 				RouteSearchStatus.FOUND,
 				stairCount,
@@ -546,12 +555,6 @@ class RouteSearchController {
 				reasonCodes.add("ACCESSIBILITY_CHECK_REQUIRED");
 			}
 			return List.copyOf(reasonCodes);
-		}
-
-		private static int countReason(List<String> reasonCodes, String reasonCode) {
-			return Math.toIntExact(reasonCodes.stream()
-				.filter(reasonCode::equals)
-				.count());
 		}
 
 		private static int countWarning(List<RouteWarning> warnings, RouteWarningCode warningCode) {
@@ -623,7 +626,9 @@ class RouteSearchController {
 		String providerObservedAt,
 		String gatewayReceivedAt,
 		String servedAt,
-		AccessibilityRiskDto accessibilityRisk
+		AccessibilityRiskDto accessibilityRisk,
+		String stairAccess,
+		boolean requiresAccessibilityCheck
 	) {
 
 		private static List<LegDto> fromSteps(
@@ -645,7 +650,8 @@ class RouteSearchController {
 					? plannedDepartureTime.plusSeconds(durationSeconds)
 					: OffsetDateTime.parse(step.plannedArrivalTime());
 				durationSeconds = Math.toIntExact(Duration.between(plannedDepartureTime, plannedArrivalTime).toSeconds());
-				legs.add(from(step, legType, plannedDepartureTime, plannedArrivalTime, durationSeconds, slackSeconds, mobilityPreset));
+				legs.add(from(step, legType, plannedDepartureTime, plannedArrivalTime, durationSeconds, slackSeconds,
+					mobilityPreset));
 				cursor = plannedArrivalTime;
 			}
 			return List.copyOf(legs);
@@ -691,7 +697,12 @@ class RouteSearchController {
 				step.providerObservedAt(),
 				step.gatewayReceivedAt(),
 				step.servedAt(),
-				AccessibilityRiskDto.from(step)
+				AccessibilityRiskDto.from(step),
+				StairAccess.ofStep(step).name(),
+				// 계단 사실과 검증 여부는 다른 축이다(#2590). 계단이 확인된 구간도 근거가
+				// 없으면 확인 안내가 함께 붙어야 하므로, 표시 계층이 stairAccess에서
+				// 파생하지 않도록 플래너가 세운 값을 그대로 싣는다.
+				step.requiresAccessibilityCheck()
 			);
 		}
 
