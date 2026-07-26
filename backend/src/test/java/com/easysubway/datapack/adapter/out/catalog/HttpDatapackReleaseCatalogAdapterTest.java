@@ -3,10 +3,12 @@ package com.easysubway.datapack.adapter.out.catalog;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Signature;
@@ -16,16 +18,109 @@ import org.junit.jupiter.api.Test;
 
 class HttpDatapackReleaseCatalogAdapterTest {
 	private static final ObjectMapper JSON = new ObjectMapper();
+	private static final Path CANONICAL_NUMBER_CONTRACT_PATH =
+		Path.of("..", "contracts", "datapack", "canonical-number-contract.json");
+
+	/**
+	 * contracts/datapack/canonical-number-contract.json 은 Node·Java·Dart 세 구현이
+	 * 공유하는 정준 숫자 표기 계약이다. 기대 문자열은 세 런타임 실측으로 고정된 상수이며
+	 * 이 테스트는 구현을 복제하지 않고 저장된 상수와만 비교한다.
+	 */
+	@Test
+	void canonicalNumberFormattingMatchesSharedContract() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("formatting")) {
+			var literal = entry.get("literal").asText();
+			var parsed = HttpDatapackReleaseCatalogAdapter.JSON.readTree(literal);
+
+			assertThat(HttpDatapackReleaseCatalogAdapter.ecmascriptNumber(parsed.decimalValue()))
+				.as("formatting/%s (%s)", entry.get("id").asText(), literal)
+				.isEqualTo(entry.get("canonical").asText());
+		}
+	}
 
 	@Test
-	void canonicalNumbersMatchEcmascriptJsonStringify() throws Exception {
+	void canonicalSerializationAcceptsOnlySafeRangeNumbersFromSharedContract() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("formatting")) {
+			var literal = entry.get("literal").asText();
+			var label = "formatting/" + entry.get("id").asText() + " (" + literal + ")";
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.readTree("{\"value\":" + literal + "}");
+
+			if (entry.get("withinSafeRange").asBoolean()) {
+				assertThat(new String(HttpDatapackReleaseCatalogAdapter.canonical(document), StandardCharsets.UTF_8))
+					.as(label)
+					.isEqualTo("{\"value\":" + entry.get("canonical").asText() + "}");
+			} else {
+				assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+					.as(label)
+					.isInstanceOf(IllegalArgumentException.class);
+			}
+		}
+	}
+
+	@Test
+	void canonicalSerializationRejectsLiteralsWithoutAgreedCanonicalForm() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("rejectedLiterals")) {
+			var literal = entry.get("literal").asText();
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.readTree("{\"value\":" + literal + "}");
+
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+				.as("rejectedLiterals/%s (%s)", entry.get("id").asText(), literal)
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void canonicalSerializationRejectsNonFiniteNumbers() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("rejectedSpecialValues")) {
+			var value = switch (entry.get("value").asText()) {
+				case "Infinity" -> Double.POSITIVE_INFINITY;
+				case "-Infinity" -> Double.NEGATIVE_INFINITY;
+				case "NaN" -> Double.NaN;
+				default -> throw new IllegalStateException("unknown special value");
+			};
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.createObjectNode();
+			document.put("value", value);
+
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+				.as("rejectedSpecialValues/%s", entry.get("id").asText())
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void canonicalSerializationRejectsLiteralsThatAreNotShortestRoundTripDecimals() throws Exception {
+		for (JsonNode entry : canonicalNumberContract().get("nonCanonicalLiterals")) {
+			var literal = entry.get("literal").asText();
+			var document = HttpDatapackReleaseCatalogAdapter.JSON.readTree("{\"value\":" + literal + "}");
+
+			assertThatThrownBy(() -> HttpDatapackReleaseCatalogAdapter.canonical(document))
+				.as("nonCanonicalLiterals/%s (%s)", entry.get("id").asText(), literal)
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void canonicalSerializationReproducesEveryRoundTripSample() throws Exception {
+		var samples = canonicalNumberContract().get("roundTripSamples");
+		assertThat(samples.size()).isGreaterThanOrEqualTo(300);
+		for (JsonNode sample : samples) {
+			var text = sample.asText();
+
+			assertThat(HttpDatapackReleaseCatalogAdapter.ecmascriptNumber(
+				HttpDatapackReleaseCatalogAdapter.JSON.readTree(text).decimalValue()))
+				.as("roundTripSamples/%s", text)
+				.isEqualTo(text);
+		}
+	}
+
+	@Test
+	void canonicalSerializationSortsKeysAndOmitsWhitespace() throws Exception {
 		var value = JSON.readTree("""
-			{"plainSmall":0.0001,"scientificSmall":0.0000001,"plainLarge":100000000000000000000,"scientificLarge":1e21,"negativeZero":-0.0}
+			{"b":[1,true,null,"x"],"A":2,"a":{"z":3,"y":4}}
 			""");
 
 		assertThat(new String(HttpDatapackReleaseCatalogAdapter.canonical(value), StandardCharsets.UTF_8))
-			.isEqualTo("{\"negativeZero\":0,\"plainLarge\":100000000000000000000,\"plainSmall\":0.0001,"
-				+ "\"scientificLarge\":1e+21,\"scientificSmall\":1e-7}");
+			.isEqualTo("{\"A\":2,\"a\":{\"y\":4,\"z\":3},\"b\":[1,true,null,\"x\"]}");
 	}
 
 	@Test
@@ -269,6 +364,10 @@ class HttpDatapackReleaseCatalogAdapterTest {
 		signature.put("algorithm", "rsa-sha256-release-request-v1");
 		signature.put("value", Base64.getUrlEncoder().withoutPadding().encodeToString(signer.sign()));
 		return JSON.writeValueAsBytes(binding);
+	}
+
+	private static JsonNode canonicalNumberContract() throws Exception {
+		return JSON.readTree(CANONICAL_NUMBER_CONTRACT_PATH.toFile());
 	}
 
 	private static String sha256(byte[] value) throws Exception {
