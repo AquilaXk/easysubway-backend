@@ -469,11 +469,15 @@ jobs:
             git diff-tree --check --root HEAD
           fi
 
+      # tools/qa는 detect-changed-paths.sh에서 tools/ci·tools/repo와 같은 arm(ci=true, repository=true)에
+      # 묶이므로 계약 테스트 스텝 글롭에 넣는다(#2558). Admin QA Gates의 `npm test --prefix tools/qa`는
+      # playwright 설치(npm ci)에 딸린 실행 경로라, 설치가 깨지면 계약 테스트까지 함께 사라진다.
+      # tools/qa 테스트는 소스를 텍스트로 파싱해 playwright 없이 돌아가므로 여기서도 그대로 실행된다.
       - name: Repository CI / Run contract tests
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.docs_only == 'true' || needs.changes.outputs.ci == 'true' }}
         env:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
-        run: node --test tools/ci/*.test.mjs tools/ci/lib/*.test.mjs tools/repo/*.test.mjs tools/lib/*.test.mjs tools/mobile/*.test.mjs
+        run: node --test tools/ci/*.test.mjs tools/ci/lib/*.test.mjs tools/repo/*.test.mjs tools/lib/*.test.mjs tools/mobile/*.test.mjs tools/qa/*.test.mjs
 
       - name: Repository CI / Validate contracts
         if: ${{ needs.changes.outputs.contracts == 'true' }}
@@ -491,13 +495,24 @@ jobs:
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
         env:
           NODE_OPTIONS: --disable-warning=ExperimentalWarning
-        run: node --test tools/datapack/*.test.mjs
+        run: node --test tools/datapack/*.test.mjs tools/datapack/lib/*.test.mjs
 
       # 앱 drift 선언이 바뀌어도(mobile) 팩 자산이 바뀌어도(datapack) 판정이 필요하므로
       # datapack 테스트 레인보다 트리거 범위를 넓게 잡는다(#2527).
       - name: Repository CI / Check data pack and app catalog schema parity
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.datapack == 'true' }}
         run: node tools/ci/check-pack-app-schema-parity.mjs
+
+      # tools/routes는 detect-changed-paths.sh에서 tools/route-map과 같은 arm(repository=true,
+      # route_map=true)에 묶이지만 노선도 렌더링이 아니라 경로 탐색 도구라 Chrome이 필요 없다(#2558).
+      # 아래 route map 스텝에 합치면 setup-chrome에 불필요하게 묶이므로, 다른 도메인 스텝과 같은
+      # `repository || ci` 게이트로 별도 스텝을 둔다. setup-chrome 실패가 브라우저 비의존 테스트를
+      # 막지 않도록 Chrome 설치 스텝보다 앞에 배치한다.
+      - name: Repository CI / Run route tool tests
+        if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
+        env:
+          NODE_OPTIONS: --disable-warning=ExperimentalWarning
+        run: node --test tools/routes/*.test.mjs
 
       - name: Repository CI / Set up Chrome for route map tests
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' }}
