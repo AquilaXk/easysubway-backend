@@ -60,7 +60,7 @@ public class ProductionRouteV2Support {
 			|| plan.timetableArtifactId().isBlank()
 			|| !validPlannerIdentity(plan)
 			|| timetablePort.activeItxTimetableArtifactId().filter(plan.timetableArtifactId()::equals).isEmpty()
-			|| plan.itineraries().stream().anyMatch(this::incompleteFoundItinerary)) {
+			|| plan.itineraries().stream().anyMatch(ProductionRouteV2Support::incompleteFoundItinerary)) {
 			throw new ItxTimetableUnavailableException();
 		}
 		return plan.timetableArtifactId();
@@ -83,7 +83,10 @@ public class ProductionRouteV2Support {
 		return value != null && value.matches("[0-9a-f]{64}");
 	}
 
-	private boolean incompleteFoundItinerary(RouteSearchResult itinerary) {
+	// #2560: 응답 후보를 추가하는 쪽(RouteV2Planner)이 같은 계약을 미리 확인할 수 있도록 static으로 둔다.
+	// 계약을 어긴 FOUND itinerary가 하나라도 응답에 들어오면 requireUsablePlan()이 plan 전체를 503으로
+	// 거부하므로, 판정을 복제하지 않고 이 한 곳을 공유한다.
+	static boolean incompleteFoundItinerary(RouteSearchResult itinerary) {
 		if (itinerary.status() != RouteSearchStatus.FOUND) {
 			return false;
 		}
@@ -93,10 +96,10 @@ public class ProductionRouteV2Support {
 			|| fare.sourceSnapshotIds().isEmpty()
 			|| itinerary.objectiveTags().isEmpty()
 			|| itinerary.steps().stream().noneMatch(step -> "ride".equals(step.stepType()))
-			|| itinerary.steps().stream().anyMatch(this::incompletePlannerStep);
+			|| itinerary.steps().stream().anyMatch(ProductionRouteV2Support::incompletePlannerStep);
 	}
 
-	private boolean incompletePlannerStep(RouteStep step) {
+	private static boolean incompletePlannerStep(RouteStep step) {
 		if (!validPlannedTimes(step)) {
 			return true;
 		}
@@ -110,7 +113,7 @@ public class ProductionRouteV2Support {
 		return "ITX_CHEONGCHUN".equals(step.serviceClass()) && blank(step.trainNo());
 	}
 
-	private boolean validPlannedTimes(RouteStep step) {
+	private static boolean validPlannedTimes(RouteStep step) {
 		try {
 			OffsetDateTime departure = OffsetDateTime.parse(step.plannedDepartureTime());
 			OffsetDateTime arrival = OffsetDateTime.parse(step.plannedArrivalTime());
@@ -120,7 +123,7 @@ public class ProductionRouteV2Support {
 		}
 	}
 
-	private boolean blank(String value) {
+	private static boolean blank(String value) {
 		return value == null || value.isBlank();
 	}
 

@@ -1219,7 +1219,8 @@ class RouteSearchServiceTest {
 
 		var plan = planner.search(routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3));
 
-		assertThat(plan.itineraries()).hasSize(2);
+		// #2560: 두 objective 대표가 모두 계단을 지나므로 검증된 무단차 대안이 세 번째 자리에 남는다.
+		assertThat(plan.itineraries()).hasSize(3);
 		assertThat(plan.itineraries().get(0).transferCount()).isOne();
 		assertThat(plan.itineraries().get(0).objectiveTags()).containsExactly("FASTEST");
 		assertThat(plan.itineraries().get(0).officialFare().adultFareWon()).isEqualTo(2_500);
@@ -1230,6 +1231,10 @@ class RouteSearchServiceTest {
 		assertThat(plan.itineraries().get(1).transferCount()).isZero();
 		assertThat(plan.itineraries().get(1).objectiveTags()).containsExactly("FEWEST_TRANSFERS");
 		assertThat(plan.itineraries().get(1).officialFare().adultFareWon()).isEqualTo(2_000);
+		assertThat(plan.itineraries().get(2).transferCount()).isOne();
+		assertThat(plan.itineraries().get(2).objectiveTags()).containsExactly("STEP_FREE_PREFERRED");
+		assertThat(plan.itineraries().get(2).officialFare().adultFareWon()).isEqualTo(2_300);
+		assertThat(plan.itineraries().get(2).warnings()).isEmpty();
 	}
 
 	@Test
@@ -1268,7 +1273,8 @@ class RouteSearchServiceTest {
 		Collections.reverse(fares);
 		LoadRouteTimetablePort reversed = () -> new LoadRouteTimetablePort.RouteTimetable(
 			original.serviceCalendars(), original.serviceCalendarDates(), original.transitRoutes(),
-			trips, stopTimes, original.transitFrequencies(), fares, original.feedEndDate()
+			trips, stopTimes, original.transitFrequencies(), fares, original.feedEndDate(),
+			original.routeAccessData()
 		);
 		var command = routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3);
 
@@ -1316,10 +1322,14 @@ class RouteSearchServiceTest {
 
 		assertThat(plan.source()).isEqualTo(RouteV2PlanSource.TIMETABLE_RAPTOR);
 		assertThat(plan.plannerIdentity()).isEqualTo(identity);
-		assertThat(plan.itineraries()).hasSize(2).allSatisfy(itinerary -> {
+		// #2560: canary는 objective 대표 2건과 무단차 대안 1건을 낸다(요청 alternativeCount 상한과 동일).
+		assertThat(plan.itineraries()).hasSize(3).allSatisfy(itinerary -> {
 			assertThat(itinerary.officialFare()).isNotNull();
 			assertThat(itinerary.objectiveTags()).isNotEmpty();
 		});
+		assertThat(plan.itineraries())
+			.flatExtracting(RouteSearchResult::objectiveTags)
+			.containsExactlyInAnyOrder("FASTEST", "FEWEST_TRANSFERS", "STEP_FREE_PREFERRED");
 
 		String output = System.getenv("EASYSUBWAY_PLANNER_SUCCESS_OUTPUT");
 		if (output != null && !output.isBlank()) {
@@ -4116,6 +4126,12 @@ class RouteSearchServiceTest {
 			List.of());
 	}
 
+	/**
+	 * objective 대표 두 건(최속 ITX 환승·최소 환승 직통)에 더해, #2560의 무단차 대안까지 나오는 시각표다.
+	 * 두 대표는 각각 계단 환승(station-transfer)과 계단 진입(station-a:line-direct)을 지나고,
+	 * station-step-free를 경유하는 세 번째 경로만 검증된 무단차다. planner canary가 이 세 후보를 그대로
+	 * 산출하므로 릴리스 증거 게이트가 무단차 대안 편입 경로를 실제로 관측한다.
+	 */
 	private static LoadRouteTimetablePort objectiveRouteTimetablePort() {
 		return () -> new LoadRouteTimetablePort.RouteTimetable(
 			List.of(new LoadRouteTimetablePort.ServiceCalendar(
@@ -4126,7 +4142,8 @@ class RouteSearchServiceTest {
 			List.of(
 				new LoadRouteTimetablePort.TransitRoute("route-direct", "line-direct", "D", "직통", "도착 방면", "Asia/Seoul"),
 				new LoadRouteTimetablePort.TransitRoute("route-a", "line-a", "A", "A", "환승 방면", "Asia/Seoul"),
-				new LoadRouteTimetablePort.TransitRoute("route-b", "line-b", "B", "B", "도착 방면", "Asia/Seoul")
+				new LoadRouteTimetablePort.TransitRoute("route-b", "line-b", "B", "B", "도착 방면", "Asia/Seoul"),
+				new LoadRouteTimetablePort.TransitRoute("route-c", "line-c", "C", "C", "도착 방면", "Asia/Seoul")
 			),
 			List.of(
 				new LoadRouteTimetablePort.TransitTrip("trip-direct", "route-direct", "weekday-2026", "도착", "0", "LOCAL", 0),
@@ -4134,24 +4151,109 @@ class RouteSearchServiceTest {
 				new LoadRouteTimetablePort.TransitTrip(
 					"trip-b", "route-b", "weekday-2026", "도착", "0",
 					"ITX_CHEONGCHUN", "EXPRESS", "2001", 0
-				)
+				),
+				new LoadRouteTimetablePort.TransitTrip("trip-c", "route-c", "weekday-2026", "도착", "0", "LOCAL", 0)
 			),
 			List.of(
 				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 1, "station-a", "line-direct", 32820, 32820, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-direct", 2, "station-b", "line-direct", 34200, 34200, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-a", 1, "station-a", "line-a", 32820, 32820, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-a", 2, "station-transfer", "line-a", 33000, 33000, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-a", 3, "station-step-free", "line-a", 33180, 33180, 0, 0),
 				new LoadRouteTimetablePort.TransitStopTime("trip-b", 1, "station-transfer", "line-b", 33600, 33600, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime("trip-b", 2, "station-b", "line-b", 33900, 33900, 0, 0)
+				new LoadRouteTimetablePort.TransitStopTime("trip-b", 2, "station-b", "line-b", 33900, 33900, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-c", 1, "station-step-free", "line-c", 33900, 33900, 0, 0),
+				new LoadRouteTimetablePort.TransitStopTime("trip-c", 2, "station-b", "line-c", 34080, 34080, 0, 0)
 			),
 			List.of(),
 			List.of(
 				new LoadRouteTimetablePort.OfficialFare("trip-direct", "station-a", "station-b", 2_000, "KRW", "official", "snapshot"),
 				new LoadRouteTimetablePort.OfficialFare("trip-a", "station-a", "station-transfer", 1_000, "KRW", "official", "snapshot"),
-				new LoadRouteTimetablePort.OfficialFare("trip-b", "station-transfer", "station-b", 1_500, "KRW", "official", "snapshot")
+				new LoadRouteTimetablePort.OfficialFare("trip-a", "station-a", "station-step-free", 1_200, "KRW", "official", "snapshot"),
+				new LoadRouteTimetablePort.OfficialFare("trip-b", "station-transfer", "station-b", 1_500, "KRW", "official", "snapshot"),
+				new LoadRouteTimetablePort.OfficialFare("trip-c", "station-step-free", "station-b", 1_100, "KRW", "official", "snapshot")
 			),
-			null
+			null,
+			objectiveRouteAccessData()
 		);
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData objectiveRouteAccessData() {
+		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
+		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
+		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
+		for (String stationLine : List.of(
+			"station-a:line-a", "station-transfer:line-a", "station-transfer:line-b",
+			"station-step-free:line-a", "station-step-free:line-c",
+			"station-b:line-direct", "station-b:line-b", "station-b:line-c")) {
+			String[] parts = stationLine.split(":");
+			addObjectiveAccess(nodes, edges, evidence, parts[0], parts[1], false);
+		}
+		// 최소 환승 대표(직통)는 출발역 진입이 계단이다.
+		addObjectiveAccess(nodes, edges, evidence, "station-a", "line-direct", true);
+		List<LoadRouteTimetablePort.TransferRule> transfers = new ArrayList<>();
+		// 최속 대표(ITX 환승)는 계단 환승, 세 번째 후보만 검증된 무단차 환승이다.
+		addObjectiveTransfer(nodes, edges, evidence, transfers, "station-transfer", "line-a", "line-b", 120, true);
+		addObjectiveTransfer(nodes, edges, evidence, transfers, "station-step-free", "line-a", "line-c", 360, false);
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, transfers, evidence);
+	}
+
+	private static void addObjectiveAccess(
+		List<LoadRouteTimetablePort.PathwayNode> nodes,
+		List<LoadRouteTimetablePort.PathwayEdge> edges,
+		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence,
+		String station,
+		String line,
+		boolean entryIncludesStairs
+	) {
+		String key = station + "-" + line;
+		var entry = objectiveEdge(key + "-entry", 240, 180, entryIncludesStairs);
+		var exit = objectiveEdge(key + "-exit", 180, 120, false);
+		edges.add(entry);
+		edges.add(exit);
+		nodes.add(new LoadRouteTimetablePort.PathwayNode(entry.fromNodeId(), station, null, "ENTRANCE"));
+		nodes.add(new LoadRouteTimetablePort.PathwayNode(entry.toNodeId(), station, line, "PLATFORM"));
+		nodes.add(new LoadRouteTimetablePort.PathwayNode(exit.fromNodeId(), station, line, "PLATFORM"));
+		nodes.add(new LoadRouteTimetablePort.PathwayNode(exit.toNodeId(), station, null, "EXIT"));
+		evidence.add(objectiveEvidence(key + "-entry-evidence", station, line, entry.id(), "ENTRY"));
+		evidence.add(objectiveEvidence(key + "-exit-evidence", station, line, exit.id(), "EXIT"));
+	}
+
+	private static void addObjectiveTransfer(
+		List<LoadRouteTimetablePort.PathwayNode> nodes,
+		List<LoadRouteTimetablePort.PathwayEdge> edges,
+		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence,
+		List<LoadRouteTimetablePort.TransferRule> transfers,
+		String station,
+		String fromLine,
+		String toLine,
+		int durationSeconds,
+		boolean includesStairs
+	) {
+		String key = station + "-" + fromLine + "-" + toLine;
+		var edge = objectiveEdge(key + "-transfer", durationSeconds, durationSeconds, includesStairs);
+		edges.add(edge);
+		nodes.add(new LoadRouteTimetablePort.PathwayNode(edge.fromNodeId(), station, fromLine, "PLATFORM"));
+		nodes.add(new LoadRouteTimetablePort.PathwayNode(edge.toNodeId(), station, toLine, "PLATFORM"));
+		evidence.add(objectiveEvidence(key + "-transfer-evidence", station, toLine, edge.id(), "TRANSFER"));
+		transfers.add(new LoadRouteTimetablePort.TransferRule(
+			key + "-rule", station, fromLine, station, toLine, "IN_STATION", durationSeconds,
+			edge.id(), includesStairs ? null : edge.id(), "VERIFIED"));
+	}
+
+	private static LoadRouteTimetablePort.PathwayEdge objectiveEdge(
+		String id, int duration, int distance, boolean includesStairs
+	) {
+		return new LoadRouteTimetablePort.PathwayEdge(
+			id, id + "-from", id + "-to", duration, distance, false, includesStairs, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
+	private static LoadRouteTimetablePort.RouteEdgeEvidence objectiveEvidence(
+		String id, String station, String line, String edgeId, String edgeType
+	) {
+		return new LoadRouteTimetablePort.RouteEdgeEvidence(
+			id, station, line, edgeId, edgeType, "OFFICIAL_SOURCE", "VERIFIED", true, null);
 	}
 
 	private static LoadRouteTimetablePort objectiveOverflowRouteTimetablePort() {

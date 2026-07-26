@@ -18,12 +18,14 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.CompiledTimetable;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.RealtimeOverlay;
+import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.RouteNotFoundException;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
+import com.easysubway.route.domain.RouteWarningCode;
 import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -33,6 +35,7 @@ import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.ObjectProvider;
@@ -48,6 +51,13 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private static final Logger log = LoggerFactory.getLogger(RouteV2Planner.class);
 	private static final String PLANNER_ADR = "tools/routes/route-algorithm-v2-adr.json";
 	private static final int RANKING_CANDIDATE_LIMIT = 3;
+	// #2560: PREFER_STEP_FREE에서 objective 대표와 별개로 보존하는 무단차 대안의 objective tag다.
+	// RouteObjective(요청 스키마)는 그대로 두고 응답 태그 어휘만 넓힌다 — 요청으로 지정할 수 있는
+	// objective가 아니라 FASTEST·FEWEST_TRANSFERS와 같은 "대표" 표시이며, "무단차 선호가 고른
+	// 후보"를 뜻한다. 접근성 검증 여부까지 단언하지 않는다(경로의 검증 수준은 기존대로 warnings·
+	// stairAccessState·requiresAccessibilityCheck가 전달한다). 미지 태그를 무시하는 클라이언트는
+	// 기존 동작 그대로다.
+	private static final String STEP_FREE_OBJECTIVE_TAG = "STEP_FREE_PREFERRED";
 
 	private final RouteSearchUseCase routeSearchUseCase;
 	private final LoadRouteTimetablePort routeTimetablePort;
@@ -159,6 +169,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 				timetableItineraries = rankTimetableItineraries(
 					timetableItineraries,
 					command.objective(),
+					command.constraintMode(),
 					command.alternativeCount()
 				);
 				return new RouteV2Plan(
@@ -436,6 +447,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 	private List<RouteSearchResult> rankTimetableItineraries(
 		List<RouteSearchResult> itineraries,
 		RouteObjective requestedObjective,
+		ConstraintMode constraintMode,
 		int alternativeCount
 	) {
 		if (itineraries.isEmpty()) {
@@ -471,11 +483,71 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		}
 		List<RouteSearchResult> ranked = new ArrayList<>(alternativeCount);
 		rankedFound.stream().limit(alternativeCount).forEach(ranked::add);
+		stepFreeAlternative(constraintMode, found, ranked, alternativeCount).ifPresent(ranked::add);
 		itineraries.stream()
 			.filter(itinerary -> itinerary.status() != RouteSearchStatus.FOUND)
 			.limit(alternativeCount - ranked.size())
 			.forEach(ranked::add);
 		return List.copyOf(ranked);
+	}
+
+	// #2560: 플래너가 보존한 무단차 후보(#2534)는 objective 대표 2건 축약에서 다시 버려진다. 두
+	// comparator 모두 accessibilityRiskScore가 3순위라, 환승 수가 같고 계단 경로가 더 빠르면 두 대표가
+	// 모두 계단 경로로 확정되기 때문이다. 선호(prefer)는 대안을 지우는 필터가 아니므로 대표를 교체하지
+	// 않고, alternativeCount에 남는 자리가 있을 때만 무단차 대표 1건을 덧붙인다 — 표시 선두("최속"·
+	// "최소 환승") 계약은 그대로 두고 응답 후보 집합만 넓힌다(정렬과 보존의 분리).
+	// 발동 조건은 "응답에 담긴 대표 중 검증된 무단차가 없음"이다. 검증되지 않은 접근 동선(UNKNOWN)은
+	// 무단차로 확인된 것이 아니므로 대표에 있어도 대안 보존을 막지 않는다.
+	private Optional<RouteSearchResult> stepFreeAlternative(
+		ConstraintMode constraintMode,
+		List<RouteSearchResult> found,
+		List<RouteSearchResult> representatives,
+		int alternativeCount
+	) {
+		if (constraintMode != ConstraintMode.PREFER_STEP_FREE
+			|| representatives.size() >= alternativeCount
+			|| representatives.stream().anyMatch(itinerary -> stairAccess(itinerary) == StairAccess.STEP_FREE)) {
+			return Optional.empty();
+		}
+		List<String> representativeIds = representatives.stream()
+			.map(RouteSearchResult::routeSearchId)
+			.toList();
+		Comparator<RouteSearchResult> stepFreePreference = Comparator
+			.comparingInt(this::accessibilityRiskScore)
+			.thenComparingLong(this::plannedArrivalEpochSecond)
+			.thenComparingInt(RouteSearchResult::transferCount)
+			.thenComparing(RouteSearchResult::routeSearchId);
+		return found.stream()
+			// 검증된 무단차 후보만 태깅한다. UNKNOWN 후보를 STEP_FREE_PREFERRED로 붙이면 태그가
+			// 그 후보의 stairAccessState=UNKNOWN·requiresAccessibilityCheck=true와 모순된다.
+			.filter(itinerary -> stairAccess(itinerary) == StairAccess.STEP_FREE)
+			.filter(itinerary -> !representativeIds.contains(itinerary.routeSearchId()))
+			.map(itinerary -> withObjectiveTags(itinerary, List.of(STEP_FREE_OBJECTIVE_TAG)))
+			// 응답에 편입되는 순간 prod 완결성 계약의 대상이 되고, 어기면 requireUsablePlan()이 plan
+			// 전체를 503으로 거부한다(200이던 검색이 통째로 실패). 계약을 못 채우는 후보는 붙이지 않아
+			// 기존 동작(=대안 미첨부)으로 안전하게 되돌아간다. 태깅 뒤에 걸러야 objectiveTags 조건을
+			// 실제 응답 형태로 판정한다.
+			.filter(itinerary -> !ProductionRouteV2Support.incompleteFoundItinerary(itinerary))
+			.min(stepFreePreference);
+	}
+
+	// 계단 접근성은 3값이다. 스텝의 stairAccessState가 STAIR_ONLY / STEP_FREE / UNKNOWN으로 갈리고
+	// (RouteTimetableRaptorPlanner의 접근 전이 생성), 미검증 전이는 계단 없음이 아니라 "확인되지 않음"이다.
+	private StairAccess stairAccess(RouteSearchResult itinerary) {
+		if (itinerary.steps().stream().anyMatch(RouteStep::includesStairs)
+			|| itinerary.warnings().stream()
+				.anyMatch(warning -> warning.code() == RouteWarningCode.STAIR_ONLY_ACCESS)) {
+			return StairAccess.STAIR_ONLY;
+		}
+		return itinerary.steps().stream().anyMatch(RouteStep::requiresAccessibilityCheck)
+			? StairAccess.UNKNOWN
+			: StairAccess.STEP_FREE;
+	}
+
+	private enum StairAccess {
+		STEP_FREE,
+		UNKNOWN,
+		STAIR_ONLY
 	}
 
 	private long plannedArrivalEpochSecond(RouteSearchResult itinerary) {
