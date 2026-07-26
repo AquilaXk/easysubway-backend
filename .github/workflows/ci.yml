@@ -739,6 +739,9 @@ jobs:
         run: |
           set -euo pipefail
           flutter pub get
+          # `flutter analyze`는 포맷 드리프트를 잡지 못해, 포맷이 어긋난 파일이 CI green으로
+          # 병합된 뒤 무관한 PR에서 뒤늦게 터졌다. Dart 소스 전 디렉토리를 게이트로 고정한다.
+          dart format --output=none --set-exit-if-changed lib test integration_test test_driver
           flutter analyze
           flutter test --coverage
           node ../../tools/ci/filter-mobile-lcov.mjs --input coverage/lcov.info --output coverage/lcov.info
