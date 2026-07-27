@@ -4,23 +4,22 @@
 // htmx 부분 갱신(자동 갱신 폴링)으로 새 canvas가 들어오면 afterSwap에서 다시 그린다.
 // Chart.js가 없거나 JSON이 없으면 조용히 넘어가고 details 안 데이터 표가 대체한다.
 (function () {
-	function tokenColor(name, fallback) {
+	function tokenColor(name) {
 		if (typeof getComputedStyle !== 'function') {
-			return fallback;
+			return '';
 		}
-		var value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-		return value || fallback;
+		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 	}
 
 	var COLORS = {
-		COMPLETED: tokenColor('--admin-good', '#0a705a'),
-		FAILED: tokenColor('--admin-danger', '#b42318'),
-		RUNNING: tokenColor('--admin-warn', '#9a5600')
+		COMPLETED: tokenColor('--admin-good'),
+		FAILED: tokenColor('--admin-danger'),
+		RUNNING: tokenColor('--admin-warn')
 	};
 
 	function barColor(status) {
 		// 상태 매핑 밖(알 수 없는 상태)은 장식적 색 대신 무채색 잉크 톤으로 폴백한다(#1983).
-		return COLORS[status] || tokenColor('--admin-ink-3', '#466467');
+		return COLORS[status] || tokenColor('--admin-ink-3');
 	}
 
 	function renderChart(canvas) {

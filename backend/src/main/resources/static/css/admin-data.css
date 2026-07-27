@@ -480,6 +480,10 @@
 	font-weight: var(--admin-w-medium);
 }
 
+.admin-v3 .timeline .timeline-current .timeline-time {
+	color: var(--admin-ink-2);
+}
+
 /* 핵심 지표 그리드 반응형(#1983): 900px 이하 2열, 768px 이하 1열. 각 행의 첫 열은
    좌측 구분선을 빼고, 1열에서는 상단 구분선으로 전환한다. */
 @media (max-width: 900px) {

@@ -165,17 +165,25 @@
 
 .admin-nav-item:hover {
 	border-radius: 0;
-	border-left-color: var(--admin-border-strong);
+	border-left-color: var(--admin-sidebar-accent-border);
 	background: var(--admin-sidebar-accent);
 	color: var(--admin-ink);
 }
 
 .admin-nav-item.is-active {
 	border-radius: 0;
-	border-left-color: var(--admin-accent);
+	border-left-color: var(--admin-sidebar-accent-border);
 	background: var(--admin-sidebar-accent);
-	color: var(--admin-ink);
+	color: var(--admin-accent-ink);
 	font-weight: var(--admin-w-strong);
+}
+
+.admin-nav-item:hover:focus-visible {
+	outline-color: var(--admin-focus-on-signature);
+}
+
+.admin-nav-item.is-active:focus-visible {
+	outline-color: var(--admin-focus-on-signature);
 }
 
 .admin-main {

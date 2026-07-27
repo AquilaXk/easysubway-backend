@@ -32,7 +32,7 @@ a {
 a:focus-visible,
 button:focus-visible,
 input:focus-visible {
-	outline: 3px solid #ffbf47;
+	outline: 3px solid var(--admin-focus);
 	outline-offset: 3px;
 }
 
@@ -105,17 +105,25 @@ input:focus-visible {
 
 .nav-link:hover {
 	border-radius: 0;
-	border-left-color: var(--admin-border-strong);
+	border-left-color: var(--admin-sidebar-accent-border);
 	background: var(--admin-sidebar-accent);
 	color: var(--admin-ink);
 }
 
 .nav-link.active {
 	border-radius: 0;
-	border-left-color: var(--admin-accent);
+	border-left-color: var(--admin-sidebar-accent-border);
 	background: var(--admin-sidebar-accent);
-	color: var(--admin-ink);
+	color: var(--admin-accent-ink);
 	font-weight: var(--admin-w-strong);
+}
+
+.nav-link:hover:focus-visible {
+	outline-color: var(--admin-focus-on-signature);
+}
+
+.nav-link.active:focus-visible {
+	outline-color: var(--admin-focus-on-signature);
 }
 
 .desktop-user {
@@ -221,7 +229,7 @@ input:focus-visible {
 .desk-btn.primary {
 	border-color: var(--admin-accent);
 	background: var(--admin-accent);
-	color: #fff;
+	color: var(--admin-on-primary);
 }
 
 /* auto-fit(#2349 PR⑩e 리뷰 반영): 4개 카드 화면은 4열을 채우고, 5개 카드 화면(접근성 현황)은
@@ -459,7 +467,7 @@ input:focus-visible {
 }
 
 .operator-table-scroll:focus-visible {
-	outline: 3px solid #ffbf47;
+	outline: 3px solid var(--admin-focus);
 	outline-offset: 3px;
 }
 
@@ -562,7 +570,7 @@ input:focus-visible {
 	border: 1px solid var(--admin-accent);
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-accent);
-	color: #fff;
+	color: var(--admin-on-primary);
 	padding: 0 12px;
 	font-weight: var(--admin-w-strong);
 }
@@ -677,7 +685,7 @@ input:focus-visible {
 	border: 0;
 	border-radius: var(--admin-radius-control);
 	background: var(--admin-primary);
-	color: #fff;
+	color: var(--admin-on-primary);
 	font-weight: var(--admin-w-strong);
 }
 

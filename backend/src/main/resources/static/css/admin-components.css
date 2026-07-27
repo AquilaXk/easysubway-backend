@@ -172,7 +172,7 @@
 }
 
 .admin-v3 .admin-table-scroll:focus-visible {
-	outline: 3px solid #ffbf47;
+	outline: 3px solid var(--admin-focus);
 	outline-offset: 3px;
 }
 

@@ -14,6 +14,8 @@ import java.util.Set;
 import java.util.TreeSet;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -30,6 +32,15 @@ class AdminDesignGuardTest {
 	private static final String CSS_DATA = "backend/src/main/resources/static/css/admin-data.css";
 	private static final String CSS_ADMIN_V3 = "backend/src/main/resources/static/css/admin-v3.css";
 	private static final String CSS_OPERATOR = "backend/src/main/resources/static/css/operator-v3.css";
+	private static final String JS_DASHBOARD_CHARTS = "backend/src/main/resources/static/js/admin/dashboard-charts.js";
+	private static final String JS_BATCH_HISTORY_CHARTS = "backend/src/main/resources/static/js/admin/batch-history-charts.js";
+	private static final String JS_OPERATOR_REPORT_CHARTS = "backend/src/main/resources/static/js/operator/report-charts.js";
+	private static final String COLOR_SYSTEM_JSON = "tools/design/easysubway-color-system.json";
+	private static final Pattern CSS_CUSTOM_PROPERTY = Pattern.compile(
+		"(?m)^\\s*(--[a-z0-9-]+)\\s*:\\s*([^;]+);");
+	private static final Pattern HEX_COLOR = Pattern.compile("#[0-9a-fA-F]{3,8}\\b");
+	private static final List<String> CHART_JS_FILES = List.of(
+		JS_DASHBOARD_CHARTS, JS_BATCH_HISTORY_CHARTS, JS_OPERATOR_REPORT_CHARTS);
 
 	// import 순서(tokens → foundation → shell → components → data)를 그대로 소유하는 4책임 파일.
 	private static final List<String> RESPONSIBILITY_FILES = List.of(
@@ -89,6 +100,185 @@ class AdminDesignGuardTest {
 		"provenance", "generated", "hash", "gates", "rollback", "approval", "updated", "diff");
 	private static final Pattern STATIC_TH = Pattern.compile("<th\\b([^>]*)>([^<]*)</th>", Pattern.DOTALL);
 	private static final Pattern H2_TAG = Pattern.compile("<h2\\b[^>]*>([^<]*)</h2>", Pattern.DOTALL);
+
+	@Test
+	@DisplayName("색상 JSON version 1의 primitive·semantic property와 관리자 alias가 정확히 일치한다")
+	void colorSystemJsonMatchesAdminTokensAndCompatibilityAliases() throws IOException {
+		JsonNode colorSystem = new ObjectMapper().readTree(read(COLOR_SYSTEM_JSON));
+		assertThat(colorSystem.path("version").asInt()).isEqualTo(1);
+
+		Map<String, String> expectedProperties = new LinkedHashMap<>();
+		JsonNode primitives = colorSystem.path("primitives");
+		assertThat(primitives.size()).as("JSON primitive 수").isEqualTo(25);
+		primitives.properties().forEach(entry ->
+			expectedProperties.put(primitiveProperty(entry.getKey()), entry.getValue().asText()));
+
+		JsonNode semantic = colorSystem.path("semantic");
+		assertThat(semantic.size()).as("JSON semantic 수").isEqualTo(31);
+		semantic.properties().forEach(entry -> expectedProperties.put(
+			primitiveProperty(entry.getKey()), "var(" + primitiveProperty(entry.getValue().asText()) + ")"));
+
+		String tokensCss = read(CSS_TOKENS).replaceAll("(?s)/\\*.*?\\*/", "");
+		Matcher root = Pattern.compile("(?m)^\\s*:root\\s*\\{([^}]*)}", Pattern.DOTALL).matcher(tokensCss);
+		assertThat(root.find()).as(":root token block이 존재한다").isTrue();
+		Map<String, String> cssProperties = cssCustomProperties(root.group(1));
+		assertThat(root.find()).as(":root token block은 하나다").isFalse();
+		Map<String, String> esProperties = new LinkedHashMap<>();
+		cssProperties.forEach((name, value) -> {
+			if (name.startsWith("--es-")) {
+				esProperties.put(name, value);
+			}
+		});
+		assertThat(esProperties).containsExactlyInAnyOrderEntriesOf(expectedProperties);
+
+		Map<String, String> expectedAliases = Map.ofEntries(
+			Map.entry("--admin-bg", "var(--es-surface-scaffold)"),
+			Map.entry("--admin-surface", "var(--es-surface-default)"),
+			Map.entry("--admin-border", "var(--es-border-subtle)"),
+			Map.entry("--admin-border-strong", "var(--es-interaction-secondary-border)"),
+			Map.entry("--admin-header-bg", "var(--es-surface-brand-chrome)"),
+			Map.entry("--admin-ink", "var(--es-content-primary)"),
+			Map.entry("--admin-ink-2", "var(--es-content-secondary)"),
+			Map.entry("--admin-ink-3", "var(--es-content-muted)"),
+			Map.entry("--admin-accent", "var(--es-interaction-primary)"),
+			Map.entry("--admin-accent-soft", "var(--es-interaction-secondary-surface)"),
+			Map.entry("--admin-accent-ink", "var(--es-interaction-on-brand)"),
+			Map.entry("--admin-sidebar-bg", "var(--es-surface-default)"),
+			Map.entry("--admin-sidebar-accent", "var(--es-surface-signature)"),
+			Map.entry("--admin-sidebar-accent-border", "var(--es-interaction-on-signature-border)"),
+			Map.entry("--admin-primary", "var(--es-interaction-primary)"),
+			Map.entry("--admin-primary-hover", "var(--es-interaction-primary-pressed)"),
+			Map.entry("--admin-on-primary", "var(--es-interaction-on-primary)"),
+			Map.entry("--admin-focus", "var(--es-focus-default)"),
+			Map.entry("--admin-focus-on-signature", "var(--es-focus-on-signature)"),
+			Map.entry("--admin-good", "var(--es-status-success-content)"),
+			Map.entry("--admin-warn", "var(--es-status-warning-content)"),
+			Map.entry("--admin-danger", "var(--es-status-danger-content)"),
+			Map.entry("--admin-info", "var(--es-status-info-content)"),
+			Map.entry("--admin-good-soft", "var(--es-status-success-surface)"),
+			Map.entry("--admin-warn-soft", "var(--es-status-warning-surface)"),
+			Map.entry("--admin-danger-soft", "var(--es-status-danger-surface)"),
+			Map.entry("--admin-info-soft", "var(--es-status-info-surface)")
+		);
+		assertThat(expectedAliases).hasSize(27);
+		Map<String, String> actualAliases = new LinkedHashMap<>();
+		expectedAliases.keySet().forEach(name -> actualAliases.put(name, cssProperties.get(name)));
+		assertThat(actualAliases).containsExactlyInAnyOrderEntriesOf(expectedAliases);
+	}
+
+	@Test
+	@DisplayName("관리자·운영자 색 소비자는 semantic token과 chart 역할을 분리한다")
+	void adminAndOperatorColorConsumersUseSemanticTokensOnly() throws IOException {
+		List<String> rawColors = new ArrayList<>();
+		for (String path : CSS_FILES) {
+			rawColors.addAll(rawColors(path, read(path)));
+		}
+		assertThat(rawColors).as("token 선언 밖 CSS raw color: %s", rawColors).isEmpty();
+
+		assertThat(rule(read(CSS_FOUNDATION),
+			"\\.admin-v3 a:focus-visible,\\s*\\.admin-v3 button:focus-visible,\\s*"
+				+ "\\.admin-v3 input:focus-visible,\\s*\\.admin-v3 select:focus-visible,\\s*"
+				+ "\\.admin-v3 textarea:focus-visible,\\s*\\.admin-v3 \\.admin-panel:focus-visible"))
+			.contains("outline: 3px solid var(--admin-focus);");
+		assertThat(rule(read(CSS_OPERATOR),
+			"a:focus-visible,\\s*button:focus-visible,\\s*input:focus-visible"))
+			.contains("outline: 3px solid var(--admin-focus);");
+		assertThat(rule(read(CSS_SHELL), "\\.admin-nav-item\\.is-active:focus-visible"))
+			.contains("outline-color: var(--admin-focus-on-signature);");
+		assertThat(rule(read(CSS_OPERATOR), "\\.nav-link\\.active:focus-visible"))
+			.contains("outline-color: var(--admin-focus-on-signature);");
+		assertThat(rule(read(CSS_SHELL), "\\.admin-nav-item\\.is-active"))
+			.contains("color: var(--admin-accent-ink);");
+		assertThat(rule(read(CSS_OPERATOR), "\\.nav-link\\.active"))
+			.contains("color: var(--admin-accent-ink);");
+		assertThat(rule(read(CSS_SHELL), "\\.admin-nav-item:hover:focus-visible"))
+			.contains("outline-color: var(--admin-focus-on-signature);");
+		assertThat(rule(read(CSS_OPERATOR), "\\.nav-link:hover:focus-visible"))
+			.contains("outline-color: var(--admin-focus-on-signature);");
+		assertThat(rule(read(CSS_SHELL), "\\.admin-nav-item:hover"))
+			.contains("border-left-color: var(--admin-sidebar-accent-border);");
+		assertThat(rule(read(CSS_SHELL), "\\.admin-nav-item\\.is-active"))
+			.contains("border-left-color: var(--admin-sidebar-accent-border);");
+		assertThat(rule(read(CSS_OPERATOR), "\\.nav-link:hover"))
+			.contains("border-left-color: var(--admin-sidebar-accent-border);");
+		assertThat(rule(read(CSS_OPERATOR), "\\.nav-link\\.active"))
+			.contains("border-left-color: var(--admin-sidebar-accent-border);");
+		assertThat(rule(read(CSS_DATA),
+			"\\.admin-v3 \\.timeline \\.timeline-current \\.timeline-time"))
+			.contains("color: var(--admin-ink-2);");
+		assertThat(read(CSS_COMPONENTS)).contains("color: var(--admin-on-primary);");
+		assertThat(read(CSS_OPERATOR)).contains("color: var(--admin-on-primary);");
+
+		for (String path : CHART_JS_FILES) {
+			String js = read(path);
+			assertThat(js).as("%s tokenColor fallback 금지", path)
+				.contains("function tokenColor(name) {")
+				.doesNotContain("function tokenColor(name,");
+			assertThat(js.replaceAll("(?m)//.*$", ""))
+				.as("%s raw HEX fallback 금지", path)
+				.doesNotContainPattern(HEX_COLOR);
+		}
+
+		String dashboardCharts = read(JS_DASHBOARD_CHARTS);
+		assertThat(dashboardCharts)
+			.contains("tokenColor('--admin-chart-series')")
+			.doesNotContain("tokenColor('--admin-good')")
+			.doesNotContain("tokenColor('--admin-warn')")
+			.doesNotContain("tokenColor('--admin-danger')");
+		assertThat(read(JS_BATCH_HISTORY_CHARTS))
+			.contains("tokenColor('--admin-good')")
+			.contains("tokenColor('--admin-danger')")
+			.contains("tokenColor('--admin-warn')")
+			.contains("tokenColor('--admin-ink-3')")
+			.doesNotContain("--admin-chart-series");
+		String operatorReportCharts = read(JS_OPERATOR_REPORT_CHARTS);
+		assertThat(operatorReportCharts)
+			.contains("var GOOD_LABELS = ['완료', '발송 완료'];")
+			.contains("var DANGER_LABELS = ['실패', '발송 실패'];")
+			.contains("var goodColor = tokenColor('--admin-good');")
+			.contains("var dangerColor = tokenColor('--admin-danger');")
+			.contains("var NEUTRAL_SEQUENCE = [\n"
+				+ "\t\ttokenColor('--admin-accent'),\n"
+				+ "\t\ttokenColor('--admin-ink-2'),\n"
+				+ "\t\ttokenColor('--admin-ink-3'),\n"
+				+ "\t\ttokenColor('--admin-chart-series')\n"
+				+ "\t];")
+			.contains("if (GOOD_LABELS.indexOf(label) !== -1) {\n\t\t\t\treturn goodColor;")
+			.contains("if (DANGER_LABELS.indexOf(label) !== -1) {\n\t\t\t\treturn dangerColor;");
+	}
+
+	@Test
+	void rawColorGuardRejectsRawHexInsideAlias() {
+		assertThat(rawColors(CSS_TOKENS,
+			":root { --new-alias: color-mix(in srgb, var(--es-surface-default), #123456); }"))
+			.containsExactly(CSS_TOKENS + ": #123456");
+	}
+
+	private static List<String> rawColors(String path, String source) {
+		String css = source.replaceAll("(?s)/\\*.*?\\*/", "");
+		List<String> rawColors = new ArrayList<>();
+		Matcher colors = HEX_COLOR.matcher(css);
+		while (colors.find()) {
+			String color = colors.group();
+			String preceding = css.substring(0, colors.start());
+			int declarationStart = Math.max(preceding.lastIndexOf(';'), preceding.lastIndexOf('{')) + 1;
+			String declaration = preceding.substring(declarationStart);
+			Matcher declarationName = Pattern.compile("\\s*(--[a-z0-9-]+)\\s*:").matcher(declaration);
+			String propertyName = declarationName.find() ? declarationName.group(1) : "";
+			boolean allowedTokenPrimitive = path.equals(CSS_TOKENS)
+				&& propertyName.startsWith("--es-");
+			boolean allowedChartSeries = path.equals(CSS_TOKENS)
+				&& color.equalsIgnoreCase("#2F6F9F")
+				&& propertyName.equals("--admin-chart-series");
+			boolean allowedDangerHover = path.equals(CSS_TOKENS)
+				&& color.equalsIgnoreCase("#000")
+				&& propertyName.equals("--admin-danger-hover");
+			if (!allowedTokenPrimitive && !allowedChartSeries && !allowedDangerHover) {
+				rawColors.add(path + ": " + color);
+			}
+		}
+		return rawColors;
+	}
 
 	@Test
 	@DisplayName("admin-v3.css는 tokens → foundation → shell → components → data import manifest다")
@@ -528,6 +718,20 @@ class AdminDesignGuardTest {
 			count++;
 		}
 		return count;
+	}
+
+	private static String primitiveProperty(String token) {
+		return "--es-" + token.replace(".", "-")
+			.replaceAll("([a-z])([A-Z])", "$1-$2").toLowerCase(Locale.ROOT);
+	}
+
+	private static Map<String, String> cssCustomProperties(String css) {
+		Map<String, String> properties = new LinkedHashMap<>();
+		Matcher matcher = CSS_CUSTOM_PROPERTY.matcher(css);
+		while (matcher.find()) {
+			properties.put(matcher.group(1), matcher.group(2).trim());
+		}
+		return properties;
 	}
 
 	private static String rule(String css, String selectorPattern) {

@@ -26,7 +26,7 @@ body.admin-v3 {
 .admin-v3 select:focus-visible,
 .admin-v3 textarea:focus-visible,
 .admin-v3 .admin-panel:focus-visible {
-	outline: 3px solid #ffbf47;
+	outline: 3px solid var(--admin-focus);
 	outline-offset: 3px;
 }
 

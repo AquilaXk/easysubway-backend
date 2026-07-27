@@ -1,11 +1,10 @@
 // Operator report charts read the adjacent fallback table, so no inline JSON is needed.
 (function () {
-	function tokenColor(name, fallback) {
+	function tokenColor(name) {
 		if (typeof getComputedStyle !== 'function') {
-			return fallback;
+			return '';
 		}
-		var value = getComputedStyle(document.documentElement).getPropertyValue(name).trim();
-		return value || fallback;
+		return getComputedStyle(document.documentElement).getPropertyValue(name).trim();
 	}
 
 	// 색 매핑(#2349 PR⑩e 리뷰 반영): dashboard-charts.js PALETTE처럼 인덱스 순서로 색을 배정하면
@@ -17,15 +16,15 @@
 	var GOOD_LABELS = ['완료', '발송 완료'];
 	var DANGER_LABELS = ['실패', '발송 실패'];
 	var NEUTRAL_SEQUENCE = [
-		tokenColor('--admin-accent', '#006fd6'),
-		tokenColor('--admin-ink-2', '#29484b'),
-		tokenColor('--admin-ink-3', '#466467'),
-		tokenColor('--admin-chart-series', '#2f6f9f')
+		tokenColor('--admin-accent'),
+		tokenColor('--admin-ink-2'),
+		tokenColor('--admin-ink-3'),
+		tokenColor('--admin-chart-series')
 	];
 
 	function colorsForLabels(labels) {
-		var goodColor = tokenColor('--admin-good', '#0a705a');
-		var dangerColor = tokenColor('--admin-danger', '#b42318');
+		var goodColor = tokenColor('--admin-good');
+		var dangerColor = tokenColor('--admin-danger');
 		var neutralIndex = 0;
 		return labels.map(function (label) {
 			if (GOOD_LABELS.indexOf(label) !== -1) {
