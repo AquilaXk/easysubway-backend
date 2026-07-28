@@ -110,13 +110,17 @@
 	/* 그림자 — 사용 안 함(플랫) */
 	--admin-shadow-card: none;
 
-	/* 타이포 위계 */
-	--admin-fs-h1: 34px;
-	--admin-fs-h2: 18px;
-	--admin-fs-body: 14px;
-	--admin-fs-caption: 13px;
-	--admin-w-body: 500;
+	/* 타이포 위계 — 관리자 productive UI의 역할 기반 고정 scale */
+	--admin-fs-page: 28px;
+	--admin-fs-section: 20px;
+	--admin-fs-body: 16px;
+	--admin-fs-control: 14px;
+	--admin-fs-meta: 12px;
+	--admin-fs-h1: var(--admin-fs-page);
+	--admin-fs-h2: var(--admin-fs-section);
+	--admin-fs-caption: var(--admin-fs-meta);
+	--admin-w-body: 400;
 	--admin-w-medium: 600;
-	--admin-w-strong: 700;
-	--admin-w-title: 800;
+	--admin-w-strong: 600;
+	--admin-w-title: 600;
 }

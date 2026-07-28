@@ -77,7 +77,9 @@ class AdminV3PageSmokeTest {
 			.contains("확인 필요 먼저")
 			// 역명은 허브(시설 탭)로, 제보는 역 필터 제보 대기열로 크로스링크한다.
 			.contains("/admin/stations/station-sangnoksu/page?tab=facilities")
-			.contains("/admin/reports/page?station=station-sangnoksu");
+			.contains("/admin/reports/page?station=station-sangnoksu")
+			.doesNotContain("역 상세와 경로 안내에 쓰는 시설 상태를 확인하고 수정합니다.")
+			.doesNotContain("모든 접근성 시설의 상태·확인 상태·갱신일을 필터링하고 즉시 변경합니다.");
 
 		// #2313 PR②: 현재 상태는 상태 텍스트(.admin-status, ● 점 + 텍스트)로 표시한다. 상태 변경 열은
 		// 우측 sticky action, 갱신일은 상대 시간 + 정확한 날짜 병기, 공통 표 영역(table-region) 계약을 소비한다.
@@ -85,7 +87,10 @@ class AdminV3PageSmokeTest {
 			.contains("class=\"admin-status")
 			.contains("class=\"cell-sticky-action\"")
 			.contains("class=\"data-verified-relative\"")
-			.contains("가로로 스크롤 가능한 데이터 표");
+			.contains("가로로 스크롤 가능한 데이터 표")
+			.contains("<th scope=\"col\" class=\"cell-sticky-action\">변경</th>")
+			.contains("<span class=\"sr-only\">변경할 상태</span>")
+			.doesNotContain("<span class=\"meta\">변경할 상태</span>");
 
 		String fragment = mockMvc.perform(get("/admin/facilities/page")
 				.param("sort", "attention")
@@ -250,7 +255,9 @@ class AdminV3PageSmokeTest {
 		// 단언한다 — 다른 화면 텍스트에 우연히 섞일 수 있는 라벨 substring("분석" 등) 대신 고유 토큰을 쓴다.
 		assertThat(html)
 			.contains("class=\"admin-nav-workspace-toggle\"")
-			.contains("aria-controls=\"admin-workspace-overview\"")
+			.contains("data-persistent=\"true\"")
+			.contains("href=\"/admin/dashboard/page\"")
+			.doesNotContain("aria-controls=\"admin-workspace-overview\"")
 			.contains("aria-controls=\"admin-workspace-accessibility-data\"")
 			.contains("aria-controls=\"admin-workspace-analytics\"")
 			.doesNotContain("aria-controls=\"admin-workspace-operations\"")
@@ -258,15 +265,34 @@ class AdminV3PageSmokeTest {
 			.doesNotContain("aria-controls=\"admin-workspace-datapack\"")
 			.doesNotContain("aria-controls=\"admin-workspace-system-audit\"");
 
-		// 현재 위치(대시보드)를 담은 workspace만 data-current="true"로 렌더돼 JS가 이 영역만 펼친다.
+		// 현재 위치(대시보드)를 담은 workspace만 data-current="true"로 렌더돼 JS가 이 영역을 항상 펼친다.
 		// no-JS 폴백을 위해 서버는 toggle에 aria-expanded="true"를 정적으로 붙여 모든 program을 노출한다.
 		assertThat(html)
+			.contains("x-data=\"navWorkspaceList\"")
 			.contains("is-current")
 			.contains("data-current=\"true\"")
 			.contains("data-current=\"false\"")
-			.contains("aria-expanded=\"true\"")
+			.containsPattern("class=\"admin-nav-workspace-toggle\"[^>]*aria-expanded=\"true\"[^>]*aria-controls=\"admin-workspace-accessibility-data\"")
+			.contains("aria-current=\"page\"")
 			// 현재 위치가 있는 페이지는 no-current 폴백 표식을 붙이지 않는다(현재 영역만 펼침 유지).
 			.doesNotContain("class=\"admin-nav-scroll is-no-current\"");
+	}
+
+	@Test
+	@DisplayName("통합 대시보드는 다른 업무 페이지에서도 접히지 않는 홈 항목으로 남는다")
+	void dashboardEntryRemainsPersistentOutsideOverview() throws Exception {
+		String html = mockMvc.perform(get("/admin/facilities/page")
+				.with(user("viewer").authorities(new SimpleGrantedAuthority("admin.view"))))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("data-persistent=\"true\"")
+			.contains("href=\"/admin/dashboard/page\"")
+			.containsPattern("class=\"admin-nav-workspace-toggle\"[^>]*aria-controls=\"admin-workspace-accessibility-data\"[^>]*aria-disabled=\"true\"")
+			.doesNotContain("aria-controls=\"admin-workspace-overview\"");
 	}
 
 	@Test
@@ -284,7 +310,7 @@ class AdminV3PageSmokeTest {
 
 		assertThat(html)
 			.contains("class=\"admin-nav-scroll is-no-current\"")
-			.contains("aria-controls=\"admin-workspace-overview\"")
+			.contains("data-persistent=\"true\"")
 			.contains("href=\"/admin/dashboard/page\"")
 			.contains("data-current=\"false\"")
 			.doesNotContain("data-current=\"true\"");
@@ -420,7 +446,7 @@ class AdminV3PageSmokeTest {
 
 		assertThat(html)
 			.contains("관리자 로그인")
-			.contains("통합 관리자 콘솔")
+			.contains("쉬운 지하철 관리자")
 			.contains("name=\"username\"")
 			.contains("name=\"password\"");
 
@@ -550,7 +576,7 @@ class AdminV3PageSmokeTest {
 			.contains("id=\"admin-content\"")
 			.doesNotContain("<main id=\"admin-content\"")
 			.contains("DEV")
-			.contains("class=\"admin-user-menu-name\">admin-user</span>")
+			.contains("<dd>admin-user</dd>")
 			.contains("<span class=\"admin-status-label\">리비전</span>")
 			.contains("<strong>local</strong>")
 			.contains("<span class=\"admin-status-label\">마스터데이터</span>")

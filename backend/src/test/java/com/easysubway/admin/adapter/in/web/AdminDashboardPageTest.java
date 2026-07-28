@@ -21,6 +21,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.mock.web.MockHttpSession;
 import org.springframework.security.core.authority.SimpleGrantedAuthority;
 import org.springframework.test.web.servlet.MockMvc;
@@ -40,6 +41,62 @@ class AdminDashboardPageTest {
 	private AdminMetricDailyRepository repository;
 
 	@Test
+	@DirtiesContext(methodMode = DirtiesContext.MethodMode.BEFORE_METHOD)
+	@DisplayName("현재 운영 상태와 최근 7일 제보 흐름을 실제 지표로 렌더한다")
+	void rendersCurrentOperationsAndSevenDayReportFlow() throws Exception {
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now().minusDays(1), 4));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_RECENT_24H, LocalDate.now(), 7));
+
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("<title>오늘의 운영 현황</title>")
+			.contains("<h1>오늘의 운영 현황</h1>")
+			.contains("id=\"dashboard-current-operations\"")
+			.contains("기준")
+			.contains("aria-label=\"운영 상태 새로고침\"")
+			.contains("href=\"/admin/dashboard/page\" aria-label=\"운영 상태 새로고침\"")
+			.contains("전체 서비스")
+			.containsPattern("<dt>제보</dt>\\s*<dd[^>]*>\\d+건</dd>")
+			.doesNotContainPattern("class=\"is-warn\"[^>]*>\\s*<dt>데이터</dt>")
+			.containsPattern("class=\"\\s*is-waiting\"[^>]*>\\s*<dt>지표 집계</dt>\\s*<dd[^>]*>대기</dd>")
+			.contains("최근 7일 API 정상률")
+			.containsPattern("최근 7일 API 정상률</span>\\s*<strong><span aria-hidden=\\\"true\\\">—</span><span class=\\\"sr-only\\\">집계 없음</span></strong>")
+			.contains("id=\"dashboard-weekly-operations\"")
+			.contains("data-weekday=\"월\"")
+			.contains("data-weekday=\"화\"")
+			.contains("data-weekday=\"수\"")
+			.contains("data-weekday=\"목\"")
+			.contains("data-weekday=\"금\"")
+			.contains("data-weekday=\"토\"")
+			.contains("data-weekday=\"일\"")
+			.containsPattern("class=\"dashboard-week-day\\s+is-today\"")
+			.containsPattern("class=\"dashboard-weekly-total\">[1-2]일 집계")
+			.contains("aria-label=\"이번 주 최근 24시간 제보 스냅샷\"")
+			.doesNotContain("aria-label=\"최근 7일 제보 접수 현황\"")
+			.doesNotContain("처리 완료")
+			.doesNotContain("미처리")
+			.doesNotContain("주간 처리율")
+			.contains("class=\"dashboard-reference-lower\"")
+			.doesNotContain("최근 7일 운영 추이")
+			.doesNotContain("aria-label=\"API 정상률\"")
+			.doesNotContain("오류율 0.0%");
+	}
+
+	@Test
+	@DisplayName("주간 제보 스냅샷은 합계 대신 집계된 날짜 수를 표시한다")
+	void labelsWeeklySnapshotCoverage() {
+		assertThat(AdminOverviewPageController.weeklyCoverageLabel(0)).isEqualTo("집계 대기");
+		assertThat(AdminOverviewPageController.weeklyCoverageLabel(2)).isEqualTo("2일 집계");
+		assertThat(AdminOverviewPageController.weeklyCoverageLabel(7)).isEqualTo("7일 집계");
+	}
+
+	@Test
 	@DisplayName("핵심 카드가 클릭 가능하고 스냅샷 이력이 있으면 스파크라인을 그린다")
 	void rendersClickableCardsWithSparkline() throws Exception {
 		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now().minusDays(1), 3));
@@ -54,13 +111,37 @@ class AdminDashboardPageTest {
 
 		assertThat(html)
 			.contains("class=\"dashboard-card metric-cell\"")
-			.contains("통합 대시보드")
+			.contains("오늘의 운영 현황")
 			.doesNotContain("지금 급한 것 → 추세 → 상세 순으로 신고·시설·경로·알림·시스템을 모읍니다.")
-			.contains("class=\"admin-actions admin-dashboard-snapshot-actions\"")
+			.contains("class=\"dashboard-snapshot-form\" data-dashboard-snapshot-form")
+			.contains(">지표 다시 집계</button>")
 			.contains("확인할 제보")
 			.contains("href=\"/admin/reports/page\"")
 			.contains("dashboard-spark")
 			.contains("<polyline");
+	}
+
+	@Test
+	@DisplayName("축과 범례가 없는 장식 운영 추이를 렌더하지 않는다")
+	void omitsDecorativeReferenceTrend() throws Exception {
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now().minusDays(1), 3));
+		repository.save(AdminMetricDaily.scalar(AdminMetricKeys.REPORTS_PENDING, LocalDate.now(), 8));
+
+		String html = mockMvc.perform(get("/admin/dashboard/page")
+				.with(httpBasic("admin-test", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html)
+			.contains("class=\"dashboard-reference-lower\"")
+			.contains("class=\"dashboard-operations-details\"")
+			.contains("상세 운영 지표 보기")
+			.contains("id=\"dashboard-trends\"")
+			.contains("class=\"admin-grid-2 dashboard-readiness-grid")
+			.doesNotContain("dashboard-reference-trend")
+			.doesNotContain("최근 7일 운영 추이");
 	}
 
 	@Test

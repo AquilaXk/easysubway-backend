@@ -17,13 +17,11 @@
 	<header class="admin-page-head">
 		<div>
 			<h1>시설 상태판</h1>
-			<p>모든 접근성 시설의 상태·확인 상태·갱신일을 필터링하고 즉시 변경합니다.</p>
 		</div>
 		<div class="admin-actions">
 			<a class="admin-btn outline" th:href="@{/admin/facilities/editor/page}">시설 등록·수정</a>
 		</div>
 	</header>
-	<p class="summary">역 상세와 경로 안내에 쓰는 시설 상태를 확인하고 수정합니다.</p>
 	<div class="alert warning" th:if="${!masterDataWritable}">
 		<strong>읽기 전용 마스터 데이터</strong>
 		<p>현재 운영 데이터는 저장할 수 없어 상태 변경 요청이 차단됩니다.</p>
@@ -104,7 +102,7 @@
 					<th scope="col">확인 상태</th>
 					<th scope="col">갱신일</th>
 					<th scope="col">제보</th>
-					<th scope="col" class="cell-sticky-action">상태 변경</th>
+					<th scope="col" class="cell-sticky-action">변경</th>
 				</tr>
 			</th:block>
 			<th:block th:fragment="facilityTableRows">
@@ -162,7 +160,7 @@
 							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
 							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
 							<label>
-								<span class="meta">변경할 상태</span>
+								<span class="sr-only">변경할 상태</span>
 								<select name="status">
 									<option th:each="option : ${statusOptions}"
 									        th:value="${option.value}"

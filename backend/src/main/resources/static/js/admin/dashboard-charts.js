@@ -84,7 +84,7 @@
 	// 낸다. 첫 제출에서 버튼을 비활성화(자리·크기 그대로 두어 layout stability 유지, aria-busy로 진행 표시)해
 	// 중복 실행을 막는다. no-JS에서는 이 가드 없이 폼이 그대로 한 번 제출된다.
 	function guardSnapshotRerun() {
-		var form = document.querySelector('.admin-dashboard-snapshot-actions form');
+		var form = document.querySelector('[data-dashboard-snapshot-form]');
 		if (!form) {
 			return;
 		}

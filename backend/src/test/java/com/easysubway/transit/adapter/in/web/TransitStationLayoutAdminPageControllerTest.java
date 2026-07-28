@@ -99,7 +99,7 @@ class TransitStationLayoutAdminPageControllerTest {
 			.contains("name=\"reliabilityScore\"")
 			.contains("name=\"active\"")
 				.doesNotContain("{\"nodes\":[],\"edges\":[]}")
-				.doesNotContain("<img")
+				.doesNotContain("<img src=\"https://www.seoulmetro.co.kr\"")
 				// 내부 이동 노드/간선 "유형" 열은 RouteNodeType/RouteEdgeType.label() 한글 라벨을 표시한다(#2349).
 				// enum.name() 원문(ELEVATOR/WALK)이 노출되지 않아야 회귀를 잡는다.
 				.contains("<td>엘리베이터</td>")

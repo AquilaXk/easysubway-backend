@@ -5,8 +5,13 @@
 
 .admin-shell {
 	display: grid;
-	grid-template-columns: 240px minmax(0, 1fr);
+	grid-template-columns: 220px minmax(0, 1fr);
 	min-height: 100vh;
+	margin: 0;
+	border: 0;
+	border-radius: 0;
+	background: linear-gradient(to right, var(--admin-primary) 0 220px, var(--admin-bg) 220px);
+	overflow: visible;
 }
 
 .admin-sidebar {
@@ -17,14 +22,31 @@
 	flex-direction: column;
 	height: 100vh;
 	height: 100dvh;
-	padding: 22px 0;
-	border-right: 1px solid var(--admin-border);
-	background: var(--admin-sidebar-bg);
+	margin: 0;
+	padding: 0;
+	border-right: 0;
+	border-left: 0;
+	border-radius: 0;
+	background: var(--admin-primary);
 	color: var(--admin-ink-2);
 }
 
 .admin-brand {
-	padding: 4px 24px 22px;
+	display: flex;
+	align-items: center;
+	gap: 12px;
+	height: 132px;
+	padding: 0 30px;
+	border-bottom: 1px solid color-mix(in srgb, var(--admin-on-primary) 14%, transparent);
+}
+
+.admin-brand-icon {
+	width: 34px;
+	height: 34px;
+	padding: 3px;
+	border-radius: calc(var(--admin-radius-control) + 3px);
+	background: var(--admin-surface);
+	object-fit: contain;
 }
 
 .admin-brand strong,
@@ -33,23 +55,19 @@
 }
 
 .admin-brand strong {
-	color: var(--admin-ink);
-	font-size: 17px;
+	color: var(--admin-on-primary);
+	font-size: 18px;
 	font-weight: var(--admin-w-title);
 	line-height: 1.25;
 }
 
 .admin-brand span {
-	margin-top: 3px;
-	color: var(--admin-ink-3);
-	font-size: 12px;
-	font-weight: var(--admin-w-medium);
-	letter-spacing: 0.02em;
+	display: none;
 }
 
 /* 퀵서치(#1981): 사이드바 최상단, 기존 커맨드 팔레트 트리거를 이 자리로 재배치했다. */
 .admin-sidebar-quicksearch {
-	display: flex;
+	display: none;
 	align-items: center;
 	gap: 8px;
 	min-height: 36px;
@@ -82,9 +100,9 @@
 }
 
 /* 업무 영역(workspace) disclosure(#2277): 옛 그룹 라벨을 접기 버튼으로 대체한다. 시각 언어는 유지
-   (무채색·플랫·radius 0·shadow 0). program 목록은 x-show가, 헤더 상태는 aria-expanded가 정본이다. */
+   (무채색·플랫·radius 0·shadow 0). program 목록은 native hidden이, 헤더 상태는 aria-expanded가 정본이다. */
 .admin-nav-workspace {
-	margin-top: 10px;
+	margin: 0;
 }
 
 /* 헤더는 정적 라벨성 disclosure 버튼이므로 파랑 채움을 벗긴다. .admin-v3 button(0,1,1)이 파랑
@@ -93,42 +111,55 @@
 .admin-v3 .admin-nav-workspace-toggle {
 	display: flex;
 	align-items: center;
-	justify-content: space-between;
-	gap: 8px;
+	justify-content: flex-start;
+	gap: 16px;
 	width: 100%;
-	min-height: 44px;
+	height: 62px;
 	margin: 0;
-	padding: 0 24px;
+	padding: 0 27px 0 30px;
 	border: 0;
 	border-radius: 0;
 	background: transparent;
-	color: var(--admin-ink-3);
-	font-size: 11px;
+	color: var(--admin-on-primary);
+	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-strong);
-	letter-spacing: 0.04em;
-	text-transform: uppercase;
+	letter-spacing: -0.01em;
+	text-transform: none;
 	text-align: left;
 	cursor: pointer;
 }
 
 .admin-v3 .admin-nav-workspace-toggle:hover {
 	background: transparent;
-	color: var(--admin-ink-2);
+	color: var(--admin-on-primary);
 }
 
 .admin-nav-workspace.is-current .admin-nav-workspace-name {
-	color: var(--admin-ink);
+	color: inherit;
+}
+
+.admin-nav-workspace-name {
+	white-space: nowrap;
+}
+
+.admin-nav-workspace-icon,
+.admin-nav-program-icon {
+	display: inline-flex;
+	align-items: center;
+	justify-content: center;
+	width: 22px;
+	flex: none;
+}
+
+.admin-nav-workspace-icon svg,
+.admin-nav-program-icon svg {
+	width: 20px;
+	height: 20px;
 }
 
 /* 접힘/펼침 표시 caret: 순수 CSS 삼각형(무채색). 펼침=아래(기본), 접힘(aria-expanded=false)=왼쪽. */
 .admin-nav-workspace-caret {
-	flex: none;
-	width: 0;
-	height: 0;
-	border-left: 4px solid transparent;
-	border-right: 4px solid transparent;
-	border-top: 5px solid currentcolor;
-	transition: transform 0.15s ease;
+	display: none;
 }
 
 .admin-nav-workspace-toggle[aria-expanded="false"] .admin-nav-workspace-caret {
@@ -141,41 +172,60 @@
 	padding-bottom: 4px;
 }
 
+.admin-nav-workspace-programs[hidden] {
+	display: none;
+}
+
+.admin-nav-workspace.is-persistent .admin-nav-workspace-programs {
+	padding-bottom: 0;
+}
+
+.admin-nav-workspace.is-persistent .admin-nav-item {
+	min-height: 62px;
+	gap: 16px;
+	padding: 0 30px;
+	border-left: 0;
+}
+
 /* 펼침 전 flash 방지(#2277): JS 초기화 창(has-js, has-js-ready 이전)에서만 현재 위치가 아닌 영역의
-   program 목록을 숨긴다. has-js-ready 이후로는 navWorkspace의 x-show 인라인 display가 전담하고,
+   program 목록을 숨긴다. has-js-ready 이후로는 navWorkspaceList가 native hidden 상태를 전담하고,
    no-JS(has-js 미부착)는 이 규칙이 걸리지 않아 모든 영역이 펼쳐진 채 유지된다(폴백).
-   현재 위치가 없는 페이지(.admin-nav-scroll.is-no-current, #2277 리뷰)는 가드에서 제외해 전 영역을
-   펼친 채 유지한다 — is-current가 하나도 없어 모든 영역이 숨겨지는 회귀를 막는다. */
-.admin-v3.has-js:not(.has-js-ready) .admin-nav-scroll:not(.is-no-current) .admin-nav-workspace:not(.is-current) .admin-nav-workspace-programs {
+   현재 위치가 없는 페이지는 모든 영역을 숨겨 JS 초기 상태와 맞춘다. */
+.admin-v3.has-js:not(.has-js-ready) .admin-nav-workspace:not(.is-current):not(.is-persistent) .admin-nav-workspace-programs {
 	display: none;
 }
 
 .admin-nav-item {
 	display: flex;
 	align-items: center;
-	min-height: 38px;
-	padding: 0 24px 0 30px;
+	min-height: 42px;
+	padding: 0 24px 0 68px;
 	border-radius: 0;
 	border-left: 2px solid transparent;
-	color: var(--admin-ink-2);
-	font-size: 14px;
+	color: var(--admin-on-primary);
+	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-medium);
 	text-decoration: none;
+	white-space: nowrap;
 }
 
 .admin-nav-item:hover {
 	border-radius: 0;
 	border-left-color: var(--admin-sidebar-accent-border);
 	background: var(--admin-sidebar-accent);
-	color: var(--admin-ink);
+	color: var(--admin-accent-ink);
 }
 
 .admin-nav-item.is-active {
-	border-radius: 0;
 	border-left-color: var(--admin-sidebar-accent-border);
 	background: var(--admin-sidebar-accent);
 	color: var(--admin-accent-ink);
 	font-weight: var(--admin-w-strong);
+}
+
+.admin-v3 .admin-sidebar .admin-nav-workspace-toggle:focus-visible,
+.admin-v3 .admin-sidebar .admin-nav-item:focus-visible {
+	outline-color: var(--admin-on-primary);
 }
 
 .admin-nav-item:hover:focus-visible {
@@ -191,12 +241,26 @@
 	width: 100%;
 	max-width: none;
 	margin: 0;
-	padding: 28px 30px 48px;
+	padding: 30px 38px 40px;
+	background: var(--admin-bg);
 	overflow-x: visible;
 }
 
 .admin-topbar {
 	margin-bottom: 16px;
+}
+
+.admin-dashboard-page .admin-topbar {
+	margin-bottom: 20px;
+}
+
+.admin-dashboard-page .admin-topbar-row {
+	justify-content: flex-start;
+	min-height: 38px;
+}
+
+.admin-dashboard-page .admin-topbar-search {
+	height: 38px;
 }
 
 .admin-content-anchor {
@@ -211,11 +275,61 @@
 	gap: 10px 16px;
 	align-items: center;
 	justify-content: space-between;
-	padding: 11px 14px;
+	padding: 0;
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
+}
+
+.admin-topbar-search {
+	display: flex;
+	align-items: center;
+	gap: 9px;
+	width: min(520px, 44vw);
+	min-width: 360px;
+	height: 42px;
+	padding: 0 13px;
 	border: 1px solid var(--admin-border);
-	border-radius: var(--admin-radius-card);
+	border-radius: var(--admin-radius-control);
 	background: var(--admin-surface);
-	box-shadow: var(--admin-shadow-card);
+	color: var(--admin-ink-3);
+}
+
+.admin-topbar-search svg {
+	width: 19px;
+	height: 19px;
+	flex: none;
+}
+
+.admin-mobile-search svg {
+	width: 22px;
+	height: 22px;
+	flex: none;
+}
+
+.admin-topbar-search input[type="search"] {
+	width: 100%;
+	min-width: 0;
+	padding: 0;
+	border: 0;
+	background: transparent;
+	color: var(--admin-ink);
+	box-shadow: none;
+}
+
+.admin-topbar-search:focus-within {
+	border-color: var(--admin-border-strong);
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 3px;
+}
+
+.admin-topbar-search input[type="search"]:focus {
+	outline: 0;
+}
+
+.admin-mobile-search {
+	display: none;
 }
 
 .admin-topbar-context {
@@ -246,6 +360,8 @@
    아래 미디어 쿼리(반응형 앱 프레임)가 다시 노출한다. 접근성 스모크가 고정하는 클래스·aria-label은
    그대로 두고 display만 바꾼다. */
 .admin-topbar-brand,
+.admin-topbar-mobile-icon,
+.admin-topbar-mobile-brand,
 .admin-topbar-sep,
 .admin-topbar-scope {
 	display: none;
@@ -342,10 +458,19 @@
 
 .admin-page-head h1 {
 	margin: 0;
-	font-size: var(--admin-fs-h1);
+	font-size: var(--admin-fs-page);
 	font-weight: var(--admin-w-title);
-	line-height: 1.16;
-	letter-spacing: 0;
+	line-height: 36px;
+	letter-spacing: -0.04em;
+}
+
+.admin-dashboard-page .admin-page-head {
+	margin-bottom: 26px;
+}
+
+.admin-dashboard-page .admin-page-head h1 {
+	font-size: var(--admin-fs-page);
+	letter-spacing: -0.04em;
 }
 
 .admin-page-head p {
@@ -375,44 +500,159 @@
 @media (max-width: 1024px) {
 	.admin-shell {
 		grid-template-columns: 1fr;
+		min-height: 100vh;
+		margin: 0;
+		border: 0;
+		border-radius: 0;
+		background: var(--admin-bg);
+		overflow: visible;
 	}
 
 	/* no-JS 기본: 사이드바가 본문 위에 스택으로 보인다(전 기능 접근 가능). */
 	.admin-sidebar {
 		position: static;
 		height: auto;
+		margin: 0;
+		border-left: 0;
+		border-radius: 0;
 		max-height: 44vh;
 		overflow-y: auto;
 	}
 
 	.admin-main {
-		padding: 22px 16px 36px;
+		padding: 0 16px 36px;
+	}
+
+	.admin-topbar {
+		margin: 0 -16px 18px;
+		background: var(--admin-primary);
+	}
+
+	.admin-dashboard-page .admin-topbar {
+		margin-bottom: 0;
 	}
 
 	.admin-topbar-row {
-		display: flex;
-		padding: 0 0 10px;
+		display: grid;
+		grid-template-columns: minmax(0, 1fr) 44px auto;
+		gap: 0;
+		height: 60px;
+		padding: 0 10px;
 		border: 0;
-		border-bottom: 1px solid var(--admin-border);
+		border-bottom: 0;
 		border-radius: 0;
-		background: transparent;
+		background: var(--admin-primary);
 		box-shadow: none;
 	}
 
 	.admin-topbar-context {
-		flex: 1 1 190px;
+		display: grid;
+		grid-template-columns: 44px minmax(0, 1fr);
+		gap: 0;
+		min-width: 0;
 		align-items: center;
 	}
 
 	/* ≤1024px는 사이드바가 off-canvas라 topbar 브랜드가 유일한 브랜드 표시가 된다(#2349 PR⑨). */
-	.admin-topbar-brand,
-	.admin-topbar-sep,
-	.admin-topbar-scope {
+	.admin-topbar-brand {
 		display: inline;
 	}
 
+	.admin-topbar-mobile-brand .admin-topbar-brand {
+		min-width: 0;
+		overflow: hidden;
+		color: var(--admin-on-primary);
+		font-size: 16px;
+		text-overflow: ellipsis;
+		white-space: nowrap;
+	}
+
+	.admin-topbar-mobile-brand {
+		display: flex;
+		align-items: center;
+		justify-content: flex-start;
+		gap: 8px;
+		min-width: 0;
+		padding-left: 4px;
+	}
+
+	.admin-topbar-mobile-icon {
+		display: block;
+		width: 24px;
+		height: 24px;
+		padding: 2px;
+		border-radius: var(--admin-radius-control);
+		background: var(--admin-surface);
+		object-fit: contain;
+	}
+
+	.admin-topbar-sep,
+	.admin-topbar-scope,
+	.admin-topbar-search {
+		display: none;
+	}
+
+	.admin-mobile-search {
+		display: inline-flex;
+		align-items: center;
+		justify-content: center;
+		width: 44px;
+		height: 44px;
+		color: var(--admin-on-primary);
+		text-decoration: none;
+	}
+
 	.admin-topbar-actions {
-		flex: 0 1 auto;
+		gap: 0;
+		margin: 0;
+		padding: 0;
+		border: 0;
+		background: transparent;
+	}
+
+	.admin-v3 .admin-topbar-actions .admin-alert-bell,
+	.admin-v3 .admin-topbar-actions .admin-user-menu-trigger {
+		color: var(--admin-on-primary);
+	}
+
+	.admin-v3 .admin-topbar .admin-sidebar-toggle:focus-visible,
+	.admin-v3 .admin-topbar .admin-mobile-search:focus-visible,
+	.admin-v3 .admin-topbar .admin-alert-bell:focus-visible,
+	.admin-v3 .admin-topbar .admin-user-menu-trigger:focus-visible {
+		outline-color: var(--admin-on-primary);
+	}
+
+	.admin-v3 .admin-topbar-actions .admin-alert-bell:hover,
+	.admin-v3 .admin-topbar-actions .admin-user-menu-trigger:hover,
+	.admin-v3 .admin-topbar-actions .admin-user-menu-trigger[aria-expanded="true"] {
+		background: color-mix(in srgb, var(--admin-on-primary) 14%, transparent);
+		color: var(--admin-on-primary);
+	}
+
+	.admin-status-strip {
+		margin: 0;
+		padding: 7px 14px 9px;
+		background: var(--admin-surface);
+	}
+
+	.admin-v3 .admin-sidebar-nav-control .admin-sidebar-toggle {
+		color: var(--admin-on-primary);
+	}
+
+	.admin-dashboard-page .admin-main {
+		padding: 0 18px 30px;
+	}
+
+	.admin-dashboard-page .admin-topbar {
+		margin: 0 -18px;
+	}
+
+	.admin-dashboard-page .admin-page-head {
+		margin: 22px 0 20px;
+	}
+
+	.admin-dashboard-page .admin-page-head h1 {
+		font-size: var(--admin-fs-page);
 	}
 
 	.admin-page-head {
@@ -431,9 +671,12 @@
 		left: 0;
 		bottom: 0;
 		width: min(280px, 82vw);
-		min-height: 100vh;
-		max-height: none;
-		overflow-y: auto;
+		height: 100vh;
+		height: 100dvh;
+		min-height: 0;
+		max-height: 100vh;
+		max-height: 100dvh;
+		overflow: hidden;
 		transform: translateX(-100%);
 		transition: transform 0.2s ease;
 		z-index: 90;
@@ -447,6 +690,15 @@
 	/* 오프캔버스 터치 타깃(#2416): ≤1024px에서 사이드바 링크·퀵서치가 44×44px 이상이 되도록 한다. */
 	.admin-nav-item {
 		min-height: 44px;
+	}
+
+	.admin-nav-workspace:not(.is-persistent) {
+		border-block: 1px solid transparent;
+	}
+
+	.admin-nav-workspace:not(.is-persistent):has(> .admin-nav-workspace-toggle[aria-expanded="true"]) {
+		border-block-color: color-mix(in srgb, var(--admin-on-primary) 24%, transparent);
+		background: color-mix(in srgb, var(--admin-on-primary) 4%, transparent);
 	}
 
 	.admin-sidebar-quicksearch {

@@ -2,8 +2,8 @@
   <!--
     admin-symbols.svg — V6-04(#2276) 프로젝트 소유 정적 아이콘 sprite.
     외부 라이브러리를 vendor하지 않고 보편적 기하학 라인 아이콘만 최소하게 담는다(무채색·심플 원칙).
-    inventory 13개 고정: search, menu, alert, close, account, logout, chevron-down, check,
-    warning, error, info, more, copy. 각 symbol은 viewBox="0 0 20 20" · fill="none" ·
+    inventory: search, menu, alert, close, account, logout, chevron-down, check, warning, error,
+    info, more, copy, refresh와 관리자 workspace 아이콘. 각 symbol은 viewBox="0 0 20 20" · fill="none" ·
     stroke="currentColor" · stroke-width="1.75" · round linecap/linejoin을 사용한다.
     렌더 svg의 accessible name은 이 sprite를 <use>로 부르는 button/link가 소유한다(fragments/icon.html).
   -->
@@ -62,5 +62,36 @@
   <symbol id="copy" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
     <rect x="7" y="7" width="9" height="9" rx="1.5" />
     <path d="M13 7V5.5A1.5 1.5 0 0 0 11.5 4h-7A1.5 1.5 0 0 0 3 5.5v7A1.5 1.5 0 0 0 4.5 14H6" />
+  </symbol>
+  <symbol id="refresh" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M16.5 5v4.5H12" />
+    <path d="M15 13.5a6.7 6.7 0 1 1 .3-7.1l1.2 3.1" />
+  </symbol>
+  <symbol id="dashboard" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.5 9 10 3.5 16.5 9v7.5h-13Z" />
+    <path d="M7.5 16.5v-5h5v5" />
+  </symbol>
+  <symbol id="data-quality" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M3.5 16.5v-13M3.5 16.5h13" />
+    <path d="m6 13 3.5-3.5 2.5 2 4-6" />
+  </symbol>
+  <symbol id="operations" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <rect x="3.5" y="5" width="13" height="11.5" rx="1.5" />
+    <path d="M3.5 8h13M7 3.5V6M13 3.5V6m-6 6 2 2 4-4" />
+  </symbol>
+  <symbol id="communications" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 4.5h12v8H9l-4 3v-3H4Z" />
+    <path d="M7 8.5h6" />
+  </symbol>
+  <symbol id="analytics" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <path d="M4 16V9m4 7V5m4 11v-4m4 4V3.5" />
+  </symbol>
+  <symbol id="datapack" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <ellipse cx="10" cy="5" rx="6" ry="2.5" />
+    <path d="M4 5v5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5V5M4 10v5c0 1.4 2.7 2.5 6 2.5s6-1.1 6-2.5v-5" />
+  </symbol>
+  <symbol id="system-audit" viewBox="0 0 20 20" fill="none" stroke="currentColor" stroke-width="1.75" stroke-linecap="round" stroke-linejoin="round">
+    <circle cx="10" cy="10" r="3" />
+    <path d="M10 2.8v2M10 15.2v2M2.8 10h2M15.2 10h2M4.9 4.9l1.4 1.4m7.4 7.4 1.4 1.4m0-10.2-1.4 1.4m-7.4 7.4-1.4 1.4" />
   </symbol>
 </svg>

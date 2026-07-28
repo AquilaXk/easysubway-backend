@@ -7,9 +7,10 @@
 <body>
 <nav class="admin-sidebar" id="admin-primary-nav" th:fragment="sidebar(active)" aria-label="통합 관리자 화면">
 	<div class="admin-brand">
+		<img class="admin-brand-icon" th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="">
 		<div>
 			<strong>쉬운 지하철</strong>
-			<span>통합 관리자</span>
+			<span>관리자</span>
 		</div>
 	</div>
 	<!--
@@ -50,7 +51,7 @@
 	<!--
 	  업무 영역(workspace) IA(#2277): permission 필터를 통과한 program을 7개 업무 영역으로 묶어
 	  disclosure로 렌더한다. 서버는 모든 영역을 펼친 채 내보내(no-JS는 허용 program 전부 표시),
-	  JS가 있으면 navWorkspace 컴포넌트가 현재 위치(active)를 담은 영역만 펼치고 나머지는 접는다.
+	  JS가 있으면 navWorkspaceList 컴포넌트가 현재 위치(active)를 담은 영역과 탐색 영역 하나만 관리한다.
 	  펼침 전 순간의 flash는 admin-shell.css의 has-js:not(has-js-ready) 규칙이 가린다. CSP 빌드라
 	  x-on/x-bind에는 메서드·게터 이름만 쓴다. program이 0개인 영역은 advice가 목록에서 제외한다.
 	-->
@@ -58,33 +59,38 @@
 	  현재 위치 없음 폴백(#2277 리뷰): active가 permission 필터를 통과한 어떤 program에도 없으면
 	  (예: sidebar('')로 호출되는 검색·알림·오류 페이지) 현재 위치를 담은 영역이 하나도 없어 JS가 전
 	  영역을 접어버리는 회귀가 생긴다. 서버가 이 상태를 is-no-current로 표식해, FOUC 가드(admin-shell.css)와
-	  navWorkspace init이 전 영역 펼침으로 폴백하게 한다. no-JS는 has-js가 없어 이 표식과 무관하게 정적
-	  펼침을 유지한다. 판정은 adminProgramIds(렌더되는 workspace program id 집합)의 active 포함 여부로 한다
+	  navWorkspaceList init이 모든 영역을 접은 상태에서 탐색을 시작하게 한다. no-JS는 has-js가 없어 이
+	  표식과 무관하게 정적 펼침을 유지한다. 판정은 adminProgramIds(렌더되는 workspace program id 집합)의 active 포함 여부로 한다
 	  — 각 program은 정확히 하나의 렌더 workspace에 속하므로 이는 "현재 workspace 존재"와 동치다.
 	  adminProgramIds가 null인 경로(권한 컨텍스트 없는 오류 페이지)도 폴백 상태로 안전하게 처리한다. -->
 	<div class="admin-nav-scroll"
 	     th:with="hasCurrentWorkspace=${adminProgramIds != null and adminProgramIds.contains(active)}"
-	     th:classappend="${hasCurrentWorkspace} ? '' : 'is-no-current'">
+	     th:classappend="${hasCurrentWorkspace} ? '' : 'is-no-current'"
+	     x-data="navWorkspaceList">
 		<div class="admin-nav-workspace"
 		     th:each="workspace : ${adminWorkspaces}"
-		     th:with="isCurrent=${#lists.contains(workspace.programs.![id], active)}"
-		     th:classappend="${isCurrent} ? ' is-current'"
-		     th:attr="data-current=${isCurrent}"
-		     x-data="navWorkspace">
-			<button type="button" class="admin-nav-workspace-toggle" aria-expanded="true"
-			        x-on:click="toggle" x-bind:aria-expanded="ariaExpanded"
-			        th:attr="aria-controls=${'admin-workspace-' + workspace.id}">
-				<!-- aria-expanded="true"는 no-JS 정적 상태(모든 영역 펼침). JS는 x-bind로 실제 상태를 덮어쓴다. -->
+		     th:with="isCurrent=${#lists.contains(workspace.programs.![id], active)},
+		              isPersistent=${workspace.id == 'overview'},
+		              workspaceIcon=${workspace.id == 'overview' ? 'dashboard' : (workspace.id == 'accessibility-data' ? 'data-quality' : (workspace.id == 'operations' ? 'operations' : (workspace.id == 'communications' ? 'communications' : (workspace.id == 'analytics' ? 'analytics' : (workspace.id == 'datapack' ? 'datapack' : 'system-audit')))))}"
+		     th:classappend="${(isCurrent ? ' is-current' : '') + (isPersistent ? ' is-persistent' : '')}"
+		     th:attr="data-current=${isCurrent},data-persistent=${isPersistent}">
+			<button th:unless="${isPersistent}" type="button" class="admin-nav-workspace-toggle" aria-expanded="true"
+			        x-on:click="toggle"
+			        th:attr="aria-controls=${'admin-workspace-' + workspace.id},aria-disabled=${isCurrent ? 'true' : null}">
+				<!-- aria-expanded="true"는 no-JS 정적 상태(모든 영역 펼침). JS는 init에서 실제 상태를 덮어쓴다. -->
+				<span class="admin-nav-workspace-icon"><svg th:replace="~{admin/fragments/icon :: icon(${workspaceIcon})}"></svg></span>
 				<span class="admin-nav-workspace-name" th:text="${workspace.label}">업무 영역</span>
 				<span class="admin-nav-workspace-caret" aria-hidden="true"></span>
 			</button>
-			<div class="admin-nav-workspace-programs" th:id="${'admin-workspace-' + workspace.id}"
-			     x-show="expanded">
+			<div class="admin-nav-workspace-programs" th:id="${'admin-workspace-' + workspace.id}">
 				<a th:each="program : ${workspace.programs}"
 				   class="admin-nav-item"
 				   th:classappend="${active == program.id} ? ' is-active'"
-				   th:href="@{${program.path}}"
-				   th:text="${program.label}">메뉴</a>
+				   th:attr="aria-current=${active == program.id ? 'page' : null}"
+				   th:href="@{${program.path}}">
+					<span th:if="${isPersistent}" class="admin-nav-program-icon"><svg th:replace="~{admin/fragments/icon :: icon(${workspaceIcon})}"></svg></span>
+					<span th:text="${program.label}">메뉴</span>
+				</a>
 			</div>
 		</div>
 	</div>
@@ -107,10 +113,21 @@
 				</button>
 				<div class="admin-sidebar-backdrop" x-cloak x-show="open" x-on:click="close"></div>
 			</div>
-			<strong class="admin-topbar-brand">쉬운 지하철</strong>
+			<span class="admin-topbar-mobile-brand">
+				<img class="admin-topbar-mobile-icon" th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="">
+				<strong class="admin-topbar-brand">쉬운 지하철 관리자</strong>
+			</span>
 			<span class="admin-topbar-sep" aria-hidden="true">/</span>
 			<span class="admin-topbar-scope">통합 관리자</span>
 		</div>
+		<form class="admin-topbar-search" role="search" method="get" th:action="@{/admin/search}">
+			<svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
+			<input type="search" name="q" placeholder="메뉴·역 검색" aria-label="메뉴·역 검색" autocomplete="off">
+			<button type="submit" class="sr-only" tabindex="-1">검색</button>
+		</form>
+		<a class="admin-mobile-search" th:href="@{/admin/search}" aria-label="검색">
+			<svg th:replace="~{admin/fragments/icon :: icon('search')}"></svg>
+		</a>
 		<div class="admin-topbar-actions">
 			<!--
 			  알림 센터(#1738): topbar 벨. 벨을 누르면 요약 패널이 열린다(Cmd 없이 클릭으로).
@@ -136,10 +153,8 @@
 				<button type="button" class="admin-user-menu-trigger" x-ref="trigger"
 				        x-on:click="toggle"
 				        x-bind:aria-expanded="ariaExpanded" aria-controls="admin-user-menu-panel"
-				        aria-label="사용자 메뉴">
-					<span class="admin-user-menu-name" th:text="${adminShell != null ? adminShell.username : 'anonymous'}">admin</span>
-					<span class="admin-user-menu-role" th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</span>
-					<span class="admin-user-menu-caret" aria-hidden="true"></span>
+				        aria-label="계정 메뉴">
+					<svg class="admin-user-menu-icon" th:replace="~{admin/fragments/icon :: icon('account')}"></svg>
 				</button>
 				<div id="admin-user-menu-panel" class="admin-user-menu-panel" x-show="open"
 				     role="region" aria-label="사용자 메뉴">
@@ -149,16 +164,19 @@
 						<dt>권한</dt>
 						<dd th:text="${adminShell != null ? adminShell.rolesLabel : '권한 없음'}">admin.view</dd>
 					</dl>
+					<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
+					      class="admin-topbar-logout-form"
+					      th:action="@{/admin/logout}"
+					      method="post"
+					      aria-label="관리자 로그아웃">
+						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+						<button type="submit" class="admin-topbar-logout" aria-label="로그아웃">
+							<svg th:replace="~{admin/fragments/icon :: icon('logout')}"></svg>
+							<span>로그아웃</span>
+						</button>
+					</form>
 				</div>
 			</div>
-			<form th:if="${adminShell != null && adminShell.username != 'anonymous'}"
-			      class="admin-topbar-logout-form"
-			      th:action="@{/admin/logout}"
-			      method="post"
-			      aria-label="관리자 로그아웃">
-				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-				<button type="submit" class="admin-topbar-logout" aria-label="로그아웃">로그아웃</button>
-			</form>
 		</div>
 	</div>
 	<!--

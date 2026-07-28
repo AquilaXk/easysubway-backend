@@ -4,10 +4,10 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<meta name="htmx-config" content='{"includeIndicatorStyles":false}'>
-	<title>통합 대시보드</title>
+	<title>오늘의 운영 현황</title>
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
-<body class="admin-v3">
+<body class="admin-v3 admin-dashboard-page">
 <a th:replace="~{admin/fragments/shell :: skipLink}"></a>
 <div class="admin-shell">
 <div th:replace="~{admin/fragments/shell :: sidebar('a-dashboard')}"></div>
@@ -16,24 +16,77 @@
 	<div th:replace="~{admin/fragments/shell :: contentStart}"></div>
 	<header class="admin-page-head">
 		<div>
-			<h1>통합 대시보드</h1>
-		</div>
-		<div class="admin-actions admin-dashboard-snapshot-actions">
-			<span th:if="${snapshotStatus == null}" class="admin-status warn">지표 집계 대기</span>
-			<span th:if="${snapshotStatus != null and snapshotStatus.success}" class="admin-status good">지표 집계 정상</span>
-			<span th:if="${snapshotStatus != null and !snapshotStatus.success}" class="admin-status bad">지표 집계 실패</span>
-			<!-- 지표 스냅샷 수동 재실행: DATA_OPERATE 계정(배치 화면 보이는 계정)에만 노출. command token + CSRF. -->
-			<form th:if="${adminProgramIds.contains('a-batches')}"
-			      method="post" th:action="@{/admin/dashboard/metrics/snapshot}">
-				<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-				<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-				<button type="submit" class="admin-btn outline">지표 지금 다시 집계</button>
-			</form>
+			<h1>오늘의 운영 현황</h1>
 		</div>
 	</header>
 
 	<div th:replace="~{admin/fragments/shell :: flash}"></div>
 
+	<div class="dashboard-overview-grid">
+		<section class="admin-panel dashboard-current-panel" id="dashboard-current-operations"
+		         aria-labelledby="dashboard-current-title">
+			<header class="dashboard-overview-head">
+				<h2 id="dashboard-current-title">현재 운영 상태</h2>
+				<div class="dashboard-current-actions">
+					<p class="dashboard-basis-time"><time th:text="${snapshotBasisTime}">—</time> 기준</p>
+					<a class="dashboard-refresh" th:href="@{/admin/dashboard/page}" aria-label="운영 상태 새로고침">
+						<svg th:replace="~{admin/fragments/icon :: icon('refresh')}"></svg>
+					</a>
+				</div>
+			</header>
+			<div class="dashboard-current-overview">
+				<div class="dashboard-current-service">
+					<span class="dashboard-service-copy">
+						<span>전체 서비스</span>
+						<strong><span class="dashboard-service-dot"
+						              th:classappend="${dashboard.healthStatus == 'UP'} ? ' is-good' : ' is-bad'"
+						              aria-hidden="true"></span><span th:text="${dashboard.healthStatus == 'UP' ? '정상' : '점검 필요'}">정상</span></strong>
+					</span>
+				</div>
+				<dl class="dashboard-current-metrics">
+					<div>
+						<dt>제보</dt>
+						<dd th:text="|${dashboard.recentReports}건|">0건</dd>
+					</div>
+					<div>
+						<dt>데이터</dt>
+						<dd th:text="|${dashboard.totalFacilities}건|">0건</dd>
+					</div>
+					<div th:classappend="${snapshotStatus == null ? ' is-waiting' : (snapshotStatus.success ? ' is-good' : ' is-bad')}">
+						<dt>지표 집계</dt>
+						<dd th:text="${snapshotStatus == null ? '대기' : (snapshotStatus.success ? '정상' : '실패')}">대기</dd>
+					</div>
+				</dl>
+			</div>
+			<div class="dashboard-api-health">
+					<span>최근 7일 API 정상률</span>
+				<strong th:insert="~{admin/fragments/missing-value :: value(${dashboard.apiNormalRateLabel}, '집계 없음')}">—</strong>
+				<progress th:if="${dashboard.apiDataAvailable}" max="100" th:value="${dashboard.apiNormalRate}" aria-label="API 정상률"></progress>
+				<div th:if="${dashboard.apiDataAvailable}" class="dashboard-api-meta">
+					<span th:text="|오류율 ${dashboard.apiErrorRate}|">오류율 0.0%</span>
+				</div>
+			</div>
+		</section>
+
+		<section class="admin-panel dashboard-weekly-panel" id="dashboard-weekly-operations"
+		         aria-labelledby="dashboard-weekly-title">
+			<header class="dashboard-overview-head">
+				<h2 id="dashboard-weekly-title">이번 주 운영 현황</h2>
+				<strong class="dashboard-weekly-total" th:text="${weeklyReport.summaryLabel}">집계 대기</strong>
+			</header>
+			<ul class="dashboard-week-days" aria-label="이번 주 최근 24시간 제보 스냅샷">
+				<li th:each="day : ${weeklyReport.days}" class="dashboard-week-day"
+				    th:classappend="${(day.today ? ' is-today' : '') + (day.weekend ? ' is-weekend' : '')}"
+				    th:attr="data-weekday=${day.weekday}">
+					<span th:text="${day.weekday}">월</span>
+					<strong th:insert="~{admin/fragments/missing-value :: value(${day.value == '—' ? null : day.value}, '집계 없음')}"
+					        th:title="${day.dateLabel}">0</strong>
+				</li>
+			</ul>
+		</section>
+	</div>
+
+	<div class="dashboard-reference-lower">
 	<!-- 확인 필요(#2349): 트리아지 최우선 통합 카드. 확인할 제보·확인 필요 시설·데이터팩 차단 요인 중
 	     0건인 항목은 행 자체를 뺀다. 전부 0(또는 권한 밖)이면 카드 대신 한 줄 상태 텍스트만 보여준다. -->
 	<section class="admin-panel dashboard-triage-panel" aria-labelledby="dashboard-triage-title"
@@ -51,6 +104,7 @@
 		</ul>
 	</section>
 	<p th:if="${triageItems.isEmpty()}" class="admin-status good dashboard-triage-empty">지금 확인할 항목이 없습니다</p>
+	</div>
 
 	<!-- 긴급 줄: 알림 센터 신호 요약(있을 때만). 데이터팩 blocker 신호는 위 확인 필요 카드와
 	     같은 값을 중복 서술하므로 이 화면에서는 뺀다(#2349 blocker 이중 노출 해소). -->
@@ -64,6 +118,16 @@
 	</section>
 	</th:block>
 
+	<details class="dashboard-operations-details">
+		<summary>상세 운영 지표 보기</summary>
+		<div class="dashboard-operations-details-body">
+		<form th:if="${adminProgramIds.contains('a-batches')}"
+		      class="dashboard-snapshot-form" data-dashboard-snapshot-form method="post"
+		      th:action="@{/admin/dashboard/metrics/snapshot}">
+			<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+			<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+			<button type="submit" class="admin-btn outline">지표 다시 집계</button>
+		</form>
 	<!-- 핵심 지표 패널(#2281 V6-09): 시점·비율 대표 KPI만 headline으로 노출하고 누계 총량 지표는
 	     disclosure로 격하해 urgent state를 먼저 식별하게 한다. 각 셀 = 흐린 라벨 + 큰 숫자(tabular-nums)
 	     + 파랑 스파크라인 + 상태 3색 델타. 셀 전체가 해당 화면으로 이동(a 태그 유지).
@@ -81,7 +145,7 @@
 		<div class="admin-panel-head">
 			<h2 id="dashboard-metric-panel-title">핵심 지표</h2>
 		</div>
-		<p class="section-hint">현재 값 · 최근 7일 스파크라인 · 전일 대비. 기간 추이는 아래 추이 섹션에서 봅니다.</p>
+		<p class="section-hint sr-only">현재 값 · 최근 7일 스파크라인 · 전일 대비. 기간 추이는 아래 추이 섹션에서 봅니다.</p>
 		<!-- headline: 시점·비율 대표 KPI. data-metric-key로 카드의 지표 정체성을 노출한다(격하 근거·QA 계약).
 		     셀 마크업은 admin/fragments/dashboard-card :: card로 추출해 moreCards와 공유한다(SonarCloud 중복 게이트 회피 겸 유지보수 단일화). -->
 		<div class="dashboard-cards">
@@ -188,6 +252,8 @@
 			</table>
 		</section>
 	</div>
+		</div>
+	</details>
 </main>
 </div>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>

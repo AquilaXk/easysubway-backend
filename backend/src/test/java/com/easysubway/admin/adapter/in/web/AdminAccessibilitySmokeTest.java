@@ -51,11 +51,18 @@ class AdminAccessibilitySmokeTest {
 		assertThat(html)
 			.contains("<html lang=\"ko\"")
 			.contains("name=\"viewport\"")
+			.contains("class=\"login-layout\"")
+			.contains("class=\"login-brand-panel\"")
+			.contains("class=\"login-form-panel\"")
+			.contains("src=\"/images/admin-app-icon.png\"")
+			.contains("쉬운 지하철 관리자")
 			.contains("<h1>관리자 로그인</h1>")
 			.contains("for=\"username\"")
 			.contains("id=\"username\"")
+			.contains("autocomplete=\"username\"")
 			.contains("for=\"password\"")
 			.contains("id=\"password\"")
+			.contains("autocomplete=\"current-password\"")
 			.contains("name=\"_csrf\"");
 	}
 
@@ -64,7 +71,7 @@ class AdminAccessibilitySmokeTest {
 	void adminPagesKeepAccessibleShell() throws Exception {
 		RequestPostProcessor admin = fullAdmin();
 
-		assertAdminShell("/admin/dashboard/page", "통합 대시보드", admin);
+		assertAdminShell("/admin/dashboard/page", "오늘의 운영 현황", admin);
 		assertAdminShell("/admin/reports/page", "제보 확인 대기열", admin);
 		assertAdminShell("/admin/facilities/page", "시설 상태판", admin);
 		assertAdminShell("/admin/batches/page", "배치 운영", admin);
@@ -162,10 +169,20 @@ class AdminAccessibilitySmokeTest {
 			.contains("href=\"#admin-content\"")
 			.contains("class=\"admin-shell\"")
 			.contains("aria-label=\"통합 관리자 화면\"")
+			.contains("class=\"admin-brand-icon\" src=\"/images/admin-app-icon.png\" alt=\"\"")
 			// #2277: sidebar는 workspace disclosure로 렌더되고, no-JS 폴백을 위해 toggle은 정적
 			// aria-expanded="true"로 모든 허용 program을 노출한다.
 			.contains("class=\"admin-nav-workspace-toggle\"")
+			.contains("class=\"admin-nav-workspace-icon\"")
+			.contains("class=\"admin-nav-scroll\"")
+			.contains("x-data=\"navWorkspaceList\"")
+			.contains("aria-current=\"page\"")
 			.contains("class=\"admin-topbar-row\" aria-label=\"관리자 실행 환경\"")
+			.contains("class=\"admin-topbar-brand\">쉬운 지하철 관리자</strong>")
+			.contains("class=\"admin-topbar-search\" role=\"search\"")
+			.contains("type=\"submit\" class=\"sr-only\" tabindex=\"-1\"")
+			.contains("class=\"admin-mobile-search\"")
+			.contains("aria-label=\"검색\"")
 			.contains("id=\"admin-content\" class=\"admin-content-anchor\" tabindex=\"-1\"")
 			.contains("<main class=\"admin-main\">")
 			.contains("<h1>" + expectedHeading + "</h1>")
@@ -186,6 +203,8 @@ class AdminAccessibilitySmokeTest {
 		assertThat(html.indexOf("class=\"admin-sidebar-nav-control\""))
 			.isLessThan(html.indexOf("class=\"admin-topbar-brand\""));
 		assertThat(html.indexOf("class=\"admin-topbar-brand\""))
+			.isLessThan(html.indexOf("class=\"admin-mobile-search\""));
+		assertThat(html.indexOf("class=\"admin-mobile-search\""))
 			.isLessThan(html.indexOf("class=\"admin-alert-center\""));
 		assertThat(html.indexOf("class=\"admin-alert-center\""))
 			.isLessThan(html.indexOf("class=\"admin-user-menu\""));

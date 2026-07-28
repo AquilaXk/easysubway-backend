@@ -105,23 +105,27 @@ test("admin accessibility QA script captures login NONE and RETRY_WARNING public
   assert.match(source, /&& adminExpectedStateOk\s*\n\s*&& operatorExpectedStateOk/);
 });
 
-// #2277 V6-05: workspace disclosure가 현재 위치를 담은 영역만 기본 펼침하는지 keyboard smoke가 검사한다.
-test("admin accessibility QA script verifies workspace disclosure defaults to current only", () => {
+// #2277 V6-05: dashboard 홈은 고정하고 업무 workspace만 disclosure로 관리하는지 검사한다.
+test("admin accessibility QA script verifies persistent dashboard home with collapsed workspaces", () => {
   assert.match(source, /check: "nav-workspace-disclosure"/);
   assert.match(source, /\.admin-nav-workspace-toggle\[aria-expanded="false"\]/);
-  assert.match(source, /workspaceDisclosure\.expanded === 1/);
-  assert.match(source, /workspaceDisclosure\.collapsed === workspaceDisclosure\.total - 1/);
-  assert.match(source, /workspace disclosure did not default to only the current workspace expanded/);
+  assert.match(source, /workspaceDisclosure\.persistentVisible/);
+  assert.match(source, /workspaceDisclosure\.expanded === 0/);
+  assert.match(source, /workspaceDisclosure\.collapsed === workspaceDisclosure\.total/);
+  assert.match(source, /workspaceDisclosure\.visiblePrograms === 1/);
+  assert.match(source, /workspace disclosure did not preserve the dashboard home/);
 });
 
-// #2277 리뷰: 현재 위치가 없는 페이지가 전 영역 펼침으로 폴백하는지 QA 하네스가 실제로 검증하는 계약.
-test("admin accessibility QA script verifies no-current page falls back to all workspaces expanded", () => {
+// #2666: 현재 위치가 없는 페이지도 dashboard 홈만 보이고 업무 그룹은 모두 접힌다.
+test("admin accessibility QA script verifies no-current page keeps only dashboard home visible", () => {
   assert.match(source, /check: "nav-workspace-no-current-disclosure"/);
   assert.match(source, /\/admin\/search/);
   assert.match(source, /is-no-current/);
-  assert.match(source, /disclosure\.expanded === disclosure\.total/);
-  assert.match(source, /disclosure\.visiblePrograms === disclosure\.total/);
-  assert.match(source, /no-current page did not fall back to all workspaces expanded/);
+  assert.match(source, /disclosure\.persistentVisible/);
+  assert.match(source, /disclosure\.expanded === 0/);
+  assert.match(source, /disclosure\.collapsed === disclosure\.total/);
+  assert.match(source, /disclosure\.visiblePrograms === 1/);
+  assert.match(source, /no-current page did not keep only the dashboard home visible/);
   assert.match(source, /await noCurrentWorkspaceDisclosure\(page, baseUrl, report\)/);
 });
 

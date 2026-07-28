@@ -22,10 +22,11 @@ class AdminIconContractTest {
 	private static final String SPRITE = "backend/src/main/resources/static/icons/admin-symbols.svg";
 	private static final String FRAGMENT = "backend/src/main/resources/templates/admin/fragments/icon.html";
 
-	// #2276 §7: sprite inventory는 아래 13개로 고정한다.
+	// #2666: 관리자 셸에서 사용하는 공통 동작·workspace 아이콘 inventory를 고정한다.
 	private static final List<String> INVENTORY = List.of(
 		"search", "menu", "alert", "close", "account", "logout", "chevron-down",
-		"check", "warning", "error", "info", "more", "copy");
+		"check", "warning", "error", "info", "more", "copy", "refresh", "dashboard",
+		"data-quality", "operations", "communications", "analytics", "datapack", "system-audit");
 
 	private static final Pattern SYMBOL = Pattern.compile("<symbol\\b[^>]*>", Pattern.DOTALL);
 	private static final Pattern SYMBOL_ID = Pattern.compile("id=\"([^\"]+)\"");
@@ -41,7 +42,7 @@ class AdminIconContractTest {
 	private static final Pattern RX_LITERAL = Pattern.compile("\\brx=\"([0-9.]+)\"");
 
 	@Test
-	@DisplayName("sprite는 고정 inventory 13개 symbol을 정확히 소유한다")
+	@DisplayName("sprite는 고정 inventory 21개 symbol을 정확히 소유한다")
 	void spriteOwnsFixedInventory() throws IOException {
 		String svg = read(SPRITE);
 		List<String> ids = new ArrayList<>();

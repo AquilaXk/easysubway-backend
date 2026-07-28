@@ -61,6 +61,7 @@ class AdminDashboardTriagePanelTest {
 		String triage = triageSection(fetchDashboard());
 
 		assertThat(triage)
+			.contains("class=\"dashboard-triage-list\"")
 			// 라벨은 렌더 마크업(dashboard-triage-label 태그)으로 스코핑해 안내 주석 등 다른 위치의
 			// 우연한 텍스트 일치와 구분한다(#2352 리뷰).
 			.contains("<span class=\"dashboard-triage-label\">확인할 제보</span>")
@@ -69,7 +70,7 @@ class AdminDashboardTriagePanelTest {
 			// 확인 필요 시설·데이터팩 차단 요인은 0건이라 딥링크 자체가 빠진다(라벨 텍스트는 섹션
 			// 안내 주석에도 나오므로 href로 스코핑한다).
 			.doesNotContain("href=\"/admin/facilities/page\"")
-			.doesNotContain("href=\"#dashboard-datapack-readiness\"");
+			.doesNotContain("href=\"/admin/datapack/pipeline/page\"");
 	}
 
 	@Test
@@ -98,7 +99,7 @@ class AdminDashboardTriagePanelTest {
 		assertThat(triageSection(html))
 			.contains("<span class=\"dashboard-triage-label\">데이터팩 차단 요인</span>")
 			.contains(">3건<")
-			.contains("href=\"#dashboard-datapack-readiness\"");
+			.contains("href=\"/admin/datapack/pipeline/page\"");
 	}
 
 	@Test

@@ -29,7 +29,7 @@
 	border: 1px solid var(--admin-border-strong);
 	background: var(--admin-surface);
 	color: var(--admin-ink);
-	font-size: var(--admin-fs-body);
+	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-strong);
 	cursor: pointer;
 	text-decoration: none;
@@ -114,6 +114,7 @@
 	background: var(--admin-surface);
 	color: var(--admin-ink);
 	font: inherit;
+	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-body);
 }
 
@@ -198,7 +199,7 @@
 	text-align: left;
 	vertical-align: top;
 	font-size: 14px;
-	line-height: 1.45;
+	line-height: 20px;
 	/* 한글 어절 단위 줄바꿈(#2349 PR⑩a) — 좁은 컬럼에서 낱글자 단위 세로 줄바꿈("접/수/됨")을 막는다.
 	   공백 없는 긴 값이 keep-all로 줄바꿈 불가능해질 때만 overflow-wrap: anywhere가 칸 안에서 끊는다. */
 	word-break: keep-all;
@@ -208,7 +209,7 @@
 .admin-v3 th {
 	background: var(--admin-header-bg);
 	color: var(--admin-ink-2);
-	font-size: 13px;
+	font-size: var(--admin-fs-control);
 	font-weight: var(--admin-w-medium);
 }
 
@@ -1079,13 +1080,23 @@
 	padding: 18px;
 }
 
-.admin-panel h2,
+.admin-panel h2 {
+	margin: 0 0 12px;
+	padding: 0;
+	background: transparent;
+	font-size: var(--admin-fs-section);
+	font-weight: var(--admin-w-strong);
+	line-height: 28px;
+
+}
+
 .admin-panel h3 {
 	margin: 0 0 12px;
 	padding: 0;
 	background: transparent;
-	font-size: var(--admin-fs-h2);
+	font-size: var(--admin-fs-body);
 	font-weight: var(--admin-w-strong);
+	line-height: 24px;
 }
 
 .admin-form {
@@ -1166,38 +1177,67 @@
 	}
 }
 
-.login-screen {
+.login-layout {
 	display: grid;
+	grid-template-columns: 1fr;
+	place-content: center;
 	min-height: 100vh;
-	place-items: center;
-	padding: 32px 18px;
-	background: var(--admin-bg);
+	min-height: 100dvh;
+	padding: 48px 24px;
+	background: var(--admin-surface);
+}
+
+.login-brand-panel {
+	display: flex;
+	align-items: center;
+	justify-content: flex-start;
+	width: min(100%, 420px);
+	margin: 0 auto 28px;
+	padding: 0;
+	background: transparent;
+	color: var(--admin-ink);
+}
+
+.login-brand-lockup {
+	display: flex;
+	align-items: center;
+	gap: 14px;
+}
+
+.login-brand-lockup img {
+	width: 38px;
+	height: 38px;
+	padding: 4px;
+	border-radius: calc(var(--admin-radius-control) + 3px);
+	background: var(--admin-surface);
+	object-fit: contain;
+}
+
+.login-brand-lockup strong {
+	font-size: 22px;
+	font-weight: var(--admin-w-title);
+	letter-spacing: -0.03em;
+}
+
+.login-form-panel {
+	display: block;
+	width: min(100%, 420px);
+	margin: 0 auto;
+	padding: 0;
+	background: transparent;
 }
 
 .login-card {
-	width: min(100%, 420px);
-	padding: 32px;
-	border: 1px solid var(--admin-border);
-	border-radius: var(--admin-radius-card);
-	background: var(--admin-surface);
-	box-shadow: var(--admin-shadow-card);
-}
-
-.login-card .login-brand {
+	width: 100%;
 	padding: 0;
-	color: var(--admin-ink);
-}
-
-.login-card .login-brand strong {
-	color: var(--admin-ink);
-}
-
-.login-card .login-brand span {
-	color: var(--admin-ink-2);
+	border: 0;
+	border-radius: 0;
+	background: transparent;
+	box-shadow: none;
 }
 
 .login-card h1 {
-	margin: 24px 0 8px;
+	margin: 0 0 30px;
 	font-size: 30px;
 	line-height: 1.2;
 }
@@ -1212,7 +1252,7 @@
 .login-field {
 	display: grid;
 	gap: 7px;
-	margin-top: 16px;
+	margin-top: 18px;
 }
 
 .login-field label {
@@ -1223,6 +1263,7 @@
 .login-field input,
 .login-submit {
 	width: 100%;
+	min-height: 48px;
 }
 
 .login-submit {
@@ -1239,6 +1280,57 @@
 	color: var(--admin-warn);
 	font-size: 13px;
 	font-weight: var(--admin-w-strong);
+}
+
+@media (max-width: 720px) {
+	.login-layout {
+		padding: 36px 18px;
+	}
+
+	.admin-login-page .login-brand-panel {
+		justify-content: center;
+		margin-bottom: 12px;
+	}
+
+	.login-brand-lockup {
+		gap: 10px;
+	}
+
+	.login-brand-lockup img {
+		width: 44px;
+		height: 44px;
+		padding: 3px;
+		border: 1px solid var(--admin-border);
+		border-radius: 8px;
+	}
+
+	.admin-login-page .login-brand-lockup strong {
+		font-size: 20px;
+		letter-spacing: -0.02em;
+	}
+
+	.login-form-panel {
+		display: block;
+		padding: 0;
+	}
+
+	.login-card {
+		width: 100%;
+		max-width: 420px;
+		margin: 0 auto;
+	}
+
+	.login-card h1 {
+		margin-bottom: 24px;
+		font-size: 26px;
+		text-align: center;
+	}
+
+	.admin-login-page .login-brand-lockup img {
+		width: 40px;
+		height: 40px;
+	}
+
 }
 
 .sr-only {
@@ -1277,7 +1369,7 @@
 .admin-v3 .summary {
 	margin: 0 0 18px;
 	color: var(--admin-ink-2);
-	font-size: 15px;
+	font-size: var(--admin-fs-body);
 	font-weight: var(--admin-w-body);
 	line-height: 1.45;
 }
@@ -1286,7 +1378,7 @@
 	display: block;
 	margin-top: 4px;
 	color: var(--admin-ink-2);
-	font-size: 13px;
+	font-size: var(--admin-fs-meta);
 	font-weight: var(--admin-w-body);
 }
 
@@ -1805,9 +1897,9 @@
 	justify-content: center;
 	width: 44px;
 	height: 44px;
-	border: 1px solid var(--admin-border);
+	border: 0;
 	border-radius: var(--admin-radius-control);
-	background: var(--admin-surface);
+	background: transparent;
 	color: var(--admin-ink-2);
 	text-decoration: none;
 	font-size: 16px;
@@ -1916,17 +2008,16 @@
    배경을 강제하므로 셀렉터 명시도를 .admin-v3 .admin-user-menu-trigger(0,2,0)로 올려 이긴다. */
 .admin-v3 .admin-user-menu-trigger {
 	display: inline-flex;
-	flex-direction: column;
-	align-items: flex-end;
-	gap: 1px;
-	min-height: 44px;
-	padding: 4px 10px;
-	border: 1px solid var(--admin-border);
+	align-items: center;
+	justify-content: center;
+	width: 44px;
+	height: 44px;
+	padding: 0;
+	border: 0;
 	border-radius: var(--admin-radius-control);
-	background: var(--admin-surface);
+	background: transparent;
 	color: var(--admin-ink);
 	cursor: pointer;
-	line-height: 1.2;
 }
 
 .admin-v3 .admin-user-menu-trigger:hover {
@@ -1934,22 +2025,13 @@
 }
 
 .admin-v3 .admin-user-menu-trigger[aria-expanded="true"] {
-	border-color: var(--admin-accent);
+	background: var(--admin-accent-soft);
+	color: var(--admin-accent-ink);
 }
 
-.admin-user-menu-name {
-	font-size: 13px;
-	font-weight: var(--admin-w-strong);
-}
-
-.admin-user-menu-role {
-	font-size: 11px;
-	color: var(--admin-ink-2);
-	font-weight: var(--admin-w-medium);
-}
-
-.admin-user-menu-caret {
-	display: none;
+.admin-user-menu-icon {
+	width: 20px;
+	height: 20px;
 }
 
 .admin-user-menu-panel {
@@ -1992,14 +2074,41 @@
 	font-weight: var(--admin-w-strong);
 }
 
+.admin-user-menu-panel .admin-topbar-logout-form {
+	margin: 12px 0 0;
+	padding-top: 12px;
+	border-top: 1px solid var(--admin-border);
+}
+
 /* topbar 로그아웃은 독립 neutral action이며 account dialog와 별개로 항상 접근 가능하다.
    자주 쓰지 않는 액션이라 계정 메뉴(상시 노출 박스 트리거)와 동급 박스로 보이지 않도록 위계를
    낮춘다(#2349 PR⑨) — 기본 상태는 보더·채움 없는 텍스트 톤이고, 44px 터치 타깃은 아래 결합
    셀렉터(min-width/min-height)가 여백만으로 공급한다. */
 .admin-v3 .admin-topbar-logout {
+	display: flex;
+	align-items: center;
+	gap: 8px;
+	width: 100%;
 	background: transparent;
 	border: 1px solid transparent;
 	color: var(--admin-ink-2);
+}
+
+.admin-topbar-logout svg {
+	width: 18px;
+	height: 18px;
+}
+
+@media (max-width: 720px) {
+	.admin-v3 .admin-alert-center .admin-alert-panel {
+		position: fixed;
+		top: 60px;
+		left: 10px;
+		right: 10px;
+		width: auto;
+		max-height: calc(100vh - 80px);
+		overflow-y: auto;
+	}
 }
 
 .admin-v3 .admin-topbar-logout:hover {
