@@ -1,347 +1,124 @@
 <!doctype html>
 <html lang="ko">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <meta name="description" content="휠체어, 유모차, 불편한 걸음을 먼저 생각하는 지하철 길찾기, 쉬운 지하철">
-  <meta name="theme-color" content="#f4f1ea">
-  <title>쉬운 지하철 | 접근 가능한 지하철 길찾기</title>
-  <style>
-    :root {
-      color-scheme: light;
-      --ink: #17312b;
-      --muted: #52655f;
-      --paper: #f4f1ea;
-      --card: #fffdf8;
-      --line: #d5dbd4;
-      --green: #08785d;
-      --green-dark: #075d49;
-      --lime: #d9ee7e;
-      --orange: #c84e28;
-      --shadow: 0 20px 60px rgb(23 49 43 / 10%);
-    }
-
-    * { box-sizing: border-box; }
-
-    html { scroll-behavior: smooth; }
-
-    body {
-      margin: 0;
-      background: var(--paper);
-      color: var(--ink);
-      font-family: -apple-system, BlinkMacSystemFont, "Apple SD Gothic Neo", "Noto Sans KR", sans-serif;
-      line-height: 1.6;
-    }
-
-    a { color: inherit; }
-
-    a:focus-visible {
-      outline: 3px solid var(--orange);
-      outline-offset: 4px;
-      border-radius: 4px;
-    }
-
-    .skip {
-      position: fixed;
-      top: 1rem;
-      left: 1rem;
-      z-index: 10;
-      padding: .65rem 1rem;
-      background: var(--ink);
-      color: white;
-      transform: translateY(-200%);
-    }
-
-    .skip:focus { transform: none; }
-
-    .wrap {
-      width: min(1120px, calc(100% - 2rem));
-      margin-inline: auto;
-    }
-
-    header {
-      display: flex;
-      align-items: center;
-      justify-content: space-between;
-      gap: 1rem;
-      padding-block: 1.25rem;
-    }
-
-    .brand {
-      display: inline-flex;
-      align-items: center;
-      gap: .65rem;
-      font-weight: 800;
-      text-decoration: none;
-    }
-
-    .brand-mark {
-      display: grid;
-      width: 2rem;
-      height: 2rem;
-      place-items: center;
-      border-radius: 50%;
-      background: var(--green);
-      color: white;
-      font-size: .78rem;
-    }
-
-    nav { display: flex; gap: 1rem; }
-    nav a { color: var(--muted); font-size: .9rem; font-weight: 700; }
-
-    .hero {
-      display: grid;
-      min-height: 70vh;
-      align-items: center;
-      gap: 3rem;
-      padding-block: 5rem 7rem;
-    }
-
-    .eyebrow {
-      margin: 0 0 1rem;
-      color: var(--green-dark);
-      font-size: .82rem;
-      font-weight: 800;
-      letter-spacing: .12em;
-      text-transform: uppercase;
-    }
-
-    h1 {
-      max-width: 760px;
-      margin: 0;
-      font-size: clamp(3rem, 9vw, 6.6rem);
-      line-height: .98;
-      letter-spacing: -.065em;
-      text-wrap: balance;
-    }
-
-    .hero-copy {
-      max-width: 620px;
-      margin: 2rem 0 0;
-      color: var(--muted);
-      font-size: clamp(1.08rem, 2.5vw, 1.35rem);
-      word-break: keep-all;
-    }
-
-    .actions {
-      display: flex;
-      flex-wrap: wrap;
-      align-items: center;
-      gap: .85rem;
-      margin-top: 2rem;
-    }
-
-    .button {
-      display: inline-flex;
-      min-height: 3rem;
-      align-items: center;
-      justify-content: center;
-      padding: .7rem 1.2rem;
-      border: 1px solid var(--ink);
-      border-radius: 999px;
-      font-weight: 800;
-      text-decoration: none;
-    }
-
-    .button.primary { background: var(--ink); color: white; }
-
-    .status {
-      display: inline-flex;
-      align-items: center;
-      gap: .5rem;
-      color: var(--green-dark);
-      font-size: .92rem;
-      font-weight: 800;
-    }
-
-    .status::before {
-      width: .65rem;
-      height: .65rem;
-      border-radius: 50%;
-      background: var(--orange);
-      content: "";
-    }
-
-    .route-line {
-      position: relative;
-      height: 8px;
-      margin-top: 4rem;
-      border-radius: 999px;
-      background: linear-gradient(90deg, var(--green) 0 68%, var(--lime) 68%);
-    }
-
-    .route-line::before,
-    .route-line::after {
-      position: absolute;
-      top: 50%;
-      width: 1.25rem;
-      height: 1.25rem;
-      border: 5px solid var(--green);
-      border-radius: 50%;
-      background: var(--paper);
-      content: "";
-      transform: translateY(-50%);
-    }
-
-    .route-line::before { left: 18%; }
-    .route-line::after { left: 67%; }
-
-    section { padding-block: 5rem; }
-
-    h2 {
-      max-width: 700px;
-      margin: 0 0 2rem;
-      font-size: clamp(2rem, 5vw, 3.6rem);
-      line-height: 1.12;
-      letter-spacing: -.045em;
-      text-wrap: balance;
-    }
-
-    .section-copy { margin: -1rem 0 2rem; color: var(--muted); }
-
-    .grid {
-      display: grid;
-      grid-template-columns: repeat(2, minmax(0, 1fr));
-      gap: 1rem;
-    }
-
-    .card {
-      min-height: 220px;
-      padding: 1.75rem;
-      border: 1px solid var(--line);
-      border-radius: 1.5rem;
-      background: var(--card);
-      box-shadow: var(--shadow);
-    }
-
-    .card:first-child { grid-row: span 2; }
-    .card-number { color: var(--orange); font-size: .8rem; font-weight: 900; letter-spacing: .1em; }
-    .card h3 { margin: 2rem 0 .5rem; font-size: 1.45rem; line-height: 1.25; }
-    .card p { margin: 0; color: var(--muted); word-break: keep-all; }
-
-    .current {
-      display: grid;
-      gap: 1.5rem;
-      padding: clamp(2rem, 6vw, 4.5rem);
-      border-radius: 2rem;
-      background: var(--ink);
-      color: white;
-    }
-
-    .current p { max-width: 680px; margin: 0; color: #cdd9d5; font-size: 1.1rem; }
-    .current a { width: fit-content; color: var(--lime); font-weight: 800; }
-
-    footer {
-      display: grid;
-      gap: 1.5rem;
-      padding-block: 3rem;
-      border-top: 1px solid var(--line);
-      color: var(--muted);
-      font-size: .9rem;
-    }
-
-    .footer-links { display: flex; flex-wrap: wrap; gap: .8rem 1.25rem; }
-    .footer-links a { text-underline-offset: 3px; }
-
-    @media (min-width: 760px) {
-      .hero { grid-template-columns: minmax(0, 4fr) minmax(260px, 1fr); }
-      .hero .route-line { height: 70%; margin: 0; background: linear-gradient(var(--green) 0 68%, var(--lime) 68%); justify-self: center; width: 8px; }
-      .hero .route-line::before { top: 18%; left: 50%; transform: translate(-50%, -50%); }
-      .hero .route-line::after { top: 67%; left: 50%; transform: translate(-50%, -50%); }
-      .grid { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-    }
-
-    @media (max-width: 600px) {
-      nav a:first-child { display: none; }
-      .hero { min-height: auto; padding-block: 4rem 5rem; }
-      .grid { grid-template-columns: 1fr; }
-      .card:first-child { grid-row: auto; }
-    }
-
-    @media (prefers-reduced-motion: reduce) {
-      html { scroll-behavior: auto; }
-    }
-  </style>
+	<meta charset="utf-8">
+	<meta name="viewport" content="width=device-width, initial-scale=1">
+	<meta name="theme-color" content="#1F2340">
+	<meta name="description" content="접근 가능한 지하철 경로와 검증된 역 시설 정보를 연결하는 EasySubway입니다.">
+	<title>EasySubway · 쉬운 지하철</title>
+	<link rel="stylesheet" href="/css/landing.css">
+	<script src="/js/landing.js" defer></script>
 </head>
 <body>
-  <a class="skip" href="#main">본문으로 바로가기</a>
-  <header class="wrap">
-    <a class="brand" href="/" aria-label="쉬운 지하철 홈">
-      <span class="brand-mark" aria-hidden="true">ES</span>
-      <span>쉬운 지하철</span>
-    </a>
-    <nav aria-label="주요 메뉴">
-      <a href="#why">왜 쉬운 지하철인가</a>
-      <a href="#now">현재 범위</a>
-    </nav>
-  </header>
+	<a class="skip-link" href="#main" lang="ko">본문으로 바로가기</a>
+	<header class="site-header">
+		<div class="frame header-inner">
+			<a class="brand" href="#main" aria-label="EasySubway 홈" lang="ko">EasySubway<i aria-hidden="true"></i></a>
+			<div class="header-meta" lang="en">
+				<span>Accessible navigation</span>
+				<span>Seoul · 2026</span>
+				<fieldset class="language-switch" aria-label="언어 선택" lang="ko">
+					<button class="language-button is-active" type="button" data-language="ko" aria-pressed="true">KR</button>
+					<span aria-hidden="true">/</span>
+					<button class="language-button" type="button" data-language="en" aria-pressed="false">EN</button>
+				</fieldset>
+			</div>
+		</div>
+	</header>
 
-  <main id="main">
-    <section class="hero wrap" aria-labelledby="hero-title">
-      <div>
-        <p class="eyebrow" lang="en">Accessible subway navigation</p>
-        <h1 id="hero-title">빠른 길보다,<br>갈 수 있는 길.</h1>
-        <p class="hero-copy">쉬운 지하철은 휠체어, 유모차, 불편한 걸음을 먼저 생각하는 지하철 길찾기입니다.</p>
-        <div class="actions">
-          <a class="button primary" href="https://github.com/AquilaXk/easysubway">GitHub에서 보기</a>
-          <span class="status">Android 출시 준비 중</span>
-        </div>
-      </div>
-      <div class="route-line" aria-hidden="true"></div>
-    </section>
+	<main id="main" tabindex="-1">
+		<section class="hero">
+			<div class="terrain" aria-hidden="true"></div>
+			<div class="hero-copy">
+				<p class="kicker" lang="en">Mobility without barriers</p>
+				<h1 data-copy="ko">갈 수 있는 길을<br>먼저 보여주는<br>지하철.</h1>
+				<h1 data-copy="en">A subway map<br>built around<br>routes you can take.</h1>
+				<p data-copy="ko">접근 가능한 경로와 검증된 시설 정보를 하나의 제품 경험으로 연결합니다.</p>
+				<p data-copy="en">Accessible routes and verified station information, connected in one product.</p>
+			</div>
+			<div class="device device--hero device--map">
+				<img src="/images/landing/route-map.png" alt="EasySubway 실제 노선도 화면" width="1080" height="2340" decoding="async" lang="ko">
+			</div>
+			<span class="scroll-label" lang="en">Scroll to explore ↓</span>
+		</section>
 
-    <section id="why" class="wrap" aria-labelledby="why-title">
-      <p class="eyebrow" lang="en">Designed around real barriers</p>
-      <h2 id="why-title">당신의 상황이<br>곧 길의 기준입니다.</h2>
-      <p class="section-copy">아래 기능을 Android 앱에 담아 출시를 준비하고 있습니다.</p>
-      <div class="grid">
-        <article class="card">
-          <span class="card-number">01</span>
-          <h3>지하에서도, 인터넷 없이도</h3>
-          <p>역 검색과 길찾기를 기기 안에서 처리해 연결이 불안정한 지하에서도 필요한 정보를 찾습니다.</p>
-        </article>
-        <article class="card">
-          <span class="card-number">02</span>
-          <h3>갈 수 있는 경로를 먼저</h3>
-          <p>휠체어, 유모차, 불편한 걸음처럼 이동 상황에 맞춰 계단 없는 길을 우선합니다.</p>
-        </article>
-        <article class="card">
-          <span class="card-number">03</span>
-          <h3>모르는 것은 모른다고</h3>
-          <p>접근성 정보에 출처와 확인 날짜를 붙이고, 확인되지 않은 정보는 분명히 구분합니다.</p>
-        </article>
-        <article class="card">
-          <span class="card-number">04</span>
-          <h3>가입 없는 시설 제보</h3>
-          <p>엘리베이터 고장처럼 이동을 막는 상황을 계정 없이 알리고 접수 번호로 확인합니다.</p>
-        </article>
-        <article class="card">
-          <span class="card-number">05</span>
-          <h3>당신을 따라다니지 않게</h3>
-          <p>계정을 요구하지 않고, 즐겨찾기는 기기에 보관하는 방식으로 개인정보를 줄입니다.</p>
-        </article>
-      </div>
-    </section>
+		<section class="intro">
+			<div class="frame intro-grid">
+				<h2 class="display-title" lang="en">Access<br><span>is the</span><br>route.</h2>
+				<div class="intro-copy">
+					<span class="intro-number">01</span>
+					<strong lang="en">Our point of view</strong>
+					<p data-copy="ko">가장 빠른 경로가 모두에게 가장 좋은 경로는 아닙니다. EasySubway는 실제로 끝까지 이동할 수 있는 경로를 먼저 설계합니다.</p>
+					<p data-copy="en">The fastest route is not always the best route. EasySubway starts with the route a person can actually complete.</p>
+				</div>
+			</div>
+		</section>
 
-    <section id="now" class="wrap" aria-labelledby="now-title">
-      <div class="current">
-        <p class="eyebrow" lang="en">What we are validating now</p>
-        <h2 id="now-title">작게 시작하고,<br>확인한 만큼만 말합니다.</h2>
-        <p>현재 상록수·사당의 접근성 정보를 먼저 검증하고 있습니다. Android 출시를 준비 중이며, 공개 다운로드가 시작되면 이곳에서 안내합니다.</p>
-        <a href="mailto:aquila@aquilaxk.site">aquila@aquilaxk.site로 연락하기</a>
-      </div>
-    </section>
-  </main>
+		<section class="process" aria-labelledby="process-title">
+			<div class="frame process-frame">
+				<h2 id="process-title" class="process-title" lang="en">How<span>It works</span></h2>
+				<div class="process-tile"><b>04</b><p data-copy="ko">노선 탐색부터<br>실제 이동까지</p><p data-copy="en">From route discovery<br>to the journey</p></div>
+				<div class="process-flow">
+					<p class="process-lead" data-copy="ko">EasySubway는 노선을 찾는 순간부터 역 시설을 확인하고 실제로 이동하는 순간까지 하나의 흐름으로 연결합니다.</p>
+					<p class="process-lead" data-copy="en">EasySubway connects route discovery, accessibility decisions, station information, and the actual journey.</p>
+					<p class="flow-label"><span data-copy="ko">제품 이용 흐름</span><span data-copy="en">Journey flow</span></p>
+					<ol class="process-steps">
+						<li><b>01</b><span data-copy="ko">노선 탐색</span><span data-copy="en">Explore</span></li>
+						<li><b>02</b><span data-copy="ko">접근성 판단</span><span data-copy="en">Decide</span></li>
+						<li><b>03</b><span data-copy="ko">시설 확인</span><span data-copy="en">Verify</span></li>
+						<li><b>04</b><span data-copy="ko">이동</span><span data-copy="en">Move</span></li>
+					</ol>
+				</div>
+			</div>
+		</section>
 
-  <footer class="wrap">
-    <strong>Aquila Software · 쉬운 지하철</strong>
-    <div class="footer-links">
-      <a href="mailto:support@aquilaxk.site">고객 문의</a>
-      <a href="/privacy">개인정보 처리방침</a>
-      <a href="/terms">서비스 이용약관</a>
-      <a href="/location-terms">위치정보 이용약관</a>
-    </div>
-    <span>계단 앞에서 막막했던 모든 순간을 위해.</span>
-  </footer>
+		<section class="screen-wall">
+			<div class="frame wall-heading" lang="en"><strong>One journey. Three decisions.</strong><span>Actual product screens · Android</span></div>
+			<div class="device wall-device wall-device--map device--map"><img src="/images/landing/route-map.png" alt="실제 노선도 홈 화면" width="1080" height="2340" loading="lazy" decoding="async" lang="ko"></div>
+			<div class="device wall-device wall-device--route device--route"><img src="/images/landing/accessible-route.png" alt="실제 접근성 경로 결과 화면" width="1080" height="2340" loading="lazy" decoding="async" lang="ko"></div>
+			<div class="device wall-device wall-device--station device--station"><img src="/images/landing/station-detail.png" alt="노선도에서 상록수역을 선택한 실제 화면" width="1080" height="2340" loading="lazy" decoding="async" lang="ko"></div>
+			<p class="wall-caption" lang="en">Explore · Decide · Move</p>
+		</section>
+
+		<section class="feature">
+			<span class="feature-number">01</span><div class="halo halo--right" aria-hidden="true"></div>
+			<div class="feature-copy feature-copy--left"><span class="feature-label" lang="en">Network map</span><h2 data-copy="ko">검증 중인 노선을<br>한눈에.</h2><h2 data-copy="en">The pilot network,<br>at a glance.</h2><p data-copy="ko">검증 중인 노선에서 출발지와 도착지를 직관적으로 선택합니다.</p><p data-copy="en">Choose origin and destination intuitively within the validation pilot.</p></div>
+			<div class="device feature-device feature-device--right device--map"><img src="/images/landing/route-map.png" alt="노선도 기능 실제 화면" width="1080" height="2340" loading="lazy" decoding="async" lang="ko"></div>
+			<div class="mini-data mini-data--left" lang="en"><div><b>02 stations</b>Validation pilot</div><div><b>Android</b>In preparation</div></div>
+		</section>
+
+		<section class="feature feature--alternate">
+			<span class="feature-number feature-number--right">02</span><div class="halo halo--left" aria-hidden="true"></div>
+			<div class="device feature-device feature-device--left device--route"><img src="/images/landing/accessible-route.png" alt="접근성 경로 실제 화면" width="1080" height="2340" loading="lazy" decoding="async" lang="ko"></div>
+			<div class="feature-copy feature-copy--right"><span class="feature-label" lang="en">Accessible route</span><h2 data-copy="ko">시간보다 먼저,<br>갈 수 있는가.</h2><h2 data-copy="en">Before time,<br>can you take it?</h2><p data-copy="ko">계단 여부와 이동 부담을 함께 판단해 사용자에게 맞는 경로를 보여줍니다.</p><p data-copy="en">Routes consider stairs and mobility burden, not travel time alone.</p></div>
+			<div class="mini-data mini-data--right" lang="en"><div><b>Step-free</b>Route priority</div><div><b>Transparent</b>Travel burden</div></div>
+		</section>
+
+		<section class="feature">
+			<span class="feature-number">03</span><div class="halo halo--right" aria-hidden="true"></div>
+			<div class="feature-copy feature-copy--left"><span class="feature-label" lang="en">Station selection</span><h2 data-copy="ko">노선 위에서,<br>역을 바로 선택.</h2><h2 data-copy="en">Choose a station,<br>directly on the map.</h2><p data-copy="ko">노선도에서 역을 선택하고 출발·경유·도착 흐름을 한 화면에서 이어갑니다.</p><p data-copy="en">Choose a station on the map and continue to origin, waypoint, or destination in one flow.</p></div>
+			<div class="device feature-device feature-device--right device--station"><img src="/images/landing/station-detail.png" alt="노선도에서 상록수역을 선택한 실제 화면" width="1080" height="2340" loading="lazy" decoding="async" lang="ko"></div>
+			<div class="mini-data mini-data--left" lang="en"><div><b>Verified</b>Source &amp; date</div><div><b>Honest</b>Unknown stays unknown</div></div>
+		</section>
+
+		<section class="system">
+			<span class="system-number">04</span><span class="system-label" lang="en">Trust &amp; technology</span>
+			<div class="frame">
+				<div class="system-heading"><h2 data-copy="ko">신뢰는 기능이 아니라<br>제품의 구조입니다.</h2><h2 data-copy="en">Trust is not a feature.<br>It is the system.</h2><p data-copy="ko">연결이 불안정한 지하에서도, 가입이나 추적 없이, 확인된 정보만으로 이동을 이어갑니다.</p><p data-copy="en">Keep moving underground with verified information, no forced account, and no tracking.</p></div>
+				<div class="facts">
+					<article><b>02</b><h3 lang="en">Validated pilot stations</h3><p data-copy="ko">현재 공개 검증 범위는 상록수·사당 검증 pilot입니다.</p><p data-copy="en">The current public validation pilot covers Sangnoksu and Sadang.</p></article>
+					<article><b>0</b><h3 lang="en">Forced accounts</h3><p data-copy="ko">경로를 찾기 위해 먼저 개인정보를 제출할 필요가 없습니다.</p><p data-copy="en">No personal information is required before finding a route.</p></article>
+					<article><b>PREP</b><h3 lang="en">Android release</h3><p data-copy="ko">Android 출시를 준비 중이며 공개 다운로드가 시작되면 이곳에서 안내합니다.</p><p data-copy="en">Android release is in preparation; download availability will be announced here.</p></article>
+				</div>
+			</div>
+		</section>
+
+		<section class="partner">
+			<div class="frame partner-heading" lang="en"><p class="kicker">Partnership · Investment · Product</p><h2>Move more.<br><span>Together.</span></h2></div>
+			<div class="partner-bottom"><div><p data-copy="ko">교통·시설 데이터, 현장 검증, 기술 협력을 통해 더 많은 사람이 갈 수 있는 이동의 기준을 함께 만듭니다.</p><p data-copy="en">Build a more accessible mobility standard through transit data, field verification, and technology partnerships.</p><span class="release-state" data-copy="ko">Android 출시 준비 중</span><span class="release-state" data-copy="en">Android release in preparation</span></div><a class="action" href="mailto:aquila@aquilaxk.site" lang="en">Partnership inquiry <span aria-hidden="true">↗</span></a></div>
+		</section>
+	</main>
+
+	<footer class="site-footer" lang="ko"><div class="frame footer-inner"><strong>EasySubway · 쉬운 지하철</strong><nav aria-label="정책 및 문의"><a href="/privacy">개인정보처리방침</a><a href="/terms">이용약관</a><a href="/location-terms">위치기반서비스 이용약관</a><a href="mailto:aquila@aquilaxk.site" lang="en">Contact</a></nav><span lang="en">© Aquila Software</span></div></footer>
 </body>
 </html>

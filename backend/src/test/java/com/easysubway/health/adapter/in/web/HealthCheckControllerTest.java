@@ -144,17 +144,19 @@ class HealthCheckControllerTest {
 			assertThat(response.getHeaders().getContentType()).isNotNull();
 			assertThat(response.getHeaders().getContentType().isCompatibleWith(MediaType.TEXT_HTML)).isTrue();
 			assertThat(response.getBody()).contains(
-				"쉬운 지하철",
-				"빠른 길보다,",
-				"갈 수 있는 길.",
+				"EasySubway · 쉬운 지하철",
+				"data-language=\"ko\"",
+				"data-language=\"en\"",
 				"Android 출시 준비 중",
-				"아래 기능을 Android 앱에 담아 출시를 준비하고 있습니다.",
-				"https://github.com/AquilaXk/easysubway",
+				"/css/landing.css",
+				"/js/landing.js",
+				"/images/landing/route-map.png",
+				"/images/landing/accessible-route.png",
+				"/images/landing/station-detail.png",
 				"/privacy",
 				"/terms",
 				"/location-terms",
-				"mailto:aquila@aquilaxk.site",
-				"mailto:support@aquilaxk.site"
+				"mailto:aquila@aquilaxk.site"
 			);
 		}
 	}
