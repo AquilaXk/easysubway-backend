@@ -93,6 +93,8 @@ jobs:
     needs: changes
     permissions:
       contents: read
+    outputs:
+      artifact_available: ${{ steps.release-env.outputs.artifact_available }}
     if: ${{ needs.changes.outputs.android == 'true' || needs.changes.outputs.mobile == 'true' }}
 
     steps:
@@ -141,6 +143,7 @@ jobs:
             -dname "CN=EasySubway CI,O=EasySubway,C=KR"
 
       - name: Android Release Artifacts / Restore GitHub Actions dotenv secret
+        id: release-env
         shell: bash
         env:
           EASYSUBWAY_ENV_SECRET: ${{ secrets.EASYSUBWAY_ENV }}
@@ -152,6 +155,7 @@ jobs:
               echo "EASYSUBWAY_RELEASE_ARTIFACTS_STORE_READY=false"
               echo "EASYSUBWAY_RELEASE_ARTIFACTS_SKIP_BUILD=true"
             } >> "${GITHUB_ENV}"
+            echo "artifact_available=false" >> "${GITHUB_OUTPUT}"
           }
 
           if [[ -z "${EASYSUBWAY_ENV_SECRET}" ]]; then
@@ -166,6 +170,7 @@ jobs:
           printf '%s' "${EASYSUBWAY_ENV_SECRET}" > "${env_file}"
           if node tools/ci/validate-store-privacy-env.mjs --env-file "${env_file}" --github-env "${GITHUB_ENV}"; then
             echo "EASYSUBWAY_RELEASE_ARTIFACTS_STORE_READY=true" >> "${GITHUB_ENV}"
+            echo "artifact_available=true" >> "${GITHUB_OUTPUT}"
           elif [[ "${GITHUB_EVENT_NAME}" == "pull_request" ]]; then
             mark_pr_non_store_ready
           else
@@ -229,8 +234,10 @@ jobs:
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY="${EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY}" \
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
+            --target-platform=android-arm,android-arm64 \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
@@ -238,6 +245,7 @@ jobs:
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY="${EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY}" \
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
 
       - name: Android Release Artifact / Collect release outputs
@@ -438,6 +446,7 @@ jobs:
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY="${EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY}" \
             --dart-define=EASYSUBWAY_DATA_PACK_BASE_URL="${EASYSUBWAY_DATA_PACK_BASE_URL}" \
             --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N}" \
             --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E}" \
@@ -447,6 +456,7 @@ jobs:
             --dart-define=EASYSUBWAY_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER="${EASYSUBWAY_PLAY_INTEGRITY_CLOUD_PROJECT_NUMBER}" \
             --dart-define=EASYSUBWAY_ENABLE_PUSH_NOTIFICATIONS=false
           flutter build appbundle --release \
+            --target-platform=android-arm,android-arm64 \
             --dart-define=EASYSUBWAY_API_BASE_URL="${DEPLOY_PUBLIC_API_BASE_URL}" \
             --dart-define=EASYSUBWAY_TERMS_OF_SERVICE_URL="${EASYSUBWAY_TERMS_OF_SERVICE_URL}" \
             --dart-define=EASYSUBWAY_PRIVACY_POLICY_URL="${EASYSUBWAY_PRIVACY_POLICY_URL}" \
@@ -454,6 +464,7 @@ jobs:
             --dart-define=EASYSUBWAY_SUPPORT_EMAIL="${EASYSUBWAY_SUPPORT_EMAIL}" \
             --dart-define=EASYSUBWAY_DATA_DELETION_EMAIL="${EASYSUBWAY_DATA_DELETION_EMAIL}" \
             --dart-define=EASYSUBWAY_SECURITY_EMAIL="${EASYSUBWAY_SECURITY_EMAIL}" \
+            --dart-define=EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY="${EASYSUBWAY_KAKAO_MAP_NATIVE_APP_KEY}" \
             --dart-define=EASYSUBWAY_DATA_PACK_BASE_URL="${EASYSUBWAY_DATA_PACK_BASE_URL}" \
             --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_N}" \
             --dart-define=EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E="${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_E}" \
@@ -724,7 +735,7 @@ jobs:
           node-version: "24"
 
       - name: RC Evidence Manifest / Download Android artifact
-        if: ${{ needs.android-release.result == 'success' }}
+        if: ${{ needs.android-release.result == 'success' && needs.android-release.outputs.artifact_available == 'true' }}
         uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
         with:
           name: easysubway-android-release-${{ github.sha }}
