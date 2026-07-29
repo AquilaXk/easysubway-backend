@@ -42,7 +42,7 @@ import org.springframework.test.web.servlet.request.RequestPostProcessor;
 @DisplayName("관리자 데이터팩 source snapshot 화면")
 class DataSourceSnapshotAdminPageControllerTest {
 	private static final String GOVERNANCE_POLICY_VERSION = "2026-07-15";
-	private static final String GOVERNANCE_POLICY_SHA256 = "ebc469886bbc11af62629d2d55129e2d27bdcabec300dcc268bb73d546fe2128";
+	private static final String GOVERNANCE_POLICY_SHA256 = "96fb678f2ec5da7f555d81d9d2009ac838e6145cc48ed2ae4757bce42c90ef70";
 	private static final String RAW_RETENTION_EXPIRES_AT = "2026-09-28T03:00:00";
 
 	@Autowired

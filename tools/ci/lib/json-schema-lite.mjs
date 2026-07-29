@@ -12,6 +12,7 @@ const SUPPORTED = new Set([
   "minItems",
   "minLength",
   "minimum",
+  "oneOf",
   "pattern",
   "properties",
   "required",
@@ -28,9 +29,23 @@ export function validateSchema(schema, value) {
 
 function walk(schema, value, path, errors) {
   assertSupported(schema, path);
+  validateOneOf(schema, value, path, errors);
   if (validateScalar(schema, value, path, errors)) return;
   validateObject(schema, value, path, errors);
   validateArray(schema, value, path, errors);
+}
+
+function validateOneOf(schema, value, path, errors) {
+  if (schema.oneOf === undefined) return;
+  if (!Array.isArray(schema.oneOf) || schema.oneOf.length === 0) {
+    throw new Error(`json-schema-lite: oneOf는 비어 있지 않은 배열이어야 합니다 (${path})`);
+  }
+  const matches = schema.oneOf.filter((candidate) => {
+    const candidateErrors = [];
+    walk(candidate, value, path, candidateErrors);
+    return candidateErrors.length === 0;
+  }).length;
+  if (matches !== 1) errors.push(`${path}: oneOf 분기 정확히 하나와 일치해야 함`);
 }
 
 function assertSupported(schema, path) {
