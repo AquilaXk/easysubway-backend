@@ -9,9 +9,11 @@ const SUPPORTED = new Set([
   "enum",
   "format",
   "items",
+  "maxItems",
   "minItems",
   "minLength",
   "minimum",
+  "not",
   "oneOf",
   "pattern",
   "properties",
@@ -30,9 +32,17 @@ export function validateSchema(schema, value) {
 function walk(schema, value, path, errors) {
   assertSupported(schema, path);
   validateOneOf(schema, value, path, errors);
+  validateNot(schema, value, path, errors);
   if (validateScalar(schema, value, path, errors)) return;
   validateObject(schema, value, path, errors);
   validateArray(schema, value, path, errors);
+}
+
+function validateNot(schema, value, path, errors) {
+  if (schema.not === undefined) return;
+  const candidateErrors = [];
+  walk(schema.not, value, path, candidateErrors);
+  if (candidateErrors.length === 0) errors.push(`${path}: not 분기와 일치하면 안 됨`);
 }
 
 function validateOneOf(schema, value, path, errors) {
@@ -159,14 +169,17 @@ function validateObject(schema, value, path, errors) {
 
 function validateArray(schema, value, path, errors) {
   if (schema.type !== "array") {
-    if (schema.items || schema.minItems !== undefined || schema.uniqueItems !== undefined) {
-      throw new Error(`json-schema-lite: items/minItems/uniqueItems 사용 시 type: array 명시 필요 (${path})`);
+    if (schema.items || schema.minItems !== undefined || schema.maxItems !== undefined || schema.uniqueItems !== undefined) {
+      throw new Error(`json-schema-lite: items/minItems/maxItems/uniqueItems 사용 시 type: array 명시 필요 (${path})`);
     }
     return;
   }
   if (!Array.isArray(value)) return;
   if (schema.minItems !== undefined && value.length < schema.minItems) {
     errors.push(`${path}: minItems ${schema.minItems} 미만`);
+  }
+  if (schema.maxItems !== undefined && value.length > schema.maxItems) {
+    errors.push(`${path}: maxItems ${schema.maxItems} 초과`);
   }
   if (schema.uniqueItems !== undefined && typeof schema.uniqueItems !== "boolean") {
     throw new Error(`json-schema-lite: uniqueItems는 boolean이어야 합니다 (${path})`);
