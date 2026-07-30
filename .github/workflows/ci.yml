@@ -481,7 +481,7 @@ jobs:
 
       - name: Repository CI / Validate contracts
         if: ${{ needs.changes.outputs.contracts == 'true' }}
-        run: node tools/ci/check-contracts.mjs
+        run: node tools/ci/check-contracts.mjs --workspace contracts/workspaces/hub.json
 
       - name: Repository CI / Check directory boundaries
         if: ${{ needs.changes.outputs.repository == 'true' || needs.changes.outputs.ci == 'true' || needs.changes.outputs.contracts == 'true' || needs.changes.outputs.backend == 'true' || needs.changes.outputs.mobile == 'true' || needs.changes.outputs.datapack == 'true' }}

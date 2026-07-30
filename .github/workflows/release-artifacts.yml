@@ -262,10 +262,10 @@ jobs:
           cp release/play-production-access-gate.json release-artifacts/android/play-production-access-gate.json
           cp release/play-store-submission-content.json release-artifacts/android/play-store-submission-content.json
           cp release/play-generated-apk-device-matrix-gate.json release-artifacts/android/play-generated-apk-device-matrix-gate.json
-          cp release/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
-          cp release/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
-          cp release/abuse-penetration-rehearsal-gate.json release-artifacts/android/abuse-penetration-rehearsal-gate.json
-          cp release/rc-evidence-manifest-contract.json release-artifacts/android/rc-evidence-manifest-contract.json
+          cp ../../release/product-gates/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
+          cp ../../release/product-gates/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
+          cp ../../release/product-gates/abuse-penetration-rehearsal-gate.json release-artifacts/android/abuse-penetration-rehearsal-gate.json
+          cp ../../release/product-gates/rc-evidence-manifest-contract.json release-artifacts/android/rc-evidence-manifest-contract.json
           cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
           cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
@@ -485,9 +485,9 @@ jobs:
           cp release/signed-release-artifact-gate.json release-artifacts/android/signed-release-artifact-gate.json
           cp release/android-16kb-page-size-gate.json release-artifacts/android/android-16kb-page-size-gate.json
           cp release/android-rc-store-evidence.json release-artifacts/android/android-rc-store-evidence.json
-          cp release/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
-          cp release/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
-          cp release/operations-observability-gate.json release-artifacts/android/operations-observability-gate.json
+          cp ../../release/product-gates/post-launch-operations-review-gate.json release-artifacts/android/post-launch-operations-review-gate.json
+          cp ../../release/product-gates/support-incident-response-gate.json release-artifacts/android/support-incident-response-gate.json
+          cp ../../release/product-gates/operations-observability-gate.json release-artifacts/android/operations-observability-gate.json
           cp ../../tools/mobile/check-android-aab-16kb-page-size.sh release-artifacts/android/check-android-aab-16kb-page-size.sh
           cp ../../tools/mobile/check-elf-load-alignment.mjs release-artifacts/android/check-elf-load-alignment.mjs
           if [[ -f build/app/outputs/mapping/release/mapping.txt ]]; then
@@ -862,6 +862,7 @@ jobs:
           generator_args=(
             --repo-root .
             --app-root apps/mobile
+            --rc-evidence-contract release/product-gates/rc-evidence-manifest-contract.json
             --git-sha "${GITHUB_SHA}"
             --verify-github-sha true
             --data-pack-manifest "${data_pack_manifest}"
@@ -1061,10 +1062,10 @@ jobs:
           node tools/release/generate-route-integration-verdict.mjs \
             "${verdict_args[@]}" \
             --output release-artifacts/rc/route-integration-verdict.json
-          cp apps/mobile/release/post-launch-operations-review-gate.json release-artifacts/rc/post-launch-operations-review-gate.json
-          cp apps/mobile/release/support-incident-response-gate.json release-artifacts/rc/support-incident-response-gate.json
-          cp apps/mobile/release/operations-observability-gate.json release-artifacts/rc/operations-observability-gate.json
-          cp apps/mobile/release/rc-evidence-manifest-contract.json release-artifacts/rc/rc-evidence-manifest-contract.json
+          cp release/product-gates/post-launch-operations-review-gate.json release-artifacts/rc/post-launch-operations-review-gate.json
+          cp release/product-gates/support-incident-response-gate.json release-artifacts/rc/support-incident-response-gate.json
+          cp release/product-gates/operations-observability-gate.json release-artifacts/rc/operations-observability-gate.json
+          cp release/product-gates/rc-evidence-manifest-contract.json release-artifacts/rc/rc-evidence-manifest-contract.json
           {
             echo "commit=${GITHUB_SHA}"
             echo "manifest=final-readiness.json"

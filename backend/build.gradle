@@ -153,7 +153,7 @@ tasks.named('processResources') {
 	from('../tools/datapack/source-governance-policy.json') {
 		into 'datapack'
 	}
-	from('../apps/mobile/release/datapack-freshness-sla.json') {
+	from('../release/product-gates/datapack-freshness-sla.json') {
 		into 'datapack'
 	}
 }

@@ -14,7 +14,7 @@ import { codepointCompare } from "../lib/codepoint-compare.mjs";
 
 const execFileAsync = promisify(execFile);
 const root = path.resolve(import.meta.dirname, "../..");
-const gatePath = path.join(root, "apps/mobile/release/abuse-penetration-rehearsal-gate.json");
+const gatePath = path.join(root, "release/product-gates/abuse-penetration-rehearsal-gate.json");
 const gate = JSON.parse(readFileSync(gatePath, "utf8"));
 
 const schemaV2EvidenceRoot = `.codex/evidence/security/abuse-penetration-rehearsal/${"a".repeat(40)}`;

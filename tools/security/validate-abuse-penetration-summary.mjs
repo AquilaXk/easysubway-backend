@@ -302,7 +302,7 @@ export function validateAbusePenetrationSummary(summary, gate, { requirePass=fal
   return Object.freeze({schemaVersion:2,status:summary.status});
 }
 function parseArgs(args) {
-  const result={summaryPath:null,gatePath:"apps/mobile/release/abuse-penetration-rehearsal-gate.json",requirePass:false};
+  const result={summaryPath:null,gatePath:"release/product-gates/abuse-penetration-rehearsal-gate.json",requirePass:false};
   const seen=new Set();
   for (let index=0; index<args.length; index+=1) {
     const flag=args[index]; if (!["--summary","--gate","--require-pass"].includes(flag)||seen.has(flag)) fail("SUMMARY_CLI_INVALID","$","arguments"); seen.add(flag);

@@ -861,7 +861,7 @@ test("route commercialization gate sorts checked reports with an explicit compar
 async function writeFixtureSet(reports) {
   const dir = await mkdtemp(path.join(tmpdir(), "route-commercialization-gate-"));
   const gatePath = path.join(dir, "route-commercialization-gate.json");
-  const gate = JSON.parse(await readFile("apps/mobile/release/route-commercialization-gate.json", "utf8"));
+  const gate = JSON.parse(await readFile("release/product-gates/route-commercialization-gate.json", "utf8"));
   const gateOverride = reports.gateOverride ?? {};
   await writeFile(gatePath, `${JSON.stringify({
     ...gate,
