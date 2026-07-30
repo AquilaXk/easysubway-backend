@@ -149,13 +149,25 @@ tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
 	}
 }
 
+def contractsBundle = providers.environmentVariable('EASYSUBWAY_CONTRACTS_BUNDLE')
+
+def stageContracts = tasks.register('stageContracts', Exec) {
+	inputs.file(layout.projectDirectory.file('tools/stage-contracts.mjs'))
+	inputs.file(layout.projectDirectory.file('contracts.lock.json'))
+	inputs.file(contractsBundle)
+	outputs.dir(layout.buildDirectory.dir('contracts-staging'))
+
+	doFirst {
+		def bundle = contractsBundle.orNull
+		if (bundle == null || bundle.isBlank()) {
+			throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
+		}
+		commandLine 'node', 'tools/stage-contracts.mjs', '--lock', 'contracts.lock.json', '--input', bundle, '--output', 'build/contracts-staging'
+	}
+}
+
 tasks.named('processResources') {
-	from('../tools/datapack/source-governance-policy.json') {
-		into 'datapack'
-	}
-	from('../release/product-gates/datapack-freshness-sla.json') {
-		into 'datapack'
-	}
+	from(stageContracts)
 }
 
 tasks.named('bootJar') {

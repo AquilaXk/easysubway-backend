@@ -1,0 +1,116 @@
+import assert from "node:assert/strict";
+import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
+import { mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join, resolve } from "node:path";
+import test from "node:test";
+
+const repositoryRoot = resolve(import.meta.dirname, "../..");
+const script = join(repositoryRoot, "backend/tools/build-component-manifest.mjs");
+const gitSha = "a".repeat(40);
+const imageDigest = `sha256:${"b".repeat(64)}`;
+
+test("build-component-manifest는 immutable backend identity를 결정적으로 발행한다", () => {
+  const fixture = createFixture();
+  try {
+    run(fixture);
+    assert.deepEqual(JSON.parse(readFileSync(fixture.output, "utf8")), {
+      schemaVersion: 1,
+      component: "backend",
+      repository: "AquilaXk/easysubway",
+      gitSha,
+      artifactIdentity: { imageDigest, apiContractVersion: "1.0.0" },
+      contractVersion: "1.0.0",
+      evidenceSha256: createHash("sha256").update("release evidence\n").digest("hex"),
+      issueRefs: ["AquilaXk/easysubway#2697"],
+    });
+    const first = readFileSync(fixture.output);
+    run({ ...fixture, output: join(fixture.directory, "second.json") });
+    assert.deepEqual(readFileSync(join(fixture.directory, "second.json")), first);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("build-component-manifest는 mutable 또는 malformed digest를 거부한다", () => {
+  const fixture = createFixture();
+  try {
+    for (const digest of ["ghcr.io/aquilaxk/easysubway-backend:latest", "sha256:latest", `sha256:${"B".repeat(64)}`, "sha256:abc"]) {
+      assert.throws(() => run(fixture, ["--image-digest", digest]), /digest/i);
+    }
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("build-component-manifest는 qualified issue ref와 lowercase git SHA를 요구한다", () => {
+  const fixture = createFixture();
+  try {
+    assert.throws(() => run(fixture, ["--issue-ref", "2697"]), /issue ref/i);
+    assert.throws(() => run(fixture, ["--git-sha", "A".repeat(40)]), /git sha/i);
+    assert.throws(() => run(fixture, ["--git-sha", "a".repeat(39)]), /git sha/i);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("build-component-manifest는 unreadable evidence와 duplicate 또는 extra CLI args를 거부한다", () => {
+  const fixture = createFixture();
+  try {
+    assert.throws(() => run(fixture, ["--evidence", join(fixture.directory, "missing.txt")]), /evidence/i);
+    assert.throws(() => run(fixture, [], ["--repository", "AquilaXk/easysubway"]), /duplicate/i);
+    assert.throws(() => run(fixture, [], ["--unexpected", "value"]), /unknown|arguments/i);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("build-component-manifest는 symlink output과 없는 output parent를 거부한다", () => {
+  const fixture = createFixture();
+  try {
+    const symlinkOutput = join(fixture.directory, "manifest-link.json");
+    symlinkSync(fixture.evidence, symlinkOutput);
+    assert.throws(() => run({ ...fixture, output: symlinkOutput }), /output must not be a symlink/);
+    assert.throws(
+      () => run({ ...fixture, output: join(fixture.directory, "missing", "manifest.json") }),
+      /output parent is unavailable/,
+    );
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+function createFixture() {
+  const directory = mkdtempSync(join(tmpdir(), "build-component-manifest-"));
+  const evidence = join(directory, "release-metadata.txt");
+  writeFileSync(evidence, "release evidence\n");
+  return {
+    directory,
+    evidence,
+    output: join(directory, "backend-component-manifest.json"),
+    cleanup() {
+      rmSync(directory, { recursive: true, force: true });
+    },
+  };
+}
+
+function run(fixture, replacements = [], extraArguments = []) {
+  const args = [
+    "--repository", "AquilaXk/easysubway",
+    "--git-sha", gitSha,
+    "--image-digest", imageDigest,
+    "--contract-version", "1.0.0",
+    "--evidence", fixture.evidence,
+    "--issue-ref", "AquilaXk/easysubway#2697",
+    "--output", fixture.output,
+  ];
+  for (let index = 0; index < replacements.length; index += 2) {
+    const option = replacements[index];
+    const value = replacements[index + 1];
+    const position = args.indexOf(option);
+    if (position === -1) args.push(option, value);
+    else args[position + 1] = value;
+  }
+  return execFileSync(process.execPath, [script, ...args, ...extraArguments], { encoding: "utf8", stdio: "pipe" });
+}

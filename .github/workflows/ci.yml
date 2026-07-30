@@ -194,6 +194,8 @@ jobs:
       - name: Admin QA Gates / Build backend for actual browser QA
         if: ${{ needs.changes.outputs.backend == 'true' }}
         working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ github.workspace }}/contracts/bundles/backend-contracts-v1.0.0.json
         run: |
           set -euo pipefail
           chmod +x gradlew
@@ -653,6 +655,8 @@ jobs:
       - name: Backend CI / Run Gradle checks
         if: ${{ needs.changes.outputs.backend == 'true' && steps.scaffold.outputs.present == 'true' }}
         working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ github.workspace }}/contracts/bundles/backend-contracts-v1.0.0.json
         run: ./gradlew check --no-daemon
 
   mobile-app:

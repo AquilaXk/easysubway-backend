@@ -642,15 +642,17 @@ jobs:
         run: |
           rm -f "${RUNNER_TEMP}/easysubway-release.env"
 
-  # Validation only: builds and inspects the backend image as a PR-time dry-run
-  # and does NOT push. The single production image producer is the CD build-image
-  # job (cd.yml), which publishes the arm64 image to GHCR by digest (#1686).
+  # PRs validate a local image only. Main pushes publish the single production
+  # image and its immutable component manifest for CD consumption.
   backend-release:
     name: Backend Release Image
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04-arm
     needs: changes
     permissions:
+      actions: read
       contents: read
+      # Main push에서 GHCR image를 publish할 때만 사용한다.
+      packages: write
     if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.deploy == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.mobile == 'true' || github.event_name == 'workflow_dispatch' }}
 
     steps:
@@ -666,25 +668,116 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      - name: Backend Release Image / Set up Node
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: "24"
+
+      - name: Backend Release Image / Require successful main CI
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          ci_runs_file="${RUNNER_TEMP}/ci-runs.json"
+          ci_wait_deadline="$((SECONDS + 3600))"
+          while true; do
+            if curl -fsS \
+              --connect-timeout 5 \
+              --max-time 20 \
+              -H "Accept: application/vnd.github+json" \
+              -H "Authorization: Bearer ${GITHUB_TOKEN}" \
+              -H "X-GitHub-Api-Version: 2022-11-28" \
+              --output "${ci_runs_file}" \
+              "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/workflows/ci.yml/runs?head_sha=${GITHUB_SHA}&branch=main&event=push&status=success&per_page=20"; then
+              if node tools/ci/require-successful-workflow-run.mjs \
+                "${ci_runs_file}" "${GITHUB_SHA}" "CI" "push" main 1209600; then
+                break
+              fi
+            fi
+            if (( SECONDS >= ci_wait_deadline )); then
+              echo "timed out waiting for successful CI for ${GITHUB_SHA}" >&2
+              exit 1
+            fi
+            sleep 15
+          done
+
       - name: Backend Release Image / Build bootJar
         working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ github.workspace }}/contracts/bundles/backend-contracts-v1.0.0.json
         run: ./gradlew bootJar --no-daemon
 
       - name: Backend Release Image / Generate Route V2 planner canary
         working-directory: backend
         env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ github.workspace }}/contracts/bundles/backend-contracts-v1.0.0.json
           EASYSUBWAY_PLANNER_SUCCESS_OUTPUT: ../release-artifacts/backend/planner-canary-result.json
           EASYSUBWAY_CANONICAL_PACK_PATH: ../apps/mobile/assets/datapacks/capital.sqlite.gz
-        run: >-
-          ./gradlew test --no-daemon
-          --tests com.easysubway.route.application.service.RouteSearchServiceTest.routeV2PlannerProducesSyntheticCanaryResult
+        run: |
+          mkdir -p ../release-artifacts/backend
+          ./gradlew test --no-daemon \
+            --tests com.easysubway.route.application.service.RouteSearchServiceTest.routeV2PlannerProducesSyntheticCanaryResult
 
-      - name: Backend Release Image / Build and inspect image
+      - name: Backend Release Image / Build PR validation image
+        if: ${{ github.event_name != 'push' }}
         shell: bash
         run: |
           set -euo pipefail
-          docker build -f backend/Dockerfile -t easysubway-backend:${{ github.sha }} backend
-          docker image inspect easysubway-backend:${{ github.sha }}
+          docker buildx build --load --platform linux/arm64 -f backend/Dockerfile -t easysubway-backend:${GITHUB_SHA} backend
+          docker image inspect easysubway-backend:${GITHUB_SHA}
+
+      - name: Backend Release Image / Log in to GHCR
+        if: ${{ github.event_name == 'push' }}
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Backend Release Image / Build and push immutable arm64 image
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/aquilaxk/easysubway-backend:sha-${GITHUB_SHA}"
+          metadata_file="${RUNNER_TEMP}/backend-build-metadata.json"
+          mkdir -p release-artifacts/backend
+          docker buildx create --driver docker-container --use
+          docker buildx build --platform linux/arm64 --push --sbom=true --provenance=mode=max --metadata-file "${metadata_file}" --label "org.opencontainers.image.revision=${GITHUB_SHA}" --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" -f backend/Dockerfile -t "${image}" backend
+          digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${image}")"
+          if [[ ! "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "published image lacks an immutable digest" >&2
+            exit 1
+          fi
+          if ! grep -Eq '"containerimage\.digest"[[:space:]]*:[[:space:]]*"'"${digest}"'"' "${metadata_file}"; then
+            echo "Buildx metadata digest does not match the pushed manifest" >&2
+            exit 1
+          fi
+          docker buildx imagetools inspect --raw "${image}" > release-artifacts/backend/image-index.json
+          sbom="$(docker buildx imagetools inspect "${image}" --format '{{json .SBOM}}')"
+          provenance="$(docker buildx imagetools inspect "${image}" --format '{{json .Provenance}}')"
+          if [[ -z "${sbom}" || "${sbom}" == "null" || -z "${provenance}" || "${provenance}" == "null" ]]; then
+            echo "published image lacks SBOM or provenance attestation" >&2
+            exit 1
+          fi
+          arch="$(docker buildx imagetools inspect "${image}" --format '{{range .Manifest.Manifests}}{{if eq .Platform.OS "linux"}}{{.Platform.OS}}/{{.Platform.Architecture}}{{end}}{{end}}')"
+          if [[ "${arch}" != "linux/arm64" ]]; then
+            echo "published image runtime platform ${arch}, expected linux/arm64" >&2
+            exit 1
+          fi
+          final_from="$(awk 'toupper($1) == "FROM" { line=$0 } END { print line }' backend/Dockerfile)"
+          if [[ ! "${final_from}" =~ ^FROM[[:space:]]+[^[:space:]]+@sha256:[a-f0-9]{64}([[:space:]]+AS[[:space:]]+[A-Za-z0-9._-]+)?$ ]]; then
+            echo "backend base image must be digest pinned" >&2
+            exit 1
+          fi
+          {
+            echo "image=ghcr.io/aquilaxk/easysubway-backend@${digest}"
+            echo "imageDigest=${digest}"
+          } > release-artifacts/backend/identity.env
+          printf '[{"RepoDigests":["ghcr.io/aquilaxk/easysubway-backend@%s"],"Id":"%s"}]\n' "${digest}" "${digest}" > release-artifacts/backend/image-inspect.json
 
       - name: Backend Release Image / Validate deployment dry-run
         shell: bash
@@ -709,15 +802,40 @@ jobs:
             exit 1
           fi
           cp "${boot_jar[0]}" release-artifacts/backend/backend-boot.jar
-          docker image inspect easysubway-backend:${{ github.sha }} > release-artifacts/backend/image-inspect.json
+          if [[ "${GITHUB_EVENT_NAME}" != "push" ]]; then
+            docker image inspect easysubway-backend:${GITHUB_SHA} > release-artifacts/backend/image-inspect.json
+          fi
           backend_artifact_sha256="$(sha256sum release-artifacts/backend/backend-boot.jar | awk '{print $1}')"
           {
             echo "commit=${GITHUB_SHA}"
-            echo "image=easysubway-backend:${GITHUB_SHA}"
+            if [[ "${GITHUB_EVENT_NAME}" == "push" ]]; then
+              cat release-artifacts/backend/identity.env
+            else
+              echo "image=easysubway-backend:${GITHUB_SHA}"
+            fi
             echo "backendArtifactSha256=${backend_artifact_sha256}"
             echo "dockerfile=backend/Dockerfile"
             echo "compose=infra/docker-compose.yml"
           } > release-artifacts/backend/release-metadata.txt
+
+      - name: Backend Release Image / Emit component manifest
+        if: ${{ github.event_name == 'push' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_digest="$(sed -nE 's/^imageDigest=(sha256:[a-f0-9]{64})$/\1/p' release-artifacts/backend/identity.env)"
+          if [[ -z "${image_digest}" ]]; then
+            echo "component manifest requires the published image digest" >&2
+            exit 1
+          fi
+          node backend/tools/build-component-manifest.mjs \
+            --repository "${GITHUB_REPOSITORY}" \
+            --git-sha "${GITHUB_SHA}" \
+            --image-digest "${image_digest}" \
+            --contract-version 1.0.0 \
+            --evidence release-artifacts/backend/release-metadata.txt \
+            --issue-ref AquilaXk/easysubway#2697 \
+            --output release-artifacts/backend/backend-component-manifest.json
 
       - name: Backend Release Image / Upload image metadata
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02

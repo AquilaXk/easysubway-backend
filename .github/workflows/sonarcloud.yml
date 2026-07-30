@@ -74,6 +74,8 @@ jobs:
 
       - name: Build backend classes and coverage reports
         working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ github.workspace }}/contracts/bundles/backend-contracts-v1.0.0.json
         run: ./gradlew check jacocoTestReport spotbugsMain --no-daemon
 
       - name: Upload SpotBugs reports
