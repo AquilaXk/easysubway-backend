@@ -575,6 +575,18 @@ jobs:
           name: easysubway-android-production-rc-${{ github.sha }}
           path: release-artifacts/downloaded/android-production-rc
 
+      - name: Play internal upload / Download RC evidence artifact
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093
+        with:
+          name: easysubway-rc-evidence-manifest-${{ github.sha }}
+          path: release-artifacts/downloaded/rc
+
+      - name: Play internal upload / Require authoritative GO decision
+        run: >-
+          node tools/release/validate-system-release-manifest.mjs
+          --manifest release-artifacts/downloaded/rc/system-release-manifest.json
+          --require-decision GO
+
       - name: Play internal upload / Restore release environment
         shell: bash
         env:
@@ -639,7 +651,7 @@ jobs:
     needs: changes
     permissions:
       contents: read
-    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.deploy == 'true' }}
+    if: ${{ needs.changes.outputs.backend == 'true' || needs.changes.outputs.deploy == 'true' || needs.changes.outputs.android == 'true' || needs.changes.outputs.mobile == 'true' || github.event_name == 'workflow_dispatch' }}
 
     steps:
       - name: Backend Release Image / Checkout repository
@@ -678,7 +690,12 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
+          mkdir -p release-artifacts/backend
+          EASYSUBWAY_BACKEND_IMAGE_TAG="${GITHUB_SHA}" docker compose --env-file .env.example -f infra/docker-compose.yml config --quiet
+          EASYSUBWAY_BACKEND_IMAGE_TAG="${GITHUB_SHA}" docker compose --env-file .env.example -f infra/docker-compose.yml config > release-artifacts/backend/rendered-compose.yml
+          test -f release-artifacts/backend/rendered-compose.yml
+          test ! -L release-artifacts/backend/rendered-compose.yml
+          grep -Fq "image: easysubway-backend:${GITHUB_SHA}" release-artifacts/backend/rendered-compose.yml
 
       - name: Backend Release Image / Collect release metadata
         shell: bash
@@ -721,7 +738,7 @@ jobs:
     permissions:
       actions: read
       contents: read
-    if: ${{ always() && (needs.android-release.result == 'success' || needs.android-production-rc-release.result == 'success' || needs.backend-release.result == 'success') }}
+    if: ${{ always() && needs.backend-release.result == 'success' && ((needs.android-release.result == 'success' && needs.android-release.outputs.artifact_available == 'true') || needs.android-production-rc-release.result == 'success') }}
 
     steps:
       - name: RC Evidence Manifest / Checkout repository
@@ -821,10 +838,14 @@ jobs:
         run: |
           set -euo pipefail
           mkdir -p release-artifacts/rc
-          data_pack_manifest=apps/mobile/assets/datapacks/metro_map_pack/manifest.json
+          bundled_data_manifest=apps/mobile/assets/datapacks/index.json
+          data_pack_manifest=apps/mobile/assets/datapacks/index.json
           data_pack_artifact=apps/mobile/assets/datapacks/capital.sqlite.gz
           data_pack_fallback_artifact="${data_pack_artifact}"
           data_pack_release_decision=""
+          source_snapshot_evidence="${data_pack_manifest}"
+          release_sequence=0
+          data_version=unpromoted
           if [[ "${ANDROID_RC_SIGNING_MODE}" == production-upload-key && -z "${DATAPACK_RUN_ID}" ]]; then
             echo "datapack_run_id is required for production RC identity" >&2
             exit 1
@@ -834,6 +855,9 @@ jobs:
             data_pack_artifact=release-artifacts/downloaded/datapack-selected/active.sqlite.gz
             data_pack_fallback_artifact=release-artifacts/downloaded/datapack-selected/fallback.sqlite.gz
             data_pack_release_decision=release-artifacts/downloaded/datapack-selected/release-decision.json
+            source_snapshot_evidence="${data_pack_release_decision}"
+            release_sequence="$(node -p 'JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")).releaseSequence' "${data_pack_manifest}")"
+            data_version="$(node -p 'const manifest = JSON.parse(require("node:fs").readFileSync(process.argv[1], "utf8")); manifest.dataVersion ?? manifest.version ?? manifest.date ?? manifest.activePack?.version ?? "unpromoted"' "${data_pack_manifest}")"
           fi
           generator_args=(
             --repo-root .
@@ -843,6 +867,7 @@ jobs:
             --data-pack-manifest "${data_pack_manifest}"
             --data-pack-artifact "${data_pack_artifact}"
             --data-pack-fallback-artifact "${data_pack_fallback_artifact}"
+            --release-sequence "${release_sequence}"
             --evidence-root ".codex/evidence/release/rc-evidence-manifest/${GITHUB_SHA}/"
             --device local_android_emulator
             --android-version android-15-or-16
@@ -883,24 +908,64 @@ jobs:
             )
           fi
           android_artifact_source="none"
+          aab_path=""
           if [[ -f release-artifacts/downloaded/android-production-rc/app-release.aab ]]; then
-            generator_args+=(--aab release-artifacts/downloaded/android-production-rc/app-release.aab)
+            aab_path=release-artifacts/downloaded/android-production-rc/app-release.aab
             generator_args+=(--android-release-metadata release-artifacts/downloaded/android-production-rc/release-metadata.txt)
             android_artifact_source="easysubway-android-production-rc-${GITHUB_SHA}"
           elif [[ -f release-artifacts/downloaded/android/app-release.aab ]]; then
-            generator_args+=(--aab release-artifacts/downloaded/android/app-release.aab)
+            aab_path=release-artifacts/downloaded/android/app-release.aab
             generator_args+=(--android-release-metadata release-artifacts/downloaded/android/release-metadata.txt)
             android_artifact_source="easysubway-android-release-${GITHUB_SHA}"
           fi
-          if [[ -f release-artifacts/downloaded/backend/backend-boot.jar ]]; then
-            generator_args+=(--backend-artifact release-artifacts/downloaded/backend/backend-boot.jar)
-          elif [[ -f release-artifacts/downloaded/backend/image-inspect.json ]]; then
-            generator_args+=(--backend-image-inspect release-artifacts/downloaded/backend/image-inspect.json)
+          if [[ -z "${aab_path}" ]]; then
+            echo "exactly one Android AAB is required for RC evidence" >&2
+            exit 1
           fi
+          generator_args+=(--aab "${aab_path}")
+          if [[ ! -f release-artifacts/downloaded/backend/image-inspect.json ]]; then
+            echo "backend image inspect is required for RC evidence" >&2
+            exit 1
+          fi
+          generator_args+=(--backend-image-inspect release-artifacts/downloaded/backend/image-inspect.json)
           node tools/release/generate-rc-evidence-manifest.mjs \
             "${generator_args[@]}" \
             --phase CANDIDATE \
             --output release-artifacts/rc/candidate-context.json
+          version_line="$(awk '/^version:/{print $2; exit}' apps/mobile/pubspec.yaml)"
+          version_name="${version_line%%+*}"
+          version_code="${version_line##*+}"
+          contracts_bundle="${RUNNER_TEMP}/contracts.tar"
+          component_output="${RUNNER_TEMP}/component-manifests-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          git archive --format=tar HEAD contracts > "${RUNNER_TEMP}/contracts.tar"
+          node tools/release/build-monorepo-component-manifests.mjs \
+            --repository AquilaXk/easysubway \
+            --git-sha "${GITHUB_SHA}" \
+            --mobile-version-name "${version_name}" \
+            --mobile-version-code "${version_code}" \
+            --aab "${aab_path}" \
+            --bundled-data-manifest "${bundled_data_manifest}" \
+            --backend-image-inspect release-artifacts/downloaded/backend/image-inspect.json \
+            --backend-evidence release-artifacts/downloaded/backend/release-metadata.txt \
+            --data-version "${data_version}" \
+            --data-release-sequence "${release_sequence}" \
+            --data-manifest "${data_pack_manifest}" \
+            --source-snapshot-evidence "${source_snapshot_evidence}" \
+            --platform-environment ci \
+            --platform-evidence release-artifacts/downloaded/backend/rendered-compose.yml \
+            --contracts-version 1.0.0 \
+            --contracts-bundle "${contracts_bundle}" \
+            --issue-ref AquilaXk/easysubway#2693 \
+            --output-dir "${component_output}"
+          cp "${component_output}/mobile-component-manifest.json" release-artifacts/rc/mobile-component-manifest.json
+          cp "${component_output}/backend-component-manifest.json" release-artifacts/rc/backend-component-manifest.json
+          cp "${component_output}/data-component-manifest.json" release-artifacts/rc/data-component-manifest.json
+          cp "${component_output}/platform-component-manifest.json" release-artifacts/rc/platform-component-manifest.json
+          cp "${component_output}/contracts-identity.json" release-artifacts/rc/contracts-identity.json
+          for manifest in release-artifacts/rc/{mobile,backend,data,platform}-component-manifest.json release-artifacts/rc/contracts-identity.json; do
+            test -f "${manifest}"
+            test ! -L "${manifest}"
+          done
           if [[ -f release-artifacts/downloaded/backend/planner-canary-result.json ]]; then
             node tools/release/build-planner-success-evidence.mjs \
               --candidate-context release-artifacts/rc/candidate-context.json \
@@ -968,7 +1033,16 @@ jobs:
             "${final_readiness_args[@]}" \
             --phase FINAL \
             --candidate-context release-artifacts/rc/candidate-context.json \
-            --output release-artifacts/rc/final-readiness.json
+            --output release-artifacts/rc/final-readiness.json \
+            --mobile-component-manifest release-artifacts/rc/mobile-component-manifest.json \
+            --backend-component-manifest release-artifacts/rc/backend-component-manifest.json \
+            --data-component-manifest release-artifacts/rc/data-component-manifest.json \
+            --platform-component-manifest release-artifacts/rc/platform-component-manifest.json \
+            --contracts-identity release-artifacts/rc/contracts-identity.json \
+            --system-release-output release-artifacts/rc/system-release-manifest.json \
+            --product-release-id "android-v${version_name}+${version_code}"
+          node tools/release/validate-system-release-manifest.mjs \
+            --manifest release-artifacts/rc/system-release-manifest.json
           # #1414 route/datapack 통합 판정. same-RC identity로 E1~E9 matrix를 결합한다.
           # planner(#2098)/mobile(#2099) evidence는 이 job에서 candidate-context 기준으로 생성해
           # 바로 연결한다. route-map(#2068) evidence는 아직 identity+provenance+integrationScenarios
