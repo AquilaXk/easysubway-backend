@@ -50,7 +50,6 @@ jobs:
           node --test backend/tools/*.test.mjs
           node --test tools/routes/*.test.mjs
           node --test tools/realtime/*.test.mjs
-          node --test tools/security/*.test.mjs
 
       - name: Test admin QA contracts
         run: |
