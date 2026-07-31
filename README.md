@@ -24,4 +24,4 @@
 
 - [실시간 API 계약](contracts/api/realtime-api.openapi.yaml)
 - [시설 제보 API 계약](contracts/api/report-api.openapi.yaml)
-- [질문 또는 협력 요청](https://github.com/AquilaXk/easysubway-backend/issues)
+- [aquila@aquilaxk.site](mailto:aquila@aquilaxk.site)
