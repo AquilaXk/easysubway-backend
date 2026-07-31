@@ -1,5 +1,6 @@
 package com.easysubway.admin.web;
 
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.io.IOException;
@@ -35,7 +36,6 @@ class AdminDesignGuardTest {
 	private static final String JS_DASHBOARD_CHARTS = "backend/src/main/resources/static/js/admin/dashboard-charts.js";
 	private static final String JS_BATCH_HISTORY_CHARTS = "backend/src/main/resources/static/js/admin/batch-history-charts.js";
 	private static final String JS_OPERATOR_REPORT_CHARTS = "backend/src/main/resources/static/js/operator/report-charts.js";
-	private static final String COLOR_SYSTEM_JSON = "tools/design/easysubway-color-system.json";
 	private static final Pattern CSS_CUSTOM_PROPERTY = Pattern.compile(
 		"(?m)^\\s*(--[a-z0-9-]+)\\s*:\\s*([^;]+);");
 	private static final Pattern HEX_COLOR = Pattern.compile("#[0-9a-fA-F]{3,8}\\b");
@@ -104,7 +104,8 @@ class AdminDesignGuardTest {
 	@Test
 	@DisplayName("색상 JSON version 1의 primitive·semantic property와 관리자 alias가 정확히 일치한다")
 	void colorSystemJsonMatchesAdminTokensAndCompatibilityAliases() throws IOException {
-		JsonNode colorSystem = new ObjectMapper().readTree(read(COLOR_SYSTEM_JSON));
+		JsonNode colorSystem = new ObjectMapper().readTree(requireNonNull(
+			getClass().getResourceAsStream("/contracts/easysubway-color-system.json")));
 		assertThat(colorSystem.path("version").asInt()).isEqualTo(1);
 
 		Map<String, String> expectedProperties = new LinkedHashMap<>();
