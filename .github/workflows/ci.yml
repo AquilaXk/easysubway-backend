@@ -11,6 +11,22 @@ permissions:
   contents: read
 
 jobs:
+  dependency-vulnerability-scan:
+    name: Dependency Vulnerability Scan
+    if: ${{ github.event_name == 'pull_request' }}
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4
+    with:
+      export-results: false
+      upload-sarif: true
+      fail-on-vuln: true
+      scan-args: |-
+        --lockfile=backend/gradle.lockfile
+        --lockfile=tools/qa/package-lock.json
+
   backend:
     name: Backend CI
     runs-on: ubuntu-latest
