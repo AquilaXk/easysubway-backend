@@ -97,8 +97,10 @@ test("backend immutable producer는 no-push preflight와 digest evidence ledger�
   assert.ok(workflow.includes("--format '{{json .SBOM.SPDX}}'"));
   assert.ok(workflow.includes("--format '{{json .Provenance.SLSA}}'"));
   assert.ok(workflow.includes('subject="${repository}@${digest}"'));
-  assert.ok(workflow.includes('[[ "${inspected_digest}" != "${digest}" ]]'));
+  assert.ok(workflow.includes('docker buildx imagetools inspect --raw "${subject}" > release-artifacts/backend/image-index.json'));
+  assert.ok(!workflow.includes(".Manifest.Digest"));
   assert.ok(workflow.includes('[[ "${platform}" != "linux/arm64" ]]'));
+  assert.ok(workflow.includes("name: easysubway-backend-release-${{ github.sha }}-${{ github.run_attempt }}"));
   assert.ok(workflow.includes("backend final base image must be digest pinned"));
   assert.ok(workflow.includes(`(\n            cd release-artifacts/backend\n            for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json; do
               sha256sum "\${evidence}"

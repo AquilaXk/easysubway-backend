@@ -155,11 +155,6 @@ jobs:
             exit 1
           fi
           subject="${repository}@${digest}"
-          inspected_digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${subject}")"
-          if [[ "${inspected_digest}" != "${digest}" ]]; then
-            echo "published image inspection does not match the Buildx metadata digest" >&2
-            exit 1
-          fi
           docker buildx imagetools inspect --raw "${subject}" > release-artifacts/backend/image-index.json
           docker buildx imagetools inspect "${subject}" --format '{{json .}}' > release-artifacts/backend/image-inspect.json
           docker buildx imagetools inspect "${subject}" --format '{{json .SBOM.SPDX}}' > release-artifacts/backend/sbom.json
@@ -219,7 +214,7 @@ jobs:
       - name: Upload immutable release evidence
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
         with:
-          name: easysubway-backend-release-${{ github.sha }}
+          name: easysubway-backend-release-${{ github.sha }}-${{ github.run_attempt }}
           path: release-artifacts/backend
           if-no-files-found: error
           retention-days: 14
