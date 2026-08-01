@@ -65,6 +65,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 	"spring.batch.jdbc.initialize-schema=never",
 	"easysubway.admin.username=admin-user",
 	"easysubway.admin.password=admin-password",
+	"easysubway.admin.remember-me.key=prod-test-admin-remember-me-signing-key",
 	"easysubway.admin.basic-auth.enabled=false",
 	"easysubway.auth.client-ip.trusted-proxies=",
 	"easysubway.notifications.push.external-enabled=false",

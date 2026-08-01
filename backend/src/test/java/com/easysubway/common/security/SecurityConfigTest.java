@@ -73,9 +73,27 @@ class SecurityConfigTest {
 				"spring.profiles.active=prod",
 				"easysubway.admin.username=admin-user",
 				"easysubway.admin.password=admin-password",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
 				"easysubway.admin.basic-auth.enabled=false"
 			)
 			.run(context -> assertThat(context).hasNotFailed());
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 관리자 로그인 유지 서명 키가 없으면 시작하지 않는다")
+	void prodProfileFailsWhenAdminRememberMeKeyIsMissing() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.basic-auth.enabled=false"
+			)
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasMessageContaining("운영 관리자 로그인 유지 서명 키는 32자 이상이어야 합니다.");
+			});
 	}
 
 	@Test
@@ -86,6 +104,7 @@ class SecurityConfigTest {
 				"spring.profiles.active=prod",
 				"easysubway.admin.username=admin-user",
 				"easysubway.admin.password=admin-password",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
 				"easysubway.admin.basic-auth.enabled=true"
 			)
 			.run(context -> {
@@ -103,6 +122,7 @@ class SecurityConfigTest {
 				"spring.profiles.active=prod",
 				"easysubway.admin.username=admin-user",
 				"easysubway.admin.password=admin-password",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
 				"easysubway.admin.basic-auth.enabled=true",
 				"easysubway.admin.basic-auth.exception-owner=security-owner",
 				"easysubway.admin.basic-auth.exception-expires-at=2099-12-31"

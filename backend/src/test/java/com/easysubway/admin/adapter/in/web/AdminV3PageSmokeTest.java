@@ -10,6 +10,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.redirectedUrlPattern;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import jakarta.servlet.http.Cookie;
 import java.nio.charset.StandardCharsets;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -448,7 +449,8 @@ class AdminV3PageSmokeTest {
 			.contains("관리자 로그인")
 			.contains("쉬운 지하철 관리자")
 			.contains("name=\"username\"")
-			.contains("name=\"password\"");
+			.contains("name=\"password\"")
+			.contains("name=\"remember-me\"");
 
 		mockMvc.perform(post("/admin/login")
 				.with(csrf())
@@ -456,6 +458,39 @@ class AdminV3PageSmokeTest {
 				.param("password", "admin-test-password"))
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/admin/dashboard/page"));
+	}
+
+	@Test
+	@DisplayName("로그인 유지를 선택하면 7일 쿠키로 관리자 세션을 복원하고 로그아웃 시 삭제한다")
+	void adminRememberMeRestoresAuthenticationAndLogoutClearsCookie() throws Exception {
+		Cookie rememberMe = mockMvc.perform(post("/admin/login")
+				.with(csrf())
+				.param("username", "admin-user")
+				.param("password", "admin-test-password")
+				.param("remember-me", "on"))
+			.andExpect(status().is3xxRedirection())
+			.andReturn()
+			.getResponse()
+			.getCookie("admin-remember-me");
+
+		assertThat(rememberMe).isNotNull();
+		assertThat(rememberMe.getMaxAge()).isEqualTo(7 * 24 * 60 * 60);
+		assertThat(rememberMe.isHttpOnly()).isTrue();
+		assertThat(rememberMe.getAttribute("SameSite")).isEqualTo("Lax");
+
+		mockMvc.perform(get("/admin/dashboard/page").cookie(rememberMe))
+			.andExpect(status().isOk());
+
+		Cookie cleared = mockMvc.perform(post("/admin/logout")
+				.with(csrf())
+				.cookie(rememberMe))
+			.andExpect(status().is3xxRedirection())
+			.andReturn()
+			.getResponse()
+			.getCookie("admin-remember-me");
+
+		assertThat(cleared).isNotNull();
+		assertThat(cleared.getMaxAge()).isZero();
 	}
 
 	@Test
