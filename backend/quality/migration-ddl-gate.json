@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "gateId": "backend-migration-ddl-compat",
-  "issue": "#2365",
+  "issue": "AquilaXk/easysubway#2365",
   "baselineVersion": 66,
   "scannedDirectory": "backend/src/main/resources/db/migration/postgresql",
   "excludedDirectories": [
@@ -17,7 +17,7 @@
     {
       "file": "V69__admin_error_events_permission.sql",
       "reason": "admin_role_permissions permission_code CHECK를 admin.errors.read 포함으로 확장하는 RBAC contract 단계. DROP CONSTRAINT + ADD CONSTRAINT는 기존 V11–V63 권한 시드 패턴과 동일하며, 새 권한 INSERT 전에 체크 제약이 먼저 열려야 한다.",
-      "approval": "#2433"
+      "approval": "AquilaXk/easysubway#2433"
     }
   ]
 }

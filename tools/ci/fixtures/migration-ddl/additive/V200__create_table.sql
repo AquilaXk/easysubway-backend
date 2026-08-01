@@ -1,0 +1,6 @@
+CREATE TABLE service_notice_reads (
+    id BIGSERIAL PRIMARY KEY,
+    notice_id BIGINT NOT NULL,
+    admin_id BIGINT NOT NULL,
+    read_at TIMESTAMP NOT NULL DEFAULT CURRENT_TIMESTAMP
+);

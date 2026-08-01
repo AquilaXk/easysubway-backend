@@ -1,0 +1,2 @@
+ALTER TABLE service_notices
+    ADD COLUMN pinned BOOLEAN NOT NULL DEFAULT FALSE;
