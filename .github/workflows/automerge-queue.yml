@@ -1,0 +1,187 @@
+name: Automerge Queue
+
+# 다중 세션 병합 경합 해소용 FIFO 코디네이터 (#1751).
+# automerge 라벨이 붙은 PR을 생성순으로 한 번에 하나만 처리한다:
+# BEHIND head는 update-branch 후 재리뷰하고, 검증된 current head만 auto-merge를 예약한다.
+# 병합이 일어나면 push 이벤트가 이 워크플로우를 다시 실행해 다음 PR을 처리한다.
+# 라벨은 merge-workflow 규약 4단계(코드리뷰 게이트) 완료 후에만 붙인다.
+# 코디네이터는 review 객체가 없는 PR을 큐에서 제외해 규약을 재검증한다.
+# labeled 이벤트의 라벨 검색 인덱싱 지연(빈 큐 오검출)은 이벤트 PR 직접 합류 + REST 재확인으로 보정한다 (#2010).
+
+on:
+  push:
+    branches:
+      - main
+  pull_request_target:
+    types:
+      - labeled
+  schedule:
+    - cron: "*/30 * * * *"
+  workflow_dispatch:
+
+concurrency:
+  group: automerge-queue
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  coordinate:
+    name: Automerge Queue
+    if: github.event_name != 'pull_request_target' || github.event.label.name == 'automerge'
+    runs-on: ubuntu-latest
+    permissions:
+      checks: write # current head Review gate check-run 생성에 필요
+      contents: write # update-branch API에 필요
+      pull-requests: write # auto-merge 예약, PR 코멘트, automerge 라벨 제거에 필요
+    steps:
+      - name: Process queue head
+        env:
+          # GITHUB_TOKEN의 push는 PR CI를 트리거하지 못하므로 PAT가 없으면 체인이 멈춘다.
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
+          CHECKS_TOKEN: ${{ github.token }}
+          HAS_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}
+          REPO: ${{ github.repository }}
+          EVENT_NAME: ${{ github.event_name }}
+          EVENT_PR: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
+        run: |
+          set -euo pipefail
+
+          if [ "${HAS_PAT}" != "true" ]; then
+            echo "::error::AUTOMERGE_PAT secret이 없어 producer와 다음 queue trigger를 보장할 수 없다."
+            exit 1
+          fi
+
+          # Derive the required checks from the main ruleset so newly required
+          # checks (Admin QA Gates, Release Gate Consistency, PR Title) are honored
+          # without editing this workflow. Fall back to the known set if the
+          # ruleset query fails, so a transient API error never lets a PR with a
+          # failing required check slip past the derail logic.
+          ruleset_err="$(mktemp)"
+          required_checks=$(gh api "repos/${REPO}/rules/branches/main" \
+            --jq '[.[] | select(.type == "required_status_checks")
+              | .parameters.required_status_checks[].context]' 2>"${ruleset_err}" || true)
+          if [ -z "${required_checks}" ] || [ "${required_checks}" = "[]" ]; then
+            # Preserve the underlying gh api error so repeated fallbacks are
+            # diagnosable from the workflow log (permission/API change/transient).
+            echo "::warning::main ruleset required_status_checks 동적 조회 실패($(tr '\n' ' ' <"${ruleset_err}")) — 하드코딩 폴백 사용."
+            required_checks='["Backend CI","Dependency Vulnerability Scan / osv-scan","Automerge Review Gate"]'
+          fi
+          rm -f "${ruleset_err}"
+
+          # search 인덱스 기반 조회 — labeled 이벤트 직후엔 인덱싱 지연으로 빈 결과가 날 수 있다(#2010).
+          search_candidates=$(gh pr list --repo "${REPO}" --label automerge --base main --state open --limit 1000 \
+            --json number --jq '.[].number')
+
+          # 이벤트 PR을 무조건 후보에 합류시키고(라벨 인덱싱 지연 보정) search 결과와 union·중복 제거한다.
+          candidates=$(printf '%s\n%s\n' "${search_candidates}" "${EVENT_PR}" \
+            | grep -E '^[0-9]+$' | sort -un || true)
+
+          # 각 후보를 REST로 재확인해(search 인덱스 비의존) 라벨 실재·open·non-draft·base=main만 남기고,
+          # createdAt 오름차순(FIFO)으로 최종 큐를 만든다.
+          candidate_objs="[]"
+          for cand in ${candidates}; do
+            info=$(gh pr view "${cand}" --repo "${REPO}" \
+              --json number,createdAt,isDraft,state,baseRefName,labels)
+            candidate_objs=$(jq -c --argjson obj "${info}" '. + [$obj]' <<<"${candidate_objs}")
+          done
+
+          queue=$(jq -r '[.[]
+            | select(.state == "OPEN")
+            | select(.isDraft == false)
+            | select(.baseRefName == "main")
+            | select([.labels[].name] | index("automerge") != null)]
+            | sort_by(.createdAt) | .[].number' <<<"${candidate_objs}")
+
+          if [ -z "${queue}" ]; then
+            echo "automerge 큐가 비어 있다. (trigger=${EVENT_NAME}, event_pr=${EVENT_PR:-없음})"
+            exit 0
+          fi
+
+          derail() {
+            pr_number="$1"
+            reason="$2"
+            if [ "${auto_merge_enabled:-false}" = "true" ]; then
+              gh pr merge "${pr_number}" --repo "${REPO}" --disable-auto
+            fi
+            gh pr comment "${pr_number}" --repo "${REPO}" \
+              --body "automerge 큐에서 제외: ${reason} 해결 후 automerge 라벨을 다시 붙여주세요."
+            gh pr edit "${pr_number}" --repo "${REPO}" --remove-label automerge
+          }
+
+          for pr_number in ${queue}; do
+            state=$(gh pr view "${pr_number}" --repo "${REPO}" \
+              --json headRefOid,mergeStateStatus,autoMergeRequest,reviews,statusCheckRollup)
+            head_oid=$(jq -r '.headRefOid' <<<"${state}")
+            merge_state=$(jq -r '.mergeStateStatus' <<<"${state}")
+            auto_merge_enabled=$(jq -r '.autoMergeRequest != null' <<<"${state}")
+            repo_owner="${REPO%%/*}"
+            repo_name="${REPO#*/}"
+            review_count=$(jq -r --arg head_oid "${head_oid}" --arg repo_owner "${repo_owner}" \
+              '[.reviews[]?
+                | select(.commit.oid == $head_oid)
+                | select(.state == "COMMENTED")
+                | select(.author.login == "coderabbitai" or .author.login == $repo_owner)
+                | select((.body // "") | startswith("**Actionable comments posted:"))] | length' <<<"${state}")
+            unresolved_threads=$(gh api graphql --paginate --slurp \
+              -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){nodes{isResolved}pageInfo{hasNextPage endCursor}}}}}' \
+              -F owner="${repo_owner}" -F name="${repo_name}" -F number="${pr_number}" \
+              --jq '[.[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
+            failed_required=$(jq -r --argjson required "${required_checks}" \
+              '[.statusCheckRollup[]?
+                | select(($required | index(.name? // .context?)) != null)
+                | select(((.conclusion? // .state?) // "") as $c
+                  | $c == "FAILURE" or $c == "ERROR" or $c == "CANCELLED"
+                    or $c == "TIMED_OUT" or $c == "ACTION_REQUIRED" or $c == "STARTUP_FAILURE"
+                    or $c == "STALE")] | length' <<<"${state}")
+
+            echo "PR #${pr_number}: mergeStateStatus=${merge_state}, currentHeadReviews=${review_count}, unresolvedThreads=${unresolved_threads}, failedRequiredChecks=${failed_required}"
+
+            if [ "${review_count}" -eq 0 ]; then
+              derail "${pr_number}" "현재 head의 지원된 GitHub PR Review 객체가 없습니다 (merge-workflow 규약 4단계 코드리뷰 게이트 미충족)."
+              continue
+            fi
+
+            if [ "${unresolved_threads}" -gt 0 ]; then
+              derail "${pr_number}" "미해결 review thread가 있습니다."
+              continue
+            fi
+
+            if [ "${merge_state}" = "DIRTY" ]; then
+              derail "${pr_number}" "main과 충돌(DIRTY) 상태입니다. 충돌 해결이 필요합니다."
+              continue
+            fi
+
+            if [ "${failed_required}" -gt 0 ]; then
+              derail "${pr_number}" "실패한 필수 status check가 있습니다."
+              continue
+            fi
+
+            if [ "${merge_state}" = "BEHIND" ]; then
+              if gh api --method PUT "repos/${REPO}/pulls/${pr_number}/update-branch" \
+                -H "Accept: application/vnd.github+json"; then
+                derail "${pr_number}" "main 반영으로 head가 변경됐습니다. 새 head Review가 필요합니다."
+              else
+                echo "::warning::PR #${pr_number} update-branch 실패(transient 가능) — 다음 트리거에서 재시도한다."
+              fi
+              exit 0
+            fi
+
+            GH_TOKEN="${CHECKS_TOKEN}" gh api --method POST "repos/${REPO}/check-runs" \
+              -H "Accept: application/vnd.github+json" \
+              -f name="Automerge Review Gate" \
+              -f head_sha="${head_oid}" \
+              -f status="completed" \
+              -f conclusion="success" >/dev/null
+
+            # 여기부터 큐 head 확정 — 한 번에 하나만 처리한다.
+            gh pr merge "${pr_number}" --repo "${REPO}" --squash --auto \
+              --match-head-commit "${head_oid}" \
+              || echo "::warning::PR #${pr_number} auto-merge 예약 실패 — 다음 트리거에서 재시도한다."
+
+            echo "큐 head PR #${pr_number} 처리 완료 — 필수 체크 통과 시 auto-merge가 병합한다."
+            exit 0
+          done
+
+          echo "큐에 병합 가능 후보가 없다."
