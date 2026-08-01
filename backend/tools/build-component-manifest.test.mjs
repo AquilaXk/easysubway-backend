@@ -100,9 +100,9 @@ test("backend immutable producer는 no-push preflight와 digest evidence ledger�
   assert.ok(workflow.includes('[[ "${inspected_digest}" != "${digest}" ]]'));
   assert.ok(workflow.includes('[[ "${platform}" != "linux/arm64" ]]'));
   assert.ok(workflow.includes("backend final base image must be digest pinned"));
-  assert.ok(workflow.includes(`for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json; do
-            sha256sum "release-artifacts/backend/\${evidence}"
-          done > release-artifacts/backend/evidence-ledger.sha256`));
+  assert.ok(workflow.includes(`(\n            cd release-artifacts/backend\n            for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json; do
+              sha256sum "\${evidence}"
+            done\n          ) > release-artifacts/backend/evidence-ledger.sha256`));
   assert.ok(workflow.includes(String.raw`s/.*"containerimage\.digest"[[:space:]]*:[[:space:]]*"(sha256:[a-f0-9]{64})".*/\1/p`));
   assert.ok(workflow.includes(String.raw`s/^imageDigest=(sha256:[a-f0-9]{64})$/\1/p`));
   assert.ok(!workflow.includes(String.raw`containerimage\\.digest`));
