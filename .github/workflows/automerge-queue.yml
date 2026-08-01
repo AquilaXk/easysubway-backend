@@ -32,6 +32,7 @@ jobs:
     if: github.event_name != 'pull_request' || github.event.label.name == 'automerge'
     runs-on: ubuntu-latest
     permissions:
+      checks: write # current head Review gate check-run 생성에 필요
       contents: write # update-branch API에 필요
       pull-requests: write # auto-merge 예약, PR 코멘트, automerge 라벨 제거에 필요
     steps:
@@ -63,7 +64,7 @@ jobs:
             # Preserve the underlying gh api error so repeated fallbacks are
             # diagnosable from the workflow log (permission/API change/transient).
             echo "::warning::main ruleset required_status_checks 동적 조회 실패($(tr '\n' ' ' <"${ruleset_err}")) — 하드코딩 폴백 사용."
-            required_checks='["Backend CI","Dependency Vulnerability Scan / osv-scan"]'
+            required_checks='["Backend CI","Dependency Vulnerability Scan / osv-scan","Automerge Review Gate"]'
           fi
           rm -f "${ruleset_err}"
 
@@ -160,6 +161,13 @@ jobs:
               fi
               exit 0
             fi
+
+            gh api --method POST "repos/${REPO}/check-runs" \
+              -H "Accept: application/vnd.github+json" \
+              -f name="Automerge Review Gate" \
+              -f head_sha="${head_oid}" \
+              -f status="completed" \
+              -f conclusion="success" >/dev/null
 
             # 여기부터 큐 head 확정 — 한 번에 하나만 처리한다.
             gh pr merge "${pr_number}" --repo "${REPO}" --squash --auto \

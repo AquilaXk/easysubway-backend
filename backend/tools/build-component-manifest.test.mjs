@@ -114,7 +114,7 @@ test("backend immutable producer는 no-push preflight와 digest evidence ledger�
 test("backend automerge coordinator는 current-head review와 FIFO를 fail-closed로 검증한다", () => {
   const workflow = readFileSync(join(repositoryRoot, ".github/workflows/automerge-queue.yml"), "utf8");
 
-  assert.ok(workflow.includes('required_checks=\'["Backend CI","Dependency Vulnerability Scan / osv-scan"]\''));
+  assert.ok(workflow.includes('required_checks=\'["Backend CI","Dependency Vulnerability Scan / osv-scan","Automerge Review Gate"]\''));
   assert.ok(!workflow.includes("--json number --jq '.[].number' || true"));
   assert.ok(!workflow.includes('|| { echo "::warning::PR #${cand} 조회 실패 — 후보에서 건너뛴다."; continue; }'));
   assert.ok(workflow.includes("--json headRefOid,mergeStateStatus,reviews,statusCheckRollup"));
@@ -132,6 +132,14 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   const behindGate = workflow.indexOf('if [ "${merge_state}" = "BEHIND" ]; then');
   assert.ok(behindGate >= 0 && behindGate < workflow.indexOf('gh pr merge "${pr_number}"'),
     "BEHIND head must be updated before auto-merge is reserved");
+  assert.ok(workflow.includes("checks: write"));
+  assert.ok(workflow.includes('repos/${REPO}/check-runs'));
+  assert.ok(workflow.includes("Automerge Review Gate"));
+  assert.ok(workflow.includes('-f head_sha="${head_oid}"'));
+  assert.ok(
+    workflow.indexOf('repos/${REPO}/check-runs') < workflow.indexOf('gh pr merge "${pr_number}"'),
+    "the exact-head review check must pass before auto-merge is reserved",
+  );
   assert.ok(workflow.includes('--match-head-commit "${head_oid}"'));
   for (const conclusion of ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]) {
     assert.ok(workflow.includes(`$c == "${conclusion}"`), conclusion);
