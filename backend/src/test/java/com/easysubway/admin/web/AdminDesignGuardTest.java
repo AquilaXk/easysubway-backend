@@ -854,13 +854,12 @@ class AdminDesignGuardTest {
 	void mobileLoginBrandUsesCompactCenteredLockup() throws IOException {
 		String components = read(CSS_COMPONENTS);
 
-		assertThat(rule(components, "\\.admin-login-page \\.login-brand-panel"))
-			.contains("margin-bottom: 12px;");
-		assertThat(rule(components, "\\.admin-login-page \\.login-brand-lockup img"))
-			.contains("width: 40px;")
-			.contains("height: 40px;");
-		assertThat(rule(components, "\\.admin-login-page \\.login-brand-lockup strong"))
-			.contains("font-size: 20px;");
+		assertThat(rule(components, "\\.login-brand"))
+			.contains("justify-items: center;")
+			.contains("text-align: center;");
+		assertThat(rule(components, "\\.login-brand img"))
+			.contains("width: 48px;")
+			.contains("height: 48px;");
 	}
 
 	@Test
@@ -868,19 +867,14 @@ class AdminDesignGuardTest {
 	void adminLoginUsesSingleCenteredFlow() throws IOException {
 		String components = read(CSS_COMPONENTS);
 
-		assertThat(rule(components, "\\.login-layout"))
-			.contains("grid-template-columns: 1fr;")
-			.contains("place-content: center;")
-			.contains("min-height: 100dvh;")
-			.doesNotContain("0.82fr")
-			.doesNotContain("1.18fr");
-		assertThat(rule(components, "\\.login-brand-panel"))
-			.contains("background: transparent;")
-			.contains("color: var(--admin-ink);");
-		assertThat(rule(components, "\\.admin-login-page \\.login-brand-panel"))
-			.contains("justify-content: center;");
-		assertThat(rule(components, "\\.admin-login-page \\.login-brand-lockup strong"))
-			.contains("font-size: 20px;");
+		assertThat(rule(components, "\\.login-screen"))
+			.contains("display: grid;")
+			.contains("place-items: center;")
+			.contains("min-height: 100vh;")
+			.doesNotContain("grid-template-columns:");
+		assertThat(rule(components, "\\.login-card"))
+			.contains("width: min(100%, 420px);")
+			.contains("background: var(--admin-surface);");
 	}
 
 	@Test

@@ -26,6 +26,7 @@ import java.util.List;
 import java.util.Locale;
 import java.util.Objects;
 import java.util.Set;
+import java.util.UUID;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
 import org.springframework.context.annotation.Bean;
@@ -49,6 +50,8 @@ import org.springframework.security.crypto.factory.PasswordEncoderFactories;
 import org.springframework.security.crypto.password.PasswordEncoder;
 import org.springframework.security.web.authentication.HttpStatusEntryPoint;
 import org.springframework.security.web.authentication.LoginUrlAuthenticationEntryPoint;
+import org.springframework.security.web.authentication.RememberMeServices;
+import org.springframework.security.web.authentication.rememberme.TokenBasedRememberMeServices;
 import org.springframework.security.web.access.intercept.RequestAuthorizationContext;
 import org.springframework.security.web.authentication.www.BasicAuthenticationFilter;
 import org.springframework.security.web.SecurityFilterChain;
@@ -154,6 +157,7 @@ public class SecurityConfig {
 		AdminOperatorAuditFilter auditFilter,
 		AdminHtmlAccessDeniedHandler adminHtmlAccessDeniedHandler,
 		LoginNoticeFlash loginNoticeFlash,
+		RememberMeServices adminRememberMeServices,
 		@Value("${easysubway.admin.basic-auth.enabled:true}") boolean basicAuthEnabled
 	) throws Exception {
 		// 관리자 확인 화면에는 상태 변경 form이 있으므로 CSRF 보호를 유지한다.
@@ -284,6 +288,7 @@ public class SecurityConfig {
 				.defaultSuccessUrl("/admin/dashboard/page", true)
 				.permitAll()
 			)
+			.rememberMe(remember -> remember.rememberMeServices(adminRememberMeServices))
 			.logout(logout -> logout
 				.logoutUrl("/admin/logout")
 				.logoutSuccessHandler((request, response, authentication) ->
@@ -596,6 +601,29 @@ public class SecurityConfig {
 	@Bean
 	PasswordEncoder passwordEncoder() {
 		return PasswordEncoderFactories.createDelegatingPasswordEncoder();
+	}
+
+	@Bean
+	RememberMeServices adminRememberMeServices(
+		UserDetailsService userDetailsService,
+		@Value("${easysubway.admin.remember-me.key:}") String key,
+		Environment environment
+	) {
+		boolean production = Arrays.asList(environment.getActiveProfiles()).contains("prod");
+		if (production && (key.isBlank() || key.length() < 32)) {
+			throw new IllegalStateException("운영 관리자 로그인 유지 서명 키는 32자 이상이어야 합니다.");
+		}
+		var services = new TokenBasedRememberMeServices(
+			key.isBlank() ? UUID.randomUUID().toString() : key,
+			userDetailsService
+		);
+		services.setCookieName("admin-remember-me");
+		services.setTokenValiditySeconds(7 * 24 * 60 * 60);
+		services.setCookieCustomizer(cookie -> cookie.setAttribute("SameSite", "Lax"));
+		if (production) {
+			services.setUseSecureCookie(true);
+		}
+		return services;
 	}
 
 	@Bean

@@ -51,9 +51,7 @@ class AdminAccessibilitySmokeTest {
 		assertThat(html)
 			.contains("<html lang=\"ko\"")
 			.contains("name=\"viewport\"")
-			.contains("class=\"login-layout\"")
-			.contains("class=\"login-brand-panel\"")
-			.contains("class=\"login-form-panel\"")
+			.contains("class=\"login-screen\"")
 			.contains("src=\"/images/admin-app-icon.png\"")
 			.contains("쉬운 지하철 관리자")
 			.contains("<h1>관리자 로그인</h1>")
@@ -63,7 +61,23 @@ class AdminAccessibilitySmokeTest {
 			.contains("for=\"password\"")
 			.contains("id=\"password\"")
 			.contains("autocomplete=\"current-password\"")
+			.contains("name=\"remember-me\"")
+			.contains("로그인 유지")
 			.contains("name=\"_csrf\"");
+	}
+
+	@Test
+	@DisplayName("관리자 로그인 입력과 제출 버튼은 48px 터치 높이를 유지한다")
+	void adminLoginControlsKeepLargeTouchHeight() throws Exception {
+		String css = mockMvc.perform(get("/css/admin-components.css"))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(css).containsPattern(
+			"(?s)\\.login-field input,\\s*\\.login-submit\\s*\\{[^}]*min-height:\\s*48px"
+		);
 	}
 
 	@Test

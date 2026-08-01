@@ -58,6 +58,8 @@ easysubway:
   admin:
     username: ${EASYSUBWAY_ADMIN_USERNAME}
     password: ${EASYSUBWAY_ADMIN_PASSWORD}
+    remember-me:
+      key: ${EASYSUBWAY_ADMIN_REMEMBER_ME_KEY:}
     platform-transition:
       stage: ${EASYSUBWAY_ADMIN_PLATFORM_TRANSITION_STAGE:shadow}
       flags:
