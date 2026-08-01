@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { spawnSync } from 'node:child_process';
-import { existsSync, mkdtempSync, readFileSync } from 'node:fs';
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { readFile } from 'node:fs/promises';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
@@ -534,7 +534,7 @@ test('게이트는 병합 분기보다 앞서고 producer dispatch는 큐보다 
   assert.ok(dispatchAt > contextGateAt, 'gates must precede the merge dispatch');
 });
 
-test('image producer는 main head 기준으로 정확히 한 번 dispatch된다', async () => {
+test('image producer는 발행 job 단위로 판정하고 실패는 제한된 재시도 뒤 드러낸다', async () => {
   const workflow = await readWorkflow();
 
   const producerBlock = workflow.match(
@@ -545,26 +545,78 @@ test('image producer는 main head 기준으로 정확히 한 번 dispatch된다'
   assert.ok(producerBlock.includes('head_sha=${main_sha}'));
   assert.ok(producerBlock.includes('select(.event != "pull_request")'));
   assert.ok(producerBlock.includes('gh workflow run "${producer}"'));
+  // 실행 개수만 세면 실패한 실행이 "발행됨"으로 잡힌다. 발행 job 단위로 봐야 한다.
+  assert.ok(producerBlock.includes('/jobs'));
+  // 설정값은 워크플로에서 그대로 읽어 스텁에 주입한다. 테스트가 값을 따로 들고 있으면
+  // 워크플로만 바뀌었을 때 계약이 실제 동작과 어긋난 채 통과한다.
+  const publishJob = workflow.match(/publish_job="([^"]+)"/)?.[1];
+  assert.equal(publishJob, 'Backend immutable arm64 image');
+  const attemptLimit = Number(workflow.match(/attempt_limit=(\d+)/)?.[1]);
+  assert.ok(Number.isInteger(attemptLimit) && attemptLimit >= 1, 'attempt limit must stay declared');
 
+  // runs: [{ id, status, publish }] — publish는 발행 job의 conclusion(없으면 job 부재).
   const runProducer = ({
-    existingRuns = 0,
-    appearsAfterDispatch = true,
+    runs = [],
     mainSha = 'a'.repeat(40),
+    appearsAfterDispatch = true,
   } = {}) => {
     const dir = mkdtempSync(join(tmpdir(), 'producer-dispatch-'));
+    const runsFile = join(dir, 'runs.json');
     const dispatched = join(dir, 'dispatched');
+    writeFileSync(
+      runsFile,
+      JSON.stringify({
+        workflow_runs: runs.map((run) => ({
+          id: run.id,
+          status: run.status,
+          conclusion: run.conclusion ?? null,
+          event: run.event ?? 'workflow_dispatch',
+        })),
+      }),
+    );
+    for (const run of runs) {
+      writeFileSync(
+        join(dir, `jobs-${run.id}.json`),
+        JSON.stringify({
+          jobs: [
+            { name: 'Backend image preflight (no push)', conclusion: 'skipped' },
+            ...(run.publish === undefined
+              ? []
+              : [{ name: 'Backend immutable arm64 image', conclusion: run.publish }]),
+          ],
+        }),
+      );
+    }
+    // dispatch 후에는 새 queued 실행이 목록에 추가된다.
+    const afterDispatch = JSON.stringify({
+      workflow_runs: [
+        ...runs.map((run) => ({
+          id: run.id,
+          status: run.status,
+          conclusion: run.conclusion ?? null,
+          event: run.event ?? 'workflow_dispatch',
+        })),
+        { id: 9999, status: 'queued', conclusion: null, event: 'workflow_dispatch' },
+      ],
+    });
+    writeFileSync(join(dir, 'runs-after.json'), afterDispatch);
+
     const result = stubbedBash([
       'set -euo pipefail',
+      `DIR=${JSON.stringify(dir)}`,
       `DISPATCHED=${JSON.stringify(dispatched)}`,
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       '  case "$*" in',
       `    *"commits/main"*) printf '%s\\n' ${JSON.stringify(mainSha)} ;;`,
+      '    *"/actions/runs/"*"/jobs"*)',
+      '      run_id="$(printf \'%s\' "$*" | sed -E \'s#.*/actions/runs/([0-9]+)/jobs.*#\\1#\')"',
+      '      cat "$DIR/jobs-${run_id}.json" ;;',
       '    *"runs?head_sha="*)',
       `      if [ -f "$DISPATCHED" ] && [ ${appearsAfterDispatch ? '1' : '0'} -eq 1 ]; then`,
-      "        printf '1\\n'",
+      '        cat "$DIR/runs-after.json"',
       '      else',
-      `        printf '%s\\n' ${JSON.stringify(String(existingRuns))}`,
+      '        cat "$DIR/runs.json"',
       '      fi ;;',
       '    *"workflow run"*) : > "$DISPATCHED" ;;',
       '  esac',
@@ -572,6 +624,8 @@ test('image producer는 main head 기준으로 정확히 한 번 dispatch된다'
       'sleep() { :; }',
       'repo=o/r',
       'producer=release-artifacts.yml',
+      `publish_job=${JSON.stringify(publishJob)}`,
+      `attempt_limit=${attemptLimit}`,
       dedent(producerBlock),
     ]);
     return {
@@ -582,20 +636,82 @@ test('image producer는 main head 기준으로 정확히 한 번 dispatch된다'
     };
   };
 
-  // main head에 producer 실행이 없으면 dispatch한다 (누락 방지).
-  const missing = runProducer({ existingRuns: 0 });
+  // 실행이 없으면 dispatch한다 (누락 방지).
+  const missing = runProducer({ runs: [] });
   assert.equal(missing.status, 0);
   assert.equal(missing.dispatched, true);
 
-  // 이미 실행이 있으면 dispatch하지 않는다 (중복 방지). push 병합·수동 실행·직전
-  // 코디네이터 dispatch가 모두 같은 head_sha로 잡힌다.
-  const present = runProducer({ existingRuns: 2 });
-  assert.equal(present.status, 0);
-  assert.equal(present.dispatched, false);
+  // 발행 job이 성공한 실행이 있으면 dispatch하지 않는다 (중복 방지).
+  const published = runProducer({
+    runs: [{ id: 1, status: 'completed', conclusion: 'success', publish: 'success' }],
+  });
+  assert.equal(published.status, 0);
+  assert.equal(published.dispatched, false);
+  assert.match(published.stdout, /발행을 마쳤다/);
 
-  // dispatch 후 run 목록 반영이 늦어도 큐를 막지 않는다. 다음 트리거가 같은 키로
-  // 다시 판정하고, 같은 내용의 재빌드는 push-by-digest라 무해하다.
-  const lagging = runProducer({ existingRuns: 0, appearsAfterDispatch: false });
+  // 실행 중이면 기다린다. 중복 빌드를 만들지 않는다.
+  const inFlight = runProducer({ runs: [{ id: 1, status: 'in_progress' }] });
+  assert.equal(inFlight.status, 0);
+  assert.equal(inFlight.dispatched, false);
+  // 발행 완료와 실행 중은 다른 상태다. 뭉개면 다음 판정이 어긋난다.
+  assert.match(inFlight.stdout, /실행 중이다/);
+
+  // 실패한 실행 1건은 자동 재시도한다. 개수만 세던 판정에서는 이 SHA의 이미지가
+  // 사람이 개입할 때까지 영원히 발행되지 않았다.
+  const failedOnce = runProducer({
+    runs: Array.from({ length: attemptLimit - 1 }, (_, index) => ({
+      id: index + 1,
+      status: 'completed',
+      conclusion: 'failure',
+      publish: 'failure',
+    })),
+  });
+  assert.equal(failedOnce.status, 0);
+  assert.equal(failedOnce.dispatched, true);
+
+  // 실행 conclusion은 success인데 발행 job이 skip된 경우도 발행되지 않은 것이다.
+  const skippedPublish = runProducer({
+    runs: [{ id: 1, status: 'completed', conclusion: 'success', publish: 'skipped' }],
+  });
+  assert.equal(skippedPublish.status, 0);
+  assert.equal(skippedPublish.dispatched, true);
+
+  // 발행 job이 아예 없는 실행도 마찬가지다.
+  const absentPublish = runProducer({
+    runs: [{ id: 1, status: 'completed', conclusion: 'success' }],
+  });
+  assert.equal(absentPublish.status, 0);
+  assert.equal(absentPublish.dispatched, true);
+
+  // 두 번 발행하지 못했으면 자동 재시도로 풀리는 원인이 아니다. 조용히 넘기면 그 SHA의
+  // 이미지가 영영 안 올라가므로 사람이 보도록 실패시킨다.
+  const failedRun = (id) => ({ id, status: 'completed', conclusion: 'failure', publish: 'failure' });
+  const failedTwice = runProducer({
+    runs: Array.from({ length: attemptLimit }, (_, index) => failedRun(index + 1)),
+  });
+  assert.notEqual(failedTwice.status, 0);
+  assert.equal(failedTwice.dispatched, false);
+  assert.match(failedTwice.stdout + failedTwice.stderr, /::error::/);
+
+  // 발행에 성공한 실행이 하나라도 있으면 과거 실패는 더 이상 문제가 아니다.
+  const recovered = runProducer({
+    runs: [
+      ...Array.from({ length: attemptLimit }, (_, index) => failedRun(index + 1)),
+      { id: 900, status: 'completed', conclusion: 'success', publish: 'success' },
+    ],
+  });
+  assert.equal(recovered.status, 0);
+  assert.equal(recovered.dispatched, false);
+
+  // preflight(pull_request) 실행은 이미지를 발행하지 않으므로 판정에서 제외한다.
+  const preflightOnly = runProducer({
+    runs: [{ id: 1, status: 'completed', conclusion: 'success', publish: 'skipped', event: 'pull_request' }],
+  });
+  assert.equal(preflightOnly.status, 0);
+  assert.equal(preflightOnly.dispatched, true);
+
+  // dispatch 후 run 목록 반영이 늦어도 큐를 막지 않는다.
+  const lagging = runProducer({ runs: [], appearsAfterDispatch: false });
   assert.equal(lagging.status, 0);
   assert.equal(lagging.dispatched, true);
   assert.match(lagging.stdout, /::warning::/);
