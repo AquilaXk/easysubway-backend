@@ -73,8 +73,11 @@ test('큐는 FIFO 한 건만 처리하고 미해결 thread는 fail closed다', a
   for (const contract of [
     '--base main --state open --label automerge',
     '--limit 1000',
-    "sort_by(.createdAt)[0].number // empty",
     '.isDraft == false',
+    // draft는 선택 단계에서 걸러야 한다. `gh pr list`는 draft를 필터하지 않으므로
+    // 큐 맨 앞의 draft 하나가 매 실행을 실패시켜 큐 전체를 멈춘다.
+    '--json number,createdAt,isDraft',
+    '[.[] | select(.isDraft == false)] | sort_by(.createdAt)[0].number // empty',
     'reviewThreads(first: 100)',
     'hasNextPage',
     'pageInfo.hasNextPage == false',
@@ -140,10 +143,19 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     user: { login: 'reviewer' },
     ...overrides,
   });
-  const runReviewFilter = (reviews) =>
-    spawnSync('jq', ['-e', '--arg', 'head', 'head', reviewProgram], {
+  const runReviewFilter = (reviews) => {
+    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', reviewProgram], {
       input: JSON.stringify([reviews]),
-    }).status;
+      encoding: 'utf8',
+    });
+    // jq -e는 결과가 false/null이면 1, 컴파일 오류면 3, 런타임 오류면 5를 낸다.
+    // 0/1만 판정으로 인정해야 프로그램 파손이 "차단 성공"으로 새지 않는다.
+    assert.ok(
+      result.status === 0 || result.status === 1,
+      `jq 하네스 파손 (status ${result.status}): ${result.stderr}`,
+    );
+    return result.status;
+  };
 
   // 기본 판정.
   assert.equal(
@@ -308,88 +320,118 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
   );
 });
 
-test('required context 판정은 뒤 페이지 status까지 본다', async () => {
+test('required context 판정은 대기와 실패를 구분하고 뒤 페이지 status까지 본다', async () => {
   const workflow = await readWorkflow();
 
   const checkProgram = workflow.match(
-    /# required-context-filter-begin\n\s+jq -e [^']+'\n([\s\S]*?)\n\s+' <<<"\$\{checks\}" >\/dev\/null/,
+    /# required-context-filter-begin\n\s+context_state="\$\(jq -r [^']+'\n([\s\S]*?)\n\s+' <<<"\$\{checks\}"\)"/,
   )?.[1];
   assert.ok(checkProgram, 'required context jq program must stay testable');
 
   // statusPages는 `gh api --paginate --slurp` 결과와 같은 페이지 배열이다.
-  const runCheckFilter = (
+  const classify = (
     checkRuns,
     statusPages = [],
     requiredCheck = { context: 'Backend CI', integration_id: null },
-  ) =>
-    spawnSync(
+  ) => {
+    const result = spawnSync(
       'jq',
       [
-        '-e',
-        '--argjson',
-        'required_check',
-        JSON.stringify(requiredCheck),
-        '--argjson',
-        'statuses',
-        JSON.stringify(statusPages),
+        '-r',
+        '--argjson', 'required_check', JSON.stringify(requiredCheck),
+        '--argjson', 'statuses', JSON.stringify(statusPages),
         checkProgram,
       ],
-      { input: JSON.stringify([{ check_runs: checkRuns }]) },
-    ).status;
+      { input: JSON.stringify([{ check_runs: checkRuns }]), encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, `jq 하네스 파손: ${result.stderr}`);
+    return result.stdout.trim();
+  };
 
-  assert.notEqual(
-    runCheckFilter([
-      { id: 1, name: 'Backend CI', conclusion: 'success', started_at: '2026-08-01T00:00:00Z' },
-      { id: 2, name: 'Backend CI', conclusion: 'failure', started_at: '2026-08-01T00:01:00Z' },
+  const run = (overrides) => ({
+    id: 1,
+    name: 'Backend CI',
+    conclusion: 'success',
+    started_at: '2026-08-01T00:00:00Z',
+    ...overrides,
+  });
+
+  // 최신 check run이 판정을 결정한다.
+  assert.equal(
+    classify([
+      run({ id: 1, conclusion: 'success', started_at: '2026-08-01T00:00:00Z' }),
+      run({ id: 2, conclusion: 'failure', started_at: '2026-08-01T00:01:00Z' }),
     ]),
-    0,
+    'failure',
   );
   assert.equal(
-    runCheckFilter([
-      { id: 1, name: 'Backend CI', conclusion: 'failure', started_at: '2026-08-01T00:00:00Z' },
-      { id: 2, name: 'Backend CI', conclusion: 'success', started_at: '2026-08-01T00:01:00Z' },
+    classify([
+      run({ id: 1, conclusion: 'failure', started_at: '2026-08-01T00:00:00Z' }),
+      run({ id: 2, conclusion: 'success', started_at: '2026-08-01T00:01:00Z' }),
     ]),
-    0,
+    'success',
   );
+  // 진행 중(conclusion null)은 계약 위반이 아니라 대기다. 이것을 failure로 처리하면
+  // 그 실패 check가 PR을 UNSTABLE로 만들어 다음 실행을 같은 자리에서 죽인다.
+  assert.equal(classify([run({ conclusion: null })]), 'pending');
+  // 새 head에 아직 안 붙은 상태도 대기다. 병합은 여전히 success에서만 진행된다.
+  assert.equal(classify([], []), 'missing');
   // ④ required context가 두 번째 status 페이지에 있어도 찾아낸다.
   assert.equal(
-    runCheckFilter(
+    classify(
       [],
       [
         [{ id: 1, context: 'Other CI', state: 'success', updated_at: '2026-08-01T00:00:00Z' }],
         [{ id: 2, context: 'Backend CI', state: 'success', updated_at: '2026-08-01T00:01:00Z' }],
       ],
     ),
-    0,
+    'success',
   );
   // 뒤 페이지의 최신 실패가 앞 페이지의 성공을 덮는다.
-  assert.notEqual(
-    runCheckFilter(
+  assert.equal(
+    classify(
       [],
       [
         [{ id: 1, context: 'Backend CI', state: 'success', updated_at: '2026-08-01T00:00:00Z' }],
         [{ id: 2, context: 'Backend CI', state: 'failure', updated_at: '2026-08-01T00:01:00Z' }],
       ],
     ),
-    0,
+    'failure',
   );
-  // integration_id가 지정된 required context는 다른 앱의 동명 check로 충족되지 않는다.
-  assert.notEqual(
-    runCheckFilter(
-      [{ id: 1, name: 'Backend CI', conclusion: 'success', started_at: '2026-08-01T00:00:00Z', app: { id: 7 } }],
+  assert.equal(
+    classify([], [[{ id: 1, context: 'Backend CI', state: 'pending', updated_at: '2026-08-01T00:00:00Z' }]]),
+    'pending',
+  );
+  // check run이 있으면 그것이 정본이다. 실패한 check run을 동명 classic status로
+  // 되살리지 않는다(구 필터의 `or`보다 엄격하다).
+  assert.equal(
+    classify(
+      [run({ conclusion: 'failure' })],
+      [[{ id: 2, context: 'Backend CI', state: 'success', updated_at: '2026-08-01T00:01:00Z' }]],
+    ),
+    'failure',
+  );
+  // integration_id가 지정된 required context는 다른 앱의 동명 check나 classic status로
+  // 충족되지 않는다.
+  assert.equal(
+    classify(
+      [run({ app: { id: 7 } })],
       [[{ id: 2, context: 'Backend CI', state: 'success', updated_at: '2026-08-01T00:01:00Z' }]],
       { context: 'Backend CI', integration_id: 42 },
     ),
-    0,
+    'missing',
   );
   assert.equal(
-    runCheckFilter(
-      [{ id: 1, name: 'Backend CI', conclusion: 'success', started_at: '2026-08-01T00:00:00Z', app: { id: 42 } }],
-      [],
-      { context: 'Backend CI', integration_id: 42 },
-    ),
-    0,
+    classify([run({ app: { id: 42 } })], [], { context: 'Backend CI', integration_id: 42 }),
+    'success',
   );
+});
+
+test('required context 대기는 물러나고 실패만 계약 위반이다', async () => {
+  const workflow = await readWorkflow();
+  // 분류 결과를 실제로 어떻게 처리하는지까지 고정한다.
+  assert.match(workflow, /pending \| missing\)\n\s+echo[^\n]*\n\s+exit 0/);
+  assert.match(workflow, /required context failed[\s\S]{0,40}exit 1/);
 });
 
 test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한다', async () => {
@@ -524,7 +566,7 @@ test('image producer는 main head 기준으로 정확히 한 번 dispatch된다'
       '      else',
       `        printf '%s\\n' ${JSON.stringify(String(existingRuns))}`,
       '      fi ;;',
-      '    "workflow run"*) : > "$DISPATCHED" ;;',
+      '    *"workflow run"*) : > "$DISPATCHED" ;;',
       '  esac',
       '}',
       'sleep() { :; }',
@@ -660,7 +702,24 @@ test('배포 체인 워크플로는 명시 dispatch에서도 성립한다', asyn
   const osvCondition = jobCondition(ciWorkflow, 'dependency-vulnerability-scan');
   assert.ok(osvCondition, 'osv job condition must stay testable');
   assert.ok(osvCondition.includes("github.event_name == 'pull_request'"));
-  assert.ok(osvCondition.includes("github.event_name == 'workflow_dispatch'"));
+  // PR diff 스캔은 PR 컨텍스트에서만 의미가 있다. dispatch에는 GITHUB_BASE_REF가 없어
+  // 같은 트리를 자기 자신과 비교하고 무조건 통과하므로 required context가 형해화된다.
+  assert.ok(!osvCondition.includes('workflow_dispatch'));
+
+  // dispatch 경로는 base 비교가 필요 없는 전체 스캔으로 같은 context를 만든다.
+  const dispatchOsvCondition = jobCondition(ciWorkflow, 'dependency-vulnerability-scan-dispatch');
+  assert.ok(dispatchOsvCondition, 'dispatch osv job condition must stay testable');
+  assert.ok(dispatchOsvCondition.includes("github.event_name == 'workflow_dispatch'"));
+  assert.ok(!dispatchOsvCondition.includes('pull_request'));
+  const dispatchOsvJob = ciWorkflow.slice(ciWorkflow.indexOf('  dependency-vulnerability-scan-dispatch:'));
+  assert.match(dispatchOsvJob, /uses: google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable\.yml@[0-9a-f]{40}/);
+  assert.ok(!/uses:[^\n]*osv-scanner-reusable-pr\.yml/.test(dispatchOsvJob.slice(0, dispatchOsvJob.indexOf('\n\n  ') + 1 || undefined)));
+  // 두 job 모두 같은 required context 이름을 만들어야 한다.
+  assert.equal(
+    (ciWorkflow.match(/^ {4}name: Dependency Vulnerability Scan$/gm) || []).length,
+    2,
+  );
+  assert.ok(dispatchOsvJob.includes('fail-on-vuln: true'));
 
   // GITHUB_TOKEN 병합은 push 이벤트를 만들지 않으므로 producer는 dispatch로도
   // 이미지 job까지 실행돼야 한다.
@@ -675,4 +734,9 @@ test('배포 체인 워크플로는 명시 dispatch에서도 성립한다', asyn
   const preflightCondition = jobCondition(producerWorkflow, 'image-preflight');
   assert.ok(preflightCondition, 'producer preflight job condition must stay testable');
   assert.ok(preflightCondition.includes("github.event_name == 'pull_request'"));
+  // 조건에 dispatch가 다시 들어오면 같은 ref를 두 job이 중복 빌드한다.
+  assert.ok(
+    !preflightCondition.includes('workflow_dispatch'),
+    'preflight must not run on manual dispatch',
+  );
 });

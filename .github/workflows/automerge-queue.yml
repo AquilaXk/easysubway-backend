@@ -94,9 +94,11 @@ jobs:
           set -euo pipefail
 
           repo="${GITHUB_REPOSITORY}"
+          # draft는 선택 단계에서 걸러낸다. `gh pr list`는 draft를 필터하지 않으므로
+          # 큐 맨 앞이 draft면 아래 jq -e가 매 실행마다 실패해 큐 전체가 멈춘다.
           pr="$(gh pr list --repo "${repo}" --base main --state open --label automerge \
-            --limit 1000 --json number,createdAt \
-            --jq 'sort_by(.createdAt)[0].number // empty')"
+            --limit 1000 --json number,createdAt,isDraft \
+            --jq '[.[] | select(.isDraft == false)] | sort_by(.createdAt)[0].number // empty')"
           [[ -n "${pr}" ]] || exit 0
 
           info="$(gh pr view "${pr}" --repo "${repo}" \
@@ -183,22 +185,45 @@ jobs:
             -H 'Accept: application/vnd.github+json' \
             "repos/${repo}/commits/${head}/statuses?per_page=100")"
           while IFS= read -r required_check; do
+            # 아직 끝나지 않은 check는 계약 위반이 아니다. 진행 중(conclusion null)이나
+            # 새 head에 아직 안 붙은 상태를 exit 1로 처리하면 그 실패 check가 PR을
+            # UNSTABLE로 만들어 다음 실행을 같은 자리에서 죽인다. 명시적 실패만 위반이다.
             # required-context-filter-begin
-            jq -e --argjson required_check "${required_check}" --argjson statuses "${statuses}" '
+            context_state="$(jq -r --argjson required_check "${required_check}" --argjson statuses "${statuses}" '
               ($statuses | flatten) as $status_records |
               ([.[].check_runs[] |
                 select(.name == $required_check.context) |
                 select($required_check.integration_id == null or .app.id == $required_check.integration_id)] |
                 sort_by(.started_at, .id) |
-                last |
-                .conclusion == "success") or
-              ($required_check.integration_id == null and
-                ([$status_records[] | select(.context == $required_check.context)] |
-                  sort_by((.updated_at // .created_at // ""), .id) |
-                  last |
-                  .state == "success"))
-            ' <<<"${checks}" >/dev/null
+                last) as $run |
+              ([$status_records[] | select(.context == $required_check.context)] |
+                sort_by((.updated_at // .created_at // ""), .id) |
+                last) as $status |
+              if $run != null then
+                (if $run.conclusion == null then "pending"
+                 elif $run.conclusion == "success" then "success"
+                 else "failure" end)
+              elif $required_check.integration_id == null and $status != null then
+                (if $status.state == "success" then "success"
+                 elif $status.state == "pending" then "pending"
+                 else "failure" end)
+              else
+                "missing"
+              end
+            ' <<<"${checks}")"
             # required-context-filter-end
+            context_name="$(jq -r '.context' <<<"${required_check}")"
+            case "${context_state}" in
+              success) ;;
+              pending | missing)
+                echo "PR #${pr} required context ${context_state}: ${context_name}; retrying on the next trigger."
+                exit 0
+                ;;
+              *)
+                echo "PR #${pr} required context failed: ${context_name}" >&2
+                exit 1
+                ;;
+            esac
           done < <(jq -c '.[]' <<<"${required}")
 
           # required context 검증이 병합 가능 여부의 정본이다. mergeStateStatus는 여기서
