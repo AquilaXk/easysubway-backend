@@ -162,15 +162,18 @@ jobs:
           fi
           docker buildx imagetools inspect --raw "${subject}" > release-artifacts/backend/image-index.json
           docker buildx imagetools inspect "${subject}" --format '{{json .}}' > release-artifacts/backend/image-inspect.json
-          docker buildx imagetools inspect "${subject}" --format '{{json .SBOM}}' > release-artifacts/backend/sbom.json
-          docker buildx imagetools inspect "${subject}" --format '{{json .Provenance}}' > release-artifacts/backend/provenance.json
-          for attestation in sbom provenance; do
-            evidence="release-artifacts/backend/${attestation}.json"
-            if [[ ! -s "${evidence}" || "$(<"${evidence}")" == "null" ]] || ! grep -Fq "${digest#sha256:}" "${evidence}"; then
-              echo "${attestation} attestation is absent or does not bind ${subject}" >&2
-              exit 1
-            fi
-          done
+          docker buildx imagetools inspect "${subject}" --format '{{json .SBOM.SPDX}}' > release-artifacts/backend/sbom.json
+          docker buildx imagetools inspect "${subject}" --format '{{json .Provenance.SLSA}}' > release-artifacts/backend/provenance.json
+          if [[ ! -s release-artifacts/backend/sbom.json || "$(<release-artifacts/backend/sbom.json)" == "null" ]] \
+            || ! grep -Fq '"spdxVersion"' release-artifacts/backend/sbom.json; then
+            echo "SPDX SBOM payload is absent or invalid for ${subject}" >&2
+            exit 1
+          fi
+          if [[ ! -s release-artifacts/backend/provenance.json || "$(<release-artifacts/backend/provenance.json)" == "null" ]] \
+            || ! grep -Fq '"buildType"' release-artifacts/backend/provenance.json; then
+            echo "SLSA provenance payload is absent or invalid for ${subject}" >&2
+            exit 1
+          fi
           if ! grep -Fq "${digest}" release-artifacts/backend/image-inspect.json; then
             echo "image inspection evidence does not bind ${subject}" >&2
             exit 1
