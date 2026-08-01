@@ -39,6 +39,16 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Lint workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 워크플로를 실제 YAML 파서로 읽는 유일한 게이트다. run 블록의 block scalar가
+          # 깨져 스크립트 일부가 YAML 구조로 새어 나가는 파손은 텍스트 기반 계약 테스트로는
+          # 잡히지 않는다. 이미지는 다른 base image와 같은 규칙으로 digest 고정한다.
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
         with:

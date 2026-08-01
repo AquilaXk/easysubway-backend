@@ -564,6 +564,87 @@ test('image producer는 main head 기준으로 정확히 한 번 dispatch된다'
   assert.equal(broken.dispatched, false);
 });
 
+// `run: |` 본문은 YAML block scalar다. 안쪽 줄 하나가 블록 들여쓰기 아래로 내려가면
+// 블록은 거기서 끝나고 나머지 스크립트가 YAML 구조로 새어 나간다. 문자열 포함 검사만
+// 하는 계약 테스트는 그 파손을 그대로 통과시키므로 구조 자체를 계약으로 고정한다.
+const runBlocks = (workflow) => {
+  const lines = workflow.split('\n');
+  const blocks = [];
+  for (let index = 0; index < lines.length; index += 1) {
+    const opener = /^(\s*)run: \|\s*$/.exec(lines[index]);
+    if (!opener) continue;
+    const keyIndent = opener[1].length;
+    let cursor = index + 1;
+    while (cursor < lines.length && lines[cursor].trim() === '') cursor += 1;
+    const blockIndent = /^\s*/.exec(lines[cursor] ?? '')[0].length;
+    const body = [];
+    let terminator = null;
+    for (; cursor < lines.length; cursor += 1) {
+      const line = lines[cursor];
+      if (line.trim() === '') {
+        body.push('');
+        continue;
+      }
+      if (/^\s*/.exec(line)[0].length < blockIndent) {
+        terminator = { line, number: cursor + 1 };
+        break;
+      }
+      body.push(line.slice(blockIndent));
+    }
+    blocks.push({ keyIndent, blockIndent, body: body.join('\n'), terminator, openedAt: index + 1 });
+  }
+  return blocks;
+};
+
+test('워크플로 run 블록은 YAML block scalar 들여쓰기를 지킨다', async () => {
+  const files = [
+    ['automerge-queue.yml', await readWorkflow()],
+    ['ci.yml', await readFile(ciWorkflowUrl, 'utf8')],
+    ['release-artifacts.yml', await readFile(producerWorkflowUrl, 'utf8')],
+  ];
+
+  for (const [name, workflow] of files) {
+    const blocks = runBlocks(workflow);
+    assert.ok(blocks.length > 0, `${name}: run 블록 추출이 비었다`);
+
+    for (const block of blocks) {
+      assert.ok(
+        block.blockIndent > block.keyIndent,
+        `${name}:${block.openedAt}: block scalar 본문이 run 키보다 깊게 들여쓰기되어야 한다`,
+      );
+      // 블록을 끝내는 줄은 반드시 더 얕은 레벨의 정상 YAML 키여야 한다. 스크립트 본문이
+      // 흘러넘친 줄이면 여기서 걸린다.
+      if (block.terminator) {
+        assert.match(
+          block.terminator.line,
+          /^ *(- )?[A-Za-z_][A-Za-z0-9_.-]*:(\s|$)/,
+          `${name}:${block.terminator.number}: block scalar 밖으로 새어 나온 줄 — ${JSON.stringify(block.terminator.line)}`,
+        );
+      }
+      // 구조가 살아 있어도 내용이 잘리면 셸이 깨진다. 두 겹으로 잡는다.
+      const syntax = spawnSync('bash', ['-n'], { input: block.body, encoding: 'utf8' });
+      assert.equal(
+        syntax.status,
+        0,
+        `${name}:${block.openedAt}: run 블록이 bash 문법 검사에 실패했다 — ${syntax.stderr}`,
+      );
+    }
+  }
+});
+
+test('여러 줄 셸 문자열은 한 줄 안에서 닫힌다', async () => {
+  // mobile에서 코멘트 본문을 여러 줄로 쓴 `--body "` 가 block scalar를 깨뜨렸다.
+  // 여러 줄이 필요하면 printf '%s\n' 로 조립한다.
+  const workflow = await readWorkflow();
+  assert.doesNotMatch(workflow, /--body "[^"\n]*$/m);
+});
+
+test('CI는 실제 YAML 파서로 워크플로를 검사한다', async () => {
+  const ciWorkflow = await readFile(ciWorkflowUrl, 'utf8');
+  assert.ok(ciWorkflow.includes('rhysd/actionlint@sha256:'));
+  assert.match(ciWorkflow, /docker run --rm[\s\S]{0,200}rhysd\/actionlint@sha256:[a-f0-9]{64}/);
+});
+
 test('배포 체인 워크플로는 명시 dispatch에서도 성립한다', async () => {
   const ciWorkflow = await readFile(ciWorkflowUrl, 'utf8');
   const producerWorkflow = await readFile(producerWorkflowUrl, 'utf8');
