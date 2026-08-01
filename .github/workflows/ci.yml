@@ -13,7 +13,10 @@ permissions:
 jobs:
   dependency-vulnerability-scan:
     name: Dependency Vulnerability Scan
-    if: ${{ github.event_name == 'pull_request' }}
+    # Automerge Queue가 update-branch 후 이 워크플로를 명시 dispatch한다. GITHUB_TOKEN
+    # push는 synchronize 이벤트를 만들지 못하므로, dispatch에서도 required context
+    # `Dependency Vulnerability Scan / osv-scan`이 새 head에 붙어야 병합이 가능해진다.
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     permissions:
       actions: read
       security-events: write
@@ -64,6 +67,7 @@ jobs:
       - name: Test backend-owned Node contracts
         run: |
           node --test backend/tools/*.test.mjs
+          node --test tools/ci/*.test.mjs
           node --test tools/routes/*.test.mjs
           node --test tools/realtime/*.test.mjs
 
