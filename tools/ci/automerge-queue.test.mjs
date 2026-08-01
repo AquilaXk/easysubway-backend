@@ -707,6 +707,10 @@ const makeRunQueue = (queueLoop) => (prs, runNumber = 0) => {
     '  local all="$*"',
     '  case "$all" in',
     `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
+    // BEHIND 경로의 bounded wait는 같은 `gh pr view`를 `--json headRefOid`로 부른다.
+    // 두 호출을 한 패턴으로 잡으면 new_head에 JSON 문서 전체가 들어가고, 테스트가
+    // 잘못된 이유로 통과한다. 좁은 패턴을 먼저 둔다.
+    '    "pr view "*"--json headRefOid"*) set -- $all; jq -r ".headRefOid" "$FIX/pr-$3.json" ;;',
     '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
     '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
@@ -728,7 +732,13 @@ const makeRunQueue = (queueLoop) => (prs, runNumber = 0) => {
   return {
     status: result.status,
     mergedPr: merged ? Number(merged) : null,
-    evaluated: [...calls.matchAll(/gh pr view (\d+) --repo/g)].map((m) => Number(m[1])),
+    // 후보 평가 1건당 1회만 세야 한다. bounded wait의 headRefOid 조회까지 세면 같은
+    // 후보가 두 번 잡혀 "실행당 실제 동작 최대 한 건" 계약이 헐거워진다.
+    evaluated: [...calls.matchAll(/gh pr view (\d+) --repo [^\n]*--json baseRefName/g)].map((m) =>
+      Number(m[1]),
+    ),
+    updatedBranch: calls.includes('update-branch'),
+    dispatchedCi: calls.includes('workflow run ci.yml'),
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
   };
@@ -799,6 +809,18 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
   assert.equal(serialized.evaluated.length, 1, '병합을 예약하면 그 실행은 거기서 끝난다');
+  // base 갱신도 실제 동작이므로 같은 규칙을 따른다. 픽스처의 head는 갱신 뒤에도 그대로라
+  // bounded wait가 대기로 끝나야 하고, stale ref로 CI를 쏘면 안 된다. bounded wait의
+  // headRefOid 조회가 PR JSON 전체를 받으면 이 단언이 잘못된 이유로 뒤집힌다.
+  const behind = runQueue([
+    { number: 1, mergeStateStatus: 'BEHIND' },
+    { number: 2, mergeStateStatus: 'CLEAN' },
+  ]);
+  assert.equal(behind.status, 0);
+  assert.equal(behind.mergedPr, null);
+  assert.deepEqual(behind.evaluated, [1], 'base 갱신도 한 실행에 한 건이다');
+  assert.equal(behind.updatedBranch, true);
+  assert.equal(behind.dispatchedCi, false, 'stale ref에 CI를 dispatch하면 안 된다');
   // 아무 후보도 병합할 수 없으면 병합 없이 성공으로 끝난다. 라벨은 건드리지 않는다.
   const allBlocked = runQueue([
     { number: 1, mergeStateStatus: 'BLOCKED' },
