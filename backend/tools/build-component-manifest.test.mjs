@@ -119,8 +119,15 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   assert.ok(!workflow.includes('|| { echo "::warning::PR #${cand} 조회 실패 — 후보에서 건너뛴다."; continue; }'));
   assert.ok(workflow.includes("--json headRefOid,mergeStateStatus,reviews,statusCheckRollup"));
   assert.ok(workflow.includes('.commit.oid == $head_oid'));
+  assert.ok(workflow.includes('.state == "COMMENTED"'));
+  assert.ok(workflow.includes('.author.login == "coderabbitai"'));
+  assert.ok(workflow.includes('.author.login == $repo_owner'));
   assert.ok(workflow.includes('startswith("**Actionable comments posted:")'));
-  assert.ok(workflow.includes("reviewThreads(first:100)"));
+  assert.ok(workflow.includes("gh api graphql --paginate --slurp"));
+  assert.ok(workflow.includes('$endCursor:String'));
+  assert.ok(workflow.includes("reviewThreads(first:100,after:$endCursor)"));
+  assert.ok(workflow.includes("pageInfo{hasNextPage endCursor}"));
+  assert.ok(workflow.includes("[.[].data.repository.pullRequest.reviewThreads.nodes[]"));
   assert.ok(workflow.includes('select(.isResolved == false)'));
   for (const conclusion of ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]) {
     assert.ok(workflow.includes(`$c == "${conclusion}"`), conclusion);

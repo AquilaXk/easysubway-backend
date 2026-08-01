@@ -109,16 +109,18 @@ jobs:
               --json headRefOid,mergeStateStatus,reviews,statusCheckRollup)
             head_oid=$(jq -r '.headRefOid' <<<"${state}")
             merge_state=$(jq -r '.mergeStateStatus' <<<"${state}")
-            review_count=$(jq -r --arg head_oid "${head_oid}" \
-              '[.reviews[]?
-                | select(.commit.oid == $head_oid)
-                | select((.body // "") | startswith("**Actionable comments posted:"))] | length' <<<"${state}")
             repo_owner="${REPO%%/*}"
             repo_name="${REPO#*/}"
-            unresolved_threads=$(gh api graphql \
-              -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}' \
+            review_count=$(jq -r --arg head_oid "${head_oid}" --arg repo_owner "${repo_owner}" \
+              '[.reviews[]?
+                | select(.commit.oid == $head_oid)
+                | select(.state == "COMMENTED")
+                | select(.author.login == "coderabbitai" or .author.login == $repo_owner)
+                | select((.body // "") | startswith("**Actionable comments posted:"))] | length' <<<"${state}")
+            unresolved_threads=$(gh api graphql --paginate --slurp \
+              -f query='query($owner:String!,$name:String!,$number:Int!,$endCursor:String){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100,after:$endCursor){nodes{isResolved}pageInfo{hasNextPage endCursor}}}}}' \
               -F owner="${repo_owner}" -F name="${repo_name}" -F number="${pr_number}" \
-              --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
+              --jq '[.[].data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
             failed_required=$(jq -r --argjson required "${required_checks}" \
               '[.statusCheckRollup[]?
                 | select(($required | index(.name? // .context?)) != null)
