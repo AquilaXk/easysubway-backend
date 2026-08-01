@@ -116,8 +116,10 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
 
   assert.ok(workflow.includes('required_checks=\'["Backend CI","Dependency Vulnerability Scan / osv-scan","Automerge Review Gate"]\''));
   assert.ok(!workflow.includes("--json number --jq '.[].number' || true"));
+  assert.ok(workflow.includes("--state open --limit 1000"));
   assert.ok(!workflow.includes('|| { echo "::warning::PR #${cand} 조회 실패 — 후보에서 건너뛴다."; continue; }'));
-  assert.ok(workflow.includes("--json headRefOid,mergeStateStatus,reviews,statusCheckRollup"));
+  assert.ok(workflow.includes("--json headRefOid,mergeStateStatus,autoMergeRequest,reviews,statusCheckRollup"));
+  assert.ok(workflow.includes(".autoMergeRequest != null"));
   assert.ok(workflow.includes('.commit.oid == $head_oid'));
   assert.ok(workflow.includes('.state == "COMMENTED"'));
   assert.ok(workflow.includes('.author.login == "coderabbitai"'));
@@ -130,7 +132,8 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   assert.ok(workflow.includes("[.[].data.repository.pullRequest.reviewThreads.nodes[]"));
   assert.ok(workflow.includes('select(.isResolved == false)'));
   const behindGate = workflow.indexOf('if [ "${merge_state}" = "BEHIND" ]; then');
-  assert.ok(behindGate >= 0 && behindGate < workflow.indexOf('gh pr merge "${pr_number}"'),
+  const autoMergeReservation = workflow.indexOf('gh pr merge "${pr_number}" --repo "${REPO}" --squash --auto');
+  assert.ok(autoMergeReservation >= 0 && behindGate >= 0 && behindGate < autoMergeReservation,
     "BEHIND head must be updated before auto-merge is reserved");
   assert.ok(workflow.includes("checks: write"));
   assert.ok(workflow.includes("CHECKS_TOKEN: ${{ github.token }}"));
@@ -139,10 +142,13 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   assert.ok(workflow.includes("Automerge Review Gate"));
   assert.ok(workflow.includes('-f head_sha="${head_oid}"'));
   assert.ok(
-    workflow.indexOf('repos/${REPO}/check-runs') < workflow.indexOf('gh pr merge "${pr_number}"'),
+    workflow.indexOf('repos/${REPO}/check-runs') < autoMergeReservation,
     "the exact-head review check must pass before auto-merge is reserved",
   );
   assert.ok(workflow.includes('--match-head-commit "${head_oid}"'));
+  const disableAuto = workflow.indexOf('gh pr merge "${pr_number}" --repo "${REPO}" --disable-auto');
+  assert.ok(disableAuto >= 0 && disableAuto < workflow.indexOf('gh pr edit "${pr_number}" --repo "${REPO}" --remove-label automerge'),
+    "derail must disable an existing auto-merge reservation before removing the label");
   for (const conclusion of ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]) {
     assert.ok(workflow.includes(`$c == "${conclusion}"`), conclusion);
   }

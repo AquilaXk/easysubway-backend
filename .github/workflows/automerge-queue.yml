@@ -70,7 +70,7 @@ jobs:
           rm -f "${ruleset_err}"
 
           # search 인덱스 기반 조회 — labeled 이벤트 직후엔 인덱싱 지연으로 빈 결과가 날 수 있다(#2010).
-          search_candidates=$(gh pr list --repo "${REPO}" --label automerge --base main --state open \
+          search_candidates=$(gh pr list --repo "${REPO}" --label automerge --base main --state open --limit 1000 \
             --json number --jq '.[].number')
 
           # 이벤트 PR을 무조건 후보에 합류시키고(라벨 인덱싱 지연 보정) search 결과와 union·중복 제거한다.
@@ -101,6 +101,9 @@ jobs:
           derail() {
             pr_number="$1"
             reason="$2"
+            if [ "${auto_merge_enabled:-false}" = "true" ]; then
+              gh pr merge "${pr_number}" --repo "${REPO}" --disable-auto
+            fi
             gh pr comment "${pr_number}" --repo "${REPO}" \
               --body "automerge 큐에서 제외: ${reason} 해결 후 automerge 라벨을 다시 붙여주세요."
             gh pr edit "${pr_number}" --repo "${REPO}" --remove-label automerge
@@ -108,9 +111,10 @@ jobs:
 
           for pr_number in ${queue}; do
             state=$(gh pr view "${pr_number}" --repo "${REPO}" \
-              --json headRefOid,mergeStateStatus,reviews,statusCheckRollup)
+              --json headRefOid,mergeStateStatus,autoMergeRequest,reviews,statusCheckRollup)
             head_oid=$(jq -r '.headRefOid' <<<"${state}")
             merge_state=$(jq -r '.mergeStateStatus' <<<"${state}")
+            auto_merge_enabled=$(jq -r '.autoMergeRequest != null' <<<"${state}")
             repo_owner="${REPO%%/*}"
             repo_name="${REPO#*/}"
             review_count=$(jq -r --arg head_oid "${head_oid}" --arg repo_owner "${repo_owner}" \
