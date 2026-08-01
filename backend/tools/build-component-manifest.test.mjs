@@ -94,6 +94,10 @@ test("backend immutable producer는 no-push preflight와 digest evidence ledger�
   assert.match(workflow, /release-artifacts\/backend\/provenance\.json/);
   assert.match(workflow, /release-artifacts\/backend\/evidence-ledger\.sha256/);
   assert.match(workflow, /--evidence release-artifacts\/backend\/evidence-ledger\.sha256/);
+  assert.ok(workflow.includes(String.raw`s/.*"containerimage\.digest"[[:space:]]*:[[:space:]]*"(sha256:[a-f0-9]{64})".*/\1/p`));
+  assert.ok(workflow.includes(String.raw`s/^imageDigest=(sha256:[a-f0-9]{64})$/\1/p`));
+  assert.ok(!workflow.includes(String.raw`containerimage\\.digest`));
+  assert.ok(!workflow.includes(String.raw`*/\\1/p`));
 });
 
 function createFixture() {

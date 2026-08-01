@@ -149,7 +149,7 @@ jobs:
             --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
             --output "type=image,name=${repository},push-by-digest=true,name-canonical=true,push=true" \
             backend
-          digest="$(sed -nE 's/.*"containerimage\\.digest"[[:space:]]*:[[:space:]]*"(sha256:[a-f0-9]{64})".*/\\1/p' "${metadata_file}")"
+          digest="$(sed -nE 's/.*"containerimage\.digest"[[:space:]]*:[[:space:]]*"(sha256:[a-f0-9]{64})".*/\1/p' "${metadata_file}")"
           if [[ ! "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
             echo "Buildx metadata lacks an immutable image digest" >&2
             exit 1
@@ -199,7 +199,7 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          image_digest="$(sed -nE 's/^imageDigest=(sha256:[a-f0-9]{64})$/\\1/p' release-artifacts/backend/release-metadata.txt)"
+          image_digest="$(sed -nE 's/^imageDigest=(sha256:[a-f0-9]{64})$/\1/p' release-artifacts/backend/release-metadata.txt)"
           [[ -n "${image_digest}" ]]
           node backend/tools/build-component-manifest.mjs \
             --repository AquilaXk/easysubway-backend \
