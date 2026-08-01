@@ -75,7 +75,7 @@ class AdminDashboardPageTest {
 			.contains("data-weekday=\"금\"")
 			.contains("data-weekday=\"토\"")
 			.contains("data-weekday=\"일\"")
-			.containsPattern("class=\"dashboard-week-day\\s+is-today\\b")
+			.containsPattern("class=\"dashboard-week-day\\s+is-today[\\s\"]")
 			.containsPattern("class=\"dashboard-weekly-total\">[1-2]일 집계")
 			.contains("aria-label=\"이번 주 최근 24시간 제보 스냅샷\"")
 			.doesNotContain("aria-label=\"최근 7일 제보 접수 현황\"")
