@@ -81,6 +81,21 @@ test("build-component-manifest는 symlink output과 없는 output parent를 거�
   }
 });
 
+test("backend immutable producer는 no-push preflight와 digest evidence ledger를 고정한다", () => {
+  const workflow = readFileSync(join(repositoryRoot, ".github/workflows/release-artifacts.yml"), "utf8");
+  const preflight = workflow.slice(0, workflow.indexOf("  backend-release:"));
+
+  assert.match(workflow, /image-preflight:[\s\S]*?if: \$\{\{ github\.event_name != 'push' \}\}/);
+  assert.doesNotMatch(preflight, /--push|push=true|docker\/login-action/);
+  assert.match(workflow, /backend-release:[\s\S]*?github\.event_name == 'push'[\s\S]*?github\.ref == 'refs\/heads\/main'/);
+  assert.match(workflow, /type=image,name=\$\{repository\},push-by-digest=true,name-canonical=true,push=true/);
+  assert.doesNotMatch(workflow, /ghcr\.io\/aquilaxk\/easysubway-backend:/);
+  assert.match(workflow, /release-artifacts\/backend\/sbom\.json/);
+  assert.match(workflow, /release-artifacts\/backend\/provenance\.json/);
+  assert.match(workflow, /release-artifacts\/backend\/evidence-ledger\.sha256/);
+  assert.match(workflow, /--evidence release-artifacts\/backend\/evidence-ledger\.sha256/);
+});
+
 function createFixture() {
   const directory = mkdtempSync(join(tmpdir(), "build-component-manifest-"));
   const evidence = join(directory, "release-metadata.txt");
