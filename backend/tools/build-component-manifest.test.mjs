@@ -115,6 +115,10 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   const workflow = readFileSync(join(repositoryRoot, ".github/workflows/automerge-queue.yml"), "utf8");
 
   assert.ok(workflow.includes('required_checks=\'["Backend CI","Dependency Vulnerability Scan / osv-scan","Automerge Review Gate"]\''));
+  assert.ok(workflow.includes("  pull_request_target:\n"));
+  assert.ok(!workflow.includes("  pull_request:\n"));
+  assert.ok(workflow.includes("github.event_name != 'pull_request_target'"));
+  assert.ok(workflow.includes("github.event_name == 'pull_request_target'"));
   assert.ok(!workflow.includes("--json number --jq '.[].number' || true"));
   assert.ok(workflow.includes("--state open --limit 1000"));
   assert.ok(!workflow.includes('|| { echo "::warning::PR #${cand} 조회 실패 — 후보에서 건너뛴다."; continue; }'));

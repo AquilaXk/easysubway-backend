@@ -12,7 +12,7 @@ on:
   push:
     branches:
       - main
-  pull_request:
+  pull_request_target:
     types:
       - labeled
   schedule:
@@ -29,7 +29,7 @@ permissions:
 jobs:
   coordinate:
     name: Automerge Queue
-    if: github.event_name != 'pull_request' || github.event.label.name == 'automerge'
+    if: github.event_name != 'pull_request_target' || github.event.label.name == 'automerge'
     runs-on: ubuntu-latest
     permissions:
       checks: write # current head Review gate check-run 생성에 필요
@@ -44,7 +44,7 @@ jobs:
           HAS_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
-          EVENT_PR: ${{ github.event_name == 'pull_request' && github.event.pull_request.number || '' }}
+          EVENT_PR: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
         run: |
           set -euo pipefail
 
