@@ -619,9 +619,49 @@ test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch�
   assert.ok(dispatchAt > contextGateAt, 'gates must precede the merge dispatch');
 });
 
+const declaredWindowOf = (workflow) => {
+  const declared = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  assert.ok(Number.isInteger(declared) && declared > 0, 'window constant must stay declared');
+  return declared;
+};
+
+const WINDOW_PROGRAM_RE =
+  /# candidate-window-begin\n\s+done < <\(jq -r --argjson window "\$\{window\}" --argjson offset "\$\{offset\}" '\n([\s\S]*?)\n\s+' <<<"\$\{candidates\}"\)/;
+
+const makePickWindow = (windowProgram, windowSize) => (total, offset) => {
+  const result = spawnSync(
+    'jq',
+    [
+      '-r',
+      '--argjson', 'window', String(windowSize),
+      '--argjson', 'offset', String(offset),
+      windowProgram,
+    ],
+    {
+      input: JSON.stringify(Array.from({ length: total }, (_, index) => index)),
+      encoding: 'utf8',
+    },
+  );
+  // 실패한 jq도 stdout이 비어 "선택 없음"처럼 보인다. 프로그램 파손이 정상 동작으로
+  // 새지 않도록 종료 코드를 함께 본다. 이 jq는 process substitution 안에서 돌기 때문에
+  // 셸이 실패를 삼키고, 에러는 stderr에만 남는다.
+  assert.equal(
+    result.status,
+    0,
+    `candidate window jq failed at total=${total} offset=${offset}: ${result.stderr}`,
+  );
+  const stdout = result.stdout.trim();
+  return stdout === '' ? [] : stdout.split('\n').map(Number);
+};
+
 // 큐 루프를 통째로 돌리는 하네스. `gh` 호출을 픽스처 파일 조회로 대체해 후보별 게이트와
 // 건너뛰기를 실측한다. runNumber는 실행 컨텍스트 주입값이며 결과가 여기 좌우되면 안 된다.
-const makeRunQueue = (queueLoop) => (prs, runNumber = 0) => {
+// window·offset을 주면 시작점 산출을 건너뛰고 그 값으로 루프만 돌린다 — 도달 가능성은
+// 확률이 아니라 "어떤 시작점에서 그 후보가 평가되는가"의 문제라서, 난수를 걷어내고
+// 시작점을 직접 넣어야 결정적으로 확인할 수 있다.
+const makeRunQueue =
+  (queueLoop) =>
+  (prs, { runNumber = 0, window = null, offset = null } = {}) => {
   const dir = mkdtempSync(join(tmpdir(), 'automerge-queue-loop-'));
   const log = join(dir, 'gh.log');
   for (const pr of prs) {
@@ -724,6 +764,8 @@ const makeRunQueue = (queueLoop) => (prs, runNumber = 0) => {
     'name=r',
     `required='[{"context":"Backend CI","integration_id":null}]'`,
     'candidates="$(gh pr list)"',
+    ...(window === null ? [] : [`window=${window}`]),
+    ...(offset === null ? [] : [`offset=${offset}`]),
     dedent(queueLoop),
   ].join('\n');
   const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
@@ -836,7 +878,7 @@ test('후보 창은 timeout과 API 호출량 양쪽으로 유도되고 모든 �
 
   // 창 크기는 이 저장소 값으로 다시 계산해야 한다. 형제 저장소 상수를 그대로 쓰면
   // 실행당 요청이 저장소 시간당 한도를 넘는다.
-  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  const declaredWindow = declaredWindowOf(workflow);
   assert.equal(declaredWindow, 6, 'window constant must stay pinned to the derived value');
   const rationale = workflow.slice(
     workflow.indexOf('# queue-loop-begin'),
@@ -849,35 +891,9 @@ test('후보 창은 timeout과 API 호출량 양쪽으로 유도되고 모든 �
 
   // 창 선택 자체. 어떤 시작점에서든 선택 수는 window 이하이고 오래된 순이며,
   // 시작점 전체를 훑으면 모든 후보가 최소 한 번은 창에 들어온다.
-  const windowProgram = workflow.match(
-    /# candidate-window-begin\n\s+done < <\(jq -r --argjson window "\$\{window\}" --argjson offset "\$\{offset\}" '\n([\s\S]*?)\n\s+' <<<"\$\{candidates\}"\)/,
-  )?.[1];
+  const windowProgram = workflow.match(WINDOW_PROGRAM_RE)?.[1];
   assert.ok(windowProgram, 'candidate window jq program must stay testable');
-  const pickWindow = (total, offset) => {
-    const result = spawnSync(
-      'jq',
-      [
-        '-r',
-        '--argjson', 'window', String(declaredWindow),
-        '--argjson', 'offset', String(offset),
-        windowProgram,
-      ],
-      {
-        input: JSON.stringify(Array.from({ length: total }, (_, index) => index)),
-        encoding: 'utf8',
-      },
-    );
-    // 실패한 jq도 stdout이 비어 "선택 없음"처럼 보인다. 프로그램 파손이 정상 동작으로
-    // 새지 않도록 종료 코드를 함께 본다. 이 jq는 process substitution 안에서 돌기 때문에
-    // 셸이 실패를 삼키고, 에러는 stderr에만 남는다.
-    assert.equal(
-      result.status,
-      0,
-      `candidate window jq failed at total=${total} offset=${offset}: ${result.stderr}`,
-    );
-    const stdout = result.stdout.trim();
-    return stdout === '' ? [] : stdout.split('\n').map(Number);
-  };
+  const pickWindow = makePickWindow(windowProgram, declaredWindow);
   // 빈 큐에서 죽지 않는다. `// empty` 폴백과 조기 종료를 걷어낸 자리를 여기가 받는다.
   assert.deepEqual(pickWindow(0, 0), []);
   for (const total of [declaredWindow + 1, declaredWindow * 2]) {
@@ -902,7 +918,7 @@ test('후보 창은 timeout과 API 호출량 양쪽으로 유도되고 모든 �
 
 test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 뽑힌다', async () => {
   const workflow = await readWorkflow();
-  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  const declaredWindow = declaredWindowOf(workflow);
 
   // 커버리지 보장이 실행 간격에 의존하지 않으려면 시작점이 실행 컨텍스트 값의 함수가
   // 아니어야 한다. 이 job은 automerge가 아닌 라벨 이벤트에서 if 조건에 걸려 건너뛰고
@@ -950,9 +966,15 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
 
   // total > window면 시작점이 실행마다 새로 뽑히고 범위 안에 있다. run number를 고정해
   // 두는 것은 최악의 앨리어싱 입력(간격 0)이며, 그래도 성질이 유지되어야 한다.
+  //
+  // 여기서 보는 것은 분포뿐이다. "어떤 후보가 N회 안에 병합된다"는 결정적 상한은 이
+  // 구현이 약속하지 않는다 — 난수 시작점을 택하면서 그 상한을 포기한 것이 의도된
+  // 트레이드오프다. 도달 가능성은 시작점을 주입해 별도 테스트에서 결정적으로 고정하고,
+  // 이 테스트는 "모든 시작점의 확률이 0보다 크다"만 표본으로 확인한다.
   const rotationTotal = 2 * declaredWindow;
+  const samples = 64;
   const drawn = [];
-  for (let attempt = 0; attempt < 48; attempt += 1) {
+  for (let attempt = 0; attempt < samples; attempt += 1) {
     drawn.push(drawOffset(rotationTotal, 7));
   }
   for (const offset of drawn) {
@@ -965,20 +987,55 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
     new Set(drawn).size > 1,
     'candidate offset must vary across executions even with a fixed run number',
   );
+  // 뽑힌 시작점들의 창 합집합이 전 후보를 덮는다. 표본 성질이라 실패 확률이 0은 아니지만,
+  // 후보 하나가 한 표본에서 빠질 확률이 1 - window/total = 1/2이므로 64회에서 누락
+  // 확률은 total * 2^-64 ~ 6.5e-19다.
+  const windowProgram = workflow.match(WINDOW_PROGRAM_RE)?.[1];
+  assert.ok(windowProgram, 'candidate window jq program must stay testable');
+  const pickWindow = makePickWindow(windowProgram, declaredWindow);
+  const covered = new Set();
+  for (const offset of drawn) {
+    for (const index of pickWindow(rotationTotal, offset)) covered.add(index);
+  }
+  assert.equal(covered.size, rotationTotal, 'drawn offsets must cover the whole queue');
 });
 
-test('창 밖 후보는 실행 번호 간격이 일정해도 굶지 않는다', async () => {
+test('창 밖 후보 도달 가능성은 시작점을 주입해 결정적으로 고정한다', async () => {
   const workflow = await readWorkflow();
-  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  const declaredWindow = declaredWindowOf(workflow);
   const queueLoop = workflow.match(
     /# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/,
   )?.[1];
   assert.ok(queueLoop, 'queue loop must stay testable');
   const runQueue = makeRunQueue(queueLoop);
+  // 시작점 산출을 뺀 뒷부분만 뽑는다. 큐 루프 전체를 쓰면 주입한 값을 난수 draw가 덮어써
+  // 이 테스트가 다시 표본이 된다.
+  const candidateLoop = workflow.match(
+    /# candidate-offset-end\n([\s\S]*?)\n\s+# queue-loop-end/,
+  )?.[1];
+  assert.ok(candidateLoop, 'candidate loop must stay testable');
+  assert.doesNotMatch(
+    candidateLoop,
+    /RANDOM/,
+    'injected offsets must not be overwritten by the draw',
+  );
+  const runCandidateLoop = makeRunQueue(candidateLoop);
+  const windowProgram = workflow.match(WINDOW_PROGRAM_RE)?.[1];
+  assert.ok(windowProgram, 'candidate window jq program must stay testable');
+  const pickWindow = makePickWindow(windowProgram, declaredWindow);
 
-  // total = 2 * window이고 실행 번호 간격이 2로 일정한 시퀀스. 결정적 회전
-  // (`(GITHUB_RUN_NUMBER * window) % total`)에서는 시작점이 0에 고정돼 뒤쪽 절반이
-  // 영원히 평가되지 않았다. 병합 가능한 후보는 큐 맨 뒤 1건뿐이다.
+  // 굶주림 제거는 두 성질의 곱이고, 둘은 성격이 달라 따로 고정해야 한다.
+  //   ① 도달 가능성(결정적): 어떤 시작점에서 그 후보가 실제로 평가되고 병합되는가.
+  //      시작점을 주입해 전수로 확인한다.
+  //   ② 시작점 분포(표본·구조): 모든 시작점의 확률이 0보다 크고 실행 컨텍스트에
+  //      좌우되지 않는가. 위 '창 시작점은 …' 테스트가 담당한다.
+  // 두 성질을 한 테스트에 섞어 난수 시작점 그대로 "N회 안에 병합"을 요구하면, 한 실행에서
+  // 선택될 확률이 window/total이므로 정상 동작에서도 (1 - window/total)^N 확률로 CI가
+  // 붉어진다. 구현이 약속하는 것은 확률적 도달 가능성이지 결정적 상한이 아니다 — 난수
+  // 시작점을 택하면서 그 상한을 포기한 것이 의도된 트레이드오프다.
+  //
+  // 배치는 결정적 회전(`(GITHUB_RUN_NUMBER * window) % total`)에서 뒤쪽 절반이 영원히
+  // 평가되지 않던 그 배치다. total = 2 * window이고 병합 가능한 후보는 큐 맨 뒤 1건뿐이다.
   // 하네스 비용을 줄이려고 미끼 후보는 첫 게이트(열린 라벨 PR 검사)에서 걸리게 둔다.
   // 스킵 사유별 계약은 위 시나리오에서 이미 고정했고, 여기서 보는 것은 창 도달성이다.
   const rotationTotal = 2 * declaredWindow;
@@ -988,21 +1045,39 @@ test('창 밖 후보는 실행 번호 간격이 일정해도 굶지 않는다', 
   }
   aliasingQueue.push({ number: rotationTotal, mergeStateStatus: 'CLEAN' });
 
-  let lateMergeRun = null;
-  const attempts = 24;
-  for (let attempt = 0; attempt < attempts && lateMergeRun === null; attempt += 1) {
-    // 간격 2의 비연속 run number. 시작점이 이 값을 읽지 않으므로 결과에 영향이 없다.
-    const run = runQueue(aliasingQueue, 100 + attempt * 2);
-    assert.equal(run.status, 0);
-    if (run.mergedPr === rotationTotal) lateMergeRun = attempt;
+  const mergedFrom = [];
+  for (let offset = 0; offset < rotationTotal; offset += 1) {
+    const run = runCandidateLoop(aliasingQueue, { window: declaredWindow, offset });
+    assert.equal(run.status, 0, `offset=${offset}에서 실행이 실패했다: ${run.stderr}`);
+    if (run.mergedPr === rotationTotal) mergedFrom.push(offset);
   }
-  assert.notEqual(
-    lateMergeRun,
-    null,
-    `the only mergeable candidate sits past the window and must still merge within ${attempts} runs`,
+
+  // 그 후보를 병합하는 시작점이 하나라도 있어야 한다. 창을 큐 앞쪽에 고정하면 여기가 빈다.
+  assert.ok(
+    mergedFrom.length > 0,
+    'the only mergeable candidate sits past the window and must be reachable from some offset',
+  );
+  // 창 선택과 루프 동작이 일치해야 한다. 따로 놀면 창에는 들어오는데 병합은 되지 않는
+  // 상태가 통과한다.
+  const windowContains = [];
+  for (let offset = 0; offset < rotationTotal; offset += 1) {
+    if (pickWindow(rotationTotal, offset).includes(rotationTotal - 1)) windowContains.push(offset);
+  }
+  assert.deepEqual(
+    mergedFrom,
+    windowContains,
+    'the offsets that merge the late candidate must be exactly the offsets whose window contains it',
+  );
+  // 도달 가능한 시작점이 window개라는 것이 "한 실행에서 선택될 확률 >= window/total"의
+  // 실측 근거다. 위 분포 테스트가 시작점이 균등하게 뽑힘을 따로 고정한다.
+  assert.equal(
+    mergedFrom.length,
+    declaredWindow,
+    'reachable offsets must equal the window size (probability = window / total)',
   );
 
-  // 후보가 창 안에 다 들어오면 실행 번호와 무관하게 오래된 후보가 먼저 병합된다.
+  // 후보가 창 안에 다 들어오면 시작점 산출이 회전하지 않으므로, 실행 번호와 무관하게
+  // 오래된 후보가 먼저 병합된다. 여기서는 시작점을 주입하지 않고 실제 산출을 그대로 쓴다.
   for (const runNumber of [0, 7, 40]) {
     assert.equal(
       runQueue(
@@ -1010,7 +1085,7 @@ test('창 밖 후보는 실행 번호 간격이 일정해도 굶지 않는다', 
           { number: 1, mergeStateStatus: 'CLEAN' },
           { number: 2, mergeStateStatus: 'CLEAN' },
         ],
-        runNumber,
+        { runNumber },
       ).mergedPr,
       1,
     );
