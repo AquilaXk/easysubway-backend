@@ -39,7 +39,7 @@ jobs:
       - name: Process queue head
         env:
           # GITHUB_TOKEN의 push는 PR CI를 트리거하지 못하므로 PAT가 없으면 체인이 멈춘다.
-          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT != '' && secrets.AUTOMERGE_PAT || github.token }}
+          GH_TOKEN: ${{ secrets.AUTOMERGE_PAT }}
           CHECKS_TOKEN: ${{ github.token }}
           HAS_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}
           REPO: ${{ github.repository }}
@@ -49,7 +49,8 @@ jobs:
           set -euo pipefail
 
           if [ "${HAS_PAT}" != "true" ]; then
-            echo "::warning::AUTOMERGE_PAT secret이 없어 GITHUB_TOKEN으로 실행한다. update-branch push가 PR CI를 트리거하지 못해 큐 체인이 멈출 수 있다."
+            echo "::error::AUTOMERGE_PAT secret이 없어 producer와 다음 queue trigger를 보장할 수 없다."
+            exit 1
           fi
 
           # Derive the required checks from the main ruleset so newly required
