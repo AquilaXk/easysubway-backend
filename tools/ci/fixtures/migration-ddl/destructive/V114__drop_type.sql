@@ -1,0 +1,1 @@
+DROP TYPE datapack_release_channel_kind;

@@ -6,7 +6,9 @@ import { fileURLToPath } from "node:url";
 import {
   stripSqlNoise,
   scanSqlForViolations,
+  classifyScript,
   parseVersion,
+  isAboveBaseline,
   loadMigrationFiles,
   evaluateMigrationSet,
   loadJson,
@@ -36,6 +38,13 @@ const destructiveCases = [
   ["V110__create_unique_index_existing.sql", "기존 테이블에 UNIQUE INDEX 추가"],
   ["V111__dynamic_execute.sql", "동적 EXECUTE"],
   ["V112__do_block_hidden_drop.sql", "DROP TABLE"],
+  ["V113__drop_trigger.sql", "DROP TRIGGER"],
+  ["V114__drop_type.sql", "DROP TYPE"],
+  ["V115__drop_schema.sql", "DROP SCHEMA"],
+  ["V116__drop_function_cascade.sql", "DROP FUNCTION"],
+  ["V117__add_column_implicit_not_null.sql", "DEFAULT 없는 NOT NULL 컬럼 추가"],
+  ["V118__if_not_exists_table_constraint.sql", "기존 테이블에 제약(ADD CONSTRAINT) 추가"],
+  ["V119__drop_default.sql", "DROP DEFAULT"],
 ];
 
 for (const [name, expectedLabel] of destructiveCases) {
@@ -56,6 +65,7 @@ const additiveCases = [
   "V204__new_table_constraint.sql",
   "V205__relaxations_and_dml.sql",
   "V206__do_block_raise_message.sql",
+  "V207__grant_execute_function.sql",
 ];
 
 for (const name of additiveCases) {
@@ -96,6 +106,80 @@ test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 �
     "CREATE TRIGGER t BEFORE INSERT ON snapshots FOR EACH ROW EXECUTE FUNCTION guard();",
   );
   assert.deepEqual(findings, []);
+});
+
+test("GRANT/REVOKE EXECUTE ON FUNCTION은 동적 EXECUTE로 오탐하지 않는다", () => {
+  assert.deepEqual(
+    scanSqlForViolations("GRANT EXECUTE ON FUNCTION guard_lineage() TO easysubway_app;"),
+    [],
+  );
+  assert.deepEqual(
+    scanSqlForViolations("REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public FROM readonly;"),
+    [],
+  );
+});
+
+test("권한 부여 문장이 있어도 같은 파일의 동적 EXECUTE는 탐지된다", () => {
+  const findings = scanSqlForViolations(
+    "GRANT EXECUTE ON FUNCTION guard_lineage() TO easysubway_app;\n" +
+      "DO $m$ BEGIN EXECUTE 'ALTER TABLE t DROP COLUMN c'; END $m$;",
+  );
+  assert.ok(findings.includes("동적 EXECUTE"), `findings=${JSON.stringify(findings)}`);
+});
+
+test("COLUMN 생략형 ADD도 DEFAULT가 있으면 통과하고 제약 추가로 오탐하지 않는다", () => {
+  assert.deepEqual(
+    scanSqlForViolations("ALTER TABLE t ADD required_value TEXT NOT NULL DEFAULT 'x';"),
+    [],
+  );
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE t (id BIGSERIAL PRIMARY KEY);\nALTER TABLE t ADD CHECK (id > 0);"),
+    [],
+  );
+});
+
+test("무조건적 CREATE TABLE 대상 제약 추가는 계속 면제되고 IF NOT EXISTS만 위반이 된다", () => {
+  const unconditional =
+    "CREATE TABLE t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
+  const conditional =
+    "CREATE TABLE IF NOT EXISTS t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
+  assert.deepEqual(scanSqlForViolations(unconditional), []);
+  assert.deepEqual(scanSqlForViolations(conditional), ["기존 테이블에 제약(ADD CONSTRAINT) 추가"]);
+});
+
+test("완화형 DROP(INDEX·CONSTRAINT·NOT NULL)은 통과하고 미지원 DROP 형태는 fail closed 된다", () => {
+  assert.deepEqual(scanSqlForViolations("DROP INDEX IF EXISTS ux_legacy;"), []);
+  assert.deepEqual(
+    scanSqlForViolations("ALTER TABLE t ALTER COLUMN c DROP NOT NULL;"),
+    [],
+  );
+  assert.deepEqual(scanSqlForViolations("DROP POLICY report_read ON facility_reports;"), [
+    "미지원 DROP 형태(DROP POLICY)",
+  ]);
+});
+
+test("classifyScript는 Flyway 스크립트 유형을 판정한다", () => {
+  assert.deepEqual(classifyScript("V67__admin_user_roles.sql"), {
+    kind: "versioned",
+    versionParts: [67],
+  });
+  assert.deepEqual(classifyScript("nested/V70.1__patch.sql"), {
+    kind: "versioned",
+    versionParts: [70, 1],
+  });
+  assert.equal(classifyScript("R__refresh_view.sql").kind, "repeatable");
+  assert.equal(classifyScript("afterMigrate__cleanup.sql").kind, "callback");
+  assert.equal(classifyScript("beforeEachMigrate.sql").kind, "callback");
+  assert.equal(classifyScript("V70__patch.sql.conf").kind, "ignored");
+  assert.equal(classifyScript("legacy_manual_patch.sql").kind, "unrecognized");
+  assert.equal(classifyScript("U67__undo.sql").kind, "unrecognized");
+});
+
+test("isAboveBaseline은 하위 파트가 있는 동일 major 버전을 baseline 초과로 본다", () => {
+  assert.equal(isAboveBaseline([66], 66), false);
+  assert.equal(isAboveBaseline([66, 1], 66), true);
+  assert.equal(isAboveBaseline([65, 9], 66), false);
+  assert.equal(isAboveBaseline([67], 66), true);
 });
 
 test("parseVersion은 Vn__ 접두어에서 버전을 추출한다", () => {
@@ -144,6 +228,65 @@ test("evaluateMigrationSet은 공백만 있는 사유·승인 allowlist 항목�
     assert.equal(violations.length, 1, `공백 통과: ${JSON.stringify(bogus)}`);
     assert.match(violations[0].why, /allowlist/);
   }
+});
+
+const scanScopeDir = path.join(fixturesDir, "scan-scope");
+
+test("loadMigrationFiles는 중첩·repeatable·callback·소수점 버전 스크립트까지 재귀 수집한다", () => {
+  const files = loadMigrationFiles(scanScopeDir).map((f) => f.file);
+  assert.deepEqual(files, [
+    "R__refresh_reporting_view.sql",
+    "V10__below_baseline_drop_table.sql",
+    "V70.1__decimal_version_drop_table.sql",
+    "V72__additive_column.sql",
+    "afterMigrate__cleanup_cache.sql",
+    "legacy_manual_patch.sql",
+    "nested/V71__nested_drop_column.sql",
+  ]);
+});
+
+test("evaluateMigrationSet은 Flyway가 실행하는 모든 스크립트 유형을 스캔한다", () => {
+  const violations = evaluateMigrationSet(loadMigrationFiles(scanScopeDir), {
+    baselineVersion: 66,
+    allowlist: [],
+  });
+  const byFile = new Map(violations.map((v) => [v.file, v]));
+  assert.deepEqual(
+    [...byFile.keys()].sort(),
+    [
+      "R__refresh_reporting_view.sql",
+      "V70.1__decimal_version_drop_table.sql",
+      "afterMigrate__cleanup_cache.sql",
+      "legacy_manual_patch.sql",
+      "nested/V71__nested_drop_column.sql",
+    ],
+    `위반 목록 불일치: ${JSON.stringify(violations)}`,
+  );
+  assert.deepEqual(byFile.get("R__refresh_reporting_view.sql").findings, ["DROP VIEW"]);
+  assert.deepEqual(byFile.get("afterMigrate__cleanup_cache.sql").findings, ["TRUNCATE"]);
+  assert.deepEqual(byFile.get("nested/V71__nested_drop_column.sql").findings, ["DROP COLUMN"]);
+  assert.deepEqual(byFile.get("V70.1__decimal_version_drop_table.sql").findings, ["DROP TABLE"]);
+  assert.match(byFile.get("legacy_manual_patch.sql").why, /판정 불가/);
+});
+
+test("Flyway 유형 판정 불가 스크립트는 allowlist 사유·승인으로만 통과한다", () => {
+  const files = loadMigrationFiles(scanScopeDir).filter(
+    (f) => f.file === "legacy_manual_patch.sql",
+  );
+  const approved = evaluateMigrationSet(files, {
+    baselineVersion: 66,
+    allowlist: [
+      { file: "legacy_manual_patch.sql", reason: "수동 패치 기록", approval: "AquilaXk/easysubway#2365" },
+    ],
+  });
+  assert.deepEqual(approved, []);
+
+  const incomplete = evaluateMigrationSet(files, {
+    baselineVersion: 66,
+    allowlist: [{ file: "legacy_manual_patch.sql", reason: "승인 근거 없음" }],
+  });
+  assert.equal(incomplete.length, 1);
+  assert.match(incomplete[0].why, /allowlist/);
 });
 
 test("현재 트리의 실제 마이그레이션은 baseline(V66)·공식 allowlist에서 위반이 없다(회귀 없음)", () => {
