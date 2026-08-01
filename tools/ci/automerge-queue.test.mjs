@@ -19,7 +19,9 @@ const producerWorkflowUrl = new URL(
 const readWorkflow = () => readFile(workflowUrl, 'utf8');
 
 // `run: |` 블록의 본문은 10칸 들여쓰기다. 셸 블록을 그대로 실행하려면 벗겨야 한다.
-const dedent = (block) => block.replace(/^ {10}/gm, '');
+// 큐 루프 안쪽 블록은 셸 들여쓰기 2칸이 더 붙어 12칸이다.
+const dedent = (block, width = 10) =>
+  block.replace(new RegExp(`^ {${width}}`, 'gm'), '');
 
 const stubbedBash = (lines) => {
   const dir = mkdtempSync(join(tmpdir(), 'automerge-queue-'));
@@ -67,7 +69,7 @@ test('코디네이터는 PAT 없이 GITHUB_TOKEN으로만 동작한다', async (
   assert.ok(!workflow.includes('  pull_request:\n'));
 });
 
-test('큐는 FIFO 한 건만 처리하고 미해결 thread는 fail closed다', async () => {
+test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail closed다', async () => {
   const workflow = await readWorkflow();
 
   for (const contract of [
@@ -77,7 +79,12 @@ test('큐는 FIFO 한 건만 처리하고 미해결 thread는 fail closed다', a
     // draft는 선택 단계에서 걸러야 한다. `gh pr list`는 draft를 필터하지 않으므로
     // 큐 맨 앞의 draft 하나가 매 실행을 실패시켜 큐 전체를 멈춘다.
     '--json number,createdAt,isDraft',
-    '[.[] | select(.isDraft == false)] | sort_by(.createdAt)[0].number // empty',
+    // 후보는 단일 값이 아니라 오래된 순 배열이다. head 하나만 보는 구조가
+    // head-of-line blocking의 원인이었다.
+    '[.[] | select(.isDraft == false)] | [sort_by(.createdAt)[].number]',
+    '# queue-loop-begin',
+    '# candidate-offset-begin',
+    '# candidate-window-begin',
     'reviewThreads(first: 100)',
     'hasNextPage',
     'pageInfo.hasNextPage == false',
@@ -87,6 +94,10 @@ test('큐는 FIFO 한 건만 처리하고 미해결 thread는 fail closed다', a
   ]) {
     assert.ok(workflow.includes(contract), `missing contract: ${contract}`);
   }
+
+  // 단일 head 구조의 잔재가 남으면 배열을 뽑아도 첫 후보에서 실행이 끝난다.
+  assert.doesNotMatch(workflow, /sort_by\(\.createdAt\)\[0\]\.number \/\/ empty/);
+  assert.doesNotMatch(workflow, /\[\[ -n "\$\{pr\}" \]\] \|\| exit 0/);
 });
 
 test('required context는 ruleset 전수 조회로만 판정한다', async () => {
@@ -127,7 +138,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
   const workflow = await readWorkflow();
 
   const reviewProgram = workflow.match(
-    /# review-state-filter-begin\n\s+jq -e --arg head "\$\{head\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null/,
+    /# review-state-filter-begin\n\s+if ! jq -e --arg head "\$\{head\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
@@ -427,11 +438,67 @@ test('required context 판정은 대기와 실패를 구분하고 뒤 페이지 
   );
 });
 
-test('required context 대기는 물러나고 실패만 계약 위반이다', async () => {
+test('required context 판정은 후보별 건너뛰기로 수렴하고 실패는 신호를 남긴다', async () => {
   const workflow = await readWorkflow();
-  // 분류 결과를 실제로 어떻게 처리하는지까지 고정한다.
-  assert.match(workflow, /pending \| missing\)\n\s+echo[^\n]*\n\s+exit 0/);
-  assert.match(workflow, /required context failed[\s\S]{0,40}exit 1/);
+
+  // 분류 결과를 실제로 어떻게 처리하는지까지 고정한다. 대기든 실패든 이 후보만
+  // 건너뛰고 다음 후보를 계속 평가한다. 실행을 끝내면 그 한 건이 뒤를 굶긴다.
+  assert.doesNotMatch(workflow, /pending \| missing\)\n\s+echo[^\n]*\n\s+exit 0/);
+  assert.doesNotMatch(workflow, /required context failed[\s\S]{0,40}exit 1/);
+  // 실패는 조용히 묻히면 안 된다. 계약 위반은 annotation으로 run 요약에 남긴다.
+  assert.match(workflow, /::warning::[^\n]*required context/);
+
+  // 후보별 게이트 루프를 실제로 돌려 분류별 처리를 실측한다.
+  const contextLoop = workflow.match(
+    /# required-context-loop-begin\n([\s\S]*?)\n\s+# required-context-loop-end/,
+  )?.[1];
+  assert.ok(contextLoop, 'required context loop must stay testable');
+
+  const runContextLoop = (checkRuns) => {
+    const result = stubbedBash([
+      'set -euo pipefail',
+      'pr=39',
+      `checks=${JSON.stringify(JSON.stringify([{ check_runs: checkRuns }]))}`,
+      `statuses=${JSON.stringify(JSON.stringify([[]]))}`,
+      `required=${JSON.stringify(JSON.stringify([{ context: 'Backend CI', integration_id: null }]))}`,
+      // `continue`가 후보 루프를 넘기는 동작이므로 1회 루프로 감싸고, 루프를 끝까지
+      // 진행한 경우에만 병합 분기 도달을 관측한다.
+      'for _ in 1; do',
+      dedent(contextLoop, 12),
+      `  printf 'REACHED_DISPATCH\\n'`,
+      'done',
+    ]);
+    return {
+      status: result.status,
+      reached: result.stdout.includes('REACHED_DISPATCH'),
+      warned: (result.stdout + result.stderr).includes('::warning::'),
+      stdout: result.stdout,
+    };
+  };
+
+  const run = (conclusion) => [
+    { id: 1, name: 'Backend CI', conclusion, started_at: '2026-08-01T00:00:00Z' },
+  ];
+
+  // 전 context가 success여야 병합 분기에 닿는다.
+  assert.deepEqual(runContextLoop(run('success')), {
+    status: 0,
+    reached: true,
+    warned: false,
+    stdout: 'REACHED_DISPATCH\n',
+  });
+  // 진행 중(pending)과 미부착(missing)은 조용히 이 후보만 건너뛴다.
+  for (const checkRuns of [run(null), []]) {
+    const result = runContextLoop(checkRuns);
+    assert.equal(result.status, 0);
+    assert.equal(result.reached, false, '대기 상태는 병합 분기에 닿으면 안 된다');
+    assert.equal(result.warned, false, '대기 상태는 사람이 볼 신호가 아니다');
+  }
+  // 명시적 실패도 실행을 죽이지 않고 이 후보만 건너뛰되, 신호는 남긴다.
+  const failed = runContextLoop(run('failure'));
+  assert.equal(failed.status, 0);
+  assert.equal(failed.reached, false);
+  assert.equal(failed.warned, true, 'required context 실패는 ::warning::으로 드러나야 한다');
 });
 
 test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한다', async () => {
@@ -442,7 +509,9 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   )?.[1];
   assert.ok(dispatchBlock, 'merge state dispatch must stay testable');
 
-  // gh 호출을 기록만 하는 스텁으로 대체해 상태별 분기 결과를 실측한다.
+  // gh 호출을 기록만 하는 스텁으로 대체해 상태별 분기 결과를 실측한다. 분기는 큐 루프
+  // 안에 있으므로 `continue`가 유효하도록 1회 루프로 감싸고, 루프를 빠져나오면
+  // SKIPPED를 남겨 "이 후보를 건너뛰었다"를 관측한다.
   const runDispatch = (mergeState, { headRepo = 'o/r', newHead = 'updated-head' } = {}) => {
     const result = stubbedBash([
       'set -euo pipefail',
@@ -459,13 +528,18 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `head_repo=${JSON.stringify(headRepo)}`,
       'head_ref=feature',
       `merge_state=${JSON.stringify(mergeState)}`,
-      dedent(dispatchBlock),
+      'for _ in 1; do',
+      dedent(dispatchBlock, 12),
+      'done',
+      `printf 'SKIPPED\\n' >> "$GH_LOG"`,
     ]);
     return {
       status: result.status,
       merged: result.calls.includes('gh pr merge'),
       updatedBranch: result.calls.includes('update-branch'),
       dispatchedCi: result.calls.includes('workflow run ci.yml'),
+      skipped: result.calls.includes('SKIPPED'),
+      warned: (result.stdout + result.stderr).includes('::warning::'),
     };
   };
 
@@ -474,7 +548,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   for (const mergeState of ['CLEAN', 'HAS_HOOKS', 'UNSTABLE']) {
     assert.deepEqual(
       runDispatch(mergeState),
-      { status: 0, merged: true, updatedBranch: false, dispatchedCi: false },
+      { status: 0, merged: true, updatedBranch: false, dispatchedCi: false, skipped: false, warned: false },
       `${mergeState} must proceed to merge`,
     );
   }
@@ -484,6 +558,8 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     merged: false,
     updatedBranch: true,
     dispatchedCi: true,
+    skipped: false,
+    warned: false,
   });
   // ⑨ update-branch는 비동기라 bounded wait 안에 head가 안 바뀔 수 있다. 계약 위반이
   // 아니라 대기 상태이므로 stale ref로 CI를 쏘지 않고 실패하지도 않는다.
@@ -492,46 +568,492 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     merged: false,
     updatedBranch: true,
     dispatchedCi: false,
+    skipped: false,
+    warned: false,
   });
-  // fork head에 base 저장소 CI를 dispatch하지 않는다.
-  const forkBehind = runDispatch('BEHIND', { headRepo: 'fork/r' });
-  assert.notEqual(forkBehind.status, 0);
-  assert.equal(forkBehind.updatedBranch, false);
-  // ⑦ 전이·대기 상태에서 exit 1을 내면 그 실패 check가 PR을 UNSTABLE로 만들어 다음
-  // 실행을 같은 자리에서 죽인다. 조용히 물러나 다음 트리거에서 재시도한다.
+  // ⑦ 병합할 수 없는 상태는 전부 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
+  // 그 실패 check가 PR을 UNSTABLE로 만들고 큐 전체가 뒤의 후보까지 굶긴다.
   for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
     assert.deepEqual(
       runDispatch(mergeState),
-      { status: 0, merged: false, updatedBranch: false, dispatchedCi: false },
-      `${mergeState} must back off without failing the run`,
+      { status: 0, merged: false, updatedBranch: false, dispatchedCi: false, skipped: true, warned: false },
+      `${mergeState} must skip to the next candidate`,
     );
   }
-  // ⑧ 충돌은 사람이 해소해야 하므로 계약 위반으로 실패시킨다.
-  const dirty = runDispatch('DIRTY');
-  assert.notEqual(dirty.status, 0);
-  assert.equal(dirty.merged, false);
-  // 알 수 없는 상태에서 조용히 물러나면 큐가 원인 없이 멈추므로 실패시킨다.
-  const unknownEnum = runDispatch('SOME_NEW_STATE');
-  assert.notEqual(unknownEnum.status, 0);
-  assert.equal(unknownEnum.merged, false);
+  // ⑧ 사람이 봐야 하는 상태는 건너뛰되 신호를 남긴다. 실행은 실패시키지 않는다.
+  for (const mergeState of ['DIRTY', 'SOME_NEW_STATE']) {
+    assert.deepEqual(
+      runDispatch(mergeState),
+      { status: 0, merged: false, updatedBranch: false, dispatchedCi: false, skipped: true, warned: true },
+      `${mergeState} must skip with an operator-visible warning`,
+    );
+  }
+  // fork head에 base 저장소 CI를 dispatch하지 않는다. 거부하되 큐는 계속 진행한다.
+  assert.deepEqual(runDispatch('BEHIND', { headRepo: 'fork/r' }), {
+    status: 0,
+    merged: false,
+    updatedBranch: false,
+    dispatchedCi: false,
+    skipped: true,
+    warned: true,
+  });
 });
 
-test('게이트는 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
+test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
   const workflow = await readWorkflow();
 
-  // `set -e` 아래에서 게이트는 `jq -e` 실패 시 즉시 종료되므로, 계약 위반은 병합
-  // 분기에 닿기 전에 exit 1로 끝난다.
+  // 게이트는 후보마다 수행되고, 통과하지 못하면 그 후보만 건너뛴다. 순서 계약은 유지한다.
   assert.ok(workflow.includes('set -euo pipefail'));
   const producerAt = workflow.indexOf('# producer-dispatch-end');
+  const queueLoopAt = workflow.indexOf('# queue-loop-begin');
   const reviewGateAt = workflow.indexOf('# review-state-filter-end');
   const contextGateAt = workflow.indexOf('# required-context-filter-end');
   const dispatchAt = workflow.indexOf('# merge-state-dispatch-begin');
   assert.ok(producerAt > 0, 'producer dispatch marker must exist');
-  // ⑩ producer dispatch → 리뷰 게이트 → required context 게이트 → 병합 분기 순서.
+  assert.ok(queueLoopAt > 0, 'queue loop marker must exist');
+  // ⑩ producer dispatch → 큐 루프 → 리뷰 게이트 → required context 게이트 → 병합 분기.
   // producer가 큐보다 앞서야 큐가 막힌 동안에도 배포 체인이 끊기지 않는다.
-  assert.ok(reviewGateAt > producerAt, 'producer dispatch must precede the queue gates');
+  assert.ok(queueLoopAt > producerAt, 'producer dispatch must precede the queue loop');
+  assert.ok(reviewGateAt > queueLoopAt, 'gates must run inside the candidate loop');
   assert.ok(contextGateAt > reviewGateAt, 'review gate must precede the required context gate');
   assert.ok(dispatchAt > contextGateAt, 'gates must precede the merge dispatch');
+});
+
+// 큐 루프를 통째로 돌리는 하네스. `gh` 호출을 픽스처 파일 조회로 대체해 후보별 게이트와
+// 건너뛰기를 실측한다. runNumber는 실행 컨텍스트 주입값이며 결과가 여기 좌우되면 안 된다.
+const makeRunQueue = (queueLoop) => (prs, runNumber = 0) => {
+  const dir = mkdtempSync(join(tmpdir(), 'automerge-queue-loop-'));
+  const log = join(dir, 'gh.log');
+  for (const pr of prs) {
+    const head = `head${pr.number}`;
+    writeFileSync(
+      join(dir, `pr-${pr.number}.json`),
+      JSON.stringify({
+        state: pr.state ?? 'OPEN',
+        isDraft: false,
+        baseRefName: 'main',
+        labels: [{ name: 'automerge' }],
+        headRefName: `feature-${pr.number}`,
+        headRefOid: head,
+        headRepository: { nameWithOwner: 'o/r' },
+        mergeStateStatus: pr.mergeStateStatus,
+      }),
+    );
+    writeFileSync(
+      join(dir, `reviews-${pr.number}.json`),
+      JSON.stringify(
+        pr.reviewed === false
+          ? [[]]
+          : [[
+              {
+                id: 1,
+                state: 'APPROVED',
+                submitted_at: '2026-08-01T00:00:00Z',
+                commit_id: head,
+                author_association: 'OWNER',
+                body: '',
+                user: { login: 'reviewer' },
+              },
+            ]],
+      ),
+    );
+    writeFileSync(
+      join(dir, `threads-${pr.number}.json`),
+      JSON.stringify({
+        data: {
+          repository: {
+            pullRequest: {
+              reviewThreads: {
+                nodes: pr.unresolvedThread ? [{ isResolved: false }] : [],
+                pageInfo: { hasNextPage: false },
+              },
+            },
+          },
+        },
+      }),
+    );
+    // `pending`은 conclusion이 null인 상태다. null 병합 연산자로 접으면 success로 새므로
+    // 명시 분기로 둔다.
+    const conclusion =
+      pr.checkState === 'failure' ? 'failure' : pr.checkState === 'pending' ? null : 'success';
+    writeFileSync(
+      join(dir, `checks-${head}.json`),
+      JSON.stringify([
+        {
+          check_runs:
+            pr.checkState === 'missing'
+              ? []
+              : [
+                  {
+                    id: 1,
+                    name: 'Backend CI',
+                    conclusion,
+                    started_at: '2026-08-01T00:00:00Z',
+                  },
+                ],
+        },
+      ]),
+    );
+    writeFileSync(join(dir, `statuses-${head}.json`), JSON.stringify([[]]));
+  }
+  const script = [
+    'set -euo pipefail',
+    `GH_LOG=${JSON.stringify(log)}`,
+    `FIX=${JSON.stringify(dir)}`,
+    `GITHUB_RUN_NUMBER=${JSON.stringify(String(runNumber))}`,
+    ': > "$GH_LOG"',
+    'gh() {',
+    `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
+    '  local all="$*"',
+    '  case "$all" in',
+    `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
+    '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
+    '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
+    '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
+    '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
+    '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
+    '  esac',
+    '}',
+    'sleep() { :; }',
+    'repo=o/r',
+    'owner=o',
+    'name=r',
+    `required='[{"context":"Backend CI","integration_id":null}]'`,
+    'candidates="$(gh pr list)"',
+    dedent(queueLoop),
+  ].join('\n');
+  const result = spawnSync('bash', ['-c', script], { encoding: 'utf8' });
+  const calls = existsSync(log) ? readFileSync(log, 'utf8') : '';
+  const merged = calls.match(/gh pr merge [^\n]*?(\d+) --repo/)?.[1];
+  return {
+    status: result.status,
+    mergedPr: merged ? Number(merged) : null,
+    evaluated: [...calls.matchAll(/gh pr view (\d+) --repo/g)].map((m) => Number(m[1])),
+    stdout: result.stdout ?? '',
+    stderr: result.stderr ?? '',
+  };
+};
+
+test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별로 그대로 강제된다', async () => {
+  const workflow = await readWorkflow();
+  const queueLoop = workflow.match(
+    /# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/,
+  )?.[1];
+  assert.ok(queueLoop, 'queue loop must stay testable');
+  const runQueue = makeRunQueue(queueLoop);
+
+  // 큐 head가 BLOCKED이어도 뒤의 병합 가능한 후보가 처리된다. 이것이 이 설계의 핵심이다.
+  assert.equal(
+    runQueue([
+      { number: 1, mergeStateStatus: 'BLOCKED' },
+      { number: 2, mergeStateStatus: 'CLEAN' },
+    ]).mergedPr,
+    2,
+  );
+  // 충돌한 후보도 뒤를 막지 않는다.
+  const dirtyQueue = runQueue([
+    { number: 1, mergeStateStatus: 'DIRTY' },
+    { number: 2, mergeStateStatus: 'CLEAN' },
+  ]);
+  assert.equal(dirtyQueue.mergedPr, 2);
+  // 계약 위반이 신호 없이 묻히면 안 된다.
+  assert.match(dirtyQueue.stdout + dirtyQueue.stderr, /::warning::/);
+  // 게이트는 후보별로 그대로 강제된다 — 리뷰 객체가 없는 후보는 병합되지 않는다.
+  assert.equal(
+    runQueue([
+      { number: 1, mergeStateStatus: 'CLEAN', reviewed: false },
+      { number: 2, mergeStateStatus: 'CLEAN' },
+    ]).mergedPr,
+    2,
+  );
+  // 미해결 thread가 있는 후보도 건너뛴다.
+  assert.equal(
+    runQueue([
+      { number: 1, mergeStateStatus: 'CLEAN', unresolvedThread: true },
+      { number: 2, mergeStateStatus: 'CLEAN' },
+    ]).mergedPr,
+    2,
+  );
+  // required context가 실패·대기·미부착인 후보도 각각 건너뛴다.
+  for (const checkState of ['failure', 'pending', 'missing']) {
+    assert.equal(
+      runQueue([
+        { number: 1, mergeStateStatus: 'CLEAN', checkState },
+        { number: 2, mergeStateStatus: 'CLEAN' },
+      ]).mergedPr,
+      2,
+      `required context ${checkState} must skip only that candidate`,
+    );
+  }
+  // 게이트를 통과한 가장 오래된 후보가 우선한다(best-effort FIFO).
+  assert.equal(
+    runQueue([
+      { number: 1, mergeStateStatus: 'CLEAN' },
+      { number: 2, mergeStateStatus: 'CLEAN' },
+    ]).mergedPr,
+    1,
+  );
+  // 실제 동작은 한 실행에 최대 한 건이다. 병합 직렬화가 유지되어야 한다.
+  const serialized = runQueue([
+    { number: 1, mergeStateStatus: 'CLEAN' },
+    { number: 2, mergeStateStatus: 'CLEAN' },
+  ]);
+  assert.equal(serialized.evaluated.length, 1, '병합을 예약하면 그 실행은 거기서 끝난다');
+  // 아무 후보도 병합할 수 없으면 병합 없이 성공으로 끝난다. 라벨은 건드리지 않는다.
+  const allBlocked = runQueue([
+    { number: 1, mergeStateStatus: 'BLOCKED' },
+    { number: 2, mergeStateStatus: 'DIRTY' },
+  ]);
+  assert.equal(allBlocked.status, 0);
+  assert.equal(allBlocked.mergedPr, null);
+  assert.equal(allBlocked.evaluated.length, 2);
+});
+
+test('후보 창은 timeout과 API 호출량 양쪽으로 유도되고 모든 후보에 도달한다', async () => {
+  const workflow = await readWorkflow();
+
+  // 창 크기는 이 저장소 값으로 다시 계산해야 한다. 형제 저장소 상수를 그대로 쓰면
+  // 실행당 요청이 저장소 시간당 한도를 넘는다.
+  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  assert.equal(declaredWindow, 6, 'window constant must stay pinned to the derived value');
+  const rationale = workflow.slice(
+    workflow.indexOf('# queue-loop-begin'),
+    workflow.indexOf('# candidate-offset-begin'),
+  );
+  // 근거는 두 기준을 모두 담아야 한다. 하나만 적으면 다음 사람이 다른 쪽을 모른 채 값을 바꾼다.
+  for (const basis of ['저장소당 시간당 1,000회', '10분(600초)', '후보 한 건당', '고정 비용']) {
+    assert.ok(rationale.includes(basis), `window rationale missing: ${basis}`);
+  }
+
+  // 창 선택 자체. 어떤 시작점에서든 선택 수는 window 이하이고 오래된 순이며,
+  // 시작점 전체를 훑으면 모든 후보가 최소 한 번은 창에 들어온다.
+  const windowProgram = workflow.match(
+    /# candidate-window-begin\n\s+done < <\(jq -r --argjson window "\$\{window\}" --argjson offset "\$\{offset\}" '\n([\s\S]*?)\n\s+' <<<"\$\{candidates\}"\)/,
+  )?.[1];
+  assert.ok(windowProgram, 'candidate window jq program must stay testable');
+  const pickWindow = (total, offset) => {
+    const result = spawnSync(
+      'jq',
+      [
+        '-r',
+        '--argjson', 'window', String(declaredWindow),
+        '--argjson', 'offset', String(offset),
+        windowProgram,
+      ],
+      {
+        input: JSON.stringify(Array.from({ length: total }, (_, index) => index)),
+        encoding: 'utf8',
+      },
+    );
+    // 실패한 jq도 stdout이 비어 "선택 없음"처럼 보인다. 프로그램 파손이 정상 동작으로
+    // 새지 않도록 종료 코드를 함께 본다. 이 jq는 process substitution 안에서 돌기 때문에
+    // 셸이 실패를 삼키고, 에러는 stderr에만 남는다.
+    assert.equal(
+      result.status,
+      0,
+      `candidate window jq failed at total=${total} offset=${offset}: ${result.stderr}`,
+    );
+    const stdout = result.stdout.trim();
+    return stdout === '' ? [] : stdout.split('\n').map(Number);
+  };
+  // 빈 큐에서 죽지 않는다. `// empty` 폴백과 조기 종료를 걷어낸 자리를 여기가 받는다.
+  assert.deepEqual(pickWindow(0, 0), []);
+  for (const total of [declaredWindow + 1, declaredWindow * 2]) {
+    const reachable = new Set();
+    for (let offset = 0; offset < total; offset += 1) {
+      const slice = pickWindow(total, offset);
+      assert.ok(slice.length <= declaredWindow, `window exceeded at total=${total}`);
+      assert.deepEqual(
+        slice,
+        [...slice].sort((a, b) => a - b),
+        `candidate window must stay oldest-first at total=${total}`,
+      );
+      for (const index of slice) reachable.add(index);
+    }
+    assert.equal(
+      reachable.size,
+      total,
+      `every candidate must be reachable from some offset at total=${total}`,
+    );
+  }
+});
+
+test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 뽑힌다', async () => {
+  const workflow = await readWorkflow();
+  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+
+  // 커버리지 보장이 실행 간격에 의존하지 않으려면 시작점이 실행 컨텍스트 값의 함수가
+  // 아니어야 한다. 이 job은 automerge가 아닌 라벨 이벤트에서 if 조건에 걸려 건너뛰고
+  // concurrency가 대기 실행을 버리므로 실제 실행 사이의 run number 간격 d는 1이 아니다.
+  // 시작점을 run number의 함수로 두면 유효 보폭에 d가 곱해져 앨리어싱이 생긴다.
+  const offsetBlock = workflow.match(
+    /# candidate-offset-begin\n([\s\S]*?)\n\s+# candidate-offset-end/,
+  )?.[1];
+  assert.ok(offsetBlock, 'candidate offset block must stay testable');
+  assert.doesNotMatch(
+    offsetBlock,
+    /GITHUB_RUN_NUMBER|GITHUB_RUN_ID|GITHUB_RUN_ATTEMPT|GITHUB_SHA|GITHUB_EVENT/,
+    'candidate offset must not depend on run context',
+  );
+
+  const drawOffset = (total, runNumber) => {
+    const result = spawnSync(
+      'bash',
+      [
+        '-c',
+        [
+          'set -euo pipefail',
+          `GITHUB_RUN_NUMBER=${JSON.stringify(String(runNumber))}`,
+          `candidates=${JSON.stringify(
+            JSON.stringify(Array.from({ length: total }, (_, index) => index)),
+          )}`,
+          dedent(offsetBlock),
+          `printf '%s %s\\n' "$window" "$offset"`,
+        ].join('\n'),
+      ],
+      { encoding: 'utf8' },
+    );
+    assert.equal(result.status, 0, `offset block failed: ${result.stderr}`);
+    const [drawnWindow, offset] = result.stdout.trim().split(' ').map(Number);
+    assert.equal(drawnWindow, declaredWindow, 'window constant must stay in sync');
+    return offset;
+  };
+
+  // 창 안에 다 들어오면 회전하지 않는다. 빈 큐에서도 죽지 않는다.
+  for (const total of [0, 1, declaredWindow]) {
+    for (let attempt = 0; attempt < 4; attempt += 1) {
+      assert.equal(drawOffset(total, attempt), 0, `must not rotate at total=${total}`);
+    }
+  }
+
+  // total > window면 시작점이 실행마다 새로 뽑히고 범위 안에 있다. run number를 고정해
+  // 두는 것은 최악의 앨리어싱 입력(간격 0)이며, 그래도 성질이 유지되어야 한다.
+  const rotationTotal = 2 * declaredWindow;
+  const drawn = [];
+  for (let attempt = 0; attempt < 48; attempt += 1) {
+    drawn.push(drawOffset(rotationTotal, 7));
+  }
+  for (const offset of drawn) {
+    assert.ok(
+      Number.isInteger(offset) && offset >= 0 && offset < rotationTotal,
+      `offset out of range: ${offset}`,
+    );
+  }
+  assert.ok(
+    new Set(drawn).size > 1,
+    'candidate offset must vary across executions even with a fixed run number',
+  );
+});
+
+test('창 밖 후보는 실행 번호 간격이 일정해도 굶지 않는다', async () => {
+  const workflow = await readWorkflow();
+  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  const queueLoop = workflow.match(
+    /# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/,
+  )?.[1];
+  assert.ok(queueLoop, 'queue loop must stay testable');
+  const runQueue = makeRunQueue(queueLoop);
+
+  // total = 2 * window이고 실행 번호 간격이 2로 일정한 시퀀스. 결정적 회전
+  // (`(GITHUB_RUN_NUMBER * window) % total`)에서는 시작점이 0에 고정돼 뒤쪽 절반이
+  // 영원히 평가되지 않았다. 병합 가능한 후보는 큐 맨 뒤 1건뿐이다.
+  // 하네스 비용을 줄이려고 미끼 후보는 첫 게이트(열린 라벨 PR 검사)에서 걸리게 둔다.
+  // 스킵 사유별 계약은 위 시나리오에서 이미 고정했고, 여기서 보는 것은 창 도달성이다.
+  const rotationTotal = 2 * declaredWindow;
+  const aliasingQueue = [];
+  for (let number = 1; number < rotationTotal; number += 1) {
+    aliasingQueue.push({ number, mergeStateStatus: 'CLEAN', state: 'CLOSED' });
+  }
+  aliasingQueue.push({ number: rotationTotal, mergeStateStatus: 'CLEAN' });
+
+  let lateMergeRun = null;
+  const attempts = 24;
+  for (let attempt = 0; attempt < attempts && lateMergeRun === null; attempt += 1) {
+    // 간격 2의 비연속 run number. 시작점이 이 값을 읽지 않으므로 결과에 영향이 없다.
+    const run = runQueue(aliasingQueue, 100 + attempt * 2);
+    assert.equal(run.status, 0);
+    if (run.mergedPr === rotationTotal) lateMergeRun = attempt;
+  }
+  assert.notEqual(
+    lateMergeRun,
+    null,
+    `the only mergeable candidate sits past the window and must still merge within ${attempts} runs`,
+  );
+
+  // 후보가 창 안에 다 들어오면 실행 번호와 무관하게 오래된 후보가 먼저 병합된다.
+  for (const runNumber of [0, 7, 40]) {
+    assert.equal(
+      runQueue(
+        [
+          { number: 1, mergeStateStatus: 'CLEAN' },
+          { number: 2, mergeStateStatus: 'CLEAN' },
+        ],
+        runNumber,
+      ).mergedPr,
+      1,
+    );
+  }
+});
+
+test('draft 필터는 창 산출 이전에 적용된다', async () => {
+  const workflow = await readWorkflow();
+  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+
+  // 순서 계약. draft 필터가 창 뒤로 밀리면 draft가 창 자리를 차지해 실제로 평가되는
+  // 후보 수가 window보다 줄어든다.
+  const candidatesAt = workflow.indexOf('candidates="$(gh pr list');
+  const offsetAt = workflow.indexOf('# candidate-offset-begin');
+  const windowAt = workflow.indexOf('# candidate-window-begin');
+  assert.ok(candidatesAt > 0, 'candidate selection must stay findable');
+  assert.ok(offsetAt > candidatesAt, 'draft filter must run before the offset draw');
+  assert.ok(windowAt > offsetAt, 'draft filter must run before the window slice');
+
+  const selectProgram = workflow.match(
+    /--jq '(\[\.\[\] \| select\(\.isDraft == false\)\] \| \[sort_by\(\.createdAt\)\[\]\.number\])'/,
+  )?.[1];
+  assert.ok(selectProgram, 'candidate selection jq program must stay testable');
+
+  // draft가 섞인 목록. non-draft만 오래된 순으로 남아야 한다.
+  const raw = [];
+  for (let index = 0; index < declaredWindow * 2; index += 1) {
+    raw.push({
+      number: index + 1,
+      createdAt: `2026-08-01T00:${String(index).padStart(2, '0')}:00Z`,
+      isDraft: index % 2 === 1,
+    });
+  }
+  const selected = spawnSync('jq', ['-c', selectProgram], {
+    input: JSON.stringify(raw),
+    encoding: 'utf8',
+  }).stdout.trim();
+  const expected = raw.filter((pr) => !pr.isDraft).map((pr) => pr.number);
+  assert.equal(selected, JSON.stringify(expected));
+
+  // 걸러진 목록을 그대로 시작점 산출에 넣는다. draft를 세지 않으므로 total이 window
+  // 이하가 되어 회전조차 하지 않는다.
+  const offsetBlock = workflow.match(
+    /# candidate-offset-begin\n([\s\S]*?)\n\s+# candidate-offset-end/,
+  )?.[1];
+  assert.ok(offsetBlock, 'candidate offset block must stay testable');
+  assert.ok(
+    offsetBlock.includes('<<<"${candidates}"'),
+    'offset draw must read the draft-filtered candidate list',
+  );
+  const drawn = spawnSync(
+    'bash',
+    [
+      '-c',
+      [
+        'set -euo pipefail',
+        `candidates=${JSON.stringify(selected)}`,
+        dedent(offsetBlock),
+        `printf '%s %s\\n' "$total" "$offset"`,
+      ].join('\n'),
+    ],
+    { encoding: 'utf8' },
+  );
+  assert.equal(drawn.status, 0, drawn.stderr);
+  assert.equal(drawn.stdout.trim(), `${expected.length} 0`);
 });
 
 test('image producer는 발행 job 단위로 판정하고 실패는 제한된 재시도 뒤 드러낸다', async () => {
