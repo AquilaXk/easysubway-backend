@@ -129,6 +129,10 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   assert.ok(workflow.includes("pageInfo{hasNextPage endCursor}"));
   assert.ok(workflow.includes("[.[].data.repository.pullRequest.reviewThreads.nodes[]"));
   assert.ok(workflow.includes('select(.isResolved == false)'));
+  const behindGate = workflow.indexOf('if [ "${merge_state}" = "BEHIND" ]; then');
+  assert.ok(behindGate >= 0 && behindGate < workflow.indexOf('gh pr merge "${pr_number}"'),
+    "BEHIND head must be updated before auto-merge is reserved");
+  assert.ok(workflow.includes('--match-head-commit "${head_oid}"'));
   for (const conclusion of ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]) {
     assert.ok(workflow.includes(`$c == "${conclusion}"`), conclusion);
   }

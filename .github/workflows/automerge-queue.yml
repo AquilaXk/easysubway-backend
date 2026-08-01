@@ -151,15 +151,20 @@ jobs:
               continue
             fi
 
+            if [ "${merge_state}" = "BEHIND" ]; then
+              if gh api --method PUT "repos/${REPO}/pulls/${pr_number}/update-branch" \
+                -H "Accept: application/vnd.github+json"; then
+                derail "${pr_number}" "main 반영으로 head가 변경됐습니다. 새 head Review가 필요합니다."
+              else
+                echo "::warning::PR #${pr_number} update-branch 실패(transient 가능) — 다음 트리거에서 재시도한다."
+              fi
+              exit 0
+            fi
+
             # 여기부터 큐 head 확정 — 한 번에 하나만 처리한다.
             gh pr merge "${pr_number}" --repo "${REPO}" --squash --auto \
+              --match-head-commit "${head_oid}" \
               || echo "::warning::PR #${pr_number} auto-merge 예약 실패 — 다음 트리거에서 재시도한다."
-
-            if [ "${merge_state}" = "BEHIND" ]; then
-              gh api --method PUT "repos/${REPO}/pulls/${pr_number}/update-branch" \
-                -H "Accept: application/vnd.github+json" \
-                || echo "::warning::PR #${pr_number} update-branch 실패(transient 가능) — 다음 트리거에서 재시도한다."
-            fi
 
             echo "큐 head PR #${pr_number} 처리 완료 — 필수 체크 통과 시 auto-merge가 병합한다."
             exit 0
