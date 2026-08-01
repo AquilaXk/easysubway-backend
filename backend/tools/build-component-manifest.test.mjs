@@ -133,6 +133,8 @@ test("backend automerge coordinator는 current-head review와 FIFO를 fail-close
   assert.ok(behindGate >= 0 && behindGate < workflow.indexOf('gh pr merge "${pr_number}"'),
     "BEHIND head must be updated before auto-merge is reserved");
   assert.ok(workflow.includes("checks: write"));
+  assert.ok(workflow.includes("CHECKS_TOKEN: ${{ github.token }}"));
+  assert.ok(workflow.includes('GH_TOKEN="${CHECKS_TOKEN}" gh api --method POST'));
   assert.ok(workflow.includes('repos/${REPO}/check-runs'));
   assert.ok(workflow.includes("Automerge Review Gate"));
   assert.ok(workflow.includes('-f head_sha="${head_oid}"'));

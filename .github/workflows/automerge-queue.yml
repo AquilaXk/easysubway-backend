@@ -40,6 +40,7 @@ jobs:
         env:
           # GITHUB_TOKEN의 push는 PR CI를 트리거하지 못하므로 PAT가 없으면 체인이 멈춘다.
           GH_TOKEN: ${{ secrets.AUTOMERGE_PAT != '' && secrets.AUTOMERGE_PAT || github.token }}
+          CHECKS_TOKEN: ${{ github.token }}
           HAS_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}
           REPO: ${{ github.repository }}
           EVENT_NAME: ${{ github.event_name }}
@@ -162,7 +163,7 @@ jobs:
               exit 0
             fi
 
-            gh api --method POST "repos/${REPO}/check-runs" \
+            GH_TOKEN="${CHECKS_TOKEN}" gh api --method POST "repos/${REPO}/check-runs" \
               -H "Accept: application/vnd.github+json" \
               -f name="Automerge Review Gate" \
               -f head_sha="${head_oid}" \
