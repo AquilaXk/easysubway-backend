@@ -1,6 +1,12 @@
-name: Backend Image Preflight
+name: Backend Immutable Image Producer
 
 on:
+  pull_request:
+    branches:
+      - main
+  push:
+    branches:
+      - main
   workflow_dispatch:
 
 permissions:
@@ -9,7 +15,8 @@ permissions:
 jobs:
   image-preflight:
     name: Backend image preflight (no push)
-    runs-on: ubuntu-latest
+    if: ${{ github.event_name != 'push' }}
+    runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
@@ -48,4 +55,153 @@ jobs:
         run: ./gradlew bootJar --no-daemon
 
       - name: Build image without push
-        run: docker build --tag easysubway-backend:preflight backend
+        shell: bash
+        run: |
+          set -euo pipefail
+          final_from="$(awk 'toupper($1) == "FROM" { line=$0 } END { print line }' backend/Dockerfile)"
+          if [[ ! "${final_from}" =~ ^FROM[[:space:]]+[^[:space:]]+@sha256:[a-f0-9]{64}([[:space:]]+AS[[:space:]]+[A-Za-z0-9._-]+)?$ ]]; then
+            echo "backend final base image must be digest pinned" >&2
+            exit 1
+          fi
+          docker buildx create --driver docker-container --use
+          docker buildx build --load --platform linux/arm64 \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --tag "easysubway-backend:preflight-${GITHUB_SHA}" \
+            backend
+          docker image inspect "easysubway-backend:preflight-${GITHUB_SHA}"
+
+  backend-release:
+    name: Backend immutable arm64 image
+    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.sha != '' }}
+    runs-on: ubuntu-24.04-arm
+    permissions:
+      contents: read
+      packages: write
+    steps:
+      - name: Checkout
+        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      - name: Set up Java
+        uses: actions/setup-java@be666c2fcd27ec809703dec50e508c2fdc7f6654
+        with:
+          distribution: temurin
+          java-version: "21"
+          cache: gradle
+
+      - name: Stage pinned contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            --output "${RUNNER_TEMP}/backend-contracts.json" \
+            https://raw.githubusercontent.com/AquilaXk/easysubway/main/contracts/bundles/backend-contracts-v1.0.0.json
+          node backend/tools/stage-contracts.mjs \
+            --lock backend/contracts.lock.json \
+            --input "${RUNNER_TEMP}/backend-contracts.json" \
+            --output backend/build/contracts-staging
+
+      - name: Package backend
+        working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: ./gradlew bootJar --no-daemon
+
+      - name: Validate exact main revision and final base image
+        shell: bash
+        run: |
+          set -euo pipefail
+          [[ "${GITHUB_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          [[ "$(git rev-parse HEAD)" == "${GITHUB_SHA}" ]]
+          final_from="$(awk 'toupper($1) == "FROM" { line=$0 } END { print line }' backend/Dockerfile)"
+          if [[ ! "${final_from}" =~ ^FROM[[:space:]]+[^[:space:]]+@sha256:[a-f0-9]{64}([[:space:]]+AS[[:space:]]+[A-Za-z0-9._-]+)?$ ]]; then
+            echo "backend final base image must be digest pinned" >&2
+            exit 1
+          fi
+
+      - name: Log in to GHCR
+        uses: docker/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and publish immutable arm64 image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="ghcr.io/aquilaxk/easysubway-backend:sha-${GITHUB_SHA}"
+          metadata_file="${RUNNER_TEMP}/backend-build-metadata.json"
+          mkdir -p release-artifacts/backend
+          docker buildx create --driver docker-container --use
+          docker buildx build --platform linux/arm64 --push --sbom=true --provenance=mode=max \
+            --metadata-file "${metadata_file}" \
+            --label "org.opencontainers.image.revision=${GITHUB_SHA}" \
+            --label "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}" \
+            --tag "${image}" \
+            backend
+          digest="$(docker buildx imagetools inspect --format '{{.Manifest.Digest}}' "${image}")"
+          if [[ ! "${digest}" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "published image lacks an immutable digest" >&2
+            exit 1
+          fi
+          if ! grep -Eq '"containerimage\\.digest"[[:space:]]*:[[:space:]]*"'"${digest}"'"' "${metadata_file}"; then
+            echo "Buildx metadata digest does not match the pushed manifest" >&2
+            exit 1
+          fi
+          docker buildx imagetools inspect --raw "${image}@${digest}" > release-artifacts/backend/image-index.json
+          docker buildx imagetools inspect "${image}@${digest}" --format '{{json .}}' > release-artifacts/backend/image-inspect.json
+          sbom="$(docker buildx imagetools inspect "${image}@${digest}" --format '{{json .SBOM}}')"
+          provenance="$(docker buildx imagetools inspect "${image}@${digest}" --format '{{json .Provenance}}')"
+          if [[ -z "${sbom}" || "${sbom}" == "null" || -z "${provenance}" || "${provenance}" == "null" ]]; then
+            echo "published image lacks SBOM or provenance attestation" >&2
+            exit 1
+          fi
+          platform="$(docker buildx imagetools inspect "${image}@${digest}" --format '{{range .Manifest.Manifests}}{{if eq .Platform.OS "linux"}}{{.Platform.OS}}/{{.Platform.Architecture}}{{end}}{{end}}')"
+          if [[ "${platform}" != "linux/arm64" ]]; then
+            echo "published image runtime platform ${platform}, expected linux/arm64" >&2
+            exit 1
+          fi
+          {
+            echo "image=ghcr.io/aquilaxk/easysubway-backend@${digest}"
+            echo "imageDigest=${digest}"
+            echo "gitSha=${GITHUB_SHA}"
+            echo "platform=${platform}"
+            echo "sbom=true"
+            echo "provenance=mode=max"
+          } > release-artifacts/backend/release-metadata.txt
+
+      - name: Emit and verify component manifest
+        shell: bash
+        run: |
+          set -euo pipefail
+          image_digest="$(sed -nE 's/^imageDigest=(sha256:[a-f0-9]{64})$/\\1/p' release-artifacts/backend/release-metadata.txt)"
+          [[ -n "${image_digest}" ]]
+          node backend/tools/build-component-manifest.mjs \
+            --repository AquilaXk/easysubway-backend \
+            --git-sha "${GITHUB_SHA}" \
+            --image-digest "${image_digest}" \
+            --contract-version 1.0.0 \
+            --evidence release-artifacts/backend/release-metadata.txt \
+            --issue-ref AquilaXk/easysubway-backend#17 \
+            --output release-artifacts/backend/backend-component-manifest.json
+          evidence_sha256="$(sha256sum release-artifacts/backend/release-metadata.txt | awk '{print $1}')"
+          grep -Eq '"evidenceSha256"[[:space:]]*:[[:space:]]*"'"${evidence_sha256}"'"' release-artifacts/backend/backend-component-manifest.json
+          test ! -L release-artifacts/backend/backend-component-manifest.json
+
+      - name: Upload immutable release evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02
+        with:
+          name: easysubway-backend-release-${{ github.sha }}
+          path: release-artifacts/backend
+          if-no-files-found: error
+          retention-days: 14
