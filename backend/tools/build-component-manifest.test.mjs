@@ -111,6 +111,22 @@ test("backend immutable producer는 no-push preflight와 digest evidence ledger�
   assert.ok(!workflow.includes(String.raw`*/\\1/p`));
 });
 
+test("backend automerge coordinator는 current-head review와 FIFO를 fail-closed로 검증한다", () => {
+  const workflow = readFileSync(join(repositoryRoot, ".github/workflows/automerge-queue.yml"), "utf8");
+
+  assert.ok(workflow.includes('required_checks=\'["Backend CI","Dependency Vulnerability Scan / osv-scan"]\''));
+  assert.ok(!workflow.includes("--json number --jq '.[].number' || true"));
+  assert.ok(!workflow.includes('|| { echo "::warning::PR #${cand} 조회 실패 — 후보에서 건너뛴다."; continue; }'));
+  assert.ok(workflow.includes("--json headRefOid,mergeStateStatus,reviews,statusCheckRollup"));
+  assert.ok(workflow.includes('.commit.oid == $head_oid'));
+  assert.ok(workflow.includes('startswith("**Actionable comments posted:")'));
+  assert.ok(workflow.includes("reviewThreads(first:100)"));
+  assert.ok(workflow.includes('select(.isResolved == false)'));
+  for (const conclusion of ["FAILURE", "ERROR", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STARTUP_FAILURE", "STALE"]) {
+    assert.ok(workflow.includes(`$c == "${conclusion}"`), conclusion);
+  }
+});
+
 function createFixture() {
   const directory = mkdtempSync(join(tmpdir(), "build-component-manifest-"));
   const evidence = join(directory, "release-metadata.txt");

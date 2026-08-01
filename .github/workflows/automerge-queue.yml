@@ -63,13 +63,13 @@ jobs:
             # Preserve the underlying gh api error so repeated fallbacks are
             # diagnosable from the workflow log (permission/API change/transient).
             echo "::warning::main ruleset required_status_checks 동적 조회 실패($(tr '\n' ' ' <"${ruleset_err}")) — 하드코딩 폴백 사용."
-            required_checks='["Changes","Repository CI","Admin QA Gates","Backend CI","Mobile App CI","Android CI","Release Gate Consistency","PR Title"]'
+            required_checks='["Backend CI","Dependency Vulnerability Scan / osv-scan"]'
           fi
           rm -f "${ruleset_err}"
 
           # search 인덱스 기반 조회 — labeled 이벤트 직후엔 인덱싱 지연으로 빈 결과가 날 수 있다(#2010).
           search_candidates=$(gh pr list --repo "${REPO}" --label automerge --base main --state open \
-            --json number --jq '.[].number' || true)
+            --json number --jq '.[].number')
 
           # 이벤트 PR을 무조건 후보에 합류시키고(라벨 인덱싱 지연 보정) search 결과와 union·중복 제거한다.
           candidates=$(printf '%s\n%s\n' "${search_candidates}" "${EVENT_PR}" \
@@ -80,8 +80,7 @@ jobs:
           candidate_objs="[]"
           for cand in ${candidates}; do
             info=$(gh pr view "${cand}" --repo "${REPO}" \
-              --json number,createdAt,isDraft,state,baseRefName,labels 2>/dev/null) \
-              || { echo "::warning::PR #${cand} 조회 실패 — 후보에서 건너뛴다."; continue; }
+              --json number,createdAt,isDraft,state,baseRefName,labels)
             candidate_objs=$(jq -c --argjson obj "${info}" '. + [$obj]' <<<"${candidate_objs}")
           done
 
@@ -107,19 +106,36 @@ jobs:
 
           for pr_number in ${queue}; do
             state=$(gh pr view "${pr_number}" --repo "${REPO}" \
-              --json mergeStateStatus,reviews,statusCheckRollup)
+              --json headRefOid,mergeStateStatus,reviews,statusCheckRollup)
+            head_oid=$(jq -r '.headRefOid' <<<"${state}")
             merge_state=$(jq -r '.mergeStateStatus' <<<"${state}")
-            review_count=$(jq -r '.reviews | length' <<<"${state}")
+            review_count=$(jq -r --arg head_oid "${head_oid}" \
+              '[.reviews[]?
+                | select(.commit.oid == $head_oid)
+                | select((.body // "") | startswith("**Actionable comments posted:"))] | length' <<<"${state}")
+            repo_owner="${REPO%%/*}"
+            repo_name="${REPO#*/}"
+            unresolved_threads=$(gh api graphql \
+              -f query='query($owner:String!,$name:String!,$number:Int!){repository(owner:$owner,name:$name){pullRequest(number:$number){reviewThreads(first:100){nodes{isResolved}}}}}' \
+              -F owner="${repo_owner}" -F name="${repo_name}" -F number="${pr_number}" \
+              --jq '[.data.repository.pullRequest.reviewThreads.nodes[] | select(.isResolved == false)] | length')
             failed_required=$(jq -r --argjson required "${required_checks}" \
               '[.statusCheckRollup[]?
                 | select(($required | index(.name? // .context?)) != null)
                 | select(((.conclusion? // .state?) // "") as $c
-                  | $c == "FAILURE" or $c == "ERROR")] | length' <<<"${state}")
+                  | $c == "FAILURE" or $c == "ERROR" or $c == "CANCELLED"
+                    or $c == "TIMED_OUT" or $c == "ACTION_REQUIRED" or $c == "STARTUP_FAILURE"
+                    or $c == "STALE")] | length' <<<"${state}")
 
-            echo "PR #${pr_number}: mergeStateStatus=${merge_state}, reviews=${review_count}, failedRequiredChecks=${failed_required}"
+            echo "PR #${pr_number}: mergeStateStatus=${merge_state}, currentHeadReviews=${review_count}, unresolvedThreads=${unresolved_threads}, failedRequiredChecks=${failed_required}"
 
             if [ "${review_count}" -eq 0 ]; then
-              derail "${pr_number}" "GitHub PR Review 객체가 없습니다 (merge-workflow 규약 4단계 코드리뷰 게이트 미충족)."
+              derail "${pr_number}" "현재 head의 지원된 GitHub PR Review 객체가 없습니다 (merge-workflow 규약 4단계 코드리뷰 게이트 미충족)."
+              continue
+            fi
+
+            if [ "${unresolved_threads}" -gt 0 ]; then
+              derail "${pr_number}" "미해결 review thread가 있습니다."
               continue
             fi
 
