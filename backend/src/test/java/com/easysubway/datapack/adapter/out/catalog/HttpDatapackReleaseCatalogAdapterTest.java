@@ -1,5 +1,6 @@
 package com.easysubway.datapack.adapter.out.catalog;
 
+import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
@@ -8,7 +9,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
 import java.net.InetSocketAddress;
 import java.nio.charset.StandardCharsets;
-import java.nio.file.Path;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Signature;
@@ -18,11 +18,9 @@ import org.junit.jupiter.api.Test;
 
 class HttpDatapackReleaseCatalogAdapterTest {
 	private static final ObjectMapper JSON = new ObjectMapper();
-	private static final Path CANONICAL_NUMBER_CONTRACT_PATH =
-		Path.of("..", "contracts", "datapack", "canonical-number-contract.json");
 
 	/**
-	 * contracts/datapack/canonical-number-contract.json 은 Node·Java·Dart 세 구현이
+	 * hub contracts/datapack/canonical-number-contract.json snapshot은 Node·Java·Dart 세 구현이
 	 * 공유하는 정준 숫자 표기 계약이다. 기대 문자열은 세 런타임 실측으로 고정된 상수이며
 	 * 이 테스트는 구현을 복제하지 않고 저장된 상수와만 비교한다.
 	 */
@@ -367,7 +365,8 @@ class HttpDatapackReleaseCatalogAdapterTest {
 	}
 
 	private static JsonNode canonicalNumberContract() throws Exception {
-		return JSON.readTree(CANONICAL_NUMBER_CONTRACT_PATH.toFile());
+		return JSON.readTree(requireNonNull(HttpDatapackReleaseCatalogAdapterTest.class
+			.getResourceAsStream("/contracts/canonical-number-contract.json")));
 	}
 
 	private static String sha256(byte[] value) throws Exception {

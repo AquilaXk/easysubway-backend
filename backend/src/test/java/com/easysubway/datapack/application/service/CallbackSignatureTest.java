@@ -2,12 +2,11 @@ package com.easysubway.datapack.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static java.util.Objects.requireNonNull;
 
 import com.easysubway.datapack.application.service.CallbackSignature.CanonicalFields;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.nio.file.Files;
-import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -54,9 +53,9 @@ class CallbackSignatureTest {
     @Test
     @DisplayName("공유 fixture 벡터의 기대 HMAC과 일치하고 위조는 verify=false")
     void matchesSharedVector() throws Exception {
-        var root = Path.of(System.getProperty("user.dir")).getParent(); // backend → repo root
-        var node = new ObjectMapper().readTree(
-            Files.readString(root.resolve("tools/datapack/fixtures/release-callback-signature-vector.json")));
+        var fixture = requireNonNull(getClass().getResourceAsStream(
+            "/datapack/release-callback-signature-vector.json"));
+        var node = new ObjectMapper().readTree(fixture);
         var sig = new CallbackSignature(node.get("hmacKey").asText());
         var f = fields(node.get("fields"));
 
