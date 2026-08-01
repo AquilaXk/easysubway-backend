@@ -13,12 +13,35 @@ permissions:
 jobs:
   dependency-vulnerability-scan:
     name: Dependency Vulnerability Scan
+    # PR diff 스캔은 PR 컨텍스트(GITHUB_BASE_REF)가 있어야 의미가 있다.
     if: ${{ github.event_name == 'pull_request' }}
     permissions:
       actions: read
       security-events: write
       contents: read
     uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4
+    with:
+      export-results: false
+      upload-sarif: true
+      fail-on-vuln: true
+      scan-args: |-
+        --lockfile=backend/gradle.lockfile
+        --lockfile=tools/qa/package-lock.json
+
+  dependency-vulnerability-scan-dispatch:
+    # 같은 required context(`Dependency Vulnerability Scan / osv-scan`)를 만든다.
+    name: Dependency Vulnerability Scan
+    # Automerge Queue가 update-branch 후 이 워크플로를 명시 dispatch한다. GITHUB_TOKEN
+    # push는 synchronize 이벤트를 만들지 못하므로 dispatch에서 required context를 새 head에
+    # 다시 붙여야 병합이 가능해진다. 다만 dispatch에는 PR 컨텍스트가 없어 GITHUB_BASE_REF가
+    # 비고, PR diff 스캔을 그대로 쓰면 같은 트리를 자기 자신과 비교해 무조건 통과한다.
+    # 그래서 이 경로는 base 비교가 필요 없는 전체 스캔을 쓴다(진단 범위가 더 넓다).
+    if: ${{ github.event_name == 'workflow_dispatch' }}
+    permissions:
+      actions: read
+      security-events: write
+      contents: read
+    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4
     with:
       export-results: false
       upload-sarif: true
@@ -35,6 +58,16 @@ jobs:
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd
         with:
           persist-credentials: false
+
+      - name: Lint workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 워크플로를 실제 YAML 파서로 읽는 유일한 게이트다. run 블록의 block scalar가
+          # 깨져 스크립트 일부가 YAML 구조로 새어 나가는 파손은 텍스트 기반 계약 테스트로는
+          # 잡히지 않는다. 이미지는 다른 base image와 같은 규칙으로 digest 고정한다.
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -64,6 +97,7 @@ jobs:
       - name: Test backend-owned Node contracts
         run: |
           node --test backend/tools/*.test.mjs
+          node --test tools/ci/*.test.mjs
           node --test tools/routes/*.test.mjs
           node --test tools/realtime/*.test.mjs
 

@@ -15,7 +15,8 @@ permissions:
 jobs:
   image-preflight:
     name: Backend image preflight (no push)
-    if: ${{ github.event_name != 'push' }}
+    # workflow_dispatch는 아래 발행 job이 담당하므로 preflight는 PR에서만 돈다.
+    if: ${{ github.event_name == 'pull_request' }}
     runs-on: ubuntu-24.04-arm
     steps:
       - name: Checkout
@@ -73,7 +74,10 @@ jobs:
 
   backend-release:
     name: Backend immutable arm64 image
-    if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && github.sha != '' }}
+    # GITHUB_TOKEN 병합은 main push 이벤트를 만들지 못한다. Automerge Queue가 main
+    # head에 producer 실행이 없으면 이 워크플로를 dispatch하므로, dispatch에서도
+    # 이미지를 발행해야 배포 체인이 이어진다. ref 검증은 그대로 유지한다.
+    if: ${{ (github.event_name == 'push' || github.event_name == 'workflow_dispatch') && github.ref == 'refs/heads/main' && github.sha != '' }}
     runs-on: ubuntu-24.04-arm
     permissions:
       contents: read
