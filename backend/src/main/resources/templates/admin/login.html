@@ -4,34 +4,35 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>관리자 로그인</title>
+	<link rel="icon" type="image/png" th:href="@{/images/admin-app-icon.png}" href="/images/admin-app-icon.png">
 	<link rel="stylesheet" th:href="@{/css/admin-v3.css}">
 </head>
-<body class="admin-v3 admin-login-page">
-<main class="login-layout">
-	<section class="login-brand-panel" aria-label="쉬운 지하철 관리자">
-		<div class="login-brand-lockup">
+<body class="admin-v3">
+<main class="login-screen">
+	<form class="login-card" method="post" th:action="@{/admin/login}">
+		<div class="login-brand">
 			<img th:src="@{/images/admin-app-icon.png}" src="/images/admin-app-icon.png" alt="">
 			<strong>쉬운 지하철 관리자</strong>
 		</div>
-	</section>
-	<section class="login-form-panel">
-		<form class="login-card" method="post" th:action="@{/admin/login}">
-			<h1>관리자 로그인</h1>
-			<input th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-			<div class="login-field">
-				<label for="username">아이디</label>
-				<input id="username" name="username" autocomplete="username" required>
-			</div>
-			<div class="login-field">
-				<label for="password">비밀번호</label>
-				<input id="password" name="password" type="password" autocomplete="current-password" required>
-			</div>
-			<button class="login-submit primary" type="submit">로그인</button>
-			<div class="login-note"
-			     role="alert"
-			     th:if="${loginNotice == T(com.easysubway.common.security.LoginNotice).RETRY_WARNING}">아이디 또는 비밀번호를 확인하고 다시 시도해 주세요.</div>
-		</form>
-	</section>
+		<h1>관리자 로그인</h1>
+		<input th:if="${_csrf != null}" type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+		<div class="login-field">
+			<label for="username">아이디</label>
+			<input id="username" name="username" autocomplete="username" required>
+		</div>
+		<div class="login-field">
+			<label for="password">비밀번호</label>
+			<input id="password" name="password" type="password" autocomplete="current-password" required>
+		</div>
+		<label class="login-remember" for="remember-me">
+			<input id="remember-me" name="remember-me" type="checkbox">
+			<span>로그인 유지</span>
+		</label>
+		<button class="login-submit primary" type="submit">로그인</button>
+		<div class="login-note"
+		     role="alert"
+		     th:if="${loginNotice == T(com.easysubway.common.security.LoginNotice).RETRY_WARNING}">아이디 또는 비밀번호를 확인하고 다시 시도해 주세요.</div>
+	</form>
 </main>
 </body>
 </html>
