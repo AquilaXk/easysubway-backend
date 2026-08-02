@@ -10,19 +10,24 @@ version: 2
 #
 # 넣지 않은 생태계
 #   pub·terraform : 대상 매니페스트 0건(pubspec.yaml·*.tf 모두 없음).
-#   gradle        : 조건부 보류. 아래 사유 참조.
+#   gradle        : version updates 조건부 보류. 아래 사유 참조.
 #
-# ── gradle 조건부 보류 (AquilaXk/easysubway#2727 승계, 이 레포 이슈 #45) ────────────────
-# backend 는 eGovFrame 5.0.0 을 버전 핀으로 고정한다. 이 핀은 두 겹이다.
-#   (1) backend/gradle/local-maven/ 에 org.egovframe.boot·org.egovframe.rte 산출물 5.0.0
-#       21개(jar·pom)가 로컬 Maven 저장소로 커밋돼 있고, build.gradle 의 repositories 가
-#       includeGroup 으로 이 두 group 을 해당 저장소에서만 해석한다.
-#   (2) dependencyLocking.lockAllConfigurations() + backend/gradle.lockfile 이 전 configuration
-#       의 해석 결과를 고정한다.
-# dependabot 의 gradle 생태계는 build.gradle 의 버전 문자열을 올리는 것이 전부라 (1)의
-# 로컬 저장소 산출물이나 (2)의 lockfile 을 함께 갱신하지 못한다. 활성화하면 핀 정합이
-# 깨진 PR 이 주기적으로 생성된다. 2026-07-06 hub 커밋 40e745d3 이 같은 사유로 dependabot 을
-# 제거한 이력이 있다.
+# ── gradle version updates 조건부 보류 (AquilaXk/easysubway#2727 승계, 이 레포 이슈 #45) ─
+# 보류 대상은 version updates 뿐이다. updates 에서 gradle 을 생략해도 security updates 가
+# 막히지는 않는다 — security updates 는 이 파일이 아니라 레포의 Dependabot alerts·security
+# updates 설정이 소관이다(2026-08-02 실측: 이 레포는 둘 다 disabled 라 현재는 어느 쪽도
+# 생성되지 않는다). 그 설정이 켜지면 gradle 항목 없이도 보안 PR 은 올라올 수 있고, 그것은
+# 막을 대상이 아니다.
+#
+# 보류 사유는 backend/gradle/local-maven/ 의 eGovFrame 로컬 mirror 정합 하나다.
+# org.egovframe.boot·org.egovframe.rte 산출물 5.0.0 21개(jar·pom)가 로컬 Maven 저장소로
+# 커밋돼 있고, build.gradle 의 repositories 가 includeGroup 으로 이 두 group 을 해당
+# 저장소에서 우선 해석한다(원격 egovframe 저장소가 CI runner 에서 간헐 timeout 이라 둔
+# mirror 다). 버전 문자열만 올리는 자동 PR 은 mirror 에 없는 산출물을 요구하게 되므로 핀
+# 정합이 깨진다. 2026-07-06 hub 커밋 40e745d3 이 같은 사유로 dependabot 을 제거했다.
+#
+# gradle.lockfile 은 보류 사유가 아니다 — dependabot 은 2025-06-24 GA 로 build.gradle 과
+# gradle.lockfile 을 함께 갱신한다(별도 설정 불필요).
 # 활성화 판정은 이 파일이 아니라 별도 결정 경로(이슈 #45 → hub #2727)가 소유한다.
 # ────────────────────────────────────────────────────────────────────────────────────
 #
