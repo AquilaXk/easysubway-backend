@@ -1,0 +1,93 @@
+version: 2
+
+# 이 레포가 실제로 소유한 생태계만 등록한다(기준: main 26b0b68e 실측).
+#   npm            → tools/qa/package.json · tools/qa/package-lock.json
+#   docker         → backend/Dockerfile
+#   github-actions → .github/workflows/ 4개(automerge-queue · ci · osv-scheduled · release-artifacts)
+# npm·docker 두 항목은 hub(AquilaXk/easysubway) .github/dependabot.yml 에서 이 레포로 이관한
+# 것이다. hub 쪽 중복 항목 제거는 AquilaXk/easysubway#2690 Task 10 시점이며, 순서는
+# "이 레포 활성화가 먼저, hub 제거가 나중"이다.
+#
+# 넣지 않은 생태계
+#   pub·terraform : 대상 매니페스트 0건(pubspec.yaml·*.tf 모두 없음).
+#   gradle        : 조건부 보류. 아래 사유 참조.
+#
+# ── gradle 조건부 보류 (AquilaXk/easysubway#2727 승계, 이 레포 이슈 #45) ────────────────
+# backend 는 eGovFrame 5.0.0 을 버전 핀으로 고정한다. 이 핀은 두 겹이다.
+#   (1) backend/gradle/local-maven/ 에 org.egovframe.boot·org.egovframe.rte 산출물 5.0.0
+#       21개(jar·pom)가 로컬 Maven 저장소로 커밋돼 있고, build.gradle 의 repositories 가
+#       includeGroup 으로 이 두 group 을 해당 저장소에서만 해석한다.
+#   (2) dependencyLocking.lockAllConfigurations() + backend/gradle.lockfile 이 전 configuration
+#       의 해석 결과를 고정한다.
+# dependabot 의 gradle 생태계는 build.gradle 의 버전 문자열을 올리는 것이 전부라 (1)의
+# 로컬 저장소 산출물이나 (2)의 lockfile 을 함께 갱신하지 못한다. 활성화하면 핀 정합이
+# 깨진 PR 이 주기적으로 생성된다. 2026-07-06 hub 커밋 40e745d3 이 같은 사유로 dependabot 을
+# 제거한 이력이 있다.
+# 활성화 판정은 이 파일이 아니라 별도 결정 경로(이슈 #45 → hub #2727)가 소유한다.
+# ────────────────────────────────────────────────────────────────────────────────────
+#
+# commit-message.prefix 는 세 항목 공통으로 "[CI] 의존성 업데이트" 를 쓴다. 이 레포에는
+# 현재 PR 제목 lint job 이 없지만(2026-08-02 실측: .github/workflows/** 에 pr-title 0건),
+# hub 와 같은 lint(^\[(Feat|Fix|Test|Chore|Docs|Build|CI|Style|Refactor|Backend|Mobile)\] .+)가
+# 나중에 도입돼도 자동 생성 PR 이 즉시 막히지 않도록 선제 적용한 것이다. 제목 규약의 정본은
+# 이 prefix 이며, lint 에 dependabot 예외를 두는 방식은 채택하지 않는다.
+updates:
+  # (1) npm — tools/qa. hub 항목을 그대로 이관했다.
+  - package-ecosystem: "npm"
+    directory: "/tools/qa"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:23"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "[CI] 의존성 업데이트"
+    groups:
+      # @axe-core/playwright 와 playwright-core 는 함께 올려야 정합이 유지된다.
+      # major 는 Playwright API 변경을 동반하므로 묶지 않고 개별 PR 로 남겨 검토를 강제한다.
+      qa-tools-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
+
+  # (2) docker — backend/Dockerfile. hub 항목의 eclipse-temurin major ignore 를 그대로 승계한다.
+  - package-ecosystem: "docker"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:23"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "[CI] 의존성 업데이트"
+    ignore:
+      # 런타임 major 상향은 build.gradle 의 Java 21 toolchain 과 함께 판정할 사안이다.
+      - dependency-name: "eclipse-temurin"
+        update-types:
+          - "version-update:semver-major"
+
+  # (3) github-actions — 워크플로 4개의 action 핀.
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "tuesday"
+      time: "06:23"
+      timezone: "Asia/Seoul"
+    open-pull-requests-limit: 3
+    commit-message:
+      prefix: "[CI] 의존성 업데이트"
+    groups:
+      # major 는 runner·Node 런타임 변경을 동반하는 경우가 많아 묶지 않는다.
+      github-actions-minor-patch:
+        applies-to: "version-updates"
+        patterns:
+          - "*"
+        update-types:
+          - "minor"
+          - "patch"
