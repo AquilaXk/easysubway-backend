@@ -36,11 +36,26 @@ import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandl
 import org.yaml.snakeyaml.Yaml;
 
 /**
- * 공개 OpenAPI 계약 파일이 실제 controller와 어긋나면 실패하는 계약 게이트.
+ * 공개 OpenAPI 계약 파일의 <strong>구조</strong>가 실제 controller와 어긋나면 실패하는 계약 게이트.
  *
  * <p>계약 파일은 저장소 밖의 클라이언트가 요청을 조립하는 정본이므로, 어긋난 채로 남아 있으면
  * 서버가 거부하는 요청이 생성된다. 그 어긋남이 아무 경보 없이 남아 있던 것이 이 게이트를 만든
  * 이유다(이슈 #37).
+ *
+ * <p><strong>검사하는 것</strong>은 아래 각 테스트의 {@code @DisplayName}이 말하는 범위가 전부다 —
+ * endpoint 실재와 소유 경로 완전성, Spring이 강제하는 binding의 required 선언, 유령 parameter
+ * 부재, 요청 본문의 유무·required·media type, 성공 응답의 상태 코드와 본문 유무, component 참조.
+ *
+ * <p><strong>검사하지 않는 것</strong>(이슈 #48에서 추적):
+ * <ul>
+ *   <li>요청·응답 스키마의 property가 record component와 맞는지 — 필드를 추가·삭제·개명해도
+ *       통과한다. 요청 본문은 "있는가 + media type이 비지 않았는가"까지만 본다.</li>
+ *   <li>스키마의 {@code required}·{@code nullable} 제약이 실제 검증과 맞는지.</li>
+ *   <li>계약 {@code enum}이 대응 Java enum 상수 집합과 맞는지.</li>
+ *   <li>계약이 선언한 오류 응답(4xx·5xx)이 실제로 그 상태로 나오는지 — 성공 응답만 대조한다.</li>
+ * </ul>
+ * 이 목록을 줄이지 않은 채로 "계약 드리프트를 CI가 잡는다"고 서술하면 안 된다. 그 과신이 이번
+ * 결손을 무증상으로 남긴 원인과 같은 종류다.
  *
  * <p>새 계약 파일을 게이트에 넣으려면 {@link #SPECS}에 파일 이름과 그 파일이 소유하는 경로
  * 접두사만 추가하면 된다. 검사 규칙은 파일마다 다시 쓰지 않는다.
