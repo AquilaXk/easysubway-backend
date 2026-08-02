@@ -2,24 +2,347 @@ openapi: 3.0.3
 info:
   title: EasySubway realtime API
   version: 1.0.0
+  description: |
+    역 도착 정보와 노선별 열차 위치를 조회하는 공개 API입니다.
+
+    제공기관 자격 증명은 서버에만 있습니다. 자격 증명이나 제공기관 주소로 해석될 수 있는
+    query parameter를 함께 보내면 요청 전체가 거부됩니다.
+
+    지원 범위 밖이거나 제공기관 응답을 받지 못한 경우에도 오류가 아니라 200 응답의
+    `status`(`UNSUPPORTED`·`UNAVAILABLE`·`STALE`)로 알립니다. 정적 기능이 실시간 실패로
+    함께 멈추지 않게 하기 위한 설계입니다.
+# 인증 없이 호출하는 공개 API임을 명시한다.
+security: []
 paths:
   /api/v1/realtime/arrivals:
     get:
+      summary: 역 도착 정보 조회
+      description: |
+        한 역의 도착 예정 열차를 조회합니다. `lineId`를 함께 보내면 해당 노선으로 좁혀
+        조회합니다.
+      parameters:
+        - name: stationId
+          in: query
+          required: true
+          description: EasySubway 내부 역 식별자
+          schema:
+            type: string
+            minLength: 1
+        - name: stationQueryName
+          in: query
+          required: true
+          description: |
+            제공기관 조회에 사용할 역 이름입니다. 매핑에 등록된 이름이 있으면 그 값을 우선
+            사용하므로, 이 값은 등록된 이름이 없을 때의 조회 이름이 됩니다.
+          schema:
+            type: string
+            minLength: 1
+        - name: lineId
+          in: query
+          required: false
+          description: EasySubway 내부 노선 식별자. 생략하면 노선으로 좁히지 않습니다.
+          schema:
+            type: string
+        - name: providerLineId
+          in: query
+          required: false
+          description: |
+            제공기관 노선 식별자입니다. 보내면 찾은 매핑의 노선과 일치하는지 함께 검증하고,
+            어긋나면 `status`가 `UNSUPPORTED`인 200 응답이 됩니다. 생략하면 검증하지 않습니다.
+          schema:
+            type: string
       responses:
         "200":
-          description: realtime arrivals
+          description: 도착 정보 조회 결과. 지원 범위 밖·조회 실패도 `status`로 함께 표현합니다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeArrivalEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidRealtimeRequest"
   /api/v1/realtime/train-positions:
     get:
+      summary: 노선별 열차 위치 조회
+      description: |
+        한 노선의 열차 위치를 조회합니다. 역 단위 조회가 아니므로 `stationId`를 받지 않습니다.
+        위치는 GPS가 아니라 운행 정보 기준이며, 그 사실을 응답의 `sourceNotice`로도 전달합니다.
+      parameters:
+        - name: lineName
+          in: query
+          required: true
+          description: |
+            제공기관 조회에 사용할 노선 이름입니다. 매핑에 등록된 이름이 있으면 그 값을 우선
+            사용하므로, 이 값은 등록된 이름이 없을 때의 조회 이름이 됩니다.
+          schema:
+            type: string
+            minLength: 1
+        - name: lineId
+          in: query
+          required: false
+          description: EasySubway 내부 노선 식별자. 생략하면 노선으로 좁히지 않습니다.
+          schema:
+            type: string
+        - name: providerLineId
+          in: query
+          required: false
+          description: |
+            제공기관 노선 식별자입니다. 보내면 찾은 매핑의 노선과 일치하는지 함께 검증하고,
+            어긋나면 `status`가 `UNSUPPORTED`인 200 응답이 됩니다. 생략하면 검증하지 않습니다.
+          schema:
+            type: string
       responses:
         "200":
-          description: realtime train positions
+          description: 열차 위치 조회 결과. 지원 범위 밖·조회 실패도 `status`로 함께 표현합니다.
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/RealtimeTrainPositionEnvelope"
+        "400":
+          $ref: "#/components/responses/InvalidRealtimeRequest"
 components:
+  responses:
+    InvalidRealtimeRequest:
+      description: |
+        요청 값이 올바르지 않습니다. 아래 두 경우로 나뉘고 본문 형태가 다릅니다.
+
+        - 제공기관 자격 증명류 parameter를 함께 보낸 경우: 오류 봉투를 반환합니다.
+          거부 대상 이름은 `apikey`·`api_key`·`key`·`providerUrl`·`provider_url`·`secret`·
+          `serviceKey`·`service_key`·`token`·`url`이고, 대소문자와 `-`/`_` 표기는 구분하지 않습니다.
+          요청에 실린 값과 조회 대상은 응답에 반영하지 않습니다.
+        - 필수 query parameter가 없는 경우: 본문 없이 상태 코드만 반환합니다.
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/ErrorEnvelope"
+          example:
+            success: false
+            message: 실시간 provider credential은 앱/API 요청에 포함할 수 없습니다.
+            code: INVALID_REQUEST
+            correlationId: 0f1d2c3b-4a59-4687-9d21-8f6a5b4c3d2e
   schemas:
     ApiResponseEnvelope:
+      description: |
+        모든 응답이 공유하는 봉투입니다. 값이 없는 필드는 직렬화에서 빠지므로
+        성공 응답에는 `message`·`code`·`correlationId`가, 실패 응답에는 `data`가 없습니다.
       type: object
-      required: [success, data]
+      required: [success]
       properties:
         success:
           type: boolean
         data:
-          type: object
+          description: 성공 응답 본문
+        message:
+          type: string
+        code:
+          type: string
+        correlationId:
+          type: string
+    ErrorEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/ApiResponseEnvelope"
+        - type: object
+          required: [success, message, code, correlationId]
+          properties:
+            success:
+              type: boolean
+              enum: [false]
+            message:
+              type: string
+            code:
+              type: string
+              enum: [INVALID_REQUEST]
+            correlationId:
+              type: string
+    RealtimeArrivalEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/ApiResponseEnvelope"
+        - type: object
+          required: [success, data]
+          properties:
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: "#/components/schemas/RealtimeArrivalResult"
+    RealtimeTrainPositionEnvelope:
+      allOf:
+        - $ref: "#/components/schemas/ApiResponseEnvelope"
+        - type: object
+          required: [success, data]
+          properties:
+            success:
+              type: boolean
+              enum: [true]
+            data:
+              $ref: "#/components/schemas/RealtimeTrainPositionResult"
+    RealtimeStatus:
+      type: string
+      description: |
+        - `FRESH`: 제공기관에서 새로 받은 정보
+        - `STALE`: 새로 받지 못해 마지막 정보를 그대로 보여주는 상태
+        - `UNSUPPORTED`: 실시간 지원 범위 밖
+        - `UNAVAILABLE`: 제공기관 조회 실패
+      enum:
+        - FRESH
+        - STALE
+        - UNSUPPORTED
+        - UNAVAILABLE
+    RealtimeArrivalResult:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - fallbackCode
+        - message
+        - receivedAt
+        - providerId
+        - arrivals
+      properties:
+        status:
+          $ref: "#/components/schemas/RealtimeStatus"
+        fallbackCode:
+          type: string
+          nullable: true
+          description: '`FRESH`가 아닐 때의 사유 코드'
+        message:
+          type: string
+          nullable: true
+          description: 사용자에게 그대로 보여줄 수 있는 안내 문구
+        receivedAt:
+          type: string
+          nullable: true
+          description: 정보를 받은 시각
+        providerId:
+          type: string
+        arrivals:
+          type: array
+          items:
+            $ref: "#/components/schemas/RealtimeArrival"
+    RealtimeTrainPositionResult:
+      type: object
+      additionalProperties: false
+      required:
+        - status
+        - fallbackCode
+        - message
+        - receivedAt
+        - providerId
+        - sourceNotice
+        - trainPositions
+      properties:
+        status:
+          $ref: "#/components/schemas/RealtimeStatus"
+        fallbackCode:
+          type: string
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        receivedAt:
+          type: string
+          nullable: true
+        providerId:
+          type: string
+        sourceNotice:
+          type: string
+          description: 위치가 GPS 기준이 아니라는 사실을 사용자에게 알리는 고정 문구
+        trainPositions:
+          type: array
+          items:
+            $ref: "#/components/schemas/RealtimeTrainPosition"
+    RealtimeArrival:
+      type: object
+      additionalProperties: false
+      required:
+        - lineId
+        - stationName
+        - destination
+        - direction
+        - trainNo
+        - etaSeconds
+        - message
+        - positionMessage
+        - providerReceivedAt
+        - servicePattern
+        - rawDestination
+        - rawDirection
+        - rawServicePattern
+      properties:
+        lineId:
+          type: string
+          nullable: true
+        stationName:
+          type: string
+          nullable: true
+        destination:
+          type: string
+          nullable: true
+          description: 정규화된 행선지
+        direction:
+          type: string
+          nullable: true
+          description: 정규화된 방향
+        trainNo:
+          type: string
+          nullable: true
+        etaSeconds:
+          type: integer
+          format: int32
+          nullable: true
+        message:
+          type: string
+          nullable: true
+        positionMessage:
+          type: string
+          nullable: true
+        providerReceivedAt:
+          type: string
+          nullable: true
+        servicePattern:
+          type: string
+          nullable: true
+        rawDestination:
+          type: string
+          nullable: true
+          description: 정규화 전 제공기관 원본 값
+        rawDirection:
+          type: string
+          nullable: true
+          description: 정규화 전 제공기관 원본 값
+        rawServicePattern:
+          type: string
+          nullable: true
+          description: 정규화 전 제공기관 원본 값
+    RealtimeTrainPosition:
+      type: object
+      additionalProperties: false
+      required:
+        - lineId
+        - stationName
+        - trainNo
+        - trainStatus
+        - direction
+        - destination
+        - providerReceivedAt
+      properties:
+        lineId:
+          type: string
+          nullable: true
+        stationName:
+          type: string
+          nullable: true
+        trainNo:
+          type: string
+          nullable: true
+        trainStatus:
+          type: string
+          nullable: true
+        direction:
+          type: string
+          nullable: true
+        destination:
+          type: string
+          nullable: true
+        providerReceivedAt:
+          type: string
+          nullable: true
