@@ -169,28 +169,57 @@ jobs:
           # 오염시킨다. 대신 사람이 봐야 하는 상태(DIRTY·fork head·미지 enum·required
           # context 실패)는 ::warning:: annotation으로 run 요약에 남긴다.
           # queue-loop-begin
-          # 한 실행에서 평가할 후보 수에는 상한이 필요하다. 상한은 아래 두 기준을 모두
-          # 만족해야 하고 둘 중 작은 쪽이 구속한다. 형제 저장소 상수를 그대로 옮기면 안 된다.
+          # 한 실행에서 평가할 후보 수에는 상한이 필요하다. 상한은 아래 세 기준을 모두
+          # 만족해야 하고 가장 작은 쪽이 구속한다. 형제 저장소 상수를 그대로 옮기면 안 된다.
           #
-          #  - API 호출량. 후보 한 건당 요청은 5회다(`gh pr view --json`, reviews
-          #    --paginate, reviewThreads GraphQL, check-runs --paginate, statuses
-          #    --paginate). required context별 jq는 로컬 계산이라 요청을 쓰지 않는다.
-          #    실행당 고정 비용은 producer 판정(commits/main 1 + workflow runs 1 + 후보
-          #    실행별 /jobs 1~2 + dispatch 1 + 반영 확인 1)에 ruleset 1과 gh pr list 1을
-          #    더해 대략 7회다. GITHUB_TOKEN 한도는 저장소당 시간당 1,000회이고 이 저장소의
-          #    다른 워크플로와 공유한다. 코디네이터 실행 빈도는 cron */10의 6회에
-          #    workflow_run(Backend CI 완료)·push·labeled가 얹혀 평상시 12회/시, 버스트
-          #    18회/시다(concurrency group이 대기 실행을 하나로 접으므로 그 위로는 올라가지
-          #    않는다). 한도의 70%인 700회를 상한으로 두면 18 * (7 + 5 * window) <= 700에서
-          #    window <= 6.4다. 형제 저장소 값 20을 그대로 쓰면 18 * 107 = 1,926회로 시간당
-          #    한도를 1.9배 넘긴다.
+          #  - API 예산. 후보 한 건당 요청은 5회다(`gh pr view --json`은 GraphQL,
+          #    reviews --paginate는 REST, reviewThreads는 GraphQL, check-runs와 statuses는
+          #    REST). required context별 jq는 로컬 계산이라 요청을 쓰지 않는다. 후보 평가
+          #    밖의 고정 비용은 BEHIND 경로가 정한다(update-branch 1 + 반영 확인 12 +
+          #    ci dispatch 1 + 여유 1 = 15). GITHUB_TOKEN 한도는 저장소당 시간당 1,000회이고
+          #    이 저장소의 다른 워크플로와 공유한다.
+          #
+          #    이 예산을 "실행 빈도"로 나누지 않는다. 빈도는 강제되지 않을뿐더러 실측으로도
+          #    위아래 양쪽에서 어긋난다. concurrency 그룹은 cancel-in-progress: false라
+          #    대기 중인 실행만 접을 뿐 실행이 시작되는 빈도에는 상한을 두지 않고, 이 job은
+          #    실측 5~24초(중앙값 10초)로 짧아 트리거가 그보다 뜸하면 접히는 실행이 아예
+          #    없다(관측 23회 중 concurrency로 취소된 실행 0건). 반대로 cron */10은
+          #    best-effort라 실측 14시간 동안 11회, 간격 55~112분으로만 떴다. 그래서 창은
+          #    가정이 아니라 남은 예산을 매 실행 실측해서 정한다. `GET /rate_limit`은 한도를
+          #    소비하지 않으므로 이 조회 자체가 공짜이고, 이 job이 실제로 쓰는 토큰의
+          #    REST·GraphQL 잔량을 그대로 준다. 덕분에 한도값도 실행 빈도도 알 필요가 없다.
+          #    두 버킷의 최솟값에 후보당 5회를 청구하면 실제 지출(REST 3 + GraphQL 2)보다
+          #    많이 떼므로 어느 쪽 버킷도 계산보다 먼저 마르지 않는다.
+          #
+          #    잔량에서 reserve를 먼저 뗀다. 큐가 공유 한도를 다 쓰면 같은 한도를 쓰는
+          #    producer dispatch까지 함께 멈추는데 그것이 최악이다. reserve는 큐가 손대지
+          #    않는 몫이라 큐가 멈춰도 배포 체인은 계속 돈다. producer 스텝의 정상 경로는
+          #    실행당 3회(commits/main + 실행 목록 + 발행 job 확인)이므로 300회면 100회
+          #    실행분이다.
           #  - job timeout. 이 job은 10분(600초)이고 producer 스텝이 최대 65초(반영 확인
           #    12 * 5초 + API 5회), BEHIND 경로의 bounded wait가 최대 60초(이 경로는 루프를
           #    끝내므로 실행당 한 번), 러너·스텝 오버헤드가 30초쯤 든다. 남는 445초를 후보당
           #    5회 * 1초(비관적 왕복)로 나누면 89건이고, API가 느린 날을 감안해 2배 여유를
           #    두면 44건이다.
+          #  - 한 실행의 지분. 잔량만으로 창을 정하면 예산이 넉넉한 실행 하나가 남은 몫을
+          #    통째로 써 버리고 뒤의 실행이 굶는다. window_max로 실행당 지출을 47회(이미 쓴
+          #    ruleset 1 + gh pr list 1 + 고정 비용 15 + 5 * 6)로 묶어 어느 실행도 시간당
+          #    한도의 5% 남짓만 쓰게 한다.
           #
-          # 구속하는 쪽은 API 호출량이므로 window=6이다.
+          # 구속하는 쪽은 API 예산이므로 window_max=6이고, 실제 창은 실행마다
+          # min(window_max, (잔량 - reserve - 고정 비용) / 후보당 요청)으로 정한다. 잔량이
+          # reserve에 닿으면 창이 0이 되어 큐만 건너뛰고 producer 스텝은 계속 돈다. 형제
+          # 저장소 값 20을 그대로 쓰면 실행당 117회로 세 기준을 모두 깬다.
+          #
+          # 창 대신 빈도를 제한하는 대안도 검토했고 둘 다 기각했다.
+          #  - workflow_run(Backend CI 완료) 트리거 제거: 남는 강제 트리거는 cron뿐인데
+          #    실측 간격이 55~112분이라 병합 후 다음 큐 처리가 최대 두 시간 늦는다. 막힌
+          #    후보를 건너뛰어 큐를 스스로 풀겠다는 이 워크플로의 목적을 무너뜨린다.
+          #    labeled·push·dispatch는 남으므로 빈도 상한을 얻지도 못한다.
+          #  - 직전 실행 시각 기준 debounce: 실행당 요청을 하나 더 쓰고, 건너뛴 실행이 다시
+          #    "직전 실행"이 되어 경과 시간 기준으로는 영원히 미뤄진다(시간 버킷으로 바꿔야
+          #    성립한다). 무엇보다 이 워크플로 밖에서 한도가 소모된 경우를 못 막는다. 잔량
+          #    실측은 그 경우까지 막으면서 조회 비용이 0이다.
           #
           # 다만 창을 큐 앞쪽에 고정하면 창 밖의 후보는 매 실행 제외되어, 없애려던 head
           # 차단이 1건에서 window건 규모로 옮겨갈 뿐이다. 그래서 창 시작점을 실행마다
@@ -230,8 +259,33 @@ jobs:
           # 필요 없는 평상시에는 오래된 순 그대로 훑는다. 회전이 걸린 실행에서도 선택된
           # 후보를 원래 순서(오래된 순)로 되돌려 평가하므로, 한 실행 안에서 "평가한 후보
           # 중 가장 오래된 병합 가능 후보가 이긴다"는 성질은 유지된다.
+          # candidate-budget-begin
+          window_max=6
+          reserve=300
+          fixed_cost=15
+          per_candidate=5
+          # /rate_limit은 한도를 소비하지 않으므로 매 실행 물어도 공짜다. 조회가 실패하거나
+          # 응답이 숫자가 아니면 잔량을 모르는 것이고, 모르는 예산은 쓰지 않는다. 이때 멈추는
+          # 것은 큐뿐이며 배포 체인은 앞 스텝에서 이미 처리됐다.
+          budget="$(gh api rate_limit --jq '
+            [.resources.core.remaining, .resources.graphql.remaining] |
+            map(select(type == "number")) |
+            min // empty
+          ')" || true
+          if [[ ! "${budget}" =~ ^[0-9]+$ ]]; then
+            echo "::warning::GITHUB_TOKEN 잔량을 읽지 못했다; 이번 실행은 큐를 건너뛴다."
+            exit 0
+          fi
+          window=$(( (budget - reserve - fixed_cost) / per_candidate ))
+          if [[ "${window}" -gt "${window_max}" ]]; then
+            window="${window_max}"
+          fi
+          if [[ "${window}" -lt 1 ]]; then
+            echo "::warning::GITHUB_TOKEN 잔량 ${budget}회가 예약분 ${reserve}회에 닿았다; 배포 체인 몫을 남기고 큐를 건너뛴다."
+            exit 0
+          fi
+          # candidate-budget-end
           # candidate-offset-begin
-          window=6
           total="$(jq 'length' <<<"${candidates}")"
           offset=0
           if [[ "${total}" -gt "${window}" ]]; then

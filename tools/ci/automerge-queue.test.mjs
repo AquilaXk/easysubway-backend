@@ -83,6 +83,7 @@ test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail c
     // head-of-line blocking의 원인이었다.
     '[.[] | select(.isDraft == false)] | [sort_by(.createdAt)[].number]',
     '# queue-loop-begin',
+    '# candidate-budget-begin',
     '# candidate-offset-begin',
     '# candidate-window-begin',
     'reviewThreads(first: 100)',
@@ -619,9 +620,23 @@ test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch�
   assert.ok(dispatchAt > contextGateAt, 'gates must precede the merge dispatch');
 });
 
+const BUDGET_BLOCK_RE = /# candidate-budget-begin\n([\s\S]*?)\n\s+# candidate-budget-end/;
+
+// 예산 블록의 상수는 워크플로에서 그대로 읽는다. 테스트가 값을 따로 들고 있으면
+// 워크플로만 바뀌었을 때 계약이 실제 동작과 어긋난 채 통과한다.
+const budgetConstantOf = (workflow, name) => {
+  const block = workflow.match(BUDGET_BLOCK_RE)?.[1];
+  assert.ok(block, 'candidate budget block must stay testable');
+  const declared = Number(block.match(new RegExp(`^\\s*${name}=(\\d+)$`, 'm'))?.[1]);
+  assert.ok(Number.isInteger(declared), `${name} constant must stay declared`);
+  return declared;
+};
+
+// 실제 창은 실행마다 실측 잔량에서 정해지므로 상수로 남는 것은 상한뿐이다. 창이 상한을
+// 넘지 않는다는 성질을 보는 테스트들은 이 값을 쓴다.
 const declaredWindowOf = (workflow) => {
-  const declared = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
-  assert.ok(Number.isInteger(declared) && declared > 0, 'window constant must stay declared');
+  const declared = budgetConstantOf(workflow, 'window_max');
+  assert.ok(declared > 0, 'window ceiling must stay positive');
   return declared;
 };
 
@@ -746,6 +761,9 @@ const makeRunQueue =
     `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
     '  local all="$*"',
     '  case "$all" in',
+    // 잔량 조회의 jq 프로그램이 `.resources.graphql.remaining`을 담고 있어 아래
+    // `*graphql*`에 먼저 걸린다. 좁은 패턴을 앞에 둔다. 스텁은 `--jq` 적용 결과를 낸다.
+    `    *rate_limit*) printf '%s\\n' 1000 ;;`,
     `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
     // BEHIND 경로의 bounded wait는 같은 `gh pr view`를 `--json headRefOid`로 부른다.
     // 두 호출을 한 패턴으로 잡으면 new_head에 JSON 문서 전체가 들어가고, 테스트가
@@ -873,21 +891,38 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.equal(allBlocked.evaluated.length, 2);
 });
 
-test('후보 창은 timeout과 API 호출량 양쪽으로 유도되고 모든 후보에 도달한다', async () => {
+test('후보 창은 timeout·실측 예산·실행 지분 세 기준으로 유도되고 모든 후보에 도달한다', async () => {
   const workflow = await readWorkflow();
 
   // 창 크기는 이 저장소 값으로 다시 계산해야 한다. 형제 저장소 상수를 그대로 쓰면
   // 실행당 요청이 저장소 시간당 한도를 넘는다.
   const declaredWindow = declaredWindowOf(workflow);
-  assert.equal(declaredWindow, 6, 'window constant must stay pinned to the derived value');
+  assert.equal(declaredWindow, 6, 'window ceiling must stay pinned to the derived value');
   const rationale = workflow.slice(
     workflow.indexOf('# queue-loop-begin'),
-    workflow.indexOf('# candidate-offset-begin'),
+    workflow.indexOf('# candidate-budget-begin'),
   );
-  // 근거는 두 기준을 모두 담아야 한다. 하나만 적으면 다음 사람이 다른 쪽을 모른 채 값을 바꾼다.
-  for (const basis of ['저장소당 시간당 1,000회', '10분(600초)', '후보 한 건당', '고정 비용']) {
+  // 근거는 세 기준을 모두 담아야 한다. 하나만 적으면 다음 사람이 다른 쪽을 모른 채 값을 바꾼다.
+  for (const basis of [
+    '저장소당 시간당 1,000회',
+    '10분(600초)',
+    '후보 한 건당',
+    '고정 비용',
+    // 빈도가 아니라 실측으로 정한다는 것과, 왜 빈도를 믿을 수 없는지.
+    'GET /rate_limit',
+    'cancel-in-progress: false',
+    // 같은 한도를 쓰는 배포 체인 몫을 왜 떼는지.
+    'producer dispatch',
+  ]) {
     assert.ok(rationale.includes(basis), `window rationale missing: ${basis}`);
   }
+  // 실행 빈도 가정으로 되돌아가면 안 된다. concurrency는 대기 실행만 접을 뿐 실행이
+  // 시작되는 빈도에 상한을 두지 않으므로, "N회/시"에서 유도한 상한은 강제되지 않는다.
+  assert.doesNotMatch(
+    rationale,
+    /회\/시/,
+    'window must not be derived from an assumed invocation rate',
+  );
 
   // 창 선택 자체. 어떤 시작점에서든 선택 수는 window 이하이고 오래된 순이며,
   // 시작점 전체를 훑으면 모든 후보가 최소 한 번은 창에 들어온다.
@@ -913,6 +948,96 @@ test('후보 창은 timeout과 API 호출량 양쪽으로 유도되고 모든 �
       total,
       `every candidate must be reachable from some offset at total=${total}`,
     );
+  }
+});
+
+test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌리지 않는다', async () => {
+  const workflow = await readWorkflow();
+  const budgetBlock = workflow.match(BUDGET_BLOCK_RE)?.[1];
+  assert.ok(budgetBlock, 'candidate budget block must stay testable');
+
+  // 잔량은 이 job이 실제로 쓰는 토큰에서 읽어야 한다. 한도값을 상수로 들고 있으면
+  // 실행 빈도 가정으로 되돌아간 것과 같다.
+  assert.ok(budgetBlock.includes('gh api rate_limit'), 'budget must be measured, not assumed');
+  // 후보 평가는 REST와 GraphQL을 함께 쓴다. 한쪽만 보면 다른 버킷이 먼저 마른다.
+  assert.ok(budgetBlock.includes('.resources.core.remaining'));
+  assert.ok(budgetBlock.includes('.resources.graphql.remaining'));
+
+  const windowMax = budgetConstantOf(workflow, 'window_max');
+  const reserve = budgetConstantOf(workflow, 'reserve');
+  const fixedCost = budgetConstantOf(workflow, 'fixed_cost');
+  const perCandidate = budgetConstantOf(workflow, 'per_candidate');
+  assert.equal(windowMax, 6);
+  assert.equal(reserve, 300, 'deploy chain reserve must stay pinned');
+  assert.equal(fixedCost, 15);
+  assert.equal(perCandidate, 5);
+
+  // 잔량만 바꿔 가며 블록을 그대로 실행한다. 스텁은 `--jq` 적용 결과를 낸다.
+  const runBudget = (stub) =>
+    spawnSync(
+      'bash',
+      [
+        '-c',
+        [
+          'set -euo pipefail',
+          `gh() { ${stub} }`,
+          dedent(budgetBlock),
+          `printf 'window=%s\\n' "$window"`,
+        ].join('\n'),
+      ],
+      { encoding: 'utf8' },
+    );
+  const windowAt = (remaining) => runBudget(`printf '%s\\n' ${remaining};`);
+
+  // 기대값은 워크플로 상수로 되계산하지 않고 고정한다. 유도식을 바꾸는 것은 결정이므로
+  // 테스트도 함께 고쳐야 한다.
+  for (const [remaining, expected] of [
+    [5000, 6],
+    [1000, 6],
+    [345, 6],
+    [340, 5],
+    [330, 3],
+    [320, 1],
+  ]) {
+    const result = windowAt(remaining);
+    assert.equal(result.status, 0, `budget block failed at remaining=${remaining}: ${result.stderr}`);
+    assert.equal(
+      result.stdout.trim(),
+      `window=${expected}`,
+      `window must follow the measured budget at remaining=${remaining}`,
+    );
+    // 핵심 불변식. 이번 실행이 계획한 지출을 다 써도 예약분은 남는다 — 같은 한도를 쓰는
+    // producer dispatch가 큐 때문에 멈추지 않는다.
+    assert.ok(
+      remaining - fixedCost - perCandidate * expected >= reserve,
+      `queue must never plan to spend into the reserve at remaining=${remaining}`,
+    );
+    assert.ok(expected <= windowMax, `window must stay under the ceiling at remaining=${remaining}`);
+  }
+
+  // 예약분에 닿으면 큐만 건너뛴다. 실행을 실패시키지 않는다 — producer 스텝은 이미 끝났고
+  // 실패로 남기면 그 check가 다음 판정 입력을 오염시킨다.
+  for (const remaining of [319, 316, 300, 0]) {
+    const result = windowAt(remaining);
+    assert.equal(result.status, 0, `budget block must not fail at remaining=${remaining}`);
+    assert.match(result.stdout, /::warning::/, `low budget must be announced at remaining=${remaining}`);
+    assert.doesNotMatch(
+      result.stdout,
+      /window=/,
+      `queue must not run below the reserve at remaining=${remaining}`,
+    );
+  }
+
+  // 잔량을 모르면 쓰지 않는다. 조회 실패도 비숫자 응답도 fail closed다.
+  for (const [label, stub] of [
+    ['빈 응답', "printf '';"],
+    ['비숫자 응답', "printf '%s\\n' null;"],
+    ['조회 실패', 'return 1;'],
+  ]) {
+    const result = runBudget(stub);
+    assert.equal(result.status, 0, `budget block must not fail on ${label}`);
+    assert.match(result.stdout, /::warning::/, `unknown budget must be announced on ${label}`);
+    assert.doesNotMatch(result.stdout, /window=/, `queue must not run on ${label}`);
   }
 });
 
@@ -942,6 +1067,8 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
         [
           'set -euo pipefail',
           `GITHUB_RUN_NUMBER=${JSON.stringify(String(runNumber))}`,
+          // 창 크기는 앞선 예산 블록이 정한다. 여기서는 주입값으로 시작점만 본다.
+          `window=${declaredWindow}`,
           `candidates=${JSON.stringify(
             JSON.stringify(Array.from({ length: total }, (_, index) => index)),
           )}`,
@@ -953,7 +1080,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
     );
     assert.equal(result.status, 0, `offset block failed: ${result.stderr}`);
     const [drawnWindow, offset] = result.stdout.trim().split(' ').map(Number);
-    assert.equal(drawnWindow, declaredWindow, 'window constant must stay in sync');
+    assert.equal(drawnWindow, declaredWindow, 'offset draw must not resize the window');
     return offset;
   };
 
@@ -1094,15 +1221,17 @@ test('창 밖 후보 도달 가능성은 시작점을 주입해 결정적으로 
 
 test('draft 필터는 창 산출 이전에 적용된다', async () => {
   const workflow = await readWorkflow();
-  const declaredWindow = Number(workflow.match(/^\s+window=(\d+)$/m)?.[1]);
+  const declaredWindow = declaredWindowOf(workflow);
 
   // 순서 계약. draft 필터가 창 뒤로 밀리면 draft가 창 자리를 차지해 실제로 평가되는
   // 후보 수가 window보다 줄어든다.
   const candidatesAt = workflow.indexOf('candidates="$(gh pr list');
+  const budgetAt = workflow.indexOf('# candidate-budget-begin');
   const offsetAt = workflow.indexOf('# candidate-offset-begin');
   const windowAt = workflow.indexOf('# candidate-window-begin');
   assert.ok(candidatesAt > 0, 'candidate selection must stay findable');
-  assert.ok(offsetAt > candidatesAt, 'draft filter must run before the offset draw');
+  assert.ok(budgetAt > candidatesAt, 'draft filter must run before the budget draw');
+  assert.ok(offsetAt > budgetAt, 'window size must be settled before the offset draw');
   assert.ok(windowAt > offsetAt, 'draft filter must run before the window slice');
 
   const selectProgram = workflow.match(
@@ -1142,6 +1271,7 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
       '-c',
       [
         'set -euo pipefail',
+        `window=${declaredWindow}`,
         `candidates=${JSON.stringify(selected)}`,
         dedent(offsetBlock),
         `printf '%s %s\\n' "$total" "$offset"`,
