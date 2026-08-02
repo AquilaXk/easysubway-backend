@@ -621,6 +621,15 @@ test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch�
 });
 
 const BUDGET_BLOCK_RE = /# candidate-budget-begin\n([\s\S]*?)\n\s+# candidate-budget-end/;
+// 상수와 jq 질의만 담은 조각. 하네스가 이 블록을 그대로 주입하므로 워크플로에서 상수를
+// 바꾸면 하네스도 같이 따라간다 — 테스트가 값을 따로 들고 있으면 계약이 실제 동작과
+// 어긋난 채 통과한다.
+const BUDGET_CONSTANTS_RE = /# budget-constants-begin\n([\s\S]*?)\n\s+# budget-constants-end/;
+const budgetConstantsOf = (workflow) => {
+  const block = workflow.match(BUDGET_CONSTANTS_RE)?.[1];
+  assert.ok(block, 'budget constants block must stay testable');
+  return dedent(block);
+};
 
 // 예산 블록의 상수는 워크플로에서 그대로 읽는다. 테스트가 값을 따로 들고 있으면
 // 워크플로만 바뀌었을 때 계약이 실제 동작과 어긋난 채 통과한다.
@@ -675,10 +684,13 @@ const makePickWindow = (windowProgram, windowSize) => (total, offset) => {
 // 확률이 아니라 "어떤 시작점에서 그 후보가 평가되는가"의 문제라서, 난수를 걷어내고
 // 시작점을 직접 넣어야 결정적으로 확인할 수 있다.
 const makeRunQueue =
-  (queueLoop) =>
-  (prs, { runNumber = 0, window = null, offset = null } = {}) => {
+  (queueLoop, budgetConstants) =>
+  (prs, { runNumber = 0, window = null, offset = null, remaining = [1000] } = {}) => {
   const dir = mkdtempSync(join(tmpdir(), 'automerge-queue-loop-'));
   const log = join(dir, 'gh.log');
+  // 잔량은 호출 순서대로 소비하고 목록이 끝나면 마지막 값을 반복한다. 루프 안 재확인이
+  // 실제로 다시 읽는지 보려면 실행 도중 값이 바뀌어야 한다.
+  writeFileSync(join(dir, 'rates'), `${remaining.join('\n')}\n`);
   for (const pr of prs) {
     const head = `head${pr.number}`;
     writeFileSync(
@@ -763,7 +775,12 @@ const makeRunQueue =
     '  case "$all" in',
     // 잔량 조회의 jq 프로그램이 `.resources.graphql.remaining`을 담고 있어 아래
     // `*graphql*`에 먼저 걸린다. 좁은 패턴을 앞에 둔다. 스텁은 `--jq` 적용 결과를 낸다.
-    `    *rate_limit*) printf '%s\\n' 1000 ;;`,
+    '    *rate_limit*)',
+    '      rn=$(cat "$FIX/ratecount" 2>/dev/null || printf 0); rn=$((rn + 1))',
+    '      printf %s "$rn" > "$FIX/ratecount"',
+    '      rv="$(sed -n "${rn}p" "$FIX/rates")"',
+    '      [ -n "$rv" ] || rv="$(tail -1 "$FIX/rates")"',
+    `      printf '%s\\n' "$rv" ;;`,
     `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
     // BEHIND 경로의 bounded wait는 같은 `gh pr view`를 `--json headRefOid`로 부른다.
     // 두 호출을 한 패턴으로 잡으면 new_head에 JSON 문서 전체가 들어가고, 테스트가
@@ -774,6 +791,12 @@ const makeRunQueue =
     '    *graphql*) n="${all#*number=}"; n="${n%% *}"; cat "$FIX/threads-$n.json" ;;',
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
     '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
+    // 응답이 필요 없는 실제 동작. 로그에만 남기고 조용히 성공한다.
+    '    "pr merge"* | *update-branch* | "workflow run"*) ;;',
+    // 기본 분기가 없으면 워크플로가 새 gh 호출을 늘렸을 때 스텁이 빈 출력 + 종료 코드 0을
+    // 낸다. 큐 루프는 그것을 "빈 API 응답"으로 읽고 후보를 건너뛰므로, 하네스가 덮지 못한
+    // 호출이 조용히 통과한다. 실패시켜 즉시 드러낸다.
+    `    *) printf 'unstubbed gh call: %s\\n' "$all" >&2; return 1 ;;`,
     '  esac',
     '}',
     'sleep() { :; }',
@@ -782,6 +805,7 @@ const makeRunQueue =
     'name=r',
     `required='[{"context":"Backend CI","integration_id":null}]'`,
     'candidates="$(gh pr list)"',
+    budgetConstants,
     ...(window === null ? [] : [`window=${window}`]),
     ...(offset === null ? [] : [`offset=${offset}`]),
     dedent(queueLoop),
@@ -799,6 +823,7 @@ const makeRunQueue =
     ),
     updatedBranch: calls.includes('update-branch'),
     dispatchedCi: calls.includes('workflow run ci.yml'),
+    rateCalls: (calls.match(/gh api rate_limit/g) ?? []).length,
     stdout: result.stdout ?? '',
     stderr: result.stderr ?? '',
   };
@@ -810,7 +835,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     /# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/,
   )?.[1];
   assert.ok(queueLoop, 'queue loop must stay testable');
-  const runQueue = makeRunQueue(queueLoop);
+  const runQueue = makeRunQueue(queueLoop, budgetConstantsOf(workflow));
 
   // 큐 head가 BLOCKED이어도 뒤의 병합 가능한 후보가 처리된다. 이것이 이 설계의 핵심이다.
   assert.equal(
@@ -970,9 +995,11 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   assert.equal(windowMax, 6);
   assert.equal(reserve, 300, 'deploy chain reserve must stay pinned');
   assert.equal(fixedCost, 15);
-  assert.equal(perCandidate, 5);
+  // 후보당 청구는 호출 5회가 아니라 --paginate 추가 페이지까지 덮는 여유값이다.
+  assert.equal(perCandidate, 9, 'per-candidate charge must keep the pagination allowance');
 
-  // 잔량만 바꿔 가며 블록을 그대로 실행한다. 스텁은 `--jq` 적용 결과를 낸다.
+  // 응답 payload를 주고 워크플로의 jq 질의를 실제 jq로 적용해 `gh --jq`를 그대로 흉내낸다.
+  // 스텁이 완성된 숫자를 내면 질의 자체가 검증되지 않아, 한쪽 버킷이 깨진 응답을 못 잡는다.
   const runBudget = (stub) =>
     spawnSync(
       'bash',
@@ -987,17 +1014,22 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
       ],
       { encoding: 'utf8' },
     );
-  const windowAt = (remaining) => runBudget(`printf '%s\\n' ${remaining};`);
+  const runPayload = (payload) =>
+    runBudget(`printf '%s' ${JSON.stringify(JSON.stringify(payload))} | jq -r "\${budget_query}";`);
+  const buckets = (core, graphql) => ({
+    resources: { core: { remaining: core }, graphql: { remaining: graphql } },
+  });
+  const windowAt = (remaining) => runPayload(buckets(remaining, remaining));
 
   // 기대값은 워크플로 상수로 되계산하지 않고 고정한다. 유도식을 바꾸는 것은 결정이므로
   // 테스트도 함께 고쳐야 한다.
   for (const [remaining, expected] of [
     [5000, 6],
     [1000, 6],
-    [345, 6],
-    [340, 5],
-    [330, 3],
-    [320, 1],
+    [369, 6],
+    [360, 5],
+    [342, 3],
+    [324, 1],
   ]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block failed at remaining=${remaining}: ${result.stderr}`);
@@ -1015,9 +1047,13 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
     assert.ok(expected <= windowMax, `window must stay under the ceiling at remaining=${remaining}`);
   }
 
+  // 두 버킷 값이 다르면 작은 쪽이 창을 정한다.
+  assert.equal(runPayload(buckets(5000, 342)).stdout.trim(), 'window=3');
+  assert.equal(runPayload(buckets(342, 5000)).stdout.trim(), 'window=3');
+
   // 예약분에 닿으면 큐만 건너뛴다. 실행을 실패시키지 않는다 — producer 스텝은 이미 끝났고
   // 실패로 남기면 그 check가 다음 판정 입력을 오염시킨다.
-  for (const remaining of [319, 316, 300, 0]) {
+  for (const remaining of [323, 320, 300, 0]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block must not fail at remaining=${remaining}`);
     assert.match(result.stdout, /::warning::/, `low budget must be announced at remaining=${remaining}`);
@@ -1028,8 +1064,15 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
     );
   }
 
-  // 잔량을 모르면 쓰지 않는다. 조회 실패도 비숫자 응답도 fail closed다.
+  // 잔량을 모르면 쓰지 않는다. 한쪽 버킷만 깨져도 마찬가지다 — 후보 평가는 REST와 GraphQL을
+  // 둘 다 소비하므로, 한쪽을 조용히 버리고 남은 하나로 진행하면 미지의 버킷이 이미 고갈돼
+  // 있어도 그대로 쓰게 된다.
   for (const [label, stub] of [
+    ['core만 null', `printf '%s' ${JSON.stringify(JSON.stringify(buckets(null, 5000)))} | jq -r "\${budget_query}";`],
+    ['graphql만 null', `printf '%s' ${JSON.stringify(JSON.stringify(buckets(5000, null)))} | jq -r "\${budget_query}";`],
+    ['graphql 버킷 부재', `printf '%s' ${JSON.stringify(JSON.stringify({ resources: { core: { remaining: 5000 } } }))} | jq -r "\${budget_query}";`],
+    ['core 값이 문자열', `printf '%s' ${JSON.stringify(JSON.stringify(buckets('5000', 5000)))} | jq -r "\${budget_query}";`],
+    ['resources 부재', `printf '%s' '{}' | jq -r "\${budget_query}";`],
     ['빈 응답', "printf '';"],
     ['비숫자 응답', "printf '%s\\n' null;"],
     ['조회 실패', 'return 1;'],
@@ -1039,6 +1082,58 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
     assert.match(result.stdout, /::warning::/, `unknown budget must be announced on ${label}`);
     assert.doesNotMatch(result.stdout, /window=/, `queue must not run on ${label}`);
   }
+});
+
+test('후보 순회 중에도 잔량을 다시 읽어 예약분에서 멈춘다', async () => {
+  const workflow = await readWorkflow();
+  const queueLoop = workflow.match(
+    /# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/,
+  )?.[1];
+  assert.ok(queueLoop, 'queue loop must stay testable');
+  const runQueue = makeRunQueue(queueLoop, budgetConstantsOf(workflow));
+
+  // 재확인은 그 후보에 요청을 쓰기 전에 와야 한다. 뒤에 두면 이미 쓴 뒤에 멈춘다.
+  const recheck = workflow.match(
+    /# budget-recheck-begin\n([\s\S]*?)\n\s+# budget-recheck-end/,
+  )?.[1];
+  assert.ok(recheck, 'budget recheck block must stay testable');
+  assert.ok(recheck.includes('gh api rate_limit'), 'recheck must re-measure, not reuse the draw');
+  const recheckAt = workflow.indexOf('# budget-recheck-begin');
+  const firstViewAt = workflow.indexOf('info="$(gh pr view');
+  assert.ok(recheckAt > 0 && firstViewAt > recheckAt, 'recheck must precede the candidate request');
+
+  const queue = [
+    { number: 1, mergeStateStatus: 'BLOCKED' },
+    { number: 2, mergeStateStatus: 'BLOCKED' },
+    { number: 3, mergeStateStatus: 'CLEAN' },
+  ];
+
+  // 잔량이 충분하면 셋 다 평가하고 마지막 후보를 병합한다.
+  const plenty = runQueue(queue, { remaining: [5000] });
+  assert.equal(plenty.status, 0);
+  assert.deepEqual(plenty.evaluated, [1, 2, 3]);
+  assert.equal(plenty.mergedPr, 3);
+  // 창 산출 1회 + 후보 3건 재확인 3회.
+  assert.equal(plenty.rateCalls, 4, 'budget must be re-measured once per candidate');
+
+  // 창을 정할 때는 넉넉했는데 순회 중 예약분에 닿으면, 첫 후보에 요청을 쓰기 전에 멈춘다.
+  const drained = runQueue(queue, { remaining: [5000, 310] });
+  assert.equal(drained.status, 0, 'reserve stop must not fail the run');
+  assert.deepEqual(drained.evaluated, [], 'no candidate may be evaluated below the reserve');
+  assert.equal(drained.mergedPr, null);
+  assert.match(drained.stdout + drained.stderr, /::warning::/);
+
+  // 한 건을 평가한 뒤 바닥나면 거기서 멈춘다. 뒤의 병합 가능 후보는 다음 실행 몫이다.
+  const midway = runQueue(queue, { remaining: [5000, 5000, 310] });
+  assert.equal(midway.status, 0);
+  assert.deepEqual(midway.evaluated, [1], 'evaluation must stop at the reserve boundary');
+  assert.equal(midway.mergedPr, null);
+
+  // 순회 중 잔량을 못 읽는 것도 소진과 같게 다룬다.
+  const unknown = runQueue(queue, { remaining: [5000, 'null'] });
+  assert.equal(unknown.status, 0, 'unknown budget must not fail the run');
+  assert.deepEqual(unknown.evaluated, []);
+  assert.match(unknown.stdout + unknown.stderr, /::warning::/);
 });
 
 test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 뽑힌다', async () => {
@@ -1134,7 +1229,7 @@ test('창 밖 후보 도달 가능성은 시작점을 주입해 결정적으로 
     /# queue-loop-begin\n([\s\S]*?)\n\s+# queue-loop-end/,
   )?.[1];
   assert.ok(queueLoop, 'queue loop must stay testable');
-  const runQueue = makeRunQueue(queueLoop);
+  const runQueue = makeRunQueue(queueLoop, budgetConstantsOf(workflow));
   // 시작점 산출을 뺀 뒷부분만 뽑는다. 큐 루프 전체를 쓰면 주입한 값을 난수 draw가 덮어써
   // 이 테스트가 다시 표본이 된다.
   const candidateLoop = workflow.match(
@@ -1146,7 +1241,7 @@ test('창 밖 후보 도달 가능성은 시작점을 주입해 결정적으로 
     /RANDOM/,
     'injected offsets must not be overwritten by the draw',
   );
-  const runCandidateLoop = makeRunQueue(candidateLoop);
+  const runCandidateLoop = makeRunQueue(candidateLoop, budgetConstantsOf(workflow));
   const windowProgram = workflow.match(WINDOW_PROGRAM_RE)?.[1];
   assert.ok(windowProgram, 'candidate window jq program must stay testable');
   const pickWindow = makePickWindow(windowProgram, declaredWindow);
