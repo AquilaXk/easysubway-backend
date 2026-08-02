@@ -44,7 +44,8 @@ import org.yaml.snakeyaml.Yaml;
  *
  * <p><strong>검사하는 것</strong>은 아래 각 테스트의 {@code @DisplayName}이 말하는 범위가 전부다 —
  * endpoint 실재와 소유 경로 완전성, Spring이 강제하는 binding의 required 선언, 유령 parameter
- * 부재, 요청 본문의 유무·required·media type, 성공 응답의 상태 코드와 본문 유무, component 참조.
+ * 부재, 요청 본문의 유무·required·media type, 성공 응답의 상태 코드와 본문 유무,
+ * security scheme을 참조하는 operation의 401 선언, component 참조.
  *
  * <p><strong>검사하지 않는 것</strong>(이슈 #48에서 추적):
  * <ul>
@@ -52,7 +53,10 @@ import org.yaml.snakeyaml.Yaml;
  *       통과한다. 요청 본문은 "있는가 + media type이 비지 않았는가"까지만 본다.</li>
  *   <li>스키마의 {@code required}·{@code nullable} 제약이 실제 검증과 맞는지.</li>
  *   <li>계약 {@code enum}이 대응 Java enum 상수 집합과 맞는지.</li>
- *   <li>계약이 선언한 오류 응답(4xx·5xx)이 실제로 그 상태로 나오는지 — 성공 응답만 대조한다.</li>
+ *   <li>선언된 오류 응답(4xx·5xx)이 실제로 그 상태로 나오는지, 그리고 실제로 나는 오류 응답이
+ *       전부 선언됐는지. security scheme을 참조하는 operation의 401 <em>존재</em>만 구조적으로
+ *       요구할 뿐, 그 401이 실제로 나는지도, auth scheme을 선언하지 않은 경로의 filter-level
+ *       401/403(예: 익명 전용 경로에 잘못된 Basic을 실은 경우)도 대조하지 않는다.</li>
  * </ul>
  * 이 목록을 줄이지 않은 채로 "계약 드리프트를 CI가 잡는다"고 서술하면 안 된다. 그 과신이 이번
  * 결손을 무증상으로 남긴 원인과 같은 종류다.
@@ -227,6 +231,34 @@ class PublicOpenApiContractTest {
 		}
 
 		assertThat(violations).as("성공 응답 정합").isEmpty();
+	}
+
+	@Test
+	@DisplayName("security scheme을 참조하는 operation은 인증 실패 응답 401을 선언한다")
+	void securedOperationsDeclareAuthFailureResponse() {
+		// 이 저장소의 보호 경로는 httpBasic + 401 entry point를 쓴다. auth scheme을 제공하는
+		// operation은 잘못된 자격 증명에 401을 반환하므로, 그 401을 계약이 빠뜨리면 생성
+		// 클라이언트가 인증 실패를 모델링하지 못한다. 실제 리뷰에서 GET /reports/{reportId}가
+		// 이 누락으로 걸렸다(#47). auth scheme을 선언하지 않는 operation의 filter-level 401
+		// (예: 익명 전용 경로에 잘못된 Basic을 실은 경우)까지 전수 대조하는 것은 runtime
+		// 검증이 필요해 #48 소관이다.
+		Map<OperationKey, HandlerMethod> handlers = handlers();
+		List<String> violations = new ArrayList<>();
+
+		for (SpecUnderTest spec : SPECS) {
+			forEachOperation(spec, handlers, (key, handler, operation) -> {
+				if (!referencesSecurityScheme(operation)) {
+					return;
+				}
+				if (!responses(operation).containsKey("401")) {
+					violations.add(spec.fileName() + ": " + key
+						+ " 는 security scheme을 참조하는데 인증 실패 응답 401을 선언하지 않았다"
+						+ " (선언된 상태 코드: " + responses(operation).keySet() + ")");
+				}
+			}, violations);
+		}
+
+		assertThat(violations).as("security operation 인증 실패 응답").isEmpty();
 	}
 
 	@Test
@@ -447,6 +479,19 @@ class PublicOpenApiContractTest {
 
 	private static Map<String, Object> content(Map<String, Object> holder) {
 		return asMap(holder.get("content"));
+	}
+
+	/**
+	 * operation의 {@code security}에 비어 있지 않은 requirement가 하나라도 있는가.
+	 * {@code [{}, {reportOwnerAuth: []}]}는 참(익명 허용 + auth scheme 제공),
+	 * {@code []}·미선언은 거짓이다.
+	 */
+	private static boolean referencesSecurityScheme(Map<String, Object> operation) {
+		Object security = operation.get("security");
+		if (!(security instanceof List<?> requirements)) {
+			return false;
+		}
+		return requirements.stream().anyMatch(requirement -> requirement instanceof Map<?, ?> map && !map.isEmpty());
 	}
 
 	@SuppressWarnings("unchecked")
