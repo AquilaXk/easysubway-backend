@@ -20,9 +20,6 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 	private static final Path INVENTORY = CONTRACTS.resolve("legacy-android-public-operation-inventory.json");
 	private static final Path INTERNAL_API_INDEX = CONTRACTS.resolve("internal-api-index.json");
 	private static final ObjectMapper JSON = new ObjectMapper();
-	private static final List<String> INVENTORY_PATH_PREFIXES = List.of(
-		"/api/v1/routes/", "/api/v2/routes/", "/api/v1/realtime/", "/api/v1/report", "/api/v1/me/favorites/");
-
 	private static final List<ExpectedEntry> EXPECTED = List.of(
 		entry("POST", "/api/v1/routes/search", "route-v1-search", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeSearchErrorMessage"),
 		entry("POST", "/api/v2/routes/session", "route-v2-session", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_v2_ingress.dart#RouteSearchOnlineException"),
@@ -51,7 +48,7 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 	@DisplayName("snapshot is closed, ordered, and correctly reconciled with the Backend public index")
 	void inventoryIsClosedAndExact() throws IOException {
 		JsonNode inventory = JSON.readTree(INVENTORY.toFile());
-		assertThat(fieldNames(inventory)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "evidence", "entries");
+		assertThat(fieldNames(inventory)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "evidence", "scope", "entries");
 		assertThat(inventory.path("schemaVersion").isTextual()).isTrue();
 		assertThat(inventory.path("artifactKind").isTextual()).isTrue();
 		assertThat(inventory.path("evidence").isObject()).isTrue();
@@ -62,6 +59,15 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		assertThat(inventory.path("evidence").path("mobileBaseSha").isTextual()).isTrue();
 		assertThat(inventory.path("evidence").path("backendBaseSha").asText()).isEqualTo("d512647eae19a52a13adc31dc5ba72af756edcfb");
 		assertThat(inventory.path("evidence").path("mobileBaseSha").asText()).isEqualTo("fd348c38e333597e3f0ec56c509cb1ba41e59cae");
+		JsonNode scope = inventory.path("scope");
+		assertThat(scope.isObject()).isTrue();
+		assertThat(fieldNames(scope)).containsExactlyInAnyOrder("domains", "backendPublicPathPrefixes");
+		assertThat(scope.path("domains").isArray()).isTrue();
+		assertThat(scope.path("backendPublicPathPrefixes").isArray()).isTrue();
+		assertThat(scope.path("domains")).extracting(JsonNode::asText)
+			.containsExactly("ROUTE", "REALTIME", "REPORT", "FAVORITES");
+		assertThat(scope.path("backendPublicPathPrefixes")).extracting(JsonNode::asText)
+			.containsExactly("/api/v1/routes/", "/api/v2/routes/", "/api/v1/realtime/", "/api/v1/report", "/api/v1/me/favorites/");
 		assertThat(inventory.path("entries").isArray()).isTrue();
 
 		List<ExpectedEntry> actual = new ArrayList<>();
@@ -99,7 +105,7 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		}
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 
-		Set<Operation> publicOperations = publicOperations();
+		Set<Operation> publicOperations = publicOperations(scope);
 		Set<Operation> expectedBackendOperations = new LinkedHashSet<>();
 		for (ExpectedEntry entry : EXPECTED) {
 			if ("MOBILE_CONSUMED_BACKEND_UNMAPPED".equals(entry.currentBinding())) {
@@ -119,13 +125,18 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		return new ExpectedEntry(method, path, operation, domain, currentBinding, migrationDisposition, mobileMessageSource);
 	}
 
-	private static Set<Operation> publicOperations() throws IOException {
+	private static Set<Operation> publicOperations(JsonNode scope) throws IOException {
 		JsonNode index = JSON.readTree(INTERNAL_API_INDEX.toFile());
 		Set<Operation> operations = new LinkedHashSet<>();
+		List<String> pathPrefixes = new ArrayList<>();
+		for (JsonNode prefix : scope.path("backendPublicPathPrefixes")) {
+			assertThat(prefix.isTextual()).isTrue();
+			pathPrefixes.add(prefix.asText());
+		}
 		for (JsonNode entry : index.path("operations")) {
 			String path = entry.path("path").asText();
 			if ("PUBLIC_API".equals(entry.path("surface").asText())
-				&& INVENTORY_PATH_PREFIXES.stream().anyMatch(path::startsWith)) {
+				&& pathPrefixes.stream().anyMatch(path::startsWith)) {
 				operations.add(new Operation(entry.path("method").asText(), path));
 			}
 		}
