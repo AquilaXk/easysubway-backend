@@ -546,7 +546,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `  [[ ${JSON.stringify(failedOperation)} == update-branch && "$*" == api*update-branch* ]] && return 42`,
       `  [[ ${JSON.stringify(commentFails)} == true && "$*" == "pr comment"* ]] && return 43`,
       '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; fi',
-      '  if [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]]; then label_calls=$((label_calls + 1)); [[ "$label_calls" -le "$label_failures" ]] && return 44; printf \'%s\\n\' LABEL_REMOVAL_SUCCEEDED >> "$GH_LOG"; fi',
+      '  if [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]]; then label_calls=$((label_calls + 1)); [[ "$label_calls" -le "$label_failures" ]] && return 44; fi',
       '  case "$*" in',
       '    *"pr view"*autoMergeRequest*) native_state_index="$(<"$native_state_file")"; state="${native_states[$native_state_index]:-true}"; printf \'%s\\n\' "$((native_state_index + 1))" > "$native_state_file"; [[ "$state" == ERROR ]] && return 46; printf \'NATIVE_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
       '    *"pr view"*"--json labels"*) label_state_index="$(<"$label_state_file")"; state="${label_states[$label_state_index]:-true}"; printf \'%s\\n\' "$((label_state_index + 1))" > "$label_state_file"; [[ "$state" == ERROR ]] && return 47; printf \'LABEL_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
@@ -580,7 +580,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       nativeAutoMergeDisabled: result.calls.includes('NATIVE_VERIFY_true'),
       nativeVerificationCalls: (result.calls.match(/gh pr view .*autoMergeRequest/g) ?? []).length,
       labelRemovalAttempted: /gh pr edit .*--remove-label automerge/.test(result.calls),
-      removedLabel: result.calls.includes('LABEL_REMOVAL_SUCCEEDED'),
+      removedLabel: result.calls.includes('LABEL_VERIFY_true'),
       labelVerificationCalls: (result.calls.match(/gh pr view .*--json labels/g) ?? []).length,
     };
     return failedOperation || commentFails || disableAutoFailures > 0 || labelFailures > 0 || nativeStates.includes('ERROR') || labelStates.includes('ERROR')
@@ -750,6 +750,23 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(labelFailed.labelVerificationCalls, 2, 'failed label cleanup is verified on every attempt');
   assert.match(labelFailed.stderr, /merge-stderr-sentinel/);
   assert.doesNotMatch(labelFailed.calls, /merge-stderr-sentinel/);
+
+  const labelNotConverged = runDispatch('CLEAN', {
+    failedOperation: 'merge',
+    labelStates: ['false', 'false'],
+  });
+  assert.equal(labelNotConverged.status, 41, 'label non-convergence must retain the merge status');
+  assert.equal(labelNotConverged.labelRemovalAttempted, true, 'label non-convergence must attempt removal');
+  assert.equal(labelNotConverged.removedLabel, false, 'label mutation alone must not pass convergence');
+  assert.equal(labelNotConverged.labelVerificationCalls, 2, 'label non-convergence must stop after two checks');
+
+  const labelThenConverged = runDispatch('CLEAN', {
+    failedOperation: 'merge',
+    labelStates: ['false', 'true'],
+  });
+  assert.equal(labelThenConverged.status, 41, 'label convergence must retain the merge status');
+  assert.equal(labelThenConverged.removedLabel, true, 'second label verification must prove convergence');
+  assert.equal(labelThenConverged.labelVerificationCalls, 2, 'label convergence must consume false then true');
 
   const queryFailed = runDispatch('CLEAN', { failedOperation: 'merge', nativeStates: ['ERROR', 'ERROR'] });
   assert.equal(queryFailed.status, 41, 'query failure must not replace the merge status');
