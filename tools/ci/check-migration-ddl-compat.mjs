@@ -430,6 +430,15 @@ export function scanSqlForViolations(rawSql) {
     for (const label of scanAddColumnClauses(s, isAlterTable, createdTables)) add(label);
 
     if (isAlterTable) {
+      if (/\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
+        add("ENABLE ROW LEVEL SECURITY");
+      }
+      if (/\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
+        add("FORCE ROW LEVEL SECURITY");
+      }
+      if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+GENERATED\s+ALWAYS\b/i.test(s)) {
+        add("SET GENERATED ALWAYS");
+      }
       const targetMatch = s.match(
         /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([\w".]+)/i,
       );

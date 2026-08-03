@@ -1,0 +1,1 @@
+ALTER TABLE facility_reports ENABLE ROW LEVEL SECURITY;

@@ -46,6 +46,9 @@ const destructiveCases = [
   ["V117__add_column_implicit_not_null.sql", "DEFAULT 없는 NOT NULL 컬럼 추가"],
   ["V118__if_not_exists_table_constraint.sql", "기존 테이블에 제약(ADD CONSTRAINT) 추가"],
   ["V119__drop_default.sql", "DROP DEFAULT"],
+  ["V120__enable_row_level_security.sql", "ENABLE ROW LEVEL SECURITY"],
+  ["V121__force_row_level_security.sql", "FORCE ROW LEVEL SECURITY"],
+  ["V122__set_generated_always.sql", "SET GENERATED ALWAYS"],
 ];
 
 for (const [name, expectedLabel] of destructiveCases) {
