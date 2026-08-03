@@ -524,6 +524,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       labelFailures = 0,
       nativeStates = ['true'],
       labelStates = ['true'],
+      captureCalls = false,
     } = {},
   ) => {
     const result = stubbedBash([
@@ -583,7 +584,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       removedLabel: result.calls.includes('LABEL_VERIFY_true'),
       labelVerificationCalls: (result.calls.match(/gh pr view .*--json labels/g) ?? []).length,
     };
-    return failedOperation || commentFails || disableAutoFailures > 0 || labelFailures > 0 || nativeStates.includes('ERROR') || labelStates.includes('ERROR')
+    return captureCalls || failedOperation || commentFails || disableAutoFailures > 0 || labelFailures > 0 || nativeStates.includes('ERROR') || labelStates.includes('ERROR')
       ? {
           ...summary,
           calls: result.calls,
@@ -619,6 +620,11 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `${mergeState} must proceed to merge`,
     );
   }
+  const blocked = runDispatch('BLOCKED', { captureCalls: true });
+  assert.equal(blocked.status, 0);
+  assert.equal((blocked.calls.match(/gh pr merge --squash --auto/g) ?? []).length, 1);
+  assert.equal(blocked.nativeAutoMergeDisableAttempted, false);
+  assert.equal(blocked.labelRemovalAttempted, false);
   // base 갱신이 필요한 상태는 update-branch 후 CI를 명시 dispatch한다.
   assert.deepEqual(runDispatch('BEHIND'), {
     status: 0,
@@ -640,9 +646,9 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     warned: false,
     ...noFailureSignal,
   });
-  // ⑦ 병합할 수 없는 상태는 전부 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
+  // ⑦ GitHub이 mergeability를 계산 중인 상태는 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
   // 그 실패 check가 PR을 UNSTABLE로 만들고 큐 전체가 뒤의 후보까지 굶긴다.
-  for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
+  for (const mergeState of ['UNKNOWN']) {
     assert.deepEqual(
       runDispatch(mergeState),
       {
@@ -686,6 +692,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
 
   for (const [mergeState, failedOperation, status] of [
     ['CLEAN', 'merge', 41],
+    ['BLOCKED', 'merge', 41],
     ['BEHIND', 'update-branch', 42],
   ]) {
     const failed = runDispatch(mergeState, { failedOperation });
@@ -1011,13 +1018,13 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.ok(queueLoop, 'queue loop must stay testable');
   const runQueue = makeRunQueue(queueLoop, budgetConstantsOf(workflow));
 
-  // 큐 head가 BLOCKED이어도 뒤의 병합 가능한 후보가 처리된다. 이것이 이 설계의 핵심이다.
+  // BLOCKED도 선행 게이트가 통과했으면 native auto-merge를 예약한다.
   assert.equal(
     runQueue([
       { number: 1, mergeStateStatus: 'BLOCKED' },
       { number: 2, mergeStateStatus: 'CLEAN' },
     ]).mergedPr,
-    2,
+    1,
   );
   // 충돌한 후보도 뒤를 막지 않는다.
   const dirtyQueue = runQueue([
@@ -1082,7 +1089,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.equal(behind.dispatchedCi, false, 'stale ref에 CI를 dispatch하면 안 된다');
   // 아무 후보도 병합할 수 없으면 병합 없이 성공으로 끝난다. 라벨은 건드리지 않는다.
   const allBlocked = runQueue([
-    { number: 1, mergeStateStatus: 'BLOCKED' },
+    { number: 1, mergeStateStatus: 'UNKNOWN' },
     { number: 2, mergeStateStatus: 'DIRTY' },
   ]);
   assert.equal(allBlocked.status, 0);
@@ -1277,8 +1284,8 @@ test('후보 순회 중에도 잔량을 다시 읽어 예약분에서 멈춘다'
   assert.ok(recheckAt > 0 && firstViewAt > recheckAt, 'recheck must precede the candidate request');
 
   const queue = [
-    { number: 1, mergeStateStatus: 'BLOCKED' },
-    { number: 2, mergeStateStatus: 'BLOCKED' },
+    { number: 1, mergeStateStatus: 'UNKNOWN' },
+    { number: 2, mergeStateStatus: 'UNKNOWN' },
     { number: 3, mergeStateStatus: 'CLEAN' },
   ];
 

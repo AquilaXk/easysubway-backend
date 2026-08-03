@@ -504,9 +504,11 @@ jobs:
             }
 
             case "${merge_state}" in
-              CLEAN | HAS_HOOKS | UNSTABLE)
+              CLEAN | HAS_HOOKS | UNSTABLE | BLOCKED)
                 # UNSTABLE은 "mergeable하지만 필수가 아닌 check가 green이 아님"이다.
                 # ruleset이 필수로 두지 않은 check로 병합을 막지 않는다.
+                # BLOCKED도 이 지점까지의 current-head review/thread/required-context
+                # 게이트를 통과했으면 GitHub native auto-merge에 최종 규칙 판정을 맡긴다.
                 if gh pr merge --squash --auto "${pr}" --repo "${repo}" \
                   --match-head-commit "${head}"; then
                   :
@@ -555,11 +557,9 @@ jobs:
                 echo "::warning::PR #${pr} conflicts with the base branch; skipping until it is rebased."
                 continue
                 ;;
-              BLOCKED | UNKNOWN)
-                # UNKNOWN은 GitHub이 mergeability를 계산 중인 상태다. BLOCKED은 이 job이
-                # 검사하지 않는 네이티브 규칙(추가 승인 수·code owner 리뷰·필수 배포 승인)이
-                # 남아 있다는 뜻일 수 있다. 어느 쪽이든 이번 실행에서 할 수 있는 일이 없고,
-                # 이 후보가 뒤를 막지도 않는다.
+              UNKNOWN)
+                # UNKNOWN은 GitHub이 mergeability를 계산 중인 상태다. 이번 실행에서 할 수
+                # 있는 일이 없으므로 이 후보가 뒤를 막지 않게 건너뛴다.
                 echo "PR #${pr}: not mergeable yet (${merge_state}); skipping."
                 continue
                 ;;
