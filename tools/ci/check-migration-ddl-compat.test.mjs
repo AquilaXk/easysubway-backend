@@ -223,6 +223,39 @@ test("기존 테이블 inline ADD PRIMARY KEY·NOT NULL DEFAULT NULL과 ALTER NU
     scanSqlForViolations("ALTER TABLE t SET SCHEMA archived;").includes("SET SCHEMA"));
 });
 
+test("NULL 계열 default와 rule·policy·partition·restart contract는 fail closed 하고 인접 additive 문장은 통과한다", () => {
+  for (const sql of [
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL);",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT ((NULL));",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT CAST(NULL AS TEXT);",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT NULL::TEXT;",
+    "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL);",
+    "ALTER TABLE t ALTER required_value SET DEFAULT CAST(NULL AS TEXT);",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (CAST(NULL AS TEXT));",
+    "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (CAST(NULL AS TEXT));",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT ( NULL );",
+    "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (CAST( NULL AS TEXT));",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).some((finding) => finding.includes("DEFAULT NULL")));
+  }
+  for (const [sql, label] of [
+    ["CREATE OR REPLACE RULE r AS ON INSERT TO t DO INSTEAD NOTHING;", "CREATE OR REPLACE RULE"],
+    ["CREATE POLICY reader ON t FOR SELECT USING (true);", "CREATE/ALTER POLICY ON 기존 테이블"],
+    ["ALTER POLICY reader ON t USING (true);", "CREATE/ALTER POLICY ON 기존 테이블"],
+    ["ALTER TABLE t DETACH PARTITION t_2026;", "ALTER TABLE DETACH PARTITION"],
+    ["ALTER SEQUENCE t_id_seq RESTART WITH 1;", "ALTER SEQUENCE RESTART"],
+    ["ALTER TABLE t ALTER COLUMN id RESTART WITH 1;", "ALTER TABLE ALTER COLUMN RESTART"],
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes(label), `${label} 누락`);
+  }
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT 'x';"), []);
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL IS NULL);"), []);
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL IS NULL);"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true);"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true); ALTER POLICY reader ON t USING (true);"), []);
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ATTACH PARTITION t_2026 FOR VALUES FROM (1) TO (2);"), []);
+});
+
 test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 통과한다", () => {
   assert.deepEqual(
     scanSqlForViolations("CREATE TABLE new_table (id BIGINT PRIMARY KEY, value TEXT);"),

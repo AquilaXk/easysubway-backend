@@ -507,6 +507,28 @@ function scanDropClauses(s, isAlterTable) {
 const ADD_NON_COLUMN_KEYWORD =
   /^(?:CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|CHECK|EXCLUDE|GENERATED|IDENTITY)\b/i;
 
+function hasNullDefault(clause) {
+  const tail = clause.match(/\bDEFAULT\s+([\s\S]*)/i)?.[1];
+  if (!tail) return false;
+  const boundary = /\s+(?:NOT\s+NULL|UNIQUE|PRIMARY\s+KEY|REFERENCES|CHECK|CONSTRAINT|COLLATE|GENERATED)\b/i.exec(tail);
+  let expression = (boundary ? tail.slice(0, boundary.index) : tail).trim();
+  while (expression.startsWith("(") && expression.endsWith(")")) {
+    let depth = 0;
+    let closesAt = -1;
+    for (let i = 0; i < expression.length; i++) {
+      if (expression[i] === "(") depth++;
+      if (expression[i] === ")" && --depth === 0) {
+        closesAt = i;
+        break;
+      }
+    }
+    if (closesAt !== expression.length - 1) break;
+    expression = expression.slice(1, -1).trim();
+  }
+  const type = String.raw`${SQL_QUALIFIED_IDENTIFIER}(?:\s+(?:VARYING|PRECISION|WITH(?:OUT)?\s+TIME\s+ZONE))*?(?:\s*\([^()]*\))?(?:\s*\[\s*\])*`;
+  return new RegExp(String.raw`^(?:NULL\b(?:\s*::\s*${type})?|CAST\s*\(\s*NULL\s+AS\s+${type}\s*\))$`, "i").test(expression);
+}
+
 // ADD [COLUMN] <컬럼> ... 절을 분석한다. PostgreSQL은 COLUMN 키워드를 생략할 수 있으므로
 // (`ALTER TABLE t ADD c text NOT NULL`) 두 형태를 동일하게 본다. 생략형은 ALTER TABLE
 // 문맥에서만 컬럼 추가로 해석하고, 제약 추가 구문은 별도 규칙이 담당하므로 제외한다.
@@ -524,7 +546,7 @@ function scanAddColumnClauses(s, isAlterTable, createdTables) {
     if (!isNewTable && /\bPRIMARY\s+KEY\b/i.test(clause)) labels.push("PRIMARY KEY 컬럼 추가");
     if (!isNewTable && /\bNOT\s+NULL\b/i.test(clause)) {
       if (!/\bDEFAULT\b/i.test(clause)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
-      if (/\bDEFAULT\s+NULL\b/i.test(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
+      if (hasNullDefault(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
     }
   }
   return labels;
@@ -568,6 +590,19 @@ export function scanSqlForViolations(rawSql) {
     if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|VIEW)\b/i.test(s)) {
       add("CREATE OR REPLACE 기존 객체");
     }
+    if (/\bCREATE\s+OR\s+REPLACE\s+RULE\b/i.test(keywordShadow)) {
+      add("CREATE OR REPLACE RULE");
+    }
+    const policyStarter = /\b(?:CREATE|ALTER)\s+POLICY\b/i.exec(keywordShadow);
+    if (policyStarter) {
+      const policyTarget = s.slice(policyStarter.index).match(new RegExp(
+        String.raw`^\s*(?:CREATE|ALTER)\s+POLICY\s+${SQL_IDENTIFIER}\s+ON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+        "i",
+      ));
+      if (!policyTarget || !createdTables.has(normalizeId(policyTarget[1]))) {
+        add("CREATE/ALTER POLICY ON 기존 테이블");
+      }
+    }
     const triggerMatch = s.match(
       new RegExp(
         String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
@@ -579,11 +614,17 @@ export function scanSqlForViolations(rawSql) {
     }
     if (/\bRENAME\b/i.test(s)) add("RENAME");
     if (/\bSET\s+NOT\s+NULL\b/i.test(s)) add("SET NOT NULL");
+    if (alterActions.some((action) =>
+      new RegExp(String.raw`^ALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+DEFAULT\b`, "i").test(action) &&
+      hasNullDefault(action),
+    )) {
+      add("SET DEFAULT NULL");
+    }
     if (new RegExp(
-      String.raw`\bALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+DEFAULT\s+NULL\b`,
+      String.raw`\bALTER\s+SEQUENCE\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}\s+RESTART\b`,
       "i",
     ).test(s)) {
-      add("SET DEFAULT NULL");
+      add("ALTER SEQUENCE RESTART");
     }
     if (
       new RegExp(
@@ -621,6 +662,15 @@ export function scanSqlForViolations(rawSql) {
         alterActions.some((action) => /^(?:ENABLE|DISABLE)(?:\s+(?:REPLICA|ALWAYS))?\s+TRIGGER\b/i.test(action))
       ) {
         add("ALTER TABLE TRIGGER 활성화/비활성화");
+      }
+      if (alterActions.some((action) => /^DETACH\s+PARTITION\b/i.test(action))) {
+        add("ALTER TABLE DETACH PARTITION");
+      }
+      if (alterActions.some((action) => new RegExp(
+        String.raw`^ALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+RESTART\b`,
+        "i",
+      ).test(action))) {
+        add("ALTER TABLE ALTER COLUMN RESTART");
       }
       if (
         /\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s) &&
