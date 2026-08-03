@@ -522,7 +522,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       commentFails = false,
       disableAutoFailures = 0,
       labelFailures = 0,
-      nativeStates = ['null'],
+      nativeStates = ['true'],
       labelStates = ['true'],
     } = {},
   ) => {
@@ -536,16 +536,20 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       'label_calls=0',
       'native_state_index=0',
       'label_state_index=0',
+      'native_state_file="$GH_LOG.native-state-index"',
+      'label_state_file="$GH_LOG.label-state-index"',
+      'printf \'0\\n\' > "$native_state_file"',
+      'printf \'0\\n\' > "$label_state_file"',
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       `  if [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge --squash"* ]]; then printf '%s\\n' 'merge-stderr-sentinel' >&2; return 41; fi`,
       `  [[ ${JSON.stringify(failedOperation)} == update-branch && "$*" == api*update-branch* ]] && return 42`,
       `  [[ ${JSON.stringify(commentFails)} == true && "$*" == "pr comment"* ]] && return 43`,
-      '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; printf \'%s\\n\' AUTO_MERGE_DISABLED >> "$GH_LOG"; fi',
+      '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; fi',
       '  if [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]]; then label_calls=$((label_calls + 1)); [[ "$label_calls" -le "$label_failures" ]] && return 44; printf \'%s\\n\' LABEL_REMOVAL_SUCCEEDED >> "$GH_LOG"; fi',
       '  case "$*" in',
-      '    *"pr view"*autoMergeRequest*) state="${native_states[$native_state_index]:-null}"; native_state_index=$((native_state_index + 1)); [[ "$state" == ERROR ]] && return 46; printf \'%s\\n\' "$state" ;;',
-      '    *"pr view"*"--json labels"*) state="${label_states[$label_state_index]:-true}"; label_state_index=$((label_state_index + 1)); [[ "$state" == ERROR ]] && return 47; printf \'%s\\n\' "$state" ;;',
+      '    *"pr view"*autoMergeRequest*) native_state_index="$(<"$native_state_file")"; state="${native_states[$native_state_index]:-true}"; printf \'%s\\n\' "$((native_state_index + 1))" > "$native_state_file"; [[ "$state" == ERROR ]] && return 46; printf \'NATIVE_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
+      '    *"pr view"*"--json labels"*) label_state_index="$(<"$label_state_file")"; state="${label_states[$label_state_index]:-true}"; printf \'%s\\n\' "$((label_state_index + 1))" > "$label_state_file"; [[ "$state" == ERROR ]] && return 47; printf \'LABEL_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
       `    *"pr view"*headRefOid*) printf '%s\\n' ${JSON.stringify(newHead)} ;;`,
       '  esac',
       '}',
@@ -573,7 +577,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       warned: (result.stdout + result.stderr).includes('::warning::'),
       commented: result.calls.includes('gh pr comment'),
       nativeAutoMergeDisableAttempted: /gh pr merge .*--disable-auto/.test(result.calls),
-      nativeAutoMergeDisabled: result.calls.includes('AUTO_MERGE_DISABLED'),
+      nativeAutoMergeDisabled: result.calls.includes('NATIVE_VERIFY_true'),
       nativeVerificationCalls: (result.calls.match(/gh pr view .*autoMergeRequest/g) ?? []).length,
       labelRemovalAttempted: /gh pr edit .*--remove-label automerge/.test(result.calls),
       removedLabel: result.calls.includes('LABEL_REMOVAL_SUCCEEDED'),
@@ -693,6 +697,14 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     assert.equal(failed.labelRemovalAttempted, true, `${failedOperation} failure must attempt label removal`);
     assert.equal(failed.removedLabel, true, `${failedOperation} failure must remove automerge`);
     assert.equal(failed.labelVerificationCalls, 1, `${failedOperation} label cleanup must verify once after convergence`);
+    const primaryCall = failedOperation === 'merge' ? /gh pr merge --squash/g : /gh api --method PUT/g;
+    assert.equal((failed.calls.match(primaryCall) ?? []).length, 1, 'primary operation must not retry');
+    assert.ok(
+      failed.calls.indexOf('gh pr merge 26 --repo o/r --disable-auto') <
+        failed.calls.indexOf('gh pr edit 26 --repo o/r --remove-label automerge') &&
+        failed.calls.indexOf('gh pr edit 26 --repo o/r --remove-label automerge') < failed.calls.indexOf('gh pr comment'),
+      'cleanup must converge native auto-merge, then label, then comment',
+    );
     assert.match(failed.calls, new RegExp(`merge_state=${mergeState}, status=${status}`));
     assert.match(failed.calls, /https:\/\/github\.com\/o\/r\/actions\/runs\/123/);
   }
@@ -705,16 +717,17 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   const disableThenConverged = runDispatch('CLEAN', {
     failedOperation: 'merge',
     disableAutoFailures: 1,
-    nativeStates: ['enabled', 'null'],
+    nativeStates: ['false', 'true'],
   });
   assert.equal(disableThenConverged.status, 41, 'cleanup retry must retain the merge status');
   assert.equal(disableThenConverged.nativeAutoMergeDisabled, true, 'second native cleanup attempt must converge');
   assert.equal(disableThenConverged.nativeVerificationCalls, 2, 'every native cleanup attempt is verified');
+  assert.equal((disableThenConverged.calls.match(/gh pr merge 26 --repo o\/r --disable-auto/g) ?? []).length, 2);
 
   const disableFailed = runDispatch('CLEAN', {
     failedOperation: 'merge',
     disableAutoFailures: 2,
-    nativeStates: ['enabled', 'enabled'],
+    nativeStates: ['false', 'false'],
   });
   assert.equal(disableFailed.status, 41, 'native cleanup failure must not replace the merge status');
   assert.equal(disableFailed.commented, true, 'native cleanup failure must retain the PR comment attempt');

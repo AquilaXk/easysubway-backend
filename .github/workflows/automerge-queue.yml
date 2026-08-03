@@ -465,8 +465,8 @@ jobs:
                 if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
                   echo "::error::PR #${pr}: native auto-merge could not be disabled."
                 fi
-                if auto_merge_request="$(gh pr view "${pr}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest')"; then
-                  if [[ "${auto_merge_request}" == "null" ]]; then
+                if auto_merge_disabled="$(gh pr view "${pr}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest == null')"; then
+                  if [[ "${auto_merge_disabled}" == true ]]; then
                     native_converged=true
                     break
                   fi
