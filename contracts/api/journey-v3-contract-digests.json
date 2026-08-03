@@ -1,0 +1,14 @@
+{
+  "schemaVersion": "JOURNEY_V3_CONTRACT_DIGESTS_V1",
+  "artifactKind": "journey-v3-contract-digests",
+  "artifacts": [
+    {
+      "path": "journey-v3-error-catalog.json",
+      "sha256": "05e38e28f7a97088d33000a0ee6982e5751065da0907ed7d7c44aa186c22a68e"
+    },
+    {
+      "path": "journey-v3.openapi.yaml",
+      "sha256": "e7810234c262729f59164dbcbaa59924ee0f71acb672728a2492661198dad773"
+    }
+  ]
+}
