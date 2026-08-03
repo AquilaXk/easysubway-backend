@@ -105,7 +105,11 @@ class JourneyV3ContractTest {
 			Set.of("requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
 				"mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
 		assertThat(property(document, "JourneySearchRequest", "requestId").get("pattern"))
-			.isEqualTo("^[0-9A-HJKMNP-TV-Z]{26}$");
+			.isEqualTo("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
+		assertThat(property(document, "JourneySearchSuccess", "requestId").get("pattern"))
+			.isEqualTo("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
+		assertThat(property(document, "JourneyError", "requestId").get("pattern"))
+			.isEqualTo("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 		assertThat(property(document, "JourneySearchRequest", "maxTransfers"))
 			.containsEntry("minimum", 0).containsEntry("maximum", 3);
 		assertThat(property(document, "JourneySearchRequest", "alternativeCount"))

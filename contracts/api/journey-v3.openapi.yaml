@@ -268,7 +268,7 @@ components:
       properties:
         requestId:
           type: string
-          pattern: "^[0-9A-HJKMNP-TV-Z]{26}$"
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         originStationId:
           type: string
           minLength: 1
@@ -351,7 +351,7 @@ components:
           enum: [JOURNEY_SEARCH_V3]
         requestId:
           type: string
-          pattern: "^[0-9A-HJKMNP-TV-Z]{26}$"
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         queryId:
           type: string
           minLength: 1
@@ -628,7 +628,7 @@ components:
           enum: [JOURNEY_ERROR_V1]
         requestId:
           type: string
-          pattern: "^[0-9A-HJKMNP-TV-Z]{26}$"
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
         code:
           $ref: "#/components/schemas/JourneyErrorCode"
         retryable:
