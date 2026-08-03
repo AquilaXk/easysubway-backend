@@ -1,0 +1,93 @@
+{
+  "schemaVersion": "JOURNEY_ERROR_CATALOG_V1",
+  "artifactKind": "journey-v3-error-catalog",
+  "applicationErrors": [
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 400,
+      "code": "INVALID_JOURNEY_REQUEST"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 404,
+      "code": "STATION_NOT_FOUND"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 422,
+      "code": "ROUTE_NOT_FOUND"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 422,
+      "code": "ACCESSIBILITY_CONSTRAINT_UNSATISFIED"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "ROUTING_BUNDLE_UNAVAILABLE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "ROUTING_BUNDLE_STALE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "TIMETABLE_UNAVAILABLE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "TIMETABLE_STALE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "REALTIME_REQUIRED_UNAVAILABLE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "ROUTING_IDENTITY_MISMATCH"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
+      "code": "ROUTE_SERVICE_UNAVAILABLE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 504,
+      "code": "JOURNEY_SEARCH_TIMEOUT"
+    }
+  ],
+  "ingressErrors": [
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 401,
+      "code": "ROUTE_SESSION_REQUIRED"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 429,
+      "code": "ROUTE_RATE_LIMITED"
+    },
+    {
+      "operation": "issueJourneySession",
+      "httpStatus": 400,
+      "code": "INVALID_JOURNEY_SESSION_REQUEST"
+    },
+    {
+      "operation": "issueJourneySession",
+      "httpStatus": 403,
+      "code": "ROUTE_SESSION_ATTESTATION_REJECTED"
+    },
+    {
+      "operation": "issueJourneySession",
+      "httpStatus": 503,
+      "code": "ROUTE_SESSION_ATTESTATION_UNAVAILABLE"
+    }
+  ]
+}
