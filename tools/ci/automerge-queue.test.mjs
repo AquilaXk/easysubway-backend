@@ -560,7 +560,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; fi',
       '  if [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]]; then label_calls=$((label_calls + 1)); [[ "$label_calls" -le "$label_failures" ]] && return 44; fi',
       '  case "$*" in',
-      '    *"pr view"*"--json state,autoMergeRequest"*) post_merge_state_index="$(<"$post_merge_state_file")"; last_index=$(( ${#post_merge_states[@]} - 1 )); state="${post_merge_states[$post_merge_state_index]:-${post_merge_states[$last_index]}}"; printf \'%s\\n\' "$((post_merge_state_index + 1))" > "$post_merge_state_file"; printf \'POST_MERGE_STATE_%s\\n\' "$state" >> "$GH_LOG"; printf \'{"state":"%s","autoMergeRequest":null}\\n\' "$state" ;;',
+      '    *"pr view"*"--json state,autoMergeRequest"*) post_merge_state_index="$(<"$post_merge_state_file")"; last_index=$(( ${#post_merge_states[@]} - 1 )); state="${post_merge_states[$post_merge_state_index]:-${post_merge_states[$last_index]}}"; printf \'%s\\n\' "$((post_merge_state_index + 1))" > "$post_merge_state_file"; printf \'POST_MERGE_STATE_%s\\n\' "$state" >> "$GH_LOG"; [[ "$state" == ERROR ]] && return 48; printf \'{"state":"%s","autoMergeRequest":null}\\n\' "$state" ;;',
       '    *"pr view"*autoMergeRequest*) native_state_index="$(<"$native_state_file")"; state="${native_states[$native_state_index]:-true}"; printf \'%s\\n\' "$((native_state_index + 1))" > "$native_state_file"; [[ "$state" == ERROR ]] && return 46; printf \'NATIVE_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
       '    *"pr view"*"--json labels"*) label_state_index="$(<"$label_state_file")"; state="${label_states[$label_state_index]:-true}"; printf \'%s\\n\' "$((label_state_index + 1))" > "$label_state_file"; [[ "$state" == ERROR ]] && return 47; printf \'LABEL_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
       '  esac',
@@ -758,6 +758,15 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(pending.sleepCalls, 5, 'polling must sleep only between the six attempts');
   assert.equal(pending.nativeAutoMergeDisabled, true, 'pending request must be disabled');
   assert.equal(pending.removedLabel, true, 'pending request must remove the coordinator label');
+
+  for (const [postMergeState, expectedStatus] of [['ERROR', 48], ['CLOSED', 1]]) {
+    const invalid = runDispatch('CLEAN', { postMergeStates: [postMergeState], captureCalls: true });
+    assert.equal(invalid.status, expectedStatus, `${postMergeState} must fail closed`);
+    assert.equal(invalid.postMergeStateCalls, 1);
+    assert.equal(invalid.sleepCalls, 0);
+    assert.equal(invalid.nativeAutoMergeDisabled, true);
+    assert.equal(invalid.removedLabel, true);
+  }
 });
 
 test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
@@ -1051,7 +1060,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
       { number: 1, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
       { number: 2, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
     ],
-    { remaining: [320] },
+    { remaining: [323] },
   );
   assert.notEqual(overCapacity.status, 0, 'over-capacity cleanup must fail closed');
   assert.equal(overCapacity.autoMergeDisableCalls, 0);
