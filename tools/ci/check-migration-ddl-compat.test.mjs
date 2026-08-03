@@ -248,6 +248,19 @@ test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 �
   );
 });
 
+test("quoted identifier의 destructive DDL도 fail closed 한다", () => {
+  for (const [sql, label] of [
+    ['ALTER TABLE "legacy-table" ALTER COLUMN "default-null" SET DEFAULT NULL;', "SET DEFAULT NULL"],
+    ['ALTER TABLE "legacy""table" SET SCHEMA "archive-schema";', "SET SCHEMA"],
+    ['ALTER TABLE "legacy-table" ALTER COLUMN "generated-always" SET GENERATED ALWAYS;', "SET GENERATED ALWAYS"],
+    ['ALTER TABLE "legacy-table" ALTER COLUMN "identity-column" ADD GENERATED ALWAYS AS IDENTITY;', "ADD GENERATED ALWAYS AS IDENTITY"],
+    ['ALTER TABLE "legacy-table" ADD COLUMN "unique-column" TEXT UNIQUE;', "기존 테이블에 제약(ADD CONSTRAINT) 추가"],
+    ['CREATE UNIQUE INDEX "unique-index" ON "legacy""table" (id);', "기존 테이블에 UNIQUE INDEX 추가"],
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes(label), `${label}가 quoted identifier에서 누락됐다`);
+  }
+});
+
 test("무조건적 CREATE TABLE 대상 제약 추가는 계속 면제되고 IF NOT EXISTS만 위반이 된다", () => {
   const unconditional =
     "CREATE TABLE t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
@@ -510,7 +523,8 @@ test("정책 validator는 유효한 allowlist로 인식 불가 .sql을 승인하
     return policy;
   };
 
-  assert.deepEqual(validateMigrationPolicy(makePolicy(), files), []);
+  const now = Date.parse("2029-01-01T00:00:00.000Z");
+  assert.deepEqual(validateMigrationPolicy(makePolicy(), files, now), []);
   for (const [field, value, expected] of [
     ["reason", "", "allowlist entry는 file, reason"],
     ["approval", "not-a-url", "allowlist approval은 GitHub issue URL"],
@@ -520,7 +534,7 @@ test("정책 validator는 유효한 allowlist로 인식 불가 .sql을 승인하
     const policy = makePolicy();
     const entry = policy.allowlist.find((item) => item.file === unknown.file);
     entry[field] = value;
-    const reasons = validateMigrationPolicy(policy, files).map((violation) => violation.why);
+    const reasons = validateMigrationPolicy(policy, files, now).map((violation) => violation.why);
     assert.ok(reasons.some((reason) => reason.includes(expected)), `${field} 불일치가 통과했다`);
   }
 });

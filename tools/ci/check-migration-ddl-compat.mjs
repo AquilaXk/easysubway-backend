@@ -579,13 +579,17 @@ export function scanSqlForViolations(rawSql) {
     }
     if (/\bRENAME\b/i.test(s)) add("RENAME");
     if (/\bSET\s+NOT\s+NULL\b/i.test(s)) add("SET NOT NULL");
-    if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+DEFAULT\s+NULL\b/i.test(s)) {
+    if (new RegExp(
+      String.raw`\bALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+DEFAULT\s+NULL\b`,
+      "i",
+    ).test(s)) {
       add("SET DEFAULT NULL");
     }
     if (
-      /\bALTER\s+(?:(?:MATERIALIZED\s+)?VIEW|TABLE|SEQUENCE|TYPE|DOMAIN|SCHEMA)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?[\w".]+\s+SET\s+SCHEMA\b/i.test(
-        s,
-      )
+      new RegExp(
+        String.raw`\bALTER\s+(?:(?:MATERIALIZED\s+)?VIEW|TABLE|SEQUENCE|TYPE|DOMAIN|SCHEMA)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?${SQL_QUALIFIED_IDENTIFIER}\s+SET\s+SCHEMA\b`,
+        "i",
+      ).test(s)
     ) {
       add("SET SCHEMA");
     }
@@ -624,21 +628,28 @@ export function scanSqlForViolations(rawSql) {
       ) {
         add("FORCE ROW LEVEL SECURITY");
       }
-      if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+GENERATED\s+ALWAYS\b/i.test(s)) {
+      if (new RegExp(
+        String.raw`\bALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+GENERATED\s+ALWAYS\b`,
+        "i",
+      ).test(s)) {
         add("SET GENERATED ALWAYS");
       }
       if (
         altersExistingTable &&
-        /\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+ADD\s+GENERATED\s+ALWAYS\s+AS\s+IDENTITY\b/i.test(
-          s,
-        )
+        new RegExp(
+          String.raw`\bALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+ADD\s+GENERATED\s+ALWAYS\s+AS\s+IDENTITY\b`,
+          "i",
+        ).test(s)
       ) {
         add("ADD GENERATED ALWAYS AS IDENTITY");
       }
 
       if (
         /\bADD\s+(?:CONSTRAINT\b|PRIMARY\s+KEY\b|UNIQUE\b|FOREIGN\s+KEY\b|CHECK\b|EXCLUDE\b)/i.test(s) ||
-        /\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?[\w".]+\s+[^;]*\bUNIQUE\b/i.test(s)
+        new RegExp(
+          String.raw`\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?${SQL_IDENTIFIER}\s+[^;]*\bUNIQUE\b`,
+          "i",
+        ).test(s)
       ) {
         if (!alterTarget || !createdTables.has(alterTarget)) {
           add("기존 테이블에 제약(ADD CONSTRAINT) 추가");
@@ -647,7 +658,9 @@ export function scanSqlForViolations(rawSql) {
     }
 
     if (/\bCREATE\s+UNIQUE\s+(?:NULLS\s+(?:NOT\s+)?DISTINCT\s+)?INDEX\b/i.test(s)) {
-      const onMatch = s.match(/\bON\s+(?:ONLY\s+)?([\w".]+)/i);
+      const onMatch = s.match(
+        new RegExp(String.raw`\bON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`, "i"),
+      );
       const target = onMatch ? normalizeId(onMatch[1]) : null;
       if (!target || !createdTables.has(target)) {
         add("기존 테이블에 UNIQUE INDEX 추가");
