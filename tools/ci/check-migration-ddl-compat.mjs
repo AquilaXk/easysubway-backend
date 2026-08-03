@@ -374,8 +374,10 @@ function scanAddColumnClauses(s, isAlterTable) {
       if (ADD_NON_COLUMN_KEYWORD.test(s.slice(at))) continue;
     }
     const clause = clauseFrom(s, at);
-    if (/\bNOT\s+NULL\b/i.test(clause) && !/\bDEFAULT\b/i.test(clause)) {
-      labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
+    if (/\bPRIMARY\s+KEY\b/i.test(clause)) labels.push("PRIMARY KEY 컬럼 추가");
+    if (/\bNOT\s+NULL\b/i.test(clause)) {
+      if (!/\bDEFAULT\b/i.test(clause)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
+      if (/\bDEFAULT\s+NULL\b/i.test(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
     }
   }
   return labels;
@@ -406,6 +408,16 @@ export function scanSqlForViolations(rawSql) {
     if (hasDynamicExecute(s)) add("동적 EXECUTE");
     if (/\bRENAME\b/i.test(s)) add("RENAME");
     if (/\bSET\s+NOT\s+NULL\b/i.test(s)) add("SET NOT NULL");
+    if (/\bALTER\s+COLUMN\s+[\w".]+\s+SET\s+DEFAULT\s+NULL\b/i.test(s)) {
+      add("SET DEFAULT NULL");
+    }
+    if (
+      /\bALTER\s+(?:(?:MATERIALIZED\s+)?VIEW|TABLE|SEQUENCE|TYPE|DOMAIN|SCHEMA)\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?[\w".]+\s+SET\s+SCHEMA\b/i.test(
+        s,
+      )
+    ) {
+      add("SET SCHEMA");
+    }
     if (/\bALTER\s+(?:COLUMN\s+)?(?!TABLE\b)"?\w+"?\s+(?:SET\s+DATA\s+)?TYPE\b/i.test(s)) {
       add("ALTER COLUMN TYPE");
     }

@@ -139,6 +139,38 @@ test("COLUMN 생략형 ADD도 DEFAULT가 있으면 통과하고 제약 추가로
   );
 });
 
+test("기존 테이블 inline ADD PRIMARY KEY·NOT NULL DEFAULT NULL과 ALTER NULL default·schema 이동은 fail closed 한다", () => {
+  assert.ok(
+    scanSqlForViolations("ALTER TABLE t ADD COLUMN id BIGINT PRIMARY KEY;").includes(
+      "PRIMARY KEY 컬럼 추가",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT NULL;").includes(
+      "DEFAULT NULL인 NOT NULL 컬럼 추가",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("ALTER TABLE t ALTER COLUMN value SET DEFAULT NULL;").includes(
+      "SET DEFAULT NULL",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("ALTER TABLE t SET SCHEMA archived;").includes("SET SCHEMA"));
+});
+
+test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 통과한다", () => {
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE new_table (id BIGINT PRIMARY KEY, value TEXT);"),
+    [],
+  );
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN optional_value TEXT;"), []);
+  assert.deepEqual(
+    scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT 'x';"),
+    [],
+  );
+});
+
 test("무조건적 CREATE TABLE 대상 제약 추가는 계속 면제되고 IF NOT EXISTS만 위반이 된다", () => {
   const unconditional =
     "CREATE TABLE t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
