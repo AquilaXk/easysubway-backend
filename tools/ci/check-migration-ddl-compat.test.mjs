@@ -51,6 +51,9 @@ const destructiveCases = [
   ["V121__force_row_level_security.sql", "FORCE ROW LEVEL SECURITY"],
   ["V122__set_generated_always.sql", "SET GENERATED ALWAYS"],
   ["V123__add_column_unique.sql", "기존 테이블에 제약(ADD CONSTRAINT) 추가"],
+  ["V124__add_exclude.sql", "기존 테이블에 제약(ADD CONSTRAINT) 추가"],
+  ["V125__create_unique_nulls_distinct_index.sql", "기존 테이블에 UNIQUE INDEX 추가"],
+  ["V126__create_unique_nulls_not_distinct_index.sql", "기존 테이블에 UNIQUE INDEX 추가"],
 ];
 
 for (const [name, expectedLabel] of destructiveCases) {
@@ -459,6 +462,20 @@ test("정책 validator는 유효하지만 다른 top-level issue URL을 fail clo
   policy.issue = "https://github.com/AquilaXk/easysubway/issues/9999";
   const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
   assert.ok(reasons.some((why) => why.includes("issue는 https://github.com/AquilaXk/easysubway/issues/2365이어야 함")));
+});
+
+test("정책 validator는 baseline과 scannedDirectory drift를 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = loadMigrationFiles(realMigrationDir);
+  policy.baselineVersion = 65;
+  policy.scannedDirectory = "backend/src/main/resources/db/migration/h2";
+  const reasons = validateMigrationPolicy(policy, files).map((violation) => violation.why);
+  assert.ok(reasons.some((reason) => reason.includes("baselineVersion은 66이어야 함")));
+  assert.ok(
+    reasons.some((reason) =>
+      reason.includes("scannedDirectory는 backend/src/main/resources/db/migration/postgresql이어야 함"),
+    ),
+  );
 });
 
 test("현재 트리의 실제 migration policy·DDL은 strict validator에서 위반이 없다(회귀 없음)", () => {

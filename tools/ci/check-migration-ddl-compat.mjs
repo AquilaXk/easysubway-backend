@@ -90,6 +90,10 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
   if (!Number.isInteger(policy.baselineVersion) || policy.baselineVersion < 0) {
     report("baselineVersion은 0 이상의 정수여야 함");
   }
+  if (policy.baselineVersion !== 66) report("baselineVersion은 66이어야 함");
+  if (policy.scannedDirectory !== MIGRATION_DIR) {
+    report(`scannedDirectory는 ${MIGRATION_DIR}이어야 함`);
+  }
   if (!Array.isArray(policy.excludedDirectories) || policy.excludedDirectories.some(isBlank)) {
     report("excludedDirectories는 비어 있지 않은 문자열 배열이어야 함");
   }
@@ -476,7 +480,7 @@ export function scanSqlForViolations(rawSql) {
       const alterTarget = targetMatch ? normalizeId(targetMatch[1]) : null;
 
       if (
-        /\bADD\s+(?:CONSTRAINT\b|PRIMARY\s+KEY\b|UNIQUE\b|FOREIGN\s+KEY\b|CHECK\b)/i.test(s) ||
+        /\bADD\s+(?:CONSTRAINT\b|PRIMARY\s+KEY\b|UNIQUE\b|FOREIGN\s+KEY\b|CHECK\b|EXCLUDE\b)/i.test(s) ||
         /\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?[\w".]+\s+[^;]*\bUNIQUE\b/i.test(s)
       ) {
         if (!alterTarget || !createdTables.has(alterTarget)) {
@@ -485,7 +489,7 @@ export function scanSqlForViolations(rawSql) {
       }
     }
 
-    if (/\bCREATE\s+UNIQUE\s+INDEX\b/i.test(s)) {
+    if (/\bCREATE\s+UNIQUE\s+(?:NULLS\s+(?:NOT\s+)?DISTINCT\s+)?INDEX\b/i.test(s)) {
       const onMatch = s.match(/\bON\s+(?:ONLY\s+)?([\w".]+)/i);
       const target = onMatch ? normalizeId(onMatch[1]) : null;
       if (!target || !createdTables.has(target)) {
