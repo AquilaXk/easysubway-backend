@@ -334,8 +334,66 @@ function matchDollarTag(sql, i) {
 }
 
 function normalizeId(id) {
-  return id.replace(/"/g, "").toLowerCase();
+  const parts = [];
+  let i = 0;
+  while (i < id.length) {
+    while (/\s/.test(id[i])) i++;
+    let part = "";
+    if (id[i] === '"') {
+      i++;
+      while (i < id.length) {
+        if (id[i] !== '"') {
+          part += id[i++];
+        } else if (id[i + 1] === '"') {
+          part += '"';
+          i += 2;
+        } else {
+          i++;
+          break;
+        }
+      }
+    } else {
+      const start = i;
+      while (i < id.length && /[\w$]/.test(id[i])) i++;
+      part = id.slice(start, i).toLowerCase();
+    }
+    parts.push(part);
+    while (/\s/.test(id[i])) i++;
+    if (id[i] !== ".") break;
+    i++;
+  }
+  return parts.join(".");
 }
+
+function shadowQuotedIdentifiers(sql) {
+  let out = "";
+  let i = 0;
+  while (i < sql.length) {
+    if (sql[i] !== '"') {
+      out += sql[i++];
+      continue;
+    }
+    out += " ";
+    i++;
+    while (i < sql.length) {
+      out += " ";
+      if (sql[i] === '"' && sql[i + 1] === '"') {
+        out += " ";
+        i += 2;
+      } else if (sql[i] === '"') {
+        i++;
+        break;
+      } else {
+        i++;
+      }
+    }
+  }
+  return out;
+}
+
+const SQL_IDENTIFIER = String.raw`(?:"(?:[^"]|"")*"|[A-Za-z_][\w$]*)`;
+const SQL_QUALIFIED_IDENTIFIER = String.raw`${SQL_IDENTIFIER}(?:\s*\.\s*${SQL_IDENTIFIER})*`;
+const ALTER_TABLE_TARGET = String.raw`\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})\s*\*?`;
 
 // 문자열이 아니거나(누락·잘못된 타입) 공백만 있으면 비어있는 것으로 본다.
 // non-string에 .trim()을 호출하지 않아 타입 안전하다.
@@ -348,13 +406,43 @@ function isBlank(value) {
 // 추가가 구 canonical의 쓰기를 거부할 수 있다). 무조건적 CREATE TABLE만 면제 대상이다.
 function collectCreatedTables(cleaned) {
   const set = new Set();
-  const re =
-    /\bCREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?([\w".]+)/gi;
-  for (const m of cleaned.matchAll(re)) {
-    if (m[1]) continue;
-    set.add(normalizeId(m[2]));
+  const starterRe = new RegExp(
+    String.raw`\bCREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?`,
+    "gi",
+  );
+  const targetRe = new RegExp(
+    String.raw`^\bCREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+    "i",
+  );
+  for (const starter of shadowQuotedIdentifiers(cleaned).matchAll(starterRe)) {
+    const target = cleaned.slice(starter.index).match(targetRe);
+    if (!target || target[1]) continue;
+    set.add(normalizeId(target[2]));
   }
   return set;
+}
+
+function splitAlterActions(tail) {
+  const actions = [];
+  let start = 0;
+  let i = 0;
+  while (i < tail.length) {
+    if (tail[i] !== '"') {
+      if (tail[i] === ",") {
+        actions.push(tail.slice(start, i).trim());
+        start = i + 1;
+      }
+      i++;
+      continue;
+    }
+    i++;
+    while (i < tail.length) {
+      if (tail[i] === '"' && tail[i + 1] === '"') i += 2;
+      else if (tail[i++] === '"') break;
+    }
+  }
+  actions.push(tail.slice(start).trim());
+  return actions;
 }
 
 function splitStatements(cleaned) {
@@ -424,9 +512,7 @@ const ADD_NON_COLUMN_KEYWORD =
 // 문맥에서만 컬럼 추가로 해석하고, 제약 추가 구문은 별도 규칙이 담당하므로 제외한다.
 function scanAddColumnClauses(s, isAlterTable, createdTables) {
   const labels = [];
-  const targetMatch = s.match(
-    /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([\w".]+)/i,
-  );
+  const targetMatch = s.match(new RegExp(ALTER_TABLE_TARGET, "i"));
   const isNewTable = targetMatch && createdTables.has(normalizeId(targetMatch[1]));
   for (const m of s.matchAll(/\bADD\s+(?:(COLUMN)\s+)?(?:IF\s+NOT\s+EXISTS\s+)?/gi)) {
     const at = m.index + m[0].length;
@@ -465,19 +551,28 @@ export function scanSqlForViolations(rawSql) {
 
     const isAlterTable = /\bALTER\s+TABLE\b/i.test(s);
     const alterTargetMatch = isAlterTable
-      ? s.match(/\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([\w".]+)/i)
+      ? s.match(new RegExp(ALTER_TABLE_TARGET, "i"))
       : null;
     const alterTarget = alterTargetMatch ? normalizeId(alterTargetMatch[1]) : null;
     const altersExistingTable = !alterTarget || !createdTables.has(alterTarget);
+    const alterActionTail = alterTargetMatch
+      ? s.slice(alterTargetMatch.index + alterTargetMatch[0].length)
+      : "";
+    const alterActions = splitAlterActions(alterActionTail);
+    const keywordShadow = shadowQuotedIdentifiers(s);
 
     if (s.includes(UNTERMINATED_QUOTED_BODY)) add("미종결 quoted body");
     if (/\bTRUNCATE\b/i.test(s)) add("TRUNCATE");
+    if (/\bREVOKE\b/i.test(keywordShadow)) add("REVOKE 권한");
     if (hasDynamicExecute(s)) add("동적 EXECUTE");
     if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|VIEW)\b/i.test(s)) {
       add("CREATE OR REPLACE 기존 객체");
     }
     const triggerMatch = s.match(
-      /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\s+(?:ONLY\s+)?([\w".]+)/i,
+      new RegExp(
+        String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+        "i",
+      ),
     );
     if (triggerMatch && !createdTables.has(normalizeId(triggerMatch[1]))) {
       add("CREATE TRIGGER ON 기존 테이블");
@@ -494,8 +589,20 @@ export function scanSqlForViolations(rawSql) {
     ) {
       add("SET SCHEMA");
     }
-    if (/\bALTER\s+(?:COLUMN\s+)?(?!TABLE\b)"?\w+"?\s+(?:SET\s+DATA\s+)?TYPE\b/i.test(s)) {
+    if (alterActions.some((action) => new RegExp(
+      String.raw`^ALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+(?:SET\s+DATA\s+)?TYPE\b`,
+      "i",
+    ).test(action))) {
       add("ALTER COLUMN TYPE");
+    }
+    if (
+      /\bALTER\s+DOMAIN\b/i.test(keywordShadow) &&
+      new RegExp(
+        String.raw`\bALTER\s+DOMAIN\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}\s+ADD\s+(?:CONSTRAINT\s+${SQL_IDENTIFIER}\s+)?CHECK\b`,
+        "i",
+      ).test(s)
+    ) {
+      add("ALTER DOMAIN ADD CONSTRAINT");
     }
 
     for (const label of scanDropClauses(s, isAlterTable)) add(label);
@@ -504,6 +611,12 @@ export function scanSqlForViolations(rawSql) {
     if (isAlterTable) {
       if (/\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
         add("ENABLE ROW LEVEL SECURITY");
+      }
+      if (
+        altersExistingTable &&
+        alterActions.some((action) => /^(?:ENABLE|DISABLE)(?:\s+(?:REPLICA|ALWAYS))?\s+TRIGGER\b/i.test(action))
+      ) {
+        add("ALTER TABLE TRIGGER 활성화/비활성화");
       }
       if (
         /\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s) &&

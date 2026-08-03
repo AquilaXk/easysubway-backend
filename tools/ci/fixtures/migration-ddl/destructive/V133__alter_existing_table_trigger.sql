@@ -1,0 +1,1 @@
+ALTER TABLE journey_snapshots DISABLE TRIGGER ALL;

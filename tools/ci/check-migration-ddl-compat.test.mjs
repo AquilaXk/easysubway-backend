@@ -59,6 +59,10 @@ const destructiveCases = [
   ["V129__create_or_replace_function.sql", "CREATE OR REPLACE 기존 객체"],
   ["V130__add_generated_identity.sql", "ADD GENERATED ALWAYS AS IDENTITY"],
   ["V131__function_single_quote_hidden_drop.sql", "DROP TABLE"],
+  ["V132__revoke_execute.sql", "REVOKE 권한"],
+  ["V133__alter_existing_table_trigger.sql", "ALTER TABLE TRIGGER 활성화/비활성화"],
+  ["V134__alter_domain_add_constraint.sql", "ALTER DOMAIN ADD CONSTRAINT"],
+  ["V135__alter_quoted_column_type.sql", "ALTER COLUMN TYPE"],
 ];
 
 for (const [name, expectedLabel] of destructiveCases) {
@@ -152,14 +156,26 @@ test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 �
   assert.deepEqual(findings, []);
 });
 
-test("GRANT/REVOKE EXECUTE ON FUNCTION은 동적 EXECUTE로 오탐하지 않는다", () => {
+test("GRANT EXECUTE ON FUNCTION은 동적 EXECUTE로 오탐하지 않는다", () => {
   assert.deepEqual(
     scanSqlForViolations("GRANT EXECUTE ON FUNCTION guard_lineage() TO easysubway_app;"),
     [],
   );
-  assert.deepEqual(
-    scanSqlForViolations("REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public FROM readonly;"),
-    [],
+});
+
+test("REVOKE EXECUTE를 포함한 권한 회수는 fail closed 한다", () => {
+  assert.ok(
+    scanSqlForViolations("REVOKE EXECUTE ON ALL PROCEDURES IN SCHEMA public FROM readonly;").includes(
+      "REVOKE 권한",
+    ),
+  );
+});
+
+test("procedural control syntax 뒤의 REVOKE도 fail closed 한다", () => {
+  assert.ok(
+    scanSqlForViolations(
+      "DO $$ BEGIN FOR i IN 1..1 LOOP REVOKE SELECT ON journeys FROM readonly; END LOOP; END $$;",
+    ).includes("REVOKE 권한"),
   );
 });
 
@@ -239,6 +255,101 @@ test("무조건적 CREATE TABLE 대상 제약 추가는 계속 면제되고 IF N
     "CREATE TABLE IF NOT EXISTS t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
   assert.deepEqual(scanSqlForViolations(unconditional), []);
   assert.deepEqual(scanSqlForViolations(conditional), ["기존 테이블에 제약(ADD CONSTRAINT) 추가"]);
+});
+
+test("기존 테이블의 ENABLE/DISABLE [REPLICA|ALWAYS] TRIGGER는 fail closed 하고 새 테이블은 면제한다", () => {
+  for (const sql of [
+    "ALTER TABLE t ENABLE TRIGGER audit;",
+    "ALTER TABLE t DISABLE TRIGGER ALL;",
+    "ALTER TABLE t ENABLE REPLICA TRIGGER audit;",
+    "ALTER TABLE t ENABLE ALWAYS TRIGGER USER;",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER TABLE TRIGGER 활성화/비활성화"));
+  }
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE t (id BIGINT); ALTER TABLE t DISABLE TRIGGER ALL;"),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations(
+      'CREATE TABLE audit (id BIGINT); ALTER TABLE "audit-log" DISABLE TRIGGER ALL;',
+    ).includes("ALTER TABLE TRIGGER 활성화/비활성화"),
+  );
+  assert.deepEqual(
+    scanSqlForViolations('CREATE TABLE "audit-log" (id BIGINT); ALTER TABLE "audit-log" DISABLE TRIGGER ALL;'),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations('CREATE TABLE audit (id BIGINT); ALTER TABLE "Audit" DISABLE TRIGGER ALL;').includes(
+      "ALTER TABLE TRIGGER 활성화/비활성화",
+    ),
+  );
+  assert.deepEqual(
+    scanSqlForViolations('CREATE TABLE "a""b" (id BIGINT); ALTER TABLE "a""b" DISABLE TRIGGER ALL;'),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations('CREATE TABLE ab (id BIGINT); ALTER TABLE "a""b" DISABLE TRIGGER ALL;').includes(
+      "ALTER TABLE TRIGGER 활성화/비활성화",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations(
+      'ALTER TABLE t ADD COLUMN marker BOOLEAN, DISABLE TRIGGER ALL, ALTER COLUMN "display-name" SET DATA TYPE TEXT;',
+    ).includes("ALTER TABLE TRIGGER 활성화/비활성화"),
+  );
+  assert.ok(
+    scanSqlForViolations(
+      'ALTER TABLE t ADD COLUMN marker BOOLEAN, DISABLE TRIGGER ALL, ALTER COLUMN "display-name" SET DATA TYPE TEXT;',
+    ).includes("ALTER COLUMN TYPE"),
+  );
+  assert.ok(
+    scanSqlForViolations("ALTER TABLE t * DISABLE TRIGGER ALL;").includes(
+      "ALTER TABLE TRIGGER 활성화/비활성화",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("ALTER TABLE t * ALTER COLUMN c TYPE BIGINT;").includes(
+      "ALTER COLUMN TYPE",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations(
+      'ALTER TABLE t ADD COLUMN "CREATE TABLE audit" TEXT; ALTER TABLE audit DISABLE TRIGGER ALL;',
+    ).includes("ALTER TABLE TRIGGER 활성화/비활성화"),
+  );
+});
+
+test("ALTER DOMAIN ADD [CONSTRAINT] CHECK은 fail closed 한다", () => {
+  for (const sql of [
+    "ALTER DOMAIN postal_code ADD CHECK (VALUE ~ '^[0-9]+$');",
+    "ALTER DOMAIN postal_code ADD CONSTRAINT postal_code_format CHECK (VALUE ~ '^[0-9]+$');",
+    'ALTER DOMAIN "app schema"."postal-code" ADD CONSTRAINT "postal code format" CHECK (VALUE ~ \'^[0-9]+$\');',
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER DOMAIN ADD CONSTRAINT"));
+  }
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER DOMAIN d ADD CHECK" (id BIGINT);'), []);
+});
+
+test("특수 문자와 escaped quote가 있는 quoted column의 SET DATA TYPE을 탐지한다", () => {
+  for (const sql of [
+    'ALTER TABLE t ALTER COLUMN "display-name" SET DATA TYPE TEXT;',
+    'ALTER TABLE t ALTER "a""quoted"" name" TYPE TEXT;',
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER COLUMN TYPE"));
+  }
+});
+
+test("double-quoted identifier 안의 새 규칙 키워드는 오탐하지 않는다", () => {
+  for (const sql of [
+    'ALTER TABLE t ADD COLUMN "REVOKE" TEXT;',
+    'ALTER TABLE t ADD COLUMN "DISABLE TRIGGER" BOOLEAN;',
+    'ALTER TABLE t ADD COLUMN "x, DISABLE TRIGGER" BOOLEAN;',
+    'ALTER TABLE t ADD COLUMN "x, ALTER COLUMN y TYPE" BOOLEAN;',
+    'CREATE TABLE t ("ALTER value TYPE" TEXT);',
+  ]) {
+    assert.deepEqual(scanSqlForViolations(sql), []);
+  }
 });
 
 test("완화형 DROP(INDEX·CONSTRAINT·NOT NULL)은 통과하고 미지원 DROP 형태는 fail closed 된다", () => {
