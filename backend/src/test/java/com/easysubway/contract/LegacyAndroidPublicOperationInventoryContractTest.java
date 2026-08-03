@@ -20,6 +20,8 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 	private static final Path INVENTORY = CONTRACTS.resolve("legacy-android-public-operation-inventory.json");
 	private static final Path INTERNAL_API_INDEX = CONTRACTS.resolve("internal-api-index.json");
 	private static final ObjectMapper JSON = new ObjectMapper();
+	private static final List<String> INVENTORY_PATH_PREFIXES = List.of(
+		"/api/v1/routes/", "/api/v2/routes/", "/api/v1/realtime/", "/api/v1/report", "/api/v1/me/favorites/");
 
 	private static final List<ExpectedEntry> EXPECTED = List.of(
 		entry("POST", "/api/v1/routes/search", "route-v1-search", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeSearchErrorMessage"),
@@ -98,13 +100,16 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 
 		Set<Operation> publicOperations = publicOperations();
+		Set<Operation> expectedBackendOperations = new LinkedHashSet<>();
 		for (ExpectedEntry entry : EXPECTED) {
 			if ("MOBILE_CONSUMED_BACKEND_UNMAPPED".equals(entry.currentBinding())) {
 				assertThat(publicOperations).doesNotContain(entry.methodPath());
 			} else {
+				expectedBackendOperations.add(entry.methodPath());
 				assertThat(publicOperations).contains(entry.methodPath());
 			}
 		}
+		assertThat(publicOperations).containsExactlyInAnyOrderElementsOf(expectedBackendOperations);
 	}
 
 	private static ExpectedEntry entry(
@@ -118,8 +123,10 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 		JsonNode index = JSON.readTree(INTERNAL_API_INDEX.toFile());
 		Set<Operation> operations = new LinkedHashSet<>();
 		for (JsonNode entry : index.path("operations")) {
-			if ("PUBLIC_API".equals(entry.path("surface").asText())) {
-				operations.add(new Operation(entry.path("method").asText(), entry.path("path").asText()));
+			String path = entry.path("path").asText();
+			if ("PUBLIC_API".equals(entry.path("surface").asText())
+				&& INVENTORY_PATH_PREFIXES.stream().anyMatch(path::startsWith)) {
+				operations.add(new Operation(entry.path("method").asText(), path));
 			}
 		}
 		return operations;
