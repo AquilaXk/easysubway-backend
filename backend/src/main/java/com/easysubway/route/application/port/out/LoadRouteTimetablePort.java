@@ -1,5 +1,6 @@
 package com.easysubway.route.application.port.out;
 
+import com.easysubway.route.application.model.PlannerIdentity;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -49,17 +50,6 @@ public interface LoadRouteTimetablePort {
 		public RouteTimetableSnapshot(String cacheKey, String timetableArtifactId, RouteTimetable timetable) {
 			this(cacheKey, timetableArtifactId, null, timetable);
 		}
-	}
-
-	record PlannerIdentity(
-		String timetableSnapshotSha256,
-		String canonicalPackSha256,
-		String canonicalPackSqliteSha256,
-		String canonicalStationVersion,
-		String canonicalStationSetSha256,
-		String sourceLineageSha256,
-		String evidenceHash
-	) {
 	}
 
 	record RouteTimetable(

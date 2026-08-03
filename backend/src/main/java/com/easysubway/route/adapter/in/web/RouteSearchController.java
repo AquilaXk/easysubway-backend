@@ -9,7 +9,7 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteObjective;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteTransportScope;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlannerIdentity;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.application.service.ProductionRouteV2Support;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;

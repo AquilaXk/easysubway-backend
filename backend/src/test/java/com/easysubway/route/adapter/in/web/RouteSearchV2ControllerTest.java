@@ -15,7 +15,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlannerIdentity;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.domain.EtaConfidence;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ConstraintMode;

@@ -7,6 +7,7 @@ import static org.assertj.core.api.Assertions.tuple;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.adapter.out.persistence.InMemoryRouteSearchRepository;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
@@ -1297,7 +1298,7 @@ class RouteSearchServiceTest {
 		try (var input = new GZIPInputStream(new ByteArrayInputStream(canonicalPack))) {
 			canonicalSqlite = input.readAllBytes();
 		}
-		var identity = new LoadRouteTimetablePort.PlannerIdentity(
+		var identity = new PlannerIdentity(
 			"a".repeat(64), sha256(canonicalPack), sha256(canonicalSqlite), "sha256:" + "d".repeat(64),
 			"d".repeat(64), "e".repeat(64), "f".repeat(64)
 		);
