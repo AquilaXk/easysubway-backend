@@ -2,7 +2,10 @@ package com.easysubway.architecture;
 
 import static com.tngtech.archunit.lang.syntax.ArchRuleDefinition.noClasses;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import com.tngtech.archunit.core.importer.ImportOption;
 import com.tngtech.archunit.core.importer.ClassFileImporter;
 import com.tngtech.archunit.junit.AnalyzeClasses;
@@ -56,8 +59,14 @@ class PackageDependencyRulesTest {
 		.and().areNotAssignableTo(com.easysubway.route.domain.RouteSearchResult.class)
 		.and().areNotAssignableTo(com.easysubway.route.domain.RouteWarning.class)
 		.should().dependOnClassesThat().resideInAnyPackage("com.fasterxml.jackson..")
-		.because("AquilaXk/easysubway-backend#11: adapter-owned JSON mapping/domain annotation-free로 전환하면 "
-			+ "RouteSearchResult·RouteWarning Jackson baseline을 제거한다 (2026-10-31 만료).");
+		.because("owner=AquilaXk/easysubway-backend#56; legacy-json-annotation-baseline=RouteSearchResult·RouteWarning Jackson; "
+			+ "removal-condition=Journey V3 adapter-owned mapping replaces these legacy domain annotations; review-expiry=2026-10-31.");
+
+	@Test
+	void route_domain_jackson_기존_baseline은_만료일_이후_실패한다() {
+		assertTrue(LocalDate.now(ZoneOffset.UTC).isBefore(LocalDate.of(2026, 11, 1)),
+			"AquilaXk/easysubway-backend#56: Journey V3 adapter-owned mapping replaces these legacy domain annotations.");
+	}
 
 	@Test
 	void application_to_adapter_위반을_포착한다() {
