@@ -15,6 +15,7 @@
 // repeatable(R__*.sql)과 SQL callback은 버전이 없어 재실행될 수 있으므로 항상 스캔한다.
 // 유형을 판정할 수 없는 .sql은 스캐너 사각지대이므로 위반으로 보고해 fail closed 시킨다.
 import { isMainModule } from "../lib/is-main-module.mjs";
+import { createHash } from "node:crypto";
 import { readFileSync, readdirSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -25,6 +26,171 @@ const MIGRATION_DIR = "backend/src/main/resources/db/migration/postgresql";
 
 export function loadJson(filePath) {
   return JSON.parse(readFileSync(filePath, "utf8"));
+}
+
+const POLICY_TOP_LEVEL_KEYS = new Set([
+  "schemaVersion",
+  "gateId",
+  "issue",
+  "baselineVersion",
+  "scannedDirectory",
+  "excludedDirectories",
+  "note",
+  "allowlistEntryFormat",
+  "inventory",
+  "allowlist",
+]);
+const INVENTORY_KEYS = new Set(["file", "sha256"]);
+const ALLOWLIST_KEYS = new Set(["file", "reason", "approval", "expiresAt", "sha256"]);
+const SHA256 = /^[a-f0-9]{64}$/;
+const GITHUB_ISSUE_URL = /^https:\/\/github\.com\/[^/]+\/[^/]+\/issues\/[1-9]\d*$/;
+const POLICY_ISSUE = "https://github.com/AquilaXk/easysubway/issues/2365";
+const V69_ALLOWLIST_FILE = "V69__admin_error_events_permission.sql";
+const V69_APPROVAL = "https://github.com/AquilaXk/easysubway/issues/2433";
+
+function isPlainObject(value) {
+  return value !== null && typeof value === "object" && !Array.isArray(value);
+}
+
+function unknownKeys(value, allowed) {
+  return Object.keys(value).filter((key) => !allowed.has(key));
+}
+
+function sha256(value) {
+  return createHash("sha256").update(value, "utf8").digest("hex");
+}
+
+function semanticVersionKey(versionParts) {
+  const parts = [...versionParts];
+  while (parts.length > 1 && parts.at(-1) === 0) parts.pop();
+  return parts.join(".");
+}
+
+// 정책·inventory·allowlist는 실제 migration set과 함께 검증한다. 누락·오타·만료 승인으로
+// 검사 사각지대가 생기지 않도록, 정책 오류도 DDL 위반과 동일하게 fail closed 한다.
+export function validateMigrationPolicy(policy, files, now = Date.now()) {
+  const violations = [];
+  const report = (why) => violations.push({ file: POLICY_PATH, findings: ["정책 검증 실패"], why });
+  if (!isPlainObject(policy)) {
+    report("정책 최상위가 object가 아님");
+    return violations;
+  }
+  const topUnknown = unknownKeys(policy, POLICY_TOP_LEVEL_KEYS);
+  if (topUnknown.length) report(`정책 최상위 unknown field: ${topUnknown.join(", ")}`);
+  if (policy.schemaVersion !== 2) report("schemaVersion은 2여야 함");
+  for (const key of ["gateId", "issue", "scannedDirectory", "note"]) {
+    if (isBlank(policy[key])) report(`${key}는 비어 있지 않은 문자열이어야 함`);
+  }
+  if (!GITHUB_ISSUE_URL.test(policy.issue ?? "")) {
+    report("issue는 GitHub issue URL이어야 함");
+  }
+  if (policy.issue !== POLICY_ISSUE) {
+    report(`issue는 ${POLICY_ISSUE}이어야 함`);
+  }
+  if (!Number.isInteger(policy.baselineVersion) || policy.baselineVersion < 0) {
+    report("baselineVersion은 0 이상의 정수여야 함");
+  }
+  if (!Array.isArray(policy.excludedDirectories) || policy.excludedDirectories.some(isBlank)) {
+    report("excludedDirectories는 비어 있지 않은 문자열 배열이어야 함");
+  }
+  if (!isPlainObject(policy.allowlistEntryFormat)) {
+    report("allowlistEntryFormat은 object여야 함");
+  } else {
+    const extra = unknownKeys(policy.allowlistEntryFormat, ALLOWLIST_KEYS);
+    if (extra.length) report(`allowlistEntryFormat unknown field: ${extra.join(", ")}`);
+    if ([...ALLOWLIST_KEYS].some((key) => isBlank(policy.allowlistEntryFormat[key]))) {
+      report("allowlistEntryFormat은 allowlist의 모든 field 설명을 가져야 함");
+    }
+  }
+  const hasInventory = Array.isArray(policy.inventory);
+  const hasAllowlist = Array.isArray(policy.allowlist);
+  if (!hasInventory) report("inventory는 배열이어야 함");
+  if (!hasAllowlist) report("allowlist는 배열이어야 함");
+  if (!hasInventory || !hasAllowlist) return violations;
+
+  const actualByFile = new Map(files.map((file) => [file.file, file]));
+  const expectedInventoryFiles = new Set();
+  const versions = new Map();
+  for (const file of files) {
+    const { kind, versionParts } = classifyScript(file.file);
+    if (kind === "unrecognized") {
+      report(`안전하지 않거나 인식할 수 없는 migration filename: ${file.file}`);
+      continue;
+    }
+    if (kind !== "versioned") continue;
+    const version = semanticVersionKey(versionParts);
+    const previous = versions.get(version);
+    if (previous) {
+      report(`중복 semantic migration version V${version}: ${previous}, ${file.file}`);
+    } else {
+      versions.set(version, file.file);
+    }
+    if (isAboveBaseline(versionParts, policy.baselineVersion)) expectedInventoryFiles.add(file.file);
+  }
+
+  const inventoryFiles = new Set();
+  for (const entry of policy.inventory) {
+    if (!isPlainObject(entry)) {
+      report("inventory entry는 object여야 함");
+      continue;
+    }
+    const extra = unknownKeys(entry, INVENTORY_KEYS);
+    if (extra.length) report(`inventory unknown field: ${extra.join(", ")}`);
+    if (isBlank(entry.file) || !SHA256.test(entry.sha256 ?? "")) {
+      report("inventory entry는 file과 소문자 SHA-256을 가져야 함");
+      continue;
+    }
+    if (inventoryFiles.has(entry.file)) report(`inventory duplicate entry: ${entry.file}`);
+    inventoryFiles.add(entry.file);
+    const actual = actualByFile.get(entry.file);
+    if (!actual || !expectedInventoryFiles.has(entry.file)) {
+      report(`inventory unknown entry: ${entry.file}`);
+    } else if (sha256(actual.sql) !== entry.sha256) {
+      report(`inventory SHA-256 drift: ${entry.file}`);
+    }
+  }
+  for (const file of expectedInventoryFiles) {
+    if (!inventoryFiles.has(file)) report(`baseline 초과 migration inventory 누락: ${file}`);
+  }
+
+  const allowlistFiles = new Set();
+  for (const entry of policy.allowlist) {
+    if (!isPlainObject(entry)) {
+      report("allowlist entry는 object여야 함");
+      continue;
+    }
+    const extra = unknownKeys(entry, ALLOWLIST_KEYS);
+    if (extra.length) report(`allowlist unknown field: ${extra.join(", ")}`);
+    if (isBlank(entry.file) || isBlank(entry.reason) || !SHA256.test(entry.sha256 ?? "")) {
+      report("allowlist entry는 file, reason, 소문자 SHA-256을 가져야 함");
+      continue;
+    }
+    if (!GITHUB_ISSUE_URL.test(entry.approval ?? "")) {
+      report(`allowlist approval은 GitHub issue URL이어야 함: ${entry.file}`);
+    }
+    if (entry.file === V69_ALLOWLIST_FILE && entry.approval !== V69_APPROVAL) {
+      report(`V69 allowlist approval은 ${V69_APPROVAL}이어야 함`);
+    }
+    const expiry = new Date(entry.expiresAt);
+    if (
+      typeof entry.expiresAt !== "string" ||
+      !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}\.\d{3}Z$/.test(entry.expiresAt) ||
+      Number.isNaN(expiry.getTime()) ||
+      expiry.toISOString() !== entry.expiresAt ||
+      expiry.getTime() <= now
+    ) {
+      report(`allowlist expiresAt은 유효한 미래 ISO instant여야 함: ${entry.file}`);
+    }
+    if (allowlistFiles.has(entry.file)) report(`allowlist duplicate entry: ${entry.file}`);
+    allowlistFiles.add(entry.file);
+    const actual = actualByFile.get(entry.file);
+    if (!actual) {
+      report(`allowlist unknown file: ${entry.file}`);
+    } else if (sha256(actual.sql) !== entry.sha256) {
+      report(`allowlist SHA-256 drift: ${entry.file}`);
+    }
+  }
+  return violations;
 }
 
 // SQL 전처리: 라인 주석(--), 블록 주석(/* */, 중첩 허용), 단일따옴표 문자열의 내용을 제거한다.
@@ -369,10 +535,13 @@ export function evaluateMigrationSet(files, { baselineVersion = 0, allowlist = [
 if (isMainModule(import.meta.url)) {
   const policy = loadJson(path.join(repoRoot, POLICY_PATH));
   const files = loadMigrationFiles(path.join(repoRoot, MIGRATION_DIR));
-  const violations = evaluateMigrationSet(files, {
+  const policyViolations = validateMigrationPolicy(policy, files);
+  const violations = policyViolations.length
+    ? policyViolations
+    : evaluateMigrationSet(files, {
     baselineVersion: policy.baselineVersion,
     allowlist: policy.allowlist ?? [],
-  });
+    });
   if (violations.length) {
     console.error("파괴적 DDL 마이그레이션 위반:");
     for (const v of violations) {
@@ -382,7 +551,7 @@ if (isMainModule(import.meta.url)) {
     console.error(
       "\nexpand/contract(순수 additive) 계약 위반입니다. 의도적 contract 단계라면",
     );
-    console.error(`${POLICY_PATH}의 allowlist에 사유(reason)와 승인 근거(approval)를 명기하세요.`);
+    console.error(`${POLICY_PATH}의 inventory/allowlist와 승인 만료 시각을 실제 migration과 일치시키세요.`);
     process.exit(1);
   }
 }

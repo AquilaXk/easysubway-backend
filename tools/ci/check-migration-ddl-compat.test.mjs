@@ -11,6 +11,7 @@ import {
   isAboveBaseline,
   loadMigrationFiles,
   evaluateMigrationSet,
+  validateMigrationPolicy,
   loadJson,
 } from "./check-migration-ddl-compat.mjs";
 
@@ -289,13 +290,93 @@ test("Flyway 유형 판정 불가 스크립트는 allowlist 사유·승인으로
   assert.match(incomplete[0].why, /allowlist/);
 });
 
-test("현재 트리의 실제 마이그레이션은 baseline(V66)·공식 allowlist에서 위반이 없다(회귀 없음)", () => {
+function copy(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+test("정책 validator는 unknown field와 inventory/allowlist schema mismatch를 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = loadMigrationFiles(realMigrationDir);
+  policy.unexpected = true;
+  policy.inventory[0].unexpected = true;
+  policy.allowlist[0].unexpected = true;
+  policy.inventory[1] = "not-an-object";
+  policy.schemaVersion = "2";
+  policy.issue = "AquilaXk/easysubway#2365";
+  policy.allowlist[0].file = "V69__not_the_actual_file.sql";
+  const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
+  assert.ok(reasons.some((why) => why.includes("최상위 unknown field")));
+  assert.ok(reasons.some((why) => why.includes("inventory unknown field")));
+  assert.ok(reasons.some((why) => why.includes("allowlist unknown field")));
+  assert.ok(reasons.some((why) => why.includes("inventory entry는 object")));
+  assert.ok(reasons.some((why) => why.includes("schemaVersion은 2여야 함")));
+  assert.ok(reasons.some((why) => why.includes("issue는 GitHub issue URL이어야 함")));
+  assert.ok(reasons.some((why) => why.includes("allowlist unknown file: V69__not_the_actual_file.sql")));
+});
+
+test("정책 validator는 duplicate semantic version과 인식 불가 filename을 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = [
+    ...loadMigrationFiles(realMigrationDir),
+    { file: "V67.0__same_semantic_version.sql", sql: "CREATE TABLE duplicate_version (id bigint);" },
+    { file: "unsafe_manual_patch.sql", sql: "CREATE TABLE unsafe_name (id bigint);" },
+  ];
+  const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
+  assert.ok(reasons.some((why) => why.includes("중복 semantic migration version V67")));
+  assert.ok(reasons.some((why) => why.includes("인식할 수 없는 migration filename: unsafe_manual_patch.sql")));
+});
+
+test("정책 validator는 baseline 초과 inventory 누락·unknown entry·SHA drift를 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = loadMigrationFiles(realMigrationDir);
+  policy.inventory = policy.inventory.filter((entry) => entry.file !== "V68__create_error_events.sql");
+  policy.inventory[0].sha256 = "0".repeat(64);
+  policy.inventory.push({ file: "V70__unknown.sql", sha256: "1".repeat(64) });
+  const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
+  assert.ok(reasons.some((why) => why.includes("inventory 누락: V68__create_error_events.sql")));
+  assert.ok(reasons.some((why) => why.includes("inventory SHA-256 drift: V67__admin_user_roles_granted_by.sql")));
+  assert.ok(reasons.some((why) => why.includes("inventory unknown entry: V70__unknown.sql")));
+});
+
+test("정책 validator는 allowlist file/SHA/approval/expiry 불일치를 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = loadMigrationFiles(realMigrationDir);
+  const [entry] = policy.allowlist;
+  entry.sha256 = "0".repeat(64);
+  entry.approval = "AquilaXk/easysubway-backend#29";
+  entry.expiresAt = "2020-01-01T00:00:00.000Z";
+  const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
+  assert.ok(reasons.some((why) => why.includes("allowlist SHA-256 drift")));
+  assert.ok(reasons.some((why) => why.includes("allowlist approval은 GitHub issue URL")));
+  assert.ok(reasons.some((why) => why.includes("allowlist expiresAt은 유효한 미래 ISO instant")));
+});
+
+test("정책 validator는 현재 V69 allowlist approval identity drift를 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = loadMigrationFiles(realMigrationDir);
+  policy.allowlist[0].approval = "https://github.com/AquilaXk/easysubway/issues/9999";
+  const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
+  assert.ok(reasons.some((why) => why.includes("V69 allowlist approval은 https://github.com/AquilaXk/easysubway/issues/2433이어야 함")));
+});
+
+test("정책 validator는 유효하지만 다른 top-level issue URL을 fail closed 한다", () => {
+  const policy = copy(loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json")));
+  const files = loadMigrationFiles(realMigrationDir);
+  policy.issue = "https://github.com/AquilaXk/easysubway/issues/9999";
+  const reasons = validateMigrationPolicy(policy, files).map((v) => v.why);
+  assert.ok(reasons.some((why) => why.includes("issue는 https://github.com/AquilaXk/easysubway/issues/2365이어야 함")));
+});
+
+test("현재 트리의 실제 migration policy·DDL은 strict validator에서 위반이 없다(회귀 없음)", () => {
   const policy = loadJson(path.join(repoRoot, "backend/quality/migration-ddl-gate.json"));
   const files = loadMigrationFiles(realMigrationDir);
-  const violations = evaluateMigrationSet(files, {
-    baselineVersion: policy.baselineVersion,
-    allowlist: policy.allowlist ?? [],
-  });
+  const violations = [
+    ...validateMigrationPolicy(policy, files),
+    ...evaluateMigrationSet(files, {
+      baselineVersion: policy.baselineVersion,
+      allowlist: policy.allowlist ?? [],
+    }),
+  ];
   assert.deepEqual(
     violations,
     [],
