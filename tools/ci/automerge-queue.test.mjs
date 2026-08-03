@@ -775,7 +775,8 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(pending.postMergeStateCalls, 6, 'pending merge polling must stop at the fixed bound');
   assert.equal(pending.sleepCalls, 5, 'polling must sleep only between the six attempts');
   assert.equal(pending.nativeAutoMergeDisabled, true, 'pending request must be disabled');
-  assert.equal(pending.removedLabel, true, 'pending request must remove the coordinator label');
+  assert.equal(pending.labelRemovalAttempted, false, 'pending request must preserve the coordinator label after cleanup');
+  assert.equal(pending.removedLabel, false, 'pending request must preserve the coordinator label');
 
   for (const [postMergeState, expectedStatus] of [['ERROR', 48], ['CLOSED', 1]]) {
     const invalid = runDispatch('CLEAN', { postMergeStates: [postMergeState], captureCalls: true });

@@ -534,6 +534,7 @@ jobs:
             fail_closed_pr() {
               local operation="$1"
               local status="$2"
+              local preserve_label="${3:-false}"
               local run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
               local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. 자동 병합 해제와 automerge 라벨 제거를 시도하고 상태를 확인했습니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
               local label_converged=false
@@ -541,6 +542,14 @@ jobs:
               if ! clear_auto_merge_request "${pr}"; then
                 echo "::error::PR #${pr}: native auto-merge cleanup did not converge."
                 comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. native auto-merge 요청 해제가 수렴하지 않아 다음 cleanup 실행이 다시 발견하도록 automerge 라벨을 보존했습니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
+                if ! gh pr comment "${pr}" --repo "${repo}" --body "${comment}"; then
+                  echo "::warning::PR #${pr}: failure comment could not be posted."
+                fi
+                return "${status}"
+              fi
+
+              if [[ "${preserve_label}" == true ]]; then
+                comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. native auto-merge 요청은 해제됐지만 bounded merge 대기가 끝나 다음 cleanup 실행이 다시 발견하도록 automerge 라벨을 보존했습니다."
                 if ! gh pr comment "${pr}" --repo "${repo}" --body "${comment}"; then
                   echo "::warning::PR #${pr}: failure comment could not be posted."
                 fi
@@ -592,7 +601,7 @@ jobs:
                       sleep 2
                     fi
                   done
-                  fail_closed_pr "merge-pending" 1
+                  fail_closed_pr "merge-pending" 1 true
                 else
                   status=$?
                   fail_closed_pr "merge" "${status}"
