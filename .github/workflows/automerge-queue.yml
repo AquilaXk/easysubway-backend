@@ -457,16 +457,48 @@ jobs:
               local operation="$1"
               local status="$2"
               local run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-              local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. 자동 병합 해제와 automerge 라벨 제거를 시도합니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
+              local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. 자동 병합 해제와 automerge 라벨 제거를 시도하고 상태를 확인했습니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
+              local native_converged=false
+              local label_converged=false
+
+              for _ in {1..2}; do
+                if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
+                  echo "::error::PR #${pr}: native auto-merge could not be disabled."
+                fi
+                if auto_merge_request="$(gh pr view "${pr}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest')"; then
+                  if [[ "${auto_merge_request}" == "null" ]]; then
+                    native_converged=true
+                    break
+                  fi
+                  echo "::error::PR #${pr}: native auto-merge remains enabled."
+                else
+                  echo "::error::PR #${pr}: native auto-merge state could not be verified."
+                fi
+              done
+              if [[ "${native_converged}" != true ]]; then
+                echo "::error::PR #${pr}: native auto-merge cleanup did not converge."
+              fi
+
+              for _ in {1..2}; do
+                if ! gh pr edit "${pr}" --repo "${repo}" --remove-label automerge; then
+                  echo "::error::PR #${pr}: automerge label could not be removed."
+                fi
+                if label_absent="$(gh pr view "${pr}" --repo "${repo}" --json labels --jq '[.labels[].name] | index("automerge") == null')"; then
+                  if [[ "${label_absent}" == true ]]; then
+                    label_converged=true
+                    break
+                  fi
+                  echo "::error::PR #${pr}: automerge label remains present."
+                else
+                  echo "::error::PR #${pr}: automerge label state could not be verified."
+                fi
+              done
+              if [[ "${label_converged}" != true ]]; then
+                echo "::error::PR #${pr}: automerge label cleanup did not converge."
+              fi
 
               if ! gh pr comment "${pr}" --repo "${repo}" --body "${comment}"; then
                 echo "::warning::PR #${pr}: failure comment could not be posted."
-              fi
-              if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
-                echo "::error::PR #${pr}: native auto-merge could not be disabled."
-              fi
-              if ! gh pr edit "${pr}" --repo "${repo}" --remove-label automerge; then
-                echo "::error::PR #${pr}: automerge label could not be removed."
               fi
               return "${status}"
             }

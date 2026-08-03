@@ -520,22 +520,32 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       newHead = 'updated-head',
       failedOperation = null,
       commentFails = false,
-      disableAutoFails = false,
-      labelFails = false,
+      disableAutoFailures = 0,
+      labelFailures = 0,
+      nativeStates = ['null'],
+      labelStates = ['true'],
     } = {},
   ) => {
     const result = stubbedBash([
       'set -euo pipefail',
+      `disable_auto_failures=${disableAutoFailures}`,
+      `label_failures=${labelFailures}`,
+      `native_states=(${nativeStates.map(JSON.stringify).join(' ')})`,
+      `label_states=(${labelStates.map(JSON.stringify).join(' ')})`,
+      'disable_auto_calls=0',
+      'label_calls=0',
+      'native_state_index=0',
+      'label_state_index=0',
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       `  if [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge --squash"* ]]; then printf '%s\\n' 'merge-stderr-sentinel' >&2; return 41; fi`,
       `  [[ ${JSON.stringify(failedOperation)} == update-branch && "$*" == api*update-branch* ]] && return 42`,
       `  [[ ${JSON.stringify(commentFails)} == true && "$*" == "pr comment"* ]] && return 43`,
-      `  [[ ${JSON.stringify(disableAutoFails)} == true && "$*" == "pr merge 26 --repo o/r --disable-auto" ]] && return 45`,
-      `  [[ ${JSON.stringify(labelFails)} == true && "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]] && return 44`,
-      `  [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]] && printf '%s\\n' AUTO_MERGE_DISABLED >> "$GH_LOG"`,
-      `  [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]] && printf '%s\\n' LABEL_REMOVAL_SUCCEEDED >> "$GH_LOG"`,
+      '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; printf \'%s\\n\' AUTO_MERGE_DISABLED >> "$GH_LOG"; fi',
+      '  if [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]]; then label_calls=$((label_calls + 1)); [[ "$label_calls" -le "$label_failures" ]] && return 44; printf \'%s\\n\' LABEL_REMOVAL_SUCCEEDED >> "$GH_LOG"; fi',
       '  case "$*" in',
+      '    *"pr view"*autoMergeRequest*) state="${native_states[$native_state_index]:-null}"; native_state_index=$((native_state_index + 1)); [[ "$state" == ERROR ]] && return 46; printf \'%s\\n\' "$state" ;;',
+      '    *"pr view"*"--json labels"*) state="${label_states[$label_state_index]:-true}"; label_state_index=$((label_state_index + 1)); [[ "$state" == ERROR ]] && return 47; printf \'%s\\n\' "$state" ;;',
       `    *"pr view"*headRefOid*) printf '%s\\n' ${JSON.stringify(newHead)} ;;`,
       '  esac',
       '}',
@@ -564,10 +574,12 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       commented: result.calls.includes('gh pr comment'),
       nativeAutoMergeDisableAttempted: /gh pr merge .*--disable-auto/.test(result.calls),
       nativeAutoMergeDisabled: result.calls.includes('AUTO_MERGE_DISABLED'),
+      nativeVerificationCalls: (result.calls.match(/gh pr view .*autoMergeRequest/g) ?? []).length,
       labelRemovalAttempted: /gh pr edit .*--remove-label automerge/.test(result.calls),
       removedLabel: result.calls.includes('LABEL_REMOVAL_SUCCEEDED'),
+      labelVerificationCalls: (result.calls.match(/gh pr view .*--json labels/g) ?? []).length,
     };
-    return failedOperation || commentFails || disableAutoFails || labelFails
+    return failedOperation || commentFails || disableAutoFailures > 0 || labelFailures > 0 || nativeStates.includes('ERROR') || labelStates.includes('ERROR')
       ? {
           ...summary,
           calls: result.calls,
@@ -580,8 +592,10 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     commented: false,
     nativeAutoMergeDisableAttempted: false,
     nativeAutoMergeDisabled: false,
+    nativeVerificationCalls: 0,
     labelRemovalAttempted: false,
     removedLabel: false,
+    labelVerificationCalls: 0,
   };
 
   // ⑥ 병합 가능 상태. UNSTABLE은 "필수가 아닌 check가 green이 아님"일 뿐이고 required
@@ -675,8 +689,10 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     assert.equal(failed.commented, true, `${failedOperation} failure must comment on the PR`);
     assert.equal(failed.nativeAutoMergeDisableAttempted, true, `${failedOperation} failure must disable auto-merge`);
     assert.equal(failed.nativeAutoMergeDisabled, true, `${failedOperation} failure must disable native auto-merge`);
+    assert.equal(failed.nativeVerificationCalls, 1, `${failedOperation} native cleanup must verify once after convergence`);
     assert.equal(failed.labelRemovalAttempted, true, `${failedOperation} failure must attempt label removal`);
     assert.equal(failed.removedLabel, true, `${failedOperation} failure must remove automerge`);
+    assert.equal(failed.labelVerificationCalls, 1, `${failedOperation} label cleanup must verify once after convergence`);
     assert.match(failed.calls, new RegExp(`merge_state=${mergeState}, status=${status}`));
     assert.match(failed.calls, /https:\/\/github\.com\/o\/r\/actions\/runs\/123/);
   }
@@ -686,22 +702,46 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(commentFailed.nativeAutoMergeDisabled, true, 'comment failure must not skip native auto-merge disable');
   assert.equal(commentFailed.removedLabel, true, 'comment failure must not skip label removal');
 
-  const disableFailed = runDispatch('CLEAN', { failedOperation: 'merge', disableAutoFails: true });
+  const disableThenConverged = runDispatch('CLEAN', {
+    failedOperation: 'merge',
+    disableAutoFailures: 1,
+    nativeStates: ['enabled', 'null'],
+  });
+  assert.equal(disableThenConverged.status, 41, 'cleanup retry must retain the merge status');
+  assert.equal(disableThenConverged.nativeAutoMergeDisabled, true, 'second native cleanup attempt must converge');
+  assert.equal(disableThenConverged.nativeVerificationCalls, 2, 'every native cleanup attempt is verified');
+
+  const disableFailed = runDispatch('CLEAN', {
+    failedOperation: 'merge',
+    disableAutoFailures: 2,
+    nativeStates: ['enabled', 'enabled'],
+  });
   assert.equal(disableFailed.status, 41, 'native cleanup failure must not replace the merge status');
   assert.equal(disableFailed.commented, true, 'native cleanup failure must retain the PR comment attempt');
   assert.equal(disableFailed.nativeAutoMergeDisableAttempted, true, 'native cleanup failure must be observable');
   assert.equal(disableFailed.nativeAutoMergeDisabled, false, 'failed native cleanup must not be reported as disabled');
+  assert.equal(disableFailed.nativeVerificationCalls, 2, 'failed native cleanup is verified on every attempt');
   assert.equal(disableFailed.labelRemovalAttempted, true, 'native cleanup failure must not skip label removal');
   assert.equal(disableFailed.removedLabel, true, 'native cleanup failure must still remove the label');
 
-  const labelFailed = runDispatch('CLEAN', { failedOperation: 'merge', labelFails: true });
+  const labelFailed = runDispatch('CLEAN', {
+    failedOperation: 'merge',
+    labelFailures: 2,
+    labelStates: ['false', 'false'],
+  });
   assert.equal(labelFailed.status, 41, 'label cleanup failure must not replace the merge status');
   assert.equal(labelFailed.commented, true, 'label cleanup failure must retain the PR comment attempt');
   assert.equal(labelFailed.nativeAutoMergeDisabled, true, 'label cleanup failure must not skip native auto-merge disable');
   assert.equal(labelFailed.labelRemovalAttempted, true, 'label cleanup failure must be observable');
   assert.equal(labelFailed.removedLabel, false, 'failed label cleanup must not be reported as removed');
+  assert.equal(labelFailed.labelVerificationCalls, 2, 'failed label cleanup is verified on every attempt');
   assert.match(labelFailed.stderr, /merge-stderr-sentinel/);
   assert.doesNotMatch(labelFailed.calls, /merge-stderr-sentinel/);
+
+  const queryFailed = runDispatch('CLEAN', { failedOperation: 'merge', nativeStates: ['ERROR', 'ERROR'] });
+  assert.equal(queryFailed.status, 41, 'query failure must not replace the merge status');
+  assert.equal(queryFailed.nativeVerificationCalls, 2, 'native cleanup query must stay bounded at two attempts');
+  assert.equal(queryFailed.labelRemovalAttempted, true, 'native query failure must not skip label cleanup');
 });
 
 test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
