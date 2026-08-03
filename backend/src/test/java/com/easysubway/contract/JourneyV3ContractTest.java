@@ -27,6 +27,7 @@ class JourneyV3ContractTest {
 	private static final Path OPENAPI = CONTRACTS.resolve("journey-v3.openapi.yaml");
 	private static final Path ERROR_CATALOG = CONTRACTS.resolve("journey-v3-error-catalog.json");
 	private static final Path DIGESTS = CONTRACTS.resolve("journey-v3-contract-digests.json");
+	private static final Path CONTRACT_ATTRIBUTES = CONTRACTS.resolve(".gitattributes");
 	private static final ObjectMapper JSON = new ObjectMapper();
 
 	private static final List<ErrorPair> APPLICATION_ERRORS = List.of(
@@ -47,6 +48,7 @@ class JourneyV3ContractTest {
 	private static final List<ErrorPair> INGRESS_ERRORS = List.of(
 		new ErrorPair("searchJourneys", 401, "ROUTE_SESSION_REQUIRED"),
 		new ErrorPair("searchJourneys", 429, "ROUTE_RATE_LIMITED"),
+		new ErrorPair("issueJourneySession", 400, "INVALID_JOURNEY_SESSION_REQUEST"),
 		new ErrorPair("issueJourneySession", 403, "ROUTE_SESSION_ATTESTATION_REJECTED"),
 		new ErrorPair("issueJourneySession", 503, "ROUTE_SESSION_ATTESTATION_UNAVAILABLE")
 	);
@@ -222,6 +224,9 @@ class JourneyV3ContractTest {
 	@Test
 	@DisplayName("digest artifact binds the exact OpenAPI and catalog raw bytes")
 	void digestArtifactBindsRawContractBytes() throws IOException {
+		assertThat(Files.readAllLines(CONTRACT_ATTRIBUTES, StandardCharsets.UTF_8)).containsExactly(
+			"*.yaml text eol=lf",
+			"*.json text eol=lf");
 		JsonNode digest = JSON.readTree(DIGESTS.toFile());
 		assertThat(fieldNames(digest)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "artifacts");
 		assertThat(digest.path("schemaVersion").asText()).isEqualTo("JOURNEY_V3_CONTRACT_DIGESTS_V1");

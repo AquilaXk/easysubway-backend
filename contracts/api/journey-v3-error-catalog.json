@@ -76,6 +76,11 @@
     },
     {
       "operation": "issueJourneySession",
+      "httpStatus": 400,
+      "code": "INVALID_JOURNEY_SESSION_REQUEST"
+    },
+    {
+      "operation": "issueJourneySession",
       "httpStatus": 403,
       "code": "ROUTE_SESSION_ATTESTATION_REJECTED"
     },

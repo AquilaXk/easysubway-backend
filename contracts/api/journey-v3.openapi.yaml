@@ -20,6 +20,20 @@ paths:
             application/json:
               schema:
                 $ref: "#/components/schemas/JourneySessionResponse"
+        "400":
+          description: Invalid or malformed Journey session request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                invalidSessionRequest:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: INVALID_JOURNEY_SESSION_REQUEST
+                    retryable: false
+                    occurredAt: "2026-08-02T23:58:00.482+09:00"
         "403":
           description: Play Integrity verdict or request binding rejected
           content:
@@ -617,6 +631,7 @@ components:
         - JOURNEY_SEARCH_TIMEOUT
         - ROUTE_SESSION_REQUIRED
         - ROUTE_RATE_LIMITED
+        - INVALID_JOURNEY_SESSION_REQUEST
         - ROUTE_SESSION_ATTESTATION_REJECTED
         - ROUTE_SESSION_ATTESTATION_UNAVAILABLE
     JourneyError:
