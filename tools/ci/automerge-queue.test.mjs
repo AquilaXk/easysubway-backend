@@ -507,7 +507,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   const workflow = await readWorkflow();
 
   const clearAutoMergeBlock = workflow.match(
-    /(clear_auto_merge_request\(\) \{[\s\S]*?\n\s+\})\n\n\s+info=/,
+    /(clear_auto_merge_request\(\) \{[\s\S]*?\n\s+\})\n\s+cleanup_capacity=/,
   )?.[1];
   assert.ok(clearAutoMergeBlock, 'native auto-merge cleanup must stay testable');
   assert.doesNotMatch(workflow, /update-branch/);
@@ -946,6 +946,7 @@ const makeRunQueue =
     'name=r',
     `required='[{"context":"Backend CI","integration_id":null}]'`,
     `pending_count=${pendingCount}`,
+    `pending_candidates=${JSON.stringify(JSON.stringify(orderedPrs.filter((pr) => pr.autoMergeRequest != null).map((pr) => pr.number)))}`,
     `candidates=${JSON.stringify(JSON.stringify(orderedPrs.map((pr) => pr.number)))}`,
     budgetConstants,
     ...(window === null ? [] : [`window=${window}`]),
@@ -992,7 +993,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     { number: 1, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
     { number: 2, mergeStateStatus: 'CLEAN' },
   ]);
-  assert.equal(existingRequest.mergedPr, 2, 'existing native request must be cleared then skipped');
+  assert.equal(existingRequest.mergedPr, null, 'cleanup runs must not merge an ordinary candidate');
   assert.equal(existingRequest.autoMergeDisableCalls, 1, 'existing native request must be disabled once');
   const outsideOrdinaryWindow = runQueue([
     { number: 1, mergeStateStatus: 'CLEAN' },
@@ -1003,9 +1004,9 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     { number: 6, mergeStateStatus: 'CLEAN' },
     { number: 7, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
   ]);
-  assert.deepEqual(outsideOrdinaryWindow.evaluated.slice(0, 2), [7, 1]);
+  assert.deepEqual(outsideOrdinaryWindow.evaluated, []);
   assert.equal(outsideOrdinaryWindow.autoMergeDisableCalls, 1);
-  assert.equal(outsideOrdinaryWindow.mergedPr, 1, 'cleanup must precede an ordinary merge');
+  assert.equal(outsideOrdinaryWindow.mergedPr, null, 'cleanup must finish before any ordinary merge');
   const cleanupOnly = runQueue([
     ...[1, 2, 3, 4, 5, 6].map((number) => ({
       number,
@@ -1014,9 +1015,34 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     })),
     { number: 7, mergeStateStatus: 'CLEAN' },
   ]);
-  assert.equal(cleanupOnly.evaluated.length, 6, 'pending candidates must consume the bounded window first');
+  assert.equal(cleanupOnly.evaluated.length, 0, 'cleanup is outside ordinary evaluation');
   assert.equal(cleanupOnly.autoMergeDisableCalls, 6);
-  assert.equal(cleanupOnly.mergedPr, null, 'pending window must not merge an ordinary candidate');
+  assert.equal(cleanupOnly.mergedPr, null, 'cleanup run must not merge an ordinary candidate');
+  const windowPlusOne = runQueue(
+    [...[1, 2, 3, 4, 5, 6, 7].map((number) => ({
+      number,
+      mergeStateStatus: 'CLEAN',
+      autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' },
+    }))],
+  );
+  assert.equal(windowPlusOne.status, 0);
+  assert.equal(windowPlusOne.autoMergeDisableCalls, 7, 'window + 1 pending requests must all be cleaned');
+  assert.equal(windowPlusOne.mergedPr, null);
+  const overCapacity = runQueue(
+    [
+      { number: 1, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
+      { number: 2, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
+    ],
+    { remaining: [320] },
+  );
+  assert.notEqual(overCapacity.status, 0, 'over-capacity cleanup must fail closed');
+  assert.equal(overCapacity.autoMergeDisableCalls, 0);
+  assert.equal(overCapacity.mergedPr, null);
+  const ordinaryRandom = runQueue(
+    [...[1, 2, 3, 4, 5, 6, 7].map((number) => ({ number, mergeStateStatus: 'CLEAN' }))],
+  );
+  assert.equal(ordinaryRandom.autoMergeDisableCalls, 0);
+  assert.notEqual(ordinaryRandom.mergedPr, null, 'ordinary random window remains available without pending requests');
   // 충돌한 후보도 뒤를 막지 않는다.
   const dirtyQueue = runQueue([
     { number: 1, mergeStateStatus: 'DIRTY' },
@@ -1178,6 +1204,7 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
         [
           'set -euo pipefail',
           `gh() { ${stub} }`,
+          'pending_count=0',
           dedent(budgetBlock),
           `printf 'window=%s\\n' "$window"`,
         ].join('\n'),
@@ -1324,7 +1351,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
     'candidate offset must not depend on run context',
   );
 
-  const drawOffset = (total, runNumber, pendingCount = 0) => {
+  const drawOffset = (total, runNumber) => {
     const result = spawnSync(
       'bash',
       [
@@ -1334,7 +1361,6 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
           `GITHUB_RUN_NUMBER=${JSON.stringify(String(runNumber))}`,
           // 창 크기는 앞선 예산 블록이 정한다. 여기서는 주입값으로 시작점만 본다.
           `window=${declaredWindow}`,
-          `pending_count=${pendingCount}`,
           `candidates=${JSON.stringify(
             JSON.stringify(Array.from({ length: total }, (_, index) => index)),
           )}`,
@@ -1356,8 +1382,6 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
       assert.equal(drawOffset(total, attempt), 0, `must not rotate at total=${total}`);
     }
   }
-  assert.equal(drawOffset(declaredWindow + 1, 0, 1), 0, 'pending cleanup must disable random rotation');
-
   // total > window면 시작점이 실행마다 새로 뽑히고 범위 안에 있다. run number를 고정해
   // 두는 것은 최악의 앨리어싱 입력(간격 0)이며, 그래도 성질이 유지되어야 한다.
   //
@@ -1381,9 +1405,8 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
     new Set(drawn).size > 1,
     'candidate offset must vary across executions even with a fixed run number',
   );
-  // 뽑힌 시작점들의 창 합집합이 전 후보를 덮는다. 표본 성질이라 실패 확률이 0은 아니지만,
-  // 후보 하나가 한 표본에서 빠질 확률이 1 - window/total = 1/2이므로 64회에서 누락
-  // 확률은 total * 2^-64 ~ 6.5e-19다.
+  // 표본은 난수 시드에 좌우되므로 여기서는 최소 한 창을 덮는지만 본다. 모든 시작점의
+  // 도달 가능성은 아래 주입형 테스트가 결정적으로 검증한다.
   const windowProgram = workflow.match(WINDOW_PROGRAM_RE)?.[1];
   assert.ok(windowProgram, 'candidate window jq program must stay testable');
   const pickWindow = makePickWindow(windowProgram, declaredWindow);
@@ -1391,7 +1414,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
   for (const offset of drawn) {
     for (const index of pickWindow(rotationTotal, offset)) covered.add(index);
   }
-  assert.equal(covered.size, rotationTotal, 'drawn offsets must cover the whole queue');
+  assert.ok(covered.size >= declaredWindow, 'drawn offsets must cover at least one candidate window');
 });
 
 test('창 밖 후보 도달 가능성은 시작점을 주입해 결정적으로 고정한다', async () => {
