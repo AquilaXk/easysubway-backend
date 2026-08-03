@@ -9,7 +9,7 @@
   ],
   "note": "blue/green standby+promotion 배포는 standby가 구 canonical과 동일한 live Postgres에 대해 부팅하므로 모든 마이그레이션이 expand/contract(순수 additive) 계약을 지켜야 한다. baselineVersion(V66)까지는 게이트 도입 전 기존 마이그레이션으로 grandfather 처리하고, baseline 초과 신규 파일에서 파괴적 DDL을 fail closed로 탐지한다. h2 디렉토리는 테스트 전용 스키마라 라이브 배포 대상이 아니므로 검사에서 제외한다. 스캔 범위는 scannedDirectory 재귀 전체이며, repeatable(R__*.sql)과 SQL callback은 버전 비교 기준이 없어 항상 스캔한다. Flyway 명명 규칙으로 유형을 판정할 수 없는 .sql은 스캔 사각지대이므로 allowlist 승인 없이는 위반으로 보고한다.",
   "allowlistEntryFormat": {
-    "file": "V<n>__<name>.sql",
+    "file": "scannedDirectory-relative .sql path (예: V<n>__<name>.sql 또는 legacy_manual_patch.sql)",
     "reason": "이 파괴적 마이그레이션이 안전한 이유(contract 단계 조건 등)",
     "approval": "https://github.com/<owner>/<repo>/issues/<n>",
     "expiresAt": "승인 만료 ISO instant(UTC, 예: 2030-01-01T00:00:00.000Z)",

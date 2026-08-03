@@ -110,11 +110,12 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
 
   const actualByFile = new Map(files.map((file) => [file.file, file]));
   const expectedInventoryFiles = new Set();
+  const unrecognizedFiles = [];
   const versions = new Map();
   for (const file of files) {
     const { kind, versionParts } = classifyScript(file.file);
     if (kind === "unrecognized") {
-      report(`안전하지 않거나 인식할 수 없는 migration filename: ${file.file}`);
+      unrecognizedFiles.push(file.file);
       continue;
     }
     if (kind !== "versioned") continue;
@@ -154,22 +155,29 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
   }
 
   const allowlistFiles = new Set();
+  const validAllowlistFiles = new Set();
   for (const entry of policy.allowlist) {
     if (!isPlainObject(entry)) {
       report("allowlist entry는 object여야 함");
       continue;
     }
+    let valid = true;
     const extra = unknownKeys(entry, ALLOWLIST_KEYS);
-    if (extra.length) report(`allowlist unknown field: ${extra.join(", ")}`);
+    if (extra.length) {
+      report(`allowlist unknown field: ${extra.join(", ")}`);
+      valid = false;
+    }
     if (isBlank(entry.file) || isBlank(entry.reason) || !SHA256.test(entry.sha256 ?? "")) {
       report("allowlist entry는 file, reason, 소문자 SHA-256을 가져야 함");
       continue;
     }
     if (!GITHUB_ISSUE_URL.test(entry.approval ?? "")) {
       report(`allowlist approval은 GitHub issue URL이어야 함: ${entry.file}`);
+      valid = false;
     }
     if (entry.file === V69_ALLOWLIST_FILE && entry.approval !== V69_APPROVAL) {
       report(`V69 allowlist approval은 ${V69_APPROVAL}이어야 함`);
+      valid = false;
     }
     const expiry = new Date(entry.expiresAt);
     if (
@@ -180,14 +188,26 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
       expiry.getTime() <= now
     ) {
       report(`allowlist expiresAt은 유효한 미래 ISO instant여야 함: ${entry.file}`);
+      valid = false;
     }
-    if (allowlistFiles.has(entry.file)) report(`allowlist duplicate entry: ${entry.file}`);
+    if (allowlistFiles.has(entry.file)) {
+      report(`allowlist duplicate entry: ${entry.file}`);
+      valid = false;
+    }
     allowlistFiles.add(entry.file);
     const actual = actualByFile.get(entry.file);
     if (!actual) {
       report(`allowlist unknown file: ${entry.file}`);
+      valid = false;
     } else if (sha256(actual.sql) !== entry.sha256) {
       report(`allowlist SHA-256 drift: ${entry.file}`);
+      valid = false;
+    }
+    if (valid) validAllowlistFiles.add(entry.file);
+  }
+  for (const file of unrecognizedFiles) {
+    if (!validAllowlistFiles.has(file)) {
+      report(`안전하지 않거나 인식할 수 없는 migration filename: ${file}`);
     }
   }
   return violations;
@@ -227,10 +247,18 @@ export function stripSqlNoise(sql) {
       out += " ";
       continue;
     }
-    // 단일따옴표 문자열 ('' 이스케이프 인지)
+    // 단일따옴표 문자열 ('' 및 E'...'의 backslash 이스케이프 인지)
     if (sql[i] === "'") {
+      const backslashEscapes =
+        i > 0 &&
+        /[Ee]/.test(sql[i - 1]) &&
+        (i === 1 || !/[A-Za-z0-9_]/.test(sql[i - 2]));
       i++;
       while (i < n) {
+        if (backslashEscapes && sql[i] === "\\" && i + 1 < n) {
+          i += 2;
+          continue;
+        }
         if (sql[i] === "'" && sql[i + 1] === "'") {
           i += 2;
           continue;
@@ -447,7 +475,10 @@ export function scanSqlForViolations(rawSql) {
       );
       const alterTarget = targetMatch ? normalizeId(targetMatch[1]) : null;
 
-      if (/\bADD\s+(?:CONSTRAINT\b|PRIMARY\s+KEY\b|UNIQUE\b|FOREIGN\s+KEY\b|CHECK\b)/i.test(s)) {
+      if (
+        /\bADD\s+(?:CONSTRAINT\b|PRIMARY\s+KEY\b|UNIQUE\b|FOREIGN\s+KEY\b|CHECK\b)/i.test(s) ||
+        /\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?[\w".]+\s+[^;]*\bUNIQUE\b/i.test(s)
+      ) {
         if (!alterTarget || !createdTables.has(alterTarget)) {
           add("기존 테이블에 제약(ADD CONSTRAINT) 추가");
         }
