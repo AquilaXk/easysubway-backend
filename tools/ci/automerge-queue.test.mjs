@@ -699,8 +699,9 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(disableFailed.nativeAutoMergeDisableAttempted, true, 'native cleanup failure must be observable');
   assert.equal(disableFailed.nativeAutoMergeDisabled, false, 'failed native cleanup must not be reported as disabled');
   assert.equal(disableFailed.nativeVerificationCalls, 3, 'initial state and failed cleanup attempts are verified');
-  assert.equal(disableFailed.labelRemovalAttempted, true, 'native cleanup failure must not skip label removal');
-  assert.equal(disableFailed.removedLabel, true, 'native cleanup failure must still remove the label');
+  assert.equal(disableFailed.labelRemovalAttempted, false, 'active requests must keep the discovery label');
+  assert.equal(disableFailed.removedLabel, false, 'native cleanup failure must not hide the request');
+  assert.equal(disableFailed.labelVerificationCalls, 0);
 
   const labelFailed = runDispatch('CLEAN', {
     failedOperation: 'merge',
@@ -736,7 +737,8 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   const queryFailed = runDispatch('CLEAN', { failedOperation: 'merge', nativeStates: ['ERROR', 'ERROR', 'ERROR'] });
   assert.equal(queryFailed.status, 41, 'query failure must not replace the merge status');
   assert.equal(queryFailed.nativeVerificationCalls, 3, 'native cleanup query must stay bounded at one precheck and two attempts');
-  assert.equal(queryFailed.labelRemovalAttempted, true, 'native query failure must not skip label cleanup');
+  assert.equal(queryFailed.labelRemovalAttempted, false, 'unverified active requests must keep the discovery label');
+  assert.equal(queryFailed.labelVerificationCalls, 0);
 
   const alreadyClear = runDispatch('CLEAN', {
     failedOperation: 'merge',
@@ -1063,8 +1065,21 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
     { remaining: [323] },
   );
   assert.notEqual(overCapacity.status, 0, 'over-capacity cleanup must fail closed');
-  assert.equal(overCapacity.autoMergeDisableCalls, 0);
+  assert.equal(overCapacity.autoMergeDisableCalls, 1, 'available capacity must reduce the active request set');
   assert.equal(overCapacity.mergedPr, null);
+  const nextCleanupRun = runQueue([
+    { number: 2, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
+  ]);
+  assert.equal(nextCleanupRun.status, 0, 'the remaining request is discoverable on the next run');
+  assert.equal(nextCleanupRun.autoMergeDisableCalls, 1);
+  assert.equal(nextCleanupRun.mergedPr, null);
+  const zeroCapacity = runQueue(
+    [{ number: 1, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } }],
+    { remaining: [319] },
+  );
+  assert.notEqual(zeroCapacity.status, 0);
+  assert.equal(zeroCapacity.autoMergeDisableCalls, 0);
+  assert.equal(zeroCapacity.mergedPr, null);
   for (const remaining of ['__FAIL__', 'null', 'not-a-number']) {
     const unknownBudget = runQueue(
       [

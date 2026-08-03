@@ -335,17 +335,25 @@ jobs:
           if [[ "${cleanup_capacity}" -gt "${cleanup_max}" ]]; then
             cleanup_capacity="${cleanup_max}"
           fi
-          if [[ "${pending_count}" -gt "${cleanup_capacity}" ]]; then
-            echo "::error::${pending_count} pending native auto-merge requests exceed cleanup capacity ${cleanup_capacity}."
-            exit 1
-          fi
           if [[ "${pending_count}" -gt 0 ]]; then
+            cleanup_target_count="${pending_count}"
+            if [[ "${cleanup_target_count}" -gt "${cleanup_capacity}" ]]; then
+              cleanup_target_count="${cleanup_capacity}"
+            fi
+            if [[ "${cleanup_target_count}" -lt 1 ]]; then
+              echo "::error::${pending_count} pending native auto-merge requests exceed cleanup capacity ${cleanup_capacity}; no request can be cleaned safely."
+              exit 1
+            fi
             while IFS= read -r pr; do
               if ! clear_auto_merge_request "${pr}"; then
                 echo "::error::PR #${pr}: existing native auto-merge request cleanup did not converge."
                 exit 1
               fi
-            done < <(jq -r '.[]' <<<"${pending_candidates}")
+            done < <(jq -r --argjson limit "${cleanup_target_count}" '.[0:$limit][]' <<<"${pending_candidates}")
+            if [[ "${cleanup_target_count}" -lt "${pending_count}" ]]; then
+              echo "::error::Cleared ${cleanup_target_count} of ${pending_count} pending native auto-merge requests; ${cleanup_capacity} was the bounded capacity."
+              exit 1
+            fi
             echo "Cleared ${pending_count} native auto-merge requests; skipping ordinary evaluation."
             exit 0
           fi
@@ -526,6 +534,11 @@ jobs:
 
               if ! clear_auto_merge_request "${pr}"; then
                 echo "::error::PR #${pr}: native auto-merge cleanup did not converge."
+                comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. native auto-merge 요청 해제가 수렴하지 않아 다음 cleanup 실행이 다시 발견하도록 automerge 라벨을 보존했습니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
+                if ! gh pr comment "${pr}" --repo "${repo}" --body "${comment}"; then
+                  echo "::warning::PR #${pr}: failure comment could not be posted."
+                fi
+                return "${status}"
               fi
 
               for _ in {1..2}; do
