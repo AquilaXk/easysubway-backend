@@ -168,9 +168,9 @@ class JourneyV3ErrorDispositionContractTest {
 	private static void assertPublicSurfaceIsSafe(JsonNode entry) {
 		String value = String.join(" ", entry.path("publicMessageKey").asText(), entry.path("canonicalKoreanCopy").asText(),
 			entry.path("mobileResourceKey").asText(), entry.path("primaryActionKey").isNull() ? "" : entry.path("primaryActionKey").asText(),
-			entry.path("safeDiagnosticKey").asText()).toLowerCase();
+			entry.path("safeDiagnosticKey").asText()).toLowerCase(Locale.ROOT);
 		assertThat(value).doesNotContain(
-			"http", "provider", "url", "path", "raw body", "exception", "stack", "token", "session=", "sha256", "digest", "/", "\\\\");
+			"http", "provider", "url", "path", "raw body", "exception", "stack", "token", "session=", "sha256", "digest", "/", "\\");
 	}
 
 	private static Set<String> fieldNames(JsonNode node) {
