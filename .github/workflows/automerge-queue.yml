@@ -152,9 +152,11 @@ jobs:
           # draft는 선택 단계에서 걸러낸다. `gh pr list`는 draft를 필터하지 않는다.
           # 이 필터는 아래 창 산출보다 반드시 앞서야 한다. 뒤로 미루면 draft가 창 자리를
           # 차지해 한 실행에서 실제로 평가되는 후보 수가 window보다 줄어든다.
-          candidates="$(gh pr list --repo "${repo}" --base main --state open --label automerge \
-            --limit 1000 --json number,createdAt,isDraft \
-            --jq '[.[] | select(.isDraft == false)] | [sort_by(.createdAt)[].number]')"
+          candidate_data="$(gh pr list --repo "${repo}" --base main --state open --label automerge \
+            --limit 1000 --json autoMergeRequest,number,createdAt,isDraft \
+            --jq '[.[] | select(.isDraft == false) | {autoMergeRequest, createdAt, number}] | sort_by(if .autoMergeRequest == null then 1 else 0 end, .createdAt)')"
+          pending_count="$(jq '[.[] | select(.autoMergeRequest != null)] | length' <<<"${candidate_data}")"
+          candidates="$(jq -c '[.[].number]' <<<"${candidate_data}")"
 
           # 큐는 strict FIFO가 아니라 best-effort FIFO다. 오래된 순으로 후보를 훑되 병합할 수
           # 없는 후보는 사유를 남기고 건너뛴다. head 하나만 처리하면 그 한 건이 막혔을 때 뒤의
@@ -302,7 +304,7 @@ jobs:
           # candidate-offset-begin
           total="$(jq 'length' <<<"${candidates}")"
           offset=0
-          if [[ "${total}" -gt "${window}" ]]; then
+          if [[ "${pending_count}" -eq 0 && "${total}" -gt "${window}" ]]; then
             offset="$(( RANDOM % total ))"
           fi
           # candidate-offset-end

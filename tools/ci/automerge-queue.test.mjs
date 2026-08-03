@@ -78,10 +78,11 @@ test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail c
     '.isDraft == false',
     // draft는 선택 단계에서 걸러야 한다. `gh pr list`는 draft를 필터하지 않으므로
     // 큐 맨 앞의 draft 하나가 매 실행을 실패시켜 큐 전체를 멈춘다.
-    '--json number,createdAt,isDraft',
+    '--json autoMergeRequest,number,createdAt,isDraft',
     // 후보는 단일 값이 아니라 오래된 순 배열이다. head 하나만 보는 구조가
     // head-of-line blocking의 원인이었다.
-    '[.[] | select(.isDraft == false)] | [sort_by(.createdAt)[].number]',
+    'sort_by(if .autoMergeRequest == null then 1 else 0 end, .createdAt)',
+    "pending_count=\"$(jq '[.[] | select(.autoMergeRequest != null)] | length'",
     '# queue-loop-begin',
     '# candidate-budget-begin',
     '# candidate-offset-begin',
@@ -828,6 +829,10 @@ const makeRunQueue =
   (prs, { runNumber = 0, window = null, offset = null, remaining = [1000] } = {}) => {
   const dir = mkdtempSync(join(tmpdir(), 'automerge-queue-loop-'));
   const log = join(dir, 'gh.log');
+  const orderedPrs = [...prs].sort(
+    (left, right) => Number(right.autoMergeRequest != null) - Number(left.autoMergeRequest != null),
+  );
+  const pendingCount = orderedPrs.filter((pr) => pr.autoMergeRequest != null).length;
   // 잔량은 호출 순서대로 소비하고 목록이 끝나면 마지막 값을 반복한다. 루프 안 재확인이
   // 실제로 다시 읽는지 보려면 실행 도중 값이 바뀌어야 한다.
   writeFileSync(join(dir, 'rates'), `${remaining.join('\n')}\n`);
@@ -920,7 +925,6 @@ const makeRunQueue =
     '      rv="$(sed -n "${rn}p" "$FIX/rates")"',
     '      [ -n "$rv" ] || rv="$(tail -1 "$FIX/rates")"',
     `      printf '%s\\n' "$rv" ;;`,
-    `    "pr list"*) printf '%s\\n' ${JSON.stringify(JSON.stringify(prs.map((p) => p.number)))} ;;`,
     '    "pr view "*"--json autoMergeRequest"*"--jq"*) printf true ;;',
     '    "pr view "*"--json state,autoMergeRequest"*) printf \'%s\\n\' \'{"state":"MERGED","autoMergeRequest":null}\' ;;',
     '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
@@ -941,7 +945,8 @@ const makeRunQueue =
     'owner=o',
     'name=r',
     `required='[{"context":"Backend CI","integration_id":null}]'`,
-    'candidates="$(gh pr list)"',
+    `pending_count=${pendingCount}`,
+    `candidates=${JSON.stringify(JSON.stringify(orderedPrs.map((pr) => pr.number)))}`,
     budgetConstants,
     ...(window === null ? [] : [`window=${window}`]),
     ...(offset === null ? [] : [`offset=${offset}`]),
@@ -989,6 +994,29 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   ]);
   assert.equal(existingRequest.mergedPr, 2, 'existing native request must be cleared then skipped');
   assert.equal(existingRequest.autoMergeDisableCalls, 1, 'existing native request must be disabled once');
+  const outsideOrdinaryWindow = runQueue([
+    { number: 1, mergeStateStatus: 'CLEAN' },
+    { number: 2, mergeStateStatus: 'CLEAN' },
+    { number: 3, mergeStateStatus: 'CLEAN' },
+    { number: 4, mergeStateStatus: 'CLEAN' },
+    { number: 5, mergeStateStatus: 'CLEAN' },
+    { number: 6, mergeStateStatus: 'CLEAN' },
+    { number: 7, mergeStateStatus: 'CLEAN', autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' } },
+  ]);
+  assert.deepEqual(outsideOrdinaryWindow.evaluated.slice(0, 2), [7, 1]);
+  assert.equal(outsideOrdinaryWindow.autoMergeDisableCalls, 1);
+  assert.equal(outsideOrdinaryWindow.mergedPr, 1, 'cleanup must precede an ordinary merge');
+  const cleanupOnly = runQueue([
+    ...[1, 2, 3, 4, 5, 6].map((number) => ({
+      number,
+      mergeStateStatus: 'CLEAN',
+      autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' },
+    })),
+    { number: 7, mergeStateStatus: 'CLEAN' },
+  ]);
+  assert.equal(cleanupOnly.evaluated.length, 6, 'pending candidates must consume the bounded window first');
+  assert.equal(cleanupOnly.autoMergeDisableCalls, 6);
+  assert.equal(cleanupOnly.mergedPr, null, 'pending window must not merge an ordinary candidate');
   // 충돌한 후보도 뒤를 막지 않는다.
   const dirtyQueue = runQueue([
     { number: 1, mergeStateStatus: 'DIRTY' },
@@ -1296,7 +1324,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
     'candidate offset must not depend on run context',
   );
 
-  const drawOffset = (total, runNumber) => {
+  const drawOffset = (total, runNumber, pendingCount = 0) => {
     const result = spawnSync(
       'bash',
       [
@@ -1306,6 +1334,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
           `GITHUB_RUN_NUMBER=${JSON.stringify(String(runNumber))}`,
           // 창 크기는 앞선 예산 블록이 정한다. 여기서는 주입값으로 시작점만 본다.
           `window=${declaredWindow}`,
+          `pending_count=${pendingCount}`,
           `candidates=${JSON.stringify(
             JSON.stringify(Array.from({ length: total }, (_, index) => index)),
           )}`,
@@ -1327,6 +1356,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
       assert.equal(drawOffset(total, attempt), 0, `must not rotate at total=${total}`);
     }
   }
+  assert.equal(drawOffset(declaredWindow + 1, 0, 1), 0, 'pending cleanup must disable random rotation');
 
   // total > window면 시작점이 실행마다 새로 뽑히고 범위 안에 있다. run number를 고정해
   // 두는 것은 최악의 앨리어싱 입력(간격 0)이며, 그래도 성질이 유지되어야 한다.
@@ -1462,7 +1492,7 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
 
   // 순서 계약. draft 필터가 창 뒤로 밀리면 draft가 창 자리를 차지해 실제로 평가되는
   // 후보 수가 window보다 줄어든다.
-  const candidatesAt = workflow.indexOf('candidates="$(gh pr list');
+  const candidatesAt = workflow.indexOf('candidate_data="$(gh pr list');
   const budgetAt = workflow.indexOf('# candidate-budget-begin');
   const offsetAt = workflow.indexOf('# candidate-offset-begin');
   const windowAt = workflow.indexOf('# candidate-window-begin');
@@ -1472,7 +1502,7 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
   assert.ok(windowAt > offsetAt, 'draft filter must run before the window slice');
 
   const selectProgram = workflow.match(
-    /--jq '(\[\.\[\] \| select\(\.isDraft == false\)\] \| \[sort_by\(\.createdAt\)\[\]\.number\])'/,
+    /--jq '(\[\.\[\] \| select\(\.isDraft == false\) \| \{autoMergeRequest, createdAt, number\}\] \| sort_by\(if \.autoMergeRequest == null then 1 else 0 end, \.createdAt\))'/,
   )?.[1];
   assert.ok(selectProgram, 'candidate selection jq program must stay testable');
 
@@ -1483,14 +1513,15 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
       number: index + 1,
       createdAt: `2026-08-01T00:${String(index).padStart(2, '0')}:00Z`,
       isDraft: index % 2 === 1,
+      autoMergeRequest: null,
     });
   }
-  const selected = spawnSync('jq', ['-c', selectProgram], {
+  const selected = JSON.parse(spawnSync('jq', ['-c', selectProgram], {
     input: JSON.stringify(raw),
     encoding: 'utf8',
-  }).stdout.trim();
+  }).stdout.trim());
   const expected = raw.filter((pr) => !pr.isDraft).map((pr) => pr.number);
-  assert.equal(selected, JSON.stringify(expected));
+  assert.deepEqual(selected.map((pr) => pr.number), expected);
 
   // 걸러진 목록을 그대로 시작점 산출에 넣는다. draft를 세지 않으므로 total이 window
   // 이하가 되어 회전조차 하지 않는다.
@@ -1509,7 +1540,8 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
       [
         'set -euo pipefail',
         `window=${declaredWindow}`,
-        `candidates=${JSON.stringify(selected)}`,
+        'pending_count=0',
+        `candidates=${JSON.stringify(JSON.stringify(selected.map((pr) => pr.number)))}`,
         dedent(offsetBlock),
         `printf '%s %s\\n' "$total" "$offset"`,
       ].join('\n'),
