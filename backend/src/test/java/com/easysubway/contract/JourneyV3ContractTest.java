@@ -56,6 +56,7 @@ class JourneyV3ContractTest {
 	void publicSurfaceAndBearerBoundaryAreExact() throws IOException {
 		Map<String, Object> document = openApi();
 		assertThat(document.get("openapi")).isEqualTo("3.0.3");
+		assertThat(document).doesNotContainKey("security");
 		assertThat(map(document.get("paths")).keySet()).containsExactly(
 			"/api/v3/journeys/session",
 			"/api/v3/journeys/search"
