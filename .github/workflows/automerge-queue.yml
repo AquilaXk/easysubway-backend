@@ -457,10 +457,13 @@ jobs:
               local operation="$1"
               local status="$2"
               local run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-              local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. automerge 라벨 제거를 시도합니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
+              local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. 자동 병합 해제와 automerge 라벨 제거를 시도합니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
 
               if ! gh pr comment "${pr}" --repo "${repo}" --body "${comment}"; then
                 echo "::warning::PR #${pr}: failure comment could not be posted."
+              fi
+              if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
+                echo "::error::PR #${pr}: native auto-merge could not be disabled."
               fi
               if ! gh pr edit "${pr}" --repo "${repo}" --remove-label automerge; then
                 echo "::error::PR #${pr}: automerge label could not be removed."
