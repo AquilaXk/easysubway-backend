@@ -54,6 +54,11 @@ const destructiveCases = [
   ["V124__add_exclude.sql", "기존 테이블에 제약(ADD CONSTRAINT) 추가"],
   ["V125__create_unique_nulls_distinct_index.sql", "기존 테이블에 UNIQUE INDEX 추가"],
   ["V126__create_unique_nulls_not_distinct_index.sql", "기존 테이블에 UNIQUE INDEX 추가"],
+  ["V127__do_single_quote_hidden_drop.sql", "DROP TABLE"],
+  ["V128__create_trigger_existing.sql", "CREATE TRIGGER ON 기존 테이블"],
+  ["V129__create_or_replace_function.sql", "CREATE OR REPLACE 기존 객체"],
+  ["V130__add_generated_identity.sql", "ADD GENERATED ALWAYS AS IDENTITY"],
+  ["V131__function_single_quote_hidden_drop.sql", "DROP TABLE"],
 ];
 
 for (const [name, expectedLabel] of destructiveCases) {
@@ -76,6 +81,7 @@ const additiveCases = [
   "V206__do_block_raise_message.sql",
   "V207__grant_execute_function.sql",
   "V208__no_force_row_level_security.sql",
+  "V209__dollar_literal_data.sql",
 ];
 
 for (const name of additiveCases) {
@@ -95,13 +101,34 @@ test("DO 블록 본문 안에 숨은 파괴적 DDL은 사각지대 없이 탐지
   assert.ok(findings.includes("DROP TABLE"));
 });
 
-test("stripSqlNoise는 라인/블록 주석과 문자열을 제거하고 dollar 본문은 인라인한다", () => {
+test("stripSqlNoise는 일반 literal을 제거하고 procedural dollar 본문만 인라인한다", () => {
   const cleaned = stripSqlNoise(
     "-- DROP TABLE in a comment\n/* DROP TABLE block */\nSELECT 'DROP TABLE in string';\nDO $$ DROP TABLE hidden; $$;",
   );
   // 주석·문자열 속 DROP TABLE은 사라지고, dollar 본문 속 DROP TABLE만 남는다.
   assert.equal((cleaned.match(/DROP TABLE/gi) ?? []).length, 1);
   assert.match(cleaned, /DROP TABLE hidden/);
+});
+
+test("CREATE OR REPLACE procedure/view는 기존 객체 교체로 fail closed 한다", () => {
+  for (const sql of [
+    "CREATE OR REPLACE PROCEDURE refresh_routes() LANGUAGE SQL AS $$ SELECT 1 $$;",
+    "CREATE OR REPLACE VIEW active_routes AS SELECT * FROM routes;",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("CREATE OR REPLACE 기존 객체"));
+  }
+});
+
+test("같은 migration에서 만든 테이블의 trigger는 허용한다", () => {
+  const findings = scanSqlForViolations(
+    "CREATE TABLE snapshots(id bigint); " +
+      "CREATE TRIGGER t BEFORE INSERT ON snapshots FOR EACH ROW EXECUTE FUNCTION guard();",
+  );
+  assert.deepEqual(findings, []);
+});
+
+test("미종결 quoted body는 fail closed 한다", () => {
+  assert.ok(scanSqlForViolations("DO $$ BEGIN SELECT 1;").includes("미종결 quoted body"));
 });
 
 test("E 문자열의 backslash escape 뒤 파괴적 DDL은 숨기지 않는다", () => {
@@ -119,7 +146,8 @@ test("위치 파라미터($1)는 dollar-quote로 오인하지 않는다", () => 
 
 test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 않는다", () => {
   const findings = scanSqlForViolations(
-    "CREATE TRIGGER t BEFORE INSERT ON snapshots FOR EACH ROW EXECUTE FUNCTION guard();",
+    "CREATE TABLE snapshots(id bigint); " +
+      "CREATE TRIGGER t BEFORE INSERT ON snapshots FOR EACH ROW EXECUTE FUNCTION guard();",
   );
   assert.deepEqual(findings, []);
 });

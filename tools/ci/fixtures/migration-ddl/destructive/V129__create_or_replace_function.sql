@@ -1,0 +1,1 @@
+CREATE OR REPLACE FUNCTION route_guard() RETURNS trigger AS $$ BEGIN RETURN NEW; END $$ LANGUAGE plpgsql;

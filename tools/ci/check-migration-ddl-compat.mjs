@@ -217,15 +217,25 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
   return violations;
 }
 
-// SQL 전처리: 라인 주석(--), 블록 주석(/* */, 중첩 허용), 단일따옴표 문자열의 내용을 제거한다.
-// dollar-quoted 블록($$...$$, $tag$...$tag$)은 델리미터만 제거하고 본문은 인라인으로 남겨,
-// DO/함수 본문 안의 파괴적 DDL이 사각지대 없이 스캔되도록 한다. 본문 내부의 단일따옴표
-// 문자열(예: RAISE EXCEPTION 메시지)은 본문 인라인 후에도 동일 규칙으로 제거되어 오탐을 막는다.
+const UNTERMINATED_QUOTED_BODY = "EASYSUBWAY_UNTERMINATED_QUOTED_BODY";
+
+function isProceduralBodyPrefix(out) {
+  const statement = out.slice(out.lastIndexOf(";") + 1);
+  return (
+    /\bDO(?:\s+LANGUAGE\s+[\w".]+)?\s*E?\s*$/i.test(statement) ||
+    /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bAS\s*E?\s*$/i.test(
+      statement,
+    )
+  );
+}
+
+// SQL 전처리: 주석과 일반 data literal은 제거한다. DO와 CREATE FUNCTION/PROCEDURE AS의
+// quoted body만 재귀적으로 인라인해 실행되는 DDL을 검사한다. 모든 dollar literal을 코드로
+// 취급하면 INSERT data 속 DDL 문자열이 오탐·new-table 면제를 만들기 때문에 문맥을 제한한다.
 export function stripSqlNoise(sql) {
   let out = "";
   let i = 0;
   const n = sql.length;
-  const dollarStack = [];
   while (i < n) {
     // 라인 주석
     if (sql[i] === "-" && sql[i + 1] === "-") {
@@ -253,39 +263,54 @@ export function stripSqlNoise(sql) {
     }
     // 단일따옴표 문자열 ('' 및 E'...'의 backslash 이스케이프 인지)
     if (sql[i] === "'") {
+      const preserveBody = isProceduralBodyPrefix(out);
       const backslashEscapes =
         i > 0 &&
         /[Ee]/.test(sql[i - 1]) &&
         (i === 1 || !/[A-Za-z0-9_]/.test(sql[i - 2]));
+      let literal = "";
+      let closed = false;
       i++;
       while (i < n) {
         if (backslashEscapes && sql[i] === "\\" && i + 1 < n) {
+          literal += sql[i + 1];
           i += 2;
           continue;
         }
         if (sql[i] === "'" && sql[i + 1] === "'") {
+          literal += "'";
           i += 2;
           continue;
         }
         if (sql[i] === "'") {
           i++;
+          closed = true;
           break;
         }
+        literal += sql[i];
         i++;
       }
-      out += " ";
+      out += closed
+        ? preserveBody
+          ? ` ${stripSqlNoise(literal)} `
+          : " "
+        : ` ${UNTERMINATED_QUOTED_BODY} `;
       continue;
     }
-    // dollar-quoted 델리미터
+    // dollar-quoted literal은 동일 tag의 다음 delimiter까지가 한 body다. 다른 tag는 본문
+    // 데이터일 뿐 중첩 delimiter가 아니다.
     const tag = matchDollarTag(sql, i);
     if (tag !== null) {
-      if (dollarStack.length && dollarStack[dollarStack.length - 1] === tag) {
-        dollarStack.pop();
-      } else {
-        dollarStack.push(tag);
+      const preserveBody = isProceduralBodyPrefix(out);
+      const delimiter = `$${tag}$`;
+      const bodyStart = i + delimiter.length;
+      const bodyEnd = sql.indexOf(delimiter, bodyStart);
+      if (bodyEnd === -1) {
+        out += ` ${UNTERMINATED_QUOTED_BODY} `;
+        break;
       }
-      out += " ";
-      i += tag.length + 2;
+      out += preserveBody ? ` ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ` : " ";
+      i = bodyEnd + delimiter.length;
       continue;
     }
     out += sql[i];
@@ -439,9 +464,24 @@ export function scanSqlForViolations(rawSql) {
     if (!s) continue;
 
     const isAlterTable = /\bALTER\s+TABLE\b/i.test(s);
+    const alterTargetMatch = isAlterTable
+      ? s.match(/\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([\w".]+)/i)
+      : null;
+    const alterTarget = alterTargetMatch ? normalizeId(alterTargetMatch[1]) : null;
+    const altersExistingTable = !alterTarget || !createdTables.has(alterTarget);
 
+    if (s.includes(UNTERMINATED_QUOTED_BODY)) add("미종결 quoted body");
     if (/\bTRUNCATE\b/i.test(s)) add("TRUNCATE");
     if (hasDynamicExecute(s)) add("동적 EXECUTE");
+    if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|VIEW)\b/i.test(s)) {
+      add("CREATE OR REPLACE 기존 객체");
+    }
+    const triggerMatch = s.match(
+      /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\s+(?:ONLY\s+)?([\w".]+)/i,
+    );
+    if (triggerMatch && !createdTables.has(normalizeId(triggerMatch[1]))) {
+      add("CREATE TRIGGER ON 기존 테이블");
+    }
     if (/\bRENAME\b/i.test(s)) add("RENAME");
     if (/\bSET\s+NOT\s+NULL\b/i.test(s)) add("SET NOT NULL");
     if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+DEFAULT\s+NULL\b/i.test(s)) {
@@ -474,10 +514,14 @@ export function scanSqlForViolations(rawSql) {
       if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+GENERATED\s+ALWAYS\b/i.test(s)) {
         add("SET GENERATED ALWAYS");
       }
-      const targetMatch = s.match(
-        /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([\w".]+)/i,
-      );
-      const alterTarget = targetMatch ? normalizeId(targetMatch[1]) : null;
+      if (
+        altersExistingTable &&
+        /\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+ADD\s+GENERATED\s+ALWAYS\s+AS\s+IDENTITY\b/i.test(
+          s,
+        )
+      ) {
+        add("ADD GENERATED ALWAYS AS IDENTITY");
+      }
 
       if (
         /\bADD\s+(?:CONSTRAINT\b|PRIMARY\s+KEY\b|UNIQUE\b|FOREIGN\s+KEY\b|CHECK\b|EXCLUDE\b)/i.test(s) ||
