@@ -453,12 +453,32 @@ jobs:
             # required context 검증이 병합 가능 여부의 정본이다. mergeStateStatus는 여기서
             # 실제로 병합이 불가능한 상태(base 갱신 필요·충돌)를 가려내는 데만 쓴다.
             # merge-state-dispatch-begin
+            fail_closed_pr() {
+              local operation="$1"
+              local status="$2"
+              local run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+              local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. automerge 라벨 제거를 시도합니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
+
+              if ! gh pr comment "${pr}" --repo "${repo}" --body "${comment}"; then
+                echo "::warning::PR #${pr}: failure comment could not be posted."
+              fi
+              if ! gh pr edit "${pr}" --repo "${repo}" --remove-label automerge; then
+                echo "::error::PR #${pr}: automerge label could not be removed."
+              fi
+              return "${status}"
+            }
+
             case "${merge_state}" in
               CLEAN | HAS_HOOKS | UNSTABLE)
                 # UNSTABLE은 "mergeable하지만 필수가 아닌 check가 green이 아님"이다.
                 # ruleset이 필수로 두지 않은 check로 병합을 막지 않는다.
-                gh pr merge --squash --auto "${pr}" --repo "${repo}" \
-                  --match-head-commit "${head}"
+                if gh pr merge --squash --auto "${pr}" --repo "${repo}" \
+                  --match-head-commit "${head}"; then
+                  :
+                else
+                  status=$?
+                  fail_closed_pr "merge" "${status}"
+                fi
                 echo "PR #${pr}: merge scheduled (${merge_state})."
                 exit 0
                 ;;
@@ -467,8 +487,13 @@ jobs:
                   echo "::warning::PR #${pr} uses a fork head; refusing base-repository CI dispatch."
                   continue
                 fi
-                gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
-                  -f expected_head_sha="${head}" >/dev/null
+                if gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
+                  -f expected_head_sha="${head}" >/dev/null; then
+                  :
+                else
+                  status=$?
+                  fail_closed_pr "update-branch" "${status}"
+                fi
                 # ponytail: bounded wait only; the API applies the base merge asynchronously.
                 for _ in {1..12}; do
                   new_head="$(gh pr view "${pr}" --repo "${repo}" --json headRefOid --jq '.headRefOid')"

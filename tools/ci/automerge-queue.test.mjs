@@ -513,11 +513,17 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   // gh 호출을 기록만 하는 스텁으로 대체해 상태별 분기 결과를 실측한다. 분기는 큐 루프
   // 안에 있으므로 `continue`가 유효하도록 1회 루프로 감싸고, 루프를 빠져나오면
   // SKIPPED를 남겨 "이 후보를 건너뛰었다"를 관측한다.
-  const runDispatch = (mergeState, { headRepo = 'o/r', newHead = 'updated-head' } = {}) => {
+  const runDispatch = (
+    mergeState,
+    { headRepo = 'o/r', newHead = 'updated-head', failedOperation = null, commentFails = false } = {},
+  ) => {
     const result = stubbedBash([
       'set -euo pipefail',
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
+      `  [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge"* ]] && return 41`,
+      `  [[ ${JSON.stringify(failedOperation)} == update-branch && "$*" == api*update-branch* ]] && return 42`,
+      `  [[ ${JSON.stringify(commentFails)} == true && "$*" == "pr comment"* ]] && return 43`,
       '  case "$*" in',
       `    *"pr view"*headRefOid*) printf '%s\\n' ${JSON.stringify(newHead)} ;;`,
       '  esac',
@@ -529,27 +535,48 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `head_repo=${JSON.stringify(headRepo)}`,
       'head_ref=feature',
       `merge_state=${JSON.stringify(mergeState)}`,
+      'GITHUB_SERVER_URL=https://github.com',
+      'GITHUB_REPOSITORY=o/r',
+      'GITHUB_RUN_ID=123',
       'for _ in 1; do',
       dedent(dispatchBlock, 12),
       'done',
       `printf 'SKIPPED\\n' >> "$GH_LOG"`,
     ]);
-    return {
+    const summary = {
       status: result.status,
       merged: result.calls.includes('gh pr merge'),
       updatedBranch: result.calls.includes('update-branch'),
       dispatchedCi: result.calls.includes('workflow run ci.yml'),
       skipped: result.calls.includes('SKIPPED'),
       warned: (result.stdout + result.stderr).includes('::warning::'),
+      commented: result.calls.includes('gh pr comment'),
+      removedLabel: /gh pr edit .*--remove-label automerge/.test(result.calls),
     };
+    return failedOperation || commentFails
+      ? {
+          ...summary,
+          calls: result.calls,
+        }
+      : summary;
   };
+
+  const noFailureSignal = { commented: false, removedLabel: false };
 
   // ⑥ 병합 가능 상태. UNSTABLE은 "필수가 아닌 check가 green이 아님"일 뿐이고 required
   // context는 앞에서 ruleset 기준으로 이미 검증했으므로 병합을 진행한다.
   for (const mergeState of ['CLEAN', 'HAS_HOOKS', 'UNSTABLE']) {
     assert.deepEqual(
       runDispatch(mergeState),
-      { status: 0, merged: true, updatedBranch: false, dispatchedCi: false, skipped: false, warned: false },
+      {
+        status: 0,
+        merged: true,
+        updatedBranch: false,
+        dispatchedCi: false,
+        skipped: false,
+        warned: false,
+        ...noFailureSignal,
+      },
       `${mergeState} must proceed to merge`,
     );
   }
@@ -561,6 +588,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     dispatchedCi: true,
     skipped: false,
     warned: false,
+    ...noFailureSignal,
   });
   // ⑨ update-branch는 비동기라 bounded wait 안에 head가 안 바뀔 수 있다. 계약 위반이
   // 아니라 대기 상태이므로 stale ref로 CI를 쏘지 않고 실패하지도 않는다.
@@ -571,13 +599,22 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     dispatchedCi: false,
     skipped: false,
     warned: false,
+    ...noFailureSignal,
   });
   // ⑦ 병합할 수 없는 상태는 전부 "이 후보만 건너뛴다"로 수렴한다. 실행을 실패시키면
   // 그 실패 check가 PR을 UNSTABLE로 만들고 큐 전체가 뒤의 후보까지 굶긴다.
   for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
     assert.deepEqual(
       runDispatch(mergeState),
-      { status: 0, merged: false, updatedBranch: false, dispatchedCi: false, skipped: true, warned: false },
+      {
+        status: 0,
+        merged: false,
+        updatedBranch: false,
+        dispatchedCi: false,
+        skipped: true,
+        warned: false,
+        ...noFailureSignal,
+      },
       `${mergeState} must skip to the next candidate`,
     );
   }
@@ -585,7 +622,15 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   for (const mergeState of ['DIRTY', 'SOME_NEW_STATE']) {
     assert.deepEqual(
       runDispatch(mergeState),
-      { status: 0, merged: false, updatedBranch: false, dispatchedCi: false, skipped: true, warned: true },
+      {
+        status: 0,
+        merged: false,
+        updatedBranch: false,
+        dispatchedCi: false,
+        skipped: true,
+        warned: true,
+        ...noFailureSignal,
+      },
       `${mergeState} must skip with an operator-visible warning`,
     );
   }
@@ -597,7 +642,24 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     dispatchedCi: false,
     skipped: true,
     warned: true,
+    ...noFailureSignal,
   });
+
+  for (const [mergeState, failedOperation, status] of [
+    ['CLEAN', 'merge', 41],
+    ['BEHIND', 'update-branch', 42],
+  ]) {
+    const failed = runDispatch(mergeState, { failedOperation });
+    assert.equal(failed.status, status, `${failedOperation} status must be preserved`);
+    assert.equal(failed.commented, true, `${failedOperation} failure must comment on the PR`);
+    assert.equal(failed.removedLabel, true, `${failedOperation} failure must remove automerge`);
+    assert.match(failed.calls, new RegExp(`merge_state=${mergeState}, status=${status}`));
+    assert.match(failed.calls, /https:\/\/github\.com\/o\/r\/actions\/runs\/123/);
+  }
+
+  const commentFailed = runDispatch('CLEAN', { failedOperation: 'merge', commentFails: true });
+  assert.equal(commentFailed.status, 41);
+  assert.equal(commentFailed.removedLabel, true, 'comment failure must not skip label removal');
 });
 
 test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
