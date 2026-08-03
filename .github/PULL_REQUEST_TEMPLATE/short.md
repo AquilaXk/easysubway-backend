@@ -1,4 +1,4 @@
-<!-- B/C등급(일반 코드 변경·낮은 위험 maintenance) 전용. A등급(제품/운영 위험, CI/계약 테스트/release gate 변경)은 full.md를 사용합니다. -->
+<!-- B/C등급(일반 코드 변경·낮은 위험 maintenance) 전용. A등급(제품/운영 위험, contracts/release 변경, CI/계약 테스트/release gate 변경)은 full.md를 사용합니다. -->
 
 ## 관련 이슈
 
@@ -20,7 +20,7 @@ Refs #
 - [ ] DB migration 없음
 - [ ] 배포 영향 없음
 - [ ] route/realtime API contract(contracts/api) 영향 없음
-- [ ] CI workflow·계약 테스트·release gate JSON 변경 없음 (있으면 full.md로 전환)
+- [ ] contracts/release, CI workflow·계약 테스트·release gate JSON 변경 없음 (있으면 A등급 full.md로 전환)
 
 ## 체크리스트
 

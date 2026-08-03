@@ -24,6 +24,7 @@ close #
 
 ## Version impact
 
+- [ ] contracts/release 변경 (A등급)
 - [ ] no version change
 - [ ] backend deploy only
 - [ ] backend API contract change
@@ -44,6 +45,7 @@ close #
 
 ### Version decision
 
+- contracts/release version (변경 전 → 변경 후):
 - backend image digest:
 - backend API contract version:
 - route contract:
