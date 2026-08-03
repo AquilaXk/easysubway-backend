@@ -615,8 +615,8 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     labelVerificationCalls: 0,
   };
 
-  // CLEAN·UNSTABLE은 exact-head native auto-merge를 요청하고 bounded polling 안에서 MERGED를 확인해야 한다.
-  for (const mergeState of ['CLEAN', 'UNSTABLE']) {
+  // CLEAN·HAS_HOOKS·UNSTABLE은 exact-head native auto-merge를 요청하고 bounded polling 안에서 MERGED를 확인해야 한다.
+  for (const mergeState of ['CLEAN', 'HAS_HOOKS', 'UNSTABLE']) {
     assert.deepEqual(
       runDispatch(mergeState),
       {
@@ -632,7 +632,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     );
   }
   // 아직 병합할 수 없는 상태는 native request를 만들지 않고 다음 후보로 넘긴다.
-  for (const mergeState of ['BLOCKED', 'HAS_HOOKS', 'UNKNOWN']) {
+  for (const mergeState of ['BLOCKED', 'UNKNOWN']) {
     const result = runDispatch(mergeState, { captureCalls: true });
     assert.equal(result.status, 0);
     assert.equal((result.calls.match(/gh pr merge --squash --auto/g) ?? []).length, 0);
@@ -758,9 +758,17 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(unstableDelayed.status, 0, 'UNSTABLE must use the same bounded merge path');
   assert.equal(unstableDelayed.postMergeStateCalls, 2);
 
+  const hooksDelayed = runDispatch('HAS_HOOKS', { postMergeStates: ['OPEN', 'MERGED'], captureCalls: true });
+  assert.equal(hooksDelayed.status, 0, 'HAS_HOOKS must use the same bounded merge path');
+  assert.equal(hooksDelayed.postMergeStateCalls, 2);
+
   const unstablePending = runDispatch('UNSTABLE', { postMergeStates: ['OPEN'], captureCalls: true });
   assert.equal(unstablePending.status, 1, 'UNSTABLE permanent OPEN must fail closed and clean up');
   assert.equal(unstablePending.nativeAutoMergeDisabled, true);
+
+  const hooksPending = runDispatch('HAS_HOOKS', { postMergeStates: ['OPEN'], captureCalls: true });
+  assert.equal(hooksPending.status, 1, 'HAS_HOOKS permanent OPEN must fail closed and clean up');
+  assert.equal(hooksPending.nativeAutoMergeDisabled, true);
 
   const pending = runDispatch('CLEAN', { postMergeStates: ['OPEN'], captureCalls: true });
   assert.equal(pending.status, 1, 'pending native auto-merge must fail closed');

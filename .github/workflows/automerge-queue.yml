@@ -572,7 +572,7 @@ jobs:
             }
 
             case "${merge_state}" in
-              CLEAN | UNSTABLE)
+              CLEAN | HAS_HOOKS | UNSTABLE)
                 if gh pr merge --squash --auto "${pr}" --repo "${repo}" \
                   --match-head-commit "${head}"; then
                   for attempt in {1..6}; do
@@ -607,7 +607,7 @@ jobs:
                 echo "::warning::PR #${pr} conflicts with the base branch; skipping until it is rebased."
                 continue
                 ;;
-              BLOCKED | HAS_HOOKS | UNKNOWN)
+              BLOCKED | UNKNOWN)
                 echo "PR #${pr}: not mergeable yet (${merge_state}); skipping."
                 continue
                 ;;
