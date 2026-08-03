@@ -1490,8 +1490,8 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
     new Set(drawn).size > 1,
     'candidate offset must vary across executions even with a fixed run number',
   );
-  // 표본은 난수 시드에 좌우되므로 여기서는 최소 한 창을 덮는지만 본다. 모든 시작점의
-  // 도달 가능성은 아래 주입형 테스트가 결정적으로 검증한다.
+  // 표본은 난수 시드에 좌우되므로 여기서는 서로 다른 offset이 한 창보다 넓게 덮는지만
+  // 본다. 모든 시작점의 도달 가능성은 아래 주입형 테스트가 결정적으로 검증한다.
   const windowProgram = workflow.match(WINDOW_PROGRAM_RE)?.[1];
   assert.ok(windowProgram, 'candidate window jq program must stay testable');
   const pickWindow = makePickWindow(windowProgram, declaredWindow);
@@ -1499,7 +1499,7 @@ test('창 시작점은 실행 컨텍스트를 읽지 않고 실행마다 새로 
   for (const offset of drawn) {
     for (const index of pickWindow(rotationTotal, offset)) covered.add(index);
   }
-  assert.ok(covered.size >= declaredWindow, 'drawn offsets must cover at least one candidate window');
+  assert.ok(covered.size > declaredWindow, 'distinct drawn offsets must cover more than one candidate window');
 });
 
 test('창 밖 후보 도달 가능성은 시작점을 주입해 결정적으로 고정한다', async () => {
