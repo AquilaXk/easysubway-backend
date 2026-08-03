@@ -1,6 +1,7 @@
 package com.easysubway.route.adapter.out.persistence;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import java.time.Clock;
 import java.time.LocalDate;

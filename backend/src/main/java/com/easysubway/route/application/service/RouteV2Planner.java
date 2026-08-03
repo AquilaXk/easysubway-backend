@@ -1,6 +1,7 @@
 package com.easysubway.route.application.service;
 
 import com.easysubway.common.error.InvalidRequestException;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableCandidateSource;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
@@ -407,7 +408,7 @@ public class RouteV2Planner implements RouteV2SearchUseCase {
 		CompiledTimetable compiledTimetable,
 		java.util.Set<String> coveredStationIds,
 		String timetableArtifactId,
-		LoadRouteTimetablePort.PlannerIdentity plannerIdentity
+		PlannerIdentity plannerIdentity
 	) {
 	}
 

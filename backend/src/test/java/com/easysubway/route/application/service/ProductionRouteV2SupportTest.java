@@ -10,7 +10,7 @@ import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2PlanSource;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Status;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlannerIdentity;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.application.port.out.RouteV2AccessStore;
 import com.easysubway.route.application.port.out.RouteV2AccessStore.RouteV2State;
 import com.easysubway.route.domain.RouteSearchResult;

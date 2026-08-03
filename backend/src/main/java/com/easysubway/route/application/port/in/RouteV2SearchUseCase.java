@@ -1,7 +1,7 @@
 package com.easysubway.route.application.port.in;
 
 import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PlannerIdentity;
+import com.easysubway.route.application.model.PlannerIdentity;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
