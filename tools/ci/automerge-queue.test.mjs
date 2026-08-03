@@ -81,7 +81,7 @@ test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail c
     '--json autoMergeRequest,number,createdAt,isDraft',
     // 후보는 단일 값이 아니라 오래된 순 배열이다. head 하나만 보는 구조가
     // head-of-line blocking의 원인이었다.
-    'sort_by(if .autoMergeRequest == null then 1 else 0 end, .createdAt)',
+    'sort_by(if .autoMergeRequest == null then 1 else 0 end, .createdAt, .number)',
     "pending_count=\"$(jq '[.[] | select(.autoMergeRequest != null)] | length'",
     '# queue-loop-begin',
     '# candidate-budget-begin',
@@ -528,9 +528,9 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       commentFails = false,
       disableAutoFailures = 0,
       labelFailures = 0,
-      nativeStates = ['true'],
+      nativeStates = ['false', 'true'],
       labelStates = ['true'],
-      postMergeState = 'MERGED',
+      postMergeStates = ['MERGED'],
       captureCalls = false,
     } = {},
   ) => {
@@ -540,14 +540,18 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `label_failures=${labelFailures}`,
       `native_states=(${nativeStates.map(JSON.stringify).join(' ')})`,
       `label_states=(${labelStates.map(JSON.stringify).join(' ')})`,
+      `post_merge_states=(${postMergeStates.map(JSON.stringify).join(' ')})`,
       'disable_auto_calls=0',
       'label_calls=0',
       'native_state_index=0',
       'label_state_index=0',
+      'post_merge_state_index=0',
       'native_state_file="$GH_LOG.native-state-index"',
       'label_state_file="$GH_LOG.label-state-index"',
+      'post_merge_state_file="$GH_LOG.post-merge-state-index"',
       'printf \'0\\n\' > "$native_state_file"',
       'printf \'0\\n\' > "$label_state_file"',
+      'printf \'0\\n\' > "$post_merge_state_file"',
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       `  if [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge --squash"* ]]; then printf '%s\\n' 'merge-stderr-sentinel' >&2; return 41; fi`,
@@ -556,12 +560,12 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; fi',
       '  if [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]]; then label_calls=$((label_calls + 1)); [[ "$label_calls" -le "$label_failures" ]] && return 44; fi',
       '  case "$*" in',
-      `    *"pr view"*"--json state,autoMergeRequest"*) printf '%s\\n' ${JSON.stringify(JSON.stringify({ state: postMergeState, autoMergeRequest: null }))} ;;`,
+      '    *"pr view"*"--json state,autoMergeRequest"*) post_merge_state_index="$(<"$post_merge_state_file")"; last_index=$(( ${#post_merge_states[@]} - 1 )); state="${post_merge_states[$post_merge_state_index]:-${post_merge_states[$last_index]}}"; printf \'%s\\n\' "$((post_merge_state_index + 1))" > "$post_merge_state_file"; printf \'POST_MERGE_STATE_%s\\n\' "$state" >> "$GH_LOG"; printf \'{"state":"%s","autoMergeRequest":null}\\n\' "$state" ;;',
       '    *"pr view"*autoMergeRequest*) native_state_index="$(<"$native_state_file")"; state="${native_states[$native_state_index]:-true}"; printf \'%s\\n\' "$((native_state_index + 1))" > "$native_state_file"; [[ "$state" == ERROR ]] && return 46; printf \'NATIVE_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
       '    *"pr view"*"--json labels"*) label_state_index="$(<"$label_state_file")"; state="${label_states[$label_state_index]:-true}"; printf \'%s\\n\' "$((label_state_index + 1))" > "$label_state_file"; [[ "$state" == ERROR ]] && return 47; printf \'LABEL_VERIFY_%s\\n\' "$state" >> "$GH_LOG"; printf \'%s\\n\' "$state" ;;',
       '  esac',
       '}',
-      'sleep() { :; }',
+      `sleep() { printf 'sleep %s\\n' "$*" >> "$GH_LOG"; }`,
       'pr=26',
       'repo=o/r',
       'head=old-head',
@@ -578,14 +582,14 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     const summary = {
       status: result.status,
       merged: result.calls.includes('gh pr merge'),
-      updatedBranch: false,
-      dispatchedCi: false,
       skipped: result.calls.includes('SKIPPED'),
       warned: (result.stdout + result.stderr).includes('::warning::'),
       commented: result.calls.includes('gh pr comment'),
       nativeAutoMergeDisableAttempted: /gh pr merge .*--disable-auto/.test(result.calls),
       nativeAutoMergeDisabled: result.calls.includes('NATIVE_VERIFY_true'),
       nativeVerificationCalls: (result.calls.match(/gh pr view .*autoMergeRequest/g) ?? []).length,
+      postMergeStateCalls: (result.calls.match(/POST_MERGE_STATE_/g) ?? []).length,
+      sleepCalls: (result.calls.match(/sleep 2/g) ?? []).length,
       labelRemovalAttempted: /gh pr edit .*--remove-label automerge/.test(result.calls),
       removedLabel: result.calls.includes('LABEL_VERIFY_true'),
       labelVerificationCalls: (result.calls.match(/gh pr view .*--json labels/g) ?? []).length,
@@ -604,24 +608,25 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     nativeAutoMergeDisableAttempted: false,
     nativeAutoMergeDisabled: false,
     nativeVerificationCalls: 0,
+    postMergeStateCalls: 0,
+    sleepCalls: 0,
     labelRemovalAttempted: false,
     removedLabel: false,
     labelVerificationCalls: 0,
   };
 
-  // CLEAN만 native auto-merge를 요청하고, 직후 MERGED를 확인해야 한다.
+  // CLEAN만 native auto-merge를 요청하고, bounded polling 안에서 MERGED를 확인해야 한다.
   for (const mergeState of ['CLEAN']) {
     assert.deepEqual(
       runDispatch(mergeState),
       {
         status: 0,
         merged: true,
-        updatedBranch: false,
-        dispatchedCi: false,
         skipped: false,
         warned: false,
         ...noFailureSignal,
         nativeVerificationCalls: 1,
+        postMergeStateCalls: 1,
       },
       `${mergeState} must proceed to merge`,
     );
@@ -639,8 +644,6 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       {
         status: 0,
         merged: false,
-        updatedBranch: false,
-        dispatchedCi: false,
         skipped: true,
         warned: true,
         ...noFailureSignal,
@@ -656,7 +659,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     assert.equal(failed.commented, true, `${failedOperation} failure must comment on the PR`);
     assert.equal(failed.nativeAutoMergeDisableAttempted, true, `${failedOperation} failure must disable auto-merge`);
     assert.equal(failed.nativeAutoMergeDisabled, true, `${failedOperation} failure must disable native auto-merge`);
-    assert.equal(failed.nativeVerificationCalls, 1, `${failedOperation} native cleanup must verify once after convergence`);
+    assert.equal(failed.nativeVerificationCalls, 2, `${failedOperation} native cleanup must check before and after disable`);
     assert.equal(failed.labelRemovalAttempted, true, `${failedOperation} failure must attempt label removal`);
     assert.equal(failed.removedLabel, true, `${failedOperation} failure must remove automerge`);
     assert.equal(failed.labelVerificationCalls, 1, `${failedOperation} label cleanup must verify once after convergence`);
@@ -679,23 +682,23 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   const disableThenConverged = runDispatch('CLEAN', {
     failedOperation: 'merge',
     disableAutoFailures: 1,
-    nativeStates: ['false', 'true'],
+    nativeStates: ['false', 'false', 'true'],
   });
   assert.equal(disableThenConverged.status, 41, 'cleanup retry must retain the merge status');
   assert.equal(disableThenConverged.nativeAutoMergeDisabled, true, 'second native cleanup attempt must converge');
-  assert.equal(disableThenConverged.nativeVerificationCalls, 2, 'every native cleanup attempt is verified');
+  assert.equal(disableThenConverged.nativeVerificationCalls, 3, 'initial state and every cleanup attempt are verified');
   assert.equal((disableThenConverged.calls.match(/gh pr merge 26 --repo o\/r --disable-auto/g) ?? []).length, 2);
 
   const disableFailed = runDispatch('CLEAN', {
     failedOperation: 'merge',
     disableAutoFailures: 2,
-    nativeStates: ['false', 'false'],
+    nativeStates: ['false', 'false', 'false'],
   });
   assert.equal(disableFailed.status, 41, 'native cleanup failure must not replace the merge status');
   assert.equal(disableFailed.commented, true, 'native cleanup failure must retain the PR comment attempt');
   assert.equal(disableFailed.nativeAutoMergeDisableAttempted, true, 'native cleanup failure must be observable');
   assert.equal(disableFailed.nativeAutoMergeDisabled, false, 'failed native cleanup must not be reported as disabled');
-  assert.equal(disableFailed.nativeVerificationCalls, 2, 'failed native cleanup is verified on every attempt');
+  assert.equal(disableFailed.nativeVerificationCalls, 3, 'initial state and failed cleanup attempts are verified');
   assert.equal(disableFailed.labelRemovalAttempted, true, 'native cleanup failure must not skip label removal');
   assert.equal(disableFailed.removedLabel, true, 'native cleanup failure must still remove the label');
 
@@ -730,13 +733,29 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(labelThenConverged.removedLabel, true, 'second label verification must prove convergence');
   assert.equal(labelThenConverged.labelVerificationCalls, 2, 'label convergence must consume false then true');
 
-  const queryFailed = runDispatch('CLEAN', { failedOperation: 'merge', nativeStates: ['ERROR', 'ERROR'] });
+  const queryFailed = runDispatch('CLEAN', { failedOperation: 'merge', nativeStates: ['ERROR', 'ERROR', 'ERROR'] });
   assert.equal(queryFailed.status, 41, 'query failure must not replace the merge status');
-  assert.equal(queryFailed.nativeVerificationCalls, 2, 'native cleanup query must stay bounded at two attempts');
+  assert.equal(queryFailed.nativeVerificationCalls, 3, 'native cleanup query must stay bounded at one precheck and two attempts');
   assert.equal(queryFailed.labelRemovalAttempted, true, 'native query failure must not skip label cleanup');
 
-  const pending = runDispatch('CLEAN', { postMergeState: 'OPEN' });
+  const alreadyClear = runDispatch('CLEAN', {
+    failedOperation: 'merge',
+    nativeStates: ['true'],
+  });
+  assert.equal(alreadyClear.status, 41);
+  assert.equal(alreadyClear.nativeAutoMergeDisableAttempted, false, 'already-null requests are a no-op');
+  assert.equal(alreadyClear.nativeVerificationCalls, 1, 'already-null requests are checked once');
+
+  const delayed = runDispatch('CLEAN', { postMergeStates: ['OPEN', 'MERGED'], captureCalls: true });
+  assert.equal(delayed.status, 0, 'delayed merge must succeed within the polling bound');
+  assert.equal(delayed.postMergeStateCalls, 2);
+  assert.equal(delayed.sleepCalls, 1);
+  assert.equal(delayed.nativeAutoMergeDisableAttempted, false);
+
+  const pending = runDispatch('CLEAN', { postMergeStates: ['OPEN'], captureCalls: true });
   assert.equal(pending.status, 1, 'pending native auto-merge must fail closed');
+  assert.equal(pending.postMergeStateCalls, 6, 'pending merge polling must stop at the fixed bound');
+  assert.equal(pending.sleepCalls, 5, 'polling must sleep only between the six attempts');
   assert.equal(pending.nativeAutoMergeDisabled, true, 'pending request must be disabled');
   assert.equal(pending.removedLabel, true, 'pending request must remove the coordinator label');
 });
@@ -924,8 +943,9 @@ const makeRunQueue =
     '      printf %s "$rn" > "$FIX/ratecount"',
     '      rv="$(sed -n "${rn}p" "$FIX/rates")"',
     '      [ -n "$rv" ] || rv="$(tail -1 "$FIX/rates")"',
+    '      [[ "$rv" == __FAIL__ ]] && return 50',
     `      printf '%s\\n' "$rv" ;;`,
-    '    "pr view "*"--json autoMergeRequest"*"--jq"*) printf true ;;',
+    '    "pr view "*"--json autoMergeRequest"*"--jq"*) set -- $all; n="$3"; if [[ -f "$FIX/disabled-$n" ]]; then printf true; else jq -r ".autoMergeRequest == null" "$FIX/pr-$n.json"; fi ;;',
     '    "pr view "*"--json state,autoMergeRequest"*) printf \'%s\\n\' \'{"state":"MERGED","autoMergeRequest":null}\' ;;',
     '    "pr view "*) set -- $all; cat "$FIX/pr-$3.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
@@ -933,7 +953,7 @@ const makeRunQueue =
     '    *check-runs*) h="${all#*commits/}"; h="${h%%/check-runs*}"; cat "$FIX/checks-$h.json" ;;',
     '    *statuses*) h="${all#*commits/}"; h="${h%%/statuses*}"; cat "$FIX/statuses-$h.json" ;;',
     // 응답이 필요 없는 실제 동작. 로그에만 남기고 조용히 성공한다.
-    '    "pr merge"*) ;;',
+    '    "pr merge"*) if [[ "$all" == *"--disable-auto"* ]]; then set -- $all; touch "$FIX/disabled-$3"; fi ;;',
     // 기본 분기가 없으면 워크플로가 새 gh 호출을 늘렸을 때 스텁이 빈 출력 + 종료 코드 0을
     // 낸다. 큐 루프는 그것을 "빈 API 응답"으로 읽고 후보를 건너뛰므로, 하네스가 덮지 못한
     // 호출이 조용히 통과한다. 실패시켜 즉시 드러낸다.
@@ -964,8 +984,6 @@ const makeRunQueue =
     evaluated: [...calls.matchAll(/gh pr view (\d+) --repo [^\n]*--json autoMergeRequest,baseRefName/g)].map((m) =>
       Number(m[1]),
     ),
-    updatedBranch: calls.includes('update-branch'),
-    dispatchedCi: calls.includes('workflow run ci.yml'),
     autoMergeDisableCalls: (calls.match(/--disable-auto/g) ?? []).length,
     rateCalls: (calls.match(/gh api rate_limit/g) ?? []).length,
     stdout: result.stdout ?? '',
@@ -1038,6 +1056,27 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.notEqual(overCapacity.status, 0, 'over-capacity cleanup must fail closed');
   assert.equal(overCapacity.autoMergeDisableCalls, 0);
   assert.equal(overCapacity.mergedPr, null);
+  for (const remaining of ['__FAIL__', 'null', 'not-a-number']) {
+    const unknownBudget = runQueue(
+      [
+        {
+          number: 1,
+          mergeStateStatus: 'CLEAN',
+          autoMergeRequest: { enabledAt: '2026-08-03T00:00:00Z' },
+        },
+      ],
+      { remaining: [remaining] },
+    );
+    assert.notEqual(unknownBudget.status, 0, `pending cleanup must fail on unknown budget: ${remaining}`);
+    assert.equal(unknownBudget.autoMergeDisableCalls, 0);
+    assert.equal(unknownBudget.mergedPr, null);
+  }
+  for (const remaining of ['__FAIL__', 'null', 'not-a-number']) {
+    const emptyQueue = runQueue([], { remaining: [remaining] });
+    assert.equal(emptyQueue.status, 0, `empty queue keeps the warning-success skip: ${remaining}`);
+    assert.equal(emptyQueue.autoMergeDisableCalls, 0);
+    assert.equal(emptyQueue.mergedPr, null);
+  }
   const ordinaryRandom = runQueue(
     [...[1, 2, 3, 4, 5, 6, 7].map((number) => ({ number, mergeStateStatus: 'CLEAN' }))],
   );
@@ -1100,8 +1139,6 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
   assert.equal(behind.status, 0);
   assert.equal(behind.mergedPr, 2);
   assert.deepEqual(behind.evaluated, [1, 2]);
-  assert.equal(behind.updatedBranch, false);
-  assert.equal(behind.dispatchedCi, false);
   // 아무 후보도 병합할 수 없으면 병합 없이 성공으로 끝난다. 라벨은 건드리지 않는다.
   const allBlocked = runQueue([
     { number: 1, mergeStateStatus: 'UNKNOWN' },
@@ -1525,13 +1562,13 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
   assert.ok(windowAt > offsetAt, 'draft filter must run before the window slice');
 
   const selectProgram = workflow.match(
-    /--jq '(\[\.\[\] \| select\(\.isDraft == false\) \| \{autoMergeRequest, createdAt, number\}\] \| sort_by\(if \.autoMergeRequest == null then 1 else 0 end, \.createdAt\))'/,
+    /--jq '(\[\.\[\] \| select\(\.isDraft == false\) \| \{autoMergeRequest, createdAt, number\}\] \| sort_by\(if \.autoMergeRequest == null then 1 else 0 end, \.createdAt, \.number\))'/,
   )?.[1];
   assert.ok(selectProgram, 'candidate selection jq program must stay testable');
 
   // draft가 섞인 목록. non-draft만 오래된 순으로 남아야 한다.
   const raw = [];
-  for (let index = 0; index < declaredWindow * 2; index += 1) {
+  for (let index = 0; index < (declaredWindow - 2) * 2; index += 1) {
     raw.push({
       number: index + 1,
       createdAt: `2026-08-01T00:${String(index).padStart(2, '0')}:00Z`,
@@ -1539,11 +1576,28 @@ test('draft 필터는 창 산출 이전에 적용된다', async () => {
       autoMergeRequest: null,
     });
   }
+  raw.push(
+    {
+      number: 100,
+      createdAt: '2026-08-01T01:00:00Z',
+      isDraft: false,
+      autoMergeRequest: null,
+    },
+    {
+      number: 99,
+      createdAt: '2026-08-01T01:00:00Z',
+      isDraft: false,
+      autoMergeRequest: null,
+    },
+  );
   const selected = JSON.parse(spawnSync('jq', ['-c', selectProgram], {
     input: JSON.stringify(raw),
     encoding: 'utf8',
   }).stdout.trim());
-  const expected = raw.filter((pr) => !pr.isDraft).map((pr) => pr.number);
+  const expected = raw
+    .filter((pr) => !pr.isDraft)
+    .sort((left, right) => left.createdAt.localeCompare(right.createdAt) || left.number - right.number)
+    .map((pr) => pr.number);
   assert.deepEqual(selected.map((pr) => pr.number), expected);
 
   // 걸러진 목록을 그대로 시작점 산출에 넣는다. draft를 세지 않으므로 total이 window

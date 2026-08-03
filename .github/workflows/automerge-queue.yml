@@ -154,7 +154,7 @@ jobs:
           # 차지해 한 실행에서 실제로 평가되는 후보 수가 window보다 줄어든다.
           candidate_data="$(gh pr list --repo "${repo}" --base main --state open --label automerge \
             --limit 1000 --json autoMergeRequest,number,createdAt,isDraft \
-            --jq '[.[] | select(.isDraft == false) | {autoMergeRequest, createdAt, number}] | sort_by(if .autoMergeRequest == null then 1 else 0 end, .createdAt)')"
+            --jq '[.[] | select(.isDraft == false) | {autoMergeRequest, createdAt, number}] | sort_by(if .autoMergeRequest == null then 1 else 0 end, .createdAt, .number)')"
           pending_count="$(jq '[.[] | select(.autoMergeRequest != null)] | length' <<<"${candidate_data}")"
           pending_candidates="$(jq -c '[.[] | select(.autoMergeRequest != null) | .number]' <<<"${candidate_data}")"
           candidates="$(jq -c '[.[].number]' <<<"${candidate_data}")"
@@ -166,10 +166,10 @@ jobs:
           # 일반 경로는 한 실행에 병합 하나만 시도한다. 기존 native request가 있으면 아래
           # 별도 cleanup 단계가 먼저 전부 해제·검증하고, 그 실행에서는 병합하지 않는다.
           #
-          # 병합할 수 없는 사유를 실행 종료 코드로 표현하지 않는다. exit 1은 큐 전체를 멈춰
-          # 뒤의 후보를 굶기고, 그 실패가 이 워크플로의 check로 남아 다음 판정 입력을
-          # 오염시킨다. 대신 사람이 봐야 하는 상태(DIRTY·fork head·미지 enum·required
-          # context 실패)는 ::warning:: annotation으로 run 요약에 남긴다.
+          # 일반적인 병합 불가 사유를 실행 종료 코드로 표현하지 않는다. 다만 이미 생성된
+          # native auto-merge request를 안전하게 해제하지 못한 경우는 unchecked merge를
+          # 막아야 하므로 큐 전체를 fail closed한다. 사람이 봐야 하는 상태(DIRTY·BEHIND·
+          # 미지 enum·required context 실패)는 ::warning:: annotation으로 남긴다.
           # queue-loop-begin
           # 한 실행에서 평가할 후보 수에는 상한이 필요하다. 상한은 아래 세 기준을 모두
           # 만족해야 하고 가장 작은 쪽이 구속한다. 형제 저장소 상수를 그대로 옮기면 안 된다.
@@ -204,13 +204,14 @@ jobs:
           #    않는 몫이라 큐가 멈춰도 배포 체인은 계속 돈다. producer 스텝의 정상 경로는
           #    실행당 3회(commits/main + 실행 목록 + 발행 job 확인)이므로 300회면 100회
           #    실행분이다.
-          #  - job timeout. 이 job은 10분(600초)이고 producer 스텝 최대 65초와 러너·스텝
-          #    오버헤드 30초를 뺀 445초를 cleanup에 쓴다. cleanup은 최대 두 번의 disable과
-          #    null 확인(후보당 4회)을 각각 1초로 잡아 timeout 상한을 계산한다.
-          #  - 한 실행의 지분. 잔량만으로 창을 정하면 예산이 넉넉한 실행 하나가 남은 몫을
-          #    통째로 써 버리고 뒤의 실행이 굶는다. window_max로 실행당 청구를 71회(이미 쓴
-          #    ruleset 1 + gh pr list 1 + 고정 비용 15 + 9 * 6)로 묶어 어느 실행도 시간당
-          #    한도의 7% 남짓만 쓰게 한다.
+          #  - job timeout. 이 job은 10분(600초)이고 producer 스텝 최대 65초, 러너·스텝
+          #    오버헤드 30초, 종료 안전 여유 60초를 뺀 445초를 cleanup에 쓴다. cleanup은
+          #    최초 null 확인과 최대 두 번의 disable/null 확인(후보당 5회)을 각각 1초로 잡아
+          #    timeout 상한을 계산한다.
+          #  - 한 실행의 지분. ordinary path는 window_max로 실행당 청구를 71회(이미 쓴
+          #    ruleset 1 + gh pr list 1 + 고정 비용 15 + 9 * 6), 즉 시간당 한도의 7% 남짓으로
+          #    묶는다. cleanup-only path는 persistent request를 모두 없애기 위해 이 지분을
+          #    적용하지 않지만, 같은 reserve 300회와 timeout으로 최대 89건·445회에 묶인다.
           #
           # 구속하는 쪽은 API 예산이므로 window_max=6이고, 실제 창은 실행마다
           # min(window_max, (잔량 - reserve - 고정 비용) / 후보당 요청)으로 정한다. 잔량이
@@ -274,9 +275,9 @@ jobs:
           reserve=300
           fixed_cost=15
           per_candidate=9
-          cleanup_per_candidate=4
+          cleanup_per_candidate=5
           cleanup_timeout_seconds=445
-          cleanup_per_candidate_seconds=4
+          cleanup_per_candidate_seconds=5
           cleanup_max=$(( cleanup_timeout_seconds / cleanup_per_candidate_seconds ))
           # 두 버킷이 모두 숫자일 때만 값을 낸다. 한쪽이 없거나 비정상인데 남은 하나로
           # 진행하면, 후보 평가가 실제로 소비하는 두 버킷 중 하나의 잔량을 모른 채 쓰는
@@ -292,23 +293,37 @@ jobs:
           # 것은 큐뿐이며 배포 체인은 앞 스텝에서 이미 처리됐다.
           budget="$(gh api rate_limit --jq "${budget_query}")" || true
           if [[ ! "${budget}" =~ ^[0-9]+$ ]]; then
+            if [[ "${pending_count}" -gt 0 ]]; then
+              echo "::error::pending native auto-merge cleanup budget is unknown."
+              exit 1
+            fi
             echo "::warning::GITHUB_TOKEN 잔량을 읽지 못했다; 이번 실행은 큐를 건너뛴다."
             exit 0
           fi
           clear_auto_merge_request() {
+            local target="$1"
+            local auto_merge_absent
             local converged=false
-            for _ in {1..2}; do
-              if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
-                echo "::error::PR #${pr}: native auto-merge could not be disabled."
+
+            if auto_merge_absent="$(gh pr view "${target}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest == null')"; then
+              if [[ "${auto_merge_absent}" == true ]]; then
+                return 0
               fi
-              if auto_merge_disabled="$(gh pr view "${pr}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest == null')"; then
+            else
+              echo "::error::PR #${target}: native auto-merge state could not be verified."
+            fi
+            for _ in {1..2}; do
+              if ! gh pr merge "${target}" --repo "${repo}" --disable-auto; then
+                echo "::error::PR #${target}: native auto-merge could not be disabled."
+              fi
+              if auto_merge_disabled="$(gh pr view "${target}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest == null')"; then
                 if [[ "${auto_merge_disabled}" == true ]]; then
                   converged=true
                   break
                 fi
-                echo "::error::PR #${pr}: native auto-merge remains enabled."
+                echo "::error::PR #${target}: native auto-merge remains enabled."
               else
-                echo "::error::PR #${pr}: native auto-merge state could not be verified."
+                echo "::error::PR #${target}: native auto-merge state could not be verified."
               fi
             done
             [[ "${converged}" == true ]]
@@ -326,7 +341,7 @@ jobs:
           fi
           if [[ "${pending_count}" -gt 0 ]]; then
             while IFS= read -r pr; do
-              if ! clear_auto_merge_request; then
+              if ! clear_auto_merge_request "${pr}"; then
                 echo "::error::PR #${pr}: existing native auto-merge request cleanup did not converge."
                 exit 1
               fi
@@ -380,7 +395,7 @@ jobs:
             merge_state="$(jq -r '.mergeStateStatus' <<<"${info}")"
 
             if jq -e '.autoMergeRequest != null' <<<"${info}" >/dev/null; then
-              if ! clear_auto_merge_request; then
+              if ! clear_auto_merge_request "${pr}"; then
                 echo "::error::PR #${pr}: existing native auto-merge request cleanup did not converge."
                 exit 1
               fi
@@ -509,7 +524,7 @@ jobs:
               local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. 자동 병합 해제와 automerge 라벨 제거를 시도하고 상태를 확인했습니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
               local label_converged=false
 
-              if ! clear_auto_merge_request; then
+              if ! clear_auto_merge_request "${pr}"; then
                 echo "::error::PR #${pr}: native auto-merge cleanup did not converge."
               fi
 
@@ -541,14 +556,23 @@ jobs:
               CLEAN)
                 if gh pr merge --squash --auto "${pr}" --repo "${repo}" \
                   --match-head-commit "${head}"; then
-                  post_merge="$(gh pr view "${pr}" --repo "${repo}" --json state,autoMergeRequest)" || {
-                    status=$?
-                    fail_closed_pr "merge-state" "${status}"
-                  }
-                  if jq -e '.state == "MERGED"' <<<"${post_merge}" >/dev/null; then
-                    echo "PR #${pr}: merged."
-                    exit 0
-                  fi
+                  for attempt in {1..6}; do
+                    post_merge="$(gh pr view "${pr}" --repo "${repo}" --json state,autoMergeRequest)" || {
+                      status=$?
+                      fail_closed_pr "merge-state" "${status}"
+                    }
+                    post_merge_state="$(jq -r '.state // empty' <<<"${post_merge}")"
+                    if [[ "${post_merge_state}" == MERGED ]]; then
+                      echo "PR #${pr}: merged."
+                      exit 0
+                    fi
+                    if [[ "${post_merge_state}" != OPEN ]]; then
+                      fail_closed_pr "merge-state" 1
+                    fi
+                    if [[ "${attempt}" -lt 6 ]]; then
+                      sleep 2
+                    fi
+                  done
                   fail_closed_pr "merge-pending" 1
                 else
                   status=$?
