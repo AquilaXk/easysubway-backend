@@ -235,7 +235,7 @@ class JourneyV3ContractTest {
 		List<JsonNode> artifacts = new ArrayList<>();
 		digest.path("artifacts").forEach(artifacts::add);
 		assertThat(artifacts.stream().map(node -> node.path("path").asText()).toList()).containsExactly(
-			"journey-v3-error-catalog.json", "journey-v3.openapi.yaml");
+			"journey-v3-error-catalog.json", "journey-v3-error-disposition.json", "journey-v3.openapi.yaml");
 		for (JsonNode artifact : artifacts) {
 			assertThat(fieldNames(artifact)).containsExactlyInAnyOrder("path", "sha256");
 			Path file = CONTRACTS.resolve(artifact.path("path").asText());
