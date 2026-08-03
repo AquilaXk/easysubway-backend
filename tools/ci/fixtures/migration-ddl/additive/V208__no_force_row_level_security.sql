@@ -1,0 +1,1 @@
+ALTER TABLE facility_reports NO FORCE ROW LEVEL SECURITY;

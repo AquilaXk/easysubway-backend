@@ -433,7 +433,10 @@ export function scanSqlForViolations(rawSql) {
       if (/\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
         add("ENABLE ROW LEVEL SECURITY");
       }
-      if (/\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
+      if (
+        /\bFORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s) &&
+        !/\bNO\s+FORCE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)
+      ) {
         add("FORCE ROW LEVEL SECURITY");
       }
       if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+GENERATED\s+ALWAYS\b/i.test(s)) {

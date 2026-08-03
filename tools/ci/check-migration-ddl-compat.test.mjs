@@ -70,6 +70,7 @@ const additiveCases = [
   "V205__relaxations_and_dml.sql",
   "V206__do_block_raise_message.sql",
   "V207__grant_execute_function.sql",
+  "V208__no_force_row_level_security.sql",
 ];
 
 for (const name of additiveCases) {
