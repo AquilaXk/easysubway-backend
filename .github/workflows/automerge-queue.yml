@@ -6,9 +6,8 @@ name: Automerge Queue
 #
 # 인증은 github.token 하나뿐이다. GITHUB_TOKEN이 만든 이벤트는 새 workflow run을
 # 만들지 않고 예외는 workflow_dispatch와 repository_dispatch뿐이므로, 이 코디네이터가
-# 끊게 되는 두 체인을 명시 dispatch로 잇는다.
-#   - main 병합 후 immutable image producer: head_sha 기준으로 실행 유무를 판정해 dispatch
-#   - update-branch 후 PR CI: head_ref로 ci.yml dispatch
+# 끊게 되는 immutable image producer 체인을 head_sha 기준으로 명시 dispatch로 잇는다.
+# PR head는 coordinator가 만들지 않고 PR-owning worktree의 push로만 CI를 붙인다.
 # 그 사이 트리거 공백은 schedule cron이 메운다.
 
 on:
@@ -180,8 +179,7 @@ jobs:
           #    check-runs +1, statuses +1이다. 이 여유는 "한 번의 반복이 예약선을 넘지
           #    않게" 하는 몫일 뿐이고, 그보다 긴 이력은 후보마다 잔량을 다시 읽는 재확인이
           #    잡는다(아래 budget-recheck). required context별 jq는 로컬 계산이라 요청을
-          #    쓰지 않는다. 후보 평가 밖의 고정 비용은 BEHIND 경로가 정한다(update-branch 1
-          #    + 반영 확인 12 + ci dispatch 1 + 여유 1 = 15).
+          #    쓰지 않는다. 후보 평가 밖의 고정 비용은 producer 확인과 여유를 둔 값이다.
           #    GITHUB_TOKEN 한도는 저장소당 시간당 1,000회이고 다른 워크플로와 공유한다.
           #
           #    이 예산을 "실행 빈도"로 나누지 않는다. 빈도는 강제되지 않을뿐더러 실측으로도
@@ -322,8 +320,27 @@ jobs:
               exit 0
             fi
             # budget-recheck-end
+            clear_auto_merge_request() {
+              local converged=false
+              for _ in {1..2}; do
+                if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
+                  echo "::error::PR #${pr}: native auto-merge could not be disabled."
+                fi
+                if auto_merge_disabled="$(gh pr view "${pr}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest == null')"; then
+                  if [[ "${auto_merge_disabled}" == true ]]; then
+                    converged=true
+                    break
+                  fi
+                  echo "::error::PR #${pr}: native auto-merge remains enabled."
+                else
+                  echo "::error::PR #${pr}: native auto-merge state could not be verified."
+                fi
+              done
+              [[ "${converged}" == true ]]
+            }
+
             info="$(gh pr view "${pr}" --repo "${repo}" \
-              --json baseRefName,headRefName,headRefOid,headRepository,isDraft,labels,mergeStateStatus,state)"
+              --json autoMergeRequest,baseRefName,headRefOid,isDraft,labels,mergeStateStatus,state)"
             if ! jq -e '
               .state == "OPEN" and
               .isDraft == false and
@@ -335,9 +352,16 @@ jobs:
             fi
 
             head="$(jq -r '.headRefOid' <<<"${info}")"
-            head_ref="$(jq -r '.headRefName' <<<"${info}")"
-            head_repo="$(jq -r '.headRepository.nameWithOwner // ""' <<<"${info}")"
             merge_state="$(jq -r '.mergeStateStatus' <<<"${info}")"
+
+            if jq -e '.autoMergeRequest != null' <<<"${info}" >/dev/null; then
+              if ! clear_auto_merge_request; then
+                echo "::error::PR #${pr}: existing native auto-merge request cleanup did not converge."
+                exit 1
+              fi
+              echo "PR #${pr}: removed an existing native auto-merge request; skipping this run."
+              continue
+            fi
 
             reviews="$(gh api --paginate --slurp \
               "repos/${repo}/pulls/${pr}/reviews?per_page=100")"
@@ -458,24 +482,9 @@ jobs:
               local status="$2"
               local run_url="${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
               local comment="Automerge coordinator가 PR #${pr}의 ${operation}에 실패했습니다. merge_state=${merge_state}, status=${status}. 실행 URL: ${run_url}. 자동 병합 해제와 automerge 라벨 제거를 시도하고 상태를 확인했습니다. 문제를 해결하고 모든 게이트를 통과한 뒤 다시 추가하세요."
-              local native_converged=false
               local label_converged=false
 
-              for _ in {1..2}; do
-                if ! gh pr merge "${pr}" --repo "${repo}" --disable-auto; then
-                  echo "::error::PR #${pr}: native auto-merge could not be disabled."
-                fi
-                if auto_merge_disabled="$(gh pr view "${pr}" --repo "${repo}" --json autoMergeRequest --jq '.autoMergeRequest == null')"; then
-                  if [[ "${auto_merge_disabled}" == true ]]; then
-                    native_converged=true
-                    break
-                  fi
-                  echo "::error::PR #${pr}: native auto-merge remains enabled."
-                else
-                  echo "::error::PR #${pr}: native auto-merge state could not be verified."
-                fi
-              done
-              if [[ "${native_converged}" != true ]]; then
+              if ! clear_auto_merge_request; then
                 echo "::error::PR #${pr}: native auto-merge cleanup did not converge."
               fi
 
@@ -504,52 +513,25 @@ jobs:
             }
 
             case "${merge_state}" in
-              CLEAN | HAS_HOOKS | UNSTABLE | BLOCKED)
-                # UNSTABLE은 "mergeable하지만 필수가 아닌 check가 green이 아님"이다.
-                # ruleset이 필수로 두지 않은 check로 병합을 막지 않는다.
-                # BLOCKED도 이 지점까지의 current-head review/thread/required-context
-                # 게이트를 통과했으면 GitHub native auto-merge에 최종 규칙 판정을 맡긴다.
+              CLEAN)
                 if gh pr merge --squash --auto "${pr}" --repo "${repo}" \
                   --match-head-commit "${head}"; then
-                  :
+                  post_merge="$(gh pr view "${pr}" --repo "${repo}" --json state,autoMergeRequest)" || {
+                    status=$?
+                    fail_closed_pr "merge-state" "${status}"
+                  }
+                  if jq -e '.state == "MERGED"' <<<"${post_merge}" >/dev/null; then
+                    echo "PR #${pr}: merged."
+                    exit 0
+                  fi
+                  fail_closed_pr "merge-pending" 1
                 else
                   status=$?
                   fail_closed_pr "merge" "${status}"
                 fi
-                echo "PR #${pr}: merge scheduled (${merge_state})."
-                exit 0
                 ;;
               BEHIND)
-                if [[ "${head_repo}" != "${repo}" ]]; then
-                  echo "::warning::PR #${pr} uses a fork head; refusing base-repository CI dispatch."
-                  continue
-                fi
-                if gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
-                  -f expected_head_sha="${head}" >/dev/null; then
-                  :
-                else
-                  status=$?
-                  fail_closed_pr "update-branch" "${status}"
-                fi
-                # ponytail: bounded wait only; the API applies the base merge asynchronously.
-                for _ in {1..12}; do
-                  new_head="$(gh pr view "${pr}" --repo "${repo}" --json headRefOid --jq '.headRefOid')"
-                  [[ "${new_head}" != "${head}" ]] && break
-                  sleep 5
-                done
-                if [[ "${new_head}" == "${head}" ]]; then
-                  # update-branch는 비동기라 bounded wait 안에 head가 안 바뀔 수 있다.
-                  # stale ref로 CI를 쏘지 않고 다음 트리거에서 재시도한다. bare `[[ ]]`로
-                  # 두면 bash 5에서는 아무 메시지 없이 job이 죽고 bash 3.2에서는 그냥
-                  # 통과해버린다.
-                  echo "PR #${pr}: base update has not landed yet; retrying on the next trigger."
-                  exit 0
-                fi
-                # GITHUB_TOKEN의 update-branch push는 synchronize 이벤트로 CI를 만들지
-                # 못한다. 새 head에 required context를 다시 붙이려면 명시 dispatch가 필요하다.
-                gh workflow run ci.yml --repo "${repo}" --ref "${head_ref}"
-                echo "PR #${pr}: base updated; CI dispatched."
-                exit 0
+                echo "::warning::PR #${pr} is behind main; its owning SSD worktree must rebase and push."
                 ;;
               DIRTY)
                 # 충돌은 소유 세션이 rebase 해야 풀린다. GitHub이 PR에 충돌을 직접 표시하지만
@@ -557,9 +539,7 @@ jobs:
                 echo "::warning::PR #${pr} conflicts with the base branch; skipping until it is rebased."
                 continue
                 ;;
-              UNKNOWN)
-                # UNKNOWN은 GitHub이 mergeability를 계산 중인 상태다. 이번 실행에서 할 수
-                # 있는 일이 없으므로 이 후보가 뒤를 막지 않게 건너뛴다.
+              BLOCKED | HAS_HOOKS | UNSTABLE | UNKNOWN)
                 echo "PR #${pr}: not mergeable yet (${merge_state}); skipping."
                 continue
                 ;;
