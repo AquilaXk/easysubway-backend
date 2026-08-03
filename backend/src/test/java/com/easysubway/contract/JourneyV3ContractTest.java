@@ -96,7 +96,8 @@ class JourneyV3ContractTest {
 		assertThat(property(document, "JourneySessionRequest", "clientNonce").get("pattern"))
 			.isEqualTo("^[A-Za-z0-9_-]{22}$");
 		assertThat(property(document, "JourneySessionResponse", "token")).containsExactly(
-			Map.entry("type", "string"));
+			Map.entry("type", "string"),
+			Map.entry("minLength", 1));
 		assertEnum(property(document, "JourneySessionResponse", "scope"), "journey:v3");
 
 		assertClosedSchema(document, "JourneySearchRequest",
