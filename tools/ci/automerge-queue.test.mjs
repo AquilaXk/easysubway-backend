@@ -515,15 +515,23 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   // SKIPPED를 남겨 "이 후보를 건너뛰었다"를 관측한다.
   const runDispatch = (
     mergeState,
-    { headRepo = 'o/r', newHead = 'updated-head', failedOperation = null, commentFails = false } = {},
+    {
+      headRepo = 'o/r',
+      newHead = 'updated-head',
+      failedOperation = null,
+      commentFails = false,
+      labelFails = false,
+    } = {},
   ) => {
     const result = stubbedBash([
       'set -euo pipefail',
       'gh() {',
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
-      `  [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge"* ]] && return 41`,
+      `  if [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge"* ]]; then printf '%s\\n' 'merge-stderr-sentinel' >&2; return 41; fi`,
       `  [[ ${JSON.stringify(failedOperation)} == update-branch && "$*" == api*update-branch* ]] && return 42`,
       `  [[ ${JSON.stringify(commentFails)} == true && "$*" == "pr comment"* ]] && return 43`,
+      `  [[ ${JSON.stringify(labelFails)} == true && "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]] && return 44`,
+      `  [[ "$*" == "pr edit 26 --repo o/r --remove-label automerge" ]] && printf '%s\\n' LABEL_REMOVAL_SUCCEEDED >> "$GH_LOG"`,
       '  case "$*" in',
       `    *"pr view"*headRefOid*) printf '%s\\n' ${JSON.stringify(newHead)} ;;`,
       '  esac',
@@ -551,17 +559,19 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       skipped: result.calls.includes('SKIPPED'),
       warned: (result.stdout + result.stderr).includes('::warning::'),
       commented: result.calls.includes('gh pr comment'),
-      removedLabel: /gh pr edit .*--remove-label automerge/.test(result.calls),
+      labelRemovalAttempted: /gh pr edit .*--remove-label automerge/.test(result.calls),
+      removedLabel: result.calls.includes('LABEL_REMOVAL_SUCCEEDED'),
     };
-    return failedOperation || commentFails
+    return failedOperation || commentFails || labelFails
       ? {
           ...summary,
           calls: result.calls,
+          stderr: result.stderr,
         }
       : summary;
   };
 
-  const noFailureSignal = { commented: false, removedLabel: false };
+  const noFailureSignal = { commented: false, labelRemovalAttempted: false, removedLabel: false };
 
   // ⑥ 병합 가능 상태. UNSTABLE은 "필수가 아닌 check가 green이 아님"일 뿐이고 required
   // context는 앞에서 ruleset 기준으로 이미 검증했으므로 병합을 진행한다.
@@ -652,6 +662,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     const failed = runDispatch(mergeState, { failedOperation });
     assert.equal(failed.status, status, `${failedOperation} status must be preserved`);
     assert.equal(failed.commented, true, `${failedOperation} failure must comment on the PR`);
+    assert.equal(failed.labelRemovalAttempted, true, `${failedOperation} failure must attempt label removal`);
     assert.equal(failed.removedLabel, true, `${failedOperation} failure must remove automerge`);
     assert.match(failed.calls, new RegExp(`merge_state=${mergeState}, status=${status}`));
     assert.match(failed.calls, /https:\/\/github\.com\/o\/r\/actions\/runs\/123/);
@@ -660,6 +671,14 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   const commentFailed = runDispatch('CLEAN', { failedOperation: 'merge', commentFails: true });
   assert.equal(commentFailed.status, 41);
   assert.equal(commentFailed.removedLabel, true, 'comment failure must not skip label removal');
+
+  const labelFailed = runDispatch('CLEAN', { failedOperation: 'merge', labelFails: true });
+  assert.equal(labelFailed.status, 41, 'label cleanup failure must not replace the merge status');
+  assert.equal(labelFailed.commented, true, 'label cleanup failure must retain the PR comment attempt');
+  assert.equal(labelFailed.labelRemovalAttempted, true, 'label cleanup failure must be observable');
+  assert.equal(labelFailed.removedLabel, false, 'failed label cleanup must not be reported as removed');
+  assert.match(labelFailed.stderr, /merge-stderr-sentinel/);
+  assert.doesNotMatch(labelFailed.calls, /merge-stderr-sentinel/);
 });
 
 test('게이트는 후보별로 병합 분기보다 앞서고 producer dispatch는 큐보다 앞선다', async () => {
