@@ -365,8 +365,12 @@ const ADD_NON_COLUMN_KEYWORD =
 // ADD [COLUMN] <컬럼> ... 절을 분석한다. PostgreSQL은 COLUMN 키워드를 생략할 수 있으므로
 // (`ALTER TABLE t ADD c text NOT NULL`) 두 형태를 동일하게 본다. 생략형은 ALTER TABLE
 // 문맥에서만 컬럼 추가로 해석하고, 제약 추가 구문은 별도 규칙이 담당하므로 제외한다.
-function scanAddColumnClauses(s, isAlterTable) {
+function scanAddColumnClauses(s, isAlterTable, createdTables) {
   const labels = [];
+  const targetMatch = s.match(
+    /\bALTER\s+TABLE\s+(?:IF\s+EXISTS\s+)?(?:ONLY\s+)?([\w".]+)/i,
+  );
+  const isNewTable = targetMatch && createdTables.has(normalizeId(targetMatch[1]));
   for (const m of s.matchAll(/\bADD\s+(?:(COLUMN)\s+)?(?:IF\s+NOT\s+EXISTS\s+)?/gi)) {
     const at = m.index + m[0].length;
     if (!m[1]) {
@@ -374,8 +378,8 @@ function scanAddColumnClauses(s, isAlterTable) {
       if (ADD_NON_COLUMN_KEYWORD.test(s.slice(at))) continue;
     }
     const clause = clauseFrom(s, at);
-    if (/\bPRIMARY\s+KEY\b/i.test(clause)) labels.push("PRIMARY KEY 컬럼 추가");
-    if (/\bNOT\s+NULL\b/i.test(clause)) {
+    if (!isNewTable && /\bPRIMARY\s+KEY\b/i.test(clause)) labels.push("PRIMARY KEY 컬럼 추가");
+    if (!isNewTable && /\bNOT\s+NULL\b/i.test(clause)) {
       if (!/\bDEFAULT\b/i.test(clause)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
       if (/\bDEFAULT\s+NULL\b/i.test(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
     }
@@ -408,7 +412,7 @@ export function scanSqlForViolations(rawSql) {
     if (hasDynamicExecute(s)) add("동적 EXECUTE");
     if (/\bRENAME\b/i.test(s)) add("RENAME");
     if (/\bSET\s+NOT\s+NULL\b/i.test(s)) add("SET NOT NULL");
-    if (/\bALTER\s+COLUMN\s+[\w".]+\s+SET\s+DEFAULT\s+NULL\b/i.test(s)) {
+    if (/\bALTER\s+(?:COLUMN\s+)?[\w".]+\s+SET\s+DEFAULT\s+NULL\b/i.test(s)) {
       add("SET DEFAULT NULL");
     }
     if (
@@ -423,7 +427,7 @@ export function scanSqlForViolations(rawSql) {
     }
 
     for (const label of scanDropClauses(s, isAlterTable)) add(label);
-    for (const label of scanAddColumnClauses(s, isAlterTable)) add(label);
+    for (const label of scanAddColumnClauses(s, isAlterTable, createdTables)) add(label);
 
     if (isAlterTable) {
       const targetMatch = s.match(

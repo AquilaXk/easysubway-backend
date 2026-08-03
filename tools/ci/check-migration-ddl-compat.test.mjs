@@ -156,6 +156,11 @@ test("기존 테이블 inline ADD PRIMARY KEY·NOT NULL DEFAULT NULL과 ALTER NU
     ),
   );
   assert.ok(
+    scanSqlForViolations("ALTER TABLE t ALTER value SET DEFAULT NULL;").includes(
+      "SET DEFAULT NULL",
+    ),
+  );
+  assert.ok(
     scanSqlForViolations("ALTER TABLE t SET SCHEMA archived;").includes("SET SCHEMA"));
 });
 
@@ -168,6 +173,19 @@ test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 �
   assert.deepEqual(
     scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT 'x';"),
     [],
+  );
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE t (value TEXT); ALTER TABLE t ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE t (value TEXT); ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT NULL;"),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations("CREATE TABLE IF NOT EXISTS t (value TEXT); ALTER TABLE t ADD COLUMN id BIGINT PRIMARY KEY;").includes(
+      "PRIMARY KEY 컬럼 추가",
+    ),
   );
 });
 
