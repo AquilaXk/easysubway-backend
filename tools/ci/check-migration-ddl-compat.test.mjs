@@ -461,6 +461,99 @@ test("quoted comma가 있는 ADD COLUMN도 전체 절을 검사한다", () => {
   );
 });
 
+test("기존 테이블 inline ADD COLUMN CHECK·REFERENCES는 fail closed 하고 새 테이블은 면제한다", () => {
+  for (const sql of [
+    "ALTER TABLE routes ADD COLUMN valid BOOLEAN CHECK (valid);",
+    "ALTER TABLE routes ADD COLUMN station_id BIGINT REFERENCES stations(id);",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("기존 테이블에 제약(ADD CONSTRAINT) 추가"));
+  }
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); ALTER TABLE routes ADD COLUMN valid BOOLEAN CHECK (valid);"),
+    [],
+  );
+  for (const sql of [
+    'ALTER TABLE routes ADD COLUMN "CHECK" TEXT;',
+    'ALTER TABLE routes ADD COLUMN value "REFERENCES";',
+  ]) {
+    assert.deepEqual(scanSqlForViolations(sql), []);
+  }
+});
+
+test("기존 테이블 RULE 상태 변경과 ALTER CONSTRAINT 강화는 fail closed 한다", () => {
+  for (const sql of [
+    "ALTER TABLE routes ENABLE RULE route_insert;",
+    "ALTER TABLE routes DISABLE RULE route_insert;",
+    "ALTER TABLE routes ENABLE REPLICA RULE route_insert;",
+    "ALTER TABLE routes ENABLE ALWAYS RULE route_insert;",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER TABLE RULE 활성화/비활성화"));
+  }
+  for (const sql of [
+    "ALTER TABLE routes ALTER CONSTRAINT routes_station_id_fkey NOT DEFERRABLE;",
+    "ALTER TABLE routes ALTER CONSTRAINT routes_station_id_fkey INITIALLY IMMEDIATE;",
+    "ALTER TABLE routes ALTER CONSTRAINT routes_station_id_fkey DEFERRABLE INITIALLY IMMEDIATE;",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER CONSTRAINT DEFERRABLE 강화"));
+  }
+  for (const sql of [
+    "ALTER TABLE routes ALTER CONSTRAINT routes_station_id_fkey DEFERRABLE;",
+    "ALTER TABLE routes ALTER CONSTRAINT routes_station_id_fkey INITIALLY DEFERRED;",
+  ]) {
+    assert.deepEqual(scanSqlForViolations(sql), []);
+  }
+});
+
+test("qualified·quoted composite ALTER ATTRIBUTE TYPE은 fail closed 한다", () => {
+  assert.ok(
+    scanSqlForViolations('ALTER TYPE "app schema".route_point ALTER ATTRIBUTE "display-name" TYPE TEXT;').includes(
+      "ALTER TYPE ALTER ATTRIBUTE TYPE",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("ALTER TYPE route_point RENAME ATTRIBUTE x TO y, ALTER ATTRIBUTE y SET DATA TYPE TEXT;").includes(
+      "ALTER TYPE ALTER ATTRIBUTE TYPE",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("DO $$ BEGIN ALTER TYPE route_point ALTER ATTRIBUTE point SET DATA TYPE TEXT; END $$;").includes(
+      "ALTER TYPE ALTER ATTRIBUTE TYPE",
+    ),
+  );
+  assert.deepEqual(
+    scanSqlForViolations('ALTER TYPE route_point ADD ATTRIBUTE "ALTER ATTRIBUTE x TYPE" TEXT;'),
+    [],
+  );
+});
+
+test("새 테이블 면제의 unqualified identity는 search_path 문맥을 넘지 않는다", () => {
+  assert.ok(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); SET search_path TO archive; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes(
+      "PRIMARY KEY 컬럼 추가",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); RESET search_path; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes(
+      "PRIMARY KEY 컬럼 추가",
+    ),
+  );
+  for (const contextChange of ["SET SCHEMA 'archive'", "RESET ALL"]) {
+    assert.ok(
+      scanSqlForViolations(`CREATE TABLE routes (id BIGINT); ${contextChange}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes(
+        "PRIMARY KEY 컬럼 추가",
+      ),
+    );
+  }
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE public.routes (id BIGINT); SET search_path TO archive; ALTER TABLE public.routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+});
+
 test("완화형 DROP(INDEX·CONSTRAINT·NOT NULL)은 통과하고 미지원 DROP 형태는 fail closed 된다", () => {
   assert.deepEqual(scanSqlForViolations("DROP INDEX IF EXISTS ux_legacy;"), []);
   assert.deepEqual(

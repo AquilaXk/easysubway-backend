@@ -428,7 +428,25 @@ function unconditionalCreatedTable(statement) {
     String.raw`^CREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
     "i",
   ));
-  return target && !target[1] ? normalizeId(target[2]) : null;
+  return target && !target[1] ? target[2] : null;
+}
+
+function isQualifiedId(id) {
+  let inQuote = false;
+  for (let i = 0; i < id.length; i++) {
+    if (id[i] === '"') {
+      if (inQuote && id[i + 1] === '"') i++;
+      else inQuote = !inQuote;
+    } else if (!inQuote && id[i] === ".") {
+      return true;
+    }
+  }
+  return false;
+}
+
+function tableIdentity(id, searchPathEpoch) {
+  const normalized = normalizeId(id);
+  return isQualifiedId(id) ? `qualified:${normalized}` : `unqualified:${searchPathEpoch}:${normalized}`;
 }
 
 function splitAlterActions(tail) {
@@ -598,6 +616,9 @@ function scanAddColumnClauses(s, isAlterTable, isNewTable) {
       if (!/\bDEFAULT\b/i.test(clause)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
       if (hasNullDefault(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
     }
+    if (!isNewTable && /\b(?:CHECK|REFERENCES)\b/i.test(shadowQuotedIdentifiers(clause))) {
+      labels.push("기존 테이블에 제약(ADD CONSTRAINT) 추가");
+    }
   }
   return labels;
 }
@@ -630,6 +651,7 @@ export function scanSqlForViolations(rawSql) {
   const findings = [];
   const add = (label) => findings.push(label);
   let proceduralBodyDepth = 0;
+  let searchPathEpoch = 0;
   for (const stmt of splitStatements(cleaned)) {
     const s = stmt.trim();
     if (!s) continue;
@@ -637,12 +659,18 @@ export function scanSqlForViolations(rawSql) {
     const bodyStarts = markerCount(s, PROCEDURAL_BODY_START);
     const bodyEnds = markerCount(s, PROCEDURAL_BODY_END);
     const isProceduralBody = proceduralBodyDepth > 0 || bodyStarts > 0;
+    if (
+      !isProceduralBody &&
+      /^(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b/i.test(s)
+    ) {
+      searchPathEpoch++;
+    }
 
     const isAlterTable = /\bALTER\s+TABLE\b/i.test(s);
     const alterTargetMatch = isAlterTable
       ? s.match(new RegExp(ALTER_TABLE_TARGET, "i"))
       : null;
-    const alterTarget = alterTargetMatch ? normalizeId(alterTargetMatch[1]) : null;
+    const alterTarget = alterTargetMatch ? tableIdentity(alterTargetMatch[1], searchPathEpoch) : null;
     const altersExistingTable = !alterTarget || !createdTables.has(alterTarget);
     const isNewTable = alterTarget !== null && createdTables.has(alterTarget);
     const alterActionTail = alterTargetMatch
@@ -664,7 +692,7 @@ export function scanSqlForViolations(rawSql) {
         String.raw`^\s*CREATE\s+(?:OR\s+REPLACE\s+)?RULE\s+${SQL_IDENTIFIER}\s+AS\s+ON\s+[A-Za-z_]+\s+TO\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
         "i",
       ));
-      if (!ruleTarget || !createdTables.has(normalizeId(ruleTarget[1]))) {
+      if (!ruleTarget || !createdTables.has(tableIdentity(ruleTarget[1], searchPathEpoch))) {
         add(ruleStarter[1] ? "CREATE OR REPLACE RULE" : "CREATE RULE ON 기존 테이블");
       }
     }
@@ -674,7 +702,7 @@ export function scanSqlForViolations(rawSql) {
         String.raw`^\s*(?:CREATE|ALTER)\s+POLICY\s+${SQL_IDENTIFIER}\s+ON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
         "i",
       ));
-      if (!policyTarget || !createdTables.has(normalizeId(policyTarget[1]))) {
+      if (!policyTarget || !createdTables.has(tableIdentity(policyTarget[1], searchPathEpoch))) {
         add("CREATE/ALTER POLICY ON 기존 테이블");
       }
     }
@@ -684,7 +712,7 @@ export function scanSqlForViolations(rawSql) {
         "i",
       ),
     );
-    if (triggerMatch && !createdTables.has(normalizeId(triggerMatch[1]))) {
+    if (triggerMatch && !createdTables.has(tableIdentity(triggerMatch[1], searchPathEpoch))) {
       add("CREATE TRIGGER ON 기존 테이블");
     }
     if (/\bRENAME\b/i.test(keywordShadow)) add("RENAME");
@@ -712,6 +740,24 @@ export function scanSqlForViolations(rawSql) {
     ).test(action))) {
       add("ALTER COLUMN TYPE");
     }
+    const alterTypeStarter = /\bALTER\s+TYPE\b/i.exec(keywordShadow);
+    const alterTypeStatement = alterTypeStarter ? s.slice(alterTypeStarter.index) : "";
+    const alterTypeTarget = alterTypeStatement.match(new RegExp(
+      String.raw`^ALTER\s+TYPE\s+(?:IF\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+      "i",
+    ));
+    const alterTypeActions = alterTypeTarget
+      ? splitAlterActions(alterTypeStatement.slice(alterTypeTarget[0].length))
+      : [];
+    if (alterTypeActions.some((action) =>
+      /^ALTER\s+ATTRIBUTE\b/i.test(shadowQuotedIdentifiers(action)) &&
+      new RegExp(
+        String.raw`^ALTER\s+ATTRIBUTE\s+${SQL_IDENTIFIER}\s+(?:SET\s+DATA\s+)?TYPE\b`,
+        "i",
+      ).test(action),
+    )) {
+      add("ALTER TYPE ALTER ATTRIBUTE TYPE");
+    }
     if (
       /\bALTER\s+DOMAIN\b/i.test(keywordShadow) &&
       new RegExp(
@@ -734,6 +780,26 @@ export function scanSqlForViolations(rawSql) {
         alterActions.some((action) => /^(?:ENABLE|DISABLE)(?:\s+(?:REPLICA|ALWAYS))?\s+TRIGGER\b/i.test(action))
       ) {
         add("ALTER TABLE TRIGGER 활성화/비활성화");
+      }
+      if (
+        altersExistingTable &&
+        alterActions.some((action) => /^(?:ENABLE|DISABLE)(?:\s+(?:REPLICA|ALWAYS))?\s+RULE\b/i.test(action))
+      ) {
+        add("ALTER TABLE RULE 활성화/비활성화");
+      }
+      if (
+        altersExistingTable &&
+        alterActions.some((action) => {
+          const constraint = action.match(new RegExp(
+            String.raw`^ALTER\s+CONSTRAINT\s+${SQL_IDENTIFIER}`,
+            "i",
+          ));
+          return constraint !== null && /\b(?:NOT\s+DEFERRABLE|INITIALLY\s+IMMEDIATE)\b/i.test(
+            shadowQuotedIdentifiers(action.slice(constraint[0].length)),
+          );
+        })
+      ) {
+        add("ALTER CONSTRAINT DEFERRABLE 강화");
       }
       if (alterActions.some((action) => /^DETACH\s+PARTITION\b/i.test(action))) {
         add("ALTER TABLE DETACH PARTITION");
@@ -783,14 +849,14 @@ export function scanSqlForViolations(rawSql) {
       const onMatch = s.match(
         new RegExp(String.raw`\bON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`, "i"),
       );
-      const target = onMatch ? normalizeId(onMatch[1]) : null;
+      const target = onMatch ? tableIdentity(onMatch[1], searchPathEpoch) : null;
       if (!target || !createdTables.has(target)) {
         add("기존 테이블에 UNIQUE INDEX 추가");
       }
     }
 
     const createdTable = isProceduralBody ? null : unconditionalCreatedTable(s);
-    if (createdTable) createdTables.add(createdTable);
+    if (createdTable) createdTables.add(tableIdentity(createdTable, searchPathEpoch));
     proceduralBodyDepth += bodyStarts - bodyEnds;
   }
   return [...new Set(findings)];
