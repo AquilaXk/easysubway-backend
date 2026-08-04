@@ -362,6 +362,7 @@ export function stripSqlNoise(sql) {
 // 아니면 null. 위치 파라미터($1 등)는 null을 반환한다.
 function matchDollarTag(sql, i) {
   if (sql[i] !== "$") return null;
+  if (i > 0 && /[A-Za-z0-9_$]|[^\x00-\x7F]/.test(sql[i - 1])) return null;
   let j = i + 1;
   while (j < sql.length && /[A-Za-z0-9_]/.test(sql[j])) j++;
   if (sql[j] === "$") {
@@ -612,11 +613,10 @@ function hasNullDefault(clause) {
     }
     return unwrapped;
   };
-  let expression = (boundary ? tail.slice(0, boundary.index) : tail).trim();
+  let expression = unwrapOuterParentheses((boundary ? tail.slice(0, boundary.index) : tail).trim());
   const type = String.raw`${SQL_QUALIFIED_IDENTIFIER}(?:\s+(?:VARYING|PRECISION|WITH(?:OUT)?\s+TIME\s+ZONE))*?(?:\s*\([^()]*\))?(?:\s*\[\s*\])*`;
   const castLhs = expression.match(new RegExp(String.raw`^([\s\S]*?)\s*::\s*${type}$`, "i"))?.[1];
   if (castLhs !== undefined && unwrapOuterParentheses(castLhs).toUpperCase() === "NULL") return true;
-  expression = unwrapOuterParentheses(expression);
   return new RegExp(
     String.raw`^(?:NULL\b(?:\s*::\s*${type})?|CAST\s*\(\s*NULL\s+AS\s+${type}\s*\))$`,
     "i",

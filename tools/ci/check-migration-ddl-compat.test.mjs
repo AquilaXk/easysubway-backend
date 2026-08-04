@@ -161,6 +161,12 @@ test("위치 파라미터($1)는 dollar-quote로 오인하지 않는다", () => 
   assert.deepEqual(findings, []);
 });
 
+test("identifier 내부 $tag$는 literal opener가 아니고 standalone DO body는 계속 검사한다", () => {
+  assert.ok(scanSqlForViolations("CREATE TABLE foo$tag$(id BIGINT); DROP TABLE legacy; CREATE TABLE bar$tag$(id BIGINT);").includes("DROP TABLE"));
+  assert.ok(scanSqlForViolations("CREATE TABLE café$tag$(id BIGINT); DROP TABLE legacy; CREATE TABLE résumé$tag$(id BIGINT);").includes("DROP TABLE"));
+  assert.ok(scanSqlForViolations("DO $tag$ DROP TABLE hidden; $tag$;").includes("DROP TABLE"));
+});
+
 test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 않는다", () => {
   const findings = scanSqlForViolations(
     "CREATE TABLE snapshots(id bigint); " +
@@ -244,6 +250,7 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT NULL::TEXT;",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL)::public.text;",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT ((NULL))::public.text;",
+    "ALTER TABLE t ADD COLUMN required_value BOOLEAN NOT NULL DEFAULT ((NULL)::boolean);",
     "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL);",
     "ALTER TABLE t ALTER required_value SET DEFAULT CAST(NULL AS TEXT);",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (CAST(NULL AS TEXT));",
