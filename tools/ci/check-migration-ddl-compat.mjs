@@ -408,7 +408,7 @@ function matchDollarTag(sql, i) {
   if (sql[i] !== "$") return null;
   if (i > 0 && /[A-Za-z0-9_$]|[^\x00-\x7F]/.test(sql[i - 1])) return null;
   let j = i + 1;
-  while (j < sql.length && /[A-Za-z0-9_]/.test(sql[j])) j++;
+  while (j < sql.length && (/[A-Za-z0-9_]/.test(sql[j]) || /[^\x00-\x7F]/.test(sql[j]))) j++;
   if (sql[j] === "$") {
     const tag = sql.slice(i + 1, j);
     if (tag.length && /^[0-9]/.test(tag)) return null;
@@ -817,13 +817,11 @@ export function scanSqlForViolations(rawSql) {
         add("CREATE/ALTER POLICY ON 기존 테이블");
       }
     }
-    const triggerMatch = s.match(
-      new RegExp(
-        String.raw`\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
-        "i",
-      ),
-    );
-    if (triggerMatch && !createdTables.has(tableIdentity(triggerMatch[1], searchPathEpoch))) {
+    const triggerOn = /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bON\b/i.exec(keywordShadow);
+    const triggerTarget = triggerOn
+      ? s.slice(triggerOn.index + triggerOn[0].length).match(new RegExp(String.raw`^\s*(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`, "i"))
+      : null;
+    if (triggerTarget && !createdTables.has(tableIdentity(triggerTarget[1], searchPathEpoch))) {
       add("CREATE TRIGGER ON 기존 테이블");
     }
     if (/\bRENAME\b/i.test(keywordShadow)) add("RENAME");
@@ -968,11 +966,12 @@ export function scanSqlForViolations(rawSql) {
       }
     }
 
-    if (/\bCREATE\s+UNIQUE\s+(?:NULLS\s+(?:NOT\s+)?DISTINCT\s+)?INDEX\b/i.test(s)) {
-      const onMatch = s.match(
-        new RegExp(String.raw`\bON\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`, "i"),
-      );
-      const target = onMatch ? tableIdentity(onMatch[1], searchPathEpoch) : null;
+    if (/\bCREATE\s+UNIQUE\s+(?:NULLS\s+(?:NOT\s+)?DISTINCT\s+)?INDEX\b/i.test(keywordShadow)) {
+      const onMatch = /\bON\b/i.exec(keywordShadow);
+      const rawTarget = onMatch
+        ? s.slice(onMatch.index + onMatch[0].length).match(new RegExp(String.raw`^\s*(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`, "i"))
+        : null;
+      const target = rawTarget ? tableIdentity(rawTarget[1], searchPathEpoch) : null;
       if (!target || !createdTables.has(target)) {
         add("기존 테이블에 UNIQUE INDEX 추가");
       }

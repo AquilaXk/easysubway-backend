@@ -225,6 +225,15 @@ test("identifier 내부 $tag$는 literal opener가 아니고 standalone DO body�
   assert.ok(scanSqlForViolations("CREATE TABLE foo$tag$(id BIGINT); DROP TABLE legacy; CREATE TABLE bar$tag$(id BIGINT);").includes("DROP TABLE"));
   assert.ok(scanSqlForViolations("CREATE TABLE café$tag$(id BIGINT); DROP TABLE legacy; CREATE TABLE résumé$tag$(id BIGINT);").includes("DROP TABLE"));
   assert.ok(scanSqlForViolations("DO $tag$ DROP TABLE hidden; $tag$;").includes("DROP TABLE"));
+  assert.deepEqual(scanSqlForViolations("INSERT INTO notices VALUES ($메시지$DROP TABLE hidden;$메시지$);"), []);
+  assert.ok(scanSqlForViolations("DO $본문$ DROP TABLE hidden; $본문$;").includes("DROP TABLE"));
+});
+
+test("quoted fake ON은 신규 테이블 면제를 만들지 않는다", () => {
+  assert.ok(scanSqlForViolations('CREATE TABLE fresh(id BIGINT); CREATE UNIQUE INDEX "idx ON fresh" ON existing(id);').includes("기존 테이블에 UNIQUE INDEX 추가"));
+  assert.ok(scanSqlForViolations('CREATE TABLE fresh(id BIGINT); CREATE TRIGGER "t ON fresh" BEFORE INSERT ON existing FOR EACH ROW EXECUTE FUNCTION f();').includes("CREATE TRIGGER ON 기존 테이블"));
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE fresh(id BIGINT); CREATE UNIQUE INDEX idx ON fresh(id);'), []);
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "fresh table"(id BIGINT); CREATE UNIQUE INDEX idx ON "fresh table"(id);'), []);
 });
 
 test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 않는다", () => {
