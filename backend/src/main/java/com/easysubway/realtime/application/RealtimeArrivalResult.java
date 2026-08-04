@@ -34,17 +34,6 @@ public record RealtimeArrivalResult(
 		);
 	}
 
-	public RealtimeArrivalResult stale() {
-		return new RealtimeArrivalResult(
-			RealtimeStatus.STALE,
-			"STALE_CACHE",
-			"실시간 정보를 새로 받지 못해 마지막 정보를 보여줍니다.",
-			receivedAt,
-			providerId,
-			arrivals
-		);
-	}
-
 	public static RealtimeArrivalResult unavailable(String fallbackCode) {
 		return new RealtimeArrivalResult(
 			RealtimeStatus.UNAVAILABLE,

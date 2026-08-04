@@ -59,14 +59,8 @@
     "providerTimeoutMs": 1500,
     "requestCoalescing": true,
     "cacheTtlSeconds": 20,
-    "staleCacheTtlSeconds": 120,
     "quotaExceededCircuitOpenSeconds": 60,
-    "quotaCostPerProviderCall": 1,
-    "serveStaleOn": [
-      "PROVIDER_TIMEOUT",
-      "PROVIDER_QUOTA_EXCEEDED",
-      "PROVIDER_5XX"
-    ]
+    "quotaCostPerProviderCall": 1
   },
   "fallbackCodes": [
     "UNSUPPORTED_REGION",
@@ -76,7 +70,6 @@
     "PROVIDER_TIMEOUT",
     "PROVIDER_QUOTA_EXCEEDED",
     "PROVIDER_ERROR",
-    "STALE_CACHE",
     "EMPTY_PROVIDER_RESULT"
   ],
   "mappingRequirements": {

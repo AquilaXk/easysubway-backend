@@ -9,7 +9,7 @@ info:
     query parameter를 함께 보내면 요청 전체가 거부됩니다.
 
     지원 범위 밖이거나 제공기관 응답을 받지 못한 경우에도 오류가 아니라 200 응답의
-    `status`(`UNSUPPORTED`·`UNAVAILABLE`·`STALE`)로 알립니다. 정적 기능이 실시간 실패로
+    `status`(`UNSUPPORTED`·`UNAVAILABLE`)로 알립니다. 정적 기능이 실시간 실패로
     함께 멈추지 않게 하기 위한 설계입니다.
 # 인증 없이 호출하는 공개 API임을 명시한다.
 security: []
@@ -179,12 +179,10 @@ components:
       type: string
       description: |
         - `FRESH`: 제공기관에서 새로 받은 정보
-        - `STALE`: 새로 받지 못해 마지막 정보를 그대로 보여주는 상태
         - `UNSUPPORTED`: 실시간 지원 범위 밖
         - `UNAVAILABLE`: 제공기관 조회 실패
       enum:
         - FRESH
-        - STALE
         - UNSUPPORTED
         - UNAVAILABLE
     RealtimeArrivalResult:

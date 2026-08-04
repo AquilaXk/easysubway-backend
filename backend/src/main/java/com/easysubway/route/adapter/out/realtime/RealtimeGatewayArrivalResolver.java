@@ -92,9 +92,6 @@ class RealtimeGatewayArrivalResolver implements RealtimeArrivalResolver {
 		if (result.status() == RealtimeStatus.FRESH) {
 			return ArrivalFreshness.FRESH_REALTIME;
 		}
-		if (result.status() == RealtimeStatus.STALE) {
-			return ArrivalFreshness.STALE_REALTIME;
-		}
 		if (result.status() == RealtimeStatus.UNSUPPORTED) {
 			return ArrivalFreshness.UNSUPPORTED;
 		}

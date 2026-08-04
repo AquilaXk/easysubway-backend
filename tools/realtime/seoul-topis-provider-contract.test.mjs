@@ -16,7 +16,7 @@ test("서울 TOPIS backend 계약은 capability·secret·quota 경계를 고정�
   assert.equal(contract.transport.mobileDirectCallAllowed, false);
   assert.equal(contract.gatewayPolicy.requestCoalescing, true);
   assert.ok(contract.gatewayPolicy.cacheTtlSeconds > 0);
-  assert.ok(contract.gatewayPolicy.staleCacheTtlSeconds > contract.gatewayPolicy.cacheTtlSeconds);
+  assertNoStaleServingDeclaration(contract.gatewayPolicy, contract.fallbackCodes);
   assert.deepEqual(
     contract.capabilities.map(({ id }) => id).sort(),
     ["ARRIVALS", "TRAIN_POSITIONS"],
@@ -35,6 +35,7 @@ test("서울 TOPIS production evidence는 fixture hash와 runtime fallback을 �
   const evidence = await readJson(path.join(root, "tools/realtime/seoul-topis-production-evidence.json"));
   assert.equal(evidence.status, "PASS");
   assert.equal(evidence.runtime.requestCoalescing, true);
+  assertNoStaleServingDeclaration(evidence.runtime, []);
   assert.equal(evidence.fallback.outOfProviderScopeEtaSource, "PLANNED");
   assert.equal(evidence.releaseClaim.commercialRealtimeRouteClaimAllowed, false);
 
@@ -82,4 +83,10 @@ function capabilityById(contract, capabilityId) {
   const capability = contract.capabilities.find(({ id }) => id === capabilityId);
   assert.ok(capability, `missing capability: ${capabilityId}`);
   return capability;
+}
+
+function assertNoStaleServingDeclaration(gatewayPolicy, fallbackCodes) {
+  assert.equal("staleCacheTtlSeconds" in gatewayPolicy, false);
+  assert.equal("serveStaleOn" in gatewayPolicy, false);
+  assert.equal(fallbackCodes.includes("STALE_CACHE"), false);
 }

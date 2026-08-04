@@ -331,8 +331,8 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("provider timeout은 stale cache가 있으면 stale 응답으로 낮춘다")
-	void timeoutServesStaleCache() {
+	@DisplayName("provider timeout은 cache가 있어도 payload 없는 unavailable로 종료한다")
+	void timeoutReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(provider, clock);
@@ -341,11 +341,13 @@ class RealtimeGatewayServiceTest {
 		service.arrivals(query);
 		clock.instant = Instant.parse("2026-06-26T08:01:31Z");
 		provider.failureCode = "PROVIDER_TIMEOUT";
-		RealtimeArrivalResult stale = service.arrivals(query);
+		RealtimeArrivalResult unavailable = service.arrivals(query);
 
-		assertThat(stale.status()).hasToString("STALE");
-		assertThat(stale.fallbackCode()).isEqualTo("STALE_CACHE");
-		assertThat(stale.arrivals()).hasSize(1);
+		assertThat(unavailable.status()).hasToString("UNAVAILABLE");
+		assertThat(unavailable.fallbackCode()).isEqualTo("PROVIDER_TIMEOUT");
+		assertThat(unavailable.arrivals()).isEmpty();
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
 	@Test
@@ -422,26 +424,48 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("quota 초과는 circuit을 열고 다음 요청에서 provider를 호출하지 않는다")
+	@DisplayName("quota 초과 circuit은 만료 cache를 재사용하지 않고 unavailable로 종료한다")
 	void quotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(provider, clock);
-		RealtimeQuery query = sangnoksuQuery();
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			RealtimeArrivalArchivePort.NO_OP,
+			(providerId, now, zone, perMinute, perDay) -> true,
+			1,
+			800
+		);
+		RealtimeQuery arrivalQuery = sangnoksuQuery();
+		RealtimeQuery trainPositionQuery = line4Query();
+
+		assertThat(service.arrivals(arrivalQuery).status()).hasToString("FRESH");
+		assertThat(service.trainPositions(trainPositionQuery).status()).hasToString("FRESH");
+		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
 		provider.failureCode = "PROVIDER_QUOTA_EXCEEDED";
 
-		RealtimeArrivalResult first = service.arrivals(query);
-		RealtimeArrivalResult second = service.arrivals(query);
+		RealtimeArrivalResult first = service.arrivals(arrivalQuery);
+		RealtimeArrivalResult second = service.arrivals(arrivalQuery);
+		RealtimeTrainPositionResult trainPositions = service.trainPositions(trainPositionQuery);
 
 		assertThat(first.status()).hasToString("UNAVAILABLE");
+		assertThat(first.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(first.arrivals()).isEmpty();
 		assertThat(second.status()).hasToString("UNAVAILABLE");
 		assertThat(second.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
-		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(second.arrivals()).isEmpty();
+		assertThat(trainPositions.status()).hasToString("UNAVAILABLE");
+		assertThat(trainPositions.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(trainPositions.trainPositions()).isEmpty();
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(provider.trainPositionCalls).hasValue(1);
 	}
 
 	@Test
-	@DisplayName("provider call rate limit은 stale cache가 있으면 stale 응답을 유지한다")
-	void providerRateLimitServesStaleCacheWhenAvailable() {
+	@DisplayName("provider call rate limit은 cache가 있어도 payload 없는 unavailable로 종료한다")
+	void providerRateLimitReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
@@ -459,9 +483,11 @@ class RealtimeGatewayServiceTest {
 		RealtimeArrivalResult limited = service.arrivals(query);
 
 		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("STALE");
-		assertThat(limited.fallbackCode()).isEqualTo("STALE_CACHE");
+		assertThat(limited.status()).hasToString("UNAVAILABLE");
+		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(limited.arrivals()).isEmpty();
 		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
 	@Test
@@ -593,8 +619,8 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("열차 위치 provider call rate limit도 stale cache가 있으면 stale 응답을 유지한다")
-	void trainPositionProviderRateLimitServesStaleCacheWhenAvailable() {
+	@DisplayName("열차 위치 provider call rate limit도 cache가 있어도 payload 없는 unavailable로 종료한다")
+	void trainPositionProviderRateLimitReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
@@ -612,9 +638,11 @@ class RealtimeGatewayServiceTest {
 		RealtimeTrainPositionResult limited = service.trainPositions(query);
 
 		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("STALE");
-		assertThat(limited.fallbackCode()).isEqualTo("STALE_CACHE");
+		assertThat(limited.status()).hasToString("UNAVAILABLE");
+		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(limited.trainPositions()).isEmpty();
 		assertThat(provider.trainPositionCalls).hasValue(1);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
 	@Test
@@ -976,7 +1004,7 @@ class RealtimeGatewayServiceTest {
 		assertThat(snapshot.providerTimeoutCount()).isEqualTo(1);
 		assertThat(snapshot.providerQuotaExceededCount()).isEqualTo(1);
 		assertThat(snapshot.freshResultRatio()).isPositive();
-		assertThat(snapshot.staleResultRatio()).isPositive();
+		assertThat(snapshot.staleResultRatio()).isZero();
 		assertThat(snapshot.unsupportedRatio()).isPositive();
 		assertThat(snapshot.toString())
 			.doesNotContain("상록수")

@@ -38,7 +38,6 @@
   "runtime": {
     "providerFreshnessSeconds": 90,
     "cacheTtlSeconds": 20,
-    "staleCacheTtlSeconds": 120,
     "requestCoalescing": true,
     "delayCorrectionField": "recptnDt",
     "mappingTables": [

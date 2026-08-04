@@ -37,18 +37,6 @@ public record RealtimeTrainPositionResult(
 		);
 	}
 
-	public RealtimeTrainPositionResult stale() {
-		return new RealtimeTrainPositionResult(
-			RealtimeStatus.STALE,
-			"STALE_CACHE",
-			"실시간 열차 위치를 새로 받지 못해 마지막 정보를 보여줍니다.",
-			receivedAt,
-			providerId,
-			sourceNotice,
-			trainPositions
-		);
-	}
-
 	public static RealtimeTrainPositionResult unavailable(String fallbackCode) {
 		return new RealtimeTrainPositionResult(
 			RealtimeStatus.UNAVAILABLE,
