@@ -192,10 +192,11 @@ class RouteV2RuntimeInputInventoryContractTest {
 			try (Stream<Path> paths = Files.walk(PROJECT.resolve(sourceRoot))) {
 				for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
 					String sourcePath = PROJECT.relativize(path).toString().replace('\\', '/');
+					String source = Files.readString(path);
 					if (EXCLUDED_CANDIDATE_FILES.contains(path.getFileName().toString())) {
+						assertExcludedCandidateIsOutsideProductionRuntime(path.getFileName().toString(), source);
 						continue;
 					}
-					String source = Files.readString(path);
 					List<String> suffixes = requiredMemberSuffixes(path.getFileName().toString(), source);
 					if (!suffixes.isEmpty()) {
 						String fileName = path.getFileName().toString();
@@ -219,6 +220,19 @@ class RouteV2RuntimeInputInventoryContractTest {
 					}
 				}
 			}
+		}
+	}
+
+	private static void assertExcludedCandidateIsOutsideProductionRuntime(String fileName, String source) {
+		switch (fileName) {
+			case "CapacityEvidencePlayIntegrityDecoder.java" -> assertThat(source).contains("@Profile(\"capacity-evidence\")");
+			case "InMemoryRouteSearchRepository.java", "InMemoryRealtimeMappingPort.java" -> assertThat(source)
+				.contains("@Profile(\"!prod & !staging & !release & !prod-like\")");
+			case "DevelopmentRealtimeSafetyPorts.java" -> assertThat(source).contains("@Profile({\"default\", \"dev\", \"test\"})");
+			case "FixtureRealtimeProvider.java" -> assertThat(source)
+				.contains("final class FixtureRealtimeProvider implements RealtimeProvider")
+				.doesNotContain("@Component", "@Service", "@Repository", "@Controller", "@RestController");
+			default -> throw new IllegalArgumentException("Unexpected excluded runtime candidate: " + fileName);
 		}
 	}
 
