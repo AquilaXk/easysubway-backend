@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdtempSync, readFileSync, rmSync, writeFileSync } from "node:fs";
+import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
@@ -104,6 +104,20 @@ test("assigns stable categories without claiming unrelated statements are destru
   }
 });
 
+test("keeps non-additive type and multi-action tails unsupported", () => {
+  for (const sql of [
+    "ALTER TABLE x ADD COLUMN note TEXT NOT NULL;",
+    "ALTER TABLE x ADD COLUMN note TEXT DEFAULT 'x';",
+    "ALTER TABLE x ADD CONSTRAINT c CHECK (id > 0);",
+  ]) assert.equal(classifyStatement(splitSql(sql)[0]).category, "existing-table constraint strengthening");
+  for (const sql of [
+    "ALTER TABLE x ADD COLUMN note required_domain;",
+    "ALTER TABLE x ADD COLUMN notes TEXT[];",
+    "ALTER TABLE x ADD COLUMN note TEXT COLLATE c;",
+    "ALTER TABLE x ADD COLUMN note TEXT, ADD COLUMN other TEXT;",
+  ]) assert.equal(classifyStatement(splitSql(sql)[0]).category, "unsupported / exact approval required");
+});
+
 test("checks full dotted Flyway versions above the integer baseline", () => {
   const file = { name: "V66.1__destructive.sql", version: [66, 1], content: "DROP TABLE x;", sha256: "a".repeat(64) };
   assert.deepEqual(evaluateMigrationSet([file], { baselineVersion: 66, allowlist: [] }), [{ file: file.name, findings: ["DROP"] }]);
@@ -133,6 +147,40 @@ test("reads only canonical regular migration files", () => {
   } finally {
     rmSync(dir, { recursive: true, force: true });
   }
+});
+
+test("fails closed for symlink, non-regular SQL, invalid UTF-8, and hashes raw bytes", () => {
+  const dir = mkdtempSync(join(tmpdir(), "backend-ddl-gate-"));
+  try {
+    const raw = Buffer.from("CREATE TABLE x (id BIGINT);\n", "utf8");
+    writeFileSync(join(dir, "V67__raw.sql"), raw);
+    assert.equal(loadMigrationFiles(dir)[0].sha256, sha(raw));
+    writeFileSync(join(dir, "V68__invalid.sql"), Buffer.from([0xff]));
+    assert.throws(() => loadMigrationFiles(dir), /invalid UTF-8/);
+    rmSync(join(dir, "V68__invalid.sql"));
+    symlinkSync(join(dir, "V67__raw.sql"), join(dir, "V68__link.sql"));
+    assert.throws(() => loadMigrationFiles(dir), /symlink/);
+    rmSync(join(dir, "V68__link.sql"));
+    mkdirSync(join(dir, "V68__directory.sql"));
+    assert.throws(() => loadMigrationFiles(dir), /non-regular SQL/);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+});
+
+test("requires inventory coverage and exact SHA for repeatable and callback migrations", () => {
+  const files = [
+    { name: "V67__safe.sql", version: [67], content: "CREATE TABLE x (id BIGINT);", sha256: sha("CREATE TABLE x (id BIGINT);") },
+    { name: "R__refresh.sql", version: null, content: "CREATE TABLE r (id BIGINT);", sha256: sha("CREATE TABLE r (id BIGINT);") },
+    { name: "afterMigrate.sql", version: null, content: "CREATE TABLE c (id BIGINT);", sha256: sha("CREATE TABLE c (id BIGINT);") },
+  ];
+  const inventory = Object.fromEntries(files.map((file) => [file.name, file.sha256]));
+  validatePolicy(policy(inventory), files, new Date("2029-01-01T00:00:00.000Z"));
+  for (const broken of [
+    policy({ "V67__safe.sql": files[0].sha256, "R__refresh.sql": files[1].sha256 }),
+    policy({ ...inventory, "V68__unknown.sql": "a".repeat(64) }),
+    policy({ ...inventory, "afterMigrate.sql": "0".repeat(64) }),
+  ]) assert.throws(() => validatePolicy(broken, files, new Date("2029-01-01T00:00:00.000Z")));
 });
 
 test("current V67-V69 inventory validates and V69 is byte-pinned", () => {

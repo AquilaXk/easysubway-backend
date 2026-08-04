@@ -126,7 +126,7 @@ function closedType(tokens, index) {
   }
   if (!["VARCHAR", "CHAR", "NUMERIC"].includes(type) || !punctuation(tokens[index + 1], "(")) return -1;
   const end = balanced(tokens, index + 1);
-  if (end < 0 || end !== tokens.length - 1) return -1;
+  if (end < 0) return -1;
   const values = tokens.slice(index + 2, end);
   const numeric = values.length === 1 && values[0].kind === "number" ||
     type === "NUMERIC" && values.length === 3 && values[0].kind === "number" && punctuation(values[1], ",") && values[2].kind === "number";
@@ -151,9 +151,17 @@ export function classifyStatement(statement) {
       }
       if (word(tokens[i], "ADD")) {
         i += word(tokens[i + 1], "COLUMN") ? 2 : 1;
+        if (word(tokens[i], "CONSTRAINT")) return { ok: false, category: "existing-table constraint strengthening" };
         if (!identifier(tokens[i])) return { ok: false, category: "existing-table constraint strengthening" };
         const end = closedType(tokens, i + 1);
-        return { ok: end === tokens.length, category: end === tokens.length ? "ALTER TABLE ADD COLUMN" : "existing-table constraint strengthening" };
+        if (end === tokens.length) return { ok: true, category: "ALTER TABLE ADD COLUMN" };
+        const tail = tokens.slice(end);
+        const strengthening = end > 0 && (
+          tail.length === 2 && word(tail[0], "NOT") && word(tail[1], "NULL") ||
+          tail.length === 1 && word(tail[0], "NULL") ||
+          word(tail[0], "DEFAULT")
+        );
+        return { ok: false, category: strengthening ? "existing-table constraint strengthening" : unsupported };
       }
       return { ok: false, category: unsupported };
     }
@@ -207,13 +215,21 @@ export function loadMigrationFiles(dir) {
     for (const entry of readdirSync(current, { withFileTypes: true })) {
       const full = resolve(current, entry.name);
       const stat = lstatSync(full);
-      if (stat.isSymbolicLink()) continue;
-      if (stat.isDirectory()) { walk(full); continue; }
-      if (!stat.isFile() || !entry.name.endsWith(".sql")) continue;
       const name = relative(root, full).replaceAll("\\", "/");
+      if (stat.isSymbolicLink()) fail(`unsupported / symlink migration entry: ${name}`);
+      if (entry.name.endsWith(".sql") && !stat.isFile()) fail(`unsupported / non-regular SQL migration entry: ${name}`);
+      if (stat.isDirectory()) { walk(full); continue; }
+      if (!entry.name.endsWith(".sql")) continue;
       const parsed = parseName(name);
       if (!parsed.canonical) fail(`unsupported / migration filename: ${name}`);
-      files.push({ path: full, file: name, name, version: parsed.version, content: readFileSync(full, "utf8"), sha256: hash(readFileSync(full, "utf8")) });
+      const bytes = readFileSync(full);
+      let content;
+      try {
+        content = new TextDecoder("utf-8", { fatal: true }).decode(bytes);
+      } catch {
+        fail(`unsupported / invalid UTF-8 migration: ${name}`);
+      }
+      files.push({ path: full, file: name, name, version: parsed.version, content, sha256: hash(bytes) });
     }
   };
   walk(root);
@@ -234,7 +250,7 @@ export function validatePolicy(policy, files, now = new Date()) {
   if (policy.schemaVersion !== 2 || policy.gateId !== "backend-migration-ddl-compat" || policy.issue !== "https://github.com/AquilaXk/easysubway/issues/2365" || policy.baselineVersion !== 66 || policy.scannedDirectory !== MIGRATIONS || !Array.isArray(policy.excludedDirectories) || policy.excludedDirectories.length !== 1 || policy.excludedDirectories[0] !== "backend/src/main/resources/db/migration/h2" || typeof policy.note !== "string" || !policy.note.trim()) fail("unsupported / invalid policy identity");
   assertKeys(policy.allowlistEntryFormat, ["file", "reason", "approval", "expiresAt", "sha256"], "allowlist format");
   if (Object.values(policy.allowlistEntryFormat).some((value) => typeof value !== "string" || !value.trim()) || !Array.isArray(policy.inventory) || !Array.isArray(policy.allowlist)) fail("unsupported / invalid policy types");
-  const above = files.filter((file) => file.version !== null && afterBaseline(file.version, policy.baselineVersion));
+  const inventoried = files.filter((file) => file.version === null || afterBaseline(file.version, policy.baselineVersion));
   const actual = new Map(files.map((file) => [file.name, file]));
   const inventory = new Set();
   for (const entry of policy.inventory) {
@@ -242,7 +258,7 @@ export function validatePolicy(policy, files, now = new Date()) {
     if (typeof entry.file !== "string" || !SHA256.test(entry.sha256) || inventory.has(entry.file) || !actual.get(entry.file) || actual.get(entry.file).sha256 !== entry.sha256) fail("unsupported / inventory mismatch");
     inventory.add(entry.file);
   }
-  if (above.some((file) => !inventory.has(file.name)) || inventory.size !== above.length) fail("unsupported / inventory incomplete");
+  if (inventoried.some((file) => !inventory.has(file.name)) || inventory.size !== inventoried.length) fail("unsupported / inventory incomplete");
   const allowlist = new Set();
   for (const entry of policy.allowlist) {
     assertKeys(entry, ["file", "reason", "approval", "expiresAt", "sha256"], "allowlist entry");
