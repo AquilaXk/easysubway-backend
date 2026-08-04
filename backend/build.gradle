@@ -132,6 +132,9 @@ tasks.named('test') {
 	inputs.dir(layout.projectDirectory.dir('../contracts/route'))
 		.withPropertyName('routeContracts')
 		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.dir(layout.projectDirectory.dir('src/main/resources/timetable'))
+		.withPropertyName('timetableResources')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
 	// 커버리지 측정만 수행한다. 전역 % fail 게이트는 후속 이슈에서 패키지 단위로 검토한다(#2440).
 	finalizedBy tasks.named('jacocoTestReport')
 }

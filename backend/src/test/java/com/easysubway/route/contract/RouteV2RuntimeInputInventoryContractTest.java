@@ -4,14 +4,19 @@ import static org.assertj.core.api.Assertions.assertThat;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.security.MessageDigest;
 import java.util.ArrayList;
+import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Stream;
+import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -21,6 +26,10 @@ class RouteV2RuntimeInputInventoryContractTest {
 	private static final Path PROJECT = Path.of("..");
 	private static final Path INVENTORY = PROJECT.resolve("contracts/route/route-v2-runtime-input-inventory.json");
 	private static final Path INTERNAL_API_INDEX = PROJECT.resolve("contracts/api/internal-api-index.json");
+	private static final Path TIMETABLE_GZIP = PROJECT.resolve("backend/src/main/resources/timetable/line4-timetable-seed.sql.gz");
+	private static final Path TIMETABLE_EVIDENCE = PROJECT.resolve("backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json");
+	private static final String GZIP_SHA256 = "7f63ca3717d224ac9191d40d258b736d85a0c19a5c3233793fc5ac4848adc375";
+	private static final String EVIDENCE_SHA256 = "0906ef492ae32f5362ef679943a91fead28350f6c1c540423a63a61abb534b80";
 	private static final List<String> JAVA_SOURCE_ROOTS = List.of(
 		"backend/src/main/java/com/easysubway/route/",
 		"backend/src/main/java/com/easysubway/realtime/application/",
@@ -72,7 +81,10 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/InMemoryTransitMasterRepository.java", "InMemoryTransitMasterRepository#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "CONFLICT: direct static-seed transit master source", "LoadTransitMasterPort,", "public List<Station> loadStations()", "public List<RouteEdge> loadRouteEdges()"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeMappingRepository.java", "JdbcRealtimeMappingRepository#findArrivalMapping/#findTripMapping", "production realtime station/trip mappings", "implements RealtimeMappingPort", "findArrivalMapping", "findTripMapping"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeProviderCallQuotaRepository.java", "JdbcRealtimeProviderCallQuotaRepository#tryAcquire", "production realtime provider quota", "implements RealtimeProviderCallQuotaPort", "tryAcquire(", "realtime_provider_call_quota_state"),
-		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider")
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider"),
+		entry("REGISTRY", "backend/src/main/resources/application-prod.yml", "application-prod.yml#routeV2ProductionControls", "production Route V2 auth/session/seed/freshness property controls", "timetable:", "enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}", "includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}", "break-glass: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS:false}", "route-v2:", "origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}", "session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}", "certificate-sha256: ${EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256:}", "credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}"),
+		entry("LOADER", "backend/src/main/resources/timetable/line4-timetable-seed.sql.gz", "line4-timetable-seed.sql.gz#defaultSeed", "default production timetable seed gzip resource", "gzip binary; verified by paired evidence identity"),
+		entry("REGISTRY", "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json", "server-timetable-snapshot-evidence.json#defaultSeedEvidence", "default production timetable seed identity evidence", "\"artifactKind\": \"server-timetable-snapshot-evidence\"", "\"schemaIdentity\": \"backend-timetable-snapshot-v1\"", "\"snapshotGzipSha256\"", "\"materializedSqlSha256\"")
 	);
 
 	@Test
@@ -88,7 +100,8 @@ class RouteV2RuntimeInputInventoryContractTest {
 			"backend/src/main/java/com/easysubway/realtime/application/",
 			"backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/",
 			"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/",
-			"backend/src/main/java/com/easysubway/common/security/"
+			"backend/src/main/java/com/easysubway/common/security/",
+			"backend/src/main/resources/"
 		);
 
 		List<ExpectedEntry> actual = new ArrayList<>();
@@ -110,12 +123,40 @@ class RouteV2RuntimeInputInventoryContractTest {
 			assertThat(inventory.path("sourceRoots")).extracting(JsonNode::asText).anyMatch(entry.sourcePath()::startsWith);
 			Path source = PROJECT.resolve(entry.sourcePath());
 			assertThat(Files.isRegularFile(source)).isTrue();
-			String sourceText = Files.readString(source);
-			for (String token : entry.evidenceTokens()) {
-				assertThat(sourceText).contains(token);
+			if (!source.equals(TIMETABLE_GZIP)) {
+				String sourceText = Files.readString(source);
+				for (String token : entry.evidenceTokens()) {
+					assertThat(sourceText).contains(token);
+				}
 			}
 		}
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
+	}
+
+	@Test
+	@DisplayName("default timetable gzip and evidence identity are immutable")
+	void defaultTimetableBinaryIdentityIsExact() throws Exception {
+		byte[] gzip = Files.readAllBytes(TIMETABLE_GZIP);
+		byte[] evidenceBytes = Files.readAllBytes(TIMETABLE_EVIDENCE);
+		assertThat(sha256(gzip)).isEqualTo(GZIP_SHA256);
+		assertThat(sha256(evidenceBytes)).isEqualTo(EVIDENCE_SHA256);
+
+		JsonNode evidence = JSON.readTree(evidenceBytes);
+		assertThat(evidence.path("snapshotGzipSha256").asText()).isEqualTo(sha256(gzip));
+		assertThat(evidence.path("snapshotGzipByteSize").asLong()).isEqualTo(gzip.length);
+		byte[] sql;
+		try (GZIPInputStream input = new GZIPInputStream(new ByteArrayInputStream(gzip))) {
+			sql = input.readAllBytes();
+		}
+		assertThat(evidence.path("snapshotSha256").asText()).isEqualTo(sha256(sql));
+		assertThat(evidence.path("snapshotSqlByteSize").asLong()).isEqualTo(sql.length);
+		String materializedSql = new String(sql, StandardCharsets.UTF_8);
+		int update = materializedSql.indexOf("UPDATE data_source_snapshots SET ");
+		int insert = materializedSql.indexOf("INSERT INTO data_source_snapshots ");
+		int suffixStart = update < 0 ? insert : insert < 0 ? update : Math.min(update, insert);
+		assertThat(suffixStart).isGreaterThanOrEqualTo(0);
+		assertThat(evidence.path("accessibilitySource").path("materializedSqlSha256").asText())
+			.isEqualTo(sha256(materializedSql.substring(suffixStart).getBytes(StandardCharsets.UTF_8)));
 	}
 
 	@Test
@@ -200,6 +241,10 @@ class RouteV2RuntimeInputInventoryContractTest {
 
 	private static ExpectedEntry entry(String kind, String sourcePath, String member, String pathOrTrigger, String... evidenceTokens) {
 		return new ExpectedEntry(kind, sourcePath, member, pathOrTrigger, List.of(evidenceTokens));
+	}
+
+	private static String sha256(byte[] bytes) throws Exception {
+		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
 	}
 
 	private static Set<String> fieldNames(JsonNode node) {
