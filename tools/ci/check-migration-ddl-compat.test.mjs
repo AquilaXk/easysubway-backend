@@ -268,6 +268,17 @@ test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 �
       "CREATE TRIGGER t BEFORE INSERT ON snapshots FOR EACH ROW EXECUTE FUNCTION guard();",
   );
   assert.deepEqual(findings, []);
+  assert.deepEqual(
+    scanSqlForViolations(
+      "CREATE TABLE snapshots(id bigint); CREATE CONSTRAINT TRIGGER t AFTER INSERT ON snapshots DEFERRABLE INITIALLY DEFERRED FOR EACH ROW EXECUTE PROCEDURE guard();",
+    ),
+    [],
+  );
+  for (const name of ["function", "procedure"]) {
+    assert.ok(
+      scanSqlForViolations(`DO $$ DECLARE ${name} text := 'DROP TABLE hidden'; BEGIN EXECUTE ${name}; END $$;`).includes("동적 EXECUTE"),
+    );
+  }
 });
 
 test("GRANT EXECUTE ON FUNCTION은 동적 EXECUTE로 오탐하지 않는다", () => {
@@ -437,6 +448,17 @@ test("무조건적 CREATE TABLE 대상 제약 추가는 계속 면제되고 IF N
     "CREATE TABLE IF NOT EXISTS t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
   assert.deepEqual(scanSqlForViolations(unconditional), []);
   assert.deepEqual(scanSqlForViolations(conditional), ["기존 테이블에 제약(ADD CONSTRAINT) 추가"]);
+  for (const create of [
+    "CREATE UNLOGGED TABLE t",
+    "CREATE TEMP TABLE t",
+    "CREATE TEMPORARY TABLE t",
+    "CREATE LOCAL TEMP TABLE t",
+    "CREATE GLOBAL TEMPORARY TABLE t",
+    'CREATE TABLE "quoted table"',
+  ]) {
+    const target = create.includes('"') ? '"quoted table"' : "t";
+    assert.deepEqual(scanSqlForViolations(`${create} (id BIGINT); ALTER TABLE ${target} ADD CONSTRAINT t_unique UNIQUE (id); CREATE UNIQUE INDEX ux_t ON ${target} (id);`), []);
+  }
 });
 
 test("신규 테이블 면제는 선행 최상위 무조건 CREATE TABLE에만 적용된다", () => {
@@ -545,6 +567,19 @@ test("ALTER DOMAIN ADD [CONSTRAINT] CHECK은 fail closed 한다", () => {
     assert.ok(scanSqlForViolations(sql).includes("ALTER DOMAIN ADD CONSTRAINT"));
   }
   assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER DOMAIN d ADD CHECK" (id BIGINT);'), []);
+});
+
+test("ALTER DOMAIN·VIEW SET DEFAULT는 fail closed 하고 quoted keyword는 무시한다", () => {
+  for (const sql of [
+    "ALTER DOMAIN postal_code SET DEFAULT '00000';",
+    "ALTER DOMAIN IF EXISTS postal_code SET DEFAULT '00000';",
+    "ALTER VIEW route_view ALTER COLUMN route_name SET DEFAULT 'unknown';",
+    "ALTER VIEW IF EXISTS route_view ALTER route_name SET DEFAULT 'unknown';",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).some((finding) => finding.includes("SET DEFAULT")), sql);
+  }
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER DOMAIN postal_code SET DEFAULT" (id BIGINT);'), []);
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER VIEW route_view ALTER COLUMN route_name SET DEFAULT" (id BIGINT);'), []);
 });
 
 test("ALTER DOMAIN DROP CONSTRAINT·NOT NULL만 완화로 허용한다", () => {

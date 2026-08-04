@@ -509,7 +509,7 @@ function isBlank(value) {
 // IF NOT EXISTS와 procedural/conditional/후행 CREATE TABLE은 기존 테이블 면제를 만들 수 없다.
 function unconditionalCreatedTable(statement) {
   const target = statement.match(new RegExp(
-    String.raw`^CREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+    String.raw`^CREATE\s+(?:UNLOGGED\s+|(?:(?:GLOBAL|LOCAL)\s+)?(?:TEMP|TEMPORARY)\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
     "i",
   ));
   return target && !target[1] ? target[2] : null;
@@ -723,7 +723,11 @@ function hasDynamicExecute(keywordShadow) {
   const withoutPrivilege = /\b(?:GRANT|REVOKE)\b/i.test(keywordShadow)
     ? keywordShadow.replace(/\bEXECUTE(?=\s+ON\s+(?:ALL\s+)?(?:FUNCTION|PROCEDURE|ROUTINE)S?\b)/gi, " ")
     : keywordShadow;
-  return /\bEXECUTE\b(?!\s+(?:FUNCTION|PROCEDURE)\b)/i.test(withoutPrivilege);
+  const withoutTriggerClause = withoutPrivilege.replace(
+    /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:CONSTRAINT\s+)?TRIGGER\b[\s\S]*?\bEXECUTE\s+(?=(?:FUNCTION|PROCEDURE)\b)/gi,
+    (clause) => clause.replace(/\bEXECUTE\b/i, " "),
+  );
+  return /\bEXECUTE\b/i.test(withoutTriggerClause);
 }
 
 function hasAlterSequenceRestart(s) {
@@ -929,6 +933,24 @@ export function scanSqlForViolations(rawSql) {
       ).test(s)
     ) {
       add("ALTER DOMAIN ADD CONSTRAINT");
+    }
+    if (
+      /\bALTER\s+DOMAIN\b/i.test(keywordShadow) &&
+      new RegExp(
+        String.raw`\bALTER\s+DOMAIN\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}\s+SET\s+DEFAULT\b`,
+        "i",
+      ).test(s)
+    ) {
+      add("ALTER DOMAIN SET DEFAULT");
+    }
+    if (
+      /\bALTER\s+VIEW\b/i.test(keywordShadow) &&
+      new RegExp(
+        String.raw`\bALTER\s+VIEW\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}\s+ALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+DEFAULT\b`,
+        "i",
+      ).test(s)
+    ) {
+      add("ALTER VIEW SET DEFAULT");
     }
 
     for (const label of scanDropClauses(s, keywordShadow, isAlterTable, /\bALTER\s+DOMAIN\b/i.test(keywordShadow))) add(label);
