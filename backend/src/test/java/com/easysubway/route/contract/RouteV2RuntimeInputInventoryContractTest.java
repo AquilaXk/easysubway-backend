@@ -25,10 +25,16 @@ class RouteV2RuntimeInputInventoryContractTest {
 		"backend/src/main/java/com/easysubway/route/",
 		"backend/src/main/java/com/easysubway/realtime/application/"
 	);
+	// Capacity-evidence, nested fixture, and non-prod-profile sources are outside production Route V2 runtime.
+	private static final Set<String> EXCLUDED_CANDIDATE_FILES = Set.of(
+		"CapacityEvidencePlayIntegrityDecoder.java",
+		"FixtureRealtimeProvider.java",
+		"InMemoryRouteSearchRepository.java"
+	);
 	private static final ObjectMapper JSON = new ObjectMapper();
 	private static final List<ExpectedEntry> EXPECTED = List.of(
 		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteSearchController.java", "RouteSearchController#searchRouteV2", "POST /api/v2/routes/search", "/api/v2/routes/search", "searchRouteV2"),
-		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionController.java", "RouteV2SessionController#issue", "POST /api/v2/routes/session", "/api/v2/routes/session", "issue"),
+		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionController.java", "RouteV2SessionController#issue", "POST /api/v2/routes/session", "@PostMapping(\"/api/v2/routes/session\")", "ResponseEntity<RouteV2SessionResponse> issue("),
 		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteSearchController.java", "RouteSearchController#refreshRoute", "POST /api/v2/routes/{routeSearchId}/refresh", "@PostMapping(\"/api/v2/routes/{routeSearchId}/refresh\")", "routeSearchUseCase.refreshRoute(routeSearchId)"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/application/service/RouteV2SessionService.java", "RouteV2SessionService#issue", "session integrity decode and persistence", "decoder.decode(integrityToken)", "store.claimNonceAndSaveSession"),
 		entry("PROVIDER", "backend/src/main/java/com/easysubway/route/adapter/out/integrity/GooglePlayIntegrityDecoder.java", "GooglePlayIntegrityDecoder#decode", "Google Play Integrity decode", "implements PlayIntegrityDecoder", "DECODE_URL", "restClient.post()"),
@@ -38,7 +44,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("PLANNER", "backend/src/main/java/com/easysubway/route/application/service/RouteTimetableRaptorPlanner.java", "RouteTimetableRaptorPlanner#searchWithDiagnostics", "RAPTOR timetable search", "searchWithDiagnostics"),
 		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteTimetableRepository.java", "JdbcRouteTimetableRepository#loadRouteTimetableSnapshot", "active timetable snapshot load", "loadRouteTimetableSnapshot", "timetable_snapshot_active"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteTimetableRepository.java", "JdbcRouteTimetableRepository#activeItxArtifact", "active ITX artifact registry", "activeItxArtifact", "timetable_snapshot_active"),
-		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#run", "timetable seed activation", "run", "activateLocked"),
+		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#run", "timetable seed activation", "implements ApplicationRunner", "public void run(ApplicationArguments args)", "activateLocked"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#activateLocked", "locked timetable snapshot activation", "activateLocked", "timetable_snapshot_lock", "timetable_snapshot_active"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/application/service/ProductionRouteV2Support.java", "ProductionRouteV2Support#requireTimetableArtifact/#requireUsablePlan", "production timetable and plan gate", "requireTimetableArtifact", "requireUsablePlan"),
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#searchRouteAlternatives/#planRouteAlternatives", "legacy graph alternatives", "searchRouteAlternatives", "planRouteAlternatives"),
@@ -62,8 +68,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		assertThat(inventory.path("backendBaseSha").asText()).isEqualTo("610777a77be82a7fddea43965b2a986d98079abe");
 		assertThat(inventory.path("sourceRoots")).extracting(JsonNode::asText).containsExactly(
 			"backend/src/main/java/com/easysubway/route/",
-			"backend/src/main/java/com/easysubway/realtime/application/",
-			"backend/src/main/resources/application-prod.yml"
+			"backend/src/main/java/com/easysubway/realtime/application/"
 		);
 
 		List<ExpectedEntry> actual = new ArrayList<>();
@@ -105,6 +110,8 @@ class RouteV2RuntimeInputInventoryContractTest {
 			if ("INPUT".equals(entry.path("kind").asText())) {
 				String[] methodAndPath = entry.path("pathOrTrigger").asText().split(" ", 2);
 				String[] classAndMethod = member.split("#", 2);
+				assertThat(methodAndPath).as("pathOrTrigger %s", entry.path("pathOrTrigger").asText()).hasSize(2);
+				assertThat(classAndMethod).as("member %s", member).hasSize(2);
 				inputs.add(new Endpoint(methodAndPath[0], methodAndPath[1], classAndMethod[0], classAndMethod[1]));
 			}
 		}
@@ -123,15 +130,14 @@ class RouteV2RuntimeInputInventoryContractTest {
 			try (Stream<Path> paths = Files.walk(PROJECT.resolve(sourceRoot))) {
 				for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
 					String sourcePath = PROJECT.relativize(path).toString().replace('\\', '/');
-					if (sourcePath.endsWith("CapacityEvidencePlayIntegrityDecoder.java")
-						|| sourcePath.endsWith("FixtureRealtimeProvider.java")
-						|| sourcePath.endsWith("InMemoryRouteSearchRepository.java")) {
+					if (EXCLUDED_CANDIDATE_FILES.contains(path.getFileName().toString())) {
 						continue;
 					}
 					String source = Files.readString(path);
 					String suffix = requiredMemberSuffix(source);
 					if (suffix != null) {
-						String className = source.substring(source.indexOf("class ") + "class ".length()).split("[^A-Za-z0-9_]", 2)[0];
+						String fileName = path.getFileName().toString();
+						String className = fileName.substring(0, fileName.length() - ".java".length());
 						assertThat(members).contains(new Member(sourcePath, className + suffix));
 					}
 				}
@@ -143,7 +149,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		if (source.contains("implements LoadRouteTimetablePort")) return "#loadRouteTimetableSnapshot";
 		if (source.contains("implements LoadRouteSearchPort")) return "#loadRouteSearch";
 		if (source.contains("implements RealtimeArrivalResolver")) return "#resolve";
-		if (source.contains("implements RealtimeProvider {")) return "#arrivals";
+		if (source.contains("implements RealtimeProvider {") || source.contains("implements RealtimeProvider,")) return "#arrivals";
 		if (source.contains("implements PlayIntegrityDecoder")) return "#decode";
 		if (source.contains("implements RouteV2AccessStore")) return "#claimNonceAndSaveSession";
 		if (source.contains("implements ApplicationRunner")) return "#run";
