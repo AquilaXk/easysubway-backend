@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { mkdirSync, mkdtempSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { fileURLToPath } from "node:url";
 
 import {
   classifyStatement,
@@ -12,6 +13,8 @@ import {
   splitSql,
   validatePolicy,
 } from "./check-migration-ddl-compat.mjs";
+
+const ROOT = resolve(fileURLToPath(new URL("../..", import.meta.url)));
 
 const safe = [
   "CREATE TABLE event_log (id BIGINT PRIMARY KEY, note TEXT CHECK (note <> 'DROP TABLE;'));",
@@ -33,7 +36,6 @@ const rejected = [
   "ALTER TABLE event_log ADD COLUMN notes TEXT[];",
   "CREATE UNIQUE INDEX ux_event_log_id ON event_log (id);",
   "INSERT INTO event_log(id) VALUES (1);",
-  "DO $$ BEGIN RAISE NOTICE 'safe'; END $$;",
 ];
 
 const sha = (text) => createHash("sha256").update(text).digest("hex");
@@ -58,20 +60,21 @@ const policy = (inventory, allowlist = []) => ({
 
 test("allows only additive SQL forms", () => {
   for (const sql of safe) assert.equal(classifyStatement(splitSql(sql)[0]).ok, true, sql);
-  for (const sql of rejected) {
-    try {
-      assert.equal(classifyStatement(splitSql(sql)[0]).ok, false, sql);
-    } catch (error) {
-      assert.match(error.message, /unsupported/);
-    }
-  }
+  for (const sql of rejected) assert.equal(classifyStatement(splitSql(sql)[0]).ok, false, sql);
+  assert.throws(() => splitSql("DO $$ BEGIN RAISE NOTICE 'safe'; END $$;"), /unsupported/);
 });
 
 test("does not split ordinary strings or comments and rejects malformed lexical input", () => {
   assert.equal(splitSql("CREATE TABLE x (note TEXT DEFAULT 'DROP TABLE;'); -- ; DROP\n").length, 1);
   assert.equal(splitSql("/* outer /* nested ; */ still */ CREATE TABLE x (id BIGINT);").length, 1);
   assert.equal(classifyStatement(splitSql('CREATE TABLE "DROP" ("ALTER" BIGINT);')[0]).ok, true);
-  for (const sql of ["CREATE TABLE x (note TEXT DEFAULT 'unterminated);", "/* unclosed", "DO $$ nope;"]) {
+  for (const sql of [
+    "CREATE TABLE x (note TEXT DEFAULT 'unterminated);",
+    "CREATE TABLE x (note TEXT DEFAULT 'DROP TABLE x; ''",
+    "E'plain string'",
+    "/* unclosed",
+    "DO $$ nope;",
+  ]) {
     assert.throws(() => splitSql(sql), /unsupported|unterminated/i);
   }
 });
@@ -128,6 +131,17 @@ test("fails closed for a multi-statement file and malformed policy", () => {
   assert.equal(evaluateMigrationSet(files, policy({ "V67__safe.sql": files[0].sha256 })).length, 1);
   const valid = policy({ "V67__safe.sql": files[0].sha256 });
   validatePolicy(valid, files, new Date("2029-01-01T00:00:00.000Z"));
+  const invalidExpiry = policy({ "V67__safe.sql": files[0].sha256 }, [{
+    file: "V67__safe.sql",
+    reason: "approved",
+    approval: "https://github.com/AquilaXk/easysubway/issues/1",
+    expiresAt: "2030-99-31T00:00:00.000Z",
+    sha256: files[0].sha256,
+  }]);
+  assert.throws(
+    () => validatePolicy(invalidExpiry, files, new Date("2029-01-01T00:00:00.000Z")),
+    /unsupported \/ allowlist mismatch/,
+  );
   for (const broken of [
     { ...valid, extra: true },
     { ...valid, issue: "#2365" },
@@ -184,8 +198,8 @@ test("requires inventory coverage and exact SHA for repeatable and callback migr
 });
 
 test("current V67-V69 inventory validates and V69 is byte-pinned", () => {
-  const files = loadMigrationFiles("backend/src/main/resources/db/migration/postgresql");
-  const current = JSON.parse(readFileSync("backend/quality/migration-ddl-gate.json", "utf8"));
+  const files = loadMigrationFiles(resolve(ROOT, "backend/src/main/resources/db/migration/postgresql"));
+  const current = JSON.parse(readFileSync(resolve(ROOT, "backend/quality/migration-ddl-gate.json"), "utf8"));
   validatePolicy(current, files, new Date("2029-01-01T00:00:00.000Z"));
   assert.equal(evaluateMigrationSet(files, current).length, 0);
   const v69 = files.find((file) => file.name.startsWith("V69__"));

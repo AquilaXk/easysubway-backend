@@ -57,15 +57,17 @@ export function splitSql(sql) {
       raw += sql.slice(start, i);
       continue;
     }
+    if ((c === "E" || c === "e") && sql[i + 1] === "'") fail(unsupported);
     if (c === "'" || c === '"') {
       const quote = c;
       const start = i++;
+      let terminated = false;
       while (i < sql.length) {
         if (sql[i] === quote && sql[i + 1] === quote) { i += 2; continue; }
-        if (sql[i] === quote) { i++; break; }
+        if (sql[i] === quote) { i++; terminated = true; break; }
         i++;
       }
-      if (sql[i - 1] !== quote) fail(`unsupported / unterminated ${quote === "'" ? "string" : "quoted identifier"}`);
+      if (!terminated) fail(`unsupported / unterminated ${quote === "'" ? "string" : "quoted identifier"}`);
       const value = sql.slice(start, i);
       raw += value;
       emit(quote === "'" ? "string" : "quoted-identifier", value);
@@ -263,7 +265,7 @@ export function validatePolicy(policy, files, now = new Date()) {
   for (const entry of policy.allowlist) {
     assertKeys(entry, ["file", "reason", "approval", "expiresAt", "sha256"], "allowlist entry");
     const expiry = new Date(entry.expiresAt);
-    if (typeof entry.file !== "string" || typeof entry.reason !== "string" || !entry.reason.trim() || !GITHUB_ISSUE.test(entry.approval) || !SHA256.test(entry.sha256) || allowlist.has(entry.file) || !actual.get(entry.file) || actual.get(entry.file).sha256 !== entry.sha256 || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(entry.expiresAt) || Number.isNaN(expiry) || expiry.toISOString() !== entry.expiresAt || expiry <= now) fail("unsupported / allowlist mismatch");
+    if (typeof entry.file !== "string" || typeof entry.reason !== "string" || !entry.reason.trim() || !GITHUB_ISSUE.test(entry.approval) || !SHA256.test(entry.sha256) || allowlist.has(entry.file) || !actual.get(entry.file) || actual.get(entry.file).sha256 !== entry.sha256 || !/^\d{4}-\d\d-\d\dT\d\d:\d\d:\d\d\.\d{3}Z$/.test(entry.expiresAt) || Number.isNaN(expiry.getTime()) || expiry.toISOString() !== entry.expiresAt || expiry <= now) fail("unsupported / allowlist mismatch");
     allowlist.add(entry.file);
   }
   const v69 = actual.get("V69__admin_error_events_permission.sql");
