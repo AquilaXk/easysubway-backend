@@ -81,7 +81,6 @@ const additiveCases = [
   "V202__add_column_default_not_null.sql",
   "V203__create_index.sql",
   "V204__new_table_constraint.sql",
-  "V205__relaxations_and_dml.sql",
   "V206__do_block_raise_message.sql",
   "V207__grant_execute_function.sql",
   "V208__no_force_row_level_security.sql",
@@ -98,6 +97,13 @@ for (const name of additiveCases) {
 test("DO 블록 안 RAISE EXCEPTION 메시지 문자열은 오탐을 내지 않는다", () => {
   const findings = scanSqlForViolations(readFixture("additive", "V206__do_block_raise_message.sql"));
   assert.deepEqual(findings, []);
+});
+
+test("V205 완화 fixture의 DROP CONSTRAINT·INDEX는 allowlist 승인이 필요하다", () => {
+  assert.deepEqual(scanSqlForViolations(readFixture("additive", "V205__relaxations_and_dml.sql")), [
+    "DROP CONSTRAINT",
+    "DROP INDEX",
+  ]);
 });
 
 test("DO 블록 본문 안에 숨은 파괴적 DDL은 사각지대 없이 탐지된다", () => {
@@ -164,6 +170,65 @@ test("set_config search_path만 execution context를 무효화하고 routine·�
   }
   assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT other(setting_name => 'search_path'); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
   assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config(setting_name => 'timezone', new_value => 'search_path', is_local => false); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  for (const call of [
+    "set_config('search_path', 'archive', true)",
+    "set_config(setting_name => 'search_path', new_value => 'archive', is_local := true)",
+    "set_config(new_value => 'archive', is_local => coalesce(true, false), setting_name => 'search_path')",
+    "set_config('search_path', 'archive')",
+  ]) {
+    assert.ok(scanSqlForViolations(`BEGIN; SELECT ${call}; CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"), call);
+  }
+  for (const call of [
+    "set_config('search_path', 'archive', false)",
+    "set_config(setting_name := 'search_path', new_value := 'archive', is_local := false)",
+    "set_config(new_value => 'archive', is_local => false, setting_name => 'search_path')",
+  ]) {
+    assert.deepEqual(scanSqlForViolations(`BEGIN; SELECT ${call}; CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`), [], call);
+  }
+  assert.deepEqual(scanSqlForViolations("BEGIN; SELECT other('search_path', 'archive', true); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  for (const call of [
+    "set_config(E'search_path', 'archive', true)",
+    "set_config(setting_name := E'search_path', new_value := 'archive', is_local := true)",
+    "set_config(U&'search_path', 'archive', true)",
+    "set_config(setting_name => U&'search_path', new_value => 'archive', is_local => true)",
+    "set_config($$search_path$$, 'archive', true)",
+    "set_config($$search_path$$, $value$value,(is_local=>false)$value$, false)",
+    "set_config($$search_path$$, $value$value,(is_local=>false)$value$, true)",
+    "set_config('search_path', E'archive\\' is_local=>false', true)",
+  ]) {
+    const expectedLocal = /(?:,\s*false\)|,\s*true\))/.test(call) ? !/,\s*false\)$/.test(call) : true;
+    const findings = scanSqlForViolations(`BEGIN; SELECT ${call}; CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`);
+    assert.equal(findings.includes("PRIMARY KEY 컬럼 추가"), expectedLocal, call);
+  }
+  assert.deepEqual(scanSqlForViolations("BEGIN; SELECT other($$search_path$$, 'archive', true); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+});
+
+test("U& setting_name은 escape를 decode하고 불명확한 값은 fail closed 한다", () => {
+  for (const call of [
+    "set_config(U&'search\\005fpath', 'archive', true)",
+    "set_config(setting_name => U&'search\\005fpath', new_value => 'archive', is_local => true)",
+    "set_config(U&'search!005fpath' UESCAPE '!', 'archive', true)",
+    "set_config(new_value => 'archive', is_local => true, setting_name => U&'search\\005fpath')",
+  ]) {
+    assert.ok(
+      scanSqlForViolations(`BEGIN; SELECT ${call}; CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"),
+      call,
+    );
+  }
+  assert.deepEqual(
+    scanSqlForViolations("BEGIN; SELECT set_config(U&'time\\007aone', 'UTC', true); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  for (const fn of ["set_confige", "set_configu"]) {
+    assert.deepEqual(
+      scanSqlForViolations(`BEGIN; SELECT ${fn}(U&'search\\005fpath', 'archive', true); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`),
+      [],
+      fn,
+    );
+  }
+  assert.ok(
+    scanSqlForViolations("BEGIN; SELECT set_config(U&'search\\00ZZpath', 'archive', true); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"),
+  );
 });
 
 test("ALTER FUNCTION·PROCEDURE·ROUTINE은 fail closed 하고 quoted text는 오탐하지 않는다", () => {
@@ -798,8 +863,9 @@ test("SET LOCAL search_path는 transaction 종료에서만 문맥을 복원한�
   );
 });
 
-test("완화형 DROP(INDEX·CONSTRAINT·NOT NULL)은 통과하고 미지원 DROP 형태는 fail closed 된다", () => {
-  assert.deepEqual(scanSqlForViolations("DROP INDEX IF EXISTS ux_legacy;"), []);
+test("DROP NOT NULL만 완화하고 index·constraint와 미지원 DROP은 fail closed 된다", () => {
+  assert.ok(scanSqlForViolations("DROP INDEX IF EXISTS ux_legacy;").includes("DROP INDEX"));
+  assert.ok(scanSqlForViolations("ALTER TABLE t DROP CONSTRAINT t_check;").includes("DROP CONSTRAINT"));
   assert.deepEqual(
     scanSqlForViolations("ALTER TABLE t ALTER COLUMN c DROP NOT NULL;"),
     [],

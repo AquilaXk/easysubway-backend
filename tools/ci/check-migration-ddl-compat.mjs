@@ -223,6 +223,8 @@ const PROCEDURAL_BODY_END = "EASYSUBWAY_PROCEDURAL_BODY_END";
 const DO_BODY_START = "EASYSUBWAY_DO_BODY_START";
 const DO_BODY_END = "EASYSUBWAY_DO_BODY_END";
 const SET_CONFIG_SEARCH_PATH = "EASYSUBWAY_SET_CONFIG_SEARCH_PATH";
+const SET_CONFIG_SEARCH_PATH_LOCAL = `${SET_CONFIG_SEARCH_PATH}_LOCAL`;
+const SET_CONFIG_SEARCH_PATH_SESSION = `${SET_CONFIG_SEARCH_PATH}_SESSION`;
 
 function currentStatementPrefix(out) {
   let start = 0;
@@ -269,14 +271,14 @@ function readSingleQuotedLiteral(sql, start, backslashEscapes) {
   return { literal, end: i, closed: false };
 }
 
-function isSetConfigSettingNameArgument(out) {
+function setConfigCallContext(out) {
   let depth = 0;
   let open = -1;
   for (let i = out.length - 1; i >= 0; i--) {
     if (out[i] === ")") depth++;
     else if (out[i] === "(" && (depth === 0 ? ((open = i), true) : !(depth--))) break;
   }
-  if (open < 0 || !/\bset_config\s*$/i.test(out.slice(0, open))) return false;
+  if (open < 0 || !/\bset_config\s*$/i.test(out.slice(0, open))) return null;
   const args = out.slice(open + 1);
   let lastComma = -1;
   depth = 0;
@@ -286,7 +288,94 @@ function isSetConfigSettingNameArgument(out) {
     else if (args[i] === "," && depth === 0) lastComma = i;
   }
   const argument = args.slice(lastComma + 1).trim();
-  return (lastComma === -1 && argument === "") || /^setting_name\s*(?:=>|:=)\s*$/i.test(argument);
+  return { args, lastComma, argument };
+}
+
+function isSetConfigSettingNameArgument(out) {
+  const context = setConfigCallContext(out);
+  return context !== null &&
+    ((context.lastComma === -1 && /^(?:[Ee]|[Uu]&)?\s*$/i.test(context.argument)) ||
+      /^setting_name\s*(?:=>|:=)\s*(?:[Ee]|[Uu]&)?\s*$/i.test(context.argument));
+}
+
+function unicodeEscapeCharacter(sql, cursor) {
+  const rest = sql.slice(skipSqlTrivia(sql, cursor));
+  const uescape = /^UESCAPE\s*/i.exec(rest);
+  if (!uescape) return { valid: true, value: "\\" };
+  if (rest[uescape[0].length] !== "'") return { valid: false };
+  const escape = readSingleQuotedLiteral(rest, uescape[0].length, false);
+  if (!escape.closed || escape.literal.length !== 1 || /[0-9A-Fa-f+\s']/.test(escape.literal)) return { valid: false };
+  return { valid: true, value: escape.literal };
+}
+
+function decodeUnicodeEscapeLiteral(literal, sql, cursor) {
+  const escape = unicodeEscapeCharacter(sql, cursor);
+  if (!escape.valid) return { trusted: false };
+  let decoded = "";
+  for (let i = 0; i < literal.length; i++) {
+    if (literal[i] !== escape.value) {
+      decoded += literal[i];
+      continue;
+    }
+    const next = literal[++i];
+    if (next === escape.value) {
+      decoded += escape.value;
+      continue;
+    }
+    const digits = next === "+" ? 6 : 4;
+    const hex = literal.slice(i + (next === "+" ? 1 : 0), i + (next === "+" ? 1 : 0) + digits);
+    if (!new RegExp(String.raw`^[0-9A-Fa-f]{${digits}}$`).test(hex)) return { trusted: false };
+    const codePoint = Number.parseInt(hex, 16);
+    if (codePoint > 0x10ffff || (codePoint >= 0xd800 && codePoint <= 0xdfff)) return { trusted: false };
+    decoded += String.fromCodePoint(codePoint);
+    i += (next === "+" ? 1 : 0) + digits - 1;
+  }
+  return { trusted: true, value: decoded };
+}
+
+function splitTopLevelArguments(text) {
+  const args = [];
+  let start = 0;
+  let depth = 0;
+  for (let i = 0; i < text.length; i++) {
+    const next = skipSqlLiteralToken(text, i);
+    if (next !== null) i = next - 1;
+    else if (text[i] === "(") depth++;
+    else if (text[i] === ")") depth--;
+    else if (text[i] === "," && depth === 0) {
+      args.push(text.slice(start, i).trim());
+      start = i + 1;
+    }
+  }
+  args.push(text.slice(start).trim());
+  return args;
+}
+
+function setConfigCallEnd(sql, cursor) {
+  let depth = 0;
+  for (let i = cursor; i < sql.length; i++) {
+    const next = skipSqlLiteralToken(sql, i);
+    if (next !== null) i = next - 1;
+    else if (sql[i] === "(") depth++;
+    else if (sql[i] === ")") {
+      if (depth === 0) return i;
+      depth--;
+    }
+  }
+  return sql.length;
+}
+
+function setConfigSearchPathIsLocal(out, sql, cursor) {
+  const context = setConfigCallContext(out);
+  if (context === null) return true;
+  const args = splitTopLevelArguments(
+    context.args.replace(/(?:[Ee]|[Uu]&)?\s*$/, "") + sql.slice(cursor, setConfigCallEnd(sql, cursor)),
+  );
+  const localArgument = args.find((arg) => /^is_local\s*(?:=>|:=)/i.test(arg));
+  if (localArgument !== undefined) {
+    return !/^is_local\s*(?:=>|:=)\s*false\s*$/i.test(localArgument);
+  }
+  return !/^false$/i.test(args[2] ?? "");
 }
 
 function skipSqlTrivia(sql, cursor) {
@@ -387,15 +476,21 @@ export function stripSqlNoise(sql) {
         i = component.end;
         closed = component.closed;
       }
-      out += closed
-        ? markers && unicodeEscapes && (literal.includes("\\") || /^UESCAPE\s+'/i.test(sql.slice(skipSqlTrivia(sql, i))))
-          ? ` ${UNTERMINATED_QUOTED_BODY} `
-          : markers
-          ? ` ${markers[0]} ${stripSqlNoise(literal)} ${markers[1]} `
-          : isSetConfigSettingNameArgument(out) && literal.toLowerCase() === "search_path"
-            ? ` ${SET_CONFIG_SEARCH_PATH} `
-          : " "
-        : ` ${UNTERMINATED_QUOTED_BODY} `;
+      if (!closed) out += ` ${UNTERMINATED_QUOTED_BODY} `;
+      else if (markers && unicodeEscapes && (literal.includes("\\") || /^UESCAPE\s+'/i.test(sql.slice(skipSqlTrivia(sql, i))))) {
+        out += ` ${UNTERMINATED_QUOTED_BODY} `;
+      } else if (markers) {
+        out += ` ${markers[0]} ${stripSqlNoise(literal)} ${markers[1]} `;
+      } else if (isSetConfigSettingNameArgument(out) && (
+        unicodeEscapes
+          ? (() => {
+            const decoded = decodeUnicodeEscapeLiteral(literal, sql, i);
+            return !decoded.trusted || decoded.value.toLowerCase() === "search_path";
+          })()
+          : literal.toLowerCase() === "search_path"
+      )) {
+        out += ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `;
+      } else out += " ";
       continue;
     }
     // dollar-quoted literal은 동일 tag의 다음 delimiter까지가 한 body다. 다른 tag는 본문
@@ -410,10 +505,11 @@ export function stripSqlNoise(sql) {
         out += ` ${UNTERMINATED_QUOTED_BODY} `;
         break;
       }
-      out += markers
-        ? ` ${markers[0]} ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ${markers[1]} `
-        : " ";
       i = bodyEnd + delimiter.length;
+      if (markers) out += ` ${markers[0]} ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ${markers[1]} `;
+      else if (isSetConfigSettingNameArgument(out) && sql.slice(bodyStart, bodyEnd).toLowerCase() === "search_path") {
+        out += ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `;
+      } else out += " ";
       continue;
     }
     out += sql[i];
@@ -435,6 +531,27 @@ function matchDollarTag(sql, i) {
     return tag;
   }
   return null;
+}
+
+function skipSqlLiteralToken(sql, i) {
+  if (sql[i] === "'") {
+    const backslashEscapes = i > 0 && /[Ee]/.test(sql[i - 1]) && (i === 1 || !/[A-Za-z0-9_]/.test(sql[i - 2]));
+    return readSingleQuotedLiteral(sql, i, backslashEscapes).end;
+  }
+  if (sql[i] === '"') {
+    let cursor = i + 1;
+    while (cursor < sql.length) {
+      if (sql[cursor] === '"' && sql[cursor + 1] === '"') cursor += 2;
+      else if (sql[cursor] === '"') return cursor + 1;
+      else cursor++;
+    }
+    return cursor;
+  }
+  const tag = matchDollarTag(sql, i);
+  if (tag === null) return null;
+  const delimiter = `$${tag}$`;
+  const end = sql.indexOf(delimiter, i + delimiter.length);
+  return end === -1 ? sql.length : end + delimiter.length;
 }
 
 function normalizeId(id) {
@@ -607,6 +724,7 @@ function clauseFrom(text, index) {
 // 기존 마이그레이션이 실제로 생성하는 객체이므로 제거 시 동일한 호환성 보증이 깨진다.
 const DESTRUCTIVE_DROP_OBJECTS = new Map([
   ["table", "DROP TABLE"],
+  ["index", "DROP INDEX"],
   ["view", "DROP VIEW"],
   ["sequence", "DROP SEQUENCE"],
   ["function", "DROP FUNCTION"],
@@ -633,10 +751,12 @@ function scanDropClauses(s, keywordShadow, isAlterTable, isAlterDomain) {
     const rawWord = token[1];
     const word = normalizeId(rawWord);
     const isKeyword = !rawWord.startsWith('"');
-    // 인덱스 제거는 구 canonical의 읽기·쓰기를 거부하지 않는 완화형이다.
-    if (isKeyword && word === "index") continue;
     if (isAlterTable) {
-      if (isKeyword && (word === "constraint" || word === "not")) continue; // 제약·NOT NULL 완화
+      if (isKeyword && word === "not" && /^DROP\s+NOT\s+NULL\b/i.test(s.slice(m.index))) continue;
+      if (isKeyword && word === "constraint") {
+        labels.push("DROP CONSTRAINT");
+        continue;
+      }
       // DEFAULT 제거는 그 컬럼을 생략하는 구 인스턴스의 insert를 실패시킨다.
       labels.push(isKeyword && word === "default" ? "DROP DEFAULT" : "DROP COLUMN");
       continue;
@@ -753,7 +873,7 @@ function markerCount(s, marker) {
 }
 
 const SEARCH_PATH_MUTATION = new RegExp(
-  String.raw`\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b|${SET_CONFIG_SEARCH_PATH}\b`,
+  String.raw`\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b|${SET_CONFIG_SEARCH_PATH}(?:_LOCAL|_SESSION)?\b`,
   "gi",
 );
 const BODY_MARKER = new RegExp(`${DO_BODY_START}|${DO_BODY_END}|${PROCEDURAL_BODY_START}|${PROCEDURAL_BODY_END}`, "g");
@@ -779,7 +899,7 @@ function searchPathContextChange(s, contextStack) {
     const context = applyBodyMarkers(s, contextStack, mutation.index);
     if ((context.length === 0 && (mutation.index === 0 || mutation[0].includes(SET_CONFIG_SEARCH_PATH))) || context.at(-1) === "do") {
       changes = true;
-      local = /\bSET\s+LOCAL\s+SEARCH_PATH\b/i.test(mutation[0]);
+      local = /\bSET\s+LOCAL\s+SEARCH_PATH\b/i.test(mutation[0]) || mutation[0].includes(SET_CONFIG_SEARCH_PATH_LOCAL);
     }
   }
   return { changes, local };
