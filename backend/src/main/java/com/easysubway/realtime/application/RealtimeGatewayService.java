@@ -39,7 +39,6 @@ public class RealtimeGatewayService {
 	private static final Logger log = LoggerFactory.getLogger(RealtimeGatewayService.class);
 
 	private static final Duration CACHE_TTL = Duration.ofSeconds(20);
-	private static final Duration STALE_TTL = Duration.ofSeconds(120);
 	private static final Duration PROVIDER_FRESHNESS_TTL = Duration.ofSeconds(90);
 	private static final Duration ARRIVAL_ARCHIVE_RETENTION = Duration.ofDays(30);
 	private static final Duration QUOTA_CIRCUIT_OPEN = Duration.ofSeconds(60);
@@ -253,9 +252,7 @@ public class RealtimeGatewayService {
 			return recordArrivalResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
-			return recordArrivalResult(cached != null && isStaleUsable(cached.cachedAt())
-				? cached.result().stale()
-				: RealtimeArrivalResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
+			return recordArrivalResult(RealtimeArrivalResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
 		}
 		CompletableFuture<RealtimeArrivalResult> request = new CompletableFuture<>();
 		CompletableFuture<RealtimeArrivalResult> existing = arrivalRequests.putIfAbsent(cacheKey, request);
@@ -268,13 +265,11 @@ public class RealtimeGatewayService {
 				String fallbackCode = quotaDecision == ProviderCallQuotaDecision.UNAVAILABLE
 					? "PROVIDER_UNAVAILABLE"
 					: "PROVIDER_RATE_LIMITED";
-				RealtimeArrivalResult result = cached != null && isStaleUsable(cached.cachedAt())
-					? cached.result().stale()
-					: RealtimeArrivalResult.unavailable(fallbackCode);
+				RealtimeArrivalResult result = RealtimeArrivalResult.unavailable(fallbackCode);
 				request.complete(result);
 				return recordArrivalResult(result);
 			}
-			RealtimeArrivalResult result = fetchArrivals(normalizedQuery, cacheKey, cached);
+			RealtimeArrivalResult result = fetchArrivals(normalizedQuery, cacheKey);
 			request.complete(result);
 			return recordArrivalResult(result);
 		} catch (RuntimeException exception) {
@@ -285,7 +280,7 @@ public class RealtimeGatewayService {
 		}
 	}
 
-	private RealtimeArrivalResult fetchArrivals(NormalizedRealtimeQuery normalizedQuery, String cacheKey, CachedArrival cached) {
+	private RealtimeArrivalResult fetchArrivals(NormalizedRealtimeQuery normalizedQuery, String cacheKey) {
 		Instant providerCallStartedAt = clock.instant();
 		try {
 			List<RealtimeArrival> arrivals = provider.arrivals(normalizedQuery.query());
@@ -296,7 +291,7 @@ public class RealtimeGatewayService {
 			Instant receivedAt = clock.instant();
 			ProcessedArrivals processed = freshArrivals(arrivals, receivedAt, normalizedQuery);
 			if (processed.arrivals().isEmpty()) {
-				return staleArrivalOrUnavailable(cached, "PROVIDER_ERROR");
+				return RealtimeArrivalResult.unavailable("PROVIDER_ERROR");
 			}
 			dispatchArchiveArrivals(processed.observations());
 			RealtimeArrivalResult result = RealtimeArrivalResult.fresh(
@@ -309,7 +304,7 @@ public class RealtimeGatewayService {
 			String fallbackCode = safeFallbackCode(exception.fallbackCode());
 			providerMetrics.recordProviderException(fallbackCode);
 			openQuotaCircuitIfNeeded(exception);
-			return staleArrivalOrUnavailable(cached, fallbackCode);
+			return RealtimeArrivalResult.unavailable(fallbackCode);
 		} finally {
 			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
@@ -339,9 +334,7 @@ public class RealtimeGatewayService {
 			return recordTrainPositionResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
-			return recordTrainPositionResult(cached != null && isStaleUsable(cached.cachedAt())
-				? cached.result().stale()
-				: RealtimeTrainPositionResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
+			return recordTrainPositionResult(RealtimeTrainPositionResult.unavailable("PROVIDER_QUOTA_EXCEEDED"));
 		}
 		CompletableFuture<RealtimeTrainPositionResult> request = new CompletableFuture<>();
 		CompletableFuture<RealtimeTrainPositionResult> existing = trainPositionRequests.putIfAbsent(cacheKey, request);
@@ -354,13 +347,11 @@ public class RealtimeGatewayService {
 				String fallbackCode = quotaDecision == ProviderCallQuotaDecision.UNAVAILABLE
 					? "PROVIDER_UNAVAILABLE"
 					: "PROVIDER_RATE_LIMITED";
-				RealtimeTrainPositionResult result = cached != null && isStaleUsable(cached.cachedAt())
-					? cached.result().stale()
-					: RealtimeTrainPositionResult.unavailable(fallbackCode);
+				RealtimeTrainPositionResult result = RealtimeTrainPositionResult.unavailable(fallbackCode);
 				request.complete(result);
 				return recordTrainPositionResult(result);
 			}
-			RealtimeTrainPositionResult result = fetchTrainPositions(normalizedQuery.query(), cacheKey, cached);
+			RealtimeTrainPositionResult result = fetchTrainPositions(normalizedQuery.query(), cacheKey);
 			request.complete(result);
 			return recordTrainPositionResult(result);
 		} catch (RuntimeException exception) {
@@ -373,8 +364,7 @@ public class RealtimeGatewayService {
 
 	private RealtimeTrainPositionResult fetchTrainPositions(
 		RealtimeQuery normalizedQuery,
-		String cacheKey,
-		CachedTrainPosition cached
+		String cacheKey
 	) {
 		Instant providerCallStartedAt = clock.instant();
 		try {
@@ -386,7 +376,7 @@ public class RealtimeGatewayService {
 			Instant receivedAt = clock.instant();
 			List<RealtimeTrainPosition> freshTrainPositions = freshTrainPositions(trainPositions, receivedAt);
 			if (freshTrainPositions.isEmpty()) {
-				return staleTrainPositionOrUnavailable(cached, "PROVIDER_ERROR");
+				return RealtimeTrainPositionResult.unavailable("PROVIDER_ERROR");
 			}
 			RealtimeTrainPositionResult result = RealtimeTrainPositionResult.fresh(
 				receivedAt.toString(),
@@ -398,7 +388,7 @@ public class RealtimeGatewayService {
 			String fallbackCode = safeFallbackCode(exception.fallbackCode());
 			providerMetrics.recordProviderException(fallbackCode);
 			openQuotaCircuitIfNeeded(exception);
-			return staleTrainPositionOrUnavailable(cached, fallbackCode);
+			return RealtimeTrainPositionResult.unavailable(fallbackCode);
 		} finally {
 			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
@@ -421,23 +411,6 @@ public class RealtimeGatewayService {
 	private RealtimeTrainPositionResult recordTrainPositionResult(RealtimeTrainPositionResult result) {
 		providerMetrics.recordResult(result.status());
 		return result;
-	}
-
-	private RealtimeArrivalResult staleArrivalOrUnavailable(CachedArrival cached, String fallbackCode) {
-		if (cached != null && isStaleUsable(cached.cachedAt())) {
-			return cached.result().stale();
-		}
-		return RealtimeArrivalResult.unavailable(fallbackCode);
-	}
-
-	private RealtimeTrainPositionResult staleTrainPositionOrUnavailable(
-		CachedTrainPosition cached,
-		String fallbackCode
-	) {
-		if (cached != null && isStaleUsable(cached.cachedAt())) {
-			return cached.result().stale();
-		}
-		return RealtimeTrainPositionResult.unavailable(fallbackCode);
 	}
 
 	private ProviderCallQuotaDecision tryAcquireProviderCall() {
@@ -697,10 +670,6 @@ public class RealtimeGatewayService {
 		return Duration.between(cachedAt, clock.instant()).compareTo(CACHE_TTL) <= 0;
 	}
 
-	private boolean isStaleUsable(java.time.Instant cachedAt) {
-		return Duration.between(cachedAt, clock.instant()).compareTo(STALE_TTL) <= 0;
-	}
-
 	private boolean isQuotaCircuitOpen() {
 		java.time.Instant openUntil = quotaCircuitOpenUntil;
 		return openUntil != null && clock.instant().isBefore(openUntil);
@@ -798,9 +767,6 @@ public class RealtimeGatewayService {
 			resultCount.incrementAndGet();
 			if (status == RealtimeStatus.FRESH) {
 				freshResultCount.incrementAndGet();
-			}
-			if (status == RealtimeStatus.STALE) {
-				staleResultCount.incrementAndGet();
 			}
 			if (status == RealtimeStatus.UNSUPPORTED) {
 				unsupportedResultCount.incrementAndGet();
