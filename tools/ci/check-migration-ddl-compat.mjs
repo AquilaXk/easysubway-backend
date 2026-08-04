@@ -269,6 +269,26 @@ function readSingleQuotedLiteral(sql, start, backslashEscapes) {
   return { literal, end: i, closed: false };
 }
 
+function isSetConfigSettingNameArgument(out) {
+  let depth = 0;
+  let open = -1;
+  for (let i = out.length - 1; i >= 0; i--) {
+    if (out[i] === ")") depth++;
+    else if (out[i] === "(" && (depth === 0 ? ((open = i), true) : !(depth--))) break;
+  }
+  if (open < 0 || !/\bset_config\s*$/i.test(out.slice(0, open))) return false;
+  const args = out.slice(open + 1);
+  let lastComma = -1;
+  depth = 0;
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === "(") depth++;
+    else if (args[i] === ")") depth--;
+    else if (args[i] === "," && depth === 0) lastComma = i;
+  }
+  const argument = args.slice(lastComma + 1).trim();
+  return (lastComma === -1 && argument === "") || /^setting_name\s*(?:=>|:=)\s*$/i.test(argument);
+}
+
 function skipSqlTrivia(sql, cursor) {
   while (cursor < sql.length) {
     if (/\s/.test(sql[cursor])) cursor++;
@@ -372,7 +392,7 @@ export function stripSqlNoise(sql) {
           ? ` ${UNTERMINATED_QUOTED_BODY} `
           : markers
           ? ` ${markers[0]} ${stripSqlNoise(literal)} ${markers[1]} `
-          : /\bset_config\s*\(\s*$/i.test(out) && literal.toLowerCase() === "search_path"
+          : isSetConfigSettingNameArgument(out) && literal.toLowerCase() === "search_path"
             ? ` ${SET_CONFIG_SEARCH_PATH} `
           : " "
         : ` ${UNTERMINATED_QUOTED_BODY} `;
@@ -724,7 +744,7 @@ function markerCount(s, marker) {
 }
 
 const SEARCH_PATH_MUTATION = new RegExp(
-  String.raw`\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b|\bset_config\s*\(\s*${SET_CONFIG_SEARCH_PATH}\b`,
+  String.raw`\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b|${SET_CONFIG_SEARCH_PATH}\b`,
   "gi",
 );
 const BODY_MARKER = new RegExp(`${DO_BODY_START}|${DO_BODY_END}|${PROCEDURAL_BODY_START}|${PROCEDURAL_BODY_END}`, "g");
@@ -821,7 +841,7 @@ export function scanSqlForViolations(rawSql) {
     const triggerTarget = triggerOn
       ? s.slice(triggerOn.index + triggerOn[0].length).match(new RegExp(String.raw`^\s*(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`, "i"))
       : null;
-    if (triggerTarget && !createdTables.has(tableIdentity(triggerTarget[1], searchPathEpoch))) {
+    if (triggerOn && (!triggerTarget || !createdTables.has(tableIdentity(triggerTarget[1], searchPathEpoch)))) {
       add("CREATE TRIGGER ON 기존 테이블");
     }
     if (/\bRENAME\b/i.test(keywordShadow)) add("RENAME");

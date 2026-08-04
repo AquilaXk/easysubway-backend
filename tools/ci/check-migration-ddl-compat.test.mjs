@@ -143,6 +143,27 @@ test("set_config search_path만 execution context를 무효화하고 routine·�
   assert.ok(scanSqlForViolations("CREATE TABLE routes(id BIGINT); DO $$ BEGIN PERFORM set_config('search_path', 'archive', false); END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"));
   assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM set_config('search_path', 'archive', false); END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
   assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config('timezone', 'UTC', false); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config('timezone', 'search_path', false); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  for (const call of [
+    "set_config(setting_name => 'search_path', new_value => 'archive', is_local => false)",
+    "set_config(setting_name := 'search_path', new_value := 'archive', is_local := false)",
+  ]) {
+    assert.ok(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); SELECT ${call}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"));
+  }
+  for (const call of [
+    "set_config( 'search_path', 'archive', false)",
+    "set_config(new_value => concat('arch', 'ive'), setting_name => 'search_path', is_local => false)",
+    "set_config(new_value := concat('arch', 'ive'), setting_name := 'search_path', is_local := false)",
+  ]) assert.ok(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); SELECT ${call}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"));
+  for (const call of [
+    "set_config(new_value => 'archive', setting_name => 'search_path', is_local => false)",
+    "set_config(new_value := 'archive', setting_name := 'search_path', is_local := false)",
+  ]) {
+    assert.ok(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); SELECT ${call}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"));
+    assert.deepEqual(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM ${call}; END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`), []);
+  }
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT other(setting_name => 'search_path'); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config(setting_name => 'timezone', new_value => 'search_path', is_local => false); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
 });
 
 test("ALTER FUNCTION·PROCEDURE·ROUTINE은 fail closed 하고 quoted text는 오탐하지 않는다", () => {
@@ -234,6 +255,11 @@ test("quoted fake ON은 신규 테이블 면제를 만들지 않는다", () => {
   assert.ok(scanSqlForViolations('CREATE TABLE fresh(id BIGINT); CREATE TRIGGER "t ON fresh" BEFORE INSERT ON existing FOR EACH ROW EXECUTE FUNCTION f();').includes("CREATE TRIGGER ON 기존 테이블"));
   assert.deepEqual(scanSqlForViolations('CREATE TABLE fresh(id BIGINT); CREATE UNIQUE INDEX idx ON fresh(id);'), []);
   assert.deepEqual(scanSqlForViolations('CREATE TABLE "fresh table"(id BIGINT); CREATE UNIQUE INDEX idx ON "fresh table"(id);'), []);
+});
+
+test("trigger target parse 실패는 fail closed 하고 non-ASCII target도 기존 테이블로 본다", () => {
+  assert.ok(scanSqlForViolations("CREATE TRIGGER t BEFORE INSERT ON ${schema}.facility_reports FOR EACH ROW EXECUTE FUNCTION f();").includes("CREATE TRIGGER ON 기존 테이블"));
+  assert.ok(scanSqlForViolations("CREATE TRIGGER t BEFORE INSERT ON 시설보고 FOR EACH ROW EXECUTE FUNCTION f();").includes("CREATE TRIGGER ON 기존 테이블"));
 });
 
 test("trigger의 EXECUTE FUNCTION/PROCEDURE는 동적 EXECUTE로 오탐하지 않는다", () => {
