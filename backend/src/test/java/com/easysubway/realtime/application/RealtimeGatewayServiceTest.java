@@ -424,21 +424,43 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("quota 초과는 circuit을 열고 다음 요청에서 provider를 호출하지 않는다")
+	@DisplayName("quota 초과 circuit은 만료 cache를 재사용하지 않고 unavailable로 종료한다")
 	void quotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(provider, clock);
-		RealtimeQuery query = sangnoksuQuery();
+		RealtimeGatewayService service = new RealtimeGatewayService(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			RealtimeArrivalArchivePort.NO_OP,
+			(providerId, now, zone, perMinute, perDay) -> true,
+			1,
+			800
+		);
+		RealtimeQuery arrivalQuery = sangnoksuQuery();
+		RealtimeQuery trainPositionQuery = line4Query();
+
+		assertThat(service.arrivals(arrivalQuery).status()).hasToString("FRESH");
+		assertThat(service.trainPositions(trainPositionQuery).status()).hasToString("FRESH");
+		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
 		provider.failureCode = "PROVIDER_QUOTA_EXCEEDED";
 
-		RealtimeArrivalResult first = service.arrivals(query);
-		RealtimeArrivalResult second = service.arrivals(query);
+		RealtimeArrivalResult first = service.arrivals(arrivalQuery);
+		RealtimeArrivalResult second = service.arrivals(arrivalQuery);
+		RealtimeTrainPositionResult trainPositions = service.trainPositions(trainPositionQuery);
 
 		assertThat(first.status()).hasToString("UNAVAILABLE");
+		assertThat(first.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(first.arrivals()).isEmpty();
 		assertThat(second.status()).hasToString("UNAVAILABLE");
 		assertThat(second.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
-		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(second.arrivals()).isEmpty();
+		assertThat(trainPositions.status()).hasToString("UNAVAILABLE");
+		assertThat(trainPositions.fallbackCode()).isEqualTo("PROVIDER_QUOTA_EXCEEDED");
+		assertThat(trainPositions.trainPositions()).isEmpty();
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(provider.trainPositionCalls).hasValue(1);
 	}
 
 	@Test
