@@ -76,18 +76,37 @@ test("does not split ordinary strings or comments and rejects malformed lexical 
   }
 });
 
+test("ends line comments on LF, CR, and CRLF so following statements are checked", () => {
+  for (const ending of ["\n", "\r", "\r\n"]) {
+    const statements = splitSql(`-- harmless${ending}DROP TABLE event_log;`);
+    assert.equal(statements.length, 1);
+    assert.equal(classifyStatement(statements[0]).category, "DROP");
+  }
+});
+
+test("accepts only the PostgreSQL CREATE INDEX CONCURRENTLY order", () => {
+  assert.equal(classifyStatement(splitSql("CREATE INDEX CONCURRENTLY idx_event_log_id ON event_log (id);")[0]).ok, true);
+  assert.equal(classifyStatement(splitSql("CREATE CONCURRENTLY INDEX idx_event_log_id ON event_log (id);")[0]).ok, false);
+});
+
 test("assigns stable categories without claiming unrelated statements are destructive", () => {
   const expected = new Map([
     ["DROP TABLE x;", "DROP"],
+    ["ALTER TABLE x DROP COLUMN a;", "DROP"],
     ["ALTER TABLE x RENAME COLUMN a TO b;", "RENAME"],
     ["TRUNCATE x;", "TRUNCATE"],
     ["ALTER TABLE x ALTER COLUMN a TYPE TEXT;", "ALTER COLUMN TYPE"],
     ["ALTER TABLE x ALTER COLUMN a SET NOT NULL;", "SET NOT NULL"],
   ]);
   for (const [sql, category] of expected) assert.equal(classifyStatement(splitSql(sql)[0]).category, category);
-  for (const sql of ["ALTER ROLE app_user LOGIN;", "REVOKE ALL ON x FROM y;", "ALTER TABLE x OWNER TO y;", "CREATE SEQUENCE x;", "CREATE TRIGGER x BEFORE INSERT ON y EXECUTE FUNCTION f();", "CREATE POLICY x ON y;"]) {
+  for (const sql of ["DROP FUNCTION f;", "DROP TRIGGER t ON x;", "DROP POLICY p ON x;", "DROP SEQUENCE s;", "ALTER ROLE app_user LOGIN;", "REVOKE ALL ON x FROM y;", "ALTER TABLE x OWNER TO y;", "CREATE SEQUENCE x;", "CREATE FUNCTION f;", "CREATE TRIGGER x BEFORE INSERT ON y EXECUTE FUNCTION f();", "CREATE POLICY x ON y;"]) {
     assert.equal(classifyStatement(splitSql(sql)[0]).category, "unsupported / exact approval required");
   }
+});
+
+test("checks full dotted Flyway versions above the integer baseline", () => {
+  const file = { name: "V66.1__destructive.sql", version: [66, 1], content: "DROP TABLE x;", sha256: "a".repeat(64) };
+  assert.deepEqual(evaluateMigrationSet([file], { baselineVersion: 66, allowlist: [] }), [{ file: file.name, findings: ["DROP"] }]);
 });
 
 test("fails closed for a multi-statement file and malformed policy", () => {

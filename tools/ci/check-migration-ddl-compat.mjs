@@ -38,9 +38,10 @@ export function splitSql(sql) {
     const c = sql[i];
     if (/\s/.test(c)) { raw += c; i++; continue; }
     if (sql.startsWith("--", i)) {
-      const end = sql.indexOf("\n", i);
-      raw += end < 0 ? sql.slice(i) : sql.slice(i, end + 1);
-      i = end < 0 ? sql.length : end + 1;
+      const end = sql.slice(i).search(/[\r\n]/);
+      const lineEnd = end < 0 ? -1 : i + end;
+      raw += lineEnd < 0 ? sql.slice(i) : sql.slice(i, lineEnd + 1);
+      i = lineEnd < 0 ? sql.length : lineEnd + 1;
       continue;
     }
     if (sql.startsWith("/*", i)) {
@@ -136,11 +137,12 @@ export function classifyStatement(statement) {
   try {
     const tokens = statement?.tokens ?? [];
     if (!tokens.length) return { ok: true, category: "empty" };
-    if (word(tokens[0], "DROP")) return { ok: false, category: "DROP" };
+    if (word(tokens[0], "DROP")) return { ok: false, category: word(tokens[1], "TABLE") ? "DROP" : unsupported };
     if (word(tokens[0], "TRUNCATE")) return { ok: false, category: "TRUNCATE" };
     if (word(tokens[0], "ALTER") && word(tokens[1], "TABLE")) {
       let i = qualified(tokens, 2);
       if (i < 0) return { ok: false, category: unsupported };
+      if (word(tokens[i], "DROP")) return { ok: false, category: "DROP" };
       if (word(tokens[i], "RENAME")) return { ok: false, category: "RENAME" };
       if (word(tokens[i], "ALTER") && word(tokens[i + 1], "COLUMN")) {
         if (word(tokens[i + 3], "TYPE")) return { ok: false, category: "ALTER COLUMN TYPE" };
@@ -163,11 +165,10 @@ export function classifyStatement(statement) {
       return { ok: end === tokens.length - 1, category: end === tokens.length - 1 ? "CREATE TABLE" : unsupported };
     }
     if (word(tokens[0], "CREATE")) {
-      let i = 1;
-      if (word(tokens[i], "UNIQUE")) return { ok: false, category: "existing-table constraint strengthening" };
-      if (word(tokens[i], "CONCURRENTLY")) i++;
-      if (!word(tokens[i], "INDEX")) return { ok: false, category: unsupported };
-      i = qualified(tokens, i + 1);
+      if (word(tokens[1], "UNIQUE")) return { ok: false, category: "existing-table constraint strengthening" };
+      if (!word(tokens[1], "INDEX")) return { ok: false, category: unsupported };
+      let i = word(tokens[2], "CONCURRENTLY") ? 3 : 2;
+      i = qualified(tokens, i);
       if (i < 0 || !word(tokens[i], "ON")) return { ok: false, category: unsupported };
       i = qualified(tokens, i + 1);
       const end = i < 0 ? -1 : balanced(tokens, i);
@@ -179,9 +180,23 @@ export function classifyStatement(statement) {
   }
 }
 
+function normalizedVersion(parts) {
+  const normalized = [...parts];
+  while (normalized.length > 1 && normalized.at(-1) === 0) normalized.pop();
+  return normalized.join(".");
+}
+function afterBaseline(version, baseline) {
+  const parts = Array.isArray(version) ? version : [version];
+  const base = Array.isArray(baseline) ? baseline : [baseline];
+  for (let index = 0; index < Math.max(parts.length, base.length); index++) {
+    const difference = (parts[index] ?? 0) - (base[index] ?? 0);
+    if (difference) return difference > 0;
+  }
+  return false;
+}
 function parseName(name) {
   const versioned = /^V(\d+(?:[._]\d+)*)__([^/]+)\.sql$/.exec(name);
-  if (versioned) return { version: Number(versioned[1].split(/[._]/)[0]), canonical: true };
+  if (versioned) return { version: versioned[1].split(/[._]/).map(Number), canonical: true };
   if (/^R__[^/]+\.sql$/.test(name) || /^(?:before|after)[A-Za-z0-9_]*\.sql$/.test(name)) return { version: null, canonical: true };
   return { version: null, canonical: false };
 }
@@ -204,8 +219,9 @@ export function loadMigrationFiles(dir) {
   walk(root);
   const versions = new Set();
   for (const file of files) if (file.version !== null) {
-    if (versions.has(file.version)) fail(`unsupported / duplicate migration version: ${file.version}`);
-    versions.add(file.version);
+    const version = normalizedVersion(file.version);
+    if (versions.has(version)) fail(`unsupported / duplicate migration version: ${version}`);
+    versions.add(version);
   }
   return files.sort((a, b) => a.name.localeCompare(b.name));
 }
@@ -218,7 +234,7 @@ export function validatePolicy(policy, files, now = new Date()) {
   if (policy.schemaVersion !== 2 || policy.gateId !== "backend-migration-ddl-compat" || policy.issue !== "https://github.com/AquilaXk/easysubway/issues/2365" || policy.baselineVersion !== 66 || policy.scannedDirectory !== MIGRATIONS || !Array.isArray(policy.excludedDirectories) || policy.excludedDirectories.length !== 1 || policy.excludedDirectories[0] !== "backend/src/main/resources/db/migration/h2" || typeof policy.note !== "string" || !policy.note.trim()) fail("unsupported / invalid policy identity");
   assertKeys(policy.allowlistEntryFormat, ["file", "reason", "approval", "expiresAt", "sha256"], "allowlist format");
   if (Object.values(policy.allowlistEntryFormat).some((value) => typeof value !== "string" || !value.trim()) || !Array.isArray(policy.inventory) || !Array.isArray(policy.allowlist)) fail("unsupported / invalid policy types");
-  const above = files.filter((file) => file.version !== null && file.version > policy.baselineVersion);
+  const above = files.filter((file) => file.version !== null && afterBaseline(file.version, policy.baselineVersion));
   const actual = new Map(files.map((file) => [file.name, file]));
   const inventory = new Set();
   for (const entry of policy.inventory) {
@@ -245,7 +261,7 @@ export function evaluateMigrationSet(files, policy) {
   const allowed = new Map((policy.allowlist ?? []).map((entry) => [entry.file, entry.sha256]));
   const violations = [];
   for (const file of files) {
-    if (file.version !== null && file.version <= policy.baselineVersion) continue;
+    if (file.version !== null && !afterBaseline(file.version, policy.baselineVersion)) continue;
     if (allowed.get(file.name) === file.sha256) continue;
     try {
       const findings = splitSql(file.content).map(classifyStatement).filter((result) => !result.ok).map((result) => result.category);
