@@ -423,6 +423,26 @@ test("quoted UNIQUE type name은 inline 제약으로 오인하지 않는다", ()
   assert.ok(scanSqlForViolations("ALTER TABLE t ADD COLUMN value TEXT UNIQUE;").includes("기존 테이블에 제약(ADD CONSTRAINT) 추가"));
 });
 
+test("NOT NULL domain과 rollback된 table identity는 신규-table 면제를 만들지 않는다", () => {
+  assert.ok(scanSqlForViolations("CREATE DOMAIN required_text AS text NOT NULL; ALTER TABLE live ADD COLUMN note required_text;").includes("NOT NULL domain 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN optional_text AS text; ALTER TABLE live ADD COLUMN note optional_text;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN optional_text AS text CHECK (VALUE IS NULL OR VALUE IS NOT NULL); ALTER TABLE live ADD COLUMN note optional_text;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN optional_text AS text DEFAULT CASE WHEN current_date IS NOT NULL THEN NULL ELSE 'x' END; ALTER TABLE live ADD COLUMN note optional_text;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN required_text AS text NOT NULL; ALTER TABLE live ADD COLUMN notes required_text[];"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN required_text AS text NOT NULL; ALTER TABLE live ADD COLUMN notes required_text ARRAY;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN required_text AS text NOT NULL; ALTER TABLE live ADD COLUMN notes required_text ARRAY[3];"), []);
+  assert.ok(scanSqlForViolations("CREATE DOMAIN required_text AS text DEFAULT CASE WHEN current_date IS NOT NULL THEN NULL ELSE 'x' END NOT NULL; ALTER TABLE live ADD COLUMN note required_text;").includes("NOT NULL domain 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations("CREATE DOMAIN required_text AS text NOT NULL; ALTER TABLE live ADD COLUMN note required_text DEFAULT 'x';"), []);
+  assert.ok(scanSqlForViolations("ALTER TABLE live ADD COLUMN note required_text;", new Set(["required_text"])).includes("NOT NULL domain 컬럼 추가"));
+  for (const sql of [
+    "SAVEPOINT s; CREATE TEMP TABLE orders(id int); ROLLBACK TO s; ALTER TABLE orders ADD CONSTRAINT orders_pk PRIMARY KEY (id);",
+    "BEGIN; CREATE TABLE orders(id int); ROLLBACK; ALTER TABLE orders ADD CONSTRAINT orders_pk PRIMARY KEY (id);",
+    "BEGIN; CREATE TEMP TABLE orders(id int); BEGIN; ROLLBACK; ALTER TABLE orders ADD CONSTRAINT orders_pk PRIMARY KEY (id);",
+    "BEGIN; SAVEPOINT s; CREATE TEMP TABLE orders(id int); SAVEPOINT s; RELEASE SAVEPOINT s; ROLLBACK TO SAVEPOINT s; ALTER TABLE orders ADD CONSTRAINT orders_pk PRIMARY KEY (id);",
+  ]) assert.ok(scanSqlForViolations(sql).includes("기존 테이블에 제약(ADD CONSTRAINT) 추가"), sql);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE orders(id int); COMMIT; ALTER TABLE orders ADD CONSTRAINT orders_pk PRIMARY KEY (id);"), []);
+});
+
 test("기존 테이블 inline ADD PRIMARY KEY·NOT NULL DEFAULT NULL과 ALTER NULL default·schema 이동은 fail closed 한다", () => {
   assert.ok(
     scanSqlForViolations("ALTER TABLE t ADD COLUMN id BIGINT PRIMARY KEY;").includes(

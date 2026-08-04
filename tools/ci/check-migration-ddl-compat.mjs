@@ -706,6 +706,23 @@ function splitStatements(cleaned) {
   return statements;
 }
 
+function shadowParenthesized(text) {
+  let depth = 0;
+  let shadow = "";
+  for (const ch of text) {
+    if (ch === "(") {
+      depth++;
+      shadow += " ";
+    } else if (ch === ")") {
+      shadow += " ";
+      depth = Math.max(0, depth - 1);
+    } else {
+      shadow += depth === 0 ? ch : " ";
+    }
+  }
+  return shadow;
+}
+
 // 문장에서 index 위치부터 최상위(괄호 depth 0) 콤마 또는 끝까지의 절을 잘라낸다.
 function clauseFrom(text, index) {
   let depth = 0;
@@ -850,7 +867,7 @@ function hasProvablyNonNullDefault(clause) {
 // ADD [COLUMN] <컬럼> ... 절을 분석한다. PostgreSQL은 COLUMN 키워드를 생략할 수 있으므로
 // (`ALTER TABLE t ADD c text NOT NULL`) 두 형태를 동일하게 본다. 생략형은 ALTER TABLE
 // 문맥에서만 컬럼 추가로 해석하고, 제약 추가 구문은 별도 규칙이 담당하므로 제외한다.
-function scanAddColumnClauses(s, isAlterTable, isNewTable) {
+function scanAddColumnClauses(s, isAlterTable, isNewTable, requiredDomains) {
   const labels = [];
   for (const m of s.matchAll(/\bADD\s+(?:(COLUMN)\s+)?(?:IF\s+NOT\s+EXISTS\s+)?/gi)) {
     const at = m.index + m[0].length;
@@ -860,6 +877,11 @@ function scanAddColumnClauses(s, isAlterTable, isNewTable) {
     }
     const clause = clauseFrom(s, at);
     const keywordShadow = shadowQuotedIdentifiers(clause);
+    const domainType = clause.match(new RegExp(String.raw`^\s*${SQL_IDENTIFIER}\s+(${SQL_QUALIFIED_IDENTIFIER})`, "i"));
+    const domainArray = domainType && /^(?:\s*\[|\s+ARRAY\b)/i.test(clause.slice(domainType[0].length));
+    if (!isNewTable && domainType && !domainArray && requiredDomains.has(normalizeId(domainType[1])) && !hasProvablyNonNullDefault(clause)) {
+      labels.push("NOT NULL domain 컬럼 추가");
+    }
     if (!isNewTable && /\bPRIMARY\s+KEY\b/i.test(keywordShadow)) labels.push("PRIMARY KEY 컬럼 추가");
     if (!isNewTable && /\bNOT\s+NULL\b/i.test(keywordShadow)) {
       if (!/\bDEFAULT\b/i.test(keywordShadow)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
@@ -969,10 +991,29 @@ function endsTopLevelTransaction(s, contextStack) {
   ).test(s);
 }
 
+function requiredDomainsFrom(sqlValues) {
+  const required = new Set();
+  for (const sql of sqlValues) {
+    for (const statement of splitStatements(stripSqlNoise(sql))) {
+      const shadow = shadowQuotedIdentifiers(statement);
+      const create = statement.match(new RegExp(String.raw`^\s*CREATE\s+DOMAIN\s+(${SQL_QUALIFIED_IDENTIFIER})\s+AS\b`, "i"));
+      const domainTail = create && shadowParenthesized(shadow.slice(create[0].length));
+      const domainNotNull = domainTail && [...domainTail.matchAll(/\bNOT\s+NULL\b/gi)]
+        .some((match) => !/\bIS\s*$/i.test(domainTail.slice(0, match.index)));
+      if (create && domainNotNull) required.add(normalizeId(create[1]));
+      const alter = statement.match(new RegExp(String.raw`^\s*ALTER\s+DOMAIN\s+(?:IF\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})\s+SET\s+NOT\s+NULL\b`, "i"));
+      if (alter) required.add(normalizeId(alter[1]));
+    }
+  }
+  return required;
+}
+
 // 단일 SQL 텍스트를 스캔해 파괴적 DDL 규칙 위반 라벨의 (중복 제거된) 배열을 반환한다.
-export function scanSqlForViolations(rawSql) {
+export function scanSqlForViolations(rawSql, requiredDomains = requiredDomainsFrom([rawSql])) {
   const cleaned = stripSqlNoise(rawSql);
   const createdTables = new Set();
+  const savepointTables = [];
+  let transactionTables = null;
   const findings = [];
   const add = (label) => findings.push(label);
   let proceduralBodyDepth = 0;
@@ -1008,6 +1049,38 @@ export function scanSqlForViolations(rawSql) {
       : "";
     const alterActions = splitAlterActions(alterActionTail);
     const keywordShadow = shadowQuotedIdentifiers(s);
+    if (!isProceduralBody) {
+      if (/^\s*(?:BEGIN|START\s+TRANSACTION)\b/i.test(keywordShadow) && transactionTables === null) {
+        transactionTables = new Set(createdTables);
+      }
+      const savepoint = s.match(new RegExp(String.raw`^\s*SAVEPOINT\s+(${SQL_IDENTIFIER})`, "i"));
+      if (savepoint) savepointTables.push({ name: normalizeId(savepoint[1]), tables: new Set(createdTables) });
+      const rollbackTo = s.match(new RegExp(
+        String.raw`^\s*ROLLBACK\s+(?:(?:WORK|TRANSACTION)\s+)?TO\s+(?:SAVEPOINT\s+)?(${SQL_IDENTIFIER})`,
+        "i",
+      ));
+      const savepointIndex = rollbackTo
+        ? savepointTables.findLastIndex(({ name }) => name === normalizeId(rollbackTo[1]))
+        : -1;
+      const rollbackTables = rollbackTo ? savepointTables[savepointIndex]?.tables : transactionTables;
+      if (rollbackTo ? rollbackTables !== undefined : /^\s*ROLLBACK\b/i.test(keywordShadow)) {
+        createdTables.clear();
+        for (const table of rollbackTables ?? []) createdTables.add(table);
+        if (rollbackTo) savepointTables.splice(savepointIndex + 1);
+      }
+      if (!rollbackTo && /^\s*ROLLBACK\b/i.test(keywordShadow)) {
+        transactionTables = null;
+        savepointTables.length = 0;
+      } else if (/^\s*(?:COMMIT|END)\b/i.test(keywordShadow)) {
+        transactionTables = null;
+        savepointTables.length = 0;
+      }
+      const release = s.match(new RegExp(String.raw`^\s*RELEASE\s+(?:SAVEPOINT\s+)?(${SQL_IDENTIFIER})`, "i"));
+      const releaseIndex = release
+        ? savepointTables.findLastIndex(({ name }) => name === normalizeId(release[1]))
+        : -1;
+      if (releaseIndex >= 0) savepointTables.splice(releaseIndex);
+    }
 
     if (s.includes(UNTERMINATED_QUOTED_BODY)) add("미종결 quoted body");
     if (/\bTRUNCATE\b/i.test(keywordShadow)) add("TRUNCATE");
@@ -1130,7 +1203,7 @@ export function scanSqlForViolations(rawSql) {
     }
 
     for (const label of scanDropClauses(s, keywordShadow, isAlterTable, /\bALTER\s+DOMAIN\b/i.test(keywordShadow))) add(label);
-    for (const label of scanAddColumnClauses(s, isAlterTable, isNewTable)) add(label);
+    for (const label of scanAddColumnClauses(s, isAlterTable, isNewTable, requiredDomains)) add(label);
 
     if (isAlterTable) {
       if (
@@ -1305,6 +1378,7 @@ export function loadMigrationFiles(dir) {
 // - unrecognized: 스캐너 사각지대이므로 스캔 결과와 무관하게 위반으로 보고
 export function evaluateMigrationSet(files, { baselineVersion = 0, allowlist = [] } = {}) {
   const allow = new Map(allowlist.map((entry) => [entry.file, entry]));
+  const requiredDomains = requiredDomainsFrom(files.map((file) => file.sql));
   const violations = [];
   const report = (file, findings, why) => {
     const entry = allow.get(file);
@@ -1324,7 +1398,7 @@ export function evaluateMigrationSet(files, { baselineVersion = 0, allowlist = [
       continue;
     }
     if (kind === "versioned" && !isAboveBaseline(versionParts, baselineVersion)) continue;
-    const findings = scanSqlForViolations(f.sql);
+    const findings = scanSqlForViolations(f.sql, requiredDomains);
     if (findings.length === 0) continue;
     report(f.file, findings);
   }
