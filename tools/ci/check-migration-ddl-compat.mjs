@@ -709,6 +709,16 @@ function hasAlterSequenceRestart(s) {
   return target !== null && /\bRESTART\b/i.test(shadowQuotedIdentifiers(s.slice(target.index + target[0].length)));
 }
 
+function hasAlterSequencePropertyChange(s) {
+  const target = s.match(new RegExp(
+    String.raw`\bALTER\s+SEQUENCE\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}`,
+    "i",
+  ));
+  return target !== null && /\b(?:AS|INCREMENT(?:\s+BY)?|(?:NO\s+)?MINVALUE|(?:NO\s+)?MAXVALUE|START(?:\s+WITH)?|RESTART(?:\s+WITH)?|CACHE|(?:NO\s+)?CYCLE|OWNED\s+BY)\b/i.test(
+    shadowQuotedIdentifiers(s.slice(target.index + target[0].length)),
+  );
+}
+
 function markerCount(s, marker) {
   return s.split(marker).length - 1;
 }
@@ -781,6 +791,9 @@ export function scanSqlForViolations(rawSql) {
     if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|(?:RECURSIVE\s+)?VIEW)\b/i.test(keywordShadow)) {
       add("CREATE OR REPLACE 기존 객체");
     }
+    if (/\bALTER\s+(?:TABLE|(?:MATERIALIZED\s+)?VIEW|SEQUENCE|TYPE|DOMAIN|SCHEMA)\b[\s\S]*\bOWNER\s+TO\b/i.test(keywordShadow)) {
+      add("ALTER 기존 객체 OWNER");
+    }
     if (/\bALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE)\b/i.test(keywordShadow)) {
       add("ALTER 기존 routine");
     }
@@ -823,6 +836,9 @@ export function scanSqlForViolations(rawSql) {
     }
     if (hasAlterSequenceRestart(s)) {
       add("ALTER SEQUENCE RESTART");
+    }
+    if (hasAlterSequencePropertyChange(s)) {
+      add("ALTER SEQUENCE 속성 변경");
     }
     if (
       new RegExp(
@@ -870,6 +886,15 @@ export function scanSqlForViolations(rawSql) {
     for (const label of scanAddColumnClauses(s, isAlterTable, isNewTable)) add(label);
 
     if (isAlterTable) {
+      if (
+        altersExistingTable &&
+        alterActions.some((action) => new RegExp(
+          String.raw`^ALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+DEFAULT\b`,
+          "i",
+        ).test(action))
+      ) {
+        add("ALTER TABLE SET DEFAULT");
+      }
       if (/\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
         add("ENABLE ROW LEVEL SECURITY");
       }

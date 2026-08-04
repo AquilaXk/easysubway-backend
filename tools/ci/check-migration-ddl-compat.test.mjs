@@ -152,6 +152,31 @@ test("ALTER FUNCTION·PROCEDURE·ROUTINE은 fail closed 하고 quoted text는 �
   assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER FUNCTION f" (id BIGINT);'), []);
 });
 
+test("기존 객체 OWNER·기존 table SET DEFAULT·sequence 속성 변경은 fail closed 한다", () => {
+  for (const sql of [
+    "ALTER TABLE routes OWNER TO app;",
+    "ALTER VIEW route_view OWNER TO app;",
+    "ALTER MATERIALIZED VIEW route_view OWNER TO app;",
+    "ALTER SEQUENCE route_id_seq OWNER TO app;",
+    "ALTER TYPE route_point OWNER TO app;",
+    "ALTER DOMAIN postal_code OWNER TO app;",
+    "ALTER SCHEMA public OWNER TO app;",
+  ]) assert.ok(scanSqlForViolations(sql).includes("ALTER 기존 객체 OWNER"));
+  for (const sql of [
+    "ALTER TABLE routes ALTER COLUMN title SET DEFAULT 'new';",
+    "ALTER TABLE routes ALTER title SET DEFAULT 1;",
+  ]) assert.ok(scanSqlForViolations(sql).includes("ALTER TABLE SET DEFAULT"));
+  for (const sql of [
+    "ALTER SEQUENCE route_id_seq AS BIGINT;",
+    "ALTER SEQUENCE route_id_seq INCREMENT BY 2 MINVALUE 1 MAXVALUE 999 START WITH 1 RESTART WITH 2 CACHE 10 CYCLE OWNED BY routes.id;",
+    "ALTER SEQUENCE route_id_seq NO MINVALUE NO MAXVALUE NO CYCLE;",
+  ]) assert.ok(scanSqlForViolations(sql).includes("ALTER SEQUENCE 속성 변경"));
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE routes ADD COLUMN title TEXT DEFAULT 'new';"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); ALTER TABLE routes ADD COLUMN title TEXT DEFAULT 'new';"), []);
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "OWNER TO" (id BIGINT);'), []);
+  assert.deepEqual(scanSqlForViolations('ALTER SEQUENCE "CYCLE";'), []);
+});
+
 test("stripSqlNoise는 일반 literal을 제거하고 procedural dollar 본문만 인라인한다", () => {
   const cleaned = stripSqlNoise(
     "-- DROP TABLE in a comment\n/* DROP TABLE block */\nSELECT 'DROP TABLE in string';\nDO $$ DROP TABLE hidden; $$;",
@@ -308,11 +333,11 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
   }
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT 'x';"), []);
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL IS NULL);"), []);
-  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL IS NULL);"), []);
+  assert.ok(scanSqlForViolations("ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL IS NULL);").includes("ALTER TABLE SET DEFAULT"));
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true);"), []);
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true); ALTER POLICY reader ON t USING (true);"), []);
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ATTACH PARTITION t_2026 FOR VALUES FROM (1) TO (2);"), []);
-  assert.deepEqual(scanSqlForViolations('ALTER SEQUENCE t_id_seq OWNED BY "RESTART";'), []);
+  assert.ok(scanSqlForViolations('ALTER SEQUENCE t_id_seq OWNED BY "RESTART";').includes("ALTER SEQUENCE 속성 변경"));
 });
 
 test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 통과한다", () => {
