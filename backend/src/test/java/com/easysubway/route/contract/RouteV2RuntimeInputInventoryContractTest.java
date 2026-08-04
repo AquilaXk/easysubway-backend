@@ -139,7 +139,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		byte[] gzip = Files.readAllBytes(TIMETABLE_GZIP);
 		byte[] evidenceBytes = Files.readAllBytes(TIMETABLE_EVIDENCE);
 		assertThat(sha256(gzip)).isEqualTo(GZIP_SHA256);
-		assertThat(sha256(evidenceBytes)).isEqualTo(EVIDENCE_SHA256);
+		assertThat(sha256(normalizedTextBytes(evidenceBytes))).isEqualTo(EVIDENCE_SHA256);
 
 		JsonNode evidence = JSON.readTree(evidenceBytes);
 		assertThat(evidence.path("snapshotGzipSha256").asText()).isEqualTo(sha256(gzip));
@@ -245,6 +245,10 @@ class RouteV2RuntimeInputInventoryContractTest {
 
 	private static String sha256(byte[] bytes) throws Exception {
 		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+	}
+
+	private static byte[] normalizedTextBytes(byte[] bytes) {
+		return new String(bytes, StandardCharsets.UTF_8).replace("\r\n", "\n").replace('\r', '\n').getBytes(StandardCharsets.UTF_8);
 	}
 
 	private static Set<String> fieldNames(JsonNode node) {
