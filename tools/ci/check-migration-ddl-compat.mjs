@@ -225,6 +225,7 @@ const DO_BODY_END = "EASYSUBWAY_DO_BODY_END";
 const SET_CONFIG_SEARCH_PATH = "EASYSUBWAY_SET_CONFIG_SEARCH_PATH";
 const SET_CONFIG_SEARCH_PATH_LOCAL = `${SET_CONFIG_SEARCH_PATH}_LOCAL`;
 const SET_CONFIG_SEARCH_PATH_SESSION = `${SET_CONFIG_SEARCH_PATH}_SESSION`;
+const SET_CONFIG_OTHER = "EASYSUBWAY_SET_CONFIG_OTHER";
 
 function currentStatementPrefix(out) {
   let start = 0;
@@ -481,15 +482,11 @@ export function stripSqlNoise(sql) {
         out += ` ${UNTERMINATED_QUOTED_BODY} `;
       } else if (markers) {
         out += ` ${markers[0]} ${stripSqlNoise(literal)} ${markers[1]} `;
-      } else if (isSetConfigSettingNameArgument(out) && (
-        unicodeEscapes
-          ? (() => {
-            const decoded = decodeUnicodeEscapeLiteral(literal, sql, i);
-            return !decoded.trusted || decoded.value.toLowerCase() === "search_path";
-          })()
-          : literal.toLowerCase() === "search_path"
-      )) {
-        out += ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `;
+      } else if (isSetConfigSettingNameArgument(out)) {
+        const decoded = unicodeEscapes ? decodeUnicodeEscapeLiteral(literal, sql, i) : { trusted: true, value: literal };
+        out += !decoded.trusted || decoded.value.toLowerCase() === "search_path"
+          ? ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `
+          : ` ${SET_CONFIG_OTHER} `;
       } else out += " ";
       continue;
     }
@@ -507,8 +504,10 @@ export function stripSqlNoise(sql) {
       }
       i = bodyEnd + delimiter.length;
       if (markers) out += ` ${markers[0]} ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ${markers[1]} `;
-      else if (isSetConfigSettingNameArgument(out) && sql.slice(bodyStart, bodyEnd).toLowerCase() === "search_path") {
-        out += ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `;
+      else if (isSetConfigSettingNameArgument(out)) {
+        out += sql.slice(bodyStart, bodyEnd).toLowerCase() === "search_path"
+          ? ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `
+          : ` ${SET_CONFIG_OTHER} `;
       } else out += " ";
       continue;
     }
@@ -902,6 +901,22 @@ function searchPathContextChange(s, contextStack) {
       local = /\bSET\s+LOCAL\s+SEARCH_PATH\b/i.test(mutation[0]) || mutation[0].includes(SET_CONFIG_SEARCH_PATH_LOCAL);
     }
   }
+  for (const call of keywordShadow.matchAll(/\bset_config\s*\(/gi)) {
+    const context = applyBodyMarkers(s, contextStack, call.index);
+    if (!(context.length === 0 || context.at(-1) === "do")) continue;
+    const open = call.index + call[0].length - 1;
+    const args = splitTopLevelArguments(keywordShadow.slice(open + 1, setConfigCallEnd(keywordShadow, open + 1)));
+    const setting = (args.find((arg) => /^setting_name\s*(?:=>|:=)/i.test(arg)) ?? args[0] ?? "")
+      .replace(/^setting_name\s*(?:=>|:=)\s*/i, "")
+      .replace(/^(?:[Ee]|[Uu]&)(?=\s)/, "")
+      .trim();
+    const staticSetting = setting.replace(/\s+UESCAPE\s*$/i, "");
+    if (new RegExp(String.raw`^\s*${SET_CONFIG_OTHER}\s*$`).test(staticSetting)) continue;
+    if (staticSetting !== SET_CONFIG_SEARCH_PATH_LOCAL && staticSetting !== SET_CONFIG_SEARCH_PATH_SESSION) {
+      changes = true;
+      local = !(/^is_local\s*(?:=>|:=)\s*false\s*$/i.test(args.find((arg) => /^is_local\s*(?:=>|:=)/i.test(arg)) ?? "") || /^false$/i.test(args[2] ?? ""));
+    }
+  }
   return { changes, local };
 }
 
@@ -971,6 +986,9 @@ export function scanSqlForViolations(rawSql) {
     }
     if (/\bALTER\s+(?:ROLE|USER)\b/i.test(keywordShadow)) {
       add("ALTER 기존 role");
+    }
+    if (/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bBEGIN\s+ATOMIC\b/i.test(keywordShadow)) {
+      add("미지원 BEGIN ATOMIC routine");
     }
     const ruleStarter = /\bCREATE\s+(OR\s+REPLACE\s+)?RULE\b/i.exec(keywordShadow);
     if (ruleStarter) {
@@ -1171,7 +1189,9 @@ export function scanSqlForViolations(rawSql) {
     }
 
     const createdTable = isProceduralBody ? null : unconditionalCreatedTable(s);
-    if (createdTable) createdTables.add(tableIdentity(createdTable, searchPathEpoch));
+    if (createdTable && !(/\b(?:GLOBAL\s+|LOCAL\s+)?(?:TEMP|TEMPORARY)\b/i.test(keywordShadow) && /\bON\s+COMMIT\s+DROP\b/i.test(keywordShadow))) {
+      createdTables.add(tableIdentity(createdTable, searchPathEpoch));
+    }
     proceduralBodyDepth += bodyStarts - bodyEnds;
     bodyContextStack = applyBodyMarkers(s, bodyContextStack);
   }

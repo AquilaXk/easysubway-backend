@@ -231,6 +231,25 @@ test("U& setting_name은 escape를 decode하고 불명확한 값은 fail closed 
   );
 });
 
+test("temporary ON COMMIT DROP·computed set_config·BEGIN ATOMIC은 fail closed 한다", () => {
+  assert.ok(scanSqlForViolations("CREATE TEMP TABLE routes(id BIGINT) ON COMMIT DROP; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations("CREATE TEMP TABLE routes(id BIGINT); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  for (const call of [
+    "set_config(concat('search', '_path'), 'archive', true)",
+    "set_config(lower('search_path'), 'archive', true)",
+  ]) assert.ok(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); SELECT ${call}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config('timezone', 'UTC', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.ok(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config('search' || '_path', 'archive', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config(E'timezone', 'UTC', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config(U&'timezone', 'UTC', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.deepEqual(scanSqlForViolations("BEGIN; SELECT set_config(concat('search', '_path'), 'archive', is_local => false); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  for (const sql of [
+    "CREATE FUNCTION f() RETURNS int LANGUAGE SQL BEGIN ATOMIC SELECT 1; END;",
+    "CREATE PROCEDURE p() LANGUAGE SQL BEGIN ATOMIC SELECT 1; END;",
+  ]) assert.ok(scanSqlForViolations(sql).includes("미지원 BEGIN ATOMIC routine"));
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "BEGIN ATOMIC" (id BIGINT);'), []);
+});
+
 test("ALTER FUNCTION·PROCEDURE·ROUTINE은 fail closed 하고 quoted text는 오탐하지 않는다", () => {
   for (const sql of ["ALTER FUNCTION f() RESET ALL;", "ALTER PROCEDURE p() RESET ALL;", "ALTER ROUTINE r() RESET ALL;"]) {
     assert.ok(scanSqlForViolations(sql).includes("ALTER 기존 routine"));
