@@ -218,6 +218,8 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
 }
 
 const UNTERMINATED_QUOTED_BODY = "EASYSUBWAY_UNTERMINATED_QUOTED_BODY";
+const PROCEDURAL_BODY_START = "EASYSUBWAY_PROCEDURAL_BODY_START";
+const PROCEDURAL_BODY_END = "EASYSUBWAY_PROCEDURAL_BODY_END";
 
 function isProceduralBodyPrefix(out) {
   const statement = out.slice(out.lastIndexOf(";") + 1);
@@ -237,6 +239,22 @@ export function stripSqlNoise(sql) {
   let i = 0;
   const n = sql.length;
   while (i < n) {
+    // double-quoted identifier는 내부의 --, /*, $tag$를 SQL 구문으로 다시 해석하지
+    // 않도록 하나의 원자로 소비한다. 원문은 뒤의 identifier parser가 계속 사용한다.
+    if (sql[i] === '"') {
+      const start = i++;
+      let closed = false;
+      while (i < n) {
+        if (sql[i] === '"' && sql[i + 1] === '"') {
+          i += 2;
+        } else if (sql[i++] === '"') {
+          closed = true;
+          break;
+        }
+      }
+      out += closed ? sql.slice(start, i) : ` ${UNTERMINATED_QUOTED_BODY} `;
+      continue;
+    }
     // 라인 주석
     if (sql[i] === "-" && sql[i + 1] === "-") {
       while (i < n && sql[i] !== "\n") i++;
@@ -292,7 +310,7 @@ export function stripSqlNoise(sql) {
       }
       out += closed
         ? preserveBody
-          ? ` ${stripSqlNoise(literal)} `
+          ? ` ${PROCEDURAL_BODY_START} ${stripSqlNoise(literal)} ${PROCEDURAL_BODY_END} `
           : " "
         : ` ${UNTERMINATED_QUOTED_BODY} `;
       continue;
@@ -309,7 +327,9 @@ export function stripSqlNoise(sql) {
         out += ` ${UNTERMINATED_QUOTED_BODY} `;
         break;
       }
-      out += preserveBody ? ` ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ` : " ";
+      out += preserveBody
+        ? ` ${PROCEDURAL_BODY_START} ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ${PROCEDURAL_BODY_END} `
+        : " ";
       i = bodyEnd + delimiter.length;
       continue;
     }
@@ -401,25 +421,14 @@ function isBlank(value) {
   return typeof value !== "string" || value.trim() === "";
 }
 
-// 같은 파일에서 새로 만든 테이블 집합. `CREATE TABLE IF NOT EXISTS`는 운영에 테이블이
-// 이미 있으면 no-op으로 지나가므로 "신규 생성"으로 볼 수 없다(뒤따르는 제약·UNIQUE INDEX
-// 추가가 구 canonical의 쓰기를 거부할 수 있다). 무조건적 CREATE TABLE만 면제 대상이다.
-function collectCreatedTables(cleaned) {
-  const set = new Set();
-  const starterRe = new RegExp(
-    String.raw`\bCREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?`,
-    "gi",
-  );
-  const targetRe = new RegExp(
-    String.raw`^\bCREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+// statement order상 앞선 최상위 무조건 CREATE TABLE만 신규 테이블로 인정한다.
+// IF NOT EXISTS와 procedural/conditional/후행 CREATE TABLE은 기존 테이블 면제를 만들 수 없다.
+function unconditionalCreatedTable(statement) {
+  const target = statement.match(new RegExp(
+    String.raw`^CREATE\s+(?:UNLOGGED\s+|GLOBAL\s+|LOCAL\s+|TEMP\s+|TEMPORARY\s+)?TABLE\s+(IF\s+NOT\s+EXISTS\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
     "i",
-  );
-  for (const starter of shadowQuotedIdentifiers(cleaned).matchAll(starterRe)) {
-    const target = cleaned.slice(starter.index).match(targetRe);
-    if (!target || target[1]) continue;
-    set.add(normalizeId(target[2]));
-  }
-  return set;
+  ));
+  return target && !target[1] ? normalizeId(target[2]) : null;
 }
 
 function splitAlterActions(tail) {
@@ -446,7 +455,26 @@ function splitAlterActions(tail) {
 }
 
 function splitStatements(cleaned) {
-  return cleaned.split(";");
+  const statements = [];
+  let start = 0;
+  let i = 0;
+  while (i < cleaned.length) {
+    if (cleaned[i] === '"') {
+      i++;
+      while (i < cleaned.length) {
+        if (cleaned[i] === '"' && cleaned[i + 1] === '"') i += 2;
+        else if (cleaned[i++] === '"') break;
+      }
+    } else {
+      if (cleaned[i] === ";") {
+        statements.push(cleaned.slice(start, i));
+        start = i + 1;
+      }
+      i++;
+    }
+  }
+  statements.push(cleaned.slice(start));
+  return statements;
 }
 
 // 문장에서 index 위치부터 최상위(괄호 depth 0) 콤마 또는 끝까지의 절을 잘라낸다.
@@ -484,20 +512,27 @@ const DESTRUCTIVE_DROP_OBJECTS = new Map([
 // DROP 절을 문맥별로 판정한다. ALTER TABLE 하위 DROP은 컬럼·제약·기본값 절이고, 그 밖의
 // DROP은 최상위 객체 제거 명령이다. 알려진 파괴 형태에도, 알려진 완화 형태에도 해당하지
 // 않는 DROP은 미지원으로 보고해 fail closed 시킨다(통과에는 allowlist 승인이 필요하다).
-function scanDropClauses(s, isAlterTable) {
+function scanDropClauses(s, keywordShadow, isAlterTable) {
   const labels = [];
-  const re = /\bDROP\s+(?:MATERIALIZED\s+)?(?:IF\s+EXISTS\s+)?([A-Za-z_][\w".]*)/gi;
-  for (const m of s.matchAll(re)) {
-    const word = normalizeId(m[1]);
+  const re = /\bDROP\b/gi;
+  for (const m of keywordShadow.matchAll(re)) {
+    const token = s.slice(m.index + m[0].length).match(new RegExp(
+      String.raw`^\s*(?:MATERIALIZED\s+)?(?:IF\s+EXISTS\s+)?(${SQL_IDENTIFIER})`,
+      "i",
+    ));
+    if (!token) continue;
+    const rawWord = token[1];
+    const word = normalizeId(rawWord);
+    const isKeyword = !rawWord.startsWith('"');
     // 인덱스 제거는 구 canonical의 읽기·쓰기를 거부하지 않는 완화형이다.
-    if (word === "index") continue;
+    if (isKeyword && word === "index") continue;
     if (isAlterTable) {
-      if (word === "constraint" || word === "not") continue; // 제약·NOT NULL 완화
+      if (isKeyword && (word === "constraint" || word === "not")) continue; // 제약·NOT NULL 완화
       // DEFAULT 제거는 그 컬럼을 생략하는 구 인스턴스의 insert를 실패시킨다.
-      labels.push(word === "default" ? "DROP DEFAULT" : "DROP COLUMN");
+      labels.push(isKeyword && word === "default" ? "DROP DEFAULT" : "DROP COLUMN");
       continue;
     }
-    const label = DESTRUCTIVE_DROP_OBJECTS.get(word);
+    const label = isKeyword ? DESTRUCTIVE_DROP_OBJECTS.get(word) : null;
     labels.push(label ?? `미지원 DROP 형태(DROP ${word.toUpperCase()})`);
   }
   return labels;
@@ -511,31 +546,39 @@ function hasNullDefault(clause) {
   const tail = clause.match(/\bDEFAULT\s+([\s\S]*)/i)?.[1];
   if (!tail) return false;
   const boundary = /\s+(?:NOT\s+NULL|UNIQUE|PRIMARY\s+KEY|REFERENCES|CHECK|CONSTRAINT|COLLATE|GENERATED)\b/i.exec(tail);
-  let expression = (boundary ? tail.slice(0, boundary.index) : tail).trim();
-  while (expression.startsWith("(") && expression.endsWith(")")) {
-    let depth = 0;
-    let closesAt = -1;
-    for (let i = 0; i < expression.length; i++) {
-      if (expression[i] === "(") depth++;
-      if (expression[i] === ")" && --depth === 0) {
-        closesAt = i;
-        break;
+  const unwrapOuterParentheses = (value) => {
+    let unwrapped = value.trim();
+    while (unwrapped.startsWith("(") && unwrapped.endsWith(")")) {
+      let depth = 0;
+      let closesAt = -1;
+      for (let i = 0; i < unwrapped.length; i++) {
+        if (unwrapped[i] === "(") depth++;
+        if (unwrapped[i] === ")" && --depth === 0) {
+          closesAt = i;
+          break;
+        }
       }
+      if (closesAt !== unwrapped.length - 1) break;
+      unwrapped = unwrapped.slice(1, -1).trim();
     }
-    if (closesAt !== expression.length - 1) break;
-    expression = expression.slice(1, -1).trim();
-  }
+    return unwrapped;
+  };
+  let expression = (boundary ? tail.slice(0, boundary.index) : tail).trim();
   const type = String.raw`${SQL_QUALIFIED_IDENTIFIER}(?:\s+(?:VARYING|PRECISION|WITH(?:OUT)?\s+TIME\s+ZONE))*?(?:\s*\([^()]*\))?(?:\s*\[\s*\])*`;
-  return new RegExp(String.raw`^(?:NULL\b(?:\s*::\s*${type})?|CAST\s*\(\s*NULL\s+AS\s+${type}\s*\))$`, "i").test(expression);
+  const castLhs = expression.match(new RegExp(String.raw`^([\s\S]*?)\s*::\s*${type}$`, "i"))?.[1];
+  if (castLhs !== undefined && unwrapOuterParentheses(castLhs).toUpperCase() === "NULL") return true;
+  expression = unwrapOuterParentheses(expression);
+  return new RegExp(
+    String.raw`^(?:NULL\b(?:\s*::\s*${type})?|CAST\s*\(\s*NULL\s+AS\s+${type}\s*\))$`,
+    "i",
+  ).test(expression);
 }
 
 // ADD [COLUMN] <컬럼> ... 절을 분석한다. PostgreSQL은 COLUMN 키워드를 생략할 수 있으므로
 // (`ALTER TABLE t ADD c text NOT NULL`) 두 형태를 동일하게 본다. 생략형은 ALTER TABLE
 // 문맥에서만 컬럼 추가로 해석하고, 제약 추가 구문은 별도 규칙이 담당하므로 제외한다.
-function scanAddColumnClauses(s, isAlterTable, createdTables) {
+function scanAddColumnClauses(s, isAlterTable, isNewTable) {
   const labels = [];
-  const targetMatch = s.match(new RegExp(ALTER_TABLE_TARGET, "i"));
-  const isNewTable = targetMatch && createdTables.has(normalizeId(targetMatch[1]));
   for (const m of s.matchAll(/\bADD\s+(?:(COLUMN)\s+)?(?:IF\s+NOT\s+EXISTS\s+)?/gi)) {
     const at = m.index + m[0].length;
     if (!m[1]) {
@@ -561,15 +604,32 @@ function hasDynamicExecute(s) {
   return /\bEXECUTE\b(?!\s+(?:FUNCTION|PROCEDURE)\b)/i.test(withoutPrivilege);
 }
 
+function hasAlterSequenceRestart(s) {
+  const target = s.match(new RegExp(
+    String.raw`\bALTER\s+SEQUENCE\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}`,
+    "i",
+  ));
+  return target !== null && /\bRESTART\b/i.test(shadowQuotedIdentifiers(s.slice(target.index + target[0].length)));
+}
+
+function markerCount(s, marker) {
+  return s.split(marker).length - 1;
+}
+
 // 단일 SQL 텍스트를 스캔해 파괴적 DDL 규칙 위반 라벨의 (중복 제거된) 배열을 반환한다.
 export function scanSqlForViolations(rawSql) {
   const cleaned = stripSqlNoise(rawSql);
-  const createdTables = collectCreatedTables(cleaned);
+  const createdTables = new Set();
   const findings = [];
   const add = (label) => findings.push(label);
+  let proceduralBodyDepth = 0;
   for (const stmt of splitStatements(cleaned)) {
     const s = stmt.trim();
     if (!s) continue;
+
+    const bodyStarts = markerCount(s, PROCEDURAL_BODY_START);
+    const bodyEnds = markerCount(s, PROCEDURAL_BODY_END);
+    const isProceduralBody = proceduralBodyDepth > 0 || bodyStarts > 0;
 
     const isAlterTable = /\bALTER\s+TABLE\b/i.test(s);
     const alterTargetMatch = isAlterTable
@@ -577,6 +637,7 @@ export function scanSqlForViolations(rawSql) {
       : null;
     const alterTarget = alterTargetMatch ? normalizeId(alterTargetMatch[1]) : null;
     const altersExistingTable = !alterTarget || !createdTables.has(alterTarget);
+    const isNewTable = alterTarget !== null && createdTables.has(alterTarget);
     const alterActionTail = alterTargetMatch
       ? s.slice(alterTargetMatch.index + alterTargetMatch[0].length)
       : "";
@@ -587,7 +648,7 @@ export function scanSqlForViolations(rawSql) {
     if (/\bTRUNCATE\b/i.test(s)) add("TRUNCATE");
     if (/\bREVOKE\b/i.test(keywordShadow)) add("REVOKE 권한");
     if (hasDynamicExecute(s)) add("동적 EXECUTE");
-    if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|VIEW)\b/i.test(s)) {
+    if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|(?:RECURSIVE\s+)?VIEW)\b/i.test(s)) {
       add("CREATE OR REPLACE 기존 객체");
     }
     if (/\bCREATE\s+OR\s+REPLACE\s+RULE\b/i.test(keywordShadow)) {
@@ -620,10 +681,7 @@ export function scanSqlForViolations(rawSql) {
     )) {
       add("SET DEFAULT NULL");
     }
-    if (new RegExp(
-      String.raw`\bALTER\s+SEQUENCE\s+(?:IF\s+EXISTS\s+)?${SQL_QUALIFIED_IDENTIFIER}\s+RESTART\b`,
-      "i",
-    ).test(s)) {
+    if (hasAlterSequenceRestart(s)) {
       add("ALTER SEQUENCE RESTART");
     }
     if (
@@ -650,8 +708,8 @@ export function scanSqlForViolations(rawSql) {
       add("ALTER DOMAIN ADD CONSTRAINT");
     }
 
-    for (const label of scanDropClauses(s, isAlterTable)) add(label);
-    for (const label of scanAddColumnClauses(s, isAlterTable, createdTables)) add(label);
+    for (const label of scanDropClauses(s, keywordShadow, isAlterTable)) add(label);
+    for (const label of scanAddColumnClauses(s, isAlterTable, isNewTable)) add(label);
 
     if (isAlterTable) {
       if (/\bENABLE\s+ROW\s+LEVEL\s+SECURITY\b/i.test(s)) {
@@ -716,6 +774,10 @@ export function scanSqlForViolations(rawSql) {
         add("기존 테이블에 UNIQUE INDEX 추가");
       }
     }
+
+    const createdTable = isProceduralBody ? null : unconditionalCreatedTable(s);
+    if (createdTable) createdTables.add(createdTable);
+    proceduralBodyDepth += bodyStarts - bodyEnds;
   }
   return [...new Set(findings)];
 }

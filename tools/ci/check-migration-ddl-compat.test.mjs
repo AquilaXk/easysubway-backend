@@ -118,6 +118,7 @@ test("CREATE OR REPLACE procedure/view는 기존 객체 교체로 fail closed �
   for (const sql of [
     "CREATE OR REPLACE PROCEDURE refresh_routes() LANGUAGE SQL AS $$ SELECT 1 $$;",
     "CREATE OR REPLACE VIEW active_routes AS SELECT * FROM routes;",
+    "CREATE OR REPLACE RECURSIVE VIEW active_routes AS SELECT * FROM routes;",
   ]) {
     assert.ok(scanSqlForViolations(sql).includes("CREATE OR REPLACE 기존 객체"));
   }
@@ -229,6 +230,8 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT ((NULL));",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT CAST(NULL AS TEXT);",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT NULL::TEXT;",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL)::public.text;",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT ((NULL))::public.text;",
     "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL);",
     "ALTER TABLE t ALTER required_value SET DEFAULT CAST(NULL AS TEXT);",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (CAST(NULL AS TEXT));",
@@ -244,6 +247,7 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
     ["ALTER POLICY reader ON t USING (true);", "CREATE/ALTER POLICY ON 기존 테이블"],
     ["ALTER TABLE t DETACH PARTITION t_2026;", "ALTER TABLE DETACH PARTITION"],
     ["ALTER SEQUENCE t_id_seq RESTART WITH 1;", "ALTER SEQUENCE RESTART"],
+    ["ALTER SEQUENCE t_id_seq INCREMENT BY 5 RESTART WITH 1;", "ALTER SEQUENCE RESTART"],
     ["ALTER TABLE t ALTER COLUMN id RESTART WITH 1;", "ALTER TABLE ALTER COLUMN RESTART"],
   ]) {
     assert.ok(scanSqlForViolations(sql).includes(label), `${label} 누락`);
@@ -254,6 +258,7 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true);"), []);
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true); ALTER POLICY reader ON t USING (true);"), []);
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ATTACH PARTITION t_2026 FOR VALUES FROM (1) TO (2);"), []);
+  assert.deepEqual(scanSqlForViolations('ALTER SEQUENCE t_id_seq OWNED BY "RESTART";'), []);
 });
 
 test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 통과한다", () => {
@@ -301,6 +306,40 @@ test("무조건적 CREATE TABLE 대상 제약 추가는 계속 면제되고 IF N
     "CREATE TABLE IF NOT EXISTS t (id BIGINT);\nALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);";
   assert.deepEqual(scanSqlForViolations(unconditional), []);
   assert.deepEqual(scanSqlForViolations(conditional), ["기존 테이블에 제약(ADD CONSTRAINT) 추가"]);
+});
+
+test("신규 테이블 면제는 선행 최상위 무조건 CREATE TABLE에만 적용된다", () => {
+  for (const sql of [
+    "ALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id); CREATE TABLE t (id BIGINT);",
+    "DO $$ BEGIN CREATE TABLE t (id BIGINT); END $$; ALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);",
+    "DO $$ BEGIN PERFORM 1; CREATE TABLE t (id BIGINT); END $$; ALTER TABLE t ADD CONSTRAINT t_unique UNIQUE (id);",
+    "CREATE TABLE IF NOT EXISTS t (id BIGINT); CREATE UNIQUE INDEX ux_t ON t (id);",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).length > 0, `면제가 잘못 적용됐다: ${sql}`);
+  }
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE UNIQUE INDEX ux_t ON t (id);"),
+    [],
+  );
+});
+
+test("double-quoted identifier 내부 SQL 표식은 구문으로 재해석하지 않는다", () => {
+  assert.deepEqual(
+    scanSqlForViolations('CREATE TABLE "-- not comment; DROP TABLE" (id BIGINT);'),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations('ALTER TABLE "-- hidden" ADD COLUMN required_value TEXT NOT NULL;').includes(
+      "DEFAULT 없는 NOT NULL 컬럼 추가",
+    ),
+  );
+});
+
+test("quoted column DROP은 탐지하고 quoted identifier 내부 DROP은 오탐하지 않는다", () => {
+  assert.ok(
+    scanSqlForViolations('ALTER TABLE t DROP "quoted-column";').includes("DROP COLUMN"),
+  );
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "DROP hidden" (id BIGINT);'), []);
 });
 
 test("기존 테이블의 ENABLE/DISABLE [REPLICA|ALWAYS] TRIGGER는 fail closed 하고 새 테이블은 면제한다", () => {
