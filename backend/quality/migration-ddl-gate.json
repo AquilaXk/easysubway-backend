@@ -1,7 +1,7 @@
 {
-  "schemaVersion": 1,
+  "schemaVersion": 2,
   "gateId": "backend-migration-ddl-compat",
-  "issue": "#2365",
+  "issue": "https://github.com/AquilaXk/easysubway/issues/2365",
   "baselineVersion": 66,
   "scannedDirectory": "backend/src/main/resources/db/migration/postgresql",
   "excludedDirectories": [
@@ -9,15 +9,33 @@
   ],
   "note": "blue/green standby+promotion 배포는 standby가 구 canonical과 동일한 live Postgres에 대해 부팅하므로 모든 마이그레이션이 expand/contract(순수 additive) 계약을 지켜야 한다. baselineVersion(V66)까지는 게이트 도입 전 기존 마이그레이션으로 grandfather 처리하고, baseline 초과 신규 파일에서 파괴적 DDL을 fail closed로 탐지한다. h2 디렉토리는 테스트 전용 스키마라 라이브 배포 대상이 아니므로 검사에서 제외한다.",
   "allowlistEntryFormat": {
-    "file": "V<n>__<name>.sql",
+    "file": "scannedDirectory-relative .sql path (예: V<n>__<name>.sql 또는 legacy_manual_patch.sql)",
     "reason": "이 파괴적 마이그레이션이 안전한 이유(contract 단계 조건 등)",
-    "approval": "승인 근거 (이슈/PR 링크)"
+    "approval": "https://github.com/<owner>/<repo>/issues/<n>",
+    "expiresAt": "승인 만료 ISO instant(UTC, 예: 2030-01-01T00:00:00.000Z)",
+    "sha256": "실제 파일의 소문자 SHA-256"
   },
+  "inventory": [
+    {
+      "file": "V67__admin_user_roles_granted_by.sql",
+      "sha256": "b4b33d415dcae56df2fe117bedf583a9dfdf11e28b5388f77042651a90cbd8c1"
+    },
+    {
+      "file": "V68__create_error_events.sql",
+      "sha256": "07ee7f2677086a903b74c74b54a1df819b1ba967f16fc356555267c6898aa010"
+    },
+    {
+      "file": "V69__admin_error_events_permission.sql",
+      "sha256": "16097e64609c86cf502b29e5b804ed72660c870563f5b642fd073a3a9d530e5a"
+    }
+  ],
   "allowlist": [
     {
       "file": "V69__admin_error_events_permission.sql",
       "reason": "admin_role_permissions permission_code CHECK를 admin.errors.read 포함으로 확장하는 RBAC contract 단계. DROP CONSTRAINT + ADD CONSTRAINT는 기존 V11–V63 권한 시드 패턴과 동일하며, 새 권한 INSERT 전에 체크 제약이 먼저 열려야 한다.",
-      "approval": "#2433"
+      "approval": "https://github.com/AquilaXk/easysubway/issues/2433",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "16097e64609c86cf502b29e5b804ed72660c870563f5b642fd073a3a9d530e5a"
     }
   ]
 }

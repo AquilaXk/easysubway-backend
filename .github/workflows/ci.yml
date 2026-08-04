@@ -101,6 +101,9 @@ jobs:
           node --test tools/routes/*.test.mjs
           node --test tools/realtime/*.test.mjs
 
+      - name: Check migration DDL compatibility
+        run: node tools/ci/check-migration-ddl-compat.mjs
+
       - name: Test admin QA contracts
         run: |
           npm ci --prefix tools/qa --ignore-scripts
