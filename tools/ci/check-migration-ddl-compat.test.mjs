@@ -428,6 +428,8 @@ test("특수 문자와 escaped quote가 있는 quoted column의 SET DATA TYPE을
 test("double-quoted identifier 안의 새 규칙 키워드는 오탐하지 않는다", () => {
   for (const sql of [
     'ALTER TABLE t ADD COLUMN "REVOKE" TEXT;',
+    'ALTER TABLE t ADD COLUMN "RENAME" TEXT;',
+    'ALTER TABLE t ADD COLUMN "EXECUTE" TEXT;',
     'ALTER TABLE t ADD COLUMN "DISABLE TRIGGER" BOOLEAN;',
     'ALTER TABLE t ADD COLUMN "x, DISABLE TRIGGER" BOOLEAN;',
     'ALTER TABLE t ADD COLUMN "x, ALTER COLUMN y TYPE" BOOLEAN;',
@@ -435,6 +437,28 @@ test("double-quoted identifier 안의 새 규칙 키워드는 오탐하지 않�
   ]) {
     assert.deepEqual(scanSqlForViolations(sql), []);
   }
+});
+
+test("기존 테이블의 plain CREATE RULE은 fail closed 하고 선행 신규 테이블 rule만 면제한다", () => {
+  assert.ok(
+    scanSqlForViolations("CREATE RULE route_insert AS ON INSERT TO routes DO INSTEAD NOTHING;").includes(
+      "CREATE RULE ON 기존 테이블",
+    ),
+  );
+  assert.deepEqual(
+    scanSqlForViolations(
+      "CREATE TABLE routes (id BIGINT); CREATE RULE route_insert AS ON INSERT TO routes DO INSTEAD NOTHING;",
+    ),
+    [],
+  );
+});
+
+test("quoted comma가 있는 ADD COLUMN도 전체 절을 검사한다", () => {
+  assert.ok(
+    scanSqlForViolations('ALTER TABLE routes ADD COLUMN "required,value" TEXT NOT NULL;').includes(
+      "DEFAULT 없는 NOT NULL 컬럼 추가",
+    ),
+  );
 });
 
 test("완화형 DROP(INDEX·CONSTRAINT·NOT NULL)은 통과하고 미지원 DROP 형태는 fail closed 된다", () => {

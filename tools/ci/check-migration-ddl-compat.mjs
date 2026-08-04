@@ -483,7 +483,14 @@ function clauseFrom(text, index) {
   let i = index;
   for (; i < text.length; i++) {
     const ch = text[i];
-    if (ch === "(") depth++;
+    if (ch === '"') {
+      i++;
+      while (i < text.length) {
+        if (text[i] === '"' && text[i + 1] === '"') i += 2;
+        else if (text[i++] === '"') break;
+      }
+      i--;
+    } else if (ch === "(") depth++;
     else if (ch === ")") {
       if (depth === 0) break;
       depth--;
@@ -597,10 +604,10 @@ function scanAddColumnClauses(s, isAlterTable, isNewTable) {
 
 // 동적 SQL 실행(EXECUTE '...') 탐지. trigger의 `EXECUTE FUNCTION|PROCEDURE`와 권한 부여
 // 문법(`GRANT EXECUTE ON FUNCTION f() TO role`)의 EXECUTE는 동적 실행이 아니다.
-function hasDynamicExecute(s) {
-  const withoutPrivilege = /\b(?:GRANT|REVOKE)\b/i.test(s)
-    ? s.replace(/\bEXECUTE(?=\s+ON\s+(?:ALL\s+)?(?:FUNCTION|PROCEDURE|ROUTINE)S?\b)/gi, " ")
-    : s;
+function hasDynamicExecute(keywordShadow) {
+  const withoutPrivilege = /\b(?:GRANT|REVOKE)\b/i.test(keywordShadow)
+    ? keywordShadow.replace(/\bEXECUTE(?=\s+ON\s+(?:ALL\s+)?(?:FUNCTION|PROCEDURE|ROUTINE)S?\b)/gi, " ")
+    : keywordShadow;
   return /\bEXECUTE\b(?!\s+(?:FUNCTION|PROCEDURE)\b)/i.test(withoutPrivilege);
 }
 
@@ -645,14 +652,21 @@ export function scanSqlForViolations(rawSql) {
     const keywordShadow = shadowQuotedIdentifiers(s);
 
     if (s.includes(UNTERMINATED_QUOTED_BODY)) add("미종결 quoted body");
-    if (/\bTRUNCATE\b/i.test(s)) add("TRUNCATE");
+    if (/\bTRUNCATE\b/i.test(keywordShadow)) add("TRUNCATE");
     if (/\bREVOKE\b/i.test(keywordShadow)) add("REVOKE 권한");
-    if (hasDynamicExecute(s)) add("동적 EXECUTE");
-    if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|(?:RECURSIVE\s+)?VIEW)\b/i.test(s)) {
+    if (hasDynamicExecute(keywordShadow)) add("동적 EXECUTE");
+    if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|(?:RECURSIVE\s+)?VIEW)\b/i.test(keywordShadow)) {
       add("CREATE OR REPLACE 기존 객체");
     }
-    if (/\bCREATE\s+OR\s+REPLACE\s+RULE\b/i.test(keywordShadow)) {
-      add("CREATE OR REPLACE RULE");
+    const ruleStarter = /\bCREATE\s+(OR\s+REPLACE\s+)?RULE\b/i.exec(keywordShadow);
+    if (ruleStarter) {
+      const ruleTarget = s.slice(ruleStarter.index).match(new RegExp(
+        String.raw`^\s*CREATE\s+(?:OR\s+REPLACE\s+)?RULE\s+${SQL_IDENTIFIER}\s+AS\s+ON\s+[A-Za-z_]+\s+TO\s+(?:ONLY\s+)?(${SQL_QUALIFIED_IDENTIFIER})`,
+        "i",
+      ));
+      if (!ruleTarget || !createdTables.has(normalizeId(ruleTarget[1]))) {
+        add(ruleStarter[1] ? "CREATE OR REPLACE RULE" : "CREATE RULE ON 기존 테이블");
+      }
     }
     const policyStarter = /\b(?:CREATE|ALTER)\s+POLICY\b/i.exec(keywordShadow);
     if (policyStarter) {
@@ -673,8 +687,8 @@ export function scanSqlForViolations(rawSql) {
     if (triggerMatch && !createdTables.has(normalizeId(triggerMatch[1]))) {
       add("CREATE TRIGGER ON 기존 테이블");
     }
-    if (/\bRENAME\b/i.test(s)) add("RENAME");
-    if (/\bSET\s+NOT\s+NULL\b/i.test(s)) add("SET NOT NULL");
+    if (/\bRENAME\b/i.test(keywordShadow)) add("RENAME");
+    if (/\bSET\s+NOT\s+NULL\b/i.test(keywordShadow)) add("SET NOT NULL");
     if (alterActions.some((action) =>
       new RegExp(String.raw`^ALTER\s+(?:COLUMN\s+)?${SQL_IDENTIFIER}\s+SET\s+DEFAULT\b`, "i").test(action) &&
       hasNullDefault(action),
