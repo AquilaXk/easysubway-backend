@@ -222,13 +222,29 @@ const PROCEDURAL_BODY_START = "EASYSUBWAY_PROCEDURAL_BODY_START";
 const PROCEDURAL_BODY_END = "EASYSUBWAY_PROCEDURAL_BODY_END";
 const DO_BODY_START = "EASYSUBWAY_DO_BODY_START";
 const DO_BODY_END = "EASYSUBWAY_DO_BODY_END";
+const SET_CONFIG_SEARCH_PATH = "EASYSUBWAY_SET_CONFIG_SEARCH_PATH";
+
+function currentStatementPrefix(out) {
+  let start = 0;
+  for (let i = 0; i < out.length; i++) {
+    if (out[i] === '"') {
+      i++;
+      while (i < out.length) {
+        if (out[i] === '"' && out[i + 1] === '"') i += 2;
+        else if (out[i] === '"') break;
+        else i++;
+      }
+    } else if (out[i] === ";") start = i + 1;
+  }
+  return out.slice(start);
+}
 
 function proceduralBodyMarkers(out) {
-  const statement = out.slice(out.lastIndexOf(";") + 1);
-  if (/\bDO(?:\s+LANGUAGE\s+[\w".]+)?\s*E?\s*$/i.test(statement)) {
+  const statement = currentStatementPrefix(out);
+  if (/\bDO(?:\s+LANGUAGE\s+[\w".]+)?\s*(?:E|U&)?\s*$/i.test(statement)) {
     return [DO_BODY_START, DO_BODY_END];
   }
-  if (/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bAS\s*E?\s*$/i.test(statement)) {
+  if (/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bAS\s*(?:E|U&)?\s*$/i.test(statement)) {
     return [PROCEDURAL_BODY_START, PROCEDURAL_BODY_END];
   }
   return null;
@@ -251,6 +267,29 @@ function readSingleQuotedLiteral(sql, start, backslashEscapes) {
     }
   }
   return { literal, end: i, closed: false };
+}
+
+function skipSqlTrivia(sql, cursor) {
+  while (cursor < sql.length) {
+    if (/\s/.test(sql[cursor])) cursor++;
+    else if (sql[cursor] === "-" && sql[cursor + 1] === "-") {
+      const end = sql.indexOf("\n", cursor + 2);
+      cursor = end === -1 ? sql.length : end;
+    } else if (sql[cursor] === "/" && sql[cursor + 1] === "*") {
+      let depth = 1;
+      cursor += 2;
+      while (cursor < sql.length && depth > 0) {
+        if (sql[cursor] === "/" && sql[cursor + 1] === "*") {
+          depth++;
+          cursor += 2;
+        } else if (sql[cursor] === "*" && sql[cursor + 1] === "/") {
+          depth--;
+          cursor += 2;
+        } else cursor++;
+      }
+    } else break;
+  }
+  return cursor;
 }
 
 // SQL 전처리: 주석과 일반 data literal은 제거한다. DO와 CREATE FUNCTION/PROCEDURE AS의
@@ -304,6 +343,7 @@ export function stripSqlNoise(sql) {
     // 단일따옴표 문자열 ('' 및 E'...'의 backslash 이스케이프 인지)
     if (sql[i] === "'") {
       const markers = proceduralBodyMarkers(out);
+      const unicodeEscapes = i > 1 && /[Uu]/.test(sql[i - 2]) && sql[i - 1] === "&";
       const backslashEscapes =
         i > 0 &&
         /[Ee]/.test(sql[i - 1]) &&
@@ -311,9 +351,9 @@ export function stripSqlNoise(sql) {
       let { literal, end: next, closed } = readSingleQuotedLiteral(sql, i, backslashEscapes);
       i = next;
       while (markers && closed) {
-        let cursor = i;
-        while (cursor < n && /\s/.test(sql[cursor])) cursor++;
-        if (!/[\r\n]/.test(sql.slice(i, cursor))) break;
+        const cursor = skipSqlTrivia(sql, i);
+        const separator = sql.slice(i, cursor);
+        if (!/[\r\n]/.test(separator)) break;
         let componentStart = cursor;
         let componentEscapes = false;
         if (/[Ee]/.test(sql[cursor]) && sql[cursor + 1] === "'") {
@@ -328,8 +368,12 @@ export function stripSqlNoise(sql) {
         closed = component.closed;
       }
       out += closed
-        ? markers
+        ? markers && unicodeEscapes && (literal.includes("\\") || /^UESCAPE\s+'/i.test(sql.slice(skipSqlTrivia(sql, i))))
+          ? ` ${UNTERMINATED_QUOTED_BODY} `
+          : markers
           ? ` ${markers[0]} ${stripSqlNoise(literal)} ${markers[1]} `
+          : /\bset_config\s*\(\s*$/i.test(out) && literal.toLowerCase() === "search_path"
+            ? ` ${SET_CONFIG_SEARCH_PATH} `
           : " "
         : ` ${UNTERMINATED_QUOTED_BODY} `;
       continue;
@@ -669,7 +713,10 @@ function markerCount(s, marker) {
   return s.split(marker).length - 1;
 }
 
-const SEARCH_PATH_MUTATION = /\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b/gi;
+const SEARCH_PATH_MUTATION = new RegExp(
+  String.raw`\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b|\bset_config\s*\(\s*${SET_CONFIG_SEARCH_PATH}\b`,
+  "gi",
+);
 const BODY_MARKER = new RegExp(`${DO_BODY_START}|${DO_BODY_END}|${PROCEDURAL_BODY_START}|${PROCEDURAL_BODY_END}`, "g");
 
 function applyBodyMarkers(s, stack, until = s.length) {
@@ -689,7 +736,7 @@ function changesSearchPathContext(s, contextStack) {
   SEARCH_PATH_MUTATION.lastIndex = 0;
   for (const mutation of keywordShadow.matchAll(SEARCH_PATH_MUTATION)) {
     const context = applyBodyMarkers(s, contextStack, mutation.index);
-    if ((context.length === 0 && mutation.index === 0) || context.at(-1) === "do") return true;
+    if ((context.length === 0 && (mutation.index === 0 || mutation[0].includes(SET_CONFIG_SEARCH_PATH))) || context.at(-1) === "do") return true;
   }
   return false;
 }
@@ -733,6 +780,9 @@ export function scanSqlForViolations(rawSql) {
     if (hasDynamicExecute(keywordShadow)) add("동적 EXECUTE");
     if (/\bCREATE\s+OR\s+REPLACE\s+(?:FUNCTION|PROCEDURE|(?:RECURSIVE\s+)?VIEW)\b/i.test(keywordShadow)) {
       add("CREATE OR REPLACE 기존 객체");
+    }
+    if (/\bALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE)\b/i.test(keywordShadow)) {
+      add("ALTER 기존 routine");
     }
     const ruleStarter = /\bCREATE\s+(OR\s+REPLACE\s+)?RULE\b/i.exec(keywordShadow);
     if (ruleStarter) {

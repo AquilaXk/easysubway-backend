@@ -117,6 +117,41 @@ test("newline으로 연결된 DO·함수·프로시저 single-quoted body는 함
   assert.deepEqual(scanSqlForViolations("SELECT 'DROP TABLE hidden;'\n'DROP TABLE still_data;';"), []);
 });
 
+test("procedural U& body·comment 연결·quoted semicolon prefix를 보존하고 ordinary data는 제거한다", () => {
+  for (const sql of [
+    "DO 'BEGIN ' /* joined\ncomment */ 'DROP TABLE hidden; END';",
+    "DO 'BEGIN ' -- joined\n'DROP TABLE hidden; END';",
+    "DO 'BEGIN ' /* outer /* nested */\ncomment */ 'DROP TABLE hidden; END';",
+    "DO U&'DROP TABLE hidden;'",
+    'CREATE FUNCTION f() RETURNS "x;y" LANGUAGE plpgsql AS \'DROP TABLE hidden;\';',
+    'CREATE FUNCTION "cleanup;legacy"() RETURNS void LANGUAGE plpgsql AS \'DROP TABLE hidden;\';',
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("DROP TABLE"));
+  }
+  assert.deepEqual(scanSqlForViolations("SELECT U&'DROP TABLE hidden;'"), []);
+  assert.ok(scanSqlForViolations("DO U&'\\0044ROP TABLE hidden;'").includes("미종결 quoted body"));
+  assert.ok(scanSqlForViolations("DO u&'\\0044ROP TABLE hidden;'").includes("미종결 quoted body"));
+  assert.ok(scanSqlForViolations("DO U&'!0044ROP TABLE hidden;' UESCAPE '!'").includes("미종결 quoted body"));
+  for (const trivia of ["/* valid trivia */", "-- valid trivia\n", "/* outer /* nested */ trivia */"]) {
+    assert.ok(scanSqlForViolations(`DO U&'!0044ROP TABLE hidden;' ${trivia} UESCAPE '!';`).includes("미종결 quoted body"));
+  }
+  assert.ok(scanSqlForViolations('ANALYZE "prior;statement"; DO \'DROP TABLE hidden;\';').includes("DROP TABLE"));
+});
+
+test("set_config search_path만 execution context를 무효화하고 routine·다른 key는 제외한다", () => {
+  assert.ok(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config('search_path', 'archive', false); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"));
+  assert.ok(scanSqlForViolations("CREATE TABLE routes(id BIGINT); DO $$ BEGIN PERFORM set_config('search_path', 'archive', false); END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS $$ BEGIN PERFORM set_config('search_path', 'archive', false); END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT set_config('timezone', 'UTC', false); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+});
+
+test("ALTER FUNCTION·PROCEDURE·ROUTINE은 fail closed 하고 quoted text는 오탐하지 않는다", () => {
+  for (const sql of ["ALTER FUNCTION f() RESET ALL;", "ALTER PROCEDURE p() RESET ALL;", "ALTER ROUTINE r() RESET ALL;"]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER 기존 routine"));
+  }
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER FUNCTION f" (id BIGINT);'), []);
+});
+
 test("stripSqlNoise는 일반 literal을 제거하고 procedural dollar 본문만 인라인한다", () => {
   const cleaned = stripSqlNoise(
     "-- DROP TABLE in a comment\n/* DROP TABLE block */\nSELECT 'DROP TABLE in string';\nDO $$ DROP TABLE hidden; $$;",
