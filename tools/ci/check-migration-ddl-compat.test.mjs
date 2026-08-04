@@ -187,6 +187,17 @@ test("set_config search_path만 execution context를 무효화하고 routine·�
   }
   assert.deepEqual(scanSqlForViolations("BEGIN; SELECT other('search_path', 'archive', true); CREATE TABLE routes(id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
   for (const call of [
+    'pg_catalog."set_config"(\'search_path\', \'archive\', true)',
+    '"set_config"(\'search_path\', \'archive\', true)',
+  ]) assert.ok(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); SELECT ${call}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes("PRIMARY KEY 컬럼 추가"), call);
+  assert.deepEqual(scanSqlForViolations("CREATE TABLE routes(id BIGINT); SELECT arbitrary('search_path', 'archive', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"), []);
+  assert.ok(scanSqlForViolations('CREATE TABLE routes(id BIGINT); SELECT pg_catalog."set_config"(\'search\' || \'_path\', \'archive\', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;').includes("PRIMARY KEY 컬럼 추가"));
+  assert.deepEqual(scanSqlForViolations('CREATE TABLE routes(id BIGINT); SELECT "SET_CONFIG"(\'search_path\', \'archive\', true); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;'), []);
+  for (const call of [
+    'custom.set_config(\'search_path\', \'archive\', true)',
+    'custom."set_config"(\'search_path\', \'archive\', true)',
+  ]) assert.deepEqual(scanSqlForViolations(`CREATE TABLE routes(id BIGINT); SELECT ${call}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`), [], call);
+  for (const call of [
     "set_config(E'search_path', 'archive', true)",
     "set_config(setting_name := E'search_path', new_value := 'archive', is_local := true)",
     "set_config(U&'search_path', 'archive', true)",
@@ -407,6 +418,11 @@ test("COLUMN 생략형 ADD도 DEFAULT가 있으면 통과하고 제약 추가로
   );
 });
 
+test("quoted UNIQUE type name은 inline 제약으로 오인하지 않는다", () => {
+  assert.deepEqual(scanSqlForViolations('ALTER TABLE t ADD COLUMN value "UNIQUE";'), []);
+  assert.ok(scanSqlForViolations("ALTER TABLE t ADD COLUMN value TEXT UNIQUE;").includes("기존 테이블에 제약(ADD CONSTRAINT) 추가"));
+});
+
 test("기존 테이블 inline ADD PRIMARY KEY·NOT NULL DEFAULT NULL과 ALTER NULL default·schema 이동은 fail closed 한다", () => {
   assert.ok(
     scanSqlForViolations("ALTER TABLE t ADD COLUMN id BIGINT PRIMARY KEY;").includes(
@@ -465,6 +481,14 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
   }
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT 'x';"), []);
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL IS NULL);"), []);
+  for (const sql of [
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT NULLIF(1, 1);",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT CASE WHEN true THEN NULL END;",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT nullable_function();",
+  ]) assert.ok(scanSqlForViolations(sql).some((finding) => finding.includes("NOT NULL 컬럼 추가")), sql);
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT COALESCE(NULL, 'x');"), []);
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT COALESCE('x', nullable_function());"), []);
+  assert.ok(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT COALESCE(nullable_function(), NULLIF(1, 1));").some((finding) => finding.includes("NOT NULL 컬럼 추가")));
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT CAST(coalesce(NULL, 'x') AS TEXT);"), []);
   assert.ok(scanSqlForViolations("ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL IS NULL);").includes("ALTER TABLE SET DEFAULT"));
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true);"), []);

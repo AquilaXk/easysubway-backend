@@ -226,6 +226,7 @@ const SET_CONFIG_SEARCH_PATH = "EASYSUBWAY_SET_CONFIG_SEARCH_PATH";
 const SET_CONFIG_SEARCH_PATH_LOCAL = `${SET_CONFIG_SEARCH_PATH}_LOCAL`;
 const SET_CONFIG_SEARCH_PATH_SESSION = `${SET_CONFIG_SEARCH_PATH}_SESSION`;
 const SET_CONFIG_OTHER = "EASYSUBWAY_SET_CONFIG_OTHER";
+const STATIC_NON_NULL_LITERAL = "EASYSUBWAY_STATIC_NON_NULL_LITERAL";
 
 function currentStatementPrefix(out) {
   let start = 0;
@@ -279,7 +280,8 @@ function setConfigCallContext(out) {
     if (out[i] === ")") depth++;
     else if (out[i] === "(" && (depth === 0 ? ((open = i), true) : !(depth--))) break;
   }
-  if (open < 0 || !/\bset_config\s*$/i.test(out.slice(0, open))) return null;
+  if (open < 0) return null;
+  if (!isBuiltinSetConfigPrefix(out.slice(0, open))) return null;
   const args = out.slice(open + 1);
   let lastComma = -1;
   depth = 0;
@@ -290,6 +292,15 @@ function setConfigCallContext(out) {
   }
   const argument = args.slice(lastComma + 1).trim();
   return { args, lastComma, argument };
+}
+
+function isBuiltinSetConfigPrefix(prefix) {
+  const identifier = String.raw`(?:[A-Za-z_][\w$]*|"(?:""|[^"])+")`;
+  const match = prefix.match(new RegExp(String.raw`(?:(${identifier})\s*\.\s*)?(${identifier})\s*$`));
+  if (!match) return false;
+  const name = match[2].startsWith('"') ? match[2] === '"set_config"' : match[2].toLowerCase() === "set_config";
+  if (!name || match[1] === undefined) return name;
+  return match[1].startsWith('"') ? match[1] === '"pg_catalog"' : match[1].toLowerCase() === "pg_catalog";
 }
 
 function isSetConfigSettingNameArgument(out) {
@@ -487,7 +498,7 @@ export function stripSqlNoise(sql) {
         out += !decoded.trusted || decoded.value.toLowerCase() === "search_path"
           ? ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `
           : ` ${SET_CONFIG_OTHER} `;
-      } else out += " ";
+      } else out += ` ${STATIC_NON_NULL_LITERAL} `;
       continue;
     }
     // dollar-quoted literal은 동일 tag의 다음 delimiter까지가 한 body다. 다른 tag는 본문
@@ -508,7 +519,7 @@ export function stripSqlNoise(sql) {
         out += sql.slice(bodyStart, bodyEnd).toLowerCase() === "search_path"
           ? ` ${setConfigSearchPathIsLocal(out, sql, i) ? SET_CONFIG_SEARCH_PATH_LOCAL : SET_CONFIG_SEARCH_PATH_SESSION} `
           : ` ${SET_CONFIG_OTHER} `;
-      } else out += " ";
+      } else out += ` ${STATIC_NON_NULL_LITERAL} `;
       continue;
     }
     out += sql[i];
@@ -772,6 +783,24 @@ function scanDropClauses(s, keywordShadow, isAlterTable, isAlterDomain) {
 const ADD_NON_COLUMN_KEYWORD =
   /^(?:CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|CHECK|EXCLUDE|GENERATED|IDENTITY)\b/i;
 
+function unwrapOuterParentheses(value) {
+  let unwrapped = value.trim();
+  while (unwrapped.startsWith("(") && unwrapped.endsWith(")")) {
+    let depth = 0;
+    let closesAt = -1;
+    for (let i = 0; i < unwrapped.length; i++) {
+      if (unwrapped[i] === "(") depth++;
+      if (unwrapped[i] === ")" && --depth === 0) {
+        closesAt = i;
+        break;
+      }
+    }
+    if (closesAt !== unwrapped.length - 1) break;
+    unwrapped = unwrapped.slice(1, -1).trim();
+  }
+  return unwrapped;
+}
+
 function hasNullDefault(clause) {
   const keywordShadow = shadowQuotedIdentifiers(clause);
   const defaultMatch = /\bDEFAULT\b/i.exec(keywordShadow);
@@ -779,23 +808,6 @@ function hasNullDefault(clause) {
   const tail = clause.slice(defaultMatch.index + defaultMatch[0].length);
   const shadowTail = keywordShadow.slice(defaultMatch.index + defaultMatch[0].length);
   const boundary = /\s+(?:NOT\s+NULL|UNIQUE|PRIMARY\s+KEY|REFERENCES|CHECK|CONSTRAINT|COLLATE|GENERATED)\b/i.exec(shadowTail);
-  const unwrapOuterParentheses = (value) => {
-    let unwrapped = value.trim();
-    while (unwrapped.startsWith("(") && unwrapped.endsWith(")")) {
-      let depth = 0;
-      let closesAt = -1;
-      for (let i = 0; i < unwrapped.length; i++) {
-        if (unwrapped[i] === "(") depth++;
-        if (unwrapped[i] === ")" && --depth === 0) {
-          closesAt = i;
-          break;
-        }
-      }
-      if (closesAt !== unwrapped.length - 1) break;
-      unwrapped = unwrapped.slice(1, -1).trim();
-    }
-    return unwrapped;
-  };
   let expression = unwrapOuterParentheses((boundary ? tail.slice(0, boundary.index) : tail).trim());
   const type = String.raw`${SQL_QUALIFIED_IDENTIFIER}(?:\s+(?:VARYING|PRECISION|WITH(?:OUT)?\s+TIME\s+ZONE))*?(?:\s*\([^()]*\))?(?:\s*\[\s*\])*`;
   const castLhs = expression.match(new RegExp(String.raw`^([\s\S]*?)\s*::\s*${type}$`, "i"))?.[1];
@@ -809,6 +821,30 @@ function hasNullDefault(clause) {
     String.raw`^(?:NULL\b(?:\s*::\s*${type})?|CAST\s*\(\s*NULL\s+AS\s+${type}\s*\))$`,
     "i",
   ).test(expression);
+}
+
+function isProvablyNonNullExpression(value) {
+  const expression = unwrapOuterParentheses(value.trim().replace(/;\s*$/, ""));
+  if (expression === STATIC_NON_NULL_LITERAL) return true;
+  if (/^[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:E[+-]?\d+)?$/i.test(expression)) return true;
+  if (/^(?:TRUE|FALSE|CURRENT_DATE|CURRENT_TIME(?:\s*\(\s*\d+\s*\))?|CURRENT_TIMESTAMP(?:\s*\(\s*\d+\s*\))?)$/i.test(expression)) return true;
+  if (/^NULL\s+IS\s+(?:NOT\s+)?NULL$/i.test(expression)) return true;
+  const type = String.raw`${SQL_QUALIFIED_IDENTIFIER}(?:\s+(?:VARYING|PRECISION|WITH(?:OUT)?\s+TIME\s+ZONE))*?(?:\s*\([^()]*\))?(?:\s*\[\s*\])*`;
+  const castLhs = expression.match(new RegExp(String.raw`^([\s\S]*?)\s*::\s*${type}$`, "i"))?.[1];
+  if (castLhs !== undefined) return isProvablyNonNullExpression(castLhs);
+  const castOperand = expression.match(new RegExp(String.raw`^CAST\s*\(\s*([\s\S]*?)\s+AS\s+${type}\s*\)$`, "i"))?.[1];
+  if (castOperand !== undefined) return isProvablyNonNullExpression(castOperand);
+  const coalesce = /^COALESCE\s*\(([\s\S]*)\)$/i.exec(expression);
+  return coalesce !== null && splitTopLevelArguments(coalesce[1]).some(isProvablyNonNullExpression);
+}
+
+function hasProvablyNonNullDefault(clause) {
+  const shadow = shadowQuotedIdentifiers(clause);
+  const match = /\bDEFAULT\b/i.exec(shadow);
+  if (!match) return false;
+  const tail = clause.slice(match.index + match[0].length);
+  const boundary = /\s+(?:NOT\s+NULL|UNIQUE|PRIMARY\s+KEY|REFERENCES|CHECK|CONSTRAINT|COLLATE|GENERATED)\b/i.exec(shadow.slice(match.index + match[0].length));
+  return isProvablyNonNullExpression(boundary ? tail.slice(0, boundary.index) : tail);
 }
 
 // ADD [COLUMN] <컬럼> ... 절을 분석한다. PostgreSQL은 COLUMN 키워드를 생략할 수 있으므로
@@ -827,7 +863,8 @@ function scanAddColumnClauses(s, isAlterTable, isNewTable) {
     if (!isNewTable && /\bPRIMARY\s+KEY\b/i.test(keywordShadow)) labels.push("PRIMARY KEY 컬럼 추가");
     if (!isNewTable && /\bNOT\s+NULL\b/i.test(keywordShadow)) {
       if (!/\bDEFAULT\b/i.test(keywordShadow)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
-      if (hasNullDefault(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
+      if (/\bDEFAULT\b/i.test(keywordShadow) && hasNullDefault(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
+      else if (/\bDEFAULT\b/i.test(keywordShadow) && !hasProvablyNonNullDefault(clause)) labels.push("DEFAULT non-NULL 미증명 NOT NULL 컬럼 추가");
     }
     if (!isNewTable && /\b(?:CHECK|REFERENCES)\b/i.test(keywordShadow)) {
       labels.push("기존 테이블에 제약(ADD CONSTRAINT) 추가");
@@ -901,11 +938,12 @@ function searchPathContextChange(s, contextStack) {
       local = /\bSET\s+LOCAL\s+SEARCH_PATH\b/i.test(mutation[0]) || mutation[0].includes(SET_CONFIG_SEARCH_PATH_LOCAL);
     }
   }
-  for (const call of keywordShadow.matchAll(/\bset_config\s*\(/gi)) {
+  for (const call of s.matchAll(/(?:\bset_config\s*\(|"set_config"\s*\()/gi)) {
     const context = applyBodyMarkers(s, contextStack, call.index);
     if (!(context.length === 0 || context.at(-1) === "do")) continue;
     const open = call.index + call[0].length - 1;
-    const args = splitTopLevelArguments(keywordShadow.slice(open + 1, setConfigCallEnd(keywordShadow, open + 1)));
+    if (!isBuiltinSetConfigPrefix(s.slice(0, open))) continue;
+    const args = splitTopLevelArguments(s.slice(open + 1, setConfigCallEnd(s, open + 1)));
     const setting = (args.find((arg) => /^setting_name\s*(?:=>|:=)/i.test(arg)) ?? args[0] ?? "")
       .replace(/^setting_name\s*(?:=>|:=)\s*/i, "")
       .replace(/^(?:[Ee]|[Uu]&)(?=\s)/, "")
@@ -1169,7 +1207,7 @@ export function scanSqlForViolations(rawSql) {
         new RegExp(
           String.raw`\bADD\s+(?:COLUMN\s+)?(?:IF\s+NOT\s+EXISTS\s+)?${SQL_IDENTIFIER}\s+[^;]*\bUNIQUE\b`,
           "i",
-        ).test(s)
+        ).test(keywordShadow)
       ) {
         if (!alterTarget || !createdTables.has(alterTarget)) {
           add("기존 테이블에 제약(ADD CONSTRAINT) 추가");
