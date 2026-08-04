@@ -35,12 +35,20 @@ class RouteV2RuntimeInputInventoryContractTest {
 		"backend/src/main/java/com/easysubway/realtime/application/",
 		"backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/",
 		"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/",
-		"backend/src/main/java/com/easysubway/common/security/"
+		"backend/src/main/java/com/easysubway/common/security/",
+		"backend/src/main/java/com/easysubway/realtime/adapter/in/web/",
+		"backend/src/main/java/com/easysubway/transit/adapter/in/web/",
+		"backend/src/main/java/com/easysubway/report/adapter/in/web/",
+		"backend/src/main/java/com/easysubway/transit/application/service/",
+		"backend/src/main/java/com/easysubway/report/application/service/",
+		"backend/src/main/java/com/easysubway/report/adapter/out/persistence/",
+		"backend/src/main/java/com/easysubway/common/persistence/"
 	);
 	// Capacity-evidence, nested fixture, and non-prod-profile sources are outside production Route V2 runtime.
 	private static final Set<String> EXCLUDED_CANDIDATE_FILES = Set.of(
 		"CapacityEvidencePlayIntegrityDecoder.java",
 		"FixtureRealtimeProvider.java",
+		"InMemoryFacilityReportRepository.java",
 		"InMemoryRouteSearchRepository.java",
 		"InMemoryRealtimeMappingPort.java",
 		"DevelopmentRealtimeSafetyPorts.java"
@@ -68,8 +76,8 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteV2Planner.java", "RouteV2Planner#resolveRealtimeUpdates", "timetable realtime resolution", "routeSearchUseCase.resolveTimetableRealtime(queries)", "REALTIME_OVERLAY_UNAVAILABLE"),
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#resolveTimetableRealtime", "optional realtime resolver", "realtimeArrivalResolver == null", "realtimeArrivalResolver.resolve"),
 		entry("RESOLVER", "backend/src/main/java/com/easysubway/route/adapter/out/realtime/RealtimeGatewayArrivalResolver.java", "RealtimeGatewayArrivalResolver#resolve", "gateway arrival resolver", "realtimeGatewayService.arrivals(new RealtimeQuery", "statusOf(result)"),
-		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#arrivals", "realtime gateway arrival provider", "normalizeArrivalQuery(query)", "provider.arrivals(normalizedQuery.query())", "arrivalCache", "mappingPort.findArrivalMapping(PROVIDER_ID, query)"),
-		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#arrivals", "CONFLICT: local-fixture fallback branch", "implements RealtimeProvider", "TOPIS_BASE_URI", "fixtureAllowedRuntime", "if (!fixtureEnabled)", "fallbackProvider.arrivals(query)"),
+		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#arrivals/#trainPositions", "realtime gateway arrival/train-position provider", "normalizeArrivalQuery(query)", "provider.arrivals(normalizedQuery.query())", "arrivalCache", "mappingPort.findArrivalMapping(PROVIDER_ID, query)", "normalizeTrainPositionQuery(query)", "provider.trainPositions(normalizedQuery)", "trainPositionCache"),
+		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#arrivals/#trainPositions", "CONFLICT: local-fixture fallback branch", "implements RealtimeProvider", "TOPIS_BASE_URI", "fixtureAllowedRuntime", "if (!fixtureEnabled)", "fallbackProvider.arrivals(query)", "fallbackProvider.trainPositions(query)"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/common/security/SecurityConfig.java", "SecurityConfig#routeV2IngressSecurityFilterChain", "production Route V2 ingress security wiring", "@ConditionalOnBean(RouteV2AccessStore.class)", "@Value(\"${easysubway.route-v2.origin-secret:}\")", "RouteV2IngressSecurity.configure"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2IngressSecurity.java", "RouteV2IngressSecurity#configure", "production Route V2 security matcher and filters", "securityMatcher(", "addFilterBefore(sessionFilter", "addFilterBefore(originFilter"),
 		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2OriginGateFilter.java", "RouteV2OriginGateFilter#doFilterInternal", "Route V2 origin header gate", "ORIGIN_HEADER", "MessageDigest.isEqual", "ROUTE_ORIGIN_FORBIDDEN"),
@@ -81,10 +89,29 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/InMemoryTransitMasterRepository.java", "InMemoryTransitMasterRepository#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "CONFLICT: direct static-seed transit master source", "LoadTransitMasterPort,", "public List<Station> loadStations()", "public List<RouteEdge> loadRouteEdges()"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeMappingRepository.java", "JdbcRealtimeMappingRepository#findArrivalMapping/#findTripMapping", "production realtime station/trip mappings", "implements RealtimeMappingPort", "findArrivalMapping", "findTripMapping"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeProviderCallQuotaRepository.java", "JdbcRealtimeProviderCallQuotaRepository#tryAcquire", "production realtime provider quota", "implements RealtimeProviderCallQuotaPort", "tryAcquire(", "realtime_provider_call_quota_state"),
-		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider"),
-		entry("REGISTRY", "backend/src/main/resources/application-prod.yml", "application-prod.yml#routeV2ProductionControls", "production Route V2 auth/session/seed/freshness property controls", "timetable:", "enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}", "includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}", "break-glass: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS:false}", "route-v2:", "origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}", "session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}", "certificate-sha256: ${EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256:}", "credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider(String providerId, String reason)", "switches.put(providerId, new ProviderSwitch(false, cleanReason(reason)));", "enableProvider(String providerId)", "switches.put(providerId, new ProviderSwitch(true, null));"),
+		entry("REGISTRY", "backend/src/main/resources/application-prod.yml", "application-prod.yml#routeV2ProductionControls", "production Route V2 auth/session/seed/freshness property controls", "management:", "readiness:", "include: \"readinessState,db,productionReadiness\"", "timetable:", "enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}", "includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}", "break-glass: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS:false}", "route-v2:", "origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}", "session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}", "certificate-sha256: ${EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256:}", "credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}"),
 		entry("LOADER", "backend/src/main/resources/timetable/line4-timetable-seed.sql.gz", "line4-timetable-seed.sql.gz#defaultSeed", "default production timetable seed gzip resource", "gzip binary; verified by paired evidence identity"),
-		entry("REGISTRY", "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json", "server-timetable-snapshot-evidence.json#defaultSeedEvidence", "default production timetable seed identity evidence", "\"artifactKind\": \"server-timetable-snapshot-evidence\"", "\"schemaIdentity\": \"backend-timetable-snapshot-v1\"", "\"snapshotGzipSha256\"", "\"materializedSqlSha256\"")
+		entry("REGISTRY", "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json", "server-timetable-snapshot-evidence.json#defaultSeedEvidence", "default production timetable seed identity evidence", "\"artifactKind\": \"server-timetable-snapshot-evidence\"", "\"schemaIdentity\": \"backend-timetable-snapshot-v1\"", "\"snapshotGzipSha256\"", "\"materializedSqlSha256\""),
+		entry("INPUT", "backend/src/main/java/com/easysubway/realtime/adapter/in/web/RealtimeController.java", "RealtimeController#arrivals/#trainPositions", "GET /api/v1/realtime/{arrivals,train-positions}", "@GetMapping(\"/api/v1/realtime/arrivals\")", "@GetMapping(\"/api/v1/realtime/train-positions\")", "rejectSecretBearingProviderParameters(request)", "realtimeGatewayService.arrivals(new RealtimeQuery(", "realtimeGatewayService.trainPositions(new RealtimeQuery("),
+		entry("INPUT", "backend/src/main/java/com/easysubway/realtime/adapter/in/web/RealtimeProviderAdminController.java", "RealtimeProviderAdminController#disableProvider/#enableProvider", "POST /admin/realtime/providers/{providerId}/{disable,enable}", "@PostMapping(\"/admin/realtime/providers/{providerId}/disable\")", "@PostMapping(\"/admin/realtime/providers/{providerId}/enable\")", "providerControl.disableProvider(providerId, reason)", "providerControl.enableProvider(providerId)"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/in/scheduler/RouteV2StatePurgeScheduler.java", "RouteV2StatePurgeScheduler#purgeExpiredState", "scheduled Route V2 state/session/nonce purge", "@Scheduled(fixedDelayString = \"${easysubway.route-v2.state-purge-interval-ms:300000}\")", "store.purgeExpired(clock.instant())", "metrics.recordPurge(purged)"),
+		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#TimetableSeedLoader", "configurable timetable seed/evidence resources", "@Value(\"${easysubway.timetable.seed.resource:classpath:timetable/line4-timetable-seed.sql.gz}\")", "@Value(\"${easysubway.timetable.seed.evidence-resource:classpath:timetable/server-timetable-snapshot-evidence.json}\")", "@Value(\"${easysubway.timetable.seed.includes-itx:false}\")"),
+		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#TopisRealtimeProvider", "Seoul TOPIS credential/fixture runtime configuration", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY:}\")", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_FIXTURE_ENABLED:false}\")", "@Value(\"${EASYSUBWAY_DEPLOY_ENV:}\")", "runtimeProfiles(environment)"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#RealtimeGatewayService", "TOPIS provider-call quota configuration", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_MINUTE:1}\")", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}\")", "RealtimeProviderCallQuotaPort providerCallQuotaPort"),
+		entry("INPUT", "backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitMasterController.java", "TransitMasterController#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge", "API facility create/update/status and route-edge override ingress", "@PatchMapping(\"/admin/stations/{stationId}/route-edges/{edgeId}\")", "@PostMapping(\"/admin/facilities\")", "@PutMapping(\"/admin/facilities/{facilityId}\")", "@PatchMapping(\"/admin/facilities/{facilityId}/status\")", "transitMasterAdminUseCase.updateRouteEdge(", "transitMasterAdminUseCase.createAccessibilityFacility(", "transitMasterAdminUseCase.updateAccessibilityFacility(", "transitMasterAdminUseCase.updateFacilityStatus("),
+		entry("INPUT", "backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitStationLayoutAdminPageController.java", "TransitStationLayoutAdminPageController#updateRouteEdgeFromPage", "POST route-edge override page ingress", "@PostMapping(\"/admin/stations/{stationId}/route-edges/{edgeId}/page\")", "String updateRouteEdgeFromPage(", "transitMasterAdminUseCase.updateRouteEdge(new UpdateRouteEdgeCommand("),
+		entry("INPUT", "backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitStationAdminPageController.java", "TransitStationAdminPageController#saveFacilityFromPage", "POST facility create/update page ingress", "@PostMapping(\"/admin/facilities/editor/page\")", "String saveFacilityFromPage(", "transitMasterAdminUseCase.createAccessibilityFacility(new CreateAccessibilityFacilityCommand(", "transitMasterAdminUseCase.updateAccessibilityFacility(new UpdateAccessibilityFacilityCommand("),
+		entry("INPUT", "backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitFacilityAdminPageController.java", "TransitFacilityAdminPageController#updateFacilityStatusFromPage", "POST facility-status page ingress", "@PostMapping(\"/admin/facilities/{facilityId}/page/status\")", "String updateFacilityStatusFromPage(", "transitMasterAdminUseCase.updateFacilityStatus(new UpdateAccessibilityFacilityStatusCommand("),
+		entry("INPUT", "backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportController.java", "FacilityReportController#createReport/#reviewReport", "POST report create and accepted-report API review ingress", "@PostMapping(\"/api/v1/reports\")", "ApiResponse<FacilityReportCreatedResponse> createReport(", "facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand())", "facilityReportUseCase.createReport(request.toCommand(principal.getName()))", "@PostMapping(\"/admin/reports/{reportId}/review\")", "ApiResponse<FacilityReportResponse> reviewReport(", "facilityReportUseCase.reviewReport(request.toCommand(reportId, principal.getName()))"),
+		entry("INPUT", "backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportAdminPageController.java", "FacilityReportAdminPageController#reviewReportFromPage/#bulkReviewReports", "POST accepted-report page/bulk review ingress", "@PostMapping(\"/admin/reports/{reportId}/page/review\")", "@PostMapping(\"/admin/reports/bulk-review\")", "String reviewReportFromPage(", "String bulkReviewReports(", "facilityReportUseCase.reviewReport("),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/transit/application/service/TransitMasterService.java", "TransitMasterService#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge", "facility and route-edge override writer orchestration", "public AccessibilityFacility createAccessibilityFacility(CreateAccessibilityFacilityCommand command)", "public AccessibilityFacility updateAccessibilityFacility(UpdateAccessibilityFacilityCommand command)", "public AccessibilityFacility updateFacilityStatus(UpdateAccessibilityFacilityStatusCommand command)", "public RouteEdge updateRouteEdge(UpdateRouteEdgeCommand command)", "saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(facility, command.updatedBy())", "saveAccessibilityFacilityStatusPort.saveFacilityStatus(", "saveRouteEdgePort.saveRouteEdge(updated, command.updatedBy())"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/report/application/service/FacilityReportService.java", "FacilityReportService#createReport/#createReportWithReceipt/#reviewReport/#applyAcceptedReportToFacilityStatus", "report create/review and accepted facility-status propagation", "public FacilityReport createReport(CreateFacilityReportCommand command)", "public CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command)", "saveFacilityReportPort.saveReport(report)", "public FacilityReport reviewReport(ReviewFacilityReportCommand command)", "applyAcceptedReportToFacilityStatus(report, command.decision())", "decision != FacilityReportReviewDecision.ACCEPT", "saveAccessibilityFacilityStatusPort.saveFacilityStatus(", "requireWritableMasterData();"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/JdbcTransitMasterOverrideRepository.java", "JdbcTransitMasterOverrideRepository#saveFacilityStatus/#saveAccessibilityFacility/#saveRouteEdge/#saveOverride", "facility/route-edge override persistence", "public void saveFacilityStatus(", "public void saveAccessibilityFacility(", "public void saveRouteEdge(", "saveOverride(FACILITY, facilityId, new AccessibilityFacility(", "saveOverride(ROUTE_EDGE, routeEdge.id(), routeEdge, updatedBy)", "INSERT INTO transit_master_overrides"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/common/persistence/ProductionPersistenceReadinessConfiguration.java", "ProductionPersistenceReadinessConfiguration#productionReadinessHealthIndicator", "production database/master-data readiness", "@Profile(\"prod | staging | release | prod-like\")", "HealthIndicator productionReadinessHealthIndicator(", "boolean databaseReady = databaseReady(dataSource);", "boolean masterDataReady = masterDataReady(loadTransitMasterPort);", "return health(ready).withDetails(details).build();"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteV2AccessStore.java", "JdbcRouteV2AccessStore#purgeExpired", "scheduled state/session/nonce persistence purge", "public int purgeExpired(Instant now)", "DELETE FROM route_v2_states WHERE expires_at <= ?", "DELETE FROM route_v2_nonce_replays WHERE expires_at <= ?", "DELETE FROM route_v2_sessions WHERE expires_at <= ?"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/common/security/SecurityConfig.java", "SecurityConfig#publicSecurityFilterChain", "public realtime ingress security allowlist", "SecurityFilterChain publicSecurityFilterChain(", "\"/api/v1/realtime/**\","),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/report/adapter/out/persistence/JdbcFacilityReportRepository.java", "JdbcFacilityReportRepository#loadReport/#saveReport", "production facility-report load/save persistence", "public class JdbcFacilityReportRepository implements", "public Optional<FacilityReport> loadReport(String reportId)", "public FacilityReport saveReport(FacilityReport report)", "upsertReport(report)", "return loadReport(report.id())", "INSERT INTO facility_reports (", "ON CONFLICT (report_id) DO UPDATE")
 	);
 
 	@Test
@@ -101,6 +128,13 @@ class RouteV2RuntimeInputInventoryContractTest {
 			"backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/",
 			"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/",
 			"backend/src/main/java/com/easysubway/common/security/",
+			"backend/src/main/java/com/easysubway/realtime/adapter/in/web/",
+			"backend/src/main/java/com/easysubway/transit/adapter/in/web/",
+			"backend/src/main/java/com/easysubway/report/adapter/in/web/",
+			"backend/src/main/java/com/easysubway/transit/application/service/",
+			"backend/src/main/java/com/easysubway/report/application/service/",
+			"backend/src/main/java/com/easysubway/report/adapter/out/persistence/",
+			"backend/src/main/java/com/easysubway/common/persistence/",
 			"backend/src/main/resources/"
 		);
 
@@ -130,6 +164,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 				}
 			}
 		}
+		assertThat(actual).hasSize(57);
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 	}
 
@@ -197,7 +232,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 						assertExcludedCandidateIsOutsideProductionRuntime(path.getFileName().toString(), source);
 						continue;
 					}
-					List<String> suffixes = requiredMemberSuffixes(path.getFileName().toString(), source);
+					List<String> suffixes = requiredMemberSuffixes(source);
 					if (!suffixes.isEmpty()) {
 						String fileName = path.getFileName().toString();
 						String className = fileName.substring(0, fileName.length() - ".java".length());
@@ -205,6 +240,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 							assertThat(members).contains(new Member(sourcePath, className + suffix));
 						}
 					}
+					assertSharedStateMarkers(sourcePath, source, members);
 					if (source.contains("extends UnavailableTransitMasterRepository")) {
 						assertThat(members).contains(new Member(sourcePath,
 							"JdbcTransitMasterOverrideRepository#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges"));
@@ -226,7 +262,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 	private static void assertExcludedCandidateIsOutsideProductionRuntime(String fileName, String source) {
 		switch (fileName) {
 			case "CapacityEvidencePlayIntegrityDecoder.java" -> assertThat(source).contains("@Profile(\"capacity-evidence\")");
-			case "InMemoryRouteSearchRepository.java", "InMemoryRealtimeMappingPort.java" -> assertThat(source)
+			case "InMemoryFacilityReportRepository.java", "InMemoryRouteSearchRepository.java", "InMemoryRealtimeMappingPort.java" -> assertThat(source)
 				.contains("@Profile(\"!prod & !staging & !release & !prod-like\")");
 			case "DevelopmentRealtimeSafetyPorts.java" -> assertThat(source).contains("@Profile({\"default\", \"dev\", \"test\"})");
 			case "FixtureRealtimeProvider.java" -> assertThat(source)
@@ -236,21 +272,83 @@ class RouteV2RuntimeInputInventoryContractTest {
 		}
 	}
 
-	private static List<String> requiredMemberSuffixes(String fileName, String source) {
+	private static List<String> requiredMemberSuffixes(String source) {
 		if (source.contains("implements LoadRouteTimetablePort")) return List.of("#loadRouteTimetableSnapshot");
 		if (source.contains("implements LoadRouteSearchPort")) return List.of("#loadRouteSearch");
 		if (source.contains("implements RealtimeArrivalResolver")) return List.of("#resolve");
-		if (source.contains("implements RealtimeProvider {") || source.contains("implements RealtimeProvider,")) return List.of("#arrivals");
+		if ((source.contains("implements RealtimeProvider {") || source.contains("implements RealtimeProvider,"))
+			&& !source.contains("fallbackProvider.arrivals(query)")) return List.of("#arrivals");
 		if (source.contains("implements PlayIntegrityDecoder")) return List.of("#decode");
 		if (source.contains("implements RouteV2AccessStore")) return List.of("#claimNonceAndSaveSession", "#consumeSession");
 		if (source.contains("implements ApplicationRunner")) return List.of("#run");
 		if (source.contains("LoadTransitMasterPort,")) return List.of("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
 		if (source.contains("implements RealtimeMappingPort")) return List.of("#findArrivalMapping/#findTripMapping");
-		String className = fileName.substring(0, fileName.length() - ".java".length());
+		String className = source.substring(source.lastIndexOf("class ") + "class ".length()).split("\\s+", 2)[0];
 		if (source.replaceAll("\\s+", " ").contains("class " + className + " implements RealtimeProviderCallQuotaPort")) {
 			return List.of("#tryAcquire");
 		}
 		return List.of();
+	}
+
+	private static void assertSharedStateMarkers(String sourcePath, String source, Set<Member> members) {
+		assertMarker(sourcePath, source, "provider.arrivals(normalizedQuery.query())", "RealtimeGatewayService#arrivals/#trainPositions", members);
+		assertMarker(sourcePath, source, "provider.trainPositions(normalizedQuery)", "RealtimeGatewayService#arrivals/#trainPositions", members);
+		assertMarker(sourcePath, source, "fallbackProvider.arrivals(query)", "TopisRealtimeProvider#arrivals/#trainPositions", members);
+		assertMarker(sourcePath, source, "fallbackProvider.trainPositions(query)", "TopisRealtimeProvider#arrivals/#trainPositions", members);
+		assertMarker(sourcePath, source, "disableProvider(String providerId, String reason)", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", members);
+		assertMarker(sourcePath, source, "enableProvider(String providerId)", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", members);
+		assertMarker(sourcePath, source, "providerControl.disableProvider(providerId, reason)", "RealtimeProviderAdminController#disableProvider/#enableProvider", members);
+		assertMarker(sourcePath, source, "providerControl.enableProvider(providerId)", "RealtimeProviderAdminController#disableProvider/#enableProvider", members);
+		assertMarker(sourcePath, source, "store.purgeExpired(clock.instant())", "RouteV2StatePurgeScheduler#purgeExpiredState", members);
+		assertMarker(sourcePath, source, "public int purgeExpired(Instant now)", "JdbcRouteV2AccessStore#purgeExpired", members);
+		assertMarker(sourcePath, source, "${easysubway.timetable.seed.resource:classpath:timetable/line4-timetable-seed.sql.gz}", "TimetableSeedLoader#TimetableSeedLoader", members);
+		assertTransitIngress(sourcePath, source, members);
+		assertMarker(sourcePath, source, "public AccessibilityFacility createAccessibilityFacility(CreateAccessibilityFacilityCommand command)", "TransitMasterService#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge", members);
+		assertMarker(sourcePath, source, "public RouteEdge updateRouteEdge(UpdateRouteEdgeCommand command)", "TransitMasterService#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge", members);
+		assertMarker(sourcePath, source, "saveRouteEdgePort.saveRouteEdge(updated, command.updatedBy())", "TransitMasterService#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge", members);
+		assertMarker(sourcePath, source, "facilityReportUseCase.createReportWithReceipt(request.toReceiptCommand())", "FacilityReportController#createReport/#reviewReport", members);
+		assertMarker(sourcePath, source, "facilityReportUseCase.createReport(request.toCommand(principal.getName()))", "FacilityReportController#createReport/#reviewReport", members);
+		assertMarker(sourcePath, source, "facilityReportUseCase.reviewReport(request.toCommand(reportId, principal.getName()))", "FacilityReportController#createReport/#reviewReport", members);
+		assertMarker(sourcePath, source, "public FacilityReport createReport(CreateFacilityReportCommand command)", "FacilityReportService#createReport/#createReportWithReceipt/#reviewReport/#applyAcceptedReportToFacilityStatus", members);
+		assertMarker(sourcePath, source, "public CreatedFacilityReport createReportWithReceipt(CreateFacilityReportCommand command)", "FacilityReportService#createReport/#createReportWithReceipt/#reviewReport/#applyAcceptedReportToFacilityStatus", members);
+		assertMarker(sourcePath, source, "applyAcceptedReportToFacilityStatus(report, command.decision())", "FacilityReportService#createReport/#createReportWithReceipt/#reviewReport/#applyAcceptedReportToFacilityStatus", members);
+		assertMarker(sourcePath, source, "public Optional<FacilityReport> loadReport(String reportId)", "JdbcFacilityReportRepository#loadReport/#saveReport", members);
+		assertMarker(sourcePath, source, "public FacilityReport saveReport(FacilityReport report)", "JdbcFacilityReportRepository#loadReport/#saveReport", members);
+		assertMarker(sourcePath, source, "HealthIndicator productionReadinessHealthIndicator(", "ProductionPersistenceReadinessConfiguration#productionReadinessHealthIndicator", members);
+		assertMarker(sourcePath, source, "RouteV2IngressSecurity.configure", "SecurityConfig#routeV2IngressSecurityFilterChain", members);
+		if (source.contains("\"/api/v1/realtime/**\",")) {
+			assertThat(members).contains(new Member(sourcePath, "SecurityConfig#publicSecurityFilterChain"));
+			int endpoint = source.indexOf("\"/api/v1/realtime/**\",");
+			int matcher = source.lastIndexOf(".requestMatchers(", endpoint);
+			int nextMatcher = source.indexOf(".requestMatchers(", endpoint + 1);
+			assertThat(matcher).isGreaterThanOrEqualTo(0);
+			assertThat(source.substring(matcher, nextMatcher < 0 ? source.length() : nextMatcher)).contains(".permitAll()");
+		}
+	}
+
+	private static void assertMarker(String sourcePath, String source, String marker, String member, Set<Member> members) {
+		if (source.contains(marker)) {
+			assertThat(members).contains(new Member(sourcePath, member));
+		}
+	}
+
+	private static void assertTransitIngress(String sourcePath, String source, Set<Member> members) {
+		if (!source.contains("transitMasterAdminUseCase.createAccessibilityFacility(")
+			&& !source.contains("transitMasterAdminUseCase.updateAccessibilityFacility(")
+			&& !source.contains("transitMasterAdminUseCase.updateFacilityStatus(")
+			&& !source.contains("transitMasterAdminUseCase.updateRouteEdge(")) {
+			return;
+		}
+		String member = source.contains("@PatchMapping(\"/admin/stations/{stationId}/route-edges/{edgeId}\")")
+			? "TransitMasterController#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge"
+			: source.contains("@PostMapping(\"/admin/stations/{stationId}/route-edges/{edgeId}/page\")")
+				? "TransitStationLayoutAdminPageController#updateRouteEdgeFromPage"
+				: source.contains("@PostMapping(\"/admin/facilities/editor/page\")")
+					? "TransitStationAdminPageController#saveFacilityFromPage"
+					: source.contains("@PostMapping(\"/admin/facilities/{facilityId}/page/status\")")
+						? "TransitFacilityAdminPageController#updateFacilityStatusFromPage"
+						: "UNINVENTORIED_TRANSIT_WRITER";
+		assertThat(members).contains(new Member(sourcePath, member));
 	}
 
 	private static ExpectedEntry entry(String kind, String sourcePath, String member, String pathOrTrigger, String... evidenceTokens) {
