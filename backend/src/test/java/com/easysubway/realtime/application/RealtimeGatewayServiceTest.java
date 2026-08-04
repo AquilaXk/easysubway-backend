@@ -331,8 +331,8 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("provider timeout은 stale cache가 있으면 stale 응답으로 낮춘다")
-	void timeoutServesStaleCache() {
+	@DisplayName("provider timeout은 cache가 있어도 payload 없는 unavailable로 종료한다")
+	void timeoutReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(provider, clock);
@@ -341,11 +341,13 @@ class RealtimeGatewayServiceTest {
 		service.arrivals(query);
 		clock.instant = Instant.parse("2026-06-26T08:01:31Z");
 		provider.failureCode = "PROVIDER_TIMEOUT";
-		RealtimeArrivalResult stale = service.arrivals(query);
+		RealtimeArrivalResult unavailable = service.arrivals(query);
 
-		assertThat(stale.status()).hasToString("STALE");
-		assertThat(stale.fallbackCode()).isEqualTo("STALE_CACHE");
-		assertThat(stale.arrivals()).hasSize(1);
+		assertThat(unavailable.status()).hasToString("UNAVAILABLE");
+		assertThat(unavailable.fallbackCode()).isEqualTo("PROVIDER_TIMEOUT");
+		assertThat(unavailable.arrivals()).isEmpty();
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
 	@Test
@@ -440,8 +442,8 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("provider call rate limit은 stale cache가 있으면 stale 응답을 유지한다")
-	void providerRateLimitServesStaleCacheWhenAvailable() {
+	@DisplayName("provider call rate limit은 cache가 있어도 payload 없는 unavailable로 종료한다")
+	void providerRateLimitReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
@@ -459,9 +461,11 @@ class RealtimeGatewayServiceTest {
 		RealtimeArrivalResult limited = service.arrivals(query);
 
 		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("STALE");
-		assertThat(limited.fallbackCode()).isEqualTo("STALE_CACHE");
+		assertThat(limited.status()).hasToString("UNAVAILABLE");
+		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(limited.arrivals()).isEmpty();
 		assertThat(provider.arrivalCalls).hasValue(1);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
 	@Test
@@ -593,8 +597,8 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("열차 위치 provider call rate limit도 stale cache가 있으면 stale 응답을 유지한다")
-	void trainPositionProviderRateLimitServesStaleCacheWhenAvailable() {
+	@DisplayName("열차 위치 provider call rate limit도 cache가 있어도 payload 없는 unavailable로 종료한다")
+	void trainPositionProviderRateLimitReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
@@ -612,9 +616,11 @@ class RealtimeGatewayServiceTest {
 		RealtimeTrainPositionResult limited = service.trainPositions(query);
 
 		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("STALE");
-		assertThat(limited.fallbackCode()).isEqualTo("STALE_CACHE");
+		assertThat(limited.status()).hasToString("UNAVAILABLE");
+		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
+		assertThat(limited.trainPositions()).isEmpty();
 		assertThat(provider.trainPositionCalls).hasValue(1);
+		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
 	@Test
@@ -976,7 +982,7 @@ class RealtimeGatewayServiceTest {
 		assertThat(snapshot.providerTimeoutCount()).isEqualTo(1);
 		assertThat(snapshot.providerQuotaExceededCount()).isEqualTo(1);
 		assertThat(snapshot.freshResultRatio()).isPositive();
-		assertThat(snapshot.staleResultRatio()).isPositive();
+		assertThat(snapshot.staleResultRatio()).isZero();
 		assertThat(snapshot.unsupportedRatio()).isPositive();
 		assertThat(snapshot.toString())
 			.doesNotContain("상록수")
