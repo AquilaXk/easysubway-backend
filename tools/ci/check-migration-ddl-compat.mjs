@@ -220,15 +220,37 @@ export function validateMigrationPolicy(policy, files, now = Date.now()) {
 const UNTERMINATED_QUOTED_BODY = "EASYSUBWAY_UNTERMINATED_QUOTED_BODY";
 const PROCEDURAL_BODY_START = "EASYSUBWAY_PROCEDURAL_BODY_START";
 const PROCEDURAL_BODY_END = "EASYSUBWAY_PROCEDURAL_BODY_END";
+const DO_BODY_START = "EASYSUBWAY_DO_BODY_START";
+const DO_BODY_END = "EASYSUBWAY_DO_BODY_END";
 
-function isProceduralBodyPrefix(out) {
+function proceduralBodyMarkers(out) {
   const statement = out.slice(out.lastIndexOf(";") + 1);
-  return (
-    /\bDO(?:\s+LANGUAGE\s+[\w".]+)?\s*E?\s*$/i.test(statement) ||
-    /\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bAS\s*E?\s*$/i.test(
-      statement,
-    )
-  );
+  if (/\bDO(?:\s+LANGUAGE\s+[\w".]+)?\s*E?\s*$/i.test(statement)) {
+    return [DO_BODY_START, DO_BODY_END];
+  }
+  if (/\bCREATE\s+(?:OR\s+REPLACE\s+)?(?:FUNCTION|PROCEDURE)\b[\s\S]*\bAS\s*E?\s*$/i.test(statement)) {
+    return [PROCEDURAL_BODY_START, PROCEDURAL_BODY_END];
+  }
+  return null;
+}
+
+function readSingleQuotedLiteral(sql, start, backslashEscapes) {
+  let literal = "";
+  let i = start + 1;
+  while (i < sql.length) {
+    if (backslashEscapes && sql[i] === "\\" && i + 1 < sql.length) {
+      literal += sql[i + 1];
+      i += 2;
+    } else if (sql[i] === "'" && sql[i + 1] === "'") {
+      literal += "'";
+      i += 2;
+    } else if (sql[i] === "'") {
+      return { literal, end: i + 1, closed: true };
+    } else {
+      literal += sql[i++];
+    }
+  }
+  return { literal, end: i, closed: false };
 }
 
 // SQL 전처리: 주석과 일반 data literal은 제거한다. DO와 CREATE FUNCTION/PROCEDURE AS의
@@ -281,36 +303,33 @@ export function stripSqlNoise(sql) {
     }
     // 단일따옴표 문자열 ('' 및 E'...'의 backslash 이스케이프 인지)
     if (sql[i] === "'") {
-      const preserveBody = isProceduralBodyPrefix(out);
+      const markers = proceduralBodyMarkers(out);
       const backslashEscapes =
         i > 0 &&
         /[Ee]/.test(sql[i - 1]) &&
         (i === 1 || !/[A-Za-z0-9_]/.test(sql[i - 2]));
-      let literal = "";
-      let closed = false;
-      i++;
-      while (i < n) {
-        if (backslashEscapes && sql[i] === "\\" && i + 1 < n) {
-          literal += sql[i + 1];
-          i += 2;
-          continue;
-        }
-        if (sql[i] === "'" && sql[i + 1] === "'") {
-          literal += "'";
-          i += 2;
-          continue;
-        }
-        if (sql[i] === "'") {
-          i++;
-          closed = true;
+      let { literal, end: next, closed } = readSingleQuotedLiteral(sql, i, backslashEscapes);
+      i = next;
+      while (markers && closed) {
+        let cursor = i;
+        while (cursor < n && /\s/.test(sql[cursor])) cursor++;
+        if (!/[\r\n]/.test(sql.slice(i, cursor))) break;
+        let componentStart = cursor;
+        let componentEscapes = false;
+        if (/[Ee]/.test(sql[cursor]) && sql[cursor + 1] === "'") {
+          componentStart++;
+          componentEscapes = true;
+        } else if (sql[cursor] !== "'") {
           break;
         }
-        literal += sql[i];
-        i++;
+        const component = readSingleQuotedLiteral(sql, componentStart, componentEscapes);
+        literal += component.literal;
+        i = component.end;
+        closed = component.closed;
       }
       out += closed
-        ? preserveBody
-          ? ` ${PROCEDURAL_BODY_START} ${stripSqlNoise(literal)} ${PROCEDURAL_BODY_END} `
+        ? markers
+          ? ` ${markers[0]} ${stripSqlNoise(literal)} ${markers[1]} `
           : " "
         : ` ${UNTERMINATED_QUOTED_BODY} `;
       continue;
@@ -319,7 +338,7 @@ export function stripSqlNoise(sql) {
     // 데이터일 뿐 중첩 delimiter가 아니다.
     const tag = matchDollarTag(sql, i);
     if (tag !== null) {
-      const preserveBody = isProceduralBodyPrefix(out);
+      const markers = proceduralBodyMarkers(out);
       const delimiter = `$${tag}$`;
       const bodyStart = i + delimiter.length;
       const bodyEnd = sql.indexOf(delimiter, bodyStart);
@@ -327,8 +346,8 @@ export function stripSqlNoise(sql) {
         out += ` ${UNTERMINATED_QUOTED_BODY} `;
         break;
       }
-      out += preserveBody
-        ? ` ${PROCEDURAL_BODY_START} ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ${PROCEDURAL_BODY_END} `
+      out += markers
+        ? ` ${markers[0]} ${stripSqlNoise(sql.slice(bodyStart, bodyEnd))} ${markers[1]} `
         : " ";
       i = bodyEnd + delimiter.length;
       continue;
@@ -537,7 +556,7 @@ const DESTRUCTIVE_DROP_OBJECTS = new Map([
 // DROP 절을 문맥별로 판정한다. ALTER TABLE 하위 DROP은 컬럼·제약·기본값 절이고, 그 밖의
 // DROP은 최상위 객체 제거 명령이다. 알려진 파괴 형태에도, 알려진 완화 형태에도 해당하지
 // 않는 DROP은 미지원으로 보고해 fail closed 시킨다(통과에는 allowlist 승인이 필요하다).
-function scanDropClauses(s, keywordShadow, isAlterTable) {
+function scanDropClauses(s, keywordShadow, isAlterTable, isAlterDomain) {
   const labels = [];
   const re = /\bDROP\b/gi;
   for (const m of keywordShadow.matchAll(re)) {
@@ -557,6 +576,8 @@ function scanDropClauses(s, keywordShadow, isAlterTable) {
       labels.push(isKeyword && word === "default" ? "DROP DEFAULT" : "DROP COLUMN");
       continue;
     }
+    if (isAlterDomain && isKeyword && word === "constraint") continue;
+    if (isAlterDomain && isKeyword && word === "not" && /^DROP\s+NOT\s+NULL\b/i.test(s.slice(m.index))) continue;
     const label = isKeyword ? DESTRUCTIVE_DROP_OBJECTS.get(word) : null;
     labels.push(label ?? `미지원 DROP 형태(DROP ${word.toUpperCase()})`);
   }
@@ -568,9 +589,12 @@ const ADD_NON_COLUMN_KEYWORD =
   /^(?:CONSTRAINT|PRIMARY|UNIQUE|FOREIGN|CHECK|EXCLUDE|GENERATED|IDENTITY)\b/i;
 
 function hasNullDefault(clause) {
-  const tail = clause.match(/\bDEFAULT\s+([\s\S]*)/i)?.[1];
-  if (!tail) return false;
-  const boundary = /\s+(?:NOT\s+NULL|UNIQUE|PRIMARY\s+KEY|REFERENCES|CHECK|CONSTRAINT|COLLATE|GENERATED)\b/i.exec(tail);
+  const keywordShadow = shadowQuotedIdentifiers(clause);
+  const defaultMatch = /\bDEFAULT\b/i.exec(keywordShadow);
+  if (!defaultMatch) return false;
+  const tail = clause.slice(defaultMatch.index + defaultMatch[0].length);
+  const shadowTail = keywordShadow.slice(defaultMatch.index + defaultMatch[0].length);
+  const boundary = /\s+(?:NOT\s+NULL|UNIQUE|PRIMARY\s+KEY|REFERENCES|CHECK|CONSTRAINT|COLLATE|GENERATED)\b/i.exec(shadowTail);
   const unwrapOuterParentheses = (value) => {
     let unwrapped = value.trim();
     while (unwrapped.startsWith("(") && unwrapped.endsWith(")")) {
@@ -611,12 +635,13 @@ function scanAddColumnClauses(s, isAlterTable, isNewTable) {
       if (ADD_NON_COLUMN_KEYWORD.test(s.slice(at))) continue;
     }
     const clause = clauseFrom(s, at);
-    if (!isNewTable && /\bPRIMARY\s+KEY\b/i.test(clause)) labels.push("PRIMARY KEY 컬럼 추가");
-    if (!isNewTable && /\bNOT\s+NULL\b/i.test(clause)) {
-      if (!/\bDEFAULT\b/i.test(clause)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
+    const keywordShadow = shadowQuotedIdentifiers(clause);
+    if (!isNewTable && /\bPRIMARY\s+KEY\b/i.test(keywordShadow)) labels.push("PRIMARY KEY 컬럼 추가");
+    if (!isNewTable && /\bNOT\s+NULL\b/i.test(keywordShadow)) {
+      if (!/\bDEFAULT\b/i.test(keywordShadow)) labels.push("DEFAULT 없는 NOT NULL 컬럼 추가");
       if (hasNullDefault(clause)) labels.push("DEFAULT NULL인 NOT NULL 컬럼 추가");
     }
-    if (!isNewTable && /\b(?:CHECK|REFERENCES)\b/i.test(shadowQuotedIdentifiers(clause))) {
+    if (!isNewTable && /\b(?:CHECK|REFERENCES)\b/i.test(keywordShadow)) {
       labels.push("기존 테이블에 제약(ADD CONSTRAINT) 추가");
     }
   }
@@ -644,6 +669,31 @@ function markerCount(s, marker) {
   return s.split(marker).length - 1;
 }
 
+const SEARCH_PATH_MUTATION = /\b(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b/gi;
+const BODY_MARKER = new RegExp(`${DO_BODY_START}|${DO_BODY_END}|${PROCEDURAL_BODY_START}|${PROCEDURAL_BODY_END}`, "g");
+
+function applyBodyMarkers(s, stack, until = s.length) {
+  const next = [...stack];
+  BODY_MARKER.lastIndex = 0;
+  for (const marker of s.matchAll(BODY_MARKER)) {
+    if (marker.index >= until) break;
+    if (marker[0] === DO_BODY_START) next.push("do");
+    else if (marker[0] === PROCEDURAL_BODY_START) next.push("routine");
+    else next.pop();
+  }
+  return next;
+}
+
+function changesSearchPathContext(s, contextStack) {
+  const keywordShadow = shadowQuotedIdentifiers(s);
+  SEARCH_PATH_MUTATION.lastIndex = 0;
+  for (const mutation of keywordShadow.matchAll(SEARCH_PATH_MUTATION)) {
+    const context = applyBodyMarkers(s, contextStack, mutation.index);
+    if ((context.length === 0 && mutation.index === 0) || context.at(-1) === "do") return true;
+  }
+  return false;
+}
+
 // 단일 SQL 텍스트를 스캔해 파괴적 DDL 규칙 위반 라벨의 (중복 제거된) 배열을 반환한다.
 export function scanSqlForViolations(rawSql) {
   const cleaned = stripSqlNoise(rawSql);
@@ -651,18 +701,16 @@ export function scanSqlForViolations(rawSql) {
   const findings = [];
   const add = (label) => findings.push(label);
   let proceduralBodyDepth = 0;
+  let bodyContextStack = [];
   let searchPathEpoch = 0;
   for (const stmt of splitStatements(cleaned)) {
     const s = stmt.trim();
     if (!s) continue;
 
-    const bodyStarts = markerCount(s, PROCEDURAL_BODY_START);
-    const bodyEnds = markerCount(s, PROCEDURAL_BODY_END);
+    const bodyStarts = markerCount(s, PROCEDURAL_BODY_START) + markerCount(s, DO_BODY_START);
+    const bodyEnds = markerCount(s, PROCEDURAL_BODY_END) + markerCount(s, DO_BODY_END);
     const isProceduralBody = proceduralBodyDepth > 0 || bodyStarts > 0;
-    if (
-      !isProceduralBody &&
-      /^(?:SET(?:\s+(?:LOCAL|SESSION))?\s+SEARCH_PATH|SET\s+SCHEMA|RESET\s+(?:SEARCH_PATH|ALL))\b/i.test(s)
-    ) {
+    if (changesSearchPathContext(s, bodyContextStack)) {
       searchPathEpoch++;
     }
 
@@ -768,7 +816,7 @@ export function scanSqlForViolations(rawSql) {
       add("ALTER DOMAIN ADD CONSTRAINT");
     }
 
-    for (const label of scanDropClauses(s, keywordShadow, isAlterTable)) add(label);
+    for (const label of scanDropClauses(s, keywordShadow, isAlterTable, /\bALTER\s+DOMAIN\b/i.test(keywordShadow))) add(label);
     for (const label of scanAddColumnClauses(s, isAlterTable, isNewTable)) add(label);
 
     if (isAlterTable) {
@@ -858,6 +906,7 @@ export function scanSqlForViolations(rawSql) {
     const createdTable = isProceduralBody ? null : unconditionalCreatedTable(s);
     if (createdTable) createdTables.add(tableIdentity(createdTable, searchPathEpoch));
     proceduralBodyDepth += bodyStarts - bodyEnds;
+    bodyContextStack = applyBodyMarkers(s, bodyContextStack);
   }
   return [...new Set(findings)];
 }

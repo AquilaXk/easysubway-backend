@@ -105,6 +105,18 @@ test("DO 블록 본문 안에 숨은 파괴적 DDL은 사각지대 없이 탐지
   assert.ok(findings.includes("DROP TABLE"));
 });
 
+test("newline으로 연결된 DO·함수·프로시저 single-quoted body는 함께 재귀 검사한다", () => {
+  for (const sql of [
+    "DO 'BEGIN '\n'DROP TABLE hidden; END';",
+    "CREATE FUNCTION f() RETURNS void LANGUAGE plpgsql AS 'BEGIN '\n'DROP TABLE hidden; END';",
+    "CREATE PROCEDURE p() LANGUAGE plpgsql AS E'BEGIN \\\'quoted\\\'; '\nE'DROP TABLE hidden; END';",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("DROP TABLE"));
+  }
+  assert.deepEqual(scanSqlForViolations("DO 'BEGIN ' 'DROP TABLE hidden; END';"), []);
+  assert.deepEqual(scanSqlForViolations("SELECT 'DROP TABLE hidden;'\n'DROP TABLE still_data;';"), []);
+});
+
 test("stripSqlNoise는 일반 literal을 제거하고 procedural dollar 본문만 인라인한다", () => {
   const cleaned = stripSqlNoise(
     "-- DROP TABLE in a comment\n/* DROP TABLE block */\nSELECT 'DROP TABLE in string';\nDO $$ DROP TABLE hidden; $$;",
@@ -416,6 +428,13 @@ test("ALTER DOMAIN ADD [CONSTRAINT] CHECK은 fail closed 한다", () => {
   assert.deepEqual(scanSqlForViolations('CREATE TABLE "ALTER DOMAIN d ADD CHECK" (id BIGINT);'), []);
 });
 
+test("ALTER DOMAIN DROP CONSTRAINT·NOT NULL만 완화로 허용한다", () => {
+  assert.deepEqual(scanSqlForViolations("ALTER DOMAIN postal_code DROP CONSTRAINT postal_code_format;"), []);
+  assert.deepEqual(scanSqlForViolations("ALTER DOMAIN postal_code DROP NOT NULL;"), []);
+  assert.ok(scanSqlForViolations("ALTER DOMAIN postal_code DROP DEFAULT;").length > 0);
+  assert.ok(scanSqlForViolations("ALTER DOMAIN postal_code DROP NOT VALID;").length > 0);
+});
+
 test("특수 문자와 escaped quote가 있는 quoted column의 SET DATA TYPE을 탐지한다", () => {
   for (const sql of [
     'ALTER TABLE t ALTER COLUMN "display-name" SET DATA TYPE TEXT;',
@@ -437,6 +456,16 @@ test("double-quoted identifier 안의 새 규칙 키워드는 오탐하지 않�
   ]) {
     assert.deepEqual(scanSqlForViolations(sql), []);
   }
+  assert.ok(
+    scanSqlForViolations('ALTER TABLE routes ADD COLUMN "DEFAULT value" TEXT NOT NULL DEFAULT NULL;').includes(
+      "DEFAULT NULL인 NOT NULL 컬럼 추가",
+    ),
+  );
+  assert.ok(
+    scanSqlForViolations('ALTER TABLE routes ADD COLUMN value TEXT NOT NULL DEFAULT CAST(NULL AS "CHECK");').includes(
+      "DEFAULT NULL인 NOT NULL 컬럼 추가",
+    ),
+  );
 });
 
 test("기존 테이블의 plain CREATE RULE은 fail closed 하고 선행 신규 테이블 rule만 면제한다", () => {
@@ -475,6 +504,8 @@ test("기존 테이블 inline ADD COLUMN CHECK·REFERENCES는 fail closed 하고
   for (const sql of [
     'ALTER TABLE routes ADD COLUMN "CHECK" TEXT;',
     'ALTER TABLE routes ADD COLUMN value "REFERENCES";',
+    'ALTER TABLE routes ADD COLUMN "PRIMARY KEY" TEXT;',
+    'ALTER TABLE routes ADD COLUMN value "NOT NULL";',
   ]) {
     assert.deepEqual(scanSqlForViolations(sql), []);
   }
@@ -551,6 +582,31 @@ test("새 테이블 면제의 unqualified identity는 search_path 문맥을 넘�
   assert.deepEqual(
     scanSqlForViolations("CREATE TABLE public.routes (id BIGINT); SET search_path TO archive; ALTER TABLE public.routes ADD COLUMN id BIGINT PRIMARY KEY;"),
     [],
+  );
+  for (const contextChange of [
+    "SET search_path TO archive",
+    "RESET search_path",
+    "SET SCHEMA 'archive'",
+    "RESET ALL",
+  ]) {
+    assert.ok(
+      scanSqlForViolations(`CREATE TABLE routes (id BIGINT); DO $$ BEGIN ${contextChange}; END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`).includes(
+        "PRIMARY KEY 컬럼 추가",
+      ),
+    );
+  }
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); CREATE FUNCTION set_context() RETURNS void LANGUAGE plpgsql AS $$ BEGIN SET search_path TO archive; END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  assert.deepEqual(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); DO $$ BEGIN CREATE FUNCTION set_context() RETURNS void LANGUAGE plpgsql AS 'BEGIN SET search_path TO archive; END'; END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations("CREATE TABLE routes (id BIGINT); DO $$ BEGIN CREATE FUNCTION set_context() RETURNS void LANGUAGE plpgsql AS 'BEGIN SET search_path TO archive; END'; SET search_path TO archive; END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes(
+      "PRIMARY KEY 컬럼 추가",
+    ),
   );
 });
 
