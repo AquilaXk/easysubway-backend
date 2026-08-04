@@ -421,11 +421,17 @@ jobs:
               "repos/${repo}/pulls/${pr}/reviews?per_page=100")"
             # review-state-filter-begin
             if ! jq -e --arg head "${head}" '
+              def is_coderabbit:
+                .author_association == "NONE" and
+                .user.login == "coderabbitai[bot]" and
+                .user.id == 136622811 and
+                .user.type == "Bot";
               [flatten[] |
                 select(
                   .author_association == "OWNER" or
                   .author_association == "MEMBER" or
-                  .author_association == "COLLABORATOR"
+                  .author_association == "COLLABORATOR" or
+                  is_coderabbit
                 )] as $trusted |
               ($trusted | map(select(.commit_id == $head))) as $current |
               ($trusted |
@@ -443,8 +449,9 @@ jobs:
               any($current[];
                 .state == "APPROVED" or
                 (.state == "COMMENTED" and
-                  (.body // "" | startswith("**Actionable comments posted: ")) and
-                  (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))))
+                  (is_coderabbit or
+                    ((.body // "" | startswith("**Actionable comments posted: ")) and
+                    (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))))))
             ' <<<"${reviews}" >/dev/null; then
               echo "PR #${pr}: no trusted review on the current head, or an active change request is open; skipping."
               continue
