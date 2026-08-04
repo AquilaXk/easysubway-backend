@@ -681,6 +681,11 @@ function hasNullDefault(clause) {
   const type = String.raw`${SQL_QUALIFIED_IDENTIFIER}(?:\s+(?:VARYING|PRECISION|WITH(?:OUT)?\s+TIME\s+ZONE))*?(?:\s*\([^()]*\))?(?:\s*\[\s*\])*`;
   const castLhs = expression.match(new RegExp(String.raw`^([\s\S]*?)\s*::\s*${type}$`, "i"))?.[1];
   if (castLhs !== undefined && unwrapOuterParentheses(castLhs).toUpperCase() === "NULL") return true;
+  const castOperand = expression.match(new RegExp(
+    String.raw`^CAST\s*\(\s*([\s\S]*?)\s+AS\s+${type}\s*\)$`,
+    "i",
+  ))?.[1];
+  if (castOperand !== undefined && unwrapOuterParentheses(castOperand).toUpperCase() === "NULL") return true;
   return new RegExp(
     String.raw`^(?:NULL\b(?:\s*::\s*${type})?|CAST\s*\(\s*NULL\s+AS\s+${type}\s*\))$`,
     "i",
@@ -761,14 +766,30 @@ function applyBodyMarkers(s, stack, until = s.length) {
   return next;
 }
 
-function changesSearchPathContext(s, contextStack) {
+function searchPathContextChange(s, contextStack) {
   const keywordShadow = shadowQuotedIdentifiers(s);
+  let changes = false;
+  let local = false;
   SEARCH_PATH_MUTATION.lastIndex = 0;
   for (const mutation of keywordShadow.matchAll(SEARCH_PATH_MUTATION)) {
     const context = applyBodyMarkers(s, contextStack, mutation.index);
-    if ((context.length === 0 && (mutation.index === 0 || mutation[0].includes(SET_CONFIG_SEARCH_PATH))) || context.at(-1) === "do") return true;
+    if ((context.length === 0 && (mutation.index === 0 || mutation[0].includes(SET_CONFIG_SEARCH_PATH))) || context.at(-1) === "do") {
+      changes = true;
+      local = /\bSET\s+LOCAL\s+SEARCH_PATH\b/i.test(mutation[0]);
+    }
   }
-  return false;
+  return { changes, local };
+}
+
+function endsTopLevelTransaction(s, contextStack) {
+  if (contextStack.length > 0) return false;
+  const keywordShadow = shadowQuotedIdentifiers(s);
+  if (/^\s*(?:COMMIT|END)\b/i.test(keywordShadow)) return true;
+  if (!/^\s*ROLLBACK\b/i.test(keywordShadow)) return false;
+  return !new RegExp(
+    String.raw`^\s*ROLLBACK\s+(?:(?:WORK|TRANSACTION)\s+)?TO\s+(?:SAVEPOINT\s+)?${SQL_IDENTIFIER}`,
+    "i",
+  ).test(s);
 }
 
 // 단일 SQL 텍스트를 스캔해 파괴적 DDL 규칙 위반 라벨의 (중복 제거된) 배열을 반환한다.
@@ -780,6 +801,7 @@ export function scanSqlForViolations(rawSql) {
   let proceduralBodyDepth = 0;
   let bodyContextStack = [];
   let searchPathEpoch = 0;
+  let localSearchPathActive = false;
   for (const stmt of splitStatements(cleaned)) {
     const s = stmt.trim();
     if (!s) continue;
@@ -787,8 +809,14 @@ export function scanSqlForViolations(rawSql) {
     const bodyStarts = markerCount(s, PROCEDURAL_BODY_START) + markerCount(s, DO_BODY_START);
     const bodyEnds = markerCount(s, PROCEDURAL_BODY_END) + markerCount(s, DO_BODY_END);
     const isProceduralBody = proceduralBodyDepth > 0 || bodyStarts > 0;
-    if (changesSearchPathContext(s, bodyContextStack)) {
+    const searchPathChange = searchPathContextChange(s, bodyContextStack);
+    if (searchPathChange.changes) {
       searchPathEpoch++;
+      localSearchPathActive = searchPathChange.local;
+    }
+    if (localSearchPathActive && endsTopLevelTransaction(s, bodyContextStack)) {
+      searchPathEpoch++;
+      localSearchPathActive = false;
     }
 
     const isAlterTable = /\bALTER\s+TABLE\b/i.test(s);
@@ -816,6 +844,9 @@ export function scanSqlForViolations(rawSql) {
     }
     if (/\bALTER\s+(?:FUNCTION|PROCEDURE|ROUTINE)\b/i.test(keywordShadow)) {
       add("ALTER 기존 routine");
+    }
+    if (/\bALTER\s+(?:ROLE|USER)\b/i.test(keywordShadow)) {
+      add("ALTER 기존 role");
     }
     const ruleStarter = /\bCREATE\s+(OR\s+REPLACE\s+)?RULE\b/i.exec(keywordShadow);
     if (ruleStarter) {

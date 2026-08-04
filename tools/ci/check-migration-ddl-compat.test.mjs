@@ -352,6 +352,8 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
     "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (CAST(NULL AS TEXT));",
     "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT ( NULL );",
     "ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (CAST( NULL AS TEXT));",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT CAST((NULL) AS TEXT);",
+    "ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (((CAST(((NULL)) AS TEXT))));",
   ]) {
     assert.ok(scanSqlForViolations(sql).some((finding) => finding.includes("DEFAULT NULL")));
   }
@@ -368,11 +370,26 @@ test("NULL 계열 default와 rule·policy·partition·restart contract는 fail c
   }
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT 'x';"), []);
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT (NULL IS NULL);"), []);
+  assert.deepEqual(scanSqlForViolations("ALTER TABLE t ADD COLUMN required_value TEXT NOT NULL DEFAULT CAST(coalesce(NULL, 'x') AS TEXT);"), []);
   assert.ok(scanSqlForViolations("ALTER TABLE t ALTER COLUMN required_value SET DEFAULT (NULL IS NULL);").includes("ALTER TABLE SET DEFAULT"));
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true);"), []);
   assert.deepEqual(scanSqlForViolations("CREATE TABLE t (id BIGINT); CREATE POLICY reader ON t FOR SELECT USING (true); ALTER POLICY reader ON t USING (true);"), []);
   assert.deepEqual(scanSqlForViolations("ALTER TABLE t ATTACH PARTITION t_2026 FOR VALUES FROM (1) TO (2);"), []);
   assert.ok(scanSqlForViolations('ALTER SEQUENCE t_id_seq OWNED BY "RESTART";').includes("ALTER SEQUENCE 속성 변경"));
+});
+
+test("ALTER ROLE·USER는 fail closed하고 quoted text는 무시한다", () => {
+  for (const sql of [
+    "ALTER ROLE app_user PASSWORD 'next-secret';",
+    "ALTER USER app_user RENAME TO app_user_v2;",
+    "ALTER ROLE app_user SET statement_timeout TO '1s';",
+  ]) {
+    assert.ok(scanSqlForViolations(sql).includes("ALTER 기존 role"), sql);
+  }
+  assert.deepEqual(
+    scanSqlForViolations('ALTER TABLE "ALTER ROLE app_user PASSWORD" ADD COLUMN note TEXT;'),
+    [],
+  );
 });
 
 test("새 테이블 PRIMARY KEY와 nullable/default non-null column은 계속 통과한다", () => {
@@ -709,6 +726,40 @@ test("새 테이블 면제의 unqualified identity는 search_path 문맥을 넘�
     scanSqlForViolations("CREATE TABLE routes (id BIGINT); DO $$ BEGIN CREATE FUNCTION set_context() RETURNS void LANGUAGE plpgsql AS 'BEGIN SET search_path TO archive; END'; SET search_path TO archive; END $$; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes(
       "PRIMARY KEY 컬럼 추가",
     ),
+  );
+});
+
+test("SET LOCAL search_path는 transaction 종료에서만 문맥을 복원한다", () => {
+  assert.deepEqual(
+    scanSqlForViolations("BEGIN; SET LOCAL search_path TO archive; CREATE TABLE routes (id BIGINT); ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY; COMMIT;"),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations("BEGIN; SET LOCAL search_path TO archive; CREATE TABLE routes (id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"),
+  );
+  assert.deepEqual(
+    scanSqlForViolations("BEGIN; SET LOCAL search_path TO archive; CREATE TABLE routes (id BIGINT); ROLLBACK TO SAVEPOINT keep_context; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  for (const rollback of [
+    "ROLLBACK TO SAVEPOINT keep_context",
+    "ROLLBACK WORK TO SAVEPOINT keep_context",
+    "ROLLBACK TRANSACTION TO SAVEPOINT keep_context",
+  ]) {
+    assert.deepEqual(
+      scanSqlForViolations(`BEGIN; SET LOCAL search_path TO archive; CREATE TABLE routes (id BIGINT); ${rollback}; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;`),
+      [],
+    );
+  }
+  assert.ok(
+    scanSqlForViolations("BEGIN; SET LOCAL search_path TO archive; CREATE TABLE routes (id BIGINT); END; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"),
+  );
+  assert.deepEqual(
+    scanSqlForViolations("BEGIN; SET LOCAL search_path TO archive; SET SESSION search_path TO archive; CREATE TABLE routes (id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;"),
+    [],
+  );
+  assert.ok(
+    scanSqlForViolations("BEGIN; SET SESSION search_path TO archive; SET LOCAL search_path TO archive; CREATE TABLE routes (id BIGINT); COMMIT; ALTER TABLE routes ADD COLUMN id BIGINT PRIMARY KEY;").includes("PRIMARY KEY 컬럼 추가"),
   );
 });
 
