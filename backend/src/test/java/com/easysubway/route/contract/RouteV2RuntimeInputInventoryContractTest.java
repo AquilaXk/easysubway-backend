@@ -23,13 +23,18 @@ class RouteV2RuntimeInputInventoryContractTest {
 	private static final Path INTERNAL_API_INDEX = PROJECT.resolve("contracts/api/internal-api-index.json");
 	private static final List<String> JAVA_SOURCE_ROOTS = List.of(
 		"backend/src/main/java/com/easysubway/route/",
-		"backend/src/main/java/com/easysubway/realtime/application/"
+		"backend/src/main/java/com/easysubway/realtime/application/",
+		"backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/",
+		"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/",
+		"backend/src/main/java/com/easysubway/common/security/"
 	);
 	// Capacity-evidence, nested fixture, and non-prod-profile sources are outside production Route V2 runtime.
 	private static final Set<String> EXCLUDED_CANDIDATE_FILES = Set.of(
 		"CapacityEvidencePlayIntegrityDecoder.java",
 		"FixtureRealtimeProvider.java",
-		"InMemoryRouteSearchRepository.java"
+		"InMemoryRouteSearchRepository.java",
+		"InMemoryRealtimeMappingPort.java",
+		"DevelopmentRealtimeSafetyPorts.java"
 	);
 	private static final ObjectMapper JSON = new ObjectMapper();
 	private static final List<ExpectedEntry> EXPECTED = List.of(
@@ -43,10 +48,10 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("CACHE", "backend/src/main/java/com/easysubway/route/application/service/RouteV2Planner.java", "RouteV2Planner#timetableSnapshot", "timetable snapshot cache", "cachedTimetableSnapshot", "loadRouteTimetableSnapshot"),
 		entry("PLANNER", "backend/src/main/java/com/easysubway/route/application/service/RouteTimetableRaptorPlanner.java", "RouteTimetableRaptorPlanner#searchWithDiagnostics", "RAPTOR timetable search", "searchWithDiagnostics"),
 		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteTimetableRepository.java", "JdbcRouteTimetableRepository#loadRouteTimetableSnapshot", "active timetable snapshot load", "loadRouteTimetableSnapshot", "timetable_snapshot_active"),
-		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteTimetableRepository.java", "JdbcRouteTimetableRepository#activeItxArtifact", "active ITX artifact registry", "activeItxArtifact", "timetable_snapshot_active"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteTimetableRepository.java", "JdbcRouteTimetableRepository#activeItxArtifact", "CONFLICT: stale break-glass", "activeItxArtifact", "timetable_snapshot_active", "if (breakGlass)", "return admissible;"),
 		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#run", "timetable seed activation", "implements ApplicationRunner", "public void run(ApplicationArguments args)", "activateLocked"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#activateLocked", "locked timetable snapshot activation", "activateLocked", "timetable_snapshot_lock", "timetable_snapshot_active"),
-		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/application/service/ProductionRouteV2Support.java", "ProductionRouteV2Support#requireTimetableArtifact/#requireUsablePlan", "production timetable and plan gate", "requireTimetableArtifact", "requireUsablePlan"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/application/service/ProductionRouteV2Support.java", "ProductionRouteV2Support#requireTimetableArtifact/#requireUsablePlan/#saveState", "production timetable, plan, and state gate", "requireTimetableArtifact", "requireUsablePlan", "stateStore.saveState"),
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#searchRouteAlternatives/#planRouteAlternatives", "legacy graph alternatives", "searchRouteAlternatives", "planRouteAlternatives"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteV2AccessStore.java", "JdbcRouteV2AccessStore#saveState", "ephemeral route V2 state registry", "public void saveState", "INSERT INTO route_v2_states"),
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#refreshRoute", "Route V2 refresh", "getRouteSearch(routeSearchId)", "refreshStatus(routeSearch)"),
@@ -54,8 +59,20 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteV2Planner.java", "RouteV2Planner#resolveRealtimeUpdates", "timetable realtime resolution", "routeSearchUseCase.resolveTimetableRealtime(queries)", "REALTIME_OVERLAY_UNAVAILABLE"),
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#resolveTimetableRealtime", "optional realtime resolver", "realtimeArrivalResolver == null", "realtimeArrivalResolver.resolve"),
 		entry("RESOLVER", "backend/src/main/java/com/easysubway/route/adapter/out/realtime/RealtimeGatewayArrivalResolver.java", "RealtimeGatewayArrivalResolver#resolve", "gateway arrival resolver", "realtimeGatewayService.arrivals(new RealtimeQuery", "statusOf(result)"),
-		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#arrivals", "realtime gateway arrival provider", "normalizeArrivalQuery(query)", "provider.arrivals(normalizedQuery.query())", "arrivalCache"),
-		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#arrivals", "TOPIS provider fallback", "implements RealtimeProvider", "TOPIS_BASE_URI", "fallbackProvider.arrivals(query)")
+		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#arrivals", "realtime gateway arrival provider", "normalizeArrivalQuery(query)", "provider.arrivals(normalizedQuery.query())", "arrivalCache", "mappingPort.findArrivalMapping(PROVIDER_ID, query)"),
+		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#arrivals", "CONFLICT: local-fixture fallback branch", "implements RealtimeProvider", "TOPIS_BASE_URI", "fixtureAllowedRuntime", "if (!fixtureEnabled)", "fallbackProvider.arrivals(query)"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/common/security/SecurityConfig.java", "SecurityConfig#routeV2IngressSecurityFilterChain", "production Route V2 ingress security wiring", "@ConditionalOnBean(RouteV2AccessStore.class)", "@Value(\"${easysubway.route-v2.origin-secret:}\")", "RouteV2IngressSecurity.configure"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2IngressSecurity.java", "RouteV2IngressSecurity#configure", "production Route V2 security matcher and filters", "securityMatcher(", "addFilterBefore(sessionFilter", "addFilterBefore(originFilter"),
+		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2OriginGateFilter.java", "RouteV2OriginGateFilter#doFilterInternal", "Route V2 origin header gate", "ORIGIN_HEADER", "MessageDigest.isEqual", "ROUTE_ORIGIN_FORBIDDEN"),
+		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionFilter.java", "RouteV2SessionFilter#shouldNotFilter/#doFilterInternal", "Route V2 bearer-session gate", "\"/api/v2/routes/search\"", "HttpHeaders.AUTHORIZATION", "store.consumeSession("),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteV2AccessStore.java", "JdbcRouteV2AccessStore#consumeSession", "Route V2 session consume/rate-limit registry", "UPDATE route_v2_sessions", "request_count < ?", "findSession(tokenSha256)"),
+		entry("LOADER", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#validateRouteSearch/#validatedRouteStations", "Route V2 station validation through transit master", "validatedRouteStations(command)", "loadActiveStation(command.originStationId())", "loadActiveStation(command.destinationStationId())"),
+		entry("LOADER", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/JdbcTransitMasterOverrideRepository.java", "JdbcTransitMasterOverrideRepository#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "production transit/accessibility override merge", "@Profile(\"prod | staging | release | prod-like\")", "merge(super.loadAccessibilityFacilities()", "merge(super.loadRouteEdges()"),
+		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/UnavailableTransitMasterRepository.java", "UnavailableTransitMasterRepository#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "CONFLICT: production static-seed transit master base", "new InMemoryTransitMasterRepository()", "return seedRepository.loadStations()", "return seedRepository.loadRouteEdges()"),
+		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/InMemoryTransitMasterRepository.java", "InMemoryTransitMasterRepository#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "CONFLICT: direct static-seed transit master source", "LoadTransitMasterPort,", "public List<Station> loadStations()", "public List<RouteEdge> loadRouteEdges()"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeMappingRepository.java", "JdbcRealtimeMappingRepository#findArrivalMapping/#findTripMapping", "production realtime station/trip mappings", "implements RealtimeMappingPort", "findArrivalMapping", "findTripMapping"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeProviderCallQuotaRepository.java", "JdbcRealtimeProviderCallQuotaRepository#tryAcquire", "production realtime provider quota", "implements RealtimeProviderCallQuotaPort", "tryAcquire(", "realtime_provider_call_quota_state"),
+		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider")
 	);
 
 	@Test
@@ -68,7 +85,10 @@ class RouteV2RuntimeInputInventoryContractTest {
 		assertThat(inventory.path("backendBaseSha").asText()).isEqualTo("610777a77be82a7fddea43965b2a986d98079abe");
 		assertThat(inventory.path("sourceRoots")).extracting(JsonNode::asText).containsExactly(
 			"backend/src/main/java/com/easysubway/route/",
-			"backend/src/main/java/com/easysubway/realtime/application/"
+			"backend/src/main/java/com/easysubway/realtime/application/",
+			"backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/",
+			"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/",
+			"backend/src/main/java/com/easysubway/common/security/"
 		);
 
 		List<ExpectedEntry> actual = new ArrayList<>();
@@ -107,7 +127,8 @@ class RouteV2RuntimeInputInventoryContractTest {
 		for (JsonNode entry : inventory.path("entries")) {
 			String member = entry.path("member").asText();
 			members.add(new Member(entry.path("sourcePath").asText(), member));
-			if ("INPUT".equals(entry.path("kind").asText())) {
+			if ("INPUT".equals(entry.path("kind").asText())
+				&& entry.path("pathOrTrigger").asText().startsWith("POST /api/v2/routes/")) {
 				String[] methodAndPath = entry.path("pathOrTrigger").asText().split(" ", 2);
 				String[] classAndMethod = member.split("#", 2);
 				assertThat(methodAndPath).as("pathOrTrigger %s", entry.path("pathOrTrigger").asText()).hasSize(2);
@@ -134,26 +155,47 @@ class RouteV2RuntimeInputInventoryContractTest {
 						continue;
 					}
 					String source = Files.readString(path);
-					String suffix = requiredMemberSuffix(source);
-					if (suffix != null) {
+					List<String> suffixes = requiredMemberSuffixes(path.getFileName().toString(), source);
+					if (!suffixes.isEmpty()) {
 						String fileName = path.getFileName().toString();
 						String className = fileName.substring(0, fileName.length() - ".java".length());
-						assertThat(members).contains(new Member(sourcePath, className + suffix));
+						for (String suffix : suffixes) {
+							assertThat(members).contains(new Member(sourcePath, className + suffix));
+						}
+					}
+					if (source.contains("extends UnavailableTransitMasterRepository")) {
+						assertThat(members).contains(new Member(sourcePath,
+							"JdbcTransitMasterOverrideRepository#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges"));
+					}
+					if (source.contains("RouteV2IngressSecurity.configure")) {
+						assertThat(members).contains(new Member(sourcePath, "SecurityConfig#routeV2IngressSecurityFilterChain"));
+					}
+					if (source.contains("new RouteV2SessionFilter") || source.contains("new RouteV2OriginGateFilter")) {
+						assertThat(members).contains(
+							new Member("backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionFilter.java", "RouteV2SessionFilter#shouldNotFilter/#doFilterInternal"),
+							new Member("backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2OriginGateFilter.java", "RouteV2OriginGateFilter#doFilterInternal")
+						);
 					}
 				}
 			}
 		}
 	}
 
-	private static String requiredMemberSuffix(String source) {
-		if (source.contains("implements LoadRouteTimetablePort")) return "#loadRouteTimetableSnapshot";
-		if (source.contains("implements LoadRouteSearchPort")) return "#loadRouteSearch";
-		if (source.contains("implements RealtimeArrivalResolver")) return "#resolve";
-		if (source.contains("implements RealtimeProvider {") || source.contains("implements RealtimeProvider,")) return "#arrivals";
-		if (source.contains("implements PlayIntegrityDecoder")) return "#decode";
-		if (source.contains("implements RouteV2AccessStore")) return "#claimNonceAndSaveSession";
-		if (source.contains("implements ApplicationRunner")) return "#run";
-		return null;
+	private static List<String> requiredMemberSuffixes(String fileName, String source) {
+		if (source.contains("implements LoadRouteTimetablePort")) return List.of("#loadRouteTimetableSnapshot");
+		if (source.contains("implements LoadRouteSearchPort")) return List.of("#loadRouteSearch");
+		if (source.contains("implements RealtimeArrivalResolver")) return List.of("#resolve");
+		if (source.contains("implements RealtimeProvider {") || source.contains("implements RealtimeProvider,")) return List.of("#arrivals");
+		if (source.contains("implements PlayIntegrityDecoder")) return List.of("#decode");
+		if (source.contains("implements RouteV2AccessStore")) return List.of("#claimNonceAndSaveSession", "#consumeSession");
+		if (source.contains("implements ApplicationRunner")) return List.of("#run");
+		if (source.contains("LoadTransitMasterPort,")) return List.of("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
+		if (source.contains("implements RealtimeMappingPort")) return List.of("#findArrivalMapping/#findTripMapping");
+		String className = fileName.substring(0, fileName.length() - ".java".length());
+		if (source.replaceAll("\\s+", " ").contains("class " + className + " implements RealtimeProviderCallQuotaPort")) {
+			return List.of("#tryAcquire");
+		}
+		return List.of();
 	}
 
 	private static ExpectedEntry entry(String kind, String sourcePath, String member, String pathOrTrigger, String... evidenceTokens) {
