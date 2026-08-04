@@ -232,7 +232,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 						assertExcludedCandidateIsOutsideProductionRuntime(path.getFileName().toString(), source);
 						continue;
 					}
-					List<String> suffixes = requiredMemberSuffixes(source);
+					List<String> suffixes = requiredMemberSuffixes(path.getFileName().toString(), source);
 					if (!suffixes.isEmpty()) {
 						String fileName = path.getFileName().toString();
 						String className = fileName.substring(0, fileName.length() - ".java".length());
@@ -272,7 +272,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		}
 	}
 
-	private static List<String> requiredMemberSuffixes(String source) {
+	private static List<String> requiredMemberSuffixes(String fileName, String source) {
 		if (source.contains("implements LoadRouteTimetablePort")) return List.of("#loadRouteTimetableSnapshot");
 		if (source.contains("implements LoadRouteSearchPort")) return List.of("#loadRouteSearch");
 		if (source.contains("implements RealtimeArrivalResolver")) return List.of("#resolve");
@@ -283,8 +283,9 @@ class RouteV2RuntimeInputInventoryContractTest {
 		if (source.contains("implements ApplicationRunner")) return List.of("#run");
 		if (source.contains("LoadTransitMasterPort,")) return List.of("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
 		if (source.contains("implements RealtimeMappingPort")) return List.of("#findArrivalMapping/#findTripMapping");
-		String className = source.substring(source.lastIndexOf("class ") + "class ".length()).split("\\s+", 2)[0];
-		if (source.replaceAll("\\s+", " ").contains("class " + className + " implements RealtimeProviderCallQuotaPort")) {
+		String className = fileName.substring(0, fileName.length() - ".java".length());
+		String normalizedSource = source.replaceAll("\\s+", " ");
+		if (normalizedSource.matches("(?s).*\\bclass " + className + "\\b[^\\{]*\\bimplements\\b[^\\{]*\\bRealtimeProviderCallQuotaPort\\b.*")) {
 			return List.of("#tryAcquire");
 		}
 		return List.of();
