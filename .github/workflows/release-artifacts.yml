@@ -85,6 +85,42 @@ jobs:
             backend
           docker image inspect "easysubway-backend:preflight-${GITHUB_SHA}"
 
+      - name: Verify source-free non-root read-only image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="easysubway-backend:preflight-${GITHUB_SHA}"
+          container="$(docker create "${image}")"
+          trap 'docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
+          rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"
+          docker export "${container}" | tar -tf - > "${rootfs_listing}"
+          if grep -Eq '(^|/)(gradle|gradlew|javac)$' "${rootfs_listing}"; then
+            echo "backend runtime image contains a build tool" >&2
+            exit 1
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime image build-tool scan failed" >&2
+            exit 1
+          fi
+          docker rm "${container}" >/dev/null
+          trap - EXIT
+          docker run --rm \
+            --read-only \
+            --network none \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --tmpfs /opt/easysubway/logs:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --entrypoint /bin/sh \
+            "${image}" -ceu '
+              test "$(id -u)" = "10001"
+              test "$(id -g)" = "10001"
+              test "$(find /app -mindepth 1 -maxdepth 1 -printf "%f\n")" = "app.jar"
+              ! touch /app/read-only-check
+              touch /tmp/runtime-write-check
+              touch /opt/easysubway/logs/runtime-write-check
+              test ! -e /var/run/docker.sock
+            '
+
   backend-release:
     name: Backend immutable arm64 image
     # GITHUB_TOKEN 병합은 main push 이벤트를 만들지 못한다. Automerge Queue가 main
