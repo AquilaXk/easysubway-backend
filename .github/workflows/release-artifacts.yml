@@ -107,6 +107,8 @@ jobs:
           archive_dir="${RUNNER_TEMP}/backend-image-app-archive"
           nested_archives="${RUNNER_TEMP}/backend-image-nested-archives.txt"
           nested_archive_listing="${RUNNER_TEMP}/backend-image-nested-archive.txt"
+          nested_archive_member_listing="${RUNNER_TEMP}/backend-image-nested-archive-member.txt"
+          filtered_nested_archive_listing="${RUNNER_TEMP}/backend-image-filtered-nested-archive.txt"
           docker cp "${container}:/app/app.jar" "${app_archive}"
           jar tf "${app_archive}" > "${archive_listing}"
           mkdir -p "${archive_dir}"
@@ -114,7 +116,10 @@ jobs:
           find "${archive_dir}" -type f -iname '*.jar' -print0 > "${nested_archives}"
           : > "${nested_archive_listing}"
           while IFS= read -r -d '' nested_archive; do
-            jar tf "${nested_archive}" >> "${nested_archive_listing}"
+            jar tf "${nested_archive}" > "${nested_archive_member_listing}"
+            while IFS= read -r nested_member; do
+              printf '%s:/%s\n' "${nested_archive#"${archive_dir}/"}" "${nested_member}" >> "${nested_archive_listing}"
+            done < "${nested_archive_member_listing}"
           done < "${nested_archives}"
           if grep -Eiq "${source_or_build_pattern}|\.(zip|war|ear|jmod)$" "${archive_listing}"; then
             echo "backend runtime application archive contains source or build files" >&2
@@ -123,7 +128,13 @@ jobs:
             echo "backend runtime application archive scan failed" >&2
             exit 1
           fi
-          if archive_violation="$(grep -Eim1 "${source_or_build_pattern}|\.(jar|zip|war|ear|jmod)$" "${nested_archive_listing}")"; then
+          if grep -Fvx 'BOOT-INF/lib/h2-2.3.232.jar:/org/h2/util/data.zip' "${nested_archive_listing}" > "${filtered_nested_archive_listing}"; then
+            :
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime dependency archive allowlist filter failed" >&2
+            exit 1
+          fi
+          if archive_violation="$(grep -Eim1 "${source_or_build_pattern}|\.(jar|zip|war|ear|jmod)$" "${filtered_nested_archive_listing}")"; then
             printf 'backend runtime dependency archive contains prohibited entry: %q\n' "${archive_violation}" >&2
             exit 1
           elif [[ "$?" -ne 1 ]]; then

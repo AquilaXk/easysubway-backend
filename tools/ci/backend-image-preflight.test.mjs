@@ -5,14 +5,17 @@ import test from 'node:test';
 const workflowUrl = new URL('../../.github/workflows/release-artifacts.yml', import.meta.url);
 const dockerfileUrl = new URL('../../backend/Dockerfile', import.meta.url);
 const dockerignoreUrl = new URL('../../backend/.dockerignore', import.meta.url);
+const gradleLockUrl = new URL('../../backend/gradle.lockfile', import.meta.url);
 
 test('image preflight는 source-free non-root read-only runtime isolation을 실측한다', async () => {
-  const [workflow, dockerfile, dockerignore] = await Promise.all([
+  const [workflow, dockerfile, dockerignore, gradleLock] = await Promise.all([
     readFile(workflowUrl, 'utf8'),
     readFile(dockerfileUrl, 'utf8'),
     readFile(dockerignoreUrl, 'utf8'),
+    readFile(gradleLockUrl, 'utf8'),
   ]);
   assert.equal(dockerignore, '*\n!Dockerfile\n!build\n!build/libs\n!build/libs/*.jar\n');
+  assert.match(gradleLock, /^com\.h2database:h2:2\.3\.232=/m);
   assert.deepEqual(dockerfile.match(/^[\t ]*COPY[\t ]+.+$/gim), [
     'COPY --chown=10001:10001 build/libs/ /tmp/jars/',
   ]);
@@ -37,6 +40,8 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'archive_dir="${RUNNER_TEMP}/backend-image-app-archive"',
     'nested_archives="${RUNNER_TEMP}/backend-image-nested-archives.txt"',
     'nested_archive_listing="${RUNNER_TEMP}/backend-image-nested-archive.txt"',
+    'nested_archive_member_listing="${RUNNER_TEMP}/backend-image-nested-archive-member.txt"',
+    'filtered_nested_archive_listing="${RUNNER_TEMP}/backend-image-filtered-nested-archive.txt"',
     'docker cp "${container}:/app/app.jar" "${app_archive}"',
     'jar tf "${app_archive}" > "${archive_listing}"',
     'mkdir -p "${archive_dir}"',
@@ -44,12 +49,17 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'find "${archive_dir}" -type f -iname \'*.jar\' -print0 > "${nested_archives}"',
     ': > "${nested_archive_listing}"',
     'while IFS= read -r -d \'\' nested_archive; do',
-    'jar tf "${nested_archive}" >> "${nested_archive_listing}"',
+    'jar tf "${nested_archive}" > "${nested_archive_member_listing}"',
+    'while IFS= read -r nested_member; do',
+    'printf \'%s:/%s\\n\' "${nested_archive#"${archive_dir}/"}" "${nested_member}" >> "${nested_archive_listing}"',
+    'done < "${nested_archive_member_listing}"',
     'done < "${nested_archives}"',
     'grep -Eiq "${source_or_build_pattern}|\\.(zip|war|ear|jmod)$" "${archive_listing}"',
     'backend runtime application archive contains source or build files',
     'backend runtime application archive scan failed',
-    'archive_violation="$(grep -Eim1 "${source_or_build_pattern}|\\.(jar|zip|war|ear|jmod)$" "${nested_archive_listing}")"',
+    'grep -Fvx \'BOOT-INF/lib/h2-2.3.232.jar:/org/h2/util/data.zip\' "${nested_archive_listing}" > "${filtered_nested_archive_listing}"',
+    'backend runtime dependency archive allowlist filter failed',
+    'archive_violation="$(grep -Eim1 "${source_or_build_pattern}|\\.(jar|zip|war|ear|jmod)$" "${filtered_nested_archive_listing}")"',
     'printf \'backend runtime dependency archive contains prohibited entry: %q\\n\' "${archive_violation}" >&2',
     'backend runtime dependency archive scan failed',
     'docker rm "${container}"',
