@@ -14,7 +14,12 @@ const producerSha = "a".repeat(40);
 test("Journey contract bundle v2 schema는 ordered resource identities와 complete Base64를 강제한다", () => {
   const schema = readJson(join(repositoryRoot, "contracts/api/journey-v3-contract-bundle-v2.schema.json"));
   const resources = schema.properties.resources;
+  const producerShaSchema = schema.properties.producerSha;
 
+  assert.equal(producerShaSchema.minLength, 40);
+  assert.equal(producerShaSchema.maxLength, 40);
+  assert.match(producerSha, new RegExp(producerShaSchema.pattern));
+  assert.doesNotMatch("A".repeat(40), new RegExp(producerShaSchema.pattern));
   assert.equal(resources.items, false);
   assert.deepEqual(resources.prefixItems.map((item) => item.allOf[1].properties), [
     {
@@ -79,6 +84,8 @@ test("Journey contract bundle v2는 producer SHA와 backend/build 밖 또는 sym
   try {
     const output = join(fixture.outputDirectory, "bundle.json");
     assert.throws(() => run("not-a-sha", output, fixture.contractRoot), /producer sha/i);
+    assert.throws(() => run(`${producerSha}\n`, output, fixture.contractRoot), /producer sha/i);
+    assert.throws(() => run(`${producerSha}\r\n`, output, fixture.contractRoot), /producer sha/i);
     assert.throws(() => run(producerSha, join(tmpdir(), "journey-contract-bundle.json"), fixture.contractRoot), /backend.build/i);
 
     const symlinkOutput = join(fixture.outputDirectory, "bundle-link.json");

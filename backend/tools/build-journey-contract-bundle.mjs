@@ -29,7 +29,7 @@ const expectedResources = [
 
 try {
   const arguments_ = parseArguments(process.argv.slice(2));
-  if (!/^[a-f0-9]{40}$/.test(arguments_["producer-sha"])) throw new Error("producer sha is invalid");
+  if (arguments_["producer-sha"].length !== 40 || !/^[a-f0-9]{40}$/.test(arguments_["producer-sha"])) throw new Error("producer sha is invalid");
   const contractRoot = resolveContractRoot();
   const resources = readResources(contractRoot);
   const output = assertOutput(arguments_.output);

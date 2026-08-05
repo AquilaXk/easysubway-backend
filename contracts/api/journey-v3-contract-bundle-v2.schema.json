@@ -17,7 +17,7 @@
     "bundleVersion": { "const": "2.0.0" },
     "component": { "const": "backend" },
     "producerRepository": { "const": "AquilaXk/easysubway-backend" },
-    "producerSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "producerSha": { "type": "string", "minLength": 40, "maxLength": 40, "pattern": "^[a-f0-9]{40}$" },
     "resources": {
       "type": "array",
       "minItems": 3,
