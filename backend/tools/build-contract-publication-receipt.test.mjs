@@ -12,6 +12,11 @@ const repository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
 const gitSha = "a".repeat(40);
 const artifactType = "application/vnd.easysubway.journey.contract-bundle.v2";
 const layerMediaType = "application/vnd.easysubway.journey.contract-bundle.v2+json";
+const resources = [
+  { id: "journey-v3-error-catalog", path: "contracts/api/journey-v3-error-catalog.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: "1".repeat(64), contentBase64: "e30=" },
+  { id: "journey-v3-error-disposition", path: "contracts/api/journey-v3-error-disposition.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: "2".repeat(64), contentBase64: "e30=" },
+  { id: "journey-v3-openapi", path: "contracts/api/journey-v3.openapi.yaml", owner: "AquilaXk/easysubway-backend", mediaType: "application/yaml", sha256: "3".repeat(64), contentBase64: "e30=" },
+];
 
 test("release workflow는 exact Journey contract OCI publication과 digest 재검증을 고정한다", () => {
   const workflow = readFileSync(join(repositoryRoot, ".github/workflows/release-artifacts.yml"), "utf8");
@@ -32,6 +37,8 @@ test("release workflow는 exact Journey contract OCI publication과 digest 재�
   assert.match(workflow, /descriptor=release-artifacts\/backend\/journey-v3-contract-bundle-v2-descriptor\.json/);
   assert.match(workflow, /oras manifest fetch "\$\{repository\}:\$\{tag\}" --output "\$\{raw_manifest\}" --format json > "\$\{descriptor\}"/);
   assert.match(workflow, /build-contract-publication-receipt\.mjs/);
+  assert.match(workflow, /JSON\.parse\(require\("node:fs"\)\.readFileSync\(process\.argv\[1\], "utf8"\)\)\.artifact\.manifestDigest/);
+  assert.doesNotMatch(workflow, /sed .*manifestDigest/);
   assert.match(workflow, /\(\s+cd release-artifacts\/backend\s+oras push "\$\{repository\}:\$\{tag\}"\s+\\\s+--artifact-type "\$\{artifact_type\}"\s+\\\s+--annotation "org\.opencontainers\.image\.created=\$\{created\}"\s+\\\s+"journey-v3-contract-bundle-v2\.json:\$\{layer_type\}"/s);
   assert.match(workflow, /pull_root="\$\{RUNNER_TEMP\}\/journey-contract-pull"/);
   assert.match(workflow, /mkdir -p "\$\{pull_root\}"/);
@@ -70,6 +77,11 @@ test("Journey contract publication receipt는 descriptor와 raw manifest contrac
   const cases = [
     ["producer SHA", (fixture) => ({ gitSha: "invalid" })],
     ["different valid producer SHA", (fixture) => ({ gitSha: "b".repeat(40) })],
+    ["bundle resource count", (fixture) => mutateBundle(fixture, (value) => { value.resources = []; })],
+    ["bundle resource identity", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].id = "other"; })],
+    ["bundle resource path", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].path = "other.json"; })],
+    ["bundle resource owner", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].owner = "other/repository"; })],
+    ["bundle resource media type", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].mediaType = "text/plain"; })],
     ["descriptor digest", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.digest = `sha256:${"0".repeat(64)}`; })],
     ["descriptor reference", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.reference = `${repository}@sha256:${"0".repeat(64)}`; })],
     ["descriptor raw manifest SHA binding", (fixture) => mutateJson(fixture.descriptorPath, (value) => {
@@ -142,7 +154,7 @@ test("Journey contract publication receipt는 confined output, symlink, malforme
 function createFixture() {
   mkdirSync(outputRoot, { recursive: true });
   const directory = mkdtempSync(join(outputRoot, "journey-contract-receipt-test-"));
-  const bundle = Buffer.from(`${JSON.stringify({ schemaVersion: 2, bundleVersion: "2.0.0", component: "backend", producerRepository: "AquilaXk/easysubway-backend", producerSha: gitSha, resources: [] })}\n`);
+  const bundle = Buffer.from(`${JSON.stringify({ schemaVersion: 2, bundleVersion: "2.0.0", component: "backend", producerRepository: "AquilaXk/easysubway-backend", producerSha: gitSha, resources })}\n`);
   const bundlePath = join(directory, "journey-v3-contract-bundle-v2.json");
   const manifestPath = join(directory, "manifest.json");
   const descriptorPath = join(directory, "descriptor.json");
@@ -171,6 +183,15 @@ function mutateManifest(fixture, mutate) {
     value.digest = digest;
     value.reference = `${repository}@${digest}`;
     value.size = manifest.byteLength;
+  });
+}
+
+function mutateBundle(fixture, mutate) {
+  mutateJson(fixture.bundlePath, mutate);
+  const bundle = readFileSync(fixture.bundlePath);
+  mutateManifest(fixture, (value) => {
+    value.layers[0].digest = `sha256:${sha256(bundle)}`;
+    value.layers[0].size = bundle.byteLength;
   });
 }
 

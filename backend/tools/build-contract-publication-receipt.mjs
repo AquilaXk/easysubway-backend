@@ -12,6 +12,11 @@ const layerMediaType = "application/vnd.easysubway.journey.contract-bundle.v2+js
 const emptyConfigMediaType = "application/vnd.oci.empty.v1+json";
 const emptyConfigDigest = "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
 const fileName = "journey-v3-contract-bundle-v2.json";
+const expectedResources = [
+  { id: "journey-v3-error-catalog", path: "contracts/api/journey-v3-error-catalog.json", mediaType: "application/json" },
+  { id: "journey-v3-error-disposition", path: "contracts/api/journey-v3-error-disposition.json", mediaType: "application/json" },
+  { id: "journey-v3-openapi", path: "contracts/api/journey-v3.openapi.yaml", mediaType: "application/yaml" },
+];
 const options = new Set(["--bundle", "--descriptor", "--manifest", "--repository", "--git-sha", "--output"]);
 
 try {
@@ -62,6 +67,14 @@ function validateBundle(bytes, gitSha) {
   if (bundle.schemaVersion !== 2 || bundle.bundleVersion !== "2.0.0" || bundle.component !== "backend" || bundle.producerRepository !== producerRepository || bundle.producerSha !== gitSha || !Array.isArray(bundle.resources)) {
     throw new Error("bundle header is invalid");
   }
+  if (bundle.resources.length !== expectedResources.length) throw new Error("bundle resources are invalid");
+  bundle.resources.forEach((resource, index) => {
+    const expected = expectedResources[index];
+    assertExactKeys(resource, ["id", "path", "owner", "mediaType", "sha256", "contentBase64"], "bundle resource");
+    if (resource.id !== expected.id || resource.path !== expected.path || resource.owner !== producerRepository || resource.mediaType !== expected.mediaType || !/^[a-f0-9]{64}$/.test(resource.sha256) || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(resource.contentBase64) || resource.contentBase64.length === 0) {
+      throw new Error("bundle resources are invalid");
+    }
+  });
 }
 
 function validateDescriptor(descriptor, manifest) {
