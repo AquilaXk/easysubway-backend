@@ -15,6 +15,7 @@ import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.stream.Stream;
 import java.util.zip.GZIPInputStream;
 import org.junit.jupiter.api.DisplayName;
@@ -103,6 +104,21 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/common/security/SecurityConfig.java", "SecurityConfig#publicSecurityFilterChain", "public realtime ingress security allowlist", "SecurityFilterChain publicSecurityFilterChain(", "\"/api/v1/realtime/**\","),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/report/adapter/out/persistence/JdbcFacilityReportRepository.java", "JdbcFacilityReportRepository#loadReport/#saveReport", "production facility-report load/save persistence", "public class JdbcFacilityReportRepository implements", "public Optional<FacilityReport> loadReport(String reportId)", "public FacilityReport saveReport(FacilityReport report)", "upsertReport(report)", "return loadReport(report.id())", "INSERT INTO facility_reports (", "ON CONFLICT (report_id) DO UPDATE")
 	);
+
+	@Test
+	@DisplayName("runtime interface inventory matches sole, ordered, and record declarations")
+	void requiredMemberSuffixesMatchEntireImplementsClause() {
+		assertThat(requiredMemberSuffixes("TransitSource.java", "class TransitSource implements LoadTransitMasterPort {}"))
+			.containsExactly("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
+		assertThat(requiredMemberSuffixes("RealtimeSource.java", "class RealtimeSource implements RealtimeProvider {}"))
+			.containsExactly("#arrivals");
+		assertThat(requiredMemberSuffixes("RealtimeSource.java", "class RealtimeSource implements RealtimeProvider, OtherPort {}"))
+			.containsExactly("#arrivals");
+		assertThat(requiredMemberSuffixes("RealtimeSource.java", "class RealtimeSource implements OtherPort, RealtimeProvider {}"))
+			.containsExactly("#arrivals");
+		assertThat(requiredMemberSuffixes("TransitRecord.java", "record TransitRecord() implements LoadTransitMasterPort {}"))
+			.containsExactly("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
+	}
 
 	@Test
 	@DisplayName("inventory is closed, ordered, production-only, and evidence-backed")
@@ -298,22 +314,27 @@ class RouteV2RuntimeInputInventoryContractTest {
 	}
 
 	private static List<String> requiredMemberSuffixes(String fileName, String source) {
-		if (source.contains("implements LoadRouteTimetablePort")) return List.of("#loadRouteTimetableSnapshot");
-		if (source.contains("implements LoadRouteSearchPort")) return List.of("#loadRouteSearch");
-		if (source.contains("implements RealtimeArrivalResolver")) return List.of("#resolve");
-		if ((source.contains("implements RealtimeProvider {") || source.contains("implements RealtimeProvider,"))
+		if (implementsInterface(fileName, source, "LoadRouteTimetablePort")) return List.of("#loadRouteTimetableSnapshot");
+		if (implementsInterface(fileName, source, "LoadRouteSearchPort")) return List.of("#loadRouteSearch");
+		if (implementsInterface(fileName, source, "RealtimeArrivalResolver")) return List.of("#resolve");
+		if (implementsInterface(fileName, source, "RealtimeProvider")
 			&& !source.contains("fallbackProvider.arrivals(query)")) return List.of("#arrivals");
-		if (source.contains("implements PlayIntegrityDecoder")) return List.of("#decode");
-		if (source.contains("implements RouteV2AccessStore")) return List.of("#claimNonceAndSaveSession", "#consumeSession");
-		if (source.contains("implements ApplicationRunner")) return List.of("#run");
-		if (source.contains("LoadTransitMasterPort,")) return List.of("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
-		if (source.contains("implements RealtimeMappingPort")) return List.of("#findArrivalMapping/#findTripMapping/#findTrainPositionMapping");
-		String className = fileName.substring(0, fileName.length() - ".java".length());
-		String normalizedSource = source.replaceAll("\\s+", " ");
-		if (normalizedSource.matches("(?s).*\\bclass " + className + "\\b[^\\{]*\\bimplements\\b[^\\{]*\\bRealtimeProviderCallQuotaPort\\b.*")) {
+		if (implementsInterface(fileName, source, "PlayIntegrityDecoder")) return List.of("#decode");
+		if (implementsInterface(fileName, source, "RouteV2AccessStore")) return List.of("#claimNonceAndSaveSession", "#consumeSession");
+		if (implementsInterface(fileName, source, "ApplicationRunner")) return List.of("#run");
+		if (implementsInterface(fileName, source, "LoadTransitMasterPort")) return List.of("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
+		if (implementsInterface(fileName, source, "RealtimeMappingPort")) return List.of("#findArrivalMapping/#findTripMapping/#findTrainPositionMapping");
+		if (implementsInterface(fileName, source, "RealtimeProviderCallQuotaPort")) {
 			return List.of("#tryAcquire");
 		}
 		return List.of();
+	}
+
+	private static boolean implementsInterface(String fileName, String source, String interfaceName) {
+		String typeName = fileName.substring(0, fileName.length() - ".java".length());
+		String normalizedSource = source.replaceAll("\\s+", " ");
+		return normalizedSource.matches("(?s).*\\b(?:class|record)\\s+" + Pattern.quote(typeName)
+			+ "\\b[^\\{]*\\bimplements\\b[^\\{]*\\b" + Pattern.quote(interfaceName) + "\\b.*");
 	}
 
 	private static void assertSharedStateMarkers(String sourcePath, String source, Set<Member> members) {
