@@ -9,6 +9,8 @@ const repository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
 const producerRepository = "AquilaXk/easysubway-backend";
 const artifactType = "application/vnd.easysubway.journey.contract-bundle.v2";
 const layerMediaType = "application/vnd.easysubway.journey.contract-bundle.v2+json";
+const emptyConfigMediaType = "application/vnd.oci.empty.v1+json";
+const emptyConfigDigest = "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a";
 const fileName = "journey-v3-contract-bundle-v2.json";
 const options = new Set(["--bundle", "--descriptor", "--manifest", "--repository", "--git-sha", "--output"]);
 
@@ -65,7 +67,7 @@ function validateBundle(bytes, gitSha) {
 function validateDescriptor(descriptor, manifest) {
   if (descriptor === null || typeof descriptor !== "object" || Array.isArray(descriptor)) throw new Error("descriptor is invalid");
   const manifestDigest = descriptor.digest;
-  if (!/^sha256:[a-f0-9]{64}$/.test(manifestDigest) || manifestDigest !== `sha256:${sha256(manifest)}` || descriptor.reference !== `${repository}@${manifestDigest}` || descriptor.mediaType !== "application/vnd.oci.image.manifest.v1+json" || descriptor.artifactType !== artifactType) {
+  if (!/^sha256:[a-f0-9]{64}$/.test(manifestDigest) || manifestDigest !== `sha256:${sha256(manifest)}` || descriptor.reference !== `${repository}@${manifestDigest}` || descriptor.mediaType !== "application/vnd.oci.image.manifest.v1+json" || descriptor.artifactType !== artifactType || !Number.isSafeInteger(descriptor.size) || descriptor.size !== manifest.byteLength) {
     throw new Error("descriptor manifest is invalid");
   }
   return manifestDigest;
@@ -73,6 +75,8 @@ function validateDescriptor(descriptor, manifest) {
 
 function validateManifest(manifest, payloadSha256, payloadSize) {
   if (manifest === null || typeof manifest !== "object" || Array.isArray(manifest) || manifest.schemaVersion !== 2 || manifest.mediaType !== "application/vnd.oci.image.manifest.v1+json" || manifest.artifactType !== artifactType) throw new Error("manifest is invalid");
+  const config = manifest.config;
+  if (config === null || typeof config !== "object" || Array.isArray(config) || config.mediaType !== emptyConfigMediaType || config.digest !== emptyConfigDigest || config.size !== 2) throw new Error("manifest config is invalid");
   const layers = manifest.layers;
   if (!Array.isArray(layers) || layers.length !== 1) throw new Error("descriptor layers are invalid");
   const layer = layers[0];

@@ -37,7 +37,7 @@ test("release workflow는 exact Journey contract OCI publication과 digest 재�
   assert.match(workflow, /mkdir -p "\$\{pull_root\}"/);
   assert.match(workflow, /oras pull "\$\{repository\}@\$\{manifest_digest\}" --output "\$\{pull_root\}"/);
   assert.match(workflow, /cmp --silent "\$\{bundle\}" "\$\{pull_root\}\/journey-v3-contract-bundle-v2\.json"/);
-  assert.match(workflow, /- name: Build immutable release evidence ledger\s+shell: bash\s+run: \|\s+set -euo pipefail\s+\(\s+cd release-artifacts\/backend\s+for evidence in release-metadata\.txt image-index\.json image-inspect\.json sbom\.json provenance\.json journey-v3-contract-bundle-v2\.json journey-v3-contract-bundle-v2-descriptor\.json journey-v3-contract-bundle-v2-manifest\.json journey-v3-contract-bundle-v2-receipt\.json; do\s+sha256sum "\$\{evidence\}"/s);
+  assert.match(workflow, /- name: Build immutable release evidence ledger\s+shell: bash\s+run: \|\s+set -euo pipefail\s+\(\s+cd release-artifacts\/backend\s+for evidence in release-metadata\.txt image-index\.json image-inspect\.json sbom\.json provenance\.json; do\s+sha256sum "\$\{evidence\}"\s+done\s+\) > release-artifacts\/backend\/evidence-ledger\.sha256\s+\(\s+cd release-artifacts\/backend\s+for evidence in journey-v3-contract-bundle-v2\.json journey-v3-contract-bundle-v2-descriptor\.json journey-v3-contract-bundle-v2-manifest\.json journey-v3-contract-bundle-v2-receipt\.json; do\s+sha256sum "\$\{evidence\}"\s+done\s+\) >> release-artifacts\/backend\/evidence-ledger\.sha256/s);
   assert.doesNotMatch(workflow, /tag="[^"]*latest[^"]*"/);
   assert.doesNotMatch(workflow, /oras push "[^"]*latest[^"]*"/);
   assert.doesNotMatch(workflow, /oras manifest fetch "[^"]*latest[^"]*"/);
@@ -79,7 +79,13 @@ test("Journey contract publication receipt는 descriptor와 raw manifest contrac
     })],
     ["descriptor media type", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.mediaType = "application/json"; })],
     ["descriptor artifact type", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.artifactType = "application/json"; })],
+    ["descriptor missing size", (fixture) => mutateJson(fixture.descriptorPath, (value) => { delete value.size; })],
+    ["descriptor wrong size", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.size += 1; })],
     ["raw artifact type", (fixture) => mutateManifest(fixture, (value) => { value.artifactType = "application/json"; })],
+    ["raw config missing", (fixture) => mutateManifest(fixture, (value) => { delete value.config; })],
+    ["raw config media type", (fixture) => mutateManifest(fixture, (value) => { value.config.mediaType = "application/json"; })],
+    ["raw config digest", (fixture) => mutateManifest(fixture, (value) => { value.config.digest = `sha256:${"0".repeat(64)}`; })],
+    ["raw config size", (fixture) => mutateManifest(fixture, (value) => { value.config.size = 3; })],
     ["raw layer count", (fixture) => mutateManifest(fixture, (value) => { value.layers.push({ ...value.layers[0] }); })],
     ["raw layer media type", (fixture) => mutateManifest(fixture, (value) => { value.layers[0].mediaType = "application/json"; })],
     ["raw layer title", (fixture) => mutateManifest(fixture, (value) => { value.layers[0].annotations["org.opencontainers.image.title"] = "other.json"; })],
@@ -143,12 +149,12 @@ function createFixture() {
   writeFileSync(bundlePath, bundle);
   const manifest = Buffer.from(`${JSON.stringify(manifestFor(bundle))}\n`);
   writeFileSync(manifestPath, manifest);
-  writeJson(descriptorPath, { reference: `${repository}@sha256:${sha256(manifest)}`, digest: `sha256:${sha256(manifest)}`, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType, extraMetadata: true });
+  writeJson(descriptorPath, { reference: `${repository}@sha256:${sha256(manifest)}`, digest: `sha256:${sha256(manifest)}`, size: manifest.byteLength, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType, extraMetadata: true });
   return { directory, bundle, manifest, bundlePath, manifestPath, descriptorPath, cleanup() { rmSync(directory, { recursive: true, force: true }); } };
 }
 
 function manifestFor(bundle) {
-  return { schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType, layers: [{ mediaType: layerMediaType, digest: `sha256:${sha256(bundle)}`, size: bundle.byteLength, annotations: { "org.opencontainers.image.title": "journey-v3-contract-bundle-v2.json" } }] };
+  return { schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType, config: { mediaType: "application/vnd.oci.empty.v1+json", digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", size: 2, data: "{}" }, layers: [{ mediaType: layerMediaType, digest: `sha256:${sha256(bundle)}`, size: bundle.byteLength, annotations: { "org.opencontainers.image.title": "journey-v3-contract-bundle-v2.json" } }] };
 }
 
 function mutateJson(path, mutate) {
@@ -159,10 +165,12 @@ function mutateJson(path, mutate) {
 
 function mutateManifest(fixture, mutate) {
   mutateJson(fixture.manifestPath, mutate);
-  const digest = `sha256:${sha256(readFileSync(fixture.manifestPath))}`;
+  const manifest = readFileSync(fixture.manifestPath);
+  const digest = `sha256:${sha256(manifest)}`;
   mutateJson(fixture.descriptorPath, (value) => {
     value.digest = digest;
     value.reference = `${repository}@${digest}`;
+    value.size = manifest.byteLength;
   });
 }
 

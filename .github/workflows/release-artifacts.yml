@@ -270,10 +270,16 @@ jobs:
           set -euo pipefail
           (
             cd release-artifacts/backend
-            for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json journey-v3-contract-bundle-v2.json journey-v3-contract-bundle-v2-descriptor.json journey-v3-contract-bundle-v2-manifest.json journey-v3-contract-bundle-v2-receipt.json; do
+            for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json; do
               sha256sum "${evidence}"
             done
           ) > release-artifacts/backend/evidence-ledger.sha256
+          (
+            cd release-artifacts/backend
+            for evidence in journey-v3-contract-bundle-v2.json journey-v3-contract-bundle-v2-descriptor.json journey-v3-contract-bundle-v2-manifest.json journey-v3-contract-bundle-v2-receipt.json; do
+              sha256sum "${evidence}"
+            done
+          ) >> release-artifacts/backend/evidence-ledger.sha256
 
       - name: Emit and verify component manifest
         shell: bash
