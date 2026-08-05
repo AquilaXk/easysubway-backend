@@ -93,7 +93,6 @@ test("Journey contract publication receipt는 descriptor와 raw manifest contrac
       value.reference = `${repository}@${wrongDigest}`;
     })],
     ["descriptor media type", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.mediaType = "application/json"; })],
-    ["descriptor artifact type", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.artifactType = "application/json"; })],
     ["descriptor missing size", (fixture) => mutateJson(fixture.descriptorPath, (value) => { delete value.size; })],
     ["descriptor wrong size", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.size += 1; })],
     ["raw artifact type", (fixture) => mutateManifest(fixture, (value) => { value.artifactType = "application/json"; })],
@@ -164,7 +163,7 @@ function createFixture() {
   writeFileSync(bundlePath, bundle);
   const manifest = Buffer.from(`${JSON.stringify(manifestFor(bundle))}\n`);
   writeFileSync(manifestPath, manifest);
-  writeJson(descriptorPath, { reference: `${repository}@sha256:${sha256(manifest)}`, digest: `sha256:${sha256(manifest)}`, size: manifest.byteLength, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType, extraMetadata: true });
+  writeJson(descriptorPath, { reference: `${repository}@sha256:${sha256(manifest)}`, digest: `sha256:${sha256(manifest)}`, size: manifest.byteLength, mediaType: "application/vnd.oci.image.manifest.v1+json", extraMetadata: true });
   return { directory, bundle, manifest, bundlePath, manifestPath, descriptorPath, cleanup() { rmSync(directory, { recursive: true, force: true }); } };
 }
 

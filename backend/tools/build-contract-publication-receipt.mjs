@@ -81,7 +81,7 @@ function validateBundle(bytes, gitSha) {
 function validateDescriptor(descriptor, manifest) {
   if (descriptor === null || typeof descriptor !== "object" || Array.isArray(descriptor)) throw new Error("descriptor is invalid");
   const manifestDigest = descriptor.digest;
-  if (!/^sha256:[a-f0-9]{64}$/.test(manifestDigest) || manifestDigest !== `sha256:${sha256(manifest)}` || descriptor.reference !== `${repository}@${manifestDigest}` || descriptor.mediaType !== "application/vnd.oci.image.manifest.v1+json" || descriptor.artifactType !== artifactType || !Number.isSafeInteger(descriptor.size) || descriptor.size !== manifest.byteLength) {
+  if (!/^sha256:[a-f0-9]{64}$/.test(manifestDigest) || manifestDigest !== `sha256:${sha256(manifest)}` || descriptor.reference !== `${repository}@${manifestDigest}` || descriptor.mediaType !== "application/vnd.oci.image.manifest.v1+json" || !Number.isSafeInteger(descriptor.size) || descriptor.size !== manifest.byteLength) {
     throw new Error("descriptor manifest is invalid");
   }
   return manifestDigest;
