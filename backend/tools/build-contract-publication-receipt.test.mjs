@@ -26,7 +26,7 @@ test("release workflow는 exact Journey contract OCI publication과 digest 재�
   assert.match(workflow, /backend\/build\/journey-contract-preflight-a\/journey-v3-contract-bundle-v2\.json/);
   assert.match(workflow, /backend\/build\/journey-contract-preflight-b\/journey-v3-contract-bundle-v2\.json/);
   assert.match(workflow, /cmp --silent .*journey-contract-preflight-a.*journey-contract-preflight-b/s);
-  assert.match(workflow, /oras-project\/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6/);
+  assert.match(workflow, /oras-project\/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d/);
   assert.match(workflow, /version:\s*1\.3\.3/);
   assert.match(workflow, /tag="git-\$\{GITHUB_SHA\}-run-\$\{GITHUB_RUN_ID\}-\$\{GITHUB_RUN_ATTEMPT\}"/);
   assert.match(workflow, /artifact_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2"/);
