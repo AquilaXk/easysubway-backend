@@ -29,6 +29,9 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
   assert.ok(step, 'runtime isolation preflight step must exist');
   for (const contract of [
     'container="$(docker create "${image}")"',
+    'declared_volumes="$(docker image inspect --format \'{{json .Config.Volumes}}\' "${image}")"',
+    'if [[ "${declared_volumes}" != "null" ]]; then',
+    'backend runtime image must not declare volumes',
     'rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"',
     'docker export "${container}" | tar -tf - > "${rootfs_listing}"',
     "source_or_build_pattern='(^|/)(gradle|gradlew(\\.bat)?|javac|gradle-wrapper\\.jar)$|(^|/)gradle/wrapper/|\\.(java|kt|kts|groovy|gradle)$'",
@@ -46,6 +49,9 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'jar tf "${app_archive}" > "${archive_listing}"',
     'mkdir -p "${archive_dir}"',
     '(cd "${archive_dir}" && jar xf "${app_archive}")',
+    'h2_archive="${archive_dir}/BOOT-INF/lib/h2-2.3.232.jar"',
+    'printf \'%s  %s\\n\' \'8dae62d22db8982c3dcb3826edb9c727c5d302063a67eef7d63d82de401f07d3\' "${h2_archive}" | sha256sum --check --status',
+    'backend runtime H2 archive digest mismatch',
     'find "${archive_dir}" -type f -iname \'*.jar\' -print0 > "${nested_archives}"',
     ': > "${nested_archive_listing}"',
     'while IFS= read -r -d \'\' nested_archive; do',
