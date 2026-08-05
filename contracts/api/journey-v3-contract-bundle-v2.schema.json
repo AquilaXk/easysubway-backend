@@ -1,0 +1,76 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://easysubway.example/contracts/api/journey-v3-contract-bundle-v2.schema.json",
+  "title": "Journey V3 contract bundle v2",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schemaVersion",
+    "bundleVersion",
+    "component",
+    "producerRepository",
+    "producerSha",
+    "resources"
+  ],
+  "properties": {
+    "schemaVersion": { "const": 2 },
+    "bundleVersion": { "const": "2.0.0" },
+    "component": { "const": "backend" },
+    "producerRepository": { "const": "AquilaXk/easysubway-backend" },
+    "producerSha": { "type": "string", "pattern": "^[a-f0-9]{40}$" },
+    "resources": {
+      "type": "array",
+      "minItems": 3,
+      "maxItems": 3,
+      "uniqueItems": true,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["id", "path", "owner", "mediaType", "sha256", "contentBase64"],
+        "properties": {
+          "id": {
+            "enum": [
+              "journey-v3-error-catalog",
+              "journey-v3-error-disposition",
+              "journey-v3-openapi"
+            ]
+          },
+          "path": {
+            "enum": [
+              "contracts/api/journey-v3-error-catalog.json",
+              "contracts/api/journey-v3-error-disposition.json",
+              "contracts/api/journey-v3.openapi.yaml"
+            ]
+          },
+          "owner": { "const": "AquilaXk/easysubway-backend" },
+          "mediaType": { "enum": ["application/json", "application/yaml"] },
+          "sha256": { "type": "string", "pattern": "^[a-f0-9]{64}$" },
+          "contentBase64": { "type": "string", "minLength": 1, "pattern": "^[A-Za-z0-9+/]+={0,2}$" }
+        },
+        "oneOf": [
+          {
+            "properties": {
+              "id": { "const": "journey-v3-error-catalog" },
+              "path": { "const": "contracts/api/journey-v3-error-catalog.json" },
+              "mediaType": { "const": "application/json" }
+            }
+          },
+          {
+            "properties": {
+              "id": { "const": "journey-v3-error-disposition" },
+              "path": { "const": "contracts/api/journey-v3-error-disposition.json" },
+              "mediaType": { "const": "application/json" }
+            }
+          },
+          {
+            "properties": {
+              "id": { "const": "journey-v3-openapi" },
+              "path": { "const": "contracts/api/journey-v3.openapi.yaml" },
+              "mediaType": { "const": "application/yaml" }
+            }
+          }
+        ]
+      }
+    }
+  }
+}
