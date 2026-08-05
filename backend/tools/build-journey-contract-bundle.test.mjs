@@ -11,6 +11,34 @@ const script = join(repositoryRoot, "backend/tools/build-journey-contract-bundle
 const buildRoot = join(repositoryRoot, "backend/build");
 const producerSha = "a".repeat(40);
 
+test("Journey contract bundle v2 schema는 ordered resource identities와 complete Base64를 강제한다", () => {
+  const schema = readJson(join(repositoryRoot, "contracts/api/journey-v3-contract-bundle-v2.schema.json"));
+  const resources = schema.properties.resources;
+
+  assert.equal(resources.items, false);
+  assert.deepEqual(resources.prefixItems.map((item) => item.allOf[1].properties), [
+    {
+      id: { const: "journey-v3-error-catalog" },
+      path: { const: "contracts/api/journey-v3-error-catalog.json" },
+      mediaType: { const: "application/json" },
+    },
+    {
+      id: { const: "journey-v3-error-disposition" },
+      path: { const: "contracts/api/journey-v3-error-disposition.json" },
+      mediaType: { const: "application/json" },
+    },
+    {
+      id: { const: "journey-v3-openapi" },
+      path: { const: "contracts/api/journey-v3.openapi.yaml" },
+      mediaType: { const: "application/yaml" },
+    },
+  ]);
+
+  const base64 = new RegExp(schema.$defs.resource.properties.contentBase64.pattern);
+  for (const value of ["YQ==", "YWI=", "YWJj", "YWJjYWJj"]) assert.match(value, base64);
+  for (const value of ["a", "aa=", "aaa==", "YWJ$", "YQ=A"]) assert.doesNotMatch(value, base64);
+});
+
 test("Journey contract bundle v2는 exact raw resources를 deterministic하게 생성한다", () => {
   const fixture = createFixture();
   try {
