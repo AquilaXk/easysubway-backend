@@ -851,7 +851,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   }
 });
 
-test('pending cleanup은 첫 always step이고, 이후 게이트는 후보별로 병합 분기보다 앞선다', async () => {
+test('pending cleanup은 첫 always step이고 producer는 queue 결정 뒤에 실행된다', async () => {
   const workflow = await readWorkflow();
 
   // 게이트는 후보마다 수행되고, 통과하지 못하면 그 후보만 건너뛴다. 순서 계약은 유지한다.
@@ -869,15 +869,15 @@ test('pending cleanup은 첫 always step이고, 이후 게이트는 후보별로
   assert.ok(producerAt > 0, 'producer dispatch marker must exist');
   assert.ok(rulesetAt > 0, 'ruleset lookup must exist');
   assert.ok(queueLoopAt > 0, 'queue loop marker must exist');
-  // pending cleanup → producer dispatch → 큐 루프 → 리뷰 게이트 → required context 게이트 → 병합 분기.
-  assert.ok(producerAt > cleanupAt, 'pending cleanup must precede producer dispatch');
-  assert.ok(rulesetAt > producerAt, 'ruleset lookup must follow producer dispatch');
+  // pending cleanup → 큐 루프 → 리뷰 게이트 → required context 게이트 → 병합 분기 → producer dispatch.
+  assert.ok(rulesetAt > cleanupAt, 'pending cleanup must precede the queue');
   const cleanupBlock = pendingCleanupOf(workflow);
   assert.match(cleanupBlock, /cleanup_failed.*\n[\s\S]*exit 1/, 'cleanup failure must stop before later steps');
-  assert.ok(queueLoopAt > producerAt, 'producer dispatch must precede the queue loop');
+  assert.ok(queueLoopAt > cleanupAt, 'the queue loop must follow pending cleanup');
   assert.ok(reviewGateAt > queueLoopAt, 'gates must run inside the candidate loop');
   assert.ok(contextGateAt > reviewGateAt, 'review gate must precede the required context gate');
   assert.ok(dispatchAt > contextGateAt, 'gates must precede the merge dispatch');
+  assert.ok(producerAt > dispatchAt, 'producer dispatch must follow the merge dispatch block');
 });
 
 const BUDGET_BLOCK_RE = /# candidate-budget-begin\n([\s\S]*?)\n\s+# candidate-budget-end/;
