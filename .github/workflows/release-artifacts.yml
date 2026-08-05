@@ -123,8 +123,8 @@ jobs:
             echo "backend runtime application archive scan failed" >&2
             exit 1
           fi
-          if grep -Eiq "${source_or_build_pattern}|\.(jar|zip|war|ear|jmod)$" "${nested_archive_listing}"; then
-            echo "backend runtime dependency archive contains source, build files, or a deeper archive" >&2
+          if archive_violation="$(grep -Eim1 "${source_or_build_pattern}|\.(jar|zip|war|ear|jmod)$" "${nested_archive_listing}")"; then
+            printf 'backend runtime dependency archive contains prohibited entry: %q\n' "${archive_violation}" >&2
             exit 1
           elif [[ "$?" -ne 1 ]]; then
             echo "backend runtime dependency archive scan failed" >&2
