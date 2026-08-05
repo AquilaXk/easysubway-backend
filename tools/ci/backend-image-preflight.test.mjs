@@ -16,10 +16,25 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'container="$(docker create "${image}")"',
     'rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"',
     'docker export "${container}" | tar -tf - > "${rootfs_listing}"',
-    "source_or_tool_pattern='(^|/)(gradle|gradlew(\\.bat)?|javac|gradle-wrapper\\.jar)$|(^|/)gradle/wrapper/|\\.(java|kt|kts|groovy|gradle|class)$'",
-    'grep -Eq "${source_or_tool_pattern}" "${rootfs_listing}"',
+    "source_or_build_pattern='(^|/)(gradlew(\\.bat)?|gradle-wrapper\\.jar)$|(^|/)gradle/wrapper/|\\.(java|kt|kts|groovy|gradle)$'",
+    'grep -Eq "(^|/)(gradle|javac)$|\\.class$|${source_or_build_pattern}" "${rootfs_listing}"',
     'elif [[ "$?" -ne 1 ]]; then',
     'backend runtime image source/build-tool scan failed',
+    'app_archive="${RUNNER_TEMP}/backend-image-app.jar"',
+    'archive_listing="${RUNNER_TEMP}/backend-image-app-archive.txt"',
+    'archive_dir="${RUNNER_TEMP}/backend-image-app-archive"',
+    'nested_archives="${RUNNER_TEMP}/backend-image-nested-archives.txt"',
+    'docker cp "${container}:/app/app.jar" "${app_archive}"',
+    'jar tf "${app_archive}" > "${archive_listing}"',
+    'mkdir -p "${archive_dir}"',
+    '(cd "${archive_dir}" && jar xf "${app_archive}")',
+    'find "${archive_dir}" -type f -name \'*.jar\' -print0 > "${nested_archives}"',
+    'while IFS= read -r -d \'\' nested_archive; do',
+    'jar tf "${nested_archive}" >> "${archive_listing}"',
+    'done < "${nested_archives}"',
+    'grep -Eq "${source_or_build_pattern}" "${archive_listing}"',
+    'backend runtime application archive contains source or build files',
+    'backend runtime application archive scan failed',
     'docker rm "${container}"',
     'trap - EXIT',
     'docker run --rm',
@@ -46,5 +61,9 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
   assert.ok(
     step.indexOf('docker create') < step.indexOf('docker run --rm'),
     'merged rootfs inspection must precede the runtime check',
+  );
+  assert.ok(
+    step.indexOf('docker cp') < step.indexOf('docker rm "${container}"'),
+    'application archive inspection must finish before container cleanup',
   );
 });
