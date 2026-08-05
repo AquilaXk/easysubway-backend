@@ -15,11 +15,19 @@ test("Journey contract bundle v2 schema는 ordered resource identities와 comple
   const schema = readJson(join(repositoryRoot, "contracts/api/journey-v3-contract-bundle-v2.schema.json"));
   const resources = schema.properties.resources;
   const producerShaSchema = schema.properties.producerSha;
+  const resourceSchema = schema.$defs.resource.properties;
 
   assert.equal(producerShaSchema.minLength, 40);
   assert.equal(producerShaSchema.maxLength, 40);
   assert.match(producerSha, new RegExp(producerShaSchema.pattern));
   assert.doesNotMatch("A".repeat(40), new RegExp(producerShaSchema.pattern));
+  assert.equal(resourceSchema.sha256.minLength, 64);
+  assert.equal(resourceSchema.sha256.maxLength, 64);
+  assert.match("a".repeat(64), new RegExp(resourceSchema.sha256.pattern));
+  assert.doesNotMatch("A".repeat(64), new RegExp(resourceSchema.sha256.pattern));
+  for (const value of [`${"a".repeat(64)}\n`, `${"a".repeat(64)}\r\n`]) {
+    assert.equal(value.length === resourceSchema.sha256.minLength && value.length === resourceSchema.sha256.maxLength && new RegExp(resourceSchema.sha256.pattern).test(value), false);
+  }
   assert.equal(resources.items, false);
   assert.deepEqual(resources.prefixItems.map((item) => item.allOf[1].properties), [
     {
@@ -39,9 +47,13 @@ test("Journey contract bundle v2 schema는 ordered resource identities와 comple
     },
   ]);
 
-  const base64 = new RegExp(schema.$defs.resource.properties.contentBase64.pattern);
+  const base64 = new RegExp(resourceSchema.contentBase64.pattern);
   for (const value of ["YQ==", "YWI=", "YWJj", "YWJjYWJj"]) assert.match(value, base64);
   for (const value of ["a", "aa=", "aaa==", "YWJ$", "YQ=A"]) assert.doesNotMatch(value, base64);
+  assert.deepEqual(resourceSchema.contentBase64.not, { pattern: "[\\r\\n]" });
+  const rejectedLineTerminator = new RegExp(resourceSchema.contentBase64.not.pattern);
+  assert.match("YQ==\n", rejectedLineTerminator);
+  assert.match("YQ==\r\n", rejectedLineTerminator);
 });
 
 test("Journey contract bundle v2는 exact raw resources를 deterministic하게 생성한다", () => {
