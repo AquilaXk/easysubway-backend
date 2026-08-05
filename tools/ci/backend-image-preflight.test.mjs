@@ -39,7 +39,7 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     assert.ok(step.includes(contract), `missing image isolation contract: ${contract}`);
   }
 
-  assert.doesNotMatch(step, /--privileged|--volume|^\s+-v(?:\s|$)/m);
+  assert.doesNotMatch(step, /--privileged|--volume|--cap-add(?:=|\s|$)|^\s+-v(?:\s|$)/m);
   assert.doesNotMatch(step, /find \/ -xdev|command -v (?:gradle|javac)/);
   assert.ok(
     step.indexOf('docker create') < step.indexOf('docker run --rm'),
