@@ -94,11 +94,12 @@ jobs:
           trap 'docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
           rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"
           docker export "${container}" | tar -tf - > "${rootfs_listing}"
-          if grep -Eq '(^|/)(gradle|gradlew|javac)$' "${rootfs_listing}"; then
-            echo "backend runtime image contains a build tool" >&2
+          source_or_tool_pattern='(^|/)(gradle|gradlew(\.bat)?|javac|gradle-wrapper\.jar)$|(^|/)gradle/wrapper/|\.(java|kt|kts|groovy|gradle|class)$'
+          if grep -Eq "${source_or_tool_pattern}" "${rootfs_listing}"; then
+            echo "backend runtime image contains source or a build tool" >&2
             exit 1
           elif [[ "$?" -ne 1 ]]; then
-            echo "backend runtime image build-tool scan failed" >&2
+            echo "backend runtime image source/build-tool scan failed" >&2
             exit 1
           fi
           docker rm "${container}" >/dev/null
@@ -115,7 +116,8 @@ jobs:
               test "$(id -u)" = "10001"
               test "$(id -g)" = "10001"
               test "$(find /app -mindepth 1 -maxdepth 1 -printf "%f\n")" = "app.jar"
-              ! touch /app/read-only-check
+              test "$(stat -c "%u:%g" /app/app.jar)" = "10001:10001"
+              ! touch /app/app.jar
               touch /tmp/runtime-write-check
               touch /opt/easysubway/logs/runtime-write-check
               test ! -e /var/run/docker.sock

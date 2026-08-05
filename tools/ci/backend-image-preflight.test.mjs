@@ -16,9 +16,10 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'container="$(docker create "${image}")"',
     'rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"',
     'docker export "${container}" | tar -tf - > "${rootfs_listing}"',
-    "grep -Eq '(^|/)(gradle|gradlew|javac)$' \"${rootfs_listing}\"",
+    "source_or_tool_pattern='(^|/)(gradle|gradlew(\\.bat)?|javac|gradle-wrapper\\.jar)$|(^|/)gradle/wrapper/|\\.(java|kt|kts|groovy|gradle|class)$'",
+    'grep -Eq "${source_or_tool_pattern}" "${rootfs_listing}"',
     'elif [[ "$?" -ne 1 ]]; then',
-    'backend runtime image build-tool scan failed',
+    'backend runtime image source/build-tool scan failed',
     'docker rm "${container}"',
     'trap - EXIT',
     'docker run --rm',
@@ -31,7 +32,8 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     'test "$(id -u)" = "10001"',
     'test "$(id -g)" = "10001"',
     'find /app -mindepth 1 -maxdepth 1 -printf',
-    '! touch /app/read-only-check',
+    'test "$(stat -c "%u:%g" /app/app.jar)" = "10001:10001"',
+    '! touch /app/app.jar',
     'touch /tmp/runtime-write-check',
     'touch /opt/easysubway/logs/runtime-write-check',
     'test ! -e /var/run/docker.sock',
@@ -40,7 +42,7 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
   }
 
   assert.doesNotMatch(step, /--privileged|--volume|--cap-add(?:=|\s|$)|^\s+-v(?:\s|$)/m);
-  assert.doesNotMatch(step, /find \/ -xdev|command -v (?:gradle|javac)/);
+  assert.doesNotMatch(step, /find \/ -xdev|command -v (?:gradle|javac)|\/app\/read-only-check/);
   assert.ok(
     step.indexOf('docker create') < step.indexOf('docker run --rm'),
     'merged rootfs inspection must precede the runtime check',
