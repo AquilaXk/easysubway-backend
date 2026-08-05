@@ -12,10 +12,12 @@ const repository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
 const gitSha = "a".repeat(40);
 const artifactType = "application/vnd.easysubway.journey.contract-bundle.v2";
 const layerMediaType = "application/vnd.easysubway.journey.contract-bundle.v2+json";
+const resourceContent = "e30=";
+const resourceSha256 = sha256(Buffer.from(resourceContent, "base64"));
 const resources = [
-  { id: "journey-v3-error-catalog", path: "contracts/api/journey-v3-error-catalog.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: "1".repeat(64), contentBase64: "e30=" },
-  { id: "journey-v3-error-disposition", path: "contracts/api/journey-v3-error-disposition.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: "2".repeat(64), contentBase64: "e30=" },
-  { id: "journey-v3-openapi", path: "contracts/api/journey-v3.openapi.yaml", owner: "AquilaXk/easysubway-backend", mediaType: "application/yaml", sha256: "3".repeat(64), contentBase64: "e30=" },
+  { id: "journey-v3-error-catalog", path: "contracts/api/journey-v3-error-catalog.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: resourceSha256, contentBase64: resourceContent },
+  { id: "journey-v3-error-disposition", path: "contracts/api/journey-v3-error-disposition.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: resourceSha256, contentBase64: resourceContent },
+  { id: "journey-v3-openapi", path: "contracts/api/journey-v3.openapi.yaml", owner: "AquilaXk/easysubway-backend", mediaType: "application/yaml", sha256: resourceSha256, contentBase64: resourceContent },
 ];
 
 test("release workflow는 exact Journey contract OCI publication과 digest 재검증을 고정한다", () => {
@@ -82,6 +84,7 @@ test("Journey contract publication receipt는 descriptor와 raw manifest contrac
     ["bundle resource path", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].path = "other.json"; })],
     ["bundle resource owner", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].owner = "other/repository"; })],
     ["bundle resource media type", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].mediaType = "text/plain"; })],
+    ["bundle resource digest mismatch", (fixture) => mutateBundle(fixture, (value) => { value.resources[0].sha256 = "0".repeat(64); })],
     ["descriptor digest", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.digest = `sha256:${"0".repeat(64)}`; })],
     ["descriptor reference", (fixture) => mutateJson(fixture.descriptorPath, (value) => { value.reference = `${repository}@sha256:${"0".repeat(64)}`; })],
     ["descriptor raw manifest SHA binding", (fixture) => mutateJson(fixture.descriptorPath, (value) => {

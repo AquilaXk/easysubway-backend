@@ -74,6 +74,7 @@ function validateBundle(bytes, gitSha) {
     if (resource.id !== expected.id || resource.path !== expected.path || resource.owner !== producerRepository || resource.mediaType !== expected.mediaType || !/^[a-f0-9]{64}$/.test(resource.sha256) || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(resource.contentBase64) || resource.contentBase64.length === 0) {
       throw new Error("bundle resources are invalid");
     }
+    if (sha256(Buffer.from(resource.contentBase64, "base64")) !== resource.sha256) throw new Error("bundle resource digest is invalid");
   });
 }
 
