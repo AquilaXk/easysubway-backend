@@ -30,20 +30,6 @@ class RouteV2RuntimeInputInventoryContractTest {
 	private static final Path TIMETABLE_EVIDENCE = PROJECT.resolve("backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json");
 	private static final String GZIP_SHA256 = "7f63ca3717d224ac9191d40d258b736d85a0c19a5c3233793fc5ac4848adc375";
 	private static final String EVIDENCE_SHA256 = "0906ef492ae32f5362ef679943a91fead28350f6c1c540423a63a61abb534b80";
-	private static final List<String> JAVA_SOURCE_ROOTS = List.of(
-		"backend/src/main/java/com/easysubway/route/",
-		"backend/src/main/java/com/easysubway/realtime/application/",
-		"backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/",
-		"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/",
-		"backend/src/main/java/com/easysubway/common/security/",
-		"backend/src/main/java/com/easysubway/realtime/adapter/in/web/",
-		"backend/src/main/java/com/easysubway/transit/adapter/in/web/",
-		"backend/src/main/java/com/easysubway/report/adapter/in/web/",
-		"backend/src/main/java/com/easysubway/transit/application/service/",
-		"backend/src/main/java/com/easysubway/report/application/service/",
-		"backend/src/main/java/com/easysubway/report/adapter/out/persistence/",
-		"backend/src/main/java/com/easysubway/common/persistence/"
-	);
 	// Capacity-evidence, nested fixture, and non-prod-profile sources are outside production Route V2 runtime.
 	private static final Set<String> EXCLUDED_CANDIDATE_FILES = Set.of(
 		"CapacityEvidencePlayIntegrityDecoder.java",
@@ -88,10 +74,13 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/UnavailableTransitMasterRepository.java", "UnavailableTransitMasterRepository#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "CONFLICT: production static-seed transit master base", "new InMemoryTransitMasterRepository()", "return seedRepository.loadStations()", "return seedRepository.loadRouteEdges()"),
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/transit/adapter/out/persistence/InMemoryTransitMasterRepository.java", "InMemoryTransitMasterRepository#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges", "CONFLICT: direct static-seed transit master source", "LoadTransitMasterPort,", "public List<Station> loadStations()", "public List<RouteEdge> loadRouteEdges()"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeMappingRepository.java", "JdbcRealtimeMappingRepository#findArrivalMapping/#findTripMapping/#findTrainPositionMapping", "production realtime station/trip mappings", "implements RealtimeMappingPort", "findArrivalMapping", "findTripMapping", "findTrainPositionMapping"),
+		entry("REGISTRY", "backend/src/main/resources/db/migration/postgresql/V31__realtime_provider_mappings.sql", "V31__realtime_provider_mappings.sql#productionSeed", "production PostgreSQL realtime provider line/station mapping seed", "INSERT INTO realtime_provider_line_mappings", "'seoul-topis'", "'1004'", "'seoul-4'", "'station-sangnoksu'", "'상록수'"),
+		entry("REGISTRY", "backend/src/main/resources/db/migration/postgresql/V34__realtime_provider_trip_mappings.sql", "V34__realtime_provider_trip_mappings.sql#productionSeed", "production PostgreSQL realtime provider trip mapping seed", "INSERT INTO realtime_provider_trip_mappings", "'seoul-topis'", "'1004'", "'seoul-4'", "'상행'", "'당고개 방면'", "'하행'", "'오이도 방면'"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeProviderCallQuotaRepository.java", "JdbcRealtimeProviderCallQuotaRepository#tryAcquire", "production realtime provider quota", "implements RealtimeProviderCallQuotaPort", "tryAcquire(", "realtime_provider_call_quota_state"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider(String providerId, String reason)", "switches.put(providerId, new ProviderSwitch(false, cleanReason(reason)));", "enableProvider(String providerId)", "switches.put(providerId, new ProviderSwitch(true, null));"),
 		entry("REGISTRY", "backend/src/main/resources/application-prod.yml", "application-prod.yml#routeV2ProductionControls", "production Route V2 auth/session/seed/freshness property controls", "management:", "readiness:", "include: \"readinessState,db,productionReadiness\"", "timetable:", "enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}", "includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}", "break-glass: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS:false}", "route-v2:", "origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}", "session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}", "certificate-sha256: ${EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256:}", "credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}"),
-		entry("LOADER", "backend/src/main/resources/timetable/line4-timetable-seed.sql.gz", "line4-timetable-seed.sql.gz#defaultSeed", "default production timetable seed gzip resource", "gzip binary; verified by paired evidence identity"),
+		entry("LOADER", "backend/src/main/resources/timetable/line4-timetable-seed.sql.gz", "line4-timetable-seed.sql.gz#defaultSeed", "default production timetable seed gzip resource", "sha256:7f63ca3717d224ac9191d40d258b736d85a0c19a5c3233793fc5ac4848adc375"),
+		entry("OPTIONAL_OR_LEGACY", "backend/src/main/resources/timetable/line4-subway-timetable-seed.sql.gz", "line4-subway-timetable-seed.sql.gz#packagedAlternateSeed", "CONFLICT: packaged configurable alternate timetable seed", "sha256:0fda95e45a7b4e8a4863ce93132bda458b3d149ece6706ff1e1dcb23d1adeec8"),
 		entry("REGISTRY", "backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json", "server-timetable-snapshot-evidence.json#defaultSeedEvidence", "default production timetable seed identity evidence", "\"artifactKind\": \"server-timetable-snapshot-evidence\"", "\"schemaIdentity\": \"backend-timetable-snapshot-v1\"", "\"snapshotGzipSha256\"", "\"materializedSqlSha256\""),
 		entry("INPUT", "backend/src/main/java/com/easysubway/realtime/adapter/in/web/RealtimeController.java", "RealtimeController#arrivals/#trainPositions", "GET /api/v1/realtime/{arrivals,train-positions}", "@GetMapping(\"/api/v1/realtime/arrivals\")", "@GetMapping(\"/api/v1/realtime/train-positions\")", "rejectSecretBearingProviderParameters(request)", "realtimeGatewayService.arrivals(new RealtimeQuery(", "realtimeGatewayService.trainPositions(new RealtimeQuery("),
 		entry("INPUT", "backend/src/main/java/com/easysubway/realtime/adapter/in/web/RealtimeProviderAdminController.java", "RealtimeProviderAdminController#disableProvider/#enableProvider", "POST /admin/realtime/providers/{providerId}/{disable,enable}", "@PostMapping(\"/admin/realtime/providers/{providerId}/disable\")", "@PostMapping(\"/admin/realtime/providers/{providerId}/enable\")", "providerControl.disableProvider(providerId, reason)", "providerControl.enableProvider(providerId)"),
@@ -116,7 +105,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 
 	@Test
 	@DisplayName("inventory is closed, ordered, production-only, and evidence-backed")
-	void inventoryIsClosedAndExact() throws IOException {
+	void inventoryIsClosedAndExact() throws Exception {
 		JsonNode inventory = JSON.readTree(INVENTORY.toFile());
 		assertThat(fieldNames(inventory)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "backendBaseSha", "sourceRoots", "entries");
 		assertThat(inventory.path("schemaVersion").asText()).isEqualTo("ROUTE_V2_RUNTIME_INPUT_INVENTORY_V1");
@@ -157,14 +146,31 @@ class RouteV2RuntimeInputInventoryContractTest {
 			assertThat(inventory.path("sourceRoots")).extracting(JsonNode::asText).anyMatch(entry.sourcePath()::startsWith);
 			Path source = PROJECT.resolve(entry.sourcePath());
 			assertThat(Files.isRegularFile(source)).isTrue();
-			if (!source.equals(TIMETABLE_GZIP)) {
+			if (entry.sourcePath().endsWith(".gz")) {
+				List<String> digestTokens = entry.evidenceTokens().stream().filter(token -> token.startsWith("sha256:")).toList();
+				assertThat(digestTokens).containsExactlyElementsOf(List.of("sha256:" + sha256(Files.readAllBytes(source))));
+			} else {
 				String sourceText = Files.readString(source);
 				for (String token : entry.evidenceTokens()) {
 					assertThat(sourceText).contains(token);
 				}
 			}
 		}
-		assertThat(actual).hasSize(57);
+		Set<String> timetableInventoryPaths = new LinkedHashSet<>();
+		for (JsonNode node : inventory.path("entries")) {
+			String sourcePath = node.path("sourcePath").asText();
+			if (sourcePath.startsWith("backend/src/main/resources/timetable/")) {
+				timetableInventoryPaths.add(sourcePath);
+			}
+		}
+		try (Stream<Path> paths = Files.walk(TIMETABLE_GZIP.getParent())) {
+			Set<String> actualTimetablePaths = new LinkedHashSet<>();
+			for (Path path : paths.filter(Files::isRegularFile).toList()) {
+				actualTimetablePaths.add(PROJECT.relativize(path).toString().replace('\\', '/'));
+			}
+			assertThat(actualTimetablePaths).containsExactlyInAnyOrderElementsOf(timetableInventoryPaths);
+		}
+		assertThat(actual).hasSize(60);
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 	}
 
@@ -203,27 +209,30 @@ class RouteV2RuntimeInputInventoryContractTest {
 		for (JsonNode entry : inventory.path("entries")) {
 			String member = entry.path("member").asText();
 			members.add(new Member(entry.path("sourcePath").asText(), member));
-			if ("INPUT".equals(entry.path("kind").asText())
-				&& entry.path("pathOrTrigger").asText().startsWith("POST /api/v2/routes/")) {
+			if ("INPUT".equals(entry.path("kind").asText())) {
 				String[] methodAndPath = entry.path("pathOrTrigger").asText().split(" ", 2);
 				String[] classAndMethod = member.split("#", 2);
 				assertThat(methodAndPath).as("pathOrTrigger %s", entry.path("pathOrTrigger").asText()).hasSize(2);
 				assertThat(classAndMethod).as("member %s", member).hasSize(2);
-				inputs.add(new Endpoint(methodAndPath[0], methodAndPath[1], classAndMethod[0], classAndMethod[1]));
+				if (methodAndPath[1].startsWith("/api/v2/routes/")) {
+					inputs.add(new Endpoint(methodAndPath[0], methodAndPath[1], classAndMethod[0], classAndMethod[1]));
+				}
 			}
 		}
 
 		Set<Endpoint> indexedInputs = new LinkedHashSet<>();
 		for (JsonNode operation : JSON.readTree(INTERNAL_API_INDEX.toFile()).path("operations")) {
 			String path = operation.path("path").asText();
-			if ("POST".equals(operation.path("method").asText()) && path.startsWith("/api/v2/routes/")) {
+			if (path.startsWith("/api/v2/routes/")) {
 				String handler = operation.path("handlerClass").asText();
-				indexedInputs.add(new Endpoint("POST", path, handler.substring(handler.lastIndexOf('.') + 1), operation.path("javaMethod").asText()));
+				indexedInputs.add(new Endpoint(operation.path("method").asText(), path, handler.substring(handler.lastIndexOf('.') + 1), operation.path("javaMethod").asText()));
 			}
 		}
 		assertThat(inputs).containsExactlyInAnyOrderElementsOf(indexedInputs);
 
-		for (String sourceRoot : JAVA_SOURCE_ROOTS) {
+		for (JsonNode sourceRootNode : inventory.path("sourceRoots")) {
+			String sourceRoot = sourceRootNode.asText();
+			if (!sourceRoot.contains("/java/")) continue;
 			try (Stream<Path> paths = Files.walk(PROJECT.resolve(sourceRoot))) {
 				for (Path path : paths.filter(path -> path.toString().endsWith(".java")).toList()) {
 					String sourcePath = PROJECT.relativize(path).toString().replace('\\', '/');
@@ -254,6 +263,18 @@ class RouteV2RuntimeInputInventoryContractTest {
 							new Member("backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2OriginGateFilter.java", "RouteV2OriginGateFilter#doFilterInternal")
 						);
 					}
+				}
+			}
+		}
+		Path postgresqlMigrations = PROJECT.resolve("backend/src/main/resources/db/migration/postgresql");
+		try (Stream<Path> paths = Files.walk(postgresqlMigrations)) {
+			for (Path path : paths.filter(path -> path.toString().endsWith(".sql")).toList()) {
+				String source = Files.readString(path);
+				if (source.contains("realtime_provider_line_mappings")
+					|| source.contains("realtime_provider_station_mappings")
+					|| source.contains("realtime_provider_trip_mappings")) {
+					String sourcePath = PROJECT.relativize(path).toString().replace('\\', '/');
+					assertThat(members).contains(new Member(sourcePath, path.getFileName() + "#productionSeed"));
 				}
 			}
 		}
