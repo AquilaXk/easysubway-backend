@@ -858,6 +858,7 @@ test('pending cleanup은 첫 always step이고 producer는 queue 결정 뒤에 �
   assert.ok(workflow.includes('set -euo pipefail'));
   const cleanupAt = workflow.indexOf('# pending-cleanup-begin');
   const cleanupStepAt = workflow.indexOf('name: Clear pending native auto-merge requests');
+  const producerStepAt = workflow.indexOf('name: Dispatch immutable image producer for the current main');
   const producerAt = workflow.indexOf('# producer-dispatch-end');
   const rulesetAt = workflow.indexOf('rules="$(gh api "repos/${repo}/rules/branches/main")"');
   const queueLoopAt = workflow.indexOf('# queue-loop-begin');
@@ -866,6 +867,12 @@ test('pending cleanup은 첫 always step이고 producer는 queue 결정 뒤에 �
   const dispatchAt = workflow.indexOf('# merge-state-dispatch-begin');
   assert.ok(cleanupStepAt > 0 && cleanupAt > cleanupStepAt, 'pending cleanup must be the literal first step');
   assert.match(workflow.slice(cleanupStepAt, cleanupAt), /if: always\(\)/, 'pending cleanup must run with always()');
+  assert.match(workflow.slice(cleanupStepAt, cleanupAt), /id: pending_cleanup/, 'pending cleanup outcome must be addressable');
+  assert.match(
+    workflow.slice(producerStepAt, workflow.indexOf('run: |', producerStepAt)),
+    /if: \$\{\{ !cancelled\(\) && steps\.pending_cleanup\.outcome == 'success' \}\}/,
+    'producer must run after queue failure only when cleanup succeeded and the job was not cancelled',
+  );
   assert.ok(producerAt > 0, 'producer dispatch marker must exist');
   assert.ok(rulesetAt > 0, 'ruleset lookup must exist');
   assert.ok(queueLoopAt > 0, 'queue loop marker must exist');

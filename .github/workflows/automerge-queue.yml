@@ -44,6 +44,7 @@ jobs:
       GH_TOKEN: ${{ github.token }}
     steps:
       - name: Clear pending native auto-merge requests
+        id: pending_cleanup
         if: always()
         shell: bash
         run: |
@@ -568,6 +569,7 @@ jobs:
           # queue-loop-end
 
       - name: Dispatch immutable image producer for the current main
+        if: ${{ !cancelled() && steps.pending_cleanup.outcome == 'success' }}
         shell: bash
         run: |
           set -euo pipefail
