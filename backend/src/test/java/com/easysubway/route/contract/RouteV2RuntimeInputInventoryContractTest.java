@@ -76,6 +76,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeMappingRepository.java", "JdbcRealtimeMappingRepository#findArrivalMapping/#findTripMapping/#findTrainPositionMapping", "production realtime station/trip mappings", "implements RealtimeMappingPort", "findArrivalMapping", "findTripMapping", "findTrainPositionMapping"),
 		entry("REGISTRY", "backend/src/main/resources/db/migration/postgresql/V31__realtime_provider_mappings.sql", "V31__realtime_provider_mappings.sql#productionSeed", "production PostgreSQL realtime provider line/station mapping seed", "INSERT INTO realtime_provider_line_mappings", "'seoul-topis'", "'1004'", "'seoul-4'", "'station-sangnoksu'", "'상록수'"),
 		entry("REGISTRY", "backend/src/main/resources/db/migration/postgresql/V34__realtime_provider_trip_mappings.sql", "V34__realtime_provider_trip_mappings.sql#productionSeed", "production PostgreSQL realtime provider trip mapping seed", "INSERT INTO realtime_provider_trip_mappings", "'seoul-topis'", "'1004'", "'seoul-4'", "'상행'", "'당고개 방면'", "'하행'", "'오이도 방면'"),
+		entry("REGISTRY", "backend/src/main/resources/db/migration/postgresql/V49__realtime_arrival_observations.sql", "V49__realtime_arrival_observations.sql#productionQuotaSeed", "production PostgreSQL realtime provider quota seed", "CREATE TABLE realtime_provider_call_quota_state", "INSERT INTO realtime_provider_call_quota_state", "('seoul-topis', -1, 0, -1, 0, CURRENT_TIMESTAMP)"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/adapter/out/persistence/JdbcRealtimeProviderCallQuotaRepository.java", "JdbcRealtimeProviderCallQuotaRepository#tryAcquire", "production realtime provider quota", "implements RealtimeProviderCallQuotaPort", "tryAcquire(", "realtime_provider_call_quota_state"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeProviderControl.java", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", "operator realtime provider switch", "providerEnabled(String providerId)", "switchState(providerId).enabled()", "disableProvider(String providerId, String reason)", "switches.put(providerId, new ProviderSwitch(false, cleanReason(reason)));", "enableProvider(String providerId)", "switches.put(providerId, new ProviderSwitch(true, null));"),
 		entry("REGISTRY", "backend/src/main/resources/application-prod.yml", "application-prod.yml#routeV2ProductionControls", "production Route V2 auth/session/seed/freshness property controls", "management:", "readiness:", "include: \"readinessState,db,productionReadiness\"", "timetable:", "enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}", "includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}", "break-glass: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS:false}", "route-v2:", "origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}", "session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}", "certificate-sha256: ${EASYSUBWAY_ROUTE_V2_PLAY_INTEGRITY_CERTIFICATE_SHA256:}", "credentials-base64: ${EASYSUBWAY_PLAY_INTEGRITY_CREDENTIALS_BASE64:}"),
@@ -170,7 +171,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 			}
 			assertThat(actualTimetablePaths).containsExactlyInAnyOrderElementsOf(timetableInventoryPaths);
 		}
-		assertThat(actual).hasSize(60);
+		assertThat(actual).hasSize(61);
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 	}
 
@@ -270,11 +271,14 @@ class RouteV2RuntimeInputInventoryContractTest {
 		try (Stream<Path> paths = Files.walk(postgresqlMigrations)) {
 			for (Path path : paths.filter(path -> path.toString().endsWith(".sql")).toList()) {
 				String source = Files.readString(path);
+				String sourcePath = PROJECT.relativize(path).toString().replace('\\', '/');
 				if (source.contains("realtime_provider_line_mappings")
 					|| source.contains("realtime_provider_station_mappings")
 					|| source.contains("realtime_provider_trip_mappings")) {
-					String sourcePath = PROJECT.relativize(path).toString().replace('\\', '/');
 					assertThat(members).contains(new Member(sourcePath, path.getFileName() + "#productionSeed"));
+				}
+				if (source.contains("realtime_provider_call_quota_state")) {
+					assertThat(members).contains(new Member(sourcePath, path.getFileName() + "#productionQuotaSeed"));
 				}
 			}
 		}
