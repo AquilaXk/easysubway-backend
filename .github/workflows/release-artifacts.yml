@@ -94,8 +94,8 @@ jobs:
           trap 'docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
           rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"
           docker export "${container}" | tar -tf - > "${rootfs_listing}"
-          source_or_build_pattern='(^|/)(gradlew(\.bat)?|gradle-wrapper\.jar)$|(^|/)gradle/wrapper/|\.(java|kt|kts|groovy|gradle)$'
-          if grep -Eq "(^|/)(gradle|javac)$|\.class$|${source_or_build_pattern}" "${rootfs_listing}"; then
+          source_or_build_pattern='(^|/)(gradle|gradlew(\.bat)?|javac|gradle-wrapper\.jar)$|(^|/)gradle/wrapper/|\.(java|kt|kts|groovy|gradle)$'
+          if grep -Eq "\.class$|${source_or_build_pattern}" "${rootfs_listing}"; then
             echo "backend runtime image contains source or a build tool" >&2
             exit 1
           elif [[ "$?" -ne 1 ]]; then
@@ -106,19 +106,28 @@ jobs:
           archive_listing="${RUNNER_TEMP}/backend-image-app-archive.txt"
           archive_dir="${RUNNER_TEMP}/backend-image-app-archive"
           nested_archives="${RUNNER_TEMP}/backend-image-nested-archives.txt"
+          nested_archive_listing="${RUNNER_TEMP}/backend-image-nested-archive.txt"
           docker cp "${container}:/app/app.jar" "${app_archive}"
           jar tf "${app_archive}" > "${archive_listing}"
           mkdir -p "${archive_dir}"
           (cd "${archive_dir}" && jar xf "${app_archive}")
           find "${archive_dir}" -type f -name '*.jar' -print0 > "${nested_archives}"
+          : > "${nested_archive_listing}"
           while IFS= read -r -d '' nested_archive; do
-            jar tf "${nested_archive}" >> "${archive_listing}"
+            jar tf "${nested_archive}" >> "${nested_archive_listing}"
           done < "${nested_archives}"
           if grep -Eq "${source_or_build_pattern}" "${archive_listing}"; then
             echo "backend runtime application archive contains source or build files" >&2
             exit 1
           elif [[ "$?" -ne 1 ]]; then
             echo "backend runtime application archive scan failed" >&2
+            exit 1
+          fi
+          if grep -Eq "${source_or_build_pattern}|\.jar$" "${nested_archive_listing}"; then
+            echo "backend runtime dependency archive contains source, build files, or a deeper archive" >&2
+            exit 1
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime dependency archive scan failed" >&2
             exit 1
           fi
           docker rm "${container}" >/dev/null
