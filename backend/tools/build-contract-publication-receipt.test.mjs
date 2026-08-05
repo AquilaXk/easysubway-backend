@@ -13,6 +13,39 @@ const gitSha = "a".repeat(40);
 const artifactType = "application/vnd.easysubway.journey.contract-bundle.v2";
 const layerMediaType = "application/vnd.easysubway.journey.contract-bundle.v2+json";
 
+test("release workflow는 exact Journey contract OCI publication과 digest 재검증을 고정한다", () => {
+  const workflow = readFileSync(join(repositoryRoot, ".github/workflows/release-artifacts.yml"), "utf8");
+
+  assert.match(workflow, /backend\/build\/journey-contract-preflight-a\/journey-v3-contract-bundle-v2\.json/);
+  assert.match(workflow, /backend\/build\/journey-contract-preflight-b\/journey-v3-contract-bundle-v2\.json/);
+  assert.match(workflow, /cmp --silent .*journey-contract-preflight-a.*journey-contract-preflight-b/s);
+  assert.match(workflow, /oras-project\/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6/);
+  assert.match(workflow, /version:\s*1\.3\.3/);
+  assert.match(workflow, /tag="git-\$\{GITHUB_SHA\}-run-\$\{GITHUB_RUN_ID\}-\$\{GITHUB_RUN_ATTEMPT\}"/);
+  assert.match(workflow, /artifact_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2"/);
+  assert.match(workflow, /layer_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2\+json"/);
+  assert.match(workflow, /created="\$\(git show -s --format=%cI "\$\{GITHUB_SHA\}"\)"/);
+  assert.match(workflow, /docker\/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567/);
+  assert.match(workflow, /registry: ghcr\.io\s+username: \$\{\{ github\.actor \}\}\s+password: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
+  assert.match(workflow, /oras login ghcr\.io .*--password-stdin/);
+  assert.match(workflow, /raw_manifest=release-artifacts\/backend\/journey-v3-contract-bundle-v2-manifest\.json/);
+  assert.match(workflow, /descriptor=release-artifacts\/backend\/journey-v3-contract-bundle-v2-descriptor\.json/);
+  assert.match(workflow, /oras manifest fetch "\$\{repository\}:\$\{tag\}" --output "\$\{raw_manifest\}" --format json > "\$\{descriptor\}"/);
+  assert.match(workflow, /build-contract-publication-receipt\.mjs/);
+  assert.match(workflow, /\(\s+cd release-artifacts\/backend\s+oras push "\$\{repository\}:\$\{tag\}"\s+\\\s+--artifact-type "\$\{artifact_type\}"\s+\\\s+--annotation "org\.opencontainers\.image\.created=\$\{created\}"\s+\\\s+"journey-v3-contract-bundle-v2\.json:\$\{layer_type\}"/s);
+  assert.match(workflow, /pull_root="\$\{RUNNER_TEMP\}\/journey-contract-pull"/);
+  assert.match(workflow, /mkdir -p "\$\{pull_root\}"/);
+  assert.match(workflow, /oras pull "\$\{repository\}@\$\{manifest_digest\}" --output "\$\{pull_root\}"/);
+  assert.match(workflow, /cmp --silent "\$\{bundle\}" "\$\{pull_root\}\/journey-v3-contract-bundle-v2\.json"/);
+  assert.match(workflow, /- name: Build immutable release evidence ledger\s+shell: bash\s+run: \|\s+set -euo pipefail\s+\(\s+cd release-artifacts\/backend\s+for evidence in release-metadata\.txt image-index\.json image-inspect\.json sbom\.json provenance\.json journey-v3-contract-bundle-v2\.json journey-v3-contract-bundle-v2-descriptor\.json journey-v3-contract-bundle-v2-manifest\.json journey-v3-contract-bundle-v2-receipt\.json; do\s+sha256sum "\$\{evidence\}"/s);
+  assert.doesNotMatch(workflow, /tag="[^"]*latest[^"]*"/);
+  assert.doesNotMatch(workflow, /oras push "[^"]*latest[^"]*"/);
+  assert.doesNotMatch(workflow, /oras manifest fetch "[^"]*latest[^"]*"/);
+  assert.doesNotMatch(workflow, /oras pull "[^"]*latest[^"]*"/);
+  assert.doesNotMatch(workflow, /oras manifest fetch .*\|\|/);
+  assert.doesNotMatch(workflow, /tag.*exist/i);
+});
+
 test("Journey contract publication receipt는 exact raw manifest와 bundle을 deterministic receipt로 결속한다", () => {
   const fixture = createFixture();
   try {

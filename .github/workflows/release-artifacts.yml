@@ -29,6 +29,19 @@ jobs:
         with:
           node-version: 24
 
+      - name: Verify deterministic Journey contract bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          mkdir -p backend/build/journey-contract-preflight-a backend/build/journey-contract-preflight-b
+          node backend/tools/build-journey-contract-bundle.mjs \
+            --producer-sha "${GITHUB_SHA}" \
+            --output backend/build/journey-contract-preflight-a/journey-v3-contract-bundle-v2.json
+          node backend/tools/build-journey-contract-bundle.mjs \
+            --producer-sha "${GITHUB_SHA}" \
+            --output backend/build/journey-contract-preflight-b/journey-v3-contract-bundle-v2.json
+          cmp --silent backend/build/journey-contract-preflight-a/journey-v3-contract-bundle-v2.json backend/build/journey-contract-preflight-b/journey-v3-contract-bundle-v2.json
+
       - name: Set up Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
@@ -93,6 +106,18 @@ jobs:
         with:
           node-version: 24
 
+      - name: Build exact Journey contract bundle
+        shell: bash
+        run: |
+          set -euo pipefail
+          bundle=backend/build/journey-contract-release/journey-v3-contract-bundle-v2.json
+          mkdir -p "$(dirname "${bundle}")" release-artifacts/backend
+          node backend/tools/build-journey-contract-bundle.mjs \
+            --producer-sha "${GITHUB_SHA}" \
+            --output "${bundle}"
+          cp "${bundle}" release-artifacts/backend/journey-v3-contract-bundle-v2.json
+          cmp --silent "${bundle}" release-artifacts/backend/journey-v3-contract-bundle-v2.json
+
       - name: Set up Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
@@ -138,6 +163,19 @@ jobs:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@22ce207df3b08e061f537244349aac6ae1d214f6
+        with:
+          version: 1.3.3
+
+      - name: Log in to GHCR with ORAS
+        shell: bash
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          printf '%s' "${GITHUB_TOKEN}" | oras login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
 
       - name: Build and publish immutable arm64 image
         shell: bash
@@ -190,9 +228,49 @@ jobs:
             echo "sbom=sbom.json"
             echo "provenance=provenance.json"
           } > release-artifacts/backend/release-metadata.txt
+
+      - name: Publish and verify Journey contract OCI artifact
+        shell: bash
+        run: |
+          set -euo pipefail
+          repository="ghcr.io/aquilaxk/easysubway-backend-contracts"
+          tag="git-${GITHUB_SHA}-run-${GITHUB_RUN_ID}-${GITHUB_RUN_ATTEMPT}"
+          artifact_type="application/vnd.easysubway.journey.contract-bundle.v2"
+          layer_type="application/vnd.easysubway.journey.contract-bundle.v2+json"
+          bundle=release-artifacts/backend/journey-v3-contract-bundle-v2.json
+          descriptor=release-artifacts/backend/journey-v3-contract-bundle-v2-descriptor.json
+          raw_manifest=release-artifacts/backend/journey-v3-contract-bundle-v2-manifest.json
+          receipt=release-artifacts/backend/journey-v3-contract-bundle-v2-receipt.json
+          created="$(git show -s --format=%cI "${GITHUB_SHA}")"
           (
             cd release-artifacts/backend
-            for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json; do
+            oras push "${repository}:${tag}" \
+              --artifact-type "${artifact_type}" \
+              --annotation "org.opencontainers.image.created=${created}" \
+              "journey-v3-contract-bundle-v2.json:${layer_type}"
+          )
+          oras manifest fetch "${repository}:${tag}" --output "${raw_manifest}" --format json > "${descriptor}"
+          node backend/tools/build-contract-publication-receipt.mjs \
+            --bundle "${bundle}" \
+            --descriptor "${descriptor}" \
+            --manifest "${raw_manifest}" \
+            --repository "${repository}" \
+            --git-sha "${GITHUB_SHA}" \
+            --output "${receipt}"
+          manifest_digest="$(sed -nE 's/.*"manifestDigest":"(sha256:[a-f0-9]{64})".*/\1/p' "${receipt}")"
+          [[ "${manifest_digest}" =~ ^sha256:[a-f0-9]{64}$ ]]
+          pull_root="${RUNNER_TEMP}/journey-contract-pull"
+          mkdir -p "${pull_root}"
+          oras pull "${repository}@${manifest_digest}" --output "${pull_root}"
+          cmp --silent "${bundle}" "${pull_root}/journey-v3-contract-bundle-v2.json"
+
+      - name: Build immutable release evidence ledger
+        shell: bash
+        run: |
+          set -euo pipefail
+          (
+            cd release-artifacts/backend
+            for evidence in release-metadata.txt image-index.json image-inspect.json sbom.json provenance.json journey-v3-contract-bundle-v2.json journey-v3-contract-bundle-v2-descriptor.json journey-v3-contract-bundle-v2-manifest.json journey-v3-contract-bundle-v2-receipt.json; do
               sha256sum "${evidence}"
             done
           ) > release-artifacts/backend/evidence-ledger.sha256
