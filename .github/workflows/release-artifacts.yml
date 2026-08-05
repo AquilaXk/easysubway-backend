@@ -85,6 +85,93 @@ jobs:
             backend
           docker image inspect "easysubway-backend:preflight-${GITHUB_SHA}"
 
+      - name: Verify source-free non-root read-only image
+        shell: bash
+        run: |
+          set -euo pipefail
+          image="easysubway-backend:preflight-${GITHUB_SHA}"
+          declared_volumes="$(docker image inspect --format '{{json .Config.Volumes}}' "${image}")"
+          if [[ "${declared_volumes}" != "null" ]]; then
+            echo "backend runtime image must not declare volumes" >&2
+            exit 1
+          fi
+          container="$(docker create "${image}")"
+          trap 'docker rm -f "${container}" >/dev/null 2>&1 || true' EXIT
+          rootfs_listing="${RUNNER_TEMP}/backend-image-rootfs.txt"
+          docker export "${container}" | tar -tf - > "${rootfs_listing}"
+          source_or_build_pattern='(^|/)(gradle|gradlew(\.bat)?|javac|gradle-wrapper\.jar)$|(^|/)gradle/wrapper/|\.(java|kt|kts|groovy|gradle)$'
+          if grep -Eiq "\.class$|${source_or_build_pattern}" "${rootfs_listing}"; then
+            echo "backend runtime image contains source or a build tool" >&2
+            exit 1
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime image source/build-tool scan failed" >&2
+            exit 1
+          fi
+          app_archive="${RUNNER_TEMP}/backend-image-app.jar"
+          archive_listing="${RUNNER_TEMP}/backend-image-app-archive.txt"
+          archive_dir="${RUNNER_TEMP}/backend-image-app-archive"
+          nested_archives="${RUNNER_TEMP}/backend-image-nested-archives.txt"
+          nested_archive_listing="${RUNNER_TEMP}/backend-image-nested-archive.txt"
+          nested_archive_member_listing="${RUNNER_TEMP}/backend-image-nested-archive-member.txt"
+          filtered_nested_archive_listing="${RUNNER_TEMP}/backend-image-filtered-nested-archive.txt"
+          docker cp "${container}:/app/app.jar" "${app_archive}"
+          jar tf "${app_archive}" > "${archive_listing}"
+          mkdir -p "${archive_dir}"
+          (cd "${archive_dir}" && jar xf "${app_archive}")
+          h2_archive="${archive_dir}/BOOT-INF/lib/h2-2.3.232.jar"
+          if ! printf '%s  %s\n' '8dae62d22db8982c3dcb3826edb9c727c5d302063a67eef7d63d82de401f07d3' "${h2_archive}" | sha256sum --check --status; then
+            echo "backend runtime H2 archive digest mismatch" >&2
+            exit 1
+          fi
+          find "${archive_dir}" -type f -iname '*.jar' -print0 > "${nested_archives}"
+          : > "${nested_archive_listing}"
+          while IFS= read -r -d '' nested_archive; do
+            jar tf "${nested_archive}" > "${nested_archive_member_listing}"
+            while IFS= read -r nested_member; do
+              printf '%s:/%s\n' "${nested_archive#"${archive_dir}/"}" "${nested_member}" >> "${nested_archive_listing}"
+            done < "${nested_archive_member_listing}"
+          done < "${nested_archives}"
+          if grep -Eiq "${source_or_build_pattern}|\.(zip|war|ear|jmod)$" "${archive_listing}"; then
+            echo "backend runtime application archive contains source or build files" >&2
+            exit 1
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime application archive scan failed" >&2
+            exit 1
+          fi
+          if grep -Fvx 'BOOT-INF/lib/h2-2.3.232.jar:/org/h2/util/data.zip' "${nested_archive_listing}" > "${filtered_nested_archive_listing}"; then
+            :
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime dependency archive allowlist filter failed" >&2
+            exit 1
+          fi
+          if archive_violation="$(grep -Eim1 "${source_or_build_pattern}|\.(jar|zip|war|ear|jmod)$" "${filtered_nested_archive_listing}")"; then
+            printf 'backend runtime dependency archive contains prohibited entry: %q\n' "${archive_violation}" >&2
+            exit 1
+          elif [[ "$?" -ne 1 ]]; then
+            echo "backend runtime dependency archive scan failed" >&2
+            exit 1
+          fi
+          docker rm "${container}" >/dev/null
+          trap - EXIT
+          docker run --rm \
+            --read-only \
+            --network none \
+            --cap-drop ALL \
+            --security-opt no-new-privileges:true \
+            --tmpfs /tmp:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --tmpfs /opt/easysubway/logs:rw,noexec,nosuid,nodev,size=64m,uid=10001,gid=10001 \
+            --entrypoint /bin/sh \
+            "${image}" -ceu '
+              test "$(id -u)" = "10001"
+              test "$(id -g)" = "10001"
+              test "$(find /app -mindepth 1 -maxdepth 1 -printf "%f\n")" = "app.jar"
+              test "$(stat -c "%u:%g" /app/app.jar)" = "10001:10001"
+              ! touch /app/app.jar
+              touch /tmp/runtime-write-check
+              touch /opt/easysubway/logs/runtime-write-check
+              test ! -e /var/run/docker.sock
+            '
+
   backend-release:
     name: Backend immutable arm64 image
     # GITHUB_TOKEN 병합은 main push 이벤트를 만들지 못한다. Automerge Queue가 main
