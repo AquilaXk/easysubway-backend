@@ -50,10 +50,12 @@ test("Journey contract bundle v2 schema는 ordered resource identities와 comple
   const base64 = new RegExp(resourceSchema.contentBase64.pattern);
   for (const value of ["YQ==", "YWI=", "YWJj", "YWJjYWJj"]) assert.match(value, base64);
   for (const value of ["a", "aa=", "aaa==", "YWJ$", "YQ=A"]) assert.doesNotMatch(value, base64);
-  assert.deepEqual(resourceSchema.contentBase64.not, { pattern: "[\\r\\n]" });
   const rejectedLineTerminator = new RegExp(resourceSchema.contentBase64.not.pattern);
   assert.match("YQ==\n", rejectedLineTerminator);
   assert.match("YQ==\r\n", rejectedLineTerminator);
+  assert.match("YQ==\u2028", rejectedLineTerminator);
+  assert.match("YQ==\u2029", rejectedLineTerminator);
+  assert.deepEqual(resourceSchema.contentBase64.not, { pattern: "[\\r\\n\\u2028\\u2029]" });
 });
 
 test("Journey contract bundle v2는 exact raw resources를 deterministic하게 생성한다", () => {
