@@ -118,6 +118,8 @@ class RouteV2RuntimeInputInventoryContractTest {
 			.containsExactly("#arrivals");
 		assertThat(requiredMemberSuffixes("TransitRecord.java", "record TransitRecord() implements LoadTransitMasterPort {}"))
 			.containsExactly("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
+		assertThat(requiredMemberSuffixes("CombinedSource.java", "class CombinedSource implements LoadRouteTimetablePort, ApplicationRunner {}"))
+			.containsExactly("#loadRouteTimetableSnapshot", "#run");
 	}
 
 	@Test
@@ -314,20 +316,21 @@ class RouteV2RuntimeInputInventoryContractTest {
 	}
 
 	private static List<String> requiredMemberSuffixes(String fileName, String source) {
-		if (implementsInterface(fileName, source, "LoadRouteTimetablePort")) return List.of("#loadRouteTimetableSnapshot");
-		if (implementsInterface(fileName, source, "LoadRouteSearchPort")) return List.of("#loadRouteSearch");
-		if (implementsInterface(fileName, source, "RealtimeArrivalResolver")) return List.of("#resolve");
+		List<String> suffixes = new ArrayList<>();
+		if (implementsInterface(fileName, source, "LoadRouteTimetablePort")) suffixes.add("#loadRouteTimetableSnapshot");
+		if (implementsInterface(fileName, source, "LoadRouteSearchPort")) suffixes.add("#loadRouteSearch");
+		if (implementsInterface(fileName, source, "RealtimeArrivalResolver")) suffixes.add("#resolve");
 		if (implementsInterface(fileName, source, "RealtimeProvider")
-			&& !source.contains("fallbackProvider.arrivals(query)")) return List.of("#arrivals");
-		if (implementsInterface(fileName, source, "PlayIntegrityDecoder")) return List.of("#decode");
-		if (implementsInterface(fileName, source, "RouteV2AccessStore")) return List.of("#claimNonceAndSaveSession", "#consumeSession");
-		if (implementsInterface(fileName, source, "ApplicationRunner")) return List.of("#run");
-		if (implementsInterface(fileName, source, "LoadTransitMasterPort")) return List.of("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
-		if (implementsInterface(fileName, source, "RealtimeMappingPort")) return List.of("#findArrivalMapping/#findTripMapping/#findTrainPositionMapping");
+			&& !source.contains("fallbackProvider.arrivals(query)")) suffixes.add("#arrivals");
+		if (implementsInterface(fileName, source, "PlayIntegrityDecoder")) suffixes.add("#decode");
+		if (implementsInterface(fileName, source, "RouteV2AccessStore")) suffixes.addAll(List.of("#claimNonceAndSaveSession", "#consumeSession"));
+		if (implementsInterface(fileName, source, "ApplicationRunner")) suffixes.add("#run");
+		if (implementsInterface(fileName, source, "LoadTransitMasterPort")) suffixes.add("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
+		if (implementsInterface(fileName, source, "RealtimeMappingPort")) suffixes.add("#findArrivalMapping/#findTripMapping/#findTrainPositionMapping");
 		if (implementsInterface(fileName, source, "RealtimeProviderCallQuotaPort")) {
-			return List.of("#tryAcquire");
+			suffixes.add("#tryAcquire");
 		}
-		return List.of();
+		return suffixes;
 	}
 
 	private static boolean implementsInterface(String fileName, String source, String interfaceName) {
