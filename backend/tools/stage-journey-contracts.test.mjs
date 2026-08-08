@@ -12,6 +12,50 @@ const outputRoot = join(buildRoot, "stage-journey-contracts-test");
 const stager = join(repositoryRoot, "backend/tools/stage-journey-contracts.mjs");
 const builder = join(repositoryRoot, "backend/tools/build-journey-contract-bundle.mjs");
 const trackedLock = join(repositoryRoot, "backend/journey-contracts.lock.json");
+const journeyLock = JSON.parse(readFileSync(trackedLock, "utf8"));
+const journeyArtifact = `${journeyLock.artifact.repository}@${journeyLock.artifact.manifestDigest}`;
+
+test("CI와 release 및 Gradle은 digest-pinned Journey OCI payload의 현재 staging만 소비한다", () => {
+  const ci = readFileSync(join(repositoryRoot, ".github/workflows/ci.yml"), "utf8");
+  const release = readFileSync(join(repositoryRoot, ".github/workflows/release-artifacts.yml"), "utf8");
+  const build = readFileSync(join(repositoryRoot, "backend/build.gradle"), "utf8");
+  const stageCommand = new RegExp(
+    `node backend/tools/stage-journey-contracts\\.mjs\\s+\\\\\\n\\s+--lock backend/journey-contracts\\.lock\\.json\\s+\\\\\\n\\s+--input "\\$\\{RUNNER_TEMP\\}/journey-contract-pull/journey-v3-contract-bundle-v2\\.json"\\s+\\\\\\n\\s+--output backend/build/journey-contracts-staging`,
+  );
+
+  assert.equal(journeyLock.artifact.repository, "ghcr.io/aquilaxk/easysubway-backend-contracts");
+  assert.match(journeyLock.artifact.manifestDigest, /^sha256:[a-f0-9]{64}$/);
+  assert.match(journeyArtifact, /^ghcr\.io\/aquilaxk\/easysubway-backend-contracts@sha256:[a-f0-9]{64}$/);
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, /journey_contract_subject="\$\(jq -er .*backend\/journey-contracts\.lock\.json\)"/s);
+    assert.match(workflow, /\[\[ "\$\{journey_contract_subject\}" =~ \^ghcr\\\.io\/aquilaxk\/easysubway-backend-contracts@sha256:\[a-f0-9\]\{64\}\$ \]\]/);
+    assert.match(workflow, /oras pull "\$\{journey_contract_subject\}" --output "\$\{RUNNER_TEMP\}\/journey-contract-pull"/);
+    assert.match(workflow, stageCommand);
+    assert.doesNotMatch(workflow, new RegExp(journeyArtifact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
+    assert.doesNotMatch(workflow, /ghcr\.io\/aquilaxk\/easysubway-backend-contracts@sha256:/);
+  }
+  assert.equal(countMatches(ci, /journey_contract_subject="\$\(jq -er/g), 1);
+  assert.equal(countMatches(ci, /oras pull "\$\{journey_contract_subject\}"/g), 1);
+  assert.equal(countMatches(ci, /node backend\/tools\/stage-journey-contracts\.mjs/g), 1);
+  assert.equal(countMatches(release, /journey_contract_subject="\$\(jq -er/g), 2);
+  assert.equal(countMatches(release, /oras pull "\$\{journey_contract_subject\}"/g), 2);
+  assert.equal(countMatches(release, /node backend\/tools\/stage-journey-contracts\.mjs/g), 2);
+  for (const workflow of [ci, release]) {
+    assert.match(workflow, /# v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다\.[\s\S]*node backend\/tools\/stage-contracts\.mjs/);
+    assert.match(workflow, /EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
+  }
+  assert.match(build, /def journeyContractsStaging = layout\.buildDirectory\.dir\('journey-contracts-staging'\)/);
+  assert.match(build, /inputs\.file\(journeyContractsLock\)/);
+  assert.match(build, /payloadSha256 ==~ \/\[a-f0-9\]\{64\}\//);
+  assert.match(build, /Files\.isRegularFile\(marker\.toPath\(\), java\.nio\.file\.LinkOption\.NOFOLLOW_LINKS\)/);
+  assert.match(build, /marker\.getText\('UTF-8'\) != "\$\{payloadSha256\}\\n"/);
+  assert.match(build, /from\(stageContracts\)/);
+  assert.match(build, /from\(layout\.buildDirectory\.dir\('journey-contracts-staging'\)\)/);
+});
+
+function countMatches(value, pattern) {
+  return [...value.matchAll(pattern)].length;
+}
 
 test("stage-journey-contracts는 lock과 일치하는 raw resources만 원자적으로 staging한다", () => {
   const fixture = createFixture();

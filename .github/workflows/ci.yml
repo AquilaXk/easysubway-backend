@@ -74,6 +74,11 @@ jobs:
         with:
           node-version: 24
 
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        with:
+          version: 1.3.3
+
       - name: Set up Java
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
@@ -81,6 +86,7 @@ jobs:
           java-version: "21"
           cache: gradle
 
+      # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
       - name: Stage pinned contracts
         shell: bash
         run: |
@@ -93,6 +99,18 @@ jobs:
             --lock backend/contracts.lock.json \
             --input "${RUNNER_TEMP}/backend-contracts.json" \
             --output backend/build/contracts-staging
+
+      - name: Stage pinned Journey contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          journey_contract_subject="$(jq -er '.artifact | if type == "object" and (.repository | type == "string") and (.manifestDigest | type == "string" and test("^sha256:[a-f0-9]{64}$")) then "\(.repository)@\(.manifestDigest)" else error("invalid Journey contract OCI subject") end' backend/journey-contracts.lock.json)"
+          [[ "${journey_contract_subject}" =~ ^ghcr\.io/aquilaxk/easysubway-backend-contracts@sha256:[a-f0-9]{64}$ ]]
+          oras pull "${journey_contract_subject}" --output "${RUNNER_TEMP}/journey-contract-pull"
+          node backend/tools/stage-journey-contracts.mjs \
+            --lock backend/journey-contracts.lock.json \
+            --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
+            --output backend/build/journey-contracts-staging
 
       - name: Test backend-owned Node contracts
         run: |
