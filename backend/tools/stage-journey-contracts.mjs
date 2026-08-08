@@ -1,7 +1,8 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { lstatSync, mkdirSync, mkdtempSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
-import { dirname, join, relative, resolve } from "node:path";
+import { closeSync, constants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { basename, dirname, join, relative, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const backendBuild = resolve(repositoryRoot, "backend/build");
@@ -9,20 +10,23 @@ const optionNames = new Set(["--lock", "--input", "--output"]);
 const digestPattern = /^[a-f0-9]{64}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
 
-try {
-  const { lock, input, output } = parseArguments(process.argv.slice(2));
-  const lockBytes = readRegularFile(lock, "lock");
-  const inputBytes = readRegularFile(input, "input");
-  const lockDocument = parseJson(lockBytes, "lock");
-  validateLock(lockDocument);
-  if (sha256(inputBytes) !== lockDocument.payload.sha256) throw new Error("payload sha256 mismatch");
-  const bundle = parseJson(inputBytes, "bundle");
-  const resources = validateBundle(bundle, lockDocument);
-  const finalOutput = assertOutput(output);
-  stageAtomically(finalOutput, resources);
-} catch (error) {
-  process.stderr.write(`stage-journey-contracts: ${error instanceof Error ? error.message : "invalid input"}\n`);
-  process.exitCode = 1;
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) main();
+
+function main() {
+  try {
+    const { lock, input, output } = parseArguments(process.argv.slice(2));
+    const lockBytes = readRegularFile(lock, "lock");
+    const inputBytes = readRegularFile(input, "input");
+    const lockDocument = parseJson(lockBytes, "lock");
+    validateLock(lockDocument);
+    if (sha256(inputBytes) !== lockDocument.payload.sha256) throw new Error("payload sha256 mismatch");
+    const bundle = parseJson(inputBytes, "bundle");
+    const resources = validateBundle(bundle, lockDocument);
+    stageAtomically(output, resources, { payloadSha256: lockDocument.payload.sha256 });
+  } catch (error) {
+    process.stderr.write(`stage-journey-contracts: ${error instanceof Error ? error.message : "invalid input"}\n`);
+    process.exitCode = 1;
+  }
 }
 
 function parseArguments(values) {
@@ -54,7 +58,7 @@ function validateLock(lock) {
   const paths = new Set();
   for (const resource of lock.resources) {
     assertExactKeys(resource, ["id", "path", "owner", "mediaType", "sha256"], "resource lock");
-    if (typeof resource.id !== "string" || !resource.id || typeof resource.owner !== "string" || !resource.owner || typeof resource.mediaType !== "string" || !resource.mediaType || !isSafeRelativePath(resource.path) || !digestPattern.test(resource.sha256) || ids.has(resource.id) || paths.has(resource.path) || (previousPath && previousPath.localeCompare(resource.path) >= 0)) {
+    if (typeof resource.id !== "string" || !resource.id || typeof resource.owner !== "string" || !resource.owner || typeof resource.mediaType !== "string" || !resource.mediaType || !isSafeRelativePath(resource.path) || resource.path === ".stage-complete" || !digestPattern.test(resource.sha256) || ids.has(resource.id) || paths.has(resource.path) || (previousPath && previousPath.localeCompare(resource.path) >= 0)) {
       throw new Error("invalid resource lock");
     }
     ids.add(resource.id);
@@ -92,33 +96,90 @@ function assertOutput(outputPath) {
   const outputRelative = relative(backendBuild, output);
   if (!outputRelative || outputRelative.startsWith("..") || outputRelative.split("/").includes("..")) throw new Error("output must be below backend/build");
   assertDirectory(backendBuild, "backend/build");
-  const parentRelative = relative(backendBuild, dirname(output));
+  const parent = dirname(output);
+  const parentRelative = relative(backendBuild, parent);
   let current = backendBuild;
   for (const segment of parentRelative ? parentRelative.split("/") : []) {
     current = resolve(current, segment);
     const metadata = lstatSync(current, { throwIfNoEntry: false });
-    if (!metadata) mkdirSync(current);
-    else if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw new Error("output must not have a symlink or non-directory ancestor");
+    if (!metadata) throw new Error("output parent must already exist");
+    if (metadata.isSymbolicLink() || !metadata.isDirectory()) throw new Error("output must not have a symlink or non-directory ancestor");
   }
   if (lstatSync(output, { throwIfNoEntry: false })) throw new Error("final output must be absent");
-  return output;
+  return { output, parent, name: basename(output) };
 }
 
-function stageAtomically(output, resources) {
-  const temporary = mkdtempSync(join(dirname(output), ".stage-journey-contracts-"));
+export function stageAtomically(outputPath, resources, { payloadSha256, beforeClaim } = {}) {
+  if (!digestPattern.test(payloadSha256)) throw new Error("invalid completion payload sha256");
+  const target = assertOutput(outputPath);
+  const parentMetadata = lstatSync(target.parent);
+  const parentDescriptor = openSync(target.parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
+  let temporary;
+  let claimed = false;
+  let claimedMetadata;
+  let parentAnchor;
   try {
+    assertSameDirectory(parentMetadata, fstatSync(parentDescriptor));
+    parentAnchor = descriptorPath(parentDescriptor, target.parent);
+    temporary = mkdtempSync(join(backendBuild, ".stage-journey-contracts-"));
     for (const resource of resources) {
       const destination = resolve(temporary, resource.path);
       if (!isBelow(temporary, destination)) throw new Error("unsafe resource path");
       mkdirSync(dirname(destination), { recursive: true });
       writeFileSync(destination, resource.bytes, { flag: "wx", mode: 0o600 });
     }
-    if (lstatSync(output, { throwIfNoEntry: false })) throw new Error("final output must be absent");
-    renameSync(temporary, output);
+    const completion = join(temporary, ".stage-complete");
+    writeFileSync(completion, `${payloadSha256}\n`, { flag: "wx", mode: 0o600 });
+    beforeClaim?.();
+    assertSameDirectoryPath(target.parent, parentMetadata);
+    const anchoredOutput = join(parentAnchor, target.name);
+    try {
+      mkdirSync(anchoredOutput, { mode: 0o700 });
+      claimed = true;
+      claimedMetadata = lstatSync(anchoredOutput);
+    } catch (error) {
+      if (error && typeof error === "object" && error.code === "EEXIST") throw new Error("final output must be absent");
+      throw error;
+    }
+    assertSameDirectoryPath(target.parent, parentMetadata);
+    for (const entry of readdirSync(temporary)) {
+      assertSameDirectoryPath(target.parent, parentMetadata);
+      if (entry !== ".stage-complete") renameSync(join(temporary, entry), join(anchoredOutput, entry));
+    }
+    assertSameDirectoryPath(target.parent, parentMetadata);
+    linkSync(completion, join(anchoredOutput, ".stage-complete"));
+    unlinkSync(completion);
+    assertSameDirectoryPath(target.parent, parentMetadata);
   } catch (error) {
-    rmSync(temporary, { recursive: true, force: true });
+    if (claimed && isClaimedDirectory(join(parentAnchor, target.name), claimedMetadata)) rmSync(join(parentAnchor, target.name), { recursive: true, force: true });
     throw error;
+  } finally {
+    if (temporary) rmSync(temporary, { recursive: true, force: true });
+    closeSync(parentDescriptor);
   }
+}
+
+function descriptorPath(descriptor, fallback) {
+  const procDescriptor = join("/proc/self/fd", String(descriptor));
+  return existsSync(procDescriptor) ? procDescriptor : fallback;
+}
+
+function isClaimedDirectory(path, expected) {
+  const actual = lstatSync(path, { throwIfNoEntry: false });
+  return Boolean(expected && actual && !actual.isSymbolicLink() && actual.isDirectory() && actual.dev === expected.dev && actual.ino === expected.ino);
+}
+
+function assertSameDirectoryPath(path, expected) {
+  if (!isSameDirectoryPath(path, expected)) throw new Error("output parent changed during staging");
+}
+
+function isSameDirectoryPath(path, expected) {
+  const actual = lstatSync(path, { throwIfNoEntry: false });
+  return Boolean(actual && !actual.isSymbolicLink() && actual.isDirectory() && actual.dev === expected.dev && actual.ino === expected.ino);
+}
+
+function assertSameDirectory(expected, actual) {
+  if (!actual.isDirectory() || actual.dev !== expected.dev || actual.ino !== expected.ino) throw new Error("output parent changed during staging");
 }
 
 function readRegularFile(path, label) {

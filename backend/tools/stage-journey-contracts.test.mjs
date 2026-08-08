@@ -1,9 +1,10 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const buildRoot = join(repositoryRoot, "backend/build");
@@ -19,8 +20,64 @@ test("stage-journey-contracts는 lock과 일치하는 raw resources만 원자적
     for (const resource of fixture.lock.resources) {
       assert.deepEqual(readFileSync(join(fixture.output, resource.path)), readFileSync(join(repositoryRoot, resource.path)));
     }
+    assert.equal(readFileSync(join(fixture.output, ".stage-complete"), "utf8"), `${fixture.lock.payload.sha256}\n`);
   } finally {
     fixture.cleanup();
+  }
+});
+
+test("stage-journey-contracts는 missing output parent를 만들지 않는다", () => {
+  const fixture = createFixture();
+  const missingParent = join(fixture.directory, "missing-parent");
+  fixture.output = join(missingParent, "staged");
+  try {
+    assert.throws(() => runStager(fixture), /output parent must already exist/i);
+    assert.equal(existsSync(missingParent), false);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("stage-journey-contracts는 late empty target을 덮어쓰지 않는다", async () => {
+  const { stageAtomically } = await import(`${pathToFileURL(stager).href}?late-target`);
+  const fixture = createFixture();
+  try {
+    assert.throws(
+      () => stageAtomically(fixture.output, bundleResources(fixture), { payloadSha256: fixture.lock.payload.sha256, beforeClaim: () => mkdirSync(fixture.output) }),
+      /final output must be absent/i,
+    );
+    assert.deepEqual(readdirSync(fixture.output), []);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("stage-journey-contracts는 검사한 output parent가 symlink로 교체되면 외부에 쓰지 않는다", async () => {
+  const { stageAtomically } = await import(`${pathToFileURL(stager).href}?ancestor-swap`);
+  const fixture = createFixture();
+  const movedParent = `${fixture.directory}-moved`;
+  const escapedParent = mkdtempSync(join(outputRoot, "escaped-"));
+  let swapped = false;
+  try {
+    assert.throws(
+      () => stageAtomically(fixture.output, bundleResources(fixture), {
+        payloadSha256: fixture.lock.payload.sha256,
+        beforeClaim() {
+          renameSync(fixture.directory, movedParent);
+          symlinkSync(escapedParent, fixture.directory, "dir");
+          swapped = true;
+        },
+      }),
+      /output parent changed/i,
+    );
+    assert.equal(existsSync(join(escapedParent, "staged")), false);
+  } finally {
+    if (swapped) {
+      rmSync(fixture.directory, { force: true });
+      renameSync(movedParent, fixture.directory);
+    }
+    fixture.cleanup();
+    rmSync(escapedParent, { recursive: true, force: true });
   }
 });
 
@@ -84,6 +141,13 @@ function createFixture({ mutate } = {}) {
       rmSync(directory, { recursive: true, force: true });
     },
   };
+}
+
+function bundleResources(fixture) {
+  return JSON.parse(readFileSync(fixture.input, "utf8")).resources.map((resource) => ({
+    path: resource.path,
+    bytes: Buffer.from(resource.contentBase64, "base64"),
+  }));
 }
 
 function createSymlinkInputFixture() {
