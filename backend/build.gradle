@@ -171,8 +171,33 @@ def stageContracts = tasks.register('stageContracts', Exec) {
 	}
 }
 
+def journeyContractsStaging = layout.buildDirectory.dir('journey-contracts-staging')
+def journeyContractsStagingMarker = layout.buildDirectory.file('journey-contracts-staging/.stage-complete')
+def journeyContractsLock = layout.projectDirectory.file('journey-contracts.lock.json')
+
 tasks.named('processResources') {
+	inputs.file(journeyContractsLock)
+		.withPropertyName('journeyContractsLock')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.dir(journeyContractsStaging)
+		.withPropertyName('journeyContractsStaging')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
+
+	doFirst {
+		def lock = new groovy.json.JsonSlurper().parse(journeyContractsLock.asFile)
+		def payloadSha256 = lock?.payload?.sha256
+		if (!(payloadSha256 instanceof String) || !(payloadSha256 ==~ /[a-f0-9]{64}/)) {
+			throw new GradleException('Journey contract lock payload SHA-256 is invalid')
+		}
+		def marker = journeyContractsStagingMarker.get().asFile
+		if (!java.nio.file.Files.isRegularFile(marker.toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| marker.getText('UTF-8') != "${payloadSha256}\n") {
+			throw new GradleException('Journey contract staging does not match the lock payload')
+		}
+	}
+
 	from(stageContracts)
+	from(layout.buildDirectory.dir('journey-contracts-staging'))
 }
 
 tasks.named('bootJar') {
