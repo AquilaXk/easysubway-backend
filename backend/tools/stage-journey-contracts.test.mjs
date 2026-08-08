@@ -81,6 +81,26 @@ test("stage-journey-contracts는 검사한 output parent가 symlink로 교체되
   }
 });
 
+test("stage-journey-contracts는 regular input을 연 뒤 path가 교체돼도 같은 descriptor bytes만 읽는다", async () => {
+  const { readRegularFile } = await import(`${pathToFileURL(stager).href}?input-swap`);
+  const fixture = createFixture();
+  const movedInput = `${fixture.input}-opened`;
+  const replacement = join(fixture.directory, "replacement.json");
+  const expected = readFileSync(fixture.input);
+  writeFileSync(replacement, "replacement\n");
+  try {
+    const actual = readRegularFile(fixture.input, "input", {
+      afterOpen() {
+        renameSync(fixture.input, movedInput);
+        symlinkSync(replacement, fixture.input);
+      },
+    });
+    assert.deepEqual(actual, expected);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 test("stage-journey-contracts는 current payload/resource identity drift 뒤 final output을 만들지 않는다", () => {
   for (const { mutate, expectedError } of [
     { mutate: mutatePayloadByte, expectedError: /payload sha256 mismatch/i },

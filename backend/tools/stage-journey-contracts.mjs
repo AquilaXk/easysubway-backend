@@ -182,10 +182,20 @@ function assertSameDirectory(expected, actual) {
   if (!actual.isDirectory() || actual.dev !== expected.dev || actual.ino !== expected.ino) throw new Error("output parent changed during staging");
 }
 
-function readRegularFile(path, label) {
-  const metadata = lstatSync(path, { throwIfNoEntry: false });
-  if (!metadata || metadata.isSymbolicLink() || !metadata.isFile()) throw new Error(`${label} must be a regular non-symlink file`);
-  return readFileSync(path);
+export function readRegularFile(path, label, { afterOpen } = {}) {
+  let descriptor;
+  try {
+    descriptor = openSync(path, constants.O_RDONLY | constants.O_NOFOLLOW);
+  } catch {
+    throw new Error(`${label} must be a regular non-symlink file`);
+  }
+  try {
+    if (!fstatSync(descriptor).isFile()) throw new Error(`${label} must be a regular non-symlink file`);
+    afterOpen?.();
+    return readFileSync(descriptor);
+  } finally {
+    closeSync(descriptor);
+  }
 }
 
 function assertDirectory(path, label) {
