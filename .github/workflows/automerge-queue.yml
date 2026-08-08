@@ -270,8 +270,10 @@ jobs:
           reserve=300
           fixed_cost=15
           commits_page_cap=3
+          # shellcheck disable=SC2034
           commits_bounded_request_cost=4
           comments_page_cap=3
+          # shellcheck disable=SC2034
           comments_bounded_request_cost=4
           per_candidate=17
           # 두 버킷이 모두 숫자일 때만 값을 낸다. 한쪽이 없거나 비정상인데 남은 하나로
