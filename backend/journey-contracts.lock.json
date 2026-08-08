@@ -1,0 +1,43 @@
+{
+  "schemaVersion": 2,
+  "component": "backend",
+  "bundleVersion": "2.0.0",
+  "producer": {
+    "repository": "AquilaXk/easysubway-backend",
+    "gitSha": "d789995d0beeb421bedd627a924ae8f660fa97bc"
+  },
+  "artifact": {
+    "repository": "ghcr.io/aquilaxk/easysubway-backend-contracts",
+    "manifestDigest": "sha256:415cee82879c5af68fbca7f74e6437d9bc00f043378a555479a004a04297ca44",
+    "artifactType": "application/vnd.easysubway.journey.contract-bundle.v2"
+  },
+  "payload": {
+    "fileName": "journey-v3-contract-bundle-v2.json",
+    "mediaType": "application/vnd.easysubway.journey.contract-bundle.v2+json",
+    "sha256": "702c180011b9c2378f3e4199df30f6592512ec4892e7f078907d5e292225705c"
+  },
+  "publicationReceiptSha256": "e7a5338c2a84f00ca3a18e1688f8f2058bbc5efe3d23501bb7913c168f408998",
+  "resources": [
+    {
+      "id": "journey-v3-error-catalog",
+      "path": "contracts/api/journey-v3-error-catalog.json",
+      "owner": "AquilaXk/easysubway-backend",
+      "mediaType": "application/json",
+      "sha256": "5b93075c2e19801c8084e8ab08b5efb1ef8267822b3a71487742e7888e822772"
+    },
+    {
+      "id": "journey-v3-error-disposition",
+      "path": "contracts/api/journey-v3-error-disposition.json",
+      "owner": "AquilaXk/easysubway-backend",
+      "mediaType": "application/json",
+      "sha256": "1e03ee7262897e0887ef837c95a2802ff420ffeaf15c921e0dca8a9750280780"
+    },
+    {
+      "id": "journey-v3-openapi",
+      "path": "contracts/api/journey-v3.openapi.yaml",
+      "owner": "AquilaXk/easysubway-backend",
+      "mediaType": "application/yaml",
+      "sha256": "582bf1f2454c810249a61342bce6f3bc455c7842a2f56f8e55fbe365f9fec2ab"
+    }
+  ]
+}
