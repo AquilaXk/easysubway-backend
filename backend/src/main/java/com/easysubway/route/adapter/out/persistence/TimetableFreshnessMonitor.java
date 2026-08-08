@@ -11,7 +11,6 @@ import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.actuate.health.Health;
 import org.springframework.boot.actuate.health.HealthIndicator;
 import org.springframework.boot.actuate.health.Status;
@@ -34,16 +33,6 @@ import org.springframework.stereotype.Component;
  * admin의 {@code HealthCheckService}는 이 actuator 레지스트리와 무관한 별도 hand-rolled 상태다). 저장소 밖
  * alerting·대시보드에서 root status 문자열 동등 비교를 하는지는 별도 확인이 필요하다.
  *
- * <p><b>break-glass override({@code easysubway.timetable.freshness.break-glass})</b>는 {@code fresh_until}
- * 축(시간 기반 만료)만 우회한다. {@code RouteV2Planner.search}의 {@code isFeedStale} 게이트({@code feed_end_date}가
- * 검색일보다 과거면 {@code STALE_TIMETABLE} → 503)는 override와 무관하게 그대로 적용된다 — feed_end_date 이후
- * 날짜에는 애초에 실제 trip이 없어 우회할 대상이 없으므로 의도된 동작이다. 즉 override를 켜도 만료된 snapshot의
- * {@code feed_end_date}가 지난 날짜의 검색은 여전히 503이다.
- *
- * <p>이 override의 실효 감사 표면은 <b>WARN 로그와 {@code easysubway.timetable.snapshot.break-glass} gauge</b>다.
- * {@code health()}가 반환하는 {@code breakGlass}/{@code breakGlassReason} detail은 참고용이며,
- * {@code management.endpoint.health.show-details} 기본값({@code never})에서는 {@code /actuator/health} 응답에
- * 노출되지 않는다. 노출을 원하면 별도로 {@code show-details: when-authorized}를 검토해야 한다(이 변경 범위 밖).
  */
 @Component
 @Profile("prod | staging | release | prod-like")
@@ -51,52 +40,24 @@ class TimetableFreshnessMonitor implements HealthIndicator {
 
 	static final Status STALE = new Status("STALE");
 	private static final Logger log = LoggerFactory.getLogger(TimetableFreshnessMonitor.class);
-	private static final String UNSPECIFIED_REASON = "(unspecified)";
 
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
-	// break-glass override 활성 여부와 감사 문맥(활성 사유·주체). freshness 판정 자체는 바꾸지 않고 관측만 얹는다.
-	private final boolean breakGlass;
-	private final String breakGlassReason;
 	private final AtomicReference<Freshness> state = new AtomicReference<>(Freshness.unknown());
 
 	@Autowired
 	TimetableFreshnessMonitor(
 		DataSource dataSource,
-		MeterRegistry meterRegistry,
-		@Value("${easysubway.timetable.freshness.break-glass:false}") boolean breakGlass,
-		@Value("${easysubway.timetable.freshness.break-glass-reason:}") String breakGlassReason
+		MeterRegistry meterRegistry
 	) {
-		this(new JdbcTemplate(dataSource), Clock.systemUTC(), meterRegistry, breakGlass, breakGlassReason);
+		this(new JdbcTemplate(dataSource), Clock.systemUTC(), meterRegistry);
 	}
 
 	TimetableFreshnessMonitor(JdbcTemplate jdbcTemplate, Clock clock, MeterRegistry meterRegistry) {
-		this(jdbcTemplate, clock, meterRegistry, false, "");
-	}
-
-	TimetableFreshnessMonitor(
-		JdbcTemplate jdbcTemplate,
-		Clock clock,
-		MeterRegistry meterRegistry,
-		boolean breakGlass,
-		String breakGlassReason
-	) {
 		this.jdbcTemplate = jdbcTemplate;
 		this.clock = clock;
-		this.breakGlass = breakGlass;
-		this.breakGlassReason = breakGlassReason == null || breakGlassReason.isBlank()
-			? UNSPECIFIED_REASON
-			// 감사 문자열이 WARN 로그·health detail에 그대로 들어가므로, 앞뒤 공백 제거뿐 아니라 내부 제어문자
-			// (CR/LF 포함)도 공백으로 치환해 가짜 로그 라인 삽입을 차단한다.
-			: breakGlassReason.strip().replaceAll("\\p{Cntrl}+", " ");
 		Gauge.builder("easysubway.timetable.snapshot.fresh", state, current -> current.get().fresh() ? 1.0 : 0.0)
 			.description("Active timetable snapshot freshness: 1 when fresh, 0 when stale, absent, or unknown")
-			.register(meterRegistry);
-		boolean overrideEnabled = breakGlass;
-		Gauge.builder("easysubway.timetable.snapshot.break-glass", state, current -> overrideEnabled ? 1.0 : 0.0)
-			.description(
-				"Timetable freshness break-glass override: 1 when enabled (expired snapshots served without "
-					+ "freshness gating; integrity still enforced), 0 otherwise")
 			.register(meterRegistry);
 		// alerts.yml의 T-24h/T-6h 경보가 참조하는 라이브 시계열. Prometheus 렌더링 시
 		// easysubway_timetable_snapshot_remaining_seconds로 노출된다(baseUnit 미지정 → 메터명을 그대로 변환,
@@ -119,14 +80,6 @@ class TimetableFreshnessMonitor implements HealthIndicator {
 	// ApplicationReadyEvent는 ApplicationRunner(TimetableSeedLoader 포함)까지 끝난 뒤 발생해 활성화 순서가 보장된다.
 	@EventListener(ApplicationReadyEvent.class)
 	void evaluateOnStartup() {
-		if (breakGlass) {
-			log.warn(
-				"TIMETABLE FRESHNESS BREAK-GLASS OVERRIDE ENABLED (reason={}): expired timetable snapshots will be "
-					+ "served without freshness gating. Integrity verification (hash/schema/lineage) is NOT bypassed. "
-					+ "Disable easysubway.timetable.freshness.break-glass once a fresh snapshot is admitted.",
-				breakGlassReason
-			);
-		}
 		evaluate();
 	}
 
@@ -146,14 +99,6 @@ class TimetableFreshnessMonitor implements HealthIndicator {
 		}
 		state.set(observed);
 		logTransition(previous, observed);
-		if (breakGlass && observed.state() == State.STALE) {
-			// 우회가 은폐되지 않도록 만료 snapshot을 실제로 서빙하는 동안 주기마다 강한 WARN을 남긴다.
-			log.warn(
-				"break-glass override active: serving EXPIRED timetable snapshot {} (fresh_until={}, reason={}); "
-					+ "route search bypasses freshness gating while integrity checks remain enforced",
-				observed.snapshotId(), observed.freshUntil(), breakGlassReason
-			);
-		}
 	}
 
 	@Override
@@ -179,19 +124,7 @@ class TimetableFreshnessMonitor implements HealthIndicator {
 				.withDetail("reason", "freshness query failed; see application logs")
 				.build();
 		};
-		if (!breakGlass) {
-			return base;
-		}
-		// override 활성 시 "우회 중"이 health detail에도 드러나도록 감사 정보를 얹는다. STALE일 때는 만료 데이터를
-		// 실제로 서빙 중이므로 reason을 override 문맥으로 덮어쓴다.
-		Health.Builder builder = Health.status(base.getStatus());
-		base.getDetails().forEach(builder::withDetail);
-		builder.withDetail("breakGlass", true).withDetail("breakGlassReason", breakGlassReason);
-		if (current.state() == State.STALE) {
-			builder.withDetail("reason",
-				"break-glass override active: expired snapshot is being served (integrity still verified)");
-		}
-		return builder.build();
+		return base;
 	}
 
 	/** 쿼리 성공 시 관측 결과를, 실패 시 {@code null}을 반환한다(호출부가 이전 상태 유지 여부를 결정한다). */

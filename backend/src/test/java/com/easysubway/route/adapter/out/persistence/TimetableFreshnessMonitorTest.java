@@ -30,7 +30,6 @@ class TimetableFreshnessMonitorTest {
 	private static final Instant AFTER = Instant.parse("2026-07-21T00:00:00Z");
 	private static final String FRESH_UNTIL = "2026-07-20T00:00:00+09:00";
 	private static final String GAUGE = "easysubway.timetable.snapshot.fresh";
-	private static final String BREAK_GLASS_GAUGE = "easysubway.timetable.snapshot.break-glass";
 	private static final String REMAINING_SECONDS_GAUGE = "easysubway.timetable.snapshot.remaining.seconds";
 
 	private JdbcTemplate jdbc;
@@ -220,100 +219,6 @@ class TimetableFreshnessMonitorTest {
 		});
 	}
 
-	@Test
-	void breakGlassOverrideExposesGaugeHealthDetailAndWarnWhileRemainingStale() {
-		insertActiveSnapshot(FRESH_UNTIL);
-		MeterRegistry meterRegistry = new SimpleMeterRegistry();
-		TimetableFreshnessMonitor monitor = breakGlassMonitor(AFTER, meterRegistry, "incident-2328 operator jdoe");
-
-		monitor.evaluate();
-
-		// override는 freshness 판정을 바꾸지 않는다 — 여전히 STALE로 노출해 "우회 중"이 관측되게 한다.
-		assertThat(monitor.health().getStatus()).isEqualTo(TimetableFreshnessMonitor.STALE);
-		assertThat(monitor.health().getDetails())
-			.containsEntry("state", "STALE")
-			.containsEntry("breakGlass", true)
-			.containsEntry("breakGlassReason", "incident-2328 operator jdoe")
-			.containsEntry("reason",
-				"break-glass override active: expired snapshot is being served (integrity still verified)");
-		assertThat(meterRegistry.get(BREAK_GLASS_GAUGE).gauge().value()).isEqualTo(1.0);
-		assertThat(meterRegistry.get(GAUGE).gauge().value()).isEqualTo(0.0);
-		assertThat(logAppender.events()).anySatisfy(event -> {
-			assertThat(event.getLevel()).isEqualTo(Level.WARN);
-			assertThat(event.getMessage().getFormattedMessage())
-				.contains("break-glass override active")
-				.contains("serving EXPIRED");
-		});
-	}
-
-	@Test
-	void breakGlassStartupLogsWarnAndArmsGaugeEvenWhenSnapshotStillFresh() {
-		insertActiveSnapshot(FRESH_UNTIL);
-		MeterRegistry meterRegistry = new SimpleMeterRegistry();
-		TimetableFreshnessMonitor monitor = breakGlassMonitor(BEFORE, meterRegistry, "incident-2328 operator jdoe");
-
-		monitor.evaluateOnStartup();
-
-		// snapshot이 아직 fresh여도 override가 armed임을 기동 WARN·health detail·gauge로 노출한다.
-		assertThat(monitor.health().getStatus()).isEqualTo(Status.UP);
-		assertThat(monitor.health().getDetails())
-			.containsEntry("state", "FRESH")
-			.containsEntry("breakGlass", true);
-		assertThat(meterRegistry.get(BREAK_GLASS_GAUGE).gauge().value()).isEqualTo(1.0);
-		assertThat(meterRegistry.get(GAUGE).gauge().value()).isEqualTo(1.0);
-		assertThat(logAppender.events()).anySatisfy(event -> {
-			assertThat(event.getLevel()).isEqualTo(Level.WARN);
-			assertThat(event.getMessage().getFormattedMessage()).contains("BREAK-GLASS OVERRIDE ENABLED");
-		});
-	}
-
-	@Test
-	void breakGlassDisabledLeavesGaugeZeroAndStandardStaleReason() {
-		insertActiveSnapshot(FRESH_UNTIL);
-		MeterRegistry meterRegistry = new SimpleMeterRegistry();
-		TimetableFreshnessMonitor monitor = monitor(AFTER, meterRegistry);
-
-		monitor.evaluate();
-
-		assertThat(monitor.health().getStatus()).isEqualTo(TimetableFreshnessMonitor.STALE);
-		assertThat(monitor.health().getDetails())
-			.containsEntry("reason", "route search serves 503 until a fresh snapshot is admitted")
-			.doesNotContainKey("breakGlass");
-		assertThat(meterRegistry.get(BREAK_GLASS_GAUGE).gauge().value()).isEqualTo(0.0);
-	}
-
-	@Test
-	void breakGlassReasonControlCharactersAreNormalizedToPreventLogForging() {
-		insertActiveSnapshot(FRESH_UNTIL);
-		MeterRegistry meterRegistry = new SimpleMeterRegistry();
-		// 내부 개행·제어문자가 있는 사유값(가짜 로그 라인 삽입 시도)이 공백으로 치환되는지 확인한다.
-		TimetableFreshnessMonitor monitor = breakGlassMonitor(
-			AFTER, meterRegistry, "ops-jdoe\r\nWARN forged line\tinjected");
-
-		monitor.evaluate();
-
-		assertThat(monitor.health().getDetails())
-			.extracting("breakGlassReason")
-			.isEqualTo("ops-jdoe WARN forged line injected");
-		assertThat(logAppender.events()).anySatisfy(event -> {
-			assertThat(event.getLevel()).isEqualTo(Level.WARN);
-			assertThat(event.getMessage().getFormattedMessage())
-				.doesNotContain("\r")
-				.doesNotContain("\n")
-				.contains("ops-jdoe WARN forged line injected");
-		});
-	}
-
-	@Test
-	void breakGlassBlankReasonIsNormalizedInAudit() {
-		insertActiveSnapshot(FRESH_UNTIL);
-		MeterRegistry meterRegistry = new SimpleMeterRegistry();
-		TimetableFreshnessMonitor monitor = breakGlassMonitor(AFTER, meterRegistry, "   ");
-
-		monitor.evaluate();
-
-		assertThat(monitor.health().getDetails()).containsEntry("breakGlassReason", "(unspecified)");
-	}
 
 	@Test
 	void remainingSecondsGaugeIsPositiveWhileSnapshotIsFresh() {
@@ -369,10 +274,6 @@ class TimetableFreshnessMonitorTest {
 
 	private TimetableFreshnessMonitor monitor(Instant now, MeterRegistry meterRegistry) {
 		return new TimetableFreshnessMonitor(jdbc, Clock.fixed(now, ZoneOffset.UTC), meterRegistry);
-	}
-
-	private TimetableFreshnessMonitor breakGlassMonitor(Instant now, MeterRegistry meterRegistry, String reason) {
-		return new TimetableFreshnessMonitor(jdbc, Clock.fixed(now, ZoneOffset.UTC), meterRegistry, true, reason);
 	}
 
 	private void insertActiveSnapshot(String freshUntil) {
