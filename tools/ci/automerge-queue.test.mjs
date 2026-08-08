@@ -136,11 +136,32 @@ test('classic commit status는 전 페이지를 모아 판정한다', async () =
   assert.ok(workflow.includes('($statuses | flatten) as $status_records'));
 });
 
-test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리뷰를 함께 요구한다', async () => {
+test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen discovery를 함께 요구한다', async () => {
   const workflow = await readWorkflow();
 
+  const commitsRead = workflow.match(
+    /# commit-set-read-begin\n([\s\S]*?)\n\s+# commit-set-read-end/,
+  )?.[1];
+  assert.ok(commitsRead, 'bounded PR commit read must stay testable');
+  for (const contract of [
+    'for page in {1..4}',
+    'pulls/${pr}/commits?per_page=100&page=${page}',
+    '(.sha | test("^[0-9a-f]{40}$"))',
+    'commit_count',
+    'commits_ok=false',
+    'PR commit set could not be read within the bounded page cap',
+  ]) {
+    assert.ok(commitsRead.includes(contract), `commit-set read missing: ${contract}`);
+  }
+  assert.ok(workflow.includes('commits_page_cap=3'));
+  assert.ok(workflow.includes('commits_bounded_request_cost=4'));
+  assert.ok(
+    commitsRead.includes('PR commit set does not contain the current head'),
+    'bounded commit read must fail closed when the current head is absent',
+  );
+
   const reviewProgram = workflow.match(
-    /# review-state-filter-begin\n\s+if ! jq -e --arg head "\$\{head\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
+    /# review-state-filter-begin\n\s+if ! jq -e --arg head "\$\{head\}" \\\n\s+--slurpfile commit_pages "\$\{commits_file\}" \\\n\s+--slurpfile comment_pages "\$\{comments_file\}" '\n([\s\S]*?)\n\s+' <<<"\$\{reviews\}" >\/dev\/null; then/,
   )?.[1];
   assert.ok(reviewProgram, 'review state jq program must stay testable');
 
@@ -156,8 +177,19 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     user: { login: 'reviewer' },
     ...overrides,
   });
-  const runReviewFilter = (reviews) => {
-    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', reviewProgram], {
+  const marker = '<!-- Automerge frozen discovery authorization: head -->';
+  const actionsBot = { login: 'github-actions[bot]', id: 41898282, type: 'Bot' };
+  const runReviewFilter = (
+    reviews,
+    commitPages = [[{ sha: 'head' }]],
+    commentPages = [[{ id: 1, body: marker, user: actionsBot }]],
+  ) => {
+    const dir = mkdtempSync(join(tmpdir(), 'automerge-review-commits-'));
+    const commitsPath = join(dir, 'commits.json');
+    const commentsPath = join(dir, 'comments.json');
+    writeFileSync(commitsPath, commitPages.map((page) => JSON.stringify(page)).join('\n'));
+    writeFileSync(commentsPath, commentPages.map((page) => JSON.stringify(page)).join('\n'));
+    const result = spawnSync('jq', ['-e', '--arg', 'head', 'head', '--slurpfile', 'commit_pages', commitsPath, '--slurpfile', 'comment_pages', commentsPath, reviewProgram], {
       input: JSON.stringify([reviews]),
       encoding: 'utf8',
     });
@@ -175,7 +207,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     runReviewFilter([
       review(1, 'CHANGES_REQUESTED', '2026-08-01T00:00:00Z'),
       review(2, 'APPROVED', '2026-08-01T00:01:00Z'),
-    ]),
+    ], [[{ sha: 'head' }]], [[]]),
     0,
   );
   assert.notEqual(
@@ -190,8 +222,8 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     0,
   );
   // 폴백 리뷰는 규약 양식의 제목줄과 provenance marker를 모두 가져야 한다.
-  assert.equal(
-    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)]),
+  assert.notEqual(
+    runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody)], [[{ sha: 'head' }]], [[]]),
     0,
   );
   // 신뢰되지 않는 author_association은 어떤 본문으로도 게이트를 통과하지 못한다.
@@ -286,7 +318,7 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
-  // 긍정 리뷰는 여전히 current head를 요구한다.
+  // native APPROVED는 여전히 current head를 요구한다.
   assert.notEqual(
     runReviewFilter([
       review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
@@ -295,22 +327,73 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
+  // current-head native approval도 bounded PR commit set에 current head가 없으면 통과할 수 없다.
+  assert.notEqual(
+    runReviewFilter([review(1, 'APPROVED', '2026-08-01T00:00:00Z')], [[]]),
+    0,
+  );
+  assert.notEqual(
+    runReviewFilter([review(1, 'APPROVED', '2026-08-01T00:00:00Z')], [[{ sha: 'other-head' }]]),
+    0,
+  );
+  // canonical Codex discovery는 current head가 아니어도 PR commit set에 남아 있으면 허용된다.
+  assert.equal(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+        commit_id: 'previous-head',
+      }),
+    ], [[{ sha: 'previous-head' }, { sha: 'head' }]]),
+    0,
+  );
+  // frozen discovery에는 github-actions[bot]의 exact current-head marker가 필요하다.
+  const frozenCodex = [
+    review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, { commit_id: 'previous-head' }),
+  ];
+  for (const commentPages of [
+    [[]],
+    [[{ id: 1, body: '<!-- Automerge frozen discovery authorization: other-head -->', user: actionsBot }]],
+    [[{ id: 1, body: marker, user: { ...actionsBot, id: 1 } }]],
+  ]) {
+    assert.notEqual(
+      runReviewFilter(frozenCodex, [[{ sha: 'previous-head' }, { sha: 'head' }]], commentPages),
+      0,
+    );
+  }
+  // frozen discovery 역시 empty/missing-current-head commit set으로는 통과할 수 없다.
   assert.notEqual(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
         commit_id: 'previous-head',
       }),
-    ]),
+    ], [[]]),
     0,
   );
-  // CodeRabbit도 현재 head 리뷰여야 하며, change request는 다른 승인이 있어도 막는다.
   assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', fallbackBody, {
+        commit_id: 'previous-head',
+      }),
+    ], [[{ sha: 'previous-head' }]]),
+    0,
+  );
+  // CodeRabbit discovery도 같은 commit-set membership 규칙을 따른다.
+  assert.equal(
     runReviewFilter([
       review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', {
         ...codeRabbit,
         commit_id: 'previous-head',
       }),
-    ]),
+    ], [[{ sha: 'previous-head' }, { sha: 'head' }]]),
+    0,
+  );
+  // force-push로 현재 PR commit set에서 빠진 discovery는 허용하지 않는다.
+  assert.notEqual(
+    runReviewFilter([
+      review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', {
+        ...codeRabbit,
+        commit_id: 'removed-head',
+      }),
+    ], [[{ sha: 'head' }]]),
     0,
   );
   assert.notEqual(
@@ -394,6 +477,144 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 current head 긍정 리
     ]),
     0,
   );
+});
+
+test('automerge label은 exact head authorization marker를 한 번만 남긴다', async () => {
+  const workflow = await readWorkflow();
+  const block = workflow.match(
+    /# label-head-authorization-begin\n([\s\S]*?)\n\s+# label-head-authorization-end/,
+  )?.[1];
+  assert.ok(block, 'label-head authorization producer must stay testable');
+
+  const run = (pr, head) => {
+    const result = stubbedBash([
+      'set -euo pipefail',
+      'GITHUB_REPOSITORY=o/r',
+      `EVENT_PR=${JSON.stringify(pr)}`,
+      `EVENT_HEAD=${JSON.stringify(head)}`,
+      'repo="$GITHUB_REPOSITORY"',
+      'gh() { printf "gh %s\\n" "$*" >> "$GH_LOG"; }',
+      dedent(block),
+    ]);
+    return result;
+  };
+
+  const head = 'a'.repeat(40);
+  const accepted = run('85', head);
+  assert.equal(accepted.status, 0);
+  assert.equal(
+    (accepted.calls.match(/--method POST/g) ?? []).length,
+    1,
+    'one label event must create exactly one authorization marker',
+  );
+  assert.match(
+    accepted.calls,
+    new RegExp(`issues/85/comments.*Automerge frozen discovery authorization: ${head}`),
+  );
+  for (const [pr, invalidHead] of [['bad', head], ['85', 'bad']]) {
+    const rejected = run(pr, invalidHead);
+    assert.notEqual(rejected.status, 0);
+    assert.doesNotMatch(rejected.calls, /gh api/, 'invalid event data must not mutate comments');
+  }
+});
+
+test('PR commit set은 3페이지와 1회 overflow 확인으로 bounded read하며 불완전 응답을 거절한다', async () => {
+  const workflow = await readWorkflow();
+  const commitsRead = workflow.match(
+    /# commit-set-read-begin\n([\s\S]*?)\n\s+# commit-set-read-end/,
+  )?.[1];
+  assert.ok(commitsRead, 'bounded PR commit read must stay testable');
+  const sha = 'a'.repeat(40);
+
+  const runCommitRead = (pages) => {
+    const dir = mkdtempSync(join(tmpdir(), 'automerge-commit-read-'));
+    for (const [page, payload] of Object.entries(pages)) {
+      writeFileSync(join(dir, `page-${page}.json`), payload === '__FAIL__' ? payload : JSON.stringify(payload));
+    }
+    const result = spawnSync(
+      'bash',
+      ['-c', [
+        'set -euo pipefail',
+        `FIX=${JSON.stringify(dir)}`,
+        'repo=o/r',
+        'pr=1',
+        `head=${JSON.stringify(sha)}`,
+        'commits_page_cap=3',
+        'gh() {',
+        '  page="${*: -1}"; page="${page##*page=}"',
+        '  printf "PAGE:%s\\n" "$page" >&2',
+        '  [[ "$(cat "$FIX/page-$page.json")" == __FAIL__ ]] && return 1',
+        '  cat "$FIX/page-$page.json"',
+        '}',
+        'for _ in 1; do',
+        dedent(commitsRead, 12),
+        '  printf "ACCEPT\\n"',
+        '  rm -f "$commits_file"',
+        'done',
+      ].join('\n')],
+      { encoding: 'utf8' },
+    );
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr };
+  };
+
+  const accepted = runCommitRead({ 1: [{ sha }] });
+  assert.equal(accepted.status, 0);
+  assert.match(accepted.stderr, /PAGE:1/);
+  assert.match(accepted.stdout, /ACCEPT/);
+  assert.doesNotMatch(accepted.stderr, /PAGE:2/);
+
+  for (const [label, pages] of [
+    ['API failure', { 1: '__FAIL__' }],
+    ['malformed payload', { 1: {} }],
+    ['page-cap overflow', {
+      1: Array.from({ length: 100 }, () => ({ sha })),
+      2: Array.from({ length: 100 }, () => ({ sha })),
+      3: Array.from({ length: 100 }, () => ({ sha })),
+      4: [{ sha }],
+    }],
+  ]) {
+    const rejected = runCommitRead(pages);
+    assert.equal(rejected.status, 0, `${label} must skip only this candidate`);
+    assert.doesNotMatch(rejected.stdout, /ACCEPT/, `${label} must fail closed`);
+    assert.match(rejected.stdout, /PR commit set could not be read within the bounded page cap/);
+  }
+});
+
+test('authorization comment set은 bounded read하고 API·형식·overflow 실패를 닫힌 상태로 처리한다', async () => {
+  const workflow = await readWorkflow();
+  const commentsRead = workflow.match(
+    /# authorization-comments-read-begin\n([\s\S]*?)\n\s+# authorization-comments-read-end/,
+  )?.[1];
+  assert.ok(commentsRead, 'bounded authorization comment read must stay testable');
+  for (const contract of [
+    'for page in {1..4}',
+    'issues/${pr}/comments?per_page=100&page=${page}',
+    'comments_page_cap',
+    'comments_ok=false',
+    'authorization comments could not be read within the bounded page cap',
+  ]) assert.ok(commentsRead.includes(contract), `comment read missing: ${contract}`);
+
+  const run = (pages) => {
+    const dir = mkdtempSync(join(tmpdir(), 'automerge-comment-read-'));
+    for (const [page, payload] of Object.entries(pages)) writeFileSync(join(dir, `page-${page}.json`), payload === '__FAIL__' ? payload : JSON.stringify(payload));
+    return spawnSync('bash', ['-c', [
+      'set -euo pipefail', `FIX=${JSON.stringify(dir)}`, 'repo=o/r', 'pr=85', 'commits_file="$(mktemp)"', 'comments_page_cap=3',
+      'gh() { page="${*: -1}"; page="${page##*page=}"; [[ "$(cat "$FIX/page-$page.json")" == __FAIL__ ]] && return 1; cat "$FIX/page-$page.json"; }',
+      'for _ in 1; do', dedent(commentsRead, 12), '  printf ACCEPT\\n', '  rm -f "$comments_file"', 'done',
+    ].join('\n')], { encoding: 'utf8' });
+  };
+  assert.match(run({ 1: [] }).stdout, /ACCEPT/);
+  const comment = { id: 1, body: 'x', user: { login: 'x' } };
+  for (const pages of [
+    { 1: '__FAIL__' },
+    { 1: {} },
+    { 1: Array.from({ length: 100 }, () => comment), 2: Array.from({ length: 100 }, () => comment), 3: Array.from({ length: 100 }, () => comment), 4: [comment] },
+  ]) {
+    const rejected = run(pages);
+    assert.equal(rejected.status, 0);
+    assert.doesNotMatch(rejected.stdout, /ACCEPT/);
+    assert.match(rejected.stdout, /authorization comments could not be read within the bounded page cap/);
+  }
 });
 
 test('required context 판정은 대기와 실패를 구분하고 뒤 페이지 status까지 본다', async () => {
@@ -1001,7 +1222,7 @@ const makeRunQueue =
     }))),
   );
   for (const pr of prs) {
-    const head = `head${pr.number}`;
+    const head = String(pr.number).padStart(40, '0');
     writeFileSync(
       join(dir, `pr-${pr.number}.json`),
       JSON.stringify({
@@ -1032,6 +1253,9 @@ const makeRunQueue =
             ]],
       ),
     );
+    writeFileSync(join(dir, `commits-${pr.number}-1.json`), JSON.stringify([{ sha: head }]));
+    writeFileSync(join(dir, `commits-${pr.number}-2.json`), '[]');
+    writeFileSync(join(dir, `comments-${pr.number}-1.json`), '[]');
     writeFileSync(
       join(dir, `threads-${pr.number}.json`),
       JSON.stringify({
@@ -1099,6 +1323,8 @@ const makeRunQueue =
     '    "pr view "*"--json autoMergeRequest"*"--jq"*) set -- $all; n="$3"; if [[ -f "$FIX/cleanup-complete" || -f "$FIX/disabled-$n" ]]; then printf true; else jq -r ".autoMergeRequest == null" "$FIX/pr-$n.json"; fi ;;',
     '    "pr view "*"--json state,autoMergeRequest"*) printf \'%s\\n\' \'{"state":"MERGED","autoMergeRequest":null}\' ;;',
     '    "pr view "*) set -- $all; if [[ -f "$FIX/cleanup-complete" ]]; then jq ".autoMergeRequest = null" "$FIX/pr-$3.json"; else cat "$FIX/pr-$3.json"; fi ;;',
+    '    *pulls/*/commits*) n="${all#*pulls/}"; n="${n%%/commits*}"; page="${all##*page=}"; cat "$FIX/commits-$n-$page.json" ;;',
+    '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; page="${all##*page=}"; cat "$FIX/comments-$n-$page.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
     '    *disablePullRequestAutoMerge*)',
     '      cn=$(cat "$FIX/cleanupcount" 2>/dev/null || printf 0); cn=$((cn + 1)); printf %s "$cn" > "$FIX/cleanupcount"',
@@ -1393,7 +1619,11 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   assert.equal(reserve, 300, 'deploy chain reserve must stay pinned');
   assert.equal(fixedCost, 15);
   // 후보당 청구는 호출 5회가 아니라 --paginate 추가 페이지까지 덮는 여유값이다.
-  assert.equal(perCandidate, 9, 'per-candidate charge must keep the pagination allowance');
+  assert.equal(budgetConstantOf(workflow, 'commits_page_cap'), 3);
+  assert.equal(budgetConstantOf(workflow, 'commits_bounded_request_cost'), 4);
+  assert.equal(budgetConstantOf(workflow, 'comments_page_cap'), 3);
+  assert.equal(budgetConstantOf(workflow, 'comments_bounded_request_cost'), 4);
+  assert.equal(perCandidate, 17, 'per-candidate charge must include bounded commits and comments reads');
 
   // 응답 payload를 주고 워크플로의 jq 질의를 실제 jq로 적용해 `gh --jq`를 그대로 흉내낸다.
   // 스텁이 완성된 숫자를 내면 질의 자체가 검증되지 않아, 한쪽 버킷이 깨진 응답을 못 잡는다.
@@ -1424,10 +1654,12 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   for (const [remaining, expected] of [
     [5000, 6],
     [1000, 6],
-    [369, 6],
-    [360, 5],
-    [342, 3],
-    [324, 1],
+    [417, 6],
+    [400, 5],
+    [383, 4],
+    [366, 3],
+    [349, 2],
+    [332, 1],
   ]) {
     const result = windowAt(remaining);
     assert.equal(result.status, 0, `budget block failed at remaining=${remaining}: ${result.stderr}`);
@@ -1446,8 +1678,8 @@ test('창은 실측 잔량에서 정해지고 예약분 아래로는 큐를 돌�
   }
 
   // 두 버킷 값이 다르면 작은 쪽이 창을 정한다.
-  assert.equal(runPayload(buckets(5000, 342)).stdout.trim(), 'window=3');
-  assert.equal(runPayload(buckets(342, 5000)).stdout.trim(), 'window=3');
+  assert.equal(runPayload(buckets(5000, 349)).stdout.trim(), 'window=2');
+  assert.equal(runPayload(buckets(349, 5000)).stdout.trim(), 'window=2');
 
   // 예약분에 닿으면 큐만 건너뛴다. 실행을 실패시키지 않는다 — producer 스텝은 이미 끝났고
   // 실패로 남기면 그 check가 다음 판정 입력을 오염시킨다.
