@@ -190,6 +190,8 @@ class RouteV2RuntimeInputInventoryContractTest {
 		}
 		assertThat(actual).hasSize(61);
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
+		assertThat(Files.readString(PROJECT.resolve("backend/src/main/resources/application-prod.yml")))
+			.doesNotContain("EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS");
 	}
 
 	@Test
