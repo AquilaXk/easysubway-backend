@@ -348,23 +348,15 @@ class TimetableSeedLoaderTest {
 	}
 
 	@Test
-	void staleSnapshotBootsAsLastKnownGoodAndDegradesRouteSearchAtRuntime() throws Exception {
+	void expiredSnapshotIsRejectedBeforeAnyActiveStateMutation() throws Exception {
 		SnapshotResource snapshot = snapshot("a", false);
 
-		// freshUntil이 이미 지난 시각에 기동해도 컨텍스트를 죽이지 않고 last-known-good snapshot을 활성화한다.
-		assertThat(staleLoader(snapshot).activateSeed(snapshot.seed(), snapshot.evidence()))
-			.isEqualTo(TimetableSeedLoader.ActivationResult.ACTIVATED);
-		assertSnapshotRows("a");
-		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isOne();
-
-		// 런타임 재평가: 재활성화 없이 clock만으로 serving 여부가 갈린다. 만료 clock은 경로검색 게이트를 fail closed한다.
-		JdbcRouteTimetableRepository stale = new JdbcRouteTimetableRepository(jdbc, Clock.fixed(STALE_NOW, ZoneOffset.UTC));
-		assertThat(stale.activeItxTimetableArtifactId()).isEmpty();
-		assertThat(stale.hasRouteTimetable()).isFalse();
-		// 만료 상태여도 활성화 시점 readability는 여전히 통과한다(무결성·구조는 정상, freshness만 강등).
-		assertThat(stale.hasActivatableRouteTimetable()).isTrue();
-		// 동일 데이터를 신선 clock으로 보면 정상 serving된다(회귀).
-		assertThat(repository().activeItxTimetableArtifactId()).contains("snapshot-a");
+		assertThatThrownBy(() -> staleLoader(snapshot).activateSeed(snapshot.seed(), snapshot.evidence()))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("freshness expired");
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class)).isZero();
 	}
 
 	private TimetableSeedLoader loader(SnapshotResource snapshot) {

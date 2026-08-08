@@ -90,26 +90,6 @@ easysubway:
     seed:
       enabled: ${EASYSUBWAY_TIMETABLE_SEED_ENABLED:false}
       includes-itx: ${EASYSUBWAY_TIMETABLE_SEED_INCLUDES_ITX:false}
-    freshness:
-      # break-glass override: 만료된 timetable snapshot을 명시적 운영 결정으로 한시 서빙한다(기본 false).
-      # 활성화 시 기동·주기 WARN 로그와 break-glass 메트릭으로 우회가 관측된다. actuator health detail에도
-      # breakGlass/breakGlassReason이 실리지만, management.endpoint.health.show-details 기본값(never)에서는
-      # /actuator/health 응답에 노출되지 않는다 — 실효 감사 표면은 WARN 로그 + gauge다(health detail 노출을
-      # 원하면 show-details: when-authorized 검토가 필요하며 이 변경 범위 밖이다).
-      # 무결성(해시·스키마·출처) 검증은 우회되지 않는다 — 시간 기반 만료(fresh_until)만 우회한다.
-      # RouteV2Planner의 feed_end_date staleness 게이트(isFeedStale → STALE_TIMETABLE → 503)는 fresh_until과
-      # 무관한 별도 축이라 override와 상관없이 그대로 적용된다(feed_end_date 이후 날짜는 실제 trip이 없어 우회
-      # 대상이 아님) — override를 켜도 feed_end_date가 지난 날짜의 인증 경로검색은 여전히 503이다.
-      # 오타(예: "ture")나 형식이 안 맞는 값은 boolean 바인딩 실패로 "OFF 폴백"이 아니라 애플리케이션 기동
-      # 자체가 실패한다(fail-safe이지만 무중단이 아니므로 운영 중 혼선에 유의).
-      # 적용 프로파일 범위: 이 파일(application-prod.yml)은 spring.profiles.group(application.yml)에 의해
-      # staging/release/prod-like에도 상속되므로 이 플래그는 prod 전용이 아니라 운영 계열 프로파일 전체
-      # (prod·staging·release·prod-like)에 공통으로 적용된다 — 의도된 범위다(모니터 bean과 동일한
-      # @Profile("prod | staging | release | prod-like") 대상에 대한 공통 안전장치).
-      # 사용 후에는 fresh snapshot이 admit되는 즉시 반드시 비활성으로 되돌린다.
-      break-glass: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS:false}
-      # 활성 사유·활성화 주체 감사 문맥(로그·health detail에 그대로 노출된다). 활성 시 채우기를 권장한다.
-      break-glass-reason: ${EASYSUBWAY_TIMETABLE_FRESHNESS_BREAK_GLASS_REASON:}
   route-v2:
     origin-secret: ${EASYSUBWAY_ROUTE_V2_ORIGIN_SECRET:}
     session-max-requests: ${EASYSUBWAY_ROUTE_V2_SESSION_MAX_REQUESTS:50}
