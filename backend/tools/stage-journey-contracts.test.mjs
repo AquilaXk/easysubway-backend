@@ -1,5 +1,6 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
@@ -24,10 +25,15 @@ test("stage-journey-contracts는 lock과 일치하는 raw resources만 원자적
 });
 
 test("stage-journey-contracts는 current payload/resource identity drift 뒤 final output을 만들지 않는다", () => {
-  for (const mutate of [mutatePayloadByte, mutateResourceDigest, mutateResourceContent]) {
+  for (const { mutate, expectedError } of [
+    { mutate: mutatePayloadByte, expectedError: /payload sha256 mismatch/i },
+    { mutate: mutateResourceDigest, expectedError: /bundle resource identity mismatch/i },
+    { mutate: mutateResourceContent, expectedError: /resource sha256 mismatch/i },
+    { mutate: mutateNonCanonicalBase64, expectedError: /invalid resource Base64/i },
+  ]) {
     const fixture = createFixture({ mutate });
     try {
-      assert.throws(() => runStager(fixture));
+      assert.throws(() => runStager(fixture), expectedError);
       assert.equal(existsSync(fixture.output), false);
     } finally {
       fixture.cleanup();
@@ -138,10 +144,20 @@ function mutateResourceDigest({ lock, lockPath }) {
   writeJson(lockPath, lock);
 }
 
-function mutateResourceContent({ input }) {
+function mutateResourceContent(fixture) {
+  const { input } = fixture;
   const bundle = JSON.parse(readFileSync(input, "utf8"));
   bundle.resources[0].contentBase64 = Buffer.from("changed\n").toString("base64");
   writeJson(input, bundle);
+  refreshPayloadDigest(fixture);
+}
+
+function mutateNonCanonicalBase64(fixture) {
+  const { input } = fixture;
+  const bundle = JSON.parse(readFileSync(input, "utf8"));
+  bundle.resources[0].contentBase64 += "\n";
+  writeJson(input, bundle);
+  refreshPayloadDigest(fixture);
 }
 
 function addLockKey({ lock, lockPath }) {
@@ -184,4 +200,9 @@ function runStager(fixture) {
 
 function writeJson(path, value) {
   writeFileSync(path, `${JSON.stringify(value)}\n`);
+}
+
+function refreshPayloadDigest({ lock, lockPath, input }) {
+  lock.payload.sha256 = createHash("sha256").update(readFileSync(input)).digest("hex");
+  writeJson(lockPath, lock);
 }
