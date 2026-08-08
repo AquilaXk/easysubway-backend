@@ -479,29 +479,50 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
   );
 });
 
-test('automerge label은 exact head authorization marker를 한 번만 남긴다', async () => {
+test('automerge label은 canonical authorization marker를 PATCH-or-POST 한 번으로 수렴시킨다', async () => {
   const workflow = await readWorkflow();
   const block = workflow.match(
     /# label-head-authorization-begin\n([\s\S]*?)\n\s+# label-head-authorization-end/,
   )?.[1];
   assert.ok(block, 'label-head authorization producer must stay testable');
 
-  const run = (pr, head) => {
-    const result = stubbedBash([
+  const markerFor = (head) => `<!-- Automerge frozen discovery authorization: ${head} -->`;
+  const bot = { login: 'github-actions[bot]', id: 41898282, type: 'Bot' };
+  const run = (pr, head, { pages = [[]], failPatch = false, failPost = false } = {}) => {
+    const dir = mkdtempSync(join(tmpdir(), 'automerge-marker-producer-'));
+    const log = join(dir, 'gh.log');
+    for (const [index, page] of pages.entries()) writeFileSync(join(dir, `page-${index + 1}.json`), page === '__FAIL__' ? page : JSON.stringify(page));
+    const result = spawnSync('bash', ['-c', [
       'set -euo pipefail',
+      `GH_LOG=${JSON.stringify(log)}`,
+      `FIX=${JSON.stringify(dir)}`,
       'GITHUB_REPOSITORY=o/r',
       `EVENT_PR=${JSON.stringify(pr)}`,
       `EVENT_HEAD=${JSON.stringify(head)}`,
       'repo="$GITHUB_REPOSITORY"',
-      'gh() { printf "gh %s\\n" "$*" >> "$GH_LOG"; }',
+      `fail_patch=${JSON.stringify(failPatch)}`,
+      `fail_post=${JSON.stringify(failPost)}`,
+      ': > "$GH_LOG"',
+      'gh() {',
+      '  printf "gh %s\\n" "$*" >> "$GH_LOG"',
+      '  all="$*"',
+      '  case "$all" in',
+      '    *issues/*/comments?per_page=100*) page="${all##*page=}"; [[ "$(cat "$FIX/page-$page.json")" == __FAIL__ ]] && return 1; cat "$FIX/page-$page.json" ;;',
+      '    *"--method PATCH"*) if [[ "$fail_patch" == true ]]; then return 1; fi ;;',
+      '    *"--method POST"*) if [[ "$fail_post" == true ]]; then return 1; fi ;;',
+      '    *) return 1 ;;',
+      '  esac',
+      '}',
       dedent(block),
-    ]);
-    return result;
+      'printf "ACCEPT\\n"',
+    ].join('\n')], { encoding: 'utf8' });
+    return { status: result.status, stdout: result.stdout, stderr: result.stderr, calls: readFileSync(log, 'utf8') };
   };
 
   const head = 'a'.repeat(40);
   const accepted = run('85', head);
-  assert.equal(accepted.status, 0);
+  assert.equal(accepted.status, 0, accepted.stderr);
+  assert.equal(accepted.stdout, 'ACCEPT\n');
   assert.equal(
     (accepted.calls.match(/--method POST/g) ?? []).length,
     1,
@@ -511,6 +532,25 @@ test('automerge label은 exact head authorization marker를 한 번만 남긴다
     accepted.calls,
     new RegExp(`issues/85/comments.*Automerge frozen discovery authorization: ${head}`),
   );
+  const repeated = run('85', head, { pages: [[{ id: 99, body: markerFor('b'.repeat(40)), user: bot }]] });
+  assert.equal(repeated.status, 0);
+  assert.equal((repeated.calls.match(/--method PATCH/g) ?? []).length, 1);
+  assert.equal((repeated.calls.match(/--method POST/g) ?? []).length, 0);
+  assert.match(repeated.calls, new RegExp(`issues/85/comments/99.*${head}`));
+
+  const spoof = run('85', head, { pages: [[{ id: 7, body: markerFor('b'.repeat(40)), user: { ...bot, id: 1 } }]] });
+  assert.equal(spoof.status, 0);
+  assert.equal((spoof.calls.match(/--method POST/g) ?? []).length, 1, 'spoof marker must be ignored');
+  for (const options of [
+    { pages: ['__FAIL__'] },
+    { pages: [Array.from({ length: 100 }, () => ({ id: 1, body: markerFor(head), user: bot })), Array.from({ length: 100 }, () => ({ id: 2, body: markerFor(head), user: bot })), Array.from({ length: 100 }, () => ({ id: 3, body: markerFor(head), user: bot })), [{ id: 4, body: markerFor(head), user: bot }]] },
+    { pages: [[{ id: 99, body: markerFor(head), user: bot }]], failPatch: true },
+    { pages: [[]], failPost: true },
+  ]) {
+    const failed = run('85', head, options);
+    assert.notEqual(failed.status, 0);
+    assert.doesNotMatch(failed.calls, /--method PATCH.*\n.*--method POST|--method POST.*\n.*--method PATCH/, 'failed operation must not fall through to another mutation');
+  }
   for (const [pr, invalidHead] of [['bad', head], ['85', 'bad']]) {
     const rejected = run(pr, invalidHead);
     assert.notEqual(rejected.status, 0);

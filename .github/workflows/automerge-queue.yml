@@ -59,8 +59,70 @@ jobs:
             echo "automerge label event의 PR 또는 head SHA가 유효하지 않다." >&2
             exit 1
           fi
-          gh api --method POST "repos/${repo}/issues/${EVENT_PR}/comments" \
-            -f body="<!-- Automerge frozen discovery authorization: ${EVENT_HEAD} -->"
+          marker_body="<!-- Automerge frozen discovery authorization: ${EVENT_HEAD} -->"
+          comments_file="$(mktemp)"
+          comments_ok=true
+          for page in {1..4}; do
+            if ! comments_page="$(gh api "repos/${repo}/issues/${EVENT_PR}/comments?per_page=100&page=${page}")"; then
+              comments_ok=false
+              break
+            fi
+            if ! jq -e '
+              type == "array" and
+              all(.[];
+                type == "object" and
+                (.id | type == "number") and
+                (.body | type == "string") and
+                (.user | type == "object") and
+                (.user.login | type == "string") and
+                (.user.id | type == "number") and
+                (.user.type | type == "string")
+              )
+            ' <<<"${comments_page}" >/dev/null; then
+              comments_ok=false
+              break
+            fi
+            printf '%s\n' "${comments_page}" >>"${comments_file}"
+            comment_count="$(jq 'length' <<<"${comments_page}")"
+            if [[ "${page}" -le 3 ]]; then
+              [[ "${comment_count}" -lt 100 ]] && break
+            elif [[ "${comment_count}" -ne 0 ]]; then
+              comments_ok=false
+              break
+            else
+              break
+            fi
+          done
+          if [[ "${comments_ok}" != true ]]; then
+            rm -f "${comments_file}"
+            echo "automerge authorization marker comments를 읽지 못했다." >&2
+            exit 1
+          fi
+          if ! marker_id="$(jq -ser '
+            flatten |
+            [ .[] | select(
+              .user.login == "github-actions[bot]" and
+              .user.id == 41898282 and
+              .user.type == "Bot" and
+              (.body | test("^<!-- Automerge frozen discovery authorization: [0-9a-f]{40} -->$"))
+            ) | .id ] |
+            if length == 0 then ""
+            elif length == 1 then .[0]
+            else error("multiple canonical authorization markers")
+            end
+          ' "${comments_file}")"; then
+            rm -f "${comments_file}"
+            echo "automerge authorization marker가 단일 canonical comment가 아니다." >&2
+            exit 1
+          fi
+          rm -f "${comments_file}"
+          if [[ -n "${marker_id}" ]]; then
+            gh api --method PATCH "repos/${repo}/issues/${EVENT_PR}/comments/${marker_id}" \
+              -f body="${marker_body}"
+          else
+            gh api --method POST "repos/${repo}/issues/${EVENT_PR}/comments" \
+              -f body="${marker_body}"
+          fi
           # label-head-authorization-end
 
       - name: Clear pending native auto-merge requests
