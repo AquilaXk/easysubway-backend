@@ -7,11 +7,21 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.realtime.application.RealtimeProvider;
+import com.easysubway.realtime.application.RealtimeQuery;
+import com.easysubway.realtime.domain.RealtimeArrival;
+import com.easysubway.realtime.domain.RealtimeTrainPosition;
+import java.time.Instant;
+import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.Primary;
+import org.springframework.context.annotation.Import;
 import org.springframework.test.annotation.DirtiesContext;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -19,9 +29,9 @@ import org.springframework.test.web.servlet.MockMvc;
 	"spring.profiles.active=test",
 	"spring.flyway.enabled=false",
 	"spring.datasource.url=jdbc:h2:mem:realtime-controller;MODE=PostgreSQL;DB_CLOSE_DELAY=-1",
-	"spring.datasource.driver-class-name=org.h2.Driver",
-	"EASYSUBWAY_SEOUL_TOPIS_FIXTURE_ENABLED=true"
+	"spring.datasource.driver-class-name=org.h2.Driver"
 })
+@Import(RealtimeControllerTest.TestRealtimeProviderConfiguration.class)
 @AutoConfigureMockMvc
 @DirtiesContext(classMode = DirtiesContext.ClassMode.AFTER_EACH_TEST_METHOD)
 @DisplayName("서울 실시간 gateway API")
@@ -99,5 +109,26 @@ class RealtimeControllerTest {
 			.andExpect(jsonPath("$.data.status").value("FRESH"))
 			.andExpect(jsonPath("$.data.trainPositions[0].stationName").value("상록수"))
 			.andExpect(jsonPath("$.data.sourceNotice").value("열차 위치는 GPS가 아니라 운행 정보 기준 위치입니다."));
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class TestRealtimeProviderConfiguration {
+		@Bean
+		@Primary
+		RealtimeProvider testRealtimeProvider() {
+			return new RealtimeProvider() {
+				@Override
+				public List<RealtimeArrival> arrivals(RealtimeQuery query) {
+					return List.of(new RealtimeArrival("4", "상록수", "당고개", "상행", "4123", 180,
+						"3분 후", "전역 출발", Instant.now().toString()));
+				}
+
+				@Override
+				public List<RealtimeTrainPosition> trainPositions(RealtimeQuery query) {
+					return List.of(new RealtimeTrainPosition("4", "상록수", "4123", "운행중", "상행",
+						"당고개", Instant.now().toString()));
+				}
+			};
+		}
 	}
 }

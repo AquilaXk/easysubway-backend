@@ -1016,16 +1016,23 @@ class RealtimeGatewayServiceTest {
 	@Test
 	@DisplayName("TOPIS provider는 backend service key가 없으면 unavailable로 낮춘다")
 	void topisProviderWithoutBackendServiceKeyIsUnavailableByDefault() {
+		TimeoutHttpClient httpClient = new TimeoutHttpClient();
 		TopisRealtimeProvider provider = new TopisRealtimeProvider(
 			"",
 			new ObjectMapper(),
-			java.net.http.HttpClient.newHttpClient(),
-			new FixtureRealtimeProvider()
+			httpClient
 		);
 
 		assertThatThrownBy(() -> provider.arrivals(sangnoksuQuery()))
 			.isInstanceOf(RealtimeProviderException.class)
 			.hasMessage("PROVIDER_UNAVAILABLE");
+		assertThatThrownBy(() -> provider.trainPositions(line4Query()))
+			.isInstanceOf(RealtimeProviderException.class)
+			.hasMessage("PROVIDER_UNAVAILABLE");
+		assertThat(httpClient.sendCalls).hasValue(0);
+		assertThat(TopisRealtimeProvider.class.getDeclaredConstructors())
+			.allSatisfy(constructor -> assertThat(constructor.getParameterTypes())
+				.doesNotContain(RealtimeProvider.class, boolean.class));
 	}
 
 	@Test
@@ -1040,101 +1047,17 @@ class RealtimeGatewayServiceTest {
 	@Test
 	@DisplayName("TOPIS provider timeout 예외는 realtime timeout fallback 코드로 변환한다")
 	void topisProviderMapsHttpTimeoutToProviderTimeout() {
+		TimeoutHttpClient httpClient = new TimeoutHttpClient();
 		TopisRealtimeProvider provider = new TopisRealtimeProvider(
 			"backend-key",
 			new ObjectMapper(),
-			new TimeoutHttpClient(),
-			new FixtureRealtimeProvider()
+			httpClient
 		);
 
 		assertThatThrownBy(() -> provider.arrivals(sangnoksuQuery()))
 			.isInstanceOf(RealtimeProviderException.class)
 			.hasMessage("PROVIDER_TIMEOUT");
-	}
-
-	@Test
-	@DisplayName("TOPIS provider fixture는 명시적으로 켠 테스트 경로에서만 동작한다")
-	void topisProviderUsesFixtureOnlyWhenExplicitlyEnabled() {
-		String previous = System.getProperty("spring.profiles.active");
-		System.setProperty("spring.profiles.active", "test");
-		try {
-			TopisRealtimeProvider provider = new TopisRealtimeProvider(
-				"",
-				new ObjectMapper(),
-				java.net.http.HttpClient.newHttpClient(),
-				new FixtureRealtimeProvider(),
-				true
-			);
-
-			List<RealtimeArrival> arrivals = provider.arrivals(sangnoksuQuery());
-
-			assertThat(arrivals).hasSize(1);
-			assertThat(arrivals.getFirst().stationName()).isEqualTo("상록수");
-			assertThat(arrivals.getFirst().message()).isEqualTo("3분 후");
-		} finally {
-			if (previous == null) {
-				System.clearProperty("spring.profiles.active");
-			} else {
-				System.setProperty("spring.profiles.active", previous);
-			}
-		}
-	}
-
-	@Test
-	@DisplayName("TOPIS provider fixture는 기본 dev profile에서도 동작한다")
-	void topisProviderUsesFixtureOnDefaultDevProfile() {
-		TopisRealtimeProvider provider = new TopisRealtimeProvider(
-			"",
-			new ObjectMapper(),
-			java.net.http.HttpClient.newHttpClient(),
-			new FixtureRealtimeProvider(),
-			true,
-			"",
-			"dev"
-		);
-
-		List<RealtimeArrival> arrivals = provider.arrivals(sangnoksuQuery());
-
-		assertThat(arrivals).hasSize(1);
-		assertThat(arrivals.getFirst().stationName()).isEqualTo("상록수");
-	}
-
-	@Test
-	@DisplayName("TOPIS fixture는 release deploy env에서 켜져도 시작하지 않는다")
-	void topisFixtureFailsOnReleaseDeployEnv() {
-		String previous = System.getProperty("EASYSUBWAY_DEPLOY_ENV");
-		System.setProperty("EASYSUBWAY_DEPLOY_ENV", "release");
-		try {
-			assertThatThrownBy(() -> new TopisRealtimeProvider(
-				"",
-				new ObjectMapper(),
-				java.net.http.HttpClient.newHttpClient(),
-				new FixtureRealtimeProvider(),
-				true
-			)).isInstanceOf(IllegalStateException.class)
-				.hasMessageContaining("TOPIS fixture");
-		} finally {
-			if (previous == null) {
-				System.clearProperty("EASYSUBWAY_DEPLOY_ENV");
-			} else {
-				System.setProperty("EASYSUBWAY_DEPLOY_ENV", previous);
-			}
-		}
-	}
-
-	@Test
-	@DisplayName("TOPIS fixture는 prod-like deploy env에서 test profile이어도 시작하지 않는다")
-	void topisFixtureFailsOnProdLikeDeployEnv() {
-		assertThatThrownBy(() -> new TopisRealtimeProvider(
-			"",
-			new ObjectMapper(),
-			java.net.http.HttpClient.newHttpClient(),
-			new FixtureRealtimeProvider(),
-			true,
-			"prod-like",
-			"test"
-		)).isInstanceOf(IllegalStateException.class)
-			.hasMessageContaining("TOPIS fixture");
+		assertThat(httpClient.sendCalls).hasValue(1);
 	}
 
 	@Test
@@ -1144,8 +1067,7 @@ class RealtimeGatewayServiceTest {
 		TopisRealtimeProvider provider = new TopisRealtimeProvider(
 			"backend-key",
 			objectMapper,
-			java.net.http.HttpClient.newHttpClient(),
-			new FixtureRealtimeProvider()
+			java.net.http.HttpClient.newHttpClient()
 		);
 
 		provider.validateTopisStatus(objectMapper.readTree("""
@@ -1162,8 +1084,7 @@ class RealtimeGatewayServiceTest {
 		TopisRealtimeProvider provider = new TopisRealtimeProvider(
 			"backend-key",
 			objectMapper,
-			java.net.http.HttpClient.newHttpClient(),
-			new FixtureRealtimeProvider()
+			java.net.http.HttpClient.newHttpClient()
 		);
 
 		List<RealtimeArrival> arrivals = provider.arrivalsFromPayload(
@@ -1464,6 +1385,7 @@ class RealtimeGatewayServiceTest {
 	}
 
 	private static final class TimeoutHttpClient extends java.net.http.HttpClient {
+		private final AtomicInteger sendCalls = new AtomicInteger();
 		@Override
 		public Optional<java.net.CookieHandler> cookieHandler() {
 			return Optional.empty();
@@ -1514,6 +1436,7 @@ class RealtimeGatewayServiceTest {
 			java.net.http.HttpRequest request,
 			java.net.http.HttpResponse.BodyHandler<T> responseBodyHandler
 		) throws IOException {
+			sendCalls.incrementAndGet();
 			throw new java.net.http.HttpTimeoutException("timeout");
 		}
 
