@@ -31,10 +31,9 @@ class RouteV2RuntimeInputInventoryContractTest {
 	private static final Path TIMETABLE_EVIDENCE = PROJECT.resolve("backend/src/main/resources/timetable/server-timetable-snapshot-evidence.json");
 	private static final String GZIP_SHA256 = "7f63ca3717d224ac9191d40d258b736d85a0c19a5c3233793fc5ac4848adc375";
 	private static final String EVIDENCE_SHA256 = "0906ef492ae32f5362ef679943a91fead28350f6c1c540423a63a61abb534b80";
-	// Capacity-evidence, nested fixture, and non-prod-profile sources are outside production Route V2 runtime.
+	// Capacity-evidence and non-prod-profile sources are outside production Route V2 runtime.
 	private static final Set<String> EXCLUDED_CANDIDATE_FILES = Set.of(
 		"CapacityEvidencePlayIntegrityDecoder.java",
-		"FixtureRealtimeProvider.java",
 		"InMemoryFacilityReportRepository.java",
 		"InMemoryRouteSearchRepository.java",
 		"InMemoryRealtimeMappingPort.java",
@@ -64,7 +63,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java", "RouteSearchService#resolveTimetableRealtime", "optional realtime resolver", "realtimeArrivalResolver == null", "realtimeArrivalResolver.resolve"),
 		entry("RESOLVER", "backend/src/main/java/com/easysubway/route/adapter/out/realtime/RealtimeGatewayArrivalResolver.java", "RealtimeGatewayArrivalResolver#resolve", "gateway arrival resolver", "realtimeGatewayService.arrivals(new RealtimeQuery", "statusOf(result)"),
 		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#arrivals/#trainPositions", "realtime gateway arrival/train-position provider", "normalizeArrivalQuery(query)", "provider.arrivals(normalizedQuery.query())", "arrivalCache", "mappingPort.findArrivalMapping(PROVIDER_ID, query)", "normalizeTrainPositionQuery(query)", "provider.trainPositions(normalizedQuery)", "trainPositionCache"),
-		entry("OPTIONAL_OR_LEGACY", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#arrivals/#trainPositions", "CONFLICT: local-fixture fallback branch", "implements RealtimeProvider", "TOPIS_BASE_URI", "fixtureAllowedRuntime", "if (!fixtureEnabled)", "fallbackProvider.arrivals(query)", "fallbackProvider.trainPositions(query)"),
+		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#arrivals/#trainPositions", "Seoul TOPIS realtime provider", "implements RealtimeProvider", "TOPIS_BASE_URI", "throw new RealtimeProviderException(\"PROVIDER_UNAVAILABLE\")", "realtimeStationArrival/0/5/%s", "realtimePosition/0/10/%s"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/common/security/SecurityConfig.java", "SecurityConfig#routeV2IngressSecurityFilterChain", "production Route V2 ingress security wiring", "@ConditionalOnBean(RouteV2AccessStore.class)", "@Value(\"${easysubway.route-v2.origin-secret:}\")", "RouteV2IngressSecurity.configure"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2IngressSecurity.java", "RouteV2IngressSecurity#configure", "production Route V2 security matcher and filters", "securityMatcher(", "addFilterBefore(sessionFilter", "addFilterBefore(originFilter"),
 		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2OriginGateFilter.java", "RouteV2OriginGateFilter#doFilterInternal", "Route V2 origin header gate", "ORIGIN_HEADER", "MessageDigest.isEqual", "ROUTE_ORIGIN_FORBIDDEN"),
@@ -88,7 +87,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		entry("INPUT", "backend/src/main/java/com/easysubway/realtime/adapter/in/web/RealtimeProviderAdminController.java", "RealtimeProviderAdminController#disableProvider/#enableProvider", "POST /admin/realtime/providers/{providerId}/{disable,enable}", "@PostMapping(\"/admin/realtime/providers/{providerId}/disable\")", "@PostMapping(\"/admin/realtime/providers/{providerId}/enable\")", "providerControl.disableProvider(providerId, reason)", "providerControl.enableProvider(providerId)"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/route/adapter/in/scheduler/RouteV2StatePurgeScheduler.java", "RouteV2StatePurgeScheduler#purgeExpiredState", "scheduled Route V2 state/session/nonce purge", "@Scheduled(fixedDelayString = \"${easysubway.route-v2.state-purge-interval-ms:300000}\")", "store.purgeExpired(clock.instant())", "metrics.recordPurge(purged)"),
 		entry("LOADER", "backend/src/main/java/com/easysubway/route/adapter/out/persistence/TimetableSeedLoader.java", "TimetableSeedLoader#TimetableSeedLoader", "configurable timetable seed/evidence resources", "@Value(\"${easysubway.timetable.seed.resource:classpath:timetable/line4-timetable-seed.sql.gz}\")", "@Value(\"${easysubway.timetable.seed.evidence-resource:classpath:timetable/server-timetable-snapshot-evidence.json}\")", "@Value(\"${easysubway.timetable.seed.includes-itx:false}\")"),
-		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#TopisRealtimeProvider", "Seoul TOPIS credential/fixture runtime configuration", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY:}\")", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_FIXTURE_ENABLED:false}\")", "@Value(\"${EASYSUBWAY_DEPLOY_ENV:}\")", "runtimeProfiles(environment)"),
+		entry("PROVIDER", "backend/src/main/java/com/easysubway/realtime/application/TopisRealtimeProvider.java", "TopisRealtimeProvider#TopisRealtimeProvider", "Seoul TOPIS credential runtime configuration", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY:}\")", "HttpClient.newBuilder().connectTimeout(REQUEST_TIMEOUT).build()"),
 		entry("REGISTRY", "backend/src/main/java/com/easysubway/realtime/application/RealtimeGatewayService.java", "RealtimeGatewayService#RealtimeGatewayService", "TOPIS provider-call quota configuration", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_MINUTE:1}\")", "@Value(\"${EASYSUBWAY_SEOUL_TOPIS_CALL_LIMIT_PER_DAY:800}\")", "RealtimeProviderCallQuotaPort providerCallQuotaPort"),
 		entry("INPUT", "backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitMasterController.java", "TransitMasterController#createAccessibilityFacility/#updateAccessibilityFacility/#updateFacilityStatus/#updateRouteEdge/#updateRouteNodeDisplay", "API facility create/update/status and route-edge/node override ingress", "@PatchMapping(\"/admin/stations/{stationId}/route-edges/{edgeId}\")", "@PatchMapping(\"/admin/stations/{stationId}/route-nodes/{nodeId}\")", "@PostMapping(\"/admin/facilities\")", "@PutMapping(\"/admin/facilities/{facilityId}\")", "@PatchMapping(\"/admin/facilities/{facilityId}/status\")", "transitMasterAdminUseCase.updateRouteEdge(", "transitMasterAdminUseCase.updateRouteNodeDisplay(", "transitMasterAdminUseCase.createAccessibilityFacility(", "transitMasterAdminUseCase.updateAccessibilityFacility(", "transitMasterAdminUseCase.updateFacilityStatus("),
 		entry("INPUT", "backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitStationLayoutAdminPageController.java", "TransitStationLayoutAdminPageController#updateRouteEdgeFromPage/#updateRouteNodeDisplayFromPage", "POST route-edge/node override page ingress", "@PostMapping(\"/admin/stations/{stationId}/route-edges/{edgeId}/page\")", "@PostMapping(\"/admin/stations/{stationId}/route-nodes/{nodeId}/page\")", "String updateRouteEdgeFromPage(", "String updateRouteNodeDisplayFromPage(", "transitMasterAdminUseCase.updateRouteEdge(new UpdateRouteEdgeCommand(", "transitMasterAdminUseCase.updateRouteNodeDisplay(new UpdateRouteNodeDisplayCommand("),
@@ -111,11 +110,11 @@ class RouteV2RuntimeInputInventoryContractTest {
 		assertThat(requiredMemberSuffixes("TransitSource.java", "class TransitSource implements LoadTransitMasterPort {}"))
 			.containsExactly("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
 		assertThat(requiredMemberSuffixes("RealtimeSource.java", "class RealtimeSource implements RealtimeProvider {}"))
-			.containsExactly("#arrivals");
+			.containsExactly("#arrivals/#trainPositions");
 		assertThat(requiredMemberSuffixes("RealtimeSource.java", "class RealtimeSource implements RealtimeProvider, OtherPort {}"))
-			.containsExactly("#arrivals");
+			.containsExactly("#arrivals/#trainPositions");
 		assertThat(requiredMemberSuffixes("RealtimeSource.java", "class RealtimeSource implements OtherPort, RealtimeProvider {}"))
-			.containsExactly("#arrivals");
+			.containsExactly("#arrivals/#trainPositions");
 		assertThat(requiredMemberSuffixes("TransitRecord.java", "record TransitRecord() implements LoadTransitMasterPort {}"))
 			.containsExactly("#loadStations/#loadLines/#loadStationLines/#loadStationExits/#loadAccessibilityFacilities/#loadRouteNodes/#loadRouteEdges");
 		assertThat(requiredMemberSuffixes("CombinedSource.java", "class CombinedSource implements LoadRouteTimetablePort, ApplicationRunner {}"))
@@ -308,9 +307,6 @@ class RouteV2RuntimeInputInventoryContractTest {
 			case "InMemoryFacilityReportRepository.java", "InMemoryRouteSearchRepository.java", "InMemoryRealtimeMappingPort.java" -> assertThat(source)
 				.contains("@Profile(\"!prod & !staging & !release & !prod-like\")");
 			case "DevelopmentRealtimeSafetyPorts.java" -> assertThat(source).contains("@Profile({\"default\", \"dev\", \"test\"})");
-			case "FixtureRealtimeProvider.java" -> assertThat(source)
-				.contains("final class FixtureRealtimeProvider implements RealtimeProvider")
-				.doesNotContain("@Component", "@Service", "@Repository", "@Controller", "@RestController");
 			default -> throw new IllegalArgumentException("Unexpected excluded runtime candidate: " + fileName);
 		}
 	}
@@ -320,8 +316,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 		if (implementsInterface(fileName, source, "LoadRouteTimetablePort")) suffixes.add("#loadRouteTimetableSnapshot");
 		if (implementsInterface(fileName, source, "LoadRouteSearchPort")) suffixes.add("#loadRouteSearch");
 		if (implementsInterface(fileName, source, "RealtimeArrivalResolver")) suffixes.add("#resolve");
-		if (implementsInterface(fileName, source, "RealtimeProvider")
-			&& !source.contains("fallbackProvider.arrivals(query)")) suffixes.add("#arrivals");
+		if (implementsInterface(fileName, source, "RealtimeProvider")) suffixes.add("#arrivals/#trainPositions");
 		if (implementsInterface(fileName, source, "PlayIntegrityDecoder")) suffixes.add("#decode");
 		if (implementsInterface(fileName, source, "RouteV2AccessStore")) suffixes.addAll(List.of("#claimNonceAndSaveSession", "#consumeSession"));
 		if (implementsInterface(fileName, source, "ApplicationRunner")) suffixes.add("#run");
@@ -343,8 +338,6 @@ class RouteV2RuntimeInputInventoryContractTest {
 	private static void assertSharedStateMarkers(String sourcePath, String source, Set<Member> members) {
 		assertMarker(sourcePath, source, "provider.arrivals(normalizedQuery.query())", "RealtimeGatewayService#arrivals/#trainPositions", members);
 		assertMarker(sourcePath, source, "provider.trainPositions(normalizedQuery)", "RealtimeGatewayService#arrivals/#trainPositions", members);
-		assertMarker(sourcePath, source, "fallbackProvider.arrivals(query)", "TopisRealtimeProvider#arrivals/#trainPositions", members);
-		assertMarker(sourcePath, source, "fallbackProvider.trainPositions(query)", "TopisRealtimeProvider#arrivals/#trainPositions", members);
 		assertMarker(sourcePath, source, "disableProvider(String providerId, String reason)", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", members);
 		assertMarker(sourcePath, source, "enableProvider(String providerId)", "RealtimeProviderControl#providerEnabled/#disableProvider/#enableProvider", members);
 		assertMarker(sourcePath, source, "providerControl.disableProvider(providerId, reason)", "RealtimeProviderAdminController#disableProvider/#enableProvider", members);
