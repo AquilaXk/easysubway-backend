@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
-import { closeSync, constants, existsSync, fstatSync, linkSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, readdirSync, renameSync, rmSync, unlinkSync, writeFileSync } from "node:fs";
+import { execFileSync } from "node:child_process";
+import { closeSync, constants, fstatSync, lstatSync, mkdirSync, mkdtempSync, openSync, readFileSync, rmSync, writeFileSync } from "node:fs";
 import { basename, dirname, join, relative, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const backendBuild = resolve(repositoryRoot, "backend/build");
+const secureMover = resolve(import.meta.dirname, "SecureDirectoryTreeMover.java");
 const optionNames = new Set(["--lock", "--input", "--output"]);
 const digestPattern = /^[a-f0-9]{64}$/;
 const shaPattern = /^[a-f0-9]{40}$/;
@@ -109,18 +111,11 @@ function assertOutput(outputPath) {
   return { output, parent, name: basename(output) };
 }
 
-export function stageAtomically(outputPath, resources, { payloadSha256, beforeClaim } = {}) {
+export function stageAtomically(outputPath, resources, { payloadSha256, beforePublish, forceUnsupportedSecureDirectoryStream = false } = {}) {
   if (!digestPattern.test(payloadSha256)) throw new Error("invalid completion payload sha256");
   const target = assertOutput(outputPath);
-  const parentMetadata = lstatSync(target.parent);
-  const parentDescriptor = openSync(target.parent, constants.O_RDONLY | constants.O_DIRECTORY | constants.O_NOFOLLOW);
   let temporary;
-  let claimed = false;
-  let claimedMetadata;
-  let parentAnchor;
   try {
-    assertSameDirectory(parentMetadata, fstatSync(parentDescriptor));
-    parentAnchor = descriptorPath(parentDescriptor, target.parent);
     temporary = mkdtempSync(join(backendBuild, ".stage-journey-contracts-"));
     for (const resource of resources) {
       const destination = resolve(temporary, resource.path);
@@ -130,56 +125,22 @@ export function stageAtomically(outputPath, resources, { payloadSha256, beforeCl
     }
     const completion = join(temporary, ".stage-complete");
     writeFileSync(completion, `${payloadSha256}\n`, { flag: "wx", mode: 0o600 });
-    beforeClaim?.();
-    assertSameDirectoryPath(target.parent, parentMetadata);
-    const anchoredOutput = join(parentAnchor, target.name);
-    try {
-      mkdirSync(anchoredOutput, { mode: 0o700 });
-      claimed = true;
-      claimedMetadata = lstatSync(anchoredOutput);
-    } catch (error) {
-      if (error && typeof error === "object" && error.code === "EEXIST") throw new Error("final output must be absent");
-      throw error;
-    }
-    assertSameDirectoryPath(target.parent, parentMetadata);
-    for (const entry of readdirSync(temporary)) {
-      assertSameDirectoryPath(target.parent, parentMetadata);
-      if (entry !== ".stage-complete") renameSync(join(temporary, entry), join(anchoredOutput, entry));
-    }
-    assertSameDirectoryPath(target.parent, parentMetadata);
-    linkSync(completion, join(anchoredOutput, ".stage-complete"));
-    unlinkSync(completion);
-    assertSameDirectoryPath(target.parent, parentMetadata);
-  } catch (error) {
-    if (claimed && isClaimedDirectory(join(parentAnchor, target.name), claimedMetadata)) rmSync(join(parentAnchor, target.name), { recursive: true, force: true });
-    throw error;
+    beforePublish?.();
+    moveTemporaryWithSecureDirectories(temporary, target, forceUnsupportedSecureDirectoryStream);
   } finally {
     if (temporary) rmSync(temporary, { recursive: true, force: true });
-    closeSync(parentDescriptor);
   }
 }
 
-function descriptorPath(descriptor, fallback) {
-  const procDescriptor = join("/proc/self/fd", String(descriptor));
-  return existsSync(procDescriptor) ? procDescriptor : fallback;
-}
-
-function isClaimedDirectory(path, expected) {
-  const actual = lstatSync(path, { throwIfNoEntry: false });
-  return Boolean(expected && actual && !actual.isSymbolicLink() && actual.isDirectory() && actual.dev === expected.dev && actual.ino === expected.ino);
-}
-
-function assertSameDirectoryPath(path, expected) {
-  if (!isSameDirectoryPath(path, expected)) throw new Error("output parent changed during staging");
-}
-
-function isSameDirectoryPath(path, expected) {
-  const actual = lstatSync(path, { throwIfNoEntry: false });
-  return Boolean(actual && !actual.isSymbolicLink() && actual.isDirectory() && actual.dev === expected.dev && actual.ino === expected.ino);
-}
-
-function assertSameDirectory(expected, actual) {
-  if (!actual.isDirectory() || actual.dev !== expected.dev || actual.ino !== expected.ino) throw new Error("output parent changed during staging");
+function moveTemporaryWithSecureDirectories(temporary, target, forceUnsupportedSecureDirectoryStream) {
+  const arguments_ = [secureMover, repositoryRoot, basename(temporary), relative(backendBuild, target.output)];
+  if (forceUnsupportedSecureDirectoryStream) arguments_.push("--test-force-unsupported");
+  try {
+    execFileSync("java", arguments_, { encoding: "utf8", stdio: "pipe" });
+  } catch (error) {
+    const detail = error && typeof error === "object" ? error.stderr?.toString().trim() : "";
+    throw new Error(detail || "secure directory move failed");
+  }
 }
 
 export function readRegularFile(path, label, { afterOpen } = {}) {

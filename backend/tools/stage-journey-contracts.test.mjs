@@ -38,12 +38,43 @@ test("stage-journey-contracts는 missing output parent를 만들지 않는다", 
   }
 });
 
-test("stage-journey-contracts는 late empty target을 덮어쓰지 않는다", async () => {
+test("stage-journey-contracts는 publish 직전 output 교체가 writes를 redirect하지 않는다", async () => {
   const { stageAtomically } = await import(`${pathToFileURL(stager).href}?late-target`);
+  const fixture = createFixture();
+  const escapedParent = mkdtempSync(join(outputRoot, "escaped-"));
+  let replaced = false;
+  try {
+    assert.throws(
+      () => stageAtomically(fixture.output, bundleResources(fixture), {
+        payloadSha256: fixture.lock.payload.sha256,
+        beforePublish() {
+          mkdirSync(fixture.output);
+          rmSync(fixture.output, { recursive: true });
+          symlinkSync(escapedParent, fixture.output, "dir");
+          replaced = true;
+        },
+      }),
+      /final output must be absent|secure directory/i,
+    );
+    assert.equal(existsSync(join(escapedParent, ".stage-complete")), false);
+  } finally {
+    if (replaced) rmSync(fixture.output, { force: true });
+    fixture.cleanup();
+    rmSync(escapedParent, { recursive: true, force: true });
+  }
+});
+
+test("stage-journey-contracts는 publish 직전 late empty output을 덮어쓰지 않는다", async () => {
+  const { stageAtomically } = await import(`${pathToFileURL(stager).href}?late-empty-target`);
   const fixture = createFixture();
   try {
     assert.throws(
-      () => stageAtomically(fixture.output, bundleResources(fixture), { payloadSha256: fixture.lock.payload.sha256, beforeClaim: () => mkdirSync(fixture.output) }),
+      () => stageAtomically(fixture.output, bundleResources(fixture), {
+        payloadSha256: fixture.lock.payload.sha256,
+        beforePublish() {
+          mkdirSync(fixture.output);
+        },
+      }),
       /final output must be absent/i,
     );
     assert.deepEqual(readdirSync(fixture.output), []);
@@ -52,32 +83,52 @@ test("stage-journey-contracts는 late empty target을 덮어쓰지 않는다", a
   }
 });
 
-test("stage-journey-contracts는 검사한 output parent가 symlink로 교체되면 외부에 쓰지 않는다", async () => {
+test("stage-journey-contracts는 검사한 nested ancestor가 교체돼도 외부 parent에 결속하지 않는다", async () => {
   const { stageAtomically } = await import(`${pathToFileURL(stager).href}?ancestor-swap`);
   const fixture = createFixture();
-  const movedParent = `${fixture.directory}-moved`;
+  const nestedParent = join(fixture.directory, "nested");
+  fixture.output = join(nestedParent, "staged");
+  mkdirSync(nestedParent);
+  const movedParent = `${nestedParent}-moved`;
   const escapedParent = mkdtempSync(join(outputRoot, "escaped-"));
   let swapped = false;
   try {
     assert.throws(
       () => stageAtomically(fixture.output, bundleResources(fixture), {
         payloadSha256: fixture.lock.payload.sha256,
-        beforeClaim() {
-          renameSync(fixture.directory, movedParent);
-          symlinkSync(escapedParent, fixture.directory, "dir");
+        beforePublish() {
+          renameSync(nestedParent, movedParent);
+          symlinkSync(escapedParent, nestedParent, "dir");
           swapped = true;
         },
       }),
-      /output parent changed/i,
+      /output must not have a symlink or non-directory ancestor|secure directory/i,
     );
     assert.equal(existsSync(join(escapedParent, "staged")), false);
   } finally {
     if (swapped) {
-      rmSync(fixture.directory, { force: true });
-      renameSync(movedParent, fixture.directory);
+      rmSync(nestedParent, { force: true });
+      renameSync(movedParent, nestedParent);
     }
     fixture.cleanup();
     rmSync(escapedParent, { recursive: true, force: true });
+  }
+});
+
+test("stage-journey-contracts는 secure directory stream 미지원 시 mutation 없이 실패한다", async () => {
+  const { stageAtomically } = await import(`${pathToFileURL(stager).href}?unsupported-secure-directory-stream`);
+  const fixture = createFixture();
+  try {
+    assert.throws(
+      () => stageAtomically(fixture.output, bundleResources(fixture), {
+        payloadSha256: fixture.lock.payload.sha256,
+        forceUnsupportedSecureDirectoryStream: true,
+      }),
+      /secure directory stream unavailable/i,
+    );
+    assert.equal(existsSync(fixture.output), false);
+  } finally {
+    fixture.cleanup();
   }
 });
 
