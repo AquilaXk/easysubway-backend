@@ -50,7 +50,7 @@ public class RealtimeGatewayService {
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 	private static final String PROVIDER_ID = "seoul-topis";
-	private static final Set<String> SAFE_FALLBACK_CODES = Set.of(
+	private static final Set<String> PUBLIC_UNAVAILABLE_CAUSE_ALLOWLIST = Set.of(
 		"EMPTY_PROVIDER_RESULT",
 		"PROVIDER_ERROR",
 		"PROVIDER_QUOTA_EXCEEDED",
@@ -301,10 +301,11 @@ public class RealtimeGatewayService {
 			arrivalCache.put(cacheKey, new CachedArrival(result, receivedAt));
 			return result;
 		} catch (RealtimeProviderException exception) {
-			String fallbackCode = safeFallbackCode(exception.fallbackCode());
-			providerMetrics.recordProviderException(fallbackCode);
-			openQuotaCircuitIfNeeded(exception);
-			return RealtimeArrivalResult.unavailable(fallbackCode);
+			String providerCause = exception.providerCause();
+			String publicUnavailableCause = publicUnavailableCause(providerCause);
+			providerMetrics.recordProviderException(publicUnavailableCause);
+			openQuotaCircuitIfNeeded(providerCause);
+			return RealtimeArrivalResult.unavailable(publicUnavailableCause);
 		} finally {
 			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
@@ -385,10 +386,11 @@ public class RealtimeGatewayService {
 			trainPositionCache.put(cacheKey, new CachedTrainPosition(result, receivedAt));
 			return result;
 		} catch (RealtimeProviderException exception) {
-			String fallbackCode = safeFallbackCode(exception.fallbackCode());
-			providerMetrics.recordProviderException(fallbackCode);
-			openQuotaCircuitIfNeeded(exception);
-			return RealtimeTrainPositionResult.unavailable(fallbackCode);
+			String providerCause = exception.providerCause();
+			String publicUnavailableCause = publicUnavailableCause(providerCause);
+			providerMetrics.recordProviderException(publicUnavailableCause);
+			openQuotaCircuitIfNeeded(providerCause);
+			return RealtimeTrainPositionResult.unavailable(publicUnavailableCause);
 		} finally {
 			providerMetrics.recordProviderCall(Duration.between(providerCallStartedAt, clock.instant()));
 		}
@@ -675,14 +677,16 @@ public class RealtimeGatewayService {
 		return openUntil != null && clock.instant().isBefore(openUntil);
 	}
 
-	private void openQuotaCircuitIfNeeded(RealtimeProviderException exception) {
-		if ("PROVIDER_QUOTA_EXCEEDED".equals(exception.fallbackCode())) {
+	private void openQuotaCircuitIfNeeded(String providerCause) {
+		if ("PROVIDER_QUOTA_EXCEEDED".equals(providerCause)) {
 			quotaCircuitOpenUntil = clock.instant().plus(QUOTA_CIRCUIT_OPEN);
 		}
 	}
 
-	private String safeFallbackCode(String fallbackCode) {
-		return fallbackCode != null && SAFE_FALLBACK_CODES.contains(fallbackCode) ? fallbackCode : "PROVIDER_ERROR";
+	private String publicUnavailableCause(String providerCause) {
+		return providerCause != null && PUBLIC_UNAVAILABLE_CAUSE_ALLOWLIST.contains(providerCause)
+			? providerCause
+			: "PROVIDER_ERROR";
 	}
 
 	private static final class ProviderCallRateLimiter implements RealtimeProviderCallQuotaPort {
@@ -742,11 +746,11 @@ public class RealtimeGatewayService {
 			providerLatencyMsTotal.addAndGet(Math.max(0, latency.toMillis()));
 		}
 
-		private void recordProviderException(String fallbackCode) {
-			if ("PROVIDER_TIMEOUT".equals(fallbackCode)) {
+		private void recordProviderException(String publicUnavailableCause) {
+			if ("PROVIDER_TIMEOUT".equals(publicUnavailableCause)) {
 				providerTimeoutCount.incrementAndGet();
 			}
-			if ("PROVIDER_QUOTA_EXCEEDED".equals(fallbackCode)) {
+			if ("PROVIDER_QUOTA_EXCEEDED".equals(publicUnavailableCause)) {
 				providerQuotaExceededCount.incrementAndGet();
 			}
 		}

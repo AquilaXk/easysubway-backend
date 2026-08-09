@@ -2,14 +2,14 @@ package com.easysubway.realtime.application;
 
 public class RealtimeProviderException extends RuntimeException {
 
-	private final String fallbackCode;
+	private final String providerCause;
 
-	public RealtimeProviderException(String fallbackCode) {
-		super(fallbackCode);
-		this.fallbackCode = fallbackCode;
+	public RealtimeProviderException(String providerCause) {
+		super(providerCause);
+		this.providerCause = providerCause;
 	}
 
-	public String fallbackCode() {
-		return fallbackCode;
+	public String providerCause() {
+		return providerCause;
 	}
 }
