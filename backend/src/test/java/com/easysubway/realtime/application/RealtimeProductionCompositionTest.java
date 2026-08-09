@@ -12,45 +12,29 @@ import com.easysubway.realtime.application.port.out.RealtimeArrivalArchivePort;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
 import com.easysubway.realtime.application.port.out.RealtimeProviderCallQuotaPort;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.util.Arrays;
 import java.util.concurrent.Executor;
 import javax.sql.DataSource;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.FilteredClassLoader;
+import org.springframework.boot.test.context.TestComponent;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Bean;
+import org.springframework.context.annotation.ComponentScan;
+import org.springframework.context.annotation.FilterType;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
+import org.springframework.test.util.ReflectionTestUtils;
 
 @DisplayName("실시간 운영 조립 계약")
 class RealtimeProductionCompositionTest {
-
-	private static final Class<?>[] PRODUCTION_COMPONENTS = {
-		ProductionDependencies.class,
-		RealtimeGatewayService.class,
-		RealtimeProviderControl.class,
-		TopisRealtimeProvider.class,
-		JdbcRealtimeMappingRepository.class,
-		JdbcRealtimeArrivalArchiveRepository.class,
-		JdbcRealtimeProviderCallQuotaRepository.class,
-		RealtimeInfrastructureConfiguration.class
-	};
-
-	private static final Class<?>[] DEVELOPMENT_COMPONENTS = {
-		DevelopmentDependencies.class,
-		RealtimeGatewayService.class,
-		RealtimeProviderControl.class,
-		TopisRealtimeProvider.class,
-		InMemoryRealtimeMappingPort.class,
-		DevelopmentRealtimeSafetyPorts.class,
-		RealtimeInfrastructureConfiguration.class
-	};
 
 	@Test
 	@DisplayName("운영 계열 프로필은 TOPIS와 JDBC 포트 및 archive executor를 정확히 하나씩 조립한다")
 	void productionProfilesComposeExactlyOneRealtimePath() {
 		for (String profile : new String[] {"prod", "staging", "release", "prod-like"}) {
-			productionRunner(profile, PRODUCTION_COMPONENTS).run(context -> {
+			realtimeRunner(profile, ProductionDependencies.class).run(context -> {
 				assertThat(context).hasNotFailed();
 				assertThat(context.getBeanNamesForType(RealtimeGatewayService.class))
 					.containsExactly("realtimeGatewayService");
@@ -67,7 +51,12 @@ class RealtimeProductionCompositionTest {
 					.containsExactly("jdbcRealtimeProviderCallQuotaRepository");
 				assertThat(context.getBean(RealtimeProviderCallQuotaPort.class))
 					.isInstanceOf(JdbcRealtimeProviderCallQuotaRepository.class);
-				assertThat(context.getBeanNamesForType(Executor.class)).containsExactly("realtimeArchiveExecutor");
+				Executor archiveExecutor = context.getBean("realtimeArchiveExecutor", Executor.class);
+				assertThat(archiveExecutor).isInstanceOf(ThreadPoolTaskExecutor.class);
+				assertThat(ReflectionTestUtils.getField(
+					context.getBean(RealtimeGatewayService.class),
+					"archiveExecutor"
+				)).isSameAs(archiveExecutor);
 				assertThat(context.getBean(RealtimeArrivalArchivePort.class))
 					.isNotSameAs(RealtimeArrivalArchivePort.NO_OP);
 				assertThat(context).doesNotHaveBean(DevelopmentRealtimeSafetyPorts.class);
@@ -80,7 +69,7 @@ class RealtimeProductionCompositionTest {
 	@DisplayName("default·dev·test 프로필은 JDBC 대신 development archive·quota 포트만 조립한다")
 	void developmentProfilesUseOnlyDevelopmentSafetyPortsForArchiveAndQuota() {
 		for (String profile : new String[] {"default", "dev", "test"}) {
-			developmentRunner(profile).run(context -> {
+			realtimeRunner(profile, DevelopmentDependencies.class).run(context -> {
 				assertThat(context).hasNotFailed();
 				assertThat(context).hasSingleBean(RealtimeGatewayService.class);
 				assertThat(context.getBeanNamesForType(RealtimeMappingPort.class))
@@ -102,12 +91,15 @@ class RealtimeProductionCompositionTest {
 	void missingProductionDependencyFailsContext() {
 		for (Class<?> dependency : new Class<?>[] {
 			TopisRealtimeProvider.class,
+			RealtimeProviderControl.class,
 			JdbcRealtimeMappingRepository.class,
 			JdbcRealtimeArrivalArchiveRepository.class,
 			JdbcRealtimeProviderCallQuotaRepository.class,
 			RealtimeInfrastructureConfiguration.class
 		}) {
-			productionRunner("prod", withoutProductionComponent(dependency)).run(context ->
+			realtimeRunner("prod", ProductionDependencies.class)
+				.withClassLoader(new FilteredClassLoader(dependency))
+				.run(context ->
 				assertThat(context).hasFailed()
 			);
 		}
@@ -123,34 +115,32 @@ class RealtimeProductionCompositionTest {
 			DuplicateQuotaConfiguration.class,
 			DuplicateArchiveExecutorConfiguration.class
 		}) {
-			productionRunner("prod", withProductionComponent(duplicate)).run(context ->
+			realtimeRunner("prod", ProductionDependencies.class, duplicate).run(context ->
 				assertThat(context).hasFailed()
 			);
 		}
 	}
 
-	private ApplicationContextRunner productionRunner(String profile, Class<?>... components) {
+	private ApplicationContextRunner realtimeRunner(
+		String profile,
+		Class<?> dependencies,
+		Class<?>... additionalConfigurations
+	) {
 		return new ApplicationContextRunner()
-			.withUserConfiguration(components)
+			.withUserConfiguration(RealtimeComponentScan.class, dependencies)
+			.withUserConfiguration(additionalConfigurations)
 			.withPropertyValues("spring.profiles.active=" + profile);
 	}
 
-	private ApplicationContextRunner developmentRunner(String profile) {
-		return new ApplicationContextRunner()
-			.withUserConfiguration(DEVELOPMENT_COMPONENTS)
-			.withPropertyValues("spring.profiles.active=" + profile);
-	}
-
-	private Class<?>[] withoutProductionComponent(Class<?> component) {
-		return Arrays.stream(PRODUCTION_COMPONENTS)
-			.filter(candidate -> candidate != component)
-			.toArray(Class<?>[]::new);
-	}
-
-	private Class<?>[] withProductionComponent(Class<?> component) {
-		Class<?>[] components = Arrays.copyOf(PRODUCTION_COMPONENTS, PRODUCTION_COMPONENTS.length + 1);
-		components[components.length - 1] = component;
-		return components;
+	@TestConfiguration(proxyBeanMethods = false)
+	@ComponentScan(
+		basePackages = {
+			"com.easysubway.realtime.application",
+			"com.easysubway.realtime.adapter.out.persistence"
+		},
+		excludeFilters = @ComponentScan.Filter(type = FilterType.ANNOTATION, classes = TestComponent.class)
+	)
+	static class RealtimeComponentScan {
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)
