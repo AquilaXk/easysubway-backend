@@ -137,8 +137,8 @@ class RealtimeGatewayServiceTest {
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
 
-		service.arrivals(sangnoksuQuery());
-		service.trainPositions(line4Query());
+		RealtimeArrivalResult initialArrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult initialPositions = service.trainPositions(line4Query());
 		clock.instant = Instant.parse("2026-06-26T08:00:20Z");
 		RealtimeArrivalResult arrivalAtTtl = service.arrivals(sangnoksuQuery());
 		RealtimeTrainPositionResult positionAtTtl = service.trainPositions(line4Query());
@@ -149,8 +149,16 @@ class RealtimeGatewayServiceTest {
 
 		assertThat(arrivalAtTtl.status()).hasToString("FRESH");
 		assertThat(positionAtTtl.status()).hasToString("FRESH");
+		assertThat(arrivalAtTtl.receivedAt()).isEqualTo(initialArrivals.receivedAt());
+		assertThat(arrivalAtTtl.arrivals()).isEqualTo(initialArrivals.arrivals());
+		assertThat(positionAtTtl.receivedAt()).isEqualTo(initialPositions.receivedAt());
+		assertThat(positionAtTtl.trainPositions()).isEqualTo(initialPositions.trainPositions());
 		assertThat(arrivalAfterTtl.status()).hasToString("FRESH");
 		assertThat(positionAfterTtl.status()).hasToString("FRESH");
+		assertThat(arrivalAfterTtl.receivedAt()).isEqualTo("2026-06-26T08:00:21Z");
+		assertThat(arrivalAfterTtl.receivedAt()).isNotEqualTo(initialArrivals.receivedAt());
+		assertThat(positionAfterTtl.receivedAt()).isEqualTo("2026-06-26T08:00:21Z");
+		assertThat(positionAfterTtl.receivedAt()).isNotEqualTo(initialPositions.receivedAt());
 		assertThat(provider.arrivalCalls).hasValue(2);
 		assertThat(provider.trainPositionCalls).hasValue(2);
 	}
