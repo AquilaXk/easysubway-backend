@@ -2367,7 +2367,7 @@ test('CI dispatch는 owner 수동 진단 전용이고 배포 producer dispatch�
     (ciWorkflow.match(/^ {4}name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length,
     2,
   );
-  assert.ok(dispatchOsvJob.includes('--new=${{ runner.temp }}/results.json'));
+  assert.ok(dispatchOsvJob.includes('--new=/github/runner_temp/results.json'));
   assert.ok(dispatchOsvJob.includes('--gh-annotations=false'));
   assert.ok(dispatchOsvJob.includes('--fail-on-vuln=true'));
 
