@@ -4,7 +4,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { validateEvidence, validateExcludeFilter, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
+import { safeProject, validateEvidence, validateExcludeFilter, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const sourcePath = 'backend/src/main/java/com/example/Example.java';
@@ -26,7 +26,7 @@ const policy = () => ({
 });
 const xml = () => '<?xml version="1.0" encoding="UTF-8"?><!-- current SpotBugs report --><BugCollection><BugInstance type="EI_EXPOSE_REP" category="MALICIOUS_CODE" priority="2" rank="18"><Class classname="com.example.Example"/><Method name="&lt;init&gt;" signature="()V"/><SourceLine sourcepath="com/example/Example.java" start="2" end="2"/></BugInstance><Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>';
 const evidence = (dir) => ({
-  schemaVersion: 1, gradle: { version: '8.14.3' }, plugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: 'example.Plugin', implementationPath: join(dir, 'plugin.jar'), implementationSha256: digest('plugin') }, engine: { toolVersion: '4.9.8', classpath: [{ component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }] }, java: { requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: 'Eclipse Temurin', languageVersion: 21, runtimeVersion: '21.0.8+9', jvmVersion: '21.0.8+9', installationPath: dir, launcherPath: join(dir, 'bin/java'), launcherSha256: digest('java') }, task: { name: 'spotbugsMain', path: ':spotbugsMain', type: 'com.github.spotbugs.snom.SpotBugsTask', ignoreFailures: true, sourceDirs: [{ path: join(dir, 'backend/src/main/java'), repositoryPath: 'backend/src/main/java' }], classDirs: [{ path: join(dir, 'backend/build/classes/java/main'), repositoryPath: 'backend/build/classes/java/main' }], sources: [{ path: join(dir, sourcePath), repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classes: [{ path: join(dir, 'backend/build/classes/java/main/com/example/Example.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example.class', sha256: digest('class') }], auxClassPaths: [{ component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }], excludeFilter: 'backend/quality/spotbugs-exclude.xml', xmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.xml', htmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.html' }
+  schemaVersion: 1, gradle: { version: '8.14.3' }, plugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: 'example.Plugin', implementationPath: join(dir, 'plugin.jar'), implementationSha256: digest('plugin') }, engine: { toolVersion: '4.9.8', classpath: [{ component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }] }, java: { requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: 'Eclipse Temurin', languageVersion: 21, runtimeVersion: '21.0.8+9', jvmVersion: '21.0.8+9', installationPath: dir, launcherPath: join(dir, 'bin/java'), launcherSha256: digest('java') }, task: { name: 'spotbugsMain', path: ':spotbugsMain', declaredType: 'com.github.spotbugs.snom.SpotBugsTask', runtimeType: 'com.github.spotbugs.snom.SpotBugsTask_Decorated', runtimeTypeAssignableToDeclared: true, ignoreFailures: true, sourceDirs: [{ path: join(dir, 'backend/src/main/java'), repositoryPath: 'backend/src/main/java' }], classDirs: [{ path: join(dir, 'backend/build/classes/java/main'), repositoryPath: 'backend/build/classes/java/main' }], sources: [{ path: join(dir, sourcePath), repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classes: [{ path: join(dir, 'backend/build/classes/java/main/com/example/Example.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example.class', sha256: digest('class') }], auxClassPaths: [{ component: 'x:y:1', artifact: 'aux.jar', path: join(dir, 'aux.jar'), sha256: digest('aux') }], pluginJarFiles: [{ component: 'x:detector:1', artifact: 'detector.jar', path: join(dir, 'detector.jar'), sha256: digest('detector') }], excludeFilter: 'backend/quality/spotbugs-exclude.xml', xmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.xml', htmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.html' }
 });
 
 test('closed phase-one policy has empty findings and rejects reviewed or expired states', () => {
@@ -39,10 +39,19 @@ test('closed phase-one policy has empty findings and rejects reviewed or expired
 test('Gradle evidence is authoritative and internal paths are rehashed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'spotbugs-evidence-'));
   try {
-    writeFileSync(join(dir, 'plugin.jar'), 'plugin'); writeFileSync(join(dir, 'engine.jar'), 'engine'); mkdirSync(join(dir, 'bin')); writeFileSync(join(dir, 'bin/java'), 'java'); mkdirSync(join(dir, 'backend/src/main/java/com/example'), { recursive: true }); mkdirSync(join(dir, 'backend/build/classes/java/main/com/example'), { recursive: true }); writeFileSync(join(dir, sourcePath), 'a\nb\nc\n'); writeFileSync(join(dir, 'backend/build/classes/java/main/com/example/Example.class'), 'class');
+    writeFileSync(join(dir, 'plugin.jar'), 'plugin'); writeFileSync(join(dir, 'engine.jar'), 'engine'); writeFileSync(join(dir, 'aux.jar'), 'aux'); writeFileSync(join(dir, 'detector.jar'), 'detector'); mkdirSync(join(dir, 'bin')); writeFileSync(join(dir, 'bin/java'), 'java'); mkdirSync(join(dir, 'backend/src/main/java/com/example'), { recursive: true }); mkdirSync(join(dir, 'backend/build/classes/java/main/com/example'), { recursive: true }); writeFileSync(join(dir, sourcePath), 'a\nb\nc\n'); writeFileSync(join(dir, 'backend/build/classes/java/main/com/example/Example.class'), 'class');
     assert.equal(validateEvidence(evidence(dir), policy(), dir), true);
     const wrongVendor = evidence(dir); wrongVendor.java.vendorMatchesRequestedSpec = false;
     assert.throws(() => validateEvidence(wrongVendor, policy(), dir), /Adoptium/);
+    const wrongTaskType = evidence(dir); wrongTaskType.task.runtimeTypeAssignableToDeclared = false;
+    assert.throws(() => validateEvidence(wrongTaskType, policy(), dir), /task evidence mismatch/);
+    const missingDetector = evidence(dir); rmSync(join(dir, 'detector.jar'));
+    assert.throws(() => validateEvidence(missingDetector, policy(), dir), /external plugins is missing/);
+    writeFileSync(join(dir, 'detector.jar'), 'detector');
+    const duplicateDetector = evidence(dir); duplicateDetector.task.pluginJarFiles.push({ ...duplicateDetector.task.pluginJarFiles[0] });
+    assert.throws(() => validateEvidence(duplicateDetector, policy(), dir), /duplicate SpotBugs external plugins/);
+    const overlappingGraph = evidence(dir); overlappingGraph.task.pluginJarFiles = [{ ...overlappingGraph.task.pluginJarFiles[0], component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }];
+    assert.throws(() => validateEvidence(overlappingGraph, policy(), dir), /graphs overlap/);
     writeFileSync(join(dir, 'plugin.jar'), 'tampered');
     assert.throws(() => validateEvidence(evidence(dir), policy(), dir), /stale/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -89,7 +98,7 @@ test('workflow preserves #87 and uploads exactly four Phase-1 files before final
   assert.match(workflow, /cp build\/spotbugs\/spotbugsMain-evidence\.json/);
 });
 
-test('Gradle binds SpotBugs 6.2.2 public launcher and keeps engine and auxiliary artifact ownership separate', () => {
+test('Gradle binds SpotBugs 6.2.2 public launcher and keeps engine, auxiliary, and detector-plugin artifact ownership separate', () => {
   const build = readFileSync(new URL('../../backend/build.gradle', import.meta.url), 'utf8');
   assert.match(build, /\blauncher = javaToolchains\.launcherFor/);
   assert.match(build, /task\.launcher\.get\(\)\.metadata/);
@@ -99,10 +108,36 @@ test('Gradle binds SpotBugs 6.2.2 public launcher and keeps engine and auxiliary
   assert.match(build, /mergeArtifactMaps\('SpotBugs task engine'/);
   assert.match(build, /existing != null && existing != identity/);
   assert.match(build, /artifactMap\(configurations\.compileClasspath, 'SpotBugs auxiliary classpath'\)/);
+  assert.match(build, /artifactMap\(configurations\.spotbugsPlugins, 'SpotBugs external plugins'\)/);
   assert.match(build, /task\.spotbugsClasspath\.files, engineArtifacts/);
   assert.match(build, /task\.auxClassPaths\.files, auxiliaryArtifacts/);
-  assert.doesNotMatch(build, /artifactMap\(configurations\.spotbugsPlugins/);
+  assert.match(build, /task\.pluginJarFiles\.files, pluginArtifacts/);
+  assert.match(build, /exactArtifactFiles\(task\.spotbugsClasspath\.files, engineArtifacts/);
+  assert.match(build, /exactArtifactFiles\(task\.auxClassPaths\.files, auxiliaryArtifacts/);
+  assert.match(build, /exactArtifactFiles\(task\.pluginJarFiles\.files, pluginArtifacts/);
+  assert.match(build, /assertDisjoint\('SpotBugs engine', engineArtifacts, 'SpotBugs auxiliary classpath', auxiliaryArtifacts\)/);
+  assert.match(build, /assertDisjoint\('SpotBugs engine', engineArtifacts, 'SpotBugs external plugins', pluginArtifacts\)/);
+  assert.match(build, /assertDisjoint\('SpotBugs auxiliary classpath', auxiliaryArtifacts, 'SpotBugs external plugins', pluginArtifacts\)/);
+  assert.match(build, /def declaredTaskType = com\.github\.spotbugs\.snom\.SpotBugsTask/);
+  assert.match(build, /declaredTaskType\.isAssignableFrom\(task\.class\)/);
+  assert.doesNotMatch(build, /SpotBugsTask\$/);
   assert.match(build, /def taskClasses = task\.classes/);
   assert.match(build, /taskClasses\.asFileTree\.files/);
   assert.doesNotMatch(build, /task\.javaLauncher/);
+});
+
+test('sanitized analyzer projection preserves exact Java proof and source identities', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'spotbugs-projection-'));
+  try {
+    writeFileSync(join(dir, 'plugin.jar'), 'plugin'); writeFileSync(join(dir, 'engine.jar'), 'engine'); writeFileSync(join(dir, 'aux.jar'), 'aux'); writeFileSync(join(dir, 'detector.jar'), 'detector'); mkdirSync(join(dir, 'bin')); writeFileSync(join(dir, 'bin/java'), 'java'); mkdirSync(join(dir, 'backend/src/main/java/com/example'), { recursive: true }); mkdirSync(join(dir, 'backend/build/classes/java/main/com/example'), { recursive: true }); writeFileSync(join(dir, sourcePath), 'a\nb\nc\n'); writeFileSync(join(dir, 'backend/build/classes/java/main/com/example/Example.class'), 'class');
+    const current = evidence(dir); assert.equal(validateEvidence(current, policy(), dir), true);
+    const projected = safeProject(current);
+    assert.deepEqual(Object.keys(projected.java), ['requestedVendor', 'vendorMatchesRequestedSpec', 'vendor', 'languageVersion', 'runtimeVersion', 'jvmVersion', 'launcherSha256']);
+    assert.deepEqual(Object.keys(projected.task), ['name', 'path', 'declaredType', 'runtimeType', 'runtimeTypeAssignableToDeclared', 'ignoreFailures', 'sourceDirs', 'classDirs', 'sources', 'classes', 'auxClassPaths', 'pluginJarFiles', 'excludeFilter', 'xmlOutput', 'htmlOutput']);
+    assert.deepEqual(projected.task.sources, [{ path: sourcePath, sha256: digest('a\nb\nc\n') }]);
+    const missingJavaProof = evidence(dir); delete missingJavaProof.java.requestedVendor;
+    assert.throws(() => validateEvidence(missingJavaProof, policy(), dir), /Java evidence key order/);
+    const missingSources = evidence(dir); delete missingSources.task.sources;
+    assert.throws(() => validateEvidence(missingSources, policy(), dir), /task evidence key order/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
 });
