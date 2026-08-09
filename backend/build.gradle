@@ -186,6 +186,8 @@ tasks.register('writeSpotbugsMainEvidence') {
 
 	doLast {
 		def task = spotbugsMain.get()
+		def declaredTaskType = com.github.spotbugs.snom.SpotBugsTask
+		if (!declaredTaskType.isAssignableFrom(task.class)) throw new GradleException("spotbugsMain runtime type is not assignable to ${declaredTaskType.name}: ${task.class.name}")
 		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
 		def repositoryPath = { value -> "backend/${project.relativePath(value).replace('\\', '/')}" }
 		def directoryEntries = { values -> values.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it)] }.sort { it.repositoryPath } }
@@ -220,6 +222,19 @@ tasks.register('writeSpotbugsMainEvidence') {
 			if (item == null) throw new GradleException("unmapped ${label} input: ${canonical}")
 			[component: item.component, artifact: item.artifact, path: canonical.canonicalPath, sha256: hash(canonical)]
 		}.sort { "${it.component}/${it.artifact}" } }
+		def exactArtifactFiles = { values, mapped, label ->
+			def entries = artifactFiles(values, mapped, label)
+			def taskFiles = values.collect { file ->
+				if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
+				file.canonicalFile
+			}.toSet()
+			if (taskFiles != mapped.keySet()) throw new GradleException("${label} task inputs do not exactly match resolved artifacts")
+			entries
+		}
+		def assertDisjoint = { leftLabel, left, rightLabel, right ->
+			def overlap = left.keySet().find { right.containsKey(it) }
+			if (overlap != null) throw new GradleException("${leftLabel} and ${rightLabel} overlap: ${overlap}")
+		}
 		def expandedFiles = { directories, pattern -> directories.collectMany { fileTree(it).matching { include pattern }.files }.toSet().toList() }
 		def plugin = plugins.getPlugin('com.github.spotbugs')
 		def pluginJar = new File(plugin.class.protectionDomain.codeSource.location.toURI())
@@ -233,6 +248,10 @@ tasks.register('writeSpotbugsMainEvidence') {
 			artifactMap(configurations.spotbugsSlf4j, 'SpotBugs SLF4J provider'),
 		])
 		def auxiliaryArtifacts = artifactMap(configurations.compileClasspath, 'SpotBugs auxiliary classpath')
+		def pluginArtifacts = artifactMap(configurations.spotbugsPlugins, 'SpotBugs external plugins')
+		assertDisjoint('SpotBugs engine', engineArtifacts, 'SpotBugs auxiliary classpath', auxiliaryArtifacts)
+		assertDisjoint('SpotBugs engine', engineArtifacts, 'SpotBugs external plugins', pluginArtifacts)
+		assertDisjoint('SpotBugs auxiliary classpath', auxiliaryArtifacts, 'SpotBugs external plugins', pluginArtifacts)
 		def output = spotbugsMainEvidence.get().asFile
 		output.parentFile.mkdirs()
 		def sourceDirs = task.sourceDirs.files.toList()
@@ -242,7 +261,7 @@ tasks.register('writeSpotbugsMainEvidence') {
 		if (taskClasses == null) throw new GradleException('spotbugsMain classes input is unavailable')
 		def compiledClasses = taskClasses.asFileTree.files.toList()
 		if (compiledClasses.isEmpty() || compiledClasses.any { !it.isFile() || !it.name.endsWith('.class') } || compiledClasses.any { candidate -> !classDirs.any { directory -> candidate.canonicalPath.startsWith(directory.canonicalPath + File.separator) } }) throw new GradleException('spotbugsMain classes input does not match compiled class directories')
-		output.setText(groovy.json.JsonOutput.toJson([schemaVersion: 1, gradle: [version: gradle.gradleVersion], plugin: [id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: plugin.class.name, implementationPath: pluginJar.canonicalPath, implementationSha256: hash(pluginJar)], engine: [toolVersion: spotbugs.toolVersion.get(), classpath: artifactFiles(task.spotbugsClasspath.files, engineArtifacts, 'SpotBugs engine')], java: [requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: launcher.vendor.toString(), languageVersion: launcher.languageVersion.asInt(), runtimeVersion: launcher.javaRuntimeVersion, jvmVersion: launcher.jvmVersion, installationPath: launcher.installationPath.asFile.canonicalPath, launcherPath: new File(launcher.installationPath.asFile, 'bin/java').canonicalPath, launcherSha256: hash(new File(launcher.installationPath.asFile, 'bin/java'))], task: [name: task.name, path: task.path, type: task.class.name, ignoreFailures: task.ignoreFailures, sourceDirs: directoryEntries(sourceDirs), classDirs: directoryEntries(classDirs), sources: fileEntries(expandedFiles(sourceDirs, '**/*.java')), classes: fileEntries(compiledClasses), auxClassPaths: artifactFiles(task.auxClassPaths.files, auxiliaryArtifacts, 'SpotBugs auxiliary classpath'), excludeFilter: repositoryPath(excludeFilter), xmlOutput: repositoryPath(xmlReport), htmlOutput: repositoryPath(htmlReport)]]) + '\n', 'UTF-8')
+		output.setText(groovy.json.JsonOutput.toJson([schemaVersion: 1, gradle: [version: gradle.gradleVersion], plugin: [id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: plugin.class.name, implementationPath: pluginJar.canonicalPath, implementationSha256: hash(pluginJar)], engine: [toolVersion: spotbugs.toolVersion.get(), classpath: exactArtifactFiles(task.spotbugsClasspath.files, engineArtifacts, 'SpotBugs engine')], java: [requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: launcher.vendor.toString(), languageVersion: launcher.languageVersion.asInt(), runtimeVersion: launcher.javaRuntimeVersion, jvmVersion: launcher.jvmVersion, installationPath: launcher.installationPath.asFile.canonicalPath, launcherPath: new File(launcher.installationPath.asFile, 'bin/java').canonicalPath, launcherSha256: hash(new File(launcher.installationPath.asFile, 'bin/java'))], task: [name: task.name, path: task.path, declaredType: declaredTaskType.name, runtimeType: task.class.name, runtimeTypeAssignableToDeclared: true, ignoreFailures: task.ignoreFailures, sourceDirs: directoryEntries(sourceDirs), classDirs: directoryEntries(classDirs), sources: fileEntries(expandedFiles(sourceDirs, '**/*.java')), classes: fileEntries(compiledClasses), auxClassPaths: exactArtifactFiles(task.auxClassPaths.files, auxiliaryArtifacts, 'SpotBugs auxiliary classpath'), pluginJarFiles: exactArtifactFiles(task.pluginJarFiles.files, pluginArtifacts, 'SpotBugs external plugins'), excludeFilter: repositoryPath(excludeFilter), xmlOutput: repositoryPath(xmlReport), htmlOutput: repositoryPath(htmlReport)]]) + '\n', 'UTF-8')
 	}
 }
 
