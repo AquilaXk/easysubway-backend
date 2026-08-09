@@ -570,7 +570,8 @@ public class RealtimeGatewayService {
 	}
 
 	private boolean isProviderFresh(Instant providerReceivedAt, Instant receivedAt) {
-		return Duration.between(providerReceivedAt, receivedAt).compareTo(PROVIDER_FRESHNESS_TTL) <= 0;
+		Duration age = Duration.between(providerReceivedAt, receivedAt);
+		return !age.isNegative() && age.compareTo(PROVIDER_FRESHNESS_TTL) <= 0;
 	}
 
 	private Instant parseProviderReceivedAt(String providerReceivedAt) {
@@ -669,7 +670,8 @@ public class RealtimeGatewayService {
 	}
 
 	private boolean isFresh(java.time.Instant cachedAt) {
-		return Duration.between(cachedAt, clock.instant()).compareTo(CACHE_TTL) <= 0;
+		Duration age = Duration.between(cachedAt, clock.instant());
+		return !age.isNegative() && age.compareTo(CACHE_TTL) <= 0;
 	}
 
 	private boolean isQuotaCircuitOpen() {
