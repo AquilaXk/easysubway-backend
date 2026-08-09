@@ -248,7 +248,7 @@ public class RealtimeGatewayService {
 		);
 		cacheKey = "%s:%d".formatted(cacheKey, normalizedQuery.cacheVersion());
 		CachedArrival cached = arrivalCache.get(cacheKey);
-		if (cached != null && isFresh(cached.cachedAt())) {
+		if (cached != null && canReuseCache(arrivalCache, cacheKey, cached, cached.cachedAt())) {
 			return recordArrivalResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
@@ -331,7 +331,7 @@ public class RealtimeGatewayService {
 			normalizedQuery.cacheVersion()
 		);
 		CachedTrainPosition cached = trainPositionCache.get(cacheKey);
-		if (cached != null && isFresh(cached.cachedAt())) {
+		if (cached != null && canReuseCache(trainPositionCache, cacheKey, cached, cached.cachedAt())) {
 			return recordTrainPositionResult(cached.result());
 		}
 		if (isQuotaCircuitOpen()) {
@@ -669,9 +669,13 @@ public class RealtimeGatewayService {
 		return mapping.matchesProviderLine(query.providerLineId());
 	}
 
-	private boolean isFresh(java.time.Instant cachedAt) {
+	private <T> boolean canReuseCache(Map<String, T> cache, String cacheKey, T cached, java.time.Instant cachedAt) {
 		Duration age = Duration.between(cachedAt, clock.instant());
-		return !age.isNegative() && age.compareTo(CACHE_TTL) <= 0;
+		if (age.isNegative()) {
+			cache.remove(cacheKey, cached);
+			return false;
+		}
+		return age.compareTo(CACHE_TTL) <= 0;
 	}
 
 	private boolean isQuotaCircuitOpen() {

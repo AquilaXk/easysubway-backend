@@ -176,13 +176,20 @@ class RealtimeGatewayServiceTest {
 		provider.failureCode = "PROVIDER_ERROR";
 		RealtimeArrivalResult arrivals = service.arrivals(sangnoksuQuery());
 		RealtimeTrainPositionResult positions = service.trainPositions(line4Query());
+		clock.instant = Instant.parse("2026-06-26T08:00:00Z");
+		RealtimeArrivalResult arrivalsAfterClockRecovery = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult positionsAfterClockRecovery = service.trainPositions(line4Query());
 
 		assertThat(arrivals.status()).hasToString("UNAVAILABLE");
 		assertThat(arrivals.arrivals()).isEmpty();
 		assertThat(positions.status()).hasToString("UNAVAILABLE");
 		assertThat(positions.trainPositions()).isEmpty();
-		assertThat(provider.arrivalCalls).hasValue(2);
-		assertThat(provider.trainPositionCalls).hasValue(2);
+		assertThat(arrivalsAfterClockRecovery.status()).hasToString("UNAVAILABLE");
+		assertThat(arrivalsAfterClockRecovery.arrivals()).isEmpty();
+		assertThat(positionsAfterClockRecovery.status()).hasToString("UNAVAILABLE");
+		assertThat(positionsAfterClockRecovery.trainPositions()).isEmpty();
+		assertThat(provider.arrivalCalls).hasValue(3);
+		assertThat(provider.trainPositionCalls).hasValue(3);
 	}
 
 	@Test
@@ -195,7 +202,7 @@ class RealtimeGatewayServiceTest {
 
 		RealtimeArrivalResult futureArrivals = service.arrivals(sangnoksuQuery());
 		RealtimeTrainPositionResult futurePositions = service.trainPositions(line4Query());
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		clock.instant = Instant.parse("2026-06-26T08:00:01Z");
 		provider.providerReceivedAt = clock.instant.toString();
 		RealtimeArrivalResult correctedArrivals = service.arrivals(sangnoksuQuery());
 		RealtimeTrainPositionResult correctedPositions = service.trainPositions(line4Query());
