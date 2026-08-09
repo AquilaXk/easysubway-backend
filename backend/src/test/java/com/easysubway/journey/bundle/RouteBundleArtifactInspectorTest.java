@@ -101,10 +101,12 @@ class RouteBundleArtifactInspectorTest {
 
 	@Test
 	void rejectsZeroByteComponentAsPayloadPathSetMismatch() {
-		var payloads = payloads();
-		var manifest = manifest(payloads);
-		payloads.put(TOPOLOGY, new byte[0]);
-		assertReason(payloads, manifest, RouteBundleInspectionException.Reason.PAYLOAD_PATH_SET_MISMATCH);
+		for (var componentPath : List.of(TOPOLOGY, TIMETABLE, ACCESSIBILITY, FARE)) {
+			var payloads = payloads();
+			var manifest = manifest(payloads);
+			payloads.put(componentPath, new byte[0]);
+			assertReason(payloads, manifest, RouteBundleInspectionException.Reason.PAYLOAD_PATH_SET_MISMATCH);
+		}
 	}
 
 	@Test
