@@ -83,6 +83,7 @@ test('exclude filter is exactly the one policy-owned Class matcher', () => {
 test('workflow preserves #87 and uploads exactly four Phase-1 files before final enforcement', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.equal(validateWorkflow(workflow), true);
+  assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
   assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        shell: bash\n        working-directory: backend/);
   assert.match(workflow, /\.\/gradlew writeSpotbugsMainEvidence --no-daemon/);
   assert.match(workflow, /cp build\/spotbugs\/spotbugsMain-evidence\.json/);
