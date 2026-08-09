@@ -131,6 +131,78 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("cache는 정확히 20초까지 재사용하고 그 뒤에는 arrivals와 열차 위치를 새로 조회한다")
+	void cacheFreshnessIncludesExactTtlButExcludesOlderResults() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		service.arrivals(sangnoksuQuery());
+		service.trainPositions(line4Query());
+		clock.instant = Instant.parse("2026-06-26T08:00:20Z");
+		RealtimeArrivalResult arrivalAtTtl = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult positionAtTtl = service.trainPositions(line4Query());
+		clock.instant = Instant.parse("2026-06-26T08:00:21Z");
+		provider.providerReceivedAt = clock.instant.toString();
+		RealtimeArrivalResult arrivalAfterTtl = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult positionAfterTtl = service.trainPositions(line4Query());
+
+		assertThat(arrivalAtTtl.status()).hasToString("FRESH");
+		assertThat(positionAtTtl.status()).hasToString("FRESH");
+		assertThat(arrivalAfterTtl.status()).hasToString("FRESH");
+		assertThat(positionAfterTtl.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(provider.trainPositionCalls).hasValue(2);
+	}
+
+	@Test
+	@DisplayName("clock rollback은 prior arrivals와 열차 위치 cache를 재사용하지 않고 provider 실패를 unavailable로 닫는다")
+	void clockRollbackDoesNotReuseCachedResults() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		service.arrivals(sangnoksuQuery());
+		service.trainPositions(line4Query());
+		clock.instant = Instant.parse("2026-06-26T07:59:59Z");
+		provider.failureCode = "PROVIDER_ERROR";
+		RealtimeArrivalResult arrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult positions = service.trainPositions(line4Query());
+
+		assertThat(arrivals.status()).hasToString("UNAVAILABLE");
+		assertThat(arrivals.arrivals()).isEmpty();
+		assertThat(positions.status()).hasToString("UNAVAILABLE");
+		assertThat(positions.trainPositions()).isEmpty();
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(provider.trainPositionCalls).hasValue(2);
+	}
+
+	@Test
+	@DisplayName("future-dated provider 관측은 cache하지 않고 unavailable이며 정상 시각 관측만 새 cache를 만든다")
+	void futureDatedProviderObservationsAreUnavailableAndNotCached() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+		provider.providerReceivedAt = "2026-06-26T08:00:01Z";
+
+		RealtimeArrivalResult futureArrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult futurePositions = service.trainPositions(line4Query());
+		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
+		provider.providerReceivedAt = clock.instant.toString();
+		RealtimeArrivalResult correctedArrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult correctedPositions = service.trainPositions(line4Query());
+
+		assertThat(futureArrivals.status()).hasToString("UNAVAILABLE");
+		assertThat(futureArrivals.arrivals()).isEmpty();
+		assertThat(futurePositions.status()).hasToString("UNAVAILABLE");
+		assertThat(futurePositions.trainPositions()).isEmpty();
+		assertThat(correctedArrivals.status()).hasToString("FRESH");
+		assertThat(correctedPositions.status()).hasToString("FRESH");
+		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(provider.trainPositionCalls).hasValue(2);
+	}
+
+	@Test
 	@DisplayName("fresh provider 도착 관측은 한 번 보존하고 cache hit에서는 추가 저장하지 않는다")
 	void archivesFreshArrivalsWithoutExtraProviderCalls() {
 		CountingProvider provider = new CountingProvider();
@@ -1152,6 +1224,19 @@ class RealtimeGatewayServiceTest {
 
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock) {
 		return service(provider, clock, InMemoryRealtimeMappingPort.seededFixture());
+	}
+
+	private RealtimeGatewayService serviceWithAlwaysAvailableQuota(RealtimeProvider provider, Clock clock) {
+		return new RealtimeGatewayService(
+			provider,
+			clock,
+			InMemoryRealtimeMappingPort.seededFixture(),
+			new RealtimeProviderControl(),
+			RealtimeArrivalArchivePort.NO_OP,
+			(providerId, now, zone, perMinute, perDay) -> true,
+			1,
+			800
+		);
 	}
 
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
