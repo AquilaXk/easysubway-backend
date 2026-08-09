@@ -1,0 +1,49 @@
+{
+  "schemaVersion": 1,
+  "gateId": "backend-ci-execution-control",
+  "issue": "https://github.com/AquilaXk/easysubway-backend/issues/87",
+  "requiredContext": "Dependency Vulnerability Scan / osv-scan",
+  "events": {
+    "pull_request": {
+      "group": "${{ github.workflow }}-${{ github.event.repository.full_name }}-pr-${{ github.event.pull_request.number }}",
+      "cancelInProgress": true
+    },
+    "push": {
+      "branch": "main",
+      "group": "${{ github.workflow }}-push-${{ github.run_id }}",
+      "cancelInProgress": false
+    },
+    "workflow_dispatch": {
+      "group": "${{ github.workflow }}-workflow_dispatch-${{ github.run_id }}",
+      "cancelInProgress": false,
+      "operatorOnly": true
+    }
+  },
+  "timeouts": {
+    "backendCiMinutes": 30,
+    "osvMinutes": 10
+  },
+  "durationEvidence": {
+    "representativeRuns": [
+      { "run": 31289484933, "event": "pull_request", "backendCi": "11m57s", "osv": "24s", "gradleCache": "hit" },
+      { "run": 31288974058, "event": "pull_request", "backendCi": "10m07s", "osv": "30s", "gradleCache": "hit" },
+      { "run": 31275736279, "event": "push", "backendCi": "11m03s", "osv": "unknown", "gradleCache": "hit" }
+    ],
+    "cacheMiss": "unknown",
+    "reviewTrigger": {
+      "representativeGreenCacheMissRuns": 3,
+      "backendCiOverMinutes": 20,
+      "osvOverMinutes": 5,
+      "normalRunTimeout": true
+    }
+  },
+  "osv": {
+    "disposition": "REPLACE_WITH_LOCAL_BOUNDED_EXECUTION",
+    "lockfiles": ["backend/gradle.lockfile", "tools/qa/package-lock.json"],
+    "scannerContinueOnErrorSteps": ["Scan immutable PR base", "Scan tested PR head", "Scan immutable dispatch SHA"],
+    "scanner": "8dc09193bb540e09b23da07ad7e30bd33bf87018",
+    "checkout": "8e8c483db84b4bee98b60c0593521ed34d9990e8",
+    "artifact": "bbbca2ddaa5d8feaa63e36b76fdaad77386f024f",
+    "sarif": "cdefb33c0f6224e58673d9004f47f7cb3e328b89"
+  }
+}

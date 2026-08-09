@@ -2337,7 +2337,7 @@ test('CI는 실제 YAML 파서로 워크플로를 검사한다', async () => {
   assert.match(ciWorkflow, /docker run --rm[\s\S]{0,200}rhysd\/actionlint@sha256:[a-f0-9]{64}/);
 });
 
-test('배포 체인 워크플로는 명시 dispatch에서도 성립한다', async () => {
+test('CI dispatch는 owner 수동 진단 전용이고 배포 producer dispatch는 유지한다', async () => {
   const ciWorkflow = await readFile(ciWorkflowUrl, 'utf8');
   const producerWorkflow = await readFile(producerWorkflowUrl, 'utf8');
 
@@ -2346,30 +2346,26 @@ test('배포 체인 워크플로는 명시 dispatch에서도 성립한다', asyn
   const jobCondition = (workflow, job) =>
     workflow.match(new RegExp(`\\n {2}${job}:\\n(?: {4,}[^\\n]*\\n)*? {4}if: ([^\\n]*)`))?.[1];
 
-  // GITHUB_TOKEN dispatch로 CI를 다시 돌릴 때 required context 두 개가 모두 나와야
-  // update-branch 이후 PR이 병합 가능해진다.
+  // CI dispatch는 automerge recovery가 아닌 owner/operator 수동 진단 전용이다.
   assert.ok(ciWorkflow.includes('  workflow_dispatch:'));
   const osvCondition = jobCondition(ciWorkflow, 'dependency-vulnerability-scan');
   assert.ok(osvCondition, 'osv job condition must stay testable');
   assert.ok(osvCondition.includes("github.event_name == 'pull_request'"));
-  // PR diff 스캔은 PR 컨텍스트에서만 의미가 있다. dispatch에는 GITHUB_BASE_REF가 없어
-  // 같은 트리를 자기 자신과 비교하고 무조건 통과하므로 required context가 형해화된다.
-  assert.ok(!osvCondition.includes('workflow_dispatch'));
+  assert.ok(osvCondition.includes("github.event_name == 'workflow_dispatch'"));
 
-  // dispatch 경로는 base 비교가 필요 없는 전체 스캔으로 같은 context를 만든다.
-  const dispatchOsvCondition = jobCondition(ciWorkflow, 'dependency-vulnerability-scan-dispatch');
-  assert.ok(dispatchOsvCondition, 'dispatch osv job condition must stay testable');
-  assert.ok(dispatchOsvCondition.includes("github.event_name == 'workflow_dispatch'"));
-  assert.ok(!dispatchOsvCondition.includes('pull_request'));
-  const dispatchOsvJob = ciWorkflow.slice(ciWorkflow.indexOf('  dependency-vulnerability-scan-dispatch:'));
-  assert.match(dispatchOsvJob, /uses: google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable\.yml@[0-9a-f]{40}/);
-  assert.ok(!/uses:[^\n]*osv-scanner-reusable-pr\.yml/.test(dispatchOsvJob.slice(0, dispatchOsvJob.indexOf('\n\n  ') + 1 || undefined)));
-  // 두 job 모두 같은 required context 이름을 만들어야 한다.
+  // dispatch는 같은 OSV job 안에서 immutable github.sha 전체 스캔만 수행한다.
+  const osvJob = ciWorkflow.slice(ciWorkflow.indexOf('  dependency-vulnerability-scan:'), ciWorkflow.indexOf('\n  backend:'));
+  assert.doesNotMatch(osvJob, /google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/);
+  assert.ok(osvJob.includes('ref: ${{ github.sha }}'));
+  assert.ok(osvJob.includes('test "$(git rev-parse HEAD)" = "${{ github.sha }}"'));
+  // 단일 job만 workflow name과 결합해 required context를 정확히 만든다.
   assert.equal(
-    (ciWorkflow.match(/^ {4}name: Dependency Vulnerability Scan$/gm) || []).length,
-    2,
+    (ciWorkflow.match(/^ {4}name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length,
+    1,
   );
-  assert.ok(dispatchOsvJob.includes('fail-on-vuln: true'));
+  assert.ok(osvJob.includes('--new=/github/runner_temp/results.json'));
+  assert.ok(osvJob.includes('--gh-annotations=false'));
+  assert.ok(osvJob.includes('--fail-on-vuln=true'));
 
   // GITHUB_TOKEN 병합은 push 이벤트를 만들지 않으므로 producer는 dispatch로도
   // 이미지 job까지 실행돼야 한다.
