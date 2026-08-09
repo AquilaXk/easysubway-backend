@@ -74,6 +74,8 @@ class RealtimeProductionCompositionTest {
 				assertThat(context).hasSingleBean(RealtimeGatewayService.class);
 				assertThat(context.getBeanNamesForType(RealtimeMappingPort.class))
 					.containsExactly("inMemoryRealtimeMappingPort");
+				assertThat(context.getBean(RealtimeMappingPort.class))
+					.isInstanceOf(InMemoryRealtimeMappingPort.class);
 				assertThat(context.getBeanNamesForType(RealtimeArrivalArchivePort.class))
 					.containsExactly("developmentRealtimeSafetyPorts");
 				assertThat(context.getBeanNamesForType(RealtimeProviderCallQuotaPort.class))
