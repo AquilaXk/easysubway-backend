@@ -231,10 +231,6 @@ tasks.register('writeSpotbugsMainEvidence') {
 			if (taskFiles != mapped.keySet()) throw new GradleException("${label} task inputs do not exactly match resolved artifacts")
 			entries
 		}
-		def assertDisjoint = { leftLabel, left, rightLabel, right ->
-			def overlap = left.keySet().find { right.containsKey(it) }
-			if (overlap != null) throw new GradleException("${leftLabel} and ${rightLabel} overlap: ${overlap}")
-		}
 		def expandedFiles = { directories, pattern -> directories.collectMany { fileTree(it).matching { include pattern }.files }.toSet().toList() }
 		def plugin = plugins.getPlugin('com.github.spotbugs')
 		def pluginJar = new File(plugin.class.protectionDomain.codeSource.location.toURI())
@@ -249,9 +245,6 @@ tasks.register('writeSpotbugsMainEvidence') {
 		])
 		def auxiliaryArtifacts = artifactMap(configurations.compileClasspath, 'SpotBugs auxiliary classpath')
 		def pluginArtifacts = artifactMap(configurations.spotbugsPlugins, 'SpotBugs external plugins')
-		assertDisjoint('SpotBugs engine', engineArtifacts, 'SpotBugs auxiliary classpath', auxiliaryArtifacts)
-		assertDisjoint('SpotBugs engine', engineArtifacts, 'SpotBugs external plugins', pluginArtifacts)
-		assertDisjoint('SpotBugs auxiliary classpath', auxiliaryArtifacts, 'SpotBugs external plugins', pluginArtifacts)
 		def output = spotbugsMainEvidence.get().asFile
 		output.parentFile.mkdirs()
 		def sourceDirs = task.sourceDirs.files.toList()

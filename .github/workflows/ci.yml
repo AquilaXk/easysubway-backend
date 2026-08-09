@@ -253,6 +253,8 @@ jobs:
       - name: Validate SpotBugs report and policy
         id: spotbugs_validate
         shell: bash
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'none' }}
         run: |
           set -euo pipefail
           source_sha="$(git rev-parse HEAD)"
@@ -264,6 +266,7 @@ jobs:
             --html backend/build/reports/spotbugs/spotbugsMain.html \
             --evidence "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json" \
             --source-sha "$source_sha" \
+            --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
             --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
             --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
           cp backend/build/reports/spotbugs/spotbugsMain.xml "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.xml"
@@ -291,6 +294,8 @@ jobs:
       - name: Enforce SpotBugs gate
         if: always()
         shell: bash
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'none' }}
         run: |
           set -euo pipefail
           test "${{ steps.spotbugs_main.outcome }}" = success
@@ -307,6 +312,7 @@ jobs:
             --html "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.html" \
             --evidence "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json" \
             --source-sha "$source_sha" \
+            --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
             --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
             --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
 
