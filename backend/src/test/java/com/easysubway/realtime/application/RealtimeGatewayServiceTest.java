@@ -10,6 +10,7 @@ import com.easysubway.realtime.application.port.out.RealtimeProviderCallQuotaPor
 import com.easysubway.realtime.domain.RealtimeArrivalObservation;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
+import com.easysubway.realtime.domain.RealtimeStatus;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.easysubway.realtime.domain.RealtimeTripMapping;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -460,8 +461,14 @@ class RealtimeGatewayServiceTest {
 		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
 
-		service.arrivals(sangnoksuQuery());
-		service.trainPositions(line4Query());
+		RealtimeArrivalResult initialArrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult initialPositions = service.trainPositions(line4Query());
+
+		assertThat(initialArrivals.status()).isEqualTo(RealtimeStatus.FRESH);
+		assertThat(initialArrivals.arrivals()).isNotEmpty();
+		assertThat(initialPositions.status()).isEqualTo(RealtimeStatus.FRESH);
+		assertThat(initialPositions.trainPositions()).isNotEmpty();
+
 		clock.instant = Instant.parse("2026-06-26T08:00:20.001Z");
 		provider.failureCode = "PROVIDER_TIMEOUT";
 		RealtimeArrivalResult unavailableArrivals = service.arrivals(sangnoksuQuery());
