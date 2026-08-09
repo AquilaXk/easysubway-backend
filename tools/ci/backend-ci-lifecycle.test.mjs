@@ -18,11 +18,15 @@ test('OSV validator requires every policy lockfile and fails closed on malformed
     const clean = join(dir, 'clean.json');
     const report = { results: lockfiles.map((path) => ({
       source: { path, type: 'lockfile' },
-      packages: [{ package: { name: 'example', version: '1.0.0', ecosystem: 'npm' }, vulnerabilities: [], groups: [] }],
+      packages: [{ package: { name: 'example', version: '1.0.0', ecosystem: 'npm' } }],
     })) };
     writeFileSync(clean, JSON.stringify(report));
     assert.deepEqual(loadConfiguredOsvLockfiles(), lockfiles);
     assert.equal(validateOsvResultFile(clean, lockfiles), true);
+    const findingReport = structuredClone(report);
+    findingReport.results[0].packages[0].vulnerabilities = [];
+    findingReport.results[0].packages[0].groups = [];
+    assert.equal(validateOsvResults(findingReport, lockfiles), true);
     for (const [name, value] of [
       ['empty.json', ''], ['broken.json', '{'], ['array.json', '[]'], ['missing-results.json', '{}'],
       ['bad-source.json', '{"results":[{"source":{},"packages":[]}]}'],
@@ -41,6 +45,8 @@ test('OSV validator requires every policy lockfile and fails closed on malformed
       (value) => { value.results[0].source.type = 'directory'; },
       (value) => { value.results[0].packages = []; },
       (value) => { value.results[0].packages[0].package.version = 1; },
+      (value) => { value.results[0].packages[0].vulnerabilities = []; },
+      (value) => { value.results[0].packages[0].vulnerabilities = []; value.results[0].packages[0].groups = 'not-an-array'; },
     ]) {
       const mutation = structuredClone(report); mutate(mutation);
       assert.throws(() => validateOsvResults(mutation, lockfiles), /invalid OSV results/);

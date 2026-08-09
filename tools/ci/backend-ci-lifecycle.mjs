@@ -161,8 +161,10 @@ export function validateOsvResults(value, lockfiles) {
       if (!isObject(pkg) || typeof pkg.package?.name !== 'string' || typeof pkg.package?.version !== 'string' || typeof pkg.package?.ecosystem !== 'string') {
         fail(`results[${resultIndex}].packages[${packageIndex}].package must contain string name, version, ecosystem`);
       }
-      if (!Array.isArray(pkg.vulnerabilities) || !Array.isArray(pkg.groups)) {
-        fail(`results[${resultIndex}].packages[${packageIndex}] must contain vulnerabilities and groups arrays`);
+      const hasVulnerabilities = Object.hasOwn(pkg, 'vulnerabilities');
+      const hasGroups = Object.hasOwn(pkg, 'groups');
+      if (hasVulnerabilities !== hasGroups || hasVulnerabilities && (!Array.isArray(pkg.vulnerabilities) || !Array.isArray(pkg.groups))) {
+        fail(`results[${resultIndex}].packages[${packageIndex}] vulnerabilities and groups must both be absent or arrays`);
       }
     }
   }
