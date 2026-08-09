@@ -7,6 +7,7 @@ import java.util.Objects;
 public record ActiveRouteBundleSnapshot(
     long generation,
     RouteBundleIdentity identity,
+	RouteBundleAdmissionEvidence admissionEvidence,
     RouteBundleRuntimeView runtimeView,
     Instant activatedAt) {
 
@@ -15,6 +16,7 @@ public record ActiveRouteBundleSnapshot(
             throw new IllegalArgumentException("generation must be positive");
         }
         identity = Objects.requireNonNull(identity, "identity");
+		admissionEvidence = Objects.requireNonNull(admissionEvidence, "admissionEvidence");
         runtimeView = Objects.requireNonNull(runtimeView, "runtimeView");
         activatedAt = Objects.requireNonNull(activatedAt, "activatedAt");
     }

@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
@@ -18,28 +19,50 @@ class RouteBundleActivationRegistryTest {
 	private static final Instant T0 = Instant.parse("2026-08-09T00:00:00Z");
 
 	@Test
-	void identityRequiresTheCompleteCurrentFixtureIdentity() {
-		assertThatThrownBy(() -> identity("manifest", "UTC", "SHA-256", 3, T0, T0.plusSeconds(60)))
+	void identityAndAdmissionEvidenceRequireTheirExactSeparateContracts() {
+		assertThatThrownBy(() -> identity("a", 2, "server-route-bundle", 1, T0, T0.plusSeconds(60)))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> identity("MANIFEST", "Asia/Seoul", "SHA-256", 3, T0, T0.plusSeconds(60)))
+		assertThatThrownBy(() -> identity("a", 1, "mobile-route-bundle", 1, T0, T0.plusSeconds(60)))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> identity("manifest", "Asia/Seoul", "sha-256", 3, T0, T0.plusSeconds(60)))
+		assertThatThrownBy(() -> identity("a", 1, "server-route-bundle", 0, T0, T0.plusSeconds(60)))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> identity("manifest", "Asia/Seoul", "SHA-256", 2, T0, T0.plusSeconds(60)))
+		assertThatThrownBy(() -> new RouteBundleAdmissionEvidence(
+			"a".repeat(63), "final", "promotion", "publication", "activation"))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> identity("manifest", "Asia/Seoul", "SHA-256", 3, T0, T0))
+		assertThatThrownBy(() -> new RouteBundleIdentity.SchemaCompatibility(3, 4))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteBundleIdentity.Signature(
+			"rsa-sha256-server-route-bundle-v1", "AQID="))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identity("a", 1, "server-route-bundle", 1, T0, T0))
 			.isInstanceOf(IllegalArgumentException.class);
 
-		var identity = identity("manifest", "Asia/Seoul", "SHA-256", 3, T0, T0.plusSeconds(60));
+		var identity = identity("a", 1, "server-route-bundle", 7, T0, T0.plusSeconds(60));
+		var evidence = evidence("a");
 
-		assertThat(identity.manifestSha256()).isEqualTo("m".repeat(64));
-		assertThat(identity.payloadSha256()).isEqualTo("p".repeat(64));
-		assertThat(identity.topologySha256()).isEqualTo("t".repeat(64));
-		assertThat(identity.timetableSha256()).isEqualTo("i".repeat(64));
-		assertThat(identity.accessibilitySha256()).isEqualTo("a".repeat(64));
-		assertThat(identity.fareSha256()).isEqualTo("f".repeat(64));
-		assertThat(identity.provenanceSha256()).isEqualTo("r".repeat(64));
-		assertThat(identity.compatibilitySha256()).isEqualTo("c".repeat(64));
+		assertThat(identity.manifestVersion()).isOne();
+		assertThat(identity.artifactKind()).isEqualTo("server-route-bundle");
+		assertThat(identity.bundleId()).isEqualTo("bundle-a");
+		assertThat(identity.releaseSequence()).isEqualTo(7);
+		assertThat(identity.stationSetSha256()).isEqualTo("0".repeat(64));
+		assertThat(identity.payloadSha256()).isEqualTo("1".repeat(64));
+		assertThat(identity.topologySha256()).isEqualTo("2".repeat(64));
+		assertThat(identity.timetableSha256()).isEqualTo("3".repeat(64));
+		assertThat(identity.accessibilitySha256()).isEqualTo("4".repeat(64));
+		assertThat(identity.fareSha256()).isEqualTo("5".repeat(64));
+		assertThat(identity.provenanceSha256()).isEqualTo("6".repeat(64));
+		assertThat(identity.compatibilitySha256()).isEqualTo("7".repeat(64));
+		assertThat(identity.serviceTimezone()).isEqualTo("Asia/Seoul");
+		assertThat(identity.schemaCompatibility()).isEqualTo(new RouteBundleIdentity.SchemaCompatibility(3, 3));
+		assertThat(identity.signature().algorithm()).isEqualTo("rsa-sha256-server-route-bundle-v1");
+		assertThat(identity.signature().value()).isEqualTo("AQID");
+		assertThat(identity.activeFrom()).isEqualTo("2026-08-09T09:00:00.000+09:00");
+		assertThat(identity.activeFromInstant()).isEqualTo(T0);
+		assertThat(evidence.manifestSha256()).isEqualTo("a".repeat(64));
+		assertThat(evidence.finalEvidenceReference()).isEqualTo("final-reference-a");
+		assertThat(evidence.promotionEvidenceReference()).isEqualTo("promotion-reference-a");
+		assertThat(evidence.immutablePublicationReceiptIdentity()).isEqualTo("publication-receipt-a");
+		assertThat(evidence.activationRequestIdentity()).isEqualTo("activation-request-a");
 	}
 
 	@Test
@@ -50,7 +73,7 @@ class RouteBundleActivationRegistryTest {
 		registry.stage(candidate, 0);
 
 		assertFailure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, registry::activeSnapshot);
-		var active = registry.activate(candidate.identity().manifestSha256(), 0);
+		var active = registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
 		assertThat(active.generation()).isOne();
 		assertThat(active.identity()).isEqualTo(candidate.identity());
 		assertThat(active.runtimeView()).isEqualTo(candidate.runtimeView());
@@ -59,21 +82,37 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	@Test
-	void activationRechecksCandidateFreshnessWithoutMutatingStateOnFailure() {
+	void stageAndActivationRejectFutureAndStaleCandidatesWithoutMutatingState() {
 		var clock = new MutableClock(T0);
 		var registry = new RouteBundleActivationRegistry(clock);
-		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
-			() -> registry.stage(candidate("future", T0.plusSeconds(1), T0.plusSeconds(10)), 0));
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_FUTURE,
+			() -> registry.stage(candidate("f", T0.plusSeconds(1), T0.plusSeconds(10)), 0));
 		assertFailure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, registry::activeSnapshot);
 		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(10));
 		registry.stage(candidate, 0);
 		clock.set(T0.plusSeconds(10));
 
 		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
-			() -> registry.activate(candidate.identity().manifestSha256(), 0));
+			() -> registry.activate(candidate.admissionEvidence().manifestSha256(), 0));
 		assertFailure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, registry::activeSnapshot);
 		clock.set(T0.plusSeconds(9));
-		assertThat(registry.activate(candidate.identity().manifestSha256(), 0).generation()).isOne();
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED,
+			() -> registry.stage(candidate, 0));
+	}
+
+	@Test
+	void activeSnapshotFailsClosedWhenTheClockMovesOutsideItsValidityInterval() {
+		var clock = new MutableClock(T0);
+		var registry = new RouteBundleActivationRegistry(clock);
+		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(10));
+		registry.stage(candidate, 0);
+		var pinned = registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
+
+		clock.set(T0.minusSeconds(2));
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_FUTURE, registry::activeSnapshot);
+		clock.set(T0.plusSeconds(10));
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE, registry::activeSnapshot);
+		assertThat(pinned.identity()).isEqualTo(candidate.identity());
 	}
 
 	@Test
@@ -81,18 +120,20 @@ class RouteBundleActivationRegistryTest {
 		var registry = registryAt(T0);
 		var first = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
 		registry.stage(first, 0);
-		var firstSnapshot = registry.activate(first.identity().manifestSha256(), 0);
+		var firstSnapshot = registry.activate(first.admissionEvidence().manifestSha256(), 0);
 		var second = candidate("b", T0.minusSeconds(1), T0.plusSeconds(60));
 		registry.stage(second, 1);
 
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED,
+			() -> registry.stage(candidate("c", T0.minusSeconds(1), T0.plusSeconds(60)), 1));
 		assertFailure(RouteBundleActivationException.Reason.ACTIVATION_CONFLICT,
-			() -> registry.stage(candidate("c", T0.minusSeconds(1), T0.plusSeconds(60)), 0));
+			() -> registry.stage(candidate("d", T0.minusSeconds(1), T0.plusSeconds(60)), 0));
 		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_IDENTITY_MISMATCH,
-			() -> registry.activate("z".repeat(64), 1));
+			() -> registry.activate("e".repeat(64), 1));
 		assertThat(registry.activeSnapshot()).isEqualTo(firstSnapshot);
-		assertThat(registry.activate(second.identity().manifestSha256(), 1).generation()).isEqualTo(2);
+		assertThat(registry.activate(second.admissionEvidence().manifestSha256(), 1).generation()).isEqualTo(2);
 		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED,
-			() -> registry.activate("z".repeat(64), 2));
+			() -> registry.activate("e".repeat(64), 2));
 	}
 
 	@Test
@@ -121,13 +162,14 @@ class RouteBundleActivationRegistryTest {
 		var registry = registryAt(T0);
 		var first = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
 		registry.stage(first, 0);
-		var requestSnapshot = registry.activate(first.identity().manifestSha256(), 0);
+		var requestSnapshot = registry.activate(first.admissionEvidence().manifestSha256(), 0);
 		var second = candidate("b", T0.minusSeconds(1), T0.plusSeconds(60));
 		registry.stage(second, 1);
-		var currentSnapshot = registry.activate(second.identity().manifestSha256(), 1);
+		var currentSnapshot = registry.activate(second.admissionEvidence().manifestSha256(), 1);
 
 		assertThat(requestSnapshot.generation()).isOne();
 		assertThat(requestSnapshot.identity()).isEqualTo(first.identity());
+		assertThat(requestSnapshot.admissionEvidence()).isEqualTo(first.admissionEvidence());
 		assertThat(requestSnapshot.runtimeView()).isEqualTo(first.runtimeView());
 		assertThat(currentSnapshot.generation()).isEqualTo(2);
 		assertThat(currentSnapshot.identity()).isEqualTo(second.identity());
@@ -138,7 +180,7 @@ class RouteBundleActivationRegistryTest {
 		return () -> {
 			barrier.await();
 			try {
-				registry.activate(candidate.identity().manifestSha256(), 0);
+				registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
 				return ActivationResult.success();
 			} catch (RouteBundleActivationException exception) {
 				return ActivationResult.failure(exception.reason());
@@ -152,19 +194,33 @@ class RouteBundleActivationRegistryTest {
 
 	private static VerifiedRouteBundleCandidate candidate(String manifestMarker, Instant activeFrom, Instant freshUntil) {
 		return new VerifiedRouteBundleCandidate(
-			identity(manifestMarker, "Asia/Seoul", "SHA-256", 3, activeFrom, freshUntil),
-			new RouteBundleRuntimeView("compiled-" + manifestMarker), T0);
+			identity(manifestMarker, 1, "server-route-bundle", 1, activeFrom, freshUntil),
+			evidence(manifestMarker),
+			new CompiledRuntimeView("compiled-" + manifestMarker), T0);
 	}
 
 	private static RouteBundleIdentity identity(
-		String manifestMarker, String timezone, String digestAlgorithm, int backendSchemaVersion,
+		String manifestMarker, int manifestVersion, String artifactKind, long releaseSequence,
 		Instant activeFrom, Instant freshUntil) {
 		return new RouteBundleIdentity(
-			"server-route-bundle", "v1", "station-catalog-v1", timezone,
-			manifestMarker.substring(0, 1).repeat(64), "p".repeat(64), "t".repeat(64), "i".repeat(64),
-			"a".repeat(64), "f".repeat(64), "r".repeat(64), "c".repeat(64),
-			activeFrom, freshUntil, backendSchemaVersion, digestAlgorithm, "fixture-signing-key-v1",
-			"u".repeat(64), "n".repeat(64), "o".repeat(64), "e".repeat(64));
+			manifestVersion, artifactKind, "bundle-" + manifestMarker, releaseSequence,
+			"0".repeat(64), "1".repeat(64), "2".repeat(64), "3".repeat(64),
+			"4".repeat(64), "5".repeat(64), "6".repeat(64), "7".repeat(64),
+			"Asia/Seoul", kstMillis(activeFrom), kstMillis(freshUntil),
+			new RouteBundleIdentity.SchemaCompatibility(3, 3),
+			"route-bundle-key", new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "AQID"));
+	}
+
+	private static RouteBundleAdmissionEvidence evidence(String manifestMarker) {
+		return new RouteBundleAdmissionEvidence(
+			manifestMarker.repeat(64), "final-reference-" + manifestMarker,
+			"promotion-reference-" + manifestMarker, "publication-receipt-" + manifestMarker,
+			"activation-request-" + manifestMarker);
+	}
+
+	private static String kstMillis(Instant instant) {
+		return DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ss.SSSXXX")
+			.format(instant.atOffset(ZoneOffset.ofHours(9)));
 	}
 
 	private static void assertFailure(RouteBundleActivationException.Reason reason, ThrowingAction action) {
@@ -176,6 +232,9 @@ class RouteBundleActivationRegistryTest {
 
 	private interface ThrowingAction {
 		void run();
+	}
+
+	private record CompiledRuntimeView(String marker) implements RouteBundleRuntimeView {
 	}
 
 	private record ActivationResult(boolean success, RouteBundleActivationException.Reason reason) {

@@ -9,6 +9,7 @@ public final class RouteBundleActivationException extends RuntimeException {
         BUNDLE_FUTURE,
         CANDIDATE_ALREADY_STAGED,
         CANDIDATE_ALREADY_ACTIVE,
+		CANDIDATE_NOT_STAGED,
         CANDIDATE_IDENTITY_MISMATCH,
         ACTIVATION_CONFLICT
     }

@@ -24,15 +24,12 @@ public final class RouteBundleActivationRegistry {
             var current = state.get();
             requireExpectedGeneration(current, expectedGeneration);
             requireCandidateIsCurrent(candidate, clock.instant());
-            if (current.active != null && current.active.identity().manifestSha256()
-                .equals(candidate.identity().manifestSha256())) {
+            if (current.active != null && current.active.admissionEvidence().manifestSha256()
+				.equals(candidate.admissionEvidence().manifestSha256())) {
                 throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_ACTIVE);
             }
             if (current.staged != null) {
-                if (current.staged.identity().manifestSha256().equals(candidate.identity().manifestSha256())) {
-                    throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED);
-                }
-                throw failure(RouteBundleActivationException.Reason.ACTIVATION_CONFLICT);
+				throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED);
             }
             if (state.compareAndSet(current, new State(current.generation, current.active, candidate))) {
                 return;
@@ -46,15 +43,19 @@ public final class RouteBundleActivationRegistry {
             requireExpectedGeneration(current, expectedGeneration);
             var candidate = current.staged;
             if (candidate == null) {
-                throw failure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE);
+				if (current.active != null && current.active.admissionEvidence().manifestSha256()
+					.equals(candidateManifestSha256)) {
+					throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_ACTIVE);
+				}
+                throw failure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED);
             }
-            if (!candidate.identity().manifestSha256().equals(candidateManifestSha256)) {
+            if (!candidate.admissionEvidence().manifestSha256().equals(candidateManifestSha256)) {
                 throw failure(RouteBundleActivationException.Reason.CANDIDATE_IDENTITY_MISMATCH);
             }
             var activatedAt = clock.instant();
             requireCandidateIsCurrent(candidate, activatedAt);
             var snapshot = new ActiveRouteBundleSnapshot(
-                current.generation + 1, candidate.identity(), candidate.runtimeView(), activatedAt);
+                current.generation + 1, candidate.identity(), candidate.admissionEvidence(), candidate.runtimeView(), activatedAt);
             if (state.compareAndSet(current, new State(snapshot.generation(), snapshot, null))) {
                 return snapshot;
             }
@@ -66,6 +67,7 @@ public final class RouteBundleActivationRegistry {
         if (active == null) {
             throw failure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE);
         }
+		requireIdentityIsCurrent(active.identity(), clock.instant());
         return active;
     }
 
@@ -77,10 +79,17 @@ public final class RouteBundleActivationRegistry {
 
     private static void requireCandidateIsCurrent(VerifiedRouteBundleCandidate candidate, Instant now) {
         var identity = candidate.identity();
-        if (candidate.verifiedAt().isAfter(now) || identity.activeFrom().isAfter(now)) {
+		if (candidate.verifiedAt().isAfter(now)) {
             throw failure(RouteBundleActivationException.Reason.BUNDLE_FUTURE);
         }
-        if (!identity.freshUntil().isAfter(now)) {
+		requireIdentityIsCurrent(identity, now);
+	}
+
+	private static void requireIdentityIsCurrent(RouteBundleIdentity identity, Instant now) {
+		if (now.isBefore(identity.activeFromInstant())) {
+			throw failure(RouteBundleActivationException.Reason.BUNDLE_FUTURE);
+		}
+		if (!now.isBefore(identity.freshUntilInstant())) {
             throw failure(RouteBundleActivationException.Reason.BUNDLE_STALE);
         }
     }
