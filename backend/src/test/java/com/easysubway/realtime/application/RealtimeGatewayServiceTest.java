@@ -329,6 +329,7 @@ class RealtimeGatewayServiceTest {
 
 		assertThat(first.status()).hasToString("FRESH");
 		assertThat(cached.status()).hasToString("FRESH");
+		assertThat(cached).isSameAs(first);
 		assertThat(cached.receivedAt()).isEqualTo(first.receivedAt());
 		assertThat(cached.arrivals()).isEqualTo(first.arrivals());
 		assertThat(provider.arrivalCalls).hasValue(1);
