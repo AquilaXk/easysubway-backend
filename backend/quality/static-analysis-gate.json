@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
-  "gateId": "backend-static-analysis-feasibility",
-  "defaultPolicy": "contract-only-before-enforcement",
-  "enforcementStatus": "partial_report_only_enabled",
+  "gateId": "backend-static-analysis-gate",
+  "defaultPolicy": "closed-report-policy-before-final-enforcement",
+  "enforcementStatus": "spotbugs-discovery-remote-red",
   "ciRuntimeBudgetMinutes": {
     "maxAdditionalMinutes": 3,
     "measurementRequiredBeforeEnforcement": true
@@ -20,19 +20,20 @@
     },
     {
       "id": "spotbugs",
-      "enforcement": "report_only",
-      "firstAllowedGate": "bug_pattern_baseline_after_security_tests",
+      "enforcement": "required_fail_closed_discovery",
+      "firstAllowedGate": "backend-spotbugs-main",
       "evidence": {
         "suppressionPolicy": "backend/quality/spotbugs-suppression-policy.json",
         "excludeFilter": "backend/quality/spotbugs-exclude.xml",
-        "failMode": "ignoreFailures=true (CI red 금지, HTML/XML 리포트만)",
-        "baselineViolationCount": 194,
-        "ciRuntimeMeasurement": "local 2026-07-22: ./gradlew compileJava spotbugsMain --no-daemon real 18.41s (ignoreFailures=true, findings=194)"
+        "requiredValidator": "tools/ci/backend-spotbugs-gate.mjs",
+        "resultArtifact": "backend-spotbugs-${GITHUB_SHA}/backend-spotbugs-result.json",
+        "failMode": "ignoreFailures=true only while the closed validator produces the required discovery RED artifact",
+        "foundationIssue": "https://github.com/AquilaXk/easysubway-backend/issues/35"
       },
       "requires": [
-        "suppression justification policy",
-        "baseline violation count",
-        "CI runtime measurement"
+        "closed finding-policy validator",
+        "current XML/HTML/result artifact",
+        "root-reviewed exact FIX_REQUIRED inventory before phase-two PASS"
       ]
     },
     {
