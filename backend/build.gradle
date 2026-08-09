@@ -202,6 +202,17 @@ tasks.register('writeSpotbugsMainEvidence') {
 			}
 			mapped
 		}
+		def mergeArtifactMaps = { label, maps ->
+			def merged = [:]
+			maps.each { mapped ->
+				mapped.each { file, identity ->
+					def existing = merged[file]
+					if (existing != null && existing != identity) throw new GradleException("conflicting ${label} artifact identity: ${file}")
+					merged[file] = identity
+				}
+			}
+			merged
+		}
 		def artifactFiles = { values, mapped, label -> values.collect { file ->
 			if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
 			def canonical = file.canonicalFile
@@ -217,7 +228,10 @@ tasks.register('writeSpotbugsMainEvidence') {
 		def excludeFilter = task.excludeFilter.get().asFile
 		def xmlReport = task.reports.xml.outputLocation.get().asFile
 		def htmlReport = task.reports.html.outputLocation.get().asFile
-		def engineArtifacts = artifactMap(configurations.spotbugs, 'SpotBugs engine')
+		def engineArtifacts = mergeArtifactMaps('SpotBugs task engine', [
+			artifactMap(configurations.spotbugs, 'SpotBugs engine'),
+			artifactMap(configurations.spotbugsSlf4j, 'SpotBugs SLF4J provider'),
+		])
 		def auxiliaryArtifacts = artifactMap(configurations.compileClasspath, 'SpotBugs auxiliary classpath')
 		def output = spotbugsMainEvidence.get().asFile
 		output.parentFile.mkdirs()

@@ -95,9 +95,13 @@ test('Gradle binds SpotBugs 6.2.2 public launcher and keeps engine and auxiliary
   assert.match(build, /task\.launcher\.get\(\)\.metadata/);
   assert.match(build, /spotbugs\.toolVersion\.get\(\)/);
   assert.match(build, /artifactMap\(configurations\.spotbugs, 'SpotBugs engine'\)/);
+  assert.match(build, /artifactMap\(configurations\.spotbugsSlf4j, 'SpotBugs SLF4J provider'\)/);
+  assert.match(build, /mergeArtifactMaps\('SpotBugs task engine'/);
+  assert.match(build, /existing != null && existing != identity/);
   assert.match(build, /artifactMap\(configurations\.compileClasspath, 'SpotBugs auxiliary classpath'\)/);
   assert.match(build, /task\.spotbugsClasspath\.files, engineArtifacts/);
   assert.match(build, /task\.auxClassPaths\.files, auxiliaryArtifacts/);
+  assert.doesNotMatch(build, /artifactMap\(configurations\.spotbugsPlugins/);
   assert.match(build, /def taskClasses = task\.classes/);
   assert.match(build, /taskClasses\.asFileTree\.files/);
   assert.doesNotMatch(build, /task\.javaLauncher/);

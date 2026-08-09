@@ -6,7 +6,7 @@
   "origin": { "repository": "AquilaXk/easysubway-backend", "foundationSha": "5334c98ee146a117338789c261d439aa2153d0b4" },
   "toolchain": {
     "gradleVersion": null,
-    "spotbugsGradlePlugin": { "id": "com.github.spotbugs", "requestedVersion": "6.2.2", "buildScriptSha256": "6413fb038015c44e16dbccfd3ec483989e2d55edeab60fa13d0bdf2d5a20f16f", "implementationClass": null, "implementationJarSha256": null },
+    "spotbugsGradlePlugin": { "id": "com.github.spotbugs", "requestedVersion": "6.2.2", "buildScriptSha256": "8db3f509fda14ebb6a446a84911533225f4c602fcde19390a2ecbf63ca2fd7c0", "implementationClass": null, "implementationJarSha256": null },
     "spotbugsEngine": { "toolVersion": null, "classpath": null },
     "javaLauncher": { "vendorSpec": "ADOPTIUM", "languageVersion": 21 },
     "task": "spotbugsMain"
