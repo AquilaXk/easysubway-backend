@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { pullRequestHeadSha, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
+import { inspectMembers, pullRequestHeadSha, renderSummary, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const sourcePath = 'backend/src/main/java/com/example/Example.java';
@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '5334c98ee146a117338789c261d439aa2153d0b4' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'a'.repeat(64), implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'b63bbd76854c5dcc42620c987bf1f349fe2714a7166690f52f48190f216cd999', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -28,6 +28,100 @@ const policy = () => ({
 const xml = () => '<?xml version="1.0" encoding="UTF-8"?><!-- current SpotBugs report --><BugCollection><BugInstance type="EI_EXPOSE_REP" category="MALICIOUS_CODE" priority="2" rank="18" instanceHash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" instanceOccurrenceNum="0" instanceOccurrenceMax="0"><Class classname="com.example.Example"/><Method classname="com.example.Example" name="&lt;init&gt;" signature="()V"/><SourceLine classname="com.example.Example" sourcepath="com/example/Example.java" start="2" end="2"/></BugInstance><Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>';
 const evidence = (dir) => ({
   schemaVersion: 1, gradle: { version: '8.14.3' }, plugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: 'example.Plugin', implementationPath: join(dir, 'plugin.jar'), implementationSha256: digest('plugin') }, engine: { toolVersion: '4.9.8', classpath: [{ component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }] }, java: { requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: 'Eclipse Temurin', languageVersion: 21, runtimeVersion: '21.0.8+9', jvmVersion: '21.0.8+9', installationPath: dir, launcherPath: join(dir, 'bin/java'), launcherSha256: digest('java') }, task: { name: 'spotbugsMain', path: ':spotbugsMain', declaredType: 'com.github.spotbugs.snom.SpotBugsTask', runtimeType: 'com.github.spotbugs.snom.SpotBugsTask_Decorated', runtimeTypeAssignableToDeclared: true, ignoreFailures: true, sourceDirs: [{ path: join(dir, 'backend/src/main/java'), repositoryPath: 'backend/src/main/java' }], classDirs: [{ path: join(dir, 'backend/build/classes/java/main'), repositoryPath: 'backend/build/classes/java/main' }], sources: [{ path: join(dir, sourcePath), repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classes: [{ path: join(dir, 'backend/build/classes/java/main/com/example/Example.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example.class', sha256: digest('class') }], auxClassPaths: [{ component: 'x:y:1', artifact: 'aux.jar', path: join(dir, 'aux.jar'), sha256: digest('aux') }], pluginJarFiles: [{ component: 'x:detector:1', artifact: 'detector.jar', path: join(dir, 'detector.jar'), sha256: digest('detector') }], excludeFilter: 'backend/quality/spotbugs-exclude.xml', xmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.xml', htmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.html' }
+});
+
+test('tracked tests and policy are self-contained reviewed inventory evidence', () => {
+  const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
+  assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '1e8026d34a84708ddda0ceb0c76b711563515ed403b99413dc0ab59eb1d2b08b');
+  assert.equal(digest(JSON.stringify(tracked.findings)), '488c61fe2ca55af1fe2a5594e76e2dc2076737b74a55692c95bd56c2aecea185');
+  assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
+  assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
+});
+
+test('policy fixed literals and captured JDK javap execution fail closed', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  for (const mutate of [
+    (value) => { value.issue.title = 'wrong'; },
+    (value) => { value.toolchain.spotbugsGradlePlugin.buildScriptSha256 = null; },
+    (value) => { value.spotbugsTest.reason = ''; },
+    (value) => { value.spotbugsTest.reviewTriggers.reverse(); },
+    (value) => { value.exclusions[0].reason = 'wrong'; },
+    (value) => { value.exclusions[0].removalCondition = 'wrong'; },
+    (value) => { value.exclusions[0].reviewTriggers = []; },
+    (value) => { value.transition.finalRequirements.reverse(); }
+  ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' })); }
+  const dir = mkdtempSync(join(tmpdir(), 'spotbugs-javap-'));
+  try {
+    const installation = join(dir, 'captured-jdk'), javap = join(installation, 'bin/javap'); mkdirSync(dirname(javap), { recursive: true }); writeFileSync(join(installation, 'bin/java'), 'java'); writeFileSync(javap, 'javap');
+    const exec = (...args) => { assert.equal(args[0], javap); assert.deepEqual(args[1], ['-p', '-s', '-classpath', `/classes${process.platform === 'win32' ? ';' : ':'}/aux`, 'com.example.Example']); return 'public com.example.Example();\n  descriptor: ()V\n'; };
+    assert.deepEqual(inspectMembers({ className: 'com.example.Example', classDirs: ['/classes'], auxClassPaths: ['/aux'], javapPath: javap, javaInstallationPath: installation, exec }), new Map([['<init>\u0000()V', 1]]));
+    assert.throws(() => inspectMembers({ className: 'com.example.Example', classDirs: ['/classes'], auxClassPaths: ['/aux'], javapPath: '/usr/bin/javap', javaInstallationPath: installation, exec }), /captured JDK/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('Phase 2 summary is an exact result-derived closure artifact', () => {
+  const digestValue = 'a'.repeat(64);
+  const result = { sourceSha: 'b'.repeat(40), artifactKind: 'backend-spotbugs-result-v1', analyzer: { reviewState: { phase: 'FOUNDATION_REVIEWED_FINDINGS', pluginImplementationReviewed: true, engineReviewed: true, memberBindingReviewed: true, findingsReviewed: true } }, summary: { reported: 195, fixRequired: 195, accepted: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 }, inputs: { sourceDigest: digestValue, classDigest: digestValue, classpathDigest: digestValue, pluginClasspathDigest: digestValue, pluginImplementationDigest: digestValue, engineClasspathDigest: digestValue, javaLauncherDigest: digestValue, policyDigest: digestValue, excludeFilterDigest: digestValue }, reports: { transform: { id: 'spotbugs-report-sanitizer-v1', rawXmlSha256: digestValue, rawHtmlSha256: digestValue }, xml: { sha256: digestValue }, html: { sha256: digestValue } }, outcome: 'PASS' };
+  const summary = renderSummary(result);
+  for (const expected of ['review.pluginImplementationReviewed: true', 'review.engineReviewed: true', 'review.memberBindingReviewed: true', 'review.findingsReviewed: true', 'summary.reported: 195', 'summary.stale: 0', 'inputs.excludeFilterDigest: ' + digestValue, 'reports.transform.rawXmlSha256: ' + digestValue, 'reports.html.sha256: ' + digestValue, 'outcome: PASS']) assert.match(summary, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.notEqual(summary, renderSummary({ ...result, outcome: 'FAIL' }));
+});
+
+test('tracked Phase 2 policy is the reviewed 195-finding foundation inventory', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  assert.equal(tracked.transition.phase, 'FOUNDATION_REVIEWED_FINDINGS');
+  assert.equal(tracked.toolchain.gradleVersion, '8.14.5');
+  assert.equal(tracked.toolchain.spotbugsGradlePlugin.implementationClass, 'com.github.spotbugs.snom.SpotBugsPlugin');
+  assert.equal(tracked.toolchain.spotbugsEngine.toolVersion, '4.9.3');
+  assert.equal(tracked.toolchain.spotbugsEngine.classpath.length, 26);
+  assert.equal(tracked.findings.length, 195);
+  assert.equal(validatePolicy(tracked, { today: '2026-08-10' }), true);
+  assert.equal(digest(JSON.stringify(tracked.toolchain.spotbugsEngine.classpath)), '0178af73534a3919830c3bae141dff716dbeed2e13ef31faabcc1dfb6947db69');
+  assert.equal(digest(JSON.stringify(tracked.findings)), '488c61fe2ca55af1fe2a5594e76e2dc2076737b74a55692c95bd56c2aecea185');
+  for (const finding of tracked.findings) {
+    assert.equal(finding.disposition, 'FIX_REQUIRED');
+    assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/4');
+    assert.equal(finding.ownerIssueState, 'OPEN');
+    assert.equal(finding.expiresAt, '2026-11-07');
+  }
+  const gate = JSON.parse(readFileSync(new URL('../../backend/quality/static-analysis-gate.json', import.meta.url), 'utf8'));
+  const spotbugs = gate.tools.find(({ id }) => id === 'spotbugs');
+  assert.equal(gate.enforcementStatus, 'spotbugs-foundation-reviewed-findings-required');
+  assert.equal(spotbugs.enforcement, 'required_fail_closed_foundation_reviewed_findings');
+  assert.match(spotbugs.evidence.failMode, /ignoreFailures=true/);
+  assert.match(spotbugs.evidence.failMode, /Backend #4/);
+  for (const mutate of [
+    (value) => { value.toolchain.gradleVersion = null; },
+    (value) => { value.toolchain.spotbugsGradlePlugin.implementationClass = 'wrong.Plugin'; },
+    (value) => { value.toolchain.spotbugsEngine.toolVersion = '4.9.4'; },
+    (value) => { value.toolchain.spotbugsEngine.classpath.reverse(); },
+    (value) => { value.findings.pop(); },
+    (value) => { value.findings.push(structuredClone(value.findings[0])); },
+    (value) => { value.findings[0].sourceSha256 = '0'.repeat(64); },
+    (value) => { value.findings[0].ownerIssueUrl = 'https://example.invalid/owner'; },
+    (value) => { value.findings[0].ownerIssueTitle = 'wrong'; },
+    (value) => { value.findings[0].ownerIssueState = 'CLOSED'; },
+    (value) => { value.findings[0].expiresAt = '2026-01-01'; },
+    (value) => { value.findings[0].reason = 'wrong'; },
+    (value) => { value.findings[0].sourcePath = 'backend/src/main/java/**/*.java'; }
+  ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' })); }
+});
+
+test('Phase 2 member binding is exact, once per class, and fails closed', () => {
+  const findings = [
+    { className: 'com.example.Example', methodName: '<init>', methodSignature: '()V' },
+    { className: 'com.example.Example', methodName: 'run', methodSignature: '()V' },
+    { className: 'com.example.Future', methodName: null, methodSignature: null }
+  ];
+  let calls = 0;
+  const inspector = ({ className, classDirs, auxClassPaths }) => { calls += 1; assert.equal(className, 'com.example.Example'); assert.deepEqual(classDirs, ['/classes']); assert.deepEqual(auxClassPaths, ['/aux']); return new Map([['<init>\u0000()V', 1], ['run\u0000()V', 1]]); };
+  assert.equal(validateMemberBindings({ findings, classDirs: ['/classes'], auxClassPaths: ['/aux'], memberInspector: inspector }), true);
+  assert.equal(calls, 1);
+  assert.throws(() => validateMemberBindings({ findings: [findings[0]], classDirs: ['/classes'], auxClassPaths: [], memberInspector: () => new Map() }), /missing|ambiguous/);
+  assert.throws(() => validateMemberBindings({ findings: [findings[0]], classDirs: ['/classes'], auxClassPaths: [], memberInspector: () => new Map([['<init>\u0000()V', 2]]) }), /missing|ambiguous/);
+  assert.throws(() => validateMemberBindings({ findings: [findings[0]], classDirs: ['/classes'], auxClassPaths: [], memberInspector: () => { throw new Error('javap unavailable'); } }), /javap unavailable/);
 });
 
 test('closed phase-one policy has empty findings and rejects reviewed or expired states', () => {
@@ -200,8 +294,10 @@ test('PR-head provenance binds a distinct synthetic checkout head and rejects mi
   const gate = new URL('./backend-spotbugs-gate.mjs', import.meta.url).pathname;
   const run = (args) => spawnSync(process.execPath, [gate, ...args], { cwd: dir, encoding: 'utf8' });
   try {
-    write('backend/build.gradle', readFileSync(new URL('../../backend/build.gradle', import.meta.url)));
-    write('backend/quality/spotbugs-suppression-policy.json', readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url)));
+    const buildScript = readFileSync(new URL('../../backend/build.gradle', import.meta.url));
+    const fixturePolicy = policy(); fixturePolicy.toolchain.spotbugsGradlePlugin.buildScriptSha256 = digest(buildScript);
+    write('backend/build.gradle', buildScript);
+    write('backend/quality/spotbugs-suppression-policy.json', `${JSON.stringify(fixturePolicy, null, 2)}\n`);
     write('backend/quality/spotbugs-exclude.xml', readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url)));
     write('backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', readFileSync(new URL('../../backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', import.meta.url)));
     write(sourcePath, 'a\nb\nc\n'); write('backend/build/classes/java/main/com/example/Example.class', 'class'); write('backend/build/classes/java/main/com/example/Example$Nested.class', 'nested'); write('plugin.jar', 'plugin'); write('engine.jar', 'engine'); write('aux.jar', 'aux'); write('detector.jar', 'detector'); write('java-home/bin/java', 'java'); const currentEvidence = evidence(dir); currentEvidence.task.classes.push({ path: join(dir, 'backend/build/classes/java/main/com/example/Example$Nested.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example$Nested.class', sha256: digest('nested') }); currentEvidence.java.installationPath = join(dir, 'java-home'); currentEvidence.java.launcherPath = join(dir, 'java-home/bin/java'); currentEvidence.java.launcherSha256 = digest('java'); const rawXml = xml().replace('<BugCollection>', `<BugCollection><Project projectName="${currentEvidence.task.classes[1].path}"/>`), rawHtml = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html><body>${currentEvidence.engine.classpath[0].path}</body></html>`; assert.doesNotMatch(sanitizeReports({ rawXml, rawHtml, evidence: currentEvidence, root: dir }).xml, /\/tmp\//); for (const suffix of ['-extra', '/child', '.extra']) assert.throws(() => sanitizeReports({ rawXml, rawHtml: `<html>${currentEvidence.engine.classpath[0].path}${suffix}</html>`, evidence: currentEvidence, root: dir }), /partial token/); assert.throws(() => sanitizeReports({ rawXml, rawHtml: `<html>x${currentEvidence.engine.classpath[0].path}</html>`, evidence: currentEvidence, root: dir }), /partial token/); assert.throws(() => sanitizeReports({ rawXml, rawHtml: '<html>/home/unknown</html>', evidence: currentEvidence, root: dir }), /unmapped host path/); const sameIdentity = structuredClone(currentEvidence); sameIdentity.task.auxClassPaths = [{ ...sameIdentity.engine.classpath[0] }]; assert.equal(sanitizeReports({ rawXml, rawHtml, evidence: sameIdentity, root: dir }).html.includes('evidence-path:['), false); const crossRole = structuredClone(currentEvidence); crossRole.plugin.implementationPath = crossRole.engine.classpath[0].path; crossRole.plugin.implementationSha256 = digest('engine'); assert.equal(validateEvidence(crossRole, policy(), dir), true); assert.match(sanitizeReports({ rawXml, rawHtml, evidence: crossRole, root: dir }).html, new RegExp(`evidence-path:\\[dependency:x:y:1/engine\\.jar\\|gradle-plugin:com\\.github\\.spotbugs/${digest('engine')}\\]`)); write('raw.xml', rawXml); write('raw.html', rawHtml); write('evidence.json', JSON.stringify(currentEvidence));
