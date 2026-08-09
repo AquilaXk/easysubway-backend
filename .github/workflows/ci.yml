@@ -262,15 +262,15 @@ jobs:
           node tools/ci/backend-spotbugs-gate.mjs validate \
             --repo-root "$GITHUB_WORKSPACE" \
             --policy backend/quality/spotbugs-suppression-policy.json \
-            --xml backend/build/reports/spotbugs/spotbugsMain.xml \
-            --html backend/build/reports/spotbugs/spotbugsMain.html \
+            --raw-xml backend/build/reports/spotbugs/spotbugsMain.xml \
+            --raw-html backend/build/reports/spotbugs/spotbugsMain.html \
+            --xml "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.xml" \
+            --html "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.html" \
             --evidence "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json" \
             --source-sha "$source_sha" \
             --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
             --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
             --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
-          cp backend/build/reports/spotbugs/spotbugsMain.xml "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.xml"
-          cp backend/build/reports/spotbugs/spotbugsMain.html "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.html"
 
       - name: Upload SpotBugs current-run artifact
         id: spotbugs_artifact
@@ -308,6 +308,8 @@ jobs:
           node tools/ci/backend-spotbugs-gate.mjs validate-final \
             --repo-root "$GITHUB_WORKSPACE" \
             --policy backend/quality/spotbugs-suppression-policy.json \
+            --raw-xml backend/build/reports/spotbugs/spotbugsMain.xml \
+            --raw-html backend/build/reports/spotbugs/spotbugsMain.html \
             --xml "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.xml" \
             --html "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.html" \
             --evidence "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json" \
