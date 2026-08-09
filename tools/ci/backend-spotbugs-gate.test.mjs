@@ -230,7 +230,10 @@ test('exclude filter is exactly the one policy-owned Class matcher', () => {
   assert.equal(validateExcludeFilter(policy(), '<?xml version="1.0"?><FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match></FindBugsFilter>'), true);
   const tracked = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
   assert.equal(validateExcludeFilter(policy(), tracked), true);
+  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match><Class name="com.other.Unapproved"/></FindBugsFilter>'), /one exact Match/);
+  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match><Or><Class name="com.other.Unapproved"/></Or></FindBugsFilter>'), /one exact Match/);
   assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Package name="com.easysubway"/></Match></FindBugsFilter>'), /exact/);
+  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.*"/></Match></FindBugsFilter>'), /exact/);
   assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="&unknown;"/></Match></FindBugsFilter>'), /entity|malformed/);
     assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><!-- broken -- comment --><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match></FindBugsFilter>'), /comment/);
     assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match></FindBugsFilter>garbage'), /unconsumed/);
