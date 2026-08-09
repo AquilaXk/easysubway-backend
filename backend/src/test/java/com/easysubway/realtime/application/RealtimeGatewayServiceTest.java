@@ -53,6 +53,35 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("provider raw cause는 공개 unavailable cause로 정규화한다")
+	void normalizesProviderCauseForArrivalAndTrainPosition() {
+		RealtimeProviderException exception = new RealtimeProviderException("PROVIDER_TIMEOUT");
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		RealtimeProvider provider = new RealtimeProvider() {
+			@Override
+			public List<RealtimeArrival> arrivals(RealtimeQuery query) {
+				throw new RealtimeProviderException("provider detail must not be public");
+			}
+
+			@Override
+			public List<RealtimeTrainPosition> trainPositions(RealtimeQuery query) {
+				throw new RealtimeProviderException(null);
+			}
+		};
+		RealtimeGatewayService service = service(provider, clock);
+
+		RealtimeArrivalResult arrivals = service.arrivals(sangnoksuQuery());
+		clock.instant = Instant.parse("2026-06-26T08:01:00Z");
+		RealtimeTrainPositionResult positions = service.trainPositions(line4Query());
+
+		assertThat(exception.providerCause()).isEqualTo("PROVIDER_TIMEOUT");
+		assertThat(arrivals.status()).hasToString("UNAVAILABLE");
+		assertThat(arrivals.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(positions.status()).hasToString("UNAVAILABLE");
+		assertThat(positions.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+	}
+
+	@Test
 	@DisplayName("provider의 TOPIS 로컬(KST) recptnDt는 경계에서 ISO providerReceivedAt으로 정규화되어 emit된다")
 	void normalizesProviderTimestampToIsoAtBoundary() {
 		// TOPIS recptnDt는 "yyyy-MM-dd HH:mm:ss"(KST). 17:00:00 KST = 08:00:00Z, clock과 20초 차 → fresh.
