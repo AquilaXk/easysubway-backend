@@ -17,7 +17,7 @@ concurrency:
 jobs:
   dependency-vulnerability-scan:
     name: Dependency Vulnerability Scan / osv-scan
-    if: ${{ github.event_name == 'pull_request' }}
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
     runs-on: ubuntu-latest
     timeout-minutes: 10
     permissions:
@@ -26,44 +26,55 @@ jobs:
       contents: read
     steps:
       - name: Checkout immutable PR base
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           ref: ${{ github.event.pull_request.base.sha }}
           persist-credentials: false
       - name: Verify immutable PR base checkout
+        if: ${{ github.event_name == 'pull_request' }}
         run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
       - name: Scan immutable PR base
+        if: ${{ github.event_name == 'pull_request' }}
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
             --lockfile=tools/qa/package-lock.json
+            --all-packages
             --format=json
             --output=/github/runner_temp/base-results.json
       - name: Checkout tested PR head
+        if: ${{ github.event_name == 'pull_request' }}
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify tested PR head checkout
+        if: ${{ github.event_name == 'pull_request' }}
         run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
       - name: Record source PR head identity
+        if: ${{ github.event_name == 'pull_request' }}
         run: |
           test -n "${{ github.event.pull_request.head.sha }}"
           printf 'source-pr-head=%s\n' "${{ github.event.pull_request.head.sha }}" >> "$GITHUB_STEP_SUMMARY"
       - name: Scan tested PR head
+        if: ${{ github.event_name == 'pull_request' }}
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
             --lockfile=tools/qa/package-lock.json
+            --all-packages
             --format=json
             --output=/github/runner_temp/head-results.json
       - name: Validate immutable PR scan results
+        if: ${{ github.event_name == 'pull_request' }}
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"
       - name: Report PR dependency vulnerabilities
+        if: ${{ github.event_name == 'pull_request' }}
         uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
         with:
           scan-args: |-
@@ -73,7 +84,7 @@ jobs:
             --gh-annotations=true
             --fail-on-vuln=true
       - name: Upload PR OSV results
-        if: ${{ !cancelled() }}
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: osv-results-${{ github.sha }}
@@ -83,41 +94,36 @@ jobs:
             ${{ runner.temp }}/results.sarif
           retention-days: 5
       - name: Upload PR OSV SARIF
-        if: ${{ !cancelled() }}
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
         uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
 
-  dependency-vulnerability-scan-dispatch:
-    name: Dependency Vulnerability Scan / osv-scan
-    # workflow_dispatch는 owner/operator 수동 진단 전용이며 automerge recovery 경로가 아니다.
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    runs-on: ubuntu-latest
-    timeout-minutes: 10
-    permissions:
-      actions: read
-      security-events: write
-      contents: read
-    steps:
       - name: Checkout immutable dispatch SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
         with:
           ref: ${{ github.sha }}
           persist-credentials: false
       - name: Verify immutable dispatch checkout
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
       - name: Scan immutable dispatch SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         continue-on-error: true
         uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
             --lockfile=tools/qa/package-lock.json
+            --all-packages
             --format=json
             --output=/github/runner_temp/results.json
       - name: Validate immutable dispatch results
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/results.json"
       - name: Report dispatch dependency vulnerabilities
+        if: ${{ github.event_name == 'workflow_dispatch' }}
         uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
         with:
           scan-args: |-
@@ -126,7 +132,7 @@ jobs:
             --gh-annotations=false
             --fail-on-vuln=true
       - name: Upload dispatch OSV results
-        if: ${{ !cancelled() }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: osv-results-${{ github.sha }}
@@ -135,7 +141,7 @@ jobs:
             ${{ runner.temp }}/results.sarif
           retention-days: 5
       - name: Upload dispatch OSV SARIF
-        if: ${{ !cancelled() }}
+        if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
         uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89
         with:
           sarif_file: ${{ runner.temp }}/results.sarif

@@ -5,28 +5,46 @@ import { join } from 'node:path';
 import { tmpdir } from 'node:os';
 import { spawn } from 'node:child_process';
 import test from 'node:test';
-import { validateCiExecutionControl, validateOsvResultFile, validateOsvResults } from './backend-ci-lifecycle.mjs';
+import { loadConfiguredOsvLockfiles, validateCiExecutionControl, validateOsvResultFile, validateOsvResults } from './backend-ci-lifecycle.mjs';
 
 const workflowUrl = new URL('../../.github/workflows/ci.yml', import.meta.url);
 const policyUrl = new URL('../../backend/quality/ci-execution-control.json', import.meta.url);
 const scanner = '8dc09193bb540e09b23da07ad7e30bd33bf87018';
 
-test('OSV validator accepts a clean report and fails closed on malformed output', () => {
+test('OSV validator requires every policy lockfile and fails closed on malformed output', () => {
   const dir = mkdtempSync(join(tmpdir(), 'backend-ci-lifecycle-'));
+  const lockfiles = ['backend/gradle.lockfile', 'tools/qa/package-lock.json'];
   try {
     const clean = join(dir, 'clean.json');
-    writeFileSync(clean, '{"results":[]}');
-    assert.equal(validateOsvResultFile(clean), true);
+    const report = { results: lockfiles.map((path) => ({
+      source: { path, type: 'lockfile' },
+      packages: [{ package: { name: 'example', version: '1.0.0', ecosystem: 'npm' }, vulnerabilities: [], groups: [] }],
+    })) };
+    writeFileSync(clean, JSON.stringify(report));
+    assert.deepEqual(loadConfiguredOsvLockfiles(), lockfiles);
+    assert.equal(validateOsvResultFile(clean, lockfiles), true);
     for (const [name, value] of [
       ['empty.json', ''], ['broken.json', '{'], ['array.json', '[]'], ['missing-results.json', '{}'],
       ['bad-source.json', '{"results":[{"source":{},"packages":[]}]}'],
       ['bad-package.json', '{"results":[{"source":{"path":"x","type":"lockfile"},"packages":[{}]}]}'],
     ]) {
       const path = join(dir, name); writeFileSync(path, value);
-      assert.throws(() => validateOsvResultFile(path), /invalid OSV results/);
+      assert.throws(() => validateOsvResultFile(path, lockfiles), /invalid OSV results/);
     }
-    assert.throws(() => validateOsvResultFile(join(dir, 'missing.json')), /missing/);
-    assert.equal(validateOsvResults({ results: [{ source: { path: 'x', type: 'lockfile' }, packages: [{ package: { name: 'x', version: '1', ecosystem: 'npm' }, vulnerabilities: [], groups: [] }] }] }), true);
+    assert.throws(() => validateOsvResultFile(join(dir, 'missing.json'), lockfiles), /missing/);
+    for (const mutate of [
+      (value) => { value.results = []; },
+      (value) => { value.results.pop(); },
+      (value) => { value.results.push(structuredClone(value.results[0])); },
+      (value) => { value.results[0].source.path = '../backend/gradle.lockfile'; },
+      (value) => { value.results[0].source.path = '/tmp/backend/gradle.lockfile'; },
+      (value) => { value.results[0].source.type = 'directory'; },
+      (value) => { value.results[0].packages = []; },
+      (value) => { value.results[0].packages[0].package.version = 1; },
+    ]) {
+      const mutation = structuredClone(report); mutate(mutation);
+      assert.throws(() => validateOsvResults(mutation, lockfiles), /invalid OSV results/);
+    }
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
@@ -53,7 +71,7 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.match(workflow, /concurrency:\n  group: \$\{\{ github\.event_name == 'pull_request'[\s\S]*github\.event\.pull_request\.number[\s\S]*github\.run_id[^\n]*\}\}/);
   assert.match(workflow, /cancel-in-progress: \$\{\{ github\.event_name == 'pull_request' \}\}/);
   assert.match(workflow, /name: Backend CI\n    runs-on: ubuntu-latest\n    timeout-minutes: 30/);
-  assert.match(workflow, /dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan \/ osv-scan\n    if: \$\{\{ github\.event_name == 'pull_request' \}\}\n    runs-on: ubuntu-latest\n    timeout-minutes: 10/);
+  assert.match(workflow, /dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan \/ osv-scan\n    if: \$\{\{ github\.event_name == 'pull_request' \|\| github\.event_name == 'workflow_dispatch' \}\}\n    runs-on: ubuntu-latest\n    timeout-minutes: 10/);
   assert.doesNotMatch(workflow, /google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/);
   assert.match(workflow, new RegExp(`google/osv-scanner-action/osv-scanner-action@${scanner}`, 'g'));
   assert.match(workflow, new RegExp(`google/osv-scanner-action/osv-reporter-action@${scanner}`));
@@ -69,6 +87,8 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.match(workflow, /--output=\/github\/runner_temp\/results\.sarif/);
   assert.ok(workflow.indexOf('Checkout tested PR head') < workflow.indexOf('Validate immutable PR scan results'));
   assert.equal((workflow.match(/continue-on-error: true/g) || []).length, 3);
+  assert.equal((workflow.match(/^    name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length, 1);
+  assert.doesNotMatch(workflow, /^  dependency-vulnerability-scan-dispatch:/m);
 });
 
 test('policy/workflow static validation fails closed for unknown or malformed mutations', async () => {
@@ -92,11 +112,12 @@ test('policy/workflow static validation fails closed for unknown or malformed mu
   const reporterContinue = workflow
     .replace('      - name: Scan immutable PR base\n        continue-on-error: true', '      - name: Scan immutable PR base')
     .replace('      - name: Report PR dependency vulnerabilities', '      - name: Report PR dependency vulnerabilities\n        continue-on-error: true');
-  assert.throws(() => validateCiExecutionControl(policy, reporterContinue), /workflow missing "continue-on-error: true"|step Report PR dependency vulnerabilities/);
+  assert.throws(() => validateCiExecutionControl(policy, reporterContinue), /scanner-only continue-on-error mismatch|workflow missing "continue-on-error: true"|step Report PR dependency vulnerabilities/);
   const weakPermission = workflow.replace('      actions: read', '      actions: write');
   assert.throws(() => validateCiExecutionControl(policy, weakPermission), /permissions mismatch/);
   const missingEquality = workflow.replace('run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"', 'run: true');
   assert.throws(() => validateCiExecutionControl(policy, missingEquality), /workflow missing "test/);
-  assert.throws(() => validateCiExecutionControl(policy, workflow.replace('name: Dependency Vulnerability Scan / osv-scan', 'name: osv-scan')), /required OSV job names/);
+  assert.throws(() => validateCiExecutionControl(policy, workflow.replace('name: Dependency Vulnerability Scan / osv-scan', 'name: osv-scan')), /workflow missing "name: Dependency Vulnerability Scan \/ osv-scan"|required OSV job names/);
+  assert.throws(() => validateCiExecutionControl(policy, workflow.replace("if: ${{ github.event_name == 'workflow_dispatch' }}\n        uses: actions/checkout", 'uses: actions/checkout')), /workflow missing "if: \$\{\{ github\.event_name == 'workflow_dispatch' \}\}"|step Checkout immutable dispatch SHA/);
   assert.throws(() => validateCiExecutionControl(policy, workflow.replace('cancel-in-progress: ${{ github.event_name == \'pull_request\' }}', 'cancel-in-progress: false')), /workflow missing/);
 });

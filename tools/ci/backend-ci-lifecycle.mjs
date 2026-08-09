@@ -26,6 +26,16 @@ const requireStep = (workflow, name, fragments, forbidden = []) => {
   for (const fragment of fragments) requireText(block, fragment);
   for (const fragment of forbidden) if (block.includes(fragment)) policyFail(`step ${name} must not contain ${JSON.stringify(fragment)}`);
 };
+const configuredLockfiles = ['backend/gradle.lockfile', 'tools/qa/package-lock.json'];
+
+export function loadConfiguredOsvLockfiles() {
+  let policy;
+  try { policy = JSON.parse(readFileSync(new URL('../../backend/quality/ci-execution-control.json', import.meta.url), 'utf8')); } catch { fail('machine policy cannot be read'); }
+  if (!isObject(policy) || !isObject(policy.osv) || !Array.isArray(policy.osv.lockfiles) || policy.osv.lockfiles.join('|') !== configuredLockfiles.join('|')) {
+    fail('machine policy lockfiles mismatch');
+  }
+  return [...policy.osv.lockfiles];
+}
 
 export function validateCiExecutionControl(policy, workflow) {
   exactKeys(policy, ['schemaVersion', 'gateId', 'issue', 'requiredContext', 'events', 'timeouts', 'durationEvidence', 'osv'], 'root');
@@ -71,9 +81,11 @@ export function validateCiExecutionControl(policy, workflow) {
   const expectedConcurrency = "concurrency:\n  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}-pr-{2}', github.workflow, github.event.repository.full_name, github.event.pull_request.number) || format('{0}-{1}-{2}', github.workflow, github.event_name, github.run_id) }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}";
   requireText(workflow, expectedConcurrency);
   requireText(workflow, 'name: Dependency Vulnerability Scan / osv-scan');
-  if ((workflow.match(/name: Dependency Vulnerability Scan \/ osv-scan/g) || []).length !== 2) policyFail('required OSV job names mismatch');
+  if ((workflow.match(/name: Dependency Vulnerability Scan \/ osv-scan/g) || []).length !== 1) policyFail('required OSV job names mismatch');
   requireText(workflow, 'timeout-minutes: 30');
-  if ((workflow.match(/timeout-minutes: 10/g) || []).length !== 2) policyFail('OSV timeout mismatch');
+  if ((workflow.match(/timeout-minutes: 10/g) || []).length !== 1) policyFail('OSV timeout mismatch');
+  requireText(workflow, "dependency-vulnerability-scan:\n    name: Dependency Vulnerability Scan / osv-scan\n    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}");
+  if (/^  dependency-vulnerability-scan-dispatch:/m.test(workflow)) policyFail('skipped OSV sibling remains');
   if (/google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/.test(workflow)) policyFail('reusable OSV caller remains');
   for (const fragment of [
     `google/osv-scanner-action/osv-scanner-action@${policy.osv.scanner}`,
@@ -86,31 +98,31 @@ export function validateCiExecutionControl(policy, workflow) {
   if ((workflow.match(/continue-on-error: true/g) || []).length !== 3) policyFail('scanner-only continue-on-error mismatch');
   const scannerAction = `uses: google/osv-scanner-action/osv-scanner-action@${policy.osv.scanner}`;
   const reporterAction = `uses: google/osv-scanner-action/osv-reporter-action@${policy.osv.scanner}`;
-  for (const [name, output] of [
-    ['Scan immutable PR base', '/github/runner_temp/base-results.json'],
-    ['Scan tested PR head', '/github/runner_temp/head-results.json'],
-    ['Scan immutable dispatch SHA', '/github/runner_temp/results.json'],
-  ]) requireStep(workflow, name, ['continue-on-error: true', scannerAction, `--output=${output}`]);
-  for (const [name, inputs] of [
-    ['Report PR dependency vulnerabilities', ['/github/runner_temp/results.sarif', '--old=/github/runner_temp/base-results.json', '--new=/github/runner_temp/head-results.json']],
-    ['Report dispatch dependency vulnerabilities', ['/github/runner_temp/results.sarif', '--new=/github/runner_temp/results.json']],
-  ]) requireStep(workflow, name, [reporterAction, ...inputs], ['continue-on-error']);
-  requireStep(workflow, 'Validate immutable PR scan results', ['validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"'], ['continue-on-error']);
-  requireStep(workflow, 'Validate immutable dispatch results', ['validate-osv-results "${{ runner.temp }}/results.json"'], ['continue-on-error']);
-  requireStep(workflow, 'Upload PR OSV results', ['if: ${{ !cancelled() }}', `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/base-results.json', '${{ runner.temp }}/head-results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  requireStep(workflow, 'Upload PR OSV SARIF', ['if: ${{ !cancelled() }}', `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  requireStep(workflow, 'Upload dispatch OSV results', ['if: ${{ !cancelled() }}', `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  requireStep(workflow, 'Upload dispatch OSV SARIF', ['if: ${{ !cancelled() }}', `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
-  for (const [checkout, ref] of [
-    ['Checkout immutable PR base', '${{ github.event.pull_request.base.sha }}'],
-    ['Checkout tested PR head', '${{ github.sha }}'],
-    ['Checkout immutable dispatch SHA', '${{ github.sha }}'],
-  ]) requireStep(workflow, checkout, [`actions/checkout@${policy.osv.checkout}`, `ref: ${ref}`, 'persist-credentials: false']);
-  for (const [verify, sha] of [
-    ['Verify immutable PR base checkout', '${{ github.event.pull_request.base.sha }}'],
-    ['Verify tested PR head checkout', '${{ github.sha }}'],
-    ['Verify immutable dispatch checkout', '${{ github.sha }}'],
-  ]) requireStep(workflow, verify, [`test "$(git rev-parse HEAD)" = "${sha}"`]);
+  for (const [name, event, output] of [
+    ['Scan immutable PR base', 'pull_request', '/github/runner_temp/base-results.json'],
+    ['Scan tested PR head', 'pull_request', '/github/runner_temp/head-results.json'],
+    ['Scan immutable dispatch SHA', 'workflow_dispatch', '/github/runner_temp/results.json'],
+  ]) requireStep(workflow, name, ["if: ${{ github.event_name == '" + event + "' }}", 'continue-on-error: true', scannerAction, '--all-packages', `--output=${output}`]);
+  for (const [name, event, inputs] of [
+    ['Report PR dependency vulnerabilities', 'pull_request', ['/github/runner_temp/results.sarif', '--old=/github/runner_temp/base-results.json', '--new=/github/runner_temp/head-results.json']],
+    ['Report dispatch dependency vulnerabilities', 'workflow_dispatch', ['/github/runner_temp/results.sarif', '--new=/github/runner_temp/results.json']],
+  ]) requireStep(workflow, name, ["if: ${{ github.event_name == '" + event + "' }}", reporterAction, ...inputs], ['continue-on-error']);
+  requireStep(workflow, 'Validate immutable PR scan results', ["if: ${{ github.event_name == 'pull_request' }}", 'validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"'], ['continue-on-error']);
+  requireStep(workflow, 'Validate immutable dispatch results', ["if: ${{ github.event_name == 'workflow_dispatch' }}", 'validate-osv-results "${{ runner.temp }}/results.json"'], ['continue-on-error']);
+  requireStep(workflow, 'Upload PR OSV results', ["if: ${{ github.event_name == 'pull_request' && !cancelled() }}", `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/base-results.json', '${{ runner.temp }}/head-results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
+  requireStep(workflow, 'Upload PR OSV SARIF', ["if: ${{ github.event_name == 'pull_request' && !cancelled() }}", `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
+  requireStep(workflow, 'Upload dispatch OSV results', ["if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}", `actions/upload-artifact@${policy.osv.artifact}`, '${{ runner.temp }}/results.json', '${{ runner.temp }}/results.sarif'], ['continue-on-error']);
+  requireStep(workflow, 'Upload dispatch OSV SARIF', ["if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}", `github/codeql-action/upload-sarif@${policy.osv.sarif}`, 'sarif_file: ${{ runner.temp }}/results.sarif'], ['continue-on-error']);
+  for (const [checkout, ref, event] of [
+    ['Checkout immutable PR base', '${{ github.event.pull_request.base.sha }}', 'pull_request'],
+    ['Checkout tested PR head', '${{ github.sha }}', 'pull_request'],
+    ['Checkout immutable dispatch SHA', '${{ github.sha }}', 'workflow_dispatch'],
+  ]) requireStep(workflow, checkout, ["if: ${{ github.event_name == '" + event + "' }}", `actions/checkout@${policy.osv.checkout}`, `ref: ${ref}`, 'persist-credentials: false']);
+  for (const [verify, sha, event] of [
+    ['Verify immutable PR base checkout', '${{ github.event.pull_request.base.sha }}', 'pull_request'],
+    ['Verify tested PR head checkout', '${{ github.sha }}', 'pull_request'],
+    ['Verify immutable dispatch checkout', '${{ github.sha }}', 'workflow_dispatch'],
+  ]) requireStep(workflow, verify, ["if: ${{ github.event_name == '" + event + "' }}", `test "$(git rev-parse HEAD)" = "${sha}"`]);
   for (const [checkout, verify] of [
     ['Checkout immutable PR base', 'Verify immutable PR base checkout'],
     ['Checkout tested PR head', 'Verify tested PR head checkout'],
@@ -120,7 +132,7 @@ export function validateCiExecutionControl(policy, workflow) {
     const nextStepAt = workflow.indexOf('\n      - name:', checkoutAt + 1);
     if (nextStepAt < 0 || !workflow.slice(nextStepAt + 1).startsWith(`      - name: ${verify}`)) policyFail(`${checkout} must be immediately followed by ${verify}`);
   }
-  for (const job of ['dependency-vulnerability-scan', 'dependency-vulnerability-scan-dispatch']) {
+  for (const job of ['dependency-vulnerability-scan']) {
     const jobBlock = new RegExp(`^  ${job}:\\n([\\s\\S]*?)(?=^  [a-z][a-z0-9-]+:|$(?![\\s\\S]))`, 'm').exec(workflow)?.[0];
     if (!jobBlock) policyFail(`workflow missing job ${job}`);
     const permissions = /^    permissions:\n((?:      [^\n]+\n)+)/m.exec(jobBlock)?.[1];
@@ -129,15 +141,22 @@ export function validateCiExecutionControl(policy, workflow) {
   return true;
 }
 
-export function validateOsvResults(value) {
+export function validateOsvResults(value, lockfiles) {
   if (!isObject(value)) fail('top-level value must be an object');
   if (!Array.isArray(value.results)) fail('results must be an array');
+  if (!Array.isArray(lockfiles) || lockfiles.length === 0 || new Set(lockfiles).size !== lockfiles.length || lockfiles.some((path) => typeof path !== 'string' || !/^[a-z0-9][a-z0-9._/-]*$/.test(path) || path.includes('//') || path.split('/').includes('..'))) fail('configured lockfiles are invalid');
+  const expected = new Set(lockfiles);
+  const seen = new Set();
   for (const [resultIndex, result] of value.results.entries()) {
     if (!isObject(result)) fail(`results[${resultIndex}] must be an object`);
-    if (!isObject(result.source) || typeof result.source.path !== 'string' || typeof result.source.type !== 'string') {
+    if (!isObject(result.source) || typeof result.source.path !== 'string' || result.source.type !== 'lockfile') {
       fail(`results[${resultIndex}].source must contain string path and type`);
     }
     if (!Array.isArray(result.packages)) fail(`results[${resultIndex}].packages must be an array`);
+    if (result.packages.length === 0) fail(`results[${resultIndex}].packages must be non-empty`);
+    const sourcePath = result.source.path.startsWith('/github/workspace/') ? result.source.path.slice('/github/workspace/'.length) : result.source.path;
+    if ((sourcePath !== result.source.path && result.source.path !== `/github/workspace/${sourcePath}`) || !expected.has(sourcePath) || seen.has(sourcePath)) fail(`results[${resultIndex}].source path must name one configured lockfile exactly once`);
+    seen.add(sourcePath);
     for (const [packageIndex, pkg] of result.packages.entries()) {
       if (!isObject(pkg) || typeof pkg.package?.name !== 'string' || typeof pkg.package?.version !== 'string' || typeof pkg.package?.ecosystem !== 'string') {
         fail(`results[${resultIndex}].packages[${packageIndex}].package must contain string name, version, ecosystem`);
@@ -147,10 +166,11 @@ export function validateOsvResults(value) {
       }
     }
   }
+  if (seen.size !== expected.size) fail('every configured lockfile must have exactly one result');
   return true;
 }
 
-export function validateOsvResultFile(path) {
+export function validateOsvResultFile(path, lockfiles) {
   if (typeof path !== 'string' || path === '') fail('path is required');
   let stat;
   try { stat = lstatSync(path); } catch { fail(`${path} is missing`); }
@@ -160,14 +180,15 @@ export function validateOsvResultFile(path) {
   if (text.trim() === '') fail(`${path} is empty`);
   let value;
   try { value = JSON.parse(text); } catch { fail(`${path} is not JSON`); }
-  return validateOsvResults(value);
+  return validateOsvResults(value, lockfiles);
 }
 
 export function main(argv = process.argv.slice(2)) {
   if (argv[0] !== 'validate-osv-results' || argv.length < 2) {
     throw new Error('usage: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results <json-path> [<json-path>...]');
   }
-  for (const path of argv.slice(1)) validateOsvResultFile(path);
+  const lockfiles = loadConfiguredOsvLockfiles();
+  for (const path of argv.slice(1)) validateOsvResultFile(path, lockfiles);
 }
 
 if (import.meta.url === `file://${process.argv[1]}`) {

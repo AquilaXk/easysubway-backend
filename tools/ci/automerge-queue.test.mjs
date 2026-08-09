@@ -2351,25 +2351,21 @@ test('CI dispatch는 owner 수동 진단 전용이고 배포 producer dispatch�
   const osvCondition = jobCondition(ciWorkflow, 'dependency-vulnerability-scan');
   assert.ok(osvCondition, 'osv job condition must stay testable');
   assert.ok(osvCondition.includes("github.event_name == 'pull_request'"));
-  assert.ok(!osvCondition.includes('workflow_dispatch'));
+  assert.ok(osvCondition.includes("github.event_name == 'workflow_dispatch'"));
 
-  // dispatch는 immutable github.sha 전체 스캔으로만 같은 required context를 만든다.
-  const dispatchOsvCondition = jobCondition(ciWorkflow, 'dependency-vulnerability-scan-dispatch');
-  assert.ok(dispatchOsvCondition, 'dispatch osv job condition must stay testable');
-  assert.ok(dispatchOsvCondition.includes("github.event_name == 'workflow_dispatch'"));
-  assert.ok(!dispatchOsvCondition.includes('pull_request'));
-  const dispatchOsvJob = ciWorkflow.slice(ciWorkflow.indexOf('  dependency-vulnerability-scan-dispatch:'));
-  assert.doesNotMatch(dispatchOsvJob, /google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/);
-  assert.ok(dispatchOsvJob.includes('ref: ${{ github.sha }}'));
-  assert.ok(dispatchOsvJob.includes('test "$(git rev-parse HEAD)" = "${{ github.sha }}"'));
-  // 두 job 모두 workflow name과 결합해 required context를 정확히 만든다.
+  // dispatch는 같은 OSV job 안에서 immutable github.sha 전체 스캔만 수행한다.
+  const osvJob = ciWorkflow.slice(ciWorkflow.indexOf('  dependency-vulnerability-scan:'), ciWorkflow.indexOf('\n  backend:'));
+  assert.doesNotMatch(osvJob, /google\/osv-scanner-action\/\.github\/workflows\/osv-scanner-reusable/);
+  assert.ok(osvJob.includes('ref: ${{ github.sha }}'));
+  assert.ok(osvJob.includes('test "$(git rev-parse HEAD)" = "${{ github.sha }}"'));
+  // 단일 job만 workflow name과 결합해 required context를 정확히 만든다.
   assert.equal(
     (ciWorkflow.match(/^ {4}name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length,
-    2,
+    1,
   );
-  assert.ok(dispatchOsvJob.includes('--new=/github/runner_temp/results.json'));
-  assert.ok(dispatchOsvJob.includes('--gh-annotations=false'));
-  assert.ok(dispatchOsvJob.includes('--fail-on-vuln=true'));
+  assert.ok(osvJob.includes('--new=/github/runner_temp/results.json'));
+  assert.ok(osvJob.includes('--gh-annotations=false'));
+  assert.ok(osvJob.includes('--fail-on-vuln=true'));
 
   // GITHUB_TOKEN 병합은 push 이벤트를 만들지 않으므로 producer는 dispatch로도
   // 이미지 job까지 실행돼야 한다.
