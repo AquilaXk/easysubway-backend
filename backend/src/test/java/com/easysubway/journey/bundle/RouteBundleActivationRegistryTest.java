@@ -26,8 +26,35 @@ class RouteBundleActivationRegistryTest {
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> identity("a", 1, "server-route-bundle", 0, T0, T0.plusSeconds(60)))
 			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identity(
+			"a", 1, "server-route-bundle", 9_007_199_254_740_992L, T0, T0.plusSeconds(60)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			" bundle-a", 1, "route-bundle-key", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"", 1, "route-bundle-key", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"bundle-a", 1, " route-bundle-key", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"bundle-a", 1, "", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"bundle-a", 1, "route-bundle-key", "2026-08-09T00:00:00.000+00:00", kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"bundle-a", 1, "route-bundle-key", "2026-02-29T09:00:00.000+09:00", kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new RouteBundleAdmissionEvidence(
 			"a".repeat(63), "final", "promotion", "publication", "activation"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteBundleAdmissionEvidence(
+			"a".repeat(64), " final", "promotion", "publication", "activation"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteBundleAdmissionEvidence(
+			"a".repeat(64), "", "promotion", "publication", "activation"))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new RouteBundleIdentity.SchemaCompatibility(3, 4))
 			.isInstanceOf(IllegalArgumentException.class);
@@ -202,13 +229,27 @@ class RouteBundleActivationRegistryTest {
 	private static RouteBundleIdentity identity(
 		String manifestMarker, int manifestVersion, String artifactKind, long releaseSequence,
 		Instant activeFrom, Instant freshUntil) {
+		return identityWithRawValues(
+			"bundle-" + manifestMarker, releaseSequence, "route-bundle-key",
+			kstMillis(activeFrom), kstMillis(freshUntil), manifestVersion, artifactKind);
+	}
+
+	private static RouteBundleIdentity identityWithRawValues(
+		String bundleId, long releaseSequence, String keyId, String activeFrom, String freshUntil) {
+		return identityWithRawValues(
+			bundleId, releaseSequence, keyId, activeFrom, freshUntil, 1, "server-route-bundle");
+	}
+
+	private static RouteBundleIdentity identityWithRawValues(
+		String bundleId, long releaseSequence, String keyId, String activeFrom, String freshUntil,
+		int manifestVersion, String artifactKind) {
 		return new RouteBundleIdentity(
-			manifestVersion, artifactKind, "bundle-" + manifestMarker, releaseSequence,
+			manifestVersion, artifactKind, bundleId, releaseSequence,
 			"0".repeat(64), "1".repeat(64), "2".repeat(64), "3".repeat(64),
 			"4".repeat(64), "5".repeat(64), "6".repeat(64), "7".repeat(64),
-			"Asia/Seoul", kstMillis(activeFrom), kstMillis(freshUntil),
+			"Asia/Seoul", activeFrom, freshUntil,
 			new RouteBundleIdentity.SchemaCompatibility(3, 3),
-			"route-bundle-key", new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "AQID"));
+			keyId, new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "AQID"));
 	}
 
 	private static RouteBundleAdmissionEvidence evidence(String manifestMarker) {

@@ -23,8 +23,8 @@ public record RouteBundleAdmissionEvidence(
 	}
 
 	private static void requireRawReference(String value, String field) {
-		if (value == null || value.isEmpty()) {
-			throw new IllegalArgumentException(field + " must not be empty");
+		if (value == null || value.isEmpty() || !value.equals(value.strip())) {
+			throw new IllegalArgumentException(field + " must be non-empty raw text without trim changes");
 		}
 	}
 }
