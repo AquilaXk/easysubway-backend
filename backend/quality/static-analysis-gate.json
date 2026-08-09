@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gateId": "backend-static-analysis-gate",
   "defaultPolicy": "closed-report-policy-before-final-enforcement",
-  "enforcementStatus": "spotbugs-discovery-remote-red",
+  "enforcementStatus": "spotbugs-foundation-reviewed-findings-required",
   "ciRuntimeBudgetMinutes": {
     "maxAdditionalMinutes": 3,
     "measurementRequiredBeforeEnforcement": true
@@ -20,20 +20,20 @@
     },
     {
       "id": "spotbugs",
-      "enforcement": "required_fail_closed_discovery",
+      "enforcement": "required_fail_closed_foundation_reviewed_findings",
       "firstAllowedGate": "backend-spotbugs-main",
       "evidence": {
         "suppressionPolicy": "backend/quality/spotbugs-suppression-policy.json",
         "excludeFilter": "backend/quality/spotbugs-exclude.xml",
         "requiredValidator": "tools/ci/backend-spotbugs-gate.mjs",
         "resultArtifact": "backend-spotbugs-${GITHUB_SHA}/backend-spotbugs-result.json",
-        "failMode": "ignoreFailures=true only while the closed validator produces the required discovery RED artifact",
+        "failMode": "ignoreFailures=true only while the closed validator proves the exact reviewed FIX_REQUIRED inventory; Backend #4 exclusively owns ignoreFailures=false final enforcement",
         "foundationIssue": "https://github.com/AquilaXk/easysubway-backend/issues/35"
       },
       "requires": [
         "closed finding-policy validator",
         "current XML/HTML/result artifact",
-        "root-reviewed exact FIX_REQUIRED inventory before phase-two PASS"
+        "exact 195-entry Backend #4 OPEN FIX_REQUIRED inventory with no missing, extra, duplicate, stale, expired, wildcard, or owner mismatch"
       ]
     },
     {
