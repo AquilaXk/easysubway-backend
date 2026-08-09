@@ -316,16 +316,22 @@ class RealtimeGatewayServiceTest {
 				return 0;
 			}
 		};
+		CountingProvider provider = new CountingProvider();
 		RealtimeGatewayService service = service(
-			new CountingProvider(),
+			provider,
 			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
 			InMemoryRealtimeMappingPort.seededFixture(),
 			failingArchive
 		);
 
-		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+		RealtimeArrivalResult first = service.arrivals(sangnoksuQuery());
+		RealtimeArrivalResult cached = service.arrivals(sangnoksuQuery());
 
-		assertThat(result.status()).hasToString("FRESH");
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(cached.status()).hasToString("FRESH");
+		assertThat(cached.receivedAt()).isEqualTo(first.receivedAt());
+		assertThat(cached.arrivals()).isEqualTo(first.arrivals());
+		assertThat(provider.arrivalCalls).hasValue(1);
 		assertThat(service.providerHealthSnapshot().archiveFailureCount()).isEqualTo(1);
 	}
 
@@ -451,18 +457,23 @@ class RealtimeGatewayServiceTest {
 	void timeoutReturnsUnavailableWithoutStaleCache() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(provider, clock);
-		RealtimeQuery query = sangnoksuQuery();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
 
-		service.arrivals(query);
-		clock.instant = Instant.parse("2026-06-26T08:01:31Z");
+		service.arrivals(sangnoksuQuery());
+		service.trainPositions(line4Query());
+		clock.instant = Instant.parse("2026-06-26T08:00:20.001Z");
 		provider.failureCode = "PROVIDER_TIMEOUT";
-		RealtimeArrivalResult unavailable = service.arrivals(query);
+		RealtimeArrivalResult unavailableArrivals = service.arrivals(sangnoksuQuery());
+		RealtimeTrainPositionResult unavailablePositions = service.trainPositions(line4Query());
 
-		assertThat(unavailable.status()).hasToString("UNAVAILABLE");
-		assertThat(unavailable.fallbackCode()).isEqualTo("PROVIDER_TIMEOUT");
-		assertThat(unavailable.arrivals()).isEmpty();
+		assertThat(unavailableArrivals.status()).hasToString("UNAVAILABLE");
+		assertThat(unavailableArrivals.fallbackCode()).isEqualTo("PROVIDER_TIMEOUT");
+		assertThat(unavailableArrivals.arrivals()).isEmpty();
+		assertThat(unavailablePositions.status()).hasToString("UNAVAILABLE");
+		assertThat(unavailablePositions.fallbackCode()).isEqualTo("PROVIDER_TIMEOUT");
+		assertThat(unavailablePositions.trainPositions()).isEmpty();
 		assertThat(provider.arrivalCalls).hasValue(2);
+		assertThat(provider.trainPositionCalls).hasValue(2);
 		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
 	}
 
