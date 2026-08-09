@@ -31,6 +31,7 @@ description = 'EasySubway backend'
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
 	}
 }
 
@@ -157,9 +158,77 @@ tasks.named('jacocoTestReport') {
 }
 
 tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	launcher = javaToolchains.launcherFor {
+		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
 	reports {
 		html.required = true
 		xml.required = true
+	}
+}
+
+def spotbugsMainEvidence = layout.buildDirectory.file('spotbugs/spotbugsMain-evidence.json')
+
+tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask) {
+	reports.named('html') {
+		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.html')
+	}
+	reports.named('xml') {
+		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.xml')
+	}
+}
+
+tasks.register('writeSpotbugsMainEvidence') {
+	def spotbugsMain = tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask)
+	dependsOn spotbugsMain
+	outputs.file(spotbugsMainEvidence)
+
+	doLast {
+		def task = spotbugsMain.get()
+		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+		def repositoryPath = { value -> "backend/${project.relativePath(value).replace('\\', '/')}" }
+		def directoryEntries = { values -> values.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it)] }.sort { it.repositoryPath } }
+		def fileEntries = { values -> values.findAll { it.isFile() }.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it), sha256: hash(it)] }.sort { it.repositoryPath } }
+		def artifactMap = { configuration, label ->
+			def mapped = [:]
+			configuration.incoming.artifactView { }.artifacts.artifacts.each { artifact ->
+				def file = artifact.file.canonicalFile
+				if (!file.isFile()) throw new GradleException("non-regular ${label} artifact: ${file}")
+				def owner = artifact.variant.owner
+				if (!(owner instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier)) throw new GradleException("unmapped ${label} component: ${owner}")
+				def identity = [component: "${owner.group}:${owner.module}:${owner.version}", artifact: file.name]
+				if (mapped.put(file, identity) != null) throw new GradleException("conflicting ${label} artifact: ${file}")
+			}
+			mapped
+		}
+		def artifactFiles = { values, mapped, label -> values.collect { file ->
+			if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
+			def canonical = file.canonicalFile
+			def item = mapped[canonical]
+			if (item == null) throw new GradleException("unmapped ${label} input: ${canonical}")
+			[component: item.component, artifact: item.artifact, path: canonical.canonicalPath, sha256: hash(canonical)]
+		}.sort { "${it.component}/${it.artifact}" } }
+		def expandedFiles = { directories, pattern -> directories.collectMany { fileTree(it).matching { include pattern }.files }.toSet().toList() }
+		def plugin = plugins.getPlugin('com.github.spotbugs')
+		def pluginJar = new File(plugin.class.protectionDomain.codeSource.location.toURI())
+		def launcher = task.launcher.get().metadata
+		if (!JvmVendorSpec.ADOPTIUM.matches(launcher.vendor)) throw new GradleException("spotbugsMain launcher is not Adoptium: ${launcher.vendor}")
+		def excludeFilter = task.excludeFilter.get().asFile
+		def xmlReport = task.reports.xml.outputLocation.get().asFile
+		def htmlReport = task.reports.html.outputLocation.get().asFile
+		def engineArtifacts = artifactMap(configurations.spotbugs, 'SpotBugs engine')
+		def auxiliaryArtifacts = artifactMap(configurations.compileClasspath, 'SpotBugs auxiliary classpath')
+		def output = spotbugsMainEvidence.get().asFile
+		output.parentFile.mkdirs()
+		def sourceDirs = task.sourceDirs.files.toList()
+		def classDirs = task.classDirs?.files?.toList() ?: []
+		if (classDirs.isEmpty()) throw new GradleException('spotbugsMain has no class directories')
+		def taskClasses = task.classes
+		if (taskClasses == null) throw new GradleException('spotbugsMain classes input is unavailable')
+		def compiledClasses = taskClasses.asFileTree.files.toList()
+		if (compiledClasses.isEmpty() || compiledClasses.any { !it.isFile() || !it.name.endsWith('.class') } || compiledClasses.any { candidate -> !classDirs.any { directory -> candidate.canonicalPath.startsWith(directory.canonicalPath + File.separator) } }) throw new GradleException('spotbugsMain classes input does not match compiled class directories')
+		output.setText(groovy.json.JsonOutput.toJson([schemaVersion: 1, gradle: [version: gradle.gradleVersion], plugin: [id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: plugin.class.name, implementationPath: pluginJar.canonicalPath, implementationSha256: hash(pluginJar)], engine: [toolVersion: spotbugs.toolVersion.get(), classpath: artifactFiles(task.spotbugsClasspath.files, engineArtifacts, 'SpotBugs engine')], java: [requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: launcher.vendor.toString(), languageVersion: launcher.languageVersion.asInt(), runtimeVersion: launcher.javaRuntimeVersion, jvmVersion: launcher.jvmVersion, installationPath: launcher.installationPath.asFile.canonicalPath, launcherPath: new File(launcher.installationPath.asFile, 'bin/java').canonicalPath, launcherSha256: hash(new File(launcher.installationPath.asFile, 'bin/java'))], task: [name: task.name, path: task.path, type: task.class.name, ignoreFailures: task.ignoreFailures, sourceDirs: directoryEntries(sourceDirs), classDirs: directoryEntries(classDirs), sources: fileEntries(expandedFiles(sourceDirs, '**/*.java')), classes: fileEntries(compiledClasses), auxClassPaths: artifactFiles(task.auxClassPaths.files, auxiliaryArtifacts, 'SpotBugs auxiliary classpath'), excludeFilter: repositoryPath(excludeFilter), xmlOutput: repositoryPath(xmlReport), htmlOutput: repositoryPath(htmlReport)]]) + '\n', 'UTF-8')
 	}
 }
 

@@ -1,25 +1,21 @@
 {
   "schemaVersion": 1,
-  "policyId": "backend-spotbugs-suppression",
-  "failMode": "report_only_ignore_failures",
-  "excludeFilter": "backend/quality/spotbugs-exclude.xml",
-  "allowedSuppressionReasons": [
-    "generated or framework entrypoint noise",
-    "intentional mutable exposure with documented ownership",
-    "false positive with linked SpotBugs bug id"
-  ],
-  "currentBaseline": {
-    "measuredAt": "2026-07-22",
-    "command": "./gradlew spotbugsMain --no-daemon",
-    "bugInstanceCount": 194,
-    "priorityBreakdown": {
-      "2": 194
-    }
+  "artifactKind": "backend-spotbugs-policy-v1",
+  "gateId": "backend-spotbugs-main",
+  "issue": { "url": "https://github.com/AquilaXk/easysubway-backend/issues/35", "title": "[CI][Backend][P1] SpotBugs report·finding-policy required gate" },
+  "origin": { "repository": "AquilaXk/easysubway-backend", "foundationSha": "5334c98ee146a117338789c261d439aa2153d0b4" },
+  "toolchain": {
+    "gradleVersion": null,
+    "spotbugsGradlePlugin": { "id": "com.github.spotbugs", "requestedVersion": "6.2.2", "buildScriptSha256": "6413fb038015c44e16dbccfd3ec483989e2d55edeab60fa13d0bdf2d5a20f16f", "implementationClass": null, "implementationJarSha256": null },
+    "spotbugsEngine": { "toolVersion": null, "classpath": null },
+    "javaLauncher": { "vendorSpec": "ADOPTIUM", "languageVersion": 21 },
+    "task": "spotbugsMain"
   },
-  "baselineProcess": [
-    "HTML/XML 리포트에서 현재 violation 수를 기록한다",
-    "신규 High/Scary 이슈는 수정하거나 억제 근거를 PR에 남긴다",
-    "ignoreFailures 해제는 baseline 안정화 후 별도 이슈로 한다"
-  ],
-  "notes": "억제는 exclude filter에만 넣고, 사유 없는 광범위 Match는 금지한다."
+  "analysis": { "sourceSet": "main", "sourceRoot": "backend/src/main/java", "classOutputRoot": "backend/build/classes/java/main", "excludeFilter": "backend/quality/spotbugs-exclude.xml", "gradleIgnoreFailures": true },
+  "spotbugsTest": { "disposition": "NOT_REQUIRED_CURRENT", "reason": "test classes are not shipped runtime code", "reviewTriggers": ["test output becomes packaged/runtime", "custom source set mixes test and production outputs", "bootJar or image admits test classes", "Gradle source-set/classpath semantics change"] },
+  "exclusions": [{ "className": "com.easysubway.EasySubwayBackendApplication", "sourcePath": "backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java", "sourceSha256": "d0e6c8a5ab74a8c10fead9443573e9acb5b4c240e71f85246744a18b1601aa53", "reason": "bootstrap-only Spring Boot/scheduling entrypoint; product business logic 없음", "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/4", "ownerIssueTitle": "[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환", "ownerIssueState": "OPEN", "removalCondition": "Backend #4 reviews the class against the current report and either removes the filter or records the exact terminal justification.", "reviewTriggers": ["source byte change", "class/member/annotation or responsibility change", "plugin/JDK/task/source-set change", "broader class/package Match", "Backend #4 remediation"] }],
+  "findingIdentity": { "algorithm": "sha256-canonical-json-v1", "fields": ["bugPattern", "category", "priority", "rank", "className", "methodName", "methodSignature", "sourcePath", "startLine", "endLine", "sourceSha256"] },
+  "allowedDispositions": ["FIX_REQUIRED", "FALSE_POSITIVE_EXACT_SUPPRESSION", "ACCEPTED_BOUNDED_RISK", "GENERATED_OR_NON_OWNED_EXCLUSION"],
+  "findings": [],
+  "transition": { "phase": "DISCOVERY_REMOTE_RED", "foundationOwnerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/35", "finalOwnerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/4", "finalRequirements": ["ignoreFailures=false", "FIX_REQUIRED count 0", "every remaining finding has an exact terminal disposition"] }
 }
