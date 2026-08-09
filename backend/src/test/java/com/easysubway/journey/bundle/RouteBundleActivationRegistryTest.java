@@ -62,6 +62,9 @@ class RouteBundleActivationRegistryTest {
 	void activationRechecksCandidateFreshnessWithoutMutatingStateOnFailure() {
 		var clock = new MutableClock(T0);
 		var registry = new RouteBundleActivationRegistry(clock);
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
+			() -> registry.stage(candidate("future", T0.plusSeconds(1), T0.plusSeconds(10)), 0));
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, registry::activeSnapshot);
 		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(10));
 		registry.stage(candidate, 0);
 		clock.set(T0.plusSeconds(10));
@@ -88,6 +91,8 @@ class RouteBundleActivationRegistryTest {
 			() -> registry.activate("z".repeat(64), 1));
 		assertThat(registry.activeSnapshot()).isEqualTo(firstSnapshot);
 		assertThat(registry.activate(second.identity().manifestSha256(), 1).generation()).isEqualTo(2);
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED,
+			() -> registry.activate("z".repeat(64), 2));
 	}
 
 	@Test
