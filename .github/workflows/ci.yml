@@ -241,6 +241,8 @@ jobs:
         id: spotbugs_inputs
         shell: bash
         working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
         run: |
           set -euo pipefail
           test "$(git -C .. rev-parse HEAD)" = "${{ github.sha }}"
