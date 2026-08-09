@@ -80,6 +80,23 @@ test('XML accepts direct children only, nullable line locations, and makes phase
     const classEntry = { path: clazz, repositoryPath: 'backend/build/classes/java/main/com/example/Example.class', sha256: digest('class') };
     const report = validateReport({ policy: policy(), xml: xml(), html: '<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html><body>human evidence</body></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] });
     assert.equal(report.outcome, 'FAIL'); assert.equal(report.summary.unclassified, 1); assert.equal(report.findings[0].methodName, '<init>');
+    const cdata = xml().replace('<SourceLine sourcepath="com/example/Example.java" start="2" end="2"/>', '<SourceLine sourcepath="com/example/Example.java" start="2" end="2"/><Details><![CDATA[official details <!DOCTYPE opaque><!ENTITY opaque> <p><code>path\\value &unknown;</code></p><BugInstance><Class/></BugInstance></BugCollection>]]></Details>');
+    const cdataReport = validateReport({ policy: policy(), xml: cdata, html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] });
+    assert.equal(cdataReport.summary.reported, 1); assert.equal(cdataReport.findings.length, 1);
+    const quotedGreaterThan = xml().replace('rank="18"', 'rank="18" note="a > b"');
+    assert.equal(validateReport({ policy: policy(), xml: quotedGreaterThan, html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }).summary.reported, 1);
+    const commentGreaterThan = xml().replace('<!-- current SpotBugs report -->', '<!-- current > SpotBugs report -->');
+    assert.equal(validateReport({ policy: policy(), xml: commentGreaterThan, html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }).summary.reported, 1);
+    for (const [label, malformed] of [
+      ['unclosed CDATA', cdata.replace(']]></Details>', '</Details>')],
+      ['CDATA before root', cdata.replace('<BugCollection>', '<![CDATA[outside]]><BugCollection>')],
+      ['CDATA after root', cdata.replace(/<\/BugCollection>$/, '</BugCollection><![CDATA[outside]]>')],
+      ['ordinary text CDATA terminator', xml().replace('</BugCollection>', ']]></BugCollection>')],
+      ['unclosed quoted attribute', xml().replace('rank="18"', 'rank="unterminated>')]
+    ]) assert.throws(() => validateReport({ policy: policy(), xml: malformed, html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }), /XML/, label);
+    assert.throws(() => validateReport({ policy: policy(), xml: xml().replace('</BugCollection>', '&unknown;</BugCollection>'), html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }), /entity/);
+    assert.throws(() => validateReport({ policy: policy(), xml: xml().replace('<BugCollection>', '<!DOCTYPE root><BugCollection>'), html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }), /XML/);
+    assert.throws(() => validateReport({ policy: policy(), xml: xml().replace('<BugCollection>', '<!ENTITY x "y"><BugCollection>'), html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }), /XML/);
     const nested = xml().replace('<Class classname="com.example.Example"/>', '<Detail><Class classname="com.example.Example"/></Detail>');
     assert.throws(() => validateReport({ policy: policy(), xml: nested, html: '<html></html>', repositoryRoot: dir, sourceEntries: [sourceEntry], classEntries: [classEntry] }), /direct Class/);
     const oneSided = xml().replace(' signature="()V"', '');

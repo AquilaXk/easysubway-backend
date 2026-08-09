@@ -48,14 +48,47 @@ const decodeEntities = (value) => {
   return value.replaceAll('&lt;', '<').replaceAll('&gt;', '>').replaceAll('&amp;', '&').replaceAll('&quot;', '"').replaceAll('&apos;', "'");
 };
 const tokenize = (xml) => {
-  if (typeof xml !== 'string' || /<!DOCTYPE|<!ENTITY|(?:\/Users\/|\/home\/|\/tmp\/|github_pat_|ghp_|AKIA|-----BEGIN)/i.test(xml)) fail('XML evidence is invalid');
+  if (typeof xml !== 'string' || /(?:\/Users\/|\/home\/|\/tmp\/|github_pat_|ghp_|AKIA|-----BEGIN)/i.test(xml)) fail('XML evidence is invalid');
   const doc = { name: '#document', children: [] }, stack = [doc];
   let cursor = 0, declaration = false, rootSeen = false;
-  for (const match of xml.matchAll(/<[^>]*>/g)) {
-    const between = xml.slice(cursor, match.index);
-    if (between.includes('<') || (stack.length === 1 && between.trim() !== '')) fail('XML has unconsumed markup');
-    decodeEntities(between); cursor = match.index + match[0].length;
-    const raw = match[0];
+  const textBefore = (end) => {
+    const between = xml.slice(cursor, end);
+    if (between.includes('<') || between.includes(']]>') || (stack.length === 1 && between.trim() !== '')) fail('XML has unconsumed markup');
+    decodeEntities(between);
+  };
+  const normalTagEnd = (start) => {
+    let quoted = false;
+    for (let index = start + 1; index < xml.length; index += 1) {
+      if (xml[index] === '"') quoted = !quoted;
+      else if (xml[index] === '<') fail('XML token malformed');
+      else if (xml[index] === '>' && !quoted) return index;
+    }
+    fail('XML token malformed');
+  };
+  while (cursor < xml.length) {
+    const start = xml.indexOf('<', cursor);
+    if (start < 0) break;
+    textBefore(start);
+    let end;
+    if (xml.startsWith('<?', start)) {
+      end = xml.indexOf('?>', start + 2);
+      if (end < 0) fail('XML declaration is invalid');
+      end += 2;
+    } else if (xml.startsWith('<!--', start)) {
+      end = xml.indexOf('-->', start + 4);
+      if (end < 0) fail('XML comment is invalid');
+      end += 3;
+    } else if (xml.startsWith('<![CDATA[', start)) {
+      if (stack.length <= 1) fail('XML CDATA is outside root');
+      end = xml.indexOf(']]>', start + 9);
+      if (end < 0) fail('XML CDATA is invalid');
+      cursor = end + 3;
+      continue;
+    } else {
+      end = normalTagEnd(start) + 1;
+    }
+    const raw = xml.slice(start, end);
+    cursor = end;
     if (/^<\?xml/.test(raw)) {
       if (declaration || rootSeen || stack.length !== 1 || !/^<\?xml\s+version="1\.0"(?:\s+encoding="UTF-8")?(?:\s+standalone="(?:yes|no)")?\s*\?>$/.test(raw)) fail('XML declaration is invalid');
       declaration = true; continue;
@@ -71,7 +104,7 @@ const tokenize = (xml) => {
     stack.at(-1).children.push(node); if (stack.length === 1) rootSeen = true;
     if (!raw.endsWith('/>')) stack.push(node);
   }
-  const tail = xml.slice(cursor); if (tail.includes('<') || tail.trim() !== '') fail('XML has unconsumed markup'); decodeEntities(tail);
+  textBefore(xml.length);
   if (stack.length !== 1 || !rootSeen || doc.children.length !== 1) fail(`XML tags are malformed (stack=${stack.length}, root=${rootSeen}, nodes=${doc.children.length})`); return doc;
 };
 const direct = (node, name) => node.children.filter((child) => child.name === name);
