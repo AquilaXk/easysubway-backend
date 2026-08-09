@@ -1,10 +1,11 @@
 import assert from 'node:assert/strict';
+import { execFileSync, spawnSync } from 'node:child_process';
 import { createHash } from 'node:crypto';
 import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { safeProject, validateEvidence, validateExcludeFilter, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
+import { pullRequestHeadSha, safeProject, validateEvidence, validateExcludeFilter, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const sourcePath = 'backend/src/main/java/com/example/Example.java';
@@ -48,10 +49,15 @@ test('Gradle evidence is authoritative and internal paths are rehashed', () => {
     const missingDetector = evidence(dir); rmSync(join(dir, 'detector.jar'));
     assert.throws(() => validateEvidence(missingDetector, policy(), dir), /external plugins is missing/);
     writeFileSync(join(dir, 'detector.jar'), 'detector');
-    const duplicateDetector = evidence(dir); duplicateDetector.task.pluginJarFiles.push({ ...duplicateDetector.task.pluginJarFiles[0] });
-    assert.throws(() => validateEvidence(duplicateDetector, policy(), dir), /duplicate SpotBugs external plugins/);
-    const overlappingGraph = evidence(dir); overlappingGraph.task.pluginJarFiles = [{ ...overlappingGraph.task.pluginJarFiles[0], component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }];
-    assert.throws(() => validateEvidence(overlappingGraph, policy(), dir), /graphs overlap/);
+    const missingEngine = evidence(dir); missingEngine.engine.classpath = [];
+    assert.throws(() => validateEvidence(missingEngine, policy(), dir), /engine classpath inventory is missing/);
+    const conflictingDetector = evidence(dir); conflictingDetector.task.pluginJarFiles.push({ ...conflictingDetector.task.pluginJarFiles[0], component: 'x:other-detector:1', artifact: 'other-detector.jar' });
+    assert.throws(() => validateEvidence(conflictingDetector, policy(), dir), /duplicate SpotBugs external plugins/);
+    const sharedEngineAndAuxiliary = evidence(dir); sharedEngineAndAuxiliary.task.auxClassPaths = [{ ...sharedEngineAndAuxiliary.engine.classpath[0] }];
+    assert.equal(validateEvidence(sharedEngineAndAuxiliary, policy(), dir), true);
+    mkdirSync(join(dir, 'engine-role'), { recursive: true }); mkdirSync(join(dir, 'auxiliary-role'), { recursive: true }); writeFileSync(join(dir, 'engine-role/shared.jar'), 'engine-role'); writeFileSync(join(dir, 'auxiliary-role/shared.jar'), 'auxiliary-role');
+    const sameFilenameDifferentRoleIdentity = evidence(dir); sameFilenameDifferentRoleIdentity.engine.classpath = [{ component: 'x:engine:1', artifact: 'shared.jar', path: join(dir, 'engine-role/shared.jar'), sha256: digest('engine-role') }]; sameFilenameDifferentRoleIdentity.task.auxClassPaths = [{ component: 'x:auxiliary:1', artifact: 'shared.jar', path: join(dir, 'auxiliary-role/shared.jar'), sha256: digest('auxiliary-role') }];
+    assert.equal(validateEvidence(sameFilenameDifferentRoleIdentity, policy(), dir), true);
     writeFileSync(join(dir, 'plugin.jar'), 'tampered');
     assert.throws(() => validateEvidence(evidence(dir), policy(), dir), /stale/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
@@ -115,9 +121,7 @@ test('Gradle binds SpotBugs 6.2.2 public launcher and keeps engine, auxiliary, a
   assert.match(build, /exactArtifactFiles\(task\.spotbugsClasspath\.files, engineArtifacts/);
   assert.match(build, /exactArtifactFiles\(task\.auxClassPaths\.files, auxiliaryArtifacts/);
   assert.match(build, /exactArtifactFiles\(task\.pluginJarFiles\.files, pluginArtifacts/);
-  assert.match(build, /assertDisjoint\('SpotBugs engine', engineArtifacts, 'SpotBugs auxiliary classpath', auxiliaryArtifacts\)/);
-  assert.match(build, /assertDisjoint\('SpotBugs engine', engineArtifacts, 'SpotBugs external plugins', pluginArtifacts\)/);
-  assert.match(build, /assertDisjoint\('SpotBugs auxiliary classpath', auxiliaryArtifacts, 'SpotBugs external plugins', pluginArtifacts\)/);
+  assert.doesNotMatch(build, /assertDisjoint|input graphs overlap/);
   assert.match(build, /def declaredTaskType = com\.github\.spotbugs\.snom\.SpotBugsTask/);
   assert.match(build, /declaredTaskType\.isAssignableFrom\(task\.class\)/);
   assert.doesNotMatch(build, /SpotBugsTask\$/);
@@ -139,5 +143,32 @@ test('sanitized analyzer projection preserves exact Java proof and source identi
     assert.throws(() => validateEvidence(missingJavaProof, policy(), dir), /Java evidence key order/);
     const missingSources = evidence(dir); delete missingSources.task.sources;
     assert.throws(() => validateEvidence(missingSources, policy(), dir), /task evidence key order/);
+  } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('PR-head provenance binds a distinct synthetic checkout head and rejects missing, malformed, or tampered values', () => {
+  const dir = mkdtempSync(join(tmpdir(), 'spotbugs-pr-head-'));
+  const write = (relativePath, value) => { const target = join(dir, relativePath); mkdirSync(dirname(target), { recursive: true }); writeFileSync(target, value); };
+  const gate = new URL('./backend-spotbugs-gate.mjs', import.meta.url).pathname;
+  const run = (args) => spawnSync(process.execPath, [gate, ...args], { cwd: dir, encoding: 'utf8' });
+  try {
+    write('backend/build.gradle', readFileSync(new URL('../../backend/build.gradle', import.meta.url)));
+    write('backend/quality/spotbugs-suppression-policy.json', readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url)));
+    write('backend/quality/spotbugs-exclude.xml', readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url)));
+    write('backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', readFileSync(new URL('../../backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', import.meta.url)));
+    write(sourcePath, 'a\nb\nc\n'); write('backend/build/classes/java/main/com/example/Example.class', 'class'); write('plugin.jar', 'plugin'); write('engine.jar', 'engine'); write('aux.jar', 'aux'); write('detector.jar', 'detector'); write('bin/java', 'java'); write('spotbugsMain.xml', xml()); write('spotbugsMain.html', '<html><body>human evidence</body></html>'); write('evidence.json', JSON.stringify(evidence(dir)));
+    execFileSync('git', ['init', '-q'], { cwd: dir }); execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir }); execFileSync('git', ['config', 'user.name', 'SpotBugs fixture'], { cwd: dir }); execFileSync('git', ['add', '.'], { cwd: dir }); execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: dir });
+    const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(), prHeadSha = 'b'.repeat(40), output = join(dir, 'result.json'), summary = join(dir, 'summary.md');
+    const options = ['--repo-root', dir, '--policy', join(dir, 'backend/quality/spotbugs-suppression-policy.json'), '--xml', join(dir, 'spotbugsMain.xml'), '--html', join(dir, 'spotbugsMain.html'), '--evidence', join(dir, 'evidence.json'), '--source-sha', sourceSha, '--pull-request-head-sha', prHeadSha, '--output', output, '--summary', summary];
+    const validated = run(['validate', ...options]); assert.equal(validated.status, 0, validated.stderr);
+    const result = JSON.parse(readFileSync(output, 'utf8')); assert.deepEqual(Object.keys(result), ['schemaVersion', 'artifactKind', 'sourceSha', 'pullRequestHeadSha', 'analyzer', 'inputs', 'reports', 'findings', 'summary', 'outcome']); assert.equal(result.sourceSha, sourceSha); assert.equal(result.pullRequestHeadSha, prHeadSha);
+    const final = run(['validate-final', ...options]); assert.equal(final.status, 1); assert.match(final.stderr, /DISCOVERY_REMOTE_RED/);
+    writeFileSync(output, '{}\n'); const tampered = run(['validate-final', ...options]); assert.equal(tampered.status, 1); assert.match(tampered.stderr, /artifact tamper/);
+    const noneOutput = join(dir, 'none-result.json'), noneSummary = join(dir, 'none-summary.md'), noneOptions = [...options.slice(0, options.indexOf('--pull-request-head-sha') + 1), 'none', '--output', noneOutput, '--summary', noneSummary];
+    const none = run(['validate', ...noneOptions]); assert.equal(none.status, 0, none.stderr); assert.equal(JSON.parse(readFileSync(noneOutput, 'utf8')).pullRequestHeadSha, null);
+    const missing = run(['validate', ...options.filter((value) => value !== '--pull-request-head-sha' && value !== prHeadSha)]); assert.equal(missing.status, 1); assert.match(missing.stderr, /pull-request-head-sha/);
+    const malformed = run(['validate', ...options.map((value) => value === prHeadSha ? 'invalid' : value)]); assert.equal(malformed.status, 1); assert.match(malformed.stderr, /pull-request-head-sha/);
+    const sameSourceAndPrHead = run(['validate', ...options.map((value) => value === prHeadSha ? sourceSha : value)]); assert.equal(sameSourceAndPrHead.status, 1); assert.match(sameSourceAndPrHead.stderr, /head SHA must differ/);
+    assert.equal(pullRequestHeadSha('none'), null); assert.equal(pullRequestHeadSha(prHeadSha), prHeadSha); assert.throws(() => pullRequestHeadSha('invalid'), /pull-request-head-sha/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
