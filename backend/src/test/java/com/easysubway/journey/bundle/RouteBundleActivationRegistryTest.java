@@ -140,6 +140,80 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	@Test
+	void staleStagedCandidateWithoutAnActiveSnapshotIsReplacedByAFreshCandidate() {
+		var clock = new MutableClock(T0);
+		var registry = new RouteBundleActivationRegistry(clock);
+		var stale = candidate("a", T0.minusSeconds(1), T0.plusSeconds(10));
+		registry.stage(stale, 0);
+		clock.set(T0.plusSeconds(10));
+
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
+			() -> registry.activate(stale.admissionEvidence().manifestSha256(), 0));
+		var fresh = candidate("b", T0.minusSeconds(1), T0.plusSeconds(60));
+		registry.stage(fresh, 0);
+
+		var activated = registry.activate(fresh.admissionEvidence().manifestSha256(), 0);
+		assertThat(activated.generation()).isOne();
+		assertThat(activated.identity()).isEqualTo(fresh.identity());
+	}
+
+	@Test
+	void staleStagedCandidateIsReplacedWithoutChangingTheExistingActiveSnapshot() {
+		var clock = new MutableClock(T0);
+		var registry = new RouteBundleActivationRegistry(clock);
+		var activeCandidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
+		registry.stage(activeCandidate, 0);
+		var active = registry.activate(activeCandidate.admissionEvidence().manifestSha256(), 0);
+		var stale = candidate("b", T0.minusSeconds(1), T0.plusSeconds(10));
+		registry.stage(stale, 1);
+		clock.set(T0.plusSeconds(10));
+
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
+			() -> registry.activate(stale.admissionEvidence().manifestSha256(), 1));
+		var fresh = candidate("c", T0.minusSeconds(1), T0.plusSeconds(60));
+		registry.stage(fresh, 1);
+
+		assertThat(registry.activeSnapshot()).isSameAs(active);
+		assertThat(registry.activeSnapshot().generation()).isOne();
+		var activated = registry.activate(fresh.admissionEvidence().manifestSha256(), 1);
+		assertThat(activated.generation()).isEqualTo(2);
+		assertThat(activated.identity()).isEqualTo(fresh.identity());
+	}
+
+	@Test
+	void currentOrFutureStagedCandidateCannotBeReplaced() {
+		var currentRegistry = registryAt(T0);
+		var current = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
+		currentRegistry.stage(current, 0);
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED,
+			() -> currentRegistry.stage(candidate("b", T0.minusSeconds(1), T0.plusSeconds(60)), 0));
+
+		var clock = new MutableClock(T0);
+		var futureRegistry = new RouteBundleActivationRegistry(clock);
+		var future = candidate("c", T0, T0.plusSeconds(60));
+		futureRegistry.stage(future, 0);
+		clock.set(T0.minusSeconds(1));
+		var incoming = candidate("d", T0.minusSeconds(2), T0.plusSeconds(60), T0.minusSeconds(2));
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED,
+			() -> futureRegistry.stage(incoming, 0));
+	}
+
+	@Test
+	void invalidIncomingCandidateDoesNotClearAnExistingStagedCandidate() {
+		var clock = new MutableClock(T0);
+		var registry = new RouteBundleActivationRegistry(clock);
+		var staged = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
+		registry.stage(staged, 0);
+		clock.set(T0.plusSeconds(61));
+
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
+			() -> registry.stage(candidate("b", T0.minusSeconds(1), T0.plusSeconds(60)), 0));
+		clock.set(T0.plusSeconds(1));
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED,
+			() -> registry.stage(candidate("c", T0.minusSeconds(1), T0.plusSeconds(60)), 0));
+	}
+
+	@Test
 	void activeSnapshotFailsClosedWhenTheClockMovesOutsideItsValidityInterval() {
 		var clock = new MutableClock(T0);
 		var registry = new RouteBundleActivationRegistry(clock);
@@ -232,10 +306,15 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	private static VerifiedRouteBundleCandidate candidate(String manifestMarker, Instant activeFrom, Instant freshUntil) {
+		return candidate(manifestMarker, activeFrom, freshUntil, T0);
+	}
+
+	private static VerifiedRouteBundleCandidate candidate(
+		String manifestMarker, Instant activeFrom, Instant freshUntil, Instant verifiedAt) {
 		return new VerifiedRouteBundleCandidate(
 			identity(manifestMarker, 1, "server-route-bundle", 1, activeFrom, freshUntil),
 			evidence(manifestMarker),
-			new CompiledRuntimeView("compiled-" + manifestMarker), T0);
+			new CompiledRuntimeView("compiled-" + manifestMarker), verifiedAt);
 	}
 
 	private static RouteBundleIdentity identity(

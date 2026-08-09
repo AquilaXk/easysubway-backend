@@ -20,15 +20,23 @@ public final class RouteBundleActivationRegistry {
 
 	public void stage(VerifiedRouteBundleCandidate candidate, long expectedGeneration) {
 		candidate = Objects.requireNonNull(candidate, "candidate");
+		Instant now = clock.instant();
+		requireCandidateIsCurrent(candidate, now);
 		while (true) {
 			var current = state.get();
 			requireExpectedGeneration(current, expectedGeneration);
-			requireCandidateIsCurrent(candidate, clock.instant());
 			if (current.active != null && current.active.admissionEvidence().manifestSha256()
 				.equals(candidate.admissionEvidence().manifestSha256())) {
 				throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_ACTIVE);
 			}
 			if (current.staged != null) {
+				if (isStale(current.staged, now)) {
+					var replacement = new State(current.generation, current.active, candidate);
+					if (state.compareAndSet(current, replacement)) {
+						return;
+					}
+					continue;
+				}
 				throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED);
 			}
 			if (state.compareAndSet(current, new State(current.generation, current.active, candidate))) {
@@ -95,6 +103,10 @@ public final class RouteBundleActivationRegistry {
 		if (!now.isBefore(identity.freshUntilInstant())) {
 			throw failure(RouteBundleActivationException.Reason.BUNDLE_STALE);
 		}
+	}
+
+	private static boolean isStale(VerifiedRouteBundleCandidate candidate, Instant now) {
+		return !now.isBefore(candidate.identity().freshUntilInstant());
 	}
 
 	private static RouteBundleActivationException failure(RouteBundleActivationException.Reason reason) {
