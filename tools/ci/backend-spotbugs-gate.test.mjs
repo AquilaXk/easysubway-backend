@@ -40,8 +40,16 @@ test('closed phase-one policy has empty findings and rejects reviewed or expired
 test('Gradle evidence is authoritative and internal paths are rehashed', () => {
   const dir = mkdtempSync(join(tmpdir(), 'spotbugs-evidence-'));
   try {
-    writeFileSync(join(dir, 'plugin.jar'), 'plugin'); writeFileSync(join(dir, 'engine.jar'), 'engine'); writeFileSync(join(dir, 'aux.jar'), 'aux'); writeFileSync(join(dir, 'detector.jar'), 'detector'); mkdirSync(join(dir, 'bin')); writeFileSync(join(dir, 'bin/java'), 'java'); mkdirSync(join(dir, 'backend/src/main/java/com/example'), { recursive: true }); mkdirSync(join(dir, 'backend/build/classes/java/main/com/example'), { recursive: true }); writeFileSync(join(dir, sourcePath), 'a\nb\nc\n'); writeFileSync(join(dir, 'backend/build/classes/java/main/com/example/Example.class'), 'class');
+    writeFileSync(join(dir, 'plugin.jar'), 'plugin'); writeFileSync(join(dir, 'engine.jar'), 'engine'); writeFileSync(join(dir, 'aux.jar'), 'aux'); writeFileSync(join(dir, 'detector.jar'), 'detector'); mkdirSync(join(dir, 'bin')); writeFileSync(join(dir, 'bin/java'), 'java'); mkdirSync(join(dir, 'backend/src/main/java/com/example'), { recursive: true }); mkdirSync(join(dir, 'backend/build/classes/java/main/com/example'), { recursive: true }); writeFileSync(join(dir, sourcePath), 'a\nb\nc\n'); writeFileSync(join(dir, 'backend/build/classes/java/main/com/example/Example.class'), 'class'); writeFileSync(join(dir, 'backend/build/classes/java/main/com/example/Example$Nested.class'), 'nested');
     assert.equal(validateEvidence(evidence(dir), policy(), dir), true);
+    const nestedClass = evidence(dir); nestedClass.task.classes.push({ path: join(dir, 'backend/build/classes/java/main/com/example/Example$Nested.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example$Nested.class', sha256: digest('nested') });
+    assert.equal(validateEvidence(nestedClass, policy(), dir), true);
+    const traversal = evidence(dir); traversal.task.classes[0].repositoryPath = '../outside.class';
+    assert.throws(() => validateEvidence(traversal, policy(), dir), /repository-relative/);
+    const absolute = evidence(dir); absolute.task.classes[0].repositoryPath = '/tmp/outside.class';
+    assert.throws(() => validateEvidence(absolute, policy(), dir), /repository-relative/);
+    const mismatchedPath = evidence(dir); mismatchedPath.task.classes[0].repositoryPath = 'backend/build/classes/java/main/com/example/Other.class';
+    assert.throws(() => validateEvidence(mismatchedPath, policy(), dir), /escapes repository/);
     const wrongVendor = evidence(dir); wrongVendor.java.vendorMatchesRequestedSpec = false;
     assert.throws(() => validateEvidence(wrongVendor, policy(), dir), /Adoptium/);
     const wrongTaskType = evidence(dir); wrongTaskType.task.runtimeTypeAssignableToDeclared = false;
