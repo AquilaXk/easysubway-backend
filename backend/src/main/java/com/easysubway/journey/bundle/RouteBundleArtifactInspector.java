@@ -5,7 +5,9 @@ import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-import java.io.IOException;
+import java.nio.ByteBuffer;
+import java.nio.charset.CharacterCodingException;
+import java.nio.charset.CodingErrorAction;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -45,14 +47,22 @@ final class RouteBundleArtifactInspector {
 	private static JsonNode parse(byte[] bytes) {
 		if (bytes == null) throw failure(RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);
 		try {
-			var manifest = JSON.readTree(bytes);
+			var manifest = JSON.readTree(strictUtf8(bytes));
 			if (manifest == null || !manifest.isObject()) throw failure(RouteBundleInspectionException.Reason.MANIFEST_SCHEMA_INVALID);
 			return manifest;
-		} catch (IOException exception) {
-			if (exception instanceof JsonProcessingException processing
-				&& processing.getOriginalMessage().contains("Duplicate field")) throw failure(RouteBundleInspectionException.Reason.MANIFEST_DUPLICATE_FIELD);
+		} catch (CharacterCodingException exception) {
+			throw failure(RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);
+		} catch (JsonProcessingException exception) {
+			if (exception.getOriginalMessage().contains("Duplicate field")) throw failure(RouteBundleInspectionException.Reason.MANIFEST_DUPLICATE_FIELD);
 			throw failure(RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);
 		}
+	}
+
+	private static String strictUtf8(byte[] bytes) throws CharacterCodingException {
+		return StandardCharsets.UTF_8.newDecoder()
+			.onMalformedInput(CodingErrorAction.REPORT)
+			.onUnmappableCharacter(CodingErrorAction.REPORT)
+			.decode(ByteBuffer.wrap(bytes)).toString();
 	}
 
 	private static RouteBundleIdentity identity(JsonNode manifest) {
@@ -103,7 +113,7 @@ final class RouteBundleArtifactInspector {
 	}
 
 	private static void validatePayloadPaths(Map<String, byte[]> payloadBytes) {
-		if (payloadBytes == null || !payloadBytes.keySet().equals(Set.copyOf(PATHS)) || PATHS.stream().anyMatch(path -> payloadBytes.get(path) == null)) {
+		if (payloadBytes == null || !payloadBytes.keySet().equals(Set.copyOf(PATHS)) || PATHS.stream().anyMatch(path -> payloadBytes.get(path) == null || payloadBytes.get(path).length == 0)) {
 			throw failure(RouteBundleInspectionException.Reason.PAYLOAD_PATH_SET_MISMATCH);
 		}
 	}

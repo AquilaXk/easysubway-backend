@@ -42,6 +42,14 @@ class RouteBundleArtifactInspectorTest {
 	}
 
 	@Test
+	void rejectsUtf16AndUtf32JsonRawBytesWithItsExactReason() {
+		var payloads = payloads();
+		var json = new String(manifest(payloads), StandardCharsets.UTF_8);
+		assertReason(payloads, json.getBytes(StandardCharsets.UTF_16LE), RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);
+		assertReason(payloads, json.getBytes(java.nio.charset.Charset.forName("UTF-32LE")), RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID);
+	}
+
+	@Test
 	void rejectsDuplicateTopLevelFieldWithItsExactReason() {
 		var payloads = payloads();
 		assertReason(payloads, "{\"manifestVersion\":1,\"manifestVersion\":1}".getBytes(StandardCharsets.UTF_8), RouteBundleInspectionException.Reason.MANIFEST_DUPLICATE_FIELD);
@@ -89,6 +97,14 @@ class RouteBundleArtifactInspectorTest {
 				.extracting(error -> ((RouteBundleInspectionException) error).reason())
 				.isEqualTo(RouteBundleInspectionException.Reason.PAYLOAD_PATH_SET_MISMATCH);
 		}
+	}
+
+	@Test
+	void rejectsZeroByteComponentAsPayloadPathSetMismatch() {
+		var payloads = payloads();
+		var manifest = manifest(payloads);
+		payloads.put(TOPOLOGY, new byte[0]);
+		assertReason(payloads, manifest, RouteBundleInspectionException.Reason.PAYLOAD_PATH_SET_MISMATCH);
 	}
 
 	@Test
