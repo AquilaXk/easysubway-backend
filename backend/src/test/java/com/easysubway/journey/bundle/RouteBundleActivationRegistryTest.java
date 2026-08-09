@@ -220,7 +220,7 @@ class RouteBundleActivationRegistryTest {
 			barrier.await();
 			try {
 				registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
-				return ActivationResult.success();
+				return ActivationResult.passed();
 			} catch (RouteBundleActivationException exception) {
 				return ActivationResult.failure(exception.reason());
 			}
@@ -291,7 +291,7 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	private record ActivationResult(boolean success, RouteBundleActivationException.Reason reason) {
-		private static ActivationResult success() {
+		private static ActivationResult passed() {
 			return new ActivationResult(true, null);
 		}
 
