@@ -10,49 +10,146 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}-pr-{2}', github.workflow, github.event.repository.full_name, github.event.pull_request.number) || format('{0}-{1}-{2}', github.workflow, github.event_name, github.run_id) }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   dependency-vulnerability-scan:
-    name: Dependency Vulnerability Scan
-    # PR diff 스캔은 PR 컨텍스트(GITHUB_BASE_REF)가 있어야 의미가 있다.
-    if: ${{ github.event_name == 'pull_request' }}
+    name: Dependency Vulnerability Scan / osv-scan
+    if: ${{ github.event_name == 'pull_request' || github.event_name == 'workflow_dispatch' }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: read
       security-events: write
       contents: read
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable-pr.yml@9fd1bcce27f67e3bd819a0a7620e332803dc43bc
-    with:
-      export-results: false
-      upload-sarif: true
-      fail-on-vuln: true
-      scan-args: |-
-        --lockfile=backend/gradle.lockfile
-        --lockfile=tools/qa/package-lock.json
+    steps:
+      - name: Checkout immutable PR base
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
+      - name: Verify immutable PR base checkout
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.event.pull_request.base.sha }}"
+      - name: Scan immutable PR base
+        if: ${{ github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        with:
+          scan-args: |-
+            --lockfile=backend/gradle.lockfile
+            --lockfile=tools/qa/package-lock.json
+            --all-packages
+            --format=json
+            --output=/github/runner_temp/base-results.json
+      - name: Checkout tested PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify tested PR head checkout
+        if: ${{ github.event_name == 'pull_request' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+      - name: Record source PR head identity
+        if: ${{ github.event_name == 'pull_request' }}
+        run: |
+          test -n "${{ github.event.pull_request.head.sha }}"
+          printf 'source-pr-head=%s\n' "${{ github.event.pull_request.head.sha }}" >> "$GITHUB_STEP_SUMMARY"
+      - name: Scan tested PR head
+        if: ${{ github.event_name == 'pull_request' }}
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        with:
+          scan-args: |-
+            --lockfile=backend/gradle.lockfile
+            --lockfile=tools/qa/package-lock.json
+            --all-packages
+            --format=json
+            --output=/github/runner_temp/head-results.json
+      - name: Validate immutable PR scan results
+        if: ${{ github.event_name == 'pull_request' }}
+        run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"
+      - name: Report PR dependency vulnerabilities
+        if: ${{ github.event_name == 'pull_request' }}
+        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        with:
+          scan-args: |-
+            --output=/github/runner_temp/results.sarif
+            --old=/github/runner_temp/base-results.json
+            --new=/github/runner_temp/head-results.json
+            --gh-annotations=true
+            --fail-on-vuln=true
+      - name: Upload PR OSV results
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: osv-results-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/base-results.json
+            ${{ runner.temp }}/head-results.json
+            ${{ runner.temp }}/results.sarif
+          retention-days: 5
+      - name: Upload PR OSV SARIF
+        if: ${{ github.event_name == 'pull_request' && !cancelled() }}
+        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89
+        with:
+          sarif_file: ${{ runner.temp }}/results.sarif
 
-  dependency-vulnerability-scan-dispatch:
-    # 같은 required context(`Dependency Vulnerability Scan / osv-scan`)를 만든다.
-    name: Dependency Vulnerability Scan
-    # Automerge Queue가 update-branch 후 이 워크플로를 명시 dispatch한다. GITHUB_TOKEN
-    # push는 synchronize 이벤트를 만들지 못하므로 dispatch에서 required context를 새 head에
-    # 다시 붙여야 병합이 가능해진다. 다만 dispatch에는 PR 컨텍스트가 없어 GITHUB_BASE_REF가
-    # 비고, PR diff 스캔을 그대로 쓰면 같은 트리를 자기 자신과 비교해 무조건 통과한다.
-    # 그래서 이 경로는 base 비교가 필요 없는 전체 스캔을 쓴다(진단 범위가 더 넓다).
-    if: ${{ github.event_name == 'workflow_dispatch' }}
-    permissions:
-      actions: read
-      security-events: write
-      contents: read
-    uses: google/osv-scanner-action/.github/workflows/osv-scanner-reusable.yml@3a7550f43ba5b58905a821ce3a0ed24c4858b3f4
-    with:
-      export-results: false
-      upload-sarif: true
-      fail-on-vuln: true
-      scan-args: |-
-        --lockfile=backend/gradle.lockfile
-        --lockfile=tools/qa/package-lock.json
+      - name: Checkout immutable dispatch SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: actions/checkout@8e8c483db84b4bee98b60c0593521ed34d9990e8
+        with:
+          ref: ${{ github.sha }}
+          persist-credentials: false
+      - name: Verify immutable dispatch checkout
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: test "$(git rev-parse HEAD)" = "${{ github.sha }}"
+      - name: Scan immutable dispatch SHA
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        continue-on-error: true
+        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        with:
+          scan-args: |-
+            --lockfile=backend/gradle.lockfile
+            --lockfile=tools/qa/package-lock.json
+            --all-packages
+            --format=json
+            --output=/github/runner_temp/results.json
+      - name: Validate immutable dispatch results
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/results.json"
+      - name: Report dispatch dependency vulnerabilities
+        if: ${{ github.event_name == 'workflow_dispatch' }}
+        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        with:
+          scan-args: |-
+            --output=/github/runner_temp/results.sarif
+            --new=/github/runner_temp/results.json
+            --gh-annotations=false
+            --fail-on-vuln=true
+      - name: Upload dispatch OSV results
+        if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: osv-results-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/results.json
+            ${{ runner.temp }}/results.sarif
+          retention-days: 5
+      - name: Upload dispatch OSV SARIF
+        if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
+        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89
+        with:
+          sarif_file: ${{ runner.temp }}/results.sarif
 
   backend:
     name: Backend CI
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
