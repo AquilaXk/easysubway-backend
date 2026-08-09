@@ -16,7 +16,7 @@ const text = (value, label) => { if (typeof value !== 'string' || value.length =
 const sha = (value, label) => { if (typeof value !== 'string' || !/^[a-f0-9]{64}$/.test(value)) fail(`${label} must be SHA-256`); };
 const file = (path, label) => { try { if (!lstatSync(path).isFile()) fail(`${label} must be a regular file`); } catch { fail(`${label} is missing`); } };
 const directory = (path, label) => { try { if (!lstatSync(path).isDirectory()) fail(`${label} must be a directory`); } catch { fail(`${label} is missing`); } };
-const repoPath = (value, label) => { if (typeof value !== 'string' || value.startsWith('/') || value.includes('..') || !/^[A-Za-z0-9][A-Za-z0-9._/-]*$/.test(value)) fail(`${label} must be repository-relative`); };
+const repoPath = (value, label) => { if (typeof value !== 'string' || value.startsWith('/') || value.includes('..') || !/^[A-Za-z0-9][A-Za-z0-9._/$-]*$/.test(value)) fail(`${label} must be repository-relative`); };
 const within = (root, candidate) => { const rel = relative(root, candidate); return rel !== '' && rel !== '..' && !rel.startsWith(`..${sep}`); };
 const date = (value, label) => { if (!/^\d{4}-\d{2}-\d{2}$/.test(value) || new Date(`${value}T00:00:00Z`).toISOString().slice(0, 10) !== value) fail(`${label} is invalid`); };
 
