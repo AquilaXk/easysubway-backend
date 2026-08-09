@@ -233,6 +233,8 @@ jobs:
       - name: Run SpotBugs main analysis
         id: spotbugs_main
         working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
         run: ./gradlew spotbugsMain --no-daemon
 
       - name: Capture SpotBugs main evidence
