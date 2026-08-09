@@ -118,9 +118,20 @@ public record RouteBundleIdentity(
 	}
 
 	private static void requireRawText(String value, String field) {
-		if (value == null || value.isEmpty() || !value.equals(value.strip())) {
-			throw new IllegalArgumentException(field + " must be non-empty raw text without trim changes");
+		if (value == null || value.isEmpty()
+			|| isEcmaScriptTrimCodePoint(value.codePointAt(0))
+			|| isEcmaScriptTrimCodePoint(value.codePointBefore(value.length()))) {
+			throw new IllegalArgumentException(field + " must be non-empty raw text without ECMAScript trim edges");
 		}
+	}
+
+	private static boolean isEcmaScriptTrimCodePoint(int codePoint) {
+		return codePoint >= 0x2000 && codePoint <= 0x200A
+			|| switch (codePoint) {
+				case 0x0009, 0x000A, 0x000B, 0x000C, 0x000D, 0x0020, 0x00A0, 0x1680,
+					0x2028, 0x2029, 0x202F, 0x205F, 0x3000, 0xFEFF -> true;
+				default -> false;
+			};
 	}
 
 	private static void requireSha256(String value, String field) {

@@ -42,6 +42,18 @@ class RouteBundleActivationRegistryTest {
 			"bundle-a", 1, "", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> identityWithRawValues(
+			"\u00a0bundle-a", 1, "route-bundle-key", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"bundle-a", 1, "route-bundle-key\ufeff", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> identityWithRawValues(
+			"bundle-a\u2028", 1, "route-bundle-key", kstMillis(T0), kstMillis(T0.plusSeconds(60))))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThat(identityWithRawValues(
+			"\u001cbundle-a", 1, "route-bundle-key\u001c", kstMillis(T0), kstMillis(T0.plusSeconds(60)))
+			.bundleId()).isEqualTo("\u001cbundle-a");
+		assertThatThrownBy(() -> identityWithRawValues(
 			"bundle-a", 1, "route-bundle-key", "2026-08-09T00:00:00.000+00:00", kstMillis(T0.plusSeconds(60))))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> identityWithRawValues(
