@@ -1,0 +1,13 @@
+{
+  "schemaVersion": 1,
+  "artifactKind": "backend-critical-coverage-baseline-v1",
+  "repository": "AquilaXk/easysubway-backend",
+  "phase": "UNREVIEWED_DISCOVERY",
+  "provenance": null,
+  "producer": null,
+  "scope": null,
+  "exclusions": [],
+  "sources": [],
+  "boundaries": [],
+  "renames": []
+}
