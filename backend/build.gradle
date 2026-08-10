@@ -143,6 +143,11 @@ tasks.named('test') {
 	finalizedBy tasks.named('jacocoTestReport')
 }
 
+def jacocoClassDirectoryExcludes = [
+	'com/easysubway/EasySubwayBackendApplication.class',
+]
+def jacocoCoverageEvidence = layout.buildDirectory.file('jacoco/jacocoTestReport-evidence.json')
+
 tasks.named('jacocoTestReport') {
 	dependsOn tasks.named('test')
 	reports {
@@ -151,10 +156,43 @@ tasks.named('jacocoTestReport') {
 		csv.required = false
 	}
 	classDirectories.setFrom(files(classDirectories.files.collect { classesDir ->
-		fileTree(dir: classesDir, exclude: [
-			'**/*Application.class',
-		])
+		fileTree(dir: classesDir, exclude: jacocoClassDirectoryExcludes)
 	}))
+}
+
+def writeJacocoCoverageEvidence = tasks.register('writeJacocoCoverageEvidence') {
+	outputs.file(jacocoCoverageEvidence)
+	outputs.upToDateWhen { false }
+
+	doLast {
+		def reportTask = tasks.named('jacocoTestReport').get()
+		def testTask = tasks.named('test', org.gradle.api.tasks.testing.Test).get()
+		def launcher = testTask.javaLauncher.get().metadata
+		if (!JvmVendorSpec.ADOPTIUM.matches(launcher.vendor) || launcher.languageVersion.asInt() != 21) {
+			throw new GradleException("test launcher is not Adoptium 21: ${launcher.vendor} ${launcher.languageVersion}")
+		}
+		def configuredLauncher = new File(launcher.installationPath.asFile, 'bin/java')
+		def configuredReport = reportTask.reports.xml.outputLocation.get().asFile
+		if (!configuredLauncher.isFile() || java.nio.file.Files.isSymbolicLink(configuredLauncher.toPath())) throw new GradleException("test launcher is not a regular file: ${configuredLauncher}")
+		if (!configuredReport.isFile() || java.nio.file.Files.isSymbolicLink(configuredReport.toPath())) throw new GradleException("JaCoCo XML is not a regular file: ${configuredReport}")
+		def launcherFile = configuredLauncher.canonicalFile
+		def reportFile = configuredReport.canonicalFile
+		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+		def output = jacocoCoverageEvidence.get().asFile
+		output.parentFile.mkdirs()
+		output.setText(groovy.json.JsonOutput.toJson([
+			schemaVersion: 1,
+			gradleVersion: gradle.gradleVersion,
+			java: [vendor: 'ADOPTIUM', languageVersion: 21, launcherPath: launcherFile.canonicalPath, launcherSha256: hash(launcherFile)],
+			jacoco: [toolVersion: jacoco.toolVersion],
+			tasks: [test: testTask.name, report: reportTask.name],
+			report: [path: "backend/${project.relativePath(reportFile).replace('\\', '/')}", sha256: hash(reportFile), classDirectoryExcludes: jacocoClassDirectoryExcludes],
+		]) + '\n', 'UTF-8')
+	}
+}
+
+tasks.named('jacocoTestReport') {
+	finalizedBy writeJacocoCoverageEvidence
 }
 
 tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {

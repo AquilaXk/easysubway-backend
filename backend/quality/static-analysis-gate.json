@@ -65,18 +65,21 @@
     },
     {
       "id": "jacoco",
-      "enforcement": "report_only",
-      "firstAllowedGate": "coverage_baseline_after_p0_tests_stabilize",
+      "enforcement": "required_fail_closed_decrease_only",
+      "firstAllowedGate": "backend-critical-coverage",
       "evidence": {
+        "coveragePolicy": "backend/quality/jacoco-coverage-policy.json",
+        "coverageBaseline": "backend/quality/jacoco-coverage-baseline.json",
         "coverageExclusionPolicy": "backend/quality/jacoco-exclusion-policy.json",
-        "failMode": "no jacocoTestCoverageVerification / no global % fail",
-        "reportPaths": "backend/build/reports/jacoco/test/jacocoTestReport.xml",
-        "ciRuntimeMeasurement": "local 2026-07-22: ./gradlew test --tests '*PackageDependencyRulesTest' jacocoTestReport --no-daemon real 24.19s; report-only no % fail"
+        "requiredValidator": "tools/ci/backend-coverage-gate.mjs",
+        "resultArtifact": "backend-critical-coverage-${GITHUB_SHA}/backend-critical-coverage-result.json",
+        "failMode": "Phase B revalidates current evidence and requires decrease-only PASS; no Gradle global percentage gate",
+        "globalPercentFailGate": false
       },
       "requires": [
-        "P0 security and route test baseline",
-        "coverage exclusion policy",
-        "CI runtime measurement"
+        "reviewed current critical source inventory",
+        "exact JaCoCo XML and source identity",
+        "decrease-only line and branch evidence"
       ]
     }
   ],
