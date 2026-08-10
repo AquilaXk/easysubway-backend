@@ -590,20 +590,9 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@Test
 	@DisplayName("동시 nextServiceTime은 service day boarding index를 안전하게 lazy publish한다")
 	void concurrentNextServiceTimeLazilyPublishesBoardingIndex() throws Exception {
-		var initialized = planner.compile(frequencyTimetable());
-		var initializedDay = initialized.activeServiceDay(WEDNESDAY);
-		var expected = OffsetDateTime.parse("2026-07-01T09:00:00+09:00");
-
-		assertThat(initializedDay.boardingIndexInitialized()).isFalse();
-		assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), initialized)).contains(expected);
-		assertThat(initializedDay.boardingIndexInitialized()).isTrue();
-		assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), initialized)).contains(expected);
-
-		var boardingIndex = initializedDay.getClass().getDeclaredField("boardingsByStation");
-		boardingIndex.setAccessible(true);
-		var publishedIndex = boardingIndex.get(initializedDay);
 		var compiled = planner.compile(frequencyTimetable());
 		var activeDay = compiled.activeServiceDay(WEDNESDAY);
+		var expected = OffsetDateTime.parse("2026-07-01T09:00:00+09:00");
 		var worker = new AtomicReference<Thread>();
 		var started = new CountDownLatch(1);
 
@@ -618,11 +607,13 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				});
 				assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
 				assertThreadBlocked(worker.get());
-				boardingIndex.set(activeDay, publishedIndex);
+				assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled)).contains(expected);
+				assertThat(activeDay.boardingIndexInitialized()).isTrue();
 			}
 			assertThat(attempt.get(5, TimeUnit.SECONDS)).contains(expected);
 		}
 		assertThat(activeDay.boardingIndexInitialized()).isTrue();
+		assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled)).contains(expected);
 	}
 
 	private static void assertThreadBlocked(Thread thread) {
