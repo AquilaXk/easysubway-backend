@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { inspectMembers, pullRequestHeadSha, reconcileLedger, renderSummary, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
+import { inspectMembers, pullRequestHeadSha, reconcileLedger, renderSummary, resolvePriorPolicy, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validatePriorLedger, validateReport, validateSuppressedBindings, validateWorkflow } from './backend-spotbugs-gate.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const sourcePath = 'backend/src/main/java/com/example/Example.java';
@@ -63,9 +63,9 @@ test('policy fixed literals and captured JDK javap execution fail closed', () =>
 
 test('remediation summary is an exact result-derived closure artifact', () => {
   const digestValue = 'a'.repeat(64);
-  const result = { sourceSha: 'b'.repeat(40), artifactKind: 'backend-spotbugs-result-v1', analyzer: { reviewState: { phase: 'REMEDIATION_IN_PROGRESS', pluginImplementationReviewed: true, engineReviewed: true, memberBindingReviewed: true, findingsReviewed: true } }, summary: { ledgerTotal: 195, reported: 195, fixRequired: 195, fixed: 0, falsePositiveExactSuppression: 0, acceptedBoundedRisk: 0, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 }, inputs: { sourceDigest: digestValue, classDigest: digestValue, classpathDigest: digestValue, pluginClasspathDigest: digestValue, pluginImplementationDigest: digestValue, engineClasspathDigest: digestValue, javaLauncherDigest: digestValue, policyDigest: digestValue, excludeFilterDigest: digestValue }, reports: { transform: { id: 'spotbugs-report-sanitizer-v1', rawXmlSha256: digestValue, rawHtmlSha256: digestValue }, xml: { sha256: digestValue }, html: { sha256: digestValue } }, outcome: 'PASS' };
+  const result = { sourceSha: 'b'.repeat(40), artifactKind: 'backend-spotbugs-result-v1', analyzer: { reviewState: { phase: 'REMEDIATION_IN_PROGRESS', pluginImplementationReviewed: true, engineReviewed: true, memberBindingReviewed: true, findingsReviewed: true } }, summary: { ledgerTotal: 195, reported: 195, fixRequired: 195, fixed: 0, falsePositiveExactSuppression: 0, acceptedBoundedRisk: 0, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 }, inputs: { sourceDigest: digestValue, classDigest: digestValue, classpathDigest: digestValue, pluginClasspathDigest: digestValue, pluginImplementationDigest: digestValue, engineClasspathDigest: digestValue, javaLauncherDigest: digestValue, policyDigest: digestValue, priorPolicyDigest: digestValue, excludeFilterDigest: digestValue }, reports: { transform: { id: 'spotbugs-report-sanitizer-v1', rawXmlSha256: digestValue, rawHtmlSha256: digestValue }, xml: { sha256: digestValue }, html: { sha256: digestValue } }, outcome: 'PASS' };
   const summary = renderSummary(result);
-  for (const expected of ['review.pluginImplementationReviewed: true', 'review.engineReviewed: true', 'review.memberBindingReviewed: true', 'review.findingsReviewed: true', 'summary.ledgerTotal: 195', 'summary.fixed: 0', 'summary.stale: 0', 'inputs.excludeFilterDigest: ' + digestValue, 'reports.transform.rawXmlSha256: ' + digestValue, 'reports.html.sha256: ' + digestValue, 'outcome: PASS']) assert.match(summary, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const expected of ['review.pluginImplementationReviewed: true', 'review.engineReviewed: true', 'review.memberBindingReviewed: true', 'review.findingsReviewed: true', 'summary.ledgerTotal: 195', 'summary.fixed: 0', 'summary.stale: 0', 'inputs.priorPolicyDigest: ' + digestValue, 'inputs.excludeFilterDigest: ' + digestValue, 'reports.transform.rawXmlSha256: ' + digestValue, 'reports.html.sha256: ' + digestValue, 'outcome: PASS']) assert.match(summary, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
   assert.doesNotMatch(summary, /undefined/);
   assert.notEqual(summary, renderSummary({ ...result, outcome: 'FAIL' }));
 });
@@ -142,6 +142,40 @@ test('reconciliation is decrease-only and derives the exact lifecycle summary', 
   assert.throws(() => reconcileLedger(ledger, [{ ...base, identity: 'unknown' }]), /unreviewed/);
   assert.throws(() => reconcileLedger(ledger, [{ ...base, className: 'example.Stale' }]), /stale/);
   assert.throws(() => reconcileLedger(ledger, [structuredClone(base), structuredClone(base)]), /duplicate/);
+});
+
+test('prior terminal findings cannot reopen into FIX_REQUIRED', () => {
+  const first = { identity: 'a', disposition: 'FIX_REQUIRED' }, second = { identity: 'b', disposition: 'FIX_REQUIRED' };
+  const current = { findings: [first, second] };
+  assert.equal(validatePriorLedger(current, { findings: [first, second] }), true);
+  assert.throws(() => validatePriorLedger(current, { findings: [{ ...first, disposition: 'FIXED' }, second] }), /cannot reopen/);
+  assert.throws(() => validatePriorLedger(current, { findings: [first] }), /identity ledger/);
+  assert.throws(() => validatePriorLedger(current, { findings: [second, first] }), /identity ledger/);
+});
+
+test('prior policy resolver preserves exact show bytes and fails closed', () => {
+  const sourceSha = 'a'.repeat(40), priorSha = 'b'.repeat(40), current = { findings: [{ identity: 'a', disposition: 'FIX_REQUIRED' }] }, prior = { findings: [{ identity: 'a', disposition: 'FIX_REQUIRED' }] }, raw = `{\n  "findings": [\n    ${JSON.stringify(prior.findings[0])}\n  ]\n}\n`;
+  const calls = []; const exec = (args) => { calls.push(args); if (args[0] === 'show') return raw; return args[1] === 'HEAD' ? `${sourceSha}\n` : `${priorSha}\n`; };
+  assert.equal(resolvePriorPolicy({ root: '/repo', sourceSha, current, exec }), digest(raw));
+  assert.deepEqual(calls, [['rev-parse', 'HEAD'], ['rev-parse', `${sourceSha}^1`], ['show', `${priorSha}:backend/quality/spotbugs-suppression-policy.json`]]);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[0] === 'show' ? `${raw}\n` : exec(args) }), /canonical/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[0] === 'show' ? '{' : exec(args) }), /JSON/);
+  const invalidRaw = `{\n  "findings": [\n    ${JSON.stringify({ identity: 'a', disposition: 'INVALID' })}\n  ]\n}\n`;
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[0] === 'show' ? invalidRaw : exec(args) }), /disposition/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[1] === 'HEAD' ? 'c'.repeat(40) : exec(args) }), /checked out/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[1] === `${sourceSha}^1` ? 'not-a-sha' : exec(args) }), /first parent/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[1] === `${sourceSha}^1` ? (() => { throw new Error('shallow'); })() : exec(args) }), /first parent/);
+});
+
+test('suppressed findings bind to current captured source, class, and member evidence', () => {
+  const finding = { sourcePath, sourceSha256: digest('a\nb\nc\n'), className: 'com.example.Example', methodName: '<init>', methodSignature: '()V', suppression: {} };
+  const sourceEntries = [{ repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classEntries = [{ repositoryPath: 'backend/build/classes/java/main/com/example/Example.class' }];
+  const bindings = { classDirs: ['/classes'], auxClassPaths: [], javapPath: '/jdk/bin/javap', javaInstallationPath: '/jdk', memberInspector: () => new Map([['<init>\u0000()V', 1]]) };
+  assert.equal(validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings }), true);
+  assert.throws(() => validateSuppressedBindings({ findings: [{ ...finding, sourceSha256: 'b'.repeat(64) }], sourceEntries, classEntries, ...bindings }), /source/);
+  assert.throws(() => validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries: [], ...bindings }), /class/);
+  assert.throws(() => validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings, memberInspector: () => new Map() }), /missing|ambiguous/);
+  assert.throws(() => validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings, memberInspector: () => new Map([['<init>\u0000()V', 2]]) }), /missing|ambiguous/);
 });
 
 test('Phase 2 member binding is exact, once per class, and fails closed', () => {
@@ -319,6 +353,7 @@ test('terminal suppression filters require one ordered exact method Match', () =
 test('workflow preserves #87 and uploads exactly four Phase-1 files before final enforcement', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.equal(validateWorkflow(workflow), true);
+  assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 2\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
   assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
   assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
   assert.match(workflow, /\.\/gradlew writeSpotbugsMainEvidence --no-daemon/);
@@ -374,17 +409,17 @@ test('PR-head provenance binds a distinct synthetic checkout head and rejects mi
   const run = (args) => spawnSync(process.execPath, [gate, ...args], { cwd: dir, encoding: 'utf8' });
   try {
     const buildScript = readFileSync(new URL('../../backend/build.gradle', import.meta.url));
-    const fixturePolicy = policy(); fixturePolicy.toolchain.spotbugsGradlePlugin.buildScriptSha256 = digest(buildScript);
+    const fixturePolicy = policy(); fixturePolicy.toolchain.spotbugsGradlePlugin.buildScriptSha256 = digest(buildScript); const fixturePolicyBytes = `${JSON.stringify(fixturePolicy, null, 2)}\n`;
     write('backend/build.gradle', buildScript);
-    write('backend/quality/spotbugs-suppression-policy.json', `${JSON.stringify(fixturePolicy, null, 2)}\n`);
+    write('backend/quality/spotbugs-suppression-policy.json', fixturePolicyBytes);
     write('backend/quality/spotbugs-exclude.xml', readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url)));
     write('backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', readFileSync(new URL('../../backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', import.meta.url)));
     write(sourcePath, 'a\nb\nc\n'); write('backend/build/classes/java/main/com/example/Example.class', 'class'); write('backend/build/classes/java/main/com/example/Example$Nested.class', 'nested'); write('plugin.jar', 'plugin'); write('engine.jar', 'engine'); write('aux.jar', 'aux'); write('detector.jar', 'detector'); write('java-home/bin/java', 'java'); const currentEvidence = evidence(dir); currentEvidence.task.classes.push({ path: join(dir, 'backend/build/classes/java/main/com/example/Example$Nested.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example$Nested.class', sha256: digest('nested') }); currentEvidence.java.installationPath = join(dir, 'java-home'); currentEvidence.java.launcherPath = join(dir, 'java-home/bin/java'); currentEvidence.java.launcherSha256 = digest('java'); const rawXml = xml().replace('<BugCollection>', `<BugCollection><Project projectName="${currentEvidence.task.classes[1].path}"/>`), rawHtml = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html><body>${currentEvidence.engine.classpath[0].path}</body></html>`; assert.doesNotMatch(sanitizeReports({ rawXml, rawHtml, evidence: currentEvidence, root: dir }).xml, /\/tmp\//); for (const suffix of ['-extra', '/child', '.extra']) assert.throws(() => sanitizeReports({ rawXml, rawHtml: `<html>${currentEvidence.engine.classpath[0].path}${suffix}</html>`, evidence: currentEvidence, root: dir }), /partial token/); assert.throws(() => sanitizeReports({ rawXml, rawHtml: `<html>x${currentEvidence.engine.classpath[0].path}</html>`, evidence: currentEvidence, root: dir }), /partial token/); assert.throws(() => sanitizeReports({ rawXml, rawHtml: '<html>/home/unknown</html>', evidence: currentEvidence, root: dir }), /unmapped host path/); const sameIdentity = structuredClone(currentEvidence); sameIdentity.task.auxClassPaths = [{ ...sameIdentity.engine.classpath[0] }]; assert.equal(sanitizeReports({ rawXml, rawHtml, evidence: sameIdentity, root: dir }).html.includes('evidence-path:['), false); const crossRole = structuredClone(currentEvidence); crossRole.plugin.implementationPath = crossRole.engine.classpath[0].path; crossRole.plugin.implementationSha256 = digest('engine'); assert.equal(validateEvidence(crossRole, policy(), dir), true); assert.match(sanitizeReports({ rawXml, rawHtml, evidence: crossRole, root: dir }).html, new RegExp(`evidence-path:\\[dependency:x:y:1/engine\\.jar\\|gradle-plugin:com\\.github\\.spotbugs/${digest('engine')}\\]`)); write('raw.xml', rawXml); write('raw.html', rawHtml); write('evidence.json', JSON.stringify(currentEvidence));
-    execFileSync('git', ['init', '-q'], { cwd: dir }); execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir }); execFileSync('git', ['config', 'user.name', 'SpotBugs fixture'], { cwd: dir }); execFileSync('git', ['add', '.'], { cwd: dir }); execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: dir });
+    execFileSync('git', ['init', '-q'], { cwd: dir }); execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir }); execFileSync('git', ['config', 'user.name', 'SpotBugs fixture'], { cwd: dir }); execFileSync('git', ['add', '.'], { cwd: dir }); execFileSync('git', ['commit', '-qm', 'prior fixture'], { cwd: dir }); execFileSync('git', ['commit', '--allow-empty', '-qm', 'current fixture'], { cwd: dir });
     const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(), prHeadSha = 'b'.repeat(40), output = join(dir, 'result.json'), summary = join(dir, 'summary.md');
     const options = ['--repo-root', dir, '--policy', join(dir, 'backend/quality/spotbugs-suppression-policy.json'), '--raw-xml', join(dir, 'raw.xml'), '--raw-html', join(dir, 'raw.html'), '--xml', join(dir, 'staged.xml'), '--html', join(dir, 'staged.html'), '--evidence', join(dir, 'evidence.json'), '--source-sha', sourceSha, '--pull-request-head-sha', prHeadSha, '--output', output, '--summary', summary];
     const validated = run(['validate', ...options]); assert.equal(validated.status, 0, validated.stderr);
-    const result = JSON.parse(readFileSync(output, 'utf8')); assert.deepEqual(Object.keys(result), ['schemaVersion', 'artifactKind', 'sourceSha', 'pullRequestHeadSha', 'analyzer', 'inputs', 'reports', 'findings', 'summary', 'outcome']); assert.equal(result.sourceSha, sourceSha); assert.equal(result.pullRequestHeadSha, prHeadSha); assert.deepEqual(Object.keys(result.reports), ['transform', 'xml', 'html']); assert.equal(result.reports.transform.id, 'spotbugs-report-sanitizer-v1'); assert.doesNotMatch(readFileSync(join(dir, 'staged.xml'), 'utf8'), /\/tmp\//); assert.doesNotMatch(readFileSync(join(dir, 'staged.html'), 'utf8'), /\/tmp\//);
+    const result = JSON.parse(readFileSync(output, 'utf8')); assert.deepEqual(Object.keys(result), ['schemaVersion', 'artifactKind', 'sourceSha', 'pullRequestHeadSha', 'analyzer', 'inputs', 'reports', 'findings', 'summary', 'outcome']); assert.equal(result.sourceSha, sourceSha); assert.equal(result.pullRequestHeadSha, prHeadSha); assert.deepEqual(Object.keys(result.inputs), ['sourceDigest', 'classDigest', 'classpathDigest', 'pluginClasspathDigest', 'pluginImplementationDigest', 'engineClasspathDigest', 'javaLauncherDigest', 'policyDigest', 'priorPolicyDigest', 'excludeFilterDigest']); assert.equal(result.inputs.priorPolicyDigest, digest(fixturePolicyBytes)); assert.deepEqual(Object.keys(result.reports), ['transform', 'xml', 'html']); assert.equal(result.reports.transform.id, 'spotbugs-report-sanitizer-v1'); assert.doesNotMatch(readFileSync(join(dir, 'staged.xml'), 'utf8'), /\/tmp\//); assert.doesNotMatch(readFileSync(join(dir, 'staged.html'), 'utf8'), /\/tmp\//);
     const final = run(['validate-final', ...options]); assert.equal(final.status, 1); assert.match(final.stderr, /DISCOVERY_REMOTE_RED/);
     writeFileSync(join(dir, 'staged.xml'), '<BugCollection/>'); const stagedTamper = run(['validate-final', ...options]); assert.equal(stagedTamper.status, 1); assert.match(stagedTamper.stderr, /sanitized report tamper/); assert.equal(run(['validate', ...options]).status, 0);
     writeFileSync(output, '{}\n'); const tampered = run(['validate-final', ...options]); assert.equal(tampered.status, 1); assert.match(tampered.stderr, /artifact tamper/);
