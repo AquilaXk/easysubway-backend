@@ -127,9 +127,12 @@ class AdminAdsPageController {
 		}
 
 		private static LocalDateTime parseInstant(String value, String field) {
+			if (value == null) {
+				throw new InvalidRequestException(field + " 형식이 올바르지 않습니다.");
+			}
 			try {
 				return LocalDateTime.ofInstant(Instant.parse(value), ZoneOffset.UTC);
-			} catch (DateTimeParseException | NullPointerException exception) {
+			} catch (DateTimeParseException exception) {
 				throw new InvalidRequestException(field + " 형식이 올바르지 않습니다.", exception);
 			}
 		}

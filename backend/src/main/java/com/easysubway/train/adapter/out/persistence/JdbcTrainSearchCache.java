@@ -192,7 +192,7 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 			dayWindow,
 			Timestamp.from(databaseNow)
 		);
-		QuotaState state = jdbcTemplate.queryForObject(
+		QuotaState state = requireQuotaState(jdbcTemplate.queryForObject(
 			"""
 				SELECT minute_window, minute_calls, day_window, daily_calls
 				FROM train_provider_call_quota_state WHERE provider_id = ? FOR UPDATE
@@ -204,7 +204,7 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 				rs.getInt("daily_calls")
 			),
 			providerId
-		);
+		));
 		int minuteCalls = state.minuteWindow() == minuteWindow ? state.minuteCalls() : 0;
 		int dailyCalls = state.dayWindow() == dayWindow ? state.dailyCalls() : 0;
 		if (minuteCalls >= minuteLimit || dailyCalls >= dayLimit) {
@@ -243,10 +243,24 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 	}
 
 	private Instant databaseNow() {
-		return Objects.requireNonNull(
+		return requireDatabaseTimestamp(
 			jdbcTemplate.queryForObject("SELECT CURRENT_TIMESTAMP", Timestamp.class)
-		).toInstant();
+		);
 	}
 
-	private record QuotaState(long minuteWindow, int minuteCalls, long dayWindow, int dailyCalls) {}
+	static Instant requireDatabaseTimestamp(Timestamp value) {
+		if (value == null) {
+			throw new IllegalStateException("database timestamp query returned null");
+		}
+		return value.toInstant();
+	}
+
+	static QuotaState requireQuotaState(QuotaState value) {
+		if (value == null) {
+			throw new IllegalStateException("provider quota state query returned null");
+		}
+		return value;
+	}
+
+	record QuotaState(long minuteWindow, int minuteCalls, long dayWindow, int dailyCalls) {}
 }
