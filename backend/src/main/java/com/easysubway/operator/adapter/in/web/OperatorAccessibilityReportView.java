@@ -1,5 +1,6 @@
 package com.easysubway.operator.adapter.in.web;
 
+import java.util.ArrayList;
 import java.util.List;
 
 public record OperatorAccessibilityReportView(
@@ -13,6 +14,39 @@ public record OperatorAccessibilityReportView(
 	List<StationAccessibilityScoreRow> stationAccessibilityScoreRows,
 	List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows
 ) {
+
+	public OperatorAccessibilityReportView {
+		stationQualityRows = stationQualityRows == null ? null : new ArrayList<>(stationQualityRows);
+		regionQualityRows = regionQualityRows == null ? null : new ArrayList<>(regionQualityRows);
+		stationAccessibilityScoreRows = stationAccessibilityScoreRows == null
+			? null
+			: new ArrayList<>(stationAccessibilityScoreRows);
+		accessibilityImprovementPriorityRows = accessibilityImprovementPriorityRows == null
+			? null
+			: new ArrayList<>(accessibilityImprovementPriorityRows);
+	}
+
+	@Override
+	public List<QualityCountRow> stationQualityRows() {
+		return stationQualityRows == null ? null : new ArrayList<>(stationQualityRows);
+	}
+
+	@Override
+	public List<RegionQualityRow> regionQualityRows() {
+		return regionQualityRows == null ? null : new ArrayList<>(regionQualityRows);
+	}
+
+	@Override
+	public List<StationAccessibilityScoreRow> stationAccessibilityScoreRows() {
+		return stationAccessibilityScoreRows == null ? null : new ArrayList<>(stationAccessibilityScoreRows);
+	}
+
+	@Override
+	public List<AccessibilityImprovementPriorityRow> accessibilityImprovementPriorityRows() {
+		return accessibilityImprovementPriorityRows == null
+			? null
+			: new ArrayList<>(accessibilityImprovementPriorityRows);
+	}
 
 	public record QualityCountRow(String label, String description, long count) {
 	}
@@ -36,6 +70,15 @@ public record OperatorAccessibilityReportView(
 		List<String> reasons
 	) {
 
+		public StationAccessibilityScoreRow {
+			reasons = reasons == null ? null : new ArrayList<>(reasons);
+		}
+
+		@Override
+		public List<String> reasons() {
+			return reasons == null ? null : new ArrayList<>(reasons);
+		}
+
 		public String reasonText() {
 			return String.join(", ", reasons);
 		}
@@ -47,6 +90,15 @@ public record OperatorAccessibilityReportView(
 		int priorityScore,
 		List<String> reasons
 	) {
+
+		public AccessibilityImprovementPriorityRow {
+			reasons = reasons == null ? null : new ArrayList<>(reasons);
+		}
+
+		@Override
+		public List<String> reasons() {
+			return reasons == null ? null : new ArrayList<>(reasons);
+		}
 
 		public String reasonText() {
 			return String.join(", ", reasons);

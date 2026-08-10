@@ -18,4 +18,12 @@ public record RegionDataQualitySummary(
 			stationQualityCounts = Collections.unmodifiableMap(new EnumMap<>(stationQualityCounts));
 		}
 	}
+
+	@Override
+	public Map<DataQualityLevel, Long> stationQualityCounts() {
+		if (stationQualityCounts.isEmpty()) {
+			return Map.of();
+		}
+		return Collections.unmodifiableMap(new EnumMap<>(stationQualityCounts));
+	}
 }
