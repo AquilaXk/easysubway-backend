@@ -13,6 +13,8 @@ import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
@@ -253,9 +255,11 @@ class RouteBundleActivationRegistryTest {
 
 	@Test
 	void sameGenerationConcurrentActivationHasExactlyOneSuccess() throws Exception {
-		var registry = new RouteBundleActivationRegistry(new ActivationBarrierClock(T0));
+		var clock = new ActivationBarrierClock(T0);
+		var registry = new RouteBundleActivationRegistry(clock);
 		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
 		registry.stage(candidate, 0);
+		clock.arm();
 		var barrier = new CyclicBarrier(2);
 
 		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
@@ -412,9 +416,14 @@ class RouteBundleActivationRegistryTest {
 		private final Instant instant;
 		private final AtomicInteger calls = new AtomicInteger();
 		private final CyclicBarrier activationBarrier = new CyclicBarrier(2);
+		private volatile boolean armed;
 
 		private ActivationBarrierClock(Instant instant) {
 			this.instant = instant;
+		}
+
+		private void arm() {
+			armed = true;
 		}
 
 		@Override
@@ -429,13 +438,15 @@ class RouteBundleActivationRegistryTest {
 
 		@Override
 		public Instant instant() {
-			int call = calls.incrementAndGet();
-			if (call == 2 || call == 3) {
+			int call = armed ? calls.incrementAndGet() : 0;
+			if (call == 1 || call == 2) {
 				try {
-					activationBarrier.await();
+					activationBarrier.await(5, TimeUnit.SECONDS);
 				} catch (InterruptedException exception) {
 					Thread.currentThread().interrupt();
 					throw new AssertionError("activation barrier was interrupted", exception);
+				} catch (TimeoutException exception) {
+					throw new AssertionError("activation barrier timed out", exception);
 				} catch (BrokenBarrierException exception) {
 					throw new AssertionError("activation barrier failed", exception);
 				}
