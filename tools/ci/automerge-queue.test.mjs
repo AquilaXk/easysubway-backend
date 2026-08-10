@@ -536,7 +536,8 @@ test('automerge label은 canonical authorization marker를 PATCH-or-POST 한 번
   assert.equal(repeated.status, 0);
   assert.equal((repeated.calls.match(/--method PATCH/g) ?? []).length, 1);
   assert.equal((repeated.calls.match(/--method POST/g) ?? []).length, 0);
-  assert.match(repeated.calls, new RegExp(`issues/85/comments/99.*${head}`));
+  assert.match(repeated.calls, new RegExp(`issues/comments/99.*${head}`));
+  assert.doesNotMatch(repeated.calls, /issues\/85\/comments\/99/);
 
   const spoof = run('85', head, { pages: [[{ id: 7, body: markerFor('b'.repeat(40)), user: { ...bot, id: 1 } }]] });
   assert.equal(spoof.status, 0);
@@ -2075,6 +2076,25 @@ test('image producer는 발행 job 단위로 판정하고 실패는 제한된 �
     /# producer-dispatch-begin\n([\s\S]*?)\n\s+# producer-dispatch-end/,
   )?.[1];
   assert.ok(producerBlock, 'producer dispatch block must stay testable');
+  for (const contract of [
+    'read_workflow_runs()',
+    'read_run_jobs()',
+    'for read_attempt in 1 2',
+    'runs_file="$(mktemp)"',
+    'jobs_file="$(mktemp)"',
+    'sleep 2',
+    '(.workflow_runs | type == "array")',
+    '(.id | type == "number")',
+    '(.status | type == "string")',
+    '(.event | type == "string")',
+    '(.jobs | type == "array")',
+    '(.name | type == "string")',
+    'has("conclusion")',
+    'image producer workflow-runs response를 검증하지 못했다.',
+    'image producer run-jobs response를 검증하지 못했다.',
+  ]) {
+    assert.ok(producerBlock.includes(contract), `missing bounded provider-read contract: ${contract}`);
+  }
   // 중복·누락을 동시에 막는 판정 키는 workflow runs API의 head_sha다.
   assert.ok(producerBlock.includes('head_sha=${main_sha}'));
   assert.ok(producerBlock.includes('select(.event != "pull_request")'));
@@ -2254,6 +2274,198 @@ test('image producer는 발행 job 단위로 판정하고 실패는 제한된 �
   const broken = runProducer({ mainSha: 'null' });
   assert.notEqual(broken.status, 0);
   assert.equal(broken.dispatched, false);
+});
+
+test('image producer provider read는 malformed response를 한 번만 재시도하고 post-dispatch 관측에도 적용한다', async () => {
+  const workflow = await readWorkflow();
+  const producerBlock = workflow.match(
+    /# producer-dispatch-begin\n([\s\S]*?)\n\s+# producer-dispatch-end/,
+  )?.[1];
+  assert.ok(producerBlock, 'producer dispatch block must stay testable');
+
+  const dir = mkdtempSync(join(tmpdir(), 'producer-read-retry-'));
+  const dispatched = join(dir, 'dispatched');
+  writeFileSync(join(dir, 'runs-initial.json'), JSON.stringify({ workflow_runs: [] }));
+  writeFileSync(join(dir, 'runs-observed-2.json'), JSON.stringify({
+    workflow_runs: [{ id: 9999, status: 'queued', event: 'workflow_dispatch' }],
+  }));
+  writeFileSync(join(dir, 'runs-observed-1.json'), '{"workflow_runs":');
+
+  const result = stubbedBash([
+    'set -euo pipefail',
+    `DIR=${JSON.stringify(dir)}`,
+    `DISPATCHED=${JSON.stringify(dispatched)}`,
+    'gh() {',
+    '  printf "gh %s\\n" "$*" >> "$GH_LOG"',
+    '  case "$*" in',
+    `    *"commits/main"*) printf '%s\\n' ${JSON.stringify('a'.repeat(40))} ;;`,
+    '    *"runs?head_sha="*)',
+    '      if [ ! -f "$DISPATCHED" ]; then cat "$DIR/runs-initial.json"; else',
+    '        count_file="$DIR/observed-count"; count=0; [ -f "$count_file" ] && count="$(cat "$count_file")"; count=$((count + 1)); printf "%s" "$count" > "$count_file";',
+    '        cat "$DIR/runs-observed-$count.json";',
+    '      fi ;;',
+    '    *"workflow run"*) : > "$DISPATCHED" ;;',
+    '    *) return 1 ;;',
+    '  esac',
+    '}',
+    'sleep() { printf "sleep %s\\n" "$*" >> "$GH_LOG"; }',
+    'repo=o/r',
+    'producer=release-artifacts.yml',
+    'publish_job="Backend immutable arm64 image"',
+    'attempt_limit=2',
+    dedent(producerBlock),
+  ]);
+  assert.equal(result.status, 0, result.stderr);
+  assert.match(result.calls, /sleep 2/);
+  assert.equal((result.calls.match(/runs\?head_sha=/g) ?? []).length, 3);
+  assert.equal((result.calls.match(/workflow run release-artifacts\.yml/g) ?? []).length, 1);
+  assert.doesNotMatch(result.stdout + result.stderr, /\{"workflow_runs":/);
+});
+
+test('image producer workflow-runs read는 transport와 닫힌 schema 실패를 한 번만 복구한다', async () => {
+  const workflow = await readWorkflow();
+  const producerBlock = workflow.match(
+    /# producer-dispatch-begin\n([\s\S]*?)\n\s+# producer-dispatch-end/,
+  )?.[1];
+  assert.ok(producerBlock, 'producer dispatch block must stay testable');
+
+  const runScenario = (responses) => {
+    const dir = mkdtempSync(join(tmpdir(), 'producer-runs-read-'));
+    responses.forEach((response, index) => {
+      writeFileSync(join(dir, `runs-${index + 1}`), response);
+    });
+    return stubbedBash([
+      'set -euo pipefail',
+      `DIR=${JSON.stringify(dir)}`,
+      'gh() {',
+      '  printf "gh %s\\n" "$*" >> "$GH_LOG"',
+      '  case "$*" in',
+      `    *"commits/main"*) printf '%s\\n' ${JSON.stringify('a'.repeat(40))} ;;`,
+      '    *"runs?head_sha="*)',
+      '      count_file="$DIR/runs-count"; count=0; [ -f "$count_file" ] && count="$(cat "$count_file")"; count=$((count + 1)); printf "%s" "$count" > "$count_file";',
+      '      response="$(cat "$DIR/runs-$count")";',
+      '      if [ "$response" = "TRANSPORT_FAILURE" ]; then printf "%s\\n" "PROVIDER_SECRET_BODY" >&2; return 1; fi;',
+      '      printf "%s" "$response" ;;',
+      '    *"workflow run"*) printf "%s\\n" dispatched >> "$GH_LOG" ;;',
+      '    *) return 1 ;;',
+      '  esac',
+      '}',
+      'sleep() { printf "sleep %s\\n" "$*" >> "$GH_LOG"; }',
+      'repo=o/r',
+      'producer=release-artifacts.yml',
+      'publish_job="Backend immutable arm64 image"',
+      'attempt_limit=2',
+      dedent(producerBlock),
+    ]);
+  };
+
+  const valid = JSON.stringify({
+    workflow_runs: [{ id: 7, status: 'in_progress', event: 'workflow_dispatch' }],
+  });
+  const concatenated = `${valid}\n${valid}`;
+  for (const first of [
+    'TRANSPORT_FAILURE',
+    '',
+    '{"workflow_runs":',
+    '{"PROVIDER_SECRET_BODY":true}',
+    JSON.stringify({
+      workflow_runs: [{ id: '7', status: 'in_progress', event: 'workflow_dispatch' }],
+    }),
+    concatenated,
+  ]) {
+    const recovered = runScenario([first, valid]);
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.equal((recovered.calls.match(/runs\?head_sha=/g) ?? []).length, 2);
+    assert.equal((recovered.calls.match(/sleep 2/g) ?? []).length, 1);
+    assert.doesNotMatch(recovered.calls, /dispatched/);
+    assert.doesNotMatch(recovered.stdout + recovered.stderr, /PROVIDER_SECRET_BODY|parse error/);
+  }
+
+  const terminal = runScenario([
+    '{"PROVIDER_SECRET_BODY":true}',
+    '{"workflow_runs":[{"id":7}]}',
+  ]);
+  assert.notEqual(terminal.status, 0);
+  assert.equal((terminal.calls.match(/runs\?head_sha=/g) ?? []).length, 2);
+  assert.equal((terminal.calls.match(/sleep 2/g) ?? []).length, 1);
+  assert.doesNotMatch(terminal.calls, /dispatched/);
+  assert.doesNotMatch(terminal.stdout + terminal.stderr, /PROVIDER_SECRET_BODY|parse error/);
+  assert.match(terminal.stderr, /workflow-runs response를 검증하지 못했다/);
+
+  const multipleDocuments = runScenario([concatenated, concatenated]);
+  assert.notEqual(multipleDocuments.status, 0);
+  assert.equal((multipleDocuments.calls.match(/runs\?head_sha=/g) ?? []).length, 2);
+  assert.equal((multipleDocuments.calls.match(/sleep 2/g) ?? []).length, 1);
+  assert.doesNotMatch(multipleDocuments.calls, /dispatched/);
+  assert.match(multipleDocuments.stderr, /workflow-runs response를 검증하지 못했다/);
+});
+
+test('image producer run-jobs read는 malformed response를 한 번만 복구하고 두 번 실패하면 dispatch하지 않는다', async () => {
+  const workflow = await readWorkflow();
+  const producerBlock = workflow.match(
+    /# producer-dispatch-begin\n([\s\S]*?)\n\s+# producer-dispatch-end/,
+  )?.[1];
+  assert.ok(producerBlock, 'producer dispatch block must stay testable');
+
+  const runScenario = (jobResponses) => {
+    const dir = mkdtempSync(join(tmpdir(), 'producer-jobs-read-'));
+    jobResponses.forEach((response, index) => {
+      writeFileSync(join(dir, `jobs-${index + 1}`), response);
+    });
+    return stubbedBash([
+      'set -euo pipefail',
+      `DIR=${JSON.stringify(dir)}`,
+      'gh() {',
+      '  printf "gh %s\\n" "$*" >> "$GH_LOG"',
+      '  case "$*" in',
+      `    *"commits/main"*) printf '%s\\n' ${JSON.stringify('a'.repeat(40))} ;;`,
+      '    *"runs?head_sha="*) printf "%s" \'{"workflow_runs":[{"id":7,"status":"completed","event":"workflow_dispatch"}]}\' ;;',
+      '    *"/actions/runs/7/jobs"*)',
+      '      count_file="$DIR/jobs-count"; count=0; [ -f "$count_file" ] && count="$(cat "$count_file")"; count=$((count + 1)); printf "%s" "$count" > "$count_file";',
+      '      cat "$DIR/jobs-$count" ;;',
+      '    *"workflow run"*) printf "%s\\n" dispatched >> "$GH_LOG" ;;',
+      '    *) return 1 ;;',
+      '  esac',
+      '}',
+      'sleep() { printf "sleep %s\\n" "$*" >> "$GH_LOG"; }',
+      'repo=o/r',
+      'producer=release-artifacts.yml',
+      'publish_job="Backend immutable arm64 image"',
+      'attempt_limit=2',
+      dedent(producerBlock),
+    ]);
+  };
+
+  const valid = JSON.stringify({
+    jobs: [{ name: 'Backend immutable arm64 image', conclusion: 'success' }],
+  });
+  const concatenated = `${valid}\n${valid}`;
+  for (const first of ['{"jobs":', concatenated]) {
+    const recovered = runScenario([first, valid]);
+    assert.equal(recovered.status, 0, recovered.stderr);
+    assert.equal((recovered.calls.match(/actions\/runs\/7\/jobs/g) ?? []).length, 2);
+    assert.equal((recovered.calls.match(/sleep 2/g) ?? []).length, 1);
+    assert.doesNotMatch(recovered.calls, /dispatched/);
+    assert.doesNotMatch(recovered.stdout + recovered.stderr, /parse error/);
+  }
+
+  const terminal = runScenario([
+    '{"PROVIDER_SECRET_BODY":true}',
+    '{"jobs":[{"name":"Backend immutable arm64 image"}]}',
+  ]);
+  assert.notEqual(terminal.status, 0);
+  assert.equal((terminal.calls.match(/actions\/runs\/7\/jobs/g) ?? []).length, 2);
+  assert.equal((terminal.calls.match(/sleep 2/g) ?? []).length, 1);
+  assert.doesNotMatch(terminal.calls, /dispatched/);
+  assert.doesNotMatch(terminal.stdout + terminal.stderr, /PROVIDER_SECRET_BODY|parse error/);
+  assert.match(terminal.stderr, /run-jobs response를 검증하지 못했다/);
+
+  const multipleDocuments = runScenario([concatenated, concatenated]);
+  assert.notEqual(multipleDocuments.status, 0);
+  assert.equal((multipleDocuments.calls.match(/actions\/runs\/7\/jobs/g) ?? []).length, 2);
+  assert.equal((multipleDocuments.calls.match(/sleep 2/g) ?? []).length, 1);
+  assert.doesNotMatch(multipleDocuments.calls, /dispatched/);
+  assert.match(multipleDocuments.stderr, /run-jobs response를 검증하지 못했다/);
 });
 
 // `run: |` 본문은 YAML block scalar다. 안쪽 줄 하나가 블록 들여쓰기 아래로 내려가면

@@ -117,7 +117,7 @@ jobs:
           fi
           rm -f "${comments_file}"
           if [[ -n "${marker_id}" ]]; then
-            gh api --method PATCH "repos/${repo}/issues/${EVENT_PR}/comments/${marker_id}" \
+            gh api --method PATCH "repos/${repo}/issues/comments/${marker_id}" \
               -f body="${marker_body}"
           else
             gh api --method POST "repos/${repo}/issues/${EVENT_PR}/comments" \
@@ -783,9 +783,69 @@ jobs:
           # 때까지 영영 올라가지 않는다. 실행 conclusion만 봐도 발행 job이 skip된
           # success가 같은 착시를 만든다. 그래서 발행 job 단위로 분류한다.
           # pull_request 실행은 이미지를 발행하지 않는 preflight이므로 제외한다.
-          candidate_runs="$(gh api \
-            "repos/${repo}/actions/workflows/${producer}/runs?head_sha=${main_sha}&per_page=100" \
-            | jq -r '.workflow_runs[] | select(.event != "pull_request") | "\(.id) \(.status)"')"
+          # Runs와 jobs는 동일한 GitHub REST provider에서만 읽는다. response는 독점
+          # temporary file로 받고 필요한 닫힌 형태를 검증한 뒤에만 투영한다. 첫 transport나
+          # schema 실패는 2초 뒤 정확히 한 번 재시도하고, 두 번째 실패는 fail closed다.
+          read_workflow_runs() {
+            local runs_file read_attempt
+            for read_attempt in 1 2; do
+              runs_file="$(mktemp)"
+              if gh api "repos/${repo}/actions/workflows/${producer}/runs?head_sha=${main_sha}&per_page=100" >"${runs_file}" 2>/dev/null &&
+                jq -e -s '
+                  length == 1 and
+                  (.[0] |
+                    type == "object" and
+                    (.workflow_runs | type == "array") and
+                    all(.workflow_runs[];
+                      type == "object" and
+                      (.id | type == "number") and
+                      (.status | type == "string") and
+                      (.event | type == "string")
+                    )
+                  )
+                ' "${runs_file}" >/dev/null 2>&1; then
+                cat "${runs_file}"
+                rm -f "${runs_file}"
+                return 0
+              fi
+              rm -f "${runs_file}"
+              [[ "${read_attempt}" -eq 1 ]] && sleep 2
+            done
+            echo "::error::image producer workflow-runs response를 검증하지 못했다." >&2
+            return 1
+          }
+
+          read_run_jobs() {
+            local run_id="$1" jobs_file read_attempt
+            for read_attempt in 1 2; do
+              jobs_file="$(mktemp)"
+              if gh api "repos/${repo}/actions/runs/${run_id}/jobs" >"${jobs_file}" 2>/dev/null &&
+                jq -e -s '
+                  length == 1 and
+                  (.[0] |
+                    type == "object" and
+                    (.jobs | type == "array") and
+                    all(.jobs[];
+                      type == "object" and
+                      (.name | type == "string") and
+                      has("conclusion") and
+                      ((.conclusion | type) == "string" or .conclusion == null)
+                    )
+                  )
+                ' "${jobs_file}" >/dev/null 2>&1; then
+                jq -r --arg job "${publish_job}" \
+                  '[.jobs[] | select(.name == $job)] | last | .conclusion // "absent"' "${jobs_file}"
+                rm -f "${jobs_file}"
+                return 0
+              fi
+              rm -f "${jobs_file}"
+              [[ "${read_attempt}" -eq 1 ]] && sleep 2
+            done
+            echo "::error::image producer run-jobs response를 검증하지 못했다." >&2
+            return 1
+          }
+
+          candidate_runs="$(read_workflow_runs | jq -r '.workflow_runs[] | select(.event != "pull_request") | "\(.id) \(.status)"')"
 
           published=0
           in_flight=0
@@ -798,9 +858,7 @@ jobs:
               in_flight=$((in_flight + 1))
               continue
             fi
-            publish_conclusion="$(gh api "repos/${repo}/actions/runs/${run_id}/jobs" \
-              | jq -r --arg job "${publish_job}" \
-                '[.jobs[] | select(.name == $job)] | last | .conclusion // "absent"')"
+            publish_conclusion="$(read_run_jobs "${run_id}")"
             if [[ "${publish_conclusion}" == "success" ]]; then
               published=$((published + 1))
             else
@@ -825,9 +883,7 @@ jobs:
           gh workflow run "${producer}" --repo "${repo}" --ref main
           # ponytail: bounded wait only; the run record appears asynchronously.
           for _ in {1..12}; do
-            observed="$(gh api \
-              "repos/${repo}/actions/workflows/${producer}/runs?head_sha=${main_sha}&per_page=100" \
-              | jq -r '[.workflow_runs[] | select(.event != "pull_request")] | length')"
+            observed="$(read_workflow_runs | jq -r '[.workflow_runs[] | select(.event != "pull_request")] | length')"
             if [[ "${observed}" -gt "${unproductive}" ]]; then
               echo "image producer dispatch 확인: main ${main_sha}"
               exit 0
