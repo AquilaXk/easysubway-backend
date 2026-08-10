@@ -819,7 +819,7 @@ jobs:
             local run_id="$1" jobs_file read_attempt
             for read_attempt in 1 2; do
               jobs_file="$(mktemp)"
-              if gh api "repos/${repo}/actions/runs/${run_id}/jobs" >"${jobs_file}" 2>/dev/null &&
+              if gh api "repos/${repo}/actions/runs/${run_id}/jobs?per_page=100" >"${jobs_file}" 2>/dev/null &&
                 jq -e -s '
                   length == 1 and
                   (.[0] |

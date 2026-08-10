@@ -2090,6 +2090,7 @@ test('image producer는 발행 job 단위로 판정하고 실패는 제한된 �
     '(.jobs | type == "array")',
     '(.name | type == "string")',
     'has("conclusion")',
+    'actions/runs/${run_id}/jobs?per_page=100',
     'image producer workflow-runs response를 검증하지 못했다.',
     'image producer run-jobs response를 검증하지 못했다.',
   ]) {
@@ -2101,6 +2102,7 @@ test('image producer는 발행 job 단위로 판정하고 실패는 제한된 �
   assert.ok(producerBlock.includes('gh workflow run "${producer}"'));
   // 실행 개수만 세면 실패한 실행이 "발행됨"으로 잡힌다. 발행 job 단위로 봐야 한다.
   assert.ok(producerBlock.includes('/jobs'));
+  assert.doesNotMatch(producerBlock, /actions\/runs\/\$\{run_id\}\/jobs"/);
   // 설정값은 워크플로에서 그대로 읽어 스텁에 주입한다. 테스트가 값을 따로 들고 있으면
   // 워크플로만 바뀌었을 때 계약이 실제 동작과 어긋난 채 통과한다.
   const publishJob = workflow.match(/publish_job="([^"]+)"/)?.[1];
