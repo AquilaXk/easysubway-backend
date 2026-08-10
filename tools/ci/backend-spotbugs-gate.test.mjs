@@ -34,7 +34,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'cafaf6431baa8f87d7835a7f808a156351b1f3028fb795fd538325cf738dcfcd');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'd4f849c4d03b62fe10ad21908fe97659625b09ab8553b4189c65ce6fcd52a4d2');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -70,7 +70,7 @@ test('remediation summary is an exact result-derived closure artifact', () => {
   assert.notEqual(summary, renderSummary({ ...result, outcome: 'FAIL' }));
 });
 
-test('tracked Phase 2 policy preserves Backend #107 and projects Backend #110 into the immutable ledger', () => {
+test('tracked remediation policy preserves prior children and projects Backend #113 into the immutable ledger', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   assert.equal(tracked.transition.phase, 'REMEDIATION_IN_PROGRESS');
   assert.equal(tracked.toolchain.gradleVersion, '8.14.5');
@@ -91,7 +91,7 @@ test('tracked Phase 2 policy preserves Backend #107 and projects Backend #110 in
     'FIXED',
   ]);
   const lifecycle = reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED'));
-  assert.deepEqual(lifecycle, { ledgerTotal: 195, reported: 141, fixRequired: 141, fixed: 14, falsePositiveExactSuppression: 38, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(lifecycle, { ledgerTotal: 195, reported: 95, fixRequired: 95, fixed: 57, falsePositiveExactSuppression: 41, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   assert.deepEqual(report.filter(({ disposition }) => disposition === 'FIXED').map(({ identity }) => identity), [
     'bf9106f46fd3c8a55e1199dd6c9e83d982b7ca5101e8997a4629142cb42788f5',
     'd0285ecad578ac2c773fb1e80d5c4530f9dc4d1b9795aa59eb46dafe3a13d5f8',
@@ -157,6 +157,8 @@ test('tracked Phase 2 policy preserves Backend #107 and projects Backend #110 in
   assert.equal(spotbugs.enforcement, 'required_fail_closed_remediation_ledger');
   assert.match(spotbugs.evidence.failMode, /ignoreFailures=true/);
   assert.match(spotbugs.evidence.failMode, /Backend #4/);
+  const requiredIndex = tracked.findings.findIndex(({ disposition }) => disposition === 'FIX_REQUIRED');
+  assert.notEqual(requiredIndex, -1);
   for (const mutate of [
     (value) => { value.toolchain.gradleVersion = null; },
     (value) => { value.toolchain.spotbugsGradlePlugin.implementationClass = 'wrong.Plugin'; },
@@ -164,13 +166,13 @@ test('tracked Phase 2 policy preserves Backend #107 and projects Backend #110 in
     (value) => { value.toolchain.spotbugsEngine.classpath.reverse(); },
     (value) => { value.findings.pop(); },
     (value) => { value.findings.push(structuredClone(value.findings[0])); },
-    (value) => { value.findings[0].sourceSha256 = '0'.repeat(64); },
-    (value) => { value.findings[0].ownerIssueUrl = 'https://example.invalid/owner'; },
-    (value) => { value.findings[0].ownerIssueTitle = 'wrong'; },
-    (value) => { value.findings[0].ownerIssueState = 'CLOSED'; },
-    (value) => { value.findings[0].expiresAt = '2026-01-01'; },
-    (value) => { value.findings[0].reason = 'wrong'; },
-    (value) => { value.findings[0].sourcePath = 'backend/src/main/java/**/*.java'; }
+    (value) => { value.findings[requiredIndex].sourceSha256 = '0'.repeat(64); },
+    (value) => { value.findings[requiredIndex].ownerIssueUrl = 'https://example.invalid/owner'; },
+    (value) => { value.findings[requiredIndex].ownerIssueTitle = 'wrong'; },
+    (value) => { value.findings[requiredIndex].ownerIssueState = 'CLOSED'; },
+    (value) => { value.findings[requiredIndex].expiresAt = '2026-01-01'; },
+    (value) => { value.findings[requiredIndex].reason = 'wrong'; },
+    (value) => { value.findings[requiredIndex].sourcePath = 'backend/src/main/java/**/*.java'; }
   ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' })); }
 });
 
@@ -180,7 +182,7 @@ test('Backend #110 datapack projection is exact', () => {
   assert.equal(datapack.length, 26);
   assert.equal(new Set(datapack.map(({ sourcePath }) => sourcePath)).size, 14);
   assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), 'ec819b85d5a55653bd06a926a125694efb09cba0f2389841f3cbb8852f89cdc4');
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 141, fixRequired: 141, fixed: 14, falsePositiveExactSuppression: 38, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 95, fixRequired: 95, fixed: 57, falsePositiveExactSuppression: 41, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   const fixed = datapack.filter(({ disposition }) => disposition === 'FIXED');
   assert.deepEqual(fixed.map(({ identity }) => identity), ['d233aa50bd7f69d165daa6336008536ec372c51d9739a669c7d202dac64bd481', '6105aefe9ddc33aa82dc2dbc1dec6e4913558a4b4d00f4ba5f86e4583c8e0a57', '20f57710c70f578826127d148bcb6fff9ddf182b5a0919da897fdbada2e20546', '90c28725d7010af274f86071b28b259a19b6e2102d211ad03450a5ef289aa0dc']);
   const ct = datapack.filter(({ bugPattern, disposition }) => bugPattern === 'CT_CONSTRUCTOR_THROW' && disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION');
@@ -218,7 +220,54 @@ test('Backend #110 datapack projection is exact', () => {
     assert.equal(finding.suppression.className, finding.className);
     assert.equal(finding.suppression.methodName, finding.methodName);
   }
-  assert.equal((readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8').match(/<Match>/g) ?? []).length, 41);
+  assert.equal((readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8').match(/<Match>/g) ?? []).length, 44);
+});
+
+test('Backend #113 admin operator quality projection is exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const partition = tracked.findings.filter(({ sourcePath }) => /^backend\/src\/main\/java\/com\/easysubway\/(?:admin|operator|quality)\//.test(sourcePath));
+  assert.equal(partition.length, 46);
+  assert.equal(new Set(partition.map(({ sourcePath }) => sourcePath)).size, 13);
+  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), 'e48b3b055c3f7c64e1d9f18ea463866136999d77f0ee7a953dc9fae0e15be7b0');
+  const fixed = partition.filter(({ disposition }) => disposition === 'FIXED');
+  const ct = partition.filter(({ bugPattern, disposition }) => bugPattern === 'CT_CONSTRUCTOR_THROW' && disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION');
+  const di = partition.filter(({ bugPattern, disposition }) => bugPattern === 'EI_EXPOSE_REP2' && disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION');
+  assert.equal(fixed.length, 43);
+  assert.equal(ct.length, 2);
+  assert.equal(di.length, 1);
+  for (const finding of partition) {
+    assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/113');
+    assert.equal(finding.ownerIssueTitle, '[Build][Backend][P1] admin·operator·quality SpotBugs remediation');
+    assert.equal(finding.ownerIssueState, 'OPEN');
+    assert.equal(finding.expiresAt, '2026-11-08');
+  }
+  for (const finding of fixed) {
+    assert.equal(finding.reason, 'Backend #113 removed this exact admin/operator/quality finding with a focused source-level remediation.');
+    assert.equal(finding.removalCondition, 'Reopen Backend #113 if this exact finding or a source-equivalent replacement reappears.');
+    assert.equal(finding.reviewTrigger, 'Review this terminal decision when the exact source, admin/operator/quality contract, analyzer, or Backend #113 evidence changes.');
+    assert.equal(finding.suppression, null);
+  }
+  for (const finding of di) {
+    assert.equal(finding.reason, 'Backend #113 verified that ErrorEventAsyncWriter intentionally retains the injected repository identity for async persistence; it is behavior infrastructure, not caller-owned value data.');
+    assert.equal(finding.removalCondition, 'Remove this exact suppression when the writer no longer retains this repository or the dependency becomes a copyable value contract.');
+    assert.equal(finding.reviewTrigger, 'Review this decision on repository identity/mutability, async wiring, source/member, analyzer, or Backend #113 owner-state change.');
+    assert.equal(finding.suppression.reason, 'Backend #113 exact ErrorEventRepository injected-collaborator identity contract.');
+  }
+  for (const finding of ct) {
+    assert.equal(finding.reason, 'Backend #113 reviewed these constructors as intentional fail-fast JDBC dialect initialization; no partially initialized repository escapes.');
+    assert.equal(finding.removalCondition, 'Remove this exact suppression when the constructors no longer perform the reviewed dialect initialization.');
+    assert.equal(finding.reviewTrigger, 'Review this decision on constructor source/signature, JDBC startup wiring, exception timing, analyzer, or Backend #113 owner-state change.');
+    assert.equal(finding.suppression.reason, 'Backend #113 exact fail-fast AdminMetricDaily JDBC dialect initialization.');
+  }
+  assert.deepEqual([...ct, ...di].map(({ suppression }) => [suppression.bugPattern, suppression.className, suppression.methodName, suppression.params, suppression.returns]), [
+    ['CT_CONSTRUCTOR_THROW', 'com.easysubway.admin.metric.adapter.out.persistence.JdbcAdminMetricDailyRepository', '<init>', 'javax.sql.DataSource', 'void'],
+    ['CT_CONSTRUCTOR_THROW', 'com.easysubway.admin.metric.adapter.out.persistence.JdbcAdminMetricDailyRepository', '<init>', 'org.springframework.jdbc.core.JdbcTemplate', 'void'],
+    ['EI_EXPOSE_REP2', 'com.easysubway.admin.errors.application.service.ErrorEventAsyncWriter', '<init>', 'com.easysubway.admin.errors.application.port.out.ErrorEventRepository', 'void'],
+  ]);
+  for (const finding of [...ct, ...di]) {
+    assert.deepEqual(Object.keys(finding.suppression), ['kind', 'bugPattern', 'className', 'methodName', 'params', 'returns', 'reason']);
+    assert.equal(finding.suppression.kind, 'EXCLUDE_FILTER_EXACT_METHOD');
+  }
 });
 
 test('remediation policy admits a synthetic fixed terminal absence', () => {
@@ -235,6 +284,7 @@ test('remediation policy admits a synthetic fixed terminal absence', () => {
       finding.reason = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
       finding.removalCondition = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
       finding.reviewTrigger = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
+      finding.expiresAt = '2026-11-07';
       finding.suppression = null;
     }
   }
@@ -249,7 +299,9 @@ test('remediation policy admits a synthetic fixed terminal absence', () => {
 
 test('terminal dispositions require child-owned non-generic review metadata', () => {
   const terminal = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  terminal.findings[0].disposition = 'FIXED';
+  const required = terminal.findings.find(({ disposition }) => disposition === 'FIX_REQUIRED');
+  assert.ok(required);
+  required.disposition = 'FIXED';
   assert.throws(() => validatePolicy(terminal, { today: '2026-08-10' }), /terminal metadata/);
 });
 
@@ -437,7 +489,7 @@ test('terminal suppression filters require one ordered exact method Match', () =
   const filter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
   assert.equal(validatePolicy(terminal, { today: '2026-08-10' }), true);
   assert.equal(validateExcludeFilter(terminal, filter), true);
-  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 141, fixRequired: 141, fixed: 14, falsePositiveExactSuppression: 38, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 95, fixRequired: 95, fixed: 57, falsePositiveExactSuppression: 41, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   for (const mutate of [
     (value) => { value.suppression.params = 'java.lang.String,java.util.List'; },
     (value) => { value.suppression.returns = 'java.lang.Void'; }
