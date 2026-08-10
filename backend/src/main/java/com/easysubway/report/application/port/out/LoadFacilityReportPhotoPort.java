@@ -14,5 +14,13 @@ public interface LoadFacilityReportPhotoPort {
 		String contentType,
 		byte[] bytes
 	) {
+		public LoadedFacilityReportPhoto {
+			bytes = bytes == null ? null : bytes.clone();
+		}
+
+		@Override
+		public byte[] bytes() {
+			return bytes == null ? null : bytes.clone();
+		}
 	}
 }

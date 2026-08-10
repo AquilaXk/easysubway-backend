@@ -83,12 +83,16 @@ public class LocalFacilityReportPhotoStorage implements
 	}
 
 	private void writeObject(String objectKey, byte[] bytes) {
+		if (objectKey == null || objectKey.isBlank()) {
+			throw new IllegalArgumentException("Invalid facility report photo object key");
+		}
 		Path objectPath = storageRoot.resolve(objectKey).normalize();
-		if (!objectPath.startsWith(storageRoot.normalize())) {
+		Path parent = objectPath.getParent();
+		if (!objectPath.startsWith(storageRoot.normalize()) || parent == null) {
 			throw new IllegalArgumentException("Invalid facility report photo object key");
 		}
 		try {
-			Files.createDirectories(objectPath.getParent());
+			Files.createDirectories(parent);
 			Files.write(objectPath, bytes);
 		} catch (IOException exception) {
 			throw new UncheckedIOException("Failed to store facility report photo object", exception);

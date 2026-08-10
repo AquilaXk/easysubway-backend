@@ -730,10 +730,6 @@ class FacilityReportAdminPageController {
 		return "%s, %s".formatted(latitude.toPlainString(), longitude.toPlainString());
 	}
 
-	private static boolean hasCompletePhoto(FacilityReport report) {
-		return report.hasPhoto();
-	}
-
 	private static boolean hasCompletePhoto(FacilityReportSummary report) {
 		return report.hasPhoto();
 	}
