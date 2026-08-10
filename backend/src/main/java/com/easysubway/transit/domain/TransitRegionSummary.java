@@ -13,10 +13,17 @@ public record TransitRegionSummary(
 ) {
 
 	public TransitRegionSummary {
-		if (dataQualityCounts == null || dataQualityCounts.isEmpty()) {
-			dataQualityCounts = Map.of();
-		} else {
-			dataQualityCounts = Collections.unmodifiableMap(new EnumMap<>(dataQualityCounts));
+		EnumMap<DataQualityLevel, Long> snapshot = new EnumMap<>(DataQualityLevel.class);
+		if (dataQualityCounts != null) {
+			snapshot.putAll(dataQualityCounts);
 		}
+		dataQualityCounts = Collections.unmodifiableMap(snapshot);
+	}
+
+	@Override
+	public Map<DataQualityLevel, Long> dataQualityCounts() {
+		EnumMap<DataQualityLevel, Long> snapshot = new EnumMap<>(DataQualityLevel.class);
+		snapshot.putAll(dataQualityCounts);
+		return Collections.unmodifiableMap(snapshot);
 	}
 }
