@@ -369,6 +369,10 @@ const counterMap = (node, label) => {
   return result;
 };
 const equalCounter = (actual, expected, label) => { if (JSON.stringify(actual) !== JSON.stringify(expected)) fail(`${label} counter mismatch`); };
+const equalOrOmittedZeroCounter = (counters, type, expected, label) => {
+  if (counters.has(type)) equalCounter(counters.get(type), expected, label);
+  else if (expected.total !== 0) fail(`${label} counter is missing`);
+};
 
 export function parseJacocoReport(xml) {
   if (typeof xml !== 'string' || Buffer.byteLength(xml) === 0 || Buffer.byteLength(xml) > 64 * 1024 * 1024 || xml.includes('\0') || xml.startsWith('\uFEFF')) fail('JaCoCo XML bytes are invalid');
@@ -413,20 +417,19 @@ export function parseJacocoReport(xml) {
         if (ci > 0) lineCovered += 1; else if (mi > 0) lineMissed += 1; else fail('line has no executable instructions');
       }
       const counters = counterMap(sourceNode, 'sourcefile'), lineValue = counter(lineMissed, lineCovered), branchValue = counter(branchMissed, branchCovered);
-      if (counters.has('LINE')) equalCounter(counters.get('LINE'), lineValue, 'sourcefile LINE');
-      else if (lineValue.total !== 0) fail('sourcefile LINE counter is missing');
-      if (counters.has('BRANCH')) equalCounter(counters.get('BRANCH'), branchValue, 'sourcefile BRANCH'); else if (branchValue.total !== 0) fail('sourcefile BRANCH counter is missing');
+      equalOrOmittedZeroCounter(counters, 'LINE', lineValue, 'sourcefile LINE');
+      equalOrOmittedZeroCounter(counters, 'BRANCH', branchValue, 'sourcefile BRANCH');
       const normalized = { packageName: packageNode.attrs.name.replaceAll('/', '.'), sourceFileName: sourceNode.attrs.name, line: lineValue, branch: branchValue };
       sources.push(normalized); packageSourceCounters.push(normalized);
     }
     const counters = counterMap(packageNode, 'package');
     const expectedLine = sumCounters(packageSourceCounters.map(({ line }) => line)), expectedBranch = sumCounters(packageSourceCounters.map(({ branch }) => branch));
-    if (!counters.has('LINE')) fail('package LINE counter is missing'); equalCounter(counters.get('LINE'), expectedLine, 'package LINE');
-    if (counters.has('BRANCH')) equalCounter(counters.get('BRANCH'), expectedBranch, 'package BRANCH'); else if (expectedBranch.total !== 0) fail('package BRANCH counter is missing');
+    equalOrOmittedZeroCounter(counters, 'LINE', expectedLine, 'package LINE');
+    equalOrOmittedZeroCounter(counters, 'BRANCH', expectedBranch, 'package BRANCH');
   }
   const rootCounters = counterMap(root, 'report'), expectedLine = sumCounters(sources.map(({ line }) => line)), expectedBranch = sumCounters(sources.map(({ branch }) => branch));
-  if (!rootCounters.has('LINE')) fail('report LINE counter is missing'); equalCounter(rootCounters.get('LINE'), expectedLine, 'report LINE');
-  if (rootCounters.has('BRANCH')) equalCounter(rootCounters.get('BRANCH'), expectedBranch, 'report BRANCH'); else if (expectedBranch.total !== 0) fail('report BRANCH counter is missing');
+  equalOrOmittedZeroCounter(rootCounters, 'LINE', expectedLine, 'report LINE');
+  equalOrOmittedZeroCounter(rootCounters, 'BRANCH', expectedBranch, 'report BRANCH');
   sources.sort((left, right) => `${left.packageName}/${left.sourceFileName}`.localeCompare(`${right.packageName}/${right.sourceFileName}`));
   return { sources, line: expectedLine, branch: expectedBranch };
 }

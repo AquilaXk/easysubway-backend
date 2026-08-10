@@ -28,6 +28,15 @@ import {
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const canonical = (value) => `${JSON.stringify(value, null, 2)}\n`;
+const replaceOccurrence = (value, target, replacement, occurrence) => {
+  let index = -1, from = 0;
+  for (let count = 0; count < occurrence; count += 1) {
+    index = value.indexOf(target, from);
+    assert.notEqual(index, -1);
+    from = index + target.length;
+  }
+  return `${value.slice(0, index)}${replacement}${value.slice(index + target.length)}`;
+};
 
 const trackedPolicyBytes = readFileSync(new URL('../../backend/quality/jacoco-coverage-policy.json', import.meta.url), 'utf8');
 const trackedBaselineBytes = readFileSync(new URL('../../backend/quality/jacoco-coverage-baseline.json', import.meta.url), 'utf8');
@@ -43,6 +52,10 @@ const discoveryBaseline = {
 const jacocoXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
 <report name="fixture"><sessioninfo id="session" start="1" dump="2"/><package name="com/easysubway/journey"><class name="com/easysubway/journey/Example" sourcefilename="Example.java"><method name="run" desc="()V" line="1"><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/></method><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/><counter type="CLASS" missed="0" covered="1"/></class><sourcefile name="Example.java"><line nr="1" mi="0" ci="1" mb="0" cb="2"/><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/><counter type="CLASS" missed="0" covered="1"/></sourcefile><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/><counter type="CLASS" missed="0" covered="1"/></package><counter type="INSTRUCTION" missed="0" covered="1"/><counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/><counter type="COMPLEXITY" missed="0" covered="1"/><counter type="METHOD" missed="0" covered="1"/><counter type="CLASS" missed="0" covered="1"/></report>
+`;
+const emptyJacocoXml = `<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
+<!DOCTYPE report PUBLIC "-//JACOCO//DTD Report 1.1//EN" "report.dtd">
+<report name="empty"/>
 `;
 
 const phaseTwoFixture = () => {
@@ -83,6 +96,12 @@ test('Phase A policy, baseline and JaCoCo report are closed evidence', () => {
   const withEmptySource = parseJacocoReport(jacocoXml.replace('</sourcefile>', '</sourcefile><sourcefile name="Empty.java"/>'));
   assert.deepEqual(withEmptySource.sources.at(0), {
     packageName: 'com.easysubway.journey', sourceFileName: 'Empty.java',
+    line: { missed: 0, covered: 0, total: 0, basisPoints: null },
+    branch: { missed: 0, covered: 0, total: 0, basisPoints: null },
+  });
+  assert.equal(parseJacocoReport(jacocoXml.replace('</package>', '</package><package name="com/easysubway/empty"/>')).sources.length, 1);
+  assert.deepEqual(parseJacocoReport(emptyJacocoXml), {
+    sources: [],
     line: { missed: 0, covered: 0, total: 0, basisPoints: null },
     branch: { missed: 0, covered: 0, total: 0, basisPoints: null },
   });
@@ -135,12 +154,14 @@ test('canonical JSON rejects duplicate keys, BOM and trailing data', () => {
 });
 
 test('report grammar and counter relationships reject ambiguity', () => {
+  const aggregateCounters = '<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/>';
   for (const invalid of [
     jacocoXml.replace('Report 1.1', 'Report 1.2'),
     jacocoXml.replace('</report>', '<group name="unexpected"/></report>'),
     jacocoXml.replace('<sourcefile name="Example.java">', '<sourcefile name="Example.java" name="Duplicate.java">'),
-    jacocoXml.replace('<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/>', '<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="1" covered="0"/>'),
-    jacocoXml.replace('<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/>', '<counter type="BRANCH" missed="0" covered="2"/>'),
+    jacocoXml.replace(aggregateCounters, '<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="1" covered="0"/>'),
+    ...[1, 2, 3].map((occurrence) => replaceOccurrence(jacocoXml, aggregateCounters, '<counter type="BRANCH" missed="0" covered="2"/>', occurrence)),
+    ...[1, 2, 3].map((occurrence) => replaceOccurrence(jacocoXml, aggregateCounters, '<counter type="LINE" missed="0" covered="1"/>', occurrence)),
     jacocoXml.replace('</sourcefile>', '<line nr="1" mi="0" ci="1" mb="0" cb="0"/></sourcefile>'),
     jacocoXml.replace('</report>', '<!ENTITY unsafe "value"></report>'),
   ]) assert.throws(() => parseJacocoReport(invalid));
