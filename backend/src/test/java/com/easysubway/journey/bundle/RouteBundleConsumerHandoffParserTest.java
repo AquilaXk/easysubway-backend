@@ -284,7 +284,11 @@ class RouteBundleConsumerHandoffParserTest {
 			.isEqualTo(reason);
 	}
 
-	private static Fixture fixture() {
+	static Fixture fixture() {
+		return fixture("production-v1", "AQID");
+	}
+
+	static Fixture fixture(String keyId, String signature) {
 		List<Map<String, Object>> payloadInventory = List.of(
 			map("path", "payload/accessibility.sqlite.zst", "sizeBytes", 15, "sha256", "4".repeat(64)),
 			map("path", "payload/fare.sqlite.zst", "sizeBytes", 16, "sha256", "5".repeat(64)),
@@ -308,12 +312,13 @@ class RouteBundleConsumerHandoffParserTest {
 			"activeFrom", "2099-01-01T09:00:00.000+09:00",
 			"freshUntil", "2099-02-01T09:00:00.000+09:00",
 			"schemaCompatibility", map("backendMin", 3, "backendMax", 3),
-			"keyId", "production-v1");
-		String signingInputSha256 = sha256(canonicalBytes(signingInput));
+			"keyId", keyId);
+		byte[] signingInputBytes = canonicalBytes(signingInput);
+		String signingInputSha256 = sha256(signingInputBytes);
 		Map<String, Object> manifest = new LinkedHashMap<>(signingInput);
 		manifest.put("signature", map(
 			"algorithm", "rsa-sha256-server-route-bundle-v1",
-			"value", "AQID"));
+			"value", signature));
 		String manifestSha256 = sha256(canonicalBytes(manifest));
 		String objectPrefix = "server-route-bundles/v1/" + manifestSha256 + "/";
 		List<Map<String, Object>> objects = List.of(
@@ -380,7 +385,7 @@ class RouteBundleConsumerHandoffParserTest {
 		handoff.put("handoffSha256", handoffSha256);
 		byte[] bytes = canonicalBytes(handoff);
 		try {
-			return new Fixture(bytes, new String(bytes, StandardCharsets.UTF_8),
+			return new Fixture(bytes, signingInputBytes, new String(bytes, StandardCharsets.UTF_8),
 				(ObjectNode) JSON.readTree(bytes), manifestSha256, receiptRawSha256, handoffSha256,
 				payloadSha256);
 		} catch (IOException exception) {
@@ -460,8 +465,9 @@ class RouteBundleConsumerHandoffParserTest {
 		return result;
 	}
 
-	private record Fixture(
+	record Fixture(
 		byte[] bytes,
+		byte[] signingInputBytes,
 		String json,
 		ObjectNode node,
 		String manifestSha256,
