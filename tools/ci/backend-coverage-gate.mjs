@@ -413,8 +413,8 @@ export function parseJacocoReport(xml) {
         if (ci > 0) lineCovered += 1; else if (mi > 0) lineMissed += 1; else fail('line has no executable instructions');
       }
       const counters = counterMap(sourceNode, 'sourcefile'), lineValue = counter(lineMissed, lineCovered), branchValue = counter(branchMissed, branchCovered);
-      if (!counters.has('LINE')) fail('sourcefile LINE counter is missing');
-      equalCounter(counters.get('LINE'), lineValue, 'sourcefile LINE');
+      if (counters.has('LINE')) equalCounter(counters.get('LINE'), lineValue, 'sourcefile LINE');
+      else if (lineValue.total !== 0) fail('sourcefile LINE counter is missing');
       if (counters.has('BRANCH')) equalCounter(counters.get('BRANCH'), branchValue, 'sourcefile BRANCH'); else if (branchValue.total !== 0) fail('sourcefile BRANCH counter is missing');
       const normalized = { packageName: packageNode.attrs.name.replaceAll('/', '.'), sourceFileName: sourceNode.attrs.name, line: lineValue, branch: branchValue };
       sources.push(normalized); packageSourceCounters.push(normalized);

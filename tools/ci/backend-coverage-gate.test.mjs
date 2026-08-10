@@ -80,6 +80,12 @@ test('Phase A policy, baseline and JaCoCo report are closed evidence', () => {
     line: { missed: 0, covered: 1, total: 1, basisPoints: 10000 },
     branch: { missed: 0, covered: 2, total: 2, basisPoints: 10000 },
   }]);
+  const withEmptySource = parseJacocoReport(jacocoXml.replace('</sourcefile>', '</sourcefile><sourcefile name="Empty.java"/>'));
+  assert.deepEqual(withEmptySource.sources.at(0), {
+    packageName: 'com.easysubway.journey', sourceFileName: 'Empty.java',
+    line: { missed: 0, covered: 0, total: 0, basisPoints: null },
+    branch: { missed: 0, covered: 0, total: 0, basisPoints: null },
+  });
   assert.equal(digest(jacocoXml).length, 64);
 });
 
@@ -134,6 +140,7 @@ test('report grammar and counter relationships reject ambiguity', () => {
     jacocoXml.replace('</report>', '<group name="unexpected"/></report>'),
     jacocoXml.replace('<sourcefile name="Example.java">', '<sourcefile name="Example.java" name="Duplicate.java">'),
     jacocoXml.replace('<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/>', '<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="1" covered="0"/>'),
+    jacocoXml.replace('<counter type="BRANCH" missed="0" covered="2"/><counter type="LINE" missed="0" covered="1"/>', '<counter type="BRANCH" missed="0" covered="2"/>'),
     jacocoXml.replace('</sourcefile>', '<line nr="1" mi="0" ci="1" mb="0" cb="0"/></sourcefile>'),
     jacocoXml.replace('</report>', '<!ENTITY unsafe "value"></report>'),
   ]) assert.throws(() => parseJacocoReport(invalid));
