@@ -5,14 +5,14 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { inspectMembers, pullRequestHeadSha, renderSummary, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validateReport, validateWorkflow } from './backend-spotbugs-gate.mjs';
+import { inspectMembers, pullRequestHeadSha, reconcileLedger, renderSummary, resolvePriorPolicy, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validatePriorLedger, validateReport, validateSuppressedBindings, validateWorkflow } from './backend-spotbugs-gate.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const sourcePath = 'backend/src/main/java/com/example/Example.java';
 const policy = () => ({
   schemaVersion: 1, artifactKind: 'backend-spotbugs-policy-v1', gateId: 'backend-spotbugs-main',
-  issue: { url: 'https://github.com/AquilaXk/easysubway-backend/issues/35', title: '[CI][Backend][P1] SpotBugs report·finding-policy required gate' },
-  origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '5334c98ee146a117338789c261d439aa2153d0b4' },
+  issue: { url: 'https://github.com/AquilaXk/easysubway-backend/issues/4', title: '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환' },
+  origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
     spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'b63bbd76854c5dcc42620c987bf1f349fe2714a7166690f52f48190f216cd999', implementationClass: null, implementationJarSha256: null },
@@ -22,8 +22,8 @@ const policy = () => ({
   spotbugsTest: { disposition: 'NOT_REQUIRED_CURRENT', reason: 'test classes are not shipped runtime code', reviewTriggers: ['test output becomes packaged/runtime', 'custom source set mixes test and production outputs', 'bootJar or image admits test classes', 'Gradle source-set/classpath semantics change'] },
   exclusions: [{ className: 'com.easysubway.EasySubwayBackendApplication', sourcePath: 'backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', sourceSha256: 'd0e6c8a5ab74a8c10fead9443573e9acb5b4c240e71f85246744a18b1601aa53', reason: 'bootstrap-only Spring Boot/scheduling entrypoint; product business logic 없음', ownerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', ownerIssueTitle: '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환', ownerIssueState: 'OPEN', removalCondition: 'Backend #4 reviews the class against the current report and either removes the filter or records the exact terminal justification.', reviewTriggers: ['source byte change', 'class/member/annotation or responsibility change', 'plugin/JDK/task/source-set change', 'broader class/package Match', 'Backend #4 remediation'] }],
   findingIdentity: { algorithm: 'sha256-canonical-json-v1', fields: ['bugPattern', 'category', 'priority', 'rank', 'className', 'methodName', 'methodSignature', 'sourcePath', 'startLine', 'endLine', 'sourceSha256', 'analyzerInstanceHash'] },
-  allowedDispositions: ['FIX_REQUIRED', 'FALSE_POSITIVE_EXACT_SUPPRESSION', 'ACCEPTED_BOUNDED_RISK', 'GENERATED_OR_NON_OWNED_EXCLUSION'], findings: [],
-  transition: { phase: 'DISCOVERY_REMOTE_RED', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] }
+  allowedDispositions: ['FIX_REQUIRED', 'FIXED', 'FALSE_POSITIVE_EXACT_SUPPRESSION', 'ACCEPTED_BOUNDED_RISK', 'GENERATED_OR_NON_OWNED_EXCLUSION'], findings: [],
+  transition: { phase: 'DISCOVERY_REMOTE_RED', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] }
 });
 const xml = () => '<?xml version="1.0" encoding="UTF-8"?><!-- current SpotBugs report --><BugCollection><BugInstance type="EI_EXPOSE_REP" category="MALICIOUS_CODE" priority="2" rank="18" instanceHash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" instanceOccurrenceNum="0" instanceOccurrenceMax="0"><Class classname="com.example.Example"/><Method classname="com.example.Example" name="&lt;init&gt;" signature="()V"/><SourceLine classname="com.example.Example" sourcepath="com/example/Example.java" start="2" end="2"/></BugInstance><Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>';
 const evidence = (dir) => ({
@@ -34,8 +34,8 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '1e8026d34a84708ddda0ceb0c76b711563515ed403b99413dc0ab59eb1d2b08b');
-  assert.equal(digest(JSON.stringify(tracked.findings)), '488c61fe2ca55af1fe2a5594e76e2dc2076737b74a55692c95bd56c2aecea185');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '2684967947b5c6e7424a949af3d04a8a52a5f86bb65ed1a602b413a9385d8b9d');
+  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
 });
@@ -61,17 +61,18 @@ test('policy fixed literals and captured JDK javap execution fail closed', () =>
   } finally { rmSync(dir, { recursive: true, force: true }); }
 });
 
-test('Phase 2 summary is an exact result-derived closure artifact', () => {
+test('remediation summary is an exact result-derived closure artifact', () => {
   const digestValue = 'a'.repeat(64);
-  const result = { sourceSha: 'b'.repeat(40), artifactKind: 'backend-spotbugs-result-v1', analyzer: { reviewState: { phase: 'FOUNDATION_REVIEWED_FINDINGS', pluginImplementationReviewed: true, engineReviewed: true, memberBindingReviewed: true, findingsReviewed: true } }, summary: { reported: 195, fixRequired: 195, accepted: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 }, inputs: { sourceDigest: digestValue, classDigest: digestValue, classpathDigest: digestValue, pluginClasspathDigest: digestValue, pluginImplementationDigest: digestValue, engineClasspathDigest: digestValue, javaLauncherDigest: digestValue, policyDigest: digestValue, excludeFilterDigest: digestValue }, reports: { transform: { id: 'spotbugs-report-sanitizer-v1', rawXmlSha256: digestValue, rawHtmlSha256: digestValue }, xml: { sha256: digestValue }, html: { sha256: digestValue } }, outcome: 'PASS' };
+  const result = { sourceSha: 'b'.repeat(40), artifactKind: 'backend-spotbugs-result-v1', analyzer: { reviewState: { phase: 'REMEDIATION_IN_PROGRESS', pluginImplementationReviewed: true, engineReviewed: true, memberBindingReviewed: true, findingsReviewed: true } }, summary: { ledgerTotal: 195, reported: 195, fixRequired: 195, fixed: 0, falsePositiveExactSuppression: 0, acceptedBoundedRisk: 0, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 }, inputs: { sourceDigest: digestValue, classDigest: digestValue, classpathDigest: digestValue, pluginClasspathDigest: digestValue, pluginImplementationDigest: digestValue, engineClasspathDigest: digestValue, javaLauncherDigest: digestValue, policyDigest: digestValue, priorPolicyDigest: digestValue, excludeFilterDigest: digestValue }, reports: { transform: { id: 'spotbugs-report-sanitizer-v1', rawXmlSha256: digestValue, rawHtmlSha256: digestValue }, xml: { sha256: digestValue }, html: { sha256: digestValue } }, outcome: 'PASS' };
   const summary = renderSummary(result);
-  for (const expected of ['review.pluginImplementationReviewed: true', 'review.engineReviewed: true', 'review.memberBindingReviewed: true', 'review.findingsReviewed: true', 'summary.reported: 195', 'summary.stale: 0', 'inputs.excludeFilterDigest: ' + digestValue, 'reports.transform.rawXmlSha256: ' + digestValue, 'reports.html.sha256: ' + digestValue, 'outcome: PASS']) assert.match(summary, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  for (const expected of ['review.pluginImplementationReviewed: true', 'review.engineReviewed: true', 'review.memberBindingReviewed: true', 'review.findingsReviewed: true', 'summary.ledgerTotal: 195', 'summary.fixed: 0', 'summary.stale: 0', 'inputs.priorPolicyDigest: ' + digestValue, 'inputs.excludeFilterDigest: ' + digestValue, 'reports.transform.rawXmlSha256: ' + digestValue, 'reports.html.sha256: ' + digestValue, 'outcome: PASS']) assert.match(summary, new RegExp(expected.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')));
+  assert.doesNotMatch(summary, /undefined/);
   assert.notEqual(summary, renderSummary({ ...result, outcome: 'FAIL' }));
 });
 
 test('tracked Phase 2 policy is the reviewed 195-finding foundation inventory', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(tracked.transition.phase, 'FOUNDATION_REVIEWED_FINDINGS');
+  assert.equal(tracked.transition.phase, 'REMEDIATION_IN_PROGRESS');
   assert.equal(tracked.toolchain.gradleVersion, '8.14.5');
   assert.equal(tracked.toolchain.spotbugsGradlePlugin.implementationClass, 'com.github.spotbugs.snom.SpotBugsPlugin');
   assert.equal(tracked.toolchain.spotbugsEngine.toolVersion, '4.9.3');
@@ -79,17 +80,18 @@ test('tracked Phase 2 policy is the reviewed 195-finding foundation inventory', 
   assert.equal(tracked.findings.length, 195);
   assert.equal(validatePolicy(tracked, { today: '2026-08-10' }), true);
   assert.equal(digest(JSON.stringify(tracked.toolchain.spotbugsEngine.classpath)), '0178af73534a3919830c3bae141dff716dbeed2e13ef31faabcc1dfb6947db69');
-  assert.equal(digest(JSON.stringify(tracked.findings)), '488c61fe2ca55af1fe2a5594e76e2dc2076737b74a55692c95bd56c2aecea185');
+  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   for (const finding of tracked.findings) {
     assert.equal(finding.disposition, 'FIX_REQUIRED');
     assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/4');
     assert.equal(finding.ownerIssueState, 'OPEN');
     assert.equal(finding.expiresAt, '2026-11-07');
+    assert.equal(finding.suppression, null);
   }
   const gate = JSON.parse(readFileSync(new URL('../../backend/quality/static-analysis-gate.json', import.meta.url), 'utf8'));
   const spotbugs = gate.tools.find(({ id }) => id === 'spotbugs');
-  assert.equal(gate.enforcementStatus, 'spotbugs-foundation-reviewed-findings-required');
-  assert.equal(spotbugs.enforcement, 'required_fail_closed_foundation_reviewed_findings');
+  assert.equal(gate.enforcementStatus, 'spotbugs-remediation-ledger-progressive-required');
+  assert.equal(spotbugs.enforcement, 'required_fail_closed_remediation_ledger');
   assert.match(spotbugs.evidence.failMode, /ignoreFailures=true/);
   assert.match(spotbugs.evidence.failMode, /Backend #4/);
   for (const mutate of [
@@ -107,6 +109,73 @@ test('tracked Phase 2 policy is the reviewed 195-finding foundation inventory', 
     (value) => { value.findings[0].reason = 'wrong'; },
     (value) => { value.findings[0].sourcePath = 'backend/src/main/java/**/*.java'; }
   ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' })); }
+});
+
+test('remediation policy admits a synthetic fixed terminal absence', () => {
+  const remediation = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  remediation.issue = { url: 'https://github.com/AquilaXk/easysubway-backend/issues/4', title: '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환' };
+  remediation.origin.foundationSha = '3a15efb833b37d5ce051e9591161311dd7952c79';
+  remediation.allowedDispositions = ['FIX_REQUIRED', 'FIXED', 'FALSE_POSITIVE_EXACT_SUPPRESSION', 'ACCEPTED_BOUNDED_RISK', 'GENERATED_OR_NON_OWNED_EXCLUSION'];
+  remediation.transition = { phase: 'REMEDIATION_IN_PROGRESS', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] };
+  for (const finding of remediation.findings) finding.suppression = null;
+  remediation.findings[0].disposition = 'FIXED';
+  remediation.findings[0].ownerIssueUrl = 'https://github.com/AquilaXk/easysubway-backend/issues/103';
+  remediation.findings[0].ownerIssueTitle = '[Build][Backend][P1] SpotBugs decrease-only remediation ledger foundation';
+  remediation.findings[0].reason = 'Child remediation verified this finding no longer appears in the current report.';
+  remediation.findings[0].removalCondition = 'Reopen this child remediation if the exact finding reappears.';
+  remediation.findings[0].reviewTrigger = 'Review this terminal decision when the exact source, report, or child issue evidence changes.';
+  assert.doesNotThrow(() => validatePolicy(remediation, { today: '2026-08-10' }));
+});
+
+test('terminal dispositions require child-owned non-generic review metadata', () => {
+  const terminal = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  terminal.findings[0].disposition = 'FIXED';
+  assert.throws(() => validatePolicy(terminal, { today: '2026-08-10' }), /terminal metadata/);
+});
+
+test('reconciliation is decrease-only and derives the exact lifecycle summary', () => {
+  const base = { identity: 'a', bugPattern: 'P', category: 'C', priority: 1, rank: 1, className: 'example.A', methodName: 'run', methodSignature: '()V', sourcePath: 'backend/src/main/java/example/A.java', startLine: 1, endLine: 1, sourceSha256: 'a'.repeat(64), analyzerInstanceHash: 'a'.repeat(32) };
+  const ledger = { findings: [{ ...base, disposition: 'FIX_REQUIRED' }, { ...base, identity: 'b', disposition: 'FIXED' }] };
+  assert.deepEqual(reconcileLedger(ledger, [structuredClone(base)]), { ledgerTotal: 2, reported: 1, fixRequired: 1, fixed: 1, falsePositiveExactSuppression: 0, acceptedBoundedRisk: 0, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.throws(() => reconcileLedger(ledger, []), /required finding is missing/);
+  assert.throws(() => reconcileLedger(ledger, [structuredClone(base), { ...base, identity: 'b' }]), /terminal finding remains reported/);
+  assert.throws(() => reconcileLedger(ledger, [{ ...base, identity: 'unknown' }]), /unreviewed/);
+  assert.throws(() => reconcileLedger(ledger, [{ ...base, className: 'example.Stale' }]), /stale/);
+  assert.throws(() => reconcileLedger(ledger, [structuredClone(base), structuredClone(base)]), /duplicate/);
+});
+
+test('prior terminal findings cannot reopen into FIX_REQUIRED', () => {
+  const first = { identity: 'a', disposition: 'FIX_REQUIRED' }, second = { identity: 'b', disposition: 'FIX_REQUIRED' };
+  const current = { findings: [first, second] };
+  assert.equal(validatePriorLedger(current, { findings: [first, second] }), true);
+  assert.throws(() => validatePriorLedger(current, { findings: [{ ...first, disposition: 'FIXED' }, second] }), /cannot reopen/);
+  assert.throws(() => validatePriorLedger(current, { findings: [first] }), /identity ledger/);
+  assert.throws(() => validatePriorLedger(current, { findings: [second, first] }), /identity ledger/);
+});
+
+test('prior policy resolver preserves exact show bytes and fails closed', () => {
+  const sourceSha = 'a'.repeat(40), priorSha = 'b'.repeat(40), current = { findings: [{ identity: 'a', disposition: 'FIX_REQUIRED' }] }, prior = { findings: [{ identity: 'a', disposition: 'FIX_REQUIRED' }] }, raw = `{\n  "findings": [\n    ${JSON.stringify(prior.findings[0])}\n  ]\n}\n`;
+  const calls = []; const exec = (args) => { calls.push(args); if (args[0] === 'show') return raw; return args[1] === 'HEAD' ? `${sourceSha}\n` : `${priorSha}\n`; };
+  assert.equal(resolvePriorPolicy({ root: '/repo', sourceSha, current, exec }), digest(raw));
+  assert.deepEqual(calls, [['rev-parse', 'HEAD'], ['rev-parse', `${sourceSha}^1`], ['show', `${priorSha}:backend/quality/spotbugs-suppression-policy.json`]]);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[0] === 'show' ? `${raw}\n` : exec(args) }), /canonical/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[0] === 'show' ? '{' : exec(args) }), /JSON/);
+  const invalidRaw = `{\n  "findings": [\n    ${JSON.stringify({ identity: 'a', disposition: 'INVALID' })}\n  ]\n}\n`;
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[0] === 'show' ? invalidRaw : exec(args) }), /disposition/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[1] === 'HEAD' ? 'c'.repeat(40) : exec(args) }), /checked out/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[1] === `${sourceSha}^1` ? 'not-a-sha' : exec(args) }), /first parent/);
+  assert.throws(() => resolvePriorPolicy({ root: '/repo', sourceSha, current, exec: (args) => args[1] === `${sourceSha}^1` ? (() => { throw new Error('shallow'); })() : exec(args) }), /first parent/);
+});
+
+test('suppressed findings bind to current captured source, class, and member evidence', () => {
+  const finding = { sourcePath, sourceSha256: digest('a\nb\nc\n'), className: 'com.example.Example', methodName: '<init>', methodSignature: '()V', suppression: {} };
+  const sourceEntries = [{ repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classEntries = [{ repositoryPath: 'backend/build/classes/java/main/com/example/Example.class' }];
+  const bindings = { classDirs: ['/classes'], auxClassPaths: [], javapPath: '/jdk/bin/javap', javaInstallationPath: '/jdk', memberInspector: () => new Map([['<init>\u0000()V', 1]]) };
+  assert.equal(validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings }), true);
+  assert.throws(() => validateSuppressedBindings({ findings: [{ ...finding, sourceSha256: 'b'.repeat(64) }], sourceEntries, classEntries, ...bindings }), /source/);
+  assert.throws(() => validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries: [], ...bindings }), /class/);
+  assert.throws(() => validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings, memberInspector: () => new Map() }), /missing|ambiguous/);
+  assert.throws(() => validateSuppressedBindings({ findings: [finding], sourceEntries, classEntries, ...bindings, memberInspector: () => new Map([['<init>\u0000()V', 2]]) }), /missing|ambiguous/);
 });
 
 test('Phase 2 member binding is exact, once per class, and fails closed', () => {
@@ -230,9 +299,10 @@ test('exclude filter is exactly the one policy-owned Class matcher', () => {
   assert.equal(validateExcludeFilter(policy(), '<?xml version="1.0"?><FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match></FindBugsFilter>'), true);
   const tracked = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
   assert.equal(validateExcludeFilter(policy(), tracked), true);
-  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match><Class name="com.other.Unapproved"/></FindBugsFilter>'), /one exact Match/);
-  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match><Or><Class name="com.other.Unapproved"/></Or></FindBugsFilter>'), /one exact Match/);
+  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match><Class name="com.other.Unapproved"/></FindBugsFilter>'), /Match inventory/);
+  assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match><Or><Class name="com.other.Unapproved"/></Or></FindBugsFilter>'), /Match inventory/);
   assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Package name="com.easysubway"/></Match></FindBugsFilter>'), /exact/);
+  for (const child of ['Bug', 'Class', 'Method', 'Package']) assert.throws(() => validateExcludeFilter(policy(), `<FindBugsFilter><Match><Class name="com.easysubway.EasySubwayBackendApplication"><${child} name="com.easysubway"/></Class></Match></FindBugsFilter>`), /exact/);
   assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="com.easysubway.*"/></Match></FindBugsFilter>'), /exact/);
   assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><Match><Class name="&unknown;"/></Match></FindBugsFilter>'), /entity|malformed/);
     assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter><!-- broken -- comment --><Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match></FindBugsFilter>'), /comment/);
@@ -240,9 +310,50 @@ test('exclude filter is exactly the one policy-owned Class matcher', () => {
     assert.throws(() => validateExcludeFilter(policy(), '<FindBugsFilter/><FindBugsFilter/>'), /malformed/);
 });
 
+test('terminal suppression filters require one ordered exact method Match', () => {
+  const terminal = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const finding = terminal.findings.find(({ methodSignature }) => methodSignature === '(Ljava/lang/String;Ljava/lang/String;Ljava/util/List;)V');
+  finding.disposition = 'FALSE_POSITIVE_EXACT_SUPPRESSION';
+  finding.ownerIssueUrl = 'https://github.com/AquilaXk/easysubway-backend/issues/103';
+  finding.ownerIssueTitle = '[Build][Backend][P1] SpotBugs decrease-only remediation ledger foundation';
+  finding.reason = 'Child remediation verified this exact finding as a reviewed false positive.';
+  finding.removalCondition = 'Reopen this child remediation if the exact finding reappears.';
+  finding.reviewTrigger = 'Review this terminal decision when the exact source, report, or child issue evidence changes.';
+  finding.suppression = { kind: 'EXCLUDE_FILTER_EXACT_METHOD', bugPattern: finding.bugPattern, className: finding.className, methodName: finding.methodName, params: 'java.lang.String,java.lang.String,java.util.List', returns: 'void', reason: 'Synthetic exact multi-parameter filter.' };
+  const bootstrap = '<Match><Class name="com.easysubway.EasySubwayBackendApplication"/></Match>';
+  const match = `<Match><Bug pattern="${finding.bugPattern}"/><Class name="${finding.className}"/><Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,java.util.List" returns="void"/></Match>`;
+  const filter = `<FindBugsFilter>${bootstrap}${match}</FindBugsFilter>`;
+  assert.equal(validatePolicy(terminal, { today: '2026-08-10' }), true);
+  assert.equal(validateExcludeFilter(terminal, filter), true);
+  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ identity }) => identity !== finding.identity)), { ledgerTotal: 195, reported: 194, fixRequired: 194, fixed: 0, falsePositiveExactSuppression: 1, acceptedBoundedRisk: 0, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  for (const mutate of [
+    (value) => { value.suppression.params = 'java.lang.String,java.util.List'; },
+    (value) => { value.suppression.returns = 'java.lang.Void'; }
+  ]) { const invalid = structuredClone(terminal); mutate(invalid.findings.find(({ identity }) => identity === finding.identity)); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' }), /descriptor mismatch/); }
+  const terminalPrefix = `<Match><Bug pattern="${finding.bugPattern}"/><Class name="${finding.className}"/>`;
+  for (const invalid of [
+    filter.replace(finding.bugPattern, `${finding.bugPattern},OTHER`),
+    filter.replace(finding.bugPattern, `~${finding.bugPattern}`),
+    filter.replace(finding.className, `${finding.className}*`),
+    filter.replace(match, ''),
+    filter.replace('</FindBugsFilter>', `${match}</FindBugsFilter>`),
+    `<FindBugsFilter>${match}${bootstrap}</FindBugsFilter>`,
+    `<FindBugsFilter>${bootstrap}${terminalPrefix}</Match></FindBugsFilter>`,
+    `<FindBugsFilter>${bootstrap}${terminalPrefix}<Method name="&lt;init&gt;"/></Match></FindBugsFilter>`,
+    `<FindBugsFilter>${bootstrap}${terminalPrefix}<Method params="java.lang.String,java.lang.String,java.util.List"/></Match></FindBugsFilter>`,
+    `<FindBugsFilter>${bootstrap}${terminalPrefix}<Method returns="void"/></Match></FindBugsFilter>`,
+    filter.replace('/><Class', '><Package name="com.example"/></Bug><Class'),
+    filter.replace('/><Method', '><Package name="com.example"/></Class><Method'),
+    filter.replace('/></Match>', '><Package name="com.example"/></Method></Match>'),
+    filter.replace('/><Class', '><Bug pattern="OTHER"/></Bug><Class'),
+    filter.replace('returns="void"', 'returns="java.lang.Void"')
+  ]) assert.throws(() => validateExcludeFilter(terminal, invalid), /XML|exact|Match/);
+});
+
 test('workflow preserves #87 and uploads exactly four Phase-1 files before final enforcement', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.equal(validateWorkflow(workflow), true);
+  assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 2\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
   assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
   assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
   assert.match(workflow, /\.\/gradlew writeSpotbugsMainEvidence --no-daemon/);
@@ -298,17 +409,17 @@ test('PR-head provenance binds a distinct synthetic checkout head and rejects mi
   const run = (args) => spawnSync(process.execPath, [gate, ...args], { cwd: dir, encoding: 'utf8' });
   try {
     const buildScript = readFileSync(new URL('../../backend/build.gradle', import.meta.url));
-    const fixturePolicy = policy(); fixturePolicy.toolchain.spotbugsGradlePlugin.buildScriptSha256 = digest(buildScript);
+    const fixturePolicy = policy(); fixturePolicy.toolchain.spotbugsGradlePlugin.buildScriptSha256 = digest(buildScript); const fixturePolicyBytes = `${JSON.stringify(fixturePolicy, null, 2)}\n`;
     write('backend/build.gradle', buildScript);
-    write('backend/quality/spotbugs-suppression-policy.json', `${JSON.stringify(fixturePolicy, null, 2)}\n`);
+    write('backend/quality/spotbugs-suppression-policy.json', fixturePolicyBytes);
     write('backend/quality/spotbugs-exclude.xml', readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url)));
     write('backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', readFileSync(new URL('../../backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', import.meta.url)));
     write(sourcePath, 'a\nb\nc\n'); write('backend/build/classes/java/main/com/example/Example.class', 'class'); write('backend/build/classes/java/main/com/example/Example$Nested.class', 'nested'); write('plugin.jar', 'plugin'); write('engine.jar', 'engine'); write('aux.jar', 'aux'); write('detector.jar', 'detector'); write('java-home/bin/java', 'java'); const currentEvidence = evidence(dir); currentEvidence.task.classes.push({ path: join(dir, 'backend/build/classes/java/main/com/example/Example$Nested.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example$Nested.class', sha256: digest('nested') }); currentEvidence.java.installationPath = join(dir, 'java-home'); currentEvidence.java.launcherPath = join(dir, 'java-home/bin/java'); currentEvidence.java.launcherSha256 = digest('java'); const rawXml = xml().replace('<BugCollection>', `<BugCollection><Project projectName="${currentEvidence.task.classes[1].path}"/>`), rawHtml = `<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Transitional//EN" "https://www.w3.org/TR/xhtml1/DTD/xhtml1-transitional.dtd"><html><body>${currentEvidence.engine.classpath[0].path}</body></html>`; assert.doesNotMatch(sanitizeReports({ rawXml, rawHtml, evidence: currentEvidence, root: dir }).xml, /\/tmp\//); for (const suffix of ['-extra', '/child', '.extra']) assert.throws(() => sanitizeReports({ rawXml, rawHtml: `<html>${currentEvidence.engine.classpath[0].path}${suffix}</html>`, evidence: currentEvidence, root: dir }), /partial token/); assert.throws(() => sanitizeReports({ rawXml, rawHtml: `<html>x${currentEvidence.engine.classpath[0].path}</html>`, evidence: currentEvidence, root: dir }), /partial token/); assert.throws(() => sanitizeReports({ rawXml, rawHtml: '<html>/home/unknown</html>', evidence: currentEvidence, root: dir }), /unmapped host path/); const sameIdentity = structuredClone(currentEvidence); sameIdentity.task.auxClassPaths = [{ ...sameIdentity.engine.classpath[0] }]; assert.equal(sanitizeReports({ rawXml, rawHtml, evidence: sameIdentity, root: dir }).html.includes('evidence-path:['), false); const crossRole = structuredClone(currentEvidence); crossRole.plugin.implementationPath = crossRole.engine.classpath[0].path; crossRole.plugin.implementationSha256 = digest('engine'); assert.equal(validateEvidence(crossRole, policy(), dir), true); assert.match(sanitizeReports({ rawXml, rawHtml, evidence: crossRole, root: dir }).html, new RegExp(`evidence-path:\\[dependency:x:y:1/engine\\.jar\\|gradle-plugin:com\\.github\\.spotbugs/${digest('engine')}\\]`)); write('raw.xml', rawXml); write('raw.html', rawHtml); write('evidence.json', JSON.stringify(currentEvidence));
-    execFileSync('git', ['init', '-q'], { cwd: dir }); execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir }); execFileSync('git', ['config', 'user.name', 'SpotBugs fixture'], { cwd: dir }); execFileSync('git', ['add', '.'], { cwd: dir }); execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: dir });
+    execFileSync('git', ['init', '-q'], { cwd: dir }); execFileSync('git', ['config', 'user.email', 'test@example.invalid'], { cwd: dir }); execFileSync('git', ['config', 'user.name', 'SpotBugs fixture'], { cwd: dir }); execFileSync('git', ['add', '.'], { cwd: dir }); execFileSync('git', ['commit', '-qm', 'prior fixture'], { cwd: dir }); execFileSync('git', ['commit', '--allow-empty', '-qm', 'current fixture'], { cwd: dir });
     const sourceSha = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: dir, encoding: 'utf8' }).trim(), prHeadSha = 'b'.repeat(40), output = join(dir, 'result.json'), summary = join(dir, 'summary.md');
     const options = ['--repo-root', dir, '--policy', join(dir, 'backend/quality/spotbugs-suppression-policy.json'), '--raw-xml', join(dir, 'raw.xml'), '--raw-html', join(dir, 'raw.html'), '--xml', join(dir, 'staged.xml'), '--html', join(dir, 'staged.html'), '--evidence', join(dir, 'evidence.json'), '--source-sha', sourceSha, '--pull-request-head-sha', prHeadSha, '--output', output, '--summary', summary];
     const validated = run(['validate', ...options]); assert.equal(validated.status, 0, validated.stderr);
-    const result = JSON.parse(readFileSync(output, 'utf8')); assert.deepEqual(Object.keys(result), ['schemaVersion', 'artifactKind', 'sourceSha', 'pullRequestHeadSha', 'analyzer', 'inputs', 'reports', 'findings', 'summary', 'outcome']); assert.equal(result.sourceSha, sourceSha); assert.equal(result.pullRequestHeadSha, prHeadSha); assert.deepEqual(Object.keys(result.reports), ['transform', 'xml', 'html']); assert.equal(result.reports.transform.id, 'spotbugs-report-sanitizer-v1'); assert.doesNotMatch(readFileSync(join(dir, 'staged.xml'), 'utf8'), /\/tmp\//); assert.doesNotMatch(readFileSync(join(dir, 'staged.html'), 'utf8'), /\/tmp\//);
+    const result = JSON.parse(readFileSync(output, 'utf8')); assert.deepEqual(Object.keys(result), ['schemaVersion', 'artifactKind', 'sourceSha', 'pullRequestHeadSha', 'analyzer', 'inputs', 'reports', 'findings', 'summary', 'outcome']); assert.equal(result.sourceSha, sourceSha); assert.equal(result.pullRequestHeadSha, prHeadSha); assert.deepEqual(Object.keys(result.inputs), ['sourceDigest', 'classDigest', 'classpathDigest', 'pluginClasspathDigest', 'pluginImplementationDigest', 'engineClasspathDigest', 'javaLauncherDigest', 'policyDigest', 'priorPolicyDigest', 'excludeFilterDigest']); assert.equal(result.inputs.priorPolicyDigest, digest(fixturePolicyBytes)); assert.deepEqual(Object.keys(result.reports), ['transform', 'xml', 'html']); assert.equal(result.reports.transform.id, 'spotbugs-report-sanitizer-v1'); assert.doesNotMatch(readFileSync(join(dir, 'staged.xml'), 'utf8'), /\/tmp\//); assert.doesNotMatch(readFileSync(join(dir, 'staged.html'), 'utf8'), /\/tmp\//);
     const final = run(['validate-final', ...options]); assert.equal(final.status, 1); assert.match(final.stderr, /DISCOVERY_REMOTE_RED/);
     writeFileSync(join(dir, 'staged.xml'), '<BugCollection/>'); const stagedTamper = run(['validate-final', ...options]); assert.equal(stagedTamper.status, 1); assert.match(stagedTamper.stderr, /sanitized report tamper/); assert.equal(run(['validate', ...options]).status, 0);
     writeFileSync(output, '{}\n'); const tampered = run(['validate-final', ...options]); assert.equal(tampered.status, 1); assert.match(tampered.stderr, /artifact tamper/);
