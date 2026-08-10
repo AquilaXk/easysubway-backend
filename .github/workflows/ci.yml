@@ -324,7 +324,7 @@ jobs:
         id: coverage_analyze
         shell: bash
         env:
-          PULL_REQUEST_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'none' }}
+          COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}
           COVERAGE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -339,7 +339,7 @@ jobs:
             --java-home "$JAVA_HOME" \
             --event "${{ github.event_name }}" \
             --source-sha "$source_sha" \
-            --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
+            --pull-request-head-sha "$COVERAGE_PULL_REQUEST_HEAD_SHA" \
             --run-url "$COVERAGE_RUN_URL" \
             --artifact-dir "${RUNNER_TEMP}/backend-critical-coverage"
 
@@ -368,7 +368,7 @@ jobs:
         if: always()
         shell: bash
         env:
-          PULL_REQUEST_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'none' }}
+          COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}
           COVERAGE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
         run: |
           set -euo pipefail
@@ -388,7 +388,7 @@ jobs:
             --java-home "$JAVA_HOME" \
             --event "${{ github.event_name }}" \
             --source-sha "$source_sha" \
-            --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
+            --pull-request-head-sha "$COVERAGE_PULL_REQUEST_HEAD_SHA" \
             --run-url "$COVERAGE_RUN_URL" \
             --artifact-dir "${RUNNER_TEMP}/backend-critical-coverage" \
             --test-outcome "${{ steps.test_backend.outcome }}" \

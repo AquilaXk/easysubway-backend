@@ -149,7 +149,9 @@ test('tracked build, exclusion, static gate, workflow and source inventory agree
     readFileSync(new URL('../../backend/build.gradle', import.meta.url), 'utf8'),
     readFileSync(new URL('../../backend/gradle/wrapper/gradle-wrapper.properties', import.meta.url), 'utf8'),
   ), true);
-  assert.equal(validateWorkflow(readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8')), true);
+  const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
+  assert.equal(validateWorkflow(workflow), true);
+  assert.throws(() => validateWorkflow(workflow.replaceAll('COVERAGE_PULL_REQUEST_HEAD_SHA', 'PULL_REQUEST_HEAD_SHA')), /PR-head binding/);
   const inventory = inventorySources(repositoryRoot, policy);
   const critical = inventory.scoped.filter(({ boundaryIds }) => boundaryIds.length > 0);
   assert.ok(critical.length > 0);

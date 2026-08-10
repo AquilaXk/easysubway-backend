@@ -692,6 +692,8 @@ export function validateWorkflow(workflow) {
     'if: always() && !cancelled()', 'uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f', 'name: backend-critical-coverage-${{ github.sha }}',
     'retention-days: 5', 'if-no-files-found: error', '--gradle-evidence', '--summary-outcome',
   ]) if (!workflow.includes(literal)) fail(`workflow missing ${literal}`);
+  const coverageHeadExpression = "COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}";
+  if (workflow.split(coverageHeadExpression).length !== 3 || workflow.split('--pull-request-head-sha "$COVERAGE_PULL_REQUEST_HEAD_SHA"').length !== 3) fail('coverage workflow PR-head binding mismatch');
   const start = workflow.indexOf('      - name: Analyze backend critical coverage');
   const end = workflow.indexOf('      - name: Build image without push', start);
   if (start < 0 || end <= start || /continue-on-error/.test(workflow.slice(start, end))) fail('coverage workflow cannot continue on error');
