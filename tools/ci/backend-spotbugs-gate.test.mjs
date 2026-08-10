@@ -34,7 +34,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'cf1bb79cc76506d12ef00c0eeac479830259a89723c4866c162389aa3639fc1f');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'cafaf6431baa8f87d7835a7f808a156351b1f3028fb795fd538325cf738dcfcd');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -70,7 +70,7 @@ test('remediation summary is an exact result-derived closure artifact', () => {
   assert.notEqual(summary, renderSummary({ ...result, outcome: 'FAIL' }));
 });
 
-test('tracked Phase 2 policy projects Backend #107 report findings into the immutable ledger', () => {
+test('tracked Phase 2 policy preserves Backend #107 and projects Backend #110 into the immutable ledger', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   assert.equal(tracked.transition.phase, 'REMEDIATION_IN_PROGRESS');
   assert.equal(tracked.toolchain.gradleVersion, '8.14.5');
@@ -91,7 +91,7 @@ test('tracked Phase 2 policy projects Backend #107 report findings into the immu
     'FIXED',
   ]);
   const lifecycle = reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED'));
-  assert.deepEqual(lifecycle, { ledgerTotal: 195, reported: 167, fixRequired: 167, fixed: 10, falsePositiveExactSuppression: 16, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(lifecycle, { ledgerTotal: 195, reported: 141, fixRequired: 141, fixed: 14, falsePositiveExactSuppression: 38, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   assert.deepEqual(report.filter(({ disposition }) => disposition === 'FIXED').map(({ identity }) => identity), [
     'bf9106f46fd3c8a55e1199dd6c9e83d982b7ca5101e8997a4629142cb42788f5',
     'd0285ecad578ac2c773fb1e80d5c4530f9dc4d1b9795aa59eb46dafe3a13d5f8',
@@ -172,6 +172,53 @@ test('tracked Phase 2 policy projects Backend #107 report findings into the immu
     (value) => { value.findings[0].reason = 'wrong'; },
     (value) => { value.findings[0].sourcePath = 'backend/src/main/java/**/*.java'; }
   ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' })); }
+});
+
+test('Backend #110 datapack projection is exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
+  assert.equal(datapack.length, 26);
+  assert.equal(new Set(datapack.map(({ sourcePath }) => sourcePath)).size, 14);
+  assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), 'ec819b85d5a55653bd06a926a125694efb09cba0f2389841f3cbb8852f89cdc4');
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 141, fixRequired: 141, fixed: 14, falsePositiveExactSuppression: 38, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  const fixed = datapack.filter(({ disposition }) => disposition === 'FIXED');
+  assert.deepEqual(fixed.map(({ identity }) => identity), ['d233aa50bd7f69d165daa6336008536ec372c51d9739a669c7d202dac64bd481', '6105aefe9ddc33aa82dc2dbc1dec6e4913558a4b4d00f4ba5f86e4583c8e0a57', '20f57710c70f578826127d148bcb6fff9ddf182b5a0919da897fdbada2e20546', '90c28725d7010af274f86071b28b259a19b6e2102d211ad03450a5ef289aa0dc']);
+  const ct = datapack.filter(({ bugPattern, disposition }) => bugPattern === 'CT_CONSTRUCTOR_THROW' && disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION');
+  const di = datapack.filter(({ bugPattern, disposition }) => bugPattern === 'EI_EXPOSE_REP2' && disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION');
+  assert.equal(ct.length, 13);
+  assert.equal(di.length, 9);
+  for (const finding of datapack) {
+    assert.equal(finding.ownerIssueUrl, 'https://github.com/AquilaXk/easysubway-backend/issues/110');
+    assert.equal(finding.ownerIssueTitle, '[Build][Backend][P1] datapack domain SpotBugs remediation');
+    assert.equal(finding.ownerIssueState, 'OPEN');
+    assert.equal(finding.expiresAt, '2026-11-07');
+  }
+  for (const finding of fixed) {
+    assert.equal(finding.reason, 'Backend #110 removed this exact datapack-domain finding with a focused source-level remediation.');
+    assert.equal(finding.removalCondition, 'Reopen Backend #110 if this exact finding or a source-equivalent replacement reappears.');
+    assert.equal(finding.reviewTrigger, 'Review this terminal decision when the exact source, datapack contract, analyzer, or Backend #110 evidence changes.');
+    assert.equal(finding.suppression, null);
+  }
+  for (const finding of ct) {
+    assert.equal(finding.reason, 'Backend #110 reviewed this constructor as intentional fail-fast datapack infrastructure initialization; no partially initialized instance escapes.');
+    assert.equal(finding.removalCondition, 'Remove this exact suppression when this constructor no longer performs the reviewed fail-fast initialization.');
+    assert.equal(finding.reviewTrigger, 'Review this decision on constructor source/signature, startup wiring, exception semantics, analyzer, or Backend #110 owner-state change.');
+    assert.equal(finding.suppression.reason, 'Backend #110 exact fail-fast datapack constructor initialization.');
+  }
+  for (const finding of di) {
+    assert.equal(finding.reason, 'Backend #110 verified that this constructor intentionally retains the injected collaborator identity; it is behavior infrastructure, not caller-owned value data.');
+    assert.equal(finding.removalCondition, 'Remove this exact suppression when the constructor no longer retains this collaborator or the dependency becomes a copyable value contract.');
+    assert.equal(finding.reviewTrigger, 'Review this decision on collaborator type/identity/mutability, constructor wiring, source/member, analyzer, or Backend #110 owner-state change.');
+    assert.equal(finding.suppression.reason, 'Backend #110 exact injected-collaborator identity contract.');
+  }
+  for (const finding of [...ct, ...di]) {
+    assert.equal(Object.keys(finding.suppression).join('|'), 'kind|bugPattern|className|methodName|params|returns|reason');
+    assert.equal(finding.suppression.kind, 'EXCLUDE_FILTER_EXACT_METHOD');
+    assert.equal(finding.suppression.bugPattern, finding.bugPattern);
+    assert.equal(finding.suppression.className, finding.className);
+    assert.equal(finding.suppression.methodName, finding.methodName);
+  }
+  assert.equal((readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8').match(/<Match>/g) ?? []).length, 41);
 });
 
 test('remediation policy admits a synthetic fixed terminal absence', () => {
@@ -390,7 +437,7 @@ test('terminal suppression filters require one ordered exact method Match', () =
   const filter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
   assert.equal(validatePolicy(terminal, { today: '2026-08-10' }), true);
   assert.equal(validateExcludeFilter(terminal, filter), true);
-  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 167, fixRequired: 167, fixed: 10, falsePositiveExactSuppression: 16, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 141, fixRequired: 141, fixed: 14, falsePositiveExactSuppression: 38, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   for (const mutate of [
     (value) => { value.suppression.params = 'java.lang.String,java.util.List'; },
     (value) => { value.suppression.returns = 'java.lang.Void'; }
