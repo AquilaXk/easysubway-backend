@@ -1,7 +1,7 @@
 {
   "schemaVersion": 1,
   "policyId": "backend-jacoco-exclusion",
-  "phase": "DISCOVERY_REMOTE_RED",
+  "phase": "ENFORCED_DECREASE_ONLY",
   "reportOnly": true,
   "globalPercentFailGate": false,
   "classDirectoryExcludes": [

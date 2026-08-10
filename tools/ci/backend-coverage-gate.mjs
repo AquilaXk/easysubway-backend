@@ -14,8 +14,8 @@ import {
 import { basename, dirname, join, resolve, sep } from 'node:path';
 import { pathToFileURL } from 'node:url';
 
-const POLICY_SHA256 = '268f6ff552c9f9a52b7910ca578446efa01f2a9bdec14d1a3cb372984eeef88f';
-const BASELINE_SHA256 = '046d184ee91280d8484717ebc37066efe9cbc1105dc36ee4fccc995627499c0f';
+const POLICY_SHA256 = '78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b';
+const BASELINE_SHA256 = '2e89ef6998959627385471e35f76b23f4b55630234e19da0c87b09ff94cd6d49';
 const POLICY_PHASE_A = 'DISCOVERY_REMOTE_RED';
 const POLICY_PHASE_B = 'ENFORCED_DECREASE_ONLY';
 const BASELINE_PHASE_A = 'UNREVIEWED_DISCOVERY';
@@ -278,7 +278,7 @@ export function validateBaseline(baseline, policy) {
   if (baseline.scope.criticalSourceCount !== baseline.scope.reportedSourceCount + baseline.scope.missingSourceCount || baseline.scope.excludedSourceCount !== 1) fail('baseline scope counts mismatch');
   if (!Array.isArray(baseline.sources) || baseline.sources.length !== baseline.scope.criticalSourceCount + 1) fail('baseline source count mismatch');
   const paths = baseline.sources.map(({ path }) => path);
-  if (new Set(paths).size !== paths.length || JSON.stringify(paths) !== JSON.stringify([...paths].sort())) fail('baseline sources must be unique and sorted');
+  if (new Set(paths).size !== paths.length || JSON.stringify(paths) !== JSON.stringify([...paths].sort((left, right) => left.localeCompare(right)))) fail('baseline sources must be unique and sorted');
   baseline.sources.forEach((source, index) => validateSourceRow(source, policy, `baseline source ${index}`));
   if (!Array.isArray(baseline.exclusions) || baseline.exclusions.length !== 1) fail('baseline exclusion count mismatch');
   exactKeys(baseline.exclusions[0], ['id', 'sourcePath', 'classFile', 'sha256'], 'baseline exclusion');
@@ -590,7 +590,10 @@ const parseIdentity = ({ event, sourceSha, pullRequestHeadSha, runUrl, repositor
   return { event, sourceSha, pullRequestHeadSha: prHead, runUrl };
 };
 
-const loadInputs = ({ repoRoot, policyPath, baselinePath, rawXmlPath, gradleEvidencePath, javaHome, event, sourceSha, pullRequestHeadSha, runUrl, runGit = git }) => {
+const loadInputs = (
+  { repoRoot, policyPath, baselinePath, rawXmlPath, gradleEvidencePath, javaHome, event, sourceSha, pullRequestHeadSha, runUrl, runGit = git },
+  { expectedPolicySha256 = POLICY_SHA256, expectedBaselineSha256 = BASELINE_SHA256 } = {},
+) => {
   const root = realpathSync(repoRoot);
   const fixedInputs = [
     [policyPath, 'backend/quality/jacoco-coverage-policy.json', 'policy'],
@@ -604,7 +607,7 @@ const loadInputs = ({ repoRoot, policyPath, baselinePath, rawXmlPath, gradleEvid
   }
   const policyBytes = readFileSync(policyPath), baselineBytes = readFileSync(baselinePath), rawXmlBytes = readFileSync(rawXmlPath), evidenceBytes = readFileSync(gradleEvidencePath);
   const policyDigest = digest(policyBytes), baselineDigest = digest(baselineBytes);
-  if (policyDigest !== POLICY_SHA256 || baselineDigest !== BASELINE_SHA256) fail('reviewed policy or baseline digest mismatch');
+  if (policyDigest !== expectedPolicySha256 || baselineDigest !== expectedBaselineSha256) fail('reviewed policy or baseline digest mismatch');
   const policy = parseCanonicalJson(policyBytes, 'policy'), baseline = parseBaselineBytes(baselineBytes); validatePolicy(policy); validateBaseline(baseline, policy);
   const exclusionPolicy = parseCanonicalJson(readFileSync(join(root, 'backend/quality/jacoco-exclusion-policy.json')), 'JaCoCo exclusion policy');
   const staticGate = parseCanonicalJson(readFileSync(join(root, 'backend/quality/static-analysis-gate.json')), 'static analysis gate');
@@ -677,9 +680,9 @@ export function writeArtifact({ artifactDirectory, rawXmlBytes, baselineBytes, r
   return true;
 }
 
-export function verifyArtifactDirectory({ artifactDirectory, inputs }) {
+export function verifyArtifactDirectory({ artifactDirectory, inputs, expectedPolicySha256 = POLICY_SHA256, expectedBaselineSha256 = BASELINE_SHA256 }) {
   const files = readdirSync(artifactDirectory).sort(); if (JSON.stringify(files) !== JSON.stringify([...ARTIFACT_FILES].sort())) fail('artifact file set mismatch');
-  const current = loadInputs(inputs), resultBytes = readFileSync(join(artifactDirectory, 'backend-critical-coverage-result.json'));
+  const current = loadInputs(inputs, { expectedPolicySha256, expectedBaselineSha256 }), resultBytes = readFileSync(join(artifactDirectory, 'backend-critical-coverage-result.json'));
   const result = parseCanonicalJson(resultBytes, 'result'); exactKeys(result, RESULT_KEYS, 'result');
   if (canonical(current.result) !== resultBytes.toString('utf8')) fail('artifact result does not match current inputs');
   if (!readFileSync(join(artifactDirectory, 'jacocoTestReport.xml')).equals(current.rawXmlBytes) || !readFileSync(join(artifactDirectory, 'backend-critical-coverage-baseline.json')).equals(current.baselineBytes)) fail('artifact inputs are stale');
@@ -745,17 +748,17 @@ const requireArgs = (args, expected) => {
 };
 const inputArgs = (args) => ({ repoRoot: args.repo_root, policyPath: args.policy, baselinePath: args.baseline, rawXmlPath: args.raw_xml, gradleEvidencePath: args.gradle_evidence, javaHome: args.java_home, event: args.event, sourceSha: args.source_sha, pullRequestHeadSha: args.pull_request_head_sha, runUrl: args.run_url });
 
-export function runCli(argv = process.argv.slice(2)) {
+export function runCli(argv = process.argv.slice(2), { expectedPolicySha256 = POLICY_SHA256, expectedBaselineSha256 = BASELINE_SHA256 } = {}) {
   const [command, ...values] = argv;
   try {
     if (command === 'analyze') {
       const args = requireArgs(parseArgs(values), ['repo-root', 'policy', 'baseline', 'raw-xml', 'gradle-evidence', 'java-home', 'event', 'source-sha', 'pull-request-head-sha', 'run-url', 'artifact-dir']);
-      const loaded = loadInputs(inputArgs(args)); writeArtifact({ artifactDirectory: args.artifact_dir, rawXmlBytes: loaded.rawXmlBytes, baselineBytes: loaded.baselineBytes, result: loaded.result }); return 0;
+      const loaded = loadInputs(inputArgs(args), { expectedPolicySha256, expectedBaselineSha256 }); writeArtifact({ artifactDirectory: args.artifact_dir, rawXmlBytes: loaded.rawXmlBytes, baselineBytes: loaded.baselineBytes, result: loaded.result }); return 0;
     }
     if (command === 'verdict') {
       const args = requireArgs(parseArgs(values), ['repo-root', 'policy', 'baseline', 'raw-xml', 'gradle-evidence', 'java-home', 'event', 'source-sha', 'pull-request-head-sha', 'run-url', 'artifact-dir', 'test-outcome', 'analysis-outcome', 'upload-outcome', 'summary-outcome']);
       for (const key of ['test_outcome', 'analysis_outcome', 'upload_outcome', 'summary_outcome']) if (args[key] !== 'success') fail(`${key} is not success`);
-      const result = verifyArtifactDirectory({ artifactDirectory: args.artifact_dir, inputs: inputArgs(args) });
+      const result = verifyArtifactDirectory({ artifactDirectory: args.artifact_dir, inputs: inputArgs(args), expectedPolicySha256, expectedBaselineSha256 });
       if (result.outcome !== 'PASS') fail(`${result.outcome}: ${result.reasons.join(',')}`);
       return 0;
     }

@@ -81,12 +81,18 @@ const phaseTwoFixture = () => {
   return { policy, baseline, projection, producer };
 };
 
-test('Phase A policy, baseline and JaCoCo report are closed evidence', () => {
-  assert.equal(digest(trackedPolicyBytes), '268f6ff552c9f9a52b7910ca578446efa01f2a9bdec14d1a3cb372984eeef88f');
-  assert.equal(digest(trackedBaselineBytes), '046d184ee91280d8484717ebc37066efe9cbc1105dc36ee4fccc995627499c0f');
+test('Phase B policy, reviewed baseline and JaCoCo report are closed evidence', () => {
+  assert.equal(digest(trackedPolicyBytes), '78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b');
+  assert.equal(digest(trackedBaselineBytes), '2e89ef6998959627385471e35f76b23f4b55630234e19da0c87b09ff94cd6d49');
   assert.deepEqual(parseCanonicalJson(trackedPolicyBytes, 'policy'), fixturePolicy());
   assert.equal(validatePolicy(fixturePolicy()), true);
-  assert.equal(validateBaseline(discoveryBaseline, fixturePolicy()), true);
+  const trackedBaseline = JSON.parse(trackedBaselineBytes);
+  assert.equal(validateBaseline(trackedBaseline, fixturePolicy()), true);
+  assert.equal(serializeBaseline(trackedBaseline), trackedBaselineBytes);
+  const reorderedBaseline = structuredClone(trackedBaseline); reorderedBaseline.sources.reverse();
+  assert.throws(() => validateBaseline(reorderedBaseline, fixturePolicy()), /unique and sorted/);
+  const phaseAPolicy = fixturePolicy(); phaseAPolicy.phase = 'DISCOVERY_REMOTE_RED';
+  assert.equal(validateBaseline(discoveryBaseline, phaseAPolicy), true);
   const report = parseJacocoReport(jacocoXml);
   assert.deepEqual(report.sources, [{
     packageName: 'com.easysubway.journey', sourceFileName: 'Example.java',
@@ -229,10 +235,18 @@ test('Phase A CLI binds checkout, producer, report, sources and artifact bytes',
   const directory = mkdtempSync(join(tmpdir(), 'backend-coverage-cli-'));
   const put = (path, value) => { mkdirSync(join(directory, path, '..'), { recursive: true }); writeFileSync(join(directory, path), value); };
   try {
-    put('backend/quality/jacoco-coverage-policy.json', trackedPolicyBytes);
-    put('backend/quality/jacoco-coverage-baseline.json', trackedBaselineBytes);
-    put('backend/quality/jacoco-exclusion-policy.json', readFileSync(new URL('../../backend/quality/jacoco-exclusion-policy.json', import.meta.url)));
-    put('backend/quality/static-analysis-gate.json', readFileSync(new URL('../../backend/quality/static-analysis-gate.json', import.meta.url)));
+    const policy = fixturePolicy(); policy.phase = 'DISCOVERY_REMOTE_RED';
+    const policyBytes = canonical(policy), baselineBytes = canonical(discoveryBaseline);
+    const exclusionPolicy = JSON.parse(readFileSync(new URL('../../backend/quality/jacoco-exclusion-policy.json', import.meta.url), 'utf8'));
+    exclusionPolicy.phase = 'DISCOVERY_REMOTE_RED';
+    const staticGate = JSON.parse(readFileSync(new URL('../../backend/quality/static-analysis-gate.json', import.meta.url), 'utf8'));
+    const jacoco = staticGate.tools.find(({ id }) => id === 'jacoco');
+    jacoco.enforcement = 'discovery_remote_red';
+    jacoco.evidence.failMode = 'Phase A validates and uploads current evidence, then fails with DISCOVERY_REMOTE_RED; no Gradle global percentage gate';
+    put('backend/quality/jacoco-coverage-policy.json', policyBytes);
+    put('backend/quality/jacoco-coverage-baseline.json', baselineBytes);
+    put('backend/quality/jacoco-exclusion-policy.json', canonical(exclusionPolicy));
+    put('backend/quality/static-analysis-gate.json', canonical(staticGate));
     put('backend/build.gradle', readFileSync(new URL('../../backend/build.gradle', import.meta.url)));
     put('backend/gradle/wrapper/gradle-wrapper.properties', readFileSync(new URL('../../backend/gradle/wrapper/gradle-wrapper.properties', import.meta.url)));
     put('.github/workflows/ci.yml', readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url)));
@@ -267,13 +281,14 @@ test('Phase A CLI binds checkout, producer, report, sources and artifact bytes',
       runUrl: 'https://github.com/AquilaXk/easysubway-backend/actions/runs/1',
     };
     const flags = ['--repo-root', inputs.repoRoot, '--policy', inputs.policyPath, '--baseline', inputs.baselinePath, '--raw-xml', inputs.rawXmlPath, '--gradle-evidence', inputs.gradleEvidencePath, '--java-home', inputs.javaHome, '--event', inputs.event, '--source-sha', inputs.sourceSha, '--pull-request-head-sha', inputs.pullRequestHeadSha, '--run-url', inputs.runUrl, '--artifact-dir', artifactDirectory];
-    assert.equal(runCli(['analyze', ...flags]), 0);
-    const result = verifyArtifactDirectory({ artifactDirectory, inputs });
+    const expectedDigests = { expectedPolicySha256: digest(policyBytes), expectedBaselineSha256: digest(baselineBytes) };
+    assert.equal(runCli(['analyze', ...flags], expectedDigests), 0);
+    const result = verifyArtifactDirectory({ artifactDirectory, inputs, ...expectedDigests });
     assert.equal(result.outcome, 'DISCOVERY_REMOTE_RED');
     assert.deepEqual(result.reasons, ['BASELINE_UNREVIEWED']);
     assert.deepEqual(result.inventory.summary, { inventorySourceCount: 2, criticalSourceCount: 1, reportedSourceCount: 1, missingSourceCount: 0, excludedSourceCount: 1 });
     writeFileSync(join(artifactDirectory, 'backend-critical-coverage-summary.md'), 'tampered\n');
-    assert.throws(() => verifyArtifactDirectory({ artifactDirectory, inputs }), /summary mismatch/);
+    assert.throws(() => verifyArtifactDirectory({ artifactDirectory, inputs, ...expectedDigests }), /summary mismatch/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

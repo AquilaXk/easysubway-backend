@@ -65,7 +65,7 @@
     },
     {
       "id": "jacoco",
-      "enforcement": "discovery_remote_red",
+      "enforcement": "required_fail_closed_decrease_only",
       "firstAllowedGate": "backend-critical-coverage",
       "evidence": {
         "coveragePolicy": "backend/quality/jacoco-coverage-policy.json",
@@ -73,7 +73,7 @@
         "coverageExclusionPolicy": "backend/quality/jacoco-exclusion-policy.json",
         "requiredValidator": "tools/ci/backend-coverage-gate.mjs",
         "resultArtifact": "backend-critical-coverage-${GITHUB_SHA}/backend-critical-coverage-result.json",
-        "failMode": "Phase A validates and uploads current evidence, then fails with DISCOVERY_REMOTE_RED; no Gradle global percentage gate",
+        "failMode": "Phase B revalidates current evidence and requires decrease-only PASS; no Gradle global percentage gate",
         "globalPercentFailGate": false
       },
       "requires": [
