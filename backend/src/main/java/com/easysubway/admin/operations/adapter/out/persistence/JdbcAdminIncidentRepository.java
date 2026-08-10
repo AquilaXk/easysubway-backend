@@ -149,12 +149,13 @@ public class JdbcAdminIncidentRepository implements AdminIncidentRepository {
 		}
 		List<String> ids = List.copyOf(incidentIds);
 		String placeholders = String.join(", ", ids.stream().map(id -> "?").toList());
-		List<AdminIncidentTransition> rows = jdbcTemplate.query("""
+		String querySql = """
 			SELECT incident_id, from_status, to_status, changed_at, changed_by, note
 			FROM admin_incident_transitions
-			WHERE incident_id IN (%s)
+			WHERE incident_id IN (__SQL_PLACEHOLDERS__)
 			ORDER BY changed_at, id
-			""".formatted(placeholders), this::mapTransition, ids.toArray());
+			""".replace("__SQL_PLACEHOLDERS__", placeholders);
+		List<AdminIncidentTransition> rows = jdbcTemplate.query(querySql, this::mapTransition, ids.toArray());
 		Map<String, List<AdminIncidentTransition>> byIncident = new LinkedHashMap<>();
 		for (AdminIncidentTransition row : rows) {
 			byIncident.computeIfAbsent(row.incidentId(), key -> new ArrayList<>()).add(row);

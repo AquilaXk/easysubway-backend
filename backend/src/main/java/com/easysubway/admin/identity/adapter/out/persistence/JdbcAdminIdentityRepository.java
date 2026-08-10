@@ -140,7 +140,7 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 		arguments.add(now);
 		arguments.add(AdminIdentityStatus.DISABLED.name());
 		arguments.addAll(active);
-		return jdbcTemplate.update("""
+		String updateSql = """
 			UPDATE admin_users
 			SET status = ?,
 				failed_login_count = 0,
@@ -148,8 +148,9 @@ public class JdbcAdminIdentityRepository implements AdminIdentityRepository {
 				updated_at = ?
 			WHERE bootstrap_managed = TRUE
 				AND status <> ?
-				AND login_id NOT IN (%s)
-			""".formatted(placeholders), arguments.toArray());
+				AND login_id NOT IN (__SQL_PLACEHOLDERS__)
+			""".replace("__SQL_PLACEHOLDERS__", placeholders);
+		return jdbcTemplate.update(updateSql, arguments.toArray());
 	}
 
 	@Override

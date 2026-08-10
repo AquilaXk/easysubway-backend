@@ -163,7 +163,7 @@ class AdminBatchPageController {
 			.map(execution -> HISTORY_LABEL.format(execution.startedAt()))
 			.toList();
 		List<Long> values = history.executions().stream()
-			.map(execution -> execution.durationMillis() == null ? 0L : execution.durationMillis())
+			.map(AdminBatchPageController::durationMillisOrZero)
 			.toList();
 		List<String> statuses = history.executions().stream()
 			.map(execution -> execution.status().name())
@@ -181,6 +181,11 @@ class AdminBatchPageController {
 			toJson(chart),
 			table
 		);
+	}
+
+	static Long durationMillisOrZero(RunExecution execution) {
+		Long durationMillis = execution.durationMillis();
+		return durationMillis == null ? Long.valueOf(0L) : durationMillis;
 	}
 
 	// Chart.js가 읽을 데이터 섬(JSON). 직렬화 실패 시 빈 차트로 안전 폴백(details 표가 대체).

@@ -86,11 +86,12 @@ public class JdbcAdminRbacAuthorityRepository implements AdminRbacAuthorityRepos
 		List<Object> arguments = new ArrayList<>();
 		arguments.add(BOOTSTRAP_PROVENANCE);
 		arguments.addAll(active);
-		jdbcTemplate.update("""
+		String deleteSql = """
 			DELETE FROM admin_user_roles
 			WHERE granted_by = ?
-				AND login_id NOT IN (%s)
-			""".formatted(placeholders), arguments.toArray());
+				AND login_id NOT IN (__SQL_PLACEHOLDERS__)
+			""".replace("__SQL_PLACEHOLDERS__", placeholders);
+		jdbcTemplate.update(deleteSql, arguments.toArray());
 	}
 
 	private static String normalize(String loginId) {
