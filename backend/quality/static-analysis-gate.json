@@ -2,7 +2,7 @@
   "schemaVersion": 1,
   "gateId": "backend-static-analysis-gate",
   "defaultPolicy": "closed-report-policy-before-final-enforcement",
-  "enforcementStatus": "spotbugs-foundation-reviewed-findings-required",
+  "enforcementStatus": "spotbugs-remediation-ledger-progressive-required",
   "ciRuntimeBudgetMinutes": {
     "maxAdditionalMinutes": 3,
     "measurementRequiredBeforeEnforcement": true
@@ -20,20 +20,22 @@
     },
     {
       "id": "spotbugs",
-      "enforcement": "required_fail_closed_foundation_reviewed_findings",
+      "enforcement": "required_fail_closed_remediation_ledger",
       "firstAllowedGate": "backend-spotbugs-main",
       "evidence": {
         "suppressionPolicy": "backend/quality/spotbugs-suppression-policy.json",
         "excludeFilter": "backend/quality/spotbugs-exclude.xml",
         "requiredValidator": "tools/ci/backend-spotbugs-gate.mjs",
         "resultArtifact": "backend-spotbugs-${GITHUB_SHA}/backend-spotbugs-result.json",
-        "failMode": "ignoreFailures=true only while the closed validator proves the exact reviewed FIX_REQUIRED inventory; Backend #4 exclusively owns ignoreFailures=false final enforcement",
-        "foundationIssue": "https://github.com/AquilaXk/easysubway-backend/issues/35"
+        "failMode": "ignoreFailures=true only while the closed validator proves the immutable 195-entry decrease-only remediation ledger; Backend #4 exclusively owns ignoreFailures=false final enforcement",
+        "foundationIssue": "https://github.com/AquilaXk/easysubway-backend/issues/35",
+        "remediationOwnerIssue": "https://github.com/AquilaXk/easysubway-backend/issues/4"
       },
       "requires": [
         "closed finding-policy validator",
         "current XML/HTML/result artifact",
-        "exact 195-entry Backend #4 OPEN FIX_REQUIRED inventory with no missing, extra, duplicate, stale, expired, wildcard, or owner mismatch"
+        "exact 195-entry immutable identity-order ledger with no missing, extra, duplicate, stale, expired, wildcard, suppression mismatch, or owner mismatch",
+        "terminal dispositions absent from the report and exact method suppression matches only"
       ]
     },
     {
