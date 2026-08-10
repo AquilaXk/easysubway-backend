@@ -395,21 +395,25 @@ test('terminal suppression filters require one ordered exact method Match', () =
     (value) => { value.suppression.params = 'java.lang.String,java.util.List'; },
     (value) => { value.suppression.returns = 'java.lang.Void'; }
   ]) { const invalid = structuredClone(terminal); mutate(invalid.findings.find(({ identity }) => identity === finding.identity)); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' }), /descriptor mismatch/); }
-  const match = `<Match><Bug pattern="${finding.suppression.bugPattern}"/><Class name="${finding.suppression.className}"/><Method name="${finding.suppression.methodName === '<init>' ? '&lt;init&gt;' : finding.suppression.methodName}" params="${finding.suppression.params}" returns="${finding.suppression.returns}"/></Match>`;
-  const terminalPrefix = `<Match><Bug pattern="${finding.suppression.bugPattern}"/><Class name="${finding.suppression.className}"/>`;
+  const selectedMethod = `<Method name="${finding.suppression.methodName === '<init>' ? '&lt;init&gt;' : finding.suppression.methodName}" params="${finding.suppression.params}" returns="${finding.suppression.returns}"/>`;
+  const selectedMatch = `<Match><Bug pattern="${finding.suppression.bugPattern}"/><Class name="${finding.suppression.className}"/>${selectedMethod}</Match>`;
   for (const [index, invalid] of [
     filter.replace(finding.suppression.bugPattern, `${finding.suppression.bugPattern},OTHER`),
     filter.replace(finding.suppression.bugPattern, `~${finding.suppression.bugPattern}`),
     filter.replace(finding.suppression.className, `${finding.suppression.className}*`),
     filter.replace(/\t<Match>\n\t\t<Bug[\s\S]*?\n\t<\/Match>\n/, ''),
-    filter.replace('</FindBugsFilter>', `${match}</FindBugsFilter>`),
-    filter.replace('<Match>\n\t\t<Class name="com.easysubway.EasySubwayBackendApplication"/>\n\t</Match>', match),
-    `<FindBugsFilter>${terminalPrefix}</Match></FindBugsFilter>`,
-    `<FindBugsFilter>${terminalPrefix}<Method name="&lt;init&gt;"/></Match></FindBugsFilter>`,
-    `<FindBugsFilter>${terminalPrefix}<Method params="${finding.suppression.params}"/></Match></FindBugsFilter>`,
-    `<FindBugsFilter>${terminalPrefix}<Method returns="${finding.suppression.returns}"/></Match></FindBugsFilter>`,
+    filter.replace('</FindBugsFilter>', `${selectedMatch}</FindBugsFilter>`),
+    filter.replace('<Match>\n\t\t<Class name="com.easysubway.EasySubwayBackendApplication"/>\n\t</Match>', selectedMatch),
+    filter.replace(selectedMethod, ''),
+    filter.replace(selectedMethod, selectedMethod.replace(/ name="[^"]+"/, '')),
+    filter.replace(selectedMethod, selectedMethod.replace(/ params="[^"]+"/, '')),
+    filter.replace(selectedMethod, selectedMethod.replace(/ returns="[^"]+"/, '')),
     filter.replace(`returns="${finding.suppression.returns}"`, 'returns="java.lang.Void"')
-  ].entries()) assert.throws(() => validateExcludeFilter(terminal, invalid), /XML|exact|Match/, `invalid filter mutation ${index}`);
+  ].entries()) assert.throws(
+    () => validateExcludeFilter(terminal, invalid),
+    index >= 6 && index <= 9 ? /exclude filter terminal Match/ : /XML|exact|Match/,
+    `invalid filter mutation ${index}`,
+  );
 });
 
 test('workflow preserves #87 and uploads exactly four Phase-1 files before final enforcement', () => {
