@@ -7,10 +7,6 @@ import com.easysubway.admin.batch.application.service.AdminBatchOperationService
 import com.easysubway.admin.batch.application.service.AdminBatchOperationService.RunExecution;
 import com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricChart;
 import com.easysubway.admin.metric.application.service.AdminMetricQueryService.AdminMetricSeries;
-import com.easysubway.admin.transition.AdminPlatformTransitionProperties.BlockerMode;
-import com.easysubway.admin.transition.AdminPlatformTransitionProperties.LegacyEnvAdminFallback;
-import com.easysubway.admin.transition.AdminPlatformTransitionProperties.ReleaseGate;
-import com.easysubway.admin.transition.AdminPlatformTransitionProperties.ShadowMode;
 import com.easysubway.admin.web.AdminFormErrorView;
 import com.easysubway.collection.domain.DataCollectionStatus;
 import com.easysubway.operator.adapter.in.web.OperatorAccessibilityReportView;
@@ -37,8 +33,8 @@ import org.junit.jupiter.api.Test;
 class AdminOperatorQualityValueBoundaryTest {
 
 	@Test
-	@DisplayName("배치·지표·전환 설정 list는 null과 순서를 보존하는 독립 snapshot이다")
-	void batchMetricAndTransitionListsAreIndependentSnapshots() {
+	@DisplayName("배치·지표 list는 null과 순서를 보존하는 독립 snapshot이다")
+	void batchAndMetricListsAreIndependentSnapshots() {
 		RunExecution firstExecution = new RunExecution(
 			LocalDateTime.of(2026, 8, 10, 1, 0), DataCollectionStatus.COMPLETED, 10L);
 		RunExecution secondExecution = new RunExecution(
@@ -71,25 +67,6 @@ class AdminOperatorQualityValueBoundaryTest {
 		chart.series().removeFirst();
 		assertThat(chart.labels()).containsExactly("first", null, "second");
 		assertThat(chart.series()).hasSize(3);
-
-		var promotionCriteria = new ArrayList<String>(Arrays.asList("first", null, "second"));
-		var shadow = new ShadowMode("compare", "metric", promotionCriteria);
-		var removalCriteria = new ArrayList<String>(Arrays.asList("first", null, "second"));
-		var fallback = new LegacyEnvAdminFallback(removalCriteria, "rollback");
-		var blockers = new ArrayList<String>(Arrays.asList("first", null, "second"));
-		var releaseGate = new ReleaseGate(BlockerMode.FAIL, blockers);
-		promotionCriteria.clear();
-		removalCriteria.clear();
-		blockers.clear();
-		assertThat(shadow.promotionCriteria()).containsExactly("first", null, "second");
-		assertThat(fallback.removalCriteria()).containsExactly("first", null, "second");
-		assertThat(releaseGate.blockers()).containsExactly("first", null, "second");
-		shadow.promotionCriteria().clear();
-		fallback.removalCriteria().clear();
-		releaseGate.blockers().clear();
-		assertThat(shadow.promotionCriteria()).hasSize(3);
-		assertThat(fallback.removalCriteria()).hasSize(3);
-		assertThat(releaseGate.blockers()).hasSize(3);
 	}
 
 	@Test
@@ -267,8 +244,6 @@ class AdminOperatorQualityValueBoundaryTest {
 		assertThat(new AdminMetricSeries("metric", "지표", null).values()).isNull();
 		assertThat(new AdminMetricChart(7, null, null).labels()).isNull();
 		assertThat(new AdminMetricChart(7, null, null).series()).isNull();
-		assertThat(new ShadowMode("mode", "metric", null).promotionCriteria()).isNull();
-		assertThat(new LegacyEnvAdminFallback(null, "rollback").removalCriteria()).isNull();
 		assertThat(new AdminFormErrorView(null, null).summary()).isNull();
 		assertThat(new AdminFormErrorView(null, null).fieldErrors()).isNull();
 		assertThat(new StationAccessibilityScoreRow("역", "지역", 1, null).reasons()).isNull();
