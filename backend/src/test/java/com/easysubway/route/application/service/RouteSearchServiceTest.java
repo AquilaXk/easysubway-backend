@@ -83,6 +83,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.zip.GZIPInputStream;
 import java.util.zip.GZIPOutputStream;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
@@ -1946,6 +1947,44 @@ class RouteSearchServiceTest {
 		assertThat(plan.statuses()).containsExactly(
 			RouteV2Status.FOUND, RouteV2Status.REALTIME_UNAVAILABLE_PLANNED_USED);
 		assertThat(plan.itineraries()).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("V2 planner는 monitor에서 대기한 요청에도 한 timetable snapshot만 게시한다")
+	void routeV2PlannerPublishesOneTimetableSnapshotToWaitingRequest() throws Exception {
+		var repository = new InMemoryRouteSearchRepository();
+		var routeSearchService = new RouteSearchService(repository, repository, new RampAccessibleTransitMasterPort(), CLOCK);
+		var timetablePort = new CountingRouteTimetablePort();
+		var planner = new RouteV2Planner(routeSearchService, timetablePort);
+		var command = routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 3);
+		var worker = new AtomicReference<Thread>();
+		var started = new CountDownLatch(1);
+
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			java.util.concurrent.Future<RouteV2Plan> attempt;
+			synchronized (planner) {
+				attempt = executor.submit(() -> {
+					worker.set(Thread.currentThread());
+					started.countDown();
+					return planner.search(command);
+				});
+				assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThreadBlocked(worker.get());
+				assertThat(planner.search(command).itineraries()).isNotEmpty();
+			}
+			assertThat(attempt.get(5, TimeUnit.SECONDS).itineraries()).isNotEmpty();
+		}
+
+		assertThat(planner.search(command).itineraries()).isNotEmpty();
+		assertThat(timetablePort.loadCount()).isOne();
+	}
+
+	private static void assertThreadBlocked(Thread thread) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (thread.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertThat(thread.getState()).isEqualTo(Thread.State.BLOCKED);
 	}
 
 	@Test
