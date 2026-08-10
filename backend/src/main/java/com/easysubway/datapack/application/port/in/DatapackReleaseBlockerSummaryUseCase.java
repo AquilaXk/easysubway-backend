@@ -1,6 +1,7 @@
 package com.easysubway.datapack.application.port.in;
 
 import java.time.LocalDateTime;
+import java.util.ArrayList;
 import java.util.List;
 
 public interface DatapackReleaseBlockerSummaryUseCase {
@@ -33,6 +34,14 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 		List<ReleaseReadinessRow> readinessRows,
 		LocalDateTime candidateCreatedAt
 	) {
+		public DatapackReleaseBlockerSummary {
+			readinessRows = readinessRows == null ? null : new ArrayList<>(readinessRows);
+		}
+
+		@Override
+		public List<ReleaseReadinessRow> readinessRows() {
+			return readinessRows == null ? null : new ArrayList<>(readinessRows);
+		}
 
 		public static DatapackReleaseBlockerSummary empty() {
 			return new DatapackReleaseBlockerSummary(
@@ -92,6 +101,14 @@ public interface DatapackReleaseBlockerSummaryUseCase {
 		long totalBlockers,
 		List<StationReleaseBlockerRow> rows
 	) {
+		public StationReleaseBlockerSummary {
+			rows = rows == null ? null : new ArrayList<>(rows);
+		}
+
+		@Override
+		public List<StationReleaseBlockerRow> rows() {
+			return rows == null ? null : new ArrayList<>(rows);
+		}
 
 		public static StationReleaseBlockerSummary empty(String stationId) {
 			return new StationReleaseBlockerSummary(
