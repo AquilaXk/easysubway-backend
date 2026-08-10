@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
@@ -65,7 +66,23 @@ class RouteBundleConsumerHandoffParserTest {
 		assertReason(
 			RouteBundleHandoffException.Reason.ACTIVATION_REQUEST_IDENTITY_INVALID,
 			fixture.bytes(),
+			null);
+		assertReason(
+			RouteBundleHandoffException.Reason.ACTIVATION_REQUEST_IDENTITY_INVALID,
+			fixture.bytes(),
 			" activation");
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID,
+			null,
+			ACTIVATION_REQUEST);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID,
+			new byte[0],
+			ACTIVATION_REQUEST);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID,
+			("\uFEFF" + fixture.json()).getBytes(StandardCharsets.UTF_8),
+			ACTIVATION_REQUEST);
 		assertReason(
 			RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID,
 			new byte[] {(byte) 0xc3, (byte) 0x28},
@@ -82,6 +99,10 @@ class RouteBundleConsumerHandoffParserTest {
 			RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID,
 			(fixture.json() + "{}").getBytes(StandardCharsets.UTF_8),
 			ACTIVATION_REQUEST);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			"[]".getBytes(StandardCharsets.UTF_8),
+			ACTIVATION_REQUEST);
 
 		var unknownKey = fixture.node().deepCopy();
 		unknownKey.put("unexpected", true);
@@ -96,6 +117,31 @@ class RouteBundleConsumerHandoffParserTest {
 		assertReason(
 			RouteBundleHandoffException.Reason.HANDOFF_SELF_DIGEST_MISMATCH,
 			canonicalBytes(selfDigestDrift),
+			ACTIVATION_REQUEST);
+
+		var manifestContainerDrift = fixture.node().deepCopy();
+		manifestContainerDrift.put("manifest", "not-an-object");
+		rebindHandoff(manifestContainerDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(manifestContainerDrift),
+			ACTIVATION_REQUEST);
+
+		var schemaVersionTypeDrift = fixture.node().deepCopy();
+		schemaVersionTypeDrift.put("schemaVersion", "1");
+		rebindHandoff(schemaVersionTypeDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(schemaVersionTypeDrift),
+			ACTIVATION_REQUEST);
+
+		var manifestIdentityDrift = fixture.node().deepCopy();
+		((ObjectNode) manifestIdentityDrift.path("manifest"))
+			.put("artifactKind", "server-route-bundle-legacy");
+		rebindHandoff(manifestIdentityDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.MANIFEST_IDENTITY_MISMATCH,
+			canonicalBytes(manifestIdentityDrift),
 			ACTIVATION_REQUEST);
 
 		var platformDigestDrift = fixture.node().deepCopy();
@@ -137,6 +183,85 @@ class RouteBundleConsumerHandoffParserTest {
 		assertReason(
 			RouteBundleHandoffException.Reason.PUBLICATION_RECEIPT_IDENTITY_MISMATCH,
 			canonicalBytes(payloadSizeDrift),
+			ACTIVATION_REQUEST);
+
+		var receiptKindDrift = fixture.node().deepCopy();
+		((ObjectNode) receiptKindDrift.path("publicationReceipt"))
+			.put("artifactKind", "legacy-publication-receipt");
+		rebindReceiptAndHandoff(receiptKindDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(receiptKindDrift),
+			ACTIVATION_REQUEST);
+
+		var repositoryShaDrift = fixture.node().deepCopy();
+		((ObjectNode) repositoryShaDrift.path("publicationReceipt").path("repository"))
+			.put("gitSha", "not-a-git-sha");
+		rebindReceiptAndHandoff(repositoryShaDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(repositoryShaDrift),
+			ACTIVATION_REQUEST);
+
+		var locatorDrift = fixture.node().deepCopy();
+		((ObjectNode) locatorDrift.path("publicationReceipt").path("locator"))
+			.put("publicBaseUrl", "https://example.invalid/o");
+		rebindReceiptAndHandoff(locatorDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(locatorDrift),
+			ACTIVATION_REQUEST);
+
+		var objectCountDrift = fixture.node().deepCopy();
+		((ArrayNode) objectCountDrift.path("publicationReceipt").path("objects")).remove(7);
+		rebindReceiptAndHandoff(objectCountDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.PUBLICATION_RECEIPT_IDENTITY_MISMATCH,
+			canonicalBytes(objectCountDrift),
+			ACTIVATION_REQUEST);
+
+		var objectContainerDrift = fixture.node().deepCopy();
+		((ArrayNode) objectContainerDrift.path("publicationReceipt").path("objects"))
+			.set(0, JSON.getNodeFactory().textNode("not-an-object"));
+		rebindReceiptAndHandoff(objectContainerDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(objectContainerDrift),
+			ACTIVATION_REQUEST);
+
+		var objectPathTypeDrift = fixture.node().deepCopy();
+		((ObjectNode) objectPathTypeDrift.path("publicationReceipt").path("objects").path(0))
+			.put("path", 1);
+		rebindReceiptAndHandoff(objectPathTypeDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(objectPathTypeDrift),
+			ACTIVATION_REQUEST);
+
+		var objectSizeRangeDrift = fixture.node().deepCopy();
+		((ObjectNode) objectSizeRangeDrift.path("publicationReceipt").path("objects").path(0))
+			.put("sizeBytes", 0);
+		rebindReceiptAndHandoff(objectSizeRangeDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(objectSizeRangeDrift),
+			ACTIVATION_REQUEST);
+
+		var releaseResultDrift = fixture.node().deepCopy();
+		((ObjectNode) releaseResultDrift.path("release")).put("result", "NO_GO");
+		rebindHandoff(releaseResultDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.RELEASE_EVIDENCE_IDENTITY_MISMATCH,
+			canonicalBytes(releaseResultDrift),
+			ACTIVATION_REQUEST);
+
+		var releaseReceiptDrift = fixture.node().deepCopy();
+		((ObjectNode) releaseReceiptDrift.path("release"))
+			.put("publicationReceiptSha256", "f".repeat(64));
+		rebindHandoff(releaseReceiptDrift);
+		assertReason(
+			RouteBundleHandoffException.Reason.RELEASE_EVIDENCE_IDENTITY_MISMATCH,
+			canonicalBytes(releaseReceiptDrift),
 			ACTIVATION_REQUEST);
 
 		var releaseReferenceDrift = fixture.node().deepCopy();
