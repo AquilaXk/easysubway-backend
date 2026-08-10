@@ -1,6 +1,8 @@
 package com.easysubway.field.domain;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public record FieldVerificationSession(
@@ -23,6 +25,11 @@ public record FieldVerificationSession(
 		status = requireNonNull(status, "status");
 		note = cleanOptionalText(note);
 		items = cleanItems(items);
+	}
+
+	@Override
+	public List<FieldVerificationItem> items() {
+		return Collections.unmodifiableList(new ArrayList<>(items));
 	}
 
 	private static List<FieldVerificationItem> cleanItems(List<FieldVerificationItem> values) {

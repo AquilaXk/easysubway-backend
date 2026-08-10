@@ -1,6 +1,7 @@
 package com.easysubway.ads.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.csrf;
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -14,6 +15,7 @@ import com.easysubway.admin.audit.domain.AdminAuditEvent;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.ads.application.port.out.AdRepository;
 import com.easysubway.ads.domain.AdCreative;
+import com.easysubway.common.error.InvalidRequestException;
 import java.time.LocalDateTime;
 import java.util.List;
 import java.util.regex.Pattern;
@@ -157,9 +159,26 @@ class AdminAdsPageControllerTest {
 	}
 
 	@Test
-	@DisplayName("잘못된 instant는 400이고 CSRF와 command token 없는 POST는 거부한다")
+	@DisplayName("누락되거나 잘못된 instant는 400이고 CSRF와 command token 없는 POST는 거부한다")
 	void rejectsInvalidInstantAndUnprotectedPosts() throws Exception {
 		MockHttpSession session = new MockHttpSession();
+		mockMvc.perform(post("/admin/ads")
+				.session(session)
+				.with(csrf())
+				.with(commandToken(session))
+				.with(operationsManager())
+				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
+				.param("id", "missing-time")
+				.param("placementId", "route-result-bottom")
+				.param("advertiserName", "광고주")
+				.param("imageUrl", "https://assets.easysubway.example/ads/missing.png")
+				.param("landingUrl", "https://partner.example/missing")
+				.param("altText", "광고 대체텍스트")
+				.param("endsAt", "")
+				.param("reason", "누락 시각 검증"))
+			.andExpect(status().isBadRequest());
+		assertThat(repository.findById("missing-time")).isEmpty();
+
 		mockMvc.perform(post("/admin/ads")
 				.session(session)
 				.with(csrf())
@@ -177,6 +196,20 @@ class AdminAdsPageControllerTest {
 				.param("reason", "잘못된 시각 검증"))
 			.andExpect(status().isBadRequest());
 		assertThat(repository.findById("invalid-time")).isEmpty();
+		assertThatThrownBy(() -> new AdminAdsPageController.AdForm(
+			"missing-time",
+			"route-result-bottom",
+			"광고주",
+			"https://assets.easysubway.example/ads/missing.png",
+			"https://partner.example/missing",
+			"광고 대체텍스트",
+			null,
+			null,
+			"누락 시각 검증"
+		).toCreative())
+			.isInstanceOf(InvalidRequestException.class)
+			.hasMessage("startsAt 형식이 올바르지 않습니다.")
+			.hasNoCause();
 
 		mockMvc.perform(post("/admin/ads/creative-1/enable")
 				.with(operationsManager())

@@ -1,6 +1,8 @@
 package com.easysubway.transit.domain;
 
 import java.time.LocalDate;
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 public record SimplifiedStationLayout(
@@ -34,6 +36,11 @@ public record SimplifiedStationLayout(
 		createdBy = requireText(createdBy, "createdBy");
 		reviewedBy = cleanOptionalText(reviewedBy);
 		lastVerifiedAt = requireNonNull(lastVerifiedAt, "lastVerifiedAt");
+	}
+
+	@Override
+	public List<String> sourceIds() {
+		return Collections.unmodifiableList(new ArrayList<>(sourceIds));
 	}
 
 	private static List<String> cleanSourceIds(List<String> values) {

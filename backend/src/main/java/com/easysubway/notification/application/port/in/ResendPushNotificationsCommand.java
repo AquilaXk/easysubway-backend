@@ -1,5 +1,7 @@
 package com.easysubway.notification.application.port.in;
 
+import java.util.ArrayList;
+import java.util.Collections;
 import java.util.List;
 
 /**
@@ -18,5 +20,10 @@ public record ResendPushNotificationsCommand(List<String> notificationIds, int m
 				.map(String::trim)
 				.distinct()
 				.toList();
+	}
+
+	@Override
+	public List<String> notificationIds() {
+		return Collections.unmodifiableList(new ArrayList<>(notificationIds));
 	}
 }
