@@ -1,5 +1,6 @@
 package com.easysubway.admin.transition;
 
+import java.util.ArrayList;
 import java.util.List;
 import org.springframework.boot.context.properties.ConfigurationProperties;
 
@@ -53,14 +54,14 @@ public record AdminPlatformTransitionProperties(
 	) {
 
 		public Flags {
-			identityStore = identityStore == null ? true : identityStore;
-			rbacShadow = rbacShadow == null ? true : rbacShadow;
-			rbacEnforcement = rbacEnforcement == null ? false : rbacEnforcement;
-			auditShadow = auditShadow == null ? true : auditShadow;
-			auditEnforcement = auditEnforcement == null ? false : auditEnforcement;
-			legacyEnvAdminFallback = legacyEnvAdminFallback == null ? true : legacyEnvAdminFallback;
-			breakGlassBootstrap = breakGlassBootstrap == null ? true : breakGlassBootstrap;
-			roleSeedRequired = roleSeedRequired == null ? true : roleSeedRequired;
+			identityStore = identityStore == null ? Boolean.TRUE : identityStore;
+			rbacShadow = rbacShadow == null ? Boolean.TRUE : rbacShadow;
+			rbacEnforcement = rbacEnforcement == null ? Boolean.FALSE : rbacEnforcement;
+			auditShadow = auditShadow == null ? Boolean.TRUE : auditShadow;
+			auditEnforcement = auditEnforcement == null ? Boolean.FALSE : auditEnforcement;
+			legacyEnvAdminFallback = legacyEnvAdminFallback == null ? Boolean.TRUE : legacyEnvAdminFallback;
+			breakGlassBootstrap = breakGlassBootstrap == null ? Boolean.TRUE : breakGlassBootstrap;
+			roleSeedRequired = roleSeedRequired == null ? Boolean.TRUE : roleSeedRequired;
 		}
 
 		static Flags defaults() {
@@ -73,6 +74,15 @@ public record AdminPlatformTransitionProperties(
 		String metric,
 		List<String> promotionCriteria
 	) {
+
+		public ShadowMode {
+			promotionCriteria = promotionCriteria == null ? null : new ArrayList<>(promotionCriteria);
+		}
+
+		@Override
+		public List<String> promotionCriteria() {
+			return promotionCriteria == null ? null : new ArrayList<>(promotionCriteria);
+		}
 
 		ShadowMode withDefaults(ShadowMode defaults) {
 			return new ShadowMode(
@@ -111,6 +121,15 @@ public record AdminPlatformTransitionProperties(
 		List<String> removalCriteria,
 		String rollbackAction
 	) {
+
+		public LegacyEnvAdminFallback {
+			removalCriteria = removalCriteria == null ? null : new ArrayList<>(removalCriteria);
+		}
+
+		@Override
+		public List<String> removalCriteria() {
+			return removalCriteria == null ? null : new ArrayList<>(removalCriteria);
+		}
 
 		LegacyEnvAdminFallback withDefaults(LegacyEnvAdminFallback defaults) {
 			return new LegacyEnvAdminFallback(
@@ -198,6 +217,12 @@ public record AdminPlatformTransitionProperties(
 					"role or account seed is missing in prod"
 				)
 				: blockers;
+			blockers = new ArrayList<>(blockers);
+		}
+
+		@Override
+		public List<String> blockers() {
+			return new ArrayList<>(blockers);
 		}
 
 		static ReleaseGate defaults() {

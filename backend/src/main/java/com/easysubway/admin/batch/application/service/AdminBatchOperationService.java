@@ -83,6 +83,15 @@ public class AdminBatchOperationService {
 
 	public record JobExecutionHistory(String jobId, String label, List<RunExecution> executions) {
 
+		public JobExecutionHistory {
+			executions = executions == null ? null : new ArrayList<>(executions);
+		}
+
+		@Override
+		public List<RunExecution> executions() {
+			return executions == null ? null : new ArrayList<>(executions);
+		}
+
 		public long successCount() {
 			return executions.stream().filter(RunExecution::success).count();
 		}
