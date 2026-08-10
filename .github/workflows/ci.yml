@@ -226,6 +226,7 @@ jobs:
           npm test --prefix tools/qa
 
       - name: Test and package backend
+        id: test_backend
         working-directory: backend
         env:
           EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
@@ -318,6 +319,82 @@ jobs:
             --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
             --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
             --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
+
+      - name: Analyze backend critical coverage
+        id: coverage_analyze
+        shell: bash
+        env:
+          COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}
+          COVERAGE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          test "$source_sha" = "${{ github.sha }}"
+          node tools/ci/backend-coverage-gate.mjs analyze \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --policy backend/quality/jacoco-coverage-policy.json \
+            --baseline backend/quality/jacoco-coverage-baseline.json \
+            --raw-xml backend/build/reports/jacoco/test/jacocoTestReport.xml \
+            --gradle-evidence backend/build/jacoco/jacocoTestReport-evidence.json \
+            --java-home "$JAVA_HOME" \
+            --event "${{ github.event_name }}" \
+            --source-sha "$source_sha" \
+            --pull-request-head-sha "$COVERAGE_PULL_REQUEST_HEAD_SHA" \
+            --run-url "$COVERAGE_RUN_URL" \
+            --artifact-dir "${RUNNER_TEMP}/backend-critical-coverage"
+
+      - name: Upload backend critical coverage artifact
+        id: coverage_artifact
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: backend-critical-coverage-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/backend-critical-coverage/jacocoTestReport.xml
+            ${{ runner.temp }}/backend-critical-coverage/backend-critical-coverage-baseline.json
+            ${{ runner.temp }}/backend-critical-coverage/backend-critical-coverage-result.json
+            ${{ runner.temp }}/backend-critical-coverage/backend-critical-coverage-summary.md
+            ${{ runner.temp }}/backend-critical-coverage/backend-critical-coverage.sha256
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Append backend critical coverage summary
+        id: coverage_summary
+        if: always() && !cancelled() && steps.coverage_analyze.outcome == 'success'
+        shell: bash
+        run: cat "${RUNNER_TEMP}/backend-critical-coverage/backend-critical-coverage-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce backend critical coverage verdict
+        if: always()
+        shell: bash
+        env:
+          COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}
+          COVERAGE_RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          set -euo pipefail
+          test "${{ steps.test_backend.outcome }}" = success
+          test "${{ steps.coverage_analyze.outcome }}" = success
+          test "${{ steps.coverage_artifact.outcome }}" = success
+          test "${{ steps.coverage_summary.outcome }}" = success
+          test "${{ job.status }}" != cancelled
+          source_sha="$(git rev-parse HEAD)"
+          test "$source_sha" = "${{ github.sha }}"
+          node tools/ci/backend-coverage-gate.mjs verdict \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --policy backend/quality/jacoco-coverage-policy.json \
+            --baseline backend/quality/jacoco-coverage-baseline.json \
+            --raw-xml backend/build/reports/jacoco/test/jacocoTestReport.xml \
+            --gradle-evidence backend/build/jacoco/jacocoTestReport-evidence.json \
+            --java-home "$JAVA_HOME" \
+            --event "${{ github.event_name }}" \
+            --source-sha "$source_sha" \
+            --pull-request-head-sha "$COVERAGE_PULL_REQUEST_HEAD_SHA" \
+            --run-url "$COVERAGE_RUN_URL" \
+            --artifact-dir "${RUNNER_TEMP}/backend-critical-coverage" \
+            --test-outcome "${{ steps.test_backend.outcome }}" \
+            --analysis-outcome "${{ steps.coverage_analyze.outcome }}" \
+            --upload-outcome "${{ steps.coverage_artifact.outcome }}" \
+            --summary-outcome "${{ steps.coverage_summary.outcome }}"
 
       - name: Build image without push
         run: docker build --tag easysubway-backend:ci backend

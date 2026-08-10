@@ -1,18 +1,30 @@
 {
   "schemaVersion": 1,
   "policyId": "backend-jacoco-exclusion",
+  "phase": "ENFORCED_DECREASE_ONLY",
   "reportOnly": true,
   "globalPercentFailGate": false,
   "classDirectoryExcludes": [
-    "**/*Application.class"
+    "com/easysubway/EasySubwayBackendApplication.class"
+  ],
+  "exclusions": [
+    {
+      "id": "SPRING_BOOT_ENTRYPOINT",
+      "classFile": "com/easysubway/EasySubwayBackendApplication.class",
+      "sourcePath": "backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java",
+      "reason": "Spring Boot entrypoint contains no critical business behavior and is covered by startup/context contracts.",
+      "ownerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/32",
+      "removalCondition": "Remove when the entrypoint is admitted to critical executable coverage without synthetic startup behavior.",
+      "reviewTriggers": [
+        "SOURCE_BYTES_CHANGE",
+        "CLASS_PATH_CHANGE",
+        "STARTUP_CONTRACT_CHANGE"
+      ]
+    }
   ],
   "sonarCoverageExclusions": [
     "backend/src/main/resources/**",
     "tools/**"
   ],
-  "deferredExclusions": [
-    "DTO/record packages — 패키지 단위 baseline 확정 후 검토",
-    "Thymeleaf admin view helpers — UI 계약 테스트가 주 검증"
-  ],
-  "notes": "측정 가시화만 허용한다. 전역 coverage %로 PR를 차단하지 않는다."
+  "notes": "JaCoCo Gradle reporting remains global-percent-free; backend-critical-coverage enforces reviewed decrease-only evidence."
 }
