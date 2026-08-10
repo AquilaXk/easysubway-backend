@@ -74,7 +74,7 @@ const sha = (value, label) => { if (!/^[a-f0-9]{64}$/.test(value ?? '')) fail(`$
 const commitSha = (value, label) => { if (!/^[a-f0-9]{40}$/.test(value ?? '')) fail(`${label} must be a commit SHA`); return value; };
 const safeInteger = (value, label) => { if (!Number.isSafeInteger(value) || value < 0) fail(`${label} must be a nonnegative safe integer`); return value; };
 const safePath = (value, label) => {
-  if (typeof value !== 'string' || !/^[A-Za-z0-9._/-]+$/.test(value) || value.startsWith('/') || value.includes('..') || value.includes('//') || value.includes('\\')) fail(`${label} must be a canonical repository path`);
+  if (typeof value !== 'string' || !/^[A-Za-z0-9$._/-]+$/.test(value) || value.startsWith('/') || value.includes('..') || value.includes('//') || value.includes('\\')) fail(`${label} must be a canonical repository path`);
   return value;
 };
 const isWithin = (root, candidate) => candidate === root || candidate.startsWith(`${root}${sep}`);

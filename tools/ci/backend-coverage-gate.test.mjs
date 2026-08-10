@@ -193,6 +193,25 @@ test('tracked build, exclusion, static gate, workflow and source inventory agree
   assert.deepEqual(inventory.scoped.filter(({ path }) => path.endsWith('/EasySubwayBackendApplication.java')).map(({ boundaryIds }) => boundaryIds), [[]]);
 });
 
+test('tracked Java inventory admits a legal dollar-sign source filename', () => {
+  const directory = mkdtempSync(join(tmpdir(), 'backend-coverage-dollar-source-'));
+  const put = (path, value) => { mkdirSync(join(directory, path, '..'), { recursive: true }); writeFileSync(join(directory, path), value); };
+  try {
+    put('backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', 'package com.easysubway;\nfinal class EasySubwayBackendApplication {}\n');
+    put('backend/src/main/java/com/easysubway/journey/A$B.java', 'package com.easysubway.journey;\nfinal class A$B {}\n');
+    execFileSync('git', ['init', '-q'], { cwd: directory });
+    execFileSync('git', ['config', 'user.name', 'Coverage Fixture'], { cwd: directory });
+    execFileSync('git', ['config', 'user.email', 'coverage@example.invalid'], { cwd: directory });
+    execFileSync('git', ['add', '.'], { cwd: directory });
+    execFileSync('git', ['commit', '-qm', 'fixture'], { cwd: directory });
+    const inventory = inventorySources(directory, fixturePolicy());
+    assert.deepEqual(inventory.scoped.map(({ path, sourceFileName }) => [path, sourceFileName]), [
+      ['backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', 'EasySubwayBackendApplication.java'],
+      ['backend/src/main/java/com/easysubway/journey/A$B.java', 'A$B.java'],
+    ]);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test('coverage projection keeps missing and excluded evidence distinct', () => {
   const example = { path: 'backend/src/main/java/com/easysubway/journey/Example.java', sha256: 'a'.repeat(64), packageName: 'com.easysubway.journey', sourceFileName: 'Example.java', boundaryIds: ['JOURNEY_ROUTE'] };
   const missing = { path: 'backend/src/main/java/com/easysubway/journey/Missing.java', sha256: 'b'.repeat(64), packageName: 'com.easysubway.journey', sourceFileName: 'Missing.java', boundaryIds: ['JOURNEY_ROUTE'] };
