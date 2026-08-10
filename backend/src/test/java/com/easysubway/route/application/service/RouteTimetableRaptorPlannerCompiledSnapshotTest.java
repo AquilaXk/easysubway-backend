@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -591,21 +592,36 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	void concurrentNextServiceTimeLazilyPublishesBoardingIndex() throws Exception {
 		var compiled = planner.compile(frequencyTimetable());
 		var activeDay = compiled.activeServiceDay(WEDNESDAY);
-		var start = new CountDownLatch(1);
+		var expected = OffsetDateTime.parse("2026-07-01T09:00:00+09:00");
+		var worker = new AtomicReference<Thread>();
+		var started = new CountDownLatch(1);
 
 		assertThat(activeDay.boardingIndexInitialized()).isFalse();
-		try (var executor = Executors.newFixedThreadPool(8)) {
-			var attempts = java.util.stream.IntStream.range(0, 8).mapToObj(ignored -> executor.submit(() -> {
-				start.await();
-				return planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled);
-			})).toList();
-			start.countDown();
-			for (var attempt : attempts) {
-				assertThat(attempt.get(5, TimeUnit.SECONDS))
-					.contains(OffsetDateTime.parse("2026-07-01T09:00:00+09:00"));
+		try (var executor = Executors.newSingleThreadExecutor()) {
+			java.util.concurrent.Future<java.util.Optional<OffsetDateTime>> attempt;
+			synchronized (activeDay) {
+				attempt = executor.submit(() -> {
+					worker.set(Thread.currentThread());
+					started.countDown();
+					return planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled);
+				});
+				assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
+				assertThreadBlocked(worker.get());
+				assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled)).contains(expected);
+				assertThat(activeDay.boardingIndexInitialized()).isTrue();
 			}
+			assertThat(attempt.get(5, TimeUnit.SECONDS)).contains(expected);
 		}
 		assertThat(activeDay.boardingIndexInitialized()).isTrue();
+		assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled)).contains(expected);
+	}
+
+	private static void assertThreadBlocked(Thread thread) {
+		long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(5);
+		while (thread.getState() != Thread.State.BLOCKED && System.nanoTime() < deadline) {
+			Thread.onSpinWait();
+		}
+		assertThat(thread.getState()).isEqualTo(Thread.State.BLOCKED);
 	}
 
 	@Test
