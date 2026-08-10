@@ -230,5 +230,93 @@ jobs:
           EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
         run: ./gradlew test bootJar --no-daemon
 
+      - name: Run SpotBugs main analysis
+        id: spotbugs_main
+        working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: ./gradlew spotbugsMain --no-daemon
+
+      - name: Capture SpotBugs main evidence
+        id: spotbugs_inputs
+        shell: bash
+        working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: |
+          set -euo pipefail
+          test "$(git -C .. rev-parse HEAD)" = "${{ github.sha }}"
+          ./gradlew writeSpotbugsMainEvidence --no-daemon
+          mkdir -p "${RUNNER_TEMP}/backend-spotbugs"
+          cp build/spotbugs/spotbugsMain-evidence.json "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json"
+
+      - name: Validate SpotBugs report and policy
+        id: spotbugs_validate
+        shell: bash
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'none' }}
+        run: |
+          set -euo pipefail
+          source_sha="$(git rev-parse HEAD)"
+          test "$source_sha" = "${{ github.sha }}"
+          node tools/ci/backend-spotbugs-gate.mjs validate \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --policy backend/quality/spotbugs-suppression-policy.json \
+            --raw-xml backend/build/reports/spotbugs/spotbugsMain.xml \
+            --raw-html backend/build/reports/spotbugs/spotbugsMain.html \
+            --xml "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.xml" \
+            --html "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.html" \
+            --evidence "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json" \
+            --source-sha "$source_sha" \
+            --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
+            --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
+            --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
+
+      - name: Upload SpotBugs current-run artifact
+        id: spotbugs_artifact
+        if: always() && !cancelled()
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: backend-spotbugs-${{ github.sha }}
+          path: |
+            ${{ runner.temp }}/backend-spotbugs/spotbugsMain.xml
+            ${{ runner.temp }}/backend-spotbugs/spotbugsMain.html
+            ${{ runner.temp }}/backend-spotbugs/backend-spotbugs-result.json
+            ${{ runner.temp }}/backend-spotbugs/backend-spotbugs-summary.md
+          retention-days: 5
+          if-no-files-found: error
+
+      - name: Append SpotBugs summary
+        if: always() && !cancelled() && steps.spotbugs_validate.outcome == 'success'
+        shell: bash
+        run: cat "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Enforce SpotBugs gate
+        if: always()
+        shell: bash
+        env:
+          PULL_REQUEST_HEAD_SHA: ${{ github.event_name == 'pull_request' && github.event.pull_request.head.sha || 'none' }}
+        run: |
+          set -euo pipefail
+          test "${{ steps.spotbugs_main.outcome }}" = success
+          test "${{ steps.spotbugs_inputs.outcome }}" = success
+          test "${{ steps.spotbugs_validate.outcome }}" = success
+          test "${{ steps.spotbugs_artifact.outcome }}" = success
+          test "${{ job.status }}" != cancelled
+          source_sha="$(git rev-parse HEAD)"
+          test "$source_sha" = "${{ github.sha }}"
+          node tools/ci/backend-spotbugs-gate.mjs validate-final \
+            --repo-root "$GITHUB_WORKSPACE" \
+            --policy backend/quality/spotbugs-suppression-policy.json \
+            --raw-xml backend/build/reports/spotbugs/spotbugsMain.xml \
+            --raw-html backend/build/reports/spotbugs/spotbugsMain.html \
+            --xml "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.xml" \
+            --html "${RUNNER_TEMP}/backend-spotbugs/spotbugsMain.html" \
+            --evidence "${RUNNER_TEMP}/backend-spotbugs/gradle-evidence.json" \
+            --source-sha "$source_sha" \
+            --pull-request-head-sha "$PULL_REQUEST_HEAD_SHA" \
+            --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
+            --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
+
       - name: Build image without push
         run: docker build --tag easysubway-backend:ci backend

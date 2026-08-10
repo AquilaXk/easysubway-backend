@@ -1,6 +1,6 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FindBugsFilter>
-	<!-- Spring Boot 엔트리포인트는 SpotBugs 노이즈가 커서 제외한다. 추가 억제는 spotbugs-suppression-policy.json 근거 필요. -->
+	<!-- policy-owned exact source SHA-256: d0e6c8a5ab74a8c10fead9443573e9acb5b4c240e71f85246744a18b1601aa53; Backend #4 removes or re-approves this bootstrap-only entrypoint exclusion. -->
 	<Match>
 		<Class name="com.easysubway.EasySubwayBackendApplication"/>
 	</Match>
