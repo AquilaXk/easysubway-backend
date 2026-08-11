@@ -1,6 +1,7 @@
 package com.easysubway.realtime.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 
 import com.easysubway.realtime.adapter.out.persistence.DevelopmentRealtimeSafetyPorts;
@@ -86,6 +87,14 @@ class RealtimeProductionCompositionTest {
 					});
 			}
 		}
+	}
+
+	@Test
+	@DisplayName("TOPIS 키 null은 운영 guard에서 canonical 오류로 거부한다")
+	void nullTopisServiceKeyIsRejectedByProductionGuard() {
+		assertThatThrownBy(() -> new ProductionRealtimeProviderConfigurationGuard(null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY must not be blank");
 	}
 
 	@Test
