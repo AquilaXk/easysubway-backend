@@ -356,11 +356,9 @@ final class LegacyFlywayBaselineTransition {
 
 	private static boolean hasExactBaselineHistory(Connection connection, String schema, String baselineVersion) throws SQLException {
 		String quotedSchema = '"' + schema + '"';
-		String sql = """
-			SELECT COUNT(*),
-			       COUNT(*) FILTER (WHERE type = 'BASELINE' AND version = ? AND success)
-			FROM %s.flyway_schema_history
-			""".formatted(quotedSchema);
+		String sql = "SELECT COUNT(*), COUNT(*) FILTER "
+			+ "(WHERE type = 'BASELINE' AND version = ? AND success) "
+			+ "FROM %s.flyway_schema_history".formatted(quotedSchema);
 		try (var statement = connection.prepareStatement(sql)) {
 			statement.setString(1, baselineVersion);
 			try (var result = statement.executeQuery()) {
