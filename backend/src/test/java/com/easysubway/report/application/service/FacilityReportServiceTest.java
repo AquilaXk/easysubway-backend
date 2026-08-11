@@ -243,12 +243,14 @@ class FacilityReportServiceTest {
 	@DisplayName("운영 프로필은 강한 receipt token pepper가 없으면 시작하지 않는다")
 	void prodProfileFailsWithoutStrongReceiptTokenPepper() {
 		new ApplicationContextRunner()
-			.withUserConfiguration(ProductionReportReceiptTokenPepperValidator.class)
+			.withUserConfiguration(ProductionReportCanonicalSecretValidator.class)
 			.withPropertyValues("spring.profiles.active=prod")
 			.run(context -> {
 				assertThat(context).hasFailed();
 				assertThat(context.getStartupFailure())
-					.hasRootCauseMessage("운영 receipt token pepper 설정이 필요합니다.");
+					.hasRootCauseMessage(
+						"운영 report secret canonical 설정이 필요합니다: EASYSUBWAY_REPORT_RECEIPT_PEPPER"
+					);
 			});
 	}
 
