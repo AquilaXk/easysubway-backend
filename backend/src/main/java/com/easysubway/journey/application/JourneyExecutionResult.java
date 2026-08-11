@@ -16,6 +16,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 				throw new IllegalArgumentException("source must be SERVER_TIMETABLE_RAPTOR");
 			}
 			bundleIdentity = requireText(bundleIdentity, "bundleIdentity");
+			realtimeIdentity = realtimeIdentity == null ? null : requireText(realtimeIdentity, "realtimeIdentity");
 			candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
 			if (candidates.isEmpty()) {
 				throw new IllegalArgumentException("candidates must not be empty");

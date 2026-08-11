@@ -137,6 +137,12 @@ class JourneyApplicationServiceTest {
 
 	@Test
 	void rejectsBlankRequiredIdentitiesAndInvalidSuccessValues() {
+		assertThat(new JourneyExecutionResult.Success(
+			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", null, List.of("candidate-1"))
+			.realtimeIdentity()).isNull();
+		assertThat(new JourneyExecutionResult.Success(
+			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", "realtime-1", List.of("candidate-1"))
+			.realtimeIdentity()).isEqualTo("realtime-1");
 		assertThatThrownBy(() -> new JourneyRequest(" ", "station-origin", "station-destination",
 			JourneyRequest.Mode.TIMETABLE_REQUIRED, () -> false))
 			.isInstanceOf(IllegalArgumentException.class);
@@ -148,6 +154,12 @@ class JourneyApplicationServiceTest {
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
 			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, " ", null, List.of("candidate-1")))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
+			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", "", List.of("candidate-1")))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
+			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", " \t", List.of("candidate-1")))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
 			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", null, List.of()))
