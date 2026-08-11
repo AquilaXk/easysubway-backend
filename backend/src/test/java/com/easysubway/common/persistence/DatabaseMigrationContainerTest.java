@@ -50,6 +50,37 @@ class DatabaseMigrationContainerTest {
 		new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"));
 
 	@Test
+	@DisplayName("운영 migration은 history가 없는 non-empty schema를 자동 baseline하지 않는다")
+	void releaseProfilesRejectNonEmptySchemaWithoutHistory() {
+		var dataSource = new DriverManagerDataSource(
+			POSTGRES.getJdbcUrl(),
+			POSTGRES.getUsername(),
+			POSTGRES.getPassword()
+		);
+		String schema = "flyway_no_implicit_baseline_" + System.nanoTime();
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		jdbcTemplate.execute("CREATE SCHEMA " + schema);
+		jdbcTemplate.execute("CREATE TABLE " + schema + ".legacy_marker (marker_id INTEGER PRIMARY KEY)");
+		jdbcTemplate.update("INSERT INTO " + schema + ".legacy_marker (marker_id) VALUES (1)");
+		var flyway = flyway(dataSource, "classpath:db/migration/postgresql", schema)
+			.baselineOnMigrate(false)
+			.load();
+
+		assertThatThrownBy(flyway::migrate)
+			.isInstanceOf(org.flywaydb.core.api.FlywayException.class)
+			.hasMessageContaining("non-empty schema");
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM " + schema + ".legacy_marker",
+			Integer.class
+		)).isEqualTo(1);
+		assertThat(jdbcTemplate.queryForObject("""
+			SELECT COUNT(*)
+			FROM information_schema.tables
+			WHERE table_schema = ? AND table_name = 'flyway_schema_history'
+			""", Integer.class, schema)).isZero();
+	}
+
+	@Test
 	@DisplayName("깨끗한 PostgreSQL DB는 versioned migration만으로 핵심 운영 테이블과 제약을 만든다")
 	void flywayMigratesCleanPostgresqlSchema() {
 		var dataSource = new DriverManagerDataSource(
