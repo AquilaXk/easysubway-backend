@@ -83,6 +83,7 @@ class LegacySchemaFingerprintTest {
 			mutations.put("standalone-type", "CREATE TYPE legacy_pair AS (code TEXT, rank INTEGER)");
 			mutations.put("routine", "CREATE FUNCTION legacy_touch() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'");
 			mutations.put("trigger", "CREATE TRIGGER legacy_touch_trigger BEFORE INSERT ON favorite_stations FOR EACH ROW EXECUTE FUNCTION legacy_touch()");
+			mutations.put("trigger-state", "ALTER TABLE favorite_stations DISABLE TRIGGER legacy_touch_trigger");
 			mutations.put("row-security", "ALTER TABLE favorite_stations ENABLE ROW LEVEL SECURITY");
 			mutations.put("policy", "CREATE POLICY legacy_station_policy ON favorite_stations USING (user_id = CURRENT_USER)");
 			for (var mutation : mutations.entrySet()) {
@@ -91,6 +92,17 @@ class LegacySchemaFingerprintTest {
 				assertThat(changed).as(mutation.getKey()).isNotEqualTo(previous);
 				previous = changed;
 			}
+			String role = "legacy_policy_role_" + System.nanoTime();
+			statement.execute("CREATE ROLE " + role);
+			assertThat(LegacySchemaFingerprint.calculate(connection, "public"))
+				.as("role outside target schema")
+				.isEqualTo(previous);
+			statement.execute("ALTER POLICY legacy_station_policy ON favorite_stations TO " + role);
+			assertThat(LegacySchemaFingerprint.calculate(connection, "public"))
+				.as("policy role")
+				.isNotEqualTo(previous);
+			statement.execute("DROP POLICY legacy_station_policy ON favorite_stations");
+			statement.execute("DROP ROLE " + role);
 		}
 	}
 

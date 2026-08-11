@@ -100,10 +100,10 @@ final class LegacySchemaFingerprint {
 			       t.typnotnull::text,
 			       COALESCE(t.typdefault, ''),
 			       COALESCE((
-			         SELECT string_agg(e.enumlabel, ',' ORDER BY e.enumsortorder)
+			         SELECT jsonb_agg(e.enumlabel ORDER BY e.enumsortorder)::text
 			         FROM pg_catalog.pg_enum e
 			         WHERE e.enumtypid = t.oid
-			       ), ''),
+			       ), '[]'),
 			       COALESCE(pg_catalog.format_type(r.rngsubtype, NULL), '')
 			FROM pg_catalog.pg_type t
 			JOIN pg_catalog.pg_namespace n ON n.oid = t.typnamespace
@@ -127,6 +127,7 @@ final class LegacySchemaFingerprint {
 		new CatalogQuery("TRIGGER", """
 			SELECT c.relname,
 			       t.tgname,
+			       t.tgenabled::text,
 			       pg_get_triggerdef(t.oid, true)
 			FROM pg_catalog.pg_trigger t
 			JOIN pg_catalog.pg_class c ON c.oid = t.tgrelid
@@ -140,6 +141,11 @@ final class LegacySchemaFingerprint {
 			       p.polname,
 			       p.polcmd::text,
 			       p.polpermissive::text,
+			       COALESCE((
+			         SELECT jsonb_agg(COALESCE(role_name.rolname, 'PUBLIC') ORDER BY COALESCE(role_name.rolname, 'PUBLIC'))::text
+			         FROM unnest(p.polroles) AS policy_role(oid)
+			         LEFT JOIN pg_catalog.pg_roles role_name ON role_name.oid = policy_role.oid
+			       ), '[]'),
 			       COALESCE(pg_get_expr(p.polqual, p.polrelid), ''),
 			       COALESCE(pg_get_expr(p.polwithcheck, p.polrelid), '')
 			FROM pg_catalog.pg_policy p
