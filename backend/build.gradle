@@ -340,6 +340,12 @@ tasks.named('processResources') {
 
 	from(stageContracts)
 	from(layout.buildDirectory.dir('journey-contracts-staging'))
+	from('flyway-migration-inventory.lock.json') {
+		into 'META-INF/easysubway'
+	}
+	from('quality/migration-ddl-gate.json') {
+		into 'META-INF/easysubway'
+	}
 }
 
 tasks.named('bootJar') {

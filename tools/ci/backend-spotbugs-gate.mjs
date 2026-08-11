@@ -16,7 +16,7 @@ const FINDING_REASON = 'Exact current SpotBugs finding requires source-level rev
 const FINDING_REMOVAL = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
 const FINDING_TRIGGER = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
 const ISSUE4_TITLE = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
-const BUILD_SCRIPT_DIGEST = 'decb5e5bc54c022a698b1b591b6fb9843cb7faedf1af9ce98f98217841df0722';
+const BUILD_SCRIPT_DIGEST = '7e70fd9826469558d0e17f60956d87badb8c7356e36e7bed0759260f4e61423c';
 const SPOTBUGS_TEST_TRIGGERS = ['test output becomes packaged/runtime', 'custom source set mixes test and production outputs', 'bootJar or image admits test classes', 'Gradle source-set/classpath semantics change'];
 const EXCLUSION_TRIGGERS = ['source byte change', 'class/member/annotation or responsibility change', 'plugin/JDK/task/source-set change', 'broader class/package Match', 'Backend #4 remediation'];
 const FINAL_REQUIREMENTS = ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'];
