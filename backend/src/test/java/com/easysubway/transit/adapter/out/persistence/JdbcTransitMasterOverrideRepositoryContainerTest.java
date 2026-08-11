@@ -76,7 +76,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			var ready = new CountDownLatch(2);
 			var start = new CountDownLatch(1);
-			var executor = Executors.newFixedThreadPool(2);
+			var executor = boundedExecutor();
 
 			try {
 				var first = executor.submit(() -> {
@@ -136,7 +136,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 27), "seed"), "seed");
 			var changed = new CountDownLatch(1);
 			var release = new CountDownLatch(1);
-			var executor = Executors.newFixedThreadPool(2);
+			var executor = boundedExecutor();
 
 			try {
 				Future<?> fullSave = executor.submit(() -> transaction.executeWithoutResult(ignored -> {
@@ -180,7 +180,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 28), "second"), "second");
 			var changed = new CountDownLatch(1);
 			var release = new CountDownLatch(1);
-			var executor = Executors.newFixedThreadPool(2);
+			var executor = boundedExecutor();
 
 			try {
 				Future<?> rollback = executor.submit(() -> transaction.executeWithoutResult(ignored -> {
@@ -216,7 +216,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 			SimplifiedStationLayout base = repository.loadSimplifiedStationLayouts().getFirst();
 			var changed = new CountDownLatch(1);
 			var release = new CountDownLatch(1);
-			var executor = Executors.newFixedThreadPool(2);
+			var executor = boundedExecutor();
 
 			try {
 				Future<?> fullSave = executor.submit(() -> transaction.executeWithoutResult(ignored -> {
@@ -296,6 +296,13 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 		assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 	}
 
+	private ExecutorService boundedExecutor() {
+		return Executors.newFixedThreadPool(
+			2,
+			Thread.ofPlatform().daemon().name("transit-override-container-test-", 0).factory()
+		);
+	}
+
 	private void await(CountDownLatch latch) {
 		try {
 			assertThat(latch.await(5, TimeUnit.SECONDS)).isTrue();
@@ -339,6 +346,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 		dataSource.setUsername(POSTGRES.getUsername());
 		dataSource.setPassword(POSTGRES.getPassword());
 		dataSource.setSchema(schema);
+		dataSource.addDataSourceProperty("options", "-c lock_timeout=5000 -c statement_timeout=8000");
 		return dataSource;
 	}
 
