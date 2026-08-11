@@ -60,10 +60,6 @@ easysubway:
     password: ${EASYSUBWAY_ADMIN_PASSWORD}
     remember-me:
       key: ${EASYSUBWAY_ADMIN_REMEMBER_ME_KEY:}
-    break-glass:
-      username: ${EASYSUBWAY_ADMIN_BREAK_GLASS_USERNAME:}
-      password: ${EASYSUBWAY_ADMIN_BREAK_GLASS_PASSWORD:}
-      reason: ${EASYSUBWAY_ADMIN_BREAK_GLASS_REASON:}
     basic-auth:
       enabled: ${EASYSUBWAY_ADMIN_BASIC_AUTH_ENABLED:false}
       exception-owner: ${EASYSUBWAY_ADMIN_BASIC_AUTH_EXCEPTION_OWNER:}
