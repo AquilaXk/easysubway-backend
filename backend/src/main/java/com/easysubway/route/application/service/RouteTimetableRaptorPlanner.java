@@ -188,7 +188,7 @@ class RouteTimetableRaptorPlanner {
 			legs.add(new JourneyRideProjection(
 				ride.lineId(),
 				ride.tripId(),
-				ride.trip().tripHeadsign(),
+				ride.scheduledTrip().stopTimes().getLast().stationId(),
 				ride.from().stationId(),
 				ride.to().stationId(),
 				serviceInstant(serviceDay, ride.scheduledTrip().departureSeconds(ride.fromIndex())),

@@ -330,7 +330,7 @@ class JourneyRaptorAdapterTest {
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
 		var route = new TransitRoute("route", "line", "L", "Line", "station-b", "Asia/Seoul");
 		var trip = new TransitTrip(
-			"trip", "route", "daily", "station-b", "down", "SUBWAY", "LOCAL", "1001", 0);
+			"trip", "route", "daily", "춘천행", "down", "SUBWAY", "LOCAL", "1001", 0);
 		var lateTrip = new TransitTrip(
 			"trip-late", "route", "daily", "station-b", "down", "SUBWAY", "LOCAL", "1002", 0);
 		var stopTimes = List.of(
