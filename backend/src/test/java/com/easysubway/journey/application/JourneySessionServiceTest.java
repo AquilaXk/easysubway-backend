@@ -142,6 +142,11 @@ class JourneySessionServiceTest {
 		Fakes malformed = new Fakes();
 		assertFailure(() -> malformed.service().authorize(" "), Kind.SESSION_REQUIRED);
 		assertThat(malformed.authorizeCalls).isZero();
+
+		Fakes unavailable = new Fakes();
+		unavailable.authorizationFailure = new IllegalStateException("store details");
+		assertFailure(() -> unavailable.service().authorize("opaque-token"), Kind.SESSION_REQUIRED);
+		assertThat(unavailable.authorizeCalls).isEqualTo(1);
 	}
 
 	private static Verdict validVerdict() {
@@ -181,11 +186,23 @@ class JourneySessionServiceTest {
 	}
 
 	private static void assertFailure(Runnable action, Kind kind) {
+		String expectedMachineCode = switch (kind) {
+			case INVALID_REQUEST -> "INVALID_JOURNEY_SESSION_REQUEST";
+			case ATTESTATION_REJECTED -> "ROUTE_SESSION_ATTESTATION_REJECTED";
+			case ATTESTATION_UNAVAILABLE -> "ROUTE_SESSION_ATTESTATION_UNAVAILABLE";
+			case SESSION_REQUIRED -> "ROUTE_SESSION_REQUIRED";
+		};
+		int expectedHttpStatus = switch (kind) {
+			case INVALID_REQUEST -> 400;
+			case ATTESTATION_REJECTED -> 403;
+			case ATTESTATION_UNAVAILABLE -> 503;
+			case SESSION_REQUIRED -> 401;
+		};
 		assertThatThrownBy(action::run)
 			.isInstanceOfSatisfying(JourneySessionException.class, exception -> {
 				assertThat(exception.kind()).isEqualTo(kind);
-				assertThat(exception.machineCode()).isEqualTo(kind.machineCode());
-				assertThat(exception.httpStatus()).isEqualTo(kind.httpStatus());
+				assertThat(exception.machineCode()).isEqualTo(expectedMachineCode);
+				assertThat(exception.httpStatus()).isEqualTo(expectedHttpStatus);
 			});
 	}
 
@@ -193,6 +210,7 @@ class JourneySessionServiceTest {
 		private Verdict verdict = validVerdict();
 		private RuntimeException decoderFailure;
 		private boolean claimed = true;
+		private RuntimeException authorizationFailure;
 		private SessionUse authorization = new SessionUse(
 			AuthorizationStatus.VALID, "journey:v3", NOW.plusSeconds(600)
 		);
@@ -234,6 +252,7 @@ class JourneySessionServiceTest {
 						authorizeCalls++;
 						authorizedTokenSha256 = tokenSha256;
 						requiredScope = scope;
+						if (authorizationFailure != null) throw authorizationFailure;
 						return authorization;
 					}
 				},

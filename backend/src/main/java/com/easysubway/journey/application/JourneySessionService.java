@@ -83,7 +83,12 @@ public final class JourneySessionService {
 	public AuthorizedSession authorize(String token) {
 		if (token == null || token.isBlank()) throw failure(Kind.SESSION_REQUIRED);
 		Instant now = clock.instant();
-		SessionUse use = store.authorize(sha256Hex(token), SCOPE, now);
+		SessionUse use;
+		try {
+			use = store.authorize(sha256Hex(token), SCOPE, now);
+		} catch (RuntimeException exception) {
+			throw failure(Kind.SESSION_REQUIRED);
+		}
 		if (use == null
 			|| use.status() != AuthorizationStatus.VALID
 			|| !SCOPE.equals(use.scope())
