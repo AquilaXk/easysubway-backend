@@ -139,16 +139,24 @@ class JourneyApplicationServiceTest {
 		assertThat(beforeSnapshot.realtimeCalls).isZero();
 		assertThat(beforeSnapshot.raptorCalls).isZero();
 
-		assertCancelled(fakes -> fakes.cancelAfterSnapshot = true);
-		assertCancelled(fakes -> fakes.cancelAfterRealtime = true);
-		assertCancelled(fakes -> fakes.cancelAfterRaptor = true);
+		assertCancelled(fakes -> fakes.cancelAfterSnapshot = true, 1, 0, 0);
+		assertCancelled(fakes -> fakes.cancelAfterRealtime = true, 1, 1, 0);
+		assertCancelled(fakes -> fakes.cancelAfterRaptor = true, 1, 1, 1);
 	}
 
-	private static void assertCancelled(java.util.function.Consumer<Fakes> configure) {
+	private static void assertCancelled(
+		java.util.function.Consumer<Fakes> configure,
+		int expectedSnapshotCalls,
+		int expectedRealtimeCalls,
+		int expectedRaptorCalls
+	) {
 		Fakes fakes = new Fakes();
 		configure.accept(fakes);
 		assertFailure(fakes.service().execute(request(JourneyRequest.Mode.REALTIME_REQUIRED, fakes.cancelled)),
 			JourneyExecutionFailure.Reason.CANCELLED);
+		assertThat(fakes.snapshotCalls).isEqualTo(expectedSnapshotCalls);
+		assertThat(fakes.realtimeCalls).isEqualTo(expectedRealtimeCalls);
+		assertThat(fakes.raptorCalls).isEqualTo(expectedRaptorCalls);
 	}
 
 	private static JourneyRequest request(JourneyRequest.Mode mode) {
