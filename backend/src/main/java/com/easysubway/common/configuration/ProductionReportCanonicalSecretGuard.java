@@ -38,6 +38,14 @@ final class ProductionReportCanonicalSecretGuard implements SmartInitializingSin
 		}
 		requireProductionSecret(CANONICAL_RECEIPT_KEY, receiptTokenPepper, LOCAL_RECEIPT_VALUE);
 		requireProductionSecret(CANONICAL_INTENT_KEY, uploadIntentSigningKey, LOCAL_INTENT_VALUE);
+		if (receiptTokenPepper.trim().equals(uploadIntentSigningKey.trim())) {
+			throw new IllegalStateException(
+				"운영 report secret은 서로 달라야 합니다: "
+					+ CANONICAL_RECEIPT_KEY
+					+ ", "
+					+ CANONICAL_INTENT_KEY
+			);
+		}
 	}
 
 	private static void requireProductionSecret(String key, String value, String localValue) {

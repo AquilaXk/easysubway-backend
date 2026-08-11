@@ -1,13 +1,17 @@
 package com.easysubway.common.configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.catchThrowable;
 
 import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.LazyInitializationBeanFactoryPostProcessor;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.boot.test.util.TestPropertyValues;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 @DisplayName("운영 report secret canonical-only 설정")
 class ProductionReportCanonicalSecretGuardTest {
@@ -35,6 +39,40 @@ class ProductionReportCanonicalSecretGuardTest {
 				assertThat(context).hasNotFailed();
 				assertThat(context).hasSingleBean(ProductionReportCanonicalSecretGuard.class);
 			});
+	}
+
+	@Test
+	void rejectsLegacyInputWhenGlobalLazyInitializationIsEnabled() {
+		String legacyValue = "sensitive-legacy-receipt-pepper-with-enough-entropy";
+		Throwable startupFailure;
+		try (AnnotationConfigApplicationContext context = new AnnotationConfigApplicationContext()) {
+			TestPropertyValues.of(
+				"spring.main.lazy-initialization=true",
+				RECEIPT_PROPERTY + "=" + STRONG_RECEIPT,
+				INTENT_PROPERTY + "=" + STRONG_INTENT,
+				LEGACY_RECEIPT_KEY + "=" + legacyValue
+			).applyTo(context);
+			context.getEnvironment().setActiveProfiles("prod");
+			context.register(ProductionReportCanonicalSecretGuard.class);
+			context.addBeanFactoryPostProcessor(new LazyInitializationBeanFactoryPostProcessor());
+			startupFailure = catchThrowable(context::refresh);
+		}
+
+		assertThat(startupFailure).hasStackTraceContaining(LEGACY_RECEIPT_KEY);
+		assertThat(rootCause(startupFailure).getMessage()).doesNotContain(legacyValue);
+	}
+
+	@Test
+	void rejectsEqualNormalizedCanonicalSecrets() {
+		String sharedValue = "shared-report-secret-value-with-enough-entropy";
+		assertStartupFailure(
+			new String[] {
+				RECEIPT_PROPERTY + "=" + sharedValue,
+				INTENT_PROPERTY + "= " + sharedValue + " "
+			},
+			CANONICAL_INTENT_KEY,
+			sharedValue
+		);
 	}
 
 	@Test
