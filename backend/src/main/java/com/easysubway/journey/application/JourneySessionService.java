@@ -141,11 +141,12 @@ public final class JourneySessionService {
 	}
 
 	private boolean requestHashMatches(String clientNonce, String actualHash) {
+		if (actualHash == null) return false;
 		try {
 			byte[] expected = sha256(canonicalRequest(clientNonce).getBytes(StandardCharsets.UTF_8));
 			byte[] actual = BASE64_URL_DECODER.decode(actualHash);
 			return MessageDigest.isEqual(expected, actual);
-		} catch (IllegalArgumentException | NullPointerException exception) {
+		} catch (IllegalArgumentException exception) {
 			return false;
 		}
 	}

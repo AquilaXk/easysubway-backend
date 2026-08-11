@@ -23,6 +23,16 @@ public interface JourneySessionIntegrityPort {
 			deviceRecognitionVerdicts = copyOrNull(deviceRecognitionVerdicts);
 		}
 
+		@Override
+		public List<String> certificateSha256Digests() {
+			return copyOrNull(certificateSha256Digests);
+		}
+
+		@Override
+		public List<String> deviceRecognitionVerdicts() {
+			return copyOrNull(deviceRecognitionVerdicts);
+		}
+
 		private static List<String> copyOrNull(List<String> values) {
 			return values == null ? null : List.copyOf(values);
 		}
