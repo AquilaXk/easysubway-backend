@@ -100,6 +100,22 @@ class RouteTimetableRaptorPlanner {
 		return results(command, timetable, serviceDay, realtimeOverlay,
 			scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay));
 	}
+
+	List<JourneyItinerary> journeyItineraries(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay
+	) {
+		ServiceDay serviceDay = serviceDay(command);
+		ScanResult scanResult = scanDestinationLabels(
+			command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay);
+		return scanResult.labels().stream()
+			.sorted(RouteTimetableRaptorPlanner::compareLabels)
+			.limit(candidateLimit(command))
+			.map(label -> toJourneyItinerary(command, timetable, serviceDay, realtimeOverlay, label))
+			.toList();
+	}
+
 	SearchOutcome searchWithDiagnostics(SearchRouteV2Command command, CompiledTimetable timetable) {
 		return searchWithDiagnostics(command, timetable, RealtimeOverlay.empty());
 	}
@@ -134,6 +150,99 @@ class RouteTimetableRaptorPlanner {
 			.limit(candidateLimit(command))
 			.map(label -> toRouteSearchResult(command, label, serviceDay, timetable, realtimeOverlay))
 			.toList();
+	}
+
+	private static JourneyItinerary toJourneyItinerary(
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		ServiceDay serviceDay,
+		RealtimeOverlay realtimeOverlay,
+		Label label
+	) {
+		List<JourneyLegProjection> legs = new ArrayList<>();
+		List<RideLeg> path = label.path();
+		RideLeg firstRide = path.getFirst();
+		int entryTransition = label.accessTransitions()[0];
+		legs.add(journeyAccessLeg(
+			JourneyAccessKind.ENTRY,
+			command.originStationId(),
+			firstRide.from().stationId(),
+			command,
+			timetable,
+			entryTransition
+		));
+		for (int index = 0; index < path.size(); index += 1) {
+			RideLeg ride = path.get(index);
+			if (index > 0) {
+				RideLeg previous = path.get(index - 1);
+				legs.add(journeyAccessLeg(
+					JourneyAccessKind.TRANSFER,
+					previous.to().stationId(),
+					ride.from().stationId(),
+					command,
+					timetable,
+					label.accessTransitions()[index]
+				));
+			}
+			RealtimeEvidence evidence = realtimeOverlay.evidence(ride.scheduledTrip());
+			legs.add(new JourneyRideProjection(
+				ride.lineId(),
+				ride.tripId(),
+				ride.trip().tripHeadsign(),
+				ride.from().stationId(),
+				ride.to().stationId(),
+				serviceInstant(serviceDay, ride.scheduledTrip().departureSeconds(ride.fromIndex())),
+				serviceInstant(serviceDay, ride.scheduledTrip().arrivalSeconds(ride.toIndex())),
+				evidence == null ? null : serviceInstant(serviceDay, ride.departureSeconds()),
+				evidence == null ? null : serviceInstant(serviceDay, ride.arrivalSeconds())
+			));
+		}
+		RideLeg lastRide = path.getLast();
+		int exitDurationSeconds = profiledWalkSeconds(
+			command, timetable.transitionDurationSeconds(label.exitTransition()));
+		legs.add(journeyAccessLeg(
+			JourneyAccessKind.EXIT,
+			lastRide.to().stationId(),
+			command.destinationStationId(),
+			command,
+			timetable,
+			label.exitTransition()
+		));
+		return new JourneyItinerary(
+			serviceDay.date(),
+			serviceInstant(serviceDay, label.startSeconds()),
+			serviceInstant(serviceDay,
+				lastRide.scheduledTrip().arrivalSeconds(lastRide.toIndex()) + exitDurationSeconds),
+			realtimeOverlay.available() ? serviceInstant(serviceDay, label.startSeconds()) : null,
+			realtimeOverlay.available()
+				? serviceInstant(serviceDay, lastRide.arrivalSeconds() + exitDurationSeconds)
+				: null,
+			List.copyOf(legs)
+		);
+	}
+
+	private static JourneyAccessProjection journeyAccessLeg(
+		JourneyAccessKind kind,
+		String fromStationId,
+		String toStationId,
+		SearchRouteV2Command command,
+		CompiledTimetable timetable,
+		int transition
+	) {
+		return new JourneyAccessProjection(
+			kind,
+			fromStationId,
+			toStationId,
+			profiledWalkSeconds(command, timetable.transitionDurationSeconds(transition)),
+			timetable.transitionDistanceMeters(transition),
+			timetable.transitionIncludesStairs(transition),
+			timetable.transitionVerified(transition),
+			timetable.transitionVerificationStatus(transition)
+		);
+	}
+
+	private static Instant serviceInstant(ServiceDay serviceDay, int seconds) {
+		return serviceDay.date().atStartOfDay(SERVICE_ZONE).plusSeconds(seconds).toInstant();
 	}
 
 	private static RouteSearchResult blockedAccessibilityResult(
@@ -2487,6 +2596,53 @@ class RouteTimetableRaptorPlanner {
 	private record BoardingPoint(String stationId, String lineId) {
 	}
 	record ScanMetrics(int expandedRoutes, int expandedTrips, int workspaceIdentity) {
+	}
+
+	record JourneyItinerary(
+		LocalDate serviceDate,
+		Instant plannedDepartureTime,
+		Instant plannedArrivalTime,
+		Instant realtimeDepartureTime,
+		Instant realtimeArrivalTime,
+		List<JourneyLegProjection> legs
+	) {
+		JourneyItinerary {
+			legs = List.copyOf(legs);
+		}
+	}
+
+	sealed interface JourneyLegProjection permits JourneyAccessProjection, JourneyRideProjection {
+	}
+
+	enum JourneyAccessKind {
+		ENTRY,
+		TRANSFER,
+		EXIT
+	}
+
+	record JourneyAccessProjection(
+		JourneyAccessKind kind,
+		String fromStationId,
+		String toStationId,
+		int durationSeconds,
+		int distanceMeters,
+		boolean includesStairs,
+		boolean verified,
+		String verificationStatus
+	) implements JourneyLegProjection {
+	}
+
+	record JourneyRideProjection(
+		String lineId,
+		String tripId,
+		String directionStationId,
+		String fromStationId,
+		String toStationId,
+		Instant plannedDepartureTime,
+		Instant plannedArrivalTime,
+		Instant realtimeDepartureTime,
+		Instant realtimeArrivalTime
+	) implements JourneyLegProjection {
 	}
 
 	static final class RealtimeOverlay {

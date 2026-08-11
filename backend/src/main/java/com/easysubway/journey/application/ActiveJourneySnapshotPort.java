@@ -15,6 +15,7 @@ public interface ActiveJourneySnapshotPort {
 		String timetableSnapshotId,
 		String accessibilitySnapshotId,
 		long generation,
+		JourneyRaptorRuntimeView runtimeView,
 		Instant validUntil,
 		boolean fresh
 	) {
@@ -27,6 +28,13 @@ public interface ActiveJourneySnapshotPort {
 			timetableSnapshotId = requireText(timetableSnapshotId, "timetableSnapshotId");
 			accessibilitySnapshotId = requireText(accessibilitySnapshotId, "accessibilitySnapshotId");
 			if (generation < 1) throw new IllegalArgumentException("generation must be positive");
+			runtimeView = Objects.requireNonNull(runtimeView, "runtimeView");
+			if (!routeBundleSha256.equals(runtimeView.routeBundleSha256())) {
+				throw new IllegalArgumentException("runtime view routeBundleSha256 does not match snapshot");
+			}
+			if (generation != runtimeView.generation()) {
+				throw new IllegalArgumentException("runtime view generation does not match snapshot");
+			}
 			validUntil = Objects.requireNonNull(validUntil, "validUntil");
 		}
 

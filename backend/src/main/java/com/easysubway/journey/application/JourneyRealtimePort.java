@@ -12,7 +12,13 @@ public interface JourneyRealtimePort {
 		Instant effectiveInstant
 	);
 
-	record RealtimeObservation(String identity, String routeBundleSha256, Instant validUntil, boolean fresh) {
+	record RealtimeObservation(
+		String identity,
+		String routeBundleSha256,
+		JourneyRaptorRealtimeView runtimeView,
+		Instant validUntil,
+		boolean fresh
+	) {
 		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 
 		public RealtimeObservation {
@@ -20,6 +26,13 @@ public interface JourneyRealtimePort {
 			routeBundleSha256 = requireText(routeBundleSha256, "routeBundleSha256");
 			if (!SHA256.matcher(routeBundleSha256).matches()) {
 				throw new IllegalArgumentException("routeBundleSha256 must be lowercase SHA-256");
+			}
+			runtimeView = Objects.requireNonNull(runtimeView, "runtimeView");
+			if (!identity.equals(runtimeView.identity())) {
+				throw new IllegalArgumentException("realtime runtime view identity does not match observation");
+			}
+			if (!routeBundleSha256.equals(runtimeView.routeBundleSha256())) {
+				throw new IllegalArgumentException("realtime runtime view routeBundleSha256 does not match observation");
 			}
 			validUntil = Objects.requireNonNull(validUntil, "validUntil");
 		}

@@ -140,14 +140,14 @@ class JourneyCandidateTest {
 	void rejectsInvalidPortIdentityAndPreservesPlanResultBytes() {
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "BAD", "timetable-1", "accessibility-1", 1,
-			ARRIVAL, true
+			new TestRuntimeView("BAD", 1), ARRIVAL, true
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", 0,
-			ARRIVAL, true
+			new TestRuntimeView("a".repeat(64), 0), ARRIVAL, true
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(
-			"realtime-1", "BAD", ARRIVAL, true
+			"realtime-1", "BAD", new TestRealtimeView("realtime-1", "BAD", 1), ARRIVAL, true
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult(" ", List.of()))
 			.isInstanceOf(IllegalArgumentException.class);
@@ -185,5 +185,13 @@ class JourneyCandidateTest {
 			"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
 			DEPARTURE, ARRIVAL, realtimeDeparture, realtimeArrival
 		));
+	}
+
+	private record TestRuntimeView(String routeBundleSha256, long generation)
+		implements JourneyRaptorRuntimeView {
+	}
+
+	private record TestRealtimeView(String identity, String routeBundleSha256, long generation)
+		implements JourneyRaptorRealtimeView {
 	}
 }
