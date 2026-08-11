@@ -21,10 +21,10 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import javax.sql.DataSource;
+import org.springframework.beans.factory.InitializingBean;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
@@ -36,7 +36,7 @@ import org.springframework.transaction.annotation.Transactional;
 @Repository
 @Profile("prod | staging | release | prod-like")
 public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMasterRepository
-	implements RollbackTransitMasterOverridePort {
+	implements RollbackTransitMasterOverridePort, InitializingBean {
 
 	public static final String FACILITY = "ACCESSIBILITY_FACILITY";
 	public static final String LAYOUT_SOURCE = "STATION_LAYOUT_SOURCE";
@@ -47,14 +47,18 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectReader jsonReader;
 	private final ObjectWriter jsonWriter;
-	private final DatabaseDialect databaseDialect;
+	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
 		this.jsonReader = objectMapper.reader();
 		this.jsonWriter = objectMapper.writer();
-		this.databaseDialect = databaseDialect();
+	}
+
+	@Override
+	public void afterPropertiesSet() {
+		this.databaseDialect = detectDatabaseDialect();
 	}
 
 	@Override
@@ -298,7 +302,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	private void lockTarget(String entityType, String entityId) {
-		switch (databaseDialect) {
+		switch (requireDatabaseDialect()) {
 			case POSTGRESQL -> jdbcTemplate.update("""
 				INSERT INTO transit_master_override_locks (entity_type, entity_id)
 				VALUES (?, ?)
@@ -319,7 +323,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	private void upsertOverride(String entityType, String entityId, String payload, String updatedBy) {
-		switch (databaseDialect) {
+		switch (requireDatabaseDialect()) {
 			case POSTGRESQL -> jdbcTemplate.update("""
 				INSERT INTO transit_master_overrides (entity_type, entity_id, payload_json, updated_by, updated_at)
 				VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
@@ -336,13 +340,23 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 		}
 	}
 
-	private DatabaseDialect databaseDialect() {
-		String productName = Objects.requireNonNull(
-			jdbcTemplate.execute(
-				(ConnectionCallback<String>) connection -> connection.getMetaData().getDatabaseProductName()
-			),
-			"database product name"
+	private DatabaseDialect requireDatabaseDialect() {
+		DatabaseDialect current = databaseDialect;
+		if (current != null) {
+			return current;
+		}
+		DatabaseDialect detected = detectDatabaseDialect();
+		databaseDialect = detected;
+		return detected;
+	}
+
+	private DatabaseDialect detectDatabaseDialect() {
+		String productName = jdbcTemplate.execute(
+			(ConnectionCallback<String>) connection -> connection.getMetaData().getDatabaseProductName()
 		);
+		if (productName == null) {
+			throw new IllegalStateException("database product name is unavailable");
+		}
 		return switch (productName) {
 			case "PostgreSQL" -> DatabaseDialect.POSTGRESQL;
 			case "H2" -> DatabaseDialect.H2;
