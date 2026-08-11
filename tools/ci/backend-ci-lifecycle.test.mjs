@@ -95,6 +95,9 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.equal((workflow.match(/continue-on-error: true/g) || []).length, 3);
   assert.equal((workflow.match(/^    name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length, 1);
   assert.doesNotMatch(workflow, /^  dependency-vulnerability-scan-dispatch:/m);
+  assert.equal((workflow.match(/uses: actions\/setup-java@[0-9a-f]{40}/g) || []).length, 1, 'workflow must use exactly one setup-java action');
+  const setupJavaSteps = workflow.match(/      - name: Set up Java\n        uses: actions\/setup-java@[0-9a-f]{40}\n        with:\n          distribution: temurin\n          java-version: "21\.0\.11"\n          cache: gradle/g) || [];
+  assert.equal(setupJavaSteps.length, 1, 'workflow must use exactly one Temurin 21.0.11 setup-java step');
 });
 
 test('policy/workflow static validation fails closed for unknown or malformed mutations', async () => {
