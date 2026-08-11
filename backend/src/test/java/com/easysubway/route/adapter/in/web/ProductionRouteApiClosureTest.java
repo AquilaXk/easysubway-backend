@@ -69,6 +69,7 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 	"easysubway.admin.basic-auth.enabled=false",
 	"easysubway.auth.client-ip.trusted-proxies=",
 	"easysubway.notifications.push.external-enabled=false",
+	"EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=synthetic-test-key",
 	"EASYSUBWAY_ADS_EVENT_DAILY_CAP=1000000",
 	"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
 	"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
