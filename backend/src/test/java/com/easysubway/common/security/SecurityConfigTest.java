@@ -15,6 +15,7 @@ import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
 import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -826,12 +827,17 @@ class SecurityConfigTest {
 				.hasMessageContaining("break-glass identity");
 			assertThat(repository.findByLoginId("break-glass")).contains(expectedIdentity);
 			assertThat(repository.findByLoginId("admin-user")).isEmpty();
-			assertThat(repository.findByLoginId("operator-user")).isEmpty();
 			assertThat(rbacRepository.findPermissionAuthorities("break-glass"))
 				.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
 				.doesNotContain("admin.security.admin");
 			assertThat(rbacRepository.findPermissionAuthorities("admin-user")).isEmpty();
-			assertThat(rbacRepository.findPermissionAuthorities("operator-user")).isEmpty();
+			if (!scenario.operatorUsername().isBlank()) {
+				String normalizedOperatorLoginId = scenario.operatorUsername().trim().toLowerCase(Locale.ROOT);
+				assertThat(repository.findByLoginId(normalizedOperatorLoginId)).contains(expectedIdentity);
+				assertThat(rbacRepository.findPermissionAuthorities(normalizedOperatorLoginId))
+					.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
+					.doesNotContain("admin.security.admin");
+			}
 		}
 	}
 
