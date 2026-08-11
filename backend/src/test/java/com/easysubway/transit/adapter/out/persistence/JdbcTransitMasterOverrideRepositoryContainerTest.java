@@ -22,8 +22,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
 import org.flywaydb.core.Flyway;
+import org.junit.jupiter.api.BeforeAll;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.parallel.Execution;
+import org.junit.jupiter.api.parallel.ExecutionMode;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
@@ -34,19 +38,37 @@ import org.testcontainers.junit.jupiter.Testcontainers;
 import org.testcontainers.utility.DockerImageName;
 
 @Testcontainers
+@Execution(ExecutionMode.SAME_THREAD)
 @DisplayName("PostgreSQL 도시철도 마스터 override 저장소")
 class JdbcTransitMasterOverrideRepositoryContainerTest {
+
+	private static final String SCHEMA = "transit_override_container";
 
 	@Container
 	private static final PostgreSQLContainer<?> POSTGRES =
 		new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"));
 
+	@BeforeAll
+	static void migrateSchemaOnce() {
+		migrate(SCHEMA);
+	}
+
+	@BeforeEach
+	void resetOverrides() {
+		try (var dataSource = dataSource(SCHEMA)) {
+			var jdbcTemplate = new JdbcTemplate(dataSource);
+			jdbcTemplate.execute("DROP TRIGGER IF EXISTS pause_transit_master_override_insert ON transit_master_overrides");
+			jdbcTemplate.execute("DROP FUNCTION IF EXISTS pause_transit_master_override_insert()");
+			jdbcTemplate.execute("TRUNCATE TABLE transit_master_override_audits");
+			jdbcTemplate.execute("TRUNCATE TABLE transit_master_overrides");
+			jdbcTemplate.execute("TRUNCATE TABLE transit_master_override_locks");
+		}
+	}
+
 	@Test
 	@DisplayName("동일 target 최초 저장은 PostgreSQL transaction 안에서 직렬화되고 정확한 pre-image audit을 남긴다")
 	void concurrentFirstWritesRemainUsableAndRecordExactAuditChain() throws Exception {
-		String schema = "transit_override_concurrent_" + System.nanoTime();
-		migrate(schema);
-		try (var dataSource = dataSource(schema)) {
+		try (var dataSource = dataSource(SCHEMA)) {
 			var jdbcTemplate = new JdbcTemplate(dataSource);
 			installInsertDelay(jdbcTemplate);
 			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
@@ -107,9 +129,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	@Test
 	@DisplayName("시설 status 저장은 target lock 뒤의 full save payload를 변환하고 정확한 pre-image audit을 남긴다")
 	void facilityStatusUsesFullSavePayloadReadAfterTargetLock() throws Exception {
-		String schema = "transit_override_facility_status_" + System.nanoTime();
-		migrate(schema);
-		try (var dataSource = dataSource(schema)) {
+		try (var dataSource = dataSource(SCHEMA)) {
 			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 27), "seed"), "seed");
@@ -152,9 +172,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	@Test
 	@DisplayName("시설 status 저장은 target lock 뒤의 rollback payload를 변환한다")
 	void facilityStatusUsesRollbackPayloadReadAfterTargetLock() throws Exception {
-		String schema = "transit_override_facility_rollback_" + System.nanoTime();
-		migrate(schema);
-		try (var dataSource = dataSource(schema)) {
+		try (var dataSource = dataSource(SCHEMA)) {
 			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 27), "first"), "first");
@@ -191,9 +209,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	@Test
 	@DisplayName("layout status 저장은 target lock 뒤의 version을 하나만 증가시키고 pre-image audit을 남긴다")
 	void layoutStatusSerializesVersionAfterTargetLock() throws Exception {
-		String schema = "transit_override_layout_status_" + System.nanoTime();
-		migrate(schema);
-		try (var dataSource = dataSource(schema)) {
+		try (var dataSource = dataSource(SCHEMA)) {
 			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			SimplifiedStationLayout base = repository.loadSimplifiedStationLayouts().getFirst();
@@ -294,7 +310,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 			""");
 	}
 
-	private void migrate(String schema) {
+	private static void migrate(String schema) {
 		var dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
 		Flyway.configure()
 			.dataSource(dataSource)
