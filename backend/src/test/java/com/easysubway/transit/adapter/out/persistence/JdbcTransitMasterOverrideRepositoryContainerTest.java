@@ -22,16 +22,17 @@ import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import javax.sql.DataSource;
-import org.flywaydb.core.Flyway;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.parallel.Execution;
 import org.junit.jupiter.api.parallel.ExecutionMode;
+import org.springframework.core.io.ClassPathResource;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DriverManagerDataSource;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
@@ -50,8 +51,17 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 		new PostgreSQLContainer<>(DockerImageName.parse("postgres:16-alpine"));
 
 	@BeforeAll
-	static void migrateSchemaOnce() {
-		migrate(SCHEMA);
+	static void createOverrideSchemaOnce() {
+		var adminDataSource = new DriverManagerDataSource(
+			POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword()
+		);
+		new JdbcTemplate(adminDataSource).execute("CREATE SCHEMA IF NOT EXISTS " + SCHEMA);
+		try (var dataSource = dataSource(SCHEMA)) {
+			new ResourceDatabasePopulator(
+				new ClassPathResource("db/migration/postgresql/V14__transit_master_overrides.sql"),
+				new ClassPathResource("db/migration/postgresql/V70__transit_master_override_locks.sql")
+			).execute(dataSource);
+		}
 	}
 
 	@BeforeEach
@@ -329,18 +339,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 			""");
 	}
 
-	private static void migrate(String schema) {
-		var dataSource = new DriverManagerDataSource(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
-		Flyway.configure()
-			.dataSource(dataSource)
-			.locations("classpath:db/migration/postgresql")
-			.schemas(schema)
-			.createSchemas(true)
-			.load()
-			.migrate();
-	}
-
-	private HikariDataSource dataSource(String schema) {
+	private static HikariDataSource dataSource(String schema) {
 		var dataSource = new HikariDataSource();
 		dataSource.setJdbcUrl(POSTGRES.getJdbcUrl());
 		dataSource.setUsername(POSTGRES.getUsername());
