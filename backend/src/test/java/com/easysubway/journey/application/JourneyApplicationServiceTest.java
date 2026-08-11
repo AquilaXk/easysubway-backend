@@ -393,7 +393,8 @@ class JourneyApplicationServiceTest {
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant validUntil, boolean fresh) {
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
-			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1, validUntil, fresh
+			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1,
+			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh
 		);
 	}
 
@@ -402,7 +403,9 @@ class JourneyApplicationServiceTest {
 		String routeBundleSha,
 		boolean fresh
 	) {
-		return new JourneyRealtimePort.RealtimeObservation("realtime-1", routeBundleSha, validUntil, fresh);
+		return new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", routeBundleSha, new TestRealtimeView("realtime-1", routeBundleSha, 1),
+			validUntil, fresh);
 	}
 
 	private static JourneyRaptorPort.PlanResult planResult(JourneyCandidate.TimeSource timeSource) {
@@ -436,6 +439,14 @@ class JourneyApplicationServiceTest {
 				new JourneyCandidate.Exit("station-destination", 20)
 			)
 		);
+	}
+
+	private record TestRuntimeView(String routeBundleSha256, long generation)
+		implements JourneyRaptorRuntimeView {
+	}
+
+	private record TestRealtimeView(String identity, String routeBundleSha256, long generation)
+		implements JourneyRaptorRealtimeView {
 	}
 
 	private static void assertFailure(JourneyExecutionResult result, JourneyExecutionFailure.Reason reason) {
