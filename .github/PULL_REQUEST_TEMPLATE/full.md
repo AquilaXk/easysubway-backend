@@ -1,30 +1,43 @@
-## 관련 이슈
+<!-- A등급: high-risk API, schema, database, security, runtime, artifact, release, CI·contract 변경. -->
 
-close #
+## Related issue
 
-## 작업 배경
+Related #
+
+## Summary
+
+- Problem:
+- Outcome:
+
+## Changes
 
 -
 
-## 작업 내용
+## Scope
+
+### Included
 
 -
 
-## 검증
+### Excluded
 
-- 실행한 명령과 결과:
+-
 
-## 검증 증거
+### Ownership / dependencies
 
-접근성, 수동 QA, 배포 확인이 필요한 항목은 증거 첨부, 링크, 또는 로컬 evidence 경로를 적습니다. 증거가 필요 없는 항목은 사유를 적습니다.
+- Accountable owner or plan:
+- Required predecessor output:
+- Concurrent work overlap: None
 
-| 항목 | 컴포넌트 | 확인 방법 | 증거 | 결과 |
-| --- | --- | --- | --- | --- |
-|  |  |  |  |  |
+## Contract & Compatibility
+
+- API / schema / database contract:
+- Runtime / readiness identity:
+- Backward compatibility:
+- Migration or cutover:
 
 ## Version impact
 
-- [ ] contracts/release 변경 (A등급)
 - [ ] no version change
 - [ ] backend deploy only
 - [ ] backend API contract change
@@ -34,37 +47,64 @@ close #
 ## Route commercialization gate impact
 
 - [ ] route 상용화 gate 지표 영향 없음
-- [ ] tools/routes의 route ETA accuracy, realtime coverage, route v2 contract report를 갱신했다 (gate JSON 집계는 hub 레포 소유).
+- [ ] route ETA accuracy, realtime coverage, route v2 contract report를 갱신했다.
 - [ ] 상용 경로/ETA claim을 추가하거나 변경하지 않는다.
 
 ## Route release readiness tracker impact
 
 - [ ] release readiness tracker 영향 없음
-- [ ] release blocker issue 또는 production evidence 완료 조건을 갱신했다 (hub tracker 반영이 필요하면 hub 이슈를 함께 참조).
+- [ ] release blocker issue 또는 production evidence 완료 조건을 갱신했다.
 - [ ] 실시간/교통약자 길찾기 출시 준비 완료 claim을 추가하거나 변경하지 않는다.
 
 ### Version decision
 
-- contracts/release version (변경 전 → 변경 후):
+- contracts/release version:
 - backend image digest:
-- backend API contract version:
-- route contract:
-- realtime contract:
+- backend API / route / realtime contract:
 - backend identity:
 
-## 리뷰어 메모
+## Verification
 
-- 리뷰어가 먼저 봐야 할 지점:
+| Check | Result / Evidence |
+| --- | --- |
+| Focused RED → GREEN | |
+| Affected integration | |
+| Required CI | |
+| Runtime / production-like | Not required — reason: |
+| Security / data integrity | Not applicable — reason: |
 
-## 리스크
+## Not run
+
+- Check: None
+- Reason:
+- Rerun owner / condition:
+
+## Risk
+
+- Level: High
+- Main risk:
+- Failure behavior:
+- Response / readiness / active-state mutation on failure:
+- Fallback or degraded-success path introduced: No
+
+## Rollout / Recovery
+
+- Rollout or activation:
+- Monitoring / success signal:
+- Rollback or recovery:
+- API / schema / data compatibility after rollback:
+
+## Review focus
 
 -
 
-## 체크리스트
+## Checklist
 
-- [ ] PR 본문은 이 템플릿 섹션을 삭제하지 않고 모두 채웠다.
-- [ ] CI 결과를 확인했다.
-- [ ] CodeRabbit 리뷰를 확인했다.
-- [ ] GitHub PR Review 객체가 있는지 확인했다. CodeRabbit status check만으로는 리뷰 완료로 보지 않는다.
-- [ ] CodeRabbit 실행이 불가능하거나 PR Review 객체가 없으면 폴백 code review를 단일 PR review로 게시했다.
-- [ ] 배포 영향이 있는 경우 CD 상태를 확인했다.
+- [ ] 이슈 범위와 실제 diff가 일치합니다.
+- [ ] 관련 없는 변경이나 다른 owner의 surface를 포함하지 않았습니다.
+- [ ] 위험에 필요한 검증과 미실행 사유를 기록했습니다.
+- [ ] 실패·호환성·rollout·recovery 동작이 명확합니다.
+- [ ] current failure를 이전·local·legacy 경로의 성공으로 바꾸지 않습니다.
+- [ ] GitHub PR Review 객체가 있는지 확인했습니다. CodeRabbit status check만으로는 리뷰 완료로 보지 않습니다.
+- [ ] CodeRabbit Review 객체가 없으면 지원되는 Codex CLI 폴백 Review를 단일 GitHub PR Review로 게시했습니다.
+- [ ] 배포 영향이 있는 경우 CD 상태를 확인했습니다.
