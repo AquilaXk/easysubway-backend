@@ -29,6 +29,8 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseBuilder;
 import org.springframework.jdbc.datasource.embedded.EmbeddedDatabaseType;
 import org.springframework.jdbc.datasource.init.ResourceDatabasePopulator;
+import org.springframework.jdbc.datasource.DataSourceTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 @DisplayName("JDBC 도시철도 마스터 override 저장소")
 class JdbcTransitMasterOverrideRepositoryTest {
@@ -37,10 +39,13 @@ class JdbcTransitMasterOverrideRepositoryTest {
 	@DisplayName("override table readiness가 writable capability를 결정한다")
 	void readinessControlsWritableCapability() {
 		var ready = new JdbcTransitMasterOverrideRepository(overrideDataSource(), objectMapper()).masterDataCapability();
+		var v14Only = new JdbcTransitMasterOverrideRepository(v14OverrideDataSource(), objectMapper()).masterDataCapability();
 		var unready = new JdbcTransitMasterOverrideRepository(emptyDataSource(), objectMapper()).masterDataCapability();
 
 		assertThat(ready.status()).isEqualTo(MasterDataCapabilityStatus.UP);
 		assertThat(ready.writable()).isTrue();
+		assertThat(v14Only.status()).isEqualTo(MasterDataCapabilityStatus.READ_ONLY);
+		assertThat(v14Only.writable()).isFalse();
 		assertThat(unready.status()).isEqualTo(MasterDataCapabilityStatus.READ_ONLY);
 		assertThat(unready.writable()).isFalse();
 	}
@@ -258,9 +263,10 @@ class JdbcTransitMasterOverrideRepositoryTest {
 	}
 
 	@Test
-	@DisplayName("같은 entity 최초 override 저장이 겹쳐도 insert conflict를 update로 수렴한다")
+	@DisplayName("같은 entity 최초 override 저장은 transaction 안에서 직렬화되고 정확한 pre-image audit을 남긴다")
 	void concurrentFirstOverrideWritesDoNotFail() throws Exception {
 		DataSource dataSource = overrideDataSource();
+		var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
 		var executor = Executors.newFixedThreadPool(2);
 		var ready = new CountDownLatch(2);
 		var start = new CountDownLatch(1);
@@ -269,6 +275,7 @@ class JdbcTransitMasterOverrideRepositoryTest {
 			var first = executor.submit(() -> {
 				saveFacilityStatusAfterStart(
 					dataSource,
+					transaction,
 					ready,
 					start,
 					AccessibilityFacilityStatus.BROKEN,
@@ -280,6 +287,7 @@ class JdbcTransitMasterOverrideRepositoryTest {
 			var second = executor.submit(() -> {
 				saveFacilityStatusAfterStart(
 					dataSource,
+					transaction,
 					ready,
 					start,
 					AccessibilityFacilityStatus.CLOSED,
@@ -305,10 +313,48 @@ class JdbcTransitMasterOverrideRepositoryTest {
 			JdbcTransitMasterOverrideRepository.FACILITY,
 			"facility-sangnoksu-elevator-1"
 		)).hasSize(2);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		var payloads = jdbcTemplate.queryForList("""
+			SELECT payload_json
+			FROM transit_master_override_audits
+			WHERE entity_type = ? AND entity_id = ? AND action = 'UPSERT'
+			ORDER BY audit_id
+			""", String.class, JdbcTransitMasterOverrideRepository.FACILITY, "facility-sangnoksu-elevator-1");
+		assertThat(jdbcTemplate.queryForList("""
+			SELECT previous_payload_json
+			FROM transit_master_override_audits
+			WHERE entity_type = ? AND entity_id = ? AND action = 'UPSERT'
+			ORDER BY audit_id
+			""", String.class, JdbcTransitMasterOverrideRepository.FACILITY, "facility-sangnoksu-elevator-1"))
+			.containsExactly(null, payloads.getFirst());
+	}
+
+	@Test
+	@DisplayName("저장 transaction이 rollback되면 override, audit, lock identity도 남지 않는다")
+	void rolledBackSaveLeavesNoOverrideAuditOrLockIdentity() {
+		DataSource dataSource = overrideDataSource();
+		var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+		var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
+
+		transaction.executeWithoutResult(status -> {
+			repository.saveFacilityStatus(
+				"facility-sangnoksu-elevator-1",
+				AccessibilityFacilityStatus.BROKEN,
+				LocalDate.of(2026, 6, 27),
+				"rollback-admin"
+			);
+			status.setRollbackOnly();
+		});
+
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_overrides", Integer.class)).isZero();
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_override_audits", Integer.class)).isZero();
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_override_locks", Integer.class)).isZero();
 	}
 
 	private void saveFacilityStatusAfterStart(
 		DataSource dataSource,
+		TransactionTemplate transaction,
 		CountDownLatch ready,
 		CountDownLatch start,
 		AccessibilityFacilityStatus status,
@@ -317,15 +363,27 @@ class JdbcTransitMasterOverrideRepositoryTest {
 	) throws InterruptedException {
 		ready.countDown();
 		assertThat(start.await(5, TimeUnit.SECONDS)).isTrue();
-		new JdbcTransitMasterOverrideRepository(dataSource, objectMapper()).saveFacilityStatus(
-			"facility-sangnoksu-elevator-1",
-			status,
-			updatedAt,
-			updatedBy
-		);
+		transaction.executeWithoutResult(ignored -> {
+			new JdbcTransitMasterOverrideRepository(dataSource, objectMapper()).saveFacilityStatus(
+				"facility-sangnoksu-elevator-1",
+				status,
+				updatedAt,
+				updatedBy
+			);
+			assertThat(new JdbcTemplate(dataSource).queryForObject("SELECT 1", Integer.class)).isEqualTo(1);
+		});
 	}
 
 	private DataSource overrideDataSource() {
+		var dataSource = v14OverrideDataSource();
+		new ResourceDatabasePopulator(
+			new ClassPathResource("db/migration/h2/V70__transit_master_override_locks.sql")
+		)
+			.execute(dataSource);
+		return dataSource;
+	}
+
+	private DataSource v14OverrideDataSource() {
 		var dataSource = emptyDataSource();
 		new ResourceDatabasePopulator(new ClassPathResource("db/migration/h2/V14__transit_master_overrides.sql"))
 			.execute(dataSource);

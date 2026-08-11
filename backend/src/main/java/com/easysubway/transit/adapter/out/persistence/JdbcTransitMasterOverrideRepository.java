@@ -25,8 +25,8 @@ import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Profile;
 import org.springframework.dao.DataAccessException;
-import org.springframework.dao.DuplicateKeyException;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.jdbc.core.ConnectionCallback;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -43,11 +43,13 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectMapper objectMapper;
+	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
 		this.objectMapper = objectMapper;
+		this.databaseDialect = databaseDialect();
 	}
 
 	@Override
@@ -55,6 +57,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 		try {
 			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_overrides", Integer.class);
 			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_override_audits", Integer.class);
+			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_override_locks", Integer.class);
 			return new MasterDataCapability(
 				MasterDataCapabilityStatus.UP,
 				true,
@@ -114,7 +117,8 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 		LocalDate updatedAt,
 		String updatedBy
 	) {
-		loadAccessibilityFacility(facilityId).ifPresent(facility -> saveOverride(FACILITY, facilityId, new AccessibilityFacility(
+		lockTarget(FACILITY, facilityId);
+		loadAccessibilityFacility(facilityId).ifPresent(facility -> saveLockedOverride(FACILITY, facilityId, new AccessibilityFacility(
 			facility.id(),
 			facility.stationId(),
 			facility.exitId(),
@@ -164,7 +168,8 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 		String reviewedBy,
 		LocalDate updatedAt
 	) {
-		loadSimplifiedStationLayout(layoutId).ifPresent(layout -> saveOverride(LAYOUT, layoutId, new SimplifiedStationLayout(
+		lockTarget(LAYOUT, layoutId);
+		loadSimplifiedStationLayout(layoutId).ifPresent(layout -> saveLockedOverride(LAYOUT, layoutId, new SimplifiedStationLayout(
 			layout.id(),
 			layout.stationId(),
 			layout.version() + 1,
@@ -208,6 +213,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	@Override
 	@Transactional
 	public void rollbackMasterDataOverride(String entityType, String entityId, String updatedBy) {
+		lockTarget(entityType, entityId);
 		String currentPayload = activePayload(entityType, entityId).orElse(null);
 		if (currentPayload == null) {
 			return;
@@ -275,32 +281,70 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	private void saveOverride(String entityType, String entityId, Object value, String updatedBy) {
+		lockTarget(entityType, entityId);
+		saveLockedOverride(entityType, entityId, value, updatedBy);
+	}
+
+	private void saveLockedOverride(String entityType, String entityId, Object value, String updatedBy) {
 		String payload = writeJson(value);
 		String previousPayload = activePayload(entityType, entityId).orElse(null);
-		int updated = jdbcTemplate.update("""
-			UPDATE transit_master_overrides
-			SET payload_json = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
-			WHERE entity_type = ? AND entity_id = ?
-			""", payload, updatedBy, entityType, entityId);
-		if (updated > 0) {
-			insertAudit(entityType, entityId, "UPSERT", updatedBy, previousPayload, payload);
-			return;
-		}
+		upsertOverride(entityType, entityId, payload, updatedBy);
+		insertAudit(entityType, entityId, "UPSERT", updatedBy, previousPayload, payload);
+	}
 
-		try {
-			jdbcTemplate.update("""
+	private void lockTarget(String entityType, String entityId) {
+		switch (databaseDialect) {
+			case POSTGRESQL -> jdbcTemplate.update("""
+				INSERT INTO transit_master_override_locks (entity_type, entity_id)
+				VALUES (?, ?)
+				ON CONFLICT (entity_type, entity_id) DO NOTHING
+				""", entityType, entityId);
+			case H2 -> jdbcTemplate.update("""
+				MERGE INTO transit_master_override_locks (entity_type, entity_id)
+				KEY (entity_type, entity_id)
+				VALUES (?, ?)
+				""", entityType, entityId);
+		}
+		jdbcTemplate.queryForObject("""
+			SELECT entity_type
+			FROM transit_master_override_locks
+			WHERE entity_type = ? AND entity_id = ?
+			FOR UPDATE
+			""", String.class, entityType, entityId);
+	}
+
+	private void upsertOverride(String entityType, String entityId, String payload, String updatedBy) {
+		switch (databaseDialect) {
+			case POSTGRESQL -> jdbcTemplate.update("""
 				INSERT INTO transit_master_overrides (entity_type, entity_id, payload_json, updated_by, updated_at)
 				VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+				ON CONFLICT (entity_type, entity_id) DO UPDATE
+				SET payload_json = EXCLUDED.payload_json,
+					updated_by = EXCLUDED.updated_by,
+					updated_at = CURRENT_TIMESTAMP
 				""", entityType, entityId, payload, updatedBy);
-		} catch (DuplicateKeyException exception) {
-			previousPayload = activePayload(entityType, entityId).orElse(null);
-			jdbcTemplate.update("""
-				UPDATE transit_master_overrides
-				SET payload_json = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
-				WHERE entity_type = ? AND entity_id = ?
-				""", payload, updatedBy, entityType, entityId);
+			case H2 -> jdbcTemplate.update("""
+				MERGE INTO transit_master_overrides (entity_type, entity_id, payload_json, updated_by, updated_at)
+				KEY (entity_type, entity_id)
+				VALUES (?, ?, ?, ?, CURRENT_TIMESTAMP)
+				""", entityType, entityId, payload, updatedBy);
 		}
-		insertAudit(entityType, entityId, "UPSERT", updatedBy, previousPayload, payload);
+	}
+
+	private DatabaseDialect databaseDialect() {
+		String productName = jdbcTemplate.execute(
+			(ConnectionCallback<String>) connection -> connection.getMetaData().getDatabaseProductName()
+		);
+		return switch (productName) {
+			case "PostgreSQL" -> DatabaseDialect.POSTGRESQL;
+			case "H2" -> DatabaseDialect.H2;
+			default -> throw new IllegalStateException("지원하지 않는 transit master override database: " + productName);
+		};
+	}
+
+	private enum DatabaseDialect {
+		POSTGRESQL,
+		H2
 	}
 
 	private Optional<String> activePayload(String entityType, String entityId) {
