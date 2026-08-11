@@ -10,6 +10,9 @@ import { loadConfiguredOsvLockfiles, validateCiExecutionControl, validateOsvResu
 const workflowUrl = new URL('../../.github/workflows/ci.yml', import.meta.url);
 const policyUrl = new URL('../../backend/quality/ci-execution-control.json', import.meta.url);
 const scanner = '8dc09193bb540e09b23da07ad7e30bd33bf87018';
+const countSetupJavaReferences = (workflow) => (
+  workflow.match(/^[ \t]*uses:[ \t]*actions\/setup-java@[^\s#]+/gm) || []
+).length;
 
 test('OSV validator requires every policy lockfile and fails closed on malformed output', () => {
   const dir = mkdtempSync(join(tmpdir(), 'backend-ci-lifecycle-'));
@@ -95,9 +98,15 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.equal((workflow.match(/continue-on-error: true/g) || []).length, 3);
   assert.equal((workflow.match(/^    name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length, 1);
   assert.doesNotMatch(workflow, /^  dependency-vulnerability-scan-dispatch:/m);
-  assert.equal((workflow.match(/uses: actions\/setup-java@[0-9a-f]{40}/g) || []).length, 1, 'workflow must use exactly one setup-java action');
+  assert.equal(countSetupJavaReferences(workflow), 1, 'workflow must use exactly one setup-java action');
   const setupJavaSteps = workflow.match(/      - name: Set up Java\n        uses: actions\/setup-java@[0-9a-f]{40}\n        with:\n          distribution: temurin\n          java-version: "21\.0\.11"\n          cache: gradle/g) || [];
   assert.equal(setupJavaSteps.length, 1, 'workflow must use exactly one Temurin 21.0.11 setup-java step');
+});
+
+test('setup-java reference count rejects an additional tag-based action', async () => {
+  const workflow = await readFile(workflowUrl, 'utf8');
+  const workflowWithTaggedSetupJava = `${workflow}\nuses: actions/setup-java@v4`;
+  assert.equal(countSetupJavaReferences(workflowWithTaggedSetupJava), 2, 'every setup-java reference must be counted');
 });
 
 test('policy/workflow static validation fails closed for unknown or malformed mutations', async () => {
