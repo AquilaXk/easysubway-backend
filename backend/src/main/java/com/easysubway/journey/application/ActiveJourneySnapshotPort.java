@@ -2,15 +2,40 @@ package com.easysubway.journey.application;
 
 import java.time.Instant;
 import java.util.Objects;
+import java.util.regex.Pattern;
 
 @FunctionalInterface
 public interface ActiveJourneySnapshotPort {
 	ActiveJourneySnapshot requireActive(Instant effectiveInstant);
 
-	record ActiveJourneySnapshot(String identity, String bundleIdentity, long generation, boolean fresh) {
+	record ActiveJourneySnapshot(
+		String identity,
+		String routeBundleId,
+		String routeBundleSha256,
+		String timetableSnapshotId,
+		String accessibilitySnapshotId,
+		long generation,
+		Instant validUntil,
+		boolean fresh
+	) {
+		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
+
 		public ActiveJourneySnapshot {
 			identity = requireText(identity, "identity");
-			bundleIdentity = requireText(bundleIdentity, "bundleIdentity");
+			routeBundleId = requireText(routeBundleId, "routeBundleId");
+			routeBundleSha256 = requireSha256(routeBundleSha256);
+			timetableSnapshotId = requireText(timetableSnapshotId, "timetableSnapshotId");
+			accessibilitySnapshotId = requireText(accessibilitySnapshotId, "accessibilitySnapshotId");
+			if (generation < 1) throw new IllegalArgumentException("generation must be positive");
+			validUntil = Objects.requireNonNull(validUntil, "validUntil");
+		}
+
+		private static String requireSha256(String value) {
+			value = requireText(value, "routeBundleSha256");
+			if (!SHA256.matcher(value).matches()) {
+				throw new IllegalArgumentException("routeBundleSha256 must be lowercase SHA-256");
+			}
+			return value;
 		}
 
 		private static String requireText(String value, String name) {

@@ -2,7 +2,6 @@ package com.easysubway.journey.application;
 
 import java.time.Clock;
 import java.time.Instant;
-import java.util.List;
 import java.util.Objects;
 
 public final class JourneyApplicationService {
@@ -29,26 +28,18 @@ public final class JourneyApplicationService {
 		Instant effectiveInstant = request.departure() instanceof JourneyRequest.Departure.Scheduled scheduled
 			? scheduled.requestedAt()
 			: capturedInstant;
-		if (request.isCancelled()) {
-			return failure(JourneyExecutionFailure.Reason.CANCELLED);
-		}
+		if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		try {
 			snapshot = activeSnapshotPort.requireActive(effectiveInstant);
 		} catch (RuntimeException exception) {
-			if (request.isCancelled()) {
-				return failure(JourneyExecutionFailure.Reason.CANCELLED);
-			}
+			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
 		}
-		if (request.isCancelled()) {
-			return failure(JourneyExecutionFailure.Reason.CANCELLED);
-		}
-		if (snapshot == null) {
-			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
-		}
-		if (!snapshot.fresh()) {
+		if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
+		if (snapshot == null) return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
+		if (!snapshot.fresh() || !isCurrent(snapshot.validUntil(), capturedInstant, effectiveInstant)) {
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_STALE);
 		}
 
@@ -57,53 +48,64 @@ public final class JourneyApplicationService {
 			try {
 				realtime = realtimePort.requireFresh(request, snapshot, effectiveInstant);
 			} catch (RuntimeException exception) {
-				if (request.isCancelled()) {
-					return failure(JourneyExecutionFailure.Reason.CANCELLED);
-				}
+				if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 				return failure(JourneyExecutionFailure.Reason.REALTIME_UNAVAILABLE);
 			}
-			if (request.isCancelled()) {
-				return failure(JourneyExecutionFailure.Reason.CANCELLED);
-			}
-			if (realtime == null) {
-				return failure(JourneyExecutionFailure.Reason.REALTIME_UNAVAILABLE);
-			}
-			if (!realtime.fresh()) {
+			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
+			if (realtime == null) return failure(JourneyExecutionFailure.Reason.REALTIME_UNAVAILABLE);
+			if (!realtime.fresh() || !isCurrent(realtime.validUntil(), capturedInstant, effectiveInstant)) {
 				return failure(JourneyExecutionFailure.Reason.REALTIME_STALE);
 			}
-			if (!snapshot.bundleIdentity().equals(realtime.bundleIdentity())) {
+			if (!snapshot.routeBundleSha256().equals(realtime.routeBundleSha256())) {
 				return failure(JourneyExecutionFailure.Reason.REALTIME_IDENTITY_MISMATCH);
 			}
 		}
 
-		List<String> candidates;
+		JourneyRaptorPort.PlanResult plan;
 		try {
-			candidates = raptorPort.plan(request, snapshot, effectiveInstant, realtime);
+			plan = raptorPort.plan(request, snapshot, effectiveInstant, realtime);
 		} catch (RuntimeException exception) {
-			if (request.isCancelled()) {
-				return failure(JourneyExecutionFailure.Reason.CANCELLED);
-			}
+			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		}
-		if (request.isCancelled()) {
-			return failure(JourneyExecutionFailure.Reason.CANCELLED);
-		}
-		if (candidates == null) {
-			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
-		}
-		if (candidates.isEmpty()) {
-			return failure(JourneyExecutionFailure.Reason.NO_ROUTE);
-		}
+		if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
+		if (plan == null) return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+		if (plan.candidates().isEmpty()) return failure(JourneyExecutionFailure.Reason.NO_ROUTE);
+
 		try {
-			return new JourneyExecutionResult.Success(
-				JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR,
-				snapshot.bundleIdentity(),
-				realtime == null ? null : realtime.identity(),
-				candidates
+			Instant validUntil = realtime == null || snapshot.validUntil().isBefore(realtime.validUntil())
+				? snapshot.validUntil() : realtime.validUntil();
+			var result = new JourneyExecutionResult.Success(
+				request.requestId(),
+				plan.queryId(),
+				capturedInstant,
+				validUntil,
+				effectiveInstant,
+				effectiveInstant.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate(),
+				new JourneyExecutionResult.SourceIdentity(
+					snapshot.routeBundleId(),
+					snapshot.routeBundleSha256(),
+					snapshot.timetableSnapshotId(),
+					snapshot.accessibilitySnapshotId(),
+					realtime == null ? null : realtime.identity()
+				),
+				new JourneyExecutionResult.RequestPolicy(
+					request.timePolicy(),
+					request.mobilityProfile(),
+					request.constraintMode(),
+					request.maxTransfers(),
+					request.alternativeCount()
+				),
+				plan.candidates()
 			);
+			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		}
+	}
+
+	private static boolean isCurrent(Instant validUntil, Instant capturedInstant, Instant effectiveInstant) {
+		return validUntil.isAfter(capturedInstant) && validUntil.isAfter(effectiveInstant);
 	}
 
 	private static JourneyExecutionFailure failure(JourneyExecutionFailure.Reason reason) {
