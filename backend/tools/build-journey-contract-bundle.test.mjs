@@ -41,6 +41,11 @@ test("Journey contract bundle v2 schema는 ordered resource identities와 comple
       mediaType: { const: "application/json" },
     },
     {
+      id: { const: "journey-v3-session-integrity" },
+      path: { const: "contracts/api/journey-v3-session-integrity.json" },
+      mediaType: { const: "application/json" },
+    },
+    {
       id: { const: "journey-v3-openapi" },
       path: { const: "contracts/api/journey-v3.openapi.yaml" },
       mediaType: { const: "application/yaml" },
@@ -75,11 +80,13 @@ test("Journey contract bundle v2는 exact raw resources를 deterministic하게 �
     assert.deepEqual(bundle.resources.map(({ path }) => path), [
       "contracts/api/journey-v3-error-catalog.json",
       "contracts/api/journey-v3-error-disposition.json",
+      "contracts/api/journey-v3-session-integrity.json",
       "contracts/api/journey-v3.openapi.yaml",
     ]);
     assert.deepEqual(bundle.resources.map(({ id, owner, mediaType }) => ({ id, owner, mediaType })), [
       { id: "journey-v3-error-catalog", owner: "AquilaXk/easysubway-backend", mediaType: "application/json" },
       { id: "journey-v3-error-disposition", owner: "AquilaXk/easysubway-backend", mediaType: "application/json" },
+      { id: "journey-v3-session-integrity", owner: "AquilaXk/easysubway-backend", mediaType: "application/json" },
       { id: "journey-v3-openapi", owner: "AquilaXk/easysubway-backend", mediaType: "application/yaml" },
     ]);
     for (const resource of bundle.resources) {
@@ -133,7 +140,7 @@ test("Journey contract bundle v2는 digest와 raw contract 불일치를 fail clo
       },
     },
     {
-      name: "네 번째 digest entry 추가",
+      name: "다섯 번째 digest entry 추가",
       mutate(root) {
         const digests = readJson(join(root, "journey-v3-contract-digests.json"));
         digests.artifacts.push({ path: "unexpected.json", sha256: "0".repeat(64) });
@@ -149,9 +156,9 @@ test("Journey contract bundle v2는 digest와 raw contract 불일치를 fail clo
       },
     },
     {
-      name: "raw resource 손상",
+      name: "session integrity raw resource 손상",
       mutate(root) {
-        const path = join(root, "journey-v3-error-catalog.json");
+        const path = join(root, "journey-v3-session-integrity.json");
         writeFileSync(path, Buffer.concat([readFileSync(path), Buffer.from(" ")]));
       },
     },

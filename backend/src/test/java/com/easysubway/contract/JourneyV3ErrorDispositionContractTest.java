@@ -134,7 +134,7 @@ class JourneyV3ErrorDispositionContractTest {
 			assertThat(artifact.path("sha256").asText()).isEqualTo(sha256(Files.readAllBytes(CONTRACTS.resolve(path))));
 		}
 		assertThat(paths).containsExactly("journey-v3-error-catalog.json", "journey-v3-error-disposition.json",
-			"journey-v3.openapi.yaml");
+			"journey-v3-session-integrity.json", "journey-v3.openapi.yaml");
 	}
 
 	private static ExpectedDisposition entry(

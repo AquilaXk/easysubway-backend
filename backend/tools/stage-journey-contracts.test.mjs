@@ -10,7 +10,6 @@ const repositoryRoot = resolve(import.meta.dirname, "../..");
 const buildRoot = join(repositoryRoot, "backend/build");
 const outputRoot = join(buildRoot, "stage-journey-contracts-test");
 const stager = join(repositoryRoot, "backend/tools/stage-journey-contracts.mjs");
-const builder = join(repositoryRoot, "backend/tools/build-journey-contract-bundle.mjs");
 const trackedLock = join(repositoryRoot, "backend/journey-contracts.lock.json");
 const journeyLock = JSON.parse(readFileSync(trackedLock, "utf8"));
 const journeyArtifact = `${journeyLock.artifact.repository}@${journeyLock.artifact.manifestDigest}`;
@@ -244,7 +243,19 @@ function createFixture({ mutate } = {}) {
   cpSync(trackedLock, lockPath);
   const lock = JSON.parse(readFileSync(lockPath, "utf8"));
   const input = join(directory, lock.payload.fileName);
-  execFileSync(process.execPath, [builder, "--producer-sha", lock.producer.gitSha, "--output", input], { stdio: "pipe" });
+  const bundle = Buffer.from(`${JSON.stringify({
+    schemaVersion: 2,
+    bundleVersion: lock.bundleVersion,
+    component: lock.component,
+    producerRepository: lock.producer.repository,
+    producerSha: lock.producer.gitSha,
+    resources: lock.resources.map((resource) => ({
+      ...resource,
+      contentBase64: readFileSync(join(repositoryRoot, resource.path)).toString("base64"),
+    })),
+  })}\n`);
+  assert.equal(createHash("sha256").update(bundle).digest("hex"), lock.payload.sha256);
+  writeFileSync(input, bundle);
   if (mutate) mutate({ directory, lock, lockPath, input });
   return {
     directory,

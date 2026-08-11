@@ -20,6 +20,12 @@ const expectedResources = [
     mediaType: "application/json",
   },
   {
+    id: "journey-v3-session-integrity",
+    digestPath: "journey-v3-session-integrity.json",
+    path: "contracts/api/journey-v3-session-integrity.json",
+    mediaType: "application/json",
+  },
+  {
     id: "journey-v3-openapi",
     digestPath: "journey-v3.openapi.yaml",
     path: "contracts/api/journey-v3.openapi.yaml",
