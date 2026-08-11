@@ -289,6 +289,10 @@ class RouteBundleConsumerHandoffParserTest {
 	}
 
 	static Fixture fixture(String keyId, String signature) {
+		return fixture(keyId, signature, 7);
+	}
+
+	static Fixture fixture(String keyId, String signature, long releaseSequence) {
 		List<Map<String, Object>> payloadInventory = List.of(
 			map("path", "payload/accessibility.sqlite.zst", "sizeBytes", 15, "sha256", "4".repeat(64)),
 			map("path", "payload/fare.sqlite.zst", "sizeBytes", 16, "sha256", "5".repeat(64)),
@@ -299,7 +303,7 @@ class RouteBundleConsumerHandoffParserTest {
 			"manifestVersion", 1,
 			"artifactKind", "server-route-bundle",
 			"bundleId", "server-route-bundle-20990101",
-			"releaseSequence", 7,
+			"releaseSequence", releaseSequence,
 			"stationSetSha256", "0".repeat(64),
 			"payloadSha256", payloadSha256,
 			"topologySha256", "2".repeat(64),

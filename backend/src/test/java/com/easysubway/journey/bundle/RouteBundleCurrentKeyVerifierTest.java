@@ -139,6 +139,20 @@ class RouteBundleCurrentKeyVerifierTest {
 				.publicKeySha256());
 	}
 
+	@Test
+	void rejectsStaleSignedBytesAfterManifestAndUnkeyedEvidenceAreRebound() throws Exception {
+		KeyPair signingKey = rsaKeyPair();
+		var original = RouteBundleConsumerHandoffParserTest.fixture("launch-2026", "AQID");
+		String staleSignature = sign(signingKey.getPrivate(), original.signingInputBytes());
+		var rebound = RouteBundleConsumerHandoffParserTest.fixture("launch-2026", staleSignature, 8);
+		var currentKey = new RouteBundleCurrentKeyVerifier.CurrentKey(
+			"launch-2026", pem(signingKey.getPublic()));
+
+		assertReason(SIGNING_INPUT_IDENTITY_MISMATCH,
+			() -> RouteBundleCurrentKeyVerifier.verify(
+				rebound.bytes(), ACTIVATION_REQUEST, original.signingInputBytes(), currentKey));
+	}
+
 	private static RouteBundleConsumerHandoffParserTest.Fixture signedFixture(
 		KeyPair keyPair,
 		String keyId) throws Exception {
