@@ -1,6 +1,7 @@
 package com.easysubway.journey.application;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -22,8 +23,11 @@ class JourneyApplicationServiceTest {
 	@Test
 	void executesTimetableRequestWithPinnedSnapshotAndNoRealtime() {
 		Fakes fakes = new Fakes();
+		List<String> plannerCandidates = new ArrayList<>(List.of("candidate-1", "candidate-2"));
+		fakes.candidates = plannerCandidates;
 
 		JourneyExecutionResult result = fakes.service().execute(request(JourneyRequest.Mode.TIMETABLE_REQUIRED));
+		plannerCandidates.clear();
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
 		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
@@ -31,6 +35,8 @@ class JourneyApplicationServiceTest {
 		assertThat(success.bundleIdentity()).isEqualTo("bundle-1");
 		assertThat(success.realtimeIdentity()).isNull();
 		assertThat(success.candidates()).containsExactly("candidate-1", "candidate-2");
+		assertThatThrownBy(() -> success.candidates().add("candidate-3"))
+			.isInstanceOf(UnsupportedOperationException.class);
 		assertThat(fakes.snapshotCalls).isEqualTo(1);
 		assertThat(fakes.realtimeCalls).isZero();
 		assertThat(fakes.raptorCalls).isEqualTo(1);
@@ -127,6 +133,36 @@ class JourneyApplicationServiceTest {
 		emptyOutput.candidates = List.of();
 		assertFailure(emptyOutput.service().execute(request(JourneyRequest.Mode.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.NO_ROUTE);
+	}
+
+	@Test
+	void rejectsBlankRequiredIdentitiesAndInvalidSuccessValues() {
+		assertThatThrownBy(() -> new JourneyRequest(" ", "station-origin", "station-destination",
+			JourneyRequest.Mode.TIMETABLE_REQUIRED, () -> false))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(" ", "bundle-1", 1, true))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(" ", "bundle-1", true))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyExecutionResult.Success(null, "bundle-1", null, List.of("candidate-1")))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
+			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, " ", null, List.of("candidate-1")))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void mapsNullRaptorCandidateToClosedFailureWithoutReturningSuccess() {
+		Fakes fakes = new Fakes();
+		fakes.candidates = new ArrayList<>();
+		fakes.candidates.add("candidate-1");
+		fakes.candidates.add(null);
+
+		assertFailure(fakes.service().execute(request(JourneyRequest.Mode.TIMETABLE_REQUIRED)),
+			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+		assertThat(fakes.snapshotCalls).isEqualTo(1);
+		assertThat(fakes.realtimeCalls).isZero();
+		assertThat(fakes.raptorCalls).isEqualTo(1);
 	}
 
 	@Test
