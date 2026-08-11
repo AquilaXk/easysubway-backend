@@ -13,8 +13,12 @@ import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
@@ -67,6 +71,31 @@ class JourneyRaptorAdapterTest {
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
 			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
 		});
+	}
+
+	@Test
+	void preservesVerifiedTransferLegIdentityCountWalkingTotalAndOrder() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, transferTimetable());
+		var transferRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			transferRequest, snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.transferCount()).isEqualTo(1);
+		assertThat(candidate.walkingDistanceMeters()).isEqualTo(250);
+		assertThat(candidate.legs()).containsExactly(
+			new JourneyCandidate.Entry("station-a", 120),
+			new JourneyCandidate.Ride(
+				"line-a", "trip-first", "station-transfer", "station-a", "station-transfer",
+				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null),
+			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 120),
+			new JourneyCandidate.Ride(
+				"line-b", "trip-second", "station-b", "station-transfer", "station-b",
+				Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null),
+			new JourneyCandidate.Exit("station-b", 60));
 	}
 
 	@Test
@@ -312,6 +341,59 @@ class JourneyRaptorAdapterTest {
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), List.of(trip, lateTrip), stopTimes, List.of(), List.of(), null,
 			verifiedAccess ? verifiedAccess(includesStairs) : LoadRouteTimetablePort.RouteAccessData.empty());
+	}
+
+	private static RouteTimetable transferTimetable() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-first", "line-a", "A", "First", "station-transfer", "Asia/Seoul"),
+			new TransitRoute("route-second", "line-b", "B", "Second", "station-b", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip(
+				"trip-first", "route-first", "daily", "station-transfer", "down", "SUBWAY", "LOCAL", "2001", 0),
+			new TransitTrip(
+				"trip-second", "route-second", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
+			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
+		var edges = List.of(
+			new PathwayEdge(
+				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge(
+				"transfer", "platform-transfer-a", "platform-transfer-b", 120, 50, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge(
+				"exit", "platform-b", "outside", 60, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new PathwayNode("platform-a", "station-a", "line-a", "PLATFORM"),
+				new PathwayNode("platform-transfer-a", "station-transfer", "line-a", "PLATFORM"),
+				new PathwayNode("platform-transfer-b", "station-transfer", "line-b", "PLATFORM"),
+				new PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
+				new PathwayNode("outside", "station-b", null, "EXIT")),
+			edges,
+			List.of(new TransferRule(
+				"transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION",
+				120, "transfer", "transfer", "VERIFIED")),
+			List.of(
+				new RouteEdgeEvidence(
+					"entry-evidence", "station-a", "line-a", "entry", "ENTRY",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new RouteEdgeEvidence(
+					"transfer-evidence", "station-transfer", "line-b", "transfer", "TRANSFER",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new RouteEdgeEvidence(
+					"exit-evidence", "station-b", "line-b", "exit", "EXIT",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+		return new RouteTimetable(
+			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
 	}
 
 	private static LoadRouteTimetablePort.RouteAccessData verifiedAccess(boolean includesStairs) {
