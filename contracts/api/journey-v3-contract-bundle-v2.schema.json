@@ -20,8 +20,8 @@
     "producerSha": { "type": "string", "minLength": 40, "maxLength": 40, "pattern": "^[a-f0-9]{40}$" },
     "resources": {
       "type": "array",
-      "minItems": 3,
-      "maxItems": 3,
+      "minItems": 4,
+      "maxItems": 4,
       "uniqueItems": true,
       "prefixItems": [
         {
@@ -43,6 +43,18 @@
               "properties": {
                 "id": { "const": "journey-v3-error-disposition" },
                 "path": { "const": "contracts/api/journey-v3-error-disposition.json" },
+                "mediaType": { "const": "application/json" }
+              }
+            }
+          ]
+        },
+        {
+          "allOf": [
+            { "$ref": "#/$defs/resource" },
+            {
+              "properties": {
+                "id": { "const": "journey-v3-session-integrity" },
+                "path": { "const": "contracts/api/journey-v3-session-integrity.json" },
                 "mediaType": { "const": "application/json" }
               }
             }
