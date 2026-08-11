@@ -14,6 +14,8 @@ import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import java.time.Clock;
 import java.time.LocalDateTime;
+import java.util.List;
+import java.util.Locale;
 import java.util.Set;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -26,7 +28,6 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.mock.env.MockEnvironment;
 import org.springframework.security.authentication.AuthenticationManager;
 import org.springframework.security.authentication.BadCredentialsException;
-import org.springframework.security.authentication.DisabledException;
 import org.springframework.security.authentication.LockedException;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.config.annotation.authentication.configuration.AuthenticationConfiguration;
@@ -63,6 +64,24 @@ class SecurityConfigTest {
 		contextRunner
 			.withPropertyValues("spring.profiles.active=dev")
 			.run(context -> assertThat(context).hasNotFailed());
+	}
+
+	@Test
+	@DisplayName("비운영 프로필의 partial 관리자 credential은 identity mutation 전에 거부한다")
+	void partialAdminCredentialsFailBeforeIdentityMutationOutsideProd() {
+		var securityConfig = new SecurityConfig();
+		var repository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+
+		assertThatThrownBy(() -> securityConfig.userDetailsService(
+			"admin-user", "", "", "", "", "", false, "", "",
+			repository, rbacRepository, passwordEncoder, new MockEnvironment()
+		))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
+		assertThat(repository.findByLoginId("admin-user")).isEmpty();
+		assertThat(rbacRepository.findPermissionAuthorities("admin-user")).isEmpty();
 	}
 
 	@Test
@@ -111,6 +130,26 @@ class SecurityConfigTest {
 				assertThat(context).hasFailed();
 				assertThat(context.getStartupFailure())
 					.hasMessageContaining("운영 Basic auth 예외는 owner와 만료일이 필요합니다.");
+			});
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 고정된 과거 만료일의 Basic auth 예외를 거부한다")
+	void prodProfileRejectsExpiredBasicAuthReleaseException() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
+				"easysubway.admin.basic-auth.enabled=true",
+				"easysubway.admin.basic-auth.exception-owner=security-owner",
+				"easysubway.admin.basic-auth.exception-expires-at=2000-01-01"
+			)
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasMessageContaining("운영 Basic auth 예외 만료일이 지났습니다.");
 			});
 	}
 
@@ -326,9 +365,6 @@ class SecurityConfigTest {
 			"",
 			"",
 			"",
-			"",
-			"",
-			"",
 			true,
 			"",
 			"",
@@ -372,13 +408,13 @@ class SecurityConfigTest {
 		var environment = new MockEnvironment();
 
 		securityConfig.userDetailsService(
-			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			"env-admin", "admin-password", "", "", "", "", true, "", "",
 			adminRepository, rbacRepository, passwordEncoder, environment
 		);
 		Set<String> afterFirstBoot = rbacRepository.findPermissionAuthorities("env-admin");
 
 		securityConfig.userDetailsService(
-			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			"env-admin", "admin-password", "", "", "", "", true, "", "",
 			adminRepository, rbacRepository, passwordEncoder, environment
 		);
 		Set<String> afterSecondBoot = rbacRepository.findPermissionAuthorities("env-admin");
@@ -397,14 +433,14 @@ class SecurityConfigTest {
 		var environment = new MockEnvironment();
 
 		securityConfig.userDetailsService(
-			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			"env-admin", "admin-password", "", "", "", "", true, "", "",
 			adminRepository, rbacRepository, passwordEncoder, environment
 		);
 		assertThat(rbacRepository.findPermissionAuthorities("env-admin")).contains("admin.security.admin");
 
 		// env에서 관리자 계정 설정이 사라진 채 부팅한다.
 		securityConfig.userDetailsService(
-			"", "", "", "", "", "", "", "", "", true, "", "",
+			"", "", "", "", "", "", true, "", "",
 			adminRepository, rbacRepository, passwordEncoder, environment
 		);
 
@@ -423,12 +459,12 @@ class SecurityConfigTest {
 		rbacRepository.replacePermissionAuthorities("manual-admin", Set.of("admin.view", "admin.report.review"));
 
 		securityConfig.userDetailsService(
-			"env-admin", "admin-password", "", "", "", "", "", "", "", true, "", "",
+			"env-admin", "admin-password", "", "", "", "", true, "", "",
 			adminRepository, rbacRepository, passwordEncoder, environment
 		);
 		// env 계정 제거 후 재부팅해도 수동 부여 권한은 회수되지 않는다.
 		securityConfig.userDetailsService(
-			"", "", "", "", "", "", "", "", "", true, "", "",
+			"", "", "", "", "", "", true, "", "",
 			adminRepository, rbacRepository, passwordEncoder, environment
 		);
 
@@ -477,21 +513,6 @@ class SecurityConfigTest {
 	}
 
 	@Test
-	@DisplayName("break-glass 계정은 아이디, 비밀번호, 사유를 함께 설정해야 한다")
-	void breakGlassCredentialsFailWhenPartiallyConfigured() {
-		contextRunner
-			.withPropertyValues(
-				"easysubway.admin.break-glass.username=break-glass",
-				"easysubway.admin.break-glass.password=break-password"
-			)
-			.run(context -> {
-				assertThat(context).hasFailed();
-				assertThat(context.getStartupFailure())
-					.hasMessageContaining("break-glass 계정 설정은 아이디, 비밀번호, 사유를 함께 입력해야 합니다.");
-			});
-	}
-
-	@Test
 	@DisplayName("일반 사용자 계정 ID는 관리자 계정 ID와 달라야 한다")
 	void userCredentialsFailWhenLoginIdCollidesWithAdminIdentity() {
 		contextRunner
@@ -504,7 +525,7 @@ class SecurityConfigTest {
 			.run(context -> {
 				assertThat(context).hasFailed();
 				assertThat(context.getStartupFailure())
-					.hasMessageContaining("관리자, 운영기관, break-glass, 일반 사용자 계정 ID는 서로 달라야 합니다.");
+					.hasMessageContaining("관리자, 운영기관, 일반 사용자 계정 ID는 서로 달라야 합니다.");
 			});
 	}
 
@@ -560,40 +581,6 @@ class SecurityConfigTest {
 	}
 
 	@Test
-	@DisplayName("break-glass Basic auth 성공은 감사 사유를 남기고 credential rotation을 요구한다")
-	void breakGlassAuthRecordsReasonAndRequiresCredentialRotation() {
-		contextRunner
-			.withPropertyValues(
-				"easysubway.admin.username=admin-user",
-				"easysubway.admin.password=admin-password",
-				"easysubway.admin.break-glass.username=break-glass",
-				"easysubway.admin.break-glass.password=break-password",
-				"easysubway.admin.break-glass.reason=정기 관리자 계정 접근 장애 대응"
-			)
-			.run(context -> {
-				assertThat(context).hasNotFailed();
-				AuthenticationManager authenticationManager = context.getBean(AuthenticationConfiguration.class)
-					.getAuthenticationManager();
-				InMemoryAdminIdentityRepository repository = context.getBean(InMemoryAdminIdentityRepository.class);
-
-				assertThat(authenticate(authenticationManager, "break-glass", "break-password").isAuthenticated())
-					.isTrue();
-				assertThat(repository.findByLoginId("break-glass").orElseThrow().status())
-					.isEqualTo(AdminIdentityStatus.CREDENTIAL_ROTATION_REQUIRED);
-				assertThat(repository.audits())
-					.anySatisfy(audit -> {
-						assertThat(audit.loginId()).isEqualTo("break-glass");
-						assertThat(audit.authMethod()).isEqualTo(AdminIdentityAuthMethod.BREAK_GLASS);
-						assertThat(audit.outcome()).isEqualTo("SUCCESS");
-						assertThat(audit.reason()).isEqualTo("정기 관리자 계정 접근 장애 대응");
-					});
-
-				assertThatThrownBy(() -> authenticate(authenticationManager, "break-glass", "break-password"))
-					.isInstanceOf(DisabledException.class);
-			});
-	}
-
-	@Test
 	@DisplayName("관리자 bootstrap은 배포 secret이 바뀌면 기존 identity 비밀번호 해시를 갱신한다")
 	void adminBootstrapUpdatesStoredPasswordWhenDeploymentSecretRotates() {
 		var securityConfig = new SecurityConfig();
@@ -604,9 +591,6 @@ class SecurityConfigTest {
 		securityConfig.userDetailsService(
 			"admin-user",
 			"old-admin-password",
-			"",
-			"",
-			"",
 			"",
 			"",
 			"",
@@ -622,9 +606,6 @@ class SecurityConfigTest {
 		securityConfig.userDetailsService(
 			"admin-user",
 			"new-admin-password",
-			"",
-			"",
-			"",
 			"",
 			"",
 			"",
@@ -654,9 +635,6 @@ class SecurityConfigTest {
 		securityConfig.userDetailsService(
 			"old-admin",
 			"old-admin-password",
-			"old-break-glass",
-			"old-break-password",
-			"운영 장애 대응",
 			"old-operator",
 			"old-operator-password",
 			"",
@@ -676,9 +654,6 @@ class SecurityConfigTest {
 			"",
 			"",
 			"",
-			"",
-			"",
-			"",
 			false,
 			"",
 			"",
@@ -690,8 +665,6 @@ class SecurityConfigTest {
 		assertThat(repository.findByLoginId("old-admin").orElseThrow().status())
 			.isEqualTo(AdminIdentityStatus.DISABLED);
 		assertThat(repository.findByLoginId("old-operator").orElseThrow().status())
-			.isEqualTo(AdminIdentityStatus.DISABLED);
-		assertThat(repository.findByLoginId("old-break-glass").orElseThrow().status())
 			.isEqualTo(AdminIdentityStatus.DISABLED);
 		assertThat(repository.findByLoginId("new-admin").orElseThrow().status())
 			.isEqualTo(AdminIdentityStatus.ACTIVE);
@@ -712,9 +685,6 @@ class SecurityConfigTest {
 			"",
 			"",
 			"",
-			"",
-			"",
-			"",
 			false,
 			"",
 			"",
@@ -725,9 +695,6 @@ class SecurityConfigTest {
 		securityConfig.userDetailsService(
 			"replacement-admin",
 			"replacement-password",
-			"",
-			"",
-			"",
 			"",
 			"",
 			"",
@@ -745,9 +712,6 @@ class SecurityConfigTest {
 		securityConfig.userDetailsService(
 			"admin-user",
 			"admin-password",
-			"",
-			"",
-			"",
 			"",
 			"",
 			"",
@@ -767,225 +731,135 @@ class SecurityConfigTest {
 	}
 
 	@Test
-	@DisplayName("break-glass bootstrap은 사용 전에는 비밀번호 만료 시각을 저장하지 않는다")
-	void breakGlassBootstrapDoesNotExpireBeforeFirstUse() {
+	@DisplayName("stale bootstrap-managed break-glass identity는 시작 시 비활성화되고 bootstrap RBAC role을 잃는다")
+	void staleBootstrapManagedBreakGlassIdentityIsDisabledAndRolesRevoked() {
 		var securityConfig = new SecurityConfig();
 		var repository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
 		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
-		var environment = new MockEnvironment();
+		var now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		repository.save(breakGlassIdentity(passwordEncoder, true, now));
+		rbacRepository.seedRole("break-glass", com.easysubway.admin.authorization.AdminRbacRole.SUPER_ADMIN);
 
 		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
-
-		var breakGlass = repository.findByLoginId("break-glass").orElseThrow();
-		assertThat(breakGlass.status()).isEqualTo(AdminIdentityStatus.ACTIVE);
-		assertThat(breakGlass.passwordExpiresAt()).isNull();
-	}
-
-	@Test
-	@DisplayName("break-glass bootstrap은 같은 비밀번호면 reason 변경만으로 rotation 요구를 해제하지 않는다")
-	void breakGlassBootstrapKeepsRotationRequirementWhenSecretDidNotChange() {
-		var securityConfig = new SecurityConfig();
-		var repository = new InMemoryAdminIdentityRepository();
-		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
-		var environment = new MockEnvironment();
-
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"break-password",
-			"운영 장애 후속 기록 변경",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
-		var usedBreakGlass = repository.findByLoginId("break-glass")
-			.orElseThrow()
-			.recordBreakGlassSuccess(LocalDateTime.of(2026, 6, 27, 0, 0));
-		repository.save(usedBreakGlass);
-
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
+			"admin-user", "admin-password", "", "", "", "", false, "", "",
+			repository, rbacRepository, passwordEncoder, new MockEnvironment()
 		);
 
 		assertThat(repository.findByLoginId("break-glass").orElseThrow().status())
+			.isEqualTo(AdminIdentityStatus.DISABLED);
+		assertThat(rbacRepository.findPermissionAuthorities("break-glass")).isEmpty();
+	}
+
+	@Test
+	@DisplayName("외부 관리 break-glass identity는 명시 RBAC와 기존 감사·rotation 동작을 보존한다")
+	void externallyManagedBreakGlassIdentityPreservesExplicitRbacAuditAndRotation() {
+		var securityConfig = new SecurityConfig();
+		var repository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+		var now = LocalDateTime.of(2026, 6, 27, 0, 0);
+		repository.save(breakGlassIdentity(passwordEncoder, false, now));
+		rbacRepository.replacePermissionAuthorities("break-glass", Set.of("admin.view", "admin.audit.read"));
+
+		UserDetailsService users = securityConfig.userDetailsService(
+			"admin-user", "admin-password", "", "", "", "", false, "", "",
+			repository, rbacRepository, passwordEncoder, new MockEnvironment()
+		);
+		var provider = new AdminOperatorLockoutAuthenticationProvider(
+			users, passwordEncoder, repository, 5, java.time.Duration.ofMinutes(15), Clock.systemUTC());
+
+		var authentication = provider.authenticate(UsernamePasswordAuthenticationToken.unauthenticated(
+			"break-glass", "break-password"));
+		assertThat(authentication.isAuthenticated()).isTrue();
+		assertThat(authentication.getAuthorities())
+			.extracting(GrantedAuthority::getAuthority)
+			.containsExactlyInAnyOrder("ROLE_ADMIN", "admin.view", "admin.audit.read")
+			.doesNotContain("admin.security.admin");
+		assertThat(repository.findByLoginId("break-glass").orElseThrow().status())
 			.isEqualTo(AdminIdentityStatus.CREDENTIAL_ROTATION_REQUIRED);
+		assertThat(rbacRepository.findPermissionAuthorities("break-glass"))
+			.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
+			.doesNotContain("admin.security.admin");
+		assertThat(repository.audits()).anySatisfy(audit -> {
+			assertThat(audit.authMethod()).isEqualTo(AdminIdentityAuthMethod.BREAK_GLASS);
+			assertThat(audit.outcome()).isEqualTo("SUCCESS");
+			assertThat(audit.reason()).isEqualTo("운영 장애 대응");
+		});
 	}
 
 	@Test
-	@DisplayName("break-glass bootstrap은 비밀번호가 바뀌면 rotation 요구를 해제하고 새 비밀번호를 저장한다")
-	void breakGlassBootstrapRestoresAccessWhenSecretChanges() {
-		var securityConfig = new SecurityConfig();
-		var repository = new InMemoryAdminIdentityRepository();
-		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
-		var environment = new MockEnvironment();
+	@DisplayName("모든 persisted break-glass identity와 bootstrap ID 충돌은 mutation 전에 실패한다")
+	void persistedBreakGlassIdentityCollisionFailsBeforeMutation() {
+		for (var scenario : List.of(
+			new BootstrapIdentityCollision(" BREAK-GLASS ", "different-admin-password", "", "", false),
+			new BootstrapIdentityCollision(" break-glass ", "break-password", "", "", true),
+			new BootstrapIdentityCollision("admin-user", "admin-password", " BREAK-GLASS ", "different-operator-password", false),
+			new BootstrapIdentityCollision("admin-user", "admin-password", " break-glass ", "break-password", true)
+		)) {
+			var securityConfig = new SecurityConfig();
+			var repository = new InMemoryAdminIdentityRepository();
+			var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+			var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+			var now = LocalDateTime.of(2026, 6, 27, 0, 0);
+			AdminIdentity existingIdentity = breakGlassIdentity(
+				passwordEncoder, scenario.bootstrapManaged(), now);
+			repository.save(existingIdentity);
+			rbacRepository.replacePermissionAuthorities("break-glass", Set.of("admin.view", "admin.audit.read"));
 
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"old-break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
-		repository.save(repository.findByLoginId("break-glass")
-			.orElseThrow()
-			.recordBreakGlassSuccess(LocalDateTime.of(2026, 6, 27, 0, 0)));
-
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"new-break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
-
-		var breakGlass = repository.findByLoginId("break-glass").orElseThrow();
-		assertThat(breakGlass.status()).isEqualTo(AdminIdentityStatus.ACTIVE);
-		assertThat(passwordEncoder.matches("old-break-password", breakGlass.passwordHash())).isFalse();
-		assertThat(passwordEncoder.matches("new-break-password", breakGlass.passwordHash())).isTrue();
+			AdminIdentity expectedIdentity = existingIdentity;
+			assertThatThrownBy(() -> securityConfig.userDetailsService(
+				scenario.adminUsername(),
+				scenario.adminPassword(),
+				scenario.operatorUsername(),
+				scenario.operatorPassword(),
+				"",
+				"",
+				false,
+				"",
+				"",
+				repository,
+				rbacRepository,
+				passwordEncoder,
+				new MockEnvironment()
+			))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessageContaining("break-glass identity");
+			assertThat(repository.findByLoginId("break-glass")).contains(expectedIdentity);
+			assertThat(repository.findByLoginId("admin-user")).isEmpty();
+			assertThat(rbacRepository.findPermissionAuthorities("break-glass"))
+				.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
+				.doesNotContain("admin.security.admin");
+			assertThat(rbacRepository.findPermissionAuthorities("admin-user")).isEmpty();
+			if (!scenario.operatorUsername().isBlank()) {
+				String normalizedOperatorLoginId = scenario.operatorUsername().trim().toLowerCase(Locale.ROOT);
+				assertThat(repository.findByLoginId(normalizedOperatorLoginId)).contains(expectedIdentity);
+				assertThat(rbacRepository.findPermissionAuthorities(normalizedOperatorLoginId))
+					.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
+					.doesNotContain("admin.security.admin");
+			}
+		}
 	}
 
-	@Test
-	@DisplayName("사용 완료된 break-glass 계정은 제거 후 같은 비밀번호로 복구해도 재활성화하지 않는다")
-	void breakGlassBootstrapKeepsRotationRequirementAfterDisableWhenSecretDidNotChange() {
-		var securityConfig = new SecurityConfig();
-		var repository = new InMemoryAdminIdentityRepository();
-		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
-		var environment = new MockEnvironment();
-
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
+	private AdminIdentity breakGlassIdentity(
+		org.springframework.security.crypto.password.PasswordEncoder passwordEncoder,
+		boolean bootstrapManaged,
+		LocalDateTime now
+	) {
+		return new AdminIdentity(
+			"break-glass", "break-glass 관리자", null, passwordEncoder.encode("break-password"),
+			AdminIdentityAuthMethod.BREAK_GLASS, AdminIdentityRole.ADMIN, AdminIdentityStatus.ACTIVE,
+			0, null, now, null, false, "운영 장애 대응", bootstrapManaged, now, now
 		);
-		repository.save(repository.findByLoginId("break-glass")
-			.orElseThrow()
-			.recordBreakGlassSuccess(LocalDateTime.of(2026, 6, 27, 0, 0)));
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"",
-			"",
-			"",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
+	}
 
-		securityConfig.userDetailsService(
-			"admin-user",
-			"admin-password",
-			"break-glass",
-			"break-password",
-			"운영 장애 대응",
-			"",
-			"",
-			"",
-			"",
-			false,
-			"",
-			"",
-			repository,
-			passwordEncoder,
-			environment
-		);
-
-		var breakGlass = repository.findByLoginId("break-glass").orElseThrow();
-		assertThat(breakGlass.status()).isEqualTo(AdminIdentityStatus.DISABLED);
-		assertThat(breakGlass.credentialRotationRequired()).isTrue();
+	private record BootstrapIdentityCollision(
+		String adminUsername,
+		String adminPassword,
+		String operatorUsername,
+		String operatorPassword,
+		boolean bootstrapManaged
+	) {
 	}
 
 	private org.springframework.security.core.Authentication authenticate(

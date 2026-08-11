@@ -462,9 +462,6 @@ public class SecurityConfig {
 	UserDetailsService userDetailsService(
 		@Value("${easysubway.admin.username:}") String adminUsername,
 		@Value("${easysubway.admin.password:}") String adminPassword,
-		@Value("${easysubway.admin.break-glass.username:}") String breakGlassUsername,
-		@Value("${easysubway.admin.break-glass.password:}") String breakGlassPassword,
-		@Value("${easysubway.admin.break-glass.reason:}") String breakGlassReason,
 		@Value("${easysubway.operator.username:}") String operatorUsername,
 		@Value("${easysubway.operator.password:}") String operatorPassword,
 		@Value("${easysubway.user.username:}") String userUsername,
@@ -486,8 +483,12 @@ public class SecurityConfig {
 			environment
 		);
 		validateOperatorCredentials(operatorUsername, operatorPassword);
-		validateBreakGlassCredentials(breakGlassUsername, breakGlassPassword, breakGlassReason);
-		validateDistinctAdminLoginIds(adminUsername, operatorUsername, breakGlassUsername, userUsername);
+		validateDistinctAdminLoginIds(adminUsername, operatorUsername, userUsername);
+		validateBreakGlassBootstrapCollision(
+			adminUsername,
+			operatorUsername,
+			adminIdentityRepository
+		);
 
 		LocalDateTime now = LocalDateTime.now(Clock.systemUTC());
 		Set<String> activeBootstrapLoginIds = new LinkedHashSet<>();
@@ -515,15 +516,6 @@ public class SecurityConfig {
 				now
 			), now);
 		}
-		if (!breakGlassUsername.isBlank() && !breakGlassPassword.isBlank()) {
-			activeBootstrapLoginIds.add(normalizeLoginId(breakGlassUsername));
-			bootstrapIdentity(adminIdentityRepository, passwordEncoder, breakGlassPassword, breakGlassIdentity(
-				breakGlassUsername,
-				passwordEncoder.encode(breakGlassPassword),
-				breakGlassReason,
-				now
-			), now);
-		}
 		adminIdentityRepository.disableStaleBootstrapIdentities(activeBootstrapLoginIds, now);
 		// disableStale와 대칭으로, active bootstrap 계정 목록에 없는 bootstrap-seeded RBAC role을
 		// 회수한다. 수동 부여 role은 보존한다(provenance로 구분).
@@ -546,9 +538,6 @@ public class SecurityConfig {
 	UserDetailsService userDetailsService(
 		String adminUsername,
 		String adminPassword,
-		String breakGlassUsername,
-		String breakGlassPassword,
-		String breakGlassReason,
 		String operatorUsername,
 		String operatorPassword,
 		String userUsername,
@@ -563,9 +552,6 @@ public class SecurityConfig {
 		return userDetailsService(
 			adminUsername,
 			adminPassword,
-			breakGlassUsername,
-			breakGlassPassword,
-			breakGlassReason,
 			operatorUsername,
 			operatorPassword,
 			userUsername,
@@ -652,9 +638,6 @@ public class SecurityConfig {
 			return;
 		}
 		AdminIdentity existing = current.orElseThrow();
-		if (breakGlassRotationRequiredWithSamePassword(existing, rawPassword, passwordEncoder)) {
-			return;
-		}
 		if (sameBootstrapSecret(existing, bootstrap, rawPassword, passwordEncoder)) {
 			return;
 		}
@@ -674,16 +657,6 @@ public class SecurityConfig {
 			&& Objects.equals(existing.email(), bootstrap.email())
 			&& Objects.equals(existing.breakGlassReason(), bootstrap.breakGlassReason())
 			&& existing.bootstrapManaged() == bootstrap.bootstrapManaged()
-			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
-	}
-
-	private boolean breakGlassRotationRequiredWithSamePassword(
-		AdminIdentity existing,
-		String rawPassword,
-		PasswordEncoder passwordEncoder
-	) {
-		return existing.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS
-			&& existing.credentialRotationRequired()
 			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
 	}
 
@@ -714,32 +687,6 @@ public class SecurityConfig {
 		);
 	}
 
-	private AdminIdentity breakGlassIdentity(
-		String loginId,
-		String passwordHash,
-		String reason,
-		LocalDateTime now
-	) {
-		return new AdminIdentity(
-			loginId,
-			"break-glass 관리자",
-			null,
-			passwordHash,
-			AdminIdentityAuthMethod.BREAK_GLASS,
-			AdminIdentityRole.ADMIN,
-			AdminIdentityStatus.ACTIVE,
-			0,
-			null,
-			now,
-			null,
-			false,
-			reason,
-			true,
-			now,
-			now
-		);
-	}
-
 	private void validateProdAdminCredentials(String adminUsername, String adminPassword, Environment environment) {
 		if (Arrays.asList(environment.getActiveProfiles()).contains("prod")
 			&& (adminUsername.isBlank() || adminPassword.isBlank())) {
@@ -759,31 +706,39 @@ public class SecurityConfig {
 		}
 	}
 
-	private void validateBreakGlassCredentials(String username, String password, String reason) {
-		boolean anyConfigured = !username.isBlank() || !password.isBlank() || !reason.isBlank();
-		boolean partiallyConfigured = username.isBlank() || password.isBlank() || reason.isBlank();
-		if (anyConfigured && partiallyConfigured) {
-			throw new IllegalStateException("break-glass 계정 설정은 아이디, 비밀번호, 사유를 함께 입력해야 합니다.");
-		}
-	}
-
 	private void validateDistinctAdminLoginIds(
 		String adminUsername,
 		String operatorUsername,
-		String breakGlassUsername,
 		String userUsername
 	) {
 		String admin = normalizeLoginId(adminUsername);
 		String operator = normalizeLoginId(operatorUsername);
-		String breakGlass = normalizeLoginId(breakGlassUsername);
 		String user = normalizeLoginId(userUsername);
 		if ((!admin.isBlank() && admin.equals(operator))
-			|| (!admin.isBlank() && admin.equals(breakGlass))
 			|| (!admin.isBlank() && admin.equals(user))
-			|| (!operator.isBlank() && operator.equals(breakGlass))
-			|| (!operator.isBlank() && operator.equals(user))
-			|| (!breakGlass.isBlank() && breakGlass.equals(user))) {
-			throw new IllegalStateException("관리자, 운영기관, break-glass, 일반 사용자 계정 ID는 서로 달라야 합니다.");
+			|| (!operator.isBlank() && operator.equals(user))) {
+			throw new IllegalStateException("관리자, 운영기관, 일반 사용자 계정 ID는 서로 달라야 합니다.");
+		}
+	}
+
+	private void validateBreakGlassBootstrapCollision(
+		String adminUsername,
+		String operatorUsername,
+		AdminIdentityRepository adminIdentityRepository
+	) {
+		for (String bootstrapLoginId : List.of(adminUsername, operatorUsername)) {
+			if (bootstrapLoginId.isBlank()) {
+				continue;
+			}
+			boolean breakGlassIdentity = adminIdentityRepository
+				.findByLoginId(normalizeLoginId(bootstrapLoginId))
+				.filter(identity -> identity.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS)
+				.isPresent();
+			if (breakGlassIdentity) {
+				throw new IllegalStateException(
+					"break-glass identity와 bootstrap 계정 ID가 충돌합니다."
+				);
+			}
 		}
 	}
 
