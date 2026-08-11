@@ -1,7 +1,347 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <FindBugsFilter>
-	<!-- Spring Boot 엔트리포인트는 SpotBugs 노이즈가 커서 제외한다. 추가 억제는 spotbugs-suppression-policy.json 근거 필요. -->
+	<!-- policy-owned exact source SHA-256: d0e6c8a5ab74a8c10fead9443573e9acb5b4c240e71f85246744a18b1601aa53; Backend #4 removes or re-approves this bootstrap-only entrypoint exclusion. -->
 	<Match>
 		<Class name="com.easysubway.EasySubwayBackendApplication"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.admin.errors.application.service.ErrorEventAsyncWriter"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.admin.errors.application.port.out.ErrorEventRepository" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.admin.metric.adapter.out.persistence.JdbcAdminMetricDailyRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.admin.metric.adapter.out.persistence.JdbcAdminMetricDailyRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.ads.adapter.out.persistence.JdbcAdRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,int" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.ads.adapter.out.persistence.JdbcAdRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate,int" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.adapter.in.web.DatapackRollbackApprovalApiController"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseChannelRepository" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseBlockerSummaryRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseDeliveryRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseDeliveryRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseRequestRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackAliasQuarantineCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackAliasQuarantineCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcAliasQuarantineQueueRepository,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackManualOverrideCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcManualOverrideLedgerRepository,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackManualOverrideCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcManualOverrideLedgerRepository,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackNormalizationRunCommandService"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackReleaseCallbackService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository,com.easysubway.datapack.application.service.CallbackSignature,org.springframework.beans.factory.ObjectProvider,com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort,com.easysubway.datapack.application.service.DatapackReleasePromoteDelegate,com.easysubway.datapack.application.port.out.DatapackReleaseDeliveryRepository,com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort,org.springframework.transaction.PlatformTransactionManager" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackReleaseCallbackService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository,com.easysubway.datapack.application.service.CallbackSignature,org.springframework.beans.factory.ObjectProvider,com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort,com.easysubway.datapack.application.service.DatapackReleasePromoteDelegate,com.easysubway.datapack.application.port.out.DatapackReleaseDeliveryRepository,com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort,org.springframework.transaction.PlatformTransactionManager" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackReleaseChannelCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.application.port.out.DatapackReleaseChannelCommandPort,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackReleaseRequestService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.application.port.out.DatapackReleaseRequestRepository,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackSourceGovernancePolicy"/>
+		<Method name="&lt;init&gt;" params="com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackSourceGovernancePolicy"/>
+		<Method name="&lt;init&gt;" params="com.fasterxml.jackson.databind.ObjectMapper,org.springframework.core.io.Resource,org.springframework.core.io.Resource" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository,org.springframework.transaction.PlatformTransactionManager,org.springframework.beans.factory.ObjectProvider,com.fasterxml.jackson.databind.ObjectMapper,com.easysubway.datapack.application.service.DatapackSourceGovernancePolicy" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository,org.springframework.transaction.PlatformTransactionManager,org.springframework.beans.factory.ObjectProvider,com.fasterxml.jackson.databind.ObjectMapper,com.easysubway.datapack.application.service.DatapackSourceGovernancePolicy" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.datapack.application.service.DatapackSourceSnapshotCommandService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.datapack.adapter.out.persistence.JdbcDataSourceSnapshotRepository,org.springframework.transaction.PlatformTransactionManager,org.springframework.beans.factory.ObjectProvider,com.fasterxml.jackson.databind.ObjectMapper,com.easysubway.datapack.application.service.DatapackSourceGovernancePolicy" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.favorite.adapter.out.persistence.JdbcFavoriteRouteRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.favorite.adapter.out.persistence.JdbcFavoriteRouteRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.favorite.adapter.out.persistence.JdbcFavoriteRouteRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate,com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.favorite.application.service.FavoriteFacilityService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.favorite.application.port.out.LoadFavoriteFacilityPort,com.easysubway.favorite.application.port.out.SaveFavoriteFacilityPort,com.easysubway.favorite.application.port.out.DeleteFavoriteFacilityPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.favorite.application.service.FavoriteRouteService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.favorite.application.port.out.LoadFavoriteRoutePort,com.easysubway.favorite.application.port.out.SaveFavoriteRoutePort,com.easysubway.favorite.application.port.out.DeleteFavoriteRoutePort,com.easysubway.route.application.port.out.LoadRouteSearchPort,java.time.Clock" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.favorite.application.service.FavoriteStationService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.favorite.application.port.out.LoadFavoriteStationPort,com.easysubway.favorite.application.port.out.SaveFavoriteStationPort,com.easysubway.favorite.application.port.out.DeleteFavoriteStationPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.field.adapter.out.persistence.JdbcFieldVerificationSessionRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.field.adapter.out.persistence.JdbcFieldVerificationSessionRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.health.application.service.HealthCheckService"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,com.easysubway.transit.application.port.out.LoadTransitMasterPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.notice.adapter.out.persistence.JdbcServiceNoticeRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.notification.adapter.out.persistence.JdbcNotificationPreferenceRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.notification.adapter.out.persistence.JdbcNotificationPreferenceRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.notification.adapter.out.persistence.JdbcPushNotificationOutboxRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.notification.adapter.out.persistence.JdbcPushNotificationOutboxRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.scheduler.FacilityReportPersonalDataPurgeScheduler"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.report.application.port.out.PurgeFacilityReportPersonalDataPort,int" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.scheduler.FacilityReportPersonalDataPurgeScheduler"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.report.application.port.out.PurgeFacilityReportPersonalDataPort,java.time.Clock,int" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportAbuseControl"/>
+		<Method name="&lt;init&gt;" params="long,int,int,int,int,int,int,java.lang.String,java.lang.String,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="JLM_JSR166_UTILCONCURRENT_MONITORENTER"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportAbuseControlLimiter"/>
+		<Method name="counterFor" params="com.easysubway.report.adapter.in.web.FacilityReportAbuseControlLimiter$LimiterKey,long" returns="com.easysubway.report.adapter.in.web.FacilityReportAbuseControlLimiter$WindowCounter"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadIntents"/>
+		<Method name="&lt;init&gt;" params="long,long,int,long,int,long,java.lang.String" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadIntents"/>
+		<Method name="&lt;init&gt;" params="java.time.Clock,java.time.Duration,long,int,long" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadIntents"/>
+		<Method name="&lt;init&gt;" params="java.time.Clock,java.time.Duration,long,int,long,int,long" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadIntents"/>
+		<Method name="&lt;init&gt;" params="java.time.Clock,java.time.Duration,long,int,long,int,long,java.lang.String" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadUrlSigner$SignedUploadUrl"/>
+		<Method name="uploadHeaders" params="" returns="java.util.Map"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadUrlSigner$SignedUploadUrl"/>
+		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,java.util.Map" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.in.web.ObjectStorageFacilityReportUploadUrlSigner"/>
+		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,java.lang.String,java.lang.String,java.lang.String" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.out.persistence.JdbcFacilityReportRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.out.persistence.JdbcFacilityReportRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.out.persistence.JdbcFacilityReportRepository"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate,com.easysubway.report.application.port.out.DeleteFacilityReportPhotoPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.out.storage.ObjectStorageFacilityReportPhotoStorage"/>
+		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.out.storage.ObjectStorageFacilityReportPhotoStorage"/>
+		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.net.http.HttpClient,java.time.Clock" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.adapter.out.storage.ObjectStorageFacilityReportPhotoStorage"/>
+		<Method name="&lt;init&gt;" params="java.lang.String,java.lang.String,long,java.lang.String,java.lang.String,java.lang.String,java.net.http.HttpClient,java.time.Clock,java.time.Duration" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.report.application.service.ProductionReportReceiptTokenPepperValidator"/>
+		<Method name="&lt;init&gt;" params="java.lang.String" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.train.adapter.in.web.TrainSearchContractController"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.train.application.TrainSearchService,com.fasterxml.jackson.databind.ObjectMapper,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.train.adapter.in.web.TrainSearchRateLimitFilter"/>
+		<Method name="&lt;init&gt;" params="com.fasterxml.jackson.databind.ObjectMapper,int,int,int,int,java.lang.String,org.springframework.beans.factory.ObjectProvider" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.transit.adapter.out.persistence.JdbcTransitMasterOverrideRepository"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
 	</Match>
 </FindBugsFilter>

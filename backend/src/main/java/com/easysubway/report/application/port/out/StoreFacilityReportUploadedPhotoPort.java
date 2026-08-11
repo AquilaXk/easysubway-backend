@@ -12,5 +12,13 @@ public interface StoreFacilityReportUploadedPhotoPort {
 		String objectKey,
 		byte[] bytes
 	) {
+		public StoreUploadedReportPhotoCommand {
+			bytes = bytes == null ? null : bytes.clone();
+		}
+
+		@Override
+		public byte[] bytes() {
+			return bytes == null ? null : bytes.clone();
+		}
 	}
 }

@@ -17,6 +17,20 @@ public interface StoreFacilityReportPhotoPort {
 		String sha256,
 		long sizeBytes
 	) {
+		public StoreFacilityReportPhotoCommand {
+			storedBytes = storedBytes == null ? null : storedBytes.clone();
+			thumbnailBytes = thumbnailBytes == null ? null : thumbnailBytes.clone();
+		}
+
+		@Override
+		public byte[] storedBytes() {
+			return storedBytes == null ? null : storedBytes.clone();
+		}
+
+		@Override
+		public byte[] thumbnailBytes() {
+			return thumbnailBytes == null ? null : thumbnailBytes.clone();
+		}
 	}
 
 	record StoredFacilityReportPhoto(

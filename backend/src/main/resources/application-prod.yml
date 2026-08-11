@@ -35,7 +35,7 @@ easysubway:
   ads:
     event-daily-cap: ${EASYSUBWAY_ADS_EVENT_DAILY_CAP}
   report:
-    receipt-token-pepper: ${EASYSUBWAY_REPORT_RECEIPT_PEPPER:${EASYSUBWAY_REPORT_RECEIPT_TOKEN_PEPPER:}}
+    receipt-token-pepper: ${EASYSUBWAY_REPORT_RECEIPT_PEPPER}
     abuse-control:
       window-seconds: ${EASYSUBWAY_REPORT_ABUSE_WINDOW_SECONDS:60}
       upload-intent-limit: ${EASYSUBWAY_REPORT_ABUSE_UPLOAD_INTENT_LIMIT:60}
@@ -49,7 +49,7 @@ easysubway:
       bucket: ${EASYSUBWAY_REPORT_UPLOAD_BUCKET:}
       max-bytes: ${EASYSUBWAY_REPORT_UPLOAD_MAX_BYTES:921600}
       url-ttl-seconds: ${EASYSUBWAY_REPORT_UPLOAD_URL_TTL_SECONDS:900}
-      intent-signing-key: ${EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY:${EASYSUBWAY_REPORT_RECEIPT_PEPPER:${EASYSUBWAY_REPORT_RECEIPT_TOKEN_PEPPER:}}}
+      intent-signing-key: ${EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY}
       object-storage-endpoint: ${EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT:}
       public-base-url: ${EASYSUBWAY_REPORT_UPLOAD_PUBLIC_BASE_URL:}
       object-storage-access-key: ${EASYSUBWAY_OBJECT_STORAGE_ACCESS_KEY:}
@@ -60,15 +60,6 @@ easysubway:
     password: ${EASYSUBWAY_ADMIN_PASSWORD}
     remember-me:
       key: ${EASYSUBWAY_ADMIN_REMEMBER_ME_KEY:}
-    platform-transition:
-      stage: ${EASYSUBWAY_ADMIN_PLATFORM_TRANSITION_STAGE:shadow}
-      flags:
-        rbac-enforcement: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_RBAC_ENFORCEMENT:false}
-        audit-enforcement: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_AUDIT_ENFORCEMENT:false}
-        legacy-env-admin-fallback: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_LEGACY_ENV_ADMIN_FALLBACK:true}
-        break-glass-bootstrap: ${EASYSUBWAY_ADMIN_PLATFORM_FLAGS_BREAK_GLASS_BOOTSTRAP:true}
-      release-gate:
-        blocker-mode: ${EASYSUBWAY_ADMIN_PLATFORM_RELEASE_BLOCKER_MODE:fail}
     break-glass:
       username: ${EASYSUBWAY_ADMIN_BREAK_GLASS_USERNAME:}
       password: ${EASYSUBWAY_ADMIN_BREAK_GLASS_PASSWORD:}

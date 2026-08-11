@@ -6,6 +6,7 @@ import com.easysubway.admin.metric.domain.AdminMetricKeys;
 import com.easysubway.admin.metric.domain.AdminMetricKeys.AdminMetricKind;
 import java.time.Clock;
 import java.time.LocalDate;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -159,6 +160,21 @@ public class AdminMetricQueryService {
 	 */
 	public record AdminMetricChart(int days, List<String> labels, List<AdminMetricSeries> series) {
 
+		public AdminMetricChart {
+			labels = labels == null ? null : new ArrayList<>(labels);
+			series = series == null ? null : new ArrayList<>(series);
+		}
+
+		@Override
+		public List<String> labels() {
+			return labels == null ? null : new ArrayList<>(labels);
+		}
+
+		@Override
+		public List<AdminMetricSeries> series() {
+			return series == null ? null : new ArrayList<>(series);
+		}
+
 		/** 조회 기간 내 모든 시리즈가 결측(null)이면 true — 빈 상태 렌더 분기(#2327)에 쓰인다. */
 		public boolean empty() {
 			return series.stream().allMatch(s -> s.values().stream().allMatch(Objects::isNull));
@@ -171,6 +187,15 @@ public class AdminMetricQueryService {
 	 * @param values labels와 같은 길이의 값 배열(결측일은 null)
 	 */
 	public record AdminMetricSeries(String key, String label, List<Double> values) {
+
+		public AdminMetricSeries {
+			values = values == null ? null : new ArrayList<>(values);
+		}
+
+		@Override
+		public List<Double> values() {
+			return values == null ? null : new ArrayList<>(values);
+		}
 	}
 
 	/**

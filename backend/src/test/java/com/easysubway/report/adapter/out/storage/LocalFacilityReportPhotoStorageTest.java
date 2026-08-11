@@ -1,6 +1,7 @@
 package com.easysubway.report.adapter.out.storage;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.report.application.port.out.StoreFacilityReportPhotoPort.StoreFacilityReportPhotoCommand;
 import java.nio.file.Files;
@@ -71,5 +72,23 @@ class LocalFacilityReportPhotoStorageTest {
 		assertThat(storedPhoto.objectKey()).endsWith(".webp");
 		assertThat(storage.loadFacilityReportPhoto(storedPhoto.objectKey()))
 			.hasValueSatisfying(photo -> assertThat(photo.contentType()).isEqualTo("image/webp"));
+	}
+
+	@Test
+	void rejectsBlankUploadTarget() {
+		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(tempDir);
+
+		assertThatThrownBy(() -> storage.storeUploadedReportPhoto(
+			new com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand("", new byte[] {1})))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void rejectsNonblankParentlessUploadTarget() {
+		LocalFacilityReportPhotoStorage storage = new LocalFacilityReportPhotoStorage(Path.of("photo"));
+
+		assertThatThrownBy(() -> storage.storeUploadedReportPhoto(
+			new com.easysubway.report.application.port.out.StoreFacilityReportUploadedPhotoPort.StoreUploadedReportPhotoCommand(".", new byte[] {1})))
+			.isInstanceOf(IllegalArgumentException.class);
 	}
 }

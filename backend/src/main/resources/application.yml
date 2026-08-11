@@ -29,54 +29,6 @@ management:
         order: "down,out-of-service,degraded,stale,up,unknown"
 
 easysubway:
-  admin:
-    platform-transition:
-      stage: ${EASYSUBWAY_ADMIN_PLATFORM_TRANSITION_STAGE:shadow}
-      flags:
-        identity-store: ${EASYSUBWAY_ADMIN_IDENTITY_STORE_ENABLED:true}
-        rbac-shadow: ${EASYSUBWAY_ADMIN_RBAC_SHADOW_ENABLED:true}
-        rbac-enforcement: ${EASYSUBWAY_ADMIN_RBAC_ENFORCEMENT_ENABLED:false}
-        audit-shadow: ${EASYSUBWAY_ADMIN_AUDIT_SHADOW_ENABLED:true}
-        audit-enforcement: ${EASYSUBWAY_ADMIN_AUDIT_ENFORCEMENT_ENABLED:false}
-        legacy-env-admin-fallback: ${EASYSUBWAY_ADMIN_LEGACY_ENV_FALLBACK_ENABLED:true}
-        break-glass-bootstrap: ${EASYSUBWAY_ADMIN_BREAK_GLASS_BOOTSTRAP_ENABLED:true}
-        role-seed-required: ${EASYSUBWAY_ADMIN_ROLE_SEED_REQUIRED:true}
-      rbac-shadow:
-        mode: compare-and-log
-        metric: admin_rbac_shadow_denial_total
-        promotion-criteria:
-          - admin_role_permissions seed includes every AdminPermission
-          - admin_user_roles seed covers each production administrator
-          - shadow denial metric is zero for one release cycle
-      audit-shadow:
-        mode: write-and-compare
-        metric: admin_audit_shadow_missing_total
-        promotion-criteria:
-          - admin_audit_events records login and privileged admin actions
-          - privacy reads and break-glass use include actor, permission, request id
-          - missing audit metric is zero for one release cycle
-      legacy-env-admin-fallback:
-        removal-criteria:
-          - all production admins have admin_users rows with role seed
-          - break-glass bootstrap account was rotated after first use
-          - rollback has been tested with the previous env admin secret
-        rollback-action: restore EASYSUBWAY_ADMIN_USERNAME and EASYSUBWAY_ADMIN_PASSWORD, keep RBAC enforcement disabled, and redeploy previous release
-      break-glass:
-        issue-procedure: create short-lived EASYSUBWAY_ADMIN_BREAK_GLASS_USERNAME, PASSWORD, and REASON secrets for the incident owner
-        rotation-procedure: rotate password and reason immediately after first successful login because the identity enters CREDENTIAL_ROTATION_REQUIRED
-      seed:
-        role-procedure: migrate admin_role_permissions first, then assign admin_user_roles before RBAC enforcement
-        account-procedure: bootstrap env admin and operator accounts until persistent admin_users seed is verified
-      rollback:
-        runbook: disable rbac-enforcement and audit-enforcement, keep shadow logging, restore legacy env admin fallback, and redeploy the previous artifact
-      release-gate:
-        blocker-mode: warn
-        blockers:
-          - RBAC shadow denials are untriaged
-          - audit shadow misses privileged admin action
-          - legacy env admin fallback removal criteria are incomplete
-          - break-glass credential rotation is overdue
-          - role or account seed is missing in prod
   datapack:
     # 워크플로 전용 서비스 토큰. 미설정이면 조회/콜백 API 체인이 전면 거부(자동화 dormant = 안전 기본값).
     workflow-token: ${EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN:}
@@ -85,7 +37,7 @@ easysubway:
     catalog-base-url: ${EASYSUBWAY_DATAPACK_CATALOG_BASE_URL:}
     signing-public-key-pem: ${EASYSUBWAY_DATAPACK_SIGNING_PUBLIC_KEY_PEM:}
     signing-key-id: ${EASYSUBWAY_DATAPACK_SIGNING_KEY_ID:production-v1}
-  # dev 프로파일 실사용 인상 평가·검수 스크린샷 전용 opt-in 합성 데이터(#2327 PR⑤). 미설정(기본
+  # dev 프로파일 실사용 인상 평가·검수 스크린샷 전용 opt-in 합성 데이터(https://github.com/AquilaXk/easysubway/issues/2327 PR⑤). 미설정(기본
   # false)이면 DevFixtureSeeder 빈이 등록되지 않는다(prod 계열 프로파일에서는 @Profile로 이중 차단).
   # CI는 이 값을 켜지 않으므로 기존 seed 전제·QA 하네스 계약에 영향이 없다.
   dev-seed:

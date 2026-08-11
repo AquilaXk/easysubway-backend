@@ -103,6 +103,22 @@ class JdbcDatapackReleaseDeliveryRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("select 뒤 다른 worker가 먼저 claim하면 loser는 delivery를 반환하지 않는다")
+	void skipsDeliveryWhenAnotherWorkerWinsAfterSelection() {
+		var delivery = repository.upsertSameDelivery(pending(SHA));
+		var losingRepository = new JdbcDatapackReleaseDeliveryRepository(jdbcTemplate) {
+			@Override
+			int claimKeyIfDue(LocalDateTime now, String owner, LocalDateTime reclaimBefore, String key) {
+				return 0;
+			}
+		};
+
+		assertThat(losingRepository.claimDue(T0, "losing-worker", 100)).isEmpty();
+		assertThat(repository.findByIdempotencyKey(delivery.idempotencyKey()))
+			.get().extracting(DatapackReleaseDelivery::claimOwner).isNull();
+	}
+
+	@Test
 	@DisplayName("만료된 worker claim은 재획득하고 이전 worker의 완료 갱신은 거부한다")
 	void reclaimsExpiredLease() {
 		repository.upsertSameDelivery(pending(SHA));

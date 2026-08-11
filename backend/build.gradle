@@ -31,6 +31,7 @@ description = 'EasySubway backend'
 java {
 	toolchain {
 		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
 	}
 }
 
@@ -142,6 +143,11 @@ tasks.named('test') {
 	finalizedBy tasks.named('jacocoTestReport')
 }
 
+def jacocoClassDirectoryExcludes = [
+	'com/easysubway/EasySubwayBackendApplication.class',
+]
+def jacocoCoverageEvidence = layout.buildDirectory.file('jacoco/jacocoTestReport-evidence.json')
+
 tasks.named('jacocoTestReport') {
 	dependsOn tasks.named('test')
 	reports {
@@ -150,16 +156,143 @@ tasks.named('jacocoTestReport') {
 		csv.required = false
 	}
 	classDirectories.setFrom(files(classDirectories.files.collect { classesDir ->
-		fileTree(dir: classesDir, exclude: [
-			'**/*Application.class',
-		])
+		fileTree(dir: classesDir, exclude: jacocoClassDirectoryExcludes)
 	}))
 }
 
+def writeJacocoCoverageEvidence = tasks.register('writeJacocoCoverageEvidence') {
+	outputs.file(jacocoCoverageEvidence)
+	outputs.upToDateWhen { false }
+
+	doLast {
+		def reportTask = tasks.named('jacocoTestReport').get()
+		def testTask = tasks.named('test', org.gradle.api.tasks.testing.Test).get()
+		def launcher = testTask.javaLauncher.get().metadata
+		if (!JvmVendorSpec.ADOPTIUM.matches(launcher.vendor) || launcher.languageVersion.asInt() != 21) {
+			throw new GradleException("test launcher is not Adoptium 21: ${launcher.vendor} ${launcher.languageVersion}")
+		}
+		def configuredLauncher = new File(launcher.installationPath.asFile, 'bin/java')
+		def configuredReport = reportTask.reports.xml.outputLocation.get().asFile
+		if (!configuredLauncher.isFile() || java.nio.file.Files.isSymbolicLink(configuredLauncher.toPath())) throw new GradleException("test launcher is not a regular file: ${configuredLauncher}")
+		if (!configuredReport.isFile() || java.nio.file.Files.isSymbolicLink(configuredReport.toPath())) throw new GradleException("JaCoCo XML is not a regular file: ${configuredReport}")
+		def launcherFile = configuredLauncher.canonicalFile
+		def reportFile = configuredReport.canonicalFile
+		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+		def output = jacocoCoverageEvidence.get().asFile
+		output.parentFile.mkdirs()
+		output.setText(groovy.json.JsonOutput.toJson([
+			schemaVersion: 1,
+			gradleVersion: gradle.gradleVersion,
+			java: [vendor: 'ADOPTIUM', languageVersion: 21, launcherPath: launcherFile.canonicalPath, launcherSha256: hash(launcherFile)],
+			jacoco: [toolVersion: jacoco.toolVersion],
+			tasks: [test: testTask.name, report: reportTask.name],
+			report: [path: "backend/${project.relativePath(reportFile).replace('\\', '/')}", sha256: hash(reportFile), classDirectoryExcludes: jacocoClassDirectoryExcludes],
+		]) + '\n', 'UTF-8')
+	}
+}
+
+tasks.named('jacocoTestReport') {
+	finalizedBy writeJacocoCoverageEvidence
+}
+
 tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
+	launcher = javaToolchains.launcherFor {
+		languageVersion = JavaLanguageVersion.of(21)
+		vendor = JvmVendorSpec.ADOPTIUM
+	}
 	reports {
 		html.required = true
 		xml.required = true
+	}
+}
+
+def spotbugsMainEvidence = layout.buildDirectory.file('spotbugs/spotbugsMain-evidence.json')
+
+tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask) {
+	reports.named('html') {
+		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.html')
+	}
+	reports.named('xml') {
+		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.xml')
+	}
+}
+
+tasks.register('writeSpotbugsMainEvidence') {
+	def spotbugsMain = tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask)
+	dependsOn spotbugsMain
+	outputs.file(spotbugsMainEvidence)
+
+	doLast {
+		def task = spotbugsMain.get()
+		def declaredTaskType = com.github.spotbugs.snom.SpotBugsTask
+		if (!declaredTaskType.isAssignableFrom(task.class)) throw new GradleException("spotbugsMain runtime type is not assignable to ${declaredTaskType.name}: ${task.class.name}")
+		def hash = { file -> java.security.MessageDigest.getInstance('SHA-256').digest(file.bytes).encodeHex().toString() }
+		def repositoryPath = { value -> "backend/${project.relativePath(value).replace('\\', '/')}" }
+		def directoryEntries = { values -> values.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it)] }.sort { it.repositoryPath } }
+		def fileEntries = { values -> values.findAll { it.isFile() }.collect { [path: it.canonicalPath, repositoryPath: repositoryPath(it), sha256: hash(it)] }.sort { it.repositoryPath } }
+		def artifactMap = { configuration, label ->
+			def mapped = [:]
+			configuration.incoming.artifactView { }.artifacts.artifacts.each { artifact ->
+				def file = artifact.file.canonicalFile
+				if (!file.isFile()) throw new GradleException("non-regular ${label} artifact: ${file}")
+				def owner = artifact.variant.owner
+				if (!(owner instanceof org.gradle.api.artifacts.component.ModuleComponentIdentifier)) throw new GradleException("unmapped ${label} component: ${owner}")
+				def identity = [component: "${owner.group}:${owner.module}:${owner.version}", artifact: file.name]
+				if (mapped.put(file, identity) != null) throw new GradleException("conflicting ${label} artifact: ${file}")
+			}
+			mapped
+		}
+		def mergeArtifactMaps = { label, maps ->
+			def merged = [:]
+			maps.each { mapped ->
+				mapped.each { file, identity ->
+					def existing = merged[file]
+					if (existing != null && existing != identity) throw new GradleException("conflicting ${label} artifact identity: ${file}")
+					merged[file] = identity
+				}
+			}
+			merged
+		}
+		def artifactFiles = { values, mapped, label -> values.collect { file ->
+			if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
+			def canonical = file.canonicalFile
+			def item = mapped[canonical]
+			if (item == null) throw new GradleException("unmapped ${label} input: ${canonical}")
+			[component: item.component, artifact: item.artifact, path: canonical.canonicalPath, sha256: hash(canonical)]
+		}.sort { "${it.component}/${it.artifact}" } }
+		def exactArtifactFiles = { values, mapped, label ->
+			def entries = artifactFiles(values, mapped, label)
+			def taskFiles = values.collect { file ->
+				if (!file.isFile()) throw new GradleException("non-regular ${label} input: ${file}")
+				file.canonicalFile
+			}.toSet()
+			if (taskFiles != mapped.keySet()) throw new GradleException("${label} task inputs do not exactly match resolved artifacts")
+			entries
+		}
+		def expandedFiles = { directories, pattern -> directories.collectMany { fileTree(it).matching { include pattern }.files }.toSet().toList() }
+		def plugin = plugins.getPlugin('com.github.spotbugs')
+		def pluginJar = new File(plugin.class.protectionDomain.codeSource.location.toURI())
+		def launcher = task.launcher.get().metadata
+		if (!JvmVendorSpec.ADOPTIUM.matches(launcher.vendor)) throw new GradleException("spotbugsMain launcher is not Adoptium: ${launcher.vendor}")
+		def excludeFilter = task.excludeFilter.get().asFile
+		def xmlReport = task.reports.xml.outputLocation.get().asFile
+		def htmlReport = task.reports.html.outputLocation.get().asFile
+		def engineArtifacts = mergeArtifactMaps('SpotBugs task engine', [
+			artifactMap(configurations.spotbugs, 'SpotBugs engine'),
+			artifactMap(configurations.spotbugsSlf4j, 'SpotBugs SLF4J provider'),
+		])
+		def auxiliaryArtifacts = artifactMap(configurations.compileClasspath, 'SpotBugs auxiliary classpath')
+		def pluginArtifacts = artifactMap(configurations.spotbugsPlugins, 'SpotBugs external plugins')
+		def output = spotbugsMainEvidence.get().asFile
+		output.parentFile.mkdirs()
+		def sourceDirs = task.sourceDirs.files.toList()
+		def classDirs = task.classDirs?.files?.toList() ?: []
+		if (classDirs.isEmpty()) throw new GradleException('spotbugsMain has no class directories')
+		def taskClasses = task.classes
+		if (taskClasses == null) throw new GradleException('spotbugsMain classes input is unavailable')
+		def compiledClasses = taskClasses.asFileTree.files.toList()
+		if (compiledClasses.isEmpty() || compiledClasses.any { !it.isFile() || !it.name.endsWith('.class') } || compiledClasses.any { candidate -> !classDirs.any { directory -> candidate.canonicalPath.startsWith(directory.canonicalPath + File.separator) } }) throw new GradleException('spotbugsMain classes input does not match compiled class directories')
+		output.setText(groovy.json.JsonOutput.toJson([schemaVersion: 1, gradle: [version: gradle.gradleVersion], plugin: [id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: plugin.class.name, implementationPath: pluginJar.canonicalPath, implementationSha256: hash(pluginJar)], engine: [toolVersion: spotbugs.toolVersion.get(), classpath: exactArtifactFiles(task.spotbugsClasspath.files, engineArtifacts, 'SpotBugs engine')], java: [requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: launcher.vendor.toString(), languageVersion: launcher.languageVersion.asInt(), runtimeVersion: launcher.javaRuntimeVersion, jvmVersion: launcher.jvmVersion, installationPath: launcher.installationPath.asFile.canonicalPath, launcherPath: new File(launcher.installationPath.asFile, 'bin/java').canonicalPath, launcherSha256: hash(new File(launcher.installationPath.asFile, 'bin/java'))], task: [name: task.name, path: task.path, declaredType: declaredTaskType.name, runtimeType: task.class.name, runtimeTypeAssignableToDeclared: true, ignoreFailures: task.ignoreFailures, sourceDirs: directoryEntries(sourceDirs), classDirs: directoryEntries(classDirs), sources: fileEntries(expandedFiles(sourceDirs, '**/*.java')), classes: fileEntries(compiledClasses), auxClassPaths: exactArtifactFiles(task.auxClassPaths.files, auxiliaryArtifacts, 'SpotBugs auxiliary classpath'), pluginJarFiles: exactArtifactFiles(task.pluginJarFiles.files, pluginArtifacts, 'SpotBugs external plugins'), excludeFilter: repositoryPath(excludeFilter), xmlOutput: repositoryPath(xmlReport), htmlOutput: repositoryPath(htmlReport)]]) + '\n', 'UTF-8')
 	}
 }
 

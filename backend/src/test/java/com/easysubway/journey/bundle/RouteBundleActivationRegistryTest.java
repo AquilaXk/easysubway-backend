@@ -7,11 +7,15 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.time.format.DateTimeFormatter;
+import java.util.concurrent.BrokenBarrierException;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CyclicBarrier;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class RouteBundleActivationRegistryTest {
@@ -251,9 +255,11 @@ class RouteBundleActivationRegistryTest {
 
 	@Test
 	void sameGenerationConcurrentActivationHasExactlyOneSuccess() throws Exception {
-		var registry = registryAt(T0);
+		var clock = new ActivationBarrierClock(T0);
+		var registry = new RouteBundleActivationRegistry(clock);
 		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
 		registry.stage(candidate, 0);
+		clock.arm();
 		var barrier = new CyclicBarrier(2);
 
 		try (ExecutorService executor = Executors.newFixedThreadPool(2)) {
@@ -402,6 +408,49 @@ class RouteBundleActivationRegistryTest {
 
 		@Override
 		public Instant instant() {
+			return instant;
+		}
+	}
+
+	private static final class ActivationBarrierClock extends Clock {
+		private final Instant instant;
+		private final AtomicInteger calls = new AtomicInteger();
+		private final CyclicBarrier activationBarrier = new CyclicBarrier(2);
+		private volatile boolean armed;
+
+		private ActivationBarrierClock(Instant instant) {
+			this.instant = instant;
+		}
+
+		private void arm() {
+			armed = true;
+		}
+
+		@Override
+		public ZoneOffset getZone() {
+			return ZoneOffset.UTC;
+		}
+
+		@Override
+		public Clock withZone(java.time.ZoneId zone) {
+			return this;
+		}
+
+		@Override
+		public Instant instant() {
+			int call = armed ? calls.incrementAndGet() : 0;
+			if (call == 1 || call == 2) {
+				try {
+					activationBarrier.await(5, TimeUnit.SECONDS);
+				} catch (InterruptedException exception) {
+					Thread.currentThread().interrupt();
+					throw new AssertionError("activation barrier was interrupted", exception);
+				} catch (TimeoutException exception) {
+					throw new AssertionError("activation barrier timed out", exception);
+				} catch (BrokenBarrierException exception) {
+					throw new AssertionError("activation barrier failed", exception);
+				}
+			}
 			return instant;
 		}
 	}

@@ -8,6 +8,7 @@ import com.easysubway.train.application.TrainSearchCache.CachedLeg;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.ZoneId;
+import java.sql.Timestamp;
 import java.util.List;
 import java.util.UUID;
 import java.util.concurrent.CountDownLatch;
@@ -208,6 +209,19 @@ class JdbcTrainSearchCacheTest {
 		assertThat(repository.tryAcquireProviderCall("tago-train", providerZone, 2, 2)).isTrue();
 		assertThat(repository.tryAcquireProviderCall("tago-train", providerZone, 2, 2)).isFalse();
 		assertThat(repository.tryAcquireProviderCall("other", providerZone, 1, 1)).isTrue();
+	}
+
+	@Test
+	void rejectsNullDatabaseQueryResultsBeforeDereference() {
+		assertThatThrownBy(() -> JdbcTrainSearchCache.requireDatabaseTimestamp(null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("database timestamp query returned null");
+		assertThat(JdbcTrainSearchCache.requireDatabaseTimestamp(Timestamp.from(Instant.EPOCH)))
+			.isEqualTo(Instant.EPOCH);
+
+		assertThatThrownBy(() -> JdbcTrainSearchCache.requireQuotaState(null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("provider quota state query returned null");
 	}
 
 	private CachedLeg leg(String key, Instant observedAt, Instant expiresAt) {
