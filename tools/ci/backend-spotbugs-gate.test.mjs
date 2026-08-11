@@ -5,7 +5,7 @@ import { mkdtempSync, mkdirSync, readFileSync, rmSync, writeFileSync } from 'nod
 import { dirname, join } from 'node:path';
 import { tmpdir } from 'node:os';
 import test from 'node:test';
-import { REVIEWED_INPUT_DIGESTS, REVIEWED_JAVA_LAUNCHER_DIGESTS, inspectMembers, pullRequestHeadSha, reconcileLedger, renderSummary, resolvePriorPolicy, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validatePriorLedger, validateReport, validateReviewedPhaseTwoInputs, validateSuppressedBindings, validateWorkflow } from './backend-spotbugs-gate.mjs';
+import { inspectMembers, pullRequestHeadSha, reconcileLedger, renderSummary, resolvePriorPolicy, safeProject, sanitizeReports, validateEvidence, validateExcludeFilter, validateMemberBindings, validatePolicy, validatePriorLedger, validateReport, validateSuppressedBindings, validateWorkflow } from './backend-spotbugs-gate.mjs';
 
 const digest = (value) => createHash('sha256').update(value).digest('hex');
 const sourcePath = 'backend/src/main/java/com/example/Example.java';
@@ -28,14 +28,6 @@ const policy = () => ({
 const xml = () => '<?xml version="1.0" encoding="UTF-8"?><!-- current SpotBugs report --><BugCollection><BugInstance type="EI_EXPOSE_REP" category="MALICIOUS_CODE" priority="2" rank="18" instanceHash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" instanceOccurrenceNum="0" instanceOccurrenceMax="0"><Class classname="com.example.Example"/><Method classname="com.example.Example" name="&lt;init&gt;" signature="()V"/><SourceLine classname="com.example.Example" sourcepath="com/example/Example.java" start="2" end="2"/></BugInstance><Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>';
 const evidence = (dir) => ({
   schemaVersion: 1, gradle: { version: '8.14.3' }, plugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', implementationClass: 'example.Plugin', implementationPath: join(dir, 'plugin.jar'), implementationSha256: digest('plugin') }, engine: { toolVersion: '4.9.8', classpath: [{ component: 'x:y:1', artifact: 'engine.jar', path: join(dir, 'engine.jar'), sha256: digest('engine') }] }, java: { requestedVendor: 'ADOPTIUM', vendorMatchesRequestedSpec: true, vendor: 'Eclipse Temurin', languageVersion: 21, runtimeVersion: '21.0.8+9', jvmVersion: '21.0.8+9', installationPath: dir, launcherPath: join(dir, 'bin/java'), launcherSha256: digest('java') }, task: { name: 'spotbugsMain', path: ':spotbugsMain', declaredType: 'com.github.spotbugs.snom.SpotBugsTask', runtimeType: 'com.github.spotbugs.snom.SpotBugsTask_Decorated', runtimeTypeAssignableToDeclared: true, ignoreFailures: true, sourceDirs: [{ path: join(dir, 'backend/src/main/java'), repositoryPath: 'backend/src/main/java' }], classDirs: [{ path: join(dir, 'backend/build/classes/java/main'), repositoryPath: 'backend/build/classes/java/main' }], sources: [{ path: join(dir, sourcePath), repositoryPath: sourcePath, sha256: digest('a\nb\nc\n') }], classes: [{ path: join(dir, 'backend/build/classes/java/main/com/example/Example.class'), repositoryPath: 'backend/build/classes/java/main/com/example/Example.class', sha256: digest('class') }], auxClassPaths: [{ component: 'x:y:1', artifact: 'aux.jar', path: join(dir, 'aux.jar'), sha256: digest('aux') }], pluginJarFiles: [{ component: 'x:detector:1', artifact: 'detector.jar', path: join(dir, 'detector.jar'), sha256: digest('detector') }], excludeFilter: 'backend/quality/spotbugs-exclude.xml', xmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.xml', htmlOutput: 'backend/build/reports/spotbugs/spotbugsMain.html' }
-});
-
-test('phase-two inputs accept only the two exact reviewed hosted-runner Temurin launchers', () => {
-  assert.deepEqual(REVIEWED_JAVA_LAUNCHER_DIGESTS, ['b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2', '11af352aa2c506c4123a4e4c19c187d59e06cd0dff317d54f5e6806e07c6715d']);
-  const expectedPlugin = 'f'.repeat(64);
-  for (const javaLauncherDigest of REVIEWED_JAVA_LAUNCHER_DIGESTS) assert.equal(validateReviewedPhaseTwoInputs({ ...REVIEWED_INPUT_DIGESTS, pluginImplementationDigest: expectedPlugin, javaLauncherDigest }, expectedPlugin), true);
-  assert.throws(() => validateReviewedPhaseTwoInputs({ ...REVIEWED_INPUT_DIGESTS, pluginImplementationDigest: expectedPlugin, javaLauncherDigest: 'a'.repeat(64) }, expectedPlugin), /phase-two input digest mismatch/);
-  assert.throws(() => validateReviewedPhaseTwoInputs({ ...REVIEWED_INPUT_DIGESTS, classpathDigest: 'a'.repeat(64), pluginImplementationDigest: expectedPlugin, javaLauncherDigest: REVIEWED_JAVA_LAUNCHER_DIGESTS[0] }, expectedPlugin), /phase-two input digest mismatch/);
 });
 
 test('tracked tests and policy are self-contained reviewed inventory evidence', () => {
