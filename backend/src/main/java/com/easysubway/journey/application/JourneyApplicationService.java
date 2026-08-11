@@ -25,7 +25,10 @@ public final class JourneyApplicationService {
 
 	public JourneyExecutionResult execute(JourneyRequest request) {
 		Objects.requireNonNull(request, "request");
-		Instant effectiveInstant = clock.instant();
+		Instant capturedInstant = clock.instant();
+		Instant effectiveInstant = request.departure() instanceof JourneyRequest.Departure.Scheduled scheduled
+			? scheduled.requestedAt()
+			: capturedInstant;
 		if (request.isCancelled()) {
 			return failure(JourneyExecutionFailure.Reason.CANCELLED);
 		}
@@ -50,7 +53,7 @@ public final class JourneyApplicationService {
 		}
 
 		JourneyRealtimePort.RealtimeObservation realtime = null;
-		if (request.mode() == JourneyRequest.Mode.REALTIME_REQUIRED) {
+		if (request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED) {
 			try {
 				realtime = realtimePort.requireFresh(request, snapshot, effectiveInstant);
 			} catch (RuntimeException exception) {
