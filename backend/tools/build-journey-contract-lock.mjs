@@ -242,6 +242,7 @@ function writeAtomically(output, document, beforeTempOpen, beforePathIdentity, b
   const temporary = `${output}.tmp-${randomUUID()}`;
   let descriptor;
   let opened;
+  let completed;
   try {
     beforeTempOpen?.(temporary);
     descriptor = openSync(temporary, "wx", 0o600);
@@ -255,7 +256,7 @@ function writeAtomically(output, document, beforeTempOpen, beforePathIdentity, b
       offset += written;
     }
     fchmodSync(descriptor, 0o600); fsyncSync(descriptor);
-    const completed = fstatSync(descriptor);
+    completed = fstatSync(descriptor);
     if (!completed.isFile() || completed.dev !== opened.dev || completed.ino !== opened.ino || (completed.mode & 0o777) !== 0o600 || completed.size !== bytes.length) throw new Error("temporary output identity is invalid");
     beforePathIdentity?.(temporary);
     assertTemporaryIdentity(temporary, completed);
@@ -266,14 +267,20 @@ function writeAtomically(output, document, beforeTempOpen, beforePathIdentity, b
     assertTemporaryIdentity(output, completed);
     removeOwnedTemporary(temporary, completed);
   } catch (error) {
-    if (descriptor !== undefined) closeSync(descriptor);
-    if (canCleanup?.() !== false && typeof opened !== "undefined") removeOwnedTemporary(temporary, opened);
+    let ownedForCleanup = completed;
+    if (descriptor !== undefined) {
+      try {
+        const current = fstatSync(descriptor);
+        if (typeof opened !== "undefined" && current.isFile() && current.dev === opened.dev && current.ino === opened.ino) ownedForCleanup = current;
+      } catch {} finally { closeSync(descriptor); }
+    }
+    if (canCleanup?.() !== false && typeof ownedForCleanup !== "undefined") removeOwnedTemporary(temporary, ownedForCleanup);
     throw error;
   }
 }
 function removeOwnedTemporary(path, owned) {
   const current = lstatSync(path, { throwIfNoEntry: false });
-  if (!current || current.isSymbolicLink() || !current.isFile() || current.dev !== owned.dev || current.ino !== owned.ino) return false;
+  if (!current || current.isSymbolicLink() || !current.isFile() || current.dev !== owned.dev || current.ino !== owned.ino || current.size !== owned.size || (current.mode & 0o777) !== 0o600) return false;
   rmSync(path); return true;
 }
 function assertTemporaryIdentity(path, descriptor) {
