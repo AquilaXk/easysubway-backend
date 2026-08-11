@@ -1,4 +1,4 @@
-package com.easysubway.report.application.service;
+package com.easysubway.common.configuration;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
@@ -10,7 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 
 @DisplayName("운영 report secret canonical-only 설정")
-class ProductionReportCanonicalSecretValidatorTest {
+class ProductionReportCanonicalSecretGuardTest {
 
 	private static final String RECEIPT_PROPERTY = "easysubway.report.receipt-token-pepper";
 	private static final String INTENT_PROPERTY = "easysubway.report.upload.intent-signing-key";
@@ -21,7 +21,7 @@ class ProductionReportCanonicalSecretValidatorTest {
 	private static final String STRONG_INTENT = "canonical-upload-intent-key-32-bytes-minimum";
 
 	private final ApplicationContextRunner contextRunner = new ApplicationContextRunner()
-		.withUserConfiguration(ProductionReportCanonicalSecretValidator.class)
+		.withUserConfiguration(ProductionReportCanonicalSecretGuard.class)
 		.withPropertyValues("spring.profiles.active=prod");
 
 	@Test
@@ -33,7 +33,7 @@ class ProductionReportCanonicalSecretValidatorTest {
 			)
 			.run(context -> {
 				assertThat(context).hasNotFailed();
-				assertThat(context).hasSingleBean(ProductionReportCanonicalSecretValidator.class);
+				assertThat(context).hasSingleBean(ProductionReportCanonicalSecretGuard.class);
 			});
 	}
 
@@ -123,7 +123,7 @@ class ProductionReportCanonicalSecretValidatorTest {
 		contextRunner.withPropertyValues(properties).run(context -> {
 			assertThat(context).hasFailed();
 			assertThat(context.getStartupFailure())
-				.hasRootCauseInstanceOf(IllegalStateException.class)
+				.isInstanceOf(IllegalStateException.class)
 				.hasStackTraceContaining(expectedIdentity);
 			if (configuredValue != null) {
 				assertThat(rootCause(context.getStartupFailure()).getMessage()).doesNotContain(configuredValue);

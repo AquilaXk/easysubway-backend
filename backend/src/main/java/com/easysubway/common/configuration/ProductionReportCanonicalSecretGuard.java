@@ -1,5 +1,6 @@
-package com.easysubway.report.application.service;
+package com.easysubway.common.configuration;
 
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.env.Environment;
@@ -7,7 +8,7 @@ import org.springframework.stereotype.Component;
 
 @Component
 @Profile("prod | staging | release | prod-like")
-final class ProductionReportCanonicalSecretValidator {
+final class ProductionReportCanonicalSecretGuard implements SmartInitializingSingleton {
 
 	private static final String CANONICAL_RECEIPT_KEY = "EASYSUBWAY_REPORT_RECEIPT_PEPPER";
 	private static final String LEGACY_RECEIPT_KEY = "EASYSUBWAY_REPORT_RECEIPT_TOKEN_PEPPER";
@@ -16,11 +17,22 @@ final class ProductionReportCanonicalSecretValidator {
 	private static final String LOCAL_INTENT_VALUE = "local-dev-report-upload-intent-signing-key";
 	private static final int MINIMUM_SECRET_LENGTH = 32;
 
-	ProductionReportCanonicalSecretValidator(
+	private final Environment environment;
+	private final String receiptTokenPepper;
+	private final String uploadIntentSigningKey;
+
+	ProductionReportCanonicalSecretGuard(
 		Environment environment,
 		@Value("${easysubway.report.receipt-token-pepper:}") String receiptTokenPepper,
 		@Value("${easysubway.report.upload.intent-signing-key:}") String uploadIntentSigningKey
 	) {
+		this.environment = environment;
+		this.receiptTokenPepper = receiptTokenPepper;
+		this.uploadIntentSigningKey = uploadIntentSigningKey;
+	}
+
+	@Override
+	public void afterSingletonsInstantiated() {
 		if (environment.containsProperty(LEGACY_RECEIPT_KEY)) {
 			throw invalid(LEGACY_RECEIPT_KEY);
 		}
