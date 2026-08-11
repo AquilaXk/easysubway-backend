@@ -23,7 +23,7 @@ const policy = () => ({
   exclusions: [{ className: 'com.easysubway.EasySubwayBackendApplication', sourcePath: 'backend/src/main/java/com/easysubway/EasySubwayBackendApplication.java', sourceSha256: 'd0e6c8a5ab74a8c10fead9443573e9acb5b4c240e71f85246744a18b1601aa53', reason: 'bootstrap-only Spring Boot/scheduling entrypoint; product business logic 없음', ownerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', ownerIssueTitle: '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환', ownerIssueState: 'OPEN', removalCondition: 'Backend #4 reviews the class against the current report and either removes the filter or records the exact terminal justification.', reviewTriggers: ['source byte change', 'class/member/annotation or responsibility change', 'plugin/JDK/task/source-set change', 'broader class/package Match', 'Backend #4 remediation'] }],
   findingIdentity: { algorithm: 'sha256-canonical-json-v1', fields: ['bugPattern', 'category', 'priority', 'rank', 'className', 'methodName', 'methodSignature', 'sourcePath', 'startLine', 'endLine', 'sourceSha256', 'analyzerInstanceHash'] },
   allowedDispositions: ['FIX_REQUIRED', 'FIXED', 'FALSE_POSITIVE_EXACT_SUPPRESSION', 'ACCEPTED_BOUNDED_RISK', 'GENERATED_OR_NON_OWNED_EXCLUSION'], findings: [],
-  transition: { phase: 'DISCOVERY_REMOTE_RED', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] }
+  transition: { phase: 'DISCOVERY_REMOTE_RED', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '47edb6d6de8f86305b7dc2efb902cbea31863449ff9c6e01072bf4f6893cc370', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] }
 });
 const xml = () => '<?xml version="1.0" encoding="UTF-8"?><!-- current SpotBugs report --><BugCollection><BugInstance type="EI_EXPOSE_REP" category="MALICIOUS_CODE" priority="2" rank="18" instanceHash="aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa" instanceOccurrenceNum="0" instanceOccurrenceMax="0"><Class classname="com.example.Example"/><Method classname="com.example.Example" name="&lt;init&gt;" signature="()V"/><SourceLine classname="com.example.Example" sourcepath="com/example/Example.java" start="2" end="2"/></BugInstance><Errors errors="0" missingClasses="0"/><FindBugsSummary total_bugs="1"/></BugCollection>';
 const evidence = (dir) => ({
@@ -34,8 +34,8 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '753d653721869ebac1f2114054b34cfcb83f3bec1bb7541fdb65d2d78f8c74ee');
-  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '7dd87c2470a1ac7865b2e9ac3e89029ba2f0bdc53e7fac6c5b2b5b988e8b0eb1');
+  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '47edb6d6de8f86305b7dc2efb902cbea31863449ff9c6e01072bf4f6893cc370');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
 });
@@ -80,7 +80,7 @@ test('tracked remediation policy preserves prior children and projects the curre
   assert.equal(tracked.findings.length, 195);
   assert.equal(validatePolicy(tracked, { today: '2026-08-10' }), true);
   assert.equal(digest(JSON.stringify(tracked.toolchain.spotbugsEngine.classpath)), '0178af73534a3919830c3bae141dff716dbeed2e13ef31faabcc1dfb6947db69');
-  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
+  assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '47edb6d6de8f86305b7dc2efb902cbea31863449ff9c6e01072bf4f6893cc370');
   const report = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/report/'));
   assert.equal(report.length, 28);
   assert.deepEqual(report.slice(0, 5).map(({ disposition }) => disposition), [
@@ -298,7 +298,7 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
   const partition = tracked.findings.filter(({ sourcePath }) => admittedPaths.has(sourcePath));
   assert.equal(partition.length, 34);
   assert.equal(new Set(partition.map(({ sourcePath }) => sourcePath)).size, 21);
-  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), 'cfd7f7082e06c832b058da317a61116baf50d1c9c52a6c33f9c06c8ca5fdf045');
+  assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), 'ab29eadf0b8896765cfa0c65965c02977813e63d8d824179233608cc6e626ed4');
   assert.equal(partition.filter(({ disposition }) => disposition === 'FIXED').length, 9);
   assert.equal(partition.filter(({ disposition }) => disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION').length, 25);
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 61, fixRequired: 61, fixed: 66, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
@@ -374,7 +374,7 @@ test('remediation policy admits a synthetic fixed terminal absence', () => {
   remediation.issue = { url: 'https://github.com/AquilaXk/easysubway-backend/issues/4', title: '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환' };
   remediation.origin.foundationSha = '3a15efb833b37d5ce051e9591161311dd7952c79';
   remediation.allowedDispositions = ['FIX_REQUIRED', 'FIXED', 'FALSE_POSITIVE_EXACT_SUPPRESSION', 'ACCEPTED_BOUNDED_RISK', 'GENERATED_OR_NON_OWNED_EXCLUSION'];
-  remediation.transition = { phase: 'REMEDIATION_IN_PROGRESS', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] };
+  remediation.transition = { phase: 'REMEDIATION_IN_PROGRESS', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '47edb6d6de8f86305b7dc2efb902cbea31863449ff9c6e01072bf4f6893cc370', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] };
   for (const finding of remediation.findings) {
     if (finding.disposition !== 'FIX_REQUIRED') {
       finding.disposition = 'FIX_REQUIRED';
