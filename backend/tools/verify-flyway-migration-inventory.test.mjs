@@ -117,6 +117,36 @@ test("Flyway migration inventory는 filename, raw SHA-256, regular file 및 syml
   }
 });
 
+test("Flyway migration inventory는 canonical repository root와 repository-relative lock path를 강제한다", () => {
+  const copiedRootFixture = createFixture();
+  try {
+    const copiedMigrationRoot = join(copiedRootFixture.directory, "copied-postgresql");
+    mkdirSync(copiedMigrationRoot);
+    writeMigration(copiedMigrationRoot, "V1__baseline.sql", "select 1;\n");
+    assert.throws(() => verify({ ...copiedRootFixture, migrationRoot: copiedMigrationRoot }), /canonical repository location/);
+  } finally {
+    copiedRootFixture.cleanup();
+  }
+
+  const basenamePathFixture = createFixture();
+  try {
+    basenamePathFixture.lock.migrations[0].path = "V1__baseline.sql";
+    writeLock(basenamePathFixture);
+    assert.throws(() => verify(basenamePathFixture), /repository-relative/);
+  } finally {
+    basenamePathFixture.cleanup();
+  }
+
+  const nonRepositoryRelativeFixture = createFixture();
+  try {
+    nonRepositoryRelativeFixture.lock.migrations[0].path = "src/main/resources/db/migration/postgresql/V1__baseline.sql";
+    writeLock(nonRepositoryRelativeFixture);
+    assert.throws(() => verify(nonRepositoryRelativeFixture), /repository-relative/);
+  } finally {
+    nonRepositoryRelativeFixture.cleanup();
+  }
+});
+
 test("Flyway migration inventory는 lock object의 closed field와 ordered entries를 강제한다", () => {
   const cases = [
     {
@@ -166,8 +196,8 @@ test("Flyway migration inventory는 lock object의 closed field와 ordered entri
 
 function createFixture() {
   const directory = mkdtempSync(join(tmpdir(), "flyway-migration-inventory-"));
-  const migrationRoot = join(directory, "postgresql");
-  mkdirSync(migrationRoot);
+  const migrationRoot = join(directory, "backend/src/main/resources/db/migration/postgresql");
+  mkdirSync(migrationRoot, { recursive: true });
   const migrations = [
     ["V1__baseline.sql", "select 1;\n"],
     ["V3__add_station.sql", "select 3;\n"],
@@ -178,7 +208,7 @@ function createFixture() {
     schemaVersion: 1,
     migrations: migrations.map(([path, contents]) => lockEntry(path, contents)),
   };
-  const lockPath = join(directory, "flyway-migration-inventory.lock.json");
+  const lockPath = join(directory, "backend/flyway-migration-inventory.lock.json");
   const fixture = {
     directory,
     lock,
@@ -200,7 +230,7 @@ function writeMigration(root, name, contents) {
 
 function lockEntry(path, contents) {
   const [, version, description] = /^V([1-9]\d*)__(.+)\.sql$/.exec(path);
-  return { version, description, path, sha256: sha256(contents) };
+  return { version, description, path: `backend/src/main/resources/db/migration/postgresql/${path}`, sha256: sha256(contents) };
 }
 
 function writeLock({ lockPath, lock }) {

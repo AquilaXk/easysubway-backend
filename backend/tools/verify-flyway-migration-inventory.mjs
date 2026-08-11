@@ -1,11 +1,14 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, readdirSync } from "node:fs";
-import { join } from "node:path";
+import { join, resolve } from "node:path";
 
 const MIGRATION_FILENAME = /^V([1-9]\d*)__([a-z0-9]+(?:_[a-z0-9]+)*)\.sql$/;
 const DIGEST = /^[a-f0-9]{64}$/;
+const LOCK_RELATIVE_PATH = "backend/flyway-migration-inventory.lock.json";
+const MIGRATION_ROOT_RELATIVE_PATH = "backend/src/main/resources/db/migration/postgresql";
 
-export function buildFlywayMigrationInventory({ migrationRoot }) {
+export function buildFlywayMigrationInventory({ migrationRoot, repositoryRoot }) {
+  assertCanonicalMigrationRoot(migrationRoot, repositoryRoot);
   assertDirectory(migrationRoot, "migration root");
 
   const versions = new Set();
@@ -23,7 +26,13 @@ export function buildFlywayMigrationInventory({ migrationRoot }) {
     const path = join(migrationRoot, entry.name);
     const stat = lstatSync(path);
     if (stat.isSymbolicLink() || !stat.isFile()) throw new Error(`migration must be a regular file: ${entry.name}`);
-    return { version, description, path: entry.name, sha256: sha256(readFileSync(path)), numericVersion };
+    return {
+      version,
+      description,
+      path: `${MIGRATION_ROOT_RELATIVE_PATH}/${entry.name}`,
+      sha256: sha256(readFileSync(path)),
+      numericVersion,
+    };
   });
 
   migrations.sort((left, right) => left.numericVersion < right.numericVersion ? -1 : left.numericVersion > right.numericVersion ? 1 : 0);
@@ -34,10 +43,11 @@ export function buildFlywayMigrationInventory({ migrationRoot }) {
 }
 
 export function verifyFlywayMigrationInventory({ lockPath, migrationRoot }) {
+  const repositoryRoot = repositoryRootFor(lockPath);
   assertRegularFile(lockPath, "migration inventory lock");
   const rawLock = readFileSync(lockPath, "utf8");
   const lock = parseLock(rawLock);
-  const inventory = buildFlywayMigrationInventory({ migrationRoot });
+  const inventory = buildFlywayMigrationInventory({ migrationRoot, repositoryRoot });
   const canonicalLock = canonicalJson(lock);
 
   if (rawLock !== `${canonicalLock}\n`) throw new Error("migration inventory lock must be canonical JSON followed by one newline");
@@ -67,7 +77,9 @@ function parseLock(rawLock) {
     }
     if (!DIGEST.test(entry.sha256)) throw new Error("migration inventory sha256 must be canonical lowercase hex");
 
-    const match = MIGRATION_FILENAME.exec(entry.path);
+    const expectedPrefix = `${MIGRATION_ROOT_RELATIVE_PATH}/`;
+    if (!entry.path.startsWith(expectedPrefix)) throw new Error("migration inventory path must be repository-relative");
+    const match = MIGRATION_FILENAME.exec(entry.path.slice(expectedPrefix.length));
     if (!match || match[1] !== entry.version || match[2] !== entry.description) throw new Error("migration inventory entry must match a canonical Flyway filename");
     const numericVersion = BigInt(entry.version);
     if (versions.has(numericVersion)) throw new Error(`Flyway migration version collision: ${entry.version}`);
@@ -78,6 +90,23 @@ function parseLock(rawLock) {
     previousVersion = numericVersion;
   }
   return lock;
+}
+
+function repositoryRootFor(lockPath) {
+  assertPath(lockPath, "migration inventory lock");
+  const absoluteLockPath = resolve(lockPath);
+  const repositoryRoot = resolve(absoluteLockPath, "..", "..");
+  if (absoluteLockPath !== join(repositoryRoot, LOCK_RELATIVE_PATH)) {
+    throw new Error("migration inventory lock must use the canonical repository location");
+  }
+  return repositoryRoot;
+}
+
+function assertCanonicalMigrationRoot(migrationRoot, repositoryRoot) {
+  assertPath(migrationRoot, "migration root");
+  if (resolve(migrationRoot) !== join(repositoryRoot, MIGRATION_ROOT_RELATIVE_PATH)) {
+    throw new Error("migration root must use the canonical repository location");
+  }
 }
 
 function assertDirectory(path, label) {
