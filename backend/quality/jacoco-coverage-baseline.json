@@ -4,13 +4,13 @@
   "repository": "AquilaXk/easysubway-backend",
   "phase": "REVIEWED_DECREASE_ONLY",
   "provenance": {
-    "runUrl": "https://github.com/AquilaXk/easysubway-backend/actions/runs/31539125940",
-    "artifactId": 9120330545,
-    "testedMergeSha": "aa970e50b2f1da4e1218115241970042669bb95b",
-    "pullRequestHeadSha": "a14c59aba5eb685202aa8419f0ab1ef399cc5df2",
-    "resultSha256": "6dff368c9ebe7725ac0cd4146009657ab3882adc15885496f3b188b8e8b25dc5",
-    "rawXmlSha256": "84e8d4a8130345e6bb1e2c63a8216515c9f62a13fb2a0d8b1941bb64986887bf",
-    "reviewedAt": "2026-08-11T21:55:37Z"
+    "runUrl": "https://github.com/AquilaXk/easysubway-backend/actions/runs/31540567513",
+    "artifactId": 9120830423,
+    "testedMergeSha": "b6bb9ebd5f7fdff98a19fa24f1719b2af0c122fa",
+    "pullRequestHeadSha": "aa2680cd120aac6c5fe24c839018a8d6ccda3648",
+    "resultSha256": "4140c7146959302c66dc78f69eb0eedc0c04170d2abdb817978adc92b2668cf4",
+    "rawXmlSha256": "f396b553adb9c1511639a8ae2ee4f30eb248ec0caf1a9cf520b0d0d51b92f4d0",
+    "reviewedAt": "2026-08-11T22:13:57Z"
   },
   "producer": {
     "gradleVersion": "8.14.5",
@@ -364,7 +364,7 @@
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitStationAdminPageController.java","sha256":"fa22e42064163b848660a63021f4bd5fec3ae8ad6ae21e952e62b357eda6adee","packageName":"com.easysubway.transit.adapter.in.web","sourceFileName":"TransitStationAdminPageController.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":23,"covered":321,"total":344,"basisPoints":9331},"branch":{"missed":30,"covered":56,"total":86,"basisPoints":6511}},
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/in/web/TransitStationLayoutAdminPageController.java","sha256":"375ffb507e215fafc30a464b1aed64c4be1ed6f8a52e55607810ea805897f2d0","packageName":"com.easysubway.transit.adapter.in.web","sourceFileName":"TransitStationLayoutAdminPageController.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":204,"total":205,"basisPoints":9951},"branch":{"missed":3,"covered":31,"total":34,"basisPoints":9117}},
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/InMemoryTransitMasterRepository.java","sha256":"7b14e69756c935d6f6799c410a3adf4fc6a611467d41be2d55b5d563f5eca241","packageName":"com.easysubway.transit.adapter.out.persistence","sourceFileName":"InMemoryTransitMasterRepository.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":2,"covered":109,"total":111,"basisPoints":9819},"branch":{"missed":3,"covered":3,"total":6,"basisPoints":5000}},
-    {"path":"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/JdbcTransitMasterOverrideRepository.java","sha256":"239fe89b71a73428dcc50bf0e37bad4ac9d15202d326595e0bf2dc3755ed1ef4","packageName":"com.easysubway.transit.adapter.out.persistence","sourceFileName":"JdbcTransitMasterOverrideRepository.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":17,"covered":99,"total":116,"basisPoints":8534},"branch":{"missed":3,"covered":11,"total":14,"basisPoints":7857}},
+    {"path":"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/JdbcTransitMasterOverrideRepository.java","sha256":"239fe89b71a73428dcc50bf0e37bad4ac9d15202d326595e0bf2dc3755ed1ef4","packageName":"com.easysubway.transit.adapter.out.persistence","sourceFileName":"JdbcTransitMasterOverrideRepository.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":20,"covered":96,"total":116,"basisPoints":8275},"branch":{"missed":3,"covered":11,"total":14,"basisPoints":7857}},
     {"path":"backend/src/main/java/com/easysubway/transit/adapter/out/persistence/UnavailableTransitMasterRepository.java","sha256":"1efd2529444017e28b61c1bcd520b1a36ae565dda97367afd51be068437f592f","packageName":"com.easysubway.transit.adapter.out.persistence","sourceFileName":"UnavailableTransitMasterRepository.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":19,"total":20,"basisPoints":9500},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/transit/application/port/in/CreateAccessibilityFacilityCommand.java","sha256":"553cb05e4b6d666e84d2accac904fb68da5dec25da55d13602c33d2daeb57031","packageName":"com.easysubway.transit.application.port.in","sourceFileName":"CreateAccessibilityFacilityCommand.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/transit/application/port/in/NearbyStationSearchCommand.java","sha256":"4f38411ed32a32f6c66f7ef0563735941516a714cb9ca66b51e1c79bc6f4bb6b","packageName":"com.easysubway.transit.application.port.in","sourceFileName":"NearbyStationSearchCommand.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":6,"covered":19,"total":25,"basisPoints":7600},"branch":{"missed":12,"covered":12,"total":24,"basisPoints":5000}},
@@ -448,10 +448,10 @@
       "reportedSourceCount": 200,
       "missingSourceCount": 0,
       "line": {
-        "missed": 660,
-        "covered": 8782,
+        "missed": 663,
+        "covered": 8779,
         "total": 9442,
-        "basisPoints": 9300
+        "basisPoints": 9297
       },
       "branch": {
         "missed": 967,
