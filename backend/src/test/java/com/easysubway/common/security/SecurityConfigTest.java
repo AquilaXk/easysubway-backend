@@ -66,6 +66,24 @@ class SecurityConfigTest {
 	}
 
 	@Test
+	@DisplayName("비운영 프로필의 partial 관리자 credential은 identity mutation 전에 거부한다")
+	void partialAdminCredentialsFailBeforeIdentityMutationOutsideProd() {
+		var securityConfig = new SecurityConfig();
+		var repository = new InMemoryAdminIdentityRepository();
+		var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
+		var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
+
+		assertThatThrownBy(() -> securityConfig.userDetailsService(
+			"admin-user", "", "", "", "", "", false, "", "",
+			repository, rbacRepository, passwordEncoder, new MockEnvironment()
+		))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("관리자 계정 설정은 아이디와 비밀번호를 함께 입력해야 합니다.");
+		assertThat(repository.findByLoginId("admin-user")).isEmpty();
+		assertThat(rbacRepository.findPermissionAuthorities("admin-user")).isEmpty();
+	}
+
+	@Test
 	@DisplayName("운영 프로필은 관리자 계정 설정이 있으면 시작한다")
 	void prodProfileStartsWhenAdminCredentialsAreConfigured() {
 		contextRunner
@@ -111,6 +129,26 @@ class SecurityConfigTest {
 				assertThat(context).hasFailed();
 				assertThat(context.getStartupFailure())
 					.hasMessageContaining("운영 Basic auth 예외는 owner와 만료일이 필요합니다.");
+			});
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 고정된 과거 만료일의 Basic auth 예외를 거부한다")
+	void prodProfileRejectsExpiredBasicAuthReleaseException() {
+		contextRunner
+			.withPropertyValues(
+				"spring.profiles.active=prod",
+				"easysubway.admin.username=admin-user",
+				"easysubway.admin.password=admin-password",
+				"easysubway.admin.remember-me.key=0123456789abcdef0123456789abcdef",
+				"easysubway.admin.basic-auth.enabled=true",
+				"easysubway.admin.basic-auth.exception-owner=security-owner",
+				"easysubway.admin.basic-auth.exception-expires-at=2000-01-01"
+			)
+			.run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasMessageContaining("운영 Basic auth 예외 만료일이 지났습니다.");
 			});
 	}
 
