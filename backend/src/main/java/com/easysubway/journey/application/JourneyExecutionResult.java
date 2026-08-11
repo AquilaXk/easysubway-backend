@@ -17,6 +17,9 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			}
 			bundleIdentity = requireText(bundleIdentity, "bundleIdentity");
 			candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
+			if (candidates.isEmpty()) {
+				throw new IllegalArgumentException("candidates must not be empty");
+			}
 		}
 
 		private static String requireText(String value, String name) {

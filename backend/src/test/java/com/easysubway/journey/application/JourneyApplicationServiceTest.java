@@ -149,6 +149,9 @@ class JourneyApplicationServiceTest {
 		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
 			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, " ", null, List.of("candidate-1")))
 			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
+			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", null, List.of()))
+			.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -180,7 +183,29 @@ class JourneyApplicationServiceTest {
 		assertCancelled(fakes -> fakes.cancelAfterRaptor = true, 1, 1, 1);
 	}
 
+	@Test
+	void cancellationSetByAThrowingPortWinsOverItsPortFailure() {
+		assertCancellationWinsOverPortFailure(fakes -> fakes.cancelAndFailSnapshot = true, 1, 0, 0);
+		assertCancellationWinsOverPortFailure(fakes -> fakes.cancelAndFailRealtime = true, 1, 1, 0);
+		assertCancellationWinsOverPortFailure(fakes -> fakes.cancelAndFailRaptor = true, 1, 1, 1);
+	}
+
 	private static void assertCancelled(
+		java.util.function.Consumer<Fakes> configure,
+		int expectedSnapshotCalls,
+		int expectedRealtimeCalls,
+		int expectedRaptorCalls
+	) {
+		Fakes fakes = new Fakes();
+		configure.accept(fakes);
+		assertFailure(fakes.service().execute(request(JourneyRequest.Mode.REALTIME_REQUIRED, fakes.cancelled)),
+			JourneyExecutionFailure.Reason.CANCELLED);
+		assertThat(fakes.snapshotCalls).isEqualTo(expectedSnapshotCalls);
+		assertThat(fakes.realtimeCalls).isEqualTo(expectedRealtimeCalls);
+		assertThat(fakes.raptorCalls).isEqualTo(expectedRaptorCalls);
+	}
+
+	private static void assertCancellationWinsOverPortFailure(
 		java.util.function.Consumer<Fakes> configure,
 		int expectedSnapshotCalls,
 		int expectedRealtimeCalls,
@@ -218,6 +243,9 @@ class JourneyApplicationServiceTest {
 		private boolean cancelAfterSnapshot;
 		private boolean cancelAfterRealtime;
 		private boolean cancelAfterRaptor;
+		private boolean cancelAndFailSnapshot;
+		private boolean cancelAndFailRealtime;
+		private boolean cancelAndFailRaptor;
 		private int snapshotCalls;
 		private int realtimeCalls;
 		private int raptorCalls;
@@ -231,6 +259,10 @@ class JourneyApplicationServiceTest {
 			return new JourneyApplicationService(effectiveInstant -> {
 				snapshotCalls++;
 				record(effectiveInstant);
+				if (cancelAndFailSnapshot) {
+					cancelled.set(true);
+					throw new IllegalStateException("snapshot failure after cancellation");
+				}
 				if (snapshotFailure != null) {
 					throw snapshotFailure;
 				}
@@ -242,6 +274,10 @@ class JourneyApplicationServiceTest {
 				realtimeCalls++;
 				lastSnapshot = activeSnapshot;
 				record(effectiveInstant);
+				if (cancelAndFailRealtime) {
+					cancelled.set(true);
+					throw new IllegalStateException("realtime failure after cancellation");
+				}
 				if (realtimeFailure != null) {
 					throw realtimeFailure;
 				}
@@ -254,6 +290,10 @@ class JourneyApplicationServiceTest {
 				lastSnapshot = activeSnapshot;
 				lastRealtime = realtimeObservation;
 				record(effectiveInstant);
+				if (cancelAndFailRaptor) {
+					cancelled.set(true);
+					throw new IllegalStateException("raptor failure after cancellation");
+				}
 				if (cancelAfterRaptor) {
 					cancelled.set(true);
 				}

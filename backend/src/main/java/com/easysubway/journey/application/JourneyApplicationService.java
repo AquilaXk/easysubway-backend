@@ -34,6 +34,9 @@ public final class JourneyApplicationService {
 		try {
 			snapshot = activeSnapshotPort.requireActive(effectiveInstant);
 		} catch (RuntimeException exception) {
+			if (request.isCancelled()) {
+				return failure(JourneyExecutionFailure.Reason.CANCELLED);
+			}
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
 		}
 		if (request.isCancelled()) {
@@ -51,6 +54,9 @@ public final class JourneyApplicationService {
 			try {
 				realtime = realtimePort.requireFresh(request, snapshot, effectiveInstant);
 			} catch (RuntimeException exception) {
+				if (request.isCancelled()) {
+					return failure(JourneyExecutionFailure.Reason.CANCELLED);
+				}
 				return failure(JourneyExecutionFailure.Reason.REALTIME_UNAVAILABLE);
 			}
 			if (request.isCancelled()) {
@@ -71,6 +77,9 @@ public final class JourneyApplicationService {
 		try {
 			candidates = raptorPort.plan(request, snapshot, effectiveInstant, realtime);
 		} catch (RuntimeException exception) {
+			if (request.isCancelled()) {
+				return failure(JourneyExecutionFailure.Reason.CANCELLED);
+			}
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		}
 		if (request.isCancelled()) {
