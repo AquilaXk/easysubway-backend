@@ -168,6 +168,89 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void validatesRuntimeConstructionAndRealtimeObservationIdentity() {
+		assertThatThrownBy(() -> RaptorRouteBundleRuntimeView.compile("BAD", GENERATION, timetable(true)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, 0, timetable(true)))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, TimetableRealtimeUpdates.unavailable("NO_DATA")))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("identity");
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, new TimetableRealtimeUpdates("overlay-v1", true, List.of(
+				new TimetableRealtimeUpdate(
+					"trip", 0, 0, false, "different", Instant.parse("2026-06-30T23:49:30Z"))
+			), null)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("identity");
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, new TimetableRealtimeUpdates("overlay-v1", true, List.of(
+				new TimetableRealtimeUpdate(
+					"unknown-trip", 0, 0, false, "realtime-1", Instant.parse("2026-06-30T23:49:30Z"))
+			), null)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("valid updates");
+	}
+
+	@Test
+	void rejectsUnexpectedRealtimeModeCancellationAndDifferentExactRouteHandle() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var otherRuntime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var otherRealtime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", otherRuntime, new TimetableRealtimeUpdates("overlay-v1", true, List.of(
+				new TimetableRealtimeUpdate(
+					"trip", 0, 0, false, "realtime-1", Instant.parse("2026-06-30T23:49:30Z"))
+			), null));
+		var observation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, otherRealtime, VALID_UNTIL, true);
+
+		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, observation))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("must not receive realtime");
+		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
+			snapshot(runtime), EFFECTIVE, observation))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("captured Journey generation");
+
+		var cancelled = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> true);
+		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
+			cancelled, snapshot(runtime), EFFECTIVE, null))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("cancelled");
+	}
+
+	@Test
+	void allowsVerifiedStairsOnlyForNonStrictRequests() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(true, true));
+		var adapter = new JourneyRaptorAdapter();
+
+		var standard = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null);
+		assertThat(standard.candidates()).singleElement()
+			.extracting(candidate -> candidate.accessibility().stairFree()).isEqualTo(false);
+
+		var strict = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null);
+		assertThat(strict.candidates()).isEmpty();
+	}
+
+	@Test
 	void returnsNoCandidateForUnverifiedAccessInsteadOfPublishingBestEffort() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(false));
 		assertThat(new JourneyRaptorAdapter().plan(
@@ -209,6 +292,10 @@ class JourneyRaptorAdapterTest {
 	}
 
 	private static RouteTimetable timetable(boolean verifiedAccess) {
+		return timetable(verifiedAccess, false);
+	}
+
+	private static RouteTimetable timetable(boolean verifiedAccess, boolean includesStairs) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -224,13 +311,13 @@ class JourneyRaptorAdapterTest {
 			new TransitStopTime("trip-late", 2, "station-b", "line", 36_600, 36_600, 0, 0));
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), List.of(trip, lateTrip), stopTimes, List.of(), List.of(), null,
-			verifiedAccess ? verifiedAccess() : LoadRouteTimetablePort.RouteAccessData.empty());
+			verifiedAccess ? verifiedAccess(includesStairs) : LoadRouteTimetablePort.RouteAccessData.empty());
 	}
 
-	private static LoadRouteTimetablePort.RouteAccessData verifiedAccess() {
+	private static LoadRouteTimetablePort.RouteAccessData verifiedAccess(boolean includesStairs) {
 		var edges = List.of(
 			new LoadRouteTimetablePort.PathwayEdge(
-				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
+				"entry", "entrance", "platform-a", 120, 60, false, includesStairs, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
 			new LoadRouteTimetablePort.PathwayEdge(
 				"exit", "platform-b", "outside", 60, 40, false, false, 100,
