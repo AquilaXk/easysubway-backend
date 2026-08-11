@@ -34,7 +34,7 @@ class RealtimeProductionCompositionTest {
 	@DisplayName("운영 계열 프로필은 TOPIS와 JDBC 포트 및 archive executor를 정확히 하나씩 조립한다")
 	void productionProfilesComposeExactlyOneRealtimePath() {
 		for (String profile : new String[] {"prod", "staging", "release", "prod-like"}) {
-			realtimeRunner(profile, ProductionDependencies.class).run(context -> {
+			productionRealtimeRunner(profile, ProductionDependencies.class).run(context -> {
 				assertThat(context).hasNotFailed();
 				assertThat(context.getBeanNamesForType(RealtimeGatewayService.class))
 					.containsExactly("realtimeGatewayService");
@@ -62,6 +62,29 @@ class RealtimeProductionCompositionTest {
 				assertThat(context).doesNotHaveBean(DevelopmentRealtimeSafetyPorts.class);
 				assertThat(context).doesNotHaveBean(InMemoryRealtimeMappingPort.class);
 			});
+		}
+	}
+
+	@Test
+	@DisplayName("운영 계열 프로필은 누락되거나 공백인 TOPIS 키로 기동하지 않는다")
+	void productionProfilesRequireNonblankTopisServiceKeyAtStartup() {
+		for (String profile : new String[] {"prod", "staging", "release", "prod-like"}) {
+			realtimeRunner(profile, ProductionDependencies.class).run(context -> {
+				assertThat(context).hasFailed();
+				assertThat(context.getStartupFailure())
+					.hasRootCauseInstanceOf(IllegalStateException.class)
+					.hasRootCauseMessage("EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY must not be blank");
+			});
+			for (String serviceKey : new String[] {"", "   "}) {
+				realtimeRunner(profile, ProductionDependencies.class)
+					.withPropertyValues("EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=" + serviceKey)
+					.run(context -> {
+						assertThat(context).hasFailed();
+						assertThat(context.getStartupFailure())
+							.hasRootCauseInstanceOf(IllegalStateException.class)
+							.hasRootCauseMessage("EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY must not be blank");
+					});
+			}
 		}
 	}
 
@@ -99,7 +122,7 @@ class RealtimeProductionCompositionTest {
 			JdbcRealtimeProviderCallQuotaRepository.class,
 			RealtimeInfrastructureConfiguration.class
 		}) {
-			realtimeRunner("prod", ProductionDependencies.class)
+			productionRealtimeRunner("prod", ProductionDependencies.class)
 				.withClassLoader(new FilteredClassLoader(dependency))
 				.run(context ->
 				assertThat(context).hasFailed()
@@ -117,7 +140,7 @@ class RealtimeProductionCompositionTest {
 			DuplicateQuotaConfiguration.class,
 			DuplicateArchiveExecutorConfiguration.class
 		}) {
-			realtimeRunner("prod", ProductionDependencies.class, duplicate).run(context ->
+			productionRealtimeRunner("prod", ProductionDependencies.class, duplicate).run(context ->
 				assertThat(context).hasFailed()
 			);
 		}
@@ -132,6 +155,15 @@ class RealtimeProductionCompositionTest {
 			.withUserConfiguration(RealtimeComponentScan.class, dependencies)
 			.withUserConfiguration(additionalConfigurations)
 			.withPropertyValues("spring.profiles.active=" + profile);
+	}
+
+	private ApplicationContextRunner productionRealtimeRunner(
+		String profile,
+		Class<?> dependencies,
+		Class<?>... additionalConfigurations
+	) {
+		return realtimeRunner(profile, dependencies, additionalConfigurations)
+			.withPropertyValues("EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=test-service-key");
 	}
 
 	@TestConfiguration(proxyBeanMethods = false)
