@@ -58,7 +58,7 @@ class JourneyV3ContractTest {
 	private static final List<ArtifactDigest> EXPECTED_DIGESTS = List.of(
 		new ArtifactDigest("journey-v3-error-catalog.json", "5b93075c2e19801c8084e8ab08b5efb1ef8267822b3a71487742e7888e822772"),
 		new ArtifactDigest("journey-v3-error-disposition.json", "1e03ee7262897e0887ef837c95a2802ff420ffeaf15c921e0dca8a9750280780"),
-		new ArtifactDigest("journey-v3-session-integrity.json", "932110304d29c890c84c26d4e254efd905e8d5aed02ae02c43f7c39d815bd978"),
+		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
 		new ArtifactDigest("journey-v3.openapi.yaml", "582bf1f2454c810249a61342bce6f3bc455c7842a2f56f8e55fbe365f9fec2ab")
 	);
 
@@ -253,11 +253,15 @@ class JourneyV3ContractTest {
 		assertThat(nonce.path("entropyBytes").isIntegralNumber()).isTrue();
 		assertThat(nonce.path("entropyBytes").asInt()).isEqualTo(16);
 		assertThat(nonce.path("encoding").asText()).isEqualTo("BASE64URL_NO_PADDING");
-		assertThat(nonce.path("pattern").asText()).isEqualTo("^[A-Za-z0-9_-]{22}$");
+		assertThat(nonce.path("pattern").asText()).isEqualTo("^[A-Za-z0-9_-]{21}[AQgw]$");
 		assertThat(nonce.path("lifecycle").asText()).isEqualTo("ONE_PER_SESSION_ISSUANCE");
 		String knownNonce = "AAAAAAAAAAAAAAAAAAAAAA";
 		assertThat(knownNonce).matches(nonce.path("pattern").asText());
 		assertThat(Base64.getUrlDecoder().decode(knownNonce)).hasSize(16);
+		String nonCanonicalNonce = "AAAAAAAAAAAAAAAAAAAAAB";
+		assertThat(Base64.getUrlDecoder().decode(nonCanonicalNonce))
+			.isEqualTo(Base64.getUrlDecoder().decode(knownNonce));
+		assertThat(nonCanonicalNonce).doesNotMatch(nonce.path("pattern").asText());
 
 		JsonNode requestHash = integrity.path("requestHash");
 		assertThat(fieldNames(requestHash)).containsExactly("requestType", "algorithm", "encoding", "pattern",
@@ -265,7 +269,7 @@ class JourneyV3ContractTest {
 		assertThat(requestHash.path("requestType").asText()).isEqualTo("PLAY_INTEGRITY_STANDARD");
 		assertThat(requestHash.path("algorithm").asText()).isEqualTo("SHA-256");
 		assertThat(requestHash.path("encoding").asText()).isEqualTo("BASE64URL_NO_PADDING");
-		assertThat(requestHash.path("pattern").asText()).isEqualTo("^[A-Za-z0-9_-]{43}$");
+		assertThat(requestHash.path("pattern").asText()).isEqualTo("^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$");
 		String canonicalPayload = "{\"clientNonce\":\"" + knownNonce + "\",\"purpose\":\"journey:v3:session\",\"version\":1}";
 		assertThat(requestHash.path("canonicalPayloadUtf8Template").asText())
 			.isEqualTo("{\"clientNonce\":\"<clientNonce>\",\"purpose\":\"journey:v3:session\",\"version\":1}");
@@ -278,6 +282,10 @@ class JourneyV3ContractTest {
 		assertThat(base64UrlSha256(canonicalPayload)).isEqualTo(knownRequestHash);
 		assertThat(knownRequestHash).matches(requestHash.path("pattern").asText());
 		assertThat(Base64.getUrlDecoder().decode(knownRequestHash)).hasSize(32);
+		String nonCanonicalRequestHash = "oiyD4z8SIUGWUKR8znsbTQ1Z26WO43JHm3RUZLuwErV";
+		assertThat(Base64.getUrlDecoder().decode(nonCanonicalRequestHash))
+			.isEqualTo(Base64.getUrlDecoder().decode(knownRequestHash));
+		assertThat(nonCanonicalRequestHash).doesNotMatch(requestHash.path("pattern").asText());
 
 		JsonNode verdict = integrity.path("verdict");
 		assertThat(fieldNames(verdict)).containsExactly("expectedRequestPackageName", "expectedAppPackageName",

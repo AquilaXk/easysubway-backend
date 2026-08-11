@@ -6,14 +6,14 @@
     "source": "CSPRNG",
     "entropyBytes": 16,
     "encoding": "BASE64URL_NO_PADDING",
-    "pattern": "^[A-Za-z0-9_-]{22}$",
+    "pattern": "^[A-Za-z0-9_-]{21}[AQgw]$",
     "lifecycle": "ONE_PER_SESSION_ISSUANCE"
   },
   "requestHash": {
     "requestType": "PLAY_INTEGRITY_STANDARD",
     "algorithm": "SHA-256",
     "encoding": "BASE64URL_NO_PADDING",
-    "pattern": "^[A-Za-z0-9_-]{43}$",
+    "pattern": "^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$",
     "canonicalPayloadUtf8Template": "{\"clientNonce\":\"<clientNonce>\",\"purpose\":\"journey:v3:session\",\"version\":1}",
     "purpose": "journey:v3:session",
     "version": 1,
