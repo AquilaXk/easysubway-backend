@@ -311,11 +311,6 @@
 	</Match>
 	<Match>
 		<Bug pattern="EI_EXPOSE_REP2"/>
-		<Class name="com.easysubway.transit.adapter.out.persistence.JdbcTransitMasterOverrideRepository"/>
-		<Method name="&lt;init&gt;" params="javax.sql.DataSource,com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="EI_EXPOSE_REP2"/>
 		<Class name="com.easysubway.user.application.service.UserDataDeletionService"/>
 		<Method name="&lt;init&gt;" params="com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort" returns="void"/>
 	</Match>

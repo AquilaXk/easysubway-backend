@@ -14,6 +14,8 @@ import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.StationLayoutSource;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.ObjectReader;
+import com.fasterxml.jackson.databind.ObjectWriter;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -42,13 +44,16 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	public static final String ROUTE_EDGE = "ROUTE_EDGE";
 
 	private final JdbcTemplate jdbcTemplate;
-	private final ObjectMapper objectMapper;
+	private final ObjectReader jsonReader;
+	private final ObjectWriter jsonWriter;
 	private final DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
-		this.objectMapper = objectMapper;
+		ObjectMapper snapshot = objectMapper.copy();
+		this.jsonReader = snapshot.reader();
+		this.jsonWriter = snapshot.writer();
 		this.databaseDialect = databaseDialect();
 	}
 
@@ -388,7 +393,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 
 	private String writeJson(Object value) {
 		try {
-			return objectMapper.writeValueAsString(value);
+			return jsonWriter.writeValueAsString(value);
 		} catch (JsonProcessingException exception) {
 			throw new IllegalArgumentException("마스터 데이터 override payload를 JSON으로 저장할 수 없습니다.", exception);
 		}
@@ -396,7 +401,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 
 	private <T> T readJson(String payload, Class<T> type) {
 		try {
-			return objectMapper.readValue(payload, type);
+			return jsonReader.forType(type).readValue(payload);
 		} catch (JsonProcessingException exception) {
 			throw new IllegalStateException("마스터 데이터 override payload를 읽을 수 없습니다.", exception);
 		}

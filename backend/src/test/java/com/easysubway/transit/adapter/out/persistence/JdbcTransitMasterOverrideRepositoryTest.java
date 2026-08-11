@@ -16,6 +16,7 @@ import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
 import com.easysubway.transit.domain.StationLayoutSource;
 import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.concurrent.CountDownLatch;
@@ -98,6 +99,29 @@ class JdbcTransitMasterOverrideRepositoryTest {
 			WHERE entity_type = ? AND entity_id = ?
 			""", String.class, JdbcTransitMasterOverrideRepository.FACILITY, "facility-sangnoksu-elevator-1"))
 			.isEqualTo("facility-admin");
+	}
+
+	@Test
+	@DisplayName("생성 뒤 ObjectMapper 변경은 저장 JSON 형식을 바꾸지 않는다")
+	void mapperMutationAfterConstructionDoesNotChangePersistedJsonShape() {
+		DataSource dataSource = overrideDataSource();
+		ObjectMapper mapper = objectMapper();
+		var repository = new JdbcTransitMasterOverrideRepository(dataSource, mapper);
+
+		mapper.setPropertyNamingStrategy(PropertyNamingStrategies.SNAKE_CASE);
+		repository.saveFacilityStatus(
+			"facility-sangnoksu-elevator-1",
+			AccessibilityFacilityStatus.BROKEN,
+			LocalDate.of(2026, 6, 27),
+			"mapper-contract-admin"
+		);
+
+		String payload = new JdbcTemplate(dataSource).queryForObject("""
+			SELECT payload_json
+			FROM transit_master_overrides
+			WHERE entity_type = ? AND entity_id = ?
+			""", String.class, JdbcTransitMasterOverrideRepository.FACILITY, "facility-sangnoksu-elevator-1");
+		assertThat(payload).contains("\"stationId\"").doesNotContain("\"station_id\"");
 	}
 
 	@Test
