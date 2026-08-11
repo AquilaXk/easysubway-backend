@@ -241,6 +241,11 @@ class JourneyApplicationServiceTest {
 		for (java.util.function.Supplier<JourneyRequest> invalidCommand : invalidCommands) {
 			assertThatThrownBy(invalidCommand::get).isInstanceOf(RuntimeException.class);
 		}
+		JourneyRequest noStairsStepFree = command("01K1Y000000000000000000000", "station-origin", "station-destination",
+			new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 0, 1, () -> false);
+		assertThat(noStairsStepFree.mobilityProfile()).isEqualTo(JourneyRequest.MobilityProfile.NO_STAIRS);
+		assertThat(noStairsStepFree.constraintMode()).isEqualTo(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
 		assertThat(fakes.snapshotCalls).isZero();
 		assertThat(fakes.realtimeCalls).isZero();
 		assertThat(fakes.raptorCalls).isZero();
