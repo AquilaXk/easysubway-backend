@@ -181,7 +181,7 @@ jobs:
         uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
         with:
           distribution: temurin
-          java-version: "21"
+          java-version: "21.0.11"
           cache: gradle
 
       # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
