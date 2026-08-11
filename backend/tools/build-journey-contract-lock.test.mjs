@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
-import { mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
+import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
@@ -63,6 +63,67 @@ test("test seam은 temp open 전 output ancestor 교체를 temp 없이 거부한
     assert.equal(exists(output), false);
     assert.deepEqual(readdirSync(parent), []);
     assert.deepEqual(readdirSync(`${parent}-old`), []);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("validation 전에 output parent가 바뀌면 write 없이 거부한다", () => {
+  const directory = temporaryDirectory("validation-swap");
+  try {
+    const artifact = createArtifact(join(directory, "artifact")); const parent = join(directory, "parent"); mkdirSync(parent); const output = join(parent, "lock.json");
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeValidation: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
+    assert.equal(exists(output), false); assert.deepEqual(readdirSync(parent), []); assert.deepEqual(readdirSync(`${parent}-old`), []);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("closed temp pathname regular/symlink substitution은 final output과 external target을 만들지 않는다", () => {
+  const directory = temporaryDirectory("temp-substitute");
+  try {
+    for (const symlink of [false, true]) {
+      const artifact = createArtifact(join(directory, `artifact-${symlink}`));
+      const parent = join(directory, `output-${symlink}`); mkdirSync(parent);
+      const output = join(parent, "journey-contracts.lock.json"); const external = join(directory, `external-${symlink}`); let substitution; writeFileSync(external, "unchanged\n");
+      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeRename: (temporary) => { substitution = temporary; rmSync(temporary); if (symlink) symlinkSync(external, temporary); else writeFileSync(temporary, "replacement\n"); } }), /temporary output identity/);
+      assert.equal(exists(output), false); assert.equal(readFileSync(external, "utf8"), "unchanged\n"); assert.equal(symlink ? lstatSync(substitution).isSymbolicLink() : readFileSync(substitution, "utf8") === "replacement\n", true);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("open temp pathname regular/symlink substitution은 descriptor identity로 거부한다", () => {
+  const directory = temporaryDirectory("open-temp-substitute");
+  try {
+    for (const symlink of [false, true]) {
+      const artifact = createArtifact(join(directory, `artifact-${symlink}`)); const parent = join(directory, `output-${symlink}`); mkdirSync(parent);
+      const output = join(parent, "journey-contracts.lock.json"); const external = join(directory, `external-${symlink}`); let substitution; writeFileSync(external, "unchanged\n");
+      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforePathIdentity: (temporary) => { substitution = temporary; rmSync(temporary); if (symlink) symlinkSync(external, temporary); else writeFileSync(temporary, "replacement\n"); } }), /temporary output identity/);
+      assert.equal(exists(output), false); assert.equal(readFileSync(external, "utf8"), "unchanged\n"); assert.equal(symlink ? lstatSync(substitution).isSymbolicLink() : readFileSync(substitution, "utf8") === "replacement\n", true);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("create-new publish는 existing output bytes를 덮어쓰지 않는다", () => {
+  const directory = temporaryDirectory("existing-output");
+  try {
+    const artifact = createArtifact(join(directory, "artifact")); const output = join(directory, "output.json"); writeFileSync(output, "existing\n");
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact) }));
+    assert.equal(readFileSync(output, "utf8"), "existing\n");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("temp collision은 foreign bytes를 삭제하지 않는다", () => {
+  const directory = temporaryDirectory("temp-collision");
+  try {
+    const artifact = createArtifact(join(directory, "artifact")); const output = join(directory, "output.json"); let collision;
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeTempOpen: (temporary) => { collision = temporary; writeFileSync(temporary, "foreign\n"); } }));
+    assert.equal(readFileSync(collision, "utf8"), "foreign\n"); assert.equal(exists(output), false);
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("# ? %를 포함한 copied CLI path도 entrypoint를 실행한다", () => {
+  const directory = temporaryDirectory("cli-special");
+  try {
+    const special = join(directory, "#?%"); mkdirSync(special); const copied = join(special, "build-journey-contract-lock.mjs"); copyFileSync(builder, copied);
+    const result = spawnSync(process.execPath, [copied, "--artifact-directory", join(directory, "missing"), "--output", join(directory, "output.json")], { encoding: "utf8" });
+    assert.equal(result.status, 1); assert.match(result.stderr, /^build-journey-contract-lock:/);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 

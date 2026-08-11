@@ -1,9 +1,10 @@
 #!/usr/bin/env node
 import { createHash } from "node:crypto";
 import { randomUUID } from "node:crypto";
-import { closeSync, constants, fstatSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, renameSync, rmSync, writeSync } from "node:fs";
+import { closeSync, constants, fchmodSync, fsyncSync, fstatSync, linkSync, lstatSync, openSync, readFileSync, readdirSync, realpathSync, rmSync, writeSync } from "node:fs";
 import { basename, dirname, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
+import { pathToFileURL } from "node:url";
 
 const producerRepository = "AquilaXk/easysubway-backend";
 const producerSha = "1c25e586270f0e40b5fcad32820ff9e9e3ff985f";
@@ -32,19 +33,21 @@ const expectedResources = [
   ["journey-v3-openapi", "contracts/api/journey-v3.openapi.yaml", "application/yaml"],
 ];
 
-if (process.argv[1] && import.meta.url === new URL(`file://${resolve(process.argv[1])}`).href) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try { buildJourneyContractLock(process.argv.slice(2)); } catch (error) {
     process.stderr.write(`build-journey-contract-lock: ${error instanceof Error ? error.message : "invalid input"}\n`);
     process.exitCode = 1;
   }
 }
 
-export function buildJourneyContractLock(values, { trustAnchors = expectedArtifact, beforeTempOpen, beforeRename } = {}) {
+export function buildJourneyContractLock(values, { trustAnchors = expectedArtifact, beforeValidation, beforeTempOpen, beforePathIdentity, beforeRename } = {}) {
   const arguments_ = parseArguments(values);
+  const artifactAncestors = snapshotAncestors(arguments_["artifact-directory"]);
+  const outputAncestors = snapshotAncestors(dirname(arguments_.output));
+  beforeValidation?.(); assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors);
   const artifactDirectory = assertArtifactDirectory(arguments_["artifact-directory"]);
   const output = assertOutput(arguments_.output, artifactDirectory);
-  const artifactAncestors = snapshotAncestors(artifactDirectory);
-  const outputAncestors = snapshotAncestors(dirname(output));
+  assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors);
   const files = readArtifact(artifactDirectory);
     validateTrustAnchors(files, trustAnchors);
     const ledgerSha256 = validateLedger(files);
@@ -63,7 +66,7 @@ export function buildJourneyContractLock(values, { trustAnchors = expectedArtifa
     payload: receipt.payload,
     publicationReceiptSha256: sha256(files.get("journey-v3-contract-bundle-v2-receipt.json")),
       resources,
-    }, () => { beforeTempOpen?.(); assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors); }, () => { beforeRename?.(); assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors); }, () => snapshotsMatch(artifactAncestors) && snapshotsMatch(outputAncestors));
+    }, (temporary) => { beforeTempOpen?.(temporary); assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors); }, beforePathIdentity, (temporary) => { beforeRename?.(temporary); assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors); }, () => snapshotsMatch(artifactAncestors) && snapshotsMatch(outputAncestors));
 }
 
 function parseArguments(values) {
@@ -235,12 +238,15 @@ function assertExactKeys(value, keys, label) {
 
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 
-function writeAtomically(output, document, beforeTempOpen, beforeRename, canCleanup) {
+function writeAtomically(output, document, beforeTempOpen, beforePathIdentity, beforeRename, canCleanup) {
   const temporary = `${output}.tmp-${randomUUID()}`;
   let descriptor;
+  let opened;
   try {
-    beforeTempOpen?.();
+    beforeTempOpen?.(temporary);
     descriptor = openSync(temporary, "wx", 0o600);
+    opened = fstatSync(descriptor);
+    if (!opened.isFile()) throw new Error("temporary output identity is invalid");
     const bytes = Buffer.from(`${JSON.stringify(document, null, 2)}\n`);
     let offset = 0;
     while (offset < bytes.length) {
@@ -248,13 +254,29 @@ function writeAtomically(output, document, beforeTempOpen, beforeRename, canClea
       if (!Number.isSafeInteger(written) || written <= 0) throw new Error("output write is incomplete");
       offset += written;
     }
-    closeSync(descriptor);
-    descriptor = undefined;
-    beforeRename?.();
-    renameSync(temporary, output);
+    fchmodSync(descriptor, 0o600); fsyncSync(descriptor);
+    const completed = fstatSync(descriptor);
+    if (!completed.isFile() || completed.dev !== opened.dev || completed.ino !== opened.ino || (completed.mode & 0o777) !== 0o600 || completed.size !== bytes.length) throw new Error("temporary output identity is invalid");
+    beforePathIdentity?.(temporary);
+    assertTemporaryIdentity(temporary, completed);
+    closeSync(descriptor); descriptor = undefined;
+    beforeRename?.(temporary);
+    assertTemporaryIdentity(temporary, completed);
+    linkSync(temporary, output);
+    assertTemporaryIdentity(output, completed);
+    removeOwnedTemporary(temporary, completed);
   } catch (error) {
     if (descriptor !== undefined) closeSync(descriptor);
-    if (canCleanup?.() !== false) rmSync(temporary, { force: true });
+    if (canCleanup?.() !== false && typeof opened !== "undefined") removeOwnedTemporary(temporary, opened);
     throw error;
   }
+}
+function removeOwnedTemporary(path, owned) {
+  const current = lstatSync(path, { throwIfNoEntry: false });
+  if (!current || current.isSymbolicLink() || !current.isFile() || current.dev !== owned.dev || current.ino !== owned.ino) return false;
+  rmSync(path); return true;
+}
+function assertTemporaryIdentity(path, descriptor) {
+  const current = lstatSync(path, { throwIfNoEntry: false });
+  if (!current || current.isSymbolicLink() || !current.isFile() || current.dev !== descriptor.dev || current.ino !== descriptor.ino || current.size !== descriptor.size || (current.mode & 0o777) !== 0o600) throw new Error("temporary output identity is invalid");
 }
