@@ -750,11 +750,11 @@ class SecurityConfigTest {
 	}
 
 	@Test
-	@DisplayName("외부 관리 break-glass identity와 bootstrap ID 충돌은 mutation 전에 실패한다")
-	void externallyManagedBreakGlassIdentityCollisionFailsBeforeMutation() {
+	@DisplayName("모든 persisted break-glass identity와 bootstrap ID 충돌은 mutation 전에 실패한다")
+	void persistedBreakGlassIdentityCollisionFailsBeforeMutation() {
 		for (var scenario : List.of(
 			new BootstrapIdentityCollision(" BREAK-GLASS ", "different-admin-password", "", "", false),
-			new BootstrapIdentityCollision(" Break-Glass ", "break-password", "", "", true),
+			new BootstrapIdentityCollision(" break-glass ", "break-password", "", "", true),
 			new BootstrapIdentityCollision("admin-user", "admin-password", " BREAK-GLASS ", "different-operator-password", false),
 			new BootstrapIdentityCollision("admin-user", "admin-password", " break-glass ", "break-password", true)
 		)) {
@@ -763,14 +763,12 @@ class SecurityConfigTest {
 			var rbacRepository = new InMemoryAdminRbacAuthorityRepository();
 			var passwordEncoder = PasswordEncoderFactories.createDelegatingPasswordEncoder();
 			var now = LocalDateTime.of(2026, 6, 27, 0, 0);
-			AdminIdentity externalIdentity = breakGlassIdentity(passwordEncoder, false, now);
-			if (scenario.rotationRequired()) {
-				externalIdentity = externalIdentity.recordBreakGlassSuccess(now.plusMinutes(1));
-			}
-			repository.save(externalIdentity);
+			AdminIdentity existingIdentity = breakGlassIdentity(
+				passwordEncoder, scenario.bootstrapManaged(), now);
+			repository.save(existingIdentity);
 			rbacRepository.replacePermissionAuthorities("break-glass", Set.of("admin.view", "admin.audit.read"));
 
-			AdminIdentity expectedIdentity = externalIdentity;
+			AdminIdentity expectedIdentity = existingIdentity;
 			assertThatThrownBy(() -> securityConfig.userDetailsService(
 				scenario.adminUsername(),
 				scenario.adminPassword(),
@@ -787,12 +785,15 @@ class SecurityConfigTest {
 				new MockEnvironment()
 			))
 				.isInstanceOf(IllegalStateException.class)
-				.hasMessageContaining("외부 관리 break-glass identity");
+				.hasMessageContaining("break-glass identity");
 			assertThat(repository.findByLoginId("break-glass")).contains(expectedIdentity);
 			assertThat(repository.findByLoginId("admin-user")).isEmpty();
+			assertThat(repository.findByLoginId("operator-user")).isEmpty();
 			assertThat(rbacRepository.findPermissionAuthorities("break-glass"))
 				.containsExactlyInAnyOrder("admin.view", "admin.audit.read")
 				.doesNotContain("admin.security.admin");
+			assertThat(rbacRepository.findPermissionAuthorities("admin-user")).isEmpty();
+			assertThat(rbacRepository.findPermissionAuthorities("operator-user")).isEmpty();
 		}
 	}
 
@@ -813,7 +814,7 @@ class SecurityConfigTest {
 		String adminPassword,
 		String operatorUsername,
 		String operatorPassword,
-		boolean rotationRequired
+		boolean bootstrapManaged
 	) {
 	}
 

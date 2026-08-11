@@ -484,7 +484,7 @@ public class SecurityConfig {
 		);
 		validateOperatorCredentials(operatorUsername, operatorPassword);
 		validateDistinctAdminLoginIds(adminUsername, operatorUsername, userUsername);
-		validateProtectedBreakGlassBootstrapCollision(
+		validateBreakGlassBootstrapCollision(
 			adminUsername,
 			operatorUsername,
 			adminIdentityRepository
@@ -638,9 +638,6 @@ public class SecurityConfig {
 			return;
 		}
 		AdminIdentity existing = current.orElseThrow();
-		if (breakGlassRotationRequiredWithSamePassword(existing, rawPassword, passwordEncoder)) {
-			return;
-		}
 		if (sameBootstrapSecret(existing, bootstrap, rawPassword, passwordEncoder)) {
 			return;
 		}
@@ -660,16 +657,6 @@ public class SecurityConfig {
 			&& Objects.equals(existing.email(), bootstrap.email())
 			&& Objects.equals(existing.breakGlassReason(), bootstrap.breakGlassReason())
 			&& existing.bootstrapManaged() == bootstrap.bootstrapManaged()
-			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
-	}
-
-	private boolean breakGlassRotationRequiredWithSamePassword(
-		AdminIdentity existing,
-		String rawPassword,
-		PasswordEncoder passwordEncoder
-	) {
-		return existing.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS
-			&& existing.credentialRotationRequired()
 			&& passwordEncoder.matches(rawPassword, existing.passwordHash());
 	}
 
@@ -734,7 +721,7 @@ public class SecurityConfig {
 		}
 	}
 
-	private void validateProtectedBreakGlassBootstrapCollision(
+	private void validateBreakGlassBootstrapCollision(
 		String adminUsername,
 		String operatorUsername,
 		AdminIdentityRepository adminIdentityRepository
@@ -743,14 +730,13 @@ public class SecurityConfig {
 			if (bootstrapLoginId.isBlank()) {
 				continue;
 			}
-			boolean protectedBreakGlassIdentity = adminIdentityRepository
+			boolean breakGlassIdentity = adminIdentityRepository
 				.findByLoginId(normalizeLoginId(bootstrapLoginId))
 				.filter(identity -> identity.authMethod() == AdminIdentityAuthMethod.BREAK_GLASS)
-				.filter(identity -> !identity.bootstrapManaged())
 				.isPresent();
-			if (protectedBreakGlassIdentity) {
+			if (breakGlassIdentity) {
 				throw new IllegalStateException(
-					"외부 관리 break-glass identity와 bootstrap 계정 ID가 충돌합니다."
+					"break-glass identity와 bootstrap 계정 ID가 충돌합니다."
 				);
 			}
 		}
