@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'decb5e5bc54c022a698b1b591b6fb9843cb7faedf1af9ce98f98217841df0722', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: '7e70fd9826469558d0e17f60956d87badb8c7356e36e7bed0759260f4e61423c', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -34,7 +34,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '883ecb5609c44c36f2225a6b4734c3caa89e9261dc329722fe74380985fe67ee');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '753d653721869ebac1f2114054b34cfcb83f3bec1bb7541fdb65d2d78f8c74ee');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
