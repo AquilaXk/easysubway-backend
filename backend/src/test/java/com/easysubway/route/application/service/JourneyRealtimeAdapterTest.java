@@ -122,6 +122,22 @@ class JourneyRealtimeAdapterTest {
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("runtime view");
 
+		var mismatchedShaRuntime = RaptorRouteBundleRuntimeView.compile(
+			"b".repeat(64), GENERATION, directTimetable());
+		assertThatThrownBy(() -> adapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
+			snapshot(mismatchedShaRuntime), EFFECTIVE))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("does not match snapshot");
+
+		var mismatchedGenerationRuntime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION + 1, directTimetable());
+		assertThatThrownBy(() -> adapter.requireFresh(
+			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
+			snapshot(mismatchedGenerationRuntime), EFFECTIVE))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("does not match snapshot");
+
 		assertThatThrownBy(() -> adapter.requireFresh(
 			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-missing", () -> false),
 			snapshot(directRuntime), EFFECTIVE))
