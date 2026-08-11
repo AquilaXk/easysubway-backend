@@ -15,6 +15,7 @@ const fileName = "journey-v3-contract-bundle-v2.json";
 const expectedResources = [
   { id: "journey-v3-error-catalog", path: "contracts/api/journey-v3-error-catalog.json", mediaType: "application/json" },
   { id: "journey-v3-error-disposition", path: "contracts/api/journey-v3-error-disposition.json", mediaType: "application/json" },
+  { id: "journey-v3-session-integrity", path: "contracts/api/journey-v3-session-integrity.json", mediaType: "application/json" },
   { id: "journey-v3-openapi", path: "contracts/api/journey-v3.openapi.yaml", mediaType: "application/yaml" },
 ];
 const options = new Set(["--bundle", "--descriptor", "--manifest", "--repository", "--git-sha", "--output"]);

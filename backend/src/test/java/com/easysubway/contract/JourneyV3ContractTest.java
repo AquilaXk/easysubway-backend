@@ -11,6 +11,7 @@ import java.nio.file.Path;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
+import java.util.Base64;
 import java.util.HexFormat;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -26,6 +27,7 @@ class JourneyV3ContractTest {
 	private static final Path CONTRACTS = Path.of("..", "contracts", "api");
 	private static final Path OPENAPI = CONTRACTS.resolve("journey-v3.openapi.yaml");
 	private static final Path ERROR_CATALOG = CONTRACTS.resolve("journey-v3-error-catalog.json");
+	private static final Path SESSION_INTEGRITY = CONTRACTS.resolve("journey-v3-session-integrity.json");
 	private static final Path DIGESTS = CONTRACTS.resolve("journey-v3-contract-digests.json");
 	private static final Path CONTRACT_ATTRIBUTES = CONTRACTS.resolve(".gitattributes");
 	private static final ObjectMapper JSON = new ObjectMapper();
@@ -51,6 +53,13 @@ class JourneyV3ContractTest {
 		new ErrorPair("issueJourneySession", 400, "INVALID_JOURNEY_SESSION_REQUEST"),
 		new ErrorPair("issueJourneySession", 403, "ROUTE_SESSION_ATTESTATION_REJECTED"),
 		new ErrorPair("issueJourneySession", 503, "ROUTE_SESSION_ATTESTATION_UNAVAILABLE")
+	);
+
+	private static final List<ArtifactDigest> EXPECTED_DIGESTS = List.of(
+		new ArtifactDigest("journey-v3-error-catalog.json", "5b93075c2e19801c8084e8ab08b5efb1ef8267822b3a71487742e7888e822772"),
+		new ArtifactDigest("journey-v3-error-disposition.json", "1e03ee7262897e0887ef837c95a2802ff420ffeaf15c921e0dca8a9750280780"),
+		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
+		new ArtifactDigest("journey-v3.openapi.yaml", "582bf1f2454c810249a61342bce6f3bc455c7842a2f56f8e55fbe365f9fec2ab")
 	);
 
 	@Test
@@ -222,7 +231,96 @@ class JourneyV3ContractTest {
 	}
 
 	@Test
-	@DisplayName("digest artifact binds the exact OpenAPI and catalog raw bytes")
+	@DisplayName("session integrity raw resource fixes the closed issuance and attestation contract")
+	void sessionIntegrityResourceIsExact() throws IOException {
+		JsonNode integrity = JSON.readTree(SESSION_INTEGRITY.toFile());
+		assertThat(fieldNames(integrity)).containsExactly(
+			"schemaVersion", "artifactKind", "operationId", "nonce", "requestHash", "verdict", "session"
+		);
+		assertThat(integrity.path("schemaVersion").asText()).isEqualTo("JOURNEY_V3_SESSION_INTEGRITY_V1");
+		assertThat(integrity.path("artifactKind").asText()).isEqualTo("journey-v3-session-integrity");
+		assertThat(integrity.path("operationId").asText()).isEqualTo("issueJourneySession");
+		assertThat(operation(openApi(), "/api/v3/journeys/session").get("operationId"))
+			.isEqualTo(integrity.path("operationId").asText());
+		assertClosedSchema(openApi(), "JourneySessionRequest",
+			Set.of("integrityToken", "clientNonce"), Set.of("integrityToken", "clientNonce"));
+		assertClosedSchema(openApi(), "JourneySessionResponse",
+			Set.of("token", "scope", "issuedAt", "expiresAt"), Set.of("token", "scope", "issuedAt", "expiresAt"));
+
+		JsonNode nonce = integrity.path("nonce");
+		assertThat(fieldNames(nonce)).containsExactly("source", "entropyBytes", "encoding", "pattern", "lifecycle");
+		assertThat(nonce.path("source").asText()).isEqualTo("CSPRNG");
+		assertThat(nonce.path("entropyBytes").isIntegralNumber()).isTrue();
+		assertThat(nonce.path("entropyBytes").asInt()).isEqualTo(16);
+		assertThat(nonce.path("encoding").asText()).isEqualTo("BASE64URL_NO_PADDING");
+		assertThat(nonce.path("pattern").asText()).isEqualTo("^[A-Za-z0-9_-]{21}[AQgw]$");
+		assertThat(nonce.path("lifecycle").asText()).isEqualTo("ONE_PER_SESSION_ISSUANCE");
+		String knownNonce = "AAAAAAAAAAAAAAAAAAAAAA";
+		assertThat(knownNonce).matches(nonce.path("pattern").asText());
+		assertThat(Base64.getUrlDecoder().decode(knownNonce)).hasSize(16);
+		String nonCanonicalNonce = "AAAAAAAAAAAAAAAAAAAAAB";
+		assertThat(Base64.getUrlDecoder().decode(nonCanonicalNonce))
+			.isEqualTo(Base64.getUrlDecoder().decode(knownNonce));
+		assertThat(nonCanonicalNonce).doesNotMatch(nonce.path("pattern").asText());
+
+		JsonNode requestHash = integrity.path("requestHash");
+		assertThat(fieldNames(requestHash)).containsExactly("requestType", "algorithm", "encoding", "pattern",
+			"canonicalPayloadUtf8Template", "purpose", "version", "sensitivePlaintextAllowed");
+		assertThat(requestHash.path("requestType").asText()).isEqualTo("PLAY_INTEGRITY_STANDARD");
+		assertThat(requestHash.path("algorithm").asText()).isEqualTo("SHA-256");
+		assertThat(requestHash.path("encoding").asText()).isEqualTo("BASE64URL_NO_PADDING");
+		assertThat(requestHash.path("pattern").asText()).isEqualTo("^[A-Za-z0-9_-]{42}[AEIMQUYcgkosw048]$");
+		String canonicalPayload = "{\"clientNonce\":\"" + knownNonce + "\",\"purpose\":\"journey:v3:session\",\"version\":1}";
+		assertThat(requestHash.path("canonicalPayloadUtf8Template").asText())
+			.isEqualTo("{\"clientNonce\":\"<clientNonce>\",\"purpose\":\"journey:v3:session\",\"version\":1}");
+		assertThat(requestHash.path("purpose").asText()).isEqualTo("journey:v3:session");
+		assertThat(requestHash.path("version").isIntegralNumber()).isTrue();
+		assertThat(requestHash.path("version").asInt()).isEqualTo(1);
+		assertThat(requestHash.path("sensitivePlaintextAllowed").isBoolean()).isTrue();
+		assertThat(requestHash.path("sensitivePlaintextAllowed").asBoolean()).isFalse();
+		String knownRequestHash = "oiyD4z8SIUGWUKR8znsbTQ1Z26WO43JHm3RUZLuwErU";
+		assertThat(base64UrlSha256(canonicalPayload)).isEqualTo(knownRequestHash);
+		assertThat(knownRequestHash).matches(requestHash.path("pattern").asText());
+		assertThat(Base64.getUrlDecoder().decode(knownRequestHash)).hasSize(32);
+		String nonCanonicalRequestHash = "oiyD4z8SIUGWUKR8znsbTQ1Z26WO43JHm3RUZLuwErV";
+		assertThat(Base64.getUrlDecoder().decode(nonCanonicalRequestHash))
+			.isEqualTo(Base64.getUrlDecoder().decode(knownRequestHash));
+		assertThat(nonCanonicalRequestHash).doesNotMatch(requestHash.path("pattern").asText());
+
+		JsonNode verdict = integrity.path("verdict");
+		assertThat(fieldNames(verdict)).containsExactly("expectedRequestPackageName", "expectedAppPackageName",
+			"maxAgeSeconds", "futureTimestampAllowed", "requiredAppRecognitionVerdict",
+			"requiredAppLicensingVerdict", "requiredDeviceRecognitionVerdict",
+			"configuredCertificateSha256Required", "configuredCertificateSha256Encoding",
+			"requestHashConstantTimeEqualityRequired", "nonceSingleUseRequired", "nonceClaimTtlSeconds");
+		assertThat(verdict.path("expectedRequestPackageName").asText()).isEqualTo("com.easysubway.app");
+		assertThat(verdict.path("expectedAppPackageName").asText()).isEqualTo("com.easysubway.app");
+		assertThat(verdict.path("maxAgeSeconds").isIntegralNumber()).isTrue();
+		assertThat(verdict.path("maxAgeSeconds").asInt()).isEqualTo(120);
+		assertThat(verdict.path("futureTimestampAllowed").isBoolean()).isTrue();
+		assertThat(verdict.path("futureTimestampAllowed").asBoolean()).isFalse();
+		assertThat(verdict.path("requiredAppRecognitionVerdict").asText()).isEqualTo("PLAY_RECOGNIZED");
+		assertThat(verdict.path("requiredAppLicensingVerdict").asText()).isEqualTo("LICENSED");
+		assertThat(verdict.path("requiredDeviceRecognitionVerdict").asText()).isEqualTo("MEETS_DEVICE_INTEGRITY");
+		assertThat(verdict.path("configuredCertificateSha256Required").isBoolean()).isTrue();
+		assertThat(verdict.path("configuredCertificateSha256Required").asBoolean()).isTrue();
+		assertThat(verdict.path("configuredCertificateSha256Encoding").asText()).isEqualTo("BASE64URL_NO_PADDING");
+		assertThat(verdict.path("requestHashConstantTimeEqualityRequired").isBoolean()).isTrue();
+		assertThat(verdict.path("requestHashConstantTimeEqualityRequired").asBoolean()).isTrue();
+		assertThat(verdict.path("nonceSingleUseRequired").isBoolean()).isTrue();
+		assertThat(verdict.path("nonceSingleUseRequired").asBoolean()).isTrue();
+		assertThat(verdict.path("nonceClaimTtlSeconds").isIntegralNumber()).isTrue();
+		assertThat(verdict.path("nonceClaimTtlSeconds").asInt()).isEqualTo(120);
+
+		JsonNode session = integrity.path("session");
+		assertThat(fieldNames(session)).containsExactly("scope", "ttlSeconds");
+		assertThat(session.path("scope").asText()).isEqualTo("journey:v3");
+		assertThat(session.path("ttlSeconds").isIntegralNumber()).isTrue();
+		assertThat(session.path("ttlSeconds").asInt()).isEqualTo(600);
+	}
+
+	@Test
+	@DisplayName("digest artifact binds the exact Journey V3 raw contract bytes")
 	void digestArtifactBindsRawContractBytes() throws IOException {
 		assertThat(Files.readAllLines(CONTRACT_ATTRIBUTES, StandardCharsets.UTF_8)).containsExactly(
 			"*.yaml text eol=lf",
@@ -231,15 +329,19 @@ class JourneyV3ContractTest {
 		assertThat(fieldNames(digest)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "artifacts");
 		assertThat(digest.path("schemaVersion").asText()).isEqualTo("JOURNEY_V3_CONTRACT_DIGESTS_V1");
 		assertThat(digest.path("artifactKind").asText()).isEqualTo("journey-v3-contract-digests");
+		assertThat(digest.path("artifacts").isArray()).isTrue();
 
 		List<JsonNode> artifacts = new ArrayList<>();
 		digest.path("artifacts").forEach(artifacts::add);
-		assertThat(artifacts.stream().map(node -> node.path("path").asText()).toList()).containsExactly(
-			"journey-v3-error-catalog.json", "journey-v3-error-disposition.json", "journey-v3.openapi.yaml");
-		for (JsonNode artifact : artifacts) {
+		assertThat(artifacts.stream().map(node -> node.path("path").asText()).toList())
+			.containsExactlyElementsOf(EXPECTED_DIGESTS.stream().map(ArtifactDigest::path).toList());
+		for (int index = 0; index < artifacts.size(); index++) {
+			JsonNode artifact = artifacts.get(index);
+			ArtifactDigest expected = EXPECTED_DIGESTS.get(index);
 			assertThat(fieldNames(artifact)).containsExactlyInAnyOrder("path", "sha256");
 			Path file = CONTRACTS.resolve(artifact.path("path").asText());
-			assertThat(artifact.path("sha256").asText()).isEqualTo(sha256(Files.readAllBytes(file)));
+			assertThat(artifact.path("sha256").asText()).isEqualTo(expected.sha256());
+			assertThat(sha256(Files.readAllBytes(file))).isEqualTo(expected.sha256());
 		}
 	}
 
@@ -341,11 +443,21 @@ class JourneyV3ContractTest {
 	}
 
 	private static String sha256(byte[] bytes) {
+		return HexFormat.of().formatHex(sha256Bytes(bytes));
+	}
+
+	private static byte[] sha256Bytes(byte[] bytes) {
 		try {
-			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+			return MessageDigest.getInstance("SHA-256").digest(bytes);
 		} catch (NoSuchAlgorithmException exception) {
 			throw new IllegalStateException("SHA-256 unavailable", exception);
 		}
+	}
+
+	private static String base64UrlSha256(String value) {
+		return Base64.getUrlEncoder().withoutPadding().encodeToString(
+			sha256Bytes(value.getBytes(StandardCharsets.UTF_8))
+		);
 	}
 
 	@SuppressWarnings("unchecked")
@@ -363,5 +475,8 @@ class JourneyV3ContractTest {
 	}
 
 	private record ErrorPair(String operation, int httpStatus, String code) {
+	}
+
+	private record ArtifactDigest(String path, String sha256) {
 	}
 }

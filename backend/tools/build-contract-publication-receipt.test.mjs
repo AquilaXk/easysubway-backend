@@ -17,6 +17,7 @@ const resourceSha256 = sha256(Buffer.from(resourceContent, "base64"));
 const resources = [
   { id: "journey-v3-error-catalog", path: "contracts/api/journey-v3-error-catalog.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: resourceSha256, contentBase64: resourceContent },
   { id: "journey-v3-error-disposition", path: "contracts/api/journey-v3-error-disposition.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: resourceSha256, contentBase64: resourceContent },
+  { id: "journey-v3-session-integrity", path: "contracts/api/journey-v3-session-integrity.json", owner: "AquilaXk/easysubway-backend", mediaType: "application/json", sha256: resourceSha256, contentBase64: resourceContent },
   { id: "journey-v3-openapi", path: "contracts/api/journey-v3.openapi.yaml", owner: "AquilaXk/easysubway-backend", mediaType: "application/yaml", sha256: resourceSha256, contentBase64: resourceContent },
 ];
 
