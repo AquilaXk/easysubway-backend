@@ -16,6 +16,7 @@ import java.math.BigDecimal;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
@@ -71,7 +72,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 		try (var dataSource = dataSource(SCHEMA)) {
 			var jdbcTemplate = new JdbcTemplate(dataSource);
 			installInsertDelay(jdbcTemplate);
-			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+			var transaction = transactionTemplate(dataSource);
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			var ready = new CountDownLatch(2);
 			var start = new CountDownLatch(1);
@@ -98,7 +99,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 				first.get(10, TimeUnit.SECONDS);
 				second.get(10, TimeUnit.SECONDS);
 			} finally {
-				executor.shutdownNow();
+				shutdownExecutor(executor);
 			}
 
 			assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_overrides", Integer.class))
@@ -130,7 +131,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	@DisplayName("시설 status 저장은 target lock 뒤의 full save payload를 변환하고 정확한 pre-image audit을 남긴다")
 	void facilityStatusUsesFullSavePayloadReadAfterTargetLock() throws Exception {
 		try (var dataSource = dataSource(SCHEMA)) {
-			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+			var transaction = transactionTemplate(dataSource);
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 27), "seed"), "seed");
 			var changed = new CountDownLatch(1);
@@ -152,7 +153,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 				fullSave.get(5, TimeUnit.SECONDS);
 				statusSave.get(5, TimeUnit.SECONDS);
 			} finally {
-				executor.shutdownNow();
+				shutdownExecutor(executor);
 			}
 
 			assertThat(repository.loadAccessibilityFacility(facilityId())).hasValueSatisfying(facility -> {
@@ -173,7 +174,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	@DisplayName("시설 status 저장은 target lock 뒤의 rollback payload를 변환한다")
 	void facilityStatusUsesRollbackPayloadReadAfterTargetLock() throws Exception {
 		try (var dataSource = dataSource(SCHEMA)) {
-			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+			var transaction = transactionTemplate(dataSource);
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 27), "first"), "first");
 			repository.saveAccessibilityFacility(facility(AccessibilityFacilityStatus.NORMAL, LocalDate.of(2026, 6, 28), "second"), "second");
@@ -196,7 +197,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 				rollback.get(5, TimeUnit.SECONDS);
 				statusSave.get(5, TimeUnit.SECONDS);
 			} finally {
-				executor.shutdownNow();
+				shutdownExecutor(executor);
 			}
 
 			assertThat(repository.loadAccessibilityFacility(facilityId())).hasValueSatisfying(facility -> {
@@ -210,7 +211,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	@DisplayName("layout status 저장은 target lock 뒤의 version을 하나만 증가시키고 pre-image audit을 남긴다")
 	void layoutStatusSerializesVersionAfterTargetLock() throws Exception {
 		try (var dataSource = dataSource(SCHEMA)) {
-			var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+			var transaction = transactionTemplate(dataSource);
 			var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
 			SimplifiedStationLayout base = repository.loadSimplifiedStationLayouts().getFirst();
 			var changed = new CountDownLatch(1);
@@ -234,7 +235,7 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 				fullSave.get(5, TimeUnit.SECONDS);
 				statusSave.get(5, TimeUnit.SECONDS);
 			} finally {
-				executor.shutdownNow();
+				shutdownExecutor(executor);
 			}
 
 			assertThat(repository.loadSimplifiedStationLayouts())
@@ -282,6 +283,17 @@ class JdbcTransitMasterOverrideRepositoryContainerTest {
 	private void assertWaiting(Future<?> operation) {
 		assertThatThrownBy(() -> operation.get(250, TimeUnit.MILLISECONDS))
 			.isInstanceOf(TimeoutException.class);
+	}
+
+	private TransactionTemplate transactionTemplate(DataSource dataSource) {
+		var transaction = new TransactionTemplate(new DataSourceTransactionManager(dataSource));
+		transaction.setTimeout(8);
+		return transaction;
+	}
+
+	private void shutdownExecutor(ExecutorService executor) throws InterruptedException {
+		executor.shutdownNow();
+		assertThat(executor.awaitTermination(5, TimeUnit.SECONDS)).isTrue();
 	}
 
 	private void await(CountDownLatch latch) {
