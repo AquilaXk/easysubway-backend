@@ -136,6 +136,20 @@ final class LegacySchemaFingerprint {
 			  AND NOT t.tgisinternal
 			  AND c.relname <> 'flyway_schema_history'
 			"""),
+		new CatalogQuery("RULE", """
+			SELECT c.relname,
+			       r.rulename,
+			       r.ev_type::text,
+			       r.ev_enabled::text,
+			       r.is_instead::text,
+			       pg_get_ruledef(r.oid, true)
+			FROM pg_catalog.pg_rewrite r
+			JOIN pg_catalog.pg_class c ON c.oid = r.ev_class
+			JOIN pg_catalog.pg_namespace n ON n.oid = c.relnamespace
+			WHERE n.nspname = ?
+			  AND c.relname <> 'flyway_schema_history'
+			  AND r.rulename <> '_RETURN'
+			"""),
 		new CatalogQuery("POLICY", """
 			SELECT c.relname,
 			       p.polname,

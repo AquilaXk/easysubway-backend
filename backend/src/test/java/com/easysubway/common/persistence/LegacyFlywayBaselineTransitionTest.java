@@ -7,20 +7,29 @@ import java.io.ByteArrayInputStream;
 import java.io.ByteArrayOutputStream;
 import java.io.InputStream;
 import java.io.PrintStream;
+import java.net.URLClassLoader;
 import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.sql.Connection;
+import java.sql.Driver;
 import java.sql.DriverManager;
+import java.sql.DriverPropertyInfo;
 import java.sql.SQLException;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Properties;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.logging.Logger;
 import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.testcontainers.containers.PostgreSQLContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
@@ -88,6 +97,37 @@ class LegacyFlywayBaselineTransitionTest {
 				"Exception",
 				" at "
 			);
+	}
+
+	@Test
+	@DisplayName("검증한 single-use JDBC connection에서 Flyway baseline과 사후 검증을 완료한다")
+	void baselinesOnTheValidatedConnectionWithoutOpeningAnotherTarget() throws SQLException {
+		prepareReviewedLegacySchema();
+		var driver = new SingleUseDriver();
+		DriverManager.registerDriver(driver);
+		try {
+			var credentials = new LegacyFlywayBaselineTransition.DatabaseCredentials(
+				driver.url(),
+				POSTGRES.getUsername(),
+				POSTGRES.getPassword()
+			);
+			var policy = policy();
+			var result = LegacyFlywayBaselineTransition.execute(
+				credentials,
+				validInput(targetIdentity()),
+				policy,
+				runtime(policy),
+				CLOCK,
+				() -> {
+				}
+			);
+
+			assertThat(result.success()).isTrue();
+			assertThat(driver.connectionCount()).isEqualTo(1);
+			assertThat(historyRowCount()).isEqualTo(1);
+		} finally {
+			DriverManager.deregisterDriver(driver);
+		}
 	}
 
 	@Test
@@ -329,6 +369,25 @@ class LegacyFlywayBaselineTransitionTest {
 		assertHistoryAbsent();
 	}
 
+	@Test
+	@DisplayName("inventory에 없는 versioned 또는 repeatable classpath migration을 거부한다")
+	void rejectsUninventoriedClasspathMigrations(@TempDir Path directory) throws Exception {
+		var policy = policy();
+		for (String filename : new String[]{"V70__unexpected.sql", "R__unexpected.sql"}) {
+			Path root = directory.resolve(filename.replace('.', '_'));
+			Path migration = root.resolve("db/migration/postgresql").resolve(filename);
+			Files.createDirectories(migration.getParent());
+			Files.writeString(migration, "SELECT 1;\n", StandardCharsets.UTF_8);
+			try (var loader = new URLClassLoader(new java.net.URL[]{root.toUri().toURL()}, getClass().getClassLoader())) {
+				assertThatThrownBy(() -> LegacyFlywayBaselineTransition.verifyRuntime(policy, loader))
+					.as(filename)
+					.isInstanceOfSatisfying(LegacyFlywayBaselineTransition.ContractFailure.class,
+						failure -> assertThat(failure.reason())
+							.isEqualTo(LegacyFlywayBaselineTransition.Reason.RESOURCE_DRIFT));
+			}
+		}
+	}
+
 	private LegacyFlywayBaselineTransition.Result execute(
 		LegacyFlywayBaselineTransition.OperationInput input,
 		LegacyFlywayBaselineTransition.Policy policy,
@@ -482,5 +541,56 @@ class LegacyFlywayBaselineTransitionTest {
 
 	private Connection connection() throws SQLException {
 		return DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+	}
+
+	private static final class SingleUseDriver implements Driver {
+
+		private static final String URL = "jdbc:easysubway-single-use:legacy-baseline";
+		private final AtomicInteger connectionCount = new AtomicInteger();
+
+		String url() {
+			return URL;
+		}
+
+		int connectionCount() {
+			return connectionCount.get();
+		}
+
+		@Override
+		public Connection connect(String url, Properties info) throws SQLException {
+			if (!acceptsURL(url)) return null;
+			if (connectionCount.incrementAndGet() != 1) throw new SQLException("second target connection rejected");
+			return DriverManager.getConnection(POSTGRES.getJdbcUrl(), POSTGRES.getUsername(), POSTGRES.getPassword());
+		}
+
+		@Override
+		public boolean acceptsURL(String url) {
+			return URL.equals(url);
+		}
+
+		@Override
+		public DriverPropertyInfo[] getPropertyInfo(String url, Properties info) {
+			return new DriverPropertyInfo[0];
+		}
+
+		@Override
+		public int getMajorVersion() {
+			return 1;
+		}
+
+		@Override
+		public int getMinorVersion() {
+			return 0;
+		}
+
+		@Override
+		public boolean jdbcCompliant() {
+			return false;
+		}
+
+		@Override
+		public Logger getParentLogger() {
+			return Logger.getLogger("com.easysubway.common.persistence.single-use-driver");
+		}
 	}
 }

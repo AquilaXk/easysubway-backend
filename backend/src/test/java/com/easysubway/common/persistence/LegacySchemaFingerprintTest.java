@@ -84,6 +84,7 @@ class LegacySchemaFingerprintTest {
 			mutations.put("routine", "CREATE FUNCTION legacy_touch() RETURNS trigger LANGUAGE plpgsql AS 'BEGIN RETURN NEW; END'");
 			mutations.put("trigger", "CREATE TRIGGER legacy_touch_trigger BEFORE INSERT ON favorite_stations FOR EACH ROW EXECUTE FUNCTION legacy_touch()");
 			mutations.put("trigger-state", "ALTER TABLE favorite_stations DISABLE TRIGGER legacy_touch_trigger");
+			mutations.put("rewrite-rule", "CREATE RULE legacy_station_insert AS ON INSERT TO favorite_stations DO INSTEAD NOTHING");
 			mutations.put("row-security", "ALTER TABLE favorite_stations ENABLE ROW LEVEL SECURITY");
 			mutations.put("policy", "CREATE POLICY legacy_station_policy ON favorite_stations USING (user_id = CURRENT_USER)");
 			for (var mutation : mutations.entrySet()) {

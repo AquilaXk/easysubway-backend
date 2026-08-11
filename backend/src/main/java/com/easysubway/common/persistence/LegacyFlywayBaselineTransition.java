@@ -27,6 +27,8 @@ import org.flywaydb.core.Flyway;
 import org.flywaydb.core.api.MigrationVersion;
 import org.flywaydb.core.api.logging.Log;
 import org.flywaydb.core.api.logging.LogFactory;
+import org.springframework.core.io.support.PathMatchingResourcePatternResolver;
+import org.springframework.jdbc.datasource.SingleConnectionDataSource;
 
 final class LegacyFlywayBaselineTransition {
 
@@ -37,6 +39,9 @@ final class LegacyFlywayBaselineTransition {
 	private static final String DDL_POLICY_RESOURCE = "META-INF/easysubway/migration-ddl-gate.json";
 	private static final String PRODUCTION_CONFIG_RESOURCE = "application-prod.yml";
 	private static final String MIGRATION_SOURCE_PREFIX = "backend/src/main/resources/";
+	private static final String MIGRATION_RESOURCE_PREFIX = "db/migration/postgresql/";
+	private static final String MIGRATION_CLASSPATH_PATTERN = "classpath*:db/migration/postgresql/*.sql";
+	private static final String MIGRATION_FILENAME_PATTERN = "V[1-9][0-9]*__[a-z0-9_]+\\.sql";
 	private static final String HISTORY_TABLE = "flyway_schema_history";
 	private static final Set<String> POLICY_KEYS = Set.of(
 		"contractVersion",
@@ -255,8 +260,9 @@ final class LegacyFlywayBaselineTransition {
 
 			stateFailure = validateLegacyState(connection, policy, input);
 			if (stateFailure != null) return Result.failure(stateFailure, clock.instant());
+			var validatedDataSource = new SingleConnectionDataSource(connection, true);
 			Flyway flyway = Flyway.configure()
-				.dataSource(credentials.url(), credentials.username(), credentials.password())
+				.dataSource(validatedDataSource)
 				.schemas(policy.targetSchema())
 				.defaultSchema(policy.targetSchema())
 				.createSchemas(false)
@@ -375,13 +381,14 @@ final class LegacyFlywayBaselineTransition {
 			throw new ContractFailure(Reason.RESOURCE_DRIFT);
 		}
 		int previousVersion = 0;
+		Map<String, String> expectedResources = new LinkedHashMap<>();
 		for (JsonNode migration : inventory.path("migrations")) {
 			assertExactKeys(migration, MIGRATION_KEYS, "migration inventory entry");
 			String version = migration.path("version").asText();
 			String path = migration.path("path").asText();
 			String expectedSha256 = migration.path("sha256").asText();
 			if (!version.matches("[1-9][0-9]*") || !path.startsWith(MIGRATION_SOURCE_PREFIX)
-				|| !path.matches("backend/src/main/resources/db/migration/postgresql/V[1-9][0-9]*__[a-z0-9_]+\\.sql")
+				|| !path.matches("backend/src/main/resources/db/migration/postgresql/" + MIGRATION_FILENAME_PATTERN)
 				|| !expectedSha256.matches("[a-f0-9]{64}")) {
 				throw new ContractFailure(Reason.RESOURCE_DRIFT);
 			}
@@ -389,11 +396,38 @@ final class LegacyFlywayBaselineTransition {
 			if (numericVersion <= previousVersion) throw new ContractFailure(Reason.RESOURCE_DRIFT);
 			previousVersion = numericVersion;
 			String resourcePath = path.substring(MIGRATION_SOURCE_PREFIX.length());
+			if (expectedResources.put(resourcePath, expectedSha256) != null) {
+				throw new ContractFailure(Reason.RESOURCE_DRIFT);
+			}
 			if (!sha256(readResource(classLoader, resourcePath)).equals(expectedSha256)) {
 				throw new ContractFailure(Reason.RESOURCE_DRIFT);
 			}
 		}
 		if (previousVersion < 2) throw new ContractFailure(Reason.RESOURCE_DRIFT);
+		verifyCompleteMigrationSet(classLoader, expectedResources);
+	}
+
+	private static void verifyCompleteMigrationSet(
+		ClassLoader classLoader,
+		Map<String, String> expectedResources
+	) throws IOException {
+		var resolver = new PathMatchingResourcePatternResolver(classLoader);
+		Map<String, String> discoveredResources = new LinkedHashMap<>();
+		for (var resource : resolver.getResources(MIGRATION_CLASSPATH_PATTERN)) {
+			String filename = resource.getFilename();
+			if (filename == null || !filename.matches(MIGRATION_FILENAME_PATTERN)) {
+				throw new ContractFailure(Reason.RESOURCE_DRIFT);
+			}
+			String resourcePath = MIGRATION_RESOURCE_PREFIX + filename;
+			try (InputStream input = resource.getInputStream()) {
+				if (discoveredResources.put(resourcePath, sha256(input.readAllBytes())) != null) {
+					throw new ContractFailure(Reason.RESOURCE_DRIFT);
+				}
+			}
+		}
+		if (!discoveredResources.equals(expectedResources)) {
+			throw new ContractFailure(Reason.RESOURCE_DRIFT);
+		}
 	}
 
 	private static byte[] readResource(ClassLoader classLoader, String path) throws IOException {
