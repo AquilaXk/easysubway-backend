@@ -10,7 +10,7 @@ const ISSUE35 = 'https://github.com/AquilaXk/easysubway-backend/issues/35'; cons
 const PHASE1 = 'DISCOVERY_REMOTE_RED'; const PHASE2 = 'REMEDIATION_IN_PROGRESS';
 const FINDING_KEYS = ['identity', ...IDENTITY, 'disposition', 'reason', 'ownerIssueUrl', 'ownerIssueTitle', 'ownerIssueState', 'removalCondition', 'reviewTrigger', 'expiresAt', 'suppression'];
 const REVIEWED_ENGINE_DIGEST = '0178af73534a3919830c3bae141dff716dbeed2e13ef31faabcc1dfb6947db69';
-const FOUNDATION_IDENTITIES_DIGEST = '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0';
+const FOUNDATION_IDENTITIES_DIGEST = '47edb6d6de8f86305b7dc2efb902cbea31863449ff9c6e01072bf4f6893cc370';
 const REVIEWED_INPUT_DIGESTS = { engineClasspathDigest: 'dd48447b7bdb9e35c6261a8ad2fcfc88c6b3e38b6f3794956f737c95e938a2eb', javaLauncherDigest: 'b1b0a09aaa036695716c829cd7c5213ea055eecd475d1462020330e251b717b2', classpathDigest: '666ed68047d51bff271301f77737e3bac6ae55d5deebc74b7df43375b4f401bf', pluginClasspathDigest: '37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570' };
 const FINDING_REASON = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
 const FINDING_REMOVAL = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
