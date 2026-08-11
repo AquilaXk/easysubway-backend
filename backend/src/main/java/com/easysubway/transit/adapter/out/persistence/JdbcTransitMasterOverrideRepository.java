@@ -21,6 +21,7 @@ import java.time.LocalDate;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.function.Function;
 import javax.sql.DataSource;
@@ -51,9 +52,8 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
-		ObjectMapper snapshot = objectMapper.copy();
-		this.jsonReader = snapshot.reader();
-		this.jsonWriter = snapshot.writer();
+		this.jsonReader = objectMapper.reader();
+		this.jsonWriter = objectMapper.writer();
 		this.databaseDialect = databaseDialect();
 	}
 
@@ -337,8 +337,11 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	private DatabaseDialect databaseDialect() {
-		String productName = jdbcTemplate.execute(
-			(ConnectionCallback<String>) connection -> connection.getMetaData().getDatabaseProductName()
+		String productName = Objects.requireNonNull(
+			jdbcTemplate.execute(
+				(ConnectionCallback<String>) connection -> connection.getMetaData().getDatabaseProductName()
+			),
+			"database product name"
 		);
 		return switch (productName) {
 			case "PostgreSQL" -> DatabaseDialect.POSTGRESQL;
