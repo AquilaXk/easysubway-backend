@@ -1,0 +1,40 @@
+{
+  "schemaVersion": "JOURNEY_V3_SESSION_INTEGRITY_V1",
+  "artifactKind": "journey-v3-session-integrity",
+  "operationId": "issueJourneySession",
+  "nonce": {
+    "source": "CSPRNG",
+    "entropyBytes": 16,
+    "encoding": "BASE64URL_NO_PADDING",
+    "pattern": "^[A-Za-z0-9_-]{22}$",
+    "lifecycle": "ONE_PER_SESSION_ISSUANCE"
+  },
+  "requestHash": {
+    "requestType": "PLAY_INTEGRITY_STANDARD",
+    "algorithm": "SHA-256",
+    "encoding": "BASE64URL_NO_PADDING",
+    "pattern": "^[A-Za-z0-9_-]{43}$",
+    "canonicalPayloadUtf8Template": "{\"clientNonce\":\"<clientNonce>\",\"purpose\":\"journey:v3:session\",\"version\":1}",
+    "purpose": "journey:v3:session",
+    "version": 1,
+    "sensitivePlaintextAllowed": false
+  },
+  "verdict": {
+    "expectedRequestPackageName": "com.easysubway.app",
+    "expectedAppPackageName": "com.easysubway.app",
+    "maxAgeSeconds": 120,
+    "futureTimestampAllowed": false,
+    "requiredAppRecognitionVerdict": "PLAY_RECOGNIZED",
+    "requiredAppLicensingVerdict": "LICENSED",
+    "requiredDeviceRecognitionVerdict": "MEETS_DEVICE_INTEGRITY",
+    "configuredCertificateSha256Required": true,
+    "configuredCertificateSha256Encoding": "BASE64URL_NO_PADDING",
+    "requestHashConstantTimeEqualityRequired": true,
+    "nonceSingleUseRequired": true,
+    "nonceClaimTtlSeconds": 120
+  },
+  "session": {
+    "scope": "journey:v3",
+    "ttlSeconds": 600
+  }
+}
