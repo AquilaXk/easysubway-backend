@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
@@ -14,76 +15,109 @@ import org.junit.jupiter.api.Test;
 
 class JourneyApplicationServiceTest {
 
-	private static final Instant EFFECTIVE_INSTANT = Instant.parse("2026-08-11T00:00:00Z");
-	private static final ActiveJourneySnapshotPort.ActiveJourneySnapshot SNAPSHOT =
-		new ActiveJourneySnapshotPort.ActiveJourneySnapshot("snapshot-1", "bundle-1", 1, true);
-	private static final JourneyRealtimePort.RealtimeObservation REALTIME =
-		new JourneyRealtimePort.RealtimeObservation("realtime-1", "bundle-1", true);
+	private static final Instant CAPTURED_AT = Instant.parse("2026-08-11T00:00:00Z");
+	private static final Instant VALID_UNTIL = Instant.parse("2026-08-11T00:10:00Z");
+	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
+	private static final ActiveJourneySnapshotPort.ActiveJourneySnapshot SNAPSHOT = snapshot(VALID_UNTIL, true);
+	private static final JourneyRealtimePort.RealtimeObservation REALTIME = realtime(
+		Instant.parse("2026-08-11T00:08:00Z"), ROUTE_BUNDLE_SHA, true
+	);
 
 	@Test
-	void executesTimetableRequestWithPinnedSnapshotAndNoRealtime() {
+	void executesTimetableRequestWithCompletePinnedIdentityAndNoRealtime() {
 		Fakes fakes = new Fakes();
-		List<String> plannerCandidates = new ArrayList<>(List.of("candidate-1", "candidate-2"));
-		fakes.candidates = plannerCandidates;
+		List<JourneyCandidate> plannerCandidates = new ArrayList<>(List.of(
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
+			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
+		));
+		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates);
 
-		JourneyExecutionResult result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+		JourneyExecutionResult result = fakes.service().execute(request(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2
+		));
 		plannerCandidates.clear();
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
 		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
+		assertThat(success.contractVersion()).isEqualTo("JOURNEY_SEARCH_V3");
 		assertThat(success.source()).isEqualTo(JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR);
-		assertThat(success.bundleIdentity()).isEqualTo("bundle-1");
-		assertThat(success.realtimeIdentity()).isNull();
-		assertThat(success.candidates()).containsExactly("candidate-1", "candidate-2");
-		assertThatThrownBy(() -> success.candidates().add("candidate-3"))
-			.isInstanceOf(UnsupportedOperationException.class);
+		assertThat(success.requestId()).isEqualTo("01K1Y000000000000000000000");
+		assertThat(success.queryId()).isEqualTo("query-1");
+		assertThat(success.calculatedAt()).isEqualTo(CAPTURED_AT);
+		assertThat(success.validUntil()).isEqualTo(VALID_UNTIL);
+		assertThat(success.effectiveDepartureTime()).isEqualTo(CAPTURED_AT);
+		assertThat(success.serviceDate()).isEqualTo(LocalDate.parse("2026-08-11"));
+		assertThat(success.serviceTimezone()).isEqualTo("Asia/Seoul");
+		assertThat(success.sourceIdentity()).isEqualTo(new JourneyExecutionResult.SourceIdentity(
+			"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
+		));
+		assertThat(success.requestPolicy()).isEqualTo(new JourneyExecutionResult.RequestPolicy(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0,
+			2
+		));
+		assertThat(success.journeys()).extracting(JourneyCandidate::journeyId)
+			.containsExactly("journey-1", "journey-2");
+		assertThatThrownBy(() -> success.journeys().add(candidate(
+			"journey-3", JourneyCandidate.TimeSource.TIMETABLE
+		))).isInstanceOf(UnsupportedOperationException.class);
 		assertThat(fakes.snapshotCalls).isEqualTo(1);
 		assertThat(fakes.realtimeCalls).isZero();
 		assertThat(fakes.raptorCalls).isEqualTo(1);
-		assertThat(fakes.lastEffectiveInstant).isEqualTo(EFFECTIVE_INSTANT);
+		assertThat(fakes.lastEffectiveInstant).isEqualTo(CAPTURED_AT);
 		assertThat(fakes.clock.instantCalls).isEqualTo(1);
 	}
 
 	@Test
-	void executesRealtimeRequestUsingTheSameSnapshotAndEffectiveInstantAtEveryPort() {
+	void executesRealtimeRequestUsingTheSameSnapshotAndMinimumValidity() {
 		Fakes fakes = new Fakes();
+		fakes.planResult = planResult(JourneyCandidate.TimeSource.REALTIME);
 		JourneyRequest request = request(JourneyRequest.TimePolicy.REALTIME_REQUIRED);
 
 		JourneyExecutionResult result = fakes.service().execute(request);
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
 		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
-		assertThat(success.realtimeIdentity()).isEqualTo("realtime-1");
+		assertThat(success.sourceIdentity().realtimeSnapshotId()).isEqualTo("realtime-1");
+		assertThat(success.validUntil()).isEqualTo(REALTIME.validUntil());
+		assertThat(success.journeys()).allSatisfy(candidate -> {
+			assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
+			assertThat(candidate.realtimeDepartureTime()).isNotNull();
+			assertThat(candidate.realtimeArrivalTime()).isNotNull();
+		});
 		assertThat(fakes.snapshotCalls).isEqualTo(1);
 		assertThat(fakes.realtimeCalls).isEqualTo(1);
 		assertThat(fakes.raptorCalls).isEqualTo(1);
 		assertThat(fakes.clock.instantCalls).isEqualTo(1);
 		assertThat(fakes.lastSnapshot).isSameAs(SNAPSHOT);
 		assertThat(fakes.lastRealtime).isSameAs(REALTIME);
-		assertThat(fakes.effectiveInstants).containsExactly(EFFECTIVE_INSTANT, EFFECTIVE_INSTANT, EFFECTIVE_INSTANT);
-		assertThat(fakes.requests).hasSize(2);
-		assertThat(fakes.requests.get(0)).isSameAs(request);
-		assertThat(fakes.requests.get(1)).isSameAs(request);
+		assertThat(fakes.effectiveInstants).containsExactly(CAPTURED_AT, CAPTURED_AT, CAPTURED_AT);
+		assertThat(fakes.requests).containsExactly(request, request);
 	}
 
 	@Test
-	void executesScheduledRequestWithItsExactRequestedAtAtEveryPort() {
+	void executesScheduledRequestWithItsExactRequestedAtAndServiceDate() {
 		Fakes fakes = new Fakes();
 		Instant requestedAt = Instant.parse("2026-08-12T03:04:05Z");
+		fakes.snapshot = snapshot(requestedAt.plusSeconds(600), true);
+		fakes.realtime = realtime(requestedAt.plusSeconds(480), ROUTE_BUNDLE_SHA, true);
+		fakes.planResult = planResult(JourneyCandidate.TimeSource.REALTIME);
 		JourneyRequest request = request(new JourneyRequest.Departure.Scheduled(requestedAt),
-			JourneyRequest.TimePolicy.REALTIME_REQUIRED, fakes.cancelled);
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, 1, fakes.cancelled);
 
 		JourneyExecutionResult result = fakes.service().execute(request);
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
+		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
+		assertThat(success.effectiveDepartureTime()).isEqualTo(requestedAt);
+		assertThat(success.serviceDate()).isEqualTo(LocalDate.parse("2026-08-12"));
 		assertThat(fakes.snapshotCalls).isEqualTo(1);
 		assertThat(fakes.realtimeCalls).isEqualTo(1);
 		assertThat(fakes.raptorCalls).isEqualTo(1);
 		assertThat(fakes.clock.instantCalls).isEqualTo(1);
 		assertThat(fakes.effectiveInstants).containsExactly(requestedAt, requestedAt, requestedAt);
-		assertThat(fakes.requests).hasSize(2);
-		assertThat(fakes.requests.get(0)).isSameAs(request);
-		assertThat(fakes.requests.get(1)).isSameAs(request);
 	}
 
 	@Test
@@ -91,9 +125,7 @@ class JourneyApplicationServiceTest {
 		for (boolean throwsFailure : List.of(false, true)) {
 			Fakes fakes = new Fakes();
 			fakes.snapshot = null;
-			if (throwsFailure) {
-				fakes.snapshotFailure = new IllegalStateException("internal snapshot detail");
-			}
+			if (throwsFailure) fakes.snapshotFailure = new IllegalStateException("internal snapshot detail");
 
 			assertFailure(fakes.service().execute(request(JourneyRequest.TimePolicy.REALTIME_REQUIRED)),
 				JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
@@ -104,37 +136,42 @@ class JourneyApplicationServiceTest {
 	}
 
 	@Test
-	void stopsBeforeRealtimeAndRaptorWhenSnapshotIsStale() {
-		Fakes fakes = new Fakes();
-		fakes.snapshot = new ActiveJourneySnapshotPort.ActiveJourneySnapshot("snapshot-1", "bundle-1", 1, false);
+	void stopsBeforeRealtimeAndRaptorWhenSnapshotIsStaleOrExpired() {
+		for (ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot : List.of(
+			snapshot(VALID_UNTIL, false),
+			snapshot(CAPTURED_AT, true)
+		)) {
+			Fakes fakes = new Fakes();
+			fakes.snapshot = snapshot;
 
-		assertFailure(fakes.service().execute(request(JourneyRequest.TimePolicy.REALTIME_REQUIRED)),
-			JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_STALE);
-		assertThat(fakes.realtimeCalls).isZero();
-		assertThat(fakes.raptorCalls).isZero();
+			assertFailure(fakes.service().execute(request(JourneyRequest.TimePolicy.REALTIME_REQUIRED)),
+				JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_STALE);
+			assertThat(fakes.realtimeCalls).isZero();
+			assertThat(fakes.raptorCalls).isZero();
+		}
 	}
 
 	@Test
-	void stopsBeforeRaptorWhenRealtimeIsUnavailableStaleOrMismatched() {
-		for (JourneyRealtimePort.RealtimeObservation observation : List.of(
-			new JourneyRealtimePort.RealtimeObservation("realtime-1", "bundle-1", false),
-			new JourneyRealtimePort.RealtimeObservation("realtime-1", "other-bundle", true))) {
+	void stopsBeforeRaptorWhenRealtimeIsUnavailableStaleExpiredOrMismatched() {
+		List<JourneyRealtimePort.RealtimeObservation> observations = new ArrayList<>();
+		observations.add(realtime(VALID_UNTIL, ROUTE_BUNDLE_SHA, false));
+		observations.add(realtime(CAPTURED_AT, ROUTE_BUNDLE_SHA, true));
+		observations.add(realtime(VALID_UNTIL, "b".repeat(64), true));
+		for (JourneyRealtimePort.RealtimeObservation observation : observations) {
 			Fakes fakes = new Fakes();
 			fakes.realtime = observation;
-
-			JourneyExecutionResult result = fakes.service().execute(request(JourneyRequest.TimePolicy.REALTIME_REQUIRED));
-
-			assertFailure(result, observation.fresh()
+			JourneyExecutionFailure.Reason expected = observation.fresh()
+				&& observation.validUntil().isAfter(CAPTURED_AT)
 				? JourneyExecutionFailure.Reason.REALTIME_IDENTITY_MISMATCH
-				: JourneyExecutionFailure.Reason.REALTIME_STALE);
+				: JourneyExecutionFailure.Reason.REALTIME_STALE;
+
+			assertFailure(fakes.service().execute(request(JourneyRequest.TimePolicy.REALTIME_REQUIRED)), expected);
 			assertThat(fakes.raptorCalls).isZero();
 		}
 		for (boolean throwsFailure : List.of(false, true)) {
 			Fakes unavailable = new Fakes();
 			unavailable.realtime = null;
-			if (throwsFailure) {
-				unavailable.realtimeFailure = new IllegalStateException("internal realtime detail");
-			}
+			if (throwsFailure) unavailable.realtimeFailure = new IllegalStateException("internal realtime detail");
 			assertFailure(unavailable.service().execute(request(JourneyRequest.TimePolicy.REALTIME_REQUIRED)),
 				JourneyExecutionFailure.Reason.REALTIME_UNAVAILABLE);
 			assertThat(unavailable.realtimeCalls).isEqualTo(1);
@@ -150,46 +187,62 @@ class JourneyApplicationServiceTest {
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
 		Fakes nullOutput = new Fakes();
-		nullOutput.candidates = null;
+		nullOutput.planResult = null;
+		nullOutput.returnNullPlan = true;
 		assertFailure(nullOutput.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
 		Fakes emptyOutput = new Fakes();
-		emptyOutput.candidates = List.of();
+		emptyOutput.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of());
 		assertFailure(emptyOutput.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.NO_ROUTE);
 	}
 
 	@Test
-	void rejectsBlankRequiredIdentitiesAndInvalidSuccessValues() {
-		assertThat(new JourneyExecutionResult.Success(
-			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", null, List.of("candidate-1"))
-			.realtimeIdentity()).isNull();
-		assertThat(new JourneyExecutionResult.Success(
-			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", "realtime-1", List.of("candidate-1"))
-			.realtimeIdentity()).isEqualTo("realtime-1");
-		assertThatThrownBy(() -> new JourneyRequest("bad-request-id", "station-origin", "station-destination",
-			new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(" ", "bundle-1", 1, true))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(" ", "bundle-1", true))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyExecutionResult.Success(null, "bundle-1", null, List.of("candidate-1")))
-			.isInstanceOf(IllegalArgumentException.class);
+	void rejectsDuplicateOverLimitAndModeMismatchedPlannerOutput() {
+		Fakes duplicate = new Fakes();
+		duplicate.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)
+		));
+		assertFailure(duplicate.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2)),
+			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+
+		Fakes overLimit = new Fakes();
+		overLimit.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
+			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
+			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
+		));
+		assertFailure(overLimit.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 1)),
+			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+
+		Fakes mismatchedMode = new Fakes();
+		mismatchedMode.planResult = planResult(JourneyCandidate.TimeSource.REALTIME);
+		assertFailure(mismatchedMode.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
+			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+	}
+
+	@Test
+	void closedSuccessRejectsInvalidRequestIdentity() {
 		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
-			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, " ", null, List.of("candidate-1")))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
-			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", "", List.of("candidate-1")))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
-			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", " \t", List.of("candidate-1")))
-			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyExecutionResult.Success(
-			JourneyExecutionResult.Source.SERVER_TIMETABLE_RAPTOR, "bundle-1", null, List.of()))
-			.isInstanceOf(IllegalArgumentException.class);
+			"not-a-ulid",
+			"query-1",
+			CAPTURED_AT,
+			VALID_UNTIL,
+			CAPTURED_AT,
+			LocalDate.parse("2026-08-11"),
+			new JourneyExecutionResult.SourceIdentity(
+				"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
+			),
+			new JourneyExecutionResult.RequestPolicy(
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.STANDARD,
+				JourneyRequest.ConstraintMode.NONE,
+				0,
+				1
+			),
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE))
+		)).isInstanceOf(IllegalArgumentException.class);
 	}
 
 	@Test
@@ -208,61 +261,43 @@ class JourneyApplicationServiceTest {
 			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", null,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
 				JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false),
-			() -> {
-				new JourneyRequest.Departure.Scheduled(null);
-				return null;
-			},
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				null, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, null, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD, null, 0, 1, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-				JourneyRequest.ConstraintMode.NONE, -1, 1, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-				JourneyRequest.ConstraintMode.NONE, 4, 1, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-				JourneyRequest.ConstraintMode.NONE, 0, 0, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-				JourneyRequest.ConstraintMode.NONE, 0, 4, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.NO_STAIRS,
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), null, JourneyRequest.MobilityProfile.STANDARD,
 				JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false),
-			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination", new JourneyRequest.Departure.Now(),
-				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-				JourneyRequest.ConstraintMode.NONE, 0, 1, null)
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, null,
+				JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false),
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.STANDARD, null, 0, 1, () -> false),
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, -1, 1, () -> false),
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 4, 1, () -> false),
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 0, () -> false),
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false),
+			() -> command("01K1Y000000000000000000000", "station-origin", "station-destination",
+				new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, null)
 		);
 
 		for (java.util.function.Supplier<JourneyRequest> invalidCommand : invalidCommands) {
 			assertThatThrownBy(invalidCommand::get).isInstanceOf(RuntimeException.class);
 		}
-		JourneyRequest noStairsStepFree = command("01K1Y000000000000000000000", "station-origin", "station-destination",
-			new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
-			JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 0, 1, () -> false);
+		JourneyRequest noStairsStepFree = command("01K1Y000000000000000000000", "station-origin",
+			"station-destination", new JourneyRequest.Departure.Now(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 0, 1,
+			() -> false);
 		assertThat(noStairsStepFree.mobilityProfile()).isEqualTo(JourneyRequest.MobilityProfile.NO_STAIRS);
-		assertThat(noStairsStepFree.constraintMode()).isEqualTo(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
 		assertThat(fakes.snapshotCalls).isZero();
 		assertThat(fakes.realtimeCalls).isZero();
 		assertThat(fakes.raptorCalls).isZero();
-	}
-
-	@Test
-	void mapsNullRaptorCandidateToClosedFailureWithoutReturningSuccess() {
-		Fakes fakes = new Fakes();
-		fakes.candidates = new ArrayList<>();
-		fakes.candidates.add("candidate-1");
-		fakes.candidates.add(null);
-
-		assertFailure(fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
-			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
-		assertThat(fakes.snapshotCalls).isEqualTo(1);
-		assertThat(fakes.realtimeCalls).isZero();
-		assertThat(fakes.raptorCalls).isEqualTo(1);
 	}
 
 	@Test
@@ -318,20 +353,26 @@ class JourneyApplicationServiceTest {
 	}
 
 	private static JourneyRequest request(JourneyRequest.TimePolicy timePolicy) {
-		return request(timePolicy, new AtomicBoolean());
+		return request(timePolicy, 1);
+	}
+
+	private static JourneyRequest request(JourneyRequest.TimePolicy timePolicy, int alternativeCount) {
+		return request(new JourneyRequest.Departure.Now(), timePolicy, alternativeCount, new AtomicBoolean());
 	}
 
 	private static JourneyRequest request(JourneyRequest.TimePolicy timePolicy, AtomicBoolean cancelled) {
-		return request(new JourneyRequest.Departure.Now(), timePolicy, cancelled);
+		return request(new JourneyRequest.Departure.Now(), timePolicy, 1, cancelled);
 	}
 
 	private static JourneyRequest request(
 		JourneyRequest.Departure departure,
 		JourneyRequest.TimePolicy timePolicy,
+		int alternativeCount,
 		AtomicBoolean cancelled
 	) {
 		return command("01K1Y000000000000000000000", "station-origin", "station-destination", departure,
-			timePolicy, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, cancelled::get);
+			timePolicy, JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0,
+			alternativeCount, cancelled::get);
 	}
 
 	private static JourneyRequest command(
@@ -350,6 +391,53 @@ class JourneyApplicationServiceTest {
 			mobilityProfile, constraintMode, maxTransfers, alternativeCount, cancellationSignal);
 	}
 
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant validUntil, boolean fresh) {
+		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1, validUntil, fresh
+		);
+	}
+
+	private static JourneyRealtimePort.RealtimeObservation realtime(
+		Instant validUntil,
+		String routeBundleSha,
+		boolean fresh
+	) {
+		return new JourneyRealtimePort.RealtimeObservation("realtime-1", routeBundleSha, validUntil, fresh);
+	}
+
+	private static JourneyRaptorPort.PlanResult planResult(JourneyCandidate.TimeSource timeSource) {
+		return new JourneyRaptorPort.PlanResult("query-1", List.of(candidate("journey-1", timeSource)));
+	}
+
+	private static JourneyCandidate candidate(String journeyId, JourneyCandidate.TimeSource timeSource) {
+		Instant plannedDeparture = Instant.parse("2026-08-11T00:01:00Z");
+		Instant plannedArrival = Instant.parse("2026-08-11T00:06:00Z");
+		Instant realtimeDeparture = timeSource == JourneyCandidate.TimeSource.REALTIME
+			? plannedDeparture.plusSeconds(30) : null;
+		Instant realtimeArrival = timeSource == JourneyCandidate.TimeSource.REALTIME
+			? plannedArrival.plusSeconds(30) : null;
+		return new JourneyCandidate(
+			journeyId,
+			plannedDeparture,
+			plannedArrival,
+			realtimeDeparture,
+			realtimeArrival,
+			300,
+			0,
+			50,
+			timeSource,
+			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")),
+			List.of(
+				new JourneyCandidate.Entry("station-origin", 30),
+				new JourneyCandidate.Ride(
+					"line-1", "trip-1", "station-direction", "station-origin", "station-destination",
+					plannedDeparture, plannedArrival, realtimeDeparture, realtimeArrival
+				),
+				new JourneyCandidate.Exit("station-destination", 20)
+			)
+		);
+	}
+
 	private static void assertFailure(JourneyExecutionResult result, JourneyExecutionFailure.Reason reason) {
 		assertThat(result).isEqualTo(new JourneyExecutionFailure(reason));
 	}
@@ -358,10 +446,11 @@ class JourneyApplicationServiceTest {
 		private final AtomicBoolean cancelled = new AtomicBoolean();
 		private ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot = SNAPSHOT;
 		private JourneyRealtimePort.RealtimeObservation realtime = REALTIME;
-		private List<String> candidates = List.of("candidate-1", "candidate-2");
+		private JourneyRaptorPort.PlanResult planResult;
 		private RuntimeException snapshotFailure;
 		private RuntimeException realtimeFailure;
 		private RuntimeException raptorFailure;
+		private boolean returnNullPlan;
 		private boolean cancelAfterSnapshot;
 		private boolean cancelAfterRealtime;
 		private boolean cancelAfterRaptor;
@@ -375,9 +464,8 @@ class JourneyApplicationServiceTest {
 		private JourneyRealtimePort.RealtimeObservation lastRealtime;
 		private Instant lastEffectiveInstant;
 		private final List<Instant> effectiveInstants = new ArrayList<>();
-		private JourneyRequest lastRequest;
 		private final List<JourneyRequest> requests = new ArrayList<>();
-		private final CountingClock clock = new CountingClock(EFFECTIVE_INSTANT);
+		private final CountingClock clock = new CountingClock(CAPTURED_AT);
 
 		private JourneyApplicationService service() {
 			return new JourneyApplicationService(effectiveInstant -> {
@@ -387,12 +475,8 @@ class JourneyApplicationServiceTest {
 					cancelled.set(true);
 					throw new IllegalStateException("snapshot failure after cancellation");
 				}
-				if (snapshotFailure != null) {
-					throw snapshotFailure;
-				}
-				if (cancelAfterSnapshot) {
-					cancelled.set(true);
-				}
+				if (snapshotFailure != null) throw snapshotFailure;
+				if (cancelAfterSnapshot) cancelled.set(true);
 				return snapshot;
 			}, (request, activeSnapshot, effectiveInstant) -> {
 				realtimeCalls++;
@@ -403,12 +487,8 @@ class JourneyApplicationServiceTest {
 					cancelled.set(true);
 					throw new IllegalStateException("realtime failure after cancellation");
 				}
-				if (realtimeFailure != null) {
-					throw realtimeFailure;
-				}
-				if (cancelAfterRealtime) {
-					cancelled.set(true);
-				}
+				if (realtimeFailure != null) throw realtimeFailure;
+				if (cancelAfterRealtime) cancelled.set(true);
 				return realtime;
 			}, (request, activeSnapshot, effectiveInstant, realtimeObservation) -> {
 				raptorCalls++;
@@ -420,14 +500,17 @@ class JourneyApplicationServiceTest {
 					cancelled.set(true);
 					throw new IllegalStateException("raptor failure after cancellation");
 				}
-				if (cancelAfterRaptor) {
-					cancelled.set(true);
-				}
-				if (raptorFailure != null) {
-					throw raptorFailure;
-				}
-				return candidates;
+				if (cancelAfterRaptor) cancelled.set(true);
+				if (raptorFailure != null) throw raptorFailure;
+				if (returnNullPlan) return null;
+				return planResult == null ? planResultFor(request.timePolicy()) : planResult;
 			}, clock);
+		}
+
+		private JourneyRaptorPort.PlanResult planResultFor(JourneyRequest.TimePolicy timePolicy) {
+			JourneyCandidate.TimeSource source = timePolicy == JourneyRequest.TimePolicy.REALTIME_REQUIRED
+				? JourneyCandidate.TimeSource.REALTIME : JourneyCandidate.TimeSource.TIMETABLE;
+			return JourneyApplicationServiceTest.planResult(source);
 		}
 
 		private void record(Instant effectiveInstant) {
@@ -436,7 +519,6 @@ class JourneyApplicationServiceTest {
 		}
 
 		private void record(JourneyRequest request) {
-			lastRequest = request;
 			requests.add(request);
 		}
 	}
