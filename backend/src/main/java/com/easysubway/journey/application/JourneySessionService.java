@@ -25,6 +25,7 @@ public final class JourneySessionService {
 	private static final Duration VERDICT_MAX_AGE = Duration.ofSeconds(120);
 	private static final Duration NONCE_CLAIM_TTL = Duration.ofSeconds(120);
 	private static final Duration SESSION_TTL = Duration.ofSeconds(600);
+	private static final int MAX_ALLOWED_SEARCHES_PER_SESSION = 50;
 	private static final Pattern NONCE = Pattern.compile("^[A-Za-z0-9_-]{21}[AQgw]$");
 	private static final Pattern CERTIFICATE_DIGEST = Pattern.compile("^[A-Za-z0-9_-]{43}$");
 	private static final Base64.Encoder BASE64_URL = Base64.getUrlEncoder().withoutPadding();
@@ -35,19 +36,25 @@ public final class JourneySessionService {
 	private final Clock clock;
 	private final SecureRandom secureRandom;
 	private final String certificateDigest;
+	private final int maxSearchesPerSession;
 
 	public JourneySessionService(
 		JourneySessionIntegrityPort integrityPort,
 		JourneySessionStore store,
 		Clock clock,
 		SecureRandom secureRandom,
-		String certificateDigest
+		String certificateDigest,
+		int maxSearchesPerSession
 	) {
 		this.integrityPort = Objects.requireNonNull(integrityPort, "integrityPort");
 		this.store = Objects.requireNonNull(store, "store");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom");
 		this.certificateDigest = validateCertificateDigest(certificateDigest);
+		if (maxSearchesPerSession < 1 || maxSearchesPerSession > MAX_ALLOWED_SEARCHES_PER_SESSION) {
+			throw new IllegalArgumentException("maxSearchesPerSession must be between 1 and 50");
+		}
+		this.maxSearchesPerSession = maxSearchesPerSession;
 	}
 
 	public IssuedSession issue(String integrityToken, String clientNonce) {
@@ -85,9 +92,12 @@ public final class JourneySessionService {
 		Instant now = clock.instant();
 		SessionUse use;
 		try {
-			use = store.authorize(sha256Hex(token), SCOPE, now);
+			use = store.authorizeAndConsume(sha256Hex(token), SCOPE, now, maxSearchesPerSession);
 		} catch (RuntimeException exception) {
 			throw failure(Kind.SESSION_REQUIRED);
+		}
+		if (use != null && use.status() == AuthorizationStatus.LIMITED) {
+			throw failure(Kind.RATE_LIMITED);
 		}
 		if (use == null
 			|| use.status() != AuthorizationStatus.VALID

@@ -8,6 +8,8 @@ import com.easysubway.journey.application.JourneySessionStore.Session;
 import java.lang.reflect.Modifier;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Executors;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -37,9 +39,10 @@ class JdbcJourneySessionStoreTest {
 		jdbcTemplate = new JdbcTemplate(dataSource);
 		jdbcTemplate.execute("DROP TABLE IF EXISTS journey_v3_sessions");
 		jdbcTemplate.execute("DROP TABLE IF EXISTS journey_v3_nonce_claims");
-		new ResourceDatabasePopulator(new ClassPathResource(
-			"db/migration/h2/V71__journey_v3_sessions.sql"
-		)).execute(dataSource);
+		new ResourceDatabasePopulator(
+			new ClassPathResource("db/migration/h2/V71__journey_v3_sessions.sql"),
+			new ClassPathResource("db/migration/h2/V72__journey_v3_session_request_limit.sql")
+		).execute(dataSource);
 		store = new JdbcJourneySessionStore(dataSource);
 	}
 
@@ -107,8 +110,8 @@ class JdbcJourneySessionStoreTest {
 	}
 
 	@Test
-	@DisplayName("authorize는 네 상태만 반환하고 schema에는 hash identity만 저장한다")
-	void authorizesClosedStatusesWithHashedOnlySchema() {
+	@DisplayName("authorizeAndConsume은 closed status를 반환하고 valid count만 원자적으로 소비한다")
+	void authorizesAndConsumesClosedStatusesAtomically() {
 		store.claimNonceAndSaveSession(
 			NONCE_HASH,
 			NOW.plusSeconds(120),
@@ -120,13 +123,28 @@ class JdbcJourneySessionStoreTest {
 			"e".repeat(64), "journey:v3", NOW.minusSeconds(601), NOW
 		);
 
-		assertThat(store.authorize(TOKEN_HASH, "journey:v3", NOW).status()).isEqualTo(AuthorizationStatus.VALID);
-		assertThat(store.authorize(TOKEN_HASH, "other", NOW).status())
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2).status())
+			.isEqualTo(AuthorizationStatus.VALID);
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2).status())
+			.isEqualTo(AuthorizationStatus.VALID);
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2).status())
+			.isEqualTo(AuthorizationStatus.LIMITED);
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "other", NOW, 2).status())
 			.isEqualTo(AuthorizationStatus.SCOPE_MISMATCH);
-		assertThat(store.authorize("e".repeat(64), "journey:v3", NOW).status())
+		assertThat(store.authorizeAndConsume("e".repeat(64), "journey:v3", NOW, 2).status())
 			.isEqualTo(AuthorizationStatus.EXPIRED);
-		assertThat(store.authorize("f".repeat(64), "journey:v3", NOW).status())
+		assertThat(store.authorizeAndConsume("f".repeat(64), "journey:v3", NOW, 2).status())
 			.isEqualTo(AuthorizationStatus.MISSING);
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			TOKEN_HASH
+		)).isEqualTo(2);
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			"e".repeat(64)
+		)).isZero();
 
 		List<String> columns = jdbcTemplate.queryForList(
 			"SELECT COLUMN_NAME FROM INFORMATION_SCHEMA.COLUMNS "
@@ -135,8 +153,40 @@ class JdbcJourneySessionStoreTest {
 		);
 		assertThat(columns).containsExactlyInAnyOrder(
 			"NONCE_SHA256", "CLAIMED_AT", "EXPIRES_AT",
-			"TOKEN_SHA256", "SCOPE", "ISSUED_AT", "EXPIRES_AT"
+			"TOKEN_SHA256", "SCOPE", "ISSUED_AT", "EXPIRES_AT", "REQUEST_COUNT"
 		);
+	}
+
+	@Test
+	@DisplayName("동시 max=1 consume은 정확히 한 요청만 승인한다")
+	void concurrentConsumeAdmitsExactlyOneRequest() throws Exception {
+		store.claimNonceAndSaveSession(
+			NONCE_HASH,
+			NOW.plusSeconds(120),
+			NOW,
+			new Session(TOKEN_HASH, "journey:v3", NOW, NOW.plusSeconds(600))
+		);
+		var start = new CountDownLatch(1);
+		try (var executor = Executors.newFixedThreadPool(2)) {
+			var calls = List.of(
+				executor.submit(() -> {
+					start.await();
+					return store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1).status();
+				}),
+				executor.submit(() -> {
+					start.await();
+					return store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1).status();
+				})
+			);
+			start.countDown();
+			assertThat(List.of(calls.get(0).get(), calls.get(1).get()))
+				.containsExactlyInAnyOrder(AuthorizationStatus.VALID, AuthorizationStatus.LIMITED);
+		}
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			TOKEN_HASH
+		)).isOne();
 	}
 
 	@Test

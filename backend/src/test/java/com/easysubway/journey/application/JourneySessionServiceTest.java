@@ -22,6 +22,7 @@ class JourneySessionServiceTest {
 	private static final String NONCE = "AAAAAAAAAAAAAAAAAAAAAA";
 	private static final String REQUEST_HASH = "oiyD4z8SIUGWUKR8znsbTQ1Z26WO43JHm3RUZLuwErU";
 	private static final String CERTIFICATE_DIGEST = "A".repeat(43);
+	private static final int MAX_SEARCHES_PER_SESSION = 50;
 
 	@Test
 	void issuesAndAuthorizesOneV3SessionWithExactContractIdentity() {
@@ -149,6 +150,23 @@ class JourneySessionServiceTest {
 		assertThat(unavailable.authorizeCalls).isEqualTo(1);
 	}
 
+	@Test
+	void mapsOnlyConsumedSessionLimitToRateLimitedAndRequiresExplicitSafeLimit() {
+		Fakes limited = new Fakes();
+		limited.authorization = new SessionUse(
+			AuthorizationStatus.LIMITED, "journey:v3", NOW.plusSeconds(600)
+		);
+		assertFailure(() -> limited.service().authorize("opaque-token"), Kind.RATE_LIMITED);
+		assertThat(limited.authorizeCalls).isEqualTo(1);
+		assertThat(limited.maxSearchesPerSession).isEqualTo(MAX_SEARCHES_PER_SESSION);
+
+		for (int invalidLimit : List.of(0, 51)) {
+			assertThatThrownBy(() -> limited.service(invalidLimit))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("maxSearchesPerSession must be between 1 and 50");
+		}
+	}
+
 	private static Verdict validVerdict() {
 		return new Verdict(
 			"com.easysubway.app",
@@ -191,12 +209,14 @@ class JourneySessionServiceTest {
 			case ATTESTATION_REJECTED -> "ROUTE_SESSION_ATTESTATION_REJECTED";
 			case ATTESTATION_UNAVAILABLE -> "ROUTE_SESSION_ATTESTATION_UNAVAILABLE";
 			case SESSION_REQUIRED -> "ROUTE_SESSION_REQUIRED";
+			case RATE_LIMITED -> "ROUTE_RATE_LIMITED";
 		};
 		int expectedHttpStatus = switch (kind) {
 			case INVALID_REQUEST -> 400;
 			case ATTESTATION_REJECTED -> 403;
 			case ATTESTATION_UNAVAILABLE -> 503;
 			case SESSION_REQUIRED -> 401;
+			case RATE_LIMITED -> 429;
 		};
 		assertThatThrownBy(action::run)
 			.isInstanceOfSatisfying(JourneySessionException.class, exception -> {
@@ -223,8 +243,13 @@ class JourneySessionServiceTest {
 		private JourneySessionStore.Session savedSession;
 		private String authorizedTokenSha256;
 		private String requiredScope;
+		private int maxSearchesPerSession;
 
 		private JourneySessionService service() {
+			return service(MAX_SEARCHES_PER_SESSION);
+		}
+
+		private JourneySessionService service(int maxSearches) {
 			return new JourneySessionService(
 				token -> {
 					decodeCalls++;
@@ -248,17 +273,24 @@ class JourneySessionServiceTest {
 					}
 
 					@Override
-					public SessionUse authorize(String tokenSha256, String scope, Instant now) {
+					public SessionUse authorizeAndConsume(
+						String tokenSha256,
+						String scope,
+						Instant now,
+						int maxSearches
+					) {
 						authorizeCalls++;
 						authorizedTokenSha256 = tokenSha256;
 						requiredScope = scope;
+						maxSearchesPerSession = maxSearches;
 						if (authorizationFailure != null) throw authorizationFailure;
 						return authorization;
 					}
 				},
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new FixedSecureRandom(),
-				CERTIFICATE_DIGEST
+				CERTIFICATE_DIGEST,
+				maxSearches
 			);
 		}
 	}
