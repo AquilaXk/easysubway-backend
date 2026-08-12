@@ -60,6 +60,78 @@ class RouteBundleConsumerHandoffParserTest {
 	}
 
 	@Test
+	void exactCanonicalPublicationDescriptorDerivesBackendOwnedAdmission() {
+		var fixture = descriptorFixture();
+
+		var descriptor = RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
+			fixture.bytes(), ACTIVATION_REQUEST);
+
+		assertThat(descriptor.repositoryGitSha()).isEqualTo("9".repeat(40));
+		assertThat(descriptor.identity().bundleId()).isEqualTo("server-route-bundle-20990101");
+		assertThat(descriptor.sourceSnapshotSetHash()).isEqualTo("8".repeat(64));
+		assertThat(descriptor.admissionEvidence()).isEqualTo(new RouteBundleAdmissionEvidence(
+			fixture.manifestSha256(),
+			"sha256:" + "b".repeat(64),
+			"sha256:" + "d".repeat(64),
+			"sha256:" + fixture.receiptRawSha256(),
+			ACTIVATION_REQUEST));
+		assertThat(descriptor.locator().objectPrefix())
+			.isEqualTo("server-route-bundles/v1/" + fixture.manifestSha256() + "/");
+		assertThat(descriptor.objects())
+			.extracting(RouteBundlePublicationDescriptor.PublishedObject::path)
+			.containsExactly(
+				"compatibility.json",
+				"manifest.json",
+				"manifest.signing-input.json",
+				"payload/accessibility.sqlite.zst",
+				"payload/fare.sqlite.zst",
+				"payload/timetable.sqlite.zst",
+				"payload/topology.sqlite.zst",
+				"provenance.json");
+		assertThat(descriptor.release().result()).isEqualTo("GO");
+		assertThat(descriptor.descriptorSha256()).isEqualTo(fixture.descriptorSha256());
+		assertThat(descriptor).isNotInstanceOf(VerifiedRouteBundleCandidate.class);
+	}
+
+	@Test
+	void publicationDescriptorRejectsLegacyAuthorityAndIdentityDriftWithoutV1Fallback() throws Exception {
+		var descriptor = descriptorFixture();
+
+		assertDescriptorReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			fixture().bytes(),
+			ACTIVATION_REQUEST);
+
+		var legacyAuthority = descriptor.node().deepCopy();
+		legacyAuthority.putObject("backendAdmission").put("manifestSha256", descriptor.manifestSha256());
+		rebindDescriptor(legacyAuthority);
+		assertDescriptorReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID,
+			canonicalBytes(legacyAuthority),
+			ACTIVATION_REQUEST);
+
+		var producerDrift = descriptor.node().deepCopy();
+		((ObjectNode) producerDrift.path("producer")).put("gitSha", "f".repeat(40));
+		rebindDescriptor(producerDrift);
+		assertDescriptorReason(
+			RouteBundleHandoffException.Reason.PUBLICATION_RECEIPT_IDENTITY_MISMATCH,
+			canonicalBytes(producerDrift),
+			ACTIVATION_REQUEST);
+
+		var digestDrift = descriptor.node().deepCopy();
+		digestDrift.put("descriptorSha256", "f".repeat(64));
+		assertDescriptorReason(
+			RouteBundleHandoffException.Reason.HANDOFF_SELF_DIGEST_MISMATCH,
+			canonicalBytes(digestDrift),
+			ACTIVATION_REQUEST);
+
+		assertDescriptorReason(
+			RouteBundleHandoffException.Reason.HANDOFF_CANONICAL_BYTES_MISMATCH,
+			(descriptor.json() + "\n").getBytes(StandardCharsets.UTF_8),
+			ACTIVATION_REQUEST);
+	}
+
+	@Test
 	void rawJsonAndSelfIdentityDriftFailClosedWithTypedReasons() throws Exception {
 		var fixture = fixture();
 
@@ -284,6 +356,41 @@ class RouteBundleConsumerHandoffParserTest {
 			.isEqualTo(reason);
 	}
 
+	private static void assertDescriptorReason(
+		RouteBundleHandoffException.Reason reason,
+		byte[] bytes,
+		String activationRequestIdentity) {
+		assertThatThrownBy(() -> RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
+			bytes, activationRequestIdentity))
+			.isInstanceOf(RouteBundleHandoffException.class)
+			.extracting(error -> ((RouteBundleHandoffException) error).reason())
+			.isEqualTo(reason);
+	}
+
+	private static DescriptorFixture descriptorFixture() {
+		var handoff = fixture();
+		ObjectNode descriptor = handoff.node().deepCopy();
+		descriptor.put("schemaVersion", 2);
+		descriptor.put("artifactKind", "server-route-bundle-publication-descriptor");
+		var producer = descriptor.putObject("producer");
+		producer.put("repository", "AquilaXk/easysubway-data");
+		producer.put("gitSha", "9".repeat(40));
+		descriptor.remove(List.of("backendAdmission", "platformRelease", "handoffSha256"));
+		try {
+			rebindDescriptor(descriptor);
+			byte[] bytes = canonicalBytes(descriptor);
+			return new DescriptorFixture(
+				bytes,
+				new String(bytes, StandardCharsets.UTF_8),
+				descriptor,
+				handoff.manifestSha256(),
+				handoff.receiptRawSha256(),
+				descriptor.path("descriptorSha256").textValue());
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
 	static Fixture fixture() {
 		return fixture("production-v1", "AQID");
 	}
@@ -420,6 +527,11 @@ class RouteBundleConsumerHandoffParserTest {
 		handoff.put("handoffSha256", sha256(canonicalBytes(handoff)));
 	}
 
+	private static void rebindDescriptor(ObjectNode descriptor) throws JsonProcessingException {
+		descriptor.remove("descriptorSha256");
+		descriptor.put("descriptorSha256", sha256(canonicalBytes(descriptor)));
+	}
+
 	private static byte[] canonicalBytes(JsonNode value) throws JsonProcessingException {
 		return JSON.writeValueAsBytes(sortNode(value));
 	}
@@ -478,5 +590,14 @@ class RouteBundleConsumerHandoffParserTest {
 		String receiptRawSha256,
 		String handoffSha256,
 		String payloadSha256) {
+	}
+
+	record DescriptorFixture(
+		byte[] bytes,
+		String json,
+		ObjectNode node,
+		String manifestSha256,
+		String receiptRawSha256,
+		String descriptorSha256) {
 	}
 }
