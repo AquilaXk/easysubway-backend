@@ -35,7 +35,8 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 			List.of(
 				candidate("T2", "2026-08-12T10:08:00Z", "2026-08-12T09:59:56Z"),
 				candidate("T2", "2026-08-12T10:07:00Z", "2026-08-12T09:59:55Z"),
-				candidate("T1", "2026-08-12T09:59:59Z", "2026-08-12T09:59:54Z"),
+				candidate("T4", "2026-08-12T09:59:30Z", "2026-08-12T09:59:57Z"),
+				candidate("T1", "2026-08-12T09:58:59Z", "2026-08-12T09:59:54Z"),
 				candidate("UNKNOWN", "2026-08-12T10:04:00Z", "2026-08-12T09:59:53Z"),
 				candidate("T3", "2026-08-12T10:12:00Z", "2026-08-12T09:59:52Z")
 			),
@@ -45,6 +46,7 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 
 		TimetableRealtimeUpdates result = resolver.resolve(List.of(query(
 			departure("trip-b", "T2", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"),
+			departure("trip-d", "T4", "2026-08-12T09:59:00Z", "2026-08-12T10:01:00Z"),
 			departure("trip-a", "T1", "2026-08-12T10:02:00Z", "2026-08-12T10:03:00Z"),
 			departure("trip-c", "T3", "2026-08-12T10:10:00Z", "2026-08-12T10:11:00Z")
 		)));
@@ -61,7 +63,10 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 				"trip-b", 120, 120, false, SNAPSHOT_ID,
 				Instant.parse("2026-08-12T09:59:55Z")),
 			new TimetableRealtimeUpdate(
-				"trip-c", 0, 0, true, SNAPSHOT_ID, SNAPSHOT_RECEIVED_AT)
+				"trip-c", 0, 0, true, SNAPSHOT_ID, SNAPSHOT_RECEIVED_AT),
+			new TimetableRealtimeUpdate(
+				"trip-d", 30, 30, false, SNAPSHOT_ID,
+				Instant.parse("2026-08-12T09:59:57Z"))
 		);
 	}
 

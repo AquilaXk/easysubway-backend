@@ -139,13 +139,20 @@ final class JourneyTimetableRealtimeArrivalResolver implements JourneyTimetableR
 		Set<String> cancelledTrainNos,
 		ArrivalCandidate candidate
 	) {
-		return candidate != null
-			&& candidate.freshness() == ArrivalFreshness.FRESH_REALTIME
-			&& candidate.trainNo() != null && !candidate.trainNo().isBlank()
-			&& candidate.providerReceivedAt() != null
-			&& !candidate.expectedArrivalAt().isBefore(query.readyAt())
-			&& !cancelledTrainNos.contains(candidate.trainNo())
-			&& plannedByTrainNo.containsKey(candidate.trainNo());
+		if (candidate == null
+			|| candidate.freshness() != ArrivalFreshness.FRESH_REALTIME
+			|| candidate.trainNo() == null || candidate.trainNo().isBlank()
+			|| candidate.providerReceivedAt() == null
+			|| cancelledTrainNos.contains(candidate.trainNo())) {
+			return false;
+		}
+		TimetableTripDeparture planned = plannedByTrainNo.get(candidate.trainNo());
+		if (planned == null) {
+			return false;
+		}
+		Duration arrivalDelta = Duration.between(
+			planned.scheduledArrivalAt(), candidate.expectedArrivalAt());
+		return !planned.scheduledDepartureAt().plus(arrivalDelta).isBefore(query.readyAt());
 	}
 
 	private static ArrivalCandidate earlierCandidate(ArrivalCandidate left, ArrivalCandidate right) {
