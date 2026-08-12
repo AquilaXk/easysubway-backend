@@ -393,6 +393,31 @@ test('Backend #220 route controller final-type remediation is exact', () => {
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 17, fixRequired: 17, fixed: 110, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #224 session controller final-type remediation is exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const finding = tracked.findings.find(
+    ({ identity }) => identity === '5fc71aa4967ea3fa6886e2c841f6d9dc86dea8c8a11036235bd34558de5b568c',
+  );
+  assert.deepEqual(
+    [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+    [
+      'FIXED',
+      'https://github.com/AquilaXk/easysubway-backend/issues/224',
+      '[Build][Backend][P1] RouteV2SessionController final-type SpotBugs remediation',
+      'OPEN',
+      'Backend #224 removed this exact session controller constructor finding by closing the package-private controller type to inheritance.',
+      'Reopen Backend #224 if this exact finding or a source-equivalent replacement reappears.',
+      'Review this terminal decision when the exact source, authenticated session controller construction contract, analyzer, or Backend #224 evidence changes.',
+      '2026-11-13',
+      null,
+    ],
+  );
+  const controller = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionController.java', import.meta.url), 'utf8');
+  assert.match(controller, /^final class RouteV2SessionController \{/mu);
+  assert.doesNotMatch(controller, /^public\s+final\s+class RouteV2SessionController\b/mu);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 16, fixRequired: 16, fixed: 111, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
