@@ -60,7 +60,8 @@ class RouteBundlePublicationObjectFetcherTest {
 			return response(request, 200, request.uri(), Map.of(
 				"Content-Length", List.of(String.valueOf(bodies.get(index).length))), bodies.get(index));
 		});
-		var fetcher = new RouteBundlePublicationObjectFetcher(client, Duration.ofSeconds(30), 64L * 1024 * 1024);
+		var fetcher = new RouteBundlePublicationObjectFetcher(
+			client, Duration.ofSeconds(30), 64L * 1024 * 1024, BASE_URL);
 
 		var fetched = fetcher.fetch(verified);
 
@@ -91,7 +92,8 @@ class RouteBundlePublicationObjectFetcherTest {
 			return response(request, 200, request.uri(), Map.of(
 				"Content-Length", List.of(String.valueOf(body.length))), body);
 		});
-		var fetcher = new RouteBundlePublicationObjectFetcher(client, Duration.ofSeconds(30), 64L * 1024 * 1024);
+		var fetcher = new RouteBundlePublicationObjectFetcher(
+			client, Duration.ofSeconds(30), 64L * 1024 * 1024, BASE_URL);
 
 		var fetched = fetcher.fetch(fixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST);
 
@@ -111,6 +113,28 @@ class RouteBundlePublicationObjectFetcherTest {
 
 		assertThrows(RouteBundleHandoffException.class,
 			() -> fetcher.fetch((byte[]) null, RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST));
+		assertTrue(client.requests().isEmpty());
+	}
+
+	@Test
+	void rejectsUntrustedRawDescriptorOriginBeforeAnyNetworkRequest() throws Exception {
+		var exactFixture = RouteBundleObjectAdmissionTest.fixture();
+		var otherOriginFixture = RouteBundleObjectAdmissionTest.fixture(
+			"https://objectstorage.ap-seoul-1.oraclecloud.com/n/othernamespace/b/easysubway-route-bundles/o");
+		var client = new StubHttpClient(request -> {
+			throw new AssertionError("network must not be called");
+		});
+		for (var invocation : List.<org.junit.jupiter.api.function.Executable>of(
+			() -> new RouteBundlePublicationObjectFetcher(
+				client, Duration.ofSeconds(30), 64L * 1024 * 1024)
+				.fetch(exactFixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST),
+			() -> new RouteBundlePublicationObjectFetcher(
+				client, Duration.ofSeconds(30), 64L * 1024 * 1024, BASE_URL)
+				.fetch(otherOriginFixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST))) {
+			var failure = assertThrows(
+				RouteBundlePublicationObjectFetcher.AcquisitionException.class, invocation);
+			assertEquals(RouteBundlePublicationObjectFetcher.Reason.UNTRUSTED_DESCRIPTOR_ORIGIN, failure.reason());
+		}
 		assertTrue(client.requests().isEmpty());
 	}
 

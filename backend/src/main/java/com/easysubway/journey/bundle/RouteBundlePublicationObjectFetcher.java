@@ -36,21 +36,35 @@ public final class RouteBundlePublicationObjectFetcher {
 	private final HttpClient httpClient;
 	private final Duration requestTimeout;
 	private final long maxTotalBytes;
+	private final URI trustedRawDescriptorBaseUri;
 
 	public RouteBundlePublicationObjectFetcher() {
+		this(null);
+	}
+
+	public RouteBundlePublicationObjectFetcher(String trustedRawDescriptorBaseUrl) {
 		this(
 			HttpClient.newBuilder()
 				.connectTimeout(CONNECT_TIMEOUT)
 				.followRedirects(HttpClient.Redirect.NEVER)
 				.build(),
 			REQUEST_TIMEOUT,
-			MAX_TOTAL_BYTES);
+			MAX_TOTAL_BYTES,
+			trustedRawDescriptorBaseUrl);
 	}
 
 	RouteBundlePublicationObjectFetcher(
 		HttpClient httpClient,
 		Duration requestTimeout,
 		long maxTotalBytes) {
+		this(httpClient, requestTimeout, maxTotalBytes, null);
+	}
+
+	RouteBundlePublicationObjectFetcher(
+		HttpClient httpClient,
+		Duration requestTimeout,
+		long maxTotalBytes,
+		String trustedRawDescriptorBaseUrl) {
 		this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
 		this.requestTimeout = Objects.requireNonNull(requestTimeout, "requestTimeout");
 		if (requestTimeout.isZero() || requestTimeout.isNegative()) {
@@ -60,6 +74,9 @@ public final class RouteBundlePublicationObjectFetcher {
 			throw new IllegalArgumentException("maxTotalBytes must be positive");
 		}
 		this.maxTotalBytes = maxTotalBytes;
+		this.trustedRawDescriptorBaseUri = trustedRawDescriptorBaseUrl == null
+			? null
+			: baseUri(trustedRawDescriptorBaseUrl);
 	}
 
 	public FetchedPublicationObjects fetch(
@@ -74,6 +91,10 @@ public final class RouteBundlePublicationObjectFetcher {
 		RouteBundlePublicationDescriptor descriptor =
 			RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
 				descriptorBytes == null ? null : descriptorBytes.clone(), activationRequestIdentity);
+		if (trustedRawDescriptorBaseUri == null
+			|| !trustedRawDescriptorBaseUri.equals(baseUri(descriptor.locator().publicBaseUrl()))) {
+			throw failure(Reason.UNTRUSTED_DESCRIPTOR_ORIGIN, "raw descriptor origin is not configured as trusted");
+		}
 		return fetch(descriptor, descriptor.identity().keyId());
 	}
 
@@ -292,6 +313,7 @@ public final class RouteBundlePublicationObjectFetcher {
 	}
 
 	public enum Reason {
+		UNTRUSTED_DESCRIPTOR_ORIGIN,
 		VERIFIED_DESCRIPTOR_INVALID,
 		SIZE_LIMIT_EXCEEDED,
 		TRANSPORT_FAILURE,

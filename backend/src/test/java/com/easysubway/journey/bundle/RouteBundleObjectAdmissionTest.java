@@ -231,6 +231,10 @@ class RouteBundleObjectAdmissionTest {
 	}
 
 	static Fixture fixture() throws Exception {
+		return fixture("https://objectstorage.ap-seoul-1.oraclecloud.com/n/testnamespace/b/easysubway-route-bundles/o");
+	}
+
+	static Fixture fixture(String publicBaseUrl) throws Exception {
 		KeyPair keyPair = rsaKeyPair();
 		var payloads = new LinkedHashMap<String, byte[]>();
 		payloads.put("payload/accessibility.sqlite.zst", bytes("accessibility"));
@@ -308,7 +312,7 @@ class RouteBundleObjectAdmissionTest {
 			"repository", map("name", "AquilaXk/easysubway-data", "gitSha", "9".repeat(40)),
 			"candidate", candidate,
 			"locator", map(
-				"publicBaseUrl", "https://objectstorage.ap-seoul-1.oraclecloud.com/n/testnamespace/b/easysubway-route-bundles/o",
+				"publicBaseUrl", publicBaseUrl,
 				"objectPrefix", objectPrefix),
 			"objects", publishedObjects);
 		String receiptSha256 = sha(canonicalBytes(receiptPayload));
