@@ -18,6 +18,11 @@ import org.springframework.test.web.servlet.MockMvc;
 @DisplayName("백엔드 애플리케이션 컨텍스트")
 class EasySubwayBackendApplicationTests {
 
+	private static final String TEST_SHA_A = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+	private static final String TEST_SHA_B = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb";
+	private static final String TEST_SHA_C = "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc";
+	private static final String TEST_SHA_D = "dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd";
+
 	@Test
 	@DisplayName("스프링 부트 애플리케이션 컨텍스트가 정상 로드된다")
 	void contextLoads() {
@@ -44,6 +49,13 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
+			"easysubway.journey-v3.readiness.instance-id=backend-context-prod",
+			"easysubway.journey-v3.readiness.release-tuple-sha256=" + TEST_SHA_A,
+			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + TEST_SHA_B,
+			"easysubway.journey-v3.readiness.backend-config-sha256=" + TEST_SHA_C,
+			"easysubway.journey-v3.readiness.journey-contract-sha256=" + TEST_SHA_D,
+			"easysubway.journey-v3.readiness.traffic-generation=1",
 			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
 			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
 			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
@@ -96,6 +108,13 @@ class EasySubwayBackendApplicationTests {
 			"EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT=PT2S",
 			"EASYSUBWAY_JOURNEY_MAX_SEARCHES_PER_SESSION=12",
 			"EASYSUBWAY_JOURNEY_SESSION_CERTIFICATE_SHA256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
+			"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
+			"easysubway.journey-v3.readiness.instance-id=backend-context-staging",
+			"easysubway.journey-v3.readiness.release-tuple-sha256=" + TEST_SHA_A,
+			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + TEST_SHA_B,
+			"easysubway.journey-v3.readiness.backend-config-sha256=" + TEST_SHA_C,
+			"easysubway.journey-v3.readiness.journey-contract-sha256=" + TEST_SHA_D,
+			"easysubway.journey-v3.readiness.traffic-generation=1",
 			"EASYSUBWAY_REPORT_RECEIPT_PEPPER=prod-like-test-receipt-token-pepper-with-enough-entropy",
 			"EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY=prod-like-test-upload-intent-signing-key-with-enough-entropy",
 			"EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT=https://object-storage.example.com",
