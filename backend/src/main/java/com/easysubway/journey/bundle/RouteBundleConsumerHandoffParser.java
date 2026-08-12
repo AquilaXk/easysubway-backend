@@ -64,15 +64,7 @@ public final class RouteBundleConsumerHandoffParser {
 
 	public static RouteBundleConsumerHandoff parse(byte[] handoffBytes, String activationRequestIdentity) {
 		requireActivationRequestIdentity(activationRequestIdentity);
-		if (handoffBytes == null || handoffBytes.length == 0) {
-			throw failure(HANDOFF_UTF8_OR_JSON_INVALID, "handoff bytes must be nonempty UTF-8 JSON");
-		}
-		String decoded = decodeUtf8(handoffBytes);
-		ObjectNode root = parseRoot(decoded);
-		byte[] canonical = canonicalBytes(root, HANDOFF_UTF8_OR_JSON_INVALID, "handoff canonicalization failed");
-		if (!Arrays.equals(handoffBytes, canonical)) {
-			throw failure(HANDOFF_CANONICAL_BYTES_MISMATCH, "handoff bytes must be canonical JSON");
-		}
+		ObjectNode root = parseCanonicalRoot(handoffBytes, "handoff");
 		requireKeys(root, Set.of(
 			"schemaVersion", "artifactKind", "manifest", "sourceSnapshotSetHash",
 			"publicationReceipt", "release", "backendAdmission", "platformRelease", "handoffSha256"),
@@ -87,7 +79,96 @@ public final class RouteBundleConsumerHandoffParser {
 			throw failure(HANDOFF_SELF_DIGEST_MISMATCH, "handoffSha256 mismatch");
 		}
 
-		ObjectNode manifest = requireObject(root, "manifest", "handoff");
+		PublicationFacts facts = parsePublicationFacts(root, "handoff");
+		RouteBundleAdmissionEvidence admissionEvidence = parseBackendAdmission(
+			requireObject(root, "backendAdmission", "handoff"),
+			facts.manifestSha256(),
+			facts.release(),
+			activationRequestIdentity);
+		String platformDigest = parsePlatformRelease(
+			requireObject(root, "platformRelease", "handoff"), facts.manifestSha256());
+
+		return new RouteBundleConsumerHandoff(
+			facts.receipt().repositoryGitSha(),
+			facts.identity(),
+			facts.sourceSnapshotSetHash(),
+			admissionEvidence,
+			facts.receipt().locator(),
+			facts.receipt().objects(),
+			facts.receipt().prePublicationFinalSha256(),
+			facts.release(),
+			platformDigest,
+			handoffSha256);
+	}
+
+	public static RouteBundlePublicationDescriptor parsePublicationDescriptor(
+		byte[] descriptorBytes,
+		String activationRequestIdentity) {
+		requireActivationRequestIdentity(activationRequestIdentity);
+		ObjectNode root = parseCanonicalRoot(descriptorBytes, "publication descriptor");
+		requireKeys(root, Set.of(
+			"schemaVersion", "artifactKind", "producer", "manifest", "sourceSnapshotSetHash",
+			"publicationReceipt", "release", "descriptorSha256"), "publicationDescriptor");
+		requireInteger(root, "schemaVersion", 2, 2, "publicationDescriptor");
+		requireExactText(
+			root,
+			"artifactKind",
+			"server-route-bundle-publication-descriptor",
+			"publicationDescriptor");
+		String descriptorSha256 = requireSha256(root, "descriptorSha256", "publicationDescriptor");
+		ObjectNode descriptorPayload = root.deepCopy();
+		descriptorPayload.remove("descriptorSha256");
+		if (!descriptorSha256.equals(sha256(canonicalBytes(
+			descriptorPayload,
+			HANDOFF_UTF8_OR_JSON_INVALID,
+			"publication descriptor digest canonicalization failed")))) {
+			throw failure(HANDOFF_SELF_DIGEST_MISMATCH, "descriptorSha256 mismatch");
+		}
+
+		ObjectNode producer = requireObject(root, "producer", "publicationDescriptor");
+		requireKeys(producer, Set.of("repository", "gitSha"), "publicationDescriptor.producer");
+		requireExactText(
+			producer,
+			"repository",
+			"AquilaXk/easysubway-data",
+			"publicationDescriptor.producer");
+		String producerGitSha = requirePatternText(
+			producer, "gitSha", GIT_SHA, "publicationDescriptor.producer");
+		PublicationFacts facts = parsePublicationFacts(root, "publicationDescriptor");
+		requireSame(
+			producerGitSha,
+			facts.receipt().repositoryGitSha(),
+			"publication descriptor producer gitSha",
+			PUBLICATION_RECEIPT_IDENTITY_MISMATCH);
+
+		RouteBundleAdmissionEvidence admissionEvidence = createBackendAdmission(
+			facts.manifestSha256(), facts.release(), activationRequestIdentity);
+		var locator = facts.receipt().locator();
+		var release = facts.release();
+		return new RouteBundlePublicationDescriptor(
+			producerGitSha,
+			facts.identity(),
+			facts.sourceSnapshotSetHash(),
+			admissionEvidence,
+			new RouteBundlePublicationDescriptor.PublicationLocator(
+				locator.publicBaseUrl(), locator.objectPrefix()),
+			facts.receipt().objects().stream()
+				.map(object -> new RouteBundlePublicationDescriptor.PublishedObject(
+					object.path(), object.objectKey(), object.sizeBytes(), object.sha256()))
+				.toList(),
+			facts.receipt().prePublicationFinalSha256(),
+			new RouteBundlePublicationDescriptor.ReleaseEvidence(
+				release.result(),
+				release.finalSha256(),
+				release.finalRawSha256(),
+				release.publicationReceiptSha256(),
+				release.publicationReceiptRawSha256(),
+				release.promotionEvidenceSha256()),
+			descriptorSha256);
+	}
+
+	private static PublicationFacts parsePublicationFacts(ObjectNode root, String label) {
+		ObjectNode manifest = requireObject(root, "manifest", label);
 		RouteBundleIdentity identity = parseManifest(manifest);
 		String manifestSha256 = sha256(canonicalBytes(
 			manifest, MANIFEST_IDENTITY_MISMATCH, "manifest canonicalization failed"));
@@ -95,35 +176,16 @@ public final class RouteBundleConsumerHandoffParser {
 		signingInput.remove("signature");
 		String signingInputSha256 = sha256(canonicalBytes(
 			signingInput, MANIFEST_IDENTITY_MISMATCH, "signing input canonicalization failed"));
-		String sourceSnapshotSetHash = requireSha256(root, "sourceSnapshotSetHash", "handoff");
-
+		String sourceSnapshotSetHash = requireSha256(root, "sourceSnapshotSetHash", label);
 		Receipt receipt = parseReceipt(
-			requireObject(root, "publicationReceipt", "handoff"),
+			requireObject(root, "publicationReceipt", label),
 			identity,
 			manifestSha256,
 			signingInputSha256,
 			sourceSnapshotSetHash);
-		ReleaseEvidence release = parseRelease(
-			requireObject(root, "release", "handoff"), receipt);
-		RouteBundleAdmissionEvidence admissionEvidence = parseBackendAdmission(
-			requireObject(root, "backendAdmission", "handoff"),
-			manifestSha256,
-			release,
-			activationRequestIdentity);
-		String platformDigest = parsePlatformRelease(
-			requireObject(root, "platformRelease", "handoff"), manifestSha256);
-
-		return new RouteBundleConsumerHandoff(
-			receipt.repositoryGitSha(),
-			identity,
-			sourceSnapshotSetHash,
-			admissionEvidence,
-			receipt.locator(),
-			receipt.objects(),
-			receipt.prePublicationFinalSha256(),
-			release,
-			platformDigest,
-			handoffSha256);
+		ReleaseEvidence release = parseRelease(requireObject(root, "release", label), receipt);
+		return new PublicationFacts(
+			identity, manifestSha256, sourceSnapshotSetHash, receipt, release);
 	}
 
 	private static RouteBundleIdentity parseManifest(ObjectNode manifest) {
@@ -361,12 +423,19 @@ public final class RouteBundleConsumerHandoffParser {
 			|| !receiptReference.equals(reference(release.publicationReceiptRawSha256()))) {
 			throw failure(RELEASE_EVIDENCE_IDENTITY_MISMATCH, "backend admission evidence identity mismatch");
 		}
+		return createBackendAdmission(actualManifestSha256, release, activationRequestIdentity);
+	}
+
+	private static RouteBundleAdmissionEvidence createBackendAdmission(
+		String manifestSha256,
+		ReleaseEvidence release,
+		String activationRequestIdentity) {
 		try {
 			return new RouteBundleAdmissionEvidence(
-				actualManifestSha256,
-				finalReference,
-				promotionReference,
-				receiptReference,
+				manifestSha256,
+				reference(release.finalRawSha256()),
+				reference(release.promotionEvidenceSha256()),
+				reference(release.publicationReceiptRawSha256()),
 				activationRequestIdentity);
 		} catch (IllegalArgumentException exception) {
 			throw failure(ACTIVATION_REQUEST_IDENTITY_INVALID, "activation request identity is invalid", exception);
@@ -387,6 +456,20 @@ public final class RouteBundleConsumerHandoffParser {
 			throw failure(ACTIVATION_REQUEST_IDENTITY_INVALID,
 				"activation request identity must be nonempty raw text without trim changes");
 		}
+	}
+
+	private static ObjectNode parseCanonicalRoot(byte[] bytes, String label) {
+		if (bytes == null || bytes.length == 0) {
+			throw failure(HANDOFF_UTF8_OR_JSON_INVALID, label + " bytes must be nonempty UTF-8 JSON");
+		}
+		String decoded = decodeUtf8(bytes);
+		ObjectNode root = parseRoot(decoded);
+		byte[] canonical = canonicalBytes(
+			root, HANDOFF_UTF8_OR_JSON_INVALID, label + " canonicalization failed");
+		if (!Arrays.equals(bytes, canonical)) {
+			throw failure(HANDOFF_CANONICAL_BYTES_MISMATCH, label + " bytes must be canonical JSON");
+		}
+		return root;
 	}
 
 	private static String decodeUtf8(byte[] bytes) {
@@ -568,5 +651,13 @@ public final class RouteBundleConsumerHandoffParser {
 		String prePublicationFinalSha256,
 		String receiptSha256,
 		String receiptRawSha256) {
+	}
+
+	private record PublicationFacts(
+		RouteBundleIdentity identity,
+		String manifestSha256,
+		String sourceSnapshotSetHash,
+		Receipt receipt,
+		ReleaseEvidence release) {
 	}
 }
