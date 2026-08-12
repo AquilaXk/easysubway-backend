@@ -46,6 +46,9 @@ public record RouteSearchResult(
 	}
 
 	public RouteSearchResult {
+		steps = List.copyOf(steps);
+		warnings = List.copyOf(warnings);
+		blockedReasons = List.copyOf(blockedReasons);
 		objectiveTags = objectiveTags == null ? List.of() : List.copyOf(objectiveTags);
 	}
 
