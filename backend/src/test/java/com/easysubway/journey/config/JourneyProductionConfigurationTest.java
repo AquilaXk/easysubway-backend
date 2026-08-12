@@ -237,6 +237,22 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("non-root servlet context에서도 readiness Bearer challenge를 유지한다")
+	void readinessBearerChallengeUsesContextRelativePath() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+				.apply(springSecurity())
+				.build();
+
+			mockMvc.perform(get("/gateway" + CANDIDATE_READINESS_PATH).contextPath("/gateway"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"));
+		});
+	}
+
+	@Test
 	@DisplayName("candidate/active 부재는 authenticated sanitized 503이고 registry를 바꾸지 않는다")
 	void readinessUnavailableIsSanitized() {
 		validProductionContext().run(context -> {
