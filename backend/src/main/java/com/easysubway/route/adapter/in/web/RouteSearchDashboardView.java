@@ -23,6 +23,15 @@ public record RouteSearchDashboardView(
 	List<RouteQualitySignalRow> routeQualitySignalRows,
 	List<AlertThresholdRow> alertThresholdRows
 ) {
+	public RouteSearchDashboardView {
+		mobilityTypeRows = List.copyOf(mobilityTypeRows);
+		regionUsageRows = List.copyOf(regionUsageRows);
+		blockedReasonRows = List.copyOf(blockedReasonRows);
+		etaSourceRows = List.copyOf(etaSourceRows);
+		fallbackReasonRows = List.copyOf(fallbackReasonRows);
+		routeQualitySignalRows = List.copyOf(routeQualitySignalRows);
+		alertThresholdRows = List.copyOf(alertThresholdRows);
+	}
 
 	static RouteSearchDashboardView from(RouteSearchDashboardSummary summary) {
 		return new RouteSearchDashboardView(
