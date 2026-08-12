@@ -15,6 +15,7 @@ import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.jdbc.datasource.DataSourceTransactionManager;
 import org.springframework.stereotype.Repository;
 import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 
 @Repository
@@ -89,7 +90,27 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 	}
 
 	@Override
-	public SessionUse authorize(String tokenSha256, String requiredScope, Instant now) {
+	@Transactional
+	public SessionUse authorizeAndConsume(
+		String tokenSha256,
+		String requiredScope,
+		Instant now,
+		int maxSearchesPerSession
+	) {
+		int consumed = jdbcTemplate.update(
+			"""
+				UPDATE journey_v3_sessions
+				SET request_count = request_count + 1
+				WHERE token_sha256 = ?
+					AND scope = ?
+					AND expires_at > ?
+					AND request_count < ?
+				""",
+			tokenSha256,
+			requiredScope,
+			Timestamp.from(now),
+			maxSearchesPerSession
+		);
 		List<SessionRow> sessions = jdbcTemplate.query(
 			"SELECT scope, expires_at FROM journey_v3_sessions WHERE token_sha256 = ?",
 			(resultSet, rowNumber) -> new SessionRow(
@@ -107,6 +128,9 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 		}
 		if (!session.scope().equals(requiredScope)) {
 			return new SessionUse(AuthorizationStatus.SCOPE_MISMATCH, session.scope(), session.expiresAt());
+		}
+		if (consumed != 1) {
+			return new SessionUse(AuthorizationStatus.LIMITED, session.scope(), session.expiresAt());
 		}
 		return new SessionUse(AuthorizationStatus.VALID, session.scope(), session.expiresAt());
 	}

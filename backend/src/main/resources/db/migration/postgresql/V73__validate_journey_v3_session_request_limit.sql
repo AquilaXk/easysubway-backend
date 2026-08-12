@@ -1,0 +1,2 @@
+ALTER TABLE journey_v3_sessions
+	VALIDATE CONSTRAINT chk_journey_v3_session_request_count;

@@ -36,8 +36,8 @@ final class JourneySearchExceptionHandler {
 	}
 
 	@ExceptionHandler(JourneySessionException.class)
-	ResponseEntity<JourneyError> handleSessionFailure() {
-		return error(null, 401, "ROUTE_SESSION_REQUIRED");
+	ResponseEntity<JourneyError> handleSessionFailure(JourneySessionException exception) {
+		return error(null, exception.httpStatus(), exception.machineCode());
 	}
 
 	@ExceptionHandler(JourneySearchController.JourneySearchWebException.class)

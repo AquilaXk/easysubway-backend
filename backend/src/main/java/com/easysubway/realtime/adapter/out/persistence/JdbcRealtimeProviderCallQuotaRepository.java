@@ -38,7 +38,7 @@ public class JdbcRealtimeProviderCallQuotaRepository implements RealtimeProvider
 		Objects.requireNonNull(providerId, "providerId must not be null");
 		Objects.requireNonNull(now, "now must not be null");
 		Objects.requireNonNull(providerZone, "providerZone must not be null");
-		QuotaState state = jdbcTemplate.queryForObject(
+		QuotaState state = Objects.requireNonNull(jdbcTemplate.queryForObject(
 			"""
 				SELECT minute_window, minute_calls, day_window, daily_calls, CURRENT_TIMESTAMP AS database_now
 				FROM realtime_provider_call_quota_state
@@ -53,7 +53,7 @@ public class JdbcRealtimeProviderCallQuotaRepository implements RealtimeProvider
 				rs.getTimestamp("database_now").toInstant()
 			),
 			providerId
-		);
+		), "quota state query returned null");
 		long minuteWindow = state.databaseNow().getEpochSecond() / 60;
 		long dayWindow = state.databaseNow().atZone(providerZone).toLocalDate().toEpochDay();
 		int minuteCalls = state.minuteWindow() == minuteWindow ? state.minuteCalls() : 0;
