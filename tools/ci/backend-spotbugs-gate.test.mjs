@@ -313,6 +313,39 @@ test('Backend #208 route search dashboard view projection is exact', () => {
   }
 });
 
+test('Backend #216 RouteV2Metrics injected registry disposition is exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const finding = tracked.findings.find(
+    ({ identity }) => identity === '60957e4ae604cc4723282f9c71999bba29a7e3f9b4004333fea2b3c18193e3ea',
+  );
+  assert.deepEqual(
+    [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+    [
+      'FALSE_POSITIVE_EXACT_SUPPRESSION',
+      'https://github.com/AquilaXk/easysubway-backend/issues/216',
+      '[Build][Backend][P1] RouteV2Metrics injected registry SpotBugs exact disposition',
+      'OPEN',
+      'Backend #216 verified that RouteV2Metrics intentionally retains the injected MeterRegistry identity so every metric is registered in the same registry; it is behavior infrastructure, not caller-owned value data.',
+      'Remove this exact suppression when RouteV2Metrics no longer retains the registry or MeterRegistry becomes a copyable value contract.',
+      'Review this decision on registry identity/mutability, Micrometer wiring, source/member, analyzer, or Backend #216 owner-state change.',
+      '2026-11-13',
+      {
+        kind: 'EXCLUDE_FILTER_EXACT_METHOD',
+        bugPattern: 'EI_EXPOSE_REP2',
+        className: 'com.easysubway.route.adapter.in.web.RouteV2Metrics',
+        methodName: '<init>',
+        params: 'io.micrometer.core.instrument.MeterRegistry',
+        returns: 'void',
+        reason: 'Backend #216 exact injected MeterRegistry identity contract.',
+      },
+    ],
+  );
+  const excludeFilter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
+  assert.match(excludeFilter, /<Bug pattern="EI_EXPOSE_REP2"\/>\s*<Class name="com\.easysubway\.route\.adapter\.in\.web\.RouteV2Metrics"\/>\s*<Method name="&lt;init&gt;" params="io\.micrometer\.core\.instrument\.MeterRegistry" returns="void"\/>/u);
+  assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 69);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 19, fixRequired: 19, fixed: 108, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
