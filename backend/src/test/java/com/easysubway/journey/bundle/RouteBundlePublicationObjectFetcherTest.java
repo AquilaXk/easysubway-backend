@@ -3,6 +3,7 @@ package com.easysubway.journey.bundle;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -48,6 +49,12 @@ class RouteBundlePublicationObjectFetcherTest {
 		"payload/timetable.sqlite.zst",
 		"payload/topology.sqlite.zst",
 		"provenance.json");
+
+	@Test
+	void constructsVerifiedAndRawDescriptorProductionBoundaries() {
+		assertNotNull(new RouteBundlePublicationObjectFetcher());
+		assertNotNull(new RouteBundlePublicationObjectFetcher(BASE_URL));
+	}
 
 	@Test
 	void fetchesExactEightObjectsOnceInDescriptorOrderAndDefensivelyCopiesBytes() {
