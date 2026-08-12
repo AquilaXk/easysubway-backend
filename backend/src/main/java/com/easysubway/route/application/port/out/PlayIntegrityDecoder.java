@@ -17,5 +17,9 @@ public interface PlayIntegrityDecoder {
 		String appLicensingVerdict,
 		List<String> deviceRecognitionVerdicts
 	) {
+		public PlayIntegrityVerdict {
+			certificateSha256Digests = List.copyOf(certificateSha256Digests);
+			deviceRecognitionVerdicts = List.copyOf(deviceRecognitionVerdicts);
+		}
 	}
 }
