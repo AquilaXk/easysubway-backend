@@ -17,7 +17,7 @@ import org.springframework.security.config.annotation.web.configurers.AbstractHt
 import org.springframework.security.web.SecurityFilterChain;
 
 @Configuration(proxyBeanMethods = false)
-@Profile("prod | staging | release | prod-like")
+@Profile("(prod | staging | release | prod-like) & !capacity-evidence")
 @EnableConfigurationProperties(JourneySearchPolicyProperties.class)
 public class JourneyProductionConfiguration {
 

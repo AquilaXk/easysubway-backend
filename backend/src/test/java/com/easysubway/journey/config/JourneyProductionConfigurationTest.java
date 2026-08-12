@@ -110,6 +110,18 @@ class JourneyProductionConfigurationTest {
 			});
 	}
 
+	@Test
+	@DisplayName("capacity evidence 프로필은 Journey 운영 bean과 config를 요구하지 않는다")
+	void capacityEvidenceProfileDoesNotComposeProductionJourney() {
+		contextRunner
+			.withPropertyValues("spring.profiles.active=prod,capacity-evidence")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context).doesNotHaveBean(JourneySearchPolicyProperties.class);
+				assertThat(context).doesNotHaveBean(JourneySessionService.class);
+			});
+	}
+
 	private WebApplicationContextRunner validProductionContext() {
 		return productionContext(
 			"easysubway.journey.search.timeout=PT2S",
