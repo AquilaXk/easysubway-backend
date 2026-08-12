@@ -124,6 +124,8 @@ class JourneySearchControllerTest {
 	@Test
 	@DisplayName("missing·malformed·rejected bearer는 application 호출 없이 exact 401이다")
 	void rejectsUnauthorizedRequestsBeforeExecution() throws Exception {
+		assertError(post("/api/v3/journeys/search")
+			.contentType(MediaType.APPLICATION_JSON), 401, "ROUTE_SESSION_REQUIRED", false);
 		for (String authorization : List.of("", "Basic session-token", "Bearer", "Bearer token extra")) {
 			var request = post("/api/v3/journeys/search")
 				.contentType(MediaType.APPLICATION_JSON)
@@ -139,6 +141,32 @@ class JourneySearchControllerTest {
 			.content(validRequest("{\"mode\":\"NOW\"}")), 401, "ROUTE_SESSION_REQUIRED", false);
 
 		verify(sessionService).authorize("rejected-token");
+		verifyNoInteractions(applicationService);
+	}
+
+	@Test
+	@DisplayName("Bearer scheme은 대소문자와 무관하게 authorize한다")
+	void acceptsCaseInsensitiveBearerScheme() throws Exception {
+		allowSession();
+		when(applicationService.execute(any())).thenReturn(success());
+
+		mockMvc.perform(post("/api/v3/journeys/search")
+			.header(HttpHeaders.AUTHORIZATION, "bEaReR session-token")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(validRequest("{\"mode\":\"NOW\"}")))
+			.andExpect(status().isOk());
+
+		verify(sessionService).authorize("session-token");
+		verify(applicationService).execute(any());
+	}
+
+	@Test
+	@DisplayName("401 session failure는 exact Bearer challenge를 포함한다")
+	void challengesUnauthorizedClientWithBearerScheme() throws Exception {
+		assertError(post("/api/v3/journeys/search")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(validRequest("{\"mode\":\"NOW\"}")), 401, "ROUTE_SESSION_REQUIRED", false);
+
 		verifyNoInteractions(applicationService);
 	}
 
@@ -165,7 +193,7 @@ class JourneySearchControllerTest {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body), 400, "INVALID_JOURNEY_REQUEST", false);
 		}
-		verify(sessionService, times(10)).authorize("session-token");
+		verify(sessionService, times(11)).authorize("session-token");
 		verifyNoInteractions(applicationService);
 	}
 
@@ -206,7 +234,7 @@ class JourneySearchControllerTest {
 		String code,
 		boolean preservesRequestId
 	) throws Exception {
-		MvcResult result = mockMvc.perform(request)
+		var response = mockMvc.perform(request)
 			.andExpect(status().is(httpStatus))
 			.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
 			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"))
@@ -215,7 +243,11 @@ class JourneySearchControllerTest {
 				: org.hamcrest.Matchers.matchesPattern("^[0-7][0-9A-HJKMNP-TV-Z]{25}$")))
 			.andExpect(jsonPath("$.code").value(code))
 			.andExpect(jsonPath("$.retryable").value(false))
-			.andExpect(jsonPath("$.occurredAt").value("2026-08-12T00:00:00Z"))
+			.andExpect(jsonPath("$.occurredAt").value("2026-08-12T00:00:00Z"));
+		if (httpStatus == 401) {
+			response.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"));
+		}
+		MvcResult result = response
 			.andReturn();
 		assertThat(fields(result)).containsExactlyInAnyOrder(
 			"contractVersion", "requestId", "code", "retryable", "occurredAt"

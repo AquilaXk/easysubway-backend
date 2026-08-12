@@ -55,9 +55,10 @@ final class JourneySearchExceptionHandler {
 
 	private ResponseEntity<JourneyError> error(String requestId, int httpStatus, String machineCode) {
 		Instant occurredAt = clock.instant();
-		return ResponseEntity.status(httpStatus)
-			.header(HttpHeaders.CACHE_CONTROL, "private, no-store")
-			.body(new JourneyError(
+		var response = ResponseEntity.status(httpStatus)
+			.header(HttpHeaders.CACHE_CONTROL, "private, no-store");
+		if (httpStatus == 401) response.header(HttpHeaders.WWW_AUTHENTICATE, "Bearer");
+		return response.body(new JourneyError(
 				CONTRACT_VERSION,
 				requestId == null ? nextUlid(occurredAt.toEpochMilli()) : requestId,
 				machineCode,

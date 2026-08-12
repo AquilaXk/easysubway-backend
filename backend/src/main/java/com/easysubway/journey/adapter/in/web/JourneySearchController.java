@@ -12,6 +12,7 @@ import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.time.OffsetDateTime;
 import java.util.Objects;
@@ -22,7 +23,6 @@ import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RestController;
 
@@ -51,10 +51,10 @@ final class JourneySearchController {
 	@PostMapping("/api/v3/journeys/search")
 	ResponseEntity<JourneySearchResponseMapper.JourneySearchResponse> search(
 		@RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
-		@RequestBody byte[] requestBytes
+		HttpServletRequest servletRequest
 	) {
 		sessionService.authorize(requireBearerToken(authorization));
-		JourneyRequest request = decodeRequest(requestBytes);
+		JourneyRequest request = decodeRequest(readRequest(servletRequest));
 		JourneyExecutionResult result;
 		try {
 			result = applicationService.execute(request);
@@ -72,14 +72,28 @@ final class JourneySearchController {
 	}
 
 	private static String requireBearerToken(String authorization) {
-		if (authorization == null || !authorization.startsWith("Bearer ")) {
+		if (authorization == null) {
 			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
 		}
-		String token = authorization.substring("Bearer ".length());
+		int separator = authorization.indexOf(' ');
+		if (separator < 1 || !authorization.substring(0, separator).equalsIgnoreCase("Bearer")) {
+			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
+		}
+		int tokenStart = separator;
+		while (tokenStart < authorization.length() && authorization.charAt(tokenStart) == ' ') tokenStart++;
+		String token = authorization.substring(tokenStart);
 		if (!SESSION_TOKEN.matcher(token).matches()) {
 			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
 		}
 		return token;
+	}
+
+	private static byte[] readRequest(HttpServletRequest request) {
+		try {
+			return request.getInputStream().readAllBytes();
+		} catch (IOException exception) {
+			throw invalidRequest();
+		}
 	}
 
 	private static JourneyRequest decodeRequest(byte[] requestBytes) {
