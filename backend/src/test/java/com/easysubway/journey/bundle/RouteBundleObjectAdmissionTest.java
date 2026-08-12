@@ -59,11 +59,16 @@ class RouteBundleObjectAdmissionTest {
 		byte[] mapRead = admission.objects().get("manifest.json");
 		mapRead[0] ^= 1;
 		assertArrayEquals(fixture.objects().get("manifest.json"), admission.objectBytes("manifest.json"));
+		assertThrows(IllegalArgumentException.class, () -> admission.objectBytes("unknown.json"));
 	}
 
 	@Test
 	void rejectsMissingExtraAndAliasedPathsBeforeSignatureAdmission() throws Exception {
 		Fixture fixture = fixture();
+		assertAdmissionReason(
+			RouteBundleObjectAdmission.Reason.OBJECT_PATH_SET_MISMATCH,
+			() -> RouteBundleObjectAdmission.admit(
+				fixture.handoffBytes(), ACTIVATION_REQUEST, null, fixture.currentKey()));
 		for (Map<String, byte[]> invalid : List.of(
 			without(fixture.mutableObjects(), "compatibility.json"),
 			with(fixture.mutableObjects(), "unknown.json", bytes("unknown")),

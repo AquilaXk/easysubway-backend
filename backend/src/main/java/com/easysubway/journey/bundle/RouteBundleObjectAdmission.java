@@ -1,14 +1,12 @@
 package com.easysubway.journey.bundle;
 
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.util.Collections;
-import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import org.apache.commons.codec.digest.DigestUtils;
 
 /** Binds delivered publication bytes to one verified handoff without issuing a candidate. */
 public final class RouteBundleObjectAdmission {
@@ -61,11 +59,7 @@ public final class RouteBundleObjectAdmission {
 	}
 
 	private static String sha256(byte[] value) {
-		try {
-			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
-		} catch (NoSuchAlgorithmException impossible) {
-			throw new IllegalStateException(impossible);
-		}
+		return DigestUtils.sha256Hex(value);
 	}
 
 	private static AdmissionException failure(Reason reason, String message) {
