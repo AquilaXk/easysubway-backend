@@ -25,6 +25,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
 import java.util.concurrent.atomic.AtomicBoolean;
@@ -282,7 +283,7 @@ class RouteBundlePublicationObjectFetcherTest {
 
 	private static final class StubHttpClient extends HttpClient {
 		private final Sender sender;
-		private final List<HttpRequest> requests = new ArrayList<>();
+		private final List<HttpRequest> requests = new CopyOnWriteArrayList<>();
 
 		private StubHttpClient(Sender sender) {
 			this.sender = sender;
