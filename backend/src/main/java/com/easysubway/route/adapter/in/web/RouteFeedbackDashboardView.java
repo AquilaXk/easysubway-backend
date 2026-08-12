@@ -11,6 +11,11 @@ public record RouteFeedbackDashboardView(
 	List<RecentBlockedFeedbackRow> recentBlockedFeedbacks,
 	List<EtaCalibrationBucketRow> etaCalibrationBuckets
 ) {
+	public RouteFeedbackDashboardView {
+		ratingRows = List.copyOf(ratingRows);
+		recentBlockedFeedbacks = List.copyOf(recentBlockedFeedbacks);
+		etaCalibrationBuckets = List.copyOf(etaCalibrationBuckets);
+	}
 
 	public record RatingCountRow(String label, String description, long count) {
 	}
