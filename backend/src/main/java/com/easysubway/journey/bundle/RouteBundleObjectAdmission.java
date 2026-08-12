@@ -104,7 +104,7 @@ public final class RouteBundleObjectAdmission {
 	}
 
 	private static byte[] validateObject(long expectedSize, String expectedSha256, byte[] source) {
-		if (source == null || source.length == 0) {
+		if (source.length == 0) {
 			throw failure(Reason.OBJECT_BYTES_INVALID, "publication object bytes are required");
 		}
 		if (expectedSize != source.length) {

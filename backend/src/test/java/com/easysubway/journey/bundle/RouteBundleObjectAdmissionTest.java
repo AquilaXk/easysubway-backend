@@ -79,6 +79,7 @@ class RouteBundleObjectAdmissionTest {
 		byte[] read = admission.objectBytes("manifest.json");
 		read[0] ^= 1;
 		assertArrayEquals(fixture.objects().get("manifest.json"), admission.objectBytes("manifest.json"));
+		assertThrows(IllegalArgumentException.class, () -> admission.objectBytes("unknown.json"));
 	}
 
 	@Test
@@ -97,6 +98,9 @@ class RouteBundleObjectAdmissionTest {
 	void rejectsDescriptorV2IdentityInventoryAndObjectMismatches() throws Exception {
 		Fixture fixture = fixture();
 		var exact = fixture.fetchedObjects();
+		assertThrows(RouteBundleHandoffException.class,
+			() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+				null, ACTIVATION_REQUEST, exact, fixture.currentKey()));
 		assertAdmissionReason(
 			RouteBundleObjectAdmission.Reason.FETCHED_DESCRIPTOR_IDENTITY_MISMATCH,
 			() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
@@ -122,6 +126,11 @@ class RouteBundleObjectAdmissionTest {
 		wrongObjectKey.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
 			first.path(), "wrong/" + first.path(), first.bytes()));
 		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_PATH_SET_MISMATCH, wrongObjectKey);
+
+		var empty = new ArrayList<>(exact.objects());
+		empty.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
+			first.path(), first.objectKey(), new byte[0]));
+		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_BYTES_INVALID, empty);
 
 		var wrongSize = new ArrayList<>(exact.objects());
 		wrongSize.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
