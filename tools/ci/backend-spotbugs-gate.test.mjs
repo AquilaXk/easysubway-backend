@@ -346,6 +346,28 @@ test('Backend #216 RouteV2Metrics injected registry disposition is exact', () =>
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 19, fixRequired: 19, fixed: 108, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #218 realtime cancelled train list remediation is exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const finding = tracked.findings.find(
+    ({ identity }) => identity === 'b9168e403643e3200ade4d55153c94f5dd6f760b556efe5a700afb1a87506feb',
+  );
+  assert.deepEqual(
+    [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+    [
+      'FIXED',
+      'https://github.com/AquilaXk/easysubway-backend/issues/218',
+      '[Build][Backend][P1] realtime cancelled-train immutable-list SpotBugs remediation',
+      'OPEN',
+      'Backend #218 removed this exact realtime cancelled-train list finding with an explicit immutable snapshot after preserving normalization.',
+      'Reopen Backend #218 if this exact finding or a source-equivalent replacement reappears.',
+      'Review this terminal decision when the exact source, cancelled-train normalization contract, analyzer, or Backend #218 evidence changes.',
+      '2026-11-13',
+      null,
+    ],
+  );
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 18, fixRequired: 18, fixed: 109, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
