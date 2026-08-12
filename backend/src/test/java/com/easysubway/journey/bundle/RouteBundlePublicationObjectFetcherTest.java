@@ -83,6 +83,26 @@ class RouteBundlePublicationObjectFetcherTest {
 	}
 
 	@Test
+	void fetchesFromRawCanonicalDescriptorBeforeTheSigningInputExistsLocally() throws Exception {
+		var fixture = RouteBundleObjectAdmissionTest.fixture();
+		var client = new StubHttpClient(request -> {
+			int index = clientRequestIndex(request);
+			byte[] body = fixture.objects().get(PATHS.get(index));
+			return response(request, 200, request.uri(), Map.of(
+				"Content-Length", List.of(String.valueOf(body.length))), body);
+		});
+		var fetcher = new RouteBundlePublicationObjectFetcher(client, Duration.ofSeconds(30), 64L * 1024 * 1024);
+
+		var fetched = fetcher.fetch(fixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST);
+
+		assertEquals(fixture.descriptorSha256(), fetched.descriptorSha256());
+		assertEquals("launch-2026", fetched.keyId());
+		assertEquals(PATHS, fetched.objects().stream()
+			.map(RouteBundlePublicationObjectFetcher.FetchedObject::path).toList());
+		assertEquals(PATHS.size(), client.requests().size());
+	}
+
+	@Test
 	void rejectsAggregateSizeBeforeAnyNetworkRequest() {
 		var verified = verifiedDescriptor(declaredSizes(64L * 1024 * 1024 + 1));
 		var client = new StubHttpClient(request -> {
