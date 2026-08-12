@@ -9,7 +9,9 @@ import java.security.Signature;
 import java.security.spec.X509EncodedKeySpec;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Objects;
+import java.util.function.Function;
 import java.util.regex.Pattern;
 
 /** Verifies one handoff against one configured current key without issuing a candidate. */
@@ -32,24 +34,71 @@ public final class RouteBundleCurrentKeyVerifier {
 		CurrentKey currentKey) {
 		RouteBundleConsumerHandoff handoff = RouteBundleConsumerHandoffParser.parse(
 			handoffBytes, activationRequestIdentity);
+		VerificationResult result = verifyParsed(
+			handoff.identity(),
+			handoff.objects(),
+			RouteBundleConsumerHandoff.PublishedObject::path,
+			RouteBundleConsumerHandoff.PublishedObject::sha256,
+			signingInputBytes,
+			currentKey);
+
+		return new VerifiedSignature(
+			handoff,
+			result.keyId(),
+			result.algorithm(),
+			result.publicKeySha256(),
+			result.signingInputSha256());
+	}
+
+	public static VerifiedPublicationDescriptorSignature verifyPublicationDescriptor(
+		byte[] descriptorBytes,
+		String activationRequestIdentity,
+		byte[] signingInputBytes,
+		CurrentKey currentKey) {
+		RouteBundlePublicationDescriptor descriptor =
+			RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
+				descriptorBytes, activationRequestIdentity);
+		VerificationResult result = verifyParsed(
+			descriptor.identity(),
+			descriptor.objects(),
+			RouteBundlePublicationDescriptor.PublishedObject::path,
+			RouteBundlePublicationDescriptor.PublishedObject::sha256,
+			signingInputBytes,
+			currentKey);
+
+		return new VerifiedPublicationDescriptorSignature(
+			descriptor,
+			result.keyId(),
+			result.algorithm(),
+			result.publicKeySha256(),
+			result.signingInputSha256());
+	}
+
+	private static <T> VerificationResult verifyParsed(
+		RouteBundleIdentity identity,
+		List<T> objects,
+		Function<T, String> path,
+		Function<T, String> digest,
+		byte[] signingInputBytes,
+		CurrentKey currentKey) {
 		if (signingInputBytes == null || signingInputBytes.length == 0) {
 			throw failure(Reason.SIGNING_INPUT_INVALID, "manifest signing input bytes are required");
 		}
 
 		String signingInputSha256 = sha256(signingInputBytes);
-		long matchingObjects = handoff.objects().stream()
-			.filter(object -> SIGNING_INPUT_PATH.equals(object.path()))
+		long matchingObjects = objects.stream()
+			.filter(object -> SIGNING_INPUT_PATH.equals(path.apply(object)))
 			.count();
 		if (matchingObjects != 1) {
 			throw failure(
 				Reason.SIGNING_INPUT_IDENTITY_MISMATCH,
 				"handoff must contain exactly one manifest signing input object");
 		}
-		String expectedSigningInputSha256 = handoff.objects().stream()
-			.filter(object -> SIGNING_INPUT_PATH.equals(object.path()))
+		String expectedSigningInputSha256 = objects.stream()
+			.filter(object -> SIGNING_INPUT_PATH.equals(path.apply(object)))
+			.map(digest)
 			.findFirst()
-			.orElseThrow()
-			.sha256();
+			.orElseThrow();
 		if (!signingInputSha256.equals(expectedSigningInputSha256)) {
 			throw failure(
 				Reason.SIGNING_INPUT_IDENTITY_MISMATCH,
@@ -60,19 +109,18 @@ public final class RouteBundleCurrentKeyVerifier {
 			|| currentKey.keyId() == null
 			|| currentKey.keyId().isEmpty()
 			|| !currentKey.keyId().equals(currentKey.keyId().strip())
-			|| !currentKey.keyId().equals(handoff.identity().keyId())) {
+			|| !currentKey.keyId().equals(identity.keyId())) {
 			throw failure(Reason.CURRENT_KEY_ID_MISMATCH, "configured current key ID does not match manifest keyId");
 		}
 
 		PublicKey publicKey = parsePublicKey(currentKey.publicKeyPem());
-		String algorithm = handoff.identity().signature().algorithm();
+		String algorithm = identity.signature().algorithm();
 		if (!SIGNATURE_ALGORITHM.equals(algorithm)) {
 			throw failure(Reason.MANIFEST_SIGNATURE_INVALID, "manifest signature algorithm is not current");
 		}
-		verifySignature(publicKey, signingInputBytes, handoff.identity().signature().value());
+		verifySignature(publicKey, signingInputBytes, identity.signature().value());
 
-		return new VerifiedSignature(
-			handoff,
+		return new VerificationResult(
 			currentKey.keyId(),
 			algorithm,
 			sha256(publicKey.getEncoded()),
@@ -147,6 +195,13 @@ public final class RouteBundleCurrentKeyVerifier {
 		return new VerificationException(reason, message, cause);
 	}
 
+	private record VerificationResult(
+		String keyId,
+		String algorithm,
+		String publicKeySha256,
+		String signingInputSha256) {
+	}
+
 	public record CurrentKey(String keyId, String publicKeyPem) {
 	}
 
@@ -193,6 +248,47 @@ public final class RouteBundleCurrentKeyVerifier {
 
 		public RouteBundleConsumerHandoff handoff() {
 			return handoff;
+		}
+
+		public String keyId() {
+			return keyId;
+		}
+
+		public String algorithm() {
+			return algorithm;
+		}
+
+		public String publicKeySha256() {
+			return publicKeySha256;
+		}
+
+		public String signingInputSha256() {
+			return signingInputSha256;
+		}
+	}
+
+	public static final class VerifiedPublicationDescriptorSignature {
+		private final RouteBundlePublicationDescriptor descriptor;
+		private final String keyId;
+		private final String algorithm;
+		private final String publicKeySha256;
+		private final String signingInputSha256;
+
+		private VerifiedPublicationDescriptorSignature(
+			RouteBundlePublicationDescriptor descriptor,
+			String keyId,
+			String algorithm,
+			String publicKeySha256,
+			String signingInputSha256) {
+			this.descriptor = Objects.requireNonNull(descriptor, "descriptor");
+			this.keyId = Objects.requireNonNull(keyId, "keyId");
+			this.algorithm = Objects.requireNonNull(algorithm, "algorithm");
+			this.publicKeySha256 = Objects.requireNonNull(publicKeySha256, "publicKeySha256");
+			this.signingInputSha256 = Objects.requireNonNull(signingInputSha256, "signingInputSha256");
+		}
+
+		public RouteBundlePublicationDescriptor descriptor() {
+			return descriptor;
 		}
 
 		public String keyId() {
