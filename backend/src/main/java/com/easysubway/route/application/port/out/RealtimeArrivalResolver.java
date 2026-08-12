@@ -46,12 +46,12 @@ public interface RealtimeArrivalResolver {
 		public Resolution {
 			status = status == null ? ArrivalFreshness.UNAVAILABLE : status;
 			candidates = candidates == null ? List.of() : List.copyOf(candidates);
-			cancelledTrainNos = cancelledTrainNos == null ? List.of() : cancelledTrainNos.stream()
+			cancelledTrainNos = cancelledTrainNos == null ? List.of() : List.copyOf(cancelledTrainNos.stream()
 				.filter(value -> value != null)
 				.map(String::trim)
 				.filter(value -> !value.isEmpty())
 				.distinct()
-				.toList();
+				.toList());
 		}
 	}
 }
