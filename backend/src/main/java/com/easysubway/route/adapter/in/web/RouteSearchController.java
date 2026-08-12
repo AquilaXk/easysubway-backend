@@ -50,7 +50,7 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-class RouteSearchController {
+final class RouteSearchController {
 
 	private final RouteSearchUseCase routeSearchUseCase;
 	private final RouteV2SearchUseCase routeV2SearchUseCase;
