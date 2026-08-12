@@ -15,6 +15,7 @@ import static org.mockito.Mockito.when;
 import java.time.Duration;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -161,13 +162,34 @@ class JourneyApplicationDeadlineExecutorTest {
 		try (var workers = Executors.newSingleThreadExecutor()) {
 			var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
 
-			assertThatThrownBy(() -> executor.execute(REQUEST))
+			var thrown = org.assertj.core.api.Assertions.catchThrowable(() -> executor.execute(REQUEST));
+			assertThat(thrown)
 				.isInstanceOf(JourneyApplicationDeadlineExecutor.DeadlineExecutionException.class)
-				.hasFieldOrPropertyWithValue("reason", TASK_FAILED)
 				.hasCause(cause);
+			assertThat(((JourneyApplicationDeadlineExecutor.DeadlineExecutionException) thrown).reason())
+				.isEqualTo(TASK_FAILED);
 		}
 		verify(service).execute(any());
 		verifyNoMoreInteractions(service);
+
+		var validationExecutor = mock(java.util.concurrent.ExecutorService.class);
+		assertThatThrownBy(() -> new JourneyApplicationDeadlineExecutor(
+			service, validationExecutor, Duration.ZERO))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("timeout must be positive");
+		assertThatThrownBy(() -> new JourneyApplicationDeadlineExecutor(
+			service, validationExecutor, Duration.ofSeconds(Long.MAX_VALUE)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("timeout is too large");
+
+		try (var rejected = Executors.newSingleThreadExecutor()) {
+			rejected.shutdown();
+			var executor = new JourneyApplicationDeadlineExecutor(service, rejected, Duration.ofSeconds(1));
+			assertThatThrownBy(() -> executor.execute(REQUEST))
+				.isInstanceOf(JourneyApplicationDeadlineExecutor.DeadlineExecutionException.class)
+				.hasFieldOrPropertyWithValue("reason", TASK_FAILED)
+				.hasCauseInstanceOf(RejectedExecutionException.class);
+		}
 	}
 
 	private static JourneyRequest copyRequest(java.util.function.BooleanSupplier cancellationSignal) {

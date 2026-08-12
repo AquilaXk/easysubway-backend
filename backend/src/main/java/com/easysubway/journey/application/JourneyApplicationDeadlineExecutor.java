@@ -35,7 +35,7 @@ public final class JourneyApplicationDeadlineExecutor {
 		JourneyRequest original = Objects.requireNonNull(request, "request");
 		var cancellation = new AtomicBoolean();
 		JourneyRequest boundedRequest = copyWithCancellation(original,
-			() -> original.isCancelled() || cancellation.get() || Thread.currentThread().isInterrupted());
+			() -> original.isCancelled() || cancellation.get());
 
 		Future<JourneyExecutionResult> future;
 		try {
@@ -58,8 +58,7 @@ public final class JourneyApplicationDeadlineExecutor {
 			throw failure(DeadlineExecutionException.Reason.CALLER_INTERRUPTED, exception);
 		} catch (ExecutionException exception) {
 			cancellation.set(true);
-			Throwable cause = exception.getCause() == null ? exception : exception.getCause();
-			throw failure(DeadlineExecutionException.Reason.TASK_FAILED, cause);
+			throw failure(DeadlineExecutionException.Reason.TASK_FAILED, exception.getCause());
 		}
 	}
 
