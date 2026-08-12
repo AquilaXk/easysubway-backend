@@ -174,6 +174,20 @@ class JourneySearchControllerTest {
 	}
 
 	@Test
+	@DisplayName("session lifetime limit은 body/application 실행 전에 exact 429로 닫힌다")
+	void rejectsRateLimitedSessionBeforeRequestExecution() throws Exception {
+		when(sessionService.authorize("session-token"))
+			.thenThrow(new JourneySessionException(JourneySessionException.Kind.RATE_LIMITED));
+
+		assertError(post("/api/v3/journeys/search")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+			.contentType(MediaType.APPLICATION_JSON), 429, "ROUTE_RATE_LIMITED", false);
+
+		verify(sessionService).authorize("session-token");
+		verifyNoInteractions(applicationService);
+	}
+
+	@Test
 	@DisplayName("authorized request body read failure는 execute 없이 exact 400으로 닫힌다")
 	void rejectsUnreadableAuthorizedRequestBeforeExecution() throws Exception {
 		allowSession();
