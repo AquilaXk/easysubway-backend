@@ -31,6 +31,10 @@
     {
       "file": "V70__transit_master_override_locks.sql",
       "sha256": "9b6f70e5b45448254d991d542fb00cbc66fc9d9f1cd1941d88b64afc6083dad9"
+    },
+    {
+      "file": "V71__journey_v3_sessions.sql",
+      "sha256": "27fbadf8efe30b00e915e28e5165dd84ce896003ec49f36ca8ccccf26eca0a81"
     }
   ],
   "allowlist": [
