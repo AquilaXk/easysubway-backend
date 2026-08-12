@@ -12,6 +12,10 @@ public record RealtimeArrivalResult(
 	String providerId,
 	List<RealtimeArrival> arrivals
 ) {
+	public RealtimeArrivalResult {
+		arrivals = List.copyOf(arrivals);
+	}
+
 	public static RealtimeArrivalResult fresh(String receivedAt, List<RealtimeArrival> arrivals) {
 		return new RealtimeArrivalResult(
 			RealtimeStatus.FRESH,

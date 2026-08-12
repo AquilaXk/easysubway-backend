@@ -13,6 +13,10 @@ public record RealtimeTrainPositionResult(
 	String sourceNotice,
 	List<RealtimeTrainPosition> trainPositions
 ) {
+	public RealtimeTrainPositionResult {
+		trainPositions = List.copyOf(trainPositions);
+	}
+
 	public static RealtimeTrainPositionResult fresh(String receivedAt, List<RealtimeTrainPosition> trainPositions) {
 		return new RealtimeTrainPositionResult(
 			RealtimeStatus.FRESH,

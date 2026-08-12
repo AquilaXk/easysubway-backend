@@ -13,7 +13,12 @@ public interface JourneySessionStore {
 		Session session
 	);
 
-	SessionUse authorize(String tokenSha256, String requiredScope, Instant now);
+	SessionUse authorizeAndConsume(
+		String tokenSha256,
+		String requiredScope,
+		Instant now,
+		int maxSearchesPerSession
+	);
 
 	record Session(String tokenSha256, String scope, Instant issuedAt, Instant expiresAt) {
 		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
@@ -36,6 +41,7 @@ public interface JourneySessionStore {
 
 	enum AuthorizationStatus {
 		VALID,
+		LIMITED,
 		MISSING,
 		EXPIRED,
 		SCOPE_MISMATCH

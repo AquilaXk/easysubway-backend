@@ -1,6 +1,8 @@
 package com.easysubway.realtime.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
 
 import java.time.Instant;
 import java.time.ZoneId;
@@ -110,6 +112,22 @@ class JdbcRealtimeProviderCallQuotaRepositoryTest {
 			.getAnnotation(Transactional.class);
 		assertThat(transactional).isNotNull();
 		assertThat(transactional.timeout()).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("quota query가 null을 반환하면 명시적으로 fail closed한다")
+	void rejectsNullQuotaState() {
+		var nullableRepository = new JdbcRealtimeProviderCallQuotaRepository(mock(JdbcTemplate.class));
+
+		assertThatThrownBy(() -> nullableRepository.tryAcquire(
+			"seoul-topis",
+			Instant.parse("2026-08-12T07:00:00Z"),
+			ZoneId.of("Asia/Seoul"),
+			10,
+			800
+		))
+			.isInstanceOf(NullPointerException.class)
+			.hasMessage("quota state query returned null");
 	}
 
 	private JdbcRealtimeProviderCallQuotaRepository proxiedRepository() {
