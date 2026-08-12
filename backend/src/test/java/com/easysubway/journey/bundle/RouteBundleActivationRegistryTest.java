@@ -77,6 +77,10 @@ class RouteBundleActivationRegistryTest {
 		assertThatThrownBy(() -> new RouteBundleIdentity.Signature(
 			"rsa-sha256-server-route-bundle-v1", "AQID="))
 			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new RouteBundleActivationRegistry.CandidateSnapshot(
+			0, identity("a", 1, "server-route-bundle", 1, T0, T0.plusSeconds(60)),
+			evidence("a"), T0, T0))
+			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> identity("a", 1, "server-route-bundle", 1, T0, T0))
 			.isInstanceOf(IllegalArgumentException.class);
 
