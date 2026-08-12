@@ -3,6 +3,7 @@ package com.easysubway.journey.bundle;
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.Mockito.mock;
@@ -50,6 +51,12 @@ class RouteBundlePublicationObjectFetcherTest {
 		"provenance.json");
 
 	@Test
+	void constructsVerifiedAndRawDescriptorProductionBoundaries() {
+		assertNotNull(new RouteBundlePublicationObjectFetcher());
+		assertNotNull(new RouteBundlePublicationObjectFetcher(BASE_URL));
+	}
+
+	@Test
 	void fetchesExactEightObjectsOnceInDescriptorOrderAndDefensivelyCopiesBytes() {
 		List<byte[]> bodies = PATHS.stream()
 			.map(path -> ("bytes:" + path).getBytes(java.nio.charset.StandardCharsets.UTF_8))
@@ -60,7 +67,8 @@ class RouteBundlePublicationObjectFetcherTest {
 			return response(request, 200, request.uri(), Map.of(
 				"Content-Length", List.of(String.valueOf(bodies.get(index).length))), bodies.get(index));
 		});
-		var fetcher = new RouteBundlePublicationObjectFetcher(client, Duration.ofSeconds(30), 64L * 1024 * 1024);
+		var fetcher = new RouteBundlePublicationObjectFetcher(
+			client, Duration.ofSeconds(30), 64L * 1024 * 1024, BASE_URL);
 
 		var fetched = fetcher.fetch(verified);
 
@@ -80,6 +88,61 @@ class RouteBundlePublicationObjectFetcherTest {
 		byte[] firstRead = fetched.objects().getFirst().bytes();
 		firstRead[0] ^= 1;
 		assertArrayEquals(bodies.getFirst(), fetched.objects().getFirst().bytes());
+	}
+
+	@Test
+	void fetchesFromRawCanonicalDescriptorBeforeTheSigningInputExistsLocally() throws Exception {
+		var fixture = RouteBundleObjectAdmissionTest.fixture();
+		var client = new StubHttpClient(request -> {
+			int index = clientRequestIndex(request);
+			byte[] body = fixture.objects().get(PATHS.get(index));
+			return response(request, 200, request.uri(), Map.of(
+				"Content-Length", List.of(String.valueOf(body.length))), body);
+		});
+		var fetcher = new RouteBundlePublicationObjectFetcher(
+			client, Duration.ofSeconds(30), 64L * 1024 * 1024, BASE_URL);
+
+		var fetched = fetcher.fetch(fixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST);
+
+		assertEquals(fixture.descriptorSha256(), fetched.descriptorSha256());
+		assertEquals("launch-2026", fetched.keyId());
+		assertEquals(PATHS, fetched.objects().stream()
+			.map(RouteBundlePublicationObjectFetcher.FetchedObject::path).toList());
+		assertEquals(PATHS.size(), client.requests().size());
+	}
+
+	@Test
+	void rejectsMissingRawDescriptorBeforeAnyNetworkRequest() {
+		var client = new StubHttpClient(request -> {
+			throw new AssertionError("network must not be called");
+		});
+		var fetcher = new RouteBundlePublicationObjectFetcher(client, Duration.ofSeconds(30), 64L * 1024 * 1024);
+
+		assertThrows(RouteBundleHandoffException.class,
+			() -> fetcher.fetch((byte[]) null, RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST));
+		assertTrue(client.requests().isEmpty());
+	}
+
+	@Test
+	void rejectsUntrustedRawDescriptorOriginBeforeAnyNetworkRequest() throws Exception {
+		var exactFixture = RouteBundleObjectAdmissionTest.fixture();
+		var otherOriginFixture = RouteBundleObjectAdmissionTest.fixture(
+			"https://objectstorage.ap-seoul-1.oraclecloud.com/n/othernamespace/b/easysubway-route-bundles/o");
+		var client = new StubHttpClient(request -> {
+			throw new AssertionError("network must not be called");
+		});
+		for (var invocation : List.<org.junit.jupiter.api.function.Executable>of(
+			() -> new RouteBundlePublicationObjectFetcher(
+				client, Duration.ofSeconds(30), 64L * 1024 * 1024)
+				.fetch(exactFixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST),
+			() -> new RouteBundlePublicationObjectFetcher(
+				client, Duration.ofSeconds(30), 64L * 1024 * 1024, BASE_URL)
+				.fetch(otherOriginFixture.descriptorBytes(), RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST))) {
+			var failure = assertThrows(
+				RouteBundlePublicationObjectFetcher.AcquisitionException.class, invocation);
+			assertEquals(RouteBundlePublicationObjectFetcher.Reason.UNTRUSTED_DESCRIPTOR_ORIGIN, failure.reason());
+		}
+		assertTrue(client.requests().isEmpty());
 	}
 
 	@Test
