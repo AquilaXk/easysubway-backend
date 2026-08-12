@@ -87,10 +87,31 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("zstd");
 
+		var nullPayload = new LinkedHashMap<>(valid);
+		nullPayload.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, null);
+		assertThatThrownBy(() -> input(nullPayload))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("payload bytes");
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler(1).compile(input(valid)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("total decompression limit");
+
 		var wrongIdentity = payloads(identity -> identity.replace(BUNDLE_ID, "other-bundle"));
 		assertThatThrownBy(() -> compiler.compile(input(wrongIdentity)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("component identity");
+	}
+
+	@Test
+	void rejectsTopologyAccessibilityMutationOutsideTheAdmittedPayloadDigests() throws Exception {
+		var admitted = payloads();
+		var mutated = payloads(value -> value, "UNAVAILABLE");
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(
+			input(mutated, payloadSha256s(admitted))))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("admitted payload digest");
 	}
 
 	@Test
@@ -130,8 +151,15 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
+		return input(payloads, payloadSha256s(payloads));
+	}
+
+	private RouteBundleSqliteRuntimeCompiler.Input input(
+		Map<String, byte[]> payloads,
+		Map<String, String> admittedPayloadSha256s
+	) {
 		return new RouteBundleSqliteRuntimeCompiler.Input(
-			SHA, 7, BUNDLE_ID, 11, STATION_SET_SHA, payloads);
+			SHA, 7, BUNDLE_ID, 11, STATION_SET_SHA, admittedPayloadSha256s, payloads);
 	}
 
 	private Map<String, byte[]> payloads() throws Exception {
@@ -139,6 +167,13 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	private Map<String, byte[]> payloads(java.util.function.UnaryOperator<String> identityTransform) throws Exception {
+		return payloads(identityTransform, "AVAILABLE");
+	}
+
+	private Map<String, byte[]> payloads(
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus
+	) throws Exception {
 		var topology = sqlite("topology", connection -> {
 			common(connection, identityTransform.apply(identitySql()));
 			execute(connection, """
@@ -156,7 +191,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			for (var edge : topologyEdges()) {
 				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
-					edge.serviceClass(), 0, "VERIFIED_PRESENT", "AVAILABLE", 100, "official", "snapshot",
+					edge.serviceClass(), 0, "VERIFIED_PRESENT", accessibilityStatus, 100, "official", "snapshot",
 					"d".repeat(64), "OFFICIAL_SOURCE", "VERIFIED", null, 1_786_485_600_000L,
 					"e".repeat(64));
 			}
@@ -224,6 +259,20 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		result.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
 		result.put(RouteBundleSqliteRuntimeCompiler.FARE_PATH, Zstd.compress(fare, 10));
 		return result;
+	}
+
+	private static Map<String, String> payloadSha256s(Map<String, byte[]> payloads) {
+		var result = new LinkedHashMap<String, String>();
+		payloads.forEach((path, bytes) -> result.put(path, bytes == null ? SHA : sha256Unchecked(bytes)));
+		return result;
+	}
+
+	private static String sha256Unchecked(byte[] bytes) {
+		try {
+			return sha256(bytes);
+		} catch (Exception exception) {
+			throw new IllegalStateException(exception);
+		}
 	}
 
 	private byte[] sqlite(String name, SqliteWriter writer) throws Exception {

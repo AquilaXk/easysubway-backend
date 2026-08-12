@@ -6,3 +6,6 @@
 !build/sqlite-native
 !build/sqlite-native/linux-aarch64
 !build/sqlite-native/linux-aarch64/libsqlitejdbc.so
+!build/zstd-native
+!build/zstd-native/linux-aarch64
+!build/zstd-native/linux-aarch64/libzstd-jni-1.5.7-13.so

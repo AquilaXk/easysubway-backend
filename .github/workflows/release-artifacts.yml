@@ -187,12 +187,18 @@ jobs:
               ! touch /app/app.jar
               test -r /opt/easysubway/native/libsqlitejdbc.so
               test ! -w /opt/easysubway/native/libsqlitejdbc.so
+              test -r /opt/easysubway/native/libzstd-jni-1.5.7-13.so
+              test ! -w /opt/easysubway/native/libzstd-jni-1.5.7-13.so
               touch /tmp/runtime-write-check
               touch /opt/easysubway/logs/runtime-write-check
               java -XX:-UsePerfData \
+                -Dorg.sqlite.lib.path=/opt/easysubway/native \
+                -Dorg.sqlite.lib.name=libsqlitejdbc.so \
+                -DZstdNativePath=/opt/easysubway/native/libzstd-jni-1.5.7-13.so \
                 -Dloader.main=com.easysubway.journey.bundle.RouteBundleSqliteRuntimeCompiler \
                 -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher
               test -z "$(find /tmp -mindepth 1 -maxdepth 1 -name "sqlite-*" -print -quit)"
+              test -z "$(find /tmp -mindepth 1 -maxdepth 1 -name "libzstd-jni-*" -print -quit)"
               test ! -e /var/run/docker.sock
             '
 

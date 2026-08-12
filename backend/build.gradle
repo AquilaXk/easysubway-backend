@@ -145,6 +145,29 @@ def stageSqliteNative = tasks.register('stageSqliteNative', Sync) {
 	}
 }
 
+def zstdNativeDirectory = layout.buildDirectory.dir('zstd-native/linux-aarch64')
+def stageZstdNative = tasks.register('stageZstdNative', Sync) {
+	def zstdArchiveName = 'zstd-jni-1.5.7-13.jar'
+	def zstdResource = 'linux/aarch64/libzstd-jni-1.5.7-13.so'
+	from({
+		def archives = configurations.runtimeClasspath.files.findAll { it.name == zstdArchiveName }
+		if (archives.size() != 1) throw new GradleException("expected one ${zstdArchiveName}, found ${archives.size()}")
+		zipTree(archives.iterator().next())
+	}) {
+		include zstdResource
+		eachFile { details -> details.path = 'libzstd-jni-1.5.7-13.so' }
+		includeEmptyDirs = false
+	}
+	into zstdNativeDirectory
+	doLast {
+		def nativeLibrary = zstdNativeDirectory.get().file('libzstd-jni-1.5.7-13.so').asFile.toPath()
+		if (!java.nio.file.Files.isRegularFile(nativeLibrary, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| java.nio.file.Files.size(nativeLibrary) == 0) {
+			throw new GradleException('zstd Linux/aarch64 native library was not staged')
+		}
+	}
+}
+
 tasks.named('test') {
 	useJUnitPlatform()
 	// @SpringBootTest 컨텍스트 캐시 누적 + fdl-excel 1만 행 xlsx 메모리 테스트(#1822)로 스위트 힙 수요가
@@ -374,7 +397,7 @@ tasks.named('processResources') {
 }
 
 tasks.named('bootJar') {
-	dependsOn stageSqliteNative
+	dependsOn stageSqliteNative, stageZstdNative
 	preserveFileTimestamps = false
 	reproducibleFileOrder = true
 }

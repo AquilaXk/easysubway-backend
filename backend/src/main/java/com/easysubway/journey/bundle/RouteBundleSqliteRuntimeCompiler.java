@@ -17,8 +17,10 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ArrayNode;
 import com.fasterxml.jackson.databind.node.ObjectNode;
+import com.github.luben.zstd.Zstd;
 import com.github.luben.zstd.ZstdInputStream;
 import java.io.ByteArrayInputStream;
+import java.io.ByteArrayOutputStream;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.nio.charset.StandardCharsets;
@@ -54,11 +56,23 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	static final String FARE_PATH = "payload/fare.sqlite.zst";
 	private static final Set<String> PAYLOAD_PATHS = Set.of(
 		TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH);
-	private static final long MAX_COMPONENT_BYTES = 512L * 1024L * 1024L;
+	private static final long MAX_TOTAL_DECOMPRESSED_BYTES = 56L * 1024L * 1024L;
 	private static final int SQLITE_USER_VERSION = 19;
 	private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 	private static final ObjectMapper JSON = new ObjectMapper();
 	private static final DateTimeFormatter SERVICE_DATE = DateTimeFormatter.BASIC_ISO_DATE;
+	private final long maxTotalDecompressedBytes;
+
+	public RouteBundleSqliteRuntimeCompiler() {
+		this(MAX_TOTAL_DECOMPRESSED_BYTES);
+	}
+
+	RouteBundleSqliteRuntimeCompiler(long maxTotalDecompressedBytes) {
+		if (maxTotalDecompressedBytes < 1 || maxTotalDecompressedBytes > MAX_TOTAL_DECOMPRESSED_BYTES) {
+			throw new IllegalArgumentException("route-bundle total decompression limit is invalid");
+		}
+		this.maxTotalDecompressedBytes = maxTotalDecompressedBytes;
+	}
 
 	public RaptorRouteBundleRuntimeView compile(Input input) {
 		Objects.requireNonNull(input, "input");
@@ -66,13 +80,24 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		if (!payloads.keySet().equals(PAYLOAD_PATHS)) {
 			throw new IllegalArgumentException("route-bundle payload inventory is invalid");
 		}
+		Map<String, String> admittedPayloadSha256s = input.admittedPayloadSha256s();
+		if (!admittedPayloadSha256s.keySet().equals(PAYLOAD_PATHS)) {
+			throw new IllegalArgumentException("route-bundle admitted payload digest inventory is invalid");
+		}
+		for (String payloadPath : PAYLOAD_PATHS) {
+			if (!admittedPayloadSha256s.get(payloadPath).equals(sha256(payloads.get(payloadPath)))) {
+				throw new IllegalArgumentException("route-bundle admitted payload digest mismatch");
+			}
+		}
 		Path directory = null;
 		var components = new ArrayList<Component>();
 		try {
 			directory = Files.createTempDirectory("journey-route-bundle-");
+			long decompressedBytes = 0;
 			for (String payloadPath : List.of(TOPOLOGY_PATH, TIMETABLE_PATH, ACCESSIBILITY_PATH, FARE_PATH)) {
 				Path sqlite = directory.resolve(payloadPath.substring("payload/".length()).replace(".zst", ""));
-				decompress(payloads.get(payloadPath), sqlite);
+				decompressedBytes = Math.addExact(decompressedBytes,
+					decompress(payloads.get(payloadPath), sqlite, maxTotalDecompressedBytes - decompressedBytes));
 				components.add(open(payloadPath, sqlite, input));
 			}
 			Map<String, Component> byPath = new HashMap<>();
@@ -95,8 +120,16 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	/** Image preflight entry point: proves that the pinned native library loads without /tmp extraction. */
-	public static void main(String[] arguments) throws SQLException {
+	public static void main(String[] arguments) throws SQLException, IOException {
 		if (arguments.length != 0) throw new IllegalArgumentException("SQLite runtime probe takes no arguments");
+		byte[] expected = "easysubway-zstd-runtime-probe".getBytes(StandardCharsets.UTF_8);
+		try (var source = new ZstdInputStream(new ByteArrayInputStream(Zstd.compress(expected)));
+			var target = new ByteArrayOutputStream()) {
+			source.transferTo(target);
+			if (!Arrays.equals(expected, target.toByteArray())) {
+				throw new IllegalStateException("zstd runtime probe mismatch");
+			}
+		}
 		try (var connection = DriverManager.getConnection("jdbc:sqlite::memory:");
 			var statement = connection.createStatement();
 			var rows = statement.executeQuery("SELECT sqlite_version()")) {
@@ -487,9 +520,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 	}
 
-	private static void decompress(byte[] compressed, Path output) throws IOException {
+	private static long decompress(byte[] compressed, Path output, long remainingBytes) throws IOException {
 		if (compressed == null || compressed.length == 0) {
 			throw new IllegalArgumentException("route-bundle zstd payload is empty");
+		}
+		if (remainingBytes < 1) {
+			throw new IllegalArgumentException("route-bundle total decompression limit exceeded");
 		}
 		try (var source = new ZstdInputStream(new ByteArrayInputStream(compressed));
 			OutputStream target = Files.newOutputStream(output, StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE)) {
@@ -498,12 +534,13 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			for (int read; (read = source.read(buffer)) >= 0;) {
 				if (read == 0) continue;
 				written = Math.addExact(written, read);
-				if (written > MAX_COMPONENT_BYTES) {
-					throw new IllegalArgumentException("route-bundle zstd payload exceeds the decompression limit");
+				if (written > remainingBytes) {
+					throw new IllegalArgumentException("route-bundle total decompression limit exceeded");
 				}
 				target.write(buffer, 0, read);
 			}
 			if (written == 0) throw new IllegalArgumentException("route-bundle zstd payload is empty");
+			return written;
 		} catch (IllegalArgumentException exception) {
 			throw exception;
 		} catch (IOException exception) {
@@ -572,6 +609,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		String bundleId,
 		long releaseSequence,
 		String stationSetSha256,
+		Map<String, String> admittedPayloadSha256s,
 		Map<String, byte[]> compressedPayloads) {
 
 		public Input {
@@ -582,17 +620,24 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				throw new IllegalArgumentException("releaseSequence is invalid");
 			}
 			stationSetSha256 = requireSha256(stationSetSha256, "stationSetSha256");
+			Objects.requireNonNull(admittedPayloadSha256s, "admittedPayloadSha256s");
+			var copiedDigests = new LinkedHashMap<String, String>();
+			admittedPayloadSha256s.forEach((path, digest) -> copiedDigests.put(
+				requireText(path, "admitted payload path"), requireSha256(digest, "admitted payload digest")));
+			admittedPayloadSha256s = Map.copyOf(copiedDigests);
 			Objects.requireNonNull(compressedPayloads, "compressedPayloads");
 			var copied = new LinkedHashMap<String, byte[]>();
-			compressedPayloads.forEach((path, bytes) -> copied.put(
-				requireText(path, "payload path"), bytes == null ? null : bytes.clone()));
+			compressedPayloads.forEach((path, bytes) -> {
+				if (bytes == null) throw new IllegalArgumentException("route-bundle payload bytes must not be null");
+				copied.put(requireText(path, "payload path"), bytes.clone());
+			});
 			compressedPayloads = Map.copyOf(copied);
 		}
 
 		@Override
 		public Map<String, byte[]> compressedPayloads() {
 			var copied = new LinkedHashMap<String, byte[]>();
-			compressedPayloads.forEach((path, bytes) -> copied.put(path, bytes == null ? null : bytes.clone()));
+			compressedPayloads.forEach((path, bytes) -> copied.put(path, bytes.clone()));
 			return Map.copyOf(copied);
 		}
 	}
