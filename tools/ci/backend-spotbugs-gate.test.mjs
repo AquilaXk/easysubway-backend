@@ -32,7 +32,9 @@ const evidence = (dir) => ({
 
 test('tracked tests and policy are self-contained reviewed inventory evidence', () => {
   const testSource = readFileSync(new URL('./backend-spotbugs-gate.test.mjs', import.meta.url), 'utf8');
+  const gateSource = readFileSync(new URL('./backend-spotbugs-gate.mjs', import.meta.url), 'utf8');
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
+  assert.match(gateSource, /classpathDigest: '524ec92aeabf6ef4dfd5e0ecec7a6551d8d9ca35d83cd1fbad2295447405cdd1'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), 'ee2cd6a46a08f359c0dcf8eb9c5eb9c836469d0e10cf94d021199c794e528c26');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
