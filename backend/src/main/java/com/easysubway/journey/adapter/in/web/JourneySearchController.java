@@ -1,6 +1,9 @@
 package com.easysubway.journey.adapter.in.web;
 
-import com.easysubway.journey.application.JourneyApplicationService;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Completed;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Outcome;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
 import com.easysubway.journey.application.JourneyExecutionDisposition;
 import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyExecutionResult;
@@ -41,11 +44,14 @@ final class JourneySearchController {
 	);
 
 	private final JourneySessionService sessionService;
-	private final JourneyApplicationService applicationService;
+	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
 
-	JourneySearchController(JourneySessionService sessionService, JourneyApplicationService applicationService) {
+	JourneySearchController(
+		JourneySessionService sessionService,
+		JourneyApplicationDeadlineExecutor deadlineExecutor
+	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
-		this.applicationService = Objects.requireNonNull(applicationService, "applicationService");
+		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
 	}
 
 	@PostMapping("/api/v3/journeys/search")
@@ -55,13 +61,18 @@ final class JourneySearchController {
 	) {
 		sessionService.authorize(requireBearerToken(authorization));
 		JourneyRequest request = decodeRequest(readRequest(servletRequest));
-		JourneyExecutionResult result;
+		Outcome outcome;
 		try {
-			result = applicationService.execute(request);
+			outcome = deadlineExecutor.execute(request);
 		} catch (RuntimeException exception) {
 			throw serviceUnavailable(request.requestId());
 		}
-		if (result == null) throw serviceUnavailable(request.requestId());
+		if (outcome == null) throw serviceUnavailable(request.requestId());
+
+		JourneyExecutionResult result = switch (outcome) {
+			case Completed completed -> completed.result();
+			case TimedOut ignored -> throw timeout(request.requestId());
+		};
 
 		return switch (result) {
 			case JourneyExecutionResult.Success success -> ResponseEntity.ok()
@@ -176,6 +187,10 @@ final class JourneySearchController {
 
 	private static JourneySearchWebException serviceUnavailable(String requestId) {
 		return new JourneySearchWebException(requestId, 503, "ROUTE_SERVICE_UNAVAILABLE");
+	}
+
+	private static JourneySearchWebException timeout(String requestId) {
+		return new JourneySearchWebException(requestId, 504, "JOURNEY_SEARCH_TIMEOUT");
 	}
 
 	static final class JourneySearchWebException extends RuntimeException {
