@@ -197,13 +197,13 @@ test("requires inventory coverage and exact SHA for repeatable and callback migr
   ]) assert.throws(() => validatePolicy(broken, files, new Date("2029-01-01T00:00:00.000Z")));
 });
 
-test("current V67-V69 inventory validates and V69 is byte-pinned", () => {
+test("current V67-V70 inventory validates and V70 is byte-pinned", () => {
   const files = loadMigrationFiles(resolve(ROOT, "backend/src/main/resources/db/migration/postgresql"));
   const current = JSON.parse(readFileSync(resolve(ROOT, "backend/quality/migration-ddl-gate.json"), "utf8"));
   validatePolicy(current, files, new Date("2029-01-01T00:00:00.000Z"));
   assert.equal(evaluateMigrationSet(files, current).length, 0);
-  const v69 = files.find((file) => file.name.startsWith("V69__"));
-  assert.ok(v69);
-  const drifted = files.map((file) => file === v69 ? { ...file, sha256: sha(`${file.content} `) } : file);
+  const v70 = files.find((file) => file.name.startsWith("V70__"));
+  assert.ok(v70);
+  const drifted = files.map((file) => file === v70 ? { ...file, sha256: sha(`${file.content} `) } : file);
   assert.throws(() => validatePolicy(current, drifted, new Date("2029-01-01T00:00:00.000Z")));
 });

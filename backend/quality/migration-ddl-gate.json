@@ -27,6 +27,10 @@
     {
       "file": "V69__admin_error_events_permission.sql",
       "sha256": "16097e64609c86cf502b29e5b804ed72660c870563f5b642fd073a3a9d530e5a"
+    },
+    {
+      "file": "V70__transit_master_override_locks.sql",
+      "sha256": "9b6f70e5b45448254d991d542fb00cbc66fc9d9f1cd1941d88b64afc6083dad9"
     }
   ],
   "allowlist": [
