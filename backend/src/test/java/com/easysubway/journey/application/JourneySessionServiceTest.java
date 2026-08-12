@@ -148,6 +148,11 @@ class JourneySessionServiceTest {
 		unavailable.authorizationFailure = new IllegalStateException("store details");
 		assertFailure(() -> unavailable.service().authorize("opaque-token"), Kind.SESSION_REQUIRED);
 		assertThat(unavailable.authorizeCalls).isEqualTo(1);
+
+		Fakes absent = new Fakes();
+		absent.authorization = null;
+		assertFailure(() -> absent.service().authorize("opaque-token"), Kind.SESSION_REQUIRED);
+		assertThat(absent.authorizeCalls).isEqualTo(1);
 	}
 
 	@Test

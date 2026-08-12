@@ -112,11 +112,10 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 			maxSearchesPerSession
 		);
 		List<SessionRow> sessions = jdbcTemplate.query(
-			"SELECT scope, expires_at, request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
+			"SELECT scope, expires_at FROM journey_v3_sessions WHERE token_sha256 = ?",
 			(resultSet, rowNumber) -> new SessionRow(
 				resultSet.getString("scope"),
-				resultSet.getTimestamp("expires_at").toInstant(),
-				resultSet.getInt("request_count")
+				resultSet.getTimestamp("expires_at").toInstant()
 			),
 			tokenSha256
 		);
@@ -130,12 +129,12 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 		if (!session.scope().equals(requiredScope)) {
 			return new SessionUse(AuthorizationStatus.SCOPE_MISMATCH, session.scope(), session.expiresAt());
 		}
-		if (consumed != 1 || session.requestCount() > maxSearchesPerSession) {
+		if (consumed != 1) {
 			return new SessionUse(AuthorizationStatus.LIMITED, session.scope(), session.expiresAt());
 		}
 		return new SessionUse(AuthorizationStatus.VALID, session.scope(), session.expiresAt());
 	}
 
-	private record SessionRow(String scope, Instant expiresAt, int requestCount) {
+	private record SessionRow(String scope, Instant expiresAt) {
 	}
 }
