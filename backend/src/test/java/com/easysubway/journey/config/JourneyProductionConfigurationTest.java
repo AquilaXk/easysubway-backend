@@ -138,7 +138,8 @@ class JourneyProductionConfigurationTest {
 		productionContext(
 			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
-		).run(context -> assertThat(context).hasFailed());
+		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
 	}
 
 	@Test
@@ -147,7 +148,8 @@ class JourneyProductionConfigurationTest {
 		productionContext(
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
-		).run(context -> assertThat(context).hasFailed());
+		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
 	}
 
 	@Test
@@ -156,7 +158,8 @@ class JourneyProductionConfigurationTest {
 		productionContext(
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.search.max-searches-per-session=12"
-		).run(context -> assertThat(context).hasFailed());
+		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
 
 		productionContext(
 			"easysubway.journey.search.timeout=PT2S",
