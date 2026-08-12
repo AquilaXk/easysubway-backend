@@ -113,13 +113,20 @@ class RouteBundleActivationRegistryTest {
 		var registry = registryAt(T0);
 		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
 
-		registry.stage(candidate, 0);
+		var staged = registry.stage(candidate, 0);
 
+		assertThat(staged.generation()).isOne();
+		assertThat(staged.identity()).isEqualTo(candidate.identity());
+		assertThat(staged.admissionEvidence()).isEqualTo(candidate.admissionEvidence());
+		assertThat(staged.verifiedAt()).isEqualTo(candidate.verifiedAt());
+		assertThat(staged.stagedAt()).isEqualTo(T0);
+		assertThat(registry.candidateSnapshot()).isEqualTo(staged);
 		assertFailure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, registry::activeSnapshot);
 		var active = registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
-		assertThat(active.generation()).isOne();
+		assertThat(active.generation()).isEqualTo(staged.generation());
 		assertThat(active.identity()).isEqualTo(candidate.identity());
 		assertThat(active.runtimeView()).isEqualTo(candidate.runtimeView());
+		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED, registry::candidateSnapshot);
 		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_ACTIVE,
 			() -> registry.stage(candidate, 1));
 	}
@@ -148,16 +155,21 @@ class RouteBundleActivationRegistryTest {
 		var clock = new MutableClock(T0);
 		var registry = new RouteBundleActivationRegistry(clock);
 		var stale = candidate("a", T0.minusSeconds(1), T0.plusSeconds(10));
-		registry.stage(stale, 0);
+		var staleSnapshot = registry.stage(stale, 0);
 		clock.set(T0.plusSeconds(10));
 
 		assertFailure(RouteBundleActivationException.Reason.BUNDLE_STALE,
 			() -> registry.activate(stale.admissionEvidence().manifestSha256(), 0));
 		var fresh = candidate("b", T0.minusSeconds(1), T0.plusSeconds(60));
-		registry.stage(fresh, 0);
+		var freshSnapshot = registry.stage(fresh, 0);
 
+		assertThat(staleSnapshot.generation()).isOne();
+		assertThat(freshSnapshot.generation()).isEqualTo(staleSnapshot.generation());
+		assertThat(freshSnapshot.identity()).isEqualTo(fresh.identity());
+		assertThat(freshSnapshot.stagedAt()).isEqualTo(T0.plusSeconds(10));
+		assertThat(registry.candidateSnapshot()).isEqualTo(freshSnapshot);
 		var activated = registry.activate(fresh.admissionEvidence().manifestSha256(), 0);
-		assertThat(activated.generation()).isOne();
+		assertThat(activated.generation()).isEqualTo(freshSnapshot.generation());
 		assertThat(activated.identity()).isEqualTo(fresh.identity());
 	}
 
@@ -239,7 +251,7 @@ class RouteBundleActivationRegistryTest {
 		registry.stage(first, 0);
 		var firstSnapshot = registry.activate(first.admissionEvidence().manifestSha256(), 0);
 		var second = candidate("b", T0.minusSeconds(1), T0.plusSeconds(60));
-		registry.stage(second, 1);
+		var secondSnapshot = registry.stage(second, 1);
 
 		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED,
 			() -> registry.stage(candidate("c", T0.minusSeconds(1), T0.plusSeconds(60)), 1));
@@ -248,6 +260,7 @@ class RouteBundleActivationRegistryTest {
 		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_IDENTITY_MISMATCH,
 			() -> registry.activate("e".repeat(64), 1));
 		assertThat(registry.activeSnapshot()).isEqualTo(firstSnapshot);
+		assertThat(registry.candidateSnapshot()).isEqualTo(secondSnapshot);
 		assertThat(registry.activate(second.admissionEvidence().manifestSha256(), 1).generation()).isEqualTo(2);
 		assertFailure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED,
 			() -> registry.activate("e".repeat(64), 2));
