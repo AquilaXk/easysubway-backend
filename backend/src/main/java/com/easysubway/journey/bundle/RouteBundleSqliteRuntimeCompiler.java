@@ -440,9 +440,11 @@ public final class RouteBundleSqliteRuntimeCompiler {
 
 	private static void requireColumns(Connection connection, String table, List<String> expected) throws SQLException {
 		var columns = new ArrayList<String>();
-		try (var statement = connection.createStatement();
-			var rows = statement.executeQuery("PRAGMA table_info('" + table + "')")) {
-			while (rows.next()) columns.add(rows.getString("name"));
+		try (var statement = connection.prepareStatement("SELECT name FROM pragma_table_info(?) ORDER BY cid")) {
+			statement.setString(1, table);
+			try (var rows = statement.executeQuery()) {
+				while (rows.next()) columns.add(rows.getString("name"));
+			}
 		}
 		if (!columns.equals(expected)) throw new IllegalArgumentException("SQLite table schema mismatch: " + table);
 	}
