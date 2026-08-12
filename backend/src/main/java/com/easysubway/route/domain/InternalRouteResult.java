@@ -18,4 +18,9 @@ public record InternalRouteResult(
 	List<RouteWarning> warnings,
 	List<String> blockedReasons
 ) {
+	public InternalRouteResult {
+		steps = List.copyOf(steps);
+		warnings = List.copyOf(warnings);
+		blockedReasons = List.copyOf(blockedReasons);
+	}
 }
