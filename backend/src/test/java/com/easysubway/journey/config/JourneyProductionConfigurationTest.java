@@ -191,10 +191,12 @@ class JourneyProductionConfigurationTest {
 
 			mockMvc.perform(get(CANDIDATE_READINESS_PATH))
 				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
 				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"));
 			mockMvc.perform(get(CANDIDATE_READINESS_PATH)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token"))
-				.andExpect(status().isUnauthorized());
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 			mockMvc.perform(get(CANDIDATE_READINESS_PATH)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
 				.andExpect(status().isOk())
@@ -226,7 +228,8 @@ class JourneyProductionConfigurationTest {
 				.andExpect(jsonPath("$.evidenceSha256").value(org.hamcrest.Matchers.matchesPattern("[0-9a-f]{64}")));
 			mockMvc.perform(post(CANDIDATE_READINESS_PATH)
 				.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
-				.andExpect(status().isForbidden());
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 
 			verify(registry).candidateSnapshot();
 			verify(registry).activeSnapshot();

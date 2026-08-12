@@ -30,6 +30,7 @@ import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.context.annotation.Profile;
 import org.springframework.core.annotation.Order;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
@@ -142,7 +143,11 @@ public class JourneyProductionConfiguration {
 					&& (JourneyReadinessController.CANDIDATE_PATH.equals(request.getRequestURI())
 						|| JourneyReadinessController.ACTIVE_PATH.equals(request.getRequestURI()));
 				response.setStatus(readinessGet ? 401 : 403);
+				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 				if (readinessGet) response.setHeader("WWW-Authenticate", "Bearer");
+			}).accessDeniedHandler((request, response, exception) -> {
+				response.setStatus(403);
+				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 			}))
 			.addFilterBefore(
 				new JourneyReadinessServiceTokenFilter(readinessProperties.serviceToken()),
