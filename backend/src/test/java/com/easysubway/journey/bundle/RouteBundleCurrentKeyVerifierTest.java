@@ -7,10 +7,15 @@ import static com.easysubway.journey.bundle.RouteBundleCurrentKeyVerifier.Reason
 import static com.easysubway.journey.bundle.RouteBundleCurrentKeyVerifier.Reason.SIGNING_INPUT_INVALID;
 import static com.easysubway.journey.bundle.RouteBundleHandoffException.Reason.ACTIVATION_REQUEST_IDENTITY_INVALID;
 import static com.easysubway.journey.bundle.RouteBundleHandoffException.Reason.HANDOFF_CANONICAL_BYTES_MISMATCH;
+import static com.easysubway.journey.bundle.RouteBundleHandoffException.Reason.HANDOFF_SCHEMA_INVALID;
 import static com.easysubway.journey.bundle.RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.fasterxml.jackson.databind.node.ObjectNode;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPair;
 import java.security.KeyPairGenerator;
@@ -20,11 +25,68 @@ import java.security.PublicKey;
 import java.security.Signature;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.List;
+import java.util.Map;
+import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 
 class RouteBundleCurrentKeyVerifierTest {
 
+	private static final ObjectMapper JSON = new ObjectMapper();
 	private static final String ACTIVATION_REQUEST = "sha256:" + "e".repeat(64);
+
+	@Test
+	void verifiesExactPublicationDescriptorWithCurrentKeyAndRawSigningInput() throws Exception {
+		KeyPair keyPair = rsaKeyPair();
+		var fixture = signedDescriptorFixture(keyPair, "launch-2026");
+		var currentKey = new RouteBundleCurrentKeyVerifier.CurrentKey(
+			"launch-2026", pem(keyPair.getPublic()));
+
+		var verified = RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+			fixture.bytes(), ACTIVATION_REQUEST, fixture.signingInputBytes(), currentKey);
+
+		assertEquals(fixture.descriptorSha256(), verified.descriptor().descriptorSha256());
+		assertEquals("launch-2026", verified.keyId());
+		assertEquals("rsa-sha256-server-route-bundle-v1", verified.algorithm());
+		assertEquals(sha256(keyPair.getPublic().getEncoded()), verified.publicKeySha256());
+		assertEquals(sha256(fixture.signingInputBytes()), verified.signingInputSha256());
+	}
+
+	@Test
+	void descriptorVerificationRejectsV1FallbackAndMissingOrTamperedSigningInput() throws Exception {
+		KeyPair keyPair = rsaKeyPair();
+		var descriptor = signedDescriptorFixture(keyPair, "launch-2026");
+		var legacy = signedFixture(keyPair, "launch-2026");
+		var currentKey = new RouteBundleCurrentKeyVerifier.CurrentKey(
+			"launch-2026", pem(keyPair.getPublic()));
+
+		assertHandoffReason(HANDOFF_SCHEMA_INVALID,
+			() -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				legacy.bytes(), ACTIVATION_REQUEST, legacy.signingInputBytes(), currentKey));
+		assertReason(SIGNING_INPUT_INVALID,
+			() -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				descriptor.bytes(), ACTIVATION_REQUEST, null, currentKey));
+		assertReason(SIGNING_INPUT_IDENTITY_MISMATCH,
+			() -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				descriptor.bytes(), ACTIVATION_REQUEST,
+				"{}".getBytes(StandardCharsets.UTF_8), currentKey));
+	}
+
+	@Test
+	void descriptorVerificationRejectsWrongKeyWithoutTryingAnAlternate() throws Exception {
+		KeyPair signingKey = rsaKeyPair();
+		KeyPair otherKey = rsaKeyPair();
+		var descriptor = signedDescriptorFixture(signingKey, "launch-2026");
+
+		assertReason(CURRENT_KEY_ID_MISMATCH,
+			() -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				descriptor.bytes(), ACTIVATION_REQUEST, descriptor.signingInputBytes(),
+				new RouteBundleCurrentKeyVerifier.CurrentKey("old-key", pem(signingKey.getPublic()))));
+		assertReason(MANIFEST_SIGNATURE_INVALID,
+			() -> RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				descriptor.bytes(), ACTIVATION_REQUEST, descriptor.signingInputBytes(),
+				new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", pem(otherKey.getPublic()))));
+	}
 
 	@Test
 	void verifiesExactCurrentKeyAndSigningInputWithoutIssuingACandidate() throws Exception {
@@ -161,6 +223,24 @@ class RouteBundleCurrentKeyVerifierTest {
 			keyId, sign(keyPair.getPrivate(), unsigned.signingInputBytes()));
 	}
 
+	private static DescriptorFixture signedDescriptorFixture(
+		KeyPair keyPair,
+		String keyId) throws Exception {
+		var handoff = signedFixture(keyPair, keyId);
+		ObjectNode descriptor = handoff.node().deepCopy();
+		descriptor.put("schemaVersion", 2);
+		descriptor.put("artifactKind", "server-route-bundle-publication-descriptor");
+		var producer = descriptor.putObject("producer");
+		producer.put("repository", "AquilaXk/easysubway-data");
+		producer.put("gitSha", "9".repeat(40));
+		descriptor.remove(List.of("backendAdmission", "platformRelease", "handoffSha256"));
+		descriptor.put("descriptorSha256", sha256(canonicalBytes(descriptor)));
+		return new DescriptorFixture(
+			canonicalBytes(descriptor),
+			handoff.signingInputBytes(),
+			descriptor.path("descriptorSha256").textValue());
+	}
+
 	private static KeyPair rsaKeyPair() throws Exception {
 		KeyPairGenerator generator = KeyPairGenerator.getInstance("RSA");
 		generator.initialize(2048);
@@ -188,6 +268,28 @@ class RouteBundleCurrentKeyVerifierTest {
 		}
 	}
 
+	private static byte[] canonicalBytes(JsonNode value) {
+		try {
+			return JSON.writeValueAsBytes(sortValue(JSON.convertValue(value, Object.class)));
+		} catch (JsonProcessingException exception) {
+			throw new IllegalStateException(exception);
+		}
+	}
+
+	private static Object sortValue(Object value) {
+		if (value instanceof Map<?, ?> map) {
+			var sorted = new TreeMap<String, Object>();
+			for (var entry : map.entrySet()) {
+				sorted.put(String.valueOf(entry.getKey()), sortValue(entry.getValue()));
+			}
+			return sorted;
+		}
+		if (value instanceof List<?> list) {
+			return list.stream().map(RouteBundleCurrentKeyVerifierTest::sortValue).toList();
+		}
+		return value;
+	}
+
 	private static void assertReason(
 		RouteBundleCurrentKeyVerifier.Reason expected,
 		org.junit.jupiter.api.function.Executable executable) {
@@ -200,5 +302,11 @@ class RouteBundleCurrentKeyVerifierTest {
 		org.junit.jupiter.api.function.Executable executable) {
 		var failure = assertThrows(RouteBundleHandoffException.class, executable);
 		assertEquals(expected, failure.reason());
+	}
+
+	private record DescriptorFixture(
+		byte[] bytes,
+		byte[] signingInputBytes,
+		String descriptorSha256) {
 	}
 }
