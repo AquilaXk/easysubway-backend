@@ -38,24 +38,61 @@ public final class RouteBundleCandidateAssembler {
 		Objects.requireNonNull(verifiedAt, "verifiedAt");
 
 		RouteBundleConsumerHandoff handoff = admission.verifiedSignature().handoff();
-		RouteBundleIdentity identity = handoff.identity();
+		if (!("sha256:" + handoff.admissionEvidence().manifestSha256())
+			.equals(handoff.platformServerRouteBundleDigest())) {
+			throw new IllegalArgumentException("route-bundle candidate identity mismatch");
+		}
+		return assemble(
+			handoff.identity(),
+			handoff.admissionEvidence(),
+			admittedPayloadDigests(handoff),
+			admission::objectBytes,
+			candidateGeneration,
+			verifiedAt);
+	}
+
+	public VerifiedRouteBundleCandidate assemble(
+		RouteBundleObjectAdmission.VerifiedPublicationObjectAdmission admission,
+		long candidateGeneration,
+		Instant verifiedAt) {
+		Objects.requireNonNull(admission, "admission");
+		RouteBundlePublicationDescriptor descriptor =
+			admission.verifiedDescriptorSignature().descriptor();
+		return assemble(
+			descriptor.identity(),
+			descriptor.admissionEvidence(),
+			admittedPayloadDigests(descriptor),
+			admission::objectBytes,
+			candidateGeneration,
+			verifiedAt);
+	}
+
+	private VerifiedRouteBundleCandidate assemble(
+		RouteBundleIdentity identity,
+		RouteBundleAdmissionEvidence admissionEvidence,
+		Map<String, String> payloadDigests,
+		ObjectBytes objectBytes,
+		long candidateGeneration,
+		Instant verifiedAt) {
+		if (candidateGeneration < 1) {
+			throw new IllegalArgumentException("candidateGeneration must be positive");
+		}
+		Objects.requireNonNull(verifiedAt, "verifiedAt");
 		if (verifiedAt.isBefore(identity.activeFromInstant())
 			|| !verifiedAt.isBefore(identity.freshUntilInstant())) {
 			throw new IllegalArgumentException("candidate verification time is outside the bundle window");
 		}
 
 		var payloads = new LinkedHashMap<String, byte[]>(PAYLOAD_PATHS.size());
-		PAYLOAD_PATHS.forEach(path -> payloads.put(path, admission.objectBytes(path)));
+		PAYLOAD_PATHS.forEach(path -> payloads.put(path, objectBytes.get(path)));
 		RouteBundlePayloadInspection inspection = RouteBundleArtifactInspector.inspect(
-			admission.objectBytes(MANIFEST_PATH), payloads);
+			objectBytes.get(MANIFEST_PATH), payloads);
 		String manifestSha256 = inspection.manifestSha256();
 		if (!inspection.identity().equals(identity)
-			|| !manifestSha256.equals(handoff.admissionEvidence().manifestSha256())
-			|| !("sha256:" + manifestSha256).equals(handoff.platformServerRouteBundleDigest())) {
+			|| !manifestSha256.equals(admissionEvidence.manifestSha256())) {
 			throw new IllegalArgumentException("route-bundle candidate identity mismatch");
 		}
 
-		Map<String, String> payloadDigests = admittedPayloadDigests(handoff);
 		var input = new RouteBundleSqliteRuntimeCompiler.Input(
 			manifestSha256,
 			candidateGeneration,
@@ -67,7 +104,7 @@ public final class RouteBundleCandidateAssembler {
 		RouteBundleRuntimeView runtime = Objects.requireNonNull(
 			compiler.compile(input), "compiled runtime");
 		return new VerifiedRouteBundleCandidate(
-			identity, handoff.admissionEvidence(), runtime, verifiedAt);
+			identity, admissionEvidence, runtime, verifiedAt);
 	}
 
 	private static Map<String, String> admittedPayloadDigests(RouteBundleConsumerHandoff handoff) {
@@ -79,6 +116,22 @@ public final class RouteBundleCandidateAssembler {
 			throw new IllegalArgumentException("route-bundle admitted payload digest inventory is invalid");
 		}
 		return Map.copyOf(digests);
+	}
+
+	private static Map<String, String> admittedPayloadDigests(RouteBundlePublicationDescriptor descriptor) {
+		var digests = new LinkedHashMap<String, String>(PAYLOAD_PATHS.size());
+		for (RouteBundlePublicationDescriptor.PublishedObject object : descriptor.objects()) {
+			if (PAYLOAD_PATHS.contains(object.path())) digests.put(object.path(), object.sha256());
+		}
+		if (!digests.keySet().equals(java.util.Set.copyOf(PAYLOAD_PATHS))) {
+			throw new IllegalArgumentException("route-bundle admitted payload digest inventory is invalid");
+		}
+		return Map.copyOf(digests);
+	}
+
+	@FunctionalInterface
+	private interface ObjectBytes {
+		byte[] get(String path);
 	}
 
 	@FunctionalInterface

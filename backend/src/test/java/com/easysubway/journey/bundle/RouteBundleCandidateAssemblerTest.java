@@ -60,6 +60,27 @@ class RouteBundleCandidateAssemblerTest {
 	}
 
 	@Test
+	void assemblesOneCandidateFromTheVerifiedDescriptorV2Admission() {
+		Fixture fixture = fixture();
+		var calls = new AtomicInteger();
+		var captured = new AtomicReference<RouteBundleSqliteRuntimeCompiler.Input>();
+		var assembler = new RouteBundleCandidateAssembler(input -> {
+			calls.incrementAndGet();
+			captured.set(input);
+			return new TestRuntime();
+		});
+
+		var candidate = assembler.assemble(v2Admission(fixture), 7, VERIFIED_AT);
+
+		assertThat(calls.get()).isEqualTo(1);
+		assertThat(candidate.identity()).isEqualTo(fixture.identity());
+		assertThat(candidate.admissionEvidence()).isEqualTo(fixture.handoff().admissionEvidence());
+		assertThat(captured.get().routeBundleSha256()).isEqualTo(fixture.manifestSha256());
+		assertThat(captured.get().generation()).isEqualTo(7);
+		assertThat(captured.get().admittedPayloadSha256s()).isEqualTo(fixture.payloadDigests());
+	}
+
+	@Test
 	void rejectsInvalidGenerationAndVerificationTimeBeforeCompilation() {
 		Fixture fixture = fixture();
 		var calls = new AtomicInteger();
@@ -71,6 +92,7 @@ class RouteBundleCandidateAssemblerTest {
 		for (var invocation : List.<Runnable>of(
 			() -> new RouteBundleCandidateAssembler().assemble(fixture.admission(), 0, VERIFIED_AT),
 			() -> assembler.assemble(fixture.admission(), 0, VERIFIED_AT),
+			() -> assembler.assemble(v2Admission(fixture), 0, VERIFIED_AT),
 			() -> assembler.assemble(fixture.admission(), 1, ACTIVE_FROM.minusNanos(1)),
 			() -> assembler.assemble(fixture.admission(), 1, FRESH_UNTIL))) {
 			assertThatThrownBy(invocation::run).isInstanceOf(IllegalArgumentException.class);
@@ -155,6 +177,26 @@ class RouteBundleCandidateAssemblerTest {
 		when(signature.handoff()).thenReturn(handoff);
 		when(admission.objectBytes(anyString())).thenAnswer(invocation -> {
 			byte[] bytes = objects.get(invocation.getArgument(0, String.class));
+			if (bytes == null) throw new IllegalArgumentException("unknown admitted object path");
+			return bytes.clone();
+		});
+		return admission;
+	}
+
+	private static RouteBundleObjectAdmission.VerifiedPublicationObjectAdmission v2Admission(Fixture fixture) {
+		var admission = mock(RouteBundleObjectAdmission.VerifiedPublicationObjectAdmission.class);
+		var signature = mock(RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature.class);
+		var descriptor = mock(RouteBundlePublicationDescriptor.class);
+		when(admission.verifiedDescriptorSignature()).thenReturn(signature);
+		when(signature.descriptor()).thenReturn(descriptor);
+		when(descriptor.identity()).thenReturn(fixture.identity());
+		when(descriptor.admissionEvidence()).thenReturn(fixture.handoff().admissionEvidence());
+		when(descriptor.objects()).thenReturn(fixture.handoff().objects().stream()
+			.map(object -> new RouteBundlePublicationDescriptor.PublishedObject(
+				object.path(), object.objectKey(), object.sizeBytes(), object.sha256()))
+			.toList());
+		when(admission.objectBytes(anyString())).thenAnswer(invocation -> {
+			byte[] bytes = fixture.objects().get(invocation.getArgument(0, String.class));
 			if (bytes == null) throw new IllegalArgumentException("unknown admitted object path");
 			return bytes.clone();
 		});

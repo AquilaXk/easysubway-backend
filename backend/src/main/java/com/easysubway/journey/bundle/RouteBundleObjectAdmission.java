@@ -8,7 +8,7 @@ import java.util.Objects;
 import java.util.Set;
 import org.apache.commons.codec.digest.DigestUtils;
 
-/** Binds delivered publication bytes to one verified handoff without issuing a candidate. */
+/** Binds delivered publication bytes to one verified v1 handoff or v2 descriptor. */
 public final class RouteBundleObjectAdmission {
 
 	private static final String SIGNING_INPUT_PATH = "manifest.signing-input.json";
@@ -58,6 +58,65 @@ public final class RouteBundleObjectAdmission {
 		return new VerifiedObjectAdmission(verifiedSignature, admittedObjects);
 	}
 
+	public static VerifiedPublicationObjectAdmission admitPublicationDescriptor(
+		byte[] descriptorBytes,
+		String activationRequestIdentity,
+		RouteBundlePublicationObjectFetcher.FetchedPublicationObjects fetched,
+		RouteBundleCurrentKeyVerifier.CurrentKey currentKey) {
+		byte[] stableDescriptorBytes = descriptorBytes == null ? null : descriptorBytes.clone();
+		RouteBundlePublicationDescriptor descriptor =
+			RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
+				stableDescriptorBytes, activationRequestIdentity);
+		if (fetched == null
+			|| !descriptor.descriptorSha256().equals(fetched.descriptorSha256())
+			|| !descriptor.identity().keyId().equals(fetched.keyId())) {
+			throw failure(
+				Reason.FETCHED_DESCRIPTOR_IDENTITY_MISMATCH,
+				"fetched publication objects do not match the descriptor identity");
+		}
+
+		List<RouteBundlePublicationObjectFetcher.FetchedObject> fetchedObjects = fetched.objects();
+		if (fetchedObjects.size() != descriptor.objects().size()) {
+			throw failure(Reason.OBJECT_PATH_SET_MISMATCH, "publication objects must match the descriptor inventory");
+		}
+		var admittedObjects = new LinkedHashMap<String, byte[]>(fetchedObjects.size());
+		for (int index = 0; index < descriptor.objects().size(); index++) {
+			RouteBundlePublicationDescriptor.PublishedObject expected = descriptor.objects().get(index);
+			RouteBundlePublicationObjectFetcher.FetchedObject actual = fetchedObjects.get(index);
+			if (!expected.path().equals(actual.path())
+				|| !expected.objectKey().equals(actual.objectKey())) {
+				throw failure(
+					Reason.OBJECT_PATH_SET_MISMATCH,
+					"publication objects must preserve the descriptor inventory");
+			}
+			byte[] source = actual.bytes();
+			admittedObjects.put(expected.path(), validateObject(
+				expected.sizeBytes(), expected.sha256(), source));
+		}
+
+		RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature signature =
+			RouteBundleCurrentKeyVerifier.verifyPublicationDescriptor(
+				stableDescriptorBytes,
+				activationRequestIdentity,
+				admittedObjects.get(SIGNING_INPUT_PATH),
+				currentKey);
+		return new VerifiedPublicationObjectAdmission(signature, admittedObjects);
+	}
+
+	private static byte[] validateObject(long expectedSize, String expectedSha256, byte[] source) {
+		if (source.length == 0) {
+			throw failure(Reason.OBJECT_BYTES_INVALID, "publication object bytes are required");
+		}
+		if (expectedSize != source.length) {
+			throw failure(Reason.OBJECT_SIZE_MISMATCH, "publication object size does not match the descriptor");
+		}
+		byte[] stableBytes = source.clone();
+		if (!expectedSha256.equals(sha256(stableBytes))) {
+			throw failure(Reason.OBJECT_DIGEST_MISMATCH, "publication object digest does not match the descriptor");
+		}
+		return stableBytes;
+	}
+
 	private static String sha256(byte[] value) {
 		return DigestUtils.sha256Hex(value);
 	}
@@ -67,6 +126,7 @@ public final class RouteBundleObjectAdmission {
 	}
 
 	public enum Reason {
+		FETCHED_DESCRIPTOR_IDENTITY_MISMATCH,
 		OBJECT_PATH_SET_MISMATCH,
 		OBJECT_BYTES_INVALID,
 		OBJECT_SIZE_MISMATCH,
@@ -99,6 +159,39 @@ public final class RouteBundleObjectAdmission {
 
 		public RouteBundleCurrentKeyVerifier.VerifiedSignature verifiedSignature() {
 			return verifiedSignature;
+		}
+
+		public Map<String, byte[]> objects() {
+			return copyObjects(objects);
+		}
+
+		public byte[] objectBytes(String path) {
+			byte[] value = objects.get(path);
+			if (value == null) throw new IllegalArgumentException("unknown admitted object path");
+			return value.clone();
+		}
+
+		private static Map<String, byte[]> copyObjects(Map<String, byte[]> source) {
+			var copy = new LinkedHashMap<String, byte[]>(source.size());
+			for (var entry : source.entrySet()) copy.put(entry.getKey(), entry.getValue().clone());
+			return Collections.unmodifiableMap(copy);
+		}
+	}
+
+	public static final class VerifiedPublicationObjectAdmission {
+		private final RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature verifiedDescriptorSignature;
+		private final Map<String, byte[]> objects;
+
+		private VerifiedPublicationObjectAdmission(
+			RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature verifiedDescriptorSignature,
+			Map<String, byte[]> objects) {
+			this.verifiedDescriptorSignature = Objects.requireNonNull(
+				verifiedDescriptorSignature, "verifiedDescriptorSignature");
+			this.objects = copyObjects(objects);
+		}
+
+		public RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature verifiedDescriptorSignature() {
+			return verifiedDescriptorSignature;
 		}
 
 		public Map<String, byte[]> objects() {
