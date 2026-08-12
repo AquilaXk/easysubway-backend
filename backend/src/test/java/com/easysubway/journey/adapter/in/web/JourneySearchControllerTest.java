@@ -13,7 +13,9 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-import com.easysubway.journey.application.JourneyApplicationService;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Completed;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyExecutionFailure.Reason;
@@ -55,14 +57,14 @@ class JourneySearchControllerTest {
 	private static final ObjectMapper JSON = new ObjectMapper();
 
 	private JourneySessionService sessionService;
-	private JourneyApplicationService applicationService;
+	private JourneyApplicationDeadlineExecutor deadlineExecutor;
 	private MockMvc mockMvc;
 
 	@BeforeEach
 	void setUp() {
 		sessionService = mock(JourneySessionService.class);
-		applicationService = mock(JourneyApplicationService.class);
-		mockMvc = MockMvcBuilders.standaloneSetup(new JourneySearchController(sessionService, applicationService))
+		deadlineExecutor = mock(JourneyApplicationDeadlineExecutor.class);
+		mockMvc = MockMvcBuilders.standaloneSetup(new JourneySearchController(sessionService, deadlineExecutor))
 			.setControllerAdvice(new JourneySearchExceptionHandler(
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new SecureRandom(new byte[] {1, 2, 3, 4})
@@ -75,7 +77,7 @@ class JourneySearchControllerTest {
 	void authorizesAndExecutesNowRequestOnce() throws Exception {
 		assertConditionalRegistration();
 		allowSession();
-		when(applicationService.execute(any())).thenReturn(success());
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
 
 		MvcResult result = perform(validRequest("{\"mode\":\"NOW\"}"))
 			.andExpect(status().isOk())
@@ -93,7 +95,7 @@ class JourneySearchControllerTest {
 		);
 		verify(sessionService).authorize("session-token");
 		var request = ArgumentCaptor.forClass(JourneyRequest.class);
-		verify(applicationService).execute(request.capture());
+		verify(deadlineExecutor).execute(request.capture());
 		assertThat(request.getValue()).satisfies(command -> {
 			assertThat(command.requestId()).isEqualTo(REQUEST_ID);
 			assertThat(command.originStationId()).isEqualTo("station-origin");
@@ -112,16 +114,44 @@ class JourneySearchControllerTest {
 	@DisplayName("SCHEDULED offset date-time을 exact instant command로 변환한다")
 	void decodesScheduledDeparture() throws Exception {
 		allowSession();
-		when(applicationService.execute(any())).thenReturn(success());
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
 
 		perform(validRequest("{\"mode\":\"SCHEDULED\",\"requestedAt\":\"2026-08-12T09:01:00+09:00\"}"))
 			.andExpect(status().isOk());
 
 		var request = ArgumentCaptor.forClass(JourneyRequest.class);
-		verify(applicationService).execute(request.capture());
+		verify(deadlineExecutor).execute(request.capture());
 		assertThat(request.getValue().departure()).isEqualTo(
 			new JourneyRequest.Departure.Scheduled(Instant.parse("2026-08-12T00:01:00Z"))
 		);
+	}
+
+	@Test
+	@DisplayName("deadline timeout은 request identity를 보존한 exact 504로 닫힌다")
+	void mapsDeadlineTimeout() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new TimedOut());
+
+		assertError(post("/api/v3/journeys/search")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(validRequest("{\"mode\":\"NOW\"}")), 504, "JOURNEY_SEARCH_TIMEOUT", true);
+
+		verify(deadlineExecutor).execute(any());
+	}
+
+	@Test
+	@DisplayName("deadline execution failure는 request identity를 보존한 existing 503으로 닫힌다")
+	void mapsDeadlineExecutionFailure() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenThrow(new RuntimeException("failed"));
+
+		assertError(post("/api/v3/journeys/search")
+			.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+			.contentType(MediaType.APPLICATION_JSON)
+			.content(validRequest("{\"mode\":\"NOW\"}")), 503, "ROUTE_SERVICE_UNAVAILABLE", true);
+
+		verify(deadlineExecutor).execute(any());
 	}
 
 	@Test
@@ -144,14 +174,14 @@ class JourneySearchControllerTest {
 			.content(validRequest("{\"mode\":\"NOW\"}")), 401, "ROUTE_SESSION_REQUIRED", false);
 
 		verify(sessionService).authorize("rejected-token");
-		verifyNoInteractions(applicationService);
+		verifyNoInteractions(deadlineExecutor);
 	}
 
 	@Test
 	@DisplayName("Bearer scheme은 대소문자와 무관하게 authorize한다")
 	void acceptsCaseInsensitiveBearerScheme() throws Exception {
 		allowSession();
-		when(applicationService.execute(any())).thenReturn(success());
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
 
 		mockMvc.perform(post("/api/v3/journeys/search")
 			.header(HttpHeaders.AUTHORIZATION, "bEaReR session-token")
@@ -160,7 +190,7 @@ class JourneySearchControllerTest {
 			.andExpect(status().isOk());
 
 		verify(sessionService).authorize("session-token");
-		verify(applicationService).execute(any());
+		verify(deadlineExecutor).execute(any());
 	}
 
 	@Test
@@ -170,7 +200,7 @@ class JourneySearchControllerTest {
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(validRequest("{\"mode\":\"NOW\"}")), 401, "ROUTE_SESSION_REQUIRED", false);
 
-		verifyNoInteractions(applicationService);
+		verifyNoInteractions(deadlineExecutor);
 	}
 
 	@Test
@@ -184,7 +214,7 @@ class JourneySearchControllerTest {
 			.contentType(MediaType.APPLICATION_JSON), 429, "ROUTE_RATE_LIMITED", false);
 
 		verify(sessionService).authorize("session-token");
-		verifyNoInteractions(applicationService);
+		verifyNoInteractions(deadlineExecutor);
 	}
 
 	@Test
@@ -196,14 +226,14 @@ class JourneySearchControllerTest {
 
 		var exception = assertThrows(
 			JourneySearchController.JourneySearchWebException.class,
-			() -> new JourneySearchController(sessionService, applicationService)
+			() -> new JourneySearchController(sessionService, deadlineExecutor)
 				.search("Bearer session-token", request)
 		);
 
 		assertThat(exception.httpStatus()).isEqualTo(400);
 		assertThat(exception.machineCode()).isEqualTo("INVALID_JOURNEY_REQUEST");
 		verify(sessionService).authorize("session-token");
-		verifyNoInteractions(applicationService);
+		verifyNoInteractions(deadlineExecutor);
 	}
 
 	@Test
@@ -230,7 +260,7 @@ class JourneySearchControllerTest {
 				.content(body), 400, "INVALID_JOURNEY_REQUEST", false);
 		}
 		verify(sessionService, times(11)).authorize("session-token");
-		verifyNoInteractions(applicationService);
+		verifyNoInteractions(deadlineExecutor);
 	}
 
 	@Test
@@ -247,14 +277,16 @@ class JourneySearchControllerTest {
 			new FailureCase(Reason.NO_ROUTE, 422, "ROUTE_NOT_FOUND"),
 			new FailureCase(Reason.CANCELLED, 503, "ROUTE_SERVICE_UNAVAILABLE")
 		)) {
-			when(applicationService.execute(any())).thenReturn(new JourneyExecutionFailure(failure.reason()));
+			when(deadlineExecutor.execute(any())).thenReturn(
+				new Completed(new JourneyExecutionFailure(failure.reason()))
+			);
 			assertError(post("/api/v3/journeys/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(validRequest("{\"mode\":\"NOW\"}")), failure.status(), failure.code(), true);
 		}
 		verify(sessionService, times(8)).authorize("session-token");
-		verify(applicationService, times(8)).execute(any());
+		verify(deadlineExecutor, times(8)).execute(any());
 	}
 
 	private org.springframework.test.web.servlet.ResultActions perform(String body) throws Exception {
@@ -350,12 +382,16 @@ class JourneySearchControllerTest {
 	private static void assertConditionalRegistration() {
 		var runner = new ApplicationContextRunner()
 			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
-			.withBean(JourneyApplicationService.class, () -> mock(JourneyApplicationService.class))
 			.withUserConfiguration(SearchWebConfiguration.class);
 		runner.run(context -> assertThat(context)
 			.doesNotHaveBean(JourneySearchController.class)
 			.doesNotHaveBean(JourneySearchExceptionHandler.class));
-		runner.withPropertyValues(SEARCH_WEB_ENABLED).run(context -> assertThat(context)
+		runner.withPropertyValues(SEARCH_WEB_ENABLED).run(context ->
+			assertThat(context.getStartupFailure()).isNotNull());
+		runner.withBean(
+			JourneyApplicationDeadlineExecutor.class,
+			() -> mock(JourneyApplicationDeadlineExecutor.class)
+		).withPropertyValues(SEARCH_WEB_ENABLED).run(context -> assertThat(context)
 			.hasSingleBean(JourneySearchController.class)
 			.hasSingleBean(JourneySearchExceptionHandler.class));
 	}
