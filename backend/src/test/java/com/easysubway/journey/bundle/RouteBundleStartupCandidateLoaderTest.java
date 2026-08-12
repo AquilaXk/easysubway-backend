@@ -69,6 +69,32 @@ class RouteBundleStartupCandidateLoaderTest {
 	}
 
 	@Test
+	@DisplayName("actual cold registry에는 generation 1 candidate만 남고 active는 unavailable이다")
+	void stagesOnlyOneCandidateInActualColdRegistry() {
+		var fetched = mock(RouteBundlePublicationObjectFetcher.FetchedPublicationObjects.class);
+		var verified = mock(RouteBundleObjectAdmission.VerifiedPublicationObjectAdmission.class);
+		var identity = mock(RouteBundleIdentity.class);
+		when(identity.activeFromInstant()).thenReturn(NOW.minusSeconds(60));
+		when(identity.freshUntilInstant()).thenReturn(NOW.plusSeconds(600));
+		var evidence = mock(RouteBundleAdmissionEvidence.class);
+		var runtime = mock(RouteBundleRuntimeView.class);
+		var candidate = new VerifiedRouteBundleCandidate(identity, evidence, runtime, NOW);
+		var assembler = mock(RouteBundleCandidateAssembler.class);
+		when(assembler.assemble(verified, 1, NOW)).thenReturn(candidate);
+		var registry = new RouteBundleActivationRegistry(Clock.fixed(NOW, ZoneOffset.UTC));
+
+		var snapshot = loader(
+			successfulFetcher(fetched), successfulAdmission(verified), assembler, registry).loadAndStage();
+
+		assertSame(identity, snapshot.identity());
+		org.junit.jupiter.api.Assertions.assertEquals(1, snapshot.generation());
+		org.junit.jupiter.api.Assertions.assertEquals(1, registry.candidateSnapshot().generation());
+		var unavailable = assertThrows(RouteBundleActivationException.class, registry::activeSnapshot);
+		org.junit.jupiter.api.Assertions.assertEquals(
+			RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, unavailable.reason());
+	}
+
+	@Test
 	@DisplayName("fetch 실패는 admission·assemble·stage 없이 전파된다")
 	void fetchFailureStopsBeforeAdmission() {
 		var fetcher = mock(RouteBundlePublicationObjectFetcher.class);
