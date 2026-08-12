@@ -162,7 +162,8 @@ class JourneyProductionConfigurationTest {
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=invalid"
-		).run(context -> assertThat(context).hasFailed());
+		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
 	}
 
 	@Test
