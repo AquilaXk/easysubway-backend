@@ -73,6 +73,7 @@ class JourneyProductionConfigurationTest {
 		))
 		.withUserConfiguration(
 			JourneyProductionConfiguration.class,
+			JourneyReadinessController.class,
 			JourneyEndpointProbeController.class
 		);
 
@@ -116,13 +117,20 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("search disabled 운영 프로필은 session만 조립하고 execution graph를 만들지 않는다")
+	@DisplayName("search disabled 운영 프로필도 readiness registry를 요구하고 execution graph는 만들지 않는다")
 	void searchDisabledProductionProfileComposesSessionOnly() {
 		productionContext(
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.search.max-searches-per-session=12",
-			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
-		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
+			"easysubway.journey-v3.readiness.service-token=" + READINESS_TOKEN,
+			"easysubway.journey-v3.readiness.instance-id=backend-a",
+			"easysubway.journey-v3.readiness.release-tuple-sha256=" + SHA_A,
+			"easysubway.journey-v3.readiness.backend-image-digest=sha256:" + SHA_B,
+			"easysubway.journey-v3.readiness.backend-config-sha256=" + SHA_C,
+			"easysubway.journey-v3.readiness.journey-contract-sha256=" + SHA_D,
+			"easysubway.journey-v3.readiness.traffic-generation=31"
+		).withUserConfiguration(DependencyTestConfiguration.class)
 			.run(context -> {
 				assertThat(context).hasNotFailed();
 				assertThat(context).hasSingleBean(JourneySessionService.class);

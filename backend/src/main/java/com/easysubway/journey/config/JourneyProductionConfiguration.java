@@ -8,8 +8,12 @@ import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
+import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
+import com.easysubway.journey.adapter.in.web.JourneyReadinessServiceTokenFilter;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import com.easysubway.journey.bundle.RouteBundleActiveJourneySnapshotAdapter;
+import com.easysubway.journey.readiness.JourneyReadinessProperties;
+import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
@@ -29,17 +33,26 @@ import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpMethod;
 import org.springframework.security.config.annotation.web.builders.HttpSecurity;
 import org.springframework.security.config.annotation.web.configurers.AbstractHttpConfigurer;
+import org.springframework.security.config.http.SessionCreationPolicy;
 import org.springframework.security.web.SecurityFilterChain;
+import org.springframework.security.web.authentication.UsernamePasswordAuthenticationFilter;
 
 @Configuration(proxyBeanMethods = false)
 @Profile("(prod | staging | release | prod-like) & !capacity-evidence")
-@EnableConfigurationProperties(JourneySearchPolicyProperties.class)
+@EnableConfigurationProperties({JourneySearchPolicyProperties.class, JourneyReadinessProperties.class})
 public class JourneyProductionConfiguration {
 
 	private static final String SESSION_PATH = "/api/v3/journeys/session";
 	private static final String SEARCH_PATH = "/api/v3/journeys/search";
 	private static final Clock CLOCK = Clock.systemUTC();
 	private static final Duration REALTIME_FRESHNESS_TTL = Duration.ofSeconds(90);
+
+	@Bean
+	JourneyReadinessService journeyReadinessService(
+		RouteBundleActivationRegistry registry,
+		JourneyReadinessProperties properties) {
+		return new JourneyReadinessService(registry, properties);
+	}
 
 	@Bean
 	JourneySessionService journeySessionService(
@@ -104,14 +117,36 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@Order(4)
-	SecurityFilterChain journeyV3IngressSecurityFilterChain(HttpSecurity http) throws Exception {
+	SecurityFilterChain journeyV3IngressSecurityFilterChain(
+		HttpSecurity http,
+		JourneyReadinessProperties readinessProperties) throws Exception {
 		return http
-			.securityMatcher(SESSION_PATH, SEARCH_PATH)
+			.securityMatcher(
+				SESSION_PATH,
+				SEARCH_PATH,
+				JourneyReadinessController.CANDIDATE_PATH,
+				JourneyReadinessController.ACTIVE_PATH)
 			.csrf(AbstractHttpConfigurer::disable)
+			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH).permitAll()
+				.requestMatchers(
+					HttpMethod.GET,
+					JourneyReadinessController.CANDIDATE_PATH,
+					JourneyReadinessController.ACTIVE_PATH)
+				.hasRole("JOURNEY_READINESS")
 				.anyRequest().denyAll()
 			)
+			.exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, exception) -> {
+				boolean readinessGet = HttpMethod.GET.matches(request.getMethod())
+					&& (JourneyReadinessController.CANDIDATE_PATH.equals(request.getRequestURI())
+						|| JourneyReadinessController.ACTIVE_PATH.equals(request.getRequestURI()));
+				response.setStatus(readinessGet ? 401 : 403);
+				if (readinessGet) response.setHeader("WWW-Authenticate", "Bearer");
+			}))
+			.addFilterBefore(
+				new JourneyReadinessServiceTokenFilter(readinessProperties.serviceToken()),
+				UsernamePasswordAuthenticationFilter.class)
 			.build();
 	}
 }
