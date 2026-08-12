@@ -13,6 +13,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.common.error.InvalidRequestException;
+import com.easysubway.journey.bundle.RouteBundleStartupCandidateLoader;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
@@ -81,6 +82,11 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 	"easysubway.journey-v3.readiness.backend-config-sha256=cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc",
 	"easysubway.journey-v3.readiness.journey-contract-sha256=dddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddddd",
 	"easysubway.journey-v3.readiness.traffic-generation=1",
+	"easysubway.journey-v3.route-bundle-startup.descriptor-base64=e30=",
+	"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+	"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
+	"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
+	"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=synthetic-public-key",
 	"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
 	"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
 	"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
@@ -122,6 +128,9 @@ class ProductionRouteApiClosureTest {
 
 	@MockitoBean
 	private PlayIntegrityDecoder playIntegrityDecoder;
+
+	@MockitoBean
+	private RouteBundleStartupCandidateLoader startupCandidateLoader;
 
 	@BeforeEach
 	void setUpCurrentReachableResponses() {

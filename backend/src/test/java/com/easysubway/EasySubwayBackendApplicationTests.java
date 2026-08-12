@@ -5,6 +5,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.journey.bundle.RouteBundleStartupCandidateLoader;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -12,6 +13,7 @@ import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMock
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.core.env.Environment;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
 @SpringBootTest
@@ -56,6 +58,11 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.journey-v3.readiness.backend-config-sha256=" + TEST_SHA_C,
 			"easysubway.journey-v3.readiness.journey-contract-sha256=" + TEST_SHA_D,
 			"easysubway.journey-v3.readiness.traffic-generation=1",
+			"easysubway.journey-v3.route-bundle-startup.descriptor-base64=e30=",
+			"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:" + TEST_SHA_A,
+			"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
+			"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
+			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=synthetic-public-key",
 			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
 			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
 			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
@@ -72,6 +79,9 @@ class EasySubwayBackendApplicationTests {
 	@AutoConfigureMockMvc
 	@DisplayName("운영 프로필 애플리케이션 컨텍스트")
 	static class ProductionProfileContextTests {
+
+		@MockitoBean
+		private RouteBundleStartupCandidateLoader startupCandidateLoader;
 
 		@Autowired
 		private MockMvc mockMvc;
@@ -115,6 +125,11 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.journey-v3.readiness.backend-config-sha256=" + TEST_SHA_C,
 			"easysubway.journey-v3.readiness.journey-contract-sha256=" + TEST_SHA_D,
 			"easysubway.journey-v3.readiness.traffic-generation=1",
+			"easysubway.journey-v3.route-bundle-startup.descriptor-base64=e30=",
+			"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:" + TEST_SHA_A,
+			"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
+			"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
+			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=synthetic-public-key",
 			"EASYSUBWAY_REPORT_RECEIPT_PEPPER=prod-like-test-receipt-token-pepper-with-enough-entropy",
 			"EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY=prod-like-test-upload-intent-signing-key-with-enough-entropy",
 			"EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT=https://object-storage.example.com",
@@ -131,6 +146,9 @@ class EasySubwayBackendApplicationTests {
 	@AutoConfigureMockMvc
 	@DisplayName("운영 유사 프로필 애플리케이션 컨텍스트")
 	static class ProductionLikeProfileContextTests {
+
+		@MockitoBean
+		private RouteBundleStartupCandidateLoader startupCandidateLoader;
 
 		@Autowired
 		private Environment environment;
