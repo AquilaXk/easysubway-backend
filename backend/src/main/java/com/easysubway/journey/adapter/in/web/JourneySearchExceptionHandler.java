@@ -11,7 +11,6 @@ import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
-import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
@@ -46,11 +45,6 @@ final class JourneySearchExceptionHandler {
 		JourneySearchController.JourneySearchWebException exception
 	) {
 		return error(exception.requestId(), exception.httpStatus(), exception.machineCode());
-	}
-
-	@ExceptionHandler(HttpMessageNotReadableException.class)
-	ResponseEntity<JourneyError> handleMalformedRequest() {
-		return error(null, 400, "INVALID_JOURNEY_REQUEST");
 	}
 
 	private ResponseEntity<JourneyError> error(String requestId, int httpStatus, String machineCode) {

@@ -1,6 +1,7 @@
 package com.easysubway.journey.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -23,6 +24,8 @@ import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionService.AuthorizedSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
@@ -167,6 +170,25 @@ class JourneySearchControllerTest {
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(validRequest("{\"mode\":\"NOW\"}")), 401, "ROUTE_SESSION_REQUIRED", false);
 
+		verifyNoInteractions(applicationService);
+	}
+
+	@Test
+	@DisplayName("authorized request body read failure는 execute 없이 exact 400으로 닫힌다")
+	void rejectsUnreadableAuthorizedRequestBeforeExecution() throws Exception {
+		allowSession();
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getInputStream()).thenThrow(new IOException("unreadable"));
+
+		var exception = assertThrows(
+			JourneySearchController.JourneySearchWebException.class,
+			() -> new JourneySearchController(sessionService, applicationService)
+				.search("Bearer session-token", request)
+		);
+
+		assertThat(exception.httpStatus()).isEqualTo(400);
+		assertThat(exception.machineCode()).isEqualTo("INVALID_JOURNEY_REQUEST");
+		verify(sessionService).authorize("session-token");
 		verifyNoInteractions(applicationService);
 	}
 
