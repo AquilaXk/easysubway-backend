@@ -300,6 +300,11 @@
 		<Method name="&lt;init&gt;" params="java.lang.String" returns="void"/>
 	</Match>
 	<Match>
+		<Bug pattern="EI_EXPOSE_REP2"/>
+		<Class name="com.easysubway.route.adapter.in.web.RouteV2Metrics"/>
+		<Method name="&lt;init&gt;" params="io.micrometer.core.instrument.MeterRegistry" returns="void"/>
+	</Match>
+	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.train.adapter.in.web.TrainSearchContractController"/>
 		<Method name="&lt;init&gt;" params="com.easysubway.train.application.TrainSearchService,com.fasterxml.jackson.databind.ObjectMapper,org.springframework.beans.factory.ObjectProvider" returns="void"/>
