@@ -121,6 +121,7 @@ class DatabaseMigrationContainerTest {
 				"route_v2_states",
 				"transit_master_overrides",
 				"transit_master_override_audits",
+				"transit_master_override_locks",
 				"timetable_snapshot_lock",
 				"timetable_snapshot_history",
 				"timetable_snapshot_active",
@@ -128,7 +129,7 @@ class DatabaseMigrationContainerTest {
 				"train_search_cache",
 				"train_provider_call_quota_state"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i
@@ -675,6 +676,29 @@ class DatabaseMigrationContainerTest {
 
 		assertNormalizationRunGuards(new JdbcTemplate(dataSource));
 		assertRouteV2AllowlistSchema(new JdbcTemplate(dataSource));
+	}
+
+	@Test
+	@DisplayName("H2 migration은 target별 transit master override lock identity를 만든다")
+	void h2MigrationCreatesTransitMasterOverrideLocks() {
+		var dataSource = new DriverManagerDataSource(
+			"jdbc:h2:mem:transit-master-override-locks;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
+			"sa",
+			""
+		);
+		migrate(dataSource, "classpath:db/migration/h2", null);
+		var jdbcTemplate = new JdbcTemplate(dataSource);
+
+		assertThat(columns(jdbcTemplate, "transit_master_override_locks"))
+			.containsExactly("entity_id", "entity_type");
+		jdbcTemplate.update("""
+			INSERT INTO transit_master_override_locks (entity_type, entity_id)
+			VALUES ('ACCESSIBILITY_FACILITY', 'facility-1')
+			""");
+		assertThatThrownBy(() -> jdbcTemplate.update("""
+			INSERT INTO transit_master_override_locks (entity_type, entity_id)
+			VALUES ('ACCESSIBILITY_FACILITY', 'facility-1')
+			""")).isInstanceOf(DataAccessException.class);
 	}
 
 	private void assertRouteV2AllowlistSchema(JdbcTemplate jdbcTemplate) {
