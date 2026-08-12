@@ -3,3 +3,6 @@
 !build
 !build/libs
 !build/libs/*.jar
+!build/sqlite-native
+!build/sqlite-native/linux-aarch64
+!build/sqlite-native/linux-aarch64/libsqlitejdbc.so

@@ -185,8 +185,14 @@ jobs:
               test "$(find /app -mindepth 1 -maxdepth 1 -printf "%f\n")" = "app.jar"
               test "$(stat -c "%u:%g" /app/app.jar)" = "10001:10001"
               ! touch /app/app.jar
+              test -r /opt/easysubway/native/libsqlitejdbc.so
+              test ! -w /opt/easysubway/native/libsqlitejdbc.so
               touch /tmp/runtime-write-check
               touch /opt/easysubway/logs/runtime-write-check
+              java -XX:-UsePerfData \
+                -Dloader.main=com.easysubway.journey.bundle.RouteBundleSqliteRuntimeCompiler \
+                -cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher
+              test -z "$(find /tmp -mindepth 1 -maxdepth 1 -name "sqlite-*" -print -quit)"
               test ! -e /var/run/docker.sock
             '
 
