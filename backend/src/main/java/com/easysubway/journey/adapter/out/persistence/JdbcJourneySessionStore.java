@@ -43,8 +43,11 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 	) {
 		Boolean claimed = transactions.execute(status -> {
 			jdbcTemplate.update(
-				"DELETE FROM journey_v3_nonce_claims WHERE nonce_sha256 = ? AND expires_at <= ?",
-				nonceSha256,
+				"DELETE FROM journey_v3_nonce_claims WHERE expires_at <= ?",
+				Timestamp.from(now)
+			);
+			jdbcTemplate.update(
+				"DELETE FROM journey_v3_sessions WHERE expires_at <= ?",
 				Timestamp.from(now)
 			);
 			if (!claimNonce(nonceSha256, nonceExpiresAt, now)) {

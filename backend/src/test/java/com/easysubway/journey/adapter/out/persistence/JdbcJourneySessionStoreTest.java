@@ -46,12 +46,52 @@ class JdbcJourneySessionStoreTest {
 	@Test
 	@DisplayName("nonce claim과 hashed session 저장은 원자적이고 duplicate nonce는 false다")
 	void claimsNonceAndStoresSessionAtomically() {
+		String expiredNonceHash = "ab".repeat(32);
+		String liveNonceHash = "bc".repeat(32);
+		String expiredTokenHash = "cd".repeat(32);
+		String liveTokenHash = "de".repeat(32);
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			expiredNonceHash, NOW.minusSeconds(120), NOW
+		);
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_nonce_claims (nonce_sha256, claimed_at, expires_at) VALUES (?, ?, ?)",
+			liveNonceHash, NOW, NOW.plusSeconds(300)
+		);
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_sessions (token_sha256, scope, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+			expiredTokenHash, "journey:v3", NOW.minusSeconds(600), NOW
+		);
+		jdbcTemplate.update(
+			"INSERT INTO journey_v3_sessions (token_sha256, scope, issued_at, expires_at) VALUES (?, ?, ?, ?)",
+			liveTokenHash, "journey:v3", NOW, NOW.plusSeconds(600)
+		);
 		var session = new Session(TOKEN_HASH, "journey:v3", NOW, NOW.plusSeconds(600));
 
 		assertThat(store.claimNonceAndSaveSession(NONCE_HASH, NOW.plusSeconds(120), NOW, session)).isTrue();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			expiredNonceHash
+		)).isZero();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			expiredTokenHash
+		)).isZero();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_nonce_claims WHERE nonce_sha256 = ?",
+			Integer.class,
+			liveNonceHash
+		)).isOne();
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT COUNT(*) FROM journey_v3_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			liveTokenHash
+		)).isOne();
 		assertThat(store.claimNonceAndSaveSession(NONCE_HASH, NOW.plusSeconds(121), NOW.plusSeconds(1),
 			new Session("c".repeat(64), "journey:v3", NOW.plusSeconds(1), NOW.plusSeconds(601)))).isFalse();
-		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM journey_v3_sessions", Integer.class)).isEqualTo(1);
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM journey_v3_sessions", Integer.class)).isEqualTo(2);
 
 		assertThatThrownBy(() -> store.claimNonceAndSaveSession(
 			"d".repeat(64),
