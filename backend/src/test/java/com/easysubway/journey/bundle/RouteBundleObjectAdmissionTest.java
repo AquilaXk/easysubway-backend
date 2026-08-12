@@ -25,7 +25,7 @@ import org.junit.jupiter.api.Test;
 class RouteBundleObjectAdmissionTest {
 
 	private static final ObjectMapper JSON = new ObjectMapper();
-	private static final String ACTIVATION_REQUEST = "sha256:" + "e".repeat(64);
+	static final String ACTIVATION_REQUEST = "sha256:" + "e".repeat(64);
 	private static final List<String> PATHS = List.of(
 		"compatibility.json",
 		"manifest.json",
@@ -60,6 +60,37 @@ class RouteBundleObjectAdmissionTest {
 		mapRead[0] ^= 1;
 		assertArrayEquals(fixture.objects().get("manifest.json"), admission.objectBytes("manifest.json"));
 		assertThrows(IllegalArgumentException.class, () -> admission.objectBytes("unknown.json"));
+	}
+
+	@Test
+	void admitsFetchedDescriptorV2ObjectsAndBindsTheCurrentKey() throws Exception {
+		Fixture fixture = fixture();
+		var fetched = fixture.fetchedObjects();
+
+		var admission = RouteBundleObjectAdmission.admitPublicationDescriptor(
+			fixture.descriptorBytes(), ACTIVATION_REQUEST, fetched, fixture.currentKey());
+
+		assertEquals(PATHS, new ArrayList<>(admission.objects().keySet()));
+		assertEquals(fixture.descriptorSha256(),
+			admission.verifiedDescriptorSignature().descriptor().descriptorSha256());
+		assertEquals("launch-2026", admission.verifiedDescriptorSignature().keyId());
+		assertEquals(sha(fixture.objects().get("manifest.signing-input.json")),
+			admission.verifiedDescriptorSignature().signingInputSha256());
+		byte[] read = admission.objectBytes("manifest.json");
+		read[0] ^= 1;
+		assertArrayEquals(fixture.objects().get("manifest.json"), admission.objectBytes("manifest.json"));
+	}
+
+	@Test
+	void rejectsMixedFetchedDescriptorIdentityBeforeCurrentKeyAdmission() throws Exception {
+		Fixture fixture = fixture();
+		var fetched = new RouteBundlePublicationObjectFetcher.FetchedPublicationObjects(
+			"f".repeat(64), "launch-2026", fixture.fetchedObjects().objects());
+
+		assertAdmissionReason(
+			RouteBundleObjectAdmission.Reason.FETCHED_DESCRIPTOR_IDENTITY_MISMATCH,
+			() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+				fixture.descriptorBytes(), ACTIVATION_REQUEST, fetched, fixture.currentKey()));
 	}
 
 	@Test
@@ -147,7 +178,7 @@ class RouteBundleObjectAdmissionTest {
 		assertEquals(RouteBundleHandoffException.Reason.HANDOFF_UTF8_OR_JSON_INVALID, failure.reason());
 	}
 
-	private static Fixture fixture() throws Exception {
+	static Fixture fixture() throws Exception {
 		KeyPair keyPair = rsaKeyPair();
 		var payloads = new LinkedHashMap<String, byte[]>();
 		payloads.put("payload/accessibility.sqlite.zst", bytes("accessibility"));
@@ -254,10 +285,19 @@ class RouteBundleObjectAdmissionTest {
 		String handoffSha256 = sha(canonicalBytes(handoffPayload));
 		Map<String, Object> handoff = new LinkedHashMap<>(handoffPayload);
 		handoff.put("handoffSha256", handoffSha256);
+		Map<String, Object> descriptor = new LinkedHashMap<>(handoffPayload);
+		descriptor.put("schemaVersion", 2);
+		descriptor.put("artifactKind", "server-route-bundle-publication-descriptor");
+		descriptor.put("producer", map(
+			"repository", "AquilaXk/easysubway-data",
+			"gitSha", "9".repeat(40)));
+		descriptor.remove("backendAdmission");
+		descriptor.remove("platformRelease");
+		descriptor.put("descriptorSha256", sha(canonicalBytes(descriptor)));
 		return new Fixture(
-			canonicalBytes(handoff), copyObjects(objects),
+			canonicalBytes(handoff), canonicalBytes(descriptor), copyObjects(objects), objectPrefix,
 			new RouteBundleCurrentKeyVerifier.CurrentKey("launch-2026", pem(keyPair.getPublic())),
-			handoffSha256);
+			handoffSha256, String.valueOf(descriptor.get("descriptorSha256")));
 	}
 
 	private static Map<String, byte[]> without(Map<String, byte[]> source, String path) {
@@ -353,14 +393,25 @@ class RouteBundleObjectAdmissionTest {
 		assertEquals(expected, failure.reason());
 	}
 
-	private record Fixture(
+	static record Fixture(
 		byte[] handoffBytes,
+		byte[] descriptorBytes,
 		Map<String, byte[]> objects,
+		String objectPrefix,
 		RouteBundleCurrentKeyVerifier.CurrentKey currentKey,
-		String handoffSha256) {
+		String handoffSha256,
+		String descriptorSha256) {
 
 		private Map<String, byte[]> mutableObjects() {
 			return copyObjects(objects);
+		}
+
+		private RouteBundlePublicationObjectFetcher.FetchedPublicationObjects fetchedObjects() {
+			return new RouteBundlePublicationObjectFetcher.FetchedPublicationObjects(
+				descriptorSha256,
+				currentKey.keyId(),
+				PATHS.stream().map(path -> new RouteBundlePublicationObjectFetcher.FetchedObject(
+					path, objectPrefix + path, objects.get(path))).toList());
 		}
 	}
 }

@@ -17,7 +17,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicReference;
 
-/** Downloads one current-key-verified descriptor's immutable objects without admitting them. */
+/** Downloads one closed descriptor's immutable objects without admitting or activating them. */
 public final class RouteBundlePublicationObjectFetcher {
 
 	private static final Duration CONNECT_TIMEOUT = Duration.ofSeconds(10);
@@ -67,14 +67,24 @@ public final class RouteBundlePublicationObjectFetcher {
 		if (verified == null || verified.descriptor() == null) {
 			throw failure(Reason.VERIFIED_DESCRIPTOR_INVALID, "verified publication descriptor is required");
 		}
-		RouteBundlePublicationDescriptor descriptor = verified.descriptor();
+		return fetch(verified.descriptor(), verified.keyId());
+	}
+
+	public FetchedPublicationObjects fetch(byte[] descriptorBytes, String activationRequestIdentity) {
+		RouteBundlePublicationDescriptor descriptor =
+			RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
+				descriptorBytes == null ? null : descriptorBytes.clone(), activationRequestIdentity);
+		return fetch(descriptor, descriptor.identity().keyId());
+	}
+
+	private FetchedPublicationObjects fetch(RouteBundlePublicationDescriptor descriptor, String keyId) {
 		PreparedDescriptor prepared = prepare(descriptor);
 		var fetched = new ArrayList<FetchedObject>(prepared.objects().size());
 		for (PreparedObject object : prepared.objects()) {
 			fetched.add(fetchObject(object));
 		}
 		return new FetchedPublicationObjects(
-			descriptor.descriptorSha256(), verified.keyId(), fetched);
+			descriptor.descriptorSha256(), keyId, fetched);
 	}
 
 	private PreparedDescriptor prepare(RouteBundlePublicationDescriptor descriptor) {
