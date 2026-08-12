@@ -21,11 +21,11 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "af86307fc27b6c81ba4b6288533b5bd354b0dbc3cf69de8dc1ada8954839c1d9"
+    "sourceInventorySha256": "c64a4ce1359b590c746c3a869265009bd1886c88b1247fa59a01dad902347ae3"
   },
   "scope": {
-    "criticalSourceCount": 403,
-    "reportedSourceCount": 403,
+    "criticalSourceCount": 404,
+    "reportedSourceCount": 404,
     "missingSourceCount": 0,
     "excludedSourceCount": 1
   },
@@ -451,16 +451,16 @@
       "reportedSourceCount": 202,
       "missingSourceCount": 0,
       "line": {
-        "missed": 666,
-        "covered": 8835,
-        "total": 9501,
-        "basisPoints": 9299
+        "missed": 662,
+        "covered": 8867,
+        "total": 9529,
+        "basisPoints": 9305
       },
       "branch": {
         "missed": 971,
-        "covered": 2924,
-        "total": 3895,
-        "basisPoints": 7507
+        "covered": 2935,
+        "total": 3906,
+        "basisPoints": 7514
       }
     },
     {
