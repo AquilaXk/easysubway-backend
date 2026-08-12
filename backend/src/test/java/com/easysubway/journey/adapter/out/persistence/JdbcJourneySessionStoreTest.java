@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneySessionStore.AuthorizationStatus;
 import com.easysubway.journey.application.JourneySessionStore.Session;
+import java.lang.reflect.Modifier;
 import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
@@ -96,5 +97,11 @@ class JdbcJourneySessionStoreTest {
 			"NONCE_SHA256", "CLAIMED_AT", "EXPIRES_AT",
 			"TOKEN_SHA256", "SCOPE", "ISSUED_AT", "EXPIRES_AT"
 		);
+	}
+
+	@Test
+	@DisplayName("production repository는 Spring persistence advisor가 proxy할 수 있다")
+	void remainsProxyableInProductionProfiles() {
+		assertThat(Modifier.isFinal(JdbcJourneySessionStore.class.getModifiers())).isFalse();
 	}
 }

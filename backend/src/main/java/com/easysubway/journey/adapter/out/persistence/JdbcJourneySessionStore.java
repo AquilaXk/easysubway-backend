@@ -19,7 +19,7 @@ import org.springframework.transaction.support.TransactionTemplate;
 
 @Repository
 @Profile("prod | staging | release | prod-like")
-public final class JdbcJourneySessionStore implements JourneySessionStore {
+public class JdbcJourneySessionStore implements JourneySessionStore {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final TransactionTemplate transactions;
