@@ -2,6 +2,7 @@ package com.easysubway.journey.application;
 
 import java.time.Duration;
 import java.util.Objects;
+import java.util.concurrent.CancellationException;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Future;
@@ -33,6 +34,7 @@ public final class JourneyApplicationDeadlineExecutor {
 
 	public Outcome execute(JourneyRequest request) {
 		JourneyRequest original = Objects.requireNonNull(request, "request");
+		long startedAtNanos = System.nanoTime();
 		var cancellation = new AtomicBoolean();
 		JourneyRequest boundedRequest = copyWithCancellation(original,
 			() -> original.isCancelled() || cancellation.get());
@@ -45,8 +47,14 @@ public final class JourneyApplicationDeadlineExecutor {
 			throw failure(DeadlineExecutionException.Reason.TASK_FAILED, exception);
 		}
 
+		long remainingNanos = timeoutNanos - (System.nanoTime() - startedAtNanos);
+		if (remainingNanos <= 0) {
+			cancellation.set(true);
+			future.cancel(true);
+			return new TimedOut();
+		}
 		try {
-			return new Completed(future.get(timeoutNanos, TimeUnit.NANOSECONDS));
+			return new Completed(future.get(remainingNanos, TimeUnit.NANOSECONDS));
 		} catch (TimeoutException exception) {
 			cancellation.set(true);
 			future.cancel(true);
@@ -59,6 +67,10 @@ public final class JourneyApplicationDeadlineExecutor {
 		} catch (ExecutionException exception) {
 			cancellation.set(true);
 			throw failure(DeadlineExecutionException.Reason.TASK_FAILED, exception.getCause());
+		} catch (CancellationException exception) {
+			cancellation.set(true);
+			future.cancel(true);
+			throw failure(DeadlineExecutionException.Reason.TASK_FAILED, exception);
 		}
 	}
 

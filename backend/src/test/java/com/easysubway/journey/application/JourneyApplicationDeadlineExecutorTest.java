@@ -7,12 +7,17 @@ import static com.easysubway.journey.application.JourneyExecutionFailure.Reason.
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
 import java.time.Duration;
+import java.util.concurrent.Callable;
+import java.util.concurrent.CancellationException;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
@@ -85,6 +90,66 @@ class JourneyApplicationDeadlineExecutorTest {
 			assertThat(started.await(1, TimeUnit.SECONDS)).isTrue();
 			assertThat(cancellationObserved.await(1, TimeUnit.SECONDS)).isTrue();
 		}
+		verify(service).execute(any());
+		verifyNoMoreInteractions(service);
+	}
+
+	@Test
+	void submit에서inline실행된late결과도deadline을우회하지않는다() throws Exception {
+		var service = mock(JourneyApplicationService.class);
+		var result = new JourneyExecutionFailure(NO_ROUTE);
+		when(service.execute(any())).thenReturn(result);
+		var inlineExecutor = mock(java.util.concurrent.ExecutorService.class);
+		when(inlineExecutor.submit(any(Callable.class))).thenAnswer(invocation -> {
+			Callable<JourneyExecutionResult> task = invocation.getArgument(0);
+			return CompletableFuture.completedFuture(task.call());
+		});
+		var executor = new JourneyApplicationDeadlineExecutor(
+			service, inlineExecutor, Duration.ofNanos(1));
+
+		assertThat(executor.execute(REQUEST))
+			.isEqualTo(new JourneyApplicationDeadlineExecutor.TimedOut());
+		verify(service).execute(any());
+		verifyNoMoreInteractions(service);
+	}
+
+	@Test
+	void executor가acceptedFuture를취소하면typedFailure와cancellationSignal로닫는다() throws Exception {
+		var service = mock(JourneyApplicationService.class);
+		var cancellationObserved = new CountDownLatch(1);
+		when(service.execute(any())).thenAnswer(invocation -> {
+			JourneyRequest request = invocation.getArgument(0);
+			while (!request.isCancelled()) {
+				LockSupport.parkNanos(TimeUnit.MILLISECONDS.toNanos(1));
+			}
+			cancellationObserved.countDown();
+			return new JourneyExecutionFailure(CANCELLED);
+		});
+		var cancelledFuture = mock(java.util.concurrent.Future.class);
+		when(cancelledFuture.get(anyLong(), eq(TimeUnit.NANOSECONDS)))
+			.thenThrow(new CancellationException("executor cancelled accepted task"));
+		var workers = mock(java.util.concurrent.ExecutorService.class);
+		var worker = new AtomicReference<Thread>();
+		when(workers.submit(any(Callable.class))).thenAnswer(invocation -> {
+			Callable<JourneyExecutionResult> task = invocation.getArgument(0);
+			worker.set(Thread.startVirtualThread(() -> {
+				try {
+					task.call();
+				} catch (Exception exception) {
+					throw new AssertionError(exception);
+				}
+			}));
+			return cancelledFuture;
+		});
+		var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
+
+		assertThatThrownBy(() -> executor.execute(REQUEST))
+			.isInstanceOf(JourneyApplicationDeadlineExecutor.DeadlineExecutionException.class)
+			.hasFieldOrPropertyWithValue("reason", TASK_FAILED)
+			.hasCauseInstanceOf(CancellationException.class);
+		assertThat(cancellationObserved.await(1, TimeUnit.SECONDS)).isTrue();
+		worker.get().join(1_000);
+		assertThat(worker.get().isAlive()).isFalse();
 		verify(service).execute(any());
 		verifyNoMoreInteractions(service);
 	}
