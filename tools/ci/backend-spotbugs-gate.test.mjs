@@ -207,7 +207,9 @@ test('Backend #196 internal route result projection is exact', () => {
     'c5b97d28f2f0361784c6808b5d2e7175ae8a1d8755c89f8b0c38523056d34207',
     'bc43fc55d494660bca793356d2ae8bff00ab3546248fec1649afb33744553eb4',
   ]);
-  const internalRouteResult = tracked.findings.filter(({ identity }) => identities.has(identity));
+  const internalRouteResult = tracked.findings.filter(
+    ({ className }) => className === 'com.easysubway.route.domain.InternalRouteResult',
+  );
   assert.deepEqual(internalRouteResult.map(({ identity }) => identity), [...identities]);
   for (const finding of internalRouteResult) {
     assert.deepEqual(
