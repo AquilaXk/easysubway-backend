@@ -35,6 +35,14 @@
     {
       "file": "V71__journey_v3_sessions.sql",
       "sha256": "27fbadf8efe30b00e915e28e5165dd84ce896003ec49f36ca8ccccf26eca0a81"
+    },
+    {
+      "file": "V72__journey_v3_session_request_limit.sql",
+      "sha256": "74faa5dd617e88962076b17e44309066bddb466f8ed31dc5e3b05b07a7242f22"
+    },
+    {
+      "file": "V73__validate_journey_v3_session_request_limit.sql",
+      "sha256": "07659f2ecd87aee399eab72f50976b4c170c72328dacaae1108340318f42d3ff"
     }
   ],
   "allowlist": [
@@ -44,6 +52,20 @@
       "approval": "https://github.com/AquilaXk/easysubway/issues/2433",
       "expiresAt": "2030-01-01T00:00:00.000Z",
       "sha256": "16097e64609c86cf502b29e5b804ed72660c870563f5b642fd073a3a9d530e5a"
+    },
+    {
+      "file": "V72__journey_v3_session_request_limit.sql",
+      "reason": "Journey V3 10분 session row에 constant request_count=0을 추가하는 expand 단계. 기존 row와 old writer insert는 default로 유효하고 새 writer의 atomic 조건부 증가를 지원하며 drop, rename, type rewrite가 없다.",
+      "approval": "https://github.com/AquilaXk/easysubway-backend/issues/178",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "74faa5dd617e88962076b17e44309066bddb466f8ed31dc5e3b05b07a7242f22"
+    },
+    {
+      "file": "V73__validate_journey_v3_session_request_limit.sql",
+      "reason": "V72에서 NOT VALID로 즉시 새 write에 적용한 Journey session request-count CHECK의 기존 row를 별도 transaction과 낮은 lock 수준에서 검증하는 online validation 단계.",
+      "approval": "https://github.com/AquilaXk/easysubway-backend/issues/178",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "07659f2ecd87aee399eab72f50976b4c170c72328dacaae1108340318f42d3ff"
     }
   ]
 }
