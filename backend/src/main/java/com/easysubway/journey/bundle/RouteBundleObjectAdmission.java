@@ -84,8 +84,7 @@ public final class RouteBundleObjectAdmission {
 			RouteBundlePublicationDescriptor.PublishedObject expected = descriptor.objects().get(index);
 			RouteBundlePublicationObjectFetcher.FetchedObject actual = fetchedObjects.get(index);
 			if (!expected.path().equals(actual.path())
-				|| !expected.objectKey().equals(actual.objectKey())
-				|| admittedObjects.containsKey(actual.path())) {
+				|| !expected.objectKey().equals(actual.objectKey())) {
 				throw failure(
 					Reason.OBJECT_PATH_SET_MISMATCH,
 					"publication objects must preserve the descriptor inventory");

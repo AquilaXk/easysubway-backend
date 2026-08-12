@@ -92,6 +92,7 @@ class RouteBundleCandidateAssemblerTest {
 		for (var invocation : List.<Runnable>of(
 			() -> new RouteBundleCandidateAssembler().assemble(fixture.admission(), 0, VERIFIED_AT),
 			() -> assembler.assemble(fixture.admission(), 0, VERIFIED_AT),
+			() -> assembler.assemble(v2Admission(fixture), 0, VERIFIED_AT),
 			() -> assembler.assemble(fixture.admission(), 1, ACTIVE_FROM.minusNanos(1)),
 			() -> assembler.assemble(fixture.admission(), 1, FRESH_UNTIL))) {
 			assertThatThrownBy(invocation::run).isInstanceOf(IllegalArgumentException.class);

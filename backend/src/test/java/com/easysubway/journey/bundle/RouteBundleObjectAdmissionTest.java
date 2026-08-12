@@ -94,6 +94,49 @@ class RouteBundleObjectAdmissionTest {
 	}
 
 	@Test
+	void rejectsDescriptorV2IdentityInventoryAndObjectMismatches() throws Exception {
+		Fixture fixture = fixture();
+		var exact = fixture.fetchedObjects();
+		assertAdmissionReason(
+			RouteBundleObjectAdmission.Reason.FETCHED_DESCRIPTOR_IDENTITY_MISMATCH,
+			() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+				fixture.descriptorBytes(), ACTIVATION_REQUEST, null, fixture.currentKey()));
+		assertAdmissionReason(
+			RouteBundleObjectAdmission.Reason.FETCHED_DESCRIPTOR_IDENTITY_MISMATCH,
+			() -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+				fixture.descriptorBytes(), ACTIVATION_REQUEST,
+				new RouteBundlePublicationObjectFetcher.FetchedPublicationObjects(
+					exact.descriptorSha256(), "other-key", exact.objects()), fixture.currentKey()));
+
+		var missing = new ArrayList<>(exact.objects());
+		missing.removeLast();
+		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_PATH_SET_MISMATCH, missing);
+
+		var wrongPath = new ArrayList<>(exact.objects());
+		var first = wrongPath.getFirst();
+		wrongPath.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
+			"wrong.json", first.objectKey(), first.bytes()));
+		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_PATH_SET_MISMATCH, wrongPath);
+
+		var wrongObjectKey = new ArrayList<>(exact.objects());
+		wrongObjectKey.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
+			first.path(), "wrong/" + first.path(), first.bytes()));
+		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_PATH_SET_MISMATCH, wrongObjectKey);
+
+		var wrongSize = new ArrayList<>(exact.objects());
+		wrongSize.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
+			first.path(), first.objectKey(), java.util.Arrays.copyOf(first.bytes(), first.bytes().length + 1)));
+		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_SIZE_MISMATCH, wrongSize);
+
+		byte[] wrongDigestBytes = first.bytes();
+		wrongDigestBytes[0] ^= 1;
+		var wrongDigest = new ArrayList<>(exact.objects());
+		wrongDigest.set(0, new RouteBundlePublicationObjectFetcher.FetchedObject(
+			first.path(), first.objectKey(), wrongDigestBytes));
+		assertV2AdmissionReason(fixture, RouteBundleObjectAdmission.Reason.OBJECT_DIGEST_MISMATCH, wrongDigest);
+	}
+
+	@Test
 	void rejectsMissingExtraAndAliasedPathsBeforeSignatureAdmission() throws Exception {
 		Fixture fixture = fixture();
 		assertAdmissionReason(
@@ -384,6 +427,18 @@ class RouteBundleObjectAdmissionTest {
 		org.junit.jupiter.api.function.Executable executable) {
 		var failure = assertThrows(RouteBundleObjectAdmission.AdmissionException.class, executable);
 		assertEquals(expected, failure.reason());
+	}
+
+	private static void assertV2AdmissionReason(
+		Fixture fixture,
+		RouteBundleObjectAdmission.Reason expected,
+		List<RouteBundlePublicationObjectFetcher.FetchedObject> objects) {
+		assertAdmissionReason(expected, () -> RouteBundleObjectAdmission.admitPublicationDescriptor(
+			fixture.descriptorBytes(),
+			ACTIVATION_REQUEST,
+			new RouteBundlePublicationObjectFetcher.FetchedPublicationObjects(
+				fixture.descriptorSha256(), fixture.currentKey().keyId(), objects),
+			fixture.currentKey()));
 	}
 
 	private static void assertVerificationReason(

@@ -103,6 +103,18 @@ class RouteBundlePublicationObjectFetcherTest {
 	}
 
 	@Test
+	void rejectsMissingRawDescriptorBeforeAnyNetworkRequest() {
+		var client = new StubHttpClient(request -> {
+			throw new AssertionError("network must not be called");
+		});
+		var fetcher = new RouteBundlePublicationObjectFetcher(client, Duration.ofSeconds(30), 64L * 1024 * 1024);
+
+		assertThrows(RouteBundleHandoffException.class,
+			() -> fetcher.fetch((byte[]) null, RouteBundleObjectAdmissionTest.ACTIVATION_REQUEST));
+		assertTrue(client.requests().isEmpty());
+	}
+
+	@Test
 	void rejectsAggregateSizeBeforeAnyNetworkRequest() {
 		var verified = verifiedDescriptor(declaredSizes(64L * 1024 * 1024 + 1));
 		var client = new StubHttpClient(request -> {
