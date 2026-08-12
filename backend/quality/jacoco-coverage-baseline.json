@@ -4,13 +4,13 @@
   "repository": "AquilaXk/easysubway-backend",
   "phase": "REVIEWED_DECREASE_ONLY",
   "provenance": {
-    "runUrl": "https://github.com/AquilaXk/easysubway-backend/actions/runs/31565160931",
-    "artifactId": 9129401240,
-    "testedMergeSha": "ada728f34f711fa4a80104b080c6397d95d181d6",
-    "pullRequestHeadSha": "9fb4682ab0c8421b2f59e73c6ad31a6dc65a80f4",
-    "resultSha256": "f267cff4a49d2c9c7c876ff69b2cc305104e14f40ac000d5eead87c9bdd7e449",
-    "rawXmlSha256": "20a80677c0f64d111ca6772c57e259f5ada756e95d0f05c39cb6bab9e0183a32",
-    "reviewedAt": "2026-08-12T05:14:43Z"
+    "runUrl": "https://github.com/AquilaXk/easysubway-backend/actions/runs/31567761303",
+    "artifactId": 9130373646,
+    "testedMergeSha": "381283e7c7f2283a94a478032258068a78499a94",
+    "pullRequestHeadSha": "32a141b4192df4b643bf5bb8c587271b2449322a",
+    "resultSha256": "f322cee15efe7781b641d824034ef74fe52ddaa4bbfc923c5c39be0bac3b6827",
+    "rawXmlSha256": "ebf51de3029f854ec1aaa307480a4149264b8fcc975a2e1016e1a4648f167da9",
+    "reviewedAt": "2026-08-12T06:02:00Z"
   },
   "producer": {
     "gradleVersion": "8.14.5",
@@ -21,11 +21,11 @@
     "testTask": "test",
     "reportTask": "jacocoTestReport",
     "policySha256": "78b16cc6a62f9625c051c2d0fe4f9ac61341180e53983bdbc3fbd35257bc968b",
-    "sourceInventorySha256": "2bf3b66b4a07c0394988042bb4015a64add7e4c12ff3bb10c5143195911e26d0"
+    "sourceInventorySha256": "c67fcd0859a71676ee3d5dd84fdcf5d86b0fdf4d2d51ffcd62c39ac94586b416"
   },
   "scope": {
-    "criticalSourceCount": 410,
-    "reportedSourceCount": 410,
+    "criticalSourceCount": 411,
+    "reportedSourceCount": 411,
     "missingSourceCount": 0,
     "excludedSourceCount": 1
   },
@@ -159,6 +159,7 @@
     {"path":"backend/src/main/java/com/easysubway/journey/bundle/RouteBundlePayloadInspection.java","sha256":"41bbd26bb5809b65989c8ca063269c22975e46a21ee8bcdbd3327d8c4a6d7581","packageName":"com.easysubway.journey.bundle","sourceFileName":"RouteBundlePayloadInspection.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":1,"total":1,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/bundle/RouteBundlePublicationDescriptor.java","sha256":"07d99d33de6166b9e4ab7f00eb99014dcccccab6c7ff4f935293d9f2873dcebc","packageName":"com.easysubway.journey.bundle","sourceFileName":"RouteBundlePublicationDescriptor.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":28,"total":28,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/journey/bundle/RouteBundleRuntimeView.java","sha256":"85c2a88a90dcc850a003ca5b09fe50502ff69b8a3bbf25c5d4523ee87c7475f3","packageName":"com.easysubway.journey.bundle","sourceFileName":"RouteBundleRuntimeView.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":0,"total":0,"basisPoints":null},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
+    {"path":"backend/src/main/java/com/easysubway/journey/bundle/RouteBundleSqliteRuntimeCompiler.java","sha256":"7da4bb3bff36080f6f36c556e3a0a505140afeff52331209cacba83dec2d21ee","packageName":"com.easysubway.journey.bundle","sourceFileName":"RouteBundleSqliteRuntimeCompiler.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":48,"covered":319,"total":367,"basisPoints":8692},"branch":{"missed":98,"covered":132,"total":230,"basisPoints":5739}},
     {"path":"backend/src/main/java/com/easysubway/journey/bundle/VerifiedRouteBundleCandidate.java","sha256":"617fc2579d34c17aaeb67a8e48be061383e6b6b4cb5c771797d6a80c41438319","packageName":"com.easysubway.journey.bundle","sourceFileName":"VerifiedRouteBundleCandidate.java","boundaryIds":["JOURNEY_ROUTE"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":10,"total":10,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
     {"path":"backend/src/main/java/com/easysubway/operator/adapter/in/web/OperatorAccessibilityReportAssembler.java","sha256":"9b62c19313861bfdd0ccb3a44ff8be9043aa8b2fa61731e81fce82bc35cca9a5","packageName":"com.easysubway.operator.adapter.in.web","sourceFileName":"OperatorAccessibilityReportAssembler.java","boundaryIds":["ACCESSIBILITY_QUALITY"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":5,"covered":66,"total":71,"basisPoints":9295},"branch":{"missed":6,"covered":4,"total":10,"basisPoints":4000}},
     {"path":"backend/src/main/java/com/easysubway/operator/adapter/in/web/OperatorAccessibilityReportController.java","sha256":"a39256275240ab7d14b6eee66756450c5111b66a23828c3e153f8f82d4291d4b","packageName":"com.easysubway.operator.adapter.in.web","sourceFileName":"OperatorAccessibilityReportController.java","boundaryIds":["ACCESSIBILITY_QUALITY"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":49,"total":49,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
@@ -453,20 +454,20 @@
   "boundaries": [
     {
       "id": "JOURNEY_ROUTE",
-      "sourceCount": 208,
-      "reportedSourceCount": 208,
+      "sourceCount": 209,
+      "reportedSourceCount": 209,
       "missingSourceCount": 0,
       "line": {
-        "missed": 666,
-        "covered": 9149,
-        "total": 9815,
-        "basisPoints": 9321
+        "missed": 714,
+        "covered": 9468,
+        "total": 10182,
+        "basisPoints": 9298
       },
       "branch": {
-        "missed": 977,
-        "covered": 2978,
-        "total": 3955,
-        "basisPoints": 7529
+        "missed": 1075,
+        "covered": 3110,
+        "total": 4185,
+        "basisPoints": 7431
       }
     },
     {
