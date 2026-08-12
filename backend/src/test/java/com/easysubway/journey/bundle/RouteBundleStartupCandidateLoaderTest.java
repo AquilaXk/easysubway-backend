@@ -27,6 +27,16 @@ class RouteBundleStartupCandidateLoaderTest {
 	private static final byte[] DESCRIPTOR = "{}".getBytes(StandardCharsets.UTF_8);
 	private static final String ACTIVATION_ID = "sha256:" + "e".repeat(64);
 	private static final Instant NOW = Instant.parse("2026-08-13T00:00:00Z");
+	private static final String PUBLIC_KEY_PEM = """
+		-----BEGIN PUBLIC KEY-----
+		MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5
+		e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK
+		tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6
+		AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd
+		hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA
+		FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X
+		sQIDAQAB
+		-----END PUBLIC KEY-----""";
 
 	@Test
 	@DisplayName("exact v2 chain을 generation 1 candidate stage까지 한 번 실행한다")
@@ -58,7 +68,7 @@ class RouteBundleStartupCandidateLoaderTest {
 			currentKey.capture());
 		org.junit.jupiter.api.Assertions.assertArrayEquals(DESCRIPTOR, descriptor.getValue());
 		org.junit.jupiter.api.Assertions.assertEquals("launch-2026", currentKey.getValue().keyId());
-		org.junit.jupiter.api.Assertions.assertEquals("synthetic-public-key", currentKey.getValue().publicKeyPem());
+		org.junit.jupiter.api.Assertions.assertEquals(PUBLIC_KEY_PEM, currentKey.getValue().publicKeyPem());
 		verify(registry, never()).activate(anyString(), anyLong());
 
 		var order = inOrder(fetcher, admissionFunction, assembler, registry);
@@ -178,6 +188,6 @@ class RouteBundleStartupCandidateLoaderTest {
 			ACTIVATION_ID,
 			"https://objects.example.com",
 			"launch-2026",
-			"synthetic-public-key");
+			PUBLIC_KEY_PEM);
 	}
 }

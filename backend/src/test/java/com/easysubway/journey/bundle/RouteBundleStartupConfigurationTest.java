@@ -15,6 +15,16 @@ import org.junit.jupiter.api.Test;
 
 @DisplayName("Route bundle startup production composition")
 class RouteBundleStartupConfigurationTest {
+	private static final String PUBLIC_KEY_PEM = """
+		-----BEGIN PUBLIC KEY-----
+		MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5
+		e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK
+		tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6
+		AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd
+		hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA
+		FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X
+		sQIDAQAB
+		-----END PUBLIC KEY-----""";
 
 	@Test
 	@DisplayName("release startup bean은 trusted fetcher·assembler·loader를 exact 조립한다")
@@ -69,6 +79,6 @@ class RouteBundleStartupConfigurationTest {
 			"sha256:" + "e".repeat(64),
 			trustedOrigin,
 			"launch-2026",
-			"synthetic-public-key");
+			PUBLIC_KEY_PEM);
 	}
 }

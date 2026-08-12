@@ -62,7 +62,14 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:" + TEST_SHA_A,
 			"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
 			"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
-			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=synthetic-public-key",
+			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=-----BEGIN PUBLIC KEY-----\\n"
+				+ "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5"
+				+ "e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK"
+				+ "tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6"
+				+ "AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd"
+				+ "hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA"
+				+ "FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X"
+				+ "sQIDAQAB\\n-----END PUBLIC KEY-----",
 			"easysubway.report.receipt-token-pepper=prod-test-receipt-token-pepper-with-enough-entropy",
 			"easysubway.report.upload.intent-signing-key=prod-test-upload-intent-signing-key-with-enough-entropy",
 			"easysubway.report.upload.object-storage-endpoint=https://object-storage.example.com",
@@ -129,7 +136,14 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.journey-v3.route-bundle-startup.activation-request-identity=sha256:" + TEST_SHA_A,
 			"easysubway.journey-v3.route-bundle-startup.trusted-raw-descriptor-base-url=https://objects.example.com",
 			"easysubway.journey-v3.route-bundle-startup.current-key-id=synthetic-current-key",
-			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=synthetic-public-key",
+			"easysubway.journey-v3.route-bundle-startup.current-public-key-pem=-----BEGIN PUBLIC KEY-----\\n"
+				+ "MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5"
+				+ "e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK"
+				+ "tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6"
+				+ "AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd"
+				+ "hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA"
+				+ "FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X"
+				+ "sQIDAQAB\\n-----END PUBLIC KEY-----",
 			"EASYSUBWAY_REPORT_RECEIPT_PEPPER=prod-like-test-receipt-token-pepper-with-enough-entropy",
 			"EASYSUBWAY_REPORT_UPLOAD_INTENT_SIGNING_KEY=prod-like-test-upload-intent-signing-key-with-enough-entropy",
 			"EASYSUBWAY_REPORT_OBJECT_STORAGE_INTERNAL_ENDPOINT=https://object-storage.example.com",

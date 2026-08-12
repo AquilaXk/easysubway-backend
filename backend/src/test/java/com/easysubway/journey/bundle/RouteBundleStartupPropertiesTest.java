@@ -14,6 +14,16 @@ class RouteBundleStartupPropertiesTest {
 
 	private static final byte[] DESCRIPTOR = "{}".getBytes(StandardCharsets.UTF_8);
 	private static final String DESCRIPTOR_BASE64 = Base64.getEncoder().encodeToString(DESCRIPTOR);
+	private static final String VALID_PUBLIC_KEY_PEM = """
+		-----BEGIN PUBLIC KEY-----
+		MIIBIjANBgkqhkiG9w0BAQEFAAOCAQ8AMIIBCgKCAQEAtfRwZiXfeTubXwMUsnZ5
+		e1exey2YoolJVU5LsmAaOuF/3umllVeK37fLxxRZdqLd6mwvbDKPZJv1mDklRtjK
+		tMJAwfZ69oH3dTD/CSYtBN2mO/KPet6Ui4gLZua4MZy5HqMdNCVDj6Z4QwQptdR6
+		AXqhwjj/fBFQCc/ONmWGCoZ76FGlxCbpbobhaJ/gWzjwAE8M20jalUewh9Yh/xHd
+		hmc5+ufKoZ/OFwOGlyLP1N06k4yxQa49jJTM30w7N8KyyyBRXS1Sz2Ubmwf8EFZA
+		FdCGzzwpSjEVrLth3kGrx8XgpddzBqIRmSH3s+WqpN+mXPbp2EYhaVlc0oHwSb5X
+		sQIDAQAB
+		-----END PUBLIC KEY-----""";
 
 	@Test
 	@DisplayName("canonical descriptor bytes와 immutable startup identity를 보존한다")
@@ -27,7 +37,7 @@ class RouteBundleStartupPropertiesTest {
 		assertEquals("sha256:" + "e".repeat(64), properties.activationRequestIdentity());
 		assertEquals("https://objects.example.com", properties.trustedRawDescriptorBaseUrl());
 		assertEquals("launch-2026", properties.currentKeyId());
-		assertEquals("synthetic-public-key", properties.currentPublicKeyPem());
+		assertEquals(VALID_PUBLIC_KEY_PEM, properties.currentPublicKeyPem());
 	}
 
 	@Test
@@ -46,15 +56,17 @@ class RouteBundleStartupPropertiesTest {
 	@DisplayName("missing·trimmed·unbounded required identity를 거부한다")
 	void rejectsInvalidRequiredIdentity() {
 		assertThrows(IllegalArgumentException.class, () -> new RouteBundleStartupProperties(
-			DESCRIPTOR_BASE64, " ", "https://objects.example.com", "launch-2026", "synthetic-public-key"));
+			DESCRIPTOR_BASE64, " ", "https://objects.example.com", "launch-2026", VALID_PUBLIC_KEY_PEM));
 		assertThrows(IllegalArgumentException.class, () -> new RouteBundleStartupProperties(
-			DESCRIPTOR_BASE64, "activation\nidentity", "https://objects.example.com", "launch-2026", "synthetic-public-key"));
+			DESCRIPTOR_BASE64, "activation\nidentity", "https://objects.example.com", "launch-2026", VALID_PUBLIC_KEY_PEM));
 		assertThrows(IllegalArgumentException.class, () -> new RouteBundleStartupProperties(
-			DESCRIPTOR_BASE64, "activation", "", "launch-2026", "synthetic-public-key"));
+			DESCRIPTOR_BASE64, "activation", "", "launch-2026", VALID_PUBLIC_KEY_PEM));
 		assertThrows(IllegalArgumentException.class, () -> new RouteBundleStartupProperties(
-			DESCRIPTOR_BASE64, "activation", "https://objects.example.com", "old key", "synthetic-public-key"));
+			DESCRIPTOR_BASE64, "activation", "https://objects.example.com", "old key", VALID_PUBLIC_KEY_PEM));
 		assertThrows(IllegalArgumentException.class, () -> new RouteBundleStartupProperties(
 			DESCRIPTOR_BASE64, "activation", "https://objects.example.com", "launch-2026", " "));
+		assertThrows(IllegalArgumentException.class, () -> new RouteBundleStartupProperties(
+			DESCRIPTOR_BASE64, "activation", "https://objects.example.com", "launch-2026", "synthetic-public-key"));
 	}
 
 	private static RouteBundleStartupProperties properties(String descriptorBase64) {
@@ -63,6 +75,6 @@ class RouteBundleStartupPropertiesTest {
 			"sha256:" + "e".repeat(64),
 			"https://objects.example.com",
 			"launch-2026",
-			"synthetic-public-key");
+			VALID_PUBLIC_KEY_PEM);
 	}
 }

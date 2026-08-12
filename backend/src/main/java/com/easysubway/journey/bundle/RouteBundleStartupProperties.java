@@ -39,6 +39,11 @@ public record RouteBundleStartupProperties(
 			|| currentPublicKeyPem.indexOf('\0') >= 0) {
 			throw new IllegalArgumentException("currentPublicKeyPem must be bounded non-blank raw text");
 		}
+		try {
+			RouteBundleCurrentKeyVerifier.validatePublicKeyPem(currentPublicKeyPem);
+		} catch (RouteBundleCurrentKeyVerifier.VerificationException exception) {
+			throw new IllegalArgumentException("currentPublicKeyPem must be an exact RSA public-key PEM", exception);
+		}
 	}
 
 	public byte[] descriptorBytes() {

@@ -27,6 +27,10 @@ public final class RouteBundleCurrentKeyVerifier {
 	private RouteBundleCurrentKeyVerifier() {
 	}
 
+	static void validatePublicKeyPem(String publicKeyPem) {
+		parsePublicKey(publicKeyPem);
+	}
+
 	public static VerifiedSignature verify(
 		byte[] handoffBytes,
 		String activationRequestIdentity,
