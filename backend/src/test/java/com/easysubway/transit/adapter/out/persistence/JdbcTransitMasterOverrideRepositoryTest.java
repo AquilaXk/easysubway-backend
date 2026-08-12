@@ -1,6 +1,9 @@
 package com.easysubway.transit.adapter.out.persistence;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacility;
@@ -18,6 +21,8 @@ import com.easysubway.transit.domain.StationLayoutSourceType;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.PropertyNamingStrategies;
 import java.math.BigDecimal;
+import java.sql.Connection;
+import java.sql.DatabaseMetaData;
 import java.time.LocalDate;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.Executors;
@@ -49,6 +54,20 @@ class JdbcTransitMasterOverrideRepositoryTest {
 		assertThat(v14Only.writable()).isFalse();
 		assertThat(unready.status()).isEqualTo(MasterDataCapabilityStatus.READ_ONLY);
 		assertThat(unready.writable()).isFalse();
+	}
+
+	@Test
+	@DisplayName("database product가 없거나 지원 대상이 아니면 초기화를 거부한다")
+	void initializationRejectsMissingAndUnsupportedDatabaseProduct() throws Exception {
+		var missing = new JdbcTransitMasterOverrideRepository(databaseProductDataSource(null), objectMapper());
+		var unsupported = new JdbcTransitMasterOverrideRepository(databaseProductDataSource("SQLite"), objectMapper());
+
+		assertThatThrownBy(missing::afterPropertiesSet)
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("database product name is unavailable");
+		assertThatThrownBy(unsupported::afterPropertiesSet)
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("지원하지 않는 transit master override database: SQLite");
 	}
 
 	@Test
@@ -122,6 +141,23 @@ class JdbcTransitMasterOverrideRepositoryTest {
 			WHERE entity_type = ? AND entity_id = ?
 			""", String.class, JdbcTransitMasterOverrideRepository.FACILITY, "facility-sangnoksu-elevator-1");
 		assertThat(payload).contains("\"stationId\"").doesNotContain("\"station_id\"");
+	}
+
+	@Test
+	@DisplayName("override가 없는 target rollback은 override와 audit을 만들지 않는다")
+	void rollbackWithoutActiveOverrideLeavesOverrideAndAuditEmpty() {
+		DataSource dataSource = overrideDataSource();
+		var repository = new JdbcTransitMasterOverrideRepository(dataSource, objectMapper());
+
+		repository.rollbackMasterDataOverride(
+			JdbcTransitMasterOverrideRepository.FACILITY,
+			"facility-not-overridden",
+			"rollback-admin"
+		);
+
+		JdbcTemplate jdbcTemplate = new JdbcTemplate(dataSource);
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_overrides", Integer.class)).isZero();
+		assertThat(jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_master_override_audits", Integer.class)).isZero();
 	}
 
 	@Test
@@ -396,6 +432,16 @@ class JdbcTransitMasterOverrideRepositoryTest {
 			);
 			assertThat(new JdbcTemplate(dataSource).queryForObject("SELECT 1", Integer.class)).isEqualTo(1);
 		});
+	}
+
+	private DataSource databaseProductDataSource(String productName) throws Exception {
+		DataSource dataSource = mock(DataSource.class);
+		Connection connection = mock(Connection.class);
+		DatabaseMetaData metadata = mock(DatabaseMetaData.class);
+		when(dataSource.getConnection()).thenReturn(connection);
+		when(connection.getMetaData()).thenReturn(metadata);
+		when(metadata.getDatabaseProductName()).thenReturn(productName);
+		return dataSource;
 	}
 
 	private DataSource overrideDataSource() {
