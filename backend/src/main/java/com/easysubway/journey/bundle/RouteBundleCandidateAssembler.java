@@ -50,7 +50,6 @@ public final class RouteBundleCandidateAssembler {
 			admission.objectBytes(MANIFEST_PATH), payloads);
 		String manifestSha256 = inspection.manifestSha256();
 		if (!inspection.identity().equals(identity)
-			|| !inspection.payloadSha256().equals(identity.payloadSha256())
 			|| !manifestSha256.equals(handoff.admissionEvidence().manifestSha256())
 			|| !("sha256:" + manifestSha256).equals(handoff.platformServerRouteBundleDigest())) {
 			throw new IllegalArgumentException("route-bundle candidate identity mismatch");

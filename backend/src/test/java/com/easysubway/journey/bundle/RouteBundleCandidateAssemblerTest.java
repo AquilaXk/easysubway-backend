@@ -69,6 +69,7 @@ class RouteBundleCandidateAssemblerTest {
 		});
 
 		for (var invocation : List.<Runnable>of(
+			() -> new RouteBundleCandidateAssembler().assemble(fixture.admission(), 0, VERIFIED_AT),
 			() -> assembler.assemble(fixture.admission(), 0, VERIFIED_AT),
 			() -> assembler.assemble(fixture.admission(), 1, ACTIVE_FROM.minusNanos(1)),
 			() -> assembler.assemble(fixture.admission(), 1, FRESH_UNTIL))) {
@@ -88,6 +89,8 @@ class RouteBundleCandidateAssemblerTest {
 		var mismatchedIdentity = identity("other-bundle", fixture.payloads());
 		var mismatchedEvidence = new RouteBundleAdmissionEvidence(
 			"f".repeat(64), "final-ref", "promotion-ref", "publication-ref", "activation-ref");
+		var incompleteObjects = new LinkedHashMap<>(fixture.objects());
+		incompleteObjects.remove(TOPOLOGY);
 
 		for (var admission : List.of(
 			admission(handoff(mismatchedIdentity, fixture.handoff().admissionEvidence(),
@@ -95,7 +98,9 @@ class RouteBundleCandidateAssemblerTest {
 			admission(handoff(fixture.identity(), mismatchedEvidence,
 				"sha256:" + fixture.manifestSha256(), fixture.objects()), fixture.objects()),
 			admission(handoff(fixture.identity(), fixture.handoff().admissionEvidence(),
-				"sha256:" + "f".repeat(64), fixture.objects()), fixture.objects()))) {
+				"sha256:" + "f".repeat(64), fixture.objects()), fixture.objects()),
+			admission(handoff(fixture.identity(), fixture.handoff().admissionEvidence(),
+				"sha256:" + fixture.manifestSha256(), incompleteObjects), fixture.objects()))) {
 			assertThatThrownBy(() -> assembler.assemble(admission, 1, VERIFIED_AT))
 				.isInstanceOf(IllegalArgumentException.class);
 		}
