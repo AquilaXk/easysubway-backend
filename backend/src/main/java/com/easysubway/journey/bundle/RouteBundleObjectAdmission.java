@@ -39,10 +39,10 @@ public final class RouteBundleObjectAdmission {
 			if (source == null || source.length == 0) {
 				throw failure(Reason.OBJECT_BYTES_INVALID, "publication object bytes are required");
 			}
-			byte[] stableBytes = source.clone();
-			if (object.sizeBytes() != stableBytes.length) {
+			if (object.sizeBytes() != source.length) {
 				throw failure(Reason.OBJECT_SIZE_MISMATCH, "publication object size does not match the handoff");
 			}
+			byte[] stableBytes = source.clone();
 			if (!object.sha256().equals(sha256(stableBytes))) {
 				throw failure(Reason.OBJECT_DIGEST_MISMATCH, "publication object digest does not match the handoff");
 			}
