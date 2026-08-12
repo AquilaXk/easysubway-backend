@@ -139,9 +139,11 @@ public class JourneyProductionConfiguration {
 				.anyRequest().denyAll()
 			)
 			.exceptionHandling(exceptions -> exceptions.authenticationEntryPoint((request, response, exception) -> {
+				String pathWithinApplication = request.getRequestURI()
+					.substring(request.getContextPath().length());
 				boolean readinessGet = HttpMethod.GET.matches(request.getMethod())
-					&& (JourneyReadinessController.CANDIDATE_PATH.equals(request.getRequestURI())
-						|| JourneyReadinessController.ACTIVE_PATH.equals(request.getRequestURI()));
+					&& (JourneyReadinessController.CANDIDATE_PATH.equals(pathWithinApplication)
+						|| JourneyReadinessController.ACTIVE_PATH.equals(pathWithinApplication));
 				response.setStatus(readinessGet ? 401 : 403);
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
 				if (readinessGet) response.setHeader("WWW-Authenticate", "Bearer");
