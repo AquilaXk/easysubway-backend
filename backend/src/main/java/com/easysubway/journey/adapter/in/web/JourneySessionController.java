@@ -3,9 +3,14 @@ package com.easysubway.journey.adapter.in.web;
 import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionException.Kind;
 import com.easysubway.journey.application.JourneySessionService;
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import java.io.IOException;
 import java.util.Objects;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -13,8 +18,12 @@ import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RestController;
 
 @RestController
-@ConditionalOnBean(JourneySessionService.class)
+@ConditionalOnProperty(name = "easysubway.journey-v3.session-web.enabled", havingValue = "true")
 final class JourneySessionController {
+
+	private static final ObjectMapper REQUEST_JSON = new ObjectMapper(JsonFactory.builder()
+		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 
 	private final JourneySessionService sessionService;
 
@@ -23,7 +32,8 @@ final class JourneySessionController {
 	}
 
 	@PostMapping("/api/v3/journeys/session")
-	ResponseEntity<JourneySessionResponse> issue(@RequestBody JsonNode request) {
+	ResponseEntity<JourneySessionResponse> issue(@RequestBody byte[] requestBytes) {
+		JsonNode request = parseRequest(requestBytes);
 		if (!validRequestShape(request)) {
 			throw new JourneySessionException(Kind.INVALID_REQUEST);
 		}
@@ -39,6 +49,14 @@ final class JourneySessionController {
 				issued.issuedAt().toString(),
 				issued.expiresAt().toString()
 			));
+	}
+
+	private static JsonNode parseRequest(byte[] requestBytes) {
+		try {
+			return REQUEST_JSON.readTree(requestBytes);
+		} catch (IOException exception) {
+			throw new JourneySessionException(Kind.INVALID_REQUEST);
+		}
 	}
 
 	private static boolean validRequestShape(JsonNode request) {

@@ -25,6 +25,9 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
@@ -37,6 +40,7 @@ class JourneySessionControllerTest {
 	private static final String NONCE = "AAAAAAAAAAAAAAAAAAAAAA";
 	private static final Instant NOW = Instant.parse("2026-08-12T00:00:00Z");
 	private static final ObjectMapper JSON = new ObjectMapper();
+	private static final String SESSION_WEB_ENABLED = "easysubway.journey-v3.session-web.enabled=true";
 
 	private JourneySessionService service;
 	private MockMvc mockMvc;
@@ -55,6 +59,7 @@ class JourneySessionControllerTest {
 	@Test
 	@DisplayName("exact request를 한 번 발급하고 direct no-store response를 반환한다")
 	void issuesDirectSessionResponseOnce() throws Exception {
+		assertConditionalRegistration();
 		when(service.issue("integrity-token", NONCE)).thenReturn(new IssuedSession(
 			"A".repeat(43),
 			"journey:v3",
@@ -88,7 +93,9 @@ class JourneySessionControllerTest {
 			"{}",
 			"{\"integrityToken\":\"token\"}",
 			"{\"integrityToken\":7,\"clientNonce\":\"" + NONCE + "\"}",
-			"{\"integrityToken\":\"token\",\"clientNonce\":\"" + NONCE + "\",\"extra\":true}"
+			"{\"integrityToken\":\"token\",\"clientNonce\":\"" + NONCE + "\",\"extra\":true}",
+			"{\"integrityToken\":\"first\",\"integrityToken\":\"second\",\"clientNonce\":\"" + NONCE + "\"}",
+			"{\"integrityToken\":\"token\",\"clientNonce\":\"" + NONCE + "\"} {}"
 		)) {
 			MvcResult result = mockMvc.perform(post("/api/v3/journeys/session")
 					.contentType(MediaType.APPLICATION_JSON)
@@ -109,6 +116,19 @@ class JourneySessionControllerTest {
 			);
 		}
 		verifyNoInteractions(service);
+	}
+
+	private static void assertConditionalRegistration() {
+		var runner = new ApplicationContextRunner()
+			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withUserConfiguration(SessionWebConfiguration.class);
+
+		runner.run(context -> assertThat(context)
+			.doesNotHaveBean(JourneySessionController.class)
+			.doesNotHaveBean(JourneySessionExceptionHandler.class));
+		runner.withPropertyValues(SESSION_WEB_ENABLED).run(context -> assertThat(context)
+			.hasSingleBean(JourneySessionController.class)
+			.hasSingleBean(JourneySessionExceptionHandler.class));
 	}
 
 	@Test
@@ -154,5 +174,10 @@ class JourneySessionControllerTest {
 	}
 
 	private record FailureCase(Kind kind, int status, String code) {
+	}
+
+	@TestConfiguration
+	@Import({JourneySessionController.class, JourneySessionExceptionHandler.class})
+	static class SessionWebConfiguration {
 	}
 }

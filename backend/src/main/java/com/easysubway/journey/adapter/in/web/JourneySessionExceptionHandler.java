@@ -6,7 +6,7 @@ import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnBean;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpHeaders;
@@ -17,7 +17,7 @@ import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
 @RestControllerAdvice(assignableTypes = JourneySessionController.class)
-@ConditionalOnBean(com.easysubway.journey.application.JourneySessionService.class)
+@ConditionalOnProperty(name = "easysubway.journey-v3.session-web.enabled", havingValue = "true")
 final class JourneySessionExceptionHandler {
 
 	private static final String CONTRACT_VERSION = "JOURNEY_ERROR_V1";
