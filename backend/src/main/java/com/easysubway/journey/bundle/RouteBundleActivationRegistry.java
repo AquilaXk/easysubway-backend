@@ -6,19 +6,19 @@ import java.util.Objects;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * Fixture-only candidate/active state machine. It intentionally owns neither
+ * Process-local candidate/active state machine. It intentionally owns neither
  * loading nor verification; callers provide an already verified candidate.
  */
 public final class RouteBundleActivationRegistry {
 
 	private final Clock clock;
-	private final AtomicReference<State> state = new AtomicReference<>(new State(0, null, null));
+	private final AtomicReference<State> state = new AtomicReference<>(new State(0, null, null, null));
 
 	public RouteBundleActivationRegistry(Clock clock) {
 		this.clock = Objects.requireNonNull(clock, "clock");
 	}
 
-	public void stage(VerifiedRouteBundleCandidate candidate, long expectedGeneration) {
+	public CandidateSnapshot stage(VerifiedRouteBundleCandidate candidate, long expectedGeneration) {
 		candidate = Objects.requireNonNull(candidate, "candidate");
 		Instant now = clock.instant();
 		requireCandidateIsCurrent(candidate, now);
@@ -31,18 +31,30 @@ public final class RouteBundleActivationRegistry {
 			}
 			if (current.staged != null) {
 				if (isStale(current.staged, now)) {
-					var replacement = new State(current.generation, current.active, candidate);
+					var replacement = new State(current.generation, current.active, candidate, now);
+					var replacementSnapshot = candidateSnapshot(replacement);
 					if (state.compareAndSet(current, replacement)) {
-						return;
+						return replacementSnapshot;
 					}
 					continue;
 				}
 				throw failure(RouteBundleActivationException.Reason.CANDIDATE_ALREADY_STAGED);
 			}
-			if (state.compareAndSet(current, new State(current.generation, current.active, candidate))) {
-				return;
+			var staged = new State(current.generation, current.active, candidate, now);
+			var stagedSnapshot = candidateSnapshot(staged);
+			if (state.compareAndSet(current, staged)) {
+				return stagedSnapshot;
 			}
 		}
+	}
+
+	public CandidateSnapshot candidateSnapshot() {
+		var current = state.get();
+		if (current.staged == null) {
+			throw failure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED);
+		}
+		requireCandidateIsCurrent(current.staged, clock.instant());
+		return candidateSnapshot(current);
 	}
 
 	public ActiveRouteBundleSnapshot activate(String candidateManifestSha256, long expectedGeneration) {
@@ -62,13 +74,14 @@ public final class RouteBundleActivationRegistry {
 			}
 			var activatedAt = clock.instant();
 			requireCandidateIsCurrent(candidate, activatedAt);
+			var stagedSnapshot = candidateSnapshot(current);
 			var snapshot = new ActiveRouteBundleSnapshot(
-				current.generation + 1,
+				stagedSnapshot.generation(),
 				candidate.identity(),
 				candidate.admissionEvidence(),
 				candidate.runtimeView(),
 				activatedAt);
-			if (state.compareAndSet(current, new State(snapshot.generation(), snapshot, null))) {
+			if (state.compareAndSet(current, new State(snapshot.generation(), snapshot, null, null))) {
 				return snapshot;
 			}
 		}
@@ -109,6 +122,15 @@ public final class RouteBundleActivationRegistry {
 		return !now.isBefore(candidate.identity().freshUntilInstant());
 	}
 
+	private static CandidateSnapshot candidateSnapshot(State state) {
+		return new CandidateSnapshot(
+			Math.addExact(state.generation, 1),
+			state.staged.identity(),
+			state.staged.admissionEvidence(),
+			state.staged.verifiedAt(),
+			state.stagedAt);
+	}
+
 	private static RouteBundleActivationException failure(RouteBundleActivationException.Reason reason) {
 		return new RouteBundleActivationException(reason);
 	}
@@ -116,6 +138,24 @@ public final class RouteBundleActivationRegistry {
 	private record State(
 		long generation,
 		ActiveRouteBundleSnapshot active,
-		VerifiedRouteBundleCandidate staged) {
+		VerifiedRouteBundleCandidate staged,
+		Instant stagedAt) {
+	}
+
+	public record CandidateSnapshot(
+		long generation,
+		RouteBundleIdentity identity,
+		RouteBundleAdmissionEvidence admissionEvidence,
+		Instant verifiedAt,
+		Instant stagedAt) {
+		public CandidateSnapshot {
+			if (generation < 1) {
+				throw new IllegalArgumentException("generation must be positive");
+			}
+			Objects.requireNonNull(identity, "identity");
+			Objects.requireNonNull(admissionEvidence, "admissionEvidence");
+			Objects.requireNonNull(verifiedAt, "verifiedAt");
+			Objects.requireNonNull(stagedAt, "stagedAt");
+		}
 	}
 }
