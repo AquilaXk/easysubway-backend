@@ -7,9 +7,21 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneyApplicationService;
+import com.easysubway.journey.application.JourneyRaptorPort;
+import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
+import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
+import com.easysubway.journey.bundle.RouteBundleActiveJourneySnapshotAdapter;
+import com.easysubway.route.application.service.JourneyRaptorAdapter;
+import com.easysubway.route.application.service.JourneyRealtimeAdapter;
+import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
@@ -36,18 +48,73 @@ class JourneyProductionConfigurationTest {
 		))
 		.withUserConfiguration(
 			JourneyProductionConfiguration.class,
-			DependencyTestConfiguration.class,
 			JourneyEndpointProbeController.class
 		);
 
 	@Test
-	@DisplayName("운영 프로필은 required config와 exact one session service를 조립한다")
-	void productionProfileComposesOneSessionService() {
+	@DisplayName("운영 프로필은 required config와 exact one Journey 실행 graph를 조립한다")
+	void productionProfileComposesOneJourneyExecutionGraph() {
 		validProductionContext().run(context -> {
 			assertThat(context).hasNotFailed();
 			assertThat(context).hasSingleBean(JourneySearchPolicyProperties.class);
 			assertThat(context).hasSingleBean(JourneySessionService.class);
+			assertThat(context).hasSingleBean(ActiveJourneySnapshotPort.class);
+			assertThat(context.getBean(ActiveJourneySnapshotPort.class))
+				.isInstanceOf(RouteBundleActiveJourneySnapshotAdapter.class);
+			assertThat(context).hasSingleBean(JourneyRaptorPort.class);
+			assertThat(context.getBean(JourneyRaptorPort.class)).isInstanceOf(JourneyRaptorAdapter.class);
+			assertThat(context).hasSingleBean(JourneyRealtimePort.class);
+			assertThat(context.getBean(JourneyRealtimePort.class)).isInstanceOf(JourneyRealtimeAdapter.class);
+			assertThat(context).hasSingleBean(JourneyApplicationService.class);
+			assertThat(context).hasSingleBean(ExecutorService.class);
+			assertThat(context).hasSingleBean(JourneyApplicationDeadlineExecutor.class);
 		});
+	}
+
+	@Test
+	@DisplayName("운영 프로필은 required execution dependency 누락·중복을 거부한다")
+	void productionProfileRejectsMissingOrDuplicateExecutionDependencies() {
+		validProductionProperties()
+			.withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
+
+		validProductionProperties()
+			.withUserConfiguration(MissingResolverDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
+
+		validProductionContext()
+			.withUserConfiguration(DuplicateRaptorTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
+	}
+
+	@Test
+	@DisplayName("search disabled 운영 프로필은 session만 조립하고 execution graph를 만들지 않는다")
+	void searchDisabledProductionProfileComposesSessionOnly() {
+		productionContext(
+			"easysubway.journey.search.timeout=PT2S",
+			"easysubway.journey.search.max-searches-per-session=12",
+			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
+		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context).hasSingleBean(JourneySessionService.class);
+				assertThat(context).doesNotHaveBean(ActiveJourneySnapshotPort.class);
+				assertThat(context).doesNotHaveBean(JourneyApplicationService.class);
+				assertThat(context).doesNotHaveBean(JourneyApplicationDeadlineExecutor.class);
+				assertThat(context).doesNotHaveBean(ExecutorService.class);
+			});
+	}
+
+	@Test
+	@DisplayName("운영 Journey executor는 context 종료 때 shutdown된다")
+	void productionExecutorShutsDownWithContext() {
+		var executor = new AtomicReference<ExecutorService>();
+		validProductionContext().run(context -> {
+			executor.set(context.getBean("journeyApplicationExecutor", ExecutorService.class));
+			assertThat(executor.get()).isNotNull();
+			assertThat(executor.get().isShutdown()).isFalse();
+		});
+		assertThat(executor.get().isShutdown()).isTrue();
 	}
 
 	@Test
@@ -123,10 +190,15 @@ class JourneyProductionConfigurationTest {
 	}
 
 	private WebApplicationContextRunner validProductionContext() {
+		return validProductionProperties().withUserConfiguration(DependencyTestConfiguration.class);
+	}
+
+	private WebApplicationContextRunner validProductionProperties() {
 		return productionContext(
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.search.max-searches-per-session=12",
-			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
+			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
+			"easysubway.journey-v3.search-web.enabled=true"
 		);
 	}
 
@@ -147,6 +219,63 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		JourneySessionStore journeySessionStore() {
 			return mock(JourneySessionStore.class);
+		}
+
+		@Bean
+		RouteBundleActivationRegistry routeBundleActivationRegistry() {
+			return mock(RouteBundleActivationRegistry.class);
+		}
+
+		@Bean
+		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
+			return mock(JourneyTimetableRealtimeResolver.class);
+		}
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class MissingRegistryDependencyTestConfiguration {
+
+		@Bean
+		JourneySessionIntegrityPort journeySessionIntegrityPort() {
+			return mock(JourneySessionIntegrityPort.class);
+		}
+
+		@Bean
+		JourneySessionStore journeySessionStore() {
+			return mock(JourneySessionStore.class);
+		}
+
+		@Bean
+		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
+			return mock(JourneyTimetableRealtimeResolver.class);
+		}
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class MissingResolverDependencyTestConfiguration {
+
+		@Bean
+		JourneySessionIntegrityPort journeySessionIntegrityPort() {
+			return mock(JourneySessionIntegrityPort.class);
+		}
+
+		@Bean
+		JourneySessionStore journeySessionStore() {
+			return mock(JourneySessionStore.class);
+		}
+
+		@Bean
+		RouteBundleActivationRegistry routeBundleActivationRegistry() {
+			return mock(RouteBundleActivationRegistry.class);
+		}
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class DuplicateRaptorTestConfiguration {
+
+		@Bean
+		JourneyRaptorPort duplicateJourneyRaptorPort() {
+			return mock(JourneyRaptorPort.class);
 		}
 	}
 
