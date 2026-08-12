@@ -11,6 +11,11 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.FutureTask;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicReference;
 
 /** Downloads one current-key-verified descriptor's immutable objects without admitting them. */
 public final class RouteBundlePublicationObjectFetcher {
@@ -145,6 +150,34 @@ public final class RouteBundlePublicationObjectFetcher {
 			.timeout(requestTimeout)
 			.GET()
 			.build();
+		var activeBody = new AtomicReference<InputStream>();
+		var task = new FutureTask<>(() -> fetchObject(object, request, activeBody));
+		Thread.ofVirtual().name("route-bundle-publication-object-fetch").start(task);
+		try {
+			return task.get(requestTimeout.toNanos(), TimeUnit.NANOSECONDS);
+		} catch (TimeoutException exception) {
+			cancel(task, activeBody);
+			throw failure(Reason.TRANSPORT_FAILURE, "publication object request timed out", exception);
+		} catch (InterruptedException exception) {
+			cancel(task, activeBody);
+			Thread.currentThread().interrupt();
+			throw failure(Reason.TRANSPORT_FAILURE, "publication object request was interrupted", exception);
+		} catch (ExecutionException exception) {
+			Throwable cause = exception.getCause();
+			if (cause instanceof AcquisitionException acquisitionException) {
+				if (acquisitionException.getCause() instanceof InterruptedException) {
+					Thread.currentThread().interrupt();
+				}
+				throw acquisitionException;
+			}
+			throw failure(Reason.TRANSPORT_FAILURE, "publication object request failed", cause);
+		}
+	}
+
+	private FetchedObject fetchObject(
+		PreparedObject object,
+		HttpRequest request,
+		AtomicReference<InputStream> activeBody) {
 		HttpResponse<InputStream> response;
 		try {
 			response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
@@ -157,21 +190,34 @@ public final class RouteBundlePublicationObjectFetcher {
 		if (response == null) {
 			throw failure(Reason.TRANSPORT_FAILURE, "publication object response is missing");
 		}
-		if (response.statusCode() != 200) {
-			closeQuietly(response.body());
-			throw failure(Reason.HTTP_STATUS_INVALID, "publication object response must be HTTP 200");
+		InputStream body = response.body();
+		activeBody.set(body);
+		try {
+			if (Thread.currentThread().isInterrupted()) {
+				throw failure(Reason.TRANSPORT_FAILURE, "publication object request was interrupted");
+			}
+			if (response.statusCode() != 200) {
+				throw failure(Reason.HTTP_STATUS_INVALID, "publication object response must be HTTP 200");
+			}
+			if (!object.uri().equals(response.uri())) {
+				throw failure(Reason.RESPONSE_URI_MISMATCH, "publication object response URI changed");
+			}
+			if (!response.headers().allValues("Content-Encoding").isEmpty()) {
+				throw failure(Reason.CONTENT_ENCODING_INVALID, "publication object response must be raw bytes");
+			}
+			validateContentLength(response, object.sizeBytes());
+			byte[] bytes = readExact(body, object.sizeBytes());
+			return new FetchedObject(object.path(), object.objectKey(), bytes);
+		} finally {
+			if (activeBody.compareAndSet(body, null)) {
+				closeQuietly(body);
+			}
 		}
-		if (!object.uri().equals(response.uri())) {
-			closeQuietly(response.body());
-			throw failure(Reason.RESPONSE_URI_MISMATCH, "publication object response URI changed");
-		}
-		if (!response.headers().allValues("Content-Encoding").isEmpty()) {
-			closeQuietly(response.body());
-			throw failure(Reason.CONTENT_ENCODING_INVALID, "publication object response must be raw bytes");
-		}
-		validateContentLength(response, object.sizeBytes());
-		byte[] bytes = readExact(response.body(), object.sizeBytes());
-		return new FetchedObject(object.path(), object.objectKey(), bytes);
+	}
+
+	private static void cancel(FutureTask<?> task, AtomicReference<InputStream> activeBody) {
+		task.cancel(true);
+		closeQuietly(activeBody.getAndSet(null));
 	}
 
 	private static void validateContentLength(HttpResponse<InputStream> response, long expected) {

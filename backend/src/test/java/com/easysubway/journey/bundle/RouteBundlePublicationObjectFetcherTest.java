@@ -27,6 +27,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.Executor;
+import java.util.concurrent.atomic.AtomicBoolean;
 import javax.net.ssl.SSLContext;
 import javax.net.ssl.SSLParameters;
 import javax.net.ssl.SSLSession;
@@ -163,6 +164,26 @@ class RouteBundlePublicationObjectFetcherTest {
 		}
 	}
 
+	@Test
+	void boundsTheCompleteBodyReadAndClosesAStalledResponse() {
+		var verified = verifiedDescriptor(declaredSizes(3));
+		var stalledBody = new StalledInputStream();
+		var client = new StubHttpClient(request -> response(
+			request, 200, request.uri(), Map.of(), stalledBody));
+		var fetcher = new RouteBundlePublicationObjectFetcher(
+			client, Duration.ofMillis(50), 64L * 1024 * 1024);
+		long startedAt = System.nanoTime();
+
+		var failure = assertThrows(
+			RouteBundlePublicationObjectFetcher.AcquisitionException.class,
+			() -> fetcher.fetch(verified));
+
+		assertEquals(RouteBundlePublicationObjectFetcher.Reason.TRANSPORT_FAILURE, failure.reason());
+		assertTrue(Duration.ofNanos(System.nanoTime() - startedAt).compareTo(Duration.ofMillis(500)) < 0);
+		assertTrue(stalledBody.closed());
+		assertEquals(1, client.requests().size());
+	}
+
 	private static RouteBundleCurrentKeyVerifier.VerifiedPublicationDescriptorSignature verifiedDescriptor(
 		List<Long> sizes) {
 		var descriptor = mock(RouteBundlePublicationDescriptor.class);
@@ -203,16 +224,55 @@ class RouteBundlePublicationObjectFetcherTest {
 		URI uri,
 		Map<String, List<String>> headers,
 		byte[] body) {
+		return response(request, status, uri, headers, new ByteArrayInputStream(body));
+	}
+
+	private static HttpResponse<InputStream> response(
+		HttpRequest request,
+		int status,
+		URI uri,
+		Map<String, List<String>> headers,
+		InputStream body) {
 		return new HttpResponse<>() {
 			@Override public int statusCode() { return status; }
 			@Override public HttpRequest request() { return request; }
 			@Override public Optional<HttpResponse<InputStream>> previousResponse() { return Optional.empty(); }
 			@Override public HttpHeaders headers() { return HttpHeaders.of(headers, (name, value) -> true); }
-			@Override public InputStream body() { return new ByteArrayInputStream(body); }
+			@Override public InputStream body() { return body; }
 			@Override public Optional<SSLSession> sslSession() { return Optional.empty(); }
 			@Override public URI uri() { return uri; }
 			@Override public HttpClient.Version version() { return HttpClient.Version.HTTP_2; }
 		};
+	}
+
+	private static final class StalledInputStream extends InputStream {
+		private final AtomicBoolean closed = new AtomicBoolean();
+
+		@Override
+		public int read() throws IOException {
+			byte[] single = new byte[1];
+			return read(single, 0, 1) < 0 ? -1 : Byte.toUnsignedInt(single[0]);
+		}
+
+		@Override
+		public int read(byte[] bytes, int offset, int length) throws IOException {
+			try {
+				Thread.sleep(750);
+				return -1;
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new IOException("stalled body interrupted", exception);
+			}
+		}
+
+		@Override
+		public void close() {
+			closed.set(true);
+		}
+
+		private boolean closed() {
+			return closed.get();
+		}
 	}
 
 	@FunctionalInterface
