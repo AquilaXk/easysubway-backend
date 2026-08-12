@@ -32,6 +32,15 @@ spring:
       initialize-schema: never
 
 easysubway:
+  journey:
+    search:
+      timeout: ${EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT}
+      max-searches-per-session: ${EASYSUBWAY_JOURNEY_MAX_SEARCHES_PER_SESSION}
+    session:
+      certificate-sha256: ${EASYSUBWAY_JOURNEY_SESSION_CERTIFICATE_SHA256}
+  journey-v3:
+    session-web:
+      enabled: true
   ads:
     event-daily-cap: ${EASYSUBWAY_ADS_EVENT_DAILY_CAP}
   report:
