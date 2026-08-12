@@ -107,10 +107,12 @@ dependencies {
 	implementation 'io.github.wimdeblauwe:htmx-spring-boot-thymeleaf:4.0.3'
 	implementation 'io.micrometer:micrometer-registry-prometheus'
 	implementation 'com.google.auth:google-auth-library-oauth2-http:1.48.0'
+	implementation 'com.github.luben:zstd-jni:1.5.7-13'
 	implementation 'org.flywaydb:flyway-core'
 	runtimeOnly 'com.h2database:h2'
 	runtimeOnly 'org.flywaydb:flyway-database-postgresql'
 	runtimeOnly 'org.postgresql:postgresql'
+	runtimeOnly 'org.xerial:sqlite-jdbc:3.53.2.1'
 	testImplementation 'org.springframework.boot:spring-boot-starter-test'
 	testImplementation 'org.springframework.batch:spring-batch-test'
 	testImplementation 'org.springframework.security:spring-security-test'
@@ -118,6 +120,52 @@ dependencies {
 	testImplementation 'org.testcontainers:junit-jupiter:1.21.4'
 	testImplementation 'org.testcontainers:postgresql:1.21.4'
 	testRuntimeOnly 'org.junit.platform:junit-platform-launcher'
+}
+
+def sqliteNativeDirectory = layout.buildDirectory.dir('sqlite-native/linux-aarch64')
+def stageSqliteNative = tasks.register('stageSqliteNative', Sync) {
+	def sqliteArchiveName = 'sqlite-jdbc-3.53.2.1.jar'
+	def sqliteResource = 'org/sqlite/native/Linux/aarch64/libsqlitejdbc.so'
+	from({
+		def archives = configurations.runtimeClasspath.files.findAll { it.name == sqliteArchiveName }
+		if (archives.size() != 1) throw new GradleException("expected one ${sqliteArchiveName}, found ${archives.size()}")
+		zipTree(archives.iterator().next())
+	}) {
+		include sqliteResource
+		eachFile { details -> details.path = 'libsqlitejdbc.so' }
+		includeEmptyDirs = false
+	}
+	into sqliteNativeDirectory
+	doLast {
+		def nativeLibrary = sqliteNativeDirectory.get().file('libsqlitejdbc.so').asFile.toPath()
+		if (!java.nio.file.Files.isRegularFile(nativeLibrary, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| java.nio.file.Files.size(nativeLibrary) == 0) {
+			throw new GradleException('SQLite Linux/aarch64 native library was not staged')
+		}
+	}
+}
+
+def zstdNativeDirectory = layout.buildDirectory.dir('zstd-native/linux-aarch64')
+def stageZstdNative = tasks.register('stageZstdNative', Sync) {
+	def zstdArchiveName = 'zstd-jni-1.5.7-13.jar'
+	def zstdResource = 'linux/aarch64/libzstd-jni-1.5.7-13.so'
+	from({
+		def archives = configurations.runtimeClasspath.files.findAll { it.name == zstdArchiveName }
+		if (archives.size() != 1) throw new GradleException("expected one ${zstdArchiveName}, found ${archives.size()}")
+		zipTree(archives.iterator().next())
+	}) {
+		include zstdResource
+		eachFile { details -> details.path = 'libzstd-jni-1.5.7-13.so' }
+		includeEmptyDirs = false
+	}
+	into zstdNativeDirectory
+	doLast {
+		def nativeLibrary = zstdNativeDirectory.get().file('libzstd-jni-1.5.7-13.so').asFile.toPath()
+		if (!java.nio.file.Files.isRegularFile(nativeLibrary, java.nio.file.LinkOption.NOFOLLOW_LINKS)
+			|| java.nio.file.Files.size(nativeLibrary) == 0) {
+			throw new GradleException('zstd Linux/aarch64 native library was not staged')
+		}
+	}
 }
 
 tasks.named('test') {
@@ -349,6 +397,7 @@ tasks.named('processResources') {
 }
 
 tasks.named('bootJar') {
+	dependsOn stageSqliteNative, stageZstdNative
 	preserveFileTimestamps = false
 	reproducibleFileOrder = true
 }

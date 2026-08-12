@@ -14,12 +14,16 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     readFile(dockerignoreUrl, 'utf8'),
     readFile(gradleLockUrl, 'utf8'),
   ]);
-  assert.equal(dockerignore, '*\n!Dockerfile\n!build\n!build/libs\n!build/libs/*.jar\n');
+  assert.equal(dockerignore, '*\n!Dockerfile\n!build\n!build/libs\n!build/libs/*.jar\n!build/sqlite-native\n!build/sqlite-native/linux-aarch64\n!build/sqlite-native/linux-aarch64/libsqlitejdbc.so\n!build/zstd-native\n!build/zstd-native/linux-aarch64\n!build/zstd-native/linux-aarch64/libzstd-jni-1.5.7-13.so\n');
   assert.match(gradleLock, /^com\.h2database:h2:2\.3\.232=/m);
   assert.deepEqual(dockerfile.match(/^[\t ]*COPY[\t ]+.+$/gim), [
     'COPY --chown=10001:10001 build/libs/ /tmp/jars/',
+    'COPY --chown=0:0 build/sqlite-native/linux-aarch64/libsqlitejdbc.so /opt/easysubway/native/libsqlitejdbc.so',
+    'COPY --chown=0:0 build/zstd-native/linux-aarch64/libzstd-jni-1.5.7-13.so /opt/easysubway/native/libzstd-jni-1.5.7-13.so',
   ]);
   assert.doesNotMatch(dockerfile, /^[\t ]*ADD\b/im);
+  assert.doesNotMatch(dockerfile, /JAVA_TOOL_OPTIONS/);
+  assert.match(dockerfile, /ENTRYPOINT \["java", "-Dorg\.sqlite\.lib\.path=\/opt\/easysubway\/native", "-Dorg\.sqlite\.lib\.name=libsqlitejdbc\.so", "-DZstdNativePath=\/opt\/easysubway\/native\/libzstd-jni-1\.5\.7-13\.so", "-jar", "\/app\/app\.jar"\]/);
 
   const preflight = workflow.slice(0, workflow.indexOf('\n  backend-release:'));
   const step = preflight.match(
@@ -84,6 +88,18 @@ test('image preflight는 source-free non-root read-only runtime isolation을 실
     '! touch /app/app.jar',
     'touch /tmp/runtime-write-check',
     'touch /opt/easysubway/logs/runtime-write-check',
+    'test -r /opt/easysubway/native/libsqlitejdbc.so',
+    'test ! -w /opt/easysubway/native/libsqlitejdbc.so',
+    'test -r /opt/easysubway/native/libzstd-jni-1.5.7-13.so',
+    'test ! -w /opt/easysubway/native/libzstd-jni-1.5.7-13.so',
+    'java -XX:-UsePerfData',
+    '-Dorg.sqlite.lib.path=/opt/easysubway/native',
+    '-Dorg.sqlite.lib.name=libsqlitejdbc.so',
+    '-DZstdNativePath=/opt/easysubway/native/libzstd-jni-1.5.7-13.so',
+    '-Dloader.main=com.easysubway.journey.bundle.RouteBundleSqliteRuntimeCompiler',
+    '-cp /app/app.jar org.springframework.boot.loader.launch.PropertiesLauncher',
+    'find /tmp -mindepth 1 -maxdepth 1 -name "sqlite-*" -print -quit',
+    'find /tmp -mindepth 1 -maxdepth 1 -name "libzstd-jni-*" -print -quit',
     'test ! -e /var/run/docker.sock',
   ]) {
     assert.ok(step.includes(contract), `missing image isolation contract: ${contract}`);
