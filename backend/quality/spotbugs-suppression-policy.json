@@ -15,7 +15,7 @@
     "spotbugsGradlePlugin": {
       "id": "com.github.spotbugs",
       "requestedVersion": "6.2.2",
-      "buildScriptSha256": "1ece9f0725d2a0cb8754a105d8be770f16818c4aa47a3c8fd393ca288ea9a86b",
+      "buildScriptSha256": "beed2d3505a47fe04d631182199499102caf3e72ba2cb2c94073d9a32216b802",
       "implementationClass": "com.github.spotbugs.snom.SpotBugsPlugin",
       "implementationJarSha256": "f37166fbbcde9258058f5f46827b527aed663f9cd8faea68138a153b1ceb4add"
     },
@@ -165,7 +165,7 @@
     "sourceRoot": "backend/src/main/java",
     "classOutputRoot": "backend/build/classes/java/main",
     "excludeFilter": "backend/quality/spotbugs-exclude.xml",
-    "gradleIgnoreFailures": true
+    "gradleIgnoreFailures": false
   },
   "spotbugsTest": {
     "disposition": "NOT_REQUIRED_CURRENT",
@@ -418,7 +418,7 @@
     {"identity":"33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4","bugPattern":"EI_EXPOSE_REP2","category":"MALICIOUS_CODE","priority":2,"rank":18,"className":"com.easysubway.user.application.service.UserDataDeletionService","methodName":"<init>","methodSignature":"(Lcom/easysubway/user/application/port/out/DeleteUserFavoriteStationPort;Lcom/easysubway/user/application/port/out/DeleteUserFavoriteFacilityPort;Lcom/easysubway/user/application/port/out/DeleteUserFavoriteRoutePort;Lcom/easysubway/user/application/port/out/AnonymizeUserRouteFeedbackPort;Lcom/easysubway/user/application/port/out/DeleteUserNotificationPreferencePort;Lcom/easysubway/user/application/port/out/DeleteUserPushNotificationPort;Lcom/easysubway/user/application/port/out/DeleteUserMobilityProfilePort;Lcom/easysubway/user/application/port/out/AnonymizeUserFacilityReportPort;)V","sourcePath":"backend/src/main/java/com/easysubway/user/application/service/UserDataDeletionService.java","startLine":43,"endLine":43,"sourceSha256":"76aba45fa53610c21867f6dca4986fc663e469471cd4e9c048624f4577d0bf56","analyzerInstanceHash":"296dcca8fe3c5138907f2c813beee9b4","disposition":"FALSE_POSITIVE_EXACT_SUPPRESSION","reason":"Backend #116 verified that this exact constructor intentionally retains injected behavior infrastructure; the dependency is not caller-owned value data and must preserve identity.","ownerIssueUrl":"https://github.com/AquilaXk/easysubway-backend/issues/116","ownerIssueTitle":"[Build][Backend][P1] remaining non-realtime domain SpotBugs remediation","ownerIssueState":"OPEN","removalCondition":"Remove this exact suppression when the constructor no longer retains the reviewed dependency or it becomes a copyable value contract.","reviewTrigger":"Review this decision on collaborator identity/mutability, source/member, analyzer, or Backend #116 owner-state change.","expiresAt":"2026-11-08","suppression":{"kind":"EXCLUDE_FILTER_EXACT_METHOD","bugPattern":"EI_EXPOSE_REP2","className":"com.easysubway.user.application.service.UserDataDeletionService","methodName":"<init>","params":"com.easysubway.user.application.port.out.DeleteUserFavoriteStationPort,com.easysubway.user.application.port.out.DeleteUserFavoriteFacilityPort,com.easysubway.user.application.port.out.DeleteUserFavoriteRoutePort,com.easysubway.user.application.port.out.AnonymizeUserRouteFeedbackPort,com.easysubway.user.application.port.out.DeleteUserNotificationPreferencePort,com.easysubway.user.application.port.out.DeleteUserPushNotificationPort,com.easysubway.user.application.port.out.DeleteUserMobilityProfilePort,com.easysubway.user.application.port.out.AnonymizeUserFacilityReportPort","returns":"void","reason":"Backend #116 exact injected behavior collaborator identity contract."}}
   ],
   "transition": {
-    "phase": "REMEDIATION_IN_PROGRESS",
+    "phase": "ENFORCED",
     "foundationOwnerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/35",
     "finalOwnerIssueUrl": "https://github.com/AquilaXk/easysubway-backend/issues/4",
     "foundationFindingCount": 195,

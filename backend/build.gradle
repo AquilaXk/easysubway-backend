@@ -12,8 +12,7 @@ jacoco {
 }
 
 spotbugs {
-	// 리포트 전용: baseline·억제 정책 정합 전 CI를 붉히지 않는다(#2440).
-	ignoreFailures = true
+	ignoreFailures = false
 	showProgress = false
 	excludeFilter = file('quality/spotbugs-exclude.xml')
 }

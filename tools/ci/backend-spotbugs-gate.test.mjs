@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: '1ece9f0725d2a0cb8754a105d8be770f16818c4aa47a3c8fd393ca288ea9a86b', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'beed2d3505a47fe04d631182199499102caf3e72ba2cb2c94073d9a32216b802', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '524ec92aeabf6ef4dfd5e0ecec7a6551d8d9ca35d83cd1fbad2295447405cdd1'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '82e22851896ceaa148fd7c7c3a4ee9daa91ece5737c86967339fa57fc15bc226');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '964bdb84a34a6e4751f0dabbf7415e9f67706db7a7adc2ccadad8664dfc7438c');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -72,9 +72,9 @@ test('remediation summary is an exact result-derived closure artifact', () => {
   assert.notEqual(summary, renderSummary({ ...result, outcome: 'FAIL' }));
 });
 
-test('tracked remediation policy preserves prior children and projects the current immutable ledger', () => {
+test('tracked enforced policy preserves prior children and projects the current immutable ledger', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(tracked.transition.phase, 'REMEDIATION_IN_PROGRESS');
+  assert.equal(tracked.transition.phase, 'ENFORCED');
   assert.equal(tracked.toolchain.gradleVersion, '8.14.5');
   assert.equal(tracked.toolchain.spotbugsGradlePlugin.implementationClass, 'com.github.spotbugs.snom.SpotBugsPlugin');
   assert.equal(tracked.toolchain.spotbugsEngine.toolVersion, '4.9.3');
@@ -895,7 +895,7 @@ test('Backend #4 final enforcement is atomic and fail closed', () => {
   const build = readFileSync(new URL('../../backend/build.gradle', import.meta.url), 'utf8');
   assert.equal(tracked.transition.phase, 'ENFORCED');
   assert.equal(tracked.analysis.gradleIgnoreFailures, false);
-  assert.match(build, /spotbugs \{\s+ignoreFailures = false\s+\}/);
+  assert.match(build, /spotbugs \{\n\tignoreFailures = false\n/);
   assert.equal(tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED').length, 0);
   assert.equal(validatePolicy(tracked, { today: '2026-08-13' }), true);
 
@@ -929,6 +929,7 @@ test('remediation policy admits a synthetic fixed terminal absence', () => {
   remediation.origin.foundationSha = '3a15efb833b37d5ce051e9591161311dd7952c79';
   remediation.allowedDispositions = ['FIX_REQUIRED', 'FIXED', 'FALSE_POSITIVE_EXACT_SUPPRESSION', 'ACCEPTED_BOUNDED_RISK', 'GENERATED_OR_NON_OWNED_EXCLUSION'];
   remediation.transition = { phase: 'REMEDIATION_IN_PROGRESS', foundationOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/35', finalOwnerIssueUrl: 'https://github.com/AquilaXk/easysubway-backend/issues/4', foundationFindingCount: 195, foundationFindingIdentitiesSha256: '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0', finalRequirements: ['ignoreFailures=false', 'FIX_REQUIRED count 0', 'every remaining finding has an exact terminal disposition'] };
+  remediation.analysis.gradleIgnoreFailures = true;
   for (const finding of remediation.findings) {
     if (finding.disposition !== 'FIX_REQUIRED') {
       finding.disposition = 'FIX_REQUIRED';
