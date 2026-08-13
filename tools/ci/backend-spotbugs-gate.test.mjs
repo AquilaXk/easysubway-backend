@@ -463,6 +463,70 @@ test('Backend #226 route v2 access store constructor dispositions are exact', ()
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 13, fixRequired: 13, fixed: 111, falsePositiveExactSuppression: 69, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #230 route v2 planner dispositions are exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const cases = [
+    {
+      identity: '8ef83b7dce2409c89e0e607710aa5bb4113ce41597b6adfa3cc0d1daf1b8198e',
+      bugPattern: 'CT_CONSTRUCTOR_THROW',
+      methodName: '<init>',
+      params: 'com.easysubway.route.application.port.in.RouteSearchUseCase,org.springframework.beans.factory.ObjectProvider,org.springframework.core.env.Environment,io.micrometer.core.instrument.MeterRegistry',
+      returns: 'void',
+      reason: 'Backend #230 reviewed the exact Spring service constructor as intentional fail-fast provider, profile, and meter registration; no partially initialized planner escapes.',
+      removalCondition: 'Remove this suppression if construction no longer performs the reviewed startup binding or the exact finding disappears.',
+      reviewTrigger: 'Review this decision on source/member identity, Spring composition, startup profile/metrics behavior, analyzer, or Backend #230 owner-state change.',
+      suppressionReason: 'Backend #230 exact fail-fast Route V2 planner composition.',
+    },
+    {
+      identity: '16bc2429304524e4919cdaad5456ef21201a61853419dd4ea7ed9af9ce556015',
+      bugPattern: 'RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE',
+      methodName: 'resolveRealtimeUpdates',
+      params: 'java.util.List',
+      returns: 'com.easysubway.route.application.port.in.RouteSearchUseCase$TimetableRealtimeUpdates',
+      reason: 'Backend #230 reviewed the exact null guard as a conservative closed unavailable result for a violated non-null realtime availability contract.',
+      removalCondition: 'Remove this suppression if the realtime availability contract or guarded failure behavior changes, or the exact finding disappears.',
+      reviewTrigger: 'Review this decision on source/member identity, realtime availability/failure semantics, analyzer, or Backend #230 owner-state change.',
+      suppressionReason: 'Backend #230 exact conservative realtime availability guard.',
+    },
+  ];
+  for (const expected of cases) {
+    const finding = tracked.findings.find((candidate) => candidate.identity === expected.identity);
+    assert.deepEqual(
+      [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+      [
+        'FALSE_POSITIVE_EXACT_SUPPRESSION',
+        'https://github.com/AquilaXk/easysubway-backend/issues/230',
+        '[Build][Backend][P1] RouteV2Planner exact-member SpotBugs disposition',
+        'OPEN',
+        expected.reason,
+        expected.removalCondition,
+        expected.reviewTrigger,
+        '2026-11-13',
+        {
+          kind: 'EXCLUDE_FILTER_EXACT_METHOD',
+          bugPattern: expected.bugPattern,
+          className: 'com.easysubway.route.application.service.RouteV2Planner',
+          methodName: expected.methodName,
+          params: expected.params,
+          returns: expected.returns,
+          reason: expected.suppressionReason,
+        },
+      ],
+    );
+  }
+  const excludeFilter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
+  for (const { bugPattern, methodName, params, returns } of cases) {
+    const escapedParams = params.replaceAll('.', '\\.').replaceAll('$', '\\$');
+    assert.match(excludeFilter, new RegExp(`<Bug pattern="${bugPattern}"/>\\s*<Class name="com\\.easysubway\\.route\\.application\\.service\\.RouteV2Planner"/>\\s*<Method name="${methodName === '<init>' ? '&lt;init&gt;' : methodName}" params="${escapedParams}" returns="${returns.replaceAll('.', '\\.').replaceAll('$', '\\$')}"/>`, 'u'));
+  }
+  assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 74);
+  const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/application/service/RouteV2Planner.java', import.meta.url), 'utf8');
+  assert.match(source, /^public class RouteV2Planner implements RouteV2SearchUseCase \{/mu);
+  assert.doesNotMatch(source, /^public\s+final\s+class RouteV2Planner\b/mu);
+  assert.match(source, /return updates == null\s*\? TimetableRealtimeUpdates\.unavailable\("REALTIME_OVERLAY_UNAVAILABLE"\)\s*:\s*updates;/u);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 11, fixRequired: 11, fixed: 111, falsePositiveExactSuppression: 71, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
