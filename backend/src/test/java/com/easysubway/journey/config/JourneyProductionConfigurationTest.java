@@ -43,6 +43,8 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.availability.ApplicationAvailability;
+import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
 import org.springframework.boot.autoconfigure.web.servlet.WebMvcAutoConfiguration;
@@ -224,6 +226,10 @@ class JourneyProductionConfigurationTest {
 			.withUserConfiguration(MissingResolverDependencyTestConfiguration.class)
 			.run(context -> assertThat(context).hasFailed());
 
+		validProductionProperties()
+			.withUserConfiguration(MissingAvailabilityDependencyTestConfiguration.class)
+			.run(context -> assertThat(context).hasFailed());
+
 		validProductionContext()
 			.withUserConfiguration(DuplicateRaptorTestConfiguration.class)
 			.run(context -> assertThat(context).hasFailed());
@@ -397,6 +403,46 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("candidate와 active readiness는 Spring application availability 전환을 evidence에 결속한다")
+	void readinessTracksApplicationAvailability() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var registry = context.getBean(RouteBundleActivationRegistry.class);
+			var availability = context.getBean(ApplicationAvailability.class);
+			var readinessService = context.getBean(JourneyReadinessService.class);
+			var identity = identity();
+			var evidence = evidence();
+			when(registry.candidateSnapshot()).thenReturn(new RouteBundleActivationRegistry.CandidateSnapshot(
+				7, identity, evidence, VERIFIED_AT, STAGED_AT));
+			var active = mock(ActiveRouteBundleSnapshot.class);
+			when(active.generation()).thenReturn(7L);
+			when(active.identity()).thenReturn(identity);
+			when(active.admissionEvidence()).thenReturn(evidence);
+			when(active.activatedAt()).thenReturn(ACTIVATED_AT);
+
+			when(availability.getReadinessState()).thenReturn(ReadinessState.ACCEPTING_TRAFFIC);
+			var acceptingCandidate = readinessService.candidate();
+			var acceptingActive = readinessService.active(active);
+			assertThat(acceptingCandidate.ready()).isTrue();
+			assertThat(acceptingActive.servingReady()).isTrue();
+			assertThat(acceptingActive.draining()).isFalse();
+
+			when(availability.getReadinessState()).thenReturn(ReadinessState.REFUSING_TRAFFIC);
+			var refusingCandidate = readinessService.candidate();
+			var refusingActive = readinessService.active(active);
+			assertThat(refusingCandidate.ready()).isFalse();
+			assertThat(refusingActive.servingReady()).isFalse();
+			assertThat(refusingActive.draining()).isTrue();
+			assertThat(refusingCandidate.evidenceSha256())
+				.isNotEqualTo(acceptingCandidate.evidenceSha256());
+			assertThat(refusingActive.evidenceSha256())
+				.isNotEqualTo(acceptingActive.evidenceSha256());
+
+			verify(registry, times(2)).candidateSnapshot();
+		});
+	}
+
+	@Test
 	@DisplayName("readiness runtime identity 누락·형식 오류·non-positive traffic generation은 startup을 거부한다")
 	void productionProfileRejectsInvalidReadinessIdentity() {
 		productionContext(
@@ -562,6 +608,13 @@ class JourneyProductionConfigurationTest {
 		}
 
 		@Bean
+		ApplicationAvailability applicationAvailability() {
+			var availability = mock(ApplicationAvailability.class);
+			when(availability.getReadinessState()).thenReturn(ReadinessState.ACCEPTING_TRAFFIC);
+			return availability;
+		}
+
+		@Bean
 		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
 			return mock(JourneyTimetableRealtimeResolver.class);
 		}
@@ -602,6 +655,30 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		RouteBundleActivationRegistry routeBundleActivationRegistry() {
 			return mock(RouteBundleActivationRegistry.class);
+		}
+	}
+
+	@TestConfiguration(proxyBeanMethods = false)
+	static class MissingAvailabilityDependencyTestConfiguration {
+
+		@Bean
+		JourneySessionIntegrityPort journeySessionIntegrityPort() {
+			return mock(JourneySessionIntegrityPort.class);
+		}
+
+		@Bean
+		JourneySessionStore journeySessionStore() {
+			return mock(JourneySessionStore.class);
+		}
+
+		@Bean
+		RouteBundleActivationRegistry routeBundleActivationRegistry() {
+			return mock(RouteBundleActivationRegistry.class);
+		}
+
+		@Bean
+		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
+			return mock(JourneyTimetableRealtimeResolver.class);
 		}
 	}
 
