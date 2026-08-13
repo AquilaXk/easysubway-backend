@@ -890,6 +890,39 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
   assert.equal((readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8').match(/<Match>/g) ?? []).length, 81);
 });
 
+test('Backend #4 final enforcement is atomic and fail closed', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const build = readFileSync(new URL('../../backend/build.gradle', import.meta.url), 'utf8');
+  assert.equal(tracked.transition.phase, 'ENFORCED');
+  assert.equal(tracked.analysis.gradleIgnoreFailures, false);
+  assert.match(build, /spotbugs \{\s+ignoreFailures = false\s+\}/);
+  assert.equal(tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED').length, 0);
+  assert.equal(validatePolicy(tracked, { today: '2026-08-13' }), true);
+
+  const permissive = structuredClone(tracked);
+  permissive.analysis.gradleIgnoreFailures = true;
+  assert.throws(() => validatePolicy(permissive, { today: '2026-08-13' }), /ignoreFailures/);
+
+  const reopened = structuredClone(tracked);
+  const finding = reopened.findings.find(({ disposition, suppression }) => disposition === 'FIXED' && suppression === null);
+  finding.disposition = 'FIX_REQUIRED';
+  finding.reason = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
+  finding.ownerIssueUrl = 'https://github.com/AquilaXk/easysubway-backend/issues/4';
+  finding.ownerIssueTitle = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
+  finding.removalCondition = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
+  finding.reviewTrigger = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
+  finding.expiresAt = '2026-11-07';
+  assert.throws(() => validatePolicy(reopened, { today: '2026-08-13' }), /zero FIX_REQUIRED/);
+
+  const unknown = { ...tracked.findings[0], identity: 'f'.repeat(64) };
+  assert.throws(() => reconcileLedger(tracked, [unknown]), /unreviewed/);
+
+  const downgraded = structuredClone(tracked);
+  downgraded.transition.phase = 'REMEDIATION_IN_PROGRESS';
+  downgraded.analysis.gradleIgnoreFailures = true;
+  assert.throws(() => validatePriorLedger(downgraded, tracked), /enforced phase cannot reopen/);
+});
+
 test('remediation policy admits a synthetic fixed terminal absence', () => {
   const remediation = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   remediation.issue = { url: 'https://github.com/AquilaXk/easysubway-backend/issues/4', title: '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환' };
