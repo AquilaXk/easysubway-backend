@@ -136,6 +136,24 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	@Test
+	void candidateExecutionSnapshotExposesTheExactRuntimeWithoutActivatingOrMutating() {
+		var registry = registryAt(T0);
+		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
+		var staged = registry.stage(candidate, 0);
+
+		var execution = registry.candidateExecutionSnapshot();
+
+		assertThat(execution.generation()).isEqualTo(staged.generation());
+		assertThat(execution.identity()).isSameAs(candidate.identity());
+		assertThat(execution.admissionEvidence()).isSameAs(candidate.admissionEvidence());
+		assertThat(execution.runtimeView()).isSameAs(candidate.runtimeView());
+		assertThat(execution.verifiedAt()).isEqualTo(candidate.verifiedAt());
+		assertThat(execution.stagedAt()).isEqualTo(T0);
+		assertThat(registry.candidateSnapshot()).isEqualTo(staged);
+		assertFailure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE, registry::activeSnapshot);
+	}
+
+	@Test
 	void stageAndActivationRejectFutureAndStaleCandidatesWithoutMutatingState() {
 		var clock = new MutableClock(T0);
 		var registry = new RouteBundleActivationRegistry(clock);

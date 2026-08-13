@@ -23,12 +23,14 @@ import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
+import com.easysubway.journey.adapter.in.web.JourneyCandidateCanaryController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.bundle.ActiveRouteBundleSnapshot;
 import com.easysubway.journey.bundle.RouteBundleAdmissionEvidence;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import com.easysubway.journey.bundle.RouteBundleActiveJourneySnapshotAdapter;
 import com.easysubway.journey.bundle.RouteBundleIdentity;
+import com.easysubway.journey.canary.JourneyCandidateCanaryService;
 import com.easysubway.journey.readiness.JourneyReadinessProperties;
 import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
@@ -67,6 +69,7 @@ class JourneyProductionConfigurationTest {
 	private static final String CANDIDATE_READINESS_PATH = "/internal/v1/journey/readiness/candidate";
 	private static final String ACTIVE_READINESS_PATH = "/internal/v1/journey/readiness/active";
 	private static final String ACTIVATION_PATH = "/internal/v1/journey/activation";
+	private static final String CANARY_PATH = "/internal/v1/journey/canary";
 	private static final Instant VERIFIED_AT = Instant.parse("2026-08-12T00:00:00Z");
 	private static final Instant STAGED_AT = Instant.parse("2026-08-12T00:00:01Z");
 	private static final Instant ACTIVATED_AT = Instant.parse("2026-08-12T00:00:02Z");
@@ -79,6 +82,7 @@ class JourneyProductionConfigurationTest {
 			JourneyProductionConfiguration.class,
 			JourneyReadinessController.class,
 			JourneyActivationController.class,
+			JourneyCandidateCanaryController.class,
 			JourneyEndpointProbeController.class
 		);
 
@@ -104,6 +108,8 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyReadinessController.class);
 			assertThat(context).hasSingleBean(JourneyActivationService.class);
 			assertThat(context).hasSingleBean(JourneyActivationController.class);
+			assertThat(context).hasSingleBean(JourneyCandidateCanaryService.class);
+			assertThat(context).hasSingleBean(JourneyCandidateCanaryController.class);
 		});
 	}
 
@@ -162,6 +168,52 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("internal candidate canary는 readiness와 같은 Bearer로 exact POST만 허용한다")
+	void candidateCanaryIngressRequiresBearerAndDeniesOtherMethods() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var registry = context.getBean(RouteBundleActivationRegistry.class);
+			var emptyRegistry = new RouteBundleActivationRegistry(Clock.fixed(VERIFIED_AT, ZoneOffset.UTC));
+			when(registry.candidateExecutionSnapshot())
+				.thenAnswer(ignored -> emptyRegistry.candidateExecutionSnapshot());
+			var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+				.apply(springSecurity())
+				.build();
+
+			mockMvc.perform(post(CANARY_PATH)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(canaryCommand()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(content().string(""));
+			mockMvc.perform(post(CANARY_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token")
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(canaryCommand()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(content().string(""));
+			mockMvc.perform(get(CANARY_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(content().string(""));
+			mockMvc.perform(post(CANARY_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(canaryCommand()))
+				.andExpect(status().isServiceUnavailable())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(jsonPath("$.artifactKind").value("journey-v3-candidate-canary-failure"))
+				.andExpect(jsonPath("$.passed").value(false))
+				.andExpect(jsonPath("$.reason").value("UNAVAILABLE"));
+
+			verify(registry).candidateExecutionSnapshot();
+		});
+	}
+
+	@Test
 	@DisplayName("운영 프로필은 required execution dependency 누락·중복을 거부한다")
 	void productionProfileRejectsMissingOrDuplicateExecutionDependencies() {
 		validProductionProperties()
@@ -199,6 +251,8 @@ class JourneyProductionConfigurationTest {
 				assertThat(context).doesNotHaveBean(JourneyApplicationService.class);
 				assertThat(context).doesNotHaveBean(JourneyApplicationDeadlineExecutor.class);
 				assertThat(context).doesNotHaveBean(ExecutorService.class);
+				assertThat(context).doesNotHaveBean(JourneyCandidateCanaryService.class);
+				assertThat(context).doesNotHaveBean(JourneyCandidateCanaryController.class);
 			});
 	}
 
@@ -474,6 +528,12 @@ class JourneyProductionConfigurationTest {
 	private static String activationCommand() {
 		return """
 			{"schemaVersion":1,"artifactKind":"journey-v3-activation-command","activationRequestIdentity":"activation-request-228","candidateManifestSha256":"%s","candidateGeneration":1,"expectedActiveGeneration":0,"trafficGeneration":31}
+			""".formatted(SHA_A).strip();
+	}
+
+	private static String canaryCommand() {
+		return """
+			{"schemaVersion":1,"artifactKind":"journey-v3-candidate-canary-command","canaryRequestIdentity":"canary-request-236","candidateManifestSha256":"%s","candidateGeneration":1,"requestId":"01K1Y000000000000000000000","originStationId":"station-origin","destinationStationId":"station-destination","mobilityProfile":"STEP_FREE","constraintMode":"REQUIRE_STEP_FREE","maxTransfers":2,"alternativeCount":1}
 			""".formatted(SHA_A).strip();
 	}
 
