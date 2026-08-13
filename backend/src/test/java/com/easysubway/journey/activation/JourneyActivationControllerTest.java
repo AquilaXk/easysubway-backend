@@ -1,5 +1,6 @@
 package com.easysubway.journey.activation;
 
+import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -11,23 +12,30 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
 import com.easysubway.journey.readiness.JourneyReadinessService;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.IOException;
 import java.time.Instant;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class JourneyActivationControllerTest {
 
 	private final JourneyActivationService activationService = mock(JourneyActivationService.class);
+	private JourneyActivationController controller;
 	private MockMvc mockMvc;
 
 	@BeforeEach
 	void setUp() {
-		mockMvc = MockMvcBuilders.standaloneSetup(new JourneyActivationController(
-			new JourneyActivationCommandParser(), activationService)).build();
+		controller = new JourneyActivationController(new JourneyActivationCommandParser(), activationService);
+		mockMvc = MockMvcBuilders.standaloneSetup(controller).build();
 	}
 
 	@Test
@@ -81,6 +89,42 @@ class JourneyActivationControllerTest {
 		mockMvc.perform(validRequest())
 			.andExpect(status().isServiceUnavailable())
 			.andExpect(jsonPath("$.reason").value("UNAVAILABLE"));
+	}
+
+	@Test
+	void invalidMediaTypeAndBodyReadFailureAreSanitized() throws Exception {
+		var invalidMediaType = mock(HttpServletRequest.class);
+		when(invalidMediaType.getContentType()).thenReturn("not a media type;;;");
+		ResponseEntity<?> invalidMediaTypeResponse = ReflectionTestUtils.invokeMethod(
+			controller, "activate", invalidMediaType);
+		assertThat(invalidMediaTypeResponse.getStatusCode().value()).isEqualTo(400);
+
+		var readFailure = mock(HttpServletRequest.class);
+		when(readFailure.getContentType()).thenReturn(MediaType.APPLICATION_JSON_VALUE);
+		var input = new ServletInputStream() {
+			@Override
+			public int read() throws IOException {
+				throw new IOException("synthetic read failure");
+			}
+
+			@Override
+			public boolean isFinished() {
+				return false;
+			}
+
+			@Override
+			public boolean isReady() {
+				return true;
+			}
+
+			@Override
+			public void setReadListener(ReadListener readListener) {
+			}
+		};
+		when(readFailure.getInputStream()).thenReturn(input);
+		ResponseEntity<?> readFailureResponse = ReflectionTestUtils.invokeMethod(
+			controller, "activate", readFailure);
+		assertThat(readFailureResponse.getStatusCode().value()).isEqualTo(400);
 	}
 
 	private static org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder validRequest() {

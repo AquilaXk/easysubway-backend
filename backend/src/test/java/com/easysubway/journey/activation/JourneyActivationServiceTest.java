@@ -54,6 +54,8 @@ class JourneyActivationServiceTest {
 		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
 			1, "journey-v3-activation-command", "activation-request-228", SHA_A, 2, 1, 31)));
 		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
+			1, "journey-v3-activation-command", "activation-request-228", SHA_A, 1, 1, 31)));
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
 			1, "journey-v3-activation-command", "activation-request-228", SHA_A, 1, 0, 32)));
 
 		verify(registry, never()).activate(SHA_A, 0);
@@ -72,6 +74,19 @@ class JourneyActivationServiceTest {
 	}
 
 	@Test
+	void differentActiveManifestDoesNotSynthesizeAlreadyActive() {
+		when(registry.candidateSnapshot()).thenThrow(candidateNotStaged());
+		var active = mock(ActiveRouteBundleSnapshot.class);
+		when(active.admissionEvidence()).thenReturn(new RouteBundleAdmissionEvidence(
+			"b".repeat(64), "final", "promotion", "receipt", "activation-request-other"));
+		when(registry.activeSnapshot()).thenReturn(active);
+
+		assertKind(JourneyActivationException.Kind.UNAVAILABLE, () -> service.activate(command()));
+
+		verify(registry, never()).activate(SHA_A, 0);
+	}
+
+	@Test
 	void sameManifestAlreadyActiveIsAConflictWithoutDiagnosticActivation() {
 		when(registry.candidateSnapshot()).thenThrow(candidateNotStaged());
 		var active = mock(ActiveRouteBundleSnapshot.class);
@@ -82,6 +97,30 @@ class JourneyActivationServiceTest {
 
 		verify(registry, never()).activate(SHA_A, 0);
 		verify(readinessService, never()).active(org.mockito.ArgumentMatchers.any(ActiveRouteBundleSnapshot.class));
+	}
+
+	@Test
+	void candidateReadFailureAndActivationCasFailureKeepTheirClosedKinds() {
+		when(registry.candidateSnapshot()).thenThrow(bundleUnavailable());
+		assertKind(JourneyActivationException.Kind.UNAVAILABLE, () -> service.activate(command()));
+
+		org.mockito.Mockito.reset(registry);
+		when(registry.candidateSnapshot()).thenReturn(candidate());
+		when(properties.trafficGeneration()).thenReturn(31L);
+		when(registry.activate(SHA_A, 0)).thenThrow(activationConflict());
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(command()));
+	}
+
+	@Test
+	void overflowingExpectedGenerationIsAConflictBeforeActivation() {
+		when(registry.candidateSnapshot()).thenReturn(candidate());
+		var overflow = new JourneyActivationCommandParser.Command(
+			1, "journey-v3-activation-command", "activation-request-228", SHA_A,
+			1, Long.MAX_VALUE, 31);
+
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(overflow));
+
+		verify(registry, never()).activate(SHA_A, Long.MAX_VALUE);
 	}
 
 	private static RouteBundleActivationRegistry.CandidateSnapshot candidate() {
@@ -104,6 +143,10 @@ class JourneyActivationServiceTest {
 
 	private static RouteBundleActivationException bundleUnavailable() {
 		return registryFailure(() -> new RouteBundleActivationRegistry(Clock.systemUTC()).activeSnapshot());
+	}
+
+	private static RouteBundleActivationException activationConflict() {
+		return registryFailure(() -> new RouteBundleActivationRegistry(Clock.systemUTC()).activate(SHA_A, -1));
 	}
 
 	private static RouteBundleActivationException registryFailure(Runnable action) {

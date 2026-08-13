@@ -70,13 +70,13 @@ public final class JourneyActivationCommandParser {
 				trafficGeneration);
 		} catch (JourneyActivationException exception) {
 			throw exception;
-		} catch (IOException | RuntimeException exception) {
+		} catch (IOException exception) {
 			throw invalidRequest();
 		}
 	}
 
 	private static boolean hasExactFields(JsonNode request) {
-		if (request == null || !request.isObject() || request.size() != FIELDS.size()) return false;
+		if (!request.isObject() || request.size() != FIELDS.size()) return false;
 		var actual = new HashSet<String>();
 		request.fieldNames().forEachRemaining(actual::add);
 		return actual.equals(FIELDS);
@@ -87,8 +87,7 @@ public final class JourneyActivationCommandParser {
 	}
 
 	private static boolean validActivationIdentity(String value) {
-		return value != null
-			&& !value.isEmpty()
+		return !value.isEmpty()
 			&& value.length() <= MAX_ACTIVATION_IDENTITY_LENGTH
 			&& value.equals(value.strip())
 			&& value.codePoints().noneMatch(codePoint -> codePoint < 0x20 || codePoint == 0x7f);

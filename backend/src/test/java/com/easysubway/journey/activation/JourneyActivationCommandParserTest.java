@@ -28,19 +28,40 @@ class JourneyActivationCommandParserTest {
 	void rejectsDuplicateExtraTrailingAndMalformedInput() {
 		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":1,\"schemaVersion\":1"));
 		assertInvalid(validCommand().replace("}", ",\"extra\":true}"));
+		assertInvalid(validCommand().replace("\"trafficGeneration\"", "\"otherTrafficGeneration\""));
 		assertInvalid(validCommand() + "{}");
 		assertInvalid("{");
+		assertInvalid(" ");
+		assertInvalid("null");
+		assertInvalid("[]");
 	}
 
 	@Test
 	void rejectsWrongConstantsBoundsAndGenerationRelations() {
+		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":\"1\""));
 		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":2"));
+		assertInvalid(validCommand().replace(
+			"\"artifactKind\":\"journey-v3-activation-command\"", "\"artifactKind\":1"));
 		assertInvalid(validCommand().replace("journey-v3-activation-command", "other"));
+		assertInvalid(validCommand().replace(
+			"\"activationRequestIdentity\":\"activation-request-228\"", "\"activationRequestIdentity\":1"));
+		assertInvalid(validCommand().replace("activation-request-228", ""));
 		assertInvalid(validCommand().replace("activation-request-228", " activation-request-228"));
 		assertInvalid(validCommand().replace("activation-request-228", "activation\\u0000request"));
+		assertInvalid(validCommand().replace("activation-request-228", "activation\\u007frequest"));
+		assertInvalid(validCommand().replace("activation-request-228", "x".repeat(513)));
+		assertInvalid(validCommand().replace(
+			"\"candidateManifestSha256\":\"" + SHA_A + "\"", "\"candidateManifestSha256\":1"));
 		assertInvalid(validCommand().replace(SHA_A, "A".repeat(64)));
+		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":0"));
+		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":1.5"));
 		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":2"));
+		assertInvalid(validCommand().replace(
+			"\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":0.5"));
 		assertInvalid(validCommand().replace("\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":-1"));
+		assertInvalid(validCommand().replace("\"trafficGeneration\":31", "\"trafficGeneration\":1.5"));
+		assertInvalid(validCommand().replace(
+			"\"trafficGeneration\":31", "\"trafficGeneration\":9223372036854775808"));
 		assertInvalid(validCommand().replace("\"trafficGeneration\":31", "\"trafficGeneration\":0"));
 		assertInvalid(validCommand().replace(
 			"\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":9223372036854775807"));
@@ -48,11 +69,13 @@ class JourneyActivationCommandParserTest {
 
 	@Test
 	void rejectsEmptyAndOversizedBodies() {
-		assertThatThrownBy(() -> parser.parse(new byte[0]))
-			.isInstanceOf(JourneyActivationException.class)
-			.extracting("kind")
-			.isEqualTo(JourneyActivationException.Kind.INVALID_REQUEST);
-		assertThatThrownBy(() -> parser.parse(new byte[4097]))
+		assertInvalidBytes(null);
+		assertInvalidBytes(new byte[0]);
+		assertInvalidBytes(new byte[4097]);
+	}
+
+	private void assertInvalidBytes(byte[] request) {
+		assertThatThrownBy(() -> parser.parse(request))
 			.isInstanceOf(JourneyActivationException.class)
 			.extracting("kind")
 			.isEqualTo(JourneyActivationException.Kind.INVALID_REQUEST);
