@@ -20,6 +20,8 @@ import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
+import com.easysubway.journey.activation.JourneyActivationService;
+import com.easysubway.journey.adapter.in.web.JourneyActivationController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.bundle.ActiveRouteBundleSnapshot;
 import com.easysubway.journey.bundle.RouteBundleAdmissionEvidence;
@@ -63,6 +65,7 @@ class JourneyProductionConfigurationTest {
 	private static final String SEARCH_PATH = "/api/v3/journeys/search";
 	private static final String CANDIDATE_READINESS_PATH = "/internal/v1/journey/readiness/candidate";
 	private static final String ACTIVE_READINESS_PATH = "/internal/v1/journey/readiness/active";
+	private static final String ACTIVATION_PATH = "/internal/v1/journey/activation";
 	private static final Instant VERIFIED_AT = Instant.parse("2026-08-12T00:00:00Z");
 	private static final Instant STAGED_AT = Instant.parse("2026-08-12T00:00:01Z");
 	private static final Instant ACTIVATED_AT = Instant.parse("2026-08-12T00:00:02Z");
@@ -74,6 +77,7 @@ class JourneyProductionConfigurationTest {
 		.withUserConfiguration(
 			JourneyProductionConfiguration.class,
 			JourneyReadinessController.class,
+			JourneyActivationController.class,
 			JourneyEndpointProbeController.class
 		);
 
@@ -97,6 +101,53 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyReadinessProperties.class);
 			assertThat(context).hasSingleBean(JourneyReadinessService.class);
 			assertThat(context).hasSingleBean(JourneyReadinessController.class);
+			assertThat(context).hasSingleBean(JourneyActivationService.class);
+			assertThat(context).hasSingleBean(JourneyActivationController.class);
+		});
+	}
+
+	@Test
+	@DisplayName("internal activation은 readiness와 같은 Bearer로 exact POST만 허용한다")
+	void activationIngressRequiresBearerAndDeniesOtherMethods() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var registry = context.getBean(RouteBundleActivationRegistry.class);
+			var identity = identity();
+			var evidence = new RouteBundleAdmissionEvidence(
+				SHA_A, "final", "promotion", "receipt", "activation-request-228");
+			when(registry.candidateSnapshot()).thenReturn(new RouteBundleActivationRegistry.CandidateSnapshot(
+				1, identity, evidence, VERIFIED_AT, STAGED_AT));
+			var active = mock(ActiveRouteBundleSnapshot.class);
+			when(active.generation()).thenReturn(1L);
+			when(active.identity()).thenReturn(identity);
+			when(active.admissionEvidence()).thenReturn(evidence);
+			when(active.activatedAt()).thenReturn(ACTIVATED_AT);
+			when(registry.activate(SHA_A, 0)).thenReturn(active);
+			when(registry.activeSnapshot()).thenReturn(active);
+			var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+				.apply(springSecurity())
+				.build();
+
+			mockMvc.perform(post(ACTIVATION_PATH)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(activationCommand()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(ACTIVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(post(ACTIVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(activationCommand()))
+				.andExpect(status().isOk())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(jsonPath("$.artifactKind").value("journey-v3-active-readiness"))
+				.andExpect(jsonPath("$.trafficGeneration").value(31));
+
+			verify(registry).activate(SHA_A, 0);
 		});
 	}
 
@@ -408,6 +459,12 @@ class JourneyProductionConfigurationTest {
 
 	private static RouteBundleAdmissionEvidence evidence() {
 		return new RouteBundleAdmissionEvidence(SHA_A, "final", "promotion", "receipt", "activation");
+	}
+
+	private static String activationCommand() {
+		return """
+			{"schemaVersion":1,"artifactKind":"journey-v3-activation-command","activationRequestIdentity":"activation-request-228","candidateManifestSha256":"%s","candidateGeneration":1,"expectedActiveGeneration":0,"trafficGeneration":31}
+			""".formatted(SHA_A).strip();
 	}
 
 	private WebApplicationContextRunner productionContext(String... propertyValues) {
