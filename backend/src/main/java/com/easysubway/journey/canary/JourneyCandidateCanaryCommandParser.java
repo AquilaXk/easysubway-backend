@@ -124,7 +124,8 @@ public final class JourneyCandidateCanaryCommandParser {
 	}
 
 	private static boolean validRawText(String value, int maxLength) {
-		if (value.isEmpty() || value.length() > maxLength || value.isBlank() || !value.equals(value.strip())) {
+		if (value.isEmpty() || value.length() > maxLength || !hasWellFormedUtf16(value)
+			|| value.isBlank() || !value.equals(value.strip())) {
 			return false;
 		}
 		int first = value.codePointAt(0);
@@ -132,6 +133,18 @@ public final class JourneyCandidateCanaryCommandParser {
 		return !isBoundarySpace(first)
 			&& !isBoundarySpace(last)
 			&& value.codePoints().noneMatch(codePoint -> codePoint < 0x20 || codePoint == 0x7f);
+	}
+
+	private static boolean hasWellFormedUtf16(String value) {
+		for (int index = 0; index < value.length(); index++) {
+			char current = value.charAt(index);
+			if (Character.isHighSurrogate(current)) {
+				if (++index >= value.length() || !Character.isLowSurrogate(value.charAt(index))) return false;
+			} else if (Character.isLowSurrogate(current)) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static boolean isBoundarySpace(int codePoint) {

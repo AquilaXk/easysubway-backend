@@ -90,6 +90,20 @@ class JourneyCandidateCanaryControllerTest {
 	}
 
 	@Test
+	void malformedUnicodeIsRejectedBeforeServiceExecution() throws Exception {
+		for (String identity : new String[] {"canary-\\uD800", "canary-\\uDC00"}) {
+			mockMvc.perform(post(JourneyCandidateCanaryController.PATH)
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(JourneyCandidateCanaryCommandParserTest.validCommand()
+						.replace("canary-request-236", identity)))
+				.andExpect(status().isBadRequest())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"));
+		}
+		verifyNoInteractions(service);
+	}
+
+	@Test
 	void conflictAndUnavailableUseTheExactFourFieldFailureSchema() throws Exception {
 		when(service.execute(any()))
 			.thenThrow(new JourneyCandidateCanaryException(JourneyCandidateCanaryException.Kind.CONFLICT))

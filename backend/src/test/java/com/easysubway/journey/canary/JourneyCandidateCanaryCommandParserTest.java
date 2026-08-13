@@ -59,6 +59,19 @@ class JourneyCandidateCanaryCommandParserTest {
 	}
 
 	@Test
+	void rejectsUnpairedSurrogatesButAcceptsAValidSupplementaryCodePoint() {
+		assertInvalid(validCommand().replace("canary-request-236", "canary-\\uD800"));
+		assertInvalid(validCommand().replace("canary-request-236", "canary-\\uDC00"));
+		assertInvalid(validCommand().replace("station-origin", "station-\\uD800"));
+
+		var command = parser.parse(validCommand()
+			.replace("canary-request-236", "canary-\\uD83D\\uDE87")
+			.getBytes(StandardCharsets.UTF_8));
+
+		assertThat(command.canaryRequestIdentity()).isEqualTo("canary-🚇");
+	}
+
+	@Test
 	void rejectsInvalidStationsEnumsAndExistingJourneyPolicyBounds() {
 		assertInvalid(validCommand().replace("station-origin", " station-origin"));
 		assertInvalid(validCommand().replace("station-origin", "station\\u007forigin"));
