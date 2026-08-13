@@ -5,12 +5,15 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.bundle.RouteBundleStartupCandidateLoader;
+import com.easysubway.journey.canary.JourneyCandidateCanaryService;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.autoconfigure.web.servlet.AutoConfigureMockMvc;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.test.context.ActiveProfiles;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
@@ -93,9 +96,25 @@ class EasySubwayBackendApplicationTests {
 		@Autowired
 		private MockMvc mockMvc;
 
+		@Autowired
+		private Environment environment;
+
+		@Autowired
+		private ApplicationContext applicationContext;
+
 		@Test
-		@DisplayName("운영 프로필은 readiness UP 응답까지 기동된다")
+		@DisplayName("운영 프로필은 Journey V3 search graph와 readiness를 함께 기동한다")
 		void prodProfileStartsUntilReadinessEndpoint() throws Exception {
+			assertThat(environment.getProperty("easysubway.journey-v3.search-web.enabled"))
+				.isEqualTo("true");
+			assertThat(applicationContext.getBeanNamesForType(
+				Class.forName("com.easysubway.journey.adapter.in.web.JourneySearchController"),
+				true,
+				false
+			)).containsExactly("journeySearchController");
+			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
+			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
+
 			mockMvc.perform(get("/actuator/health/readiness"))
 				.andExpect(status().isOk())
 				.andExpect(jsonPath("$.status").value("UP"))
@@ -168,6 +187,9 @@ class EasySubwayBackendApplicationTests {
 		private Environment environment;
 
 		@Autowired
+		private ApplicationContext applicationContext;
+
+		@Autowired
 		private MockMvc mockMvc;
 
 		@Test
@@ -178,6 +200,15 @@ class EasySubwayBackendApplicationTests {
 				.isEqualTo("prod-like-test-receipt-token-pepper-with-enough-entropy");
 			assertThat(environment.getProperty("easysubway.report.upload.bucket"))
 				.isEqualTo("easysubway-report-uploads");
+			assertThat(environment.getProperty("easysubway.journey-v3.search-web.enabled"))
+				.isEqualTo("true");
+			assertThat(applicationContext.getBeanNamesForType(
+				Class.forName("com.easysubway.journey.adapter.in.web.JourneySearchController"),
+				true,
+				false
+			)).containsExactly("journeySearchController");
+			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
+			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
 
 			mockMvc.perform(get("/actuator/health/readiness"))
 				.andExpect(status().isOk())
