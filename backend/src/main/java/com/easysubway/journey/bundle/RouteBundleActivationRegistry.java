@@ -57,6 +57,21 @@ public final class RouteBundleActivationRegistry {
 		return candidateSnapshot(current);
 	}
 
+	public CandidateExecutionSnapshot candidateExecutionSnapshot() {
+		var current = state.get();
+		if (current.staged == null) {
+			throw failure(RouteBundleActivationException.Reason.CANDIDATE_NOT_STAGED);
+		}
+		requireCandidateIsCurrent(current.staged, clock.instant());
+		return new CandidateExecutionSnapshot(
+			Math.addExact(current.generation, 1),
+			current.staged.identity(),
+			current.staged.admissionEvidence(),
+			current.staged.runtimeView(),
+			current.staged.verifiedAt(),
+			current.stagedAt);
+	}
+
 	public ActiveRouteBundleSnapshot activate(String candidateManifestSha256, long expectedGeneration) {
 		while (true) {
 			var current = state.get();
@@ -154,6 +169,25 @@ public final class RouteBundleActivationRegistry {
 			}
 			Objects.requireNonNull(identity, "identity");
 			Objects.requireNonNull(admissionEvidence, "admissionEvidence");
+			Objects.requireNonNull(verifiedAt, "verifiedAt");
+			Objects.requireNonNull(stagedAt, "stagedAt");
+		}
+	}
+
+	public record CandidateExecutionSnapshot(
+		long generation,
+		RouteBundleIdentity identity,
+		RouteBundleAdmissionEvidence admissionEvidence,
+		RouteBundleRuntimeView runtimeView,
+		Instant verifiedAt,
+		Instant stagedAt) {
+		public CandidateExecutionSnapshot {
+			if (generation < 1) {
+				throw new IllegalArgumentException("generation must be positive");
+			}
+			Objects.requireNonNull(identity, "identity");
+			Objects.requireNonNull(admissionEvidence, "admissionEvidence");
+			Objects.requireNonNull(runtimeView, "runtimeView");
 			Objects.requireNonNull(verifiedAt, "verifiedAt");
 			Objects.requireNonNull(stagedAt, "stagedAt");
 		}

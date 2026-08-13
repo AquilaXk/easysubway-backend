@@ -11,10 +11,13 @@ import com.easysubway.journey.application.JourneySessionStore;
 import com.easysubway.journey.activation.JourneyActivationCommandParser;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
+import com.easysubway.journey.adapter.in.web.JourneyCandidateCanaryController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessServiceTokenFilter;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import com.easysubway.journey.bundle.RouteBundleActiveJourneySnapshotAdapter;
+import com.easysubway.journey.canary.JourneyCandidateCanaryCommandParser;
+import com.easysubway.journey.canary.JourneyCandidateCanaryService;
 import com.easysubway.journey.readiness.JourneyReadinessProperties;
 import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
@@ -69,6 +72,20 @@ public class JourneyProductionConfiguration {
 		JourneyReadinessProperties properties,
 		JourneyReadinessService readinessService) {
 		return new JourneyActivationService(registry, properties, readinessService);
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyCandidateCanaryCommandParser journeyCandidateCanaryCommandParser() {
+		return new JourneyCandidateCanaryCommandParser();
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyCandidateCanaryService journeyCandidateCanaryService(
+		RouteBundleActivationRegistry registry,
+		JourneyRaptorPort raptorPort) {
+		return new JourneyCandidateCanaryService(registry, raptorPort, CLOCK);
 	}
 
 	@Bean
@@ -142,6 +159,7 @@ public class JourneyProductionConfiguration {
 				SESSION_PATH,
 				SEARCH_PATH,
 				JourneyActivationController.PATH,
+				JourneyCandidateCanaryController.PATH,
 				JourneyReadinessController.CANDIDATE_PATH,
 				JourneyReadinessController.ACTIVE_PATH)
 			.csrf(AbstractHttpConfigurer::disable)
@@ -149,6 +167,8 @@ public class JourneyProductionConfiguration {
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH).permitAll()
 				.requestMatchers(HttpMethod.POST, JourneyActivationController.PATH)
+				.hasRole("JOURNEY_READINESS")
+				.requestMatchers(HttpMethod.POST, JourneyCandidateCanaryController.PATH)
 				.hasRole("JOURNEY_READINESS")
 				.requestMatchers(
 					HttpMethod.GET,
@@ -165,9 +185,13 @@ public class JourneyProductionConfiguration {
 						|| JourneyReadinessController.ACTIVE_PATH.equals(pathWithinApplication));
 				boolean activationPost = HttpMethod.POST.matches(request.getMethod())
 					&& JourneyActivationController.PATH.equals(pathWithinApplication);
-				response.setStatus(readinessGet || activationPost ? 401 : 403);
+				boolean canaryPost = HttpMethod.POST.matches(request.getMethod())
+					&& JourneyCandidateCanaryController.PATH.equals(pathWithinApplication);
+				response.setStatus(readinessGet || activationPost || canaryPost ? 401 : 403);
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-				if (readinessGet || activationPost) response.setHeader("WWW-Authenticate", "Bearer");
+				if (readinessGet || activationPost || canaryPost) {
+					response.setHeader("WWW-Authenticate", "Bearer");
+				}
 			}).accessDeniedHandler((request, response, exception) -> {
 				response.setStatus(403);
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");

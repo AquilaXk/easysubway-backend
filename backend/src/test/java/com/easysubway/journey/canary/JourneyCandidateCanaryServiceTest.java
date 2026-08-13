@@ -20,6 +20,7 @@ import com.easysubway.journey.bundle.RouteBundleActivationException;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import com.easysubway.journey.bundle.RouteBundleAdmissionEvidence;
 import com.easysubway.journey.bundle.RouteBundleIdentity;
+import com.easysubway.journey.bundle.RouteBundleRuntimeView;
 import com.easysubway.journey.bundle.VerifiedRouteBundleCandidate;
 import java.time.Clock;
 import java.time.Instant;
@@ -83,7 +84,8 @@ class JourneyCandidateCanaryServiceTest {
 
 	@Test
 	void commandIdentityMismatchConflictsBeforePlannerInvocation() {
-		when(registry.candidateExecutionSnapshot()).thenReturn(staged(SHA_A, 1));
+		var staged = staged(SHA_A, 1);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 
 		assertKind(JourneyCandidateCanaryException.Kind.CONFLICT,
 			() -> service.execute(command("b".repeat(64), 1)));
@@ -101,7 +103,8 @@ class JourneyCandidateCanaryServiceTest {
 
 		org.mockito.Mockito.reset(registry);
 		var invalidRuntime = staged(SHA_A, 1);
-		when(invalidRuntime.runtimeView().routeBundleSha256()).thenReturn("b".repeat(64));
+		when(((JourneyRaptorRuntimeView) invalidRuntime.runtimeView()).routeBundleSha256())
+			.thenReturn("b".repeat(64));
 		when(registry.candidateExecutionSnapshot()).thenReturn(invalidRuntime);
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
 
@@ -113,18 +116,18 @@ class JourneyCandidateCanaryServiceTest {
 		var staged = staged(SHA_A, 1);
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 
-		when(raptorPort.plan(any(), any(), any(), any())).thenThrow(new IllegalStateException("synthetic"));
-		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
-
-		when(raptorPort.plan(any(), any(), any(), any())).thenReturn(null);
-		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
-
 		when(raptorPort.plan(any(), any(), any(), any()))
-			.thenReturn(new JourneyRaptorPort.PlanResult("other-query", List.of(mock(JourneyCandidate.class))));
+			.thenThrow(new IllegalStateException("synthetic"))
+			.thenReturn(
+				null,
+				new JourneyRaptorPort.PlanResult("other-query", List.of(mock(JourneyCandidate.class))),
+				new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of()));
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
 
-		when(raptorPort.plan(any(), any(), any(), any()))
-			.thenReturn(new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of()));
+		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
+
+		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
+
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
 
 		verify(raptorPort, times(4)).plan(any(), any(), any(), any());
@@ -146,9 +149,24 @@ class JourneyCandidateCanaryServiceTest {
 		verify(registry, never()).activate(anyString(), anyLong());
 	}
 
+	@Test
+	void candidateExpiryAfterPlanningIsUnavailableRatherThanAStateConflict() {
+		var staged = staged(SHA_A, 1);
+		var stale = mock(RouteBundleActivationException.class);
+		when(stale.reason()).thenReturn(RouteBundleActivationException.Reason.BUNDLE_STALE);
+		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
+		when(raptorPort.plan(any(), any(), any(), any())).thenReturn(new JourneyRaptorPort.PlanResult(
+			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class))));
+		when(registry.candidateSnapshot()).thenThrow(stale);
+
+		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
+
+		verify(raptorPort).plan(any(), any(), any(), any());
+		verify(registry, never()).activate(anyString(), anyLong());
+	}
+
 	private static RouteBundleActivationRegistry.CandidateExecutionSnapshot staged(String manifest, long generation) {
-		var runtime = mock(JourneyRaptorRuntimeView.class,
-			org.mockito.Mockito.withSettings().extraInterfaces(com.easysubway.journey.bundle.RouteBundleRuntimeView.class));
+		var runtime = mock(TestRuntimeView.class);
 		when(runtime.routeBundleSha256()).thenReturn(manifest);
 		when(runtime.generation()).thenReturn(generation);
 		return new RouteBundleActivationRegistry.CandidateExecutionSnapshot(
@@ -198,5 +216,8 @@ class JourneyCandidateCanaryServiceTest {
 			.isInstanceOf(JourneyCandidateCanaryException.class)
 			.extracting("kind")
 			.isEqualTo(kind);
+	}
+
+	private interface TestRuntimeView extends JourneyRaptorRuntimeView, RouteBundleRuntimeView {
 	}
 }

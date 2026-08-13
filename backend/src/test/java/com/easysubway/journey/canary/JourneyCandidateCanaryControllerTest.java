@@ -78,7 +78,8 @@ class JourneyCandidateCanaryControllerTest {
 				.contentType(MediaType.TEXT_PLAIN).content(JourneyCandidateCanaryCommandParserTest.validCommand()))
 			.andExpect(status().isBadRequest());
 
-		for (String contentType : new String[] {"*/*", "application/*", "application/*+json"}) {
+		for (String contentType : new String[] {
+			"*/*", "application/*", "application/*+json", "application/problem+json"}) {
 			mockMvc.perform(post(JourneyCandidateCanaryController.PATH)
 					.header(HttpHeaders.CONTENT_TYPE, contentType)
 					.content(JourneyCandidateCanaryCommandParserTest.validCommand()))
