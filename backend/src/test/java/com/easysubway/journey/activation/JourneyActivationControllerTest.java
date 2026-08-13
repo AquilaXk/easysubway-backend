@@ -60,6 +60,12 @@ class JourneyActivationControllerTest {
 			.andExpect(jsonPath("$.artifactKind").value("journey-v3-activation-failure"))
 			.andExpect(jsonPath("$.activated").value(false))
 			.andExpect(jsonPath("$.detail").doesNotExist());
+
+		mockMvc.perform(post(JourneyActivationController.PATH)
+				.contentType(MediaType.TEXT_PLAIN)
+				.content(JourneyActivationCommandParserTest.validCommand()))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"));
 	}
 
 	@Test

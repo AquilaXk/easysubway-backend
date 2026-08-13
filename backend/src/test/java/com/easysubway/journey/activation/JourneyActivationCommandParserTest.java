@@ -37,10 +37,13 @@ class JourneyActivationCommandParserTest {
 		assertInvalid(validCommand().replace("\"schemaVersion\":1", "\"schemaVersion\":2"));
 		assertInvalid(validCommand().replace("journey-v3-activation-command", "other"));
 		assertInvalid(validCommand().replace("activation-request-228", " activation-request-228"));
+		assertInvalid(validCommand().replace("activation-request-228", "activation\\u0000request"));
 		assertInvalid(validCommand().replace(SHA_A, "A".repeat(64)));
 		assertInvalid(validCommand().replace("\"candidateGeneration\":1", "\"candidateGeneration\":2"));
 		assertInvalid(validCommand().replace("\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":-1"));
 		assertInvalid(validCommand().replace("\"trafficGeneration\":31", "\"trafficGeneration\":0"));
+		assertInvalid(validCommand().replace(
+			"\"expectedActiveGeneration\":0", "\"expectedActiveGeneration\":9223372036854775807"));
 	}
 
 	@Test

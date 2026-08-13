@@ -33,26 +33,31 @@ class JourneyActivationServiceTest {
 		when(registry.candidateSnapshot()).thenReturn(candidate);
 		when(properties.trafficGeneration()).thenReturn(31L);
 		when(registry.activate(SHA_A, 0)).thenReturn(activeSnapshot);
-		when(readinessService.active()).thenReturn(activeReadiness);
+		when(readinessService.active(activeSnapshot)).thenReturn(activeReadiness);
 
 		assertThat(service.activate(command())).isSameAs(activeReadiness);
 
 		verify(registry).candidateSnapshot();
 		verify(registry).activate(SHA_A, 0);
-		verify(readinessService).active();
+		verify(readinessService).active(activeSnapshot);
 	}
 
 	@Test
-	void tupleOrTrafficMismatchIsAConflictBeforeActivation() {
+	void everyTupleOrTrafficMismatchIsAConflictBeforeActivation() {
 		when(registry.candidateSnapshot()).thenReturn(candidate());
 		when(properties.trafficGeneration()).thenReturn(31L);
-		var mismatched = new JourneyActivationCommandParser.Command(
-			1, "journey-v3-activation-command", "other", SHA_A, 1, 0, 31);
 
-		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(mismatched));
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
+			1, "journey-v3-activation-command", "other", SHA_A, 1, 0, 31)));
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
+			1, "journey-v3-activation-command", "activation-request-228", "b".repeat(64), 1, 0, 31)));
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
+			1, "journey-v3-activation-command", "activation-request-228", SHA_A, 2, 1, 31)));
+		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(new JourneyActivationCommandParser.Command(
+			1, "journey-v3-activation-command", "activation-request-228", SHA_A, 1, 0, 32)));
 
 		verify(registry, never()).activate(SHA_A, 0);
-		verify(readinessService, never()).active();
+		verify(readinessService, never()).active(org.mockito.ArgumentMatchers.any(ActiveRouteBundleSnapshot.class));
 	}
 
 	@Test
@@ -63,7 +68,7 @@ class JourneyActivationServiceTest {
 		assertKind(JourneyActivationException.Kind.UNAVAILABLE, () -> service.activate(command()));
 
 		verify(registry, never()).activate(SHA_A, 0);
-		verify(readinessService, never()).active();
+		verify(readinessService, never()).active(org.mockito.ArgumentMatchers.any(ActiveRouteBundleSnapshot.class));
 	}
 
 	@Test
@@ -76,7 +81,7 @@ class JourneyActivationServiceTest {
 		assertKind(JourneyActivationException.Kind.CONFLICT, () -> service.activate(command()));
 
 		verify(registry, never()).activate(SHA_A, 0);
-		verify(readinessService, never()).active();
+		verify(readinessService, never()).active(org.mockito.ArgumentMatchers.any(ActiveRouteBundleSnapshot.class));
 	}
 
 	private static RouteBundleActivationRegistry.CandidateSnapshot candidate() {

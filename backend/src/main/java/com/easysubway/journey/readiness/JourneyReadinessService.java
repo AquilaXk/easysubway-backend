@@ -67,7 +67,11 @@ public final class JourneyReadinessService {
 	}
 
 	public ActiveReadiness active() {
-		ActiveRouteBundleSnapshot snapshot = registry.activeSnapshot();
+		return active(registry.activeSnapshot());
+	}
+
+	public ActiveReadiness active(ActiveRouteBundleSnapshot snapshot) {
+		Objects.requireNonNull(snapshot, "snapshot");
 		RouteBundleIdentity identity = snapshot.identity();
 		String evidenceSha256 = evidenceSha256(
 			"schemaVersion", SCHEMA_VERSION,

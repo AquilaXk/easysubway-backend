@@ -8,6 +8,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.security.test.web.servlet.setup.SecurityMockMvcConfigurers.springSecurity;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -133,11 +134,20 @@ class JourneyProductionConfigurationTest {
 					.content(activationCommand()))
 				.andExpect(status().isUnauthorized())
 				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
-				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(content().string(""));
+			mockMvc.perform(post(ACTIVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer wrong-token")
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content(activationCommand()))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(content().string(""));
 			mockMvc.perform(get(ACTIVATION_PATH)
 					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
 				.andExpect(status().isForbidden())
-				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"))
+				.andExpect(content().string(""));
 			mockMvc.perform(post(ACTIVATION_PATH)
 					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN)
 					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
