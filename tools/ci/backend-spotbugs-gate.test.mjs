@@ -418,6 +418,51 @@ test('Backend #224 session controller final-type remediation is exact', () => {
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 16, fixRequired: 16, fixed: 111, falsePositiveExactSuppression: 66, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #226 route v2 access store constructor dispositions are exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const cases = [
+    ['0194c7b39dcf80db0c068e653288184c2c53193de71fb0ad5aae73f84b4150c9', 'javax.sql.DataSource,int'],
+    ['23d7297f5cc5352a987b23570fa9ba5d0fa8eec26911e8fe6910c1aad6fa39c0', 'org.springframework.jdbc.core.JdbcTemplate'],
+    ['e1f9e05c372bba6a8297c83cf624a300dced181324ab09b3ee4db8fadb222c03', 'org.springframework.jdbc.core.JdbcTemplate,int'],
+  ];
+  for (const [identity, params] of cases) {
+    const finding = tracked.findings.find((candidate) => candidate.identity === identity);
+    assert.deepEqual(
+      [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+      [
+        'FALSE_POSITIVE_EXACT_SUPPRESSION',
+        'https://github.com/AquilaXk/easysubway-backend/issues/226',
+        '[Build][Backend][P1] JdbcRouteV2AccessStore exact-constructor SpotBugs disposition',
+        'OPEN',
+        'Backend #226 reviewed these exact constructors as intentional fail-fast request-limit and dependency initialization; no partially initialized store escapes.',
+        'Remove this suppression if the constructor no longer fails fast, the repository transaction proxy contract changes, or the exact finding disappears.',
+        'Review this decision on source/member identity, constructor validation, Spring transaction proxy semantics, analyzer, or Backend #226 owner-state change.',
+        '2026-11-13',
+        {
+          kind: 'EXCLUDE_FILTER_EXACT_METHOD',
+          bugPattern: 'CT_CONSTRUCTOR_THROW',
+          className: 'com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore',
+          methodName: '<init>',
+          params,
+          returns: 'void',
+          reason: 'Backend #226 exact fail-fast Route V2 access-store constructor initialization.',
+        },
+      ],
+    );
+  }
+  const excludeFilter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
+  for (const [, params] of cases) {
+    const escapedParams = params.replaceAll('.', '\\.');
+    assert.match(excludeFilter, new RegExp(`<Bug pattern="CT_CONSTRUCTOR_THROW"/>\\s*<Class name="com\\.easysubway\\.route\\.adapter\\.out\\.persistence\\.JdbcRouteV2AccessStore"/>\\s*<Method name="&lt;init&gt;" params="${escapedParams}" returns="void"/>`, 'u'));
+  }
+  assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 72);
+  const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteV2AccessStore.java', import.meta.url), 'utf8');
+  assert.match(source, /^public class JdbcRouteV2AccessStore implements RouteV2AccessStore \{/mu);
+  assert.doesNotMatch(source, /^public\s+final\s+class JdbcRouteV2AccessStore\b/mu);
+  assert.equal((source.match(/@Transactional/g) ?? []).length, 2);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 13, fixRequired: 13, fixed: 111, falsePositiveExactSuppression: 69, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
