@@ -44,6 +44,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.boot.availability.ApplicationAvailability;
+import org.springframework.boot.availability.AvailabilityChangeEvent;
+import org.springframework.boot.availability.AvailabilityState;
 import org.springframework.boot.availability.ReadinessState;
 import org.springframework.boot.autoconfigure.AutoConfigurations;
 import org.springframework.boot.autoconfigure.security.servlet.SecurityAutoConfiguration;
@@ -408,8 +410,11 @@ class JourneyProductionConfigurationTest {
 		validProductionContext().run(context -> {
 			assertThat(context).hasNotFailed();
 			var registry = context.getBean(RouteBundleActivationRegistry.class);
-			var availability = context.getBean(ApplicationAvailability.class);
-			var readinessService = context.getBean(JourneyReadinessService.class);
+			var availability = new MutableApplicationAvailability();
+			var readinessService = new JourneyReadinessService(
+				registry,
+				context.getBean(JourneyReadinessProperties.class),
+				availability);
 			var identity = identity();
 			var evidence = evidence();
 			when(registry.candidateSnapshot()).thenReturn(new RouteBundleActivationRegistry.CandidateSnapshot(
@@ -420,14 +425,14 @@ class JourneyProductionConfigurationTest {
 			when(active.admissionEvidence()).thenReturn(evidence);
 			when(active.activatedAt()).thenReturn(ACTIVATED_AT);
 
-			when(availability.getReadinessState()).thenReturn(ReadinessState.ACCEPTING_TRAFFIC);
+			availability.readinessState(ReadinessState.ACCEPTING_TRAFFIC);
 			var acceptingCandidate = readinessService.candidate();
 			var acceptingActive = readinessService.active(active);
 			assertThat(acceptingCandidate.ready()).isTrue();
 			assertThat(acceptingActive.servingReady()).isTrue();
 			assertThat(acceptingActive.draining()).isFalse();
 
-			when(availability.getReadinessState()).thenReturn(ReadinessState.REFUSING_TRAFFIC);
+			availability.readinessState(ReadinessState.REFUSING_TRAFFIC);
 			var refusingCandidate = readinessService.candidate();
 			var refusingActive = readinessService.active(active);
 			assertThat(refusingCandidate.ready()).isFalse();
@@ -608,10 +613,8 @@ class JourneyProductionConfigurationTest {
 		}
 
 		@Bean
-		ApplicationAvailability applicationAvailability() {
-			var availability = mock(ApplicationAvailability.class);
-			when(availability.getReadinessState()).thenReturn(ReadinessState.ACCEPTING_TRAFFIC);
-			return availability;
+		MutableApplicationAvailability applicationAvailability() {
+			return new MutableApplicationAvailability();
 		}
 
 		@Bean
@@ -688,6 +691,33 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		JourneyRaptorPort duplicateJourneyRaptorPort() {
 			return mock(JourneyRaptorPort.class);
+		}
+	}
+
+	static final class MutableApplicationAvailability implements ApplicationAvailability {
+
+		private ReadinessState readinessState = ReadinessState.ACCEPTING_TRAFFIC;
+
+		void readinessState(ReadinessState readinessState) {
+			this.readinessState = readinessState;
+		}
+
+		@Override
+		public <S extends AvailabilityState> S getState(Class<S> stateType) {
+			return getState(stateType, null);
+		}
+
+		@Override
+		public <S extends AvailabilityState> S getState(Class<S> stateType, S defaultState) {
+			if (stateType == ReadinessState.class) {
+				return stateType.cast(readinessState);
+			}
+			return defaultState;
+		}
+
+		@Override
+		public <S extends AvailabilityState> AvailabilityChangeEvent<S> getLastChangeEvent(Class<S> stateType) {
+			return null;
 		}
 	}
 
