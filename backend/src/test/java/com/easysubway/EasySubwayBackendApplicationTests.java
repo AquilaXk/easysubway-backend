@@ -187,6 +187,9 @@ class EasySubwayBackendApplicationTests {
 		private Environment environment;
 
 		@Autowired
+		private ApplicationContext applicationContext;
+
+		@Autowired
 		private MockMvc mockMvc;
 
 		@Test
@@ -199,6 +202,13 @@ class EasySubwayBackendApplicationTests {
 				.isEqualTo("easysubway-report-uploads");
 			assertThat(environment.getProperty("easysubway.journey-v3.search-web.enabled"))
 				.isEqualTo("true");
+			assertThat(applicationContext.getBeanNamesForType(
+				Class.forName("com.easysubway.journey.adapter.in.web.JourneySearchController"),
+				true,
+				false
+			)).containsExactly("journeySearchController");
+			assertThat(applicationContext.getBeansOfType(JourneyApplicationDeadlineExecutor.class)).hasSize(1);
+			assertThat(applicationContext.getBeansOfType(JourneyCandidateCanaryService.class)).hasSize(1);
 
 			mockMvc.perform(get("/actuator/health/readiness"))
 				.andExpect(status().isOk())
