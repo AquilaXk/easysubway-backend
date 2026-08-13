@@ -110,6 +110,12 @@ class RouteV2SessionServiceTest {
 	}
 
 	@Test
+	@DisplayName("누락된 decoded requestHash를 attestation rejection으로 처리한다")
+	void rejectsMissingDecodedRequestHash() {
+		assertRejected(verdict("com.easysubway.app", "com.easysubway.app", null, NOW));
+	}
+
+	@Test
 	@DisplayName("정확히 2분 된 verdict는 freshness 경계 안에서 허용한다")
 	void acceptsVerdictAtTwoMinuteBoundary() {
 		when(decoder.decode("integrity-token")).thenReturn(

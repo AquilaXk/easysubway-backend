@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '524ec92aeabf6ef4dfd5e0ecec7a6551d8d9ca35d83cd1fbad2295447405cdd1'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '5cadc79ac25e5534ce40fedcd77c3ff7c58fe2eab5e875f9404e17ab5a9554f1');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '82e22851896ceaa148fd7c7c3a4ee9daa91ece5737c86967339fa57fc15bc226');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -93,7 +93,7 @@ test('tracked remediation policy preserves prior children and projects the curre
     'FIXED',
   ]);
   const lifecycle = reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED'));
-  assert.deepEqual(lifecycle, { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(lifecycle, { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   assert.deepEqual(report.filter(({ disposition }) => disposition === 'FIXED').map(({ identity }) => identity), [
     'bf9106f46fd3c8a55e1199dd6c9e83d982b7ca5101e8997a4629142cb42788f5',
     'd0285ecad578ac2c773fb1e80d5c4530f9dc4d1b9795aa59eb46dafe3a13d5f8',
@@ -159,23 +159,20 @@ test('tracked remediation policy preserves prior children and projects the curre
   assert.equal(spotbugs.enforcement, 'required_fail_closed_remediation_ledger');
   assert.match(spotbugs.evidence.failMode, /ignoreFailures=true/);
   assert.match(spotbugs.evidence.failMode, /Backend #4/);
-  const requiredIndex = tracked.findings.findIndex(({ disposition }) => disposition === 'FIX_REQUIRED');
-  assert.notEqual(requiredIndex, -1);
-  for (const mutate of [
-    (value) => { value.toolchain.gradleVersion = null; },
-    (value) => { value.toolchain.spotbugsGradlePlugin.implementationClass = 'wrong.Plugin'; },
-    (value) => { value.toolchain.spotbugsEngine.toolVersion = '4.9.4'; },
-    (value) => { value.toolchain.spotbugsEngine.classpath.reverse(); },
-    (value) => { value.findings.pop(); },
-    (value) => { value.findings.push(structuredClone(value.findings[0])); },
-    (value) => { value.findings[requiredIndex].sourceSha256 = '0'.repeat(64); },
-    (value) => { value.findings[requiredIndex].ownerIssueUrl = 'https://example.invalid/owner'; },
-    (value) => { value.findings[requiredIndex].ownerIssueTitle = 'wrong'; },
-    (value) => { value.findings[requiredIndex].ownerIssueState = 'CLOSED'; },
-    (value) => { value.findings[requiredIndex].expiresAt = '2026-01-01'; },
-    (value) => { value.findings[requiredIndex].reason = 'wrong'; },
-    (value) => { value.findings[requiredIndex].sourcePath = 'backend/src/main/java/**/*.java'; }
-  ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' })); }
+  const validationIndex = 0;
+  for (const [label, mutate] of [
+    ['Gradle version', (value) => { value.toolchain.gradleVersion = null; }],
+    ['plugin class', (value) => { value.toolchain.spotbugsGradlePlugin.implementationClass = 'wrong.Plugin'; }],
+    ['engine version', (value) => { value.toolchain.spotbugsEngine.toolVersion = '4.9.4'; }],
+    ['engine classpath order', (value) => { value.toolchain.spotbugsEngine.classpath.reverse(); }],
+    ['missing finding', (value) => { value.findings.pop(); }],
+    ['duplicate finding', (value) => { value.findings.push(structuredClone(value.findings[0])); }],
+    ['source digest', (value) => { value.findings[validationIndex].sourceSha256 = '0'.repeat(64); }],
+    ['owner URL', (value) => { value.findings[validationIndex].ownerIssueUrl = 'https://example.invalid/owner'; }],
+    ['owner state', (value) => { value.findings[validationIndex].ownerIssueState = 'CLOSED'; }],
+    ['expiry', (value) => { value.findings[validationIndex].expiresAt = '2026-01-01'; }],
+    ['source path', (value) => { value.findings[validationIndex].sourcePath = 'backend/src/main/java/**/*.java'; }],
+  ]) { const invalid = structuredClone(tracked); mutate(invalid); assert.throws(() => validatePolicy(invalid, { today: '2026-08-10' }), label); }
 });
 
 test('Backend #180 realtime residual projection is exact', () => {
@@ -343,7 +340,7 @@ test('Backend #216 RouteV2Metrics injected registry disposition is exact', () =>
   const excludeFilter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
   assert.match(excludeFilter, /<Bug pattern="EI_EXPOSE_REP2"\/>\s*<Class name="com\.easysubway\.route\.adapter\.in\.web\.RouteV2Metrics"\/>\s*<Method name="&lt;init&gt;" params="io\.micrometer\.core\.instrument\.MeterRegistry" returns="void"\/>/u);
   assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 81);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #218 realtime cancelled train list remediation is exact', () => {
@@ -365,7 +362,7 @@ test('Backend #218 realtime cancelled train list remediation is exact', () => {
       null,
     ],
   );
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #220 route controller final-type remediation is exact', () => {
@@ -390,7 +387,7 @@ test('Backend #220 route controller final-type remediation is exact', () => {
   const controller = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/adapter/in/web/RouteSearchController.java', import.meta.url), 'utf8');
   assert.match(controller, /^final class RouteSearchController \{/mu);
   assert.doesNotMatch(controller, /^public\s+final\s+class RouteSearchController\b/mu);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #224 session controller final-type remediation is exact', () => {
@@ -415,7 +412,7 @@ test('Backend #224 session controller final-type remediation is exact', () => {
   const controller = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionController.java', import.meta.url), 'utf8');
   assert.match(controller, /^final class RouteV2SessionController \{/mu);
   assert.doesNotMatch(controller, /^public\s+final\s+class RouteV2SessionController\b/mu);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #226 route v2 access store constructor dispositions are exact', () => {
@@ -460,7 +457,7 @@ test('Backend #226 route v2 access store constructor dispositions are exact', ()
   assert.match(source, /^public class JdbcRouteV2AccessStore implements RouteV2AccessStore \{/mu);
   assert.doesNotMatch(source, /^public\s+final\s+class JdbcRouteV2AccessStore\b/mu);
   assert.equal((source.match(/@Transactional/g) ?? []).length, 2);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #230 route v2 planner dispositions are exact', () => {
@@ -524,7 +521,7 @@ test('Backend #230 route v2 planner dispositions are exact', () => {
   assert.match(source, /^public class RouteV2Planner implements RouteV2SearchUseCase \{/mu);
   assert.doesNotMatch(source, /^public\s+final\s+class RouteV2Planner\b/mu);
   assert.match(source, /return updates == null\s*\? TimetableRealtimeUpdates\.unavailable\("REALTIME_OVERLAY_UNAVAILABLE"\)\s*:\s*updates;/u);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #234 route search service constructor dispositions are exact', () => {
@@ -577,7 +574,7 @@ test('Backend #234 route search service constructor dispositions are exact', () 
   const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java', import.meta.url), 'utf8');
   assert.match(source, /private static SaveRouteFeedbackPort requireFeedbackPort\(SaveRouteSearchPort saveRouteSearchPort\)/u);
   assert.match(source, /throw new IllegalArgumentException\("경로 피드백 저장 포트가 필요합니다\."\);/u);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #237 JDBC route search repository remediation is source-complete', () => {
@@ -655,7 +652,41 @@ test('Backend #237 JDBC route search repository remediation is source-complete',
   assert.equal(digest(source), 'ffa979f9036c09a16e20b20acd86608566f9551e4a2750c9c5742c112ac97489');
   assert.match(source, /RouteFeedbackDashboardSummary countSummary = jdbcTemplate\.queryForObject\(/u);
   assert.doesNotMatch(source, /^public\s+final\s+class JdbcRouteSearchRepository\b/mu);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
+test('Backend #240 route v2 session service remediation is source-complete', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/application/service/RouteV2SessionService.java', import.meta.url), 'utf8');
+  const identities = [
+    'e0e7e907f208e9d07be9c7cc837a9f891f9bf0871a35ac876f1bb7f133b31883',
+    '11c3e22f0e5e5c225aecb419c77d7a31e50fff43fabbf177060614185c4f4b8b',
+    'c2bf6ea21fddaf3363fe1da854cc5be25d70118bacedcdac1b7e47c87f5aa862',
+    '1bffa098934724f56cae23d5179d88b2c6f3f3f9c42d8666e231cf66a17744fc',
+  ];
+  for (const identity of identities) {
+    const finding = tracked.findings.find((candidate) => candidate.identity === identity);
+    assert.deepEqual(
+      [finding.disposition, finding.sourceSha256, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+      [
+        'FIXED',
+        'dd387321c0ee99d5adebad90eb4ace5fdd14b86e79230c74a3a79a4d48378529',
+        'https://github.com/AquilaXk/easysubway-backend/issues/240',
+        '[Build][Backend][P1] RouteV2SessionService SpotBugs final source remediation',
+        'OPEN',
+        'Backend #240 removed this exact Route V2 session finding with final-type construction or explicit null request-hash rejection.',
+        'Reopen Backend #240 if this exact finding or a source-equivalent replacement reappears.',
+        'Review this terminal decision when the exact source, session attestation contract, analyzer, or Backend #240 evidence changes.',
+        '2026-11-13',
+        null,
+      ],
+    );
+  }
+  assert.match(source, /^public final class RouteV2SessionService \{/mu);
+  assert.match(source, /if \(decodedRequestHash == null\) \{\s*return false;\s*\}/u);
+  assert.match(source, /catch \(IllegalArgumentException exception\) \{\s*return false;\s*\}/u);
+  assert.doesNotMatch(source, /IllegalArgumentException \| NullPointerException/u);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
 test('Backend #110 datapack projection is exact', () => {
@@ -664,7 +695,7 @@ test('Backend #110 datapack projection is exact', () => {
   assert.equal(datapack.length, 26);
   assert.equal(new Set(datapack.map(({ sourcePath }) => sourcePath)).size, 14);
   assert.equal(digest(`${JSON.stringify(datapack.map(({ identity }) => identity))}\n`), 'ec819b85d5a55653bd06a926a125694efb09cba0f2389841f3cbb8852f89cdc4');
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   const fixed = datapack.filter(({ disposition }) => disposition === 'FIXED');
   assert.deepEqual(fixed.map(({ identity }) => identity), ['d233aa50bd7f69d165daa6336008536ec372c51d9739a669c7d202dac64bd481', '6105aefe9ddc33aa82dc2dbc1dec6e4913558a4b4d00f4ba5f86e4583c8e0a57', '20f57710c70f578826127d148bcb6fff9ddf182b5a0919da897fdbada2e20546', '90c28725d7010af274f86071b28b259a19b6e2102d211ad03450a5ef289aa0dc']);
   const ct = datapack.filter(({ bugPattern, disposition }) => bugPattern === 'CT_CONSTRUCTOR_THROW' && disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION');
@@ -783,7 +814,7 @@ test('Backend #116 remaining non-realtime projection is exact', () => {
   assert.equal(digest(`${JSON.stringify(partition.map(({ identity }) => identity))}\n`), 'cfd7f7082e06c832b058da317a61116baf50d1c9c52a6c33f9c06c8ca5fdf045');
   assert.equal(partition.filter(({ disposition }) => disposition === 'FIXED').length, 10);
   assert.equal(partition.filter(({ disposition }) => disposition === 'FALSE_POSITIVE_EXACT_SUPPRESSION').length, 24);
-  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   const transitFix = partition.find(({ identity }) => identity === '95314f1f0a737e7d376b637c207324ddc186225d02584b6b3e3a03d274994f30');
   assert.deepEqual([transitFix.ownerIssueUrl, transitFix.ownerIssueTitle, transitFix.disposition, transitFix.suppression], [
     'https://github.com/AquilaXk/easysubway-backend/issues/151',
@@ -888,9 +919,13 @@ test('remediation policy admits a synthetic fixed terminal absence', () => {
 
 test('terminal dispositions require child-owned non-generic review metadata', () => {
   const terminal = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  const required = terminal.findings.find(({ disposition }) => disposition === 'FIX_REQUIRED');
-  assert.ok(required);
-  required.disposition = 'FIXED';
+  const fixed = terminal.findings.find(({ disposition }) => disposition === 'FIXED');
+  assert.ok(fixed);
+  fixed.ownerIssueUrl = 'https://github.com/AquilaXk/easysubway-backend/issues/4';
+  fixed.ownerIssueTitle = '[Build][Backend][P1] current SpotBugs findings 정리·enforcement 전환';
+  fixed.reason = 'Exact current SpotBugs finding requires source-level review and remediation in Backend #4.';
+  fixed.removalCondition = 'Remove this entry when the finding disappears or Backend #4 records a root-approved exact terminal disposition.';
+  fixed.reviewTrigger = 'Review on any finding identity, source byte, analyzer toolchain, classpath, report schema, or owner-state change.';
   assert.throws(() => validatePolicy(terminal, { today: '2026-08-10' }), /terminal metadata/);
 });
 
@@ -1078,7 +1113,7 @@ test('terminal suppression filters require one ordered exact method Match', () =
   const filter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
   assert.equal(validatePolicy(terminal, { today: '2026-08-10' }), true);
   assert.equal(validateExcludeFilter(terminal, filter), true);
-  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+  assert.deepEqual(reconcileLedger(terminal, terminal.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
   for (const mutate of [
     (value) => { value.suppression.params = 'java.lang.String,java.util.List'; },
     (value) => { value.suppression.returns = 'java.lang.Void'; }
