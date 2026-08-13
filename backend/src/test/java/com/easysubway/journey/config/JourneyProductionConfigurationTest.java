@@ -637,6 +637,11 @@ class JourneyProductionConfigurationTest {
 		}
 
 		@Bean
+		MutableApplicationAvailability applicationAvailability() {
+			return new MutableApplicationAvailability();
+		}
+
+		@Bean
 		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
 			return mock(JourneyTimetableRealtimeResolver.class);
 		}
@@ -653,6 +658,11 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		JourneySessionStore journeySessionStore() {
 			return mock(JourneySessionStore.class);
+		}
+
+		@Bean
+		MutableApplicationAvailability applicationAvailability() {
+			return new MutableApplicationAvailability();
 		}
 
 		@Bean
