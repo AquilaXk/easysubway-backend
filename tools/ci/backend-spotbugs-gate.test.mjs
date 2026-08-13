@@ -527,6 +527,59 @@ test('Backend #230 route v2 planner dispositions are exact', () => {
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 11, fixRequired: 11, fixed: 111, falsePositiveExactSuppression: 71, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #234 route search service constructor dispositions are exact', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const cases = [
+    {
+      identity: '093896db4fadc5fbfaa8fc5945bc3c29c10581f6e502c2512fccedb7d565e2ba',
+      params: 'com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort',
+    },
+    {
+      identity: '1528f735d8a2cb23c9c50e1a275d74b716652415a7c8b0cdc1acb23e537121a9',
+      params: 'com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock',
+    },
+    {
+      identity: '167a8027f32711e02e2d3c0b09bc9c0e70dd4ca47b7febbc3f2d51f2b361bad3',
+      params: 'com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock,com.easysubway.route.application.port.out.RealtimeArrivalResolver',
+    },
+  ];
+  for (const expected of cases) {
+    const finding = tracked.findings.find((candidate) => candidate.identity === expected.identity);
+    assert.deepEqual(
+      [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+      [
+        'FALSE_POSITIVE_EXACT_SUPPRESSION',
+        'https://github.com/AquilaXk/easysubway-backend/issues/234',
+        '[Build][Backend][P1] RouteSearchService exact-constructor SpotBugs disposition',
+        'OPEN',
+        'Backend #234 reviewed the exact convenience constructor as intentional fail-fast feedback-port capability validation; no partially initialized route service escapes.',
+        'Remove this suppression if construction no longer performs the reviewed feedback-port capability validation or the exact finding disappears.',
+        'Review this decision on source/member identity, feedback-port compatibility/failure timing, analyzer, or Backend #234 owner-state change.',
+        '2026-11-13',
+        {
+          kind: 'EXCLUDE_FILTER_EXACT_METHOD',
+          bugPattern: 'CT_CONSTRUCTOR_THROW',
+          className: 'com.easysubway.route.application.service.RouteSearchService',
+          methodName: '<init>',
+          params: expected.params,
+          returns: 'void',
+          reason: 'Backend #234 exact fail-fast RouteSearchService feedback-port compatibility boundary.',
+        },
+      ],
+    );
+  }
+  const excludeFilter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
+  for (const { params } of cases) {
+    const escapedParams = params.replaceAll('.', '\\.');
+    assert.match(excludeFilter, new RegExp('<Bug pattern="CT_CONSTRUCTOR_THROW"/>\\s*<Class name="com\\.easysubway\\.route\\.application\\.service\\.RouteSearchService"/>\\s*<Method name="&lt;init&gt;" params="' + escapedParams + '" returns="void"/>', 'u'));
+  }
+  assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 77);
+  const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/application/service/RouteSearchService.java', import.meta.url), 'utf8');
+  assert.match(source, /private static SaveRouteFeedbackPort requireFeedbackPort\(SaveRouteSearchPort saveRouteSearchPort\)/u);
+  assert.match(source, /throw new IllegalArgumentException\("경로 피드백 저장 포트가 필요합니다\."\);/u);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 8, fixRequired: 8, fixed: 111, falsePositiveExactSuppression: 74, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
