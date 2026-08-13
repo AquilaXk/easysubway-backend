@@ -46,8 +46,13 @@ public final class JourneyActivationController {
 
 	private static void requireJson(String contentType) {
 		try {
-			if (contentType == null
-				|| !MediaType.APPLICATION_JSON.isCompatibleWith(MediaType.parseMediaType(contentType))) {
+			if (contentType == null) {
+				throw new JourneyActivationException(JourneyActivationException.Kind.INVALID_REQUEST);
+			}
+			MediaType mediaType = MediaType.parseMediaType(contentType);
+			if (mediaType.isWildcardType()
+				|| mediaType.isWildcardSubtype()
+				|| !MediaType.APPLICATION_JSON.isCompatibleWith(mediaType)) {
 				throw new JourneyActivationException(JourneyActivationException.Kind.INVALID_REQUEST);
 			}
 		} catch (IllegalArgumentException exception) {
