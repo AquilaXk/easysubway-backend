@@ -658,6 +658,40 @@ test('Backend #237 JDBC route search repository remediation is source-complete',
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 111, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #240 route v2 session service remediation is source-complete', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/application/service/RouteV2SessionService.java', import.meta.url), 'utf8');
+  const identities = [
+    'e0e7e907f208e9d07be9c7cc837a9f891f9bf0871a35ac876f1bb7f133b31883',
+    '11c3e22f0e5e5c225aecb419c77d7a31e50fff43fabbf177060614185c4f4b8b',
+    'c2bf6ea21fddaf3363fe1da854cc5be25d70118bacedcdac1b7e47c87f5aa862',
+    '1bffa098934724f56cae23d5179d88b2c6f3f3f9c42d8666e231cf66a17744fc',
+  ];
+  for (const identity of identities) {
+    const finding = tracked.findings.find((candidate) => candidate.identity === identity);
+    assert.deepEqual(
+      [finding.disposition, finding.sourceSha256, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+      [
+        'FIXED',
+        digest(source),
+        'https://github.com/AquilaXk/easysubway-backend/issues/240',
+        '[Build][Backend][P1] RouteV2SessionService SpotBugs final source remediation',
+        'OPEN',
+        'Backend #240 removed this exact Route V2 session finding with final-type construction or explicit null request-hash rejection.',
+        'Reopen Backend #240 if this exact finding or a source-equivalent replacement reappears.',
+        'Review this terminal decision when the exact source, session attestation contract, analyzer, or Backend #240 evidence changes.',
+        '2026-11-13',
+        null,
+      ],
+    );
+  }
+  assert.match(source, /^public final class RouteV2SessionService \{/mu);
+  assert.match(source, /if \(decodedRequestHash == null\) \{\s*return false;\s*\}/u);
+  assert.match(source, /catch \(IllegalArgumentException exception\) \{\s*return false;\s*\}/u);
+  assert.doesNotMatch(source, /IllegalArgumentException \| NullPointerException/u);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 0, fixRequired: 0, fixed: 115, falsePositiveExactSuppression: 78, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
