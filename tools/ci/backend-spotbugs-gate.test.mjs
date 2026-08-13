@@ -580,6 +580,75 @@ test('Backend #234 route search service constructor dispositions are exact', () 
   assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 8, fixRequired: 8, fixed: 111, falsePositiveExactSuppression: 74, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
 });
 
+test('Backend #237 JDBC route search repository remediation is source-complete', () => {
+  const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
+  const constructorCases = [
+    {
+      identity: '0f2bad439027143868dc6bbad2e1b507a23c979977dacb527f7347f790374010',
+      params: 'javax.sql.DataSource,com.fasterxml.jackson.databind.ObjectMapper',
+    },
+    {
+      identity: '229ae32908060789dd99fcd681b11a8a92c260e5aff58d57536bc636227621e4',
+      params: 'org.springframework.jdbc.core.JdbcTemplate',
+    },
+    {
+      identity: '18aa99be5a2668cc6485abd3af50a745c399747cb5de78c1725cae80b2aa76b8',
+      params: 'org.springframework.jdbc.core.JdbcTemplate,com.fasterxml.jackson.databind.ObjectMapper',
+    },
+  ];
+  for (const expected of constructorCases) {
+    const finding = tracked.findings.find((candidate) => candidate.identity === expected.identity);
+    assert.deepEqual(
+      [finding.disposition, finding.ownerIssueUrl, finding.ownerIssueTitle, finding.ownerIssueState, finding.reason, finding.removalCondition, finding.reviewTrigger, finding.expiresAt, finding.suppression],
+      [
+        'FALSE_POSITIVE_EXACT_SUPPRESSION',
+        'https://github.com/AquilaXk/easysubway-backend/issues/237',
+        '[Build][Backend][P1] JdbcRouteSearchRepository SpotBugs remediation',
+        'OPEN',
+        'Backend #237 reviewed the exact repository constructor as intentional fail-fast dependency and database-dialect initialization; no partially initialized repository escapes.',
+        'Remove this suppression if construction no longer performs the reviewed fail-fast initialization or the exact finding disappears.',
+        'Review this decision on source/member identity, Spring repository proxy/exception-translation semantics, analyzer, or Backend #237 owner-state change.',
+        '2026-11-13',
+        {
+          kind: 'EXCLUDE_FILTER_EXACT_METHOD',
+          bugPattern: 'CT_CONSTRUCTOR_THROW',
+          className: 'com.easysubway.route.adapter.out.persistence.JdbcRouteSearchRepository',
+          methodName: '<init>',
+          params: expected.params,
+          returns: 'void',
+          reason: 'Backend #237 exact fail-fast JDBC route repository initialization boundary.',
+        },
+      ],
+    );
+  }
+  const fixed = tracked.findings.find(({ identity }) => identity === '4deadab6b3c471e871af1c461c8ea32c74e2e580abd1cd1ade1a7f92a22d5bb0');
+  assert.deepEqual(
+    [fixed.disposition, fixed.ownerIssueUrl, fixed.ownerIssueTitle, fixed.ownerIssueState, fixed.reason, fixed.removalCondition, fixed.reviewTrigger, fixed.expiresAt, fixed.suppression],
+    [
+      'FIXED',
+      'https://github.com/AquilaXk/easysubway-backend/issues/237',
+      '[Build][Backend][P1] JdbcRouteSearchRepository SpotBugs remediation',
+      'OPEN',
+      'Backend #237 made the aggregate query result invariant explicit with a fail-closed non-null check.',
+      'Reopen Backend #237 if this exact finding or a source-equivalent nullable aggregate dereference reappears.',
+      'Review this terminal decision when the aggregate SQL, row mapper, JdbcTemplate contract, analyzer, or Backend #237 evidence changes.',
+      '2026-11-13',
+      null,
+    ],
+  );
+  const excludeFilter = readFileSync(new URL('../../backend/quality/spotbugs-exclude.xml', import.meta.url), 'utf8');
+  for (const { params } of constructorCases) {
+    const escapedParams = params.replaceAll('.', '\\.');
+    assert.match(excludeFilter, new RegExp('<Bug pattern="CT_CONSTRUCTOR_THROW"/>\\s*<Class name="com\\.easysubway\\.route\\.adapter\\.out\\.persistence\\.JdbcRouteSearchRepository"/>\\s*<Method name="&lt;init&gt;" params="' + escapedParams + '" returns="void"/>', 'u'));
+  }
+  assert.equal((excludeFilter.match(/<Match>/g) ?? []).length, 80);
+  const source = readFileSync(new URL('../../backend/src/main/java/com/easysubway/route/adapter/out/persistence/JdbcRouteSearchRepository.java', import.meta.url), 'utf8');
+  assert.match(source, /Objects\.requireNonNull\(\s*jdbcTemplate\.queryForObject\(/u);
+  assert.match(source, /"경로 피드백 집계 결과가 필요합니다\."/u);
+  assert.doesNotMatch(source, /^public\s+final\s+class JdbcRouteSearchRepository\b/mu);
+  assert.deepEqual(reconcileLedger(tracked, tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED')), { ledgerTotal: 195, reported: 4, fixRequired: 4, fixed: 112, falsePositiveExactSuppression: 77, acceptedBoundedRisk: 2, generatedOrNonOwnedExclusion: 0, unclassified: 0, missing: 0, duplicate: 0, stale: 0 });
+});
+
 test('Backend #110 datapack projection is exact', () => {
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
   const datapack = tracked.findings.filter(({ sourcePath }) => sourcePath.includes('/datapack/'));
