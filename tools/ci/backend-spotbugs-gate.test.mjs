@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'beed2d3505a47fe04d631182199499102caf3e72ba2cb2c94073d9a32216b802', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'fc3a7134a7361b12e5ed29a3ee016c326d933a561d7eac3136101dc7262d602d', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: '524ec92aeabf6ef4dfd5e0ecec7a6551d8d9ca35d83cd1fbad2295447405cdd1'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '964bdb84a34a6e4751f0dabbf7415e9f67706db7a7adc2ccadad8664dfc7438c');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '15062c07b4f154c289df13145b219efee797dd6d5bf47c56fe099bb8e0276a68');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -155,10 +155,11 @@ test('tracked enforced policy preserves prior children and projects the current 
   }
   const gate = JSON.parse(readFileSync(new URL('../../backend/quality/static-analysis-gate.json', import.meta.url), 'utf8'));
   const spotbugs = gate.tools.find(({ id }) => id === 'spotbugs');
-  assert.equal(gate.enforcementStatus, 'spotbugs-remediation-ledger-progressive-required');
-  assert.equal(spotbugs.enforcement, 'required_fail_closed_remediation_ledger');
-  assert.match(spotbugs.evidence.failMode, /ignoreFailures=true/);
-  assert.match(spotbugs.evidence.failMode, /Backend #4/);
+  assert.equal(gate.defaultPolicy, 'zero-finding-required-enforcement');
+  assert.equal(gate.enforcementStatus, 'spotbugs-zero-finding-required-enforced');
+  assert.equal(spotbugs.enforcement, 'required_fail_closed_zero_finding');
+  assert.match(spotbugs.evidence.failMode, /spotbugsMain ignoreFailures=false/);
+  assert.match(spotbugs.evidence.failMode, /spotbugsTest remains non-failing under NOT_REQUIRED_CURRENT/);
   const validationIndex = 0;
   for (const [label, mutate] of [
     ['Gradle version', (value) => { value.toolchain.gradleVersion = null; }],
@@ -895,7 +896,9 @@ test('Backend #4 final enforcement is atomic and fail closed', () => {
   const build = readFileSync(new URL('../../backend/build.gradle', import.meta.url), 'utf8');
   assert.equal(tracked.transition.phase, 'ENFORCED');
   assert.equal(tracked.analysis.gradleIgnoreFailures, false);
-  assert.match(build, /spotbugs \{\n\tignoreFailures = false\n/);
+  assert.doesNotMatch(build, /spotbugs \{\n\tignoreFailures =/);
+  assert.match(build, /tasks\.named\('spotbugsMain', com\.github\.spotbugs\.snom\.SpotBugsTask\) \{\n\tignoreFailures = false\n/);
+  assert.match(build, /tasks\.named\('spotbugsTest', com\.github\.spotbugs\.snom\.SpotBugsTask\) \{\n\tignoreFailures = true\n\}/);
   assert.equal(tracked.findings.filter(({ disposition }) => disposition === 'FIX_REQUIRED').length, 0);
   assert.equal(validatePolicy(tracked, { today: '2026-08-13' }), true);
 

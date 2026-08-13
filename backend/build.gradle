@@ -12,7 +12,6 @@ jacoco {
 }
 
 spotbugs {
-	ignoreFailures = false
 	showProgress = false
 	excludeFilter = file('quality/spotbugs-exclude.xml')
 }
@@ -256,12 +255,17 @@ tasks.withType(com.github.spotbugs.snom.SpotBugsTask).configureEach {
 def spotbugsMainEvidence = layout.buildDirectory.file('spotbugs/spotbugsMain-evidence.json')
 
 tasks.named('spotbugsMain', com.github.spotbugs.snom.SpotBugsTask) {
+	ignoreFailures = false
 	reports.named('html') {
 		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.html')
 	}
 	reports.named('xml') {
 		outputLocation = layout.buildDirectory.file('reports/spotbugs/spotbugsMain.xml')
 	}
+}
+
+tasks.named('spotbugsTest', com.github.spotbugs.snom.SpotBugsTask) {
+	ignoreFailures = true
 }
 
 tasks.register('writeSpotbugsMainEvidence') {

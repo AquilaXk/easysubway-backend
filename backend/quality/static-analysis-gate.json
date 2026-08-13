@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "gateId": "backend-static-analysis-gate",
-  "defaultPolicy": "closed-report-policy-before-final-enforcement",
-  "enforcementStatus": "spotbugs-remediation-ledger-progressive-required",
+  "defaultPolicy": "zero-finding-required-enforcement",
+  "enforcementStatus": "spotbugs-zero-finding-required-enforced",
   "ciRuntimeBudgetMinutes": {
     "maxAdditionalMinutes": 3,
     "measurementRequiredBeforeEnforcement": true
@@ -20,14 +20,14 @@
     },
     {
       "id": "spotbugs",
-      "enforcement": "required_fail_closed_remediation_ledger",
+      "enforcement": "required_fail_closed_zero_finding",
       "firstAllowedGate": "backend-spotbugs-main",
       "evidence": {
         "suppressionPolicy": "backend/quality/spotbugs-suppression-policy.json",
         "excludeFilter": "backend/quality/spotbugs-exclude.xml",
         "requiredValidator": "tools/ci/backend-spotbugs-gate.mjs",
         "resultArtifact": "backend-spotbugs-${GITHUB_SHA}/backend-spotbugs-result.json",
-        "failMode": "ignoreFailures=true only while the closed validator proves the immutable 195-entry decrease-only remediation ledger; Backend #4 exclusively owns ignoreFailures=false final enforcement",
+        "failMode": "spotbugsMain ignoreFailures=false and the closed validator requires ENFORCED policy, zero current findings, and the immutable 195-entry terminal ledger; spotbugsTest remains non-failing under NOT_REQUIRED_CURRENT",
         "foundationIssue": "https://github.com/AquilaXk/easysubway-backend/issues/35",
         "remediationOwnerIssue": "https://github.com/AquilaXk/easysubway-backend/issues/4"
       },
