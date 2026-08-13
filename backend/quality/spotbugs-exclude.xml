@@ -306,6 +306,31 @@
 	</Match>
 	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
+		<Method name="&lt;init&gt;" params="javax.sql.DataSource,int" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
+		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate,int" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.application.service.RouteV2Planner"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.in.RouteSearchUseCase,org.springframework.beans.factory.ObjectProvider,org.springframework.core.env.Environment,io.micrometer.core.instrument.MeterRegistry" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE"/>
+		<Class name="com.easysubway.route.application.service.RouteV2Planner"/>
+		<Method name="resolveRealtimeUpdates" params="java.util.List" returns="com.easysubway.route.application.port.in.RouteSearchUseCase$TimetableRealtimeUpdates"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.train.adapter.in.web.TrainSearchContractController"/>
 		<Method name="&lt;init&gt;" params="com.easysubway.train.application.TrainSearchService,com.fasterxml.jackson.databind.ObjectMapper,org.springframework.beans.factory.ObjectProvider" returns="void"/>
 	</Match>
