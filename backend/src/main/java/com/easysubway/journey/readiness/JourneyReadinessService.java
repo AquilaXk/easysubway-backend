@@ -9,6 +9,8 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Objects;
+import org.springframework.boot.availability.ApplicationAvailability;
+import org.springframework.boot.availability.ReadinessState;
 
 public final class JourneyReadinessService {
 
@@ -18,17 +20,21 @@ public final class JourneyReadinessService {
 
 	private final RouteBundleActivationRegistry registry;
 	private final JourneyReadinessProperties properties;
+	private final ApplicationAvailability applicationAvailability;
 
 	public JourneyReadinessService(
 		RouteBundleActivationRegistry registry,
-		JourneyReadinessProperties properties) {
+		JourneyReadinessProperties properties,
+		ApplicationAvailability applicationAvailability) {
 		this.registry = Objects.requireNonNull(registry, "registry");
 		this.properties = Objects.requireNonNull(properties, "properties");
+		this.applicationAvailability = Objects.requireNonNull(applicationAvailability, "applicationAvailability");
 	}
 
 	public CandidateReadiness candidate() {
 		var snapshot = registry.candidateSnapshot();
 		var identity = snapshot.identity();
+		boolean ready = acceptsTraffic();
 		String evidenceSha256 = evidenceSha256(
 			"schemaVersion", SCHEMA_VERSION,
 			"artifactKind", CANDIDATE_KIND,
@@ -42,7 +48,7 @@ public final class JourneyReadinessService {
 			"bundleReleaseSequence", identity.releaseSequence(),
 			"generation", snapshot.generation(),
 			"warmed", true,
-			"ready", true,
+			"ready", ready,
 			"freshUntil", identity.freshUntilInstant(),
 			"verifiedAt", snapshot.verifiedAt(),
 			"stagedAt", snapshot.stagedAt());
@@ -59,7 +65,7 @@ public final class JourneyReadinessService {
 			identity.releaseSequence(),
 			snapshot.generation(),
 			true,
-			true,
+			ready,
 			identity.freshUntilInstant(),
 			snapshot.verifiedAt(),
 			snapshot.stagedAt(),
@@ -73,6 +79,8 @@ public final class JourneyReadinessService {
 	public ActiveReadiness active(ActiveRouteBundleSnapshot snapshot) {
 		Objects.requireNonNull(snapshot, "snapshot");
 		RouteBundleIdentity identity = snapshot.identity();
+		boolean servingReady = acceptsTraffic();
+		boolean draining = !servingReady;
 		String evidenceSha256 = evidenceSha256(
 			"schemaVersion", SCHEMA_VERSION,
 			"artifactKind", ACTIVE_KIND,
@@ -86,8 +94,8 @@ public final class JourneyReadinessService {
 			"bundleReleaseSequence", identity.releaseSequence(),
 			"generation", snapshot.generation(),
 			"trafficGeneration", properties.trafficGeneration(),
-			"servingReady", true,
-			"draining", false,
+			"servingReady", servingReady,
+			"draining", draining,
 			"freshUntil", identity.freshUntilInstant(),
 			"activatedAt", snapshot.activatedAt());
 		return new ActiveReadiness(
@@ -103,11 +111,15 @@ public final class JourneyReadinessService {
 			identity.releaseSequence(),
 			snapshot.generation(),
 			properties.trafficGeneration(),
-			true,
-			false,
+			servingReady,
+			draining,
 			identity.freshUntilInstant(),
 			snapshot.activatedAt(),
 			evidenceSha256);
+	}
+
+	private boolean acceptsTraffic() {
+		return applicationAvailability.getReadinessState() == ReadinessState.ACCEPTING_TRAFFIC;
 	}
 
 	private static String evidenceSha256(Object... values) {

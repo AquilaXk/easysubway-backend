@@ -30,6 +30,7 @@ import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.availability.ApplicationAvailability;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.context.annotation.Bean;
@@ -57,8 +58,9 @@ public class JourneyProductionConfiguration {
 	@Bean
 	JourneyReadinessService journeyReadinessService(
 		RouteBundleActivationRegistry registry,
-		JourneyReadinessProperties properties) {
-		return new JourneyReadinessService(registry, properties);
+		JourneyReadinessProperties properties,
+		ApplicationAvailability applicationAvailability) {
+		return new JourneyReadinessService(registry, properties, applicationAvailability);
 	}
 
 	@Bean
