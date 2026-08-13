@@ -186,7 +186,9 @@ class HealthCheckControllerTest {
 						"외부 지도 도보 길안내",
 						"카카오맵 앱",
 						"카카오맵 웹",
-							"이용자 및 법정대리인의 권리",
+						"Journey V3 서버 경로 검색",
+						"별도 검색 이력으로 저장하지 않습니다",
+						"이용자 및 법정대리인의 권리",
 						"개인정보 보호책임자",
 						"privacy@aquilaxk.site"
 					));
