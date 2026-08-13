@@ -321,6 +321,21 @@
 	</Match>
 	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.application.service.RouteSearchService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.application.service.RouteSearchService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
+		<Class name="com.easysubway.route.application.service.RouteSearchService"/>
+		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock,com.easysubway.route.application.port.out.RealtimeArrivalResolver" returns="void"/>
+	</Match>
+	<Match>
+		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.route.application.service.RouteV2Planner"/>
 		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.in.RouteSearchUseCase,org.springframework.beans.factory.ObjectProvider,org.springframework.core.env.Environment,io.micrometer.core.instrument.MeterRegistry" returns="void"/>
 	</Match>
