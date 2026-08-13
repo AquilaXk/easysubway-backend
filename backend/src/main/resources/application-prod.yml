@@ -46,6 +46,8 @@ easysubway:
   journey-v3:
     session-web:
       enabled: true
+    search-web:
+      enabled: true
   ads:
     event-daily-cap: ${EASYSUBWAY_ADS_EVENT_DAILY_CAP}
   report:
