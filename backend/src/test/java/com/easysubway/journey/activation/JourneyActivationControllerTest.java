@@ -3,6 +3,7 @@ package com.easysubway.journey.activation;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
@@ -74,6 +75,18 @@ class JourneyActivationControllerTest {
 				.content(JourneyActivationCommandParserTest.validCommand()))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"));
+	}
+
+	@Test
+	void wildcardContentTypesAreRejectedBeforeActivation() throws Exception {
+		for (String contentType : new String[] {"*/*", "application/*", "application/*+json"}) {
+			mockMvc.perform(post(JourneyActivationController.PATH)
+					.header(HttpHeaders.CONTENT_TYPE, contentType)
+					.content(JourneyActivationCommandParserTest.validCommand()))
+				.andExpect(status().isBadRequest())
+				.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"));
+		}
+		verifyNoInteractions(activationService);
 	}
 
 	@Test
