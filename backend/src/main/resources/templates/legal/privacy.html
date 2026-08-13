@@ -87,7 +87,7 @@
 <main>
 	<header>
 		<h1>쉬운 지하철 개인정보처리방침</h1>
-		<p class="meta">공고일: 2026년 7월 28일 · 시행일: 2026년 8월 4일</p>
+		<p class="meta">개정 공고일: 2026년 8월 13일 · 시행일: 2026년 8월 20일</p>
 		<p>
 			쉬운 지하철(easysubway)은 교통약자가 도시철도를 더 쉽게 이용할 수 있도록 역, 시설, 경로, 신고 기능을 제공합니다.
 			이 문서는 앱에서 처리하는 개인정보, 보관 기준, 삭제 요청 방법, 문의 창구를 설명합니다.
@@ -126,6 +126,11 @@
 				<td>사용자가 변경, 초기화, 삭제 요청할 때까지 보관</td>
 			</tr>
 			<tr>
+				<td>경로 요청 식별자, 출발·도착역 ID, 출발 기준, 시간·실시간 정책, 이동 조건, 환승·대안 수 제한</td>
+				<td>Journey V3 서버 경로 검색</td>
+				<td>요청과 계산 결과는 별도 검색 이력으로 저장하지 않습니다. 세션 검증용 해시 상태는 제4항의 기준을 따릅니다.</td>
+			</tr>
+			<tr>
 				<td>시설 신고 내용, 사진, 접수 식별 정보</td>
 				<td>시설 고장, 공사, 위치 오류 신고 검토와 처리 상태 안내</td>
 				<td>신고 내용과 접수 식별 정보는 운영 데이터에서 접수일부터 최대 1년, 제한된 PostgreSQL 백업에서 생성일부터 30일 보관 후 자동 삭제 또는 익명화. 신고 사진은 운영 object에서 접수일부터 최대 1년 보관하며 별도 백업 사본을 만들지 않음</td>
@@ -141,17 +146,23 @@
 
 	<section>
 		<h2>3. 개인정보를 처리하는 방법</h2>
-		<p>앱 설정과 최근 검색처럼 기기 안에서 처리하는 정보는 이용자의 기기에 저장됩니다. 시설 신고 제출, 선택형 ITX-청춘 경로 검색, 데이터 삭제 요청처럼 네트워크가 필요한 기능은 이용자가 해당 기능을 실행할 때 HTTPS로 전송됩니다.</p>
+		<p>앱 설정과 최근 검색처럼 기기 안에서 처리하는 정보는 이용자의 기기에 저장됩니다. 시설 신고 제출, Journey V3 서버 경로 검색, 선택형 ITX-청춘 경로 검색, 데이터 삭제 요청처럼 네트워크가 필요한 기능은 이용자가 해당 기능을 실행할 때 HTTPS로 전송됩니다.</p>
 	</section>
 
 	<section>
-		<h2>4. SUBWAY와 선택형 ITX-청춘 경로 검색</h2>
+		<h2>4. Journey V3 서버 경로 검색</h2>
 		<p>
-			SUBWAY 경로 검색은 단말 안에서만 처리하며 서버로 전송하지 않습니다.
-			ITX-청춘 경로 검색은 사용자가 직접 선택할 때만 서버 기능을 사용하며, 사용자 행동을 tracking에 사용하지 않습니다.
+			배포 환경의 정본 지하철 경로 검색은 Journey V3 서버에서 수행합니다.
+			앱은 requestId, 출발·도착역 ID, 즉시 또는 예약 출발 기준, timetable 또는 realtime 정책,
+			mobility profile, constraint mode, 최대 환승 수와 대안 수를 HTTPS 요청으로 보냅니다.
+			서버는 검증된 active route-bundle과 RAPTOR로 경로를 계산하며 필요한 데이터나 실시간 정보가 없거나 만료·불일치하면 이전·로컬 경로로 대체하지 않습니다.
 		</p>
 		<p>
-			ITX 경로 세션을 만들 때 앱은 Google Play Integrity에 requestHash를 보내고,
+			Journey V3 요청 본문과 계산 결과는 요청 처리 중에만 사용하며 별도 검색 이력으로 저장하지 않습니다.
+			응답에는 <code>private, no-store</code> cache 정책을 적용하고 request를 사용자·기기·계정 ID와 연결하지 않습니다.
+		</p>
+		<p>
+			Journey V3 또는 기존 Route V2 경로 세션을 만들 때 앱은 Google Play Integrity에 requestHash를 보내고,
 			Google은 무결성 확인을 위해 앱 package·version·certificate, 단말에서 로그인된 Google Play 계정의 license 상태와
 			기기 attestation 정보를 암호화해 처리합니다.
 			이 정보는 Google의 Play Integrity 고정 보관 정책을 따르며 Google이 제3자에게 전송하지 않습니다.
@@ -160,9 +171,15 @@
 			쉬운 지하철 backend의 경로 세션·상태는 사용자·기기·계정 ID와 연결하지 않지만, 위 Google 처리 범위는 이 backend 비연결 경계와 구분됩니다.
 		</p>
 		<p>
-			backend는 raw integrityToken을 저장하지 않고, 검증 후 발급한 Route V2 세션 token의 SHA-256, scope, issuedAt, expiresAt, requestCount를 논리적으로 10분 동안,
+			Journey V3 backend는 raw integrityToken, raw nonce와 raw bearer token을 저장하지 않습니다.
+			검증 후 token SHA-256, <code>journey:v3</code> scope, issuedAt, expiresAt, requestCount를 논리적으로 10분 동안,
+			nonce SHA-256, claimedAt, expiresAt을 논리적으로 2분 동안 저장합니다.
+			만료된 Journey V3 행은 이후 새 세션 발급 시 같은 transaction의 cleanup 단계에서 물리 삭제하며 별도 고정 주기 purge를 사용하지 않습니다.
+		</p>
+		<p>
+			기존 Route V2 backend도 raw integrityToken을 저장하지 않고, 검증 후 발급한 세션 token의 SHA-256, scope, issuedAt, expiresAt, requestCount를 논리적으로 10분 동안,
 			raw nonce 대신 nonce SHA-256을 논리적으로 2분 동안 저장합니다.
-			정상 동작 중 만료 데이터는 기본 5분 주기 purge로 물리 삭제하므로 세션은 발급 후 약 15분 이내,
+			정상 동작 중 Route V2 만료 데이터는 기본 5분 주기 purge로 물리 삭제하므로 세션은 발급 후 약 15분 이내,
 			nonce 해시는 수신 후 약 7분 이내 삭제됩니다.
 			ITX 경로 요청의 실제 JSON에는 originStationId, destinationStationId, departureTime,
 			mobilityType, mobilityPreset, constraintMode, useRealtime, maxTransfers, alternativeCount가 포함됩니다.
@@ -175,8 +192,8 @@
 			생성 시각부터 최소 30분, 최대 6시간이며, 정상 동작 중 물리 삭제는 expiresAt 뒤 5분 이내입니다.
 		</p>
 		<p>
-			backend는 raw integrityToken, raw nonce, Integrity payload·verdict를 DB에 저장하거나 로그에 남기지 않으며,
-			Route V2는 raw 검색어와 좌표를 요청으로 보내거나 저장하지 않습니다.
+			backend는 Route V2와 Journey V3의 raw integrityToken, raw nonce, Integrity payload·verdict를 DB에 저장하거나 로그에 남기지 않으며,
+			Journey V3 요청·응답을 별도 검색 이력으로 저장하지 않습니다. Route V2는 raw 검색어와 좌표를 요청으로 보내거나 저장하지 않습니다.
 			별도로 gateway는 요청 제한을 위해 IP의 이진 표현인 <code>$binary_remote_addr</code>와
 			Bearer 세션 token이 든 <code>$http_authorization</code>을 Nginx shared memory key로 처리합니다.
 			이 상태는 요청이 끝난 뒤에도 shared memory에 남을 수 있어 ephemeral 처리로 분류하지 않습니다.
@@ -199,7 +216,7 @@
 		<h2>6. 보관, 전송 및 파기</h2>
 		<p>
 				즐겨찾기, 최근 검색, 앱 설정, 신고 초안, 설치된 이동 정보 기록은 기본적으로 사용자 기기에 보관됩니다.
-			신고 제출, 선택형 ITX-청춘 경로 검색, 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
+			신고 제출, Journey V3 서버 경로 검색, 선택형 ITX-청춘 경로 검색, 삭제 요청처럼 네트워크 전송이 필요한 경우 HTTPS를 사용합니다.
 			보관 목적이 끝나거나 삭제 요청 처리가 완료된 개인정보는 복구하기 어렵게 삭제하거나 식별 가능성을 줄입니다.
 		</p>
 		<p>
@@ -274,8 +291,8 @@
 		<p>개인정보 처리자: 아퀼라 소프트웨어</p>
 		<p>주소: 경기도 안산시 상록구 본오로 9안길 47, 102호</p>
 		<p>전화: <a href="tel:010-5855-0105">010-5855-0105</a></p>
-		<p>공고일: 2026년 7월 28일</p>
-		<p>시행일: 2026년 8월 4일</p>
+		<p>개정 공고일: 2026년 8월 13일</p>
+		<p>시행일: 2026년 8월 20일</p>
 	</footer>
 </main>
 </body>
