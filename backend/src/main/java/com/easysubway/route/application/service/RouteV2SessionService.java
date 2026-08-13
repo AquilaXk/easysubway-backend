@@ -21,7 +21,7 @@ import org.springframework.stereotype.Service;
 
 @Service
 @Profile("prod | staging | release | prod-like")
-public class RouteV2SessionService {
+public final class RouteV2SessionService {
 
 	static final String PACKAGE_NAME = "com.easysubway.app";
 	static final String SCOPE = "route:v2:itx";
@@ -152,11 +152,14 @@ public class RouteV2SessionService {
 	}
 
 	private boolean requestHashMatches(String clientNonce, String decodedRequestHash) {
+		if (decodedRequestHash == null) {
+			return false;
+		}
 		try {
 			byte[] expected = sha256(canonicalRequest(clientNonce).getBytes(StandardCharsets.UTF_8));
 			byte[] actual = BASE64_URL_DECODER.decode(decodedRequestHash);
 			return MessageDigest.isEqual(expected, actual);
-		} catch (IllegalArgumentException | NullPointerException exception) {
+		} catch (IllegalArgumentException exception) {
 			return false;
 		}
 	}
