@@ -8,6 +8,9 @@ import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
+import com.easysubway.journey.activation.JourneyActivationCommandParser;
+import com.easysubway.journey.activation.JourneyActivationService;
+import com.easysubway.journey.adapter.in.web.JourneyActivationController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessServiceTokenFilter;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
@@ -53,6 +56,19 @@ public class JourneyProductionConfiguration {
 		RouteBundleActivationRegistry registry,
 		JourneyReadinessProperties properties) {
 		return new JourneyReadinessService(registry, properties);
+	}
+
+	@Bean
+	JourneyActivationCommandParser journeyActivationCommandParser() {
+		return new JourneyActivationCommandParser();
+	}
+
+	@Bean
+	JourneyActivationService journeyActivationService(
+		RouteBundleActivationRegistry registry,
+		JourneyReadinessProperties properties,
+		JourneyReadinessService readinessService) {
+		return new JourneyActivationService(registry, properties, readinessService);
 	}
 
 	@Bean
@@ -125,12 +141,15 @@ public class JourneyProductionConfiguration {
 			.securityMatcher(
 				SESSION_PATH,
 				SEARCH_PATH,
+				JourneyActivationController.PATH,
 				JourneyReadinessController.CANDIDATE_PATH,
 				JourneyReadinessController.ACTIVE_PATH)
 			.csrf(AbstractHttpConfigurer::disable)
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
 				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH).permitAll()
+				.requestMatchers(HttpMethod.POST, JourneyActivationController.PATH)
+				.hasRole("JOURNEY_READINESS")
 				.requestMatchers(
 					HttpMethod.GET,
 					JourneyReadinessController.CANDIDATE_PATH,
@@ -144,9 +163,11 @@ public class JourneyProductionConfiguration {
 				boolean readinessGet = HttpMethod.GET.matches(request.getMethod())
 					&& (JourneyReadinessController.CANDIDATE_PATH.equals(pathWithinApplication)
 						|| JourneyReadinessController.ACTIVE_PATH.equals(pathWithinApplication));
-				response.setStatus(readinessGet ? 401 : 403);
+				boolean activationPost = HttpMethod.POST.matches(request.getMethod())
+					&& JourneyActivationController.PATH.equals(pathWithinApplication);
+				response.setStatus(readinessGet || activationPost ? 401 : 403);
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-				if (readinessGet) response.setHeader("WWW-Authenticate", "Bearer");
+				if (readinessGet || activationPost) response.setHeader("WWW-Authenticate", "Bearer");
 			}).accessDeniedHandler((request, response, exception) -> {
 				response.setStatus(403);
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
