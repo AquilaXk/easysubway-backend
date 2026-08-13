@@ -320,6 +320,11 @@
 		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate,com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
 	</Match>
 	<Match>
+		<Bug pattern="NP_NULL_ON_SOME_PATH_FROM_RETURN_VALUE"/>
+		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteSearchRepository"/>
+		<Method name="summarizeRouteFeedbacks" params="" returns="com.easysubway.route.domain.RouteFeedbackDashboardSummary"/>
+	</Match>
+	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
 		<Method name="&lt;init&gt;" params="javax.sql.DataSource,int" returns="void"/>

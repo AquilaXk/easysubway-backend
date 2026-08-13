@@ -29,7 +29,6 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.util.List;
-import java.util.Objects;
 import java.util.Optional;
 import javax.sql.DataSource;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -117,24 +116,21 @@ public class JdbcRouteSearchRepository
 
 	@Override
 	public RouteFeedbackDashboardSummary summarizeRouteFeedbacks() {
-		RouteFeedbackDashboardSummary countSummary = Objects.requireNonNull(
-			jdbcTemplate.queryForObject(
-				"""
-					SELECT COUNT(*) AS total_count,
-						SUM(CASE WHEN rating = 'HELPFUL' THEN 1 ELSE 0 END) AS helpful_count,
-						SUM(CASE WHEN rating = 'NOT_HELPFUL' THEN 1 ELSE 0 END) AS not_helpful_count,
-						SUM(CASE WHEN rating = 'BLOCKED_BY_REAL_WORLD' THEN 1 ELSE 0 END) AS blocked_by_real_world_count
-					FROM route_feedbacks
-					""",
-				(resultSet, rowNumber) -> new RouteFeedbackDashboardSummary(
-					resultSet.getLong("total_count"),
-					resultSet.getLong("helpful_count"),
-					resultSet.getLong("not_helpful_count"),
-					resultSet.getLong("blocked_by_real_world_count"),
-					List.of()
-				)
-			),
-			"경로 피드백 집계 결과가 필요합니다."
+		RouteFeedbackDashboardSummary countSummary = jdbcTemplate.queryForObject(
+			"""
+				SELECT COUNT(*) AS total_count,
+					SUM(CASE WHEN rating = 'HELPFUL' THEN 1 ELSE 0 END) AS helpful_count,
+					SUM(CASE WHEN rating = 'NOT_HELPFUL' THEN 1 ELSE 0 END) AS not_helpful_count,
+					SUM(CASE WHEN rating = 'BLOCKED_BY_REAL_WORLD' THEN 1 ELSE 0 END) AS blocked_by_real_world_count
+				FROM route_feedbacks
+				""",
+			(resultSet, rowNumber) -> new RouteFeedbackDashboardSummary(
+				resultSet.getLong("total_count"),
+				resultSet.getLong("helpful_count"),
+				resultSet.getLong("not_helpful_count"),
+				resultSet.getLong("blocked_by_real_world_count"),
+				List.of()
+			)
 		);
 		return new RouteFeedbackDashboardSummary(
 			countSummary.totalCount(),
