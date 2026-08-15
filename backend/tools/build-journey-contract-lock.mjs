@@ -215,22 +215,23 @@ function validateReceipt(value, trust) {
 function validateDescriptor(value, manifest, receipt, trust) {
   const isPrepublication = receipt.schemaVersion === 2;
   const transportTag = isPrepublication ? `prepublish-pr-${receipt.publication.pullRequestNumber}-head-${receipt.producer.gitSha}-run-${receipt.publication.workflowRunId}-attempt-${receipt.publication.workflowRunAttempt}` : undefined;
-  assertExactKeys(value, isPrepublication ? ["reference", "mediaType", "digest", "size", "artifactType", "referenceAsTags"] : ["reference", "mediaType", "digest", "size", "content"], "descriptor");
+  assertExactKeys(value, isPrepublication ? ["reference", "mediaType", "digest", "size", "annotations", "artifactType", "referenceAsTags"] : ["reference", "mediaType", "digest", "size", "content"], "descriptor");
   const digest = `sha256:${sha256(manifest)}`;
-  if (value.digest !== digest || value.digest !== receipt.artifact.manifestDigest || value.reference !== `${trust.artifact.repository}@${digest}` || value.mediaType !== manifestMediaType || !Number.isSafeInteger(value.size) || value.size !== manifest.byteLength || (isPrepublication && (value.artifactType !== artifactType || !Array.isArray(value.referenceAsTags) || value.referenceAsTags.length !== 1 || value.referenceAsTags[0] !== `${trust.artifact.repository}:${transportTag}`)) || (value.content !== undefined && (value.content === null || typeof value.content !== "object" || Array.isArray(value.content) || !isDeepStrictEqual(value.content, parseJson(manifest, "manifest"))))) throw new Error("descriptor is invalid");
+  if (value.digest !== digest || value.digest !== receipt.artifact.manifestDigest || value.reference !== `${trust.artifact.repository}@${digest}` || value.mediaType !== manifestMediaType || !Number.isSafeInteger(value.size) || value.size !== manifest.byteLength || (isPrepublication && (!isDeepStrictEqual(value.annotations, parseJson(manifest, "manifest").annotations) || value.artifactType !== artifactType || !Array.isArray(value.referenceAsTags) || value.referenceAsTags.length !== 1 || value.referenceAsTags[0] !== `${trust.artifact.repository}:${transportTag}`)) || (value.content !== undefined && (value.content === null || typeof value.content !== "object" || Array.isArray(value.content) || !isDeepStrictEqual(value.content, parseJson(manifest, "manifest"))))) throw new Error("descriptor is invalid");
 }
 
 function validateManifest(value, bundle, receipt, trust) {
   if (receipt.schemaVersion === 1) assertExactKeys(value, ["schemaVersion", "mediaType", "artifactType", "config", "layers", "annotations"], "manifest");
-  else assertExactKeys(value, ["schemaVersion", "mediaType", "artifactType", "config", "layers"], "manifest");
+  else assertExactKeys(value, ["schemaVersion", "mediaType", "artifactType", "config", "layers", "annotations"], "manifest");
   assertExactKeys(value.config, ["mediaType", "digest", "size", "data"], "manifest config");
-  if (value.schemaVersion !== 2 || value.mediaType !== manifestMediaType || value.artifactType !== artifactType || !Array.isArray(value.layers) || value.layers.length !== 1) throw new Error("manifest is invalid");
+  if (value.schemaVersion !== 2 || value.mediaType !== manifestMediaType || value.artifactType !== artifactType || (receipt.schemaVersion === 2 && !canonicalCreatedAnnotation(value.annotations)) || !Array.isArray(value.layers) || value.layers.length !== 1) throw new Error("manifest is invalid");
   if (value.config.mediaType !== "application/vnd.oci.empty.v1+json" || value.config.digest !== "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" || value.config.size !== 2 || value.config.data !== "e30=") throw new Error("manifest config is invalid");
   const layer = value.layers[0];
   assertExactKeys(layer, ["mediaType", "digest", "size", "annotations"], "manifest layer");
   assertExactKeys(layer.annotations, ["org.opencontainers.image.title"], "manifest layer annotations");
   if (layer.mediaType !== trust.payload.mediaType || layer.digest !== `sha256:${sha256(bundle)}` || layer.digest !== `sha256:${receipt.payload.sha256}` || !Number.isSafeInteger(layer.size) || layer.size !== bundle.byteLength || layer.annotations["org.opencontainers.image.title"] !== trust.payload.fileName) throw new Error("manifest layer is invalid");
 }
+function canonicalCreatedAnnotation(value) { const created = value?.["org.opencontainers.image.created"]; return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 1 && typeof created === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(created) && new Date(created).toISOString() === `${created.slice(0, -1)}.000Z`); }
 
 function validateBundle(bytes, receipt, trust) {
   if (sha256(bytes) !== receipt.payload.sha256) throw new Error("bundle digest is invalid");

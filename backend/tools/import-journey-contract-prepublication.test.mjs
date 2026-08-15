@@ -2,7 +2,7 @@ import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import { deflateRawSync } from "node:zlib";
-import { chmodSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
+import { chmodSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, truncateSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { buildJourneyContractLock } from "./build-journey-contract-lock.mjs";
@@ -39,6 +39,25 @@ test("prepublication receipt와 run metadata는 v1 self-hash canonical bytes를 
     const value = JSON.parse(readFileSync(metadata)); const { runMetadataSha256, ...payload } = value;
     assert.equal(runMetadataSha256, sha(Buffer.from(JSON.stringify(payload))));
     assert.deepEqual(readFileSync(metadata), Buffer.from(`${JSON.stringify(value, null, 2)}\n`));
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("importer는 prepublication descriptor와 manifest의 created annotation exact binding만 수락한다", () => {
+  mkdirSync(join(root, "backend/build"), { recursive: true }); const directory = mkdtempSync(join(root, "backend/build/journey-prepublish-annotation-test-"));
+  try {
+    const cases = [
+      { descriptorMutate: (value) => { delete value.annotations; } },
+      { descriptorMutate: (value) => { value.annotations.extra = "rejected"; } },
+      { manifestMutate: (value) => { delete value.annotations; } },
+      { manifestMutate: (value) => { value.annotations.extra = "rejected"; } },
+      { manifestMutate: (value) => { value.annotations["org.opencontainers.image.created"] = "2026-08-16T12:34:56+09:00"; } },
+      { descriptorMutate: (value) => { value.annotations["org.opencontainers.image.created"] = "2026-08-16T12:34:57Z"; } },
+    ];
+    for (const [index, options] of cases.entries()) {
+      const caseDirectory = join(directory, `${index}`); mkdirSync(caseDirectory); const artifact = buildArtifact(caseDirectory, options), caller = callerMetadata(directory, artifact), lock = join(directory, `${index}.lock.json`), trust = join(directory, `${index}.trust.json`);
+      assert.throws(() => run(artifact.zip, caller, lock, trust), /descriptor|manifest is invalid/);
+      assert.equal(existsSync(lock), false); assert.equal(existsSync(trust), false);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -133,8 +152,8 @@ function buildArtifact(parent, zipOptions = {}) {
   const directory = join(parent, "artifact"); mkdirSync(directory); const name = `journey-contract-prepublication-pr-${pr}-${sourceSha}-run-${runId}-attempt-${attempt}`;
   const resources = [["journey-v3-error-catalog", "journey-v3-error-catalog.json"], ["journey-v3-error-disposition", "journey-v3-error-disposition.json"], ["journey-v3-session-integrity", "journey-v3-session-integrity.json"], ["journey-v3-openapi", "journey-v3.openapi.yaml"]].map(([id, file], index) => { const bytes = Buffer.from(`resource-${index}`); return { id, path: `contracts/api/${file}`, owner: repository, mediaType: file.endsWith("yaml") ? "application/yaml" : "application/json", sha256: sha(bytes), contentBase64: bytes.toString("base64") }; });
   const bundle = Buffer.from(JSON.stringify({ schemaVersion: 2, bundleVersion: "2.0.0", component: "backend", producerRepository: repository, producerSha: sourceSha, resources })); const bundleSha = sha(bundle);
-  const manifest = Buffer.from(JSON.stringify({ schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", config: { mediaType: "application/vnd.oci.empty.v1+json", digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", size: 2, data: "e30=" }, layers: [{ mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", digest: `sha256:${bundleSha}`, size: bundle.length, annotations: { "org.opencontainers.image.title": "journey-v3-contract-bundle-v2.json" } }] })); const manifestDigest = `sha256:${sha(manifest)}`;
-  const descriptorValue = { reference: `ghcr.io/aquilaxk/easysubway-backend-contracts@${manifestDigest}`, mediaType: "application/vnd.oci.image.manifest.v1+json", digest: manifestDigest, size: manifest.length, artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", referenceAsTags: [`ghcr.io/aquilaxk/easysubway-backend-contracts:prepublish-pr-${pr}-head-${sourceSha}-run-${runId}-attempt-${attempt}`] }; zipOptions.descriptorMutate?.(descriptorValue); const descriptor = Buffer.from(JSON.stringify(descriptorValue));
+  const manifestValue = { schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", config: { mediaType: "application/vnd.oci.empty.v1+json", digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", size: 2, data: "e30=" }, layers: [{ mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", digest: `sha256:${bundleSha}`, size: bundle.length, annotations: { "org.opencontainers.image.title": "journey-v3-contract-bundle-v2.json" } }], annotations: { "org.opencontainers.image.created": "2026-08-16T12:34:56Z" } }; zipOptions.manifestMutate?.(manifestValue); const manifest = Buffer.from(JSON.stringify(manifestValue)); const manifestDigest = `sha256:${sha(manifest)}`;
+  const descriptorValue = { reference: `ghcr.io/aquilaxk/easysubway-backend-contracts@${manifestDigest}`, mediaType: "application/vnd.oci.image.manifest.v1+json", digest: manifestDigest, size: manifest.length, annotations: structuredClone(manifestValue.annotations), artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", referenceAsTags: [`ghcr.io/aquilaxk/easysubway-backend-contracts:prepublish-pr-${pr}-head-${sourceSha}-run-${runId}-attempt-${attempt}`] }; zipOptions.descriptorMutate?.(descriptorValue); const descriptor = Buffer.from(JSON.stringify(descriptorValue));
   const publication = { pullRequestNumber: pr, baseRef: "main", sourceRepository: repository, workflowRepository: repository, workflowSha, workflowRunId: runId, workflowRunAttempt: attempt, artifactName: name };
   const receipt = Buffer.from(JSON.stringify({ schemaVersion: 2, component: "backend", bundleVersion: "2.0.0", producer: { repository, gitSha: sourceSha }, artifact: { repository: "ghcr.io/aquilaxk/easysubway-backend-contracts", manifestDigest, artifactType: "application/vnd.easysubway.journey.contract-bundle.v2" }, payload: { fileName: "journey-v3-contract-bundle-v2.json", mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", sha256: bundleSha }, publication }));
   const payload = { schemaVersion: 1, artifactKind: "journey-contract-prepublication-run", repository, pullRequestNumber: pr, sourceSha, baseRef: "main", sourceRepository: repository, workflowRepository: repository, workflowSha, workflowRunId: runId, workflowRunAttempt: attempt, artifactName: name, bundleSha256: bundleSha, manifestDigest, receiptSha256: sha(receipt) }; const metadata = Buffer.from(`${JSON.stringify({ ...payload, runMetadataSha256: sha(Buffer.from(JSON.stringify(payload))) }, null, 2)}\n`);
