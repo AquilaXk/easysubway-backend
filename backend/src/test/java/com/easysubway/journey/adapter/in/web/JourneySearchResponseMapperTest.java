@@ -218,8 +218,46 @@ class JourneySearchResponseMapperTest {
 			.isEqualTo("2026-08-12T00:06:40Z");
 	}
 
+	@Test
+	void mapsSlowAndFastWalkingPacesToTheirWireValues() {
+		var journeys = List.of(new JourneyCandidate(
+			"journey-pace",
+			PLANNED_DEPARTURE,
+			PLANNED_ARRIVAL,
+			null,
+			null,
+			300,
+			0,
+			0,
+			JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of()),
+			List.of(new JourneyCandidate.Entry("station-origin", 30))
+		));
+		assertThat(JSON.valueToTree(JourneySearchResponseMapper.map(success(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			null,
+			journeys
+		))).path("requestPolicy").path("walkingPace").asText()).isEqualTo("SLOW");
+		assertThat(JSON.valueToTree(JourneySearchResponseMapper.map(success(
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.FAST,
+			null,
+			journeys
+		))).path("requestPolicy").path("walkingPace").asText()).isEqualTo("FAST");
+	}
+
 	private static JourneyExecutionResult.Success success(
 		JourneyRequest.TimePolicy timePolicy,
+		String realtimeSnapshotId,
+		List<JourneyCandidate> journeys
+	) {
+		return success(timePolicy, JourneyRequest.WalkingPace.STANDARD, realtimeSnapshotId, journeys);
+	}
+
+	private static JourneyExecutionResult.Success success(
+		JourneyRequest.TimePolicy timePolicy,
+		JourneyRequest.WalkingPace walkingPace,
 		String realtimeSnapshotId,
 		List<JourneyCandidate> journeys
 	) {
@@ -239,7 +277,7 @@ class JourneySearchResponseMapperTest {
 			),
 			new JourneyExecutionResult.RequestPolicy(
 				timePolicy,
-				JourneyRequest.WalkingPace.STANDARD,
+				walkingPace,
 				JourneyRequest.MobilityProfile.STEP_FREE,
 				JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				3,

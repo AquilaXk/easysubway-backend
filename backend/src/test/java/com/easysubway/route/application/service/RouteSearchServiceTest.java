@@ -2626,6 +2626,11 @@ class RouteSearchServiceTest {
 		assertThatThrownBy(() -> routeV2Command(ConstraintMode.PREFER_STEP_FREE, MobilityType.SENIOR, 1, 4))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("alternativeCount must be 3 or less");
+		assertThatThrownBy(() -> new RouteV2SearchUseCase.SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T09:00:00+09:00"),
+			MobilityType.SENIOR, null, ConstraintMode.PREFER_STEP_FREE, false, 1, 1, -1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("journeyWalkingSpeedMetersPerHour must not be negative");
 	}
 
 	@Test

@@ -24,6 +24,9 @@ class ProfileWalkTimeCalculatorTest {
 		assertThatThrownBy(() -> ProfileWalkTimeCalculator.journeySeconds(0, 4_500, MobilityPreset.STANDARD, false))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("distanceMeters must be positive");
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.journeySeconds(100, 0, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("speedMetersPerHour must be positive");
 	}
 
 	@Test

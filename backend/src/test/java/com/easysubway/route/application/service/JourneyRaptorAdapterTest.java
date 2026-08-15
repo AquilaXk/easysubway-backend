@@ -345,6 +345,19 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void returnsNoCandidateForVerifiedPositiveDistanceAccessWithStairsWhenStepFreeIsRequired() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(verifiedAccess(true, 60, 40)));
+
+		var candidates = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null).candidates();
+
+		assertThat(candidates).isEmpty();
+	}
+
+	@Test
 	void returnsNoCandidateForUnverifiedAccessInsteadOfPublishingBestEffort() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(false));
 		assertThat(new JourneyRaptorAdapter().plan(
