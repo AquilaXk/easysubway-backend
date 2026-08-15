@@ -79,6 +79,7 @@ class RouteTimetableRaptorPlanner {
 		.thenComparingInt(Label::boardings);
 	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
+	private static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
 	private static final int NON_STRICT_PROFILE_MASK = profileMask(
 		ConstraintMode.PREFER_STEP_FREE, ConstraintMode.ALLOW_WITH_WARNINGS);
 	private final ThreadLocal<ScanWorkspace> scanWorkspaces = ThreadLocal.withInitial(ScanWorkspace::new);
@@ -2340,7 +2341,7 @@ class RouteTimetableRaptorPlanner {
 						&& distanceMeters[transition] > 0
 						&& "VERIFIED".equals(verificationStatuses[transition])
 						&& (warningCodes[transition] & (WARNING_LOW_CONFIDENCE | WARNING_STALE)) == 0
-						&& (selected < 0 || distanceMeters[transition] < distanceMeters[selected])) {
+						&& (selected < 0 || isPreferredVerifiedTransition(transition, selected, profileBit))) {
 						selected = transition;
 					}
 				}
@@ -2352,6 +2353,15 @@ class RouteTimetableRaptorPlanner {
 				}
 			}
 			return -1;
+		}
+		private boolean isPreferredVerifiedTransition(int candidate, int selected, int profileBit) {
+			boolean preferStepFree = (profileBit & PREFER_STEP_FREE_PROFILE_MASK) != 0;
+			boolean candidateHasStairs = (warningCodes[candidate] & WARNING_STAIRS) != 0;
+			boolean selectedHasStairs = (warningCodes[selected] & WARNING_STAIRS) != 0;
+			if (preferStepFree && candidateHasStairs != selectedHasStairs) {
+				return !candidateHasStairs;
+			}
+			return distanceMeters[candidate] < distanceMeters[selected];
 		}
 		private int durationSeconds(int transition) {
 			return durationSeconds[transition];

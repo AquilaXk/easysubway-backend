@@ -93,6 +93,26 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void prefersVerifiedStepFreeAccessOverShorterVerifiedStairsForStepFreeProfile() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("stairs-short", "entrance", "platform-a", 10, 10, false, true, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("step-free-long", "entrance", "platform-a", 80, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 124));
+		assertThat(candidate.accessibility().stairFree()).isTrue();
+	}
+
+	@Test
 	void skipsStatusOnlyVerifiedLowConfidenceCandidateForFullyVerifiedJourneyPath() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA,
