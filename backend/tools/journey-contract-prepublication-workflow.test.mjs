@@ -17,7 +17,10 @@ test("prepublication workflow는 trusted main과 exact same-repository PR source
   assert.match(workflow, /verify-journey-contract-transport-tag-absent\.mjs/);
   assert.match(workflow, /source-pr-before-push\.json/);
   assert.match(workflow, /oras push --format json --export-manifest/);
+  assert.match(workflow, /\(cd backend\/build\/journey-contract-prepublication && oras push --format json --export-manifest journey-v3-contract-bundle-v2-manifest\.json/);
+  assert.match(workflow, /"journey-v3-contract-bundle-v2\.json:application\/vnd\.easysubway\.journey\.contract-bundle\.v2\+json"/);
   assert.match(workflow, /oras pull "\$\{repository\}@\$\{manifest_digest\}"/);
+  assert.match(workflow, /\$\{RUNNER_TEMP\}\/pullback\/journey-v3-contract-bundle-v2\.json/);
   assert.match(workflow, /journey-contract-prepublication-run-metadata\.json/);
   assert.match(workflow, /actions\/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f/);
 });

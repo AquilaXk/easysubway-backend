@@ -3,6 +3,7 @@ import { createHash, randomUUID } from "node:crypto";
 import { inflateRawSync } from "node:zlib";
 import { closeSync, constants, fchmodSync, fsyncSync, fstatSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, resolve } from "node:path";
+import { pathToFileURL } from "node:url";
 
 const repository = "AquilaXk/easysubway-backend";
 const artifactRepository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
@@ -18,7 +19,7 @@ const maxEntryBytes = 4 * 1024 * 1024;
 const inventory = ["evidence-ledger.sha256", "journey-contract-prepublication-run-metadata.json", "journey-v3-contract-bundle-v2-descriptor.json", "journey-v3-contract-bundle-v2-manifest.json", "journey-v3-contract-bundle-v2-receipt.json", payloadName];
 const resources = [["journey-v3-error-catalog", "contracts/api/journey-v3-error-catalog.json", "application/json"], ["journey-v3-error-disposition", "contracts/api/journey-v3-error-disposition.json", "application/json"], ["journey-v3-session-integrity", "contracts/api/journey-v3-session-integrity.json", "application/json"], ["journey-v3-openapi", "contracts/api/journey-v3.openapi.yaml", "application/yaml"]];
 
-if (process.argv[1] && import.meta.url.endsWith(resolve(process.argv[1]).replaceAll("\\", "/"))) {
+if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try { importJourneyContractPrepublication(process.argv.slice(2)); } catch (error) {
     process.stderr.write(`import-journey-contract-prepublication: ${error instanceof Error ? error.message : "invalid input"}\n`);
     process.exitCode = 1;
@@ -27,6 +28,7 @@ if (process.argv[1] && import.meta.url.endsWith(resolve(process.argv[1]).replace
 
 export function importJourneyContractPrepublication(values, options = {}) {
   const args = parse(values);
+  assertOutputInputsAreDistinct(args);
   const caller = json(readRegularFile(args.callerMetadata, "caller metadata"), "caller metadata");
   validateCaller(caller);
   const files = readArchive(args.artifactZip, caller.archiveSha256);
@@ -53,7 +55,12 @@ function parse(values) {
   return { artifactZip: found["--artifact-zip"], callerMetadata: found["--caller-metadata"], lockOutput: found["--lock-output"], trustOutput: found["--trust-output"] };
 }
 
-function readRegularFile(path, label) {
+function assertOutputInputsAreDistinct(args) {
+  const inputs = [args.artifactZip, args.callerMetadata].map((path) => resolve(path)), outputs = [args.lockOutput, args.trustOutput].map((path) => resolve(path));
+  if (outputs.some((output) => inputs.includes(output))) throw new Error("outputs must not alias inputs");
+}
+
+function readRegularFile(path, label, maxBytes) {
   const lexical = lstatSync(path, { throwIfNoEntry: false });
   if (!lexical || lexical.isSymbolicLink() || !lexical.isFile()) throw new Error(`${label} must be a regular file`);
   let descriptor;
@@ -61,9 +68,10 @@ function readRegularFile(path, label) {
   try {
     const before = fstatSync(descriptor);
     if (!before.isFile() || before.dev !== lexical.dev || before.ino !== lexical.ino) throw new Error(`${label} changed while opening`);
+    if (maxBytes !== undefined && before.size > maxBytes) throw new Error(`${label} is too large`);
     const bytes = readFileSync(descriptor);
     const after = fstatSync(descriptor);
-    if (!sameIdentity(before, after)) throw new Error(`${label} changed while reading`);
+    if (!sameIdentity(before, after) || bytes.length !== before.size) throw new Error(`${label} changed while reading`);
     return bytes;
   } finally { closeSync(descriptor); }
 }
@@ -74,7 +82,7 @@ function hash(bytes) { return createHash("sha256").update(bytes).digest("hex"); 
 function digest(value) { return /^[a-f0-9]{64}$/.test(value); }
 
 function readArchive(path, expectedSha) {
-  const bytes = readRegularFile(path, "artifact zip");
+  const bytes = readRegularFile(path, "artifact zip", maxArchiveBytes);
   if (bytes.length > maxArchiveBytes || hash(bytes) !== expectedSha) throw new Error("artifact zip identity is invalid");
   const eocd = findEocd(bytes);
   const count = bytes.readUInt16LE(eocd + 10), centralSize = bytes.readUInt32LE(eocd + 12), centralOffset = bytes.readUInt32LE(eocd + 16), centralEnd = centralOffset + centralSize;
@@ -193,9 +201,11 @@ function writePair(lockPath, lockDocument, trustPath, trustDocument, options) {
   const ancestors = snapshotAncestors(parent);
   assertAncestors(ancestors);
   const before = [snapshotFile(lockOutput, "lock output"), snapshotFile(trustOutput, "trust output")];
-  const token = randomUUID(), stages = [stage(lockOutput, Buffer.from(`${JSON.stringify(lockDocument, null, 2)}\n`), token), stage(trustOutput, Buffer.from(`${JSON.stringify(trustDocument, null, 2)}\n`), token)];
+  const token = randomUUID(), stages = [];
   let firstPublished = false, secondPublished = false;
   try {
+    stages.push(stage(lockOutput, Buffer.from(`${JSON.stringify(lockDocument, null, 2)}\n`), token, 0o600, options));
+    stages.push(stage(trustOutput, Buffer.from(`${JSON.stringify(trustDocument, null, 2)}\n`), token, 0o600, options));
     options.beforeFirstRename?.();
     assertAncestors(ancestors); assertPrestate(lockOutput, before[0]); assertPrestate(trustOutput, before[1]); assertStage(stages[0]); assertStage(stages[1]);
     renameSync(stages[0].path, lockOutput); firstPublished = true;
@@ -235,30 +245,39 @@ function assertPrestate(path, before) {
   const current = snapshotFile(path, "output");
   if (before === null ? current !== null : current === null || current.dev !== before.dev || current.ino !== before.ino || current.size !== before.size || current.mode !== before.mode || !current.bytes.equals(before.bytes)) throw new Error("output prestate changed");
 }
-function stage(target, bytes, token) {
-  const path = `${target}.stage-${token}`; let descriptor;
+function stage(target, bytes, token, mode = 0o600, options = {}) {
+  const path = `${target}.stage-${token}`; let descriptor, opened, completed = false;
   try {
-    descriptor = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, 0o600);
-    writeFully(descriptor, bytes); fchmodSync(descriptor, 0o600); fsyncSync(descriptor);
+    descriptor = openSync(path, constants.O_WRONLY | constants.O_CREAT | constants.O_EXCL | constants.O_NOFOLLOW, mode);
+    opened = fstatSync(descriptor);
+    writeFully(descriptor, bytes); options.afterStageWrite?.(path); fchmodSync(descriptor, mode); fsyncSync(descriptor);
     const identity = fstatSync(descriptor);
+    completed = true;
     return { path, bytes, dev: identity.dev, ino: identity.ino, size: identity.size, mode: identity.mode & 0o777 };
-  } finally { if (descriptor !== undefined) closeSync(descriptor); }
+  } finally {
+    if (descriptor !== undefined) closeSync(descriptor);
+    if (!completed && opened) removeOwnedPath(path, opened);
+  }
 }
 function assertStage(stage_) { assertOwned(stage_.path, stage_); }
 function assertOwned(path, identity) {
   const current = snapshotFile(path, "output");
-  if (!current || current.dev !== identity.dev || current.ino !== identity.ino || current.size !== identity.size || current.mode !== 0o600 || !current.bytes.equals(identity.bytes)) throw new Error("output ownership changed");
+  if (!current || current.dev !== identity.dev || current.ino !== identity.ino || current.size !== identity.size || current.mode !== identity.mode || !current.bytes.equals(identity.bytes)) throw new Error("output ownership changed");
 }
 function restoreOwned(path, before, owned, token, ancestors) {
   try {
     assertAncestors(ancestors); assertOwned(path, owned);
     if (before === null) { unlinkSync(path); fsyncParent(dirname(path)); return; }
-    const rollback = stage(path, before.bytes, `rollback-${token}`);
-    try { assertAncestors(ancestors); assertOwned(path, owned); renameSync(rollback.path, path); assertPrestate(path, before); fsyncParent(dirname(path)); } finally { removeOwnedStage(rollback, ancestors); }
+    const rollback = stage(path, before.bytes, `rollback-${token}`, before.mode);
+    try { assertAncestors(ancestors); assertOwned(path, owned); renameSync(rollback.path, path); assertOwned(path, rollback); fsyncParent(dirname(path)); } finally { removeOwnedStage(rollback, ancestors); }
   } catch { /* A foreign replacement is never overwritten during rollback. */ }
 }
 function removeOwnedStage(stage_, ancestors) {
   try { assertAncestors(ancestors); assertOwned(stage_.path, stage_); unlinkSync(stage_.path); } catch { /* Keep a path whose ownership cannot be proved. */ }
+}
+function removeOwnedPath(path, identity) {
+  const current = lstatSync(path, { throwIfNoEntry: false });
+  if (current && current.isFile() && current.dev === identity.dev && current.ino === identity.ino) unlinkSync(path);
 }
 function fsyncParent(path) { let descriptor; try { descriptor = openSync(path, constants.O_RDONLY | constants.O_DIRECTORY); fsyncSync(descriptor); } finally { if (descriptor !== undefined) closeSync(descriptor); } }
 function writeFully(descriptor, bytes) { for (let offset = 0; offset < bytes.length;) { const written = writeSync(descriptor, bytes, offset, bytes.length - offset); if (!Number.isSafeInteger(written) || written <= 0 || written > bytes.length - offset) throw new Error("output write is incomplete"); offset += written; } }
