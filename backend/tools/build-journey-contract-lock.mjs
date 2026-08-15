@@ -213,9 +213,11 @@ function validateReceipt(value, trust) {
 }
 
 function validateDescriptor(value, manifest, receipt, trust) {
-  assertExactKeys(value, receipt.schemaVersion === 2 ? ["reference", "mediaType", "digest", "size"] : ["reference", "mediaType", "digest", "size", "content"], "descriptor");
+  const isPrepublication = receipt.schemaVersion === 2;
+  const transportTag = isPrepublication ? `prepublish-pr-${receipt.publication.pullRequestNumber}-head-${receipt.producer.gitSha}-run-${receipt.publication.workflowRunId}-attempt-${receipt.publication.workflowRunAttempt}` : undefined;
+  assertExactKeys(value, isPrepublication ? ["reference", "mediaType", "digest", "size", "artifactType", "referenceAsTags"] : ["reference", "mediaType", "digest", "size", "content"], "descriptor");
   const digest = `sha256:${sha256(manifest)}`;
-  if (value.digest !== digest || value.digest !== receipt.artifact.manifestDigest || value.reference !== `${trust.artifact.repository}@${digest}` || value.mediaType !== manifestMediaType || !Number.isSafeInteger(value.size) || value.size !== manifest.byteLength || (value.content !== undefined && (value.content === null || typeof value.content !== "object" || Array.isArray(value.content) || !isDeepStrictEqual(value.content, parseJson(manifest, "manifest"))))) throw new Error("descriptor is invalid");
+  if (value.digest !== digest || value.digest !== receipt.artifact.manifestDigest || value.reference !== `${trust.artifact.repository}@${digest}` || value.mediaType !== manifestMediaType || !Number.isSafeInteger(value.size) || value.size !== manifest.byteLength || (isPrepublication && (value.artifactType !== artifactType || !Array.isArray(value.referenceAsTags) || value.referenceAsTags.length !== 1 || value.referenceAsTags[0] !== `${trust.artifact.repository}:${transportTag}`)) || (value.content !== undefined && (value.content === null || typeof value.content !== "object" || Array.isArray(value.content) || !isDeepStrictEqual(value.content, parseJson(manifest, "manifest"))))) throw new Error("descriptor is invalid");
 }
 
 function validateManifest(value, bundle, receipt, trust) {

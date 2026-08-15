@@ -53,6 +53,16 @@ test("importer는 bit-3 descriptor ZIP만 central identity와 descriptor가 일�
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
+test("importer는 descriptor artifact type 또는 transport tag drift를 거부한다", () => {
+  mkdirSync(join(root, "backend/build"), { recursive: true }); const directory = mkdtempSync(join(root, "backend/build/journey-prepublish-descriptor-test-"));
+  try {
+    for (const [name, mutate] of [["artifact type", (descriptor) => { descriptor.artifactType = "application/json"; }], ["transport tag", (descriptor) => { descriptor.referenceAsTags = ["ghcr.io/aquilaxk/easysubway-backend-contracts:other"]; }]]) {
+      const caseDirectory = join(directory, name); mkdirSync(caseDirectory); const artifact = buildArtifact(caseDirectory, { descriptorMutate: mutate });
+      assert.throws(() => run(artifact.zip, callerMetadata(caseDirectory, artifact), join(caseDirectory, "lock.json"), join(caseDirectory, "trust.json")), /manifest|descriptor|invalid/i);
+    }
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
 test("importer는 caller-bound rehashed ZIP도 bounded deflate expansion과 local drift를 거부한다", () => {
   mkdirSync(join(root, "backend/build"), { recursive: true }); const directory = mkdtempSync(join(root, "backend/build/journey-prepublish-zip-bound-test-"));
   try {
@@ -124,7 +134,7 @@ function buildArtifact(parent, zipOptions = {}) {
   const resources = [["journey-v3-error-catalog", "journey-v3-error-catalog.json"], ["journey-v3-error-disposition", "journey-v3-error-disposition.json"], ["journey-v3-session-integrity", "journey-v3-session-integrity.json"], ["journey-v3-openapi", "journey-v3.openapi.yaml"]].map(([id, file], index) => { const bytes = Buffer.from(`resource-${index}`); return { id, path: `contracts/api/${file}`, owner: repository, mediaType: file.endsWith("yaml") ? "application/yaml" : "application/json", sha256: sha(bytes), contentBase64: bytes.toString("base64") }; });
   const bundle = Buffer.from(JSON.stringify({ schemaVersion: 2, bundleVersion: "2.0.0", component: "backend", producerRepository: repository, producerSha: sourceSha, resources })); const bundleSha = sha(bundle);
   const manifest = Buffer.from(JSON.stringify({ schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", config: { mediaType: "application/vnd.oci.empty.v1+json", digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", size: 2, data: "e30=" }, layers: [{ mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", digest: `sha256:${bundleSha}`, size: bundle.length, annotations: { "org.opencontainers.image.title": "journey-v3-contract-bundle-v2.json" } }] })); const manifestDigest = `sha256:${sha(manifest)}`;
-  const descriptor = Buffer.from(JSON.stringify({ reference: `ghcr.io/aquilaxk/easysubway-backend-contracts@${manifestDigest}`, mediaType: "application/vnd.oci.image.manifest.v1+json", digest: manifestDigest, size: manifest.length }));
+  const descriptorValue = { reference: `ghcr.io/aquilaxk/easysubway-backend-contracts@${manifestDigest}`, mediaType: "application/vnd.oci.image.manifest.v1+json", digest: manifestDigest, size: manifest.length, artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", referenceAsTags: [`ghcr.io/aquilaxk/easysubway-backend-contracts:prepublish-pr-${pr}-head-${sourceSha}-run-${runId}-attempt-${attempt}`] }; zipOptions.descriptorMutate?.(descriptorValue); const descriptor = Buffer.from(JSON.stringify(descriptorValue));
   const publication = { pullRequestNumber: pr, baseRef: "main", sourceRepository: repository, workflowRepository: repository, workflowSha, workflowRunId: runId, workflowRunAttempt: attempt, artifactName: name };
   const receipt = Buffer.from(JSON.stringify({ schemaVersion: 2, component: "backend", bundleVersion: "2.0.0", producer: { repository, gitSha: sourceSha }, artifact: { repository: "ghcr.io/aquilaxk/easysubway-backend-contracts", manifestDigest, artifactType: "application/vnd.easysubway.journey.contract-bundle.v2" }, payload: { fileName: "journey-v3-contract-bundle-v2.json", mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", sha256: bundleSha }, publication }));
   const payload = { schemaVersion: 1, artifactKind: "journey-contract-prepublication-run", repository, pullRequestNumber: pr, sourceSha, baseRef: "main", sourceRepository: repository, workflowRepository: repository, workflowSha, workflowRunId: runId, workflowRunAttempt: attempt, artifactName: name, bundleSha256: bundleSha, manifestDigest, receiptSha256: sha(receipt) }; const metadata = Buffer.from(`${JSON.stringify({ ...payload, runMetadataSha256: sha(Buffer.from(JSON.stringify(payload))) }, null, 2)}\n`);
