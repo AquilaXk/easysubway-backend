@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { createHash } from "node:crypto";
 import { copyFileSync, lstatSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, renameSync, rmSync, statSync, symlinkSync, writeFileSync } from "node:fs";
-import { join, resolve } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { spawnSync } from "node:child_process";
 import test from "node:test";
 import { buildJourneyContractLock } from "./build-journey-contract-lock.mjs";
@@ -145,6 +145,8 @@ test("missing/extra/duplicate/reordered/unsafe inventory와 identity drift는 ou
       (path) => replaceJson(path, "journey-v3-contract-bundle-v2-receipt.json", (value) => { value.artifact.repository = "ghcr.io/wrong"; }),
       (path) => replaceJson(path, "journey-v3-contract-bundle-v2-receipt.json", (value) => { value.payload.sha256 = "0".repeat(64); }),
       (path) => replaceJson(path, "journey-v3-contract-bundle-v2.json", (value) => { value.resources[2].sha256 = "0".repeat(64); }),
+      (path) => rebindManifest(path, (value) => { value.config.data = "{}"; }),
+      (path) => rebindManifest(path, (value) => { value.layers[0].annotations.extra = "drift"; }),
     ];
     for (const [index, mutate] of mutations.entries()) {
       const artifact = createArtifact(join(directory, `artifact-${index}`));
@@ -159,6 +161,18 @@ test("missing/extra/duplicate/reordered/unsafe inventory와 identity drift는 ou
     writeFileSync(output, "unchanged\n");
     fail(artifact, output);
     assert.equal(readFileSync(output, "utf8"), "unchanged\n");
+  } finally { rmSync(directory, { recursive: true, force: true }); }
+});
+
+test("rehashed descriptor·receipt·ledger 뒤에도 closed manifest config와 layer shape drift를 거부한다", () => {
+  const directory = temporaryDirectory("manifest-shape");
+  try {
+    for (const mutate of [(value) => { value.config.data = "{}"; }, (value) => { value.layers[0].annotations.extra = "drift"; }]) {
+      const artifact = createArtifact(join(directory, `${Math.random()}`)); const output = join(directory, `${Math.random()}.json`);
+      rebindManifest(artifact, mutate); refreshLedgerIfPossible(artifact);
+      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact) }), /manifest config|manifest layer annotations/);
+      assert.equal(exists(output), false);
+    }
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -211,6 +225,11 @@ function createArtifact(directory) {
 }
 
 function replaceJson(artifact, name, mutate) { const path = join(artifact, name); const value = JSON.parse(readFileSync(path, "utf8")); mutate(value); writeFileSync(path, JSON.stringify(value)); }
+function rebindManifest(artifact, mutate) {
+  const manifestPath = join(artifact, "journey-v3-contract-bundle-v2-manifest.json"); const manifest = JSON.parse(readFileSync(manifestPath, "utf8")); mutate(manifest); const manifestBytes = Buffer.from(JSON.stringify(manifest)); writeFileSync(manifestPath, manifestBytes);
+  const digest = `sha256:${sha256(manifestBytes)}`; const descriptorPath = join(artifact, "journey-v3-contract-bundle-v2-descriptor.json"); const descriptor = JSON.parse(readFileSync(descriptorPath, "utf8")); descriptor.digest = digest; descriptor.reference = `ghcr.io/aquilaxk/easysubway-backend-contracts@${digest}`; descriptor.size = manifestBytes.byteLength; descriptor.content = manifest; writeFileSync(descriptorPath, JSON.stringify(descriptor));
+  replaceJson(artifact, "journey-v3-contract-bundle-v2-receipt.json", (value) => { value.artifact.manifestDigest = digest; });
+}
 function refreshLedgerIfPossible(artifact) {
   const ledger = join(artifact, "evidence-ledger.sha256");
   const rows = readFileSync(ledger, "utf8").trimEnd().split("\n");
@@ -226,4 +245,9 @@ function fail(artifact, output) { const result = spawnSync(process.execPath, [bu
 function exists(path) { try { readFileSync(path); return true; } catch { return false; } }
 function sha256(bytes) { return createHash("sha256").update(bytes).digest("hex"); }
 function anchorsFor(artifact) { return Object.fromEntries(["evidence-ledger.sha256", "backend-component-manifest.json", "journey-v3-contract-bundle-v2-descriptor.json", "journey-v3-contract-bundle-v2-manifest.json", "journey-v3-contract-bundle-v2-receipt.json", "journey-v3-contract-bundle-v2.json"].map((name) => [name, sha256(readFileSync(join(artifact, name)))])); }
+function trustFor(artifact) {
+  const receipt = JSON.parse(readFileSync(join(artifact, "journey-v3-contract-bundle-v2-receipt.json"), "utf8")); const trust = join(dirname(artifact), `${Math.random()}.trust.json`);
+  writeFileSync(trust, JSON.stringify({ schemaVersion: 1, artifactKind: "journey-contract-publication-trust", producer: receipt.producer, artifact: receipt.artifact, payload: receipt.payload, artifactInventory: names, artifactTrustAnchors: anchorsFor(artifact) }));
+  return trust;
+}
 function temporaryDirectory(name) { return mkdtempSync(join(repositoryRoot, `backend/build/.journey-contract-lock-${name}-`)); }

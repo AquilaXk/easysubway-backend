@@ -1,0 +1,79 @@
+name: Journey Contract Prepublication
+
+on:
+  workflow_dispatch:
+    inputs:
+      pullRequestNumber:
+        required: true
+        type: string
+      expectedHeadSha:
+        required: true
+        type: string
+
+permissions:
+  contents: read
+  pull-requests: read
+  packages: write
+
+jobs:
+  prepublish:
+    if: ${{ github.repository == 'AquilaXk/easysubway-backend' && github.ref == 'refs/heads/main' }}
+    runs-on: ubuntu-24.04
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          ref: ${{ github.sha }}
+      - uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+      - uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        with:
+          version: 1.3.3
+      - name: Verify same-repository open main-base source
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PR: ${{ inputs.pullRequestNumber }}
+          EXPECTED_SHA: ${{ inputs.expectedHeadSha }}
+        run: |
+          set -euo pipefail
+          [[ "${PR}" =~ ^[1-9][0-9]*$ && "${EXPECTED_SHA}" =~ ^[a-f0-9]{40}$ ]]
+          gh api "repos/AquilaXk/easysubway-backend/pulls/${PR}" > "${RUNNER_TEMP}/source-pr.json"
+          jq -e --arg sha "${EXPECTED_SHA}" '.state == "open" and .base.ref == "main" and .head.repo.full_name == "AquilaXk/easysubway-backend" and .head.sha == $sha and .head.repo.fork == false' "${RUNNER_TEMP}/source-pr.json" >/dev/null
+      - name: Read exact source data without executing source code
+        env:
+          SOURCE_SHA: ${{ inputs.expectedHeadSha }}
+        run: |
+          set -euo pipefail
+          git init "${RUNNER_TEMP}/source"
+          git -C "${RUNNER_TEMP}/source" remote add origin https://github.com/AquilaXk/easysubway-backend.git
+          git -C "${RUNNER_TEMP}/source" fetch --depth=1 --no-tags origin "${SOURCE_SHA}"
+          [[ "$(git -C "${RUNNER_TEMP}/source" rev-parse FETCH_HEAD)" == "${SOURCE_SHA}" ]]
+          mkdir -p backend/build/journey-contract-prepublication
+          node backend/tools/build-journey-contract-prepublication-bundle.mjs --git-directory "${RUNNER_TEMP}/source" --source-sha "${SOURCE_SHA}" --output backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2.json
+      - name: Publish unique transport tag and verify immutable digest
+        env:
+          PR: ${{ inputs.pullRequestNumber }}
+          SOURCE_SHA: ${{ inputs.expectedHeadSha }}
+          GITHUB_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          repository=ghcr.io/aquilaxk/easysubway-backend-contracts
+          tag="prepublish-pr-${PR}-head-${SOURCE_SHA}-run-${GITHUB_RUN_ID}-attempt-${GITHUB_RUN_ATTEMPT}"
+          printf '%s' "${GITHUB_TOKEN}" | oras login ghcr.io --username "${GITHUB_ACTOR}" --password-stdin
+          gh api --paginate --slurp "users/AquilaXk/packages/container/easysubway-backend-contracts/versions?per_page=100" > "${RUNNER_TEMP}/journey-contract-package-versions.json"
+          node backend/tools/verify-journey-contract-transport-tag-absent.mjs --pages "${RUNNER_TEMP}/journey-contract-package-versions.json" --tag "${tag}"
+          gh api "repos/AquilaXk/easysubway-backend/pulls/${PR}" > "${RUNNER_TEMP}/source-pr-before-push.json"
+          jq -e --arg sha "${SOURCE_SHA}" '.state == "open" and .base.ref == "main" and .head.repo.full_name == "AquilaXk/easysubway-backend" and .head.sha == $sha and .head.repo.fork == false' "${RUNNER_TEMP}/source-pr-before-push.json" >/dev/null
+          oras push --format json --export-manifest backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-manifest.json "${repository}:${tag}" --artifact-type application/vnd.easysubway.journey.contract-bundle.v2 "backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2.json:application/vnd.easysubway.journey.contract-bundle.v2+json" > backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-descriptor.json
+          manifest_digest="$(jq -er '.digest | select(test("^sha256:[a-f0-9]{64}$"))' backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-descriptor.json)"
+          oras pull "${repository}@${manifest_digest}" --output "${RUNNER_TEMP}/pullback"
+          cmp --silent backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2.json "${RUNNER_TEMP}/pullback/journey-v3-contract-bundle-v2.json"
+          node backend/tools/build-journey-contract-prepublication-receipt.mjs --bundle backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2.json --manifest backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-manifest.json --descriptor backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-descriptor.json --source-sha "${SOURCE_SHA}" --workflow-sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --attempt "${GITHUB_RUN_ATTEMPT}" --pr "${PR}" --output backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-receipt.json
+          node backend/tools/build-journey-contract-prepublication-run-metadata.mjs --pr "${PR}" --source-sha "${SOURCE_SHA}" --workflow-sha "${GITHUB_SHA}" --run-id "${GITHUB_RUN_ID}" --attempt "${GITHUB_RUN_ATTEMPT}" --bundle-sha "$(sha256sum backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2.json | cut -d ' ' -f 1)" --manifest-digest "${manifest_digest}" --receipt backend/build/journey-contract-prepublication/journey-v3-contract-bundle-v2-receipt.json --output backend/build/journey-contract-prepublication/journey-contract-prepublication-run-metadata.json
+          (cd backend/build/journey-contract-prepublication && sha256sum journey-v3-contract-bundle-v2.json journey-v3-contract-bundle-v2-descriptor.json journey-v3-contract-bundle-v2-manifest.json journey-v3-contract-bundle-v2-receipt.json journey-contract-prepublication-run-metadata.json > evidence-ledger.sha256)
+      - uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: journey-contract-prepublication-pr-${{ inputs.pullRequestNumber }}-${{ inputs.expectedHeadSha }}-run-${{ github.run_id }}-attempt-${{ github.run_attempt }}
+          path: backend/build/journey-contract-prepublication
+          if-no-files-found: error
