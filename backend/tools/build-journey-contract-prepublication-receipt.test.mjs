@@ -13,14 +13,15 @@ const sourceSha = "a".repeat(40);
 const transportTag = `prepublish-pr-253-head-${sourceSha}-run-123-attempt-2`;
 const artifactType = "application/vnd.easysubway.journey.contract-bundle.v2";
 
-test("prepublication receipt는 ORAS 1.3.3 여섯 키 tag-push descriptor만 수락한다", () => {
+test("prepublication receipt는 ORAS 1.3.3 일곱 키 tag-push descriptor와 manifest annotation을 수락한다", () => {
   const directory = mkdtempSync(join(tmpdir(), "journey-prepublication-receipt-"));
   try {
     const bundle = join(directory, "bundle.json");
     const manifest = join(directory, "manifest.json");
     const descriptor = join(directory, "descriptor.json");
     writeFileSync(bundle, "{}\n");
-    writeFileSync(manifest, "{\"schemaVersion\":2}\n");
+    const annotations = { "org.opencontainers.image.created": "2026-08-16T12:34:56Z" };
+    writeFileSync(manifest, `${JSON.stringify({ schemaVersion: 2, annotations })}\n`);
     const manifestBytes = readFileSync(manifest);
     const digest = `sha256:${sha(manifestBytes)}`;
     const valid = {
@@ -28,6 +29,7 @@ test("prepublication receipt는 ORAS 1.3.3 여섯 키 tag-push descriptor만 수
       mediaType: "application/vnd.oci.image.manifest.v1+json",
       digest,
       size: manifestBytes.length,
+      annotations,
       artifactType,
       referenceAsTags: [`${repository}:${transportTag}`],
     };
@@ -44,6 +46,10 @@ test("prepublication receipt는 ORAS 1.3.3 여섯 키 tag-push descriptor만 수
       ["wrong media type", (value) => { value.mediaType = "application/json"; }],
       ["wrong digest", (value) => { value.digest = `sha256:${"0".repeat(64)}`; }],
       ["wrong size", (value) => { value.size += 1; }],
+      ["missing annotations", (value) => { delete value.annotations; }],
+      ["extra annotation", (value) => { value.annotations.extra = "rejected"; }],
+      ["invalid created annotation", (value) => { value.annotations["org.opencontainers.image.created"] = "2026-08-16T12:34:56+09:00"; }],
+      ["unequal annotation", (value) => { value.annotations["org.opencontainers.image.created"] = "2026-08-16T12:34:57Z"; }],
       ["wrong artifact type", (value) => { value.artifactType = "application/json"; }],
       ["wrong transport tag", (value) => { value.referenceAsTags = [`${repository}:other`]; }],
       ["multiple transport tags", (value) => { value.referenceAsTags.push(`${repository}:other`); }],

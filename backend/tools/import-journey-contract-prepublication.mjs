@@ -4,6 +4,7 @@ import { inflateRawSync } from "node:zlib";
 import { closeSync, constants, fchmodSync, fsyncSync, fstatSync, lstatSync, openSync, readFileSync, renameSync, unlinkSync, writeSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
+import { isDeepStrictEqual } from "node:util";
 
 const repository = "AquilaXk/easysubway-backend";
 const artifactRepository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
@@ -188,13 +189,14 @@ function validateBundle(bytes, receipt) {
 function validateManifest(manifestBytes, descriptorBytes, bundle, receipt) {
   const manifest = json(manifestBytes, "manifest"), descriptor = json(descriptorBytes, "descriptor"), digest = `sha256:${hash(manifestBytes)}`;
   const transportTag = `prepublish-pr-${receipt.publication.pullRequestNumber}-head-${receipt.producer.gitSha}-run-${receipt.publication.workflowRunId}-attempt-${receipt.publication.workflowRunAttempt}`;
-  keys(descriptor, ["reference", "mediaType", "digest", "size", "artifactType", "referenceAsTags"], "descriptor");
-  keys(manifest, ["schemaVersion", "mediaType", "artifactType", "config", "layers"], "manifest");
+  keys(descriptor, ["reference", "mediaType", "digest", "size", "annotations", "artifactType", "referenceAsTags"], "descriptor");
+  keys(manifest, ["schemaVersion", "mediaType", "artifactType", "config", "layers", "annotations"], "manifest");
   keys(manifest.config, ["mediaType", "digest", "size", "data"], "manifest config");
-  if (descriptor.reference !== `${artifactRepository}@${digest}` || descriptor.mediaType !== manifestMediaType || descriptor.digest !== digest || !Number.isSafeInteger(descriptor.size) || descriptor.size !== manifestBytes.length || descriptor.artifactType !== artifactType || !Array.isArray(descriptor.referenceAsTags) || descriptor.referenceAsTags.length !== 1 || descriptor.referenceAsTags[0] !== `${artifactRepository}:${transportTag}` || receipt.artifact.manifestDigest !== digest || manifest.schemaVersion !== 2 || manifest.mediaType !== manifestMediaType || manifest.artifactType !== artifactType || manifest.config.mediaType !== emptyConfigMediaType || manifest.config.digest !== emptyConfigDigest || manifest.config.size !== 2 || manifest.config.data !== "e30=" || !Array.isArray(manifest.layers) || manifest.layers.length !== 1) throw new Error("manifest is invalid");
+  if (descriptor.reference !== `${artifactRepository}@${digest}` || descriptor.mediaType !== manifestMediaType || descriptor.digest !== digest || !Number.isSafeInteger(descriptor.size) || descriptor.size !== manifestBytes.length || !canonicalCreatedAnnotation(manifest.annotations) || !isDeepStrictEqual(descriptor.annotations, manifest.annotations) || descriptor.artifactType !== artifactType || !Array.isArray(descriptor.referenceAsTags) || descriptor.referenceAsTags.length !== 1 || descriptor.referenceAsTags[0] !== `${artifactRepository}:${transportTag}` || receipt.artifact.manifestDigest !== digest || manifest.schemaVersion !== 2 || manifest.mediaType !== manifestMediaType || manifest.artifactType !== artifactType || manifest.config.mediaType !== emptyConfigMediaType || manifest.config.digest !== emptyConfigDigest || manifest.config.size !== 2 || manifest.config.data !== "e30=" || !Array.isArray(manifest.layers) || manifest.layers.length !== 1) throw new Error("manifest is invalid");
   const layer = manifest.layers[0]; keys(layer, ["mediaType", "digest", "size", "annotations"], "manifest layer"); keys(layer.annotations, ["org.opencontainers.image.title"], "manifest layer annotations");
   if (layer.mediaType !== payloadMediaType || layer.digest !== `sha256:${hash(bundle)}` || !Number.isSafeInteger(layer.size) || layer.size !== bundle.length || layer.annotations["org.opencontainers.image.title"] !== payloadName) throw new Error("manifest is invalid");
 }
+function canonicalCreatedAnnotation(value) { const created = value?.["org.opencontainers.image.created"]; return Boolean(value && typeof value === "object" && !Array.isArray(value) && Object.keys(value).length === 1 && typeof created === "string" && /^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}Z$/.test(created) && new Date(created).toISOString() === `${created.slice(0, -1)}.000Z`); }
 
 function writePair(lockPath, lockDocument, trustPath, trustDocument, options) {
   const lockOutput = resolve(lockPath), trustOutput = resolve(trustPath), parent = dirname(lockOutput);
