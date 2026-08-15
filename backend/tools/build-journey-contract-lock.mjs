@@ -6,10 +6,10 @@ import { basename, dirname, relative, resolve } from "node:path";
 import { isDeepStrictEqual } from "node:util";
 import { pathToFileURL } from "node:url";
 
+const repositoryRoot = resolve(import.meta.dirname, "../..");
 const producerRepository = "AquilaXk/easysubway-backend";
-const producerSha = "1c25e586270f0e40b5fcad32820ff9e9e3ff985f";
-const artifactRepository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
-const expectedArtifact = {
+const defaultTrustAnchor = resolve(repositoryRoot, "backend/journey-contracts.trust.json");
+const legacyAnchors = {
   "evidence-ledger.sha256": "ffe221cd37cf770d18ffebd9bc8a166767dff53807c1d14ddfc626eb3b00e0aa",
   "backend-component-manifest.json": "cdd53d9fcc4396b4c16a72c79bf4c7ff3b00a9b70cd57a952d40aee402882188",
   "journey-v3-contract-bundle-v2-descriptor.json": "f0e8aefcc7b40142f0343a787c234bfd616b199bbc010274333abb12e579a93c",
@@ -26,6 +26,7 @@ const expectedFiles = [
   "journey-v3-contract-bundle-v2-manifest.json", "journey-v3-contract-bundle-v2-receipt.json", payloadName, "provenance.json", "release-metadata.txt", "sbom.json",
 ];
 const expectedLedgerFiles = expectedFiles.filter((name) => name !== "backend-component-manifest.json" && name !== "evidence-ledger.sha256");
+const prepublicationFiles = ["evidence-ledger.sha256", "journey-contract-prepublication-run-metadata.json", "journey-v3-contract-bundle-v2-descriptor.json", "journey-v3-contract-bundle-v2-manifest.json", "journey-v3-contract-bundle-v2-receipt.json", payloadName];
 const expectedResources = [
   ["journey-v3-error-catalog", "contracts/api/journey-v3-error-catalog.json", "application/json"],
   ["journey-v3-error-disposition", "contracts/api/journey-v3-error-disposition.json", "application/json"],
@@ -40,23 +41,24 @@ if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1]
   }
 }
 
-export function buildJourneyContractLock(values, { trustAnchors = expectedArtifact, beforeValidation, beforeTempOpen, beforePathIdentity, beforeRename } = {}) {
+export function buildJourneyContractLock(values, { trustAnchor = defaultTrustAnchor, trustAnchors, beforeValidation, beforeTempOpen, beforePathIdentity, beforeRename } = {}) {
   const arguments_ = parseArguments(values);
+  const trust = readTrustAnchor(trustAnchor, trustAnchors);
   const artifactAncestors = snapshotAncestors(arguments_["artifact-directory"]);
   const outputAncestors = snapshotAncestors(dirname(arguments_.output));
   beforeValidation?.(); assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors);
-  const artifactDirectory = assertArtifactDirectory(arguments_["artifact-directory"]);
+  const artifactDirectory = assertArtifactDirectory(arguments_["artifact-directory"], trust.artifactInventory);
   const output = assertOutput(arguments_.output, artifactDirectory);
   assertSnapshots(artifactAncestors); assertSnapshots(outputAncestors);
-  const files = readArtifact(artifactDirectory);
-    validateTrustAnchors(files, trustAnchors);
-    const ledgerSha256 = validateLedger(files);
-    validateComponentManifest(parseJson(files.get("backend-component-manifest.json"), "component manifest"), ledgerSha256);
-    const receipt = validateReceipt(parseJson(files.get("journey-v3-contract-bundle-v2-receipt.json"), "receipt"));
+  const files = readArtifact(artifactDirectory, trust.artifactInventory);
+    validateTrustAnchors(files, trust.artifactTrustAnchors);
+    const ledgerSha256 = validateLedger(files, trust.artifactInventory);
+    if (files.has("backend-component-manifest.json")) validateComponentManifest(parseJson(files.get("backend-component-manifest.json"), "component manifest"), ledgerSha256, trust);
+    const receipt = validateReceipt(parseJson(files.get("journey-v3-contract-bundle-v2-receipt.json"), "receipt"), trust);
     const manifest = files.get("journey-v3-contract-bundle-v2-manifest.json");
-    validateDescriptor(parseJson(files.get("journey-v3-contract-bundle-v2-descriptor.json"), "descriptor"), manifest, receipt);
-    validateManifest(parseJson(manifest, "manifest"), files.get(payloadName), receipt);
-    const resources = validateBundle(files.get(payloadName), receipt);
+    validateDescriptor(parseJson(files.get("journey-v3-contract-bundle-v2-descriptor.json"), "descriptor"), manifest, receipt, trust);
+    validateManifest(parseJson(manifest, "manifest"), files.get(payloadName), receipt, trust);
+    const resources = validateBundle(files.get(payloadName), receipt, trust);
     writeAtomically(output, {
     schemaVersion: 2,
     component: receipt.component,
@@ -83,13 +85,23 @@ function parseArguments(values) {
   return { "artifact-directory": parsed["--artifact-directory"], output: parsed["--output"] };
 }
 
-function assertArtifactDirectory(path) {
+function readTrustAnchor(path, override) {
+  const value = parseJson(readRegularFile(path, "trust anchor"), "trust anchor");
+  assertExactKeys(value, ["schemaVersion", "artifactKind", "producer", "artifact", "payload", "artifactInventory", "artifactTrustAnchors"], "trust anchor");
+  assertExactKeys(value.producer, ["repository", "gitSha"], "trust producer"); assertExactKeys(value.artifact, ["repository", "manifestDigest", "artifactType"], "trust artifact"); assertExactKeys(value.payload, ["fileName", "mediaType", "sha256"], "trust payload");
+  const legacy = JSON.stringify([...value.artifactInventory].sort()) === JSON.stringify([...expectedFiles].sort()); const prepublication = JSON.stringify([...value.artifactInventory].sort()) === JSON.stringify([...prepublicationFiles].sort());
+  if (value.schemaVersion !== 1 || value.artifactKind !== "journey-contract-publication-trust" || value.producer.repository !== producerRepository || !/^[a-f0-9]{40}$/.test(value.producer.gitSha) || !/^sha256:[a-f0-9]{64}$/.test(value.artifact.manifestDigest) || value.artifact.artifactType !== artifactType || value.payload.fileName !== payloadName || value.payload.mediaType !== payloadMediaType || !/^[a-f0-9]{64}$/.test(value.payload.sha256) || !Array.isArray(value.artifactInventory) || (!legacy && !prepublication)) throw new Error("trust anchor is invalid");
+  const anchors = override ?? value.artifactTrustAnchors; const required = legacy ? Object.keys(legacyAnchors).sort() : [...prepublicationFiles].sort(); if (!anchors || typeof anchors !== "object" || Array.isArray(anchors) || JSON.stringify(Object.keys(anchors).sort()) !== JSON.stringify(required) || Object.entries(anchors).some(([name, digest]) => !/^[a-f0-9]{64}$/.test(digest))) throw new Error("trust anchor is invalid");
+  return { ...value, artifactTrustAnchors: anchors };
+}
+
+function assertArtifactDirectory(path, inventory) {
   const directory = resolve(path);
   assertNoSymlinkAncestors(directory, "artifact directory");
   const metadata = lstatSync(directory, { throwIfNoEntry: false });
   if (!metadata || metadata.isSymbolicLink() || !metadata.isDirectory()) throw new Error("artifact directory must be a non-symlink directory");
   const names = readdirSync(directory).sort();
-  if (names.length !== expectedFiles.length || names.some((name, index) => name !== [...expectedFiles].sort()[index])) throw new Error("artifact inventory is invalid");
+  if (names.length !== inventory.length || names.some((name, index) => name !== [...inventory].sort()[index])) throw new Error("artifact inventory is invalid");
   return directory;
 }
 
@@ -111,9 +123,9 @@ function isWithin(parent, candidate) {
   return path === "" || (!path.startsWith("..") && !path.includes(`..${process.platform === "win32" ? "\\\\" : "/"}`));
 }
 
-function readArtifact(directory, lexicalDirectory = directory) {
+function readArtifact(directory, inventory, lexicalDirectory = directory) {
   const files = new Map();
-  for (const name of expectedFiles) {
+  for (const name of inventory) {
     const path = resolve(directory, name);
     files.set(name, readRegularFile(path, `artifact file is invalid: ${name}`, resolve(lexicalDirectory, name)));
   }
@@ -170,7 +182,8 @@ function assertNoSymlinkAncestors(path, label) {
   }
 }
 
-function validateLedger(files) {
+function validateLedger(files, inventory) {
+  const expectedLedgerFiles = inventory.filter((name) => name !== "backend-component-manifest.json" && name !== "evidence-ledger.sha256");
   const rows = files.get("evidence-ledger.sha256").toString("utf8").split("\n").filter(Boolean);
   if (rows.length !== expectedLedgerFiles.length) throw new Error("ledger row count is invalid");
   const seen = new Set();
@@ -183,45 +196,51 @@ function validateLedger(files) {
   return sha256(files.get("evidence-ledger.sha256"));
 }
 
-function validateComponentManifest(value, ledgerSha256) {
+function validateComponentManifest(value, ledgerSha256, trust) {
   assertExactKeys(value, ["schemaVersion", "component", "repository", "gitSha", "artifactIdentity", "contractVersion", "evidenceSha256", "issueRefs"], "component manifest");
   assertExactKeys(value.artifactIdentity, ["imageDigest", "apiContractVersion"], "component artifact identity");
-  if (value.schemaVersion !== 1 || value.component !== "backend" || value.repository !== producerRepository || value.gitSha !== producerSha || value.evidenceSha256 !== ledgerSha256 || !/^sha256:[a-f0-9]{64}$/.test(value.artifactIdentity.imageDigest) || !Array.isArray(value.issueRefs)) throw new Error("component manifest is invalid");
+  if (value.schemaVersion !== 1 || value.component !== "backend" || value.repository !== trust.producer.repository || value.gitSha !== trust.producer.gitSha || value.evidenceSha256 !== ledgerSha256 || !/^sha256:[a-f0-9]{64}$/.test(value.artifactIdentity.imageDigest) || !Array.isArray(value.issueRefs)) throw new Error("component manifest is invalid");
 }
 
-function validateReceipt(value) {
-  assertExactKeys(value, ["schemaVersion", "component", "bundleVersion", "producer", "artifact", "payload"], "receipt");
+function validateReceipt(value, trust) {
+  const receiptKeys = value?.schemaVersion === 2 ? ["schemaVersion", "component", "bundleVersion", "producer", "artifact", "payload", "publication"] : ["schemaVersion", "component", "bundleVersion", "producer", "artifact", "payload"];
+  assertExactKeys(value, receiptKeys, "receipt");
   assertExactKeys(value.producer, ["repository", "gitSha"], "receipt producer");
   assertExactKeys(value.artifact, ["repository", "manifestDigest", "artifactType"], "receipt artifact");
   assertExactKeys(value.payload, ["fileName", "mediaType", "sha256"], "receipt payload");
-  if (value.schemaVersion !== 1 || value.component !== "backend" || value.bundleVersion !== "2.0.0" || value.producer.repository !== producerRepository || value.producer.gitSha !== producerSha || value.artifact.repository !== artifactRepository || !/^sha256:[a-f0-9]{64}$/.test(value.artifact.manifestDigest) || value.artifact.artifactType !== artifactType || value.payload.fileName !== payloadName || value.payload.mediaType !== payloadMediaType || !/^[a-f0-9]{64}$/.test(value.payload.sha256)) throw new Error("receipt is invalid");
+  if (![1, 2].includes(value.schemaVersion) || value.component !== "backend" || value.bundleVersion !== "2.0.0" || value.producer.repository !== trust.producer.repository || value.producer.gitSha !== trust.producer.gitSha || value.artifact.repository !== trust.artifact.repository || value.artifact.manifestDigest !== trust.artifact.manifestDigest || value.artifact.artifactType !== trust.artifact.artifactType || value.payload.fileName !== trust.payload.fileName || value.payload.mediaType !== trust.payload.mediaType || value.payload.sha256 !== trust.payload.sha256) throw new Error("receipt is invalid");
   return value;
 }
 
-function validateDescriptor(value, manifest, receipt) {
-  assertExactKeys(value, ["reference", "mediaType", "digest", "size", "content"], "descriptor");
+function validateDescriptor(value, manifest, receipt, trust) {
+  const isPrepublication = receipt.schemaVersion === 2;
+  const transportTag = isPrepublication ? `prepublish-pr-${receipt.publication.pullRequestNumber}-head-${receipt.producer.gitSha}-run-${receipt.publication.workflowRunId}-attempt-${receipt.publication.workflowRunAttempt}` : undefined;
+  assertExactKeys(value, isPrepublication ? ["reference", "mediaType", "digest", "size", "artifactType", "referenceAsTags"] : ["reference", "mediaType", "digest", "size", "content"], "descriptor");
   const digest = `sha256:${sha256(manifest)}`;
-  if (value.digest !== digest || value.digest !== receipt.artifact.manifestDigest || value.reference !== `${artifactRepository}@${digest}` || value.mediaType !== manifestMediaType || value.size !== manifest.byteLength || value.content === null || typeof value.content !== "object" || Array.isArray(value.content) || !isDeepStrictEqual(value.content, parseJson(manifest, "manifest"))) throw new Error("descriptor is invalid");
+  if (value.digest !== digest || value.digest !== receipt.artifact.manifestDigest || value.reference !== `${trust.artifact.repository}@${digest}` || value.mediaType !== manifestMediaType || !Number.isSafeInteger(value.size) || value.size !== manifest.byteLength || (isPrepublication && (value.artifactType !== artifactType || !Array.isArray(value.referenceAsTags) || value.referenceAsTags.length !== 1 || value.referenceAsTags[0] !== `${trust.artifact.repository}:${transportTag}`)) || (value.content !== undefined && (value.content === null || typeof value.content !== "object" || Array.isArray(value.content) || !isDeepStrictEqual(value.content, parseJson(manifest, "manifest"))))) throw new Error("descriptor is invalid");
 }
 
-function validateManifest(value, bundle, receipt) {
-  assertExactKeys(value, ["schemaVersion", "mediaType", "artifactType", "config", "layers", "annotations"], "manifest");
+function validateManifest(value, bundle, receipt, trust) {
+  if (receipt.schemaVersion === 1) assertExactKeys(value, ["schemaVersion", "mediaType", "artifactType", "config", "layers", "annotations"], "manifest");
+  else assertExactKeys(value, ["schemaVersion", "mediaType", "artifactType", "config", "layers"], "manifest");
   assertExactKeys(value.config, ["mediaType", "digest", "size", "data"], "manifest config");
-  if (value.schemaVersion !== 2 || value.mediaType !== manifestMediaType || value.artifactType !== artifactType || value.config.mediaType !== "application/vnd.oci.empty.v1+json" || value.config.digest !== "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" || value.config.size !== 2 || value.config.data !== "e30=" || !Array.isArray(value.layers) || value.layers.length !== 1) throw new Error("manifest is invalid");
+  if (value.schemaVersion !== 2 || value.mediaType !== manifestMediaType || value.artifactType !== artifactType || !Array.isArray(value.layers) || value.layers.length !== 1) throw new Error("manifest is invalid");
+  if (value.config.mediaType !== "application/vnd.oci.empty.v1+json" || value.config.digest !== "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a" || value.config.size !== 2 || value.config.data !== "e30=") throw new Error("manifest config is invalid");
   const layer = value.layers[0];
   assertExactKeys(layer, ["mediaType", "digest", "size", "annotations"], "manifest layer");
-  if (layer.mediaType !== payloadMediaType || layer.digest !== `sha256:${sha256(bundle)}` || layer.digest !== `sha256:${receipt.payload.sha256}` || layer.size !== bundle.byteLength || layer.annotations?.["org.opencontainers.image.title"] !== payloadName) throw new Error("manifest layer is invalid");
+  assertExactKeys(layer.annotations, ["org.opencontainers.image.title"], "manifest layer annotations");
+  if (layer.mediaType !== trust.payload.mediaType || layer.digest !== `sha256:${sha256(bundle)}` || layer.digest !== `sha256:${receipt.payload.sha256}` || !Number.isSafeInteger(layer.size) || layer.size !== bundle.byteLength || layer.annotations["org.opencontainers.image.title"] !== trust.payload.fileName) throw new Error("manifest layer is invalid");
 }
 
-function validateBundle(bytes, receipt) {
+function validateBundle(bytes, receipt, trust) {
   if (sha256(bytes) !== receipt.payload.sha256) throw new Error("bundle digest is invalid");
   const value = parseJson(bytes, "bundle");
   assertExactKeys(value, ["schemaVersion", "bundleVersion", "component", "producerRepository", "producerSha", "resources"], "bundle");
-  if (value.schemaVersion !== 2 || value.bundleVersion !== "2.0.0" || value.component !== "backend" || value.producerRepository !== producerRepository || value.producerSha !== producerSha || !Array.isArray(value.resources) || value.resources.length !== expectedResources.length) throw new Error("bundle is invalid");
+  if (value.schemaVersion !== 2 || value.bundleVersion !== "2.0.0" || value.component !== "backend" || value.producerRepository !== trust.producer.repository || value.producerSha !== trust.producer.gitSha || !Array.isArray(value.resources) || value.resources.length !== expectedResources.length) throw new Error("bundle is invalid");
   return value.resources.map((resource, index) => {
     const [id, path, mediaType] = expectedResources[index];
     assertExactKeys(resource, ["id", "path", "owner", "mediaType", "sha256", "contentBase64"], "bundle resource");
-    if (resource.id !== id || resource.path !== path || resource.owner !== producerRepository || resource.mediaType !== mediaType || !/^[a-f0-9]{64}$/.test(resource.sha256) || typeof resource.contentBase64 !== "string" || resource.contentBase64.length === 0) throw new Error("bundle resource is invalid");
+    if (resource.id !== id || resource.path !== path || resource.owner !== trust.producer.repository || resource.mediaType !== mediaType || !/^[a-f0-9]{64}$/.test(resource.sha256) || typeof resource.contentBase64 !== "string" || resource.contentBase64.length === 0) throw new Error("bundle resource is invalid");
     const raw = Buffer.from(resource.contentBase64, "base64");
     if (raw.toString("base64") !== resource.contentBase64 || sha256(raw) !== resource.sha256) throw new Error("bundle resource payload is invalid");
     return { id: resource.id, path: resource.path, owner: resource.owner, mediaType: resource.mediaType, sha256: resource.sha256 };
