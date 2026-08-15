@@ -138,7 +138,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		for (RouteTimetableRaptorPlanner.JourneyLegProjection projection : itinerary.legs()) {
 			if (projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access
 				&& (!access.verified()
-					|| access.distanceMeters() <= 0
 					|| request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
 						&& access.includesStairs())) {
 				return false;
