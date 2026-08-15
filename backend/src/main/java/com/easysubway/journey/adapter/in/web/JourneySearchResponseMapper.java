@@ -42,6 +42,7 @@ final class JourneySearchResponseMapper {
 	private static RequestPolicyResponse mapRequestPolicy(JourneyExecutionResult.RequestPolicy policy) {
 		return new RequestPolicyResponse(
 			wire(policy.timePolicy()),
+			wire(policy.walkingPace()),
 			wire(policy.mobilityProfile()),
 			wire(policy.constraintMode()),
 			policy.maxTransfers(),
@@ -124,6 +125,14 @@ final class JourneySearchResponseMapper {
 		};
 	}
 
+	private static String wire(JourneyRequest.WalkingPace value) {
+		return switch (value) {
+			case SLOW -> "SLOW";
+			case STANDARD -> "STANDARD";
+			case FAST -> "FAST";
+		};
+	}
+
 	private static String wire(JourneyRequest.ConstraintMode value) {
 		return switch (value) {
 			case NONE -> "NONE";
@@ -182,6 +191,7 @@ final class JourneySearchResponseMapper {
 
 	record RequestPolicyResponse(
 		String timePolicy,
+		String walkingPace,
 		String mobilityProfile,
 		String constraintMode,
 		int maxTransfers,

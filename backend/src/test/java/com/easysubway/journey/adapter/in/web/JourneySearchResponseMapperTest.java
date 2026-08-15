@@ -101,6 +101,7 @@ class JourneySearchResponseMapperTest {
 			  },
 			  "requestPolicy":{
 			    "timePolicy":"TIMETABLE_REQUIRED",
+			    "walkingPace":"STANDARD",
 			    "mobilityProfile":"STEP_FREE",
 			    "constraintMode":"REQUIRE_STEP_FREE",
 			    "maxTransfers":3,
@@ -238,6 +239,7 @@ class JourneySearchResponseMapperTest {
 			),
 			new JourneyExecutionResult.RequestPolicy(
 				timePolicy,
+				JourneyRequest.WalkingPace.STANDARD,
 				JourneyRequest.MobilityProfile.STEP_FREE,
 				JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				3,

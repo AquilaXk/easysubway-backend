@@ -199,7 +199,8 @@ class RouteTimetableRaptorPlanner {
 		}
 		RideLeg lastRide = path.getLast();
 		int exitDurationSeconds = profiledWalkSeconds(
-			command, timetable.transitionDurationSeconds(label.exitTransition()));
+			command, timetable.transitionDurationSeconds(label.exitTransition()),
+			timetable.transitionDistanceMeters(label.exitTransition()));
 		legs.add(journeyAccessLeg(
 			JourneyAccessKind.EXIT,
 			lastRide.to().stationId(),
@@ -233,7 +234,8 @@ class RouteTimetableRaptorPlanner {
 			kind,
 			fromStationId,
 			toStationId,
-			profiledWalkSeconds(command, timetable.transitionDurationSeconds(transition)),
+			profiledWalkSeconds(command, timetable.transitionDurationSeconds(transition),
+				timetable.transitionDistanceMeters(transition)),
 			timetable.transitionDistanceMeters(transition),
 			timetable.transitionIncludesStairs(transition),
 			timetable.transitionVerified(transition),
@@ -355,12 +357,13 @@ class RouteTimetableRaptorPlanner {
 			int stopIndex = boardingStop.stopIndex();
 			int boardingLine = timetable.lineIndex(trip.lineId(stopIndex));
 			int entryTransition = origin < 0 || boardingLine < 0 ? -1 : timetable.entryTransition(
-				origin, boardingLine, accessProfileBit, false);
+				origin, boardingLine, accessProfileBit, false, command.requiresVerifiedJourneyDistance());
 			if (entryTransition < 0) {
 				continue;
 			}
 			int entrySeconds = profiledWalkSeconds(
-				command, timetable.transitionDurationSeconds(entryTransition));
+				command, timetable.transitionDurationSeconds(entryTransition),
+				timetable.transitionDistanceMeters(entryTransition));
 			int departureSeconds = realtimeOverlay.departureSeconds(trip, stopIndex);
 			if (!trip.allowsPickup(stopIndex)
 				|| departureSeconds < startSeconds + entrySeconds + slackSeconds) {
@@ -411,7 +414,8 @@ class RouteTimetableRaptorPlanner {
 				int destination = timetable.stationIndex(stopTime.stationId());
 				int incomingLine = timetable.lineIndex(trip.lineId(stopIndex));
 				if (destination >= 0 && incomingLine >= 0
-					&& timetable.exitTransition(destination, incomingLine, accessProfileBit, false) >= 0) {
+					&& timetable.exitTransition(destination, incomingLine, accessProfileBit, false,
+						command.requiresVerifiedJourneyDistance()) >= 0) {
 					return true;
 				}
 			}
@@ -469,12 +473,14 @@ class RouteTimetableRaptorPlanner {
 				int stopIndex = boardingStop.stopIndex();
 				int boardingLine = timetable.lineIndex(trip.lineId(stopIndex));
 				int transferTransition = station < 0 || incomingLine < 0 || boardingLine < 0 ? -1
-					: timetable.transferTransition(station, incomingLine, boardingLine, accessProfileBit, false);
+					: timetable.transferTransition(station, incomingLine, boardingLine, accessProfileBit, false,
+						command.requiresVerifiedJourneyDistance());
 				if (transferTransition < 0) {
 					continue;
 				}
 				int transferSeconds = profiledWalkSeconds(
-					command, timetable.transitionDurationSeconds(transferTransition));
+					command, timetable.transitionDurationSeconds(transferTransition),
+					timetable.transitionDistanceMeters(transferTransition));
 				if (!trip.allowsPickup(stopIndex)
 					|| realtimeOverlay.departureSeconds(trip, stopIndex)
 						< readySeconds + transferSeconds + slackSeconds) {
@@ -751,9 +757,11 @@ class RouteTimetableRaptorPlanner {
 		int lastIncomingLine = round == 0 ? firstIncomingLine + 1 : timetable.lineCount();
 		for (int incomingLine = firstIncomingLine; incomingLine < lastIncomingLine; incomingLine += 1) {
 			int accessTransition = round == 0
-				? timetable.entryTransition(station, boardingLine, accessProfileBit, ignoreAccessBlocks)
+				? timetable.entryTransition(station, boardingLine, accessProfileBit, ignoreAccessBlocks,
+					command.requiresVerifiedJourneyDistance())
 				: timetable.transferTransition(
-					station, incomingLine, boardingLine, accessProfileBit, ignoreAccessBlocks);
+					station, incomingLine, boardingLine, accessProfileBit, ignoreAccessBlocks,
+					command.requiresVerifiedJourneyDistance());
 			if (accessTransition < 0) {
 				continue;
 			}
@@ -764,7 +772,8 @@ class RouteTimetableRaptorPlanner {
 					continue;
 				}
 				int earliestDepartureSeconds = readySeconds
-					+ profiledWalkSeconds(command, timetable.transitionDurationSeconds(accessTransition))
+					+ profiledWalkSeconds(command, timetable.transitionDurationSeconds(accessTransition),
+						timetable.transitionDistanceMeters(accessTransition))
 					+ slackSeconds;
 				if (earliestDepartureSeconds > boardingDeadlineSeconds) {
 					continue;
@@ -832,7 +841,8 @@ class RouteTimetableRaptorPlanner {
 			Arrays.fill(bestByWarningState, null);
 			for (int incomingLine = 0; incomingLine < timetable.lineCount(); incomingLine += 1) {
 				int exitTransition = timetable.exitTransition(
-					destination, incomingLine, accessProfileBit, ignoreAccessBlocks);
+					destination, incomingLine, accessProfileBit, ignoreAccessBlocks,
+					command.requiresVerifiedJourneyDistance());
 				if (exitTransition < 0) {
 					continue;
 				}
@@ -858,7 +868,8 @@ class RouteTimetableRaptorPlanner {
 					Label candidate = new Label(
 						destinationStationId,
 						workspace.arrivalSeconds[slot]
-							+ profiledWalkSeconds(command, timetable.transitionDurationSeconds(exitTransition)),
+							+ profiledWalkSeconds(command, timetable.transitionDurationSeconds(exitTransition),
+								timetable.transitionDistanceMeters(exitTransition)),
 						startSeconds,
 						boardings,
 						List.copyOf(path),
@@ -1035,7 +1046,8 @@ class RouteTimetableRaptorPlanner {
 		RideLeg lastLeg = path.getLast();
 		int entryTransition = label.accessTransitions()[0];
 		int entryDurationSeconds = profiledWalkSeconds(
-			command, timetable.transitionDurationSeconds(entryTransition));
+			command, timetable.transitionDurationSeconds(entryTransition),
+			timetable.transitionDistanceMeters(entryTransition));
 		steps.add(timetableAccessStep(
 			sequence,
 			"entry",
@@ -1057,7 +1069,8 @@ class RouteTimetableRaptorPlanner {
 				RideLeg previousLeg = path.get(index - 1);
 				int transferTransition = label.accessTransitions()[index];
 				int transferDurationSeconds = profiledWalkSeconds(
-					command, timetable.transitionDurationSeconds(transferTransition));
+					command, timetable.transitionDurationSeconds(transferTransition),
+					timetable.transitionDistanceMeters(transferTransition));
 				steps.add(timetableAccessStep(
 					sequence,
 					"transfer",
@@ -1110,7 +1123,8 @@ class RouteTimetableRaptorPlanner {
 			sequence += 1;
 		}
 		int exitDurationSeconds = profiledWalkSeconds(
-			command, timetable.transitionDurationSeconds(label.exitTransition()));
+			command, timetable.transitionDurationSeconds(label.exitTransition()),
+			timetable.transitionDistanceMeters(label.exitTransition()));
 		steps.add(timetableAccessStep(
 			sequence,
 			"exit",
@@ -1168,7 +1182,19 @@ class RouteTimetableRaptorPlanner {
 		);
 	}
 
-	private static int profiledWalkSeconds(SearchRouteV2Command command, int baselineSeconds) {
+	private static int profiledWalkSeconds(
+		SearchRouteV2Command command,
+		int baselineSeconds,
+		int distanceMeters
+	) {
+		if (command.requiresVerifiedJourneyDistance()) {
+			return ProfileWalkTimeCalculator.journeySeconds(
+				distanceMeters,
+				command.journeyWalkingSpeedMetersPerHour(),
+				command.mobilityPreset(),
+				false
+			);
+		}
 		return ProfileWalkTimeCalculator.estimateSeconds(
 			baselineSeconds,
 			command.mobilityPreset(),
@@ -1679,14 +1705,30 @@ class RouteTimetableRaptorPlanner {
 		int lineIndex(String lineId) {
 			return lineIndex.getOrDefault(lineId, -1);
 		}
+		int entryTransition(
+			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
+		) {
+			return accessTransitions.entry(station, line, profileBit, ignoreBlocked, requireVerifiedDistance);
+		}
 		int entryTransition(int station, int line, int profileBit, boolean ignoreBlocked) {
-			return accessTransitions.entry(station, line, profileBit, ignoreBlocked);
+			return entryTransition(station, line, profileBit, ignoreBlocked, false);
+		}
+		int exitTransition(
+			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
+		) {
+			return accessTransitions.exit(station, line, profileBit, ignoreBlocked, requireVerifiedDistance);
 		}
 		int exitTransition(int station, int line, int profileBit, boolean ignoreBlocked) {
-			return accessTransitions.exit(station, line, profileBit, ignoreBlocked);
+			return exitTransition(station, line, profileBit, ignoreBlocked, false);
+		}
+		int transferTransition(
+			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
+		) {
+			return accessTransitions.transfer(
+				station, fromLine, toLine, profileBit, ignoreBlocked, requireVerifiedDistance);
 		}
 		int transferTransition(int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked) {
-			return accessTransitions.transfer(station, fromLine, toLine, profileBit, ignoreBlocked);
+			return transferTransition(station, fromLine, toLine, profileBit, ignoreBlocked, false);
 		}
 		int transitionDurationSeconds(int transition) {
 			return accessTransitions.durationSeconds(transition);
@@ -2276,16 +2318,34 @@ class RouteTimetableRaptorPlanner {
 		private static int transferKey(int station, int fromLine, int toLine, int lineCount) {
 			return (station * lineCount + fromLine) * lineCount + toLine;
 		}
-		private int entry(int station, int line, int profileBit, boolean ignoreBlocked) {
-			return select(entryTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked);
+		private int entry(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
+			return select(entryTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
+				requireVerifiedDistance);
 		}
-		private int exit(int station, int line, int profileBit, boolean ignoreBlocked) {
-			return select(exitTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked);
+		private int exit(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
+			return select(exitTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
+				requireVerifiedDistance);
 		}
-		private int transfer(int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked) {
-			return select(transferTransitions[transferKey(station, fromLine, toLine, lineCount)], profileBit, ignoreBlocked);
+		private int transfer(
+			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
+		) {
+			return select(transferTransitions[transferKey(station, fromLine, toLine, lineCount)], profileBit,
+				ignoreBlocked, requireVerifiedDistance);
 		}
-		private int select(int[] candidates, int profileBit, boolean ignoreBlocked) {
+		private int select(int[] candidates, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
+			if (requireVerifiedDistance) {
+				int selected = -1;
+				for (int transition : candidates) {
+					if ((ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0)
+						&& distanceMeters[transition] > 0
+						&& "VERIFIED".equals(verificationStatuses[transition])
+						&& (warningCodes[transition] & (WARNING_LOW_CONFIDENCE | WARNING_STALE)) == 0
+						&& (selected < 0 || distanceMeters[transition] < distanceMeters[selected])) {
+						selected = transition;
+					}
+				}
+				return selected;
+			}
 			for (int transition : candidates) {
 				if (ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0) {
 					return transition;

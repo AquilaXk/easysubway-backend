@@ -102,6 +102,7 @@ class JourneySearchControllerTest {
 			assertThat(command.destinationStationId()).isEqualTo("station-destination");
 			assertThat(command.departure()).isEqualTo(new JourneyRequest.Departure.Now());
 			assertThat(command.timePolicy()).isEqualTo(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
+			assertThat(command.walkingPace()).isEqualTo(JourneyRequest.WalkingPace.STANDARD);
 			assertThat(command.mobilityProfile()).isEqualTo(JourneyRequest.MobilityProfile.STEP_FREE);
 			assertThat(command.constraintMode()).isEqualTo(JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE);
 			assertThat(command.maxTransfers()).isEqualTo(2);
@@ -250,6 +251,9 @@ class JourneySearchControllerTest {
 			validRequest("{\"mode\":\"NOW\"}").replace("\"alternativeCount\":1", "\"alternativeCount\":1,\"extra\":true"),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"requestId\":", "\"requestId\":\"duplicate\",\"requestId\":"),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"timePolicy\":\"TIMETABLE_REQUIRED\"", "\"timePolicy\":\"UNKNOWN\""),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"walkingPace\":\"STANDARD\",", ""),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"walkingPace\":\"STANDARD\"", "\"walkingPace\":null"),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"walkingPace\":\"STANDARD\"", "\"walkingPace\":\"UNKNOWN\""),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"maxTransfers\":2", "\"maxTransfers\":4"),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"mobilityProfile\":\"STEP_FREE\"", "\"mobilityProfile\":\"NO_STAIRS\"")
 				.replace("\"constraintMode\":\"REQUIRE_STEP_FREE\"", "\"constraintMode\":\"NONE\"")
@@ -259,7 +263,7 @@ class JourneySearchControllerTest {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body), 400, "INVALID_JOURNEY_REQUEST", false);
 		}
-		verify(sessionService, times(11)).authorize("session-token");
+		verify(sessionService, times(14)).authorize("session-token");
 		verifyNoInteractions(deadlineExecutor);
 	}
 
@@ -335,6 +339,7 @@ class JourneySearchControllerTest {
 			  "destinationStationId":"station-destination",
 			  "departure":%s,
 			  "timePolicy":"TIMETABLE_REQUIRED",
+			  "walkingPace":"STANDARD",
 			  "mobilityProfile":"STEP_FREE",
 			  "constraintMode":"REQUIRE_STEP_FREE",
 			  "maxTransfers":2,
@@ -363,6 +368,7 @@ class JourneySearchControllerTest {
 			),
 			new JourneyExecutionResult.RequestPolicy(
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.STANDARD,
 				JourneyRequest.MobilityProfile.STEP_FREE,
 				JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 				2,

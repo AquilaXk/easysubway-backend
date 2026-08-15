@@ -87,6 +87,7 @@ public final class JourneyCandidateCanaryCommandParser {
 				destinationStationId,
 				new JourneyRequest.Departure.Now(),
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.STANDARD,
 				mobilityProfile,
 				constraintMode,
 				maxTransfers,

@@ -40,7 +40,7 @@ final class JourneySearchController {
 	private static final BooleanSupplier NOT_CANCELLED = () -> false;
 	private static final Set<String> REQUEST_FIELDS = Set.of(
 		"requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
-		"mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
+		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
 	);
 
 	private final JourneySessionService sessionService;
@@ -115,6 +115,7 @@ final class JourneySearchController {
 				|| !request.path("originStationId").isTextual()
 				|| !request.path("destinationStationId").isTextual()
 				|| !request.path("timePolicy").isTextual()
+				|| !request.path("walkingPace").isTextual()
 				|| !request.path("mobilityProfile").isTextual()
 				|| !request.path("constraintMode").isTextual()
 				|| !request.path("maxTransfers").isInt()
@@ -127,6 +128,7 @@ final class JourneySearchController {
 				request.path("destinationStationId").textValue(),
 				decodeDeparture(request.path("departure")),
 				JourneyRequest.TimePolicy.valueOf(request.path("timePolicy").textValue()),
+				JourneyRequest.WalkingPace.valueOf(request.path("walkingPace").textValue()),
 				JourneyRequest.MobilityProfile.valueOf(request.path("mobilityProfile").textValue()),
 				JourneyRequest.ConstraintMode.valueOf(request.path("constraintMode").textValue()),
 				request.path("maxTransfers").intValue(),

@@ -84,6 +84,7 @@ public final class JourneyApplicationDeadlineExecutor {
 			request.destinationStationId(),
 			request.departure(),
 			request.timePolicy(),
+			request.walkingPace(),
 			request.mobilityProfile(),
 			request.constraintMode(),
 			request.maxTransfers(),

@@ -59,7 +59,7 @@ class JourneyV3ContractTest {
 		new ArtifactDigest("journey-v3-error-catalog.json", "5b93075c2e19801c8084e8ab08b5efb1ef8267822b3a71487742e7888e822772"),
 		new ArtifactDigest("journey-v3-error-disposition.json", "1e03ee7262897e0887ef837c95a2802ff420ffeaf15c921e0dca8a9750280780"),
 		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
-		new ArtifactDigest("journey-v3.openapi.yaml", "582bf1f2454c810249a61342bce6f3bc455c7842a2f56f8e55fbe365f9fec2ab")
+		new ArtifactDigest("journey-v3.openapi.yaml", "7de00754abb8c0088707164bca634abf6fe01cd846151b95084357735702b980")
 	);
 
 	@Test
@@ -113,9 +113,9 @@ class JourneyV3ContractTest {
 
 		assertClosedSchema(document, "JourneySearchRequest",
 			Set.of("requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
-				"mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"),
+				"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"),
 			Set.of("requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
-				"mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
+				"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
 		assertThat(property(document, "JourneySearchRequest", "requestId").get("pattern"))
 			.isEqualTo("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 		assertThat(property(document, "JourneySearchSuccess", "requestId").get("pattern"))
@@ -127,6 +127,7 @@ class JourneyV3ContractTest {
 		assertThat(property(document, "JourneySearchRequest", "alternativeCount"))
 			.containsEntry("minimum", 1).containsEntry("maximum", 3);
 		assertEnum(schema(document, "TimePolicy"), "TIMETABLE_REQUIRED", "REALTIME_REQUIRED");
+		assertEnum(schema(document, "WalkingPace"), "SLOW", "STANDARD", "FAST");
 		assertEnum(schema(document, "MobilityProfile"), "STANDARD", "SLOW", "NO_STAIRS", "STEP_FREE");
 		assertEnum(schema(document, "ConstraintMode"), "NONE", "REQUIRE_STEP_FREE");
 
@@ -167,8 +168,8 @@ class JourneyV3ContractTest {
 				"realtimeSnapshotId"));
 		assertThat(property(document, "JourneySourceIdentity", "realtimeSnapshotId").get("nullable")).isEqualTo(true);
 		assertClosedSchema(document, "JourneyRequestPolicy",
-			Set.of("timePolicy", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"),
-			Set.of("timePolicy", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
+			Set.of("timePolicy", "walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"),
+			Set.of("timePolicy", "walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
 
 		Set<String> journeyFields = Set.of("journeyId", "status", "planSource", "plannedDepartureTime",
 			"plannedArrivalTime", "realtimeDepartureTime", "realtimeArrivalTime", "durationSeconds",

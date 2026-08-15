@@ -259,7 +259,8 @@ class JourneyRealtimeAdapterTest {
 		return new JourneyRequest(
 			REQUEST_ID, originStationId, "station-b",
 			new JourneyRequest.Departure.Scheduled(effectiveInstant), timePolicy,
-			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
 			0, 1, cancellationSignal);
 	}
 

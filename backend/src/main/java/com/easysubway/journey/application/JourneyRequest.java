@@ -11,6 +11,7 @@ public record JourneyRequest(
 	String destinationStationId,
 	Departure departure,
 	TimePolicy timePolicy,
+	WalkingPace walkingPace,
 	MobilityProfile mobilityProfile,
 	ConstraintMode constraintMode,
 	int maxTransfers,
@@ -25,6 +26,7 @@ public record JourneyRequest(
 		destinationStationId = requireText(destinationStationId, "destinationStationId");
 		departure = Objects.requireNonNull(departure, "departure");
 		timePolicy = Objects.requireNonNull(timePolicy, "timePolicy");
+		walkingPace = Objects.requireNonNull(walkingPace, "walkingPace");
 		mobilityProfile = Objects.requireNonNull(mobilityProfile, "mobilityProfile");
 		constraintMode = Objects.requireNonNull(constraintMode, "constraintMode");
 		if (maxTransfers < 0 || maxTransfers > 3) throw new IllegalArgumentException("maxTransfers must be between 0 and 3");
@@ -53,6 +55,22 @@ public record JourneyRequest(
 	public enum TimePolicy {
 		TIMETABLE_REQUIRED,
 		REALTIME_REQUIRED
+	}
+
+	public enum WalkingPace {
+		SLOW(3_500),
+		STANDARD(4_500),
+		FAST(6_000);
+
+		private final int speedMetersPerHour;
+
+		WalkingPace(int speedMetersPerHour) {
+			this.speedMetersPerHour = speedMetersPerHour;
+		}
+
+		public int speedMetersPerHour() {
+			return speedMetersPerHour;
+		}
 	}
 
 	public enum MobilityProfile {

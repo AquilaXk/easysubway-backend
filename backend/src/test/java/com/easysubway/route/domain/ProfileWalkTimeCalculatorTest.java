@@ -13,6 +13,20 @@ import org.junit.jupiter.api.Test;
 class ProfileWalkTimeCalculatorTest {
 
 	@Test
+	@DisplayName("Journey V3 보행 속도는 검증 거리로만 ceil 계산하고 이동약자 고정 대기는 배율로 처리하지 않는다")
+	void calculatesJourneyPaceFromPositiveDistanceWithFixedFacilityWait() {
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 3_500, MobilityPreset.STANDARD, false)).isEqualTo(103);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 4_500, MobilityPreset.STANDARD, false)).isEqualTo(80);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 6_000, MobilityPreset.STANDARD, false)).isEqualTo(60);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(1, 6_000, MobilityPreset.STANDARD, false)).isEqualTo(1);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 4_500, MobilityPreset.STEP_FREE, false)).isEqualTo(140);
+		assertThat(ProfileWalkTimeCalculator.journeySeconds(100, 4_500, MobilityPreset.STEP_FREE, true)).isEqualTo(80);
+		assertThatThrownBy(() -> ProfileWalkTimeCalculator.journeySeconds(0, 4_500, MobilityPreset.STANDARD, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("distanceMeters must be positive");
+	}
+
+	@Test
 	@DisplayName("프리셋별 speedFactor와 timeSource 라벨을 적용한다")
 	void appliesPresetSpeedFactorAndTimeSource() {
 		assertThat(ProfileWalkTimeCalculator.estimateSeconds(100, MobilityPreset.STANDARD, WalkTimeSource.MEASURED_PATHWAY, false))
