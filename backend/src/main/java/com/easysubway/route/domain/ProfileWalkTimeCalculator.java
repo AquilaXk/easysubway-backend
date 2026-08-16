@@ -29,6 +29,26 @@ public final class ProfileWalkTimeCalculator {
 		return new WalkTime(seconds, timeSource, preset);
 	}
 
+	public static int journeySeconds(
+		int distanceMeters,
+		int speedMetersPerHour,
+		MobilityPreset mobilityPreset,
+		boolean facilityWaitAlreadyIncluded
+	) {
+		if (distanceMeters <= 0) {
+			throw new IllegalArgumentException("distanceMeters must be positive");
+		}
+		if (speedMetersPerHour <= 0) {
+			throw new IllegalArgumentException("speedMetersPerHour must be positive");
+		}
+		Objects.requireNonNull(mobilityPreset, "mobilityPreset must not be null");
+		long seconds = Math.ceilDiv((long) distanceMeters * 3_600L, speedMetersPerHour);
+		if (mobilityPreset == MobilityPreset.STEP_FREE && !facilityWaitAlreadyIncluded) {
+			seconds = Math.addExact(seconds, STEP_FREE_FACILITY_WAIT_SECONDS);
+		}
+		return Math.toIntExact(seconds);
+	}
+
 	public static MobilityPreset presetFor(MobilityType mobilityType) {
 		return switch (Objects.requireNonNull(mobilityType, "mobilityType must not be null")) {
 			case SENIOR, PREGNANT, TEMPORARY_INJURY -> MobilityPreset.SLOW;

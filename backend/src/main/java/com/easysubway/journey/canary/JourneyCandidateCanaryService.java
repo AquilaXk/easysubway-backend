@@ -68,6 +68,7 @@ public final class JourneyCandidateCanaryService {
 				command.destinationStationId(),
 				new JourneyRequest.Departure.Now(),
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.STANDARD,
 				command.mobilityProfile(),
 				command.constraintMode(),
 				command.maxTransfers(),

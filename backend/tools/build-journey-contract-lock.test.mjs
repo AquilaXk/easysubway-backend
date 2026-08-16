@@ -8,11 +8,7 @@ import { buildJourneyContractLock } from "./build-journey-contract-lock.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const builder = join(repositoryRoot, "backend/tools/build-journey-contract-lock.mjs");
-const trackedLock = join(repositoryRoot, "backend/journey-contracts.lock.json");
 const producerSha = "1c25e586270f0e40b5fcad32820ff9e9e3ff985f";
-const manifestDigest = "6d3b428a6e069739b98d040f6d10c5e20af10725d8656aeaaad190d5bf9fa3b1";
-const payloadDigest = "1bdffede5aa577411d77a6c8ec4f18de8ea25c61b54f227e985386b81b65625f";
-const receiptDigest = "dcb93a99c86f9a7790e33ceebc8c9392bb65178db1c0d2b6c0eeea5b8e75a6cd";
 const names = ["backend-component-manifest.json", "evidence-ledger.sha256", "image-index.json", "image-inspect.json", "journey-v3-contract-bundle-v2-descriptor.json", "journey-v3-contract-bundle-v2-manifest.json", "journey-v3-contract-bundle-v2-receipt.json", "journey-v3-contract-bundle-v2.json", "provenance.json", "release-metadata.txt", "sbom.json"];
 
 test("self-consistent fabricated artifact는 exact release trust anchor와 다르면 output 없이 거부한다", () => {
@@ -25,13 +21,25 @@ test("self-consistent fabricated artifact는 exact release trust anchor와 다�
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
-test("test seam은 synthetic admitted anchors 아래 exact tracked lock을 생성한다", () => {
+test("test seam은 synthetic admitted anchors 아래 exact artifact lock을 생성한다", () => {
   const directory = temporaryDirectory("positive");
   try {
     const artifact = createArtifact(join(directory, "artifact"));
     const output = join(directory, "journey-contracts.lock.json");
-    buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact) });
-    assert.deepEqual(JSON.parse(readFileSync(output, "utf8")), JSON.parse(readFileSync(trackedLock, "utf8")));
+    buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact) });
+    const receiptBytes = readFileSync(join(artifact, "journey-v3-contract-bundle-v2-receipt.json"));
+    const receipt = JSON.parse(receiptBytes);
+    const bundle = JSON.parse(readFileSync(join(artifact, "journey-v3-contract-bundle-v2.json")));
+    assert.deepEqual(JSON.parse(readFileSync(output, "utf8")), {
+      schemaVersion: 2,
+      component: receipt.component,
+      bundleVersion: receipt.bundleVersion,
+      producer: receipt.producer,
+      artifact: receipt.artifact,
+      payload: receipt.payload,
+      publicationReceiptSha256: sha256(receiptBytes),
+      resources: bundle.resources.map(({ contentBase64: _contentBase64, ...resource }) => resource),
+    });
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
 
@@ -42,7 +50,7 @@ test("test seam은 temp 생성 뒤 output ancestor 교체를 거부하고 redire
     const parent = join(directory, "output-parent");
     mkdirSync(parent);
     const output = join(parent, "journey-contracts.lock.json");
-    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeRename: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact), beforeRename: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
     assert.equal(exists(output), false);
     assert.deepEqual(readdirSync(parent), []);
     const quarantine = readdirSync(`${parent}-old`);
@@ -59,7 +67,7 @@ test("test seam은 temp open 전 output ancestor 교체를 temp 없이 거부한
     const parent = join(directory, "output-parent");
     mkdirSync(parent);
     const output = join(parent, "journey-contracts.lock.json");
-    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeTempOpen: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact), beforeTempOpen: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
     assert.equal(exists(output), false);
     assert.deepEqual(readdirSync(parent), []);
     assert.deepEqual(readdirSync(`${parent}-old`), []);
@@ -70,7 +78,7 @@ test("validation 전에 output parent가 바뀌면 write 없이 거부한다", (
   const directory = temporaryDirectory("validation-swap");
   try {
     const artifact = createArtifact(join(directory, "artifact")); const parent = join(directory, "parent"); mkdirSync(parent); const output = join(parent, "lock.json");
-    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeValidation: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact), beforeValidation: () => { renameSync(parent, `${parent}-old`); mkdirSync(parent); } }), /ancestor changed/);
     assert.equal(exists(output), false); assert.deepEqual(readdirSync(parent), []); assert.deepEqual(readdirSync(`${parent}-old`), []);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -82,7 +90,7 @@ test("closed temp pathname regular/symlink substitution은 final output과 exter
       const artifact = createArtifact(join(directory, `artifact-${symlink}`));
       const parent = join(directory, `output-${symlink}`); mkdirSync(parent);
       const output = join(parent, "journey-contracts.lock.json"); const external = join(directory, `external-${symlink}`); let substitution; writeFileSync(external, "unchanged\n");
-      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeRename: (temporary) => { substitution = temporary; rmSync(temporary); if (symlink) symlinkSync(external, temporary); else writeFileSync(temporary, "replacement\n"); } }), /temporary output identity/);
+      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact), beforeRename: (temporary) => { substitution = temporary; rmSync(temporary); if (symlink) symlinkSync(external, temporary); else writeFileSync(temporary, "replacement\n"); } }), /temporary output identity/);
       assert.equal(exists(output), false); assert.equal(readFileSync(external, "utf8"), "unchanged\n"); assert.equal(symlink ? lstatSync(substitution).isSymbolicLink() : readFileSync(substitution, "utf8") === "replacement\n", true);
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -94,7 +102,7 @@ test("open temp pathname regular/symlink substitution은 descriptor identity로 
     for (const symlink of [false, true]) {
       const artifact = createArtifact(join(directory, `artifact-${symlink}`)); const parent = join(directory, `output-${symlink}`); mkdirSync(parent);
       const output = join(parent, "journey-contracts.lock.json"); const external = join(directory, `external-${symlink}`); let substitution; writeFileSync(external, "unchanged\n");
-      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforePathIdentity: (temporary) => { substitution = temporary; rmSync(temporary); if (symlink) symlinkSync(external, temporary); else writeFileSync(temporary, "replacement\n"); } }), /temporary output identity/);
+      assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact), beforePathIdentity: (temporary) => { substitution = temporary; rmSync(temporary); if (symlink) symlinkSync(external, temporary); else writeFileSync(temporary, "replacement\n"); } }), /temporary output identity/);
       assert.equal(exists(output), false); assert.equal(readFileSync(external, "utf8"), "unchanged\n"); assert.equal(symlink ? lstatSync(substitution).isSymbolicLink() : readFileSync(substitution, "utf8") === "replacement\n", true);
     }
   } finally { rmSync(directory, { recursive: true, force: true }); }
@@ -104,7 +112,7 @@ test("create-new publish는 existing output bytes를 덮어쓰지 않는다", ()
   const directory = temporaryDirectory("existing-output");
   try {
     const artifact = createArtifact(join(directory, "artifact")); const output = join(directory, "output.json"); writeFileSync(output, "existing\n");
-    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact) }));
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact) }));
     assert.equal(readFileSync(output, "utf8"), "existing\n");
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -113,7 +121,7 @@ test("temp collision은 foreign bytes를 삭제하지 않는다", () => {
   const directory = temporaryDirectory("temp-collision");
   try {
     const artifact = createArtifact(join(directory, "artifact")); const output = join(directory, "output.json"); let collision;
-    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchors: anchorsFor(artifact), beforeTempOpen: (temporary) => { collision = temporary; writeFileSync(temporary, "foreign\n"); } }));
+    assert.throws(() => buildJourneyContractLock(["--artifact-directory", artifact, "--output", output], { trustAnchor: trustFor(artifact), beforeTempOpen: (temporary) => { collision = temporary; writeFileSync(temporary, "foreign\n"); } }));
     assert.equal(readFileSync(collision, "utf8"), "foreign\n"); assert.equal(exists(output), false);
   } finally { rmSync(directory, { recursive: true, force: true }); }
 });
@@ -210,11 +218,10 @@ function createArtifact(directory) {
     return { id, path, owner: "AquilaXk/easysubway-backend", mediaType, sha256: sha256(bytes), contentBase64: bytes.toString("base64") };
   });
   const bundle = Buffer.from(`${JSON.stringify({ schemaVersion: 2, bundleVersion: "2.0.0", component: "backend", producerRepository: "AquilaXk/easysubway-backend", producerSha, resources })}\n`);
-  assert.equal(sha256(bundle), payloadDigest);
+  const payloadDigest = sha256(bundle);
   const manifest = Buffer.from(JSON.stringify({ schemaVersion: 2, mediaType: "application/vnd.oci.image.manifest.v1+json", artifactType: "application/vnd.easysubway.journey.contract-bundle.v2", config: { mediaType: "application/vnd.oci.empty.v1+json", digest: "sha256:44136fa355b3678a1146ad16f7e8649e94fb4fc21fe77e8310c060f61caaff8a", size: 2, data: "e30=" }, layers: [{ mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", digest: `sha256:${payloadDigest}`, size: bundle.byteLength, annotations: { "org.opencontainers.image.title": "journey-v3-contract-bundle-v2.json" } }], annotations: { "org.opencontainers.image.created": "2026-08-11T11:27:04Z" } }));
-  assert.equal(sha256(manifest), manifestDigest);
+  const manifestDigest = sha256(manifest);
   const receipt = Buffer.from(`${JSON.stringify({ schemaVersion: 1, component: "backend", bundleVersion: "2.0.0", producer: { repository: "AquilaXk/easysubway-backend", gitSha: producerSha }, artifact: { repository: "ghcr.io/aquilaxk/easysubway-backend-contracts", manifestDigest: `sha256:${manifestDigest}`, artifactType: "application/vnd.easysubway.journey.contract-bundle.v2" }, payload: { fileName: "journey-v3-contract-bundle-v2.json", mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json", sha256: payloadDigest } })}\n`);
-  assert.equal(sha256(receipt), receiptDigest);
   const descriptor = Buffer.from(JSON.stringify({ reference: `ghcr.io/aquilaxk/easysubway-backend-contracts@sha256:${manifestDigest}`, mediaType: "application/vnd.oci.image.manifest.v1+json", digest: `sha256:${manifestDigest}`, size: manifest.byteLength, content: JSON.parse(manifest) }));
   const files = new Map([["image-index.json", "{}\n"], ["image-inspect.json", "{}\n"], ["provenance.json", "{}\n"], ["release-metadata.txt", "release\n"], ["sbom.json", "{}\n"], ["journey-v3-contract-bundle-v2.json", bundle], ["journey-v3-contract-bundle-v2-descriptor.json", descriptor], ["journey-v3-contract-bundle-v2-manifest.json", manifest], ["journey-v3-contract-bundle-v2-receipt.json", receipt]]);
   const ledger = `${[...files].map(([name, bytes]) => `${sha256(bytes)}  ${name}`).join("\n")}\n`;

@@ -25,8 +25,44 @@ public interface RouteV2SearchUseCase {
 		int maxTransfers,
 		int alternativeCount,
 		RouteTransportScope transportScope,
-		RouteObjective objective
+		RouteObjective objective,
+		int journeyWalkingSpeedMetersPerHour
 	) {
+		public SearchRouteV2Command(
+			String originStationId,
+			String destinationStationId,
+			OffsetDateTime departureTime,
+			MobilityType mobilityType,
+			MobilityPreset mobilityPreset,
+			ConstraintMode constraintMode,
+			boolean useRealtime,
+			int maxTransfers,
+			int alternativeCount,
+			RouteTransportScope transportScope,
+			RouteObjective objective
+		) {
+			this(originStationId, destinationStationId, departureTime, mobilityType, mobilityPreset,
+				constraintMode, useRealtime, maxTransfers, alternativeCount, transportScope, objective, 0);
+		}
+
+		public SearchRouteV2Command(
+			String originStationId,
+			String destinationStationId,
+			OffsetDateTime departureTime,
+			MobilityType mobilityType,
+			MobilityPreset mobilityPreset,
+			ConstraintMode constraintMode,
+			boolean useRealtime,
+			int maxTransfers,
+			int alternativeCount,
+			int journeyWalkingSpeedMetersPerHour
+		) {
+			this(originStationId, destinationStationId, departureTime, mobilityType, mobilityPreset,
+				constraintMode, useRealtime, maxTransfers, alternativeCount,
+				RouteTransportScope.SUBWAY_AND_ITX_CHEONGCHUN, RouteObjective.FASTEST,
+				journeyWalkingSpeedMetersPerHour);
+		}
+
 		public SearchRouteV2Command(
 			String originStationId,
 			String destinationStationId,
@@ -89,6 +125,13 @@ public interface RouteV2SearchUseCase {
 			if (alternativeCount > 3) {
 				throw new IllegalArgumentException("alternativeCount must be 3 or less");
 			}
+			if (journeyWalkingSpeedMetersPerHour < 0) {
+				throw new IllegalArgumentException("journeyWalkingSpeedMetersPerHour must not be negative");
+			}
+		}
+
+		public boolean requiresVerifiedJourneyDistance() {
+			return journeyWalkingSpeedMetersPerHour > 0;
 		}
 	}
 

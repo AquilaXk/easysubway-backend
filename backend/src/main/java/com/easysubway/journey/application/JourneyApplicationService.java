@@ -91,6 +91,7 @@ public final class JourneyApplicationService {
 				),
 				new JourneyExecutionResult.RequestPolicy(
 					request.timePolicy(),
+					request.walkingPace(),
 					request.mobilityProfile(),
 					request.constraintMode(),
 					request.maxTransfers(),

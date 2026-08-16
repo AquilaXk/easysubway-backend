@@ -53,6 +53,7 @@ class JourneyApplicationServiceTest {
 		));
 		assertThat(success.requestPolicy()).isEqualTo(new JourneyExecutionResult.RequestPolicy(
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD,
 			JourneyRequest.ConstraintMode.NONE,
 			0,
@@ -236,6 +237,7 @@ class JourneyApplicationServiceTest {
 			),
 			new JourneyExecutionResult.RequestPolicy(
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.STANDARD,
 				JourneyRequest.MobilityProfile.STANDARD,
 				JourneyRequest.ConstraintMode.NONE,
 				0,
@@ -388,7 +390,8 @@ class JourneyApplicationServiceTest {
 		java.util.function.BooleanSupplier cancellationSignal
 	) {
 		return new JourneyRequest(requestId, originStationId, destinationStationId, departure, timePolicy,
-			mobilityProfile, constraintMode, maxTransfers, alternativeCount, cancellationSignal);
+			JourneyRequest.WalkingPace.STANDARD, mobilityProfile, constraintMode, maxTransfers,
+			alternativeCount, cancellationSignal);
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant validUntil, boolean fresh) {

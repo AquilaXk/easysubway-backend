@@ -47,14 +47,11 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			realtimeOverlay
 		);
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
-		List<RouteTimetableRaptorPlanner.JourneyItinerary> accessibleItineraries = itineraries.stream()
-			.filter(itinerary -> hasVerifiedAccessibility(requiredRequest, itinerary))
-			.toList();
-		if (accessibleItineraries.isEmpty()) {
+		if (itineraries.isEmpty()) {
 			return new PlanResult(requiredRequest.requestId(), List.of());
 		}
 
-		List<JourneyCandidate> candidates = accessibleItineraries.stream()
+		List<JourneyCandidate> candidates = itineraries.stream()
 			.map(itinerary -> toCandidate(requiredRequest, requiredEffectiveInstant, itinerary))
 			.toList();
 		if (new HashSet<>(candidates.stream().map(JourneyCandidate::journeyId).toList()).size()
@@ -92,7 +89,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			constraintMode,
 			request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED,
 			request.maxTransfers(),
-			request.alternativeCount()
+			request.alternativeCount(),
+			request.walkingPace().speedMetersPerHour()
 		);
 	}
 
@@ -128,21 +126,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			throw new IllegalArgumentException("realtime runtime view does not match captured Journey generation");
 		}
 		return realtimeRuntime.realtimeOverlay();
-	}
-
-	private static boolean hasVerifiedAccessibility(
-		JourneyRequest request,
-		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
-	) {
-		for (RouteTimetableRaptorPlanner.JourneyLegProjection projection : itinerary.legs()) {
-			if (projection instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection access
-				&& (!access.verified()
-					|| request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
-						&& access.includesStairs())) {
-				return false;
-			}
-		}
-		return true;
 	}
 
 	private static JourneyCandidate toCandidate(

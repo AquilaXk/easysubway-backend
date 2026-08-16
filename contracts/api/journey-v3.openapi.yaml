@@ -276,6 +276,7 @@ components:
         - destinationStationId
         - departure
         - timePolicy
+        - walkingPace
         - mobilityProfile
         - constraintMode
         - maxTransfers
@@ -294,6 +295,8 @@ components:
           $ref: "#/components/schemas/JourneyDeparture"
         timePolicy:
           $ref: "#/components/schemas/TimePolicy"
+        walkingPace:
+          $ref: "#/components/schemas/WalkingPace"
         mobilityProfile:
           $ref: "#/components/schemas/MobilityProfile"
         constraintMode:
@@ -339,6 +342,9 @@ components:
     TimePolicy:
       type: string
       enum: [TIMETABLE_REQUIRED, REALTIME_REQUIRED]
+    WalkingPace:
+      type: string
+      enum: [SLOW, STANDARD, FAST]
     MobilityProfile:
       type: string
       enum: [STANDARD, SLOW, NO_STAIRS, STEP_FREE]
@@ -424,10 +430,12 @@ components:
     JourneyRequestPolicy:
       type: object
       additionalProperties: false
-      required: [timePolicy, mobilityProfile, constraintMode, maxTransfers, alternativeCount]
+      required: [timePolicy, walkingPace, mobilityProfile, constraintMode, maxTransfers, alternativeCount]
       properties:
         timePolicy:
           $ref: "#/components/schemas/TimePolicy"
+        walkingPace:
+          $ref: "#/components/schemas/WalkingPace"
         mobilityProfile:
           $ref: "#/components/schemas/MobilityProfile"
         constraintMode:

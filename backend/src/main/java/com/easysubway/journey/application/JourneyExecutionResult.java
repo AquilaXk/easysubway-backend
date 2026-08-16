@@ -110,6 +110,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 
 	record RequestPolicy(
 		JourneyRequest.TimePolicy timePolicy,
+		JourneyRequest.WalkingPace walkingPace,
 		JourneyRequest.MobilityProfile mobilityProfile,
 		JourneyRequest.ConstraintMode constraintMode,
 		int maxTransfers,
@@ -117,6 +118,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 	) {
 		public RequestPolicy {
 			timePolicy = Objects.requireNonNull(timePolicy, "timePolicy");
+			walkingPace = Objects.requireNonNull(walkingPace, "walkingPace");
 			mobilityProfile = Objects.requireNonNull(mobilityProfile, "mobilityProfile");
 			constraintMode = Objects.requireNonNull(constraintMode, "constraintMode");
 			if (maxTransfers < 0 || maxTransfers > 3) {

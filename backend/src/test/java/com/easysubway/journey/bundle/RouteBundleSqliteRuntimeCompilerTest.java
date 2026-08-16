@@ -51,6 +51,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			"station-b",
 			new JourneyRequest.Departure.Scheduled(DEPARTURE),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD,
 			JourneyRequest.ConstraintMode.NONE,
 			0,

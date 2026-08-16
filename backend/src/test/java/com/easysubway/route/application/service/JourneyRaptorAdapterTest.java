@@ -55,22 +55,149 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.candidates()).singleElement().satisfies(candidate -> {
 			assertThat(candidate.journeyId()).matches("[a-f0-9]{64}");
 			assertThat(candidate.plannedDepartureTime()).isEqualTo(EFFECTIVE);
-			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:32Z"));
 			assertThat(candidate.realtimeDepartureTime()).isNull();
 			assertThat(candidate.realtimeArrivalTime()).isNull();
-			assertThat(candidate.durationSeconds()).isEqualTo(1_260);
+			assertThat(candidate.durationSeconds()).isEqualTo(1_232);
 			assertThat(candidate.transferCount()).isZero();
 			assertThat(candidate.walkingDistanceMeters()).isEqualTo(100);
 			assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.TIMETABLE);
 			assertThat(candidate.accessibility().stairFree()).isTrue();
 			assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_VERIFIED");
 			assertThat(candidate.legs()).hasSize(3);
-			assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 120));
+			assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 48));
 			assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Ride(
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
-			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
+			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 32));
 		});
+	}
+
+	@Test
+	void selectsMinimumVerifiedDistanceWhenBaselineDurationOrderDisagrees() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("baseline-short", "entrance", "platform-a", 10, 100, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("distance-short", "entrance", "platform-a", 200, 50, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 40));
+	}
+
+	@Test
+	void prefersVerifiedStepFreeAccessOverShorterVerifiedStairsForStepFreeProfile() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("stairs-short", "entrance", "platform-a", 10, 10, false, true, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("step-free-long", "entrance", "platform-a", 80, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 124));
+		assertThat(candidate.accessibility().stairFree()).isTrue();
+	}
+
+	@Test
+	void prefersShortestVerifiedDistanceWhenStepFreeCandidatesHaveSameStairsStatus() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("step-free-duration-short", "entrance", "platform-a", 10, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("step-free-distance-short", "entrance", "platform-a", 80, 50, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 100));
+		assertThat(candidate.accessibility().stairFree()).isTrue();
+	}
+
+	@Test
+	void retainsFirstStepFreeCandidateWhenLaterStairsOrLongerStepFreeAccessIsCloserInBaselineTime() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("step-free-first", "entrance", "platform-a", 10, 50, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("stairs-short", "entrance", "platform-a", 20, 10, false, true, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("step-free-long", "entrance", "platform-a", 5, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 100));
+		assertThat(candidate.accessibility().stairFree()).isTrue();
+	}
+
+	@Test
+	void skipsStatusOnlyVerifiedLowConfidenceCandidateForFullyVerifiedJourneyPath() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("untrusted-short", "entrance", "platform-a", 10, 10, false, false, 100,
+					"AVAILABLE", "UNTRUSTED", "VERIFIED"),
+				new PathwayEdge("verified-long", "entrance", "platform-a", 200, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidates = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates();
+
+		assertThat(candidates).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 64)));
+	}
+
+	@Test
+	void appliesOneWalkingPaceCostToLegsArrivalAndJourneyIdentity() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var adapter = new JourneyRaptorAdapter();
+		var slow = adapter.plan(request(
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW
+		), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+		var fast = adapter.plan(request(
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.FAST
+		), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(slow.legs()).contains(
+			new JourneyCandidate.Entry("station-a", 62), new JourneyCandidate.Exit("station-b", 42));
+		assertThat(slow.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:42Z"));
+		assertThat(fast.legs()).contains(
+			new JourneyCandidate.Entry("station-a", 36), new JourneyCandidate.Exit("station-b", 24));
+		assertThat(fast.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:24Z"));
+		assertThat(fast.journeyId()).isNotEqualTo(slow.journeyId());
 	}
 
 	@Test
@@ -78,8 +205,8 @@ class JourneyRaptorAdapterTest {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, transferTimetable());
 		var transferRequest = new JourneyRequest(
 			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
-			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
 
 		var candidate = new JourneyRaptorAdapter().plan(
 			transferRequest, snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
@@ -87,15 +214,15 @@ class JourneyRaptorAdapterTest {
 		assertThat(candidate.transferCount()).isEqualTo(1);
 		assertThat(candidate.walkingDistanceMeters()).isEqualTo(250);
 		assertThat(candidate.legs()).containsExactly(
-			new JourneyCandidate.Entry("station-a", 120),
+			new JourneyCandidate.Entry("station-a", 80),
 			new JourneyCandidate.Ride(
 				"line-a", "trip-first", "station-transfer", "station-a", "station-transfer",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null),
-			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 120),
+			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 40),
 			new JourneyCandidate.Ride(
 				"line-b", "trip-second", "station-b", "station-transfer", "station-b",
 				Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null),
-			new JourneyCandidate.Exit("station-b", 60));
+			new JourneyCandidate.Exit("station-b", 80));
 	}
 
 	@Test
@@ -118,9 +245,9 @@ class JourneyRaptorAdapterTest {
 			snapshot(runtime), EFFECTIVE, observation).candidates().getFirst();
 
 		assertThat(candidate.plannedDepartureTime()).isEqualTo(EFFECTIVE);
-		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
+		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:32Z"));
 		assertThat(candidate.realtimeDepartureTime()).isEqualTo(EFFECTIVE);
-		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:12:00Z"));
+		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:32Z"));
 		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
 		assertThat(candidate.legs()).filteredOn(JourneyCandidate.Ride.class::isInstance)
 			.singleElement().isEqualTo(new JourneyCandidate.Ride(
@@ -251,8 +378,8 @@ class JourneyRaptorAdapterTest {
 
 		var cancelled = new JourneyRequest(
 			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
-			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.MobilityProfile.STANDARD,
-			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> true);
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> true);
 		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
 			cancelled, snapshot(runtime), EFFECTIVE, null))
 			.isInstanceOf(IllegalStateException.class)
@@ -280,12 +407,42 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void returnsNoCandidateForVerifiedPositiveDistanceAccessWithStairsWhenStepFreeIsRequired() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(verifiedAccess(true, 60, 40)));
+
+		var candidates = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime), EFFECTIVE, null).candidates();
+
+		assertThat(candidates).isEmpty();
+	}
+
+	@Test
 	void returnsNoCandidateForUnverifiedAccessInsteadOfPublishingBestEffort() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(false));
 		assertThat(new JourneyRaptorAdapter().plan(
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
 			snapshot(runtime), EFFECTIVE, null).candidates()).isEmpty();
+	}
+
+	@Test
+	void returnsNoCandidateForZeroDistanceAndRuleOnlyTransfer() {
+		var zeroDistanceRuntime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(verifiedAccess(false, 0, 40)));
+		assertThat(new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(zeroDistanceRuntime), EFFECTIVE, null).candidates())
+			.isEmpty();
+
+		var ruleOnlyRuntime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, transferTimetable(false));
+		assertThat(new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(ruleOnlyRuntime), EFFECTIVE, null).candidates())
+			.isEmpty();
 	}
 
 	private static void assertCommand(
@@ -300,6 +457,8 @@ class JourneyRaptorAdapterTest {
 		assertThat(command.mobilityType()).isEqualTo(mobilityType);
 		assertThat(command.mobilityPreset()).isEqualTo(mobilityPreset);
 		assertThat(command.constraintMode()).isEqualTo(routeConstraint);
+		assertThat(command.journeyWalkingSpeedMetersPerHour()).isEqualTo(4_500);
+		assertThat(command.requiresVerifiedJourneyDistance()).isTrue();
 	}
 
 	private static JourneyRequest request(
@@ -307,9 +466,18 @@ class JourneyRaptorAdapterTest {
 		JourneyRequest.ConstraintMode constraint,
 		JourneyRequest.TimePolicy timePolicy
 	) {
+		return request(profile, constraint, timePolicy, JourneyRequest.WalkingPace.STANDARD);
+	}
+
+	private static JourneyRequest request(
+		JourneyRequest.MobilityProfile profile,
+		JourneyRequest.ConstraintMode constraint,
+		JourneyRequest.TimePolicy timePolicy,
+		JourneyRequest.WalkingPace walkingPace
+	) {
 		return new JourneyRequest(
 			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
-			timePolicy, profile, constraint, 0, 1, () -> false);
+			timePolicy, walkingPace, profile, constraint, 0, 1, () -> false);
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
@@ -325,6 +493,10 @@ class JourneyRaptorAdapterTest {
 	}
 
 	private static RouteTimetable timetable(boolean verifiedAccess, boolean includesStairs) {
+		return timetable(verifiedAccess ? verifiedAccess(includesStairs) : LoadRouteTimetablePort.RouteAccessData.empty());
+	}
+
+	private static RouteTimetable timetable(LoadRouteTimetablePort.RouteAccessData access) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -339,11 +511,14 @@ class JourneyRaptorAdapterTest {
 			new TransitStopTime("trip-late", 1, "station-a", "line", 36_000, 36_000, 0, 0),
 			new TransitStopTime("trip-late", 2, "station-b", "line", 36_600, 36_600, 0, 0));
 		return new RouteTimetable(
-			List.of(calendar), List.of(), List.of(route), List.of(trip, lateTrip), stopTimes, List.of(), List.of(), null,
-			verifiedAccess ? verifiedAccess(includesStairs) : LoadRouteTimetablePort.RouteAccessData.empty());
+			List.of(calendar), List.of(), List.of(route), List.of(trip, lateTrip), stopTimes, List.of(), List.of(), null, access);
 	}
 
 	private static RouteTimetable transferTimetable() {
+		return transferTimetable(true);
+	}
+
+	private static RouteTimetable transferTimetable(boolean verifiedTransfer) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -360,16 +535,17 @@ class JourneyRaptorAdapterTest {
 			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
 			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
 			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
-		var edges = List.of(
+		var edges = java.util.stream.Stream.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
-			new PathwayEdge(
+			verifiedTransfer ? new PathwayEdge(
 				"transfer", "platform-transfer-a", "platform-transfer-b", 120, 50, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED") : null,
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"))
+			.filter(java.util.Objects::nonNull).toList();
 		var access = new LoadRouteTimetablePort.RouteAccessData(
 			List.of(
 				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
@@ -382,27 +558,56 @@ class JourneyRaptorAdapterTest {
 			List.of(new TransferRule(
 				"transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION",
 				120, "transfer", "transfer", "VERIFIED")),
-			List.of(
+			java.util.stream.Stream.of(
 				new RouteEdgeEvidence(
 					"entry-evidence", "station-a", "line-a", "entry", "ENTRY",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null),
-				new RouteEdgeEvidence(
+				verifiedTransfer ? new RouteEdgeEvidence(
 					"transfer-evidence", "station-transfer", "line-b", "transfer", "TRANSFER",
-					"OFFICIAL_SOURCE", "VERIFIED", true, null),
+					"OFFICIAL_SOURCE", "VERIFIED", true, null) : null,
 				new RouteEdgeEvidence(
 					"exit-evidence", "station-b", "line-b", "exit", "EXIT",
-					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+					"OFFICIAL_SOURCE", "VERIFIED", true, null)).filter(java.util.Objects::nonNull).toList());
 		return new RouteTimetable(
 			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
 	}
 
 	private static LoadRouteTimetablePort.RouteAccessData verifiedAccess(boolean includesStairs) {
+		return verifiedAccess(includesStairs, 60, 40);
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData directAccess(PathwayEdge... entries) {
+		var edgeList = new java.util.ArrayList<PathwayEdge>(List.of(entries));
+		edgeList.add(new PathwayEdge(
+			"exit", "platform-b", "outside", 60, 40, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var evidence = new java.util.ArrayList<RouteEdgeEvidence>();
+		for (PathwayEdge entry : entries) {
+			evidence.add(new RouteEdgeEvidence(
+				entry.id() + "-evidence", "station-a", "line", entry.id(), "ENTRY",
+				entry.provenanceKind(), "VERIFIED", true, null));
+		}
+		evidence.add(new RouteEdgeEvidence(
+			"exit-evidence", "station-b", "line", "exit", "EXIT",
+			"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		return new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new PathwayNode("platform-a", "station-a", "line", "PLATFORM"),
+				new PathwayNode("platform-b", "station-b", "line", "PLATFORM"),
+				new PathwayNode("outside", "station-b", null, "EXIT")),
+			edgeList, List.of(), evidence);
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData verifiedAccess(
+		boolean includesStairs, int entryDistanceMeters, int exitDistanceMeters
+	) {
 		var edges = List.of(
 			new LoadRouteTimetablePort.PathwayEdge(
-				"entry", "entrance", "platform-a", 120, 60, false, includesStairs, 100,
+				"entry", "entrance", "platform-a", 120, entryDistanceMeters, false, includesStairs, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
 			new LoadRouteTimetablePort.PathwayEdge(
-				"exit", "platform-b", "outside", 60, 40, false, false, 100,
+				"exit", "platform-b", "outside", 60, exitDistanceMeters, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
 		var evidence = List.of(
 			new LoadRouteTimetablePort.RouteEdgeEvidence(
