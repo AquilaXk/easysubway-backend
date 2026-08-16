@@ -1685,10 +1685,12 @@ class RouteSearchServiceTest {
 			"station-b",
 			OffsetDateTime.parse("2026-07-01T08:59:00+09:00"),
 			MobilityType.WHEELCHAIR,
+			null,
 			ConstraintMode.STRICT_STEP_FREE,
 			false,
 			1,
-			3
+			3,
+			4_500
 		));
 
 		assertThat(plan.statuses()).containsExactly(RouteV2Status.BLOCKED_ACCESSIBILITY);

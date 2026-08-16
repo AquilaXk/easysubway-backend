@@ -133,6 +133,28 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void retainsFirstStepFreeCandidateWhenLaterStairsOrLongerStepFreeAccessIsCloserInBaselineTime() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA,
+			GENERATION,
+			timetable(directAccess(
+				new PathwayEdge("step-free-first", "entrance", "platform-a", 10, 50, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("stairs-short", "entrance", "platform-a", 20, 10, false, true, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge("step-free-long", "entrance", "platform-a", 5, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+			)));
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
+
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 100));
+		assertThat(candidate.accessibility().stairFree()).isTrue();
+	}
+
+	@Test
 	void skipsStatusOnlyVerifiedLowConfidenceCandidateForFullyVerifiedJourneyPath() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA,
