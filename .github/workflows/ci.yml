@@ -95,7 +95,7 @@ jobs:
           retention-days: 5
       - name: Upload PR OSV SARIF
         if: ${{ github.event_name == 'pull_request' && !cancelled() }}
-        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
 
@@ -142,7 +142,7 @@ jobs:
           retention-days: 5
       - name: Upload dispatch OSV SARIF
         if: ${{ github.event_name == 'workflow_dispatch' && !cancelled() }}
-        uses: github/codeql-action/upload-sarif@cdefb33c0f6224e58673d9004f47f7cb3e328b89
+        uses: github/codeql-action/upload-sarif@ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
 
