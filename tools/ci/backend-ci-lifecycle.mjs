@@ -76,7 +76,7 @@ export function validateCiExecutionControl(policy, workflow) {
   if (!Array.isArray(policy.osv.lockfiles) || policy.osv.lockfiles.join('|') !== 'backend/gradle.lockfile|tools/qa/package-lock.json' || !Array.isArray(policy.osv.scannerContinueOnErrorSteps) || policy.osv.scannerContinueOnErrorSteps.join('|') !== 'Scan immutable PR base|Scan tested PR head|Scan immutable dispatch SHA') {
     policyFail('OSV disposition mismatch');
   }
-  const pins = { scanner: '8dc09193bb540e09b23da07ad7e30bd33bf87018', checkout: '8e8c483db84b4bee98b60c0593521ed34d9990e8', artifact: 'bbbca2ddaa5d8feaa63e36b76fdaad77386f024f', sarif: 'cdefb33c0f6224e58673d9004f47f7cb3e328b89' };
+  const pins = { scanner: '8dc09193bb540e09b23da07ad7e30bd33bf87018', checkout: '3d3c42e5aac5ba805825da76410c181273ba90b1', artifact: 'bbbca2ddaa5d8feaa63e36b76fdaad77386f024f', sarif: 'ff2f1c621b7f889edc0d3c761ac2e6a3f8cdb0dd' };
   if (policy.osv.disposition !== 'REPLACE_WITH_LOCAL_BOUNDED_EXECUTION' || Object.entries(pins).some(([key, value]) => policy.osv[key] !== value)) policyFail('OSV disposition mismatch');
   const expectedConcurrency = "concurrency:\n  group: ${{ github.event_name == 'pull_request' && format('{0}-{1}-pr-{2}', github.workflow, github.event.repository.full_name, github.event.pull_request.number) || format('{0}-{1}-{2}', github.workflow, github.event_name, github.run_id) }}\n  cancel-in-progress: ${{ github.event_name == 'pull_request' }}";
   requireText(workflow, expectedConcurrency);
