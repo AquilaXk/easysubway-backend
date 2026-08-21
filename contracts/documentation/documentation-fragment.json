@@ -4,7 +4,7 @@
   "repository": "AquilaXk/easysubway-backend",
   "sourceSha": "6a7d4ceb250d3f4d8f18e09f43284278ba728129",
   "status": "ACTIVE",
-  "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+  "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
   "verificationEvidence": [
     "https://github.com/AquilaXk/easysubway-backend/issues/247",
     "https://github.com/AquilaXk/easysubway-backend/issues/261",
@@ -44,7 +44,7 @@
       "reviewTrigger": [
         "event:workflow-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:.github/workflows/ci.yml:cf8377f650db43bed0b7f87da25dab15afbabb94",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -94,7 +94,7 @@
       "reviewTrigger": [
         "event:release-workflow-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:.github/workflows/release-artifacts.yml:3a2bddcaf8db0b5843edb33d6a6d89fffa6d64b7",
       "verificationMethod": "release-audit",
       "verificationEvidence": [
@@ -147,7 +147,7 @@
       "reviewTrigger": [
         "event:source-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:README.md:27db40318b400553cee684f9b924d681983aa9df",
       "verificationMethod": "owner-review",
       "verificationEvidence": [
@@ -198,7 +198,7 @@
       "reviewTrigger": [
         "event:critical-source-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/quality/jacoco-coverage-baseline.json:2cf2654f2c8e951bc01b54962a95f795aea44c92",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -248,7 +248,7 @@
       "reviewTrigger": [
         "event:static-policy-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/quality/static-analysis-gate.json:a80b64fe4d598fc973ceb3941690836d52b72295",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -298,7 +298,7 @@
       "reviewTrigger": [
         "event:security-config-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/src/main/java/com/easysubway/common/security/SecurityConfig.java:52734b88c2ecc307cb8e9167bd4ee5d22f7365bf",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -348,7 +348,7 @@
       "reviewTrigger": [
         "event:data-publication-contract-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/src/main/java/com/easysubway/journey/bundle/RouteBundlePublicationDescriptor.java:e45ac6f52e3a79b14c37fdc95055f4a0990d57a0",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -398,7 +398,7 @@
       "reviewTrigger": [
         "event:release-graph-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/src/main/java/com/easysubway/journey/config/JourneyProductionConfiguration.java:66732ee7e936eea2e1d8007a4d999859becf2927",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -448,7 +448,7 @@
       "reviewTrigger": [
         "event:production-config-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/src/main/resources/application-prod.yml:7603fd2f91ebffbd61a5e9cd3c7ca62167ee4735",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
@@ -501,7 +501,7 @@
       "reviewTrigger": [
         "event:privacy-notice-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:backend/src/main/resources/templates/legal/privacy.html:d7f0c9fc0b73f3a0d9fbc4c08c11eec414c0e0c8",
       "verificationMethod": "owner-review",
       "verificationEvidence": [
@@ -555,7 +555,7 @@
       "reviewTrigger": [
         "event:contract-change"
       ],
-      "lastVerifiedAt": "2026-08-22T00:00:00.000Z",
+      "lastVerifiedAt": "2026-08-21T16:26:57.000Z",
       "lastVerifiedIdentity": "git:6a7d4ceb250d3f4d8f18e09f43284278ba728129:contracts/api/journey-v3.openapi.yaml:a031c480041ec4d922b755f27251a112a5a7a3ea",
       "verificationMethod": "contract-test",
       "verificationEvidence": [
