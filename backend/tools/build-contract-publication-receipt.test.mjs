@@ -33,7 +33,7 @@ test("release workflow는 exact Journey contract OCI publication과 digest 재�
   assert.match(workflow, /artifact_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2"/);
   assert.match(workflow, /layer_type="application\/vnd\.easysubway\.journey\.contract-bundle\.v2\+json"/);
   assert.match(workflow, /created="\$\(git show -s --format=%cI "\$\{GITHUB_SHA\}"\)"/);
-  assert.match(workflow, /docker\/login-action@9780b0c442fbb1117ed29e0efdff1e18412f7567/);
+  assert.match(workflow, /docker\/login-action@dbcb813823bdd20940b903addbd779551569679f/);
   assert.match(workflow, /registry: ghcr\.io\s+username: \$\{\{ github\.actor \}\}\s+password: \$\{\{ secrets\.GITHUB_TOKEN \}\}/);
   assert.match(workflow, /oras login ghcr\.io .*--password-stdin/);
   assert.match(workflow, /raw_manifest=release-artifacts\/backend\/journey-v3-contract-bundle-v2-manifest\.json/);
