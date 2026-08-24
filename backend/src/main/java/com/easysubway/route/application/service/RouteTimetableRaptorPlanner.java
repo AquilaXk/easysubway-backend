@@ -199,8 +199,8 @@ class RouteTimetableRaptorPlanner {
 			));
 		}
 		RideLeg lastRide = path.getLast();
-		int exitDurationSeconds = profiledWalkSeconds(
-			command, timetable.transitionDurationSeconds(label.exitTransition()),
+		int exitDurationSeconds = journeyAccessSeconds(
+			command, JourneyAccessKind.EXIT, timetable.transitionDurationSeconds(label.exitTransition()),
 			timetable.transitionDistanceMeters(label.exitTransition()));
 		legs.add(journeyAccessLeg(
 			JourneyAccessKind.EXIT,
@@ -235,7 +235,7 @@ class RouteTimetableRaptorPlanner {
 			kind,
 			fromStationId,
 			toStationId,
-			profiledWalkSeconds(command, timetable.transitionDurationSeconds(transition),
+			journeyAccessSeconds(command, kind, timetable.transitionDurationSeconds(transition),
 				timetable.transitionDistanceMeters(transition)),
 			timetable.transitionDistanceMeters(transition),
 			timetable.transitionIncludesStairs(transition),
@@ -362,8 +362,8 @@ class RouteTimetableRaptorPlanner {
 			if (entryTransition < 0) {
 				continue;
 			}
-			int entrySeconds = profiledWalkSeconds(
-				command, timetable.transitionDurationSeconds(entryTransition),
+			int entrySeconds = journeyAccessSeconds(
+				command, JourneyAccessKind.ENTRY, timetable.transitionDurationSeconds(entryTransition),
 				timetable.transitionDistanceMeters(entryTransition));
 			int departureSeconds = realtimeOverlay.departureSeconds(trip, stopIndex);
 			if (!trip.allowsPickup(stopIndex)
@@ -479,8 +479,8 @@ class RouteTimetableRaptorPlanner {
 				if (transferTransition < 0) {
 					continue;
 				}
-				int transferSeconds = profiledWalkSeconds(
-					command, timetable.transitionDurationSeconds(transferTransition),
+				int transferSeconds = journeyAccessSeconds(
+					command, JourneyAccessKind.TRANSFER, timetable.transitionDurationSeconds(transferTransition),
 					timetable.transitionDistanceMeters(transferTransition));
 				if (!trip.allowsPickup(stopIndex)
 					|| realtimeOverlay.departureSeconds(trip, stopIndex)
@@ -772,8 +772,9 @@ class RouteTimetableRaptorPlanner {
 				if (readySeconds == UNREACHED) {
 					continue;
 				}
+				JourneyAccessKind accessKind = round == 0 ? JourneyAccessKind.ENTRY : JourneyAccessKind.TRANSFER;
 				int earliestDepartureSeconds = readySeconds
-					+ profiledWalkSeconds(command, timetable.transitionDurationSeconds(accessTransition),
+					+ journeyAccessSeconds(command, accessKind, timetable.transitionDurationSeconds(accessTransition),
 						timetable.transitionDistanceMeters(accessTransition))
 					+ slackSeconds;
 				if (earliestDepartureSeconds > boardingDeadlineSeconds) {
@@ -869,7 +870,8 @@ class RouteTimetableRaptorPlanner {
 					Label candidate = new Label(
 						destinationStationId,
 						workspace.arrivalSeconds[slot]
-							+ profiledWalkSeconds(command, timetable.transitionDurationSeconds(exitTransition),
+							+ journeyAccessSeconds(command, JourneyAccessKind.EXIT,
+								timetable.transitionDurationSeconds(exitTransition),
 								timetable.transitionDistanceMeters(exitTransition)),
 						startSeconds,
 						boardings,
@@ -1195,6 +1197,23 @@ class RouteTimetableRaptorPlanner {
 				command.mobilityPreset(),
 				false
 			);
+		}
+		return ProfileWalkTimeCalculator.estimateSeconds(
+			baselineSeconds,
+			command.mobilityPreset(),
+			WalkTimeSource.OFFICIAL_BASELINE,
+			false
+		).seconds();
+	}
+
+	private static int journeyAccessSeconds(
+		SearchRouteV2Command command,
+		JourneyAccessKind kind,
+		int baselineSeconds,
+		int distanceMeters
+	) {
+		if (kind == JourneyAccessKind.TRANSFER) {
+			return profiledWalkSeconds(command, baselineSeconds, distanceMeters);
 		}
 		return ProfileWalkTimeCalculator.estimateSeconds(
 			baselineSeconds,
@@ -2321,24 +2340,30 @@ class RouteTimetableRaptorPlanner {
 		}
 		private int entry(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
 			return select(entryTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
-				requireVerifiedDistance);
+				requireVerifiedDistance, false);
 		}
 		private int exit(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
 			return select(exitTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
-				requireVerifiedDistance);
+				requireVerifiedDistance, false);
 		}
 		private int transfer(
 			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
 		) {
 			return select(transferTransitions[transferKey(station, fromLine, toLine, lineCount)], profileBit,
-				ignoreBlocked, requireVerifiedDistance);
+				ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance);
 		}
-		private int select(int[] candidates, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
-			if (requireVerifiedDistance) {
+		private int select(
+			int[] candidates,
+			int profileBit,
+			boolean ignoreBlocked,
+			boolean requireVerified,
+			boolean requirePositiveDistance
+		) {
+			if (requireVerified) {
 				int selected = -1;
 				for (int transition : candidates) {
 					if ((ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0)
-						&& distanceMeters[transition] > 0
+						&& (!requirePositiveDistance || distanceMeters[transition] > 0)
 						&& "VERIFIED".equals(verificationStatuses[transition])
 						&& (warningCodes[transition] & (WARNING_LOW_CONFIDENCE | WARNING_STALE)) == 0
 						&& (selected < 0 || isPreferredVerifiedTransition(transition, selected, profileBit))) {
