@@ -43,6 +43,19 @@ test("local eGovFrame Maven mirror는 다중 줄 direct dependency를 검증한�
   }
 });
 
+test("local eGovFrame Maven mirror는 add-style direct dependency를 검증한다", () => {
+  const fixture = createFixture();
+  try {
+    writeFileSync(fixture.build, readFileSync(fixture.build, "utf8").replace(
+      "implementation 'org.egovframe.rte:egovframe-rte-ptl-mvc'",
+      'add("implementation", "org.egovframe.rte:egovframe-rte-ptl-mvc")',
+    ));
+    assert.match(run(fixture), /verified 21 artifacts/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 for (const [name, mutate] of [
   ["JAR one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.jar"))],
   ["POM one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.pom"))],
@@ -79,6 +92,15 @@ for (const [name, mutate] of [
   }],
   ["classifier direct build coordinate", (_root, fixture) => {
     writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation 'org.egovframe.rte:egovframe-rte-bat-core:5.0.0:sources'\n`);
+  }],
+  ["add-style versionless direct build coordinate", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nadd('implementation', 'org.egovframe.rte:egovframe-rte-psl-dataaccess')\n`);
+  }],
+  ["add-style versioned direct build coordinate", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nadd(\"implementation\", \"org.egovframe.rte:egovframe-rte-psl-dataaccess:5.0.0\")\n`);
+  }],
+  ["unsupported eGovFrame lock version", (_root, fixture) => {
+    writeFileSync(fixture.lock, `${readFileSync(fixture.lock, "utf8")}\norg.egovframe.rte:egovframe-rte-bat-core:5.0.0-RC1=compileClasspath\n`);
   }],
 ]) {
   test(`local eGovFrame Maven mirror rejects ${name}`, () => {

@@ -78,7 +78,10 @@ function verifyArtifact(artifact) {
 function verifyBuildAndLock(manifest, build, lock) {
   const artifactCoordinates = new Set(manifest.artifacts.map((item) => item.coordinate));
   const manifestRteCoordinates = new Set([...artifactCoordinates].filter((coordinate) => coordinate.startsWith("org.egovframe.rte:")));
-  const lockedEgovCoordinates = new Set([...lock.matchAll(/^(org\.egovframe\.(?:boot|rte):[a-z0-9.-]+:[0-9.]+)=/gmu)].map((match) => match[1]));
+  const lockedEgovCoordinates = new Set([...lock.matchAll(/^(org\.egovframe\.(?:boot|rte):[^=\r\n]+)=/gmu)].map((match) => match[1]));
+  for (const coordinate of lockedEgovCoordinates) {
+    if (!/^org\.egovframe\.(?:boot|rte):[a-z0-9.-]+:[0-9.]+$/.test(coordinate)) fail(`lock coordinate is invalid: ${coordinate}`);
+  }
   if ([...lockedEgovCoordinates].some((coordinate) => !artifactCoordinates.has(coordinate))
     || [...manifestRteCoordinates].some((coordinate) => !lockedEgovCoordinates.has(coordinate))) {
     fail("mirror artifact and lock coordinate sets differ");
@@ -97,14 +100,24 @@ function verifyBuildAndLock(manifest, build, lock) {
     const bom = declaration.match(/^\s*mavenBom\s+'(org\.egovframe\.boot:[a-z0-9.-]+:[0-9.]+)'\s*$/u);
     if (bom) directBuildCoordinates.add(bom[1]);
   }
+  const addDirectDependency = (declaredCoordinate, tail = "") => {
+    if (tail.trim()) fail(`build direct dependency declaration is unsupported: ${declaredCoordinate}`);
+    if (!/^org\.egovframe\.(?:boot|rte):[a-z0-9.-]+(?::[0-9.]+)?$/.test(declaredCoordinate)) fail(`build direct dependency coordinate is invalid: ${declaredCoordinate}`);
+    const [group, artifact, version] = declaredCoordinate.split(":");
+    const coordinate = version ? declaredCoordinate : lockedCoordinatesByModule.get(`${group}:${artifact}`);
+    if (!coordinate) fail(`lock declaration missing for direct module: ${group}:${artifact}`);
+    directBuildCoordinates.add(coordinate);
+  };
   for (const dependency of uncommentedBuild.matchAll(/(?:^|[;{}\n])[ \t\r\n]*[A-Za-z_$][A-Za-z0-9_$]*[ \t\r\n]*(?:\([ \t\r\n]*)?(['"])(org\.egovframe\.(?:boot|rte):[^'"]*)\1[ \t\r\n]*\)?[ \t\r]*(?=;|[{}\n]|$)/gmu)) {
     if (dependency) {
       const [, , declaredCoordinate] = dependency;
-      if (!/^org\.egovframe\.(?:boot|rte):[a-z0-9.-]+(?::[0-9.]+)?$/.test(declaredCoordinate)) fail(`build direct dependency coordinate is invalid: ${declaredCoordinate}`);
-      const [group, artifact, version] = declaredCoordinate.split(":");
-      const coordinate = version ? declaredCoordinate : lockedCoordinatesByModule.get(`${group}:${artifact}`);
-      if (!coordinate) fail(`lock declaration missing for direct module: ${group}:${artifact}`);
-      directBuildCoordinates.add(coordinate);
+      addDirectDependency(declaredCoordinate);
+    }
+  }
+  for (const dependency of uncommentedBuild.matchAll(/(?:^|[;{}\n])[ \t\r\n]*add[ \t\r\n]*\([ \t\r\n]*(['"])[A-Za-z_$][A-Za-z0-9_$]*\1[ \t\r\n]*,[ \t\r\n]*(['"])(org\.egovframe\.(?:boot|rte):[^'"]*)\2([^)]*)\)[ \t\r]*(?=;|[{}\n]|$)/gmu)) {
+    if (dependency) {
+      const [, , , declaredCoordinate, tail] = dependency;
+      addDirectDependency(declaredCoordinate, tail);
     }
   }
   const expectedDirectCoordinates = new Set(manifest.directBuildCoordinates);
