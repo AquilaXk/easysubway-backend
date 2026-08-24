@@ -72,6 +72,14 @@ for (const [name, mutate] of [
   ["testImplementation direct build coordinate with double-quoted call", (_root, fixture) => {
     writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\ntestImplementation(\"org.egovframe.rte:egovframe-rte-psl-dataaccess\")\n`);
   }],
+  ["unmirrored boot direct build coordinate", (_root, fixture) => {
+    const coordinate = "org.egovframe.boot:some-module:5.0.0";
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation '${coordinate}'\n`);
+    writeFileSync(fixture.lock, `${readFileSync(fixture.lock, "utf8")}\n${coordinate}=compileClasspath\n`);
+  }],
+  ["classifier direct build coordinate", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation 'org.egovframe.rte:egovframe-rte-bat-core:5.0.0:sources'\n`);
+  }],
 ]) {
   test(`local eGovFrame Maven mirror rejects ${name}`, () => {
     const fixture = createFixture();
