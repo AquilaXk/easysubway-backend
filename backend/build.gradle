@@ -349,6 +349,19 @@ tasks.register('writeSpotbugsMainEvidence') {
 
 def contractsBundle = providers.environmentVariable('EASYSUBWAY_CONTRACTS_BUNDLE')
 
+def verifyEgovframeLocalMavenMirror = tasks.register('verifyEgovframeLocalMavenMirror', Exec) {
+	inputs.file(layout.projectDirectory.file('tools/verify-egovframe-local-maven-mirror.mjs'))
+	inputs.file(layout.projectDirectory.file('quality/egovframe-local-maven-mirror.json'))
+	inputs.dir(layout.projectDirectory.dir('gradle/local-maven'))
+	inputs.file(layout.projectDirectory.file('gradle.lockfile'))
+	inputs.file(layout.projectDirectory.file('build.gradle'))
+	commandLine 'node', 'tools/verify-egovframe-local-maven-mirror.mjs',
+		'--manifest', 'quality/egovframe-local-maven-mirror.json',
+		'--mirror', 'gradle/local-maven',
+		'--build', 'build.gradle',
+		'--lock', 'gradle.lockfile'
+}
+
 def stageContracts = tasks.register('stageContracts', Exec) {
 	inputs.file(layout.projectDirectory.file('tools/stage-contracts.mjs'))
 	inputs.file(layout.projectDirectory.file('contracts.lock.json'))
@@ -369,6 +382,7 @@ def journeyContractsStagingMarker = layout.buildDirectory.file('journey-contract
 def journeyContractsLock = layout.projectDirectory.file('journey-contracts.lock.json')
 
 tasks.named('processResources') {
+	dependsOn verifyEgovframeLocalMavenMirror
 	inputs.file(journeyContractsLock)
 		.withPropertyName('journeyContractsLock')
 		.withPathSensitivity(PathSensitivity.RELATIVE)
