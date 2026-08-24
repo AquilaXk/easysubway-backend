@@ -91,13 +91,12 @@ function verifyBuildAndLock(manifest, build, lock) {
     lockedCoordinatesByModule.set(artifact, coordinate);
   }
   const directBuildCoordinates = new Set();
-  for (const line of build.split("\n")) {
-    const declaration = line.replace(/\/\/.*$/u, "");
+  for (const declaration of withoutComments(build).split("\n")) {
     const bom = declaration.match(/^\s*mavenBom\s+'(org\.egovframe\.boot:[a-z0-9.-]+:[0-9.]+)'\s*$/u);
     if (bom) directBuildCoordinates.add(bom[1]);
-    const implementation = declaration.match(/^\s*implementation\s+'org\.egovframe\.rte:([a-z0-9.-]+)(?::([0-9.]+))?'\s*$/u);
-    if (implementation) {
-      const [, artifact, version] = implementation;
+    const dependency = declaration.match(/^\s*[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\(\s*)?(['"])org\.egovframe\.rte:([a-z0-9.-]+)(?::([0-9.]+))?\1\s*\)?\s*$/u);
+    if (dependency) {
+      const [, , artifact, version] = dependency;
       const coordinate = version ? `org.egovframe.rte:${artifact}:${version}` : lockedCoordinatesByModule.get(artifact);
       if (!coordinate) fail(`lock declaration missing for direct module: ${artifact}`);
       directBuildCoordinates.add(coordinate);
@@ -111,5 +110,21 @@ function verifyBuildAndLock(manifest, build, lock) {
   for (const coordinate of expectedDirectCoordinates) {
     if (!artifactCoordinates.has(coordinate)) fail(`mirror artifacts missing direct coordinate: ${coordinate}`);
   }
+}
+function withoutComments(source) {
+  let result = "", quote = null, multilineQuote = null, lineComment = false, blockComment = false;
+  for (let index = 0; index < source.length; index += 1) {
+    const character = source[index], next = source[index + 1];
+    if (lineComment) { if (character === "\n") { lineComment = false; result += character; } continue; }
+    if (blockComment) { if (character === "*" && next === "/") { blockComment = false; index += 1; } else if (character === "\n") result += character; continue; }
+    if (multilineQuote) { if (source.startsWith(multilineQuote, index)) { result += "   "; index += 2; multilineQuote = null; } else result += character === "\n" ? character : " "; continue; }
+    if (quote) { result += character; if (character === "\\") result += source[++index] ?? ""; else if (character === quote) quote = null; continue; }
+    if ((character === "'" || character === '"') && source.startsWith(character.repeat(3), index)) { multilineQuote = character.repeat(3); result += "   "; index += 2; continue; }
+    if (character === "'" || character === '"') { quote = character; result += character; continue; }
+    if (character === "/" && next === "/") { lineComment = true; index += 1; continue; }
+    if (character === "/" && next === "*") { blockComment = true; index += 1; continue; }
+    result += character;
+  }
+  return result;
 }
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }

@@ -20,6 +20,16 @@ test("Java compilation은 local eGovFrame Maven mirror 검증 뒤에 실행된�
   assert.match(readFileSync(build, "utf8"), /tasks\.withType\(JavaCompile\)\.configureEach\s*\{\s*dependsOn verifyEgovframeLocalMavenMirror\s*\}/u);
 });
 
+test("local eGovFrame Maven mirror는 주석과 문자열의 direct coordinate를 무시한다", () => {
+  const fixture = createFixture();
+  try {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\n/*\nruntimeOnly 'org.egovframe.rte:egovframe-rte-psl-dataaccess'\n*/\ndef example = \"\"\"\ncompileOnly 'org.egovframe.rte:egovframe-rte-psl-dataaccess'\n\"\"\"\n`);
+    assert.match(run(fixture), /verified 21 artifacts/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 for (const [name, mutate] of [
   ["JAR one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.jar"))],
   ["POM one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.pom"))],
@@ -39,6 +49,15 @@ for (const [name, mutate] of [
   }],
   ["untracked direct build coordinate", (_root, fixture) => {
     writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation 'org.egovframe.rte:egovframe-rte-psl-dataaccess'\n`);
+  }],
+  ["runtimeOnly direct build coordinate", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nruntimeOnly 'org.egovframe.rte:egovframe-rte-psl-dataaccess'\n`);
+  }],
+  ["compileOnly direct build coordinate", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\ncompileOnly 'org.egovframe.rte:egovframe-rte-psl-dataaccess'\n`);
+  }],
+  ["testImplementation direct build coordinate with double-quoted call", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\ntestImplementation(\"org.egovframe.rte:egovframe-rte-psl-dataaccess\")\n`);
   }],
 ]) {
   test(`local eGovFrame Maven mirror rejects ${name}`, () => {
