@@ -16,6 +16,10 @@ test("local eGovFrame Maven mirror는 exact 21-file inventory를 검증한다", 
   assert.match(run(), /verified 21 artifacts: sha256:[a-f0-9]{16}/);
 });
 
+test("Java compilation은 local eGovFrame Maven mirror 검증 뒤에 실행된다", () => {
+  assert.match(readFileSync(build, "utf8"), /tasks\.withType\(JavaCompile\)\.configureEach\s*\{\s*dependsOn verifyEgovframeLocalMavenMirror\s*\}/u);
+});
+
 for (const [name, mutate] of [
   ["JAR one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.jar"))],
   ["POM one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.pom"))],
@@ -32,6 +36,9 @@ for (const [name, mutate] of [
     writeFileSync(fixture.manifest, `${JSON.stringify(value, null, 2)}\n`);
     writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation 'org.egovframe.rte:egovframe-rte-extra'\n`);
     writeFileSync(fixture.lock, `${readFileSync(fixture.lock, "utf8")}\n${coordinate}=compileClasspath\n`);
+  }],
+  ["untracked direct build coordinate", (_root, fixture) => {
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation 'org.egovframe.rte:egovframe-rte-psl-dataaccess'\n`);
   }],
 ]) {
   test(`local eGovFrame Maven mirror rejects ${name}`, () => {

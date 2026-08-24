@@ -77,18 +77,39 @@ function verifyArtifact(artifact) {
 
 function verifyBuildAndLock(manifest, build, lock) {
   const artifactCoordinates = new Set(manifest.artifacts.map((item) => item.coordinate));
-  for (const coordinate of manifest.directBuildCoordinates) {
-    const [group, artifact, version] = coordinate.split(":");
-    const direct = group === "org.egovframe.boot" ? `mavenBom '${coordinate}'` : `implementation '${group}:${artifact}'`;
-    if (!build.includes(direct)) fail(`build declaration differs: ${coordinate}`);
-    if (group === "org.egovframe.rte" && !lock.includes(`${coordinate}=`)) fail(`lock declaration differs: ${coordinate}`);
-    if (!artifactCoordinates.has(coordinate)) fail(`mirror artifacts missing direct coordinate: ${coordinate}`);
-  }
   const manifestRteCoordinates = new Set([...artifactCoordinates].filter((coordinate) => coordinate.startsWith("org.egovframe.rte:")));
   const lockRteCoordinates = new Set([...lock.matchAll(/^(org\.egovframe\.rte:[a-z0-9.-]+:[0-9.]+)=/gmu)].map((match) => match[1]));
   if (manifestRteCoordinates.size !== lockRteCoordinates.size
     || [...manifestRteCoordinates].some((coordinate) => !lockRteCoordinates.has(coordinate))) {
     fail("mirror artifact and lock coordinate sets differ");
+  }
+
+  const lockedCoordinatesByModule = new Map();
+  for (const coordinate of lockRteCoordinates) {
+    const [, artifact] = coordinate.split(":");
+    if (lockedCoordinatesByModule.has(artifact)) fail(`lock has multiple versions for direct module: ${artifact}`);
+    lockedCoordinatesByModule.set(artifact, coordinate);
+  }
+  const directBuildCoordinates = new Set();
+  for (const line of build.split("\n")) {
+    const declaration = line.replace(/\/\/.*$/u, "");
+    const bom = declaration.match(/^\s*mavenBom\s+'(org\.egovframe\.boot:[a-z0-9.-]+:[0-9.]+)'\s*$/u);
+    if (bom) directBuildCoordinates.add(bom[1]);
+    const implementation = declaration.match(/^\s*implementation\s+'org\.egovframe\.rte:([a-z0-9.-]+)(?::([0-9.]+))?'\s*$/u);
+    if (implementation) {
+      const [, artifact, version] = implementation;
+      const coordinate = version ? `org.egovframe.rte:${artifact}:${version}` : lockedCoordinatesByModule.get(artifact);
+      if (!coordinate) fail(`lock declaration missing for direct module: ${artifact}`);
+      directBuildCoordinates.add(coordinate);
+    }
+  }
+  const expectedDirectCoordinates = new Set(manifest.directBuildCoordinates);
+  if (directBuildCoordinates.size !== expectedDirectCoordinates.size
+    || [...directBuildCoordinates].some((coordinate) => !expectedDirectCoordinates.has(coordinate))) {
+    fail("build and manifest direct coordinate sets differ");
+  }
+  for (const coordinate of expectedDirectCoordinates) {
+    if (!artifactCoordinates.has(coordinate)) fail(`mirror artifacts missing direct coordinate: ${coordinate}`);
   }
 }
 function escapeRegExp(value) { return value.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"); }

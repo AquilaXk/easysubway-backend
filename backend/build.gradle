@@ -1,3 +1,5 @@
+import org.gradle.api.tasks.compile.JavaCompile
+
 plugins {
 	id 'java'
 	id 'jacoco'
@@ -360,6 +362,10 @@ def verifyEgovframeLocalMavenMirror = tasks.register('verifyEgovframeLocalMavenM
 		'--mirror', 'gradle/local-maven',
 		'--build', 'build.gradle',
 		'--lock', 'gradle.lockfile'
+}
+
+tasks.withType(JavaCompile).configureEach {
+	dependsOn verifyEgovframeLocalMavenMirror
 }
 
 def stageContracts = tasks.register('stageContracts', Exec) {
