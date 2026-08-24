@@ -30,6 +30,19 @@ test("local eGovFrame Maven mirror는 주석과 문자열의 direct coordinate�
   }
 });
 
+test("local eGovFrame Maven mirror는 다중 줄 direct dependency를 검증한다", () => {
+  const fixture = createFixture();
+  try {
+    writeFileSync(fixture.build, readFileSync(fixture.build, "utf8").replace(
+      "implementation 'org.egovframe.rte:egovframe-rte-ptl-mvc'",
+      "implementation(\n  'org.egovframe.rte:egovframe-rte-ptl-mvc'\n)",
+    ));
+    assert.match(run(fixture), /verified 21 artifacts/u);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
 for (const [name, mutate] of [
   ["JAR one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.jar"))],
   ["POM one-byte mutation", (root) => mutateByte(join(root, "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.pom"))],

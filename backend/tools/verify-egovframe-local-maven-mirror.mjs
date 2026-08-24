@@ -91,10 +91,12 @@ function verifyBuildAndLock(manifest, build, lock) {
     lockedCoordinatesByModule.set(artifact, coordinate);
   }
   const directBuildCoordinates = new Set();
-  for (const declaration of withoutComments(build).split("\n")) {
+  const uncommentedBuild = withoutComments(build);
+  for (const declaration of uncommentedBuild.split("\n")) {
     const bom = declaration.match(/^\s*mavenBom\s+'(org\.egovframe\.boot:[a-z0-9.-]+:[0-9.]+)'\s*$/u);
     if (bom) directBuildCoordinates.add(bom[1]);
-    const dependency = declaration.match(/^\s*[A-Za-z_$][A-Za-z0-9_$]*\s*(?:\(\s*)?(['"])org\.egovframe\.rte:([a-z0-9.-]+)(?::([0-9.]+))?\1\s*\)?\s*$/u);
+  }
+  for (const dependency of uncommentedBuild.matchAll(/(?:^|[;{}\n])[ \t\r\n]*[A-Za-z_$][A-Za-z0-9_$]*[ \t\r\n]*(?:\([ \t\r\n]*)?(['"])org\.egovframe\.rte:([a-z0-9.-]+)(?::([0-9.]+))?\1[ \t\r\n]*\)?[ \t\r]*(?=;|[{}\n]|$)/gmu)) {
     if (dependency) {
       const [, , artifact, version] = dependency;
       const coordinate = version ? `org.egovframe.rte:${artifact}:${version}` : lockedCoordinatesByModule.get(artifact);
