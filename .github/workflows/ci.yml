@@ -188,11 +188,12 @@ jobs:
       - name: Stage pinned contracts
         shell: bash
         run: |
+          artifact_url="$(jq -er '.artifactUrl | select(. == "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json")' backend/contracts.lock.json)"
           curl --fail --silent --show-error --location \
             --retry 3 --retry-delay 2 --retry-all-errors \
             --connect-timeout 10 --max-time 60 \
             --output "${RUNNER_TEMP}/backend-contracts.json" \
-            https://raw.githubusercontent.com/AquilaXk/easysubway/main/contracts/bundles/backend-contracts-v1.0.0.json
+            "${artifact_url}"
           node backend/tools/stage-contracts.mjs \
             --lock backend/contracts.lock.json \
             --input "${RUNNER_TEMP}/backend-contracts.json" \

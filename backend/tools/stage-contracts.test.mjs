@@ -9,6 +9,7 @@ import test from "node:test";
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const script = join(repositoryRoot, "backend/tools/stage-contracts.mjs");
 const outputRoot = join(repositoryRoot, "backend/build/stage-contracts-test");
+const immutableArtifactUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json";
 
 test("stage-contracts는 해시가 고정된 정확한 두 계약을 staging한다", () => {
   const fixture = createFixture();
@@ -40,12 +41,21 @@ test("stage-contracts는 lock과 다른 bundle version을 거부한다", () => {
   }
 });
 
-test("stage-contracts는 Task 1에 고정되지 않은 artifact URL을 거부한다", () => {
-  const fixture = createFixture({ artifactUrl: "https://example.invalid/backend-contracts-v1.0.0.json" });
-  try {
-    assert.throws(() => run(fixture));
-  } finally {
-    fixture.cleanup();
+test("stage-contracts는 정확한 immutable Hub artifact URL만 허용한다", () => {
+  for (const artifactUrl of [
+    "https://raw.githubusercontent.com/AquilaXk/easysubway/main/contracts/bundles/backend-contracts-v1.0.0.json",
+    "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc/contracts/bundles/backend-contracts-v1.0.0.json",
+    "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc80/contracts/bundles/backend-contracts-v1.0.0.json",
+    `${immutableArtifactUrl}\n`,
+    [immutableArtifactUrl],
+    "https://example.invalid/backend-contracts-v1.0.0.json",
+  ]) {
+    const fixture = createFixture({ artifactUrl });
+    try {
+      assert.throws(() => run(fixture), /lock/i);
+    } finally {
+      fixture.cleanup();
+    }
   }
 });
 
@@ -147,7 +157,7 @@ function createFixture(options = {}) {
   writeFileSync(join(directory, "lock.json"), `${JSON.stringify({
     schemaVersion: 1,
     bundleVersion: "1.0.0",
-    artifactUrl: options.artifactUrl ?? "https://raw.githubusercontent.com/AquilaXk/easysubway/main/contracts/bundles/backend-contracts-v1.0.0.json",
+    artifactUrl: options.artifactUrl ?? immutableArtifactUrl,
     sha256: options.hash ?? createHash("sha256").update(bytes).digest("hex"),
   })}\n`);
   return {

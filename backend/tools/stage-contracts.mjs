@@ -7,7 +7,7 @@ const requiredResources = [
   "datapack/source-governance-policy.json",
   "datapack/datapack-freshness-sla.json",
 ];
-const artifactUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/main/contracts/bundles/backend-contracts-v1.0.0.json";
+const artifactUrl = "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json";
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const backendBuild = resolve(repositoryRoot, "backend/build");
 
