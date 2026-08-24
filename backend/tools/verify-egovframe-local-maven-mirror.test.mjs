@@ -25,6 +25,14 @@ for (const [name, mutate] of [
   ["path-coordinate mismatch", (_root, fixture) => writeFileSync(fixture.manifest, readFileSync(fixture.manifest, "utf8").replace("egovframe-rte-bat-core-5.0.0.jar", "renamed.jar"))],
   ["lock drift", (_root, fixture) => writeFileSync(fixture.lock, readFileSync(fixture.lock, "utf8").replace("org.egovframe.rte:egovframe-rte-bat-core:5.0.0", "org.egovframe.rte:egovframe-rte-bat-core:9.9.9"))],
   ["build declaration drift", (_root, fixture) => writeFileSync(fixture.build, readFileSync(fixture.build, "utf8").replace("egovframe-rte-bat-core'", "egovframe-rte-bat-core:9.9.9'"))],
+  ["direct coordinate without mirror artifacts", (_root, fixture) => {
+    const coordinate = "org.egovframe.rte:egovframe-rte-extra:5.0.0";
+    const value = JSON.parse(readFileSync(fixture.manifest, "utf8"));
+    value.directBuildCoordinates.push(coordinate);
+    writeFileSync(fixture.manifest, `${JSON.stringify(value, null, 2)}\n`);
+    writeFileSync(fixture.build, `${readFileSync(fixture.build, "utf8")}\nimplementation 'org.egovframe.rte:egovframe-rte-extra'\n`);
+    writeFileSync(fixture.lock, `${readFileSync(fixture.lock, "utf8")}\n${coordinate}=compileClasspath\n`);
+  }],
 ]) {
   test(`local eGovFrame Maven mirror rejects ${name}`, () => {
     const fixture = createFixture();
