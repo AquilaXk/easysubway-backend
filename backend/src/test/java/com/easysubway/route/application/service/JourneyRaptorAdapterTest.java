@@ -55,21 +55,21 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.candidates()).singleElement().satisfies(candidate -> {
 			assertThat(candidate.journeyId()).matches("[a-f0-9]{64}");
 			assertThat(candidate.plannedDepartureTime()).isEqualTo(EFFECTIVE);
-			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:32Z"));
+			assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
 			assertThat(candidate.realtimeDepartureTime()).isNull();
 			assertThat(candidate.realtimeArrivalTime()).isNull();
-			assertThat(candidate.durationSeconds()).isEqualTo(1_232);
+			assertThat(candidate.durationSeconds()).isEqualTo(1_260);
 			assertThat(candidate.transferCount()).isZero();
 			assertThat(candidate.walkingDistanceMeters()).isEqualTo(100);
 			assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.TIMETABLE);
 			assertThat(candidate.accessibility().stairFree()).isTrue();
 			assertThat(candidate.accessibility().reasonCodes()).containsExactly("ACCESSIBILITY_VERIFIED");
 			assertThat(candidate.legs()).hasSize(3);
-			assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 48));
+			assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 120));
 			assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Ride(
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
-			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 32));
+			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
 		});
 	}
 
@@ -89,7 +89,7 @@ class JourneyRaptorAdapterTest {
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
 
-		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 40));
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 200));
 	}
 
 	@Test
@@ -108,7 +108,7 @@ class JourneyRaptorAdapterTest {
 			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
 
-		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 124));
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 140));
 		assertThat(candidate.accessibility().stairFree()).isTrue();
 	}
 
@@ -128,7 +128,7 @@ class JourneyRaptorAdapterTest {
 			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
 
-		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 100));
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 140));
 		assertThat(candidate.accessibility().stairFree()).isTrue();
 	}
 
@@ -150,7 +150,7 @@ class JourneyRaptorAdapterTest {
 			request(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
 
-		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 100));
+		assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 70));
 		assertThat(candidate.accessibility().stairFree()).isTrue();
 	}
 
@@ -171,12 +171,13 @@ class JourneyRaptorAdapterTest {
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null).candidates();
 
 		assertThat(candidates).singleElement().satisfies(candidate ->
-			assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 64)));
+			assertThat(candidate.legs()).contains(new JourneyCandidate.Entry("station-a", 200)));
 	}
 
 	@Test
-	void appliesOneWalkingPaceCostToLegsArrivalAndJourneyIdentity() {
-		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+	void preservesVerifiedZeroDistanceEntryAndExitBaselinesAcrossWalkingPaces() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(verifiedAccess(false, 0, 0)));
 		var adapter = new JourneyRaptorAdapter();
 		var slow = adapter.plan(request(
 			JourneyRequest.MobilityProfile.STANDARD,
@@ -192,12 +193,42 @@ class JourneyRaptorAdapterTest {
 		), snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
 
 		assertThat(slow.legs()).contains(
-			new JourneyCandidate.Entry("station-a", 62), new JourneyCandidate.Exit("station-b", 42));
-		assertThat(slow.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:42Z"));
+			new JourneyCandidate.Entry("station-a", 120), new JourneyCandidate.Exit("station-b", 60));
 		assertThat(fast.legs()).contains(
-			new JourneyCandidate.Entry("station-a", 36), new JourneyCandidate.Exit("station-b", 24));
-		assertThat(fast.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:24Z"));
-		assertThat(fast.journeyId()).isNotEqualTo(slow.journeyId());
+			new JourneyCandidate.Entry("station-a", 120), new JourneyCandidate.Exit("station-b", 60));
+		assertThat(slow.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
+		assertThat(fast.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
+		assertThat(fast.journeyId()).isEqualTo(slow.journeyId());
+	}
+
+	@Test
+	void appliesWalkingPaceOnlyToVerifiedTransferDurationArrivalAndJourneyIdentity() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, transferTimetable());
+		var adapter = new JourneyRaptorAdapter();
+		var slow = adapter.plan(transferRequest(JourneyRequest.WalkingPace.SLOW), snapshot(runtime), EFFECTIVE, null)
+			.candidates().getFirst();
+		var standard = adapter.plan(transferRequest(JourneyRequest.WalkingPace.STANDARD), snapshot(runtime), EFFECTIVE, null)
+			.candidates().getFirst();
+		var fast = adapter.plan(transferRequest(JourneyRequest.WalkingPace.FAST), snapshot(runtime), EFFECTIVE, null)
+			.candidates().getFirst();
+
+		assertThat(slow.legs()).contains(
+			new JourneyCandidate.Entry("station-a", 120),
+			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 103),
+			new JourneyCandidate.Exit("station-b", 60));
+		assertThat(standard.legs()).contains(
+			new JourneyCandidate.Entry("station-a", 120),
+			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 80),
+			new JourneyCandidate.Exit("station-b", 60));
+		assertThat(fast.legs()).contains(
+			new JourneyCandidate.Entry("station-a", 120),
+			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 60),
+			new JourneyCandidate.Exit("station-b", 60));
+		assertThat(fast.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:23:00Z"));
+		assertThat(standard.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:41:00Z"));
+		assertThat(slow.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:41:00Z"));
+		assertThat(fast.journeyId()).isNotEqualTo(standard.journeyId());
+		assertThat(standard.journeyId()).isNotEqualTo(slow.journeyId());
 	}
 
 	@Test
@@ -212,17 +243,17 @@ class JourneyRaptorAdapterTest {
 			transferRequest, snapshot(runtime), EFFECTIVE, null).candidates().getFirst();
 
 		assertThat(candidate.transferCount()).isEqualTo(1);
-		assertThat(candidate.walkingDistanceMeters()).isEqualTo(250);
+		assertThat(candidate.walkingDistanceMeters()).isEqualTo(300);
 		assertThat(candidate.legs()).containsExactly(
-			new JourneyCandidate.Entry("station-a", 80),
+			new JourneyCandidate.Entry("station-a", 120),
 			new JourneyCandidate.Ride(
 				"line-a", "trip-first", "station-transfer", "station-a", "station-transfer",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null),
-			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 40),
+			new JourneyCandidate.Transfer("station-transfer", "station-transfer", 80),
 			new JourneyCandidate.Ride(
 				"line-b", "trip-second", "station-b", "station-transfer", "station-b",
 				Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null),
-			new JourneyCandidate.Exit("station-b", 80));
+			new JourneyCandidate.Exit("station-b", 60));
 	}
 
 	@Test
@@ -245,9 +276,9 @@ class JourneyRaptorAdapterTest {
 			snapshot(runtime), EFFECTIVE, observation).candidates().getFirst();
 
 		assertThat(candidate.plannedDepartureTime()).isEqualTo(EFFECTIVE);
-		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:10:32Z"));
+		assertThat(candidate.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:00Z"));
 		assertThat(candidate.realtimeDepartureTime()).isEqualTo(EFFECTIVE);
-		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:32Z"));
+		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:12:00Z"));
 		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
 		assertThat(candidate.legs()).filteredOn(JourneyCandidate.Ride.class::isInstance)
 			.singleElement().isEqualTo(new JourneyCandidate.Ride(
@@ -429,13 +460,14 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
-	void returnsNoCandidateForZeroDistanceAndRuleOnlyTransfer() {
+	void retainsVerifiedZeroDistanceEntryAndExitButRejectsRuleOnlyTransfer() {
 		var zeroDistanceRuntime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION, timetable(verifiedAccess(false, 0, 40)));
 		assertThat(new JourneyRaptorAdapter().plan(
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(zeroDistanceRuntime), EFFECTIVE, null).candidates())
-			.isEmpty();
+			.singleElement().satisfies(candidate -> assertThat(candidate.legs()).contains(
+				new JourneyCandidate.Entry("station-a", 120), new JourneyCandidate.Exit("station-b", 60)));
 
 		var ruleOnlyRuntime = RaptorRouteBundleRuntimeView.compile(
 			ROUTE_BUNDLE_SHA, GENERATION, transferTimetable(false));
@@ -443,6 +475,31 @@ class JourneyRaptorAdapterTest {
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(ruleOnlyRuntime), EFFECTIVE, null).candidates())
 			.isEmpty();
+	}
+
+	@Test
+	void rejectsTransferWithoutPositiveVerifiedNonstaleAndHighConfidenceDistance() {
+		assertThat(new JourneyRaptorAdapter().plan(
+			transferRequest(JourneyRequest.WalkingPace.STANDARD),
+			snapshot(RaptorRouteBundleRuntimeView.compile(
+				ROUTE_BUNDLE_SHA, GENERATION, transferTimetable(true, 0, "OFFICIAL_SOURCE", "VERIFIED", "VERIFIED"))),
+			EFFECTIVE,
+			null
+		).candidates()).isEmpty();
+		assertThat(new JourneyRaptorAdapter().plan(
+			transferRequest(JourneyRequest.WalkingPace.STANDARD),
+			snapshot(RaptorRouteBundleRuntimeView.compile(
+				ROUTE_BUNDLE_SHA, GENERATION, transferTimetable(true, 100, "UNTRUSTED", "VERIFIED", "VERIFIED"))),
+			EFFECTIVE,
+			null
+		).candidates()).isEmpty();
+		assertThat(new JourneyRaptorAdapter().plan(
+			transferRequest(JourneyRequest.WalkingPace.STANDARD),
+			snapshot(RaptorRouteBundleRuntimeView.compile(
+				ROUTE_BUNDLE_SHA, GENERATION, transferTimetable(true, 100, "OFFICIAL_SOURCE", "VERIFIED", "STALE"))),
+			EFFECTIVE,
+			null
+		).candidates()).isEmpty();
 	}
 
 	private static void assertCommand(
@@ -478,6 +535,13 @@ class JourneyRaptorAdapterTest {
 		return new JourneyRequest(
 			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
 			timePolicy, walkingPace, profile, constraint, 0, 1, () -> false);
+	}
+
+	private static JourneyRequest transferRequest(JourneyRequest.WalkingPace walkingPace) {
+		return new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, walkingPace,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
@@ -519,6 +583,16 @@ class JourneyRaptorAdapterTest {
 	}
 
 	private static RouteTimetable transferTimetable(boolean verifiedTransfer) {
+		return transferTimetable(verifiedTransfer, 100, "OFFICIAL_SOURCE", "VERIFIED", "VERIFIED");
+	}
+
+	private static RouteTimetable transferTimetable(
+		boolean verifiedTransfer,
+		int transferDistanceMeters,
+		String transferProvenanceKind,
+		String transferPathwayVerificationStatus,
+		String transferEvidenceVerificationStatus
+	) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -529,10 +603,14 @@ class JourneyRaptorAdapterTest {
 			new TransitTrip(
 				"trip-first", "route-first", "daily", "station-transfer", "down", "SUBWAY", "LOCAL", "2001", 0),
 			new TransitTrip(
+				"trip-second-fast", "route-second", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002-fast", 0),
+			new TransitTrip(
 				"trip-second", "route-second", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002", 0));
 		var stopTimes = List.of(
 			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
 			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second-fast", 1, "station-transfer", "line-b", 33_120, 33_120, 0, 0),
+			new TransitStopTime("trip-second-fast", 2, "station-b", "line-b", 33_720, 33_720, 0, 0),
 			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
 			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
 		var edges = java.util.stream.Stream.of(
@@ -540,8 +618,8 @@ class JourneyRaptorAdapterTest {
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
 			verifiedTransfer ? new PathwayEdge(
-				"transfer", "platform-transfer-a", "platform-transfer-b", 120, 50, false, false, 100,
-				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED") : null,
+				"transfer", "platform-transfer-a", "platform-transfer-b", 120, transferDistanceMeters, false, false, 100,
+				"AVAILABLE", transferProvenanceKind, transferPathwayVerificationStatus) : null,
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"))
@@ -564,7 +642,7 @@ class JourneyRaptorAdapterTest {
 					"OFFICIAL_SOURCE", "VERIFIED", true, null),
 				verifiedTransfer ? new RouteEdgeEvidence(
 					"transfer-evidence", "station-transfer", "line-b", "transfer", "TRANSFER",
-					"OFFICIAL_SOURCE", "VERIFIED", true, null) : null,
+					transferProvenanceKind, transferEvidenceVerificationStatus, true, null) : null,
 				new RouteEdgeEvidence(
 					"exit-evidence", "station-b", "line-b", "exit", "EXIT",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null)).filter(java.util.Objects::nonNull).toList());

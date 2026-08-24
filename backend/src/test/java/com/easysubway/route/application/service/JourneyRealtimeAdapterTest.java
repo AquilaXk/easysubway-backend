@@ -80,7 +80,7 @@ class JourneyRealtimeAdapterTest {
 		).candidates().getFirst();
 		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
 		assertThat(candidate.realtimeDepartureTime()).isEqualTo(EFFECTIVE);
-		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:11:32Z"));
+		assertThat(candidate.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T00:12:00Z"));
 		assertThat(candidate.legs()).filteredOn(JourneyCandidate.Ride.class::isInstance)
 			.singleElement().isEqualTo(new JourneyCandidate.Ride(
 				"line", "trip", "station-b", "station-a", "station-b",
