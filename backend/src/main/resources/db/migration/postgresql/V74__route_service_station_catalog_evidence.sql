@@ -11,7 +11,7 @@ CREATE TABLE route_service_station_catalog_evidence (
   fresh_until VARCHAR(40),
   source_issue INTEGER NOT NULL,
   CONSTRAINT fk_route_service_station_catalog_service
-    FOREIGN KEY (service_class) REFERENCES route_service_artifact_evidence(service_class),
+    FOREIGN KEY (service_class) REFERENCES route_service_artifact_evidence(service_class) ON DELETE CASCADE,
   CONSTRAINT chk_route_service_station_catalog_class CHECK (service_class = 'ITX_CHEONGCHUN'),
   CONSTRAINT chk_route_service_station_catalog_kind CHECK (station_catalog_artifact_kind = 'station-catalog-pack'),
   CONSTRAINT chk_route_service_station_catalog_manifest_version CHECK (station_catalog_manifest_version = 1),
