@@ -15,7 +15,7 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = JourneySearchController.class)
+@RestControllerAdvice(assignableTypes = {JourneySearchController.class, StationTimetableSearchController.class})
 @ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 final class JourneySearchExceptionHandler {
 
@@ -45,6 +45,13 @@ final class JourneySearchExceptionHandler {
 		JourneySearchController.JourneySearchWebException exception
 	) {
 		return error(exception.requestId(), exception.httpStatus(), exception.machineCode());
+	}
+
+	@ExceptionHandler(StationTimetableSearchController.StationTimetableSearchWebException.class)
+	ResponseEntity<JourneyError> handleStationTimetableFailure(
+		StationTimetableSearchController.StationTimetableSearchWebException exception
+	) {
+		return error(null, exception.httpStatus(), exception.machineCode());
 	}
 
 	private ResponseEntity<JourneyError> error(String requestId, int httpStatus, String machineCode) {

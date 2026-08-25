@@ -2,6 +2,9 @@ package com.easysubway.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneySessionService;
+import com.easysubway.journey.application.StationTimetableSearchService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -20,8 +23,12 @@ import org.springframework.web.bind.annotation.RestController;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
-@SpringBootTest
+@SpringBootTest(properties = {
+	"easysubway.journey-v3.session-web.enabled=true",
+	"easysubway.journey-v3.search-web.enabled=true"
+})
 @DisplayName("프로젝트 HTTP API catalog 계약")
 class ApiOperationCatalogContractTest {
 
@@ -30,6 +37,15 @@ class ApiOperationCatalogContractTest {
 	@Autowired
 	@Qualifier("requestMappingHandlerMapping")
 	private RequestMappingHandlerMapping handlerMapping;
+
+	@MockitoBean
+	private JourneySessionService journeySessionService;
+
+	@MockitoBean
+	private JourneyApplicationDeadlineExecutor journeyApplicationDeadlineExecutor;
+
+	@MockitoBean
+	private StationTimetableSearchService stationTimetableSearchService;
 
 	@Test
 	@DisplayName("EasySubway controller mapping은 deterministic index와 일치하고 catalog endpoint를 노출하지 않는다")

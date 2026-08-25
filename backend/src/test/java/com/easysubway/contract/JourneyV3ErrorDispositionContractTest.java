@@ -57,6 +57,22 @@ class JourneyV3ErrorDispositionContractTest {
 			"경로 검색 인증이 만료되었어요.", "journey.action.reauthenticate"),
 		entry("searchJourneys", 429, "ROUTE_RATE_LIMITED", "RATE_LIMIT",
 			"요청이 많아요. 잠시 후 다시 검색해 주세요.", null),
+		entry("searchStationTimetables", 400, "INVALID_JOURNEY_REQUEST", "REQUEST_CORRECTION",
+			"역과 노선, 조회 조건을 확인해 주세요.", "journey.action.editRequest"),
+		entry("searchStationTimetables", 404, "STATION_LINE_NOT_FOUND", "REQUEST_CORRECTION",
+			"선택한 역의 노선 정보를 찾을 수 없어요.", "journey.action.reselectStation"),
+		entry("searchStationTimetables", 404, "TIMETABLE_NOT_COVERED", "ROUTE_ABSENT",
+			"선택한 역의 노선 시간표가 아직 준비되지 않았어요.", "journey.action.reselectStation"),
+		entry("searchStationTimetables", 503, "TIMETABLE_UNAVAILABLE", "ROUTING_DATA_UNAVAILABLE",
+			"시간표를 확인할 수 없어요.", "journey.action.newSearch"),
+		entry("searchStationTimetables", 503, "TIMETABLE_STALE", "ROUTING_DATA_STALE",
+			"최신 시간표를 확인할 수 없어요.", "journey.action.newSearch"),
+		entry("searchStationTimetables", 503, "TIMETABLE_IDENTITY_MISMATCH", "ROUTING_IDENTITY_FAILURE",
+			"시간표 데이터 확인 중 문제가 발생했어요.", "journey.action.newSearch"),
+		entry("searchStationTimetables", 401, "ROUTE_SESSION_REQUIRED", "SESSION_AUTHENTICATION",
+			"경로 검색 인증이 만료되었어요.", "journey.action.reauthenticate"),
+		entry("searchStationTimetables", 429, "ROUTE_RATE_LIMITED", "RATE_LIMIT",
+			"요청이 많아요. 잠시 후 다시 검색해 주세요.", null),
 		entry("issueJourneySession", 400, "INVALID_JOURNEY_SESSION_REQUEST", "SESSION_AUTHENTICATION",
 			"경로 검색 인증 요청을 확인할 수 없어요.", "journey.action.reauthenticate"),
 		entry("issueJourneySession", 403, "ROUTE_SESSION_ATTESTATION_REJECTED", "SESSION_AUTHENTICATION",
@@ -103,6 +119,7 @@ class JourneyV3ErrorDispositionContractTest {
 			assertThat(entry.path("retryDisposition").asText()).isEqualTo("FORBIDDEN");
 			assertThat(entry.path("secondaryActionKey").isNull()).isTrue();
 			assertThat(entry.path("sensitiveDetailPolicy").asText()).isEqualTo("NEVER_PUBLIC");
+			String operation = entry.path("operation").asText();
 			String machineCode = entry.path("machineCode").asText();
 			String publicMessageKey = entry.path("publicMessageKey").asText();
 			String mobileResourceKey = entry.path("mobileResourceKey").asText();
@@ -111,14 +128,17 @@ class JourneyV3ErrorDispositionContractTest {
 			assertThat(safeDiagnosticKey).isEqualTo("journey.diagnostic." + machineCode.toLowerCase(Locale.ROOT));
 			assertThat(safeDiagnosticKey).isNotEqualTo(publicMessageKey);
 			assertThat(mobileResourceKey).isEqualTo(mobileResourceKey(machineCode));
-			assertThat(publicMessageKeys.add(publicMessageKey)).isTrue();
-			assertThat(mobileResourceKeys.add(mobileResourceKey)).isTrue();
-			assertThat(safeDiagnosticKeys.add(safeDiagnosticKey)).isTrue();
+			// A Journey V3 machine code may be shared by distinct operations. Resource
+			// keys are therefore unique within the operation that owns their presentation.
+			assertThat(publicMessageKeys.add(operation + "\u0000" + publicMessageKey)).isTrue();
+			assertThat(mobileResourceKeys.add(operation + "\u0000" + mobileResourceKey)).isTrue();
+			assertThat(safeDiagnosticKeys.add(operation + "\u0000" + safeDiagnosticKey)).isTrue();
 			assertPublicSurfaceIsSafe(entry);
 		}
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 		assertThat(new LinkedHashSet<>(actual)).hasSameSizeAs(EXPECTED);
-		assertThat(catalogPairs()).containsExactlyElementsOf(EXPECTED.stream().map(ExpectedDisposition::pair).toList());
+		assertThat(catalogPairs("applicationErrors")).containsExactlyElementsOf(expectedCatalogPairs(true));
+		assertThat(catalogPairs("ingressErrors")).containsExactlyElementsOf(expectedCatalogPairs(false));
 	}
 
 	@Test
@@ -143,18 +163,31 @@ class JourneyV3ErrorDispositionContractTest {
 		return new ExpectedDisposition(operation, httpStatus, machineCode, semanticCategory, copy, primaryActionKey);
 	}
 
-	private static List<ErrorPair> catalogPairs() throws IOException {
+	private static List<ErrorPair> catalogPairs(String field) throws IOException {
 		JsonNode catalog = JSON.readTree(CATALOG.toFile());
 		List<ErrorPair> pairs = new ArrayList<>();
-		for (String field : List.of("applicationErrors", "ingressErrors")) {
-			assertThat(catalog.path(field).isArray()).isTrue();
-			for (JsonNode entry : catalog.path(field)) {
-				assertThat(fieldNames(entry)).containsExactlyInAnyOrder("operation", "httpStatus", "code");
-				assertThat(entry.path("httpStatus").isIntegralNumber()).isTrue();
-				pairs.add(new ErrorPair(entry.path("operation").asText(), entry.path("httpStatus").asInt(), entry.path("code").asText()));
-			}
+		assertThat(catalog.path(field).isArray()).isTrue();
+		for (JsonNode entry : catalog.path(field)) {
+			assertThat(fieldNames(entry)).containsExactlyInAnyOrder("operation", "httpStatus", "code");
+			assertThat(entry.path("httpStatus").isIntegralNumber()).isTrue();
+			pairs.add(new ErrorPair(entry.path("operation").asText(), entry.path("httpStatus").asInt(), entry.path("code").asText()));
 		}
 		return pairs;
+	}
+
+	private static List<ErrorPair> expectedCatalogPairs(boolean application) {
+		return EXPECTED.stream()
+			.filter(entry -> application == isApplicationError(entry))
+			.map(ExpectedDisposition::pair)
+			.toList();
+	}
+
+	private static boolean isApplicationError(ExpectedDisposition entry) {
+		return switch (entry.operation()) {
+			case "searchJourneys", "searchStationTimetables" -> entry.httpStatus() != 401 && entry.httpStatus() != 429;
+			case "issueJourneySession" -> false;
+			default -> throw new IllegalArgumentException("unknown Journey V3 operation: " + entry.operation());
+		};
 	}
 
 	private static String mobileResourceKey(String machineCode) {

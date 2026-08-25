@@ -73,4 +73,26 @@ class LoadRouteTimetablePortTest {
 		assertThat(LoadRouteTimetablePort.RouteTimetable.empty().routeAccessData())
 			.isEqualTo(LoadRouteTimetablePort.RouteAccessData.empty());
 	}
+
+	@Test
+	@DisplayName("default station snapshot과 activation availability는 route timetable presence를 그대로 사용한다")
+	void defaultStationSnapshotAndActivatableAvailabilityFollowRouteTimetable() {
+		LoadRouteTimetablePort empty = LoadRouteTimetablePort.RouteTimetable::empty;
+		assertThat(empty.loadStationTimetableSnapshot()).satisfies(snapshot -> {
+			assertThat(snapshot.cacheKey()).isEqualTo("STATIC");
+			assertThat(snapshot.timetableArtifactId()).isNull();
+			assertThat(snapshot.freshUntil()).isNull();
+			assertThat(snapshot.timetable()).isEqualTo(LoadRouteTimetablePort.RouteTimetable.empty());
+		});
+		assertThat(empty.hasActivatableRouteTimetable()).isFalse();
+
+		var timetable = new LoadRouteTimetablePort.RouteTimetable(
+			List.of(), List.of(), List.of(),
+			List.of(new LoadRouteTimetablePort.TransitTrip("trip", "route", "weekday", "headsign", "0", "LOCAL", 0)),
+			List.of(new LoadRouteTimetablePort.TransitStopTime("trip", 1, "station", "line", 0, 0, 0, 0)),
+			List.of()
+		);
+		LoadRouteTimetablePort populated = () -> timetable;
+		assertThat(populated.hasActivatableRouteTimetable()).isTrue();
+	}
 }

@@ -72,6 +72,15 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("activation availability도 active artifact와 readable trip을 함께 요구한다")
+	void hasActivatableRouteTimetableRequiresFreshArtifactAndReadableTrips() {
+		assertThat(repository.hasActivatableRouteTimetable()).isFalse();
+		insertTimetableRows();
+		insertItxRows("2026-07-20T00:00:00+09:00");
+		assertThat(repository.hasActivatableRouteTimetable()).isTrue();
+	}
+
+	@Test
 	@DisplayName("만료된 active snapshot은 런타임에서 fail closed한다")
 	void rejectsExpiredActiveSnapshotAtRequestTime() {
 		insertTimetableRows();
@@ -186,10 +195,11 @@ class JdbcRouteTimetableRepositoryTest {
 		insertTimetableRows();
 		insertItxRows("2999-01-01T00:00:00Z");
 
-		var snapshot = repository.loadRouteTimetableSnapshot();
+		var snapshot = repository.loadStationTimetableSnapshot();
 
 		assertThat(snapshot.cacheKey()).isEqualTo("a".repeat(64) + "b".repeat(64) + "2999-01-01T00:00:00Z");
 		assertThat(snapshot.timetableArtifactId()).isEqualTo("snapshot-test");
+		assertThat(snapshot.freshUntil()).isEqualTo(java.time.Instant.parse("2999-01-01T00:00:00Z"));
 		assertThat(snapshot.plannerIdentity()).satisfies(identity -> {
 			assertThat(identity.timetableSnapshotSha256()).isEqualTo("a".repeat(64));
 			assertThat(identity.canonicalPackSha256()).isEqualTo("b".repeat(64));
@@ -201,6 +211,53 @@ class JdbcRouteTimetableRepositoryTest {
 		});
 		assertThat(snapshot.timetable().transitTrips()).extracting("id")
 			.contains("trip-seoul-4-0900", "trip-itx");
+	}
+
+	@Test
+	@DisplayName("station snapshot은 blank 또는 malformed fresh_until을 null receipt로 보존한다")
+	void stationSnapshotPreservesUnparseableFreshUntilAsNull() {
+		for (String freshUntil : java.util.List.of("", "not-an-offset-datetime")) {
+			setUp();
+			insertTimetableRows();
+			insertItxRows(freshUntil);
+			var snapshot = repository.loadStationTimetableSnapshot();
+			assertThat(snapshot.timetableArtifactId()).isEqualTo("snapshot-test");
+			assertThat(snapshot.freshUntil()).isNull();
+			assertThat(snapshot.timetable().transitTrips()).isNotEmpty();
+		}
+	}
+
+	@Test
+	@DisplayName("station timetable은 동일 active identity에서 full feed를 한 번만 읽고 identity 변경 때만 교체한다")
+	void cachesStationTimetableOnlyForTheExactActiveIdentity() {
+		insertTimetableRows();
+		insertItxRows("2999-01-01T00:00:00Z");
+
+		var first = repository.loadStationTimetableSnapshot();
+		jdbcTemplate.update("""
+			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_day_start_seconds, trip_headsign, direction_id)
+			VALUES ('trip-added-after-cache', 'route-seoul-4-oido', 'weekday-2026', 'LOCAL', 0, '사당', 'down')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds)
+			VALUES ('trip-added-after-cache', 1, 'station-sangnoksu', 'seoul-4', 0, 0, 36000, 36000)
+			""");
+
+		var sameIdentity = repository.loadStationTimetableSnapshot();
+		assertThat(sameIdentity).isSameAs(first);
+		assertThat(sameIdentity.timetable().transitTrips()).noneMatch(trip -> trip.id().equals("trip-added-after-cache"));
+
+		jdbcTemplate.update("UPDATE timetable_snapshot_history SET fresh_until = '2999-01-02T00:00:00Z' WHERE snapshot_sha256 = ?", "a".repeat(64));
+		jdbcTemplate.update("UPDATE route_service_artifact_evidence SET fresh_until = '2999-01-02T00:00:00Z' WHERE service_class = 'ITX_CHEONGCHUN'");
+
+		var replaced = repository.loadStationTimetableSnapshot();
+		assertThat(replaced).isNotSameAs(first);
+		assertThat(replaced.timetable().transitTrips()).anyMatch(trip -> trip.id().equals("trip-added-after-cache"));
+
+		jdbcTemplate.update("DELETE FROM timetable_snapshot_active");
+		var unavailable = repository.loadStationTimetableSnapshot();
+		assertThat(unavailable.timetableArtifactId()).isNull();
+		assertThat(unavailable.timetable().transitTrips()).isEmpty();
 	}
 
 	@Test

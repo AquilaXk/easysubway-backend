@@ -61,6 +61,36 @@
       "operation": "searchJourneys",
       "httpStatus": 504,
       "code": "JOURNEY_SEARCH_TIMEOUT"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 400,
+      "code": "INVALID_JOURNEY_REQUEST"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 404,
+      "code": "STATION_LINE_NOT_FOUND"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 404,
+      "code": "TIMETABLE_NOT_COVERED"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 503,
+      "code": "TIMETABLE_UNAVAILABLE"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 503,
+      "code": "TIMETABLE_STALE"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 503,
+      "code": "TIMETABLE_IDENTITY_MISMATCH"
     }
   ],
   "ingressErrors": [
@@ -71,6 +101,16 @@
     },
     {
       "operation": "searchJourneys",
+      "httpStatus": 429,
+      "code": "ROUTE_RATE_LIMITED"
+    },
+    {
+      "operation": "searchStationTimetables",
+      "httpStatus": 401,
+      "code": "ROUTE_SESSION_REQUIRED"
+    },
+    {
+      "operation": "searchStationTimetables",
       "httpStatus": 429,
       "code": "ROUTE_RATE_LIMITED"
     },

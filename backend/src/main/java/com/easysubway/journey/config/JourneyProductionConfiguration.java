@@ -8,6 +8,7 @@ import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
+import com.easysubway.journey.application.StationTimetableSearchService;
 import com.easysubway.journey.activation.JourneyActivationCommandParser;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
@@ -23,6 +24,7 @@ import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
@@ -52,6 +54,7 @@ public class JourneyProductionConfiguration {
 
 	private static final String SESSION_PATH = "/api/v3/journeys/session";
 	private static final String SEARCH_PATH = "/api/v3/journeys/search";
+	private static final String STATION_TIMETABLE_PATH = "/api/v3/station-timetables/search";
 	private static final Clock CLOCK = Clock.systemUTC();
 	private static final Duration REALTIME_FRESHNESS_TTL = Duration.ofSeconds(90);
 
@@ -135,6 +138,12 @@ public class JourneyProductionConfiguration {
 		return new JourneyApplicationService(activeSnapshotPort, realtimePort, raptorPort, CLOCK);
 	}
 
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	StationTimetableSearchService stationTimetableSearchService(LoadRouteTimetablePort timetablePort) {
+		return new StationTimetableSearchService(timetablePort, CLOCK);
+	}
+
 	@Bean(destroyMethod = "close")
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	ExecutorService journeyApplicationExecutor() {
@@ -160,6 +169,7 @@ public class JourneyProductionConfiguration {
 			.securityMatcher(
 				SESSION_PATH,
 				SEARCH_PATH,
+				STATION_TIMETABLE_PATH,
 				JourneyActivationController.PATH,
 				JourneyCandidateCanaryController.PATH,
 				JourneyReadinessController.CANDIDATE_PATH,
@@ -167,7 +177,7 @@ public class JourneyProductionConfiguration {
 			.csrf(AbstractHttpConfigurer::disable)
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
-				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH).permitAll()
+				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH, STATION_TIMETABLE_PATH).permitAll()
 				.requestMatchers(HttpMethod.POST, JourneyActivationController.PATH)
 				.hasRole("JOURNEY_READINESS")
 				.requestMatchers(HttpMethod.POST, JourneyCandidateCanaryController.PATH)
