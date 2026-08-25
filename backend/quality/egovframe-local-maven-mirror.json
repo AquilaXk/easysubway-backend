@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "mirrorRoot": "backend/gradle/local-maven",
+  "provenance": { "repository": "https://maven.egovframe.go.kr/maven", "identity": "official-egovframe-maven" },
+  "directBuildCoordinates": [
+    "org.egovframe.boot:egovframe-boot-starter-parent:5.0.0",
+    "org.egovframe.rte:egovframe-rte-ptl-mvc:5.0.0",
+    "org.egovframe.rte:egovframe-rte-bat-core:5.0.0",
+    "org.egovframe.rte:egovframe-rte-fdl-property:5.0.0",
+    "org.egovframe.rte:egovframe-rte-fdl-idgnr:5.0.0",
+    "org.egovframe.rte:egovframe-rte-fdl-excel:5.0.0"
+  ],
+  "artifacts": [
+    { "path": "org/egovframe/boot/egovframe-boot-starter-parent/5.0.0/egovframe-boot-starter-parent-5.0.0.pom", "size": 20807, "sha256": "c3e2bfb071ea9c85b88b282b441295638b3b8d6a6841c49b8b2f46831143a772", "coordinate": "org.egovframe.boot:egovframe-boot-starter-parent:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.jar", "size": 116841, "sha256": "c2ec8aff05c7f23e9986590c748aaa8d8b18e0d8be143fc61764b6ee9a595b85", "coordinate": "org.egovframe.rte:egovframe-rte-bat-core:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-bat-core/5.0.0/egovframe-rte-bat-core-5.0.0.pom", "size": 21218, "sha256": "361cebf4d3eaf12d94a06ef7a2725e2d8b8ef1724e535c31aa49c0f727a910b0", "coordinate": "org.egovframe.rte:egovframe-rte-bat-core:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-cmmn/5.0.0/egovframe-rte-fdl-cmmn-5.0.0.jar", "size": 29296, "sha256": "fc899a8411be73974f3db9c4ceff51500a433a62bcf469b62368703eed334c4f", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-cmmn:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-cmmn/5.0.0/egovframe-rte-fdl-cmmn-5.0.0.pom", "size": 12026, "sha256": "ff650abf8ee6b3142f39b24281b89eb6b41f90859695c2843448d9f1c9985a61", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-cmmn:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-excel/5.0.0/egovframe-rte-fdl-excel-5.0.0.jar", "size": 20316, "sha256": "60fe1b7d1061bc48a930b3845365367aff460c32ea4f560a3c527383a8dc12e4", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-excel:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-excel/5.0.0/egovframe-rte-fdl-excel-5.0.0.pom", "size": 12360, "sha256": "d867f33a1a0eb4273ef7efaab136e4658a453ca3bb67bf660ecdf4820ad087c5", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-excel:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-filehandling/5.0.0/egovframe-rte-fdl-filehandling-5.0.0.jar", "size": 10680, "sha256": "bb806cfe89cacf91d20b7ab09c440f9e7fefa34f5d5f3eb289ef40ee9dd383b7", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-filehandling:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-filehandling/5.0.0/egovframe-rte-fdl-filehandling-5.0.0.pom", "size": 9134, "sha256": "6d33e29fab5d6eefb52117e2524feae111bcea4c749f361198a447e75d90909b", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-filehandling:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-idgnr/5.0.0/egovframe-rte-fdl-idgnr-5.0.0.jar", "size": 27857, "sha256": "2a36afddaa83085e7a916bd864f358498def28eeeea8b31552c5f5fa80445945", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-idgnr:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-idgnr/5.0.0/egovframe-rte-fdl-idgnr-5.0.0.pom", "size": 10190, "sha256": "6750782f75c1f370a68910bcc22e7a9a4ad4ff9b84ba7dbc8e4968c1734b16da", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-idgnr:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-logging/5.0.0/egovframe-rte-fdl-logging-5.0.0.jar", "size": 8204, "sha256": "4ef5787b2c9da9ae726d32cf9989bf697d41af2288ac6c9325f9bfa41f033c8a", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-logging:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-logging/5.0.0/egovframe-rte-fdl-logging-5.0.0.pom", "size": 12652, "sha256": "0a61b11c2b4ba9701e34ca7b1020a1185d4776bbc564bff2da48e21ff7754f49", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-logging:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-property/5.0.0/egovframe-rte-fdl-property-5.0.0.jar", "size": 14665, "sha256": "9cd8c12fcb4392bd4f9b9b4831e72f15416f4303f96deb44d0eec2cc826f8058", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-property:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-property/5.0.0/egovframe-rte-fdl-property-5.0.0.pom", "size": 10279, "sha256": "14cdd7d162b0f10afe6de1c7eb3c3f95c02289367214261e43e073e03f27b066", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-property:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-string/5.0.0/egovframe-rte-fdl-string-5.0.0.jar", "size": 19018, "sha256": "1f922773c6f11c0e558260aa3f356ccdf81edd591e999485106e2129846be90c", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-string:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-fdl-string/5.0.0/egovframe-rte-fdl-string-5.0.0.pom", "size": 8437, "sha256": "b9674e1198990a081ea806f9c5f478984507687e01baa85d7964a232d56f8293", "coordinate": "org.egovframe.rte:egovframe-rte-fdl-string:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-psl-dataaccess/5.0.0/egovframe-rte-psl-dataaccess-5.0.0.jar", "size": 45984, "sha256": "c8ea1f667e677c55ec59f790aba9ffdce0746f73c01ad61f3e3e014ea0707890", "coordinate": "org.egovframe.rte:egovframe-rte-psl-dataaccess:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-psl-dataaccess/5.0.0/egovframe-rte-psl-dataaccess-5.0.0.pom", "size": 12215, "sha256": "502ea21194db674af2eb96720d7b26fa49bf572203902a77996e8d8c4680fc11", "coordinate": "org.egovframe.rte:egovframe-rte-psl-dataaccess:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-ptl-mvc/5.0.0/egovframe-rte-ptl-mvc-5.0.0.jar", "size": 20202, "sha256": "c9a5c9235571e78a781f793aa1a8fd695af6cc7f92422e824d236dfb1b91f19f", "coordinate": "org.egovframe.rte:egovframe-rte-ptl-mvc:5.0.0", "provenance": "official-egovframe-maven" },
+    { "path": "org/egovframe/rte/egovframe-rte-ptl-mvc/5.0.0/egovframe-rte-ptl-mvc-5.0.0.pom", "size": 11551, "sha256": "d77a3262af0aea50e84fc3b1ef0ed6fe64b8215e47f53c8c0c48587dd085ae9b", "coordinate": "org.egovframe.rte:egovframe-rte-ptl-mvc:5.0.0", "provenance": "official-egovframe-maven" }
+  ]
+}
