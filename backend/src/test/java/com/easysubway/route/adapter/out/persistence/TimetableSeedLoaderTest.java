@@ -452,9 +452,9 @@ class TimetableSeedLoaderTest {
 			"c".repeat(64),
 			FRESH_UNTIL,
 			invalidForeignKey ? "missing-trip" : "itx-trip-" + suffix,
-			"g".repeat(64),
-			"h".repeat(64),
-			"i".repeat(64)
+			"6".repeat(64),
+			"7".repeat(64),
+			"8".repeat(64)
 		);
 		byte[] sqlBytes = sql.getBytes(StandardCharsets.UTF_8);
 		byte[] gzipBytes = gzip(sqlBytes);
@@ -481,9 +481,9 @@ class TimetableSeedLoaderTest {
 		stationCatalog.put("artifactKind", "station-catalog-pack");
 		stationCatalog.put("manifestVersion", 1);
 		stationCatalog.put("catalogPackId", "station-catalog-" + suffix);
-		stationCatalog.put("stationSetSha256", "g".repeat(64));
-		stationCatalog.put("payloadSha256", "h".repeat(64));
-		stationCatalog.put("manifestSha256", "i".repeat(64));
+		stationCatalog.put("stationSetSha256", "6".repeat(64));
+		stationCatalog.put("payloadSha256", "7".repeat(64));
+		stationCatalog.put("manifestSha256", "8".repeat(64));
 		ObjectNode canonical = evidence.putObject("canonicalPackIdentity");
 		canonical.put("id", "capital");
 		canonical.put("sha256", "b".repeat(64));
@@ -686,7 +686,7 @@ class TimetableSeedLoaderTest {
 			resultSet.getString("station_catalog_manifest_sha256")
 		));
 		assertThat(stationCatalogIdentity)
-			.isEqualTo("station-catalog-" + suffix + "|" + "g".repeat(64) + "|" + "h".repeat(64) + "|" + "i".repeat(64));
+			.isEqualTo("station-catalog-" + suffix + "|" + "6".repeat(64) + "|" + "7".repeat(64) + "|" + "8".repeat(64));
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isOne();
 	}
 
