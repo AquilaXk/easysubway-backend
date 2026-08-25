@@ -304,7 +304,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			evidence.stationCatalogManifestSha256(),
 			evidence.freshUntil()
 		);
-		if (matchingStationCatalogEvidence == null || matchingStationCatalogEvidence != 1) {
+		if (!Integer.valueOf(1).equals(matchingStationCatalogEvidence)) {
 			throw new IllegalStateException("route service station catalog evidence does not match snapshot lineage");
 		}
 	}
