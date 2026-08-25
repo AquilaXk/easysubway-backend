@@ -94,24 +94,17 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	}
 
 	@Override
-	public RouteTimetableSnapshot loadStationTimetableSnapshot() {
+	public synchronized RouteTimetableSnapshot loadStationTimetableSnapshot() {
 		Optional<ItxArtifact> artifact = admissibleItxArtifact();
 		if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
 		String cacheKey = cacheKey(artifact.get());
 		StationTimetableCache cached = stationTimetableCache;
 		if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
-		synchronized (this) {
-			artifact = admissibleItxArtifact();
-			if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
-			cacheKey = cacheKey(artifact.get());
-			cached = stationTimetableCache;
-			if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
-			RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
-				cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
-				parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
-			stationTimetableCache = new StationTimetableCache(cacheKey, snapshot);
-			return snapshot;
-		}
+		RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
+			cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
+			parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
+		stationTimetableCache = new StationTimetableCache(cacheKey, snapshot);
+		return snapshot;
 	}
 
 	private static RouteTimetableSnapshot unavailableStationTimetableSnapshot() {
@@ -119,7 +112,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	}
 
 	private static java.time.Instant parseFreshUntil(String value) {
-		if (value == null || value.isBlank()) return null;
+		if (value.isBlank()) return null;
 		try {
 			return OffsetDateTime.parse(value).toInstant();
 		} catch (DateTimeParseException exception) {
