@@ -674,7 +674,7 @@ class TimetableSeedLoaderTest {
 			.containsExactly("access-edge-" + suffix);
 		assertThat(jdbc.queryForList("SELECT id FROM route_edge_evidence", String.class))
 			.containsExactly("route-evidence-" + suffix);
-		assertThat(jdbc.queryForObject("""
+		String stationCatalogIdentity = jdbc.queryForObject("""
 			SELECT station_catalog_pack_id, station_catalog_station_set_sha256,
 				station_catalog_payload_sha256, station_catalog_manifest_sha256
 			FROM route_service_station_catalog_evidence
@@ -684,7 +684,9 @@ class TimetableSeedLoaderTest {
 			resultSet.getString("station_catalog_station_set_sha256"),
 			resultSet.getString("station_catalog_payload_sha256"),
 			resultSet.getString("station_catalog_manifest_sha256")
-		))).isEqualTo("station-catalog-" + suffix + "|" + "g".repeat(64) + "|" + "h".repeat(64) + "|" + "i".repeat(64));
+		));
+		assertThat(stationCatalogIdentity)
+			.isEqualTo("station-catalog-" + suffix + "|" + "g".repeat(64) + "|" + "h".repeat(64) + "|" + "i".repeat(64));
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isOne();
 	}
 
