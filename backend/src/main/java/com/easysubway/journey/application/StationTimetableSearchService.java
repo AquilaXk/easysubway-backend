@@ -110,6 +110,7 @@ public final class StationTimetableSearchService {
 		List<DepartureCandidate> result = new ArrayList<>();
 		for (TransitStopTime stop : timetable.transitStopTimes()) {
 			if (!stationId.equals(stop.stationId()) || !lineId.equals(stop.lineId())) continue;
+			if (stop.pickupType() == 1) continue;
 			TransitTrip trip = trips.get(stop.tripId());
 			if (trip == null) throw failure(Failure.TIMETABLE_IDENTITY_MISMATCH);
 			TransitRoute route = routes.get(trip.routeId());
@@ -126,6 +127,7 @@ public final class StationTimetableSearchService {
 				.min(Comparator.comparingInt(TransitStopTime::stopSequence)).map(TransitStopTime::departureSeconds)
 				.orElseThrow(() -> failure(Failure.TIMETABLE_IDENTITY_MISMATCH));
 			for (TransitFrequency frequency : frequencies) {
+				if (!frequency.exactTimes()) continue;
 				for (int base = frequency.startTimeSeconds(); base < frequency.endTimeSeconds();) {
 					int shift;
 					try {
@@ -215,6 +217,9 @@ public final class StationTimetableSearchService {
 		RouteTimetable timetable,
 		LocalDate serviceDate
 	) {
+		if (timetable.feedEndDate() != null && serviceDate.isAfter(timetable.feedEndDate())) {
+			throw failure(Failure.TIMETABLE_STALE);
+		}
 		Set<String> activeServiceIds = activeServices(timetable, serviceDate);
 		for (DepartureCandidate candidate : candidates) {
 			if (!activeServiceIds.contains(candidate.trip().serviceId())) continue;
@@ -370,8 +375,12 @@ public final class StationTimetableSearchService {
 		}
 	}
 	public record SearchResult(String stationId, String lineId, Selector selector, DayType resolvedDayType,
-		List<DirectionGroup> directionGroups, SourceIdentity sourceIdentity) { }
-	public record DirectionGroup(String directionName, List<Departure> departures) { }
+		List<DirectionGroup> directionGroups, SourceIdentity sourceIdentity) {
+		public SearchResult { directionGroups = List.copyOf(directionGroups); }
+	}
+	public record DirectionGroup(String directionName, List<Departure> departures) {
+		public DirectionGroup { departures = List.copyOf(departures); }
+	}
 	public record Departure(String directionName, LocalDate serviceDate, int secondsFromServiceDayStart,
 		Instant departureAt, String servicePattern, String serviceClass) { }
 	public record SourceIdentity(String timetableArtifactId, String timetableSnapshotSha256, String canonicalStationVersion,

@@ -15,6 +15,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.format.DateTimeFormatter;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Objects;
@@ -37,6 +38,7 @@ final class StationTimetableSearchController {
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private static final Pattern SESSION_TOKEN = Pattern.compile("^[A-Za-z0-9_-]+$");
 	private static final Set<String> REQUEST_FIELDS = Set.of("stationId", "lineId", "selector");
+	private static final DateTimeFormatter SEOUL_RFC3339_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX");
 
 	private final JourneySessionService sessionService;
 	private final StationTimetableSearchService service;
@@ -66,7 +68,7 @@ final class StationTimetableSearchController {
 			result.directionGroups().stream().map(group -> new DirectionGroup(
 				group.directionName(), group.departures().stream().map(departure -> new Departure(
 					departure.serviceDate().toString(), departure.secondsFromServiceDayStart(), departure.departureAt()
-						.atZone(StationTimetableSearchService.SERVICE_ZONE).toOffsetDateTime().toString(),
+						.atZone(StationTimetableSearchService.SERVICE_ZONE).format(SEOUL_RFC3339_SECONDS),
 					departure.servicePattern(), departure.serviceClass())).toList())).toList(),
 			new SourceIdentity(result.sourceIdentity().timetableArtifactId(), result.sourceIdentity().timetableSnapshotSha256(),
 				result.sourceIdentity().canonicalStationVersion(), result.sourceIdentity().canonicalStationSetSha256(),

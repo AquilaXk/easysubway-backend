@@ -134,6 +134,45 @@ class StationTimetableSearchServiceTest {
 	}
 
 	@Test
+	void frequencyWithoutExactTimesDoesNotInventAPreciseDeparture() {
+		RouteTimetable timetable = timetable(List.of(calendar()), List.of(), List.of(
+			new TransitFrequency("trip", 32_700, 33_300, 300, false)), List.of());
+
+		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
+
+		assertThat(result.directionGroups()).isEmpty();
+	}
+
+	@Test
+	void pickupForbiddenStopDoesNotAppearAsADeparture() {
+		RouteTimetable template = timetable();
+		RouteTimetable timetable = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(),
+			template.transitRoutes(), template.transitTrips(),
+			List.of(new TransitStopTime("trip", 1, "station", "line", 32_400, 32_400, 1, 0)),
+			template.transitFrequencies(), template.officialFares(), template.feedEndDate(), template.routeAccessData());
+
+		var result = service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24"))));
+
+		assertThat(result.directionGroups()).isEmpty();
+	}
+
+	@Test
+	void dateAfterFeedEndFailsAsStale() {
+		RouteTimetable template = timetable();
+		RouteTimetable timetable = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(),
+			template.transitRoutes(), template.transitTrips(), template.transitStopTimes(), template.transitFrequencies(),
+			template.officialFares(), LocalDate.parse("2026-08-23"), template.routeAccessData());
+
+		assertThatThrownBy(() -> service(snapshot(timetable, NOW.plusSeconds(60))).search(request(
+			new Selector.ServiceDateSelector(LocalDate.parse("2026-08-24")))))
+			.isInstanceOf(FailureException.class)
+			.extracting(error -> ((FailureException) error).failure())
+			.isEqualTo(Failure.TIMETABLE_STALE);
+	}
+
+	@Test
 	void frequencyInstanceWithLaterStopOverflowIsSkippedAsAWhole() {
 		RouteTimetable template = timetable(List.of(calendar()), List.of(), List.of(), List.of());
 		RouteTimetable timetable = new RouteTimetable(template.serviceCalendars(), template.serviceCalendarDates(), template.transitRoutes(),

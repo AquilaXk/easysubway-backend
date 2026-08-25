@@ -205,6 +205,39 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("station timetable은 동일 active identity에서 full feed를 한 번만 읽고 identity 변경 때만 교체한다")
+	void cachesStationTimetableOnlyForTheExactActiveIdentity() {
+		insertTimetableRows();
+		insertItxRows("2999-01-01T00:00:00Z");
+
+		var first = repository.loadStationTimetableSnapshot();
+		jdbcTemplate.update("""
+			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_day_start_seconds, trip_headsign, direction_id)
+			VALUES ('trip-added-after-cache', 'route-seoul-4-oido', 'weekday-2026', 'LOCAL', 0, '사당', 'down')
+			""");
+		jdbcTemplate.update("""
+			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds)
+			VALUES ('trip-added-after-cache', 1, 'station-sangnoksu', 'seoul-4', 0, 0, 36000, 36000)
+			""");
+
+		var sameIdentity = repository.loadStationTimetableSnapshot();
+		assertThat(sameIdentity).isSameAs(first);
+		assertThat(sameIdentity.timetable().transitTrips()).noneMatch(trip -> trip.id().equals("trip-added-after-cache"));
+
+		jdbcTemplate.update("UPDATE timetable_snapshot_history SET fresh_until = '2999-01-02T00:00:00Z' WHERE snapshot_sha256 = ?", "a".repeat(64));
+		jdbcTemplate.update("UPDATE route_service_artifact_evidence SET fresh_until = '2999-01-02T00:00:00Z' WHERE service_class = 'ITX_CHEONGCHUN'");
+
+		var replaced = repository.loadStationTimetableSnapshot();
+		assertThat(replaced).isNotSameAs(first);
+		assertThat(replaced.timetable().transitTrips()).anyMatch(trip -> trip.id().equals("trip-added-after-cache"));
+
+		jdbcTemplate.update("DELETE FROM timetable_snapshot_active");
+		var unavailable = repository.loadStationTimetableSnapshot();
+		assertThat(unavailable.timetableArtifactId()).isNull();
+		assertThat(unavailable.timetable().transitTrips()).isEmpty();
+	}
+
+	@Test
 	@DisplayName("접근성 4개 테이블을 timetable snapshot row로 함께 읽는다")
 	void loadsRouteAccessDataWithTimetableSnapshot() {
 		insertTimetableRows();

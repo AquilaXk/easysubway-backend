@@ -29,6 +29,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
+	private volatile StationTimetableCache stationTimetableCache;
 	@Autowired
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource), Clock.systemUTC());
@@ -94,17 +95,34 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	@Override
 	public RouteTimetableSnapshot loadStationTimetableSnapshot() {
-		return admissibleItxArtifact()
-			.map(artifact -> new RouteTimetableSnapshot(
-				cacheKey(artifact), artifact.snapshotId(), artifact.plannerIdentity(),
-				parseFreshUntil(artifact.freshUntil()), loadRouteTimetable()))
-			.orElseGet(() -> new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty()));
+		Optional<ItxArtifact> artifact = admissibleItxArtifact();
+		if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
+		String cacheKey = cacheKey(artifact.get());
+		StationTimetableCache cached = stationTimetableCache;
+		if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
+		synchronized (this) {
+			artifact = admissibleItxArtifact();
+			if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
+			cacheKey = cacheKey(artifact.get());
+			cached = stationTimetableCache;
+			if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
+			RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
+				cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
+				parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
+			stationTimetableCache = new StationTimetableCache(cacheKey, snapshot);
+			return snapshot;
+		}
+	}
+
+	private static RouteTimetableSnapshot unavailableStationTimetableSnapshot() {
+		return new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty());
 	}
 
 	private static java.time.Instant parseFreshUntil(String value) {
+		if (value == null || value.isBlank()) return null;
 		try {
 			return OffsetDateTime.parse(value).toInstant();
-		} catch (DateTimeParseException | NullPointerException exception) {
+		} catch (DateTimeParseException exception) {
 			return null;
 		}
 	}
@@ -381,6 +399,9 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 		String freshUntil,
 		PlannerIdentity plannerIdentity
 	) {
+	}
+
+	private record StationTimetableCache(String cacheKey, RouteTimetableSnapshot snapshot) {
 	}
 
 	private static String cacheKey(ItxArtifact artifact) {

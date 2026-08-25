@@ -55,7 +55,7 @@ class StationTimetableSearchControllerTest {
 		mockMvc.perform(post(StationTimetableSearchController.PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 			.contentType(MediaType.APPLICATION_JSON).content(request()))
 			.andExpect(status().isOk()).andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
-			.andExpect(jsonPath("$.directionGroups[0].departures[0].departureAt").value("2026-08-24T09:00+09:00"));
+			.andExpect(jsonPath("$.directionGroups[0].departures[0].departureAt").value("2026-08-24T09:00:00+09:00"));
 		verify(sessions, times(1)).authorize("session-token");
 	}
 
