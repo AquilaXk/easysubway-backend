@@ -173,6 +173,29 @@ class TimetableSeedLoaderTest {
 	}
 
 	@Test
+	void rejectsInvalidStationCatalogIdentityBeforeAnySnapshotMutation() throws Exception {
+		SnapshotResource snapshot = snapshot("a", false);
+		SnapshotResource wrongKind = withStationCatalogIdentity(
+			snapshot, "wrong-station-catalog-pack", 1, "station-catalog-a");
+		SnapshotResource wrongManifestVersion = withStationCatalogIdentity(
+			snapshot, "station-catalog-pack", 2, "station-catalog-a");
+
+		assertThatThrownBy(() -> loader(wrongKind).activateSeed(wrongKind.seed(), wrongKind.evidence()))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("canonical identity is invalid");
+		assertThatThrownBy(() -> loader(wrongManifestVersion).activateSeed(
+			wrongManifestVersion.seed(), wrongManifestVersion.evidence()))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("canonical identity is invalid");
+
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_history", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM route_service_artifact_evidence", Integer.class)).isZero();
+		assertThat(jdbc.queryForObject(
+			"SELECT COUNT(*) FROM route_service_station_catalog_evidence", Integer.class)).isZero();
+	}
+
+	@Test
 	void concurrentLoadersConvergeOnOneCompleteSnapshotWithoutMixedRows() throws Exception {
 		SnapshotResource first = snapshot("a", false);
 		SnapshotResource second = snapshot("b", false);
@@ -518,11 +541,20 @@ class TimetableSeedLoaderTest {
 	}
 
 	private SnapshotResource withCatalogPackId(SnapshotResource snapshot, String catalogPackId) throws Exception {
+		return withStationCatalogIdentity(snapshot, "station-catalog-pack", 1, catalogPackId);
+	}
+
+	private SnapshotResource withStationCatalogIdentity(
+		SnapshotResource snapshot, String artifactKind, int manifestVersion, String catalogPackId
+	) throws Exception {
 		ObjectNode evidence;
 		try (var input = snapshot.evidence().getInputStream()) {
 			evidence = (ObjectNode) objectMapper.readTree(input);
 		}
-		evidence.withObject("/stationCatalogPackIdentity").put("catalogPackId", catalogPackId);
+		ObjectNode stationCatalog = evidence.withObject("/stationCatalogPackIdentity");
+		stationCatalog.put("artifactKind", artifactKind);
+		stationCatalog.put("manifestVersion", manifestVersion);
+		stationCatalog.put("catalogPackId", catalogPackId);
 		evidence.remove("evidenceHash");
 		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
 		return new SnapshotResource(snapshot.seed(), jsonResource(evidence, "mismatched-station-catalog-evidence.json"));
