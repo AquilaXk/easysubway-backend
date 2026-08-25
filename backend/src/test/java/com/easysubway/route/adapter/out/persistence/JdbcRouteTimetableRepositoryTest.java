@@ -72,6 +72,15 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("activation availability도 active artifact와 readable trip을 함께 요구한다")
+	void hasActivatableRouteTimetableRequiresFreshArtifactAndReadableTrips() {
+		assertThat(repository.hasActivatableRouteTimetable()).isFalse();
+		insertTimetableRows();
+		insertItxRows("2026-07-20T00:00:00+09:00");
+		assertThat(repository.hasActivatableRouteTimetable()).isTrue();
+	}
+
+	@Test
 	@DisplayName("만료된 active snapshot은 런타임에서 fail closed한다")
 	void rejectsExpiredActiveSnapshotAtRequestTime() {
 		insertTimetableRows();
@@ -202,6 +211,20 @@ class JdbcRouteTimetableRepositoryTest {
 		});
 		assertThat(snapshot.timetable().transitTrips()).extracting("id")
 			.contains("trip-seoul-4-0900", "trip-itx");
+	}
+
+	@Test
+	@DisplayName("station snapshot은 blank 또는 malformed fresh_until을 null receipt로 보존한다")
+	void stationSnapshotPreservesUnparseableFreshUntilAsNull() {
+		for (String freshUntil : java.util.List.of("", "not-an-offset-datetime")) {
+			setUp();
+			insertTimetableRows();
+			insertItxRows(freshUntil);
+			var snapshot = repository.loadStationTimetableSnapshot();
+			assertThat(snapshot.timetableArtifactId()).isEqualTo("snapshot-test");
+			assertThat(snapshot.freshUntil()).isNull();
+			assertThat(snapshot.timetable().transitTrips()).isNotEmpty();
+		}
 	}
 
 	@Test
