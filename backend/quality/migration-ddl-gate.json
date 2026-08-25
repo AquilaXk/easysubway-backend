@@ -43,6 +43,10 @@
     {
       "file": "V73__validate_journey_v3_session_request_limit.sql",
       "sha256": "07659f2ecd87aee399eab72f50976b4c170c72328dacaae1108340318f42d3ff"
+    },
+    {
+      "file": "V74__route_service_station_catalog_evidence.sql",
+      "sha256": "4a71d5c8a4e2810de334031b37c6e40fd96136559d3ab3d77ad5e7130766c305"
     }
   ],
   "allowlist": [
