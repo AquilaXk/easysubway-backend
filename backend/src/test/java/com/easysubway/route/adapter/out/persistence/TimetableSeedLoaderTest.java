@@ -432,7 +432,7 @@ class TimetableSeedLoaderTest {
 			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('subway-route-%1$s','Asia/Seoul','seoul-4','','','up');
 			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('itx-route-%1$s','Asia/Seoul','line-54a7b980b7c3','ITX-청춘','','down');
 			INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','artifact-%1$s','%2$s','capital','%3$s','%4$s','ADMITTED',TRUE,'%5$s',2135);
-			INSERT INTO route_service_station_catalog_evidence (service_class, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','station-catalog-pack',1,'station-catalog-%1$s','%6$s','%7$s','%8$s','ADMITTED',TRUE,'%5$s',2649);
+			INSERT INTO route_service_station_catalog_evidence (service_class, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','station-catalog-pack',1,'station-catalog-%1$s','%7$s','%8$s','%9$s','ADMITTED',TRUE,'%5$s',2649);
 			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES ('subway-trip-%1$s','subway-route-%1$s','service-%1$s','LOCAL','SUBWAY',0,'station-subway-terminal-%1$s','up');
 			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES ('itx-trip-%1$s','itx-route-%1$s','service-%1$s','EXPRESS','ITX_CHEONGCHUN',0,'춘천','down');
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('subway-trip-%1$s',1,'station-subway-%1$s','seoul-4',0,0,100,100);
@@ -674,6 +674,17 @@ class TimetableSeedLoaderTest {
 			.containsExactly("access-edge-" + suffix);
 		assertThat(jdbc.queryForList("SELECT id FROM route_edge_evidence", String.class))
 			.containsExactly("route-evidence-" + suffix);
+		assertThat(jdbc.queryForObject("""
+			SELECT station_catalog_pack_id, station_catalog_station_set_sha256,
+				station_catalog_payload_sha256, station_catalog_manifest_sha256
+			FROM route_service_station_catalog_evidence
+			""", (resultSet, rowNumber) -> String.join(
+			"|",
+			resultSet.getString("station_catalog_pack_id"),
+			resultSet.getString("station_catalog_station_set_sha256"),
+			resultSet.getString("station_catalog_payload_sha256"),
+			resultSet.getString("station_catalog_manifest_sha256")
+		))).isEqualTo("station-catalog-" + suffix + "|" + "g".repeat(64) + "|" + "h".repeat(64) + "|" + "i".repeat(64));
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM timetable_snapshot_active", Integer.class)).isOne();
 	}
 
