@@ -1,6 +1,7 @@
 package com.easysubway.route.application.port.out;
 
 import com.easysubway.route.application.model.PlannerIdentity;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
 import java.util.Optional;
@@ -18,6 +19,11 @@ public interface LoadRouteTimetablePort {
 			activeItxTimetableArtifactId().orElse(null),
 			loadRouteTimetable()
 		);
+	}
+
+	/** V3 station-time requests need the captured freshness receipt to classify stale data explicitly. */
+	default RouteTimetableSnapshot loadStationTimetableSnapshot() {
+		return loadRouteTimetableSnapshot();
 	}
 
 	default String timetableCacheKey() {
@@ -42,10 +48,19 @@ public interface LoadRouteTimetablePort {
 		String cacheKey,
 		String timetableArtifactId,
 		PlannerIdentity plannerIdentity,
+		Instant freshUntil,
 		RouteTimetable timetable
 	) {
+		public RouteTimetableSnapshot(
+			String cacheKey,
+			String timetableArtifactId,
+			PlannerIdentity plannerIdentity,
+			RouteTimetable timetable
+		) {
+			this(cacheKey, timetableArtifactId, plannerIdentity, null, timetable);
+		}
 		public RouteTimetableSnapshot(String cacheKey, String timetableArtifactId, RouteTimetable timetable) {
-			this(cacheKey, timetableArtifactId, null, timetable);
+			this(cacheKey, timetableArtifactId, null, null, timetable);
 		}
 	}
 

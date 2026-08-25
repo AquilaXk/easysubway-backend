@@ -2,6 +2,9 @@ package com.easysubway.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneySessionService;
+import com.easysubway.journey.application.StationTimetableSearchService;
 import java.io.Reader;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -33,6 +36,7 @@ import org.springframework.web.bind.annotation.ValueConstants;
 import org.springframework.web.method.HandlerMethod;
 import org.springframework.web.servlet.mvc.method.RequestMappingInfo;
 import org.springframework.web.servlet.mvc.method.annotation.RequestMappingHandlerMapping;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.yaml.snakeyaml.Yaml;
 
 /**
@@ -64,7 +68,10 @@ import org.yaml.snakeyaml.Yaml;
  * <p>새 계약 파일을 게이트에 넣으려면 {@link #SPECS}에 파일 이름과 그 파일이 소유하는 경로
  * 접두사만 추가하면 된다. 검사 규칙은 파일마다 다시 쓰지 않는다.
  */
-@SpringBootTest
+@SpringBootTest(properties = {
+	"easysubway.journey-v3.session-web.enabled=true",
+	"easysubway.journey-v3.search-web.enabled=true"
+})
 @DisplayName("공개 OpenAPI 계약과 controller mapping 정합")
 class PublicOpenApiContractTest {
 
@@ -77,6 +84,7 @@ class PublicOpenApiContractTest {
 	 * 계약에 없으면 실패하므로, 새 endpoint를 계약에 적지 않고 추가하는 것을 막는다.
 	 */
 	private static final List<SpecUnderTest> SPECS = List.of(
+		new SpecUnderTest("journey-v3.openapi.yaml", List.of("/api/v3/journeys/", "/api/v3/station-timetables/")),
 		new SpecUnderTest("realtime-api.openapi.yaml", List.of("/api/v1/realtime/")),
 		new SpecUnderTest("report-api.openapi.yaml", List.of("/api/v1/report-uploads", "/api/v1/reports")),
 		new SpecUnderTest("train-api.openapi.yaml", List.of("/api/v1/trains/"))
@@ -94,6 +102,19 @@ class PublicOpenApiContractTest {
 	);
 
 	private static final ParameterNameDiscoverer PARAMETER_NAMES = new DefaultParameterNameDiscoverer();
+	private static final Set<String> MANUAL_REQUEST_BODY_HANDLERS = Set.of(
+		"com.easysubway.journey.adapter.in.web.JourneySearchController#search",
+		"com.easysubway.journey.adapter.in.web.StationTimetableSearchController#search"
+	);
+
+	@MockitoBean
+	private JourneySessionService journeySessionService;
+
+	@MockitoBean
+	private JourneyApplicationDeadlineExecutor journeyApplicationDeadlineExecutor;
+
+	@MockitoBean
+	private StationTimetableSearchService stationTimetableSearchService;
 
 	@Autowired
 	@Qualifier("requestMappingHandlerMapping")
@@ -378,12 +399,17 @@ class PublicOpenApiContractTest {
 	}
 
 	private static boolean readsRequestBody(HandlerMethod handler) {
-		return requestBodyAnnotation(handler) != null;
+		return requestBodyAnnotation(handler) != null || readsBodyManually(handler);
 	}
 
 	private static boolean requiresRequestBody(HandlerMethod handler) {
 		RequestBody requestBody = requestBodyAnnotation(handler);
-		return requestBody != null && requestBody.required();
+		return (requestBody != null && requestBody.required()) || readsBodyManually(handler);
+	}
+
+	private static boolean readsBodyManually(HandlerMethod handler) {
+		return MANUAL_REQUEST_BODY_HANDLERS.contains(
+			handler.getBeanType().getName() + "#" + handler.getMethod().getName());
 	}
 
 	private static RequestBody requestBodyAnnotation(HandlerMethod handler) {

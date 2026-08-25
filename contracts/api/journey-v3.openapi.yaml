@@ -231,6 +231,116 @@ paths:
                     code: ROUTE_RATE_LIMITED
                     retryable: false
                     occurredAt: "2026-08-02T23:58:00.482+09:00"
+  /api/v3/station-timetables/search:
+    post:
+      operationId: searchStationTimetables
+      summary: Read server-authoritative station timetable departures
+      security:
+        - JourneySessionBearer: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/StationTimetableSearchRequest"
+      responses:
+        "200":
+          description: Ordered departures from the active timetable snapshot
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/StationTimetableSearchSuccess"
+        "400":
+          description: Invalid station timetable request or selector
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                invalidRequest:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: INVALID_JOURNEY_REQUEST
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "404":
+          description: Canonical station-line or active timetable coverage is absent
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                stationLineNotFound:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: STATION_LINE_NOT_FOUND
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+                timetableNotCovered:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_NOT_COVERED
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "503":
+          description: Active timetable snapshot is unavailable, stale, or incompatible
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                unavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+                stale:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_STALE
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+                identityMismatch:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: TIMETABLE_IDENTITY_MISMATCH
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "401":
+          description: Missing, expired, or invalid Journey route session
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                sessionRequired:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_SESSION_REQUIRED
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
+        "429":
+          description: Journey request rate limit exceeded
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/JourneyError"
+              examples:
+                rateLimited:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: ROUTE_RATE_LIMITED
+                    retryable: false
+                    occurredAt: "2026-08-25T09:00:00+09:00"
 components:
   securitySchemes:
     JourneySessionBearer:
@@ -351,6 +461,151 @@ components:
     ConstraintMode:
       type: string
       enum: [NONE, REQUIRE_STEP_FREE]
+    StationTimetableSearchRequest:
+      type: object
+      additionalProperties: false
+      required: [stationId, lineId, selector]
+      properties:
+        stationId:
+          type: string
+          minLength: 1
+        lineId:
+          type: string
+          minLength: 1
+        selector:
+          $ref: "#/components/schemas/StationTimetableSelector"
+    StationTimetableSelector:
+      oneOf:
+        - $ref: "#/components/schemas/StationTimetableServiceDateSelector"
+        - $ref: "#/components/schemas/StationTimetableDayTypeSelector"
+        - $ref: "#/components/schemas/StationTimetableNextDeparturesSelector"
+    StationTimetableServiceDateSelector:
+      type: object
+      additionalProperties: false
+      required: [kind, serviceDate]
+      properties:
+        kind:
+          type: string
+          enum: [SERVICE_DATE]
+        serviceDate:
+          type: string
+          format: date
+    StationTimetableDayTypeSelector:
+      type: object
+      additionalProperties: false
+      required: [kind, dayType, referenceDate]
+      properties:
+        kind:
+          type: string
+          enum: [DAY_TYPE]
+        dayType:
+          type: string
+          enum: [WEEKDAY, SATURDAY, SUNDAY_HOLIDAY]
+        referenceDate:
+          type: string
+          format: date
+    StationTimetableNextDeparturesSelector:
+      type: object
+      additionalProperties: false
+      required: [kind, asOf, horizonDays]
+      properties:
+        kind:
+          type: string
+          enum: [NEXT_DEPARTURES]
+        asOf:
+          type: string
+          format: date-time
+        horizonDays:
+          type: integer
+          minimum: 1
+          maximum: 8
+    StationTimetableSearchSuccess:
+      type: object
+      additionalProperties: false
+      required: [contractVersion, stationId, lineId, selector, resolvedDayType, serviceTimezone, directionGroups, sourceIdentity]
+      properties:
+        contractVersion:
+          type: string
+          enum: [STATION_TIMETABLE_SEARCH_V3]
+        stationId:
+          type: string
+          minLength: 1
+        lineId:
+          type: string
+          minLength: 1
+        selector:
+          $ref: "#/components/schemas/StationTimetableSelector"
+        resolvedDayType:
+          type: string
+          enum: [WEEKDAY, SATURDAY, SUNDAY_HOLIDAY]
+        serviceTimezone:
+          type: string
+          enum: [Asia/Seoul]
+        directionGroups:
+          type: array
+          items:
+            $ref: "#/components/schemas/StationTimetableDirectionGroup"
+        sourceIdentity:
+          $ref: "#/components/schemas/StationTimetableSourceIdentity"
+    StationTimetableDirectionGroup:
+      type: object
+      additionalProperties: false
+      required: [directionName, departures]
+      properties:
+        directionName:
+          type: string
+          minLength: 1
+        departures:
+          type: array
+          items:
+            $ref: "#/components/schemas/StationTimetableDeparture"
+    StationTimetableDeparture:
+      type: object
+      additionalProperties: false
+      required: [serviceDate, secondsFromServiceDayStart, departureAt, servicePattern, serviceClass]
+      properties:
+        serviceDate:
+          type: string
+          format: date
+        secondsFromServiceDayStart:
+          type: integer
+          minimum: 0
+          maximum: 107999
+        departureAt:
+          type: string
+          format: date-time
+        servicePattern:
+          type: string
+          enum: [LOCAL, EXPRESS]
+        serviceClass:
+          type: string
+          enum: [SUBWAY, ITX_CHEONGCHUN]
+    StationTimetableSourceIdentity:
+      type: object
+      additionalProperties: false
+      required: [timetableArtifactId, timetableSnapshotSha256, canonicalStationVersion, canonicalStationSetSha256, sourceLineageSha256, evidenceHash, freshUntil]
+      properties:
+        timetableArtifactId:
+          type: string
+          minLength: 1
+        timetableSnapshotSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        canonicalStationVersion:
+          type: string
+          minLength: 1
+        canonicalStationSetSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        sourceLineageSha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        evidenceHash:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
+        freshUntil:
+          type: string
+          format: date-time
     JourneySearchSuccess:
       type: object
       additionalProperties: false
@@ -637,6 +892,9 @@ components:
         - ROUTING_IDENTITY_MISMATCH
         - ROUTE_SERVICE_UNAVAILABLE
         - JOURNEY_SEARCH_TIMEOUT
+        - STATION_LINE_NOT_FOUND
+        - TIMETABLE_NOT_COVERED
+        - TIMETABLE_IDENTITY_MISMATCH
         - ROUTE_SESSION_REQUIRED
         - ROUTE_RATE_LIMITED
         - INVALID_JOURNEY_SESSION_REQUEST

@@ -55,11 +55,25 @@ class JourneyV3ContractTest {
 		new ErrorPair("issueJourneySession", 503, "ROUTE_SESSION_ATTESTATION_UNAVAILABLE")
 	);
 
+	private static final List<ErrorPair> STATION_TIMETABLE_APPLICATION_ERRORS = List.of(
+		new ErrorPair("searchStationTimetables", 400, "INVALID_JOURNEY_REQUEST"),
+		new ErrorPair("searchStationTimetables", 404, "STATION_LINE_NOT_FOUND"),
+		new ErrorPair("searchStationTimetables", 404, "TIMETABLE_NOT_COVERED"),
+		new ErrorPair("searchStationTimetables", 503, "TIMETABLE_UNAVAILABLE"),
+		new ErrorPair("searchStationTimetables", 503, "TIMETABLE_STALE"),
+		new ErrorPair("searchStationTimetables", 503, "TIMETABLE_IDENTITY_MISMATCH")
+	);
+
+	private static final List<ErrorPair> STATION_TIMETABLE_INGRESS_ERRORS = List.of(
+		new ErrorPair("searchStationTimetables", 401, "ROUTE_SESSION_REQUIRED"),
+		new ErrorPair("searchStationTimetables", 429, "ROUTE_RATE_LIMITED")
+	);
+
 	private static final List<ArtifactDigest> EXPECTED_DIGESTS = List.of(
-		new ArtifactDigest("journey-v3-error-catalog.json", "5b93075c2e19801c8084e8ab08b5efb1ef8267822b3a71487742e7888e822772"),
-		new ArtifactDigest("journey-v3-error-disposition.json", "1e03ee7262897e0887ef837c95a2802ff420ffeaf15c921e0dca8a9750280780"),
+		new ArtifactDigest("journey-v3-error-catalog.json", "0f9fe2731765b5a704c3493cd85fd5280e4629c8074269ac980edaa9303a7095"),
+		new ArtifactDigest("journey-v3-error-disposition.json", "2452ba70dd4109eb01b5b1714151002333c8a08bd3c1b48494d3590f1d3686b0"),
 		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
-		new ArtifactDigest("journey-v3.openapi.yaml", "7de00754abb8c0088707164bca634abf6fe01cd846151b95084357735702b980")
+		new ArtifactDigest("journey-v3.openapi.yaml", "a523a0502008e03c18d46bf65dff5ef82d8a88e27d93c0f7b67f8583e042c21c")
 	);
 
 	@Test
@@ -70,17 +84,22 @@ class JourneyV3ContractTest {
 		assertThat(document).doesNotContainKey("security");
 		assertThat(map(document.get("paths")).keySet()).containsExactly(
 			"/api/v3/journeys/session",
-			"/api/v3/journeys/search"
+			"/api/v3/journeys/search",
+			"/api/v3/station-timetables/search"
 		);
 
 		Map<String, Object> session = operation(document, "/api/v3/journeys/session");
 		Map<String, Object> search = operation(document, "/api/v3/journeys/search");
+		Map<String, Object> stationTimetable = operation(document, "/api/v3/station-timetables/search");
 		assertThat(session.get("operationId")).isEqualTo("issueJourneySession");
 		assertThat(session).doesNotContainKey("security");
 		assertThat(search.get("operationId")).isEqualTo("searchJourneys");
 		assertThat(list(search.get("security"))).containsExactly(Map.of("JourneySessionBearer", List.of()));
 		assertOperationSchemaRefs(session, "JourneySessionRequest", "JourneySessionResponse");
 		assertOperationSchemaRefs(search, "JourneySearchRequest", "JourneySearchSuccess");
+		assertThat(stationTimetable.get("operationId")).isEqualTo("searchStationTimetables");
+		assertThat(list(stationTimetable.get("security"))).containsExactly(Map.of("JourneySessionBearer", List.of()));
+		assertOperationSchemaRefs(stationTimetable, "StationTimetableSearchRequest", "StationTimetableSearchSuccess");
 		assertThat(map(search.get("x-easysubway-time-policy-contract"))).containsExactly(
 			Map.entry("TIMETABLE_REQUIRED", "realtime-fields-null"),
 			Map.entry("REALTIME_REQUIRED", "realtime-fields-required-non-null")
@@ -92,6 +111,18 @@ class JourneyV3ContractTest {
 			Map.entry("scheme", "bearer"),
 			Map.entry("bearerFormat", "opaque-route-session")
 		);
+	}
+
+	@Test
+	@DisplayName("station timetable public operation has the exact typed error inventory")
+	void stationTimetablePublicOperationHasExactTypedErrorInventory() throws IOException {
+		Map<String, Object> document = openApi();
+		JsonNode catalog = JSON.readTree(ERROR_CATALOG.toFile());
+		List<ErrorPair> expected = concat(STATION_TIMETABLE_APPLICATION_ERRORS, STATION_TIMETABLE_INGRESS_ERRORS);
+		assertThat(responsePairs(operation(document, "/api/v3/station-timetables/search")))
+			.containsExactlyElementsOf(expected);
+		assertThat(errorPairs(catalog.path("applicationErrors"))).containsAll(STATION_TIMETABLE_APPLICATION_ERRORS);
+		assertThat(errorPairs(catalog.path("ingressErrors"))).containsAll(STATION_TIMETABLE_INGRESS_ERRORS);
 	}
 
 	@Test
@@ -209,8 +240,13 @@ class JourneyV3ContractTest {
 			"schemaVersion", "artifactKind", "applicationErrors", "ingressErrors");
 		assertThat(catalog.path("schemaVersion").asText()).isEqualTo("JOURNEY_ERROR_CATALOG_V1");
 		assertThat(catalog.path("artifactKind").asText()).isEqualTo("journey-v3-error-catalog");
-		assertThat(errorPairs(catalog.path("applicationErrors"))).containsExactlyElementsOf(APPLICATION_ERRORS);
-		assertThat(errorPairs(catalog.path("ingressErrors"))).containsExactlyElementsOf(INGRESS_ERRORS);
+		List<ErrorPair> applicationErrors = concat(APPLICATION_ERRORS, STATION_TIMETABLE_APPLICATION_ERRORS);
+		List<ErrorPair> ingressErrors = List.of(
+			INGRESS_ERRORS.get(0), INGRESS_ERRORS.get(1),
+			STATION_TIMETABLE_INGRESS_ERRORS.get(0), STATION_TIMETABLE_INGRESS_ERRORS.get(1),
+			INGRESS_ERRORS.get(2), INGRESS_ERRORS.get(3), INGRESS_ERRORS.get(4));
+		assertThat(errorPairs(catalog.path("applicationErrors"))).containsExactlyElementsOf(applicationErrors);
+		assertThat(errorPairs(catalog.path("ingressErrors"))).containsExactlyElementsOf(ingressErrors);
 		assertThat(new LinkedHashSet<>(APPLICATION_ERRORS)).hasSameSizeAs(APPLICATION_ERRORS);
 		assertThat(new LinkedHashSet<>(INGRESS_ERRORS)).hasSameSizeAs(INGRESS_ERRORS);
 
@@ -220,6 +256,8 @@ class JourneyV3ContractTest {
 			APPLICATION_ERRORS,
 			INGRESS_ERRORS.stream().filter(pair -> pair.operation().equals("searchJourneys")).toList()
 		));
+		assertThat(responsePairs(operation(document, "/api/v3/station-timetables/search"))).containsExactlyElementsOf(
+			concat(STATION_TIMETABLE_APPLICATION_ERRORS, STATION_TIMETABLE_INGRESS_ERRORS));
 		assertThat(sessionPairs).containsExactlyElementsOf(
 			INGRESS_ERRORS.stream().filter(pair -> pair.operation().equals("issueJourneySession")).toList()
 		);
@@ -227,8 +265,8 @@ class JourneyV3ContractTest {
 		Set<String> errorFields = Set.of("contractVersion", "requestId", "code", "retryable", "occurredAt");
 		assertClosedSchema(document, "JourneyError", errorFields, errorFields);
 		assertEnum(property(document, "JourneyError", "contractVersion"), "JOURNEY_ERROR_V1");
-		assertEnum(schema(document, "JourneyErrorCode"), concat(APPLICATION_ERRORS, INGRESS_ERRORS).stream()
-			.map(ErrorPair::code).toArray(String[]::new));
+		assertEnum(schema(document, "JourneyErrorCode"), concat(applicationErrors, ingressErrors).stream()
+			.map(ErrorPair::code).distinct().toArray(String[]::new));
 	}
 
 	@Test

@@ -4,11 +4,11 @@
   "artifacts": [
     {
       "path": "journey-v3-error-catalog.json",
-      "sha256": "5b93075c2e19801c8084e8ab08b5efb1ef8267822b3a71487742e7888e822772"
+      "sha256": "0f9fe2731765b5a704c3493cd85fd5280e4629c8074269ac980edaa9303a7095"
     },
     {
       "path": "journey-v3-error-disposition.json",
-      "sha256": "1e03ee7262897e0887ef837c95a2802ff420ffeaf15c921e0dca8a9750280780"
+      "sha256": "2452ba70dd4109eb01b5b1714151002333c8a08bd3c1b48494d3590f1d3686b0"
     },
     {
       "path": "journey-v3-session-integrity.json",
@@ -16,7 +16,7 @@
     },
     {
       "path": "journey-v3.openapi.yaml",
-      "sha256": "7de00754abb8c0088707164bca634abf6fe01cd846151b95084357735702b980"
+      "sha256": "a523a0502008e03c18d46bf65dff5ef82d8a88e27d93c0f7b67f8583e042c21c"
     }
   ]
 }

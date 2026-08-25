@@ -92,6 +92,23 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 			.orElseGet(() -> new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty()));
 	}
 
+	@Override
+	public RouteTimetableSnapshot loadStationTimetableSnapshot() {
+		return admissibleItxArtifact()
+			.map(artifact -> new RouteTimetableSnapshot(
+				cacheKey(artifact), artifact.snapshotId(), artifact.plannerIdentity(),
+				parseFreshUntil(artifact.freshUntil()), loadRouteTimetable()))
+			.orElseGet(() -> new RouteTimetableSnapshot("UNAVAILABLE", null, RouteTimetable.empty()));
+	}
+
+	private static java.time.Instant parseFreshUntil(String value) {
+		try {
+			return OffsetDateTime.parse(value).toInstant();
+		} catch (DateTimeParseException | NullPointerException exception) {
+			return null;
+		}
+	}
+
 	private Optional<ItxArtifact> activeItxArtifact() {
 		return admissibleItxArtifact().filter(artifact -> freshOffsetDateTime(artifact.freshUntil()).isPresent());
 	}

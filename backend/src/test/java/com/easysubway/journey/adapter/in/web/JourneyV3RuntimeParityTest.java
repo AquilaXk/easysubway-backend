@@ -17,6 +17,11 @@ import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionService.AuthorizedSession;
 import com.easysubway.journey.application.JourneySessionService.IssuedSession;
+import com.easysubway.journey.application.StationTimetableSearchService;
+import com.easysubway.journey.application.StationTimetableSearchService.DayType;
+import com.easysubway.journey.application.StationTimetableSearchService.Failure;
+import com.easysubway.journey.application.StationTimetableSearchService.FailureException;
+import com.easysubway.journey.application.StationTimetableSearchService.Selector;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
@@ -90,6 +95,24 @@ class JourneyV3RuntimeParityTest {
 				.andExpect(status().isOk())
 				.andReturn();
 			assertResponseContract(openApi, "searchJourneys", search, runtime.json());
+
+			when(runtime.stationTimetableService().search(any())).thenReturn(stationTimetableSuccess());
+			MvcResult stationTimetable = runtime.mockMvc().perform(post(StationTimetableSearchController.PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(validStationTimetableRequest()))
+				.andExpect(status().isOk())
+				.andReturn();
+			assertResponseContract(openApi, "searchStationTimetables", stationTimetable, runtime.json());
+
+			when(runtime.stationTimetableService().search(any())).thenThrow(new FailureException(Failure.TIMETABLE_NOT_COVERED));
+			MvcResult stationTimetableFailure = runtime.mockMvc().perform(post(StationTimetableSearchController.PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+					.contentType(MediaType.APPLICATION_JSON)
+					.content(validStationTimetableRequest()))
+				.andExpect(status().isNotFound())
+				.andReturn();
+			assertError(openApi, errorCatalog, errorDisposition, "searchStationTimetables", stationTimetableFailure, runtime.json());
 
 			when(runtime.sessionService().issue("rejected-token", NONCE))
 				.thenThrow(new JourneySessionException(JourneySessionException.Kind.ATTESTATION_REJECTED));
@@ -429,7 +452,22 @@ class JourneyV3RuntimeParityTest {
 			  "maxTransfers":2,
 			  "alternativeCount":1
 			}
-			""".formatted(REQUEST_ID);
+		""".formatted(REQUEST_ID);
+	}
+
+	private static String validStationTimetableRequest() {
+		return "{\"stationId\":\"station-origin\",\"lineId\":\"line-1\",\"selector\":{\"kind\":\"SERVICE_DATE\",\"serviceDate\":\"2026-08-24\"}}";
+	}
+
+	private static StationTimetableSearchService.SearchResult stationTimetableSuccess() {
+		Instant departure = Instant.parse("2026-08-24T00:00:00Z");
+		return new StationTimetableSearchService.SearchResult("station-origin", "line-1",
+			new Selector.ServiceDateSelector(LocalDate.of(2026, 8, 24)), DayType.WEEKDAY,
+			List.of(new StationTimetableSearchService.DirectionGroup("direction", List.of(
+				new StationTimetableSearchService.Departure("direction", LocalDate.of(2026, 8, 24), 32_400,
+					departure, "LOCAL", "SUBWAY")))),
+			new StationTimetableSearchService.SourceIdentity("artifact", "a".repeat(64), "sha256:" + "b".repeat(64),
+				"b".repeat(64), "c".repeat(64), "d".repeat(64), NOW.plusSeconds(600)));
 	}
 
 	private static JourneyExecutionResult.Success success() {
@@ -468,6 +506,7 @@ class JourneyV3RuntimeParityTest {
 				assertion.verify(new Runtime(
 					context.getBean(JourneySessionService.class),
 					context.getBean(JourneyApplicationDeadlineExecutor.class),
+					context.getBean(StationTimetableSearchService.class),
 					context.getBean(ObjectMapper.class),
 					MockMvcBuilders.webAppContextSetup(context).build()
 				));
@@ -496,6 +535,11 @@ class JourneyV3RuntimeParityTest {
 		}
 
 		@Bean
+		StationTimetableSearchService stationTimetableSearchService() {
+			return mock(StationTimetableSearchService.class);
+		}
+
+		@Bean
 		JourneySessionController journeySessionController(JourneySessionService sessionService) {
 			return new JourneySessionController(sessionService);
 		}
@@ -506,6 +550,14 @@ class JourneyV3RuntimeParityTest {
 			JourneyApplicationDeadlineExecutor deadlineExecutor
 		) {
 			return new JourneySearchController(sessionService, deadlineExecutor);
+		}
+
+		@Bean
+		StationTimetableSearchController stationTimetableSearchController(
+			JourneySessionService sessionService,
+			StationTimetableSearchService stationTimetableService
+		) {
+			return new StationTimetableSearchController(sessionService, stationTimetableService);
 		}
 
 		@Bean
@@ -522,6 +574,7 @@ class JourneyV3RuntimeParityTest {
 	private record Runtime(
 		JourneySessionService sessionService,
 		JourneyApplicationDeadlineExecutor deadlineExecutor,
+		StationTimetableSearchService stationTimetableService,
 		ObjectMapper json,
 		MockMvc mockMvc
 	) {

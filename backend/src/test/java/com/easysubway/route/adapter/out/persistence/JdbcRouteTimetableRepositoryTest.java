@@ -186,10 +186,11 @@ class JdbcRouteTimetableRepositoryTest {
 		insertTimetableRows();
 		insertItxRows("2999-01-01T00:00:00Z");
 
-		var snapshot = repository.loadRouteTimetableSnapshot();
+		var snapshot = repository.loadStationTimetableSnapshot();
 
 		assertThat(snapshot.cacheKey()).isEqualTo("a".repeat(64) + "b".repeat(64) + "2999-01-01T00:00:00Z");
 		assertThat(snapshot.timetableArtifactId()).isEqualTo("snapshot-test");
+		assertThat(snapshot.freshUntil()).isEqualTo(java.time.Instant.parse("2999-01-01T00:00:00Z"));
 		assertThat(snapshot.plannerIdentity()).satisfies(identity -> {
 			assertThat(identity.timetableSnapshotSha256()).isEqualTo("a".repeat(64));
 			assertThat(identity.canonicalPackSha256()).isEqualTo("b".repeat(64));
