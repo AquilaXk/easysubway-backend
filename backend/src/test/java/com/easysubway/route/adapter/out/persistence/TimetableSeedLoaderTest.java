@@ -55,6 +55,7 @@ class TimetableSeedLoaderTest {
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V61__timetable_snapshot_state.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V62__route_v2_planner_identity.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V74__route_service_station_catalog_evidence.sql'");
 	}
 
 	@Test
@@ -154,6 +155,24 @@ class TimetableSeedLoaderTest {
 	}
 
 	@Test
+	void stationCatalogEvidenceMustExactlyMatchRuntimeEvidenceBeforeActivation() throws Exception {
+		SnapshotResource first = snapshot("a", false);
+		SnapshotResource mismatchedCatalog = withCatalogPackId(snapshot("b", false), "wrong-station-catalog");
+		TimetableSeedLoader loader = loader(first);
+		loader.activateSeed(first.seed(), first.evidence());
+		String activeSha = activeSha();
+
+		assertThatThrownBy(() -> loader.activateSeed(mismatchedCatalog.seed(), mismatchedCatalog.evidence()))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("transit timetable snapshot activation failed");
+
+		assertThat(activeSha()).isEqualTo(activeSha);
+		assertThat(jdbc.queryForObject(
+			"SELECT station_catalog_pack_id FROM route_service_station_catalog_evidence", String.class
+		)).isEqualTo("station-catalog-a");
+	}
+
+	@Test
 	void concurrentLoadersConvergeOnOneCompleteSnapshotWithoutMixedRows() throws Exception {
 		SnapshotResource first = snapshot("a", false);
 		SnapshotResource second = snapshot("b", false);
@@ -219,12 +238,12 @@ class TimetableSeedLoaderTest {
 		trackedLoader().run(null);
 
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class)).isEqualTo(1035);
-		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_stop_times", Integer.class)).isEqualTo(34070);
+		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_stop_times", Integer.class)).isEqualTo(33934);
 		assertThat(jdbc.queryForObject(
 			"SELECT COUNT(*) FROM transit_trips WHERE service_class = 'ITX_CHEONGCHUN'", Integer.class))
 			.isEqualTo(140);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transit_trip_official_fares", Integer.class))
-			.isEqualTo(3686);
+			.isEqualTo(2914);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM station_pathway_nodes", Integer.class)).isEqualTo(4);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM station_pathway_edges", Integer.class)).isEqualTo(4);
 		assertThat(jdbc.queryForObject("SELECT COUNT(*) FROM transfer_rules", Integer.class)).isZero();
@@ -413,6 +432,7 @@ class TimetableSeedLoaderTest {
 			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('subway-route-%1$s','Asia/Seoul','seoul-4','','','up');
 			INSERT INTO transit_routes (id, timezone, line_id, route_short_name, route_long_name, direction_name) VALUES ('itx-route-%1$s','Asia/Seoul','line-54a7b980b7c3','ITX-청춘','','down');
 			INSERT INTO route_service_artifact_evidence (service_class, timetable_artifact_id, timetable_artifact_sha256, canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','artifact-%1$s','%2$s','capital','%3$s','%4$s','ADMITTED',TRUE,'%5$s',2135);
+			INSERT INTO route_service_station_catalog_evidence (service_class, station_catalog_artifact_kind, station_catalog_manifest_version, station_catalog_pack_id, station_catalog_station_set_sha256, station_catalog_payload_sha256, station_catalog_manifest_sha256, admission_status, admission_eligible, fresh_until, source_issue) VALUES ('ITX_CHEONGCHUN','station-catalog-pack',1,'station-catalog-%1$s','%6$s','%7$s','%8$s','ADMITTED',TRUE,'%5$s',2649);
 			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES ('subway-trip-%1$s','subway-route-%1$s','service-%1$s','LOCAL','SUBWAY',0,'station-subway-terminal-%1$s','up');
 			INSERT INTO transit_trips (id, route_id, service_id, service_pattern, service_class, service_day_start_seconds, trip_headsign, direction_id) VALUES ('itx-trip-%1$s','itx-route-%1$s','service-%1$s','EXPRESS','ITX_CHEONGCHUN',0,'춘천','down');
 			INSERT INTO transit_stop_times (trip_id, stop_sequence, station_id, line_id, pickup_type, drop_off_type, arrival_seconds, departure_seconds) VALUES ('subway-trip-%1$s',1,'station-subway-%1$s','seoul-4',0,0,100,100);
@@ -431,7 +451,10 @@ class TimetableSeedLoaderTest {
 			"b".repeat(64),
 			"c".repeat(64),
 			FRESH_UNTIL,
-			invalidForeignKey ? "missing-trip" : "itx-trip-" + suffix
+			invalidForeignKey ? "missing-trip" : "itx-trip-" + suffix,
+			"g".repeat(64),
+			"h".repeat(64),
+			"i".repeat(64)
 		);
 		byte[] sqlBytes = sql.getBytes(StandardCharsets.UTF_8);
 		byte[] gzipBytes = gzip(sqlBytes);
@@ -454,6 +477,13 @@ class TimetableSeedLoaderTest {
 		source.put("id", "artifact-" + suffix);
 		source.put("sha256", sourceHash);
 		source.put("completenessEvidenceSha256", "d".repeat(64));
+		ObjectNode stationCatalog = evidence.putObject("stationCatalogPackIdentity");
+		stationCatalog.put("artifactKind", "station-catalog-pack");
+		stationCatalog.put("manifestVersion", 1);
+		stationCatalog.put("catalogPackId", "station-catalog-" + suffix);
+		stationCatalog.put("stationSetSha256", "g".repeat(64));
+		stationCatalog.put("payloadSha256", "h".repeat(64));
+		stationCatalog.put("manifestSha256", "i".repeat(64));
 		ObjectNode canonical = evidence.putObject("canonicalPackIdentity");
 		canonical.put("id", "capital");
 		canonical.put("sha256", "b".repeat(64));
@@ -478,12 +508,24 @@ class TimetableSeedLoaderTest {
 		counts.put("itxStopTimes", 3);
 		counts.put("officialFares", 1);
 		counts.put("routeServiceEvidence", 1);
+		counts.put("routeServiceStationCatalogEvidence", 1);
 		counts.put("stationPathwayNodes", 2);
 		counts.put("stationPathwayEdges", 1);
 		counts.put("transferRules", 0);
 		counts.put("routeEdgeEvidence", 1);
 		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
 		return new SnapshotResource(namedResource(gzipBytes, "snapshot.sql.gz"), jsonResource(evidence, "evidence.json"));
+	}
+
+	private SnapshotResource withCatalogPackId(SnapshotResource snapshot, String catalogPackId) throws Exception {
+		ObjectNode evidence;
+		try (var input = snapshot.evidence().getInputStream()) {
+			evidence = (ObjectNode) objectMapper.readTree(input);
+		}
+		evidence.withObject("/stationCatalogPackIdentity").put("catalogPackId", catalogPackId);
+		evidence.remove("evidenceHash");
+		evidence.put("evidenceHash", sha256(objectMapper.writeValueAsBytes(evidence)));
+		return new SnapshotResource(snapshot.seed(), jsonResource(evidence, "mismatched-station-catalog-evidence.json"));
 	}
 
 	private SnapshotResource withTripCount(SnapshotResource snapshot, int count) throws Exception {

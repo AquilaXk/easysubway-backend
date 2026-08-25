@@ -126,10 +126,11 @@
     "itxStopTimes": 872,
     "officialFares": 2914,
     "routeServiceEvidence": 1,
+    "routeServiceStationCatalogEvidence": 1,
     "stationPathwayNodes": 4,
     "stationPathwayEdges": 4,
     "transferRules": 0,
     "routeEdgeEvidence": 4
   },
-  "evidenceHash": "01505f569a92bd844ec8f5f73e38970919fb8216802018f46d34d592cf29529c"
+  "evidenceHash": "fdd8e498c5b3e1dddfb17f65cec87e67bc441dd03f942e1faa650df2e80ff631"
 }

@@ -125,6 +125,7 @@ class DatabaseMigrationContainerTest {
 				"timetable_snapshot_lock",
 				"timetable_snapshot_history",
 				"timetable_snapshot_active",
+				"route_service_station_catalog_evidence",
 				"train_catalog_cache",
 				"train_search_cache",
 				"train_provider_call_quota_state"
@@ -162,7 +163,8 @@ class DatabaseMigrationContainerTest {
 				"fk_datapack_release_channels_previous_candidate",
 				"fk_datapack_release_channel_events_channel",
 				"fk_datapack_release_channel_events_next_candidate",
-				"fk_timetable_snapshot_active_history"
+				"fk_timetable_snapshot_active_history",
+				"fk_route_service_station_catalog_service"
 			);
 		assertThat(checkConstraintNames(jdbcTemplate))
 			.contains(
@@ -199,6 +201,14 @@ class DatabaseMigrationContainerTest {
 				"chk_timetable_snapshot_lock_singleton",
 				"chk_timetable_snapshot_counts",
 				"chk_timetable_snapshot_active_singleton",
+				"chk_route_service_station_catalog_class",
+				"chk_route_service_station_catalog_kind",
+				"chk_route_service_station_catalog_manifest_version",
+				"chk_route_service_station_catalog_station_set_hash",
+				"chk_route_service_station_catalog_payload_hash",
+				"chk_route_service_station_catalog_manifest_hash",
+				"chk_route_service_station_catalog_admission",
+				"chk_route_service_station_catalog_source_issue",
 				"chk_train_catalog_cache_hash",
 				"chk_train_catalog_cache_expiry",
 				"chk_train_search_cache_payload",
