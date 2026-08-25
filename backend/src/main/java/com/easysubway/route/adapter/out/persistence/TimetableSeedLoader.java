@@ -175,6 +175,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			"service_calendar_dates",
 			"service_calendars",
 			"transit_feed_info",
+			"route_service_station_catalog_evidence",
 			"route_service_artifact_evidence"
 		)) {
 			jdbcTemplate.update("DELETE FROM " + table);
@@ -196,6 +197,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		assertCount("transit_stop_times", evidence.stopTimeCount());
 		assertCount("transit_trip_official_fares", evidence.officialFareCount());
 		assertCount("route_service_artifact_evidence", 1);
+		assertCount("route_service_station_catalog_evidence", evidence.routeServiceStationCatalogEvidenceCount());
 		assertCount("station_pathway_nodes", evidence.stationPathwayNodeCount());
 		assertCount("station_pathway_edges", evidence.stationPathwayEdgeCount());
 		assertCount("transfer_rules", evidence.transferRuleCount());
@@ -278,6 +280,32 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		);
 		if (matchingEvidence == null || matchingEvidence != 1) {
 			throw new IllegalStateException("route service evidence does not match snapshot lineage");
+		}
+		Integer matchingStationCatalogEvidence = jdbcTemplate.queryForObject("""
+			SELECT COUNT(*) FROM route_service_station_catalog_evidence
+			WHERE service_class = 'ITX_CHEONGCHUN'
+				AND station_catalog_artifact_kind = ?
+				AND station_catalog_manifest_version = ?
+				AND station_catalog_pack_id = ?
+				AND station_catalog_station_set_sha256 = ?
+				AND station_catalog_payload_sha256 = ?
+				AND station_catalog_manifest_sha256 = ?
+				AND admission_status = 'ADMITTED'
+				AND admission_eligible = TRUE
+				AND fresh_until = ?
+				AND source_issue = 2649
+			""",
+			Integer.class,
+			evidence.stationCatalogArtifactKind(),
+			evidence.stationCatalogManifestVersion(),
+			evidence.stationCatalogPackId(),
+			evidence.stationCatalogStationSetSha256(),
+			evidence.stationCatalogPayloadSha256(),
+			evidence.stationCatalogManifestSha256(),
+			evidence.freshUntil()
+		);
+		if (!Integer.valueOf(1).equals(matchingStationCatalogEvidence)) {
+			throw new IllegalStateException("route service station catalog evidence does not match snapshot lineage");
 		}
 	}
 
@@ -455,6 +483,12 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		String sourceArtifactId,
 		String sourceArtifactSha256,
 		String completenessEvidenceSha256,
+		String stationCatalogArtifactKind,
+		int stationCatalogManifestVersion,
+		String stationCatalogPackId,
+		String stationCatalogStationSetSha256,
+		String stationCatalogPayloadSha256,
+		String stationCatalogManifestSha256,
 		String canonicalPackSha256,
 		String canonicalPackSqliteSha256,
 		String canonicalStationVersion,
@@ -472,6 +506,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 		int itxTripCount,
 		int itxStopTimeCount,
 		int officialFareCount,
+		int routeServiceStationCatalogEvidenceCount,
 		int stationPathwayNodeCount,
 		int stationPathwayEdgeCount,
 		int transferRuleCount,
@@ -496,6 +531,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 			}
 			JsonNode source = object(node, "sourceArtifact");
 			JsonNode service = object(node, "serviceIdentity");
+			JsonNode stationCatalog = object(node, "stationCatalogPackIdentity");
 			JsonNode canonical = object(node, "canonicalPackIdentity");
 			JsonNode accessibility = object(node, "accessibilitySource");
 			JsonNode stations = object(node, "canonicalStationSet");
@@ -518,6 +554,12 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				text(source, "id"),
 				hash(source, "sha256"),
 				hash(source, "completenessEvidenceSha256"),
+				text(stationCatalog, "artifactKind"),
+				positiveInteger(stationCatalog, "manifestVersion"),
+				text(stationCatalog, "catalogPackId"),
+				hash(stationCatalog, "stationSetSha256"),
+				hash(stationCatalog, "payloadSha256"),
+				hash(stationCatalog, "manifestSha256"),
 				hash(canonical, "sha256"),
 				hash(canonical, "sqliteSha256"),
 				text(stations, "version"),
@@ -535,6 +577,7 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				positiveInteger(counts, "itxTrips"),
 				positiveInteger(counts, "itxStopTimes"),
 				positiveInteger(counts, "officialFares"),
+				positiveInteger(counts, "routeServiceStationCatalogEvidence"),
 				nonNegativeInteger(counts, "stationPathwayNodes"),
 				nonNegativeInteger(counts, "stationPathwayEdges"),
 				nonNegativeInteger(counts, "transferRules"),
@@ -544,6 +587,8 @@ public class TimetableSeedLoader implements ApplicationRunner {
 				|| !"line-54a7b980b7c3".equals(text(service, "canonicalLineId"))
 				|| !"EXPRESS".equals(text(service, "servicePattern"))
 				|| !"Asia/Seoul".equals(text(service, "timezone"))
+				|| !"station-catalog-pack".equals(evidence.stationCatalogArtifactKind())
+				|| evidence.stationCatalogManifestVersion() != 1
 				|| !"capital".equals(text(canonical, "id"))
 				|| !evidence.canonicalStationVersion().equals("sha256:" + evidence.canonicalStationSetSha256())) {
 				throw new IllegalStateException("timetable snapshot evidence canonical identity is invalid");
