@@ -21,6 +21,7 @@ import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionStore;
+import com.easysubway.journey.application.StationTimetableSearchService;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
 import com.easysubway.journey.adapter.in.web.JourneyCandidateCanaryController;
@@ -36,6 +37,7 @@ import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -105,6 +107,7 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyRealtimePort.class);
 			assertThat(context.getBean(JourneyRealtimePort.class)).isInstanceOf(JourneyRealtimeAdapter.class);
 			assertThat(context).hasSingleBean(JourneyApplicationService.class);
+			assertThat(context).hasSingleBean(StationTimetableSearchService.class);
 			assertThat(context).hasSingleBean(ExecutorService.class);
 			assertThat(context).hasSingleBean(JourneyApplicationDeadlineExecutor.class);
 			assertThat(context).hasSingleBean(JourneyReadinessProperties.class);
@@ -620,6 +623,11 @@ class JourneyProductionConfigurationTest {
 		@Bean
 		JourneyTimetableRealtimeResolver journeyTimetableRealtimeResolver() {
 			return mock(JourneyTimetableRealtimeResolver.class);
+		}
+
+		@Bean
+		LoadRouteTimetablePort loadRouteTimetablePort() {
+			return mock(LoadRouteTimetablePort.class);
 		}
 	}
 

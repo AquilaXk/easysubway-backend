@@ -119,6 +119,7 @@ class JourneyV3ErrorDispositionContractTest {
 			assertThat(entry.path("retryDisposition").asText()).isEqualTo("FORBIDDEN");
 			assertThat(entry.path("secondaryActionKey").isNull()).isTrue();
 			assertThat(entry.path("sensitiveDetailPolicy").asText()).isEqualTo("NEVER_PUBLIC");
+			String operation = entry.path("operation").asText();
 			String machineCode = entry.path("machineCode").asText();
 			String publicMessageKey = entry.path("publicMessageKey").asText();
 			String mobileResourceKey = entry.path("mobileResourceKey").asText();
@@ -127,14 +128,17 @@ class JourneyV3ErrorDispositionContractTest {
 			assertThat(safeDiagnosticKey).isEqualTo("journey.diagnostic." + machineCode.toLowerCase(Locale.ROOT));
 			assertThat(safeDiagnosticKey).isNotEqualTo(publicMessageKey);
 			assertThat(mobileResourceKey).isEqualTo(mobileResourceKey(machineCode));
-			assertThat(publicMessageKeys.add(publicMessageKey)).isTrue();
-			assertThat(mobileResourceKeys.add(mobileResourceKey)).isTrue();
-			assertThat(safeDiagnosticKeys.add(safeDiagnosticKey)).isTrue();
+			// A Journey V3 machine code may be shared by distinct operations. Resource
+			// keys are therefore unique within the operation that owns their presentation.
+			assertThat(publicMessageKeys.add(operation + "\u0000" + publicMessageKey)).isTrue();
+			assertThat(mobileResourceKeys.add(operation + "\u0000" + mobileResourceKey)).isTrue();
+			assertThat(safeDiagnosticKeys.add(operation + "\u0000" + safeDiagnosticKey)).isTrue();
 			assertPublicSurfaceIsSafe(entry);
 		}
 		assertThat(actual).containsExactlyElementsOf(EXPECTED);
 		assertThat(new LinkedHashSet<>(actual)).hasSameSizeAs(EXPECTED);
-		assertThat(catalogPairs()).containsExactlyElementsOf(EXPECTED.stream().map(ExpectedDisposition::pair).toList());
+		assertThat(catalogPairs("applicationErrors")).containsExactlyElementsOf(expectedCatalogPairs(true));
+		assertThat(catalogPairs("ingressErrors")).containsExactlyElementsOf(expectedCatalogPairs(false));
 	}
 
 	@Test
@@ -159,18 +163,31 @@ class JourneyV3ErrorDispositionContractTest {
 		return new ExpectedDisposition(operation, httpStatus, machineCode, semanticCategory, copy, primaryActionKey);
 	}
 
-	private static List<ErrorPair> catalogPairs() throws IOException {
+	private static List<ErrorPair> catalogPairs(String field) throws IOException {
 		JsonNode catalog = JSON.readTree(CATALOG.toFile());
 		List<ErrorPair> pairs = new ArrayList<>();
-		for (String field : List.of("applicationErrors", "ingressErrors")) {
-			assertThat(catalog.path(field).isArray()).isTrue();
-			for (JsonNode entry : catalog.path(field)) {
-				assertThat(fieldNames(entry)).containsExactlyInAnyOrder("operation", "httpStatus", "code");
-				assertThat(entry.path("httpStatus").isIntegralNumber()).isTrue();
-				pairs.add(new ErrorPair(entry.path("operation").asText(), entry.path("httpStatus").asInt(), entry.path("code").asText()));
-			}
+		assertThat(catalog.path(field).isArray()).isTrue();
+		for (JsonNode entry : catalog.path(field)) {
+			assertThat(fieldNames(entry)).containsExactlyInAnyOrder("operation", "httpStatus", "code");
+			assertThat(entry.path("httpStatus").isIntegralNumber()).isTrue();
+			pairs.add(new ErrorPair(entry.path("operation").asText(), entry.path("httpStatus").asInt(), entry.path("code").asText()));
 		}
 		return pairs;
+	}
+
+	private static List<ErrorPair> expectedCatalogPairs(boolean application) {
+		return EXPECTED.stream()
+			.filter(entry -> application == isApplicationError(entry))
+			.map(ExpectedDisposition::pair)
+			.toList();
+	}
+
+	private static boolean isApplicationError(ExpectedDisposition entry) {
+		return switch (entry.operation()) {
+			case "searchJourneys", "searchStationTimetables" -> entry.httpStatus() != 401 && entry.httpStatus() != 429;
+			case "issueJourneySession" -> false;
+			default -> throw new IllegalArgumentException("unknown Journey V3 operation: " + entry.operation());
+		};
 	}
 
 	private static String mobileResourceKey(String machineCode) {
