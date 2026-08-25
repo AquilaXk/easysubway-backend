@@ -189,7 +189,8 @@ public final class StationTimetableSearchService {
 			appendForDate(result, candidates, timetable, serviceDate.serviceDate());
 		} else if (selector instanceof Selector.DayTypeSelector dayType) {
 			appendForDate(result, candidates, timetable, dayType.referenceDate());
-		} else if (selector instanceof Selector.NextDeparturesSelector next) {
+		} else {
+			Selector.NextDeparturesSelector next = (Selector.NextDeparturesSelector) selector;
 			LocalDate first = next.asOf().atZone(SERVICE_ZONE).toLocalDate().minusDays(1);
 			LocalDate last = next.asOf().plusSeconds((long) next.horizonDays() * 86_400).atZone(SERVICE_ZONE).toLocalDate();
 			for (LocalDate date = first; !date.isAfter(last); date = date.plusDays(1)) {
