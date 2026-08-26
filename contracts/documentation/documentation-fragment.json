@@ -540,7 +540,8 @@
       ],
       "releaseReachability": "BUILD",
       "publicSurfaceReachability": [
-        "api:/api/v3/journeys"
+        "api:/api/v3/journeys",
+        "api:/api/v3/station-timetables/search"
       ],
       "assertionState": "CURRENTLY_IMPLEMENTED_AND_EVIDENCED",
       "sensitivity": "PUBLIC",
