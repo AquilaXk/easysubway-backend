@@ -1,33 +1,33 @@
 # EasySubway Backend
 
-이동 제약을 고려한 경로, 실시간 열차 정보, 시설 제보를 EasySubway 모바일 앱에 제공하고 운영자가 데이터 품질을 관리할 수 있게 하는 백엔드입니다.
+EasySubway Backend helps riders find journeys that fit their mobility needs. It powers nationwide urban-rail routing, train and real-time information, accessibility facility reports, and the tools operators use to keep the service reliable.
 
-## 제공하는 기능
+## What it offers
 
-- **경로 탐색** — 출발·도착역, 출발 시각, 이동 제약과 환승 조건을 바탕으로 대안을 찾습니다.
-- **실시간 열차 정보** — 역 도착 정보와 노선별 열차 위치를 앱에 전달합니다.
-- **열차 검색** — 전국 여객열차 역 목록과 편도·왕복 열차편을 조회합니다.
-- **시설 제보** — 사진을 첨부할 수 있는 제보를 접수하고, 접수 후 처리 상태를 확인·확인 완료할 수 있습니다.
-- **운영 데이터 관리** — 역·시설·역사 구조·경로 데이터를 검수하고, 현장 확인과 데이터팩 후보·배포 채널을 관리합니다.
-- **운영 현황** — 경로 피드백, 접근성·반복 고장 시설, 알림 발송, 데이터 수집 실패 등 서비스 품질 지표를 확인합니다.
+- **Accessible journey planning** — Finds nationwide urban-rail journeys with Journey V3, including ITX-Cheongchun guidance, using walking pace, mobility needs, transfer limits, and step-free requirements.
+- **Real-time train information** — Provides station arrivals and available train positions.
+- **Nationwide train search** — Searches passenger-train stations and one-way or round-trip services, including ITX-Maum and ITX-Saemaeul.
+- **Facility reports** — Accepts reports with optional photos and lets riders check or confirm the result.
+- **Operations tools** — Helps authorized operators review station, facility, accessibility, timetable, routing, and release data.
+- **Service insights** — Tracks routing feedback, recurring facility problems, notifications, and data-collection health.
 
-## 현재 범위
+## How the service works
 
-- 모바일 앱 연동용 API와 인증된 운영 화면을 함께 제공합니다. 운영 기능은 일반 공개 API가 아닙니다.
-- 실시간 정보의 현재 연동 대상은 서울 TOPIS입니다.
-- 배포 환경의 정본 경로 탐색은 짧은 수명의 bearer session을 발급받아 Journey V3 서버에서 수행합니다. 서버는 검증된 active route-bundle과 RAPTOR를 사용하며, 필요한 데이터나 실시간 정보가 없거나 만료·불일치하면 로컬·V1·V2·이전 결과로 대체하지 않고 명시적인 오류를 반환합니다.
-- 제보는 사진 없이도 접수됩니다. 사진을 첨부할 때 익명 제보는 서명된 업로드 URL을 사용하고, 로그인한 사용자는 제보 요청에 사진을 함께 보낼 수도 있습니다. 사진 본문을 서버로 직접 받는 별도 업로드 엔드포인트는 로컬·개발 환경 전용입니다.
-- 익명 제보의 상태 조회와 확인 완료에는 접수 시 발급되는 자격 증명이 필요합니다. 로그인한 사용자는 본인 제보를 바로 조회할 수 있습니다.
-- 데이터 변경과 배포, 실시간 제공자 제어는 권한이 있는 운영자만 수행합니다.
+- Journey V3 is the only route-calculation authority. The mobile app's offline packs support maps and station search, but they never calculate routes.
+- Every journey uses the active, verified route bundle and returns its data identity with the result.
+- Accessibility is part of the routing decision, not an extra label added afterward.
+- If required data, real-time information, or identity evidence is missing, stale, or incompatible, the API returns a clear typed error. It never substitutes a local calculation, legacy route, previous artifact, or placeholder result.
+- Short-lived bearer sessions protect Journey V3 requests.
+- Facility reports can be sent without a photo. Anonymous riders use their report credential to check and confirm a result, while signed-in riders can access their own reports directly.
+- Data changes, releases, provider controls, and administrative features are available only to authorized operators.
 
-## API와 문의
+## APIs and contact
 
-서버 주소와 운영 API 접근 권한은 공개하지 않습니다. 앱 연동과 계약 확인은 아래 연락처로 협의해 주세요.
+Production server addresses and operator access are not published here. The versioned API contracts are available in this repository:
 
-아래는 저장소의 API 계약 파일입니다. 네 계약 모두 요청 parameter·요청 본문·필수 헤더·응답 스키마·오류 응답을 담고 있습니다. CI는 계약에 적힌 endpoint·필수 parameter·요청 본문 유무·성공 응답 상태 코드가 서버와 일치하는지, 그리고 인증을 요구하는 operation이 `401` 응답을 선언했는지까지 검사합니다. 스키마 안의 필드·제약·enum과 선언한 오류 응답의 runtime parity는 아직 보완 중입니다(#38, #48). 값 단위 형식은 협의로 확인해 주세요. 서버 주소는 계약 파일에 적지 않습니다.
+- [Real-time API](contracts/api/realtime-api.openapi.yaml)
+- [Train search API](contracts/api/train-api.openapi.yaml)
+- [Facility report API](contracts/api/report-api.openapi.yaml)
+- [Journey V3 API](contracts/api/journey-v3.openapi.yaml)
 
-- [실시간 API 계약](contracts/api/realtime-api.openapi.yaml)
-- [열차 검색 API 계약](contracts/api/train-api.openapi.yaml)
-- [시설 제보 API 계약](contracts/api/report-api.openapi.yaml)
-- [Journey V3 경로 탐색 API 계약](contracts/api/journey-v3.openapi.yaml)
-- [aquila@aquilaxk.site](mailto:aquila@aquilaxk.site)
+For app integration or contract questions, contact [aquila@aquilaxk.site](mailto:aquila@aquilaxk.site).
