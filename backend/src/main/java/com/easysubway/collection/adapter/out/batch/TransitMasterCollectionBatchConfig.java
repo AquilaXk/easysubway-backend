@@ -3,7 +3,6 @@ package com.easysubway.collection.adapter.out.batch;
 import com.easysubway.collection.application.service.DataCollectionRunRecorder;
 import com.easysubway.collection.domain.InvalidDataCollectionException;
 import java.util.Properties;
-import java.util.UUID;
 import org.egovframe.rte.bat.support.EgovJobVariableListener;
 import org.egovframe.rte.bat.support.EgovStepVariableListener;
 import org.springframework.batch.core.Job;
@@ -68,9 +67,12 @@ class TransitMasterCollectionBatchConfig {
 		return new StepBuilder(STEP_NAME, jobRepository)
 			.listener(transitMasterCollectionStepVariableListener)
 			.tasklet((contribution, chunkContext) -> {
-				String runId = (String) chunkContext.getStepContext()
+				Object runIdParameter = chunkContext.getStepContext()
 					.getJobParameters()
-					.getOrDefault("runId", "collection-" + UUID.randomUUID());
+					.get("runId");
+				if (!(runIdParameter instanceof String runId) || runId.isBlank()) {
+					throw new InvalidDataCollectionException("수집 run ID가 필요합니다.");
+				}
 				Object requestedByParameter = chunkContext.getStepContext()
 					.getJobParameters()
 					.get("requestedBy");
