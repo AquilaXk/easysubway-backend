@@ -6,6 +6,7 @@ import static java.util.Objects.requireNonNull;
 
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
@@ -48,7 +49,8 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 	private static final String FIXTURE = "timetable/line4-timetable-seed.sql.gz";
 	private static final String EVIDENCE = "timetable/server-timetable-snapshot-evidence.json";
 	private static final ObjectMapper STRICT_JSON = new ObjectMapper(
-		JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build());
+		JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private static final int WARMUPS = 20;
 	private static final int MEASUREMENTS = 100;
 	private static String fixtureSha256;
@@ -65,6 +67,7 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 			requireNonNull(classLoader.getResourceAsStream(EVIDENCE)).readAllBytes());
 		fixtureSha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(fixture));
 		assertThat(evidence.path("snapshotGzipSha256").asText()).isEqualTo(fixtureSha256);
+		assertThat(evidence.path("snapshotGzipByteSize").isIntegralNumber()).isTrue();
 		assertThat(evidence.path("snapshotGzipByteSize").asLong(-1)).isEqualTo(fixture.length);
 
 		DataSource dataSource = new DriverManagerDataSource(
