@@ -155,7 +155,7 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
-          fetch-depth: 2
+          fetch-depth: 0
 
       - name: Lint workflows
         shell: bash
@@ -396,6 +396,14 @@ jobs:
             --analysis-outcome "${{ steps.coverage_analyze.outcome }}" \
             --upload-outcome "${{ steps.coverage_artifact.outcome }}" \
             --summary-outcome "${{ steps.coverage_summary.outcome }}"
+
+      - name: Analyze with SonarQube Cloud
+        if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f
+        env:
+          SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
+        with:
+          projectBaseDir: backend
 
       - name: Build image without push
         run: docker build --tag easysubway-backend:ci backend
