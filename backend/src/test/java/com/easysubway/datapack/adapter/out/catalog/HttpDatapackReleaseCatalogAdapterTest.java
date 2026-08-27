@@ -152,6 +152,7 @@ class HttpDatapackReleaseCatalogAdapterTest {
 			exchange.getResponseBody().write(body);
 			exchange.close();
 		});
+		server.createContext("/catalog/current.json", exchange -> respond(exchange, body));
 		server.start();
 		try {
 			String publicKey = "-----BEGIN PUBLIC KEY-----\n"
@@ -163,11 +164,13 @@ class HttpDatapackReleaseCatalogAdapterTest {
 				publicKey.replace("\n", "\\n"), "production-v1");
 
 			var identity = adapter.fetch("production", 42);
+			var currentIdentity = adapter.fetchCurrent("production");
 
 			assertThat(identity.releaseSequence()).isEqualTo(42);
 			assertThat(identity.channel()).isEqualTo("production");
 			assertThat(identity.signatureValid()).isTrue();
 			assertThat(identity.manifestSha256()).hasSize(64);
+			assertThat(currentIdentity).isEqualTo(identity);
 		} finally {
 			server.stop(0);
 		}
