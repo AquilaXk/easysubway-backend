@@ -1179,7 +1179,7 @@ test('terminal suppression filters require one ordered exact method Match', () =
 test('workflow preserves #87 and uploads exactly four Phase-1 files before final enforcement', () => {
   const workflow = readFileSync(new URL('../../.github/workflows/ci.yml', import.meta.url), 'utf8');
   assert.equal(validateWorkflow(workflow), true);
-  assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 2\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
+  assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 0\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
   assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
   assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
   assert.match(workflow, /\.\/gradlew writeSpotbugsMainEvidence --no-daemon/);
