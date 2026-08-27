@@ -184,7 +184,9 @@ class HttpDatapackReleaseCatalogAdapterTest {
 			var adapter = new HttpDatapackReleaseCatalogAdapter(
 				"http://127.0.0.1:" + server.getAddress().getPort(), publicKey(keyPair), "production-v1");
 
-			assertThat(adapter.fetchCurrent("production").signatureValid()).isFalse();
+			assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+				.isInstanceOf(
+					com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort.Unavailable.class);
 		} finally {
 			server.stop(0);
 		}
