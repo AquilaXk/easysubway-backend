@@ -1,7 +1,11 @@
 package com.easysubway.route.contract;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.DeserializationFeature;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.ByteArrayInputStream;
@@ -40,6 +44,9 @@ class RouteV2RuntimeInputInventoryContractTest {
 		"DevelopmentRealtimeSafetyPorts.java"
 	);
 	private static final ObjectMapper JSON = new ObjectMapper();
+	private static final ObjectMapper STRICT_JSON = new ObjectMapper(
+		JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
+		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private static final List<ExpectedEntry> EXPECTED = List.of(
 		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteSearchController.java", "RouteSearchController#searchRouteV2", "POST /api/v2/routes/search", "/api/v2/routes/search", "searchRouteV2"),
 		entry("INPUT", "backend/src/main/java/com/easysubway/route/adapter/in/web/RouteV2SessionController.java", "RouteV2SessionController#issue", "POST /api/v2/routes/session", "@PostMapping(\"/api/v2/routes/session\")", "ResponseEntity<RouteV2SessionResponse> issue("),
@@ -199,6 +206,7 @@ class RouteV2RuntimeInputInventoryContractTest {
 	void defaultTimetableBinaryIdentityIsExact() throws Exception {
 		byte[] gzip = Files.readAllBytes(TIMETABLE_GZIP);
 		byte[] evidenceBytes = Files.readAllBytes(TIMETABLE_EVIDENCE);
+		verifyTimetableFixtureIdentity(gzip, evidenceBytes);
 		assertThat(sha256(gzip)).isEqualTo(GZIP_SHA256);
 		assertThat(sha256(normalizedTextBytes(evidenceBytes))).isEqualTo(EVIDENCE_SHA256);
 
@@ -218,6 +226,55 @@ class RouteV2RuntimeInputInventoryContractTest {
 		assertThat(suffixStart).isGreaterThanOrEqualTo(0);
 		assertThat(evidence.path("accessibilitySource").path("materializedSqlSha256").asText())
 			.isEqualTo(sha256(materializedSql.substring(suffixStart).getBytes(StandardCharsets.UTF_8)));
+	}
+
+	@Test
+	@DisplayName("timetable fixture identity rejects representative evidence mutations")
+	void timetableFixtureIdentityRejectsMutations() throws Exception {
+		byte[] gzip = Files.readAllBytes(TIMETABLE_GZIP);
+		byte[] tamperedGzip = gzip.clone();
+		tamperedGzip[0] ^= 1;
+		String evidence = Files.readString(TIMETABLE_EVIDENCE);
+		byte[] duplicateEvidence = ("{\"snapshotGzipSha256\":\"" + "0".repeat(64) + "\","
+			+ evidence.substring(1)).getBytes(StandardCharsets.UTF_8);
+		byte[] fractionalSizeEvidence = evidence
+			.replace("\"snapshotGzipByteSize\": 344354", "\"snapshotGzipByteSize\": 344354.5")
+			.getBytes(StandardCharsets.UTF_8);
+		byte[] trailingTokenEvidence = (evidence + "{}").getBytes(StandardCharsets.UTF_8);
+
+		assertThatThrownBy(() -> verifyTimetableFixtureIdentity(tamperedGzip, evidence.getBytes(StandardCharsets.UTF_8)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> verifyTimetableFixtureIdentity(gzip, "{}".getBytes(StandardCharsets.UTF_8)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> verifyTimetableFixtureIdentity(gzip, "[}".getBytes(StandardCharsets.UTF_8)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> verifyTimetableFixtureIdentity(gzip, duplicateEvidence))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> verifyTimetableFixtureIdentity(gzip, fractionalSizeEvidence))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> verifyTimetableFixtureIdentity(gzip, trailingTokenEvidence))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	private static void verifyTimetableFixtureIdentity(byte[] gzip, byte[] evidenceBytes) {
+		try {
+			JsonNode evidence = STRICT_JSON.readTree(evidenceBytes);
+			JsonNode expectedSha256 = evidence == null ? null : evidence.get("snapshotGzipSha256");
+			JsonNode expectedByteSize = evidence == null ? null : evidence.get("snapshotGzipByteSize");
+			if (expectedSha256 == null || !expectedSha256.isTextual()
+				|| !expectedSha256.asText().matches("[a-f0-9]{64}")
+				|| expectedByteSize == null || !expectedByteSize.isIntegralNumber()
+				|| !expectedByteSize.canConvertToInt()) {
+				throw new IllegalArgumentException("timetable fixture evidence identity is invalid");
+			}
+			if (!expectedSha256.asText().equals(sha256(gzip)) || expectedByteSize.asInt() != gzip.length) {
+				throw new IllegalArgumentException("timetable fixture bytes do not match evidence");
+			}
+		} catch (IllegalArgumentException exception) {
+			throw exception;
+		} catch (Exception exception) {
+			throw new IllegalArgumentException("timetable fixture evidence is invalid", exception);
+		}
 	}
 
 	@Test
