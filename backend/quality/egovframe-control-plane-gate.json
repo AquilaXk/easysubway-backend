@@ -9,11 +9,25 @@
   "decision": "selective_control_plane_only",
   "utilizationDefinition": {
     "formula": "adopted_modules / gate_approved_applicable_modules",
+    "adoptedStatus": "adopted_control_plane_only",
+    "applicableModules": [
+      "pagination",
+      "egovframeBatCore",
+      "fdlLogging",
+      "fdlProperty",
+      "fdlIdgnr",
+      "fdlExcel"
+    ],
+    "current": {
+      "adoptedModules": 5,
+      "applicableModules": 6,
+      "percent": 83.33
+    },
     "denominatorExcludes": [
       "noGoSurface",
       "pending_separate_decision(psl-dataaccess, fdl-access)"
     ],
-    "target": "100_percent",
+    "reportingPolicy": "report_computed_current_state_without_mechanical_expansion",
     "supersedes": "adoption_plan_docx_whole_codebase_30_percent"
   },
   "allowedProductionSurface": [

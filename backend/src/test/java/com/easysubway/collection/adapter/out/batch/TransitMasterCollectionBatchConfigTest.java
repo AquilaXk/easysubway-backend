@@ -89,4 +89,34 @@ class TransitMasterCollectionBatchConfigTest {
 		assertThat(execution.getStatus()).isEqualTo(BatchStatus.FAILED);
 		assertThat(repository.loadRun("collection-missing-requester")).isEmpty();
 	}
+
+	@Test
+	@DisplayName("배치 Job은 run ID 파라미터가 없으면 실패한다")
+	void transitMasterCollectionJobRequiresRunIdParameter() throws Exception {
+		var parameters = new JobParametersBuilder()
+			.addString("requestedBy", "admin-batch")
+			.addLong("run.id", System.nanoTime())
+			.toJobParameters();
+
+		var execution = jobLauncher.run(job, parameters);
+
+		assertThat(execution.getStatus()).isEqualTo(BatchStatus.FAILED);
+	}
+
+	@Test
+	@DisplayName("실패한 배치 Job은 같은 instance에서 새 execution으로 재실행된다")
+	void failedTransitMasterCollectionJobRestartsSameInstance() throws Exception {
+		var parameters = new JobParametersBuilder()
+			.addString("runId", "collection-restart-failed")
+			.toJobParameters();
+
+		var firstExecution = jobLauncher.run(job, parameters);
+		var restartedExecution = jobLauncher.run(job, parameters);
+
+		assertThat(firstExecution.getStatus()).isEqualTo(BatchStatus.FAILED);
+		assertThat(restartedExecution.getStatus()).isEqualTo(BatchStatus.FAILED);
+		assertThat(restartedExecution.getJobInstance().getInstanceId())
+			.isEqualTo(firstExecution.getJobInstance().getInstanceId());
+		assertThat(restartedExecution.getId()).isNotEqualTo(firstExecution.getId());
+	}
 }
