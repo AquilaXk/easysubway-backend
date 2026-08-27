@@ -184,6 +184,12 @@ tasks.named('test') {
 	inputs.dir(layout.projectDirectory.dir('src/main/resources/timetable'))
 		.withPropertyName('timetableResources')
 		.withPathSensitivity(PathSensitivity.RELATIVE)
+	inputs.files(
+		layout.projectDirectory.file('src/main/resources/timetable/line4-timetable-seed.sql.gz'),
+		layout.projectDirectory.file('src/main/resources/timetable/server-timetable-snapshot-evidence.json')
+	)
+		.withPropertyName('timetableBenchmarkFixtureIdentity')
+		.withPathSensitivity(PathSensitivity.RELATIVE)
 	inputs.dir(layout.projectDirectory.dir('src/main/java'))
 		.withPropertyName('runtimeInventoryJavaSources')
 		.withPathSensitivity(PathSensitivity.RELATIVE)
