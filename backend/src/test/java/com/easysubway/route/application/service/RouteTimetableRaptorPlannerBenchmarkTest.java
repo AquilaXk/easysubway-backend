@@ -2,7 +2,11 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static java.util.Objects.requireNonNull;
 
+import com.fasterxml.jackson.core.JsonFactory;
+import com.fasterxml.jackson.core.StreamReadFeature;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.RouteV2Plan;
@@ -42,9 +46,12 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 class RouteTimetableRaptorPlannerBenchmarkTest {
 
 	private static final String FIXTURE = "timetable/line4-timetable-seed.sql.gz";
-	private static final String FIXTURE_SHA256 = "06b65fed55e1d07623b0fbc69bf35b98973b22fb25e520d014fba69155d8fd5b";
+	private static final String EVIDENCE = "timetable/server-timetable-snapshot-evidence.json";
+	private static final ObjectMapper STRICT_JSON = new ObjectMapper(
+		JsonFactory.builder().enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build());
 	private static final int WARMUPS = 20;
 	private static final int MEASUREMENTS = 100;
+	private static String fixtureSha256;
 	private static RouteV2Planner planner;
 	private static RouteTimetableRaptorPlanner raptorPlanner;
 	private static int legacyExpandedRoutes;
@@ -52,11 +59,13 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 
 	@BeforeAll
 	static void setUpFixture() throws Exception {
-		byte[] fixture = RouteTimetableRaptorPlannerBenchmarkTest.class.getClassLoader()
-			.getResourceAsStream(FIXTURE)
-			.readAllBytes();
-		assertThat(HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(fixture)))
-			.isEqualTo(FIXTURE_SHA256);
+		var classLoader = RouteTimetableRaptorPlannerBenchmarkTest.class.getClassLoader();
+		byte[] fixture = requireNonNull(classLoader.getResourceAsStream(FIXTURE)).readAllBytes();
+		var evidence = STRICT_JSON.readTree(
+			requireNonNull(classLoader.getResourceAsStream(EVIDENCE)).readAllBytes());
+		fixtureSha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(fixture));
+		assertThat(evidence.path("snapshotGzipSha256").asText()).isEqualTo(fixtureSha256);
+		assertThat(evidence.path("snapshotGzipByteSize").asLong(-1)).isEqualTo(fixture.length);
 
 		DataSource dataSource = new DriverManagerDataSource(
 			"jdbc:h2:mem:route-timetable-benchmark;MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE",
@@ -67,12 +76,15 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V16__datapack_source_snapshots.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V17__datapack_alias_quarantine_ledgers.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V19__datapack_route_edge_evidence.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V23__datapack_source_snapshot_raw_evidence_policy.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V29__canonical_transit_schedule.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V30__canonical_station_pathways.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V37__transit_feed_info.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V52__datapack_source_governance.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V61__timetable_snapshot_state.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V62__route_v2_planner_identity.sql'");
+		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V74__route_service_station_catalog_evidence.sql'");
 		try (var reader = new BufferedReader(new InputStreamReader(
 			new GZIPInputStream(new ByteArrayInputStream(fixture)), StandardCharsets.UTF_8))) {
 			reader.lines().filter(line -> !line.isBlank()).forEach(jdbc::execute);
@@ -92,12 +104,12 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 
 			@Override
 			public RouteTimetableSnapshot loadRouteTimetableSnapshot() {
-				return new RouteTimetableSnapshot(FIXTURE_SHA256, "issue-2249-full-feed", timetable);
+				return new RouteTimetableSnapshot(fixtureSha256, "issue-2249-full-feed", timetable);
 			}
 
 			@Override
 			public String timetableCacheKey() {
-				return FIXTURE_SHA256;
+				return fixtureSha256;
 			}
 		};
 		planner = new RouteV2Planner(new NoLegacyRouteSearch(), port);
@@ -178,7 +190,7 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 				+ "\"expandedRoutes\":%d,\"expandedTrips\":%d,"
 				+ "\"nanos\":%s,\"allocatedBytes\":%s}%n",
 			FIXTURE,
-			FIXTURE_SHA256,
+			fixtureSha256,
 			scenario,
 			WARMUPS,
 			MEASUREMENTS,
