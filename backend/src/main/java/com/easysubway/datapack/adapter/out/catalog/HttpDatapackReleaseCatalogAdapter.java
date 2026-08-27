@@ -119,6 +119,7 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 				&& manifest.path("manifestVersion").asInt(-1) == 2
 				&& keyId.equals(manifest.path("keyId").asText())
 				&& verify(manifest, signatureValue);
+			if (!signatureValid) throw new Unavailable();
 			long actualSequence = manifest.path("releaseSequence").asLong(-1);
 			String actualChannel = manifest.path("channel").asText("");
 			return new CatalogIdentity(
