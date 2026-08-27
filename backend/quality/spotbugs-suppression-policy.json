@@ -15,7 +15,7 @@
     "spotbugsGradlePlugin": {
       "id": "com.github.spotbugs",
       "requestedVersion": "6.2.2",
-      "buildScriptSha256": "340ebd62a63c7a417d4d43e37dddbd200e68a662d5c44437ab702580b9d94753",
+      "buildScriptSha256": "abc4fcccc156430f54497903f159502d18678d546ba6cb5208a89659302d5ff0",
       "implementationClass": "com.github.spotbugs.snom.SpotBugsPlugin",
       "implementationJarSha256": "f37166fbbcde9258058f5f46827b527aed663f9cd8faea68138a153b1ceb4add"
     },
@@ -78,29 +78,29 @@
           "sha256": "1e323a501127df78ed0987f345d69d65d0ea7fa3d4fb5b3f84aaeba3a8b20f38"
         },
         {
-          "component": "org.apache.httpcomponents.client5:httpclient5:5.5.2",
-          "artifact": "httpclient5-5.5.2.jar",
-          "sha256": "5aec3f3447ec816e593e380b59fbe3e42083318af6b215bc177386f7742f6146"
+          "component": "org.apache.httpcomponents.client5:httpclient5:5.6.3",
+          "artifact": "httpclient5-5.6.3.jar",
+          "sha256": "80712ff129210d7c73d9fcc1195cbee5c3c34744965c7a05ea107b3648922f18"
         },
         {
-          "component": "org.apache.httpcomponents.core5:httpcore5-h2:5.3.6",
-          "artifact": "httpcore5-h2-5.3.6.jar",
-          "sha256": "479a8aa5e6f99030a2a446a68d1f62320698932746f811fc656a1ea06b94184d"
+          "component": "org.apache.httpcomponents.core5:httpcore5-h2:5.4.3",
+          "artifact": "httpcore5-h2-5.4.3.jar",
+          "sha256": "c7db7026b8e2dea39132b04a6069f6671e2858309b20a146ec5c7dd6ed73a0b6"
         },
         {
-          "component": "org.apache.httpcomponents.core5:httpcore5:5.3.6",
-          "artifact": "httpcore5-5.3.6.jar",
-          "sha256": "8fb4528d3e970aca440523a1bd698a389fa710ecfea4c5c6096698b86d1669ce"
+          "component": "org.apache.httpcomponents.core5:httpcore5:5.4.3",
+          "artifact": "httpcore5-5.4.3.jar",
+          "sha256": "18bfbbabb478dfb67f31aeaf428c387f3c3df654582e1309f708ee1f3086830a"
         },
         {
-          "component": "org.apache.logging.log4j:log4j-api:2.25.4",
-          "artifact": "log4j-api-2.25.4.jar",
-          "sha256": "c4b642a7f047275215de117e0e3847eb2c7711d84a0aa7433e7b3c096daf341d"
+          "component": "org.apache.logging.log4j:log4j-api:2.25.5",
+          "artifact": "log4j-api-2.25.5.jar",
+          "sha256": "64777f73ea0b3104c04eb82befbdccc30a425a19e83ad06cb2f93aa303511863"
         },
         {
-          "component": "org.apache.logging.log4j:log4j-core:2.25.4",
-          "artifact": "log4j-core-2.25.4.jar",
-          "sha256": "10fee2c0485d54fa44ee75d314f6295508f7b932281873db61a91b88073200e6"
+          "component": "org.apache.logging.log4j:log4j-core:2.25.5",
+          "artifact": "log4j-core-2.25.5.jar",
+          "sha256": "050c4f85deb48b055e9c041ac39043fbb79ce477841a11a1eb2969c86c6a0072"
         },
         {
           "component": "org.dom4j:dom4j:2.1.4",
