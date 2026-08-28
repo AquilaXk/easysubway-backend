@@ -35,7 +35,7 @@ class JourneyV3BenchmarkContractTest {
 	void rejectsTupleCorpusAndProfileMatrixDrift() {
 		var corpus = JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(validCorpus());
 		var missingDigest = completeEvidence(corpus);
-		var invalidTuple = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity("bad", "b".repeat(64), "c".repeat(64));
+		var invalidTuple = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity("bad", "b".repeat(64), "c".repeat(64), "d".repeat(40));
 		var invalid = new JourneyV3NationwideBenchmarkTest.Evidence(invalidTuple, corpus, missingDigest.cold(),
 			missingDigest.warm(), missingDigest.warmStartCounters(), missingDigest.counters(), missingDigest.config());
 		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.validate(invalid))
@@ -80,18 +80,73 @@ class JourneyV3BenchmarkContractTest {
 	@Test
 	void validatesCompleteActiveServingReceiptAndRejectsIdentityOrStateDrift() throws Exception {
 		byte[] valid = receipt("ACTIVE_SERVING", null);
-		JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(valid, "4".repeat(64));
+		JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(valid, "4".repeat(64), "5".repeat(40));
 
 		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
-			receipt("ACTIVE_SERVING", "sha256:" + "f".repeat(64)), "4".repeat(64)))
+				receipt("ACTIVE_SERVING", "sha256:" + "f".repeat(64)), "4".repeat(64), "5".repeat(40)))
 			.hasMessageContaining("does not bind");
 		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
-			receipt("FAILED_POSTSWITCH", null), "4".repeat(64)))
+			receipt("FAILED_POSTSWITCH", null), "4".repeat(64), "5".repeat(40)))
 			.hasMessageContaining("ACTIVE_SERVING");
 		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
 			new String(valid, StandardCharsets.UTF_8).concat("{}").getBytes(StandardCharsets.UTF_8),
-			"4".repeat(64)))
+			"4".repeat(64), "5".repeat(40)))
 			.isInstanceOf(java.io.IOException.class);
+	}
+
+	@Test
+	void requiresAnIndependentDeploymentRevisionAndStrictReceiptNumbers() throws Exception {
+		byte[] valid = receipt("ACTIVE_SERVING", null);
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
+			valid, "4".repeat(64), "6".repeat(40)))
+			.hasMessageContaining("release identity");
+
+		var mapper = new ObjectMapper();
+		var rollbackAsText = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(valid);
+		rollbackAsText.put("rollbackAttemptCount", "0");
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
+			mapper.writeValueAsBytes(rollbackAsText), "4".repeat(64), "5".repeat(40)))
+			.hasMessageContaining("integer");
+
+		var nodePortFraction = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(valid);
+		((com.fasterxml.jackson.databind.node.ObjectNode) nodePortFraction.path("activation").path("endpoint"))
+			.put("nodePort", 32080.5);
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
+			mapper.writeValueAsBytes(nodePortFraction), "4".repeat(64), "5".repeat(40)))
+			.hasMessageContaining("integer");
+
+		var overflowingIntegral = (com.fasterxml.jackson.databind.node.ObjectNode) mapper.readTree(valid);
+		overflowingIntegral.put("rollbackAttemptCount", new java.math.BigInteger("18446744073709551616"));
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(
+			mapper.writeValueAsBytes(overflowingIntegral), "4".repeat(64), "5".repeat(40)))
+			.hasMessageContaining("integer");
+	}
+
+	@Test
+	void rejectsNoncanonicalCorpusShapesAndScalarTypes() {
+		for (String invalid : List.of(
+			"[]",
+			"{\"schemaVersion\":\"1\",\"corpusVersion\":\"v1\",\"cases\":[]}",
+			"{\"schemaVersion\":1.5,\"corpusVersion\":\"v1\",\"cases\":[]}",
+			"{\"schemaVersion\":1,\"corpusVersion\":1,\"cases\":[]}",
+			"{\"schemaVersion\":1,\"corpusVersion\":\"v1\",\"cases\":{}}",
+			"{\"schemaVersion\":1,\"corpusVersion\":\"v1\",\"cases\":[\"case\"]}")) {
+			assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(invalid))
+				.isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	@Test
+	void rejectsArtifactPathSymlinkEscapes(@TempDir Path directory) throws Exception {
+		Path root = Files.createDirectory(directory.resolve("artifact-root"));
+		Path outside = Files.writeString(directory.resolve("outside.json"), "outside");
+		Files.createSymbolicLink(root.resolve("ancestor"), directory);
+		Files.createSymbolicLink(root.resolve("final.json"), outside);
+
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.checkedArtifactObjectPath(root, "ancestor/outside.json"))
+			.hasMessageContaining("unavailable");
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.checkedArtifactObjectPath(root, "final.json"))
+			.hasMessageContaining("unavailable");
 	}
 
 	@Test
@@ -112,7 +167,7 @@ class JourneyV3BenchmarkContractTest {
 	void rejectsDescriptorReceiptAndManifestTupleDrift() throws Exception {
 		byte[] receipt = "active-receipt".getBytes(StandardCharsets.UTF_8);
 		var expected = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(
-			"1".repeat(64), digest("active-receipt"), "2".repeat(64));
+			"1".repeat(64), digest("active-receipt"), "2".repeat(64), "5".repeat(40));
 		JourneyV3BenchmarkRuntimeAdapter.verifyExpectedIdentity(
 			"1".repeat(64), receipt, "2".repeat(64), expected);
 
@@ -141,7 +196,7 @@ class JourneyV3BenchmarkContractTest {
 				JourneyV3NationwideBenchmarkTest.Percentiles.from(samples), new JourneyV3NationwideBenchmarkTest.ScanMetrics(1, 2, 3)));
 		}
 		return new JourneyV3NationwideBenchmarkTest.Evidence(
-			new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(SHA, "b".repeat(64), "c".repeat(64)), corpus,
+			new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(SHA, "b".repeat(64), "c".repeat(64), "d".repeat(40)), corpus,
 			new JourneyV3NationwideBenchmarkTest.ColdEvidence(1, 1, 1, 1, 1, 1, 1, 1), warm,
 			new JourneyV3BenchmarkRuntimeAdapter.Counters(1, 2, 1, 1, 0, 0, 0, 0),
 			new JourneyV3BenchmarkRuntimeAdapter.Counters(1, 2, 13, 13, 0, 0, 0, 0),

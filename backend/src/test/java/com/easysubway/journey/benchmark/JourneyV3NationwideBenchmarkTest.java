@@ -49,9 +49,9 @@ class JourneyV3NationwideBenchmarkTest {
 		if (!corpus.sha256().equals(config.corpusSha256())) throw new IllegalArgumentException("benchmark corpus digest does not match the required runtime value");
 		ThreadMXBean allocations = allocationBean();
 
-		Phase<JourneyV3BenchmarkRuntimeAdapter.Loaded> load = measure(allocations,
-			() -> JourneyV3BenchmarkRuntimeAdapter.load(environment));
 		JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity tuple = JourneyV3BenchmarkRuntimeAdapter.expectedIdentity(environment);
+		Phase<JourneyV3BenchmarkRuntimeAdapter.Loaded> load = measure(allocations,
+			() -> JourneyV3BenchmarkRuntimeAdapter.load(environment, tuple));
 		Phase<JourneyV3BenchmarkRuntimeAdapter.Verified> verify = measure(allocations,
 			() -> JourneyV3BenchmarkRuntimeAdapter.verify(load.value(), tuple));
 		Phase<JourneyV3BenchmarkRuntimeAdapter> compile = measure(allocations,
@@ -196,15 +196,17 @@ class JourneyV3NationwideBenchmarkTest {
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 		private static final Pattern SHA = Pattern.compile("[0-9a-f]{64}");
 		static Corpus parseCorpus(String json) { try { JsonNode root = JSON.readTree(requireNonNull(json));
-			if (root == null || root.path("schemaVersion").asInt(-1) != 1 || !"v1".equals(root.path("corpusVersion").asText())) throw new IllegalArgumentException("corpus version is invalid");
+			if (root == null || !root.isObject() || !root.path("schemaVersion").isIntegralNumber()
+				|| root.path("schemaVersion").intValue() != 1 || !root.path("corpusVersion").isTextual()
+				|| !"v1".equals(root.path("corpusVersion").textValue()) || !root.path("cases").isArray()) throw new IllegalArgumentException("corpus version is invalid");
 			var cases = new ArrayList<Case>(); var ids = new java.util.HashSet<String>();
-			for (JsonNode item : root.path("cases")) { Case value = new Case(text(item, "id"), text(item, "originStationId"), text(item, "destinationStationId"), text(item, "serviceDay"), text(item, "departureLocalTime"));
+			for (JsonNode item : root.path("cases")) { if (!item.isObject()) throw new IllegalArgumentException("corpus entry is invalid"); Case value = new Case(text(item, "id"), text(item, "originStationId"), text(item, "destinationStationId"), text(item, "serviceDay"), text(item, "departureLocalTime"));
 				try { LocalTime parsed = LocalTime.parse(value.departureLocalTime()); if (parsed.getSecond() != 0 || parsed.getNano() != 0 || value.departureLocalTime().length() != 5) throw new IllegalArgumentException(); }
 				catch (RuntimeException exception) { throw new IllegalArgumentException("corpus entry is invalid", exception); }
 				if (value.originStationId().equals(value.destinationStationId()) || !Set.of("WEEKDAY", "WEEKEND").contains(value.serviceDay()) || !value.departureLocalTime().matches("[0-2]\\d:[0-5]\\d") || !ids.add(value.id())) throw new IllegalArgumentException("corpus entry is invalid"); cases.add(value); }
 			if (cases.isEmpty()) throw new IllegalArgumentException("corpus must not be empty"); return new Corpus("v1", sha(json.getBytes(StandardCharsets.UTF_8)), List.copyOf(cases));
 		} catch (java.io.IOException exception) { throw new IllegalArgumentException("corpus is malformed", exception); } }
-		static void validate(Evidence evidence) { requireNonNull(evidence); requireSha(evidence.tuple().descriptorSha256(), "descriptorSha256"); requireSha(evidence.tuple().receiptSha256(), "receiptSha256"); requireSha(evidence.tuple().routeBundleSha256(), "routeBundleSha256"); requireSha(evidence.corpus().sha256(), "corpusSha256"); requireSha(evidence.config().corpusSha256(), "corpusSha256"); if (!evidence.corpus().sha256().equals(evidence.config().corpusSha256())) throw new IllegalArgumentException("corpus digest is invalid");
+		static void validate(Evidence evidence) { requireNonNull(evidence); requireSha(evidence.tuple().descriptorSha256(), "descriptorSha256"); requireSha(evidence.tuple().receiptSha256(), "receiptSha256"); requireSha(evidence.tuple().routeBundleSha256(), "routeBundleSha256"); if (evidence.tuple().deploymentRevision() == null || !evidence.tuple().deploymentRevision().matches("[a-f0-9]{40}")) throw new IllegalArgumentException("deployment revision is invalid"); requireSha(evidence.corpus().sha256(), "corpusSha256"); requireSha(evidence.config().corpusSha256(), "corpusSha256"); if (!evidence.corpus().sha256().equals(evidence.config().corpusSha256())) throw new IllegalArgumentException("corpus digest is invalid");
 			if (!evidence.asJson().keySet().equals(Set.of("schemaVersion", "tuple", "corpus", "jvm",
 				"walkingPaceMetersPerHour", "config", "cold", "warm", "warmStartAdapterCounters",
 				"adapterCounters"))) throw new IllegalArgumentException("benchmark output fields are incomplete");
