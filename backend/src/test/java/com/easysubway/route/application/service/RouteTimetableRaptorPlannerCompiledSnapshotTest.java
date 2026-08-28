@@ -360,9 +360,31 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		var metrics = planner.lastScanMetrics();
 		assertThat(metrics.expandedRoutes()).isOne();
 		assertThat(metrics.expandedTrips()).isOne();
+		assertThat(metrics.expandedTransfers()).isZero();
 
 		planner.search(command(WEDNESDAY, 8, 50), compiled);
 		assertThat(planner.lastScanMetrics().workspaceIdentity()).isEqualTo(metrics.workspaceIdentity());
+	}
+
+	@Test
+	@DisplayName("scan은 valid round-one transfer 검사만 계수하고 workspace 재사용 시 reset한다")
+	void countsAndResetsExpandedTransfers() {
+		var command = new SearchRouteV2Command(
+			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T08:40:00+09:00"),
+			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 1);
+		var compiled = planner.compile(withAccess(oneTransferTimetable(), verifiedTransferAccess()));
+
+		assertThat(planner.search(command, compiled)).isNotEmpty();
+		var firstMetrics = planner.lastScanMetrics();
+		assertThat(firstMetrics.expandedTransfers()).isPositive();
+
+		assertThat(planner.search(command, compiled)).isNotEmpty();
+		var repeatedMetrics = planner.lastScanMetrics();
+		assertThat(repeatedMetrics.expandedTransfers()).isEqualTo(firstMetrics.expandedTransfers());
+		assertThat(repeatedMetrics.workspaceIdentity()).isEqualTo(firstMetrics.workspaceIdentity());
+
+		assertThat(planner.search(command(WEDNESDAY, 8, 50), planner.compile(disconnectedRoutesTimetable()))).hasSize(1);
+		assertThat(planner.lastScanMetrics().expandedTransfers()).isZero();
 	}
 
 	@Test

@@ -280,6 +280,7 @@ class RouteTimetableRaptorPlanner {
 		return new ScanMetrics(
 			workspace.expandedRoutes,
 			workspace.expandedTrips,
+			workspace.expandedTransfers,
 			System.identityHashCode(workspace)
 		);
 	}
@@ -765,6 +766,9 @@ class RouteTimetableRaptorPlanner {
 					command.requiresVerifiedJourneyDistance());
 			if (accessTransition < 0) {
 				continue;
+			}
+			if (round > 0) {
+				workspace.expandedTransfers += 1;
 			}
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
 				int readySlot = workspace.slot(round, station, incomingLine, warningState);
@@ -2533,6 +2537,7 @@ class RouteTimetableRaptorPlanner {
 		private int markedPatternCount;
 		private int expandedRoutes;
 		private int expandedTrips;
+		private int expandedTransfers;
 
 		private void prepare(int requiredStationCount, int lineCount, int patternCount) {
 			stationCount = requiredStationCount;
@@ -2573,6 +2578,7 @@ class RouteTimetableRaptorPlanner {
 			markedPatternCount = 0;
 			expandedRoutes = 0;
 			expandedTrips = 0;
+			expandedTransfers = 0;
 		}
 
 		private int slot(int boardings, int station, int incomingLine, int warningState) {
@@ -2690,7 +2696,7 @@ class RouteTimetableRaptorPlanner {
 	}
 	private record BoardingPoint(String stationId, String lineId) {
 	}
-	record ScanMetrics(int expandedRoutes, int expandedTrips, int workspaceIdentity) {
+	record ScanMetrics(int expandedRoutes, int expandedTrips, int expandedTransfers, int workspaceIdentity) {
 	}
 
 	record JourneyItinerary(
