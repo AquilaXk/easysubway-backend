@@ -132,7 +132,9 @@ class JourneyV3BenchmarkContractTest {
 			observationResponse(1), "01K1Y000000000000000000000"))
 			.hasMessageContaining("invalid");
 		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(
-			observationResponse(0).replace("}", ",\"extra\":true}"), "01K1Y000000000000000000000"))
+			new String(observationResponse(0), StandardCharsets.UTF_8)
+				.replace("}", ",\"extra\":true}").getBytes(StandardCharsets.UTF_8),
+			"01K1Y000000000000000000000"))
 			.hasMessageContaining("invalid");
 	}
 

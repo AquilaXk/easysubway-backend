@@ -51,7 +51,7 @@ class JourneyApplicationServiceTest {
 		assertThat(success.serviceTimezone()).isEqualTo("Asia/Seoul");
 		assertThat(success.executionObservation().boundaryObservation()).isEqualTo(
 			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0, 0, 0, 0));
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L));
 		assertThat(success.sourceIdentity()).isEqualTo(new JourneyExecutionResult.SourceIdentity(
 			"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
 		));
