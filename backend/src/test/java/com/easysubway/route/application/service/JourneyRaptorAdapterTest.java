@@ -71,6 +71,9 @@ class JourneyRaptorAdapterTest {
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
 			assertThat(candidate.legs().get(2)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
 		});
+		assertThat(result.scanMetrics().expandedRoutes()).isGreaterThanOrEqualTo(0);
+		assertThat(result.scanMetrics().expandedTrips()).isGreaterThanOrEqualTo(0);
+		assertThat(result.scanMetrics().expandedTransfers()).isGreaterThanOrEqualTo(0);
 	}
 
 	@Test

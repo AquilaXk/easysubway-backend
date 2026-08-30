@@ -18,6 +18,7 @@ class JourneyApplicationServiceTest {
 	private static final Instant CAPTURED_AT = Instant.parse("2026-08-11T00:00:00Z");
 	private static final Instant VALID_UNTIL = Instant.parse("2026-08-11T00:10:00Z");
 	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
+	private static final JourneyRaptorPort.ScanMetrics OBSERVED_SCAN = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
 	private static final ActiveJourneySnapshotPort.ActiveJourneySnapshot SNAPSHOT = snapshot(VALID_UNTIL, true);
 	private static final JourneyRealtimePort.RealtimeObservation REALTIME = realtime(
 		Instant.parse("2026-08-11T00:08:00Z"), ROUTE_BUNDLE_SHA, true
@@ -30,7 +31,7 @@ class JourneyApplicationServiceTest {
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
 		));
-		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates);
+		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates, OBSERVED_SCAN);
 
 		JourneyExecutionResult result = fakes.service().execute(request(
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2
@@ -48,6 +49,9 @@ class JourneyApplicationServiceTest {
 		assertThat(success.effectiveDepartureTime()).isEqualTo(CAPTURED_AT);
 		assertThat(success.serviceDate()).isEqualTo(LocalDate.parse("2026-08-11"));
 		assertThat(success.serviceTimezone()).isEqualTo("Asia/Seoul");
+		assertThat(success.executionObservation().boundaryObservation()).isEqualTo(
+			new JourneyExecutionResult.BoundaryObservation(
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0, 0, 0, 0));
 		assertThat(success.sourceIdentity()).isEqualTo(new JourneyExecutionResult.SourceIdentity(
 			"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
 		));
@@ -82,6 +86,8 @@ class JourneyApplicationServiceTest {
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
 		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
 		assertThat(success.sourceIdentity().realtimeSnapshotId()).isEqualTo("realtime-1");
+		assertThat(success.executionObservation().boundaryObservation())
+			.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
 		assertThat(success.validUntil()).isEqualTo(REALTIME.validUntil());
 		assertThat(success.journeys()).allSatisfy(candidate -> {
 			assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
@@ -119,6 +125,37 @@ class JourneyApplicationServiceTest {
 		assertThat(fakes.raptorCalls).isEqualTo(1);
 		assertThat(fakes.clock.instantCalls).isEqualTo(1);
 		assertThat(fakes.effectiveInstants).containsExactly(requestedAt, requestedAt, requestedAt);
+	}
+
+	@Test
+	void resolvesServiceDateAtTheSharedSeoulThreeAmBoundary() {
+		Fakes fakes = new Fakes();
+		Instant beforeCutoff = Instant.parse("2026-08-11T17:59:00Z");
+		fakes.snapshot = snapshot(beforeCutoff.plusSeconds(600), true);
+		fakes.planResult = planResult(JourneyCandidate.TimeSource.TIMETABLE);
+
+		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) fakes.service().execute(
+			request(new JourneyRequest.Departure.Scheduled(beforeCutoff),
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 1, fakes.cancelled));
+
+		assertThat(success.serviceDayIdentity().serviceDate()).isEqualTo(LocalDate.parse("2026-08-11"));
+		assertThat(success.serviceDayIdentity().timezone()).isEqualTo("Asia/Seoul");
+		assertThat(success.serviceDayIdentity().cutoffLocalTime()).isEqualTo("03:00");
+	}
+
+	@Test
+	void resolvesExactlyThreeAmAsTheCurrentSeoulServiceDate() {
+		Fakes fakes = new Fakes();
+		Instant atCutoff = Instant.parse("2026-08-11T18:00:00Z");
+		fakes.snapshot = snapshot(atCutoff.plusSeconds(600), true);
+		fakes.planResult = planResult(JourneyCandidate.TimeSource.TIMETABLE);
+
+		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) fakes.service().execute(
+			request(new JourneyRequest.Departure.Scheduled(atCutoff),
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 1, fakes.cancelled));
+
+		assertThat(success.serviceDayIdentity().serviceDate()).isEqualTo(LocalDate.parse("2026-08-12"));
+		assertThat(success.serviceDayIdentity().cutoffLocalTime()).isEqualTo("03:00");
 	}
 
 	@Test
@@ -194,7 +231,7 @@ class JourneyApplicationServiceTest {
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
 		Fakes emptyOutput = new Fakes();
-		emptyOutput.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of());
+		emptyOutput.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(), OBSERVED_SCAN);
 		assertFailure(emptyOutput.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.NO_ROUTE);
 	}
@@ -205,7 +242,7 @@ class JourneyApplicationServiceTest {
 		duplicate.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)
-		));
+		), OBSERVED_SCAN);
 		assertFailure(duplicate.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
@@ -213,7 +250,7 @@ class JourneyApplicationServiceTest {
 		overLimit.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
-		));
+		), OBSERVED_SCAN);
 		assertFailure(overLimit.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 1)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
@@ -232,6 +269,8 @@ class JourneyApplicationServiceTest {
 			VALID_UNTIL,
 			CAPTURED_AT,
 			LocalDate.parse("2026-08-11"),
+			1,
+			OBSERVED_SCAN,
 			new JourneyExecutionResult.SourceIdentity(
 				"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
 			),
@@ -243,7 +282,9 @@ class JourneyApplicationServiceTest {
 				0,
 				1
 			),
-			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE))
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			new JourneyExecutionResult.BoundaryObservation(
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
 		)).isInstanceOf(IllegalArgumentException.class);
 	}
 
@@ -412,7 +453,7 @@ class JourneyApplicationServiceTest {
 	}
 
 	private static JourneyRaptorPort.PlanResult planResult(JourneyCandidate.TimeSource timeSource) {
-		return new JourneyRaptorPort.PlanResult("query-1", List.of(candidate("journey-1", timeSource)));
+		return new JourneyRaptorPort.PlanResult("query-1", List.of(candidate("journey-1", timeSource)), OBSERVED_SCAN);
 	}
 
 	private static JourneyCandidate candidate(String journeyId, JourneyCandidate.TimeSource timeSource) {
@@ -482,16 +523,29 @@ class JourneyApplicationServiceTest {
 		private final CountingClock clock = new CountingClock(CAPTURED_AT);
 
 		private JourneyApplicationService service() {
-			return new JourneyApplicationService(effectiveInstant -> {
-				snapshotCalls++;
-				record(effectiveInstant);
-				if (cancelAndFailSnapshot) {
-					cancelled.set(true);
-					throw new IllegalStateException("snapshot failure after cancellation");
+			return new JourneyApplicationService(new ActiveJourneySnapshotPort() {
+				@Override
+				public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
+					snapshotCalls++;
+					record(effectiveInstant);
+					if (cancelAndFailSnapshot) {
+						cancelled.set(true);
+						throw new IllegalStateException("snapshot failure after cancellation");
+					}
+					if (snapshotFailure != null) throw snapshotFailure;
+					if (cancelAfterSnapshot) cancelled.set(true);
+					return snapshot;
 				}
-				if (snapshotFailure != null) throw snapshotFailure;
-				if (cancelAfterSnapshot) cancelled.set(true);
-				return snapshot;
+
+				@Override
+				public ActiveJourneySnapshot requireActive(Instant effectiveInstant, JourneyBoundaryObserver observer) {
+					var result = requireActive(effectiveInstant);
+					if (result.fresh()) {
+						observer.directRegistryReadSucceeded();
+						observer.freshnessAcceptedWithoutStaleArtifact();
+					}
+					return result;
+				}
 			}, (request, activeSnapshot, effectiveInstant) -> {
 				realtimeCalls++;
 				record(request);

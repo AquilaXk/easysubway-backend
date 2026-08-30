@@ -3,6 +3,7 @@ package com.easysubway.journey.readiness;
 import com.easysubway.journey.bundle.ActiveRouteBundleSnapshot;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import com.easysubway.journey.bundle.RouteBundleIdentity;
+import com.easysubway.journey.application.ServiceDayResolver;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -79,6 +80,9 @@ public final class JourneyReadinessService {
 	public ActiveReadiness active(ActiveRouteBundleSnapshot snapshot) {
 		Objects.requireNonNull(snapshot, "snapshot");
 		RouteBundleIdentity identity = snapshot.identity();
+		if (!ServiceDayResolver.TIMEZONE.equals(identity.serviceTimezone())) {
+			throw new IllegalStateException("active route bundle service timezone is not current");
+		}
 		boolean servingReady = acceptsTraffic();
 		boolean draining = !servingReady;
 		String evidenceSha256 = evidenceSha256(
@@ -93,6 +97,8 @@ public final class JourneyReadinessService {
 			"bundleId", identity.bundleId(),
 			"bundleReleaseSequence", identity.releaseSequence(),
 			"generation", snapshot.generation(),
+			"serviceTimezone", identity.serviceTimezone(),
+			"serviceDayCutoff", ServiceDayResolver.CUTOFF_LOCAL_TIME,
 			"trafficGeneration", properties.trafficGeneration(),
 			"servingReady", servingReady,
 			"draining", draining,
@@ -110,6 +116,8 @@ public final class JourneyReadinessService {
 			identity.bundleId(),
 			identity.releaseSequence(),
 			snapshot.generation(),
+			identity.serviceTimezone(),
+			ServiceDayResolver.CUTOFF_LOCAL_TIME,
 			properties.trafficGeneration(),
 			servingReady,
 			draining,
@@ -168,11 +176,19 @@ public final class JourneyReadinessService {
 		String bundleId,
 		long bundleReleaseSequence,
 		long generation,
+		String serviceTimezone,
+		String serviceDayCutoff,
 		long trafficGeneration,
 		boolean servingReady,
 		boolean draining,
 		Instant freshUntil,
 		Instant activatedAt,
 		String evidenceSha256) {
+		public ActiveReadiness {
+			if (!ServiceDayResolver.TIMEZONE.equals(serviceTimezone)
+				|| !ServiceDayResolver.CUTOFF_LOCAL_TIME.equals(serviceDayCutoff)) {
+				throw new IllegalArgumentException("active readiness service-day identity is not current");
+			}
+		}
 	}
 }

@@ -8,6 +8,10 @@ import java.util.regex.Pattern;
 public interface ActiveJourneySnapshotPort {
 	ActiveJourneySnapshot requireActive(Instant effectiveInstant);
 
+	default ActiveJourneySnapshot requireActive(Instant effectiveInstant, JourneyBoundaryObserver observer) {
+		return requireActive(effectiveInstant);
+	}
+
 	record ActiveJourneySnapshot(
 		String identity,
 		String routeBundleId,

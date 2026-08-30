@@ -14,11 +14,13 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
+import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CancellationException;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.Executors;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -50,8 +52,8 @@ class JourneyApplicationDeadlineExecutorTest {
 		var result = new JourneyExecutionFailure(NO_ROUTE);
 		when(service.execute(any())).thenReturn(result);
 
-		try (var workers = Executors.newSingleThreadExecutor()) {
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
+		try (var workers = Executors.newSingleThreadExecutor(); var measurementWorkers = Executors.newSingleThreadExecutor()) {
+			var executor = new JourneyApplicationDeadlineExecutor(service, workers, measurementWorkers, Duration.ofSeconds(1));
 
 			assertThat(executor.execute(REQUEST))
 				.isEqualTo(new JourneyApplicationDeadlineExecutor.Completed(result));
@@ -65,6 +67,39 @@ class JourneyApplicationDeadlineExecutorTest {
 			.ignoringFields("cancellationSignal")
 			.isEqualTo(REQUEST);
 		assertThat(request.getValue().isCancelled()).isFalse();
+	}
+
+	@Test
+	void measured실행은전용platformWorker에서실제서버측시간과할당을측정한다() {
+		var workerVirtualStates = new ConcurrentLinkedQueue<Boolean>();
+		var retainedBoundaryAllocation = new AtomicReference<byte[]>();
+		var service = new JourneyApplicationService(
+			effectiveInstant -> {
+				workerVirtualStates.add(Thread.currentThread().isVirtual());
+				retainedBoundaryAllocation.set(new byte[128 * 1024]);
+				throw new IllegalStateException("active snapshot unavailable");
+			},
+			(request, snapshot, effectiveInstant) -> { throw new AssertionError("realtime must not be called"); },
+			(request, snapshot, effectiveInstant, realtime) -> { throw new AssertionError("raptor must not be called"); },
+			Clock.systemUTC());
+
+		try (var searchWorkers = Executors.newVirtualThreadPerTaskExecutor();
+			var measurementWorkers = Executors.newFixedThreadPool(1, Thread.ofPlatform().factory())) {
+			var executor = new JourneyApplicationDeadlineExecutor(
+				service, searchWorkers, measurementWorkers, Duration.ofSeconds(1));
+
+			assertThat(executor.execute(REQUEST))
+				.isInstanceOf(JourneyApplicationDeadlineExecutor.Completed.class);
+			assertThat(executor.executeMeasured(REQUEST))
+				.isInstanceOf(JourneyApplicationDeadlineExecutor.MeasuredCompleted.class)
+				.satisfies(outcome -> {
+					var measured = (JourneyApplicationDeadlineExecutor.MeasuredCompleted) outcome;
+					assertThat(measured.executionNanos()).isPositive();
+					assertThat(measured.allocatedBytes()).isPositive();
+				});
+			assertThat(workerVirtualStates).containsExactly(true, false);
+			assertThat(retainedBoundaryAllocation.get()).hasSize(128 * 1024);
+		}
 	}
 
 	@Test
@@ -83,8 +118,8 @@ class JourneyApplicationDeadlineExecutorTest {
 			return new JourneyExecutionFailure(NO_ROUTE);
 		});
 
-		try (var workers = Executors.newSingleThreadExecutor()) {
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
+		try (var workers = Executors.newSingleThreadExecutor(); var measurementWorkers = Executors.newSingleThreadExecutor()) {
+			var executor = new JourneyApplicationDeadlineExecutor(service, workers, measurementWorkers, Duration.ofSeconds(1));
 
 			assertThat(executor.execute(REQUEST))
 				.isEqualTo(new JourneyApplicationDeadlineExecutor.TimedOut());
@@ -106,7 +141,7 @@ class JourneyApplicationDeadlineExecutorTest {
 			return CompletableFuture.completedFuture(task.call());
 		});
 		var executor = new JourneyApplicationDeadlineExecutor(
-			service, inlineExecutor, Duration.ofNanos(1));
+			service, inlineExecutor, inlineExecutor, Duration.ofNanos(1));
 
 		assertThat(executor.execute(REQUEST))
 			.isEqualTo(new JourneyApplicationDeadlineExecutor.TimedOut());
@@ -142,7 +177,7 @@ class JourneyApplicationDeadlineExecutorTest {
 			}));
 			return cancelledFuture;
 		});
-		var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
+		var executor = new JourneyApplicationDeadlineExecutor(service, workers, workers, Duration.ofSeconds(1));
 
 		assertThatThrownBy(() -> executor.execute(REQUEST))
 			.isInstanceOf(JourneyApplicationDeadlineExecutor.DeadlineExecutionException.class)
@@ -166,8 +201,8 @@ class JourneyApplicationDeadlineExecutorTest {
 		});
 		var cancelledRequest = copyRequest(() -> true);
 
-		try (var workers = Executors.newSingleThreadExecutor()) {
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
+		try (var workers = Executors.newSingleThreadExecutor(); var measurementWorkers = Executors.newSingleThreadExecutor()) {
+			var executor = new JourneyApplicationDeadlineExecutor(service, workers, measurementWorkers, Duration.ofSeconds(1));
 
 			assertThat(executor.execute(cancelledRequest))
 				.isEqualTo(new JourneyApplicationDeadlineExecutor.Completed(
@@ -192,8 +227,8 @@ class JourneyApplicationDeadlineExecutorTest {
 		var thrown = new AtomicReference<Throwable>();
 		var interrupted = new AtomicBoolean();
 
-		try (var workers = Executors.newSingleThreadExecutor()) {
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(5));
+		try (var workers = Executors.newSingleThreadExecutor(); var measurementWorkers = Executors.newSingleThreadExecutor()) {
+			var executor = new JourneyApplicationDeadlineExecutor(service, workers, measurementWorkers, Duration.ofSeconds(5));
 			var caller = Thread.startVirtualThread(() -> {
 				try {
 					executor.execute(REQUEST);
@@ -225,8 +260,8 @@ class JourneyApplicationDeadlineExecutorTest {
 		var cause = new IllegalStateException("planner failed");
 		when(service.execute(any())).thenThrow(cause);
 
-		try (var workers = Executors.newSingleThreadExecutor()) {
-			var executor = new JourneyApplicationDeadlineExecutor(service, workers, Duration.ofSeconds(1));
+		try (var workers = Executors.newSingleThreadExecutor(); var measurementWorkers = Executors.newSingleThreadExecutor()) {
+			var executor = new JourneyApplicationDeadlineExecutor(service, workers, measurementWorkers, Duration.ofSeconds(1));
 
 			var thrown = org.assertj.core.api.Assertions.catchThrowable(() -> executor.execute(REQUEST));
 			assertThat(thrown)
@@ -240,17 +275,17 @@ class JourneyApplicationDeadlineExecutorTest {
 
 		var validationExecutor = mock(java.util.concurrent.ExecutorService.class);
 		assertThatThrownBy(() -> new JourneyApplicationDeadlineExecutor(
-			service, validationExecutor, Duration.ZERO))
+			service, validationExecutor, validationExecutor, Duration.ZERO))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("timeout must be positive");
 		assertThatThrownBy(() -> new JourneyApplicationDeadlineExecutor(
-			service, validationExecutor, Duration.ofSeconds(Long.MAX_VALUE)))
+			service, validationExecutor, validationExecutor, Duration.ofSeconds(Long.MAX_VALUE)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("timeout is too large");
 
 		try (var rejected = Executors.newSingleThreadExecutor()) {
 			rejected.shutdown();
-			var executor = new JourneyApplicationDeadlineExecutor(service, rejected, Duration.ofSeconds(1));
+			var executor = new JourneyApplicationDeadlineExecutor(service, rejected, rejected, Duration.ofSeconds(1));
 			assertThatThrownBy(() -> executor.execute(REQUEST))
 				.isInstanceOf(JourneyApplicationDeadlineExecutor.DeadlineExecutionException.class)
 				.hasFieldOrPropertyWithValue("reason", TASK_FAILED)

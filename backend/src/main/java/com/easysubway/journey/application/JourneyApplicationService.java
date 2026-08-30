@@ -24,6 +24,7 @@ public final class JourneyApplicationService {
 
 	public JourneyExecutionResult execute(JourneyRequest request) {
 		Objects.requireNonNull(request, "request");
+		var boundaryObserver = new JourneyBoundaryObserver();
 		Instant capturedInstant = clock.instant();
 		Instant effectiveInstant = request.departure() instanceof JourneyRequest.Departure.Scheduled scheduled
 			? scheduled.requestedAt()
@@ -32,7 +33,7 @@ public final class JourneyApplicationService {
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		try {
-			snapshot = activeSnapshotPort.requireActive(effectiveInstant);
+			snapshot = activeSnapshotPort.requireActive(effectiveInstant, boundaryObserver);
 		} catch (RuntimeException exception) {
 			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
@@ -45,6 +46,7 @@ public final class JourneyApplicationService {
 
 		JourneyRealtimePort.RealtimeObservation realtime = null;
 		if (request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED) {
+			boundaryObserver.providerInvokedForRealtime();
 			try {
 				realtime = realtimePort.requireFresh(request, snapshot, effectiveInstant);
 			} catch (RuntimeException exception) {
@@ -59,6 +61,8 @@ public final class JourneyApplicationService {
 			if (!snapshot.routeBundleSha256().equals(realtime.routeBundleSha256())) {
 				return failure(JourneyExecutionFailure.Reason.REALTIME_IDENTITY_MISMATCH);
 			}
+		} else {
+			boundaryObserver.providerBypassedForTimetable();
 		}
 
 		JourneyRaptorPort.PlanResult plan;
@@ -71,6 +75,7 @@ public final class JourneyApplicationService {
 		if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 		if (plan == null) return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		if (plan.candidates().isEmpty()) return failure(JourneyExecutionFailure.Reason.NO_ROUTE);
+		boundaryObserver.noFallbackSelectedAtRouteBoundary();
 
 		try {
 			Instant validUntil = realtime == null || snapshot.validUntil().isBefore(realtime.validUntil())
@@ -81,7 +86,9 @@ public final class JourneyApplicationService {
 				capturedInstant,
 				validUntil,
 				effectiveInstant,
-				effectiveInstant.atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate(),
+				ServiceDayResolver.resolve(effectiveInstant).serviceDate(),
+				snapshot.generation(),
+				plan.scanMetrics(),
 				new JourneyExecutionResult.SourceIdentity(
 					snapshot.routeBundleId(),
 					snapshot.routeBundleSha256(),
@@ -97,7 +104,10 @@ public final class JourneyApplicationService {
 					request.maxTransfers(),
 					request.alternativeCount()
 				),
-				plan.candidates()
+				plan.candidates(),
+				request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
+					? boundaryObserver.completeTimetable()
+					: boundaryObserver.completeRealtimeWithoutReceipt()
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {

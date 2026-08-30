@@ -3,6 +3,8 @@ package com.easysubway.journey.bundle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.JourneyExecutionResult;
+import com.easysubway.journey.application.JourneyBoundaryObserver;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Clock;
 import java.time.Instant;
@@ -26,7 +28,9 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		var registry = activeRegistry(clock, runtime);
 		var adapter = new RouteBundleActiveJourneySnapshotAdapter(registry);
 
-		var snapshot = adapter.requireActive(NOW);
+		var observer = new JourneyBoundaryObserver();
+		var snapshot = adapter.requireActive(NOW, observer);
+		observer.providerBypassedForTimetable();
 
 		assertThat(snapshot.identity()).isEqualTo(MANIFEST_SHA + ":1");
 		assertThat(snapshot.routeBundleId()).isEqualTo("capital-v1");
@@ -37,6 +41,7 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(snapshot.runtimeView()).isSameAs(runtime);
 		assertThat(snapshot.validUntil()).isEqualTo(FRESH_UNTIL);
 		assertThat(snapshot.fresh()).isTrue();
+		assertThat(observer.completeTimetable()).isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
 		assertThat(clock.instantCalls()).isEqualTo(3);
 	}
 

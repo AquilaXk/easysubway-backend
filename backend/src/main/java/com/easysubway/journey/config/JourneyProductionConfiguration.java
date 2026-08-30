@@ -12,6 +12,7 @@ import com.easysubway.journey.application.StationTimetableSearchService;
 import com.easysubway.journey.activation.JourneyActivationCommandParser;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
+import com.easysubway.journey.adapter.in.web.JourneyBenchmarkObservationController;
 import com.easysubway.journey.adapter.in.web.JourneyCandidateCanaryController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessServiceTokenFilter;
@@ -30,6 +31,9 @@ import java.time.Clock;
 import java.time.Duration;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
+import java.util.concurrent.SynchronousQueue;
+import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.availability.ApplicationAvailability;
@@ -150,14 +154,28 @@ public class JourneyProductionConfiguration {
 		return Executors.newThreadPerTaskExecutor(Thread.ofVirtual().name("journey-search-", 0).factory());
 	}
 
+	@Bean(destroyMethod = "close")
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	ExecutorService journeyMeasurementExecutor() {
+		return new ThreadPoolExecutor(
+			1,
+			1,
+			0L,
+			TimeUnit.MILLISECONDS,
+			new SynchronousQueue<>(),
+			Thread.ofPlatform().name("journey-measurement-", 0).factory(),
+			new ThreadPoolExecutor.AbortPolicy());
+	}
+
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	JourneyApplicationDeadlineExecutor journeyApplicationDeadlineExecutor(
 		JourneyApplicationService service,
 		@Qualifier("journeyApplicationExecutor") ExecutorService executor,
+		@Qualifier("journeyMeasurementExecutor") ExecutorService measurementExecutor,
 		JourneySearchPolicyProperties searchPolicy
 	) {
-		return new JourneyApplicationDeadlineExecutor(service, executor, searchPolicy.timeout());
+		return new JourneyApplicationDeadlineExecutor(service, executor, measurementExecutor, searchPolicy.timeout());
 	}
 
 	@Bean
@@ -171,6 +189,7 @@ public class JourneyProductionConfiguration {
 				SEARCH_PATH,
 				STATION_TIMETABLE_PATH,
 				JourneyActivationController.PATH,
+				JourneyBenchmarkObservationController.PATH,
 				JourneyCandidateCanaryController.PATH,
 				JourneyReadinessController.CANDIDATE_PATH,
 				JourneyReadinessController.ACTIVE_PATH)
@@ -181,6 +200,8 @@ public class JourneyProductionConfiguration {
 				.requestMatchers(HttpMethod.POST, JourneyActivationController.PATH)
 				.hasRole("JOURNEY_READINESS")
 				.requestMatchers(HttpMethod.POST, JourneyCandidateCanaryController.PATH)
+				.hasRole("JOURNEY_READINESS")
+				.requestMatchers(HttpMethod.POST, JourneyBenchmarkObservationController.PATH)
 				.hasRole("JOURNEY_READINESS")
 				.requestMatchers(
 					HttpMethod.GET,
@@ -199,9 +220,11 @@ public class JourneyProductionConfiguration {
 					&& JourneyActivationController.PATH.equals(pathWithinApplication);
 				boolean canaryPost = HttpMethod.POST.matches(request.getMethod())
 					&& JourneyCandidateCanaryController.PATH.equals(pathWithinApplication);
-				response.setStatus(readinessGet || activationPost || canaryPost ? 401 : 403);
+				boolean benchmarkObservationPost = HttpMethod.POST.matches(request.getMethod())
+					&& JourneyBenchmarkObservationController.PATH.equals(pathWithinApplication);
+				response.setStatus(readinessGet || activationPost || canaryPost || benchmarkObservationPost ? 401 : 403);
 				response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
-				if (readinessGet || activationPost || canaryPost) {
+				if (readinessGet || activationPost || canaryPost || benchmarkObservationPost) {
 					response.setHeader("WWW-Authenticate", "Bearer");
 				}
 			}).accessDeniedHandler((request, response, exception) -> {

@@ -150,7 +150,7 @@ class JourneyActivationControllerTest {
 		String sha = "a".repeat(64);
 		return new JourneyReadinessService.ActiveReadiness(
 			1, "journey-v3-active-readiness", "backend-a", sha, "sha256:" + sha, sha, sha,
-			sha, "bundle-a", 1, 1, 31, true, false,
+			sha, "bundle-a", 1, 1, "Asia/Seoul", "03:00", 31, true, false,
 			Instant.parse("2026-08-14T00:00:00Z"), Instant.parse("2026-08-13T00:00:00Z"), sha);
 	}
 }

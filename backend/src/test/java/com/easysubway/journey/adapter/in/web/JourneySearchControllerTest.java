@@ -84,13 +84,15 @@ class JourneySearchControllerTest {
 			.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
 			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_SEARCH_V3"))
 			.andExpect(jsonPath("$.requestId").value(REQUEST_ID))
+			.andExpect(jsonPath("$.serviceTimezone").value("Asia/Seoul"))
+			.andExpect(jsonPath("$.serviceDayCutoff").value("03:00"))
 			.andExpect(jsonPath("$.sourceIdentity.realtimeSnapshotId").value(org.hamcrest.Matchers.nullValue()))
 			.andExpect(jsonPath("$.journeys[0].journeyId").value("journey-1"))
 			.andReturn();
 
 		assertThat(fields(result)).containsExactlyInAnyOrder(
 			"contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-			"effectiveDepartureTime", "serviceDate", "serviceTimezone", "sourceIdentity",
+			"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity",
 			"requestPolicy", "journeys"
 		);
 		verify(sessionService).authorize("session-token");
@@ -363,6 +365,7 @@ class JourneySearchControllerTest {
 		return new JourneyExecutionResult.Success(
 			REQUEST_ID, "query-1", NOW, NOW.plusSeconds(600), departure,
 			LocalDate.parse("2026-08-12"),
+			1, new com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics(1, 2, 3),
 			new JourneyExecutionResult.SourceIdentity(
 				"bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", null
 			),
@@ -374,7 +377,9 @@ class JourneySearchControllerTest {
 				2,
 				1
 			),
-			List.of(candidate)
+			List.of(candidate),
+			new JourneyExecutionResult.BoundaryObservation(
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
 		);
 	}
 

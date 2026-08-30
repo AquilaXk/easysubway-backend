@@ -187,11 +187,12 @@ class JourneyV3ContractTest {
 		Map<String, Object> document = openApi();
 		assertClosedSchema(document, "JourneySearchSuccess",
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "sourceIdentity", "requestPolicy", "journeys"),
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"),
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "sourceIdentity", "requestPolicy", "journeys"));
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"));
 		assertEnum(property(document, "JourneySearchSuccess", "contractVersion"), "JOURNEY_SEARCH_V3");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceTimezone"), "Asia/Seoul");
+		assertEnum(property(document, "JourneySearchSuccess", "serviceDayCutoff"), "03:00");
 		assertClosedSchema(document, "JourneySourceIdentity",
 			Set.of("routeBundleId", "routeBundleSha256", "timetableSnapshotId", "accessibilitySnapshotId",
 				"realtimeSnapshotId"),

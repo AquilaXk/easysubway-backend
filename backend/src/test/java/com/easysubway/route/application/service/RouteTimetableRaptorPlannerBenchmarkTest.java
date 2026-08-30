@@ -190,7 +190,6 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 		System.out.printf(
 			"BENCHMARK_RAW {\"fixture\":\"%s\",\"fixtureSha256\":\"%s\",\"scenario\":\"%s\","
 				+ "\"warmups\":%d,\"measurements\":%d,\"legacyExpandedRoutes\":%d,\"legacyExpandedTrips\":%d,"
-				+ "\"expandedRoutes\":%d,\"expandedTrips\":%d,"
 				+ "\"nanos\":%s,\"allocatedBytes\":%s}%n",
 			FIXTURE,
 			fixtureSha256,
@@ -199,8 +198,6 @@ class RouteTimetableRaptorPlannerBenchmarkTest {
 			MEASUREMENTS,
 			legacyExpandedRoutes,
 			legacyExpandedTrips,
-			raptorPlanner.lastScanMetrics().expandedRoutes(),
-			raptorPlanner.lastScanMetrics().expandedTrips(),
 			Arrays.toString(nanos),
 			Arrays.toString(allocatedBytes)
 		);
