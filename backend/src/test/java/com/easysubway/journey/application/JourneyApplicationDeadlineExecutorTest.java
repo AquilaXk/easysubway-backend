@@ -103,6 +103,38 @@ class JourneyApplicationDeadlineExecutorTest {
 	}
 
 	@Test
+	void measured실행의timeout과실패는typed결과로구분한다() throws Exception {
+		var service = mock(JourneyApplicationService.class);
+		var timedOutFuture = mock(java.util.concurrent.Future.class);
+		when(timedOutFuture.get(anyLong(), eq(TimeUnit.NANOSECONDS))).thenThrow(new TimeoutException());
+		var failedFuture = mock(java.util.concurrent.Future.class);
+		var cause = new IllegalStateException("measurement failed");
+		when(failedFuture.get(anyLong(), eq(TimeUnit.NANOSECONDS))).thenThrow(new java.util.concurrent.ExecutionException(cause));
+		var workers = mock(java.util.concurrent.ExecutorService.class);
+		when(workers.submit(any(Callable.class))).thenReturn(timedOutFuture, failedFuture);
+		var executor = new JourneyApplicationDeadlineExecutor(service, workers, workers, Duration.ofSeconds(1));
+
+		assertThat(executor.executeMeasured(REQUEST)).isEqualTo(new JourneyApplicationDeadlineExecutor.TimedOut());
+		assertThatThrownBy(() -> executor.executeMeasured(REQUEST))
+			.isInstanceOf(JourneyApplicationDeadlineExecutor.DeadlineExecutionException.class)
+			.hasFieldOrPropertyWithValue("reason", TASK_FAILED)
+			.hasCause(cause);
+		verify(timedOutFuture).cancel(true);
+	}
+
+	@Test
+	void measured값은음수를허용하지않는다() {
+		var result = new JourneyExecutionFailure(NO_ROUTE);
+
+		assertThatThrownBy(() -> new JourneyApplicationDeadlineExecutor.MeasuredCompleted(result, -1, 0))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("measured values must be nonnegative");
+		assertThatThrownBy(() -> new JourneyApplicationDeadlineExecutor.MeasuredCompleted(result, 0, -1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("measured values must be nonnegative");
+	}
+
+	@Test
 	void timeout은작업을취소하고late결과를공개하지않는다() throws Exception {
 		var service = mock(JourneyApplicationService.class);
 		var started = new CountDownLatch(1);

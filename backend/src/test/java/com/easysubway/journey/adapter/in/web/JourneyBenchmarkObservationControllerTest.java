@@ -11,6 +11,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.MeasuredCompleted;
+import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
@@ -71,6 +72,59 @@ class JourneyBenchmarkObservationControllerTest {
 		org.mockito.Mockito.verifyNoInteractions(executor);
 	}
 
+	@Test
+	void rejectsInvalidDepartureBeforeExecution() throws Exception {
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest().replace(",\"requestedAt\":\"2026-08-12T00:01:00Z\"", "")))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"));
+
+		org.mockito.Mockito.verifyNoInteractions(executor);
+	}
+
+	@Test
+	void mapsTypedTimeoutAndExecutionFailureToNonSuccessResponses() throws Exception {
+		when(executor.executeMeasured(any())).thenReturn(new TimedOut());
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isGatewayTimeout())
+			.andExpect(jsonPath("$.reason").value("TIMEOUT"));
+
+		when(executor.executeMeasured(any())).thenThrow(new IllegalStateException("measurement unavailable"));
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("UNAVAILABLE"));
+	}
+
+	@Test
+	void rejectsRequestAndActiveIdentityMismatches() throws Exception {
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success("different-request"), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("IDENTITY_MISMATCH"));
+		org.mockito.Mockito.verifyNoInteractions(readinessService);
+
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success(), 11, 12));
+		when(readinessService.active()).thenReturn(new JourneyReadinessService.ActiveReadiness(
+			1, "journey-v3-active-readiness", "backend-a", "b".repeat(64), "sha256:" + "b".repeat(64),
+			"b".repeat(64), "b".repeat(64), "b".repeat(64), "bundle-a", 1, 1, "Asia/Seoul", "03:00", 1,
+			true, false, Instant.parse("2026-08-13T00:00:00Z"), Instant.parse("2026-08-12T00:00:00Z"), "b".repeat(64)));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("IDENTITY_MISMATCH"));
+	}
+
 	private static String validRequest() {
 		return """
 			{"requestId":"01K1Y000000000000000000000","originStationId":"station-origin",
@@ -82,13 +136,17 @@ class JourneyBenchmarkObservationControllerTest {
 	}
 
 	private static JourneyExecutionResult.Success success() {
+		return success("01K1Y000000000000000000000");
+	}
+
+	private static JourneyExecutionResult.Success success(String requestId) {
 		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
 		var candidate = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300), null, null,
 			300, 0, 0, JourneyCandidate.TimeSource.TIMETABLE,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(
 				new JourneyCandidate.Ride("line-1", "trip-1", "station-destination", "station-origin",
 					"station-destination", departure, departure.plusSeconds(300), null, null)));
-		return new JourneyExecutionResult.Success("01K1Y000000000000000000000", "query-1", departure,
+		return new JourneyExecutionResult.Success(requestId, "query-1", departure,
 			departure.plusSeconds(600), departure, LocalDate.parse("2026-08-12"), 1,
 			new JourneyRaptorPort.ScanMetrics(1, 2, 3), new JourneyExecutionResult.SourceIdentity("bundle-1",
 				"a".repeat(64), "timetable-1", "accessibility-1", null),
