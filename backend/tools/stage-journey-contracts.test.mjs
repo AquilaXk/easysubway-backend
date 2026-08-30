@@ -48,6 +48,14 @@ test("CI와 release 및 Gradle은 digest-pinned Journey OCI payload의 현재 st
   assert.match(build, /payloadSha256 ==~ \/\[a-f0-9\]\{64\}\//);
   assert.match(build, /Files\.isRegularFile\(marker\.toPath\(\), java\.nio\.file\.LinkOption\.NOFOLLOW_LINKS\)/);
   assert.match(build, /marker\.getText\('UTF-8'\) != "\$\{payloadSha256\}\\n"/);
+  assert.match(build, /import org\.gradle\.process\.CommandLineArgumentProvider/);
+  assert.match(build, /inputs\.files\(providers\.provider \{[\s\S]*def bundle = contractsBundle\.orNull[\s\S]*bundle == null \|\| bundle\.isBlank\(\) \? \[\] : \[file\(bundle\)\]/);
+  assert.match(build, /\.withPropertyName\('contractsBundle'\)[\s\S]*\.withPathSensitivity\(PathSensitivity\.ABSOLUTE\)/);
+  assert.match(build, /outputs\.upToDateWhen \{[\s\S]*bundle != null && !bundle\.isBlank\(\)[\s\S]*Files\.isRegularFile\(file\(bundle\)\.toPath\(\), java\.nio\.file\.LinkOption\.NOFOLLOW_LINKS\)/);
+  assert.match(build, /executable = 'node'/);
+  assert.match(build, /args 'tools\/stage-contracts\.mjs', '--lock', 'contracts\.lock\.json'/);
+  assert.match(build, /argumentProviders\.add\(\{[\s\S]*contractsBundle\.orNull[\s\S]*return \['--input', bundle, '--output', 'build\/contracts-staging'\][\s\S]*\} as CommandLineArgumentProvider\)/);
+  assert.match(build, /throw new GradleException\('EASYSUBWAY_CONTRACTS_BUNDLE is required'\)/);
   assert.match(build, /from\(stageContracts\)/);
   assert.match(build, /from\(layout\.buildDirectory\.dir\('journey-contracts-staging'\)\)/);
 });
