@@ -74,6 +74,7 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.scanMetrics().expandedRoutes()).isGreaterThanOrEqualTo(0);
 		assertThat(result.scanMetrics().expandedTrips()).isGreaterThanOrEqualTo(0);
 		assertThat(result.scanMetrics().expandedTransfers()).isGreaterThanOrEqualTo(0);
+		assertThat(result.boundaryReceipt()).isEqualTo(JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 	}
 
 	@Test
@@ -341,7 +342,8 @@ class JourneyRaptorAdapterTest {
 		};
 		var unknownSnapshot = new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
-			GENERATION, unknown, VALID_UNTIL, true);
+			GENERATION, unknown, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 
 		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
@@ -352,7 +354,8 @@ class JourneyRaptorAdapterTest {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
-			GENERATION + 1, runtime, VALID_UNTIL, true))
+			GENERATION + 1, runtime, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("generation");
 	}
@@ -552,7 +555,8 @@ class JourneyRaptorAdapterTest {
 	) {
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
-			GENERATION, runtime, VALID_UNTIL, true);
+			GENERATION, runtime, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 	}
 
 	private static RouteTimetable timetable(boolean verifiedAccess) {

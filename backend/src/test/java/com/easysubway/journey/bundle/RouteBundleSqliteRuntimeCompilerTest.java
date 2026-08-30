@@ -59,7 +59,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			() -> false);
 		var snapshot = new ActiveJourneySnapshot(
 			"active:7", BUNDLE_ID, SHA, "timetable", "accessibility", 7, runtime,
-			DEPARTURE.plusSeconds(3600), true);
+			DEPARTURE.plusSeconds(3600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 
 		var planned = new JourneyRaptorAdapter().plan(request, snapshot, DEPARTURE, null);
 

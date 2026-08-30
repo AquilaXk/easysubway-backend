@@ -267,7 +267,8 @@ class JourneyRealtimeAdapterTest {
 	private static ActiveJourneySnapshot snapshot(JourneyRaptorRuntimeView runtime) {
 		return new ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
-			GENERATION, runtime, NOW.plusSeconds(3_600), true);
+			GENERATION, runtime, NOW.plusSeconds(3_600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 	}
 
 	private static RouteTimetable directTimetable() {

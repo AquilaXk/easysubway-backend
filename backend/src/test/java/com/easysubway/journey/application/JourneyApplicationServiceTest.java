@@ -31,7 +31,8 @@ class JourneyApplicationServiceTest {
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
 		));
-		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates, OBSERVED_SCAN);
+		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates, OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 
 		JourneyExecutionResult result = fakes.service().execute(request(
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2
@@ -102,6 +103,24 @@ class JourneyApplicationServiceTest {
 		assertThat(fakes.lastRealtime).isSameAs(REALTIME);
 		assertThat(fakes.effectiveInstants).containsExactly(CAPTURED_AT, CAPTURED_AT, CAPTURED_AT);
 		assertThat(fakes.requests).containsExactly(request, request);
+	}
+
+	@Test
+	void failsClosedWhenAnyRequiredTimetableReceiptIsUnobservable() {
+		Fakes missingSnapshotReceipt = new Fakes();
+		missingSnapshotReceipt.snapshot = snapshot(VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
+
+		assertFailure(missingSnapshotReceipt.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
+			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+
+		Fakes missingRouteReceipt = new Fakes();
+		missingRouteReceipt.planResult = planResult(
+			JourneyCandidate.TimeSource.TIMETABLE,
+			JourneyRaptorPort.RouteBoundaryReceipt.unobservable());
+
+		assertFailure(missingRouteReceipt.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
+			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 	}
 
 	@Test
@@ -231,7 +250,8 @@ class JourneyApplicationServiceTest {
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
 		Fakes emptyOutput = new Fakes();
-		emptyOutput.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(), OBSERVED_SCAN);
+		emptyOutput.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(), OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		assertFailure(emptyOutput.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.NO_ROUTE);
 	}
@@ -242,7 +262,7 @@ class JourneyApplicationServiceTest {
 		duplicate.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)
-		), OBSERVED_SCAN);
+		), OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		assertFailure(duplicate.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
@@ -250,7 +270,7 @@ class JourneyApplicationServiceTest {
 		overLimit.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
 			candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE),
 			candidate("journey-2", JourneyCandidate.TimeSource.TIMETABLE)
-		), OBSERVED_SCAN);
+		), OBSERVED_SCAN, JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		assertFailure(overLimit.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 1)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
@@ -436,9 +456,17 @@ class JourneyApplicationServiceTest {
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant validUntil, boolean fresh) {
+		return snapshot(validUntil, fresh, ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
+		Instant validUntil,
+		boolean fresh,
+		ActiveJourneySnapshotPort.SnapshotBoundaryReceipt boundaryReceipt
+	) {
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1,
-			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh
+			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh, boundaryReceipt
 		);
 	}
 
@@ -453,7 +481,15 @@ class JourneyApplicationServiceTest {
 	}
 
 	private static JourneyRaptorPort.PlanResult planResult(JourneyCandidate.TimeSource timeSource) {
-		return new JourneyRaptorPort.PlanResult("query-1", List.of(candidate("journey-1", timeSource)), OBSERVED_SCAN);
+		return planResult(timeSource, JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+	}
+
+	private static JourneyRaptorPort.PlanResult planResult(
+		JourneyCandidate.TimeSource timeSource,
+		JourneyRaptorPort.RouteBoundaryReceipt boundaryReceipt
+	) {
+		return new JourneyRaptorPort.PlanResult(
+			"query-1", List.of(candidate("journey-1", timeSource)), OBSERVED_SCAN, boundaryReceipt);
 	}
 
 	private static JourneyCandidate candidate(String journeyId, JourneyCandidate.TimeSource timeSource) {
@@ -537,15 +573,6 @@ class JourneyApplicationServiceTest {
 					return snapshot;
 				}
 
-				@Override
-				public ActiveJourneySnapshot requireActive(Instant effectiveInstant, JourneyBoundaryObserver observer) {
-					var result = requireActive(effectiveInstant);
-					if (result.fresh()) {
-						observer.directRegistryReadSucceeded();
-						observer.freshnessAcceptedWithoutStaleArtifact();
-					}
-					return result;
-				}
 			}, (request, activeSnapshot, effectiveInstant) -> {
 				realtimeCalls++;
 				record(request);

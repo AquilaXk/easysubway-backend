@@ -8,10 +8,6 @@ import java.util.regex.Pattern;
 public interface ActiveJourneySnapshotPort {
 	ActiveJourneySnapshot requireActive(Instant effectiveInstant);
 
-	default ActiveJourneySnapshot requireActive(Instant effectiveInstant, JourneyBoundaryObserver observer) {
-		return requireActive(effectiveInstant);
-	}
-
 	record ActiveJourneySnapshot(
 		String identity,
 		String routeBundleId,
@@ -21,7 +17,8 @@ public interface ActiveJourneySnapshotPort {
 		long generation,
 		JourneyRaptorRuntimeView runtimeView,
 		Instant validUntil,
-		boolean fresh
+		boolean fresh,
+		SnapshotBoundaryReceipt boundaryReceipt
 	) {
 		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 
@@ -40,6 +37,7 @@ public interface ActiveJourneySnapshotPort {
 				throw new IllegalArgumentException("runtime view generation does not match snapshot");
 			}
 			validUntil = Objects.requireNonNull(validUntil, "validUntil");
+			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
 		}
 
 		private static String requireSha256(String value) {
@@ -56,6 +54,30 @@ public interface ActiveJourneySnapshotPort {
 				throw new IllegalArgumentException(name + " must not be blank");
 			}
 			return value;
+		}
+	}
+
+	/** Immutable evidence emitted by the active-snapshot boundary for this captured snapshot. */
+	record SnapshotBoundaryReceipt(Status status, Long cacheHits, Long staleArtifactUses) {
+		enum Status { OBSERVED, UNOBSERVABLE }
+
+		public SnapshotBoundaryReceipt {
+			status = Objects.requireNonNull(status, "status");
+			if (status == Status.UNOBSERVABLE) {
+				if (cacheHits != null || staleArtifactUses != null) {
+					throw new IllegalArgumentException("unobservable snapshot receipt must not have counters");
+				}
+			} else if (cacheHits == null || cacheHits < 0 || staleArtifactUses == null || staleArtifactUses < 0) {
+				throw new IllegalArgumentException("observed snapshot receipt counters must be nonnegative");
+			}
+		}
+
+		public static SnapshotBoundaryReceipt observed(long cacheHits, long staleArtifactUses) {
+			return new SnapshotBoundaryReceipt(Status.OBSERVED, cacheHits, staleArtifactUses);
+		}
+
+		public static SnapshotBoundaryReceipt unobservable() {
+			return new SnapshotBoundaryReceipt(Status.UNOBSERVABLE, null, null);
 		}
 	}
 }

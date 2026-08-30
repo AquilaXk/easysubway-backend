@@ -1,7 +1,6 @@
 package com.easysubway.journey.bundle;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
-import com.easysubway.journey.application.JourneyBoundaryObserver;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Instant;
 import java.util.Objects;
@@ -17,14 +16,8 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 
 	@Override
 	public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
-		return requireActive(effectiveInstant, null);
-	}
-
-	@Override
-	public ActiveJourneySnapshot requireActive(Instant effectiveInstant, JourneyBoundaryObserver observer) {
 		Objects.requireNonNull(effectiveInstant, "effectiveInstant");
 		var active = registry.activeSnapshot();
-		if (observer != null) observer.directRegistryReadSucceeded();
 		if (!(active.runtimeView() instanceof JourneyRaptorRuntimeView runtimeView)) {
 			throw new IllegalStateException("active route-bundle runtime is not a Journey RAPTOR runtime");
 		}
@@ -42,10 +35,9 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 			active.generation(),
 			runtimeView,
 			identity.freshUntilInstant(),
-			fresh);
-		if (fresh && observer != null) {
-			observer.freshnessAcceptedWithoutStaleArtifact();
-		}
+			fresh,
+			fresh ? ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
+				: ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
 		return snapshot;
 	}
 }

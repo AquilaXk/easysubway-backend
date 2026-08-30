@@ -24,7 +24,6 @@ public final class JourneyApplicationService {
 
 	public JourneyExecutionResult execute(JourneyRequest request) {
 		Objects.requireNonNull(request, "request");
-		var boundaryObserver = new JourneyBoundaryObserver();
 		Instant capturedInstant = clock.instant();
 		Instant effectiveInstant = request.departure() instanceof JourneyRequest.Departure.Scheduled scheduled
 			? scheduled.requestedAt()
@@ -33,7 +32,7 @@ public final class JourneyApplicationService {
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		try {
-			snapshot = activeSnapshotPort.requireActive(effectiveInstant, boundaryObserver);
+			snapshot = activeSnapshotPort.requireActive(effectiveInstant);
 		} catch (RuntimeException exception) {
 			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
@@ -43,10 +42,14 @@ public final class JourneyApplicationService {
 		if (!snapshot.fresh() || !isCurrent(snapshot.validUntil(), capturedInstant, effectiveInstant)) {
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_STALE);
 		}
+		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
+			&& snapshot.boundaryReceipt().status()
+				!= ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED) {
+			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+		}
 
 		JourneyRealtimePort.RealtimeObservation realtime = null;
 		if (request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED) {
-			boundaryObserver.providerInvokedForRealtime();
 			try {
 				realtime = realtimePort.requireFresh(request, snapshot, effectiveInstant);
 			} catch (RuntimeException exception) {
@@ -61,8 +64,6 @@ public final class JourneyApplicationService {
 			if (!snapshot.routeBundleSha256().equals(realtime.routeBundleSha256())) {
 				return failure(JourneyExecutionFailure.Reason.REALTIME_IDENTITY_MISMATCH);
 			}
-		} else {
-			boundaryObserver.providerBypassedForTimetable();
 		}
 
 		JourneyRaptorPort.PlanResult plan;
@@ -74,9 +75,11 @@ public final class JourneyApplicationService {
 		}
 		if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 		if (plan == null) return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
+			&& plan.boundaryReceipt().status() != JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED) {
+			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
+		}
 		if (plan.candidates().isEmpty()) return failure(JourneyExecutionFailure.Reason.NO_ROUTE);
-		boundaryObserver.noFallbackSelectedAtRouteBoundary();
-
 		try {
 			Instant validUntil = realtime == null || snapshot.validUntil().isBefore(realtime.validUntil())
 				? snapshot.validUntil() : realtime.validUntil();
@@ -105,14 +108,27 @@ public final class JourneyApplicationService {
 					request.alternativeCount()
 				),
 				plan.candidates(),
-				request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
-					? boundaryObserver.completeTimetable()
-					: boundaryObserver.completeRealtimeWithoutReceipt()
+				boundaryObservation(request, snapshot, plan)
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		}
+	}
+
+	private static JourneyExecutionResult.BoundaryObservation boundaryObservation(
+		JourneyRequest request,
+		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+		JourneyRaptorPort.PlanResult plan
+	) {
+		if (request.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
+			return JourneyExecutionResult.BoundaryObservation.unobservable();
+		}
+		return JourneyExecutionResult.BoundaryObservation.observed(
+			0,
+			snapshot.boundaryReceipt().cacheHits(),
+			snapshot.boundaryReceipt().staleArtifactUses(),
+			plan.boundaryReceipt().fallbackUses());
 	}
 
 	private static boolean isCurrent(Instant validUntil, Instant capturedInstant, Instant effectiveInstant) {

@@ -3,8 +3,7 @@ package com.easysubway.journey.bundle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.easysubway.journey.application.JourneyExecutionResult;
-import com.easysubway.journey.application.JourneyBoundaryObserver;
+import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Clock;
 import java.time.Instant;
@@ -28,9 +27,7 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		var registry = activeRegistry(clock, runtime);
 		var adapter = new RouteBundleActiveJourneySnapshotAdapter(registry);
 
-		var observer = new JourneyBoundaryObserver();
-		var snapshot = adapter.requireActive(NOW, observer);
-		observer.providerBypassedForTimetable();
+		var snapshot = adapter.requireActive(NOW);
 
 		assertThat(snapshot.identity()).isEqualTo(MANIFEST_SHA + ":1");
 		assertThat(snapshot.routeBundleId()).isEqualTo("capital-v1");
@@ -41,8 +38,17 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(snapshot.runtimeView()).isSameAs(runtime);
 		assertThat(snapshot.validUntil()).isEqualTo(FRESH_UNTIL);
 		assertThat(snapshot.fresh()).isTrue();
-		assertThat(observer.completeTimetable()).isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
+		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.observed(0, 0));
 		assertThat(clock.instantCalls()).isEqualTo(3);
+	}
+
+	@Test
+	void marksTheSnapshotReceiptUnobservableWhenFreshnessCannotBeProved() {
+		var adapter = new RouteBundleActiveJourneySnapshotAdapter(
+			activeRegistry(Clock.fixed(NOW, ZoneOffset.UTC), new TestRuntime(MANIFEST_SHA, 1)));
+
+		assertThat(adapter.requireActive(FRESH_UNTIL).boundaryReceipt())
+			.isEqualTo(SnapshotBoundaryReceipt.unobservable());
 	}
 
 	@Test

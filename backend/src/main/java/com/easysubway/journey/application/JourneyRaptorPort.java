@@ -13,12 +13,42 @@ public interface JourneyRaptorPort {
 		JourneyRealtimePort.RealtimeObservation realtimeOrNull
 	);
 
-	record PlanResult(String queryId, List<JourneyCandidate> candidates, ScanMetrics scanMetrics) {
+	record PlanResult(
+		String queryId,
+		List<JourneyCandidate> candidates,
+		ScanMetrics scanMetrics,
+		RouteBoundaryReceipt boundaryReceipt
+	) {
 		public PlanResult {
 			Objects.requireNonNull(queryId, "queryId");
 			if (queryId.isBlank()) throw new IllegalArgumentException("queryId must not be blank");
 			candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
+			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
+		}
+	}
+
+	/** Immutable evidence emitted by the route-planning boundary for this plan result. */
+	record RouteBoundaryReceipt(Status status, Long fallbackUses) {
+		enum Status { OBSERVED, UNOBSERVABLE }
+
+		public RouteBoundaryReceipt {
+			status = Objects.requireNonNull(status, "status");
+			if (status == Status.UNOBSERVABLE) {
+				if (fallbackUses != null) {
+					throw new IllegalArgumentException("unobservable route receipt must not have counters");
+				}
+			} else if (fallbackUses == null || fallbackUses < 0) {
+				throw new IllegalArgumentException("observed route receipt fallback uses must be nonnegative");
+			}
+		}
+
+		public static RouteBoundaryReceipt observed(long fallbackUses) {
+			return new RouteBoundaryReceipt(Status.OBSERVED, fallbackUses);
+		}
+
+		public static RouteBoundaryReceipt unobservable() {
+			return new RouteBoundaryReceipt(Status.UNOBSERVABLE, null);
 		}
 	}
 

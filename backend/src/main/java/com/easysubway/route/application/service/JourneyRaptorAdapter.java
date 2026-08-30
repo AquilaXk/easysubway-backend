@@ -49,7 +49,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = planned.itineraries();
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 		if (itineraries.isEmpty()) {
-			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics());
+			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics(),
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
@@ -59,7 +60,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			!= candidates.size()) {
 			throw new IllegalArgumentException("RAPTOR returned duplicate Journey paths");
 		}
-		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics());
+		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 	}
 
 	static SearchRouteV2Command toCommand(JourneyRequest request, Instant effectiveInstant) {
