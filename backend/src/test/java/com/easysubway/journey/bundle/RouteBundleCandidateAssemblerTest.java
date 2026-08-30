@@ -94,6 +94,36 @@ class RouteBundleCandidateAssemblerTest {
 	}
 
 	@Test
+	void servingEvidenceAcceptsObservedAndUnobservableValues() {
+		assertThat(RouteBundleServingEvidence.observed("a".repeat(64), "b".repeat(64)))
+			.isEqualTo(new RouteBundleServingEvidence(
+				RouteBundleServingEvidence.Status.OBSERVED, "a".repeat(64), "b".repeat(64)));
+		assertThat(RouteBundleServingEvidence.unobservable())
+			.isEqualTo(new RouteBundleServingEvidence(
+				RouteBundleServingEvidence.Status.UNOBSERVABLE, null, null));
+	}
+
+	@Test
+	void servingEvidenceRejectsInvalidStatusAndDigestCombinations() {
+		assertThatThrownBy(() -> new RouteBundleServingEvidence(null, null, null))
+			.isInstanceOf(NullPointerException.class);
+
+		for (var evidence : List.<java.util.function.Supplier<RouteBundleServingEvidence>>of(
+			() -> new RouteBundleServingEvidence(RouteBundleServingEvidence.Status.UNOBSERVABLE,
+				"a".repeat(64), null),
+			() -> new RouteBundleServingEvidence(RouteBundleServingEvidence.Status.UNOBSERVABLE,
+				null, "b".repeat(64)))) {
+			assertThatThrownBy(evidence::get).isInstanceOf(IllegalArgumentException.class);
+		}
+
+		for (var evidence : List.<java.util.function.Supplier<RouteBundleServingEvidence>>of(
+			() -> RouteBundleServingEvidence.observed(null, "b".repeat(64)),
+			() -> RouteBundleServingEvidence.observed("a".repeat(64), null))) {
+			assertThatThrownBy(evidence::get).isInstanceOf(NullPointerException.class);
+		}
+	}
+
+	@Test
 	void rejectsInvalidGenerationAndVerificationTimeBeforeCompilation() {
 		Fixture fixture = fixture();
 		var calls = new AtomicInteger();
