@@ -484,6 +484,7 @@ class JourneyV3RuntimeParityTest {
 		);
 		return new JourneyExecutionResult.Success(
 			REQUEST_ID, "query-1", NOW, NOW.plusSeconds(600), departure, LocalDate.of(2026, 8, 24),
+			1, new com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics(1, 2, 3),
 			new JourneyExecutionResult.SourceIdentity(
 				"bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", null
 			),
@@ -495,7 +496,9 @@ class JourneyV3RuntimeParityTest {
 				2,
 				1
 			),
-			List.of(journey)
+			List.of(journey),
+			new JourneyExecutionResult.BoundaryObservation(
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
 		);
 	}
 

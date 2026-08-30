@@ -1,6 +1,7 @@
 package com.easysubway.journey.bundle;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.JourneyBoundaryObserver;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Instant;
 import java.util.Objects;
@@ -16,8 +17,14 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 
 	@Override
 	public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
+		return requireActive(effectiveInstant, null);
+	}
+
+	@Override
+	public ActiveJourneySnapshot requireActive(Instant effectiveInstant, JourneyBoundaryObserver observer) {
 		Objects.requireNonNull(effectiveInstant, "effectiveInstant");
 		var active = registry.activeSnapshot();
+		if (observer != null) observer.directRegistryReadSucceeded();
 		if (!(active.runtimeView() instanceof JourneyRaptorRuntimeView runtimeView)) {
 			throw new IllegalStateException("active route-bundle runtime is not a Journey RAPTOR runtime");
 		}
@@ -26,7 +33,7 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 		var manifestSha256 = active.admissionEvidence().manifestSha256();
 		var fresh = !effectiveInstant.isBefore(identity.activeFromInstant())
 			&& effectiveInstant.isBefore(identity.freshUntilInstant());
-		return new ActiveJourneySnapshot(
+		var snapshot = new ActiveJourneySnapshot(
 			manifestSha256 + ":" + active.generation(),
 			identity.bundleId(),
 			manifestSha256,
@@ -36,5 +43,9 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 			runtimeView,
 			identity.freshUntilInstant(),
 			fresh);
+		if (fresh && observer != null) {
+			observer.freshnessAcceptedWithoutStaleArtifact();
+		}
+		return snapshot;
 	}
 }

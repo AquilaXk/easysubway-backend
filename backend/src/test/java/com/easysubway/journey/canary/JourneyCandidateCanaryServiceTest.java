@@ -33,6 +33,7 @@ class JourneyCandidateCanaryServiceTest {
 
 	private static final Instant CAPTURED_AT = Instant.parse("2026-08-13T03:00:00Z");
 	private static final String SHA_A = JourneyCandidateCanaryCommandParserTest.SHA_A;
+	private static final JourneyRaptorPort.ScanMetrics OBSERVED_SCAN = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
 	private final RouteBundleActivationRegistry registry = mock(RouteBundleActivationRegistry.class);
 	private final JourneyRaptorPort raptorPort = mock(JourneyRaptorPort.class);
 	private final JourneyCandidateCanaryService service = new JourneyCandidateCanaryService(
@@ -45,7 +46,7 @@ class JourneyCandidateCanaryServiceTest {
 		when(registry.candidateSnapshot()).thenReturn(candidateProjection(staged));
 		when(raptorPort.plan(any(), any(), any(), org.mockito.ArgumentMatchers.isNull()))
 			.thenReturn(new JourneyRaptorPort.PlanResult(
-				JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class))));
+				JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN));
 
 		var result = service.execute(command(SHA_A, 1));
 
@@ -120,8 +121,8 @@ class JourneyCandidateCanaryServiceTest {
 			.thenThrow(new IllegalStateException("synthetic"))
 			.thenReturn(
 				null,
-				new JourneyRaptorPort.PlanResult("other-query", List.of(mock(JourneyCandidate.class))),
-				new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of()));
+				new JourneyRaptorPort.PlanResult("other-query", List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN),
+				new JourneyRaptorPort.PlanResult(JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(), OBSERVED_SCAN));
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
 
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));
@@ -139,7 +140,7 @@ class JourneyCandidateCanaryServiceTest {
 		var staged = staged(SHA_A, 1);
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 		when(raptorPort.plan(any(), any(), any(), any())).thenReturn(new JourneyRaptorPort.PlanResult(
-			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class))));
+			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN));
 		when(registry.candidateSnapshot()).thenReturn(new RouteBundleActivationRegistry.CandidateSnapshot(
 			2, identity("b"), evidence("b".repeat(64)), CAPTURED_AT, CAPTURED_AT));
 
@@ -156,7 +157,7 @@ class JourneyCandidateCanaryServiceTest {
 		when(stale.reason()).thenReturn(RouteBundleActivationException.Reason.BUNDLE_STALE);
 		when(registry.candidateExecutionSnapshot()).thenReturn(staged);
 		when(raptorPort.plan(any(), any(), any(), any())).thenReturn(new JourneyRaptorPort.PlanResult(
-			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class))));
+			JourneyCandidateCanaryCommandParserTest.REQUEST_ID, List.of(mock(JourneyCandidate.class)), OBSERVED_SCAN));
 		when(registry.candidateSnapshot()).thenThrow(stale);
 
 		assertKind(JourneyCandidateCanaryException.Kind.UNAVAILABLE, () -> service.execute(command(SHA_A, 1)));

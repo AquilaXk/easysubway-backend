@@ -355,15 +355,16 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	void scansOnlyMarkedRoutePatterns() {
 		var compiled = planner.compile(disconnectedRoutesTimetable());
 
-		assertThat(planner.search(command(WEDNESDAY, 8, 50), compiled)).hasSize(1);
+		var first = planner.searchWithDiagnostics(command(WEDNESDAY, 8, 50), compiled);
+		assertThat(first.itineraries()).hasSize(1);
 
-		var metrics = planner.lastScanMetrics();
+		var metrics = first.scanMetrics();
 		assertThat(metrics.expandedRoutes()).isOne();
 		assertThat(metrics.expandedTrips()).isOne();
 		assertThat(metrics.expandedTransfers()).isZero();
 
-		planner.search(command(WEDNESDAY, 8, 50), compiled);
-		assertThat(planner.lastScanMetrics().workspaceIdentity()).isEqualTo(metrics.workspaceIdentity());
+		var repeated = planner.searchWithDiagnostics(command(WEDNESDAY, 8, 50), compiled);
+		assertThat(repeated.scanMetrics()).isEqualTo(metrics);
 	}
 
 	@Test
@@ -374,17 +375,19 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 1);
 		var compiled = planner.compile(withAccess(oneTransferTimetable(), verifiedTransferAccess()));
 
-		assertThat(planner.search(command, compiled)).isNotEmpty();
-		var firstMetrics = planner.lastScanMetrics();
+		var first = planner.searchWithDiagnostics(command, compiled);
+		assertThat(first.itineraries()).isNotEmpty();
+		var firstMetrics = first.scanMetrics();
 		assertThat(firstMetrics.expandedTransfers()).isPositive();
 
-		assertThat(planner.search(command, compiled)).isNotEmpty();
-		var repeatedMetrics = planner.lastScanMetrics();
+		var repeated = planner.searchWithDiagnostics(command, compiled);
+		assertThat(repeated.itineraries()).isNotEmpty();
+		var repeatedMetrics = repeated.scanMetrics();
 		assertThat(repeatedMetrics.expandedTransfers()).isEqualTo(firstMetrics.expandedTransfers());
-		assertThat(repeatedMetrics.workspaceIdentity()).isEqualTo(firstMetrics.workspaceIdentity());
 
-		assertThat(planner.search(command(WEDNESDAY, 8, 50), planner.compile(disconnectedRoutesTimetable()))).hasSize(1);
-		assertThat(planner.lastScanMetrics().expandedTransfers()).isZero();
+		var unrelated = planner.searchWithDiagnostics(command(WEDNESDAY, 8, 50), planner.compile(disconnectedRoutesTimetable()));
+		assertThat(unrelated.itineraries()).hasSize(1);
+		assertThat(unrelated.scanMetrics().expandedTransfers()).isZero();
 	}
 
 	@Test

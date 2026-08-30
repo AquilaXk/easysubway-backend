@@ -73,7 +73,7 @@ class JourneyV3ContractTest {
 		new ArtifactDigest("journey-v3-error-catalog.json", "0f9fe2731765b5a704c3493cd85fd5280e4629c8074269ac980edaa9303a7095"),
 		new ArtifactDigest("journey-v3-error-disposition.json", "2452ba70dd4109eb01b5b1714151002333c8a08bd3c1b48494d3590f1d3686b0"),
 		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
-		new ArtifactDigest("journey-v3.openapi.yaml", "a523a0502008e03c18d46bf65dff5ef82d8a88e27d93c0f7b67f8583e042c21c")
+		new ArtifactDigest("journey-v3.openapi.yaml", "4c229b8a85d3d95ad55465963a2f76f446ba4b620b819b2f07a0c1a4c24da805")
 	);
 
 	@Test
@@ -187,11 +187,12 @@ class JourneyV3ContractTest {
 		Map<String, Object> document = openApi();
 		assertClosedSchema(document, "JourneySearchSuccess",
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "sourceIdentity", "requestPolicy", "journeys"),
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"),
 			Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "sourceIdentity", "requestPolicy", "journeys"));
+				"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity", "requestPolicy", "journeys"));
 		assertEnum(property(document, "JourneySearchSuccess", "contractVersion"), "JOURNEY_SEARCH_V3");
 		assertEnum(property(document, "JourneySearchSuccess", "serviceTimezone"), "Asia/Seoul");
+		assertEnum(property(document, "JourneySearchSuccess", "serviceDayCutoff"), "03:00");
 		assertClosedSchema(document, "JourneySourceIdentity",
 			Set.of("routeBundleId", "routeBundleSha256", "timetableSnapshotId", "accessibilitySnapshotId",
 				"realtimeSnapshotId"),

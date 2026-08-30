@@ -25,6 +25,7 @@ import com.easysubway.journey.application.StationTimetableSearchService;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
 import com.easysubway.journey.adapter.in.web.JourneyCandidateCanaryController;
+import com.easysubway.journey.adapter.in.web.JourneyBenchmarkObservationController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.bundle.ActiveRouteBundleSnapshot;
 import com.easysubway.journey.bundle.RouteBundleAdmissionEvidence;
@@ -76,6 +77,7 @@ class JourneyProductionConfigurationTest {
 	private static final String ACTIVE_READINESS_PATH = "/internal/v1/journey/readiness/active";
 	private static final String ACTIVATION_PATH = "/internal/v1/journey/activation";
 	private static final String CANARY_PATH = "/internal/v1/journey/canary";
+	private static final String BENCHMARK_OBSERVATION_PATH = "/internal/v1/journey/benchmark-observation";
 	private static final Instant VERIFIED_AT = Instant.parse("2026-08-12T00:00:00Z");
 	private static final Instant STAGED_AT = Instant.parse("2026-08-12T00:00:01Z");
 	private static final Instant ACTIVATED_AT = Instant.parse("2026-08-12T00:00:02Z");
@@ -89,6 +91,7 @@ class JourneyProductionConfigurationTest {
 			JourneyReadinessController.class,
 			JourneyActivationController.class,
 			JourneyCandidateCanaryController.class,
+			JourneyBenchmarkObservationController.class,
 			JourneyEndpointProbeController.class
 		);
 
@@ -108,7 +111,8 @@ class JourneyProductionConfigurationTest {
 			assertThat(context.getBean(JourneyRealtimePort.class)).isInstanceOf(JourneyRealtimeAdapter.class);
 			assertThat(context).hasSingleBean(JourneyApplicationService.class);
 			assertThat(context).hasSingleBean(StationTimetableSearchService.class);
-			assertThat(context).hasSingleBean(ExecutorService.class);
+			assertThat(context.getBeansOfType(ExecutorService.class)).hasSize(2)
+				.containsKeys("journeyApplicationExecutor", "journeyMeasurementExecutor");
 			assertThat(context).hasSingleBean(JourneyApplicationDeadlineExecutor.class);
 			assertThat(context).hasSingleBean(JourneyReadinessProperties.class);
 			assertThat(context).hasSingleBean(JourneyReadinessService.class);
@@ -117,6 +121,29 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyActivationController.class);
 			assertThat(context).hasSingleBean(JourneyCandidateCanaryService.class);
 			assertThat(context).hasSingleBean(JourneyCandidateCanaryController.class);
+			assertThat(context).hasSingleBean(JourneyBenchmarkObservationController.class);
+		});
+	}
+
+	@Test
+	@DisplayName("internal benchmark observation은 readiness Bearer로 exact POST만 허용한다")
+	void benchmarkObservationIngressRequiresReadinessBearer() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+				.apply(springSecurity())
+				.build();
+
+			mockMvc.perform(post(BENCHMARK_OBSERVATION_PATH)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content("{}"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(BENCHMARK_OBSERVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 		});
 	}
 
@@ -268,15 +295,21 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("운영 Journey executor는 context 종료 때 shutdown된다")
-	void productionExecutorShutsDownWithContext() {
+	@DisplayName("운영 Journey executors는 context 종료 때 shutdown된다")
+	void productionExecutorsShutDownWithContext() {
 		var executor = new AtomicReference<ExecutorService>();
+		var measurementExecutor = new AtomicReference<ExecutorService>();
 		validProductionContext().run(context -> {
 			executor.set(context.getBean("journeyApplicationExecutor", ExecutorService.class));
+			measurementExecutor.set(context.getBean("journeyMeasurementExecutor", ExecutorService.class));
 			assertThat(executor.get()).isNotNull();
 			assertThat(executor.get().isShutdown()).isFalse();
+			assertThat(measurementExecutor.get()).isNotNull();
+			assertThat(measurementExecutor.get()).isNotSameAs(executor.get());
+			assertThat(measurementExecutor.get().isShutdown()).isFalse();
 		});
 		assertThat(executor.get().isShutdown()).isTrue();
+		assertThat(measurementExecutor.get().isShutdown()).isTrue();
 	}
 
 	@Test

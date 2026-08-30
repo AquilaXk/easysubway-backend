@@ -92,6 +92,7 @@ class JourneySearchResponseMapperTest {
 			  "effectiveDepartureTime":"2026-08-12T00:01:00Z",
 			  "serviceDate":"2026-08-12",
 			  "serviceTimezone":"Asia/Seoul",
+			  "serviceDayCutoff":"03:00",
 			  "sourceIdentity":{
 			    "routeBundleId":"bundle-1",
 			    "routeBundleSha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
@@ -268,6 +269,8 @@ class JourneySearchResponseMapperTest {
 			VALID_UNTIL,
 			EFFECTIVE_DEPARTURE,
 			LocalDate.parse("2026-08-12"),
+			1,
+			new com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics(1, 2, 3),
 			new JourneyExecutionResult.SourceIdentity(
 				"bundle-1",
 				"a".repeat(64),
@@ -283,7 +286,9 @@ class JourneySearchResponseMapperTest {
 				3,
 				journeys.size()
 			),
-			journeys
+			journeys,
+			new JourneyExecutionResult.BoundaryObservation(
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
 		);
 	}
 }

@@ -149,13 +149,15 @@ class JourneyCandidateTest {
 		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", "BAD", new TestRealtimeView("realtime-1", "BAD", 1), ARRIVAL, true
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult(" ", List.of()))
+		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult(" ", List.of(),
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3)))
 			.isInstanceOf(IllegalArgumentException.class);
 
 		List<JourneyCandidate> candidates = new ArrayList<>(List.of(candidate(
 			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50
 		)));
-		JourneyRaptorPort.PlanResult result = new JourneyRaptorPort.PlanResult("query-1", candidates);
+		JourneyRaptorPort.PlanResult result = new JourneyRaptorPort.PlanResult("query-1", candidates,
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3));
 		candidates.clear();
 		assertThat(result.candidates()).extracting(JourneyCandidate::journeyId).containsExactly("journey-1");
 		assertThatThrownBy(() -> result.candidates().clear()).isInstanceOf(UnsupportedOperationException.class);

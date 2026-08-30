@@ -22,7 +22,8 @@ final class JourneySearchResponseMapper {
 			success.validUntil().toString(),
 			success.effectiveDepartureTime().toString(),
 			success.serviceDate().toString(),
-			success.serviceTimezone(),
+			success.serviceDayIdentity().timezone(),
+			success.serviceDayIdentity().cutoffLocalTime(),
 			mapSourceIdentity(success.sourceIdentity()),
 			mapRequestPolicy(success.requestPolicy()),
 			success.journeys().stream().map(JourneySearchResponseMapper::mapJourney).toList()
@@ -174,6 +175,7 @@ final class JourneySearchResponseMapper {
 		String effectiveDepartureTime,
 		String serviceDate,
 		String serviceTimezone,
+		String serviceDayCutoff,
 		SourceIdentityResponse sourceIdentity,
 		RequestPolicyResponse requestPolicy,
 		List<JourneyResponse> journeys

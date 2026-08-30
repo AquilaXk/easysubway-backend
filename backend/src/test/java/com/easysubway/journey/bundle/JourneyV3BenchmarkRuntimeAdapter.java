@@ -1,11 +1,7 @@
 package com.easysubway.journey.bundle;
 
-import com.easysubway.journey.application.JourneyApplicationService;
-import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyExecutionResult;
-import com.easysubway.journey.application.JourneyRealtimePort;
-import com.easysubway.journey.application.JourneyRequest;
-import com.easysubway.route.application.service.JourneyRaptorAdapter;
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.core.JsonFactory;
@@ -16,11 +12,7 @@ import java.nio.file.Files;
 import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.security.MessageDigest;
-import java.time.Clock;
 import java.time.Instant;
-import java.time.LocalDate;
-import java.time.LocalTime;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -32,21 +24,6 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 	private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-	private final JourneyApplicationService journey;
-	private final JourneyRaptorAdapter raptor;
-	private final MutableCounters counters;
-	private final Instant activeFrom;
-	private final Instant freshUntil;
-
-	private JourneyV3BenchmarkRuntimeAdapter(JourneyApplicationService journey, JourneyRaptorAdapter raptor,
-		MutableCounters counters, Instant activeFrom, Instant freshUntil) {
-		this.journey = journey;
-		this.raptor = raptor;
-		this.counters = counters;
-		this.activeFrom = activeFrom;
-		this.freshUntil = freshUntil;
-	}
-
 	public record ExpectedIdentity(String descriptorSha256, String receiptSha256, String routeBundleSha256,
 		String deploymentRevision) { }
 	public record Loaded(byte[] descriptorBytes, byte[] receiptBytes,
@@ -55,8 +32,20 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 		String currentKeyPem, RouteBundlePublicationDescriptor descriptor) { }
 	public record Verified(Loaded loaded, RouteBundlePublicationDescriptor descriptor,
 		RouteBundleObjectAdmission.VerifiedPublicationObjectAdmission admission) { }
-	public record Counters(long artifactReadCount, long artifactReadBytes, long activeSnapshotLookups, long searchCalls,
-		long providerCalls, long cacheHits, long staleArtifactUses, long fallbackUses) { }
+	public record Compiled(String activationRequestIdentity,
+		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity,
+		ActiveServingProjection activeServingProjection) { }
+	public record ActiveServingProjection(
+		String releaseTupleSha256,
+		String backendImageDigest,
+		String backendConfigSha256,
+		String journeyContractSha256,
+		String routeBundleManifestSha256,
+		long candidateGeneration,
+		long trafficGeneration,
+		String deploymentRevision,
+		String activeReadinessEvidenceDigest,
+		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity) { }
 
 	public static ExpectedIdentity expectedIdentity(Map<String, String> environment) {
 		return new ExpectedIdentity(required(environment, "EASYSUBWAY_JOURNEY_V3_DESCRIPTOR_SHA256"),
@@ -111,65 +100,56 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 			"expected deployment revision is invalid");
 	}
 
-	public static JourneyV3BenchmarkRuntimeAdapter compile(Verified verified) {
+	public static Compiled compile(Verified verified) {
 		Loaded loaded = verified.loaded();
 		RouteBundlePublicationDescriptor descriptor = verified.descriptor();
-		var counters = new MutableCounters(loaded.artifactReadCount(), loaded.artifactReadBytes());
+		if (!descriptor.descriptorSha256().equals(loaded.descriptor().descriptorSha256())) {
+			throw new IllegalArgumentException("verified descriptor does not match loaded descriptor");
+		}
+		ActiveServingProjection projection = activeServingProjection(loaded, descriptor);
 		var admitted = verified.admission();
-		var registry = new RouteBundleActivationRegistry(Clock.systemUTC());
-		var candidate = new RouteBundleCandidateAssembler().assemble(admitted, 1, Instant.now());
-		registry.stage(candidate, 0);
-		registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
-		var raptor = new JourneyRaptorAdapter();
-		ActiveJourneySnapshotPort snapshots = instant -> {
-			counters.activeSnapshotLookups++;
-			return new RouteBundleActiveJourneySnapshotAdapter(registry).requireActive(instant);
-		};
-		return new JourneyV3BenchmarkRuntimeAdapter(new JourneyApplicationService(
-			snapshots, realtimeMustNotBeCalled(), raptor, Clock.systemUTC()),
-			raptor, counters, candidate.identity().activeFromInstant(), candidate.identity().freshUntilInstant());
+		new RouteBundleCandidateAssembler().assemble(admitted, 1, Instant.now());
+		return new Compiled(loaded.activationRequestIdentity(), projection.activeServingIdentity(), projection);
 	}
 
-	public JourneyExecutionResult search(JourneyRequest request) {
-		counters.searchCalls++;
-		return journey.execute(request);
-	}
-
-	public long[] lastScanMetrics() {
+	private static ActiveServingProjection activeServingProjection(
+		Loaded loaded,
+		RouteBundlePublicationDescriptor descriptor
+	) {
 		try {
-			var field = JourneyRaptorAdapter.class.getDeclaredField("planner");
-			field.setAccessible(true);
-			Object planner = field.get(raptor);
-			var last = planner.getClass().getDeclaredMethod("lastScanMetrics");
-			last.setAccessible(true);
-			Object metrics = last.invoke(planner);
-			return new long[] { metric(metrics, "expandedRoutes"), metric(metrics, "expandedTrips"), metric(metrics, "expandedTransfers") };
-		} catch (ReflectiveOperationException exception) {
-			throw new IllegalStateException("Journey V3 RAPTOR scan metrics are unavailable", exception);
+			JsonNode receipt = JSON.readTree(loaded.receiptBytes());
+			JsonNode release = object(receipt, "releaseIdentity", Set.of("tupleSha256", "backendImageDigest",
+				"backendConfigDigest", "journeyContractDigest", "serverRouteBundleDigest", "deploymentRevision",
+				"environmentIdentity", "candidateGeneration", "trafficGeneration"));
+			String deploymentRevision = text(release, "deploymentRevision");
+			verifyActiveReceipt(loaded.receiptBytes(), descriptor.admissionEvidence().manifestSha256(), deploymentRevision);
+			var activeServingIdentity = new JourneyExecutionResult.ActiveServingIdentity(
+				JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+				descriptor.descriptorSha256(),
+				sha(loaded.receiptBytes()),
+				text(release, "tupleSha256"),
+				deploymentRevision,
+				ServiceDayResolver.CUTOFF_LOCAL_TIME
+			);
+			JsonNode candidate = object(receipt, "candidate", Set.of("deploymentName", "candidateEvidenceDigest",
+				"canaryEvidenceDigest", "observationEvidenceDigest", "candidateAdmissionSha256",
+				"activeReadinessEvidenceDigest"));
+			return new ActiveServingProjection(
+				digestValue(text(release, "tupleSha256")),
+				text(release, "backendImageDigest"),
+				digestValue(text(release, "backendConfigDigest")),
+				digestValue(text(release, "journeyContractDigest")),
+				descriptor.admissionEvidence().manifestSha256(),
+				integer(release, "candidateGeneration"),
+				integer(release, "trafficGeneration"),
+				deploymentRevision,
+				text(candidate, "activeReadinessEvidenceDigest"),
+				activeServingIdentity);
+		} catch (IOException exception) {
+			throw new IllegalArgumentException("verified active receipt cannot be read", exception);
 		}
 	}
 
-	public Counters counters() { return counters.snapshot(); }
-
-	/** Selects a scheduled instant from the verified active bundle validity window. */
-	public Instant scheduledInstant(String serviceDay, String localTime) {
-		ZoneId zone = ZoneId.of("Asia/Seoul");
-		LocalDate date = activeFrom.atZone(zone).toLocalDate();
-		LocalTime time = LocalTime.parse(localTime);
-		for (int day = 0; day < 370; day++, date = date.plusDays(1)) {
-			boolean matches = "WEEKDAY".equals(serviceDay)
-				? date.getDayOfWeek().getValue() <= 5 : date.getDayOfWeek().getValue() >= 6;
-			Instant candidate = date.atTime(time).atZone(zone).toInstant();
-			if (matches && !candidate.isBefore(activeFrom) && candidate.isBefore(freshUntil)) return candidate;
-		}
-		throw new IllegalStateException("active route bundle has no valid " + serviceDay + " benchmark instant");
-	}
-
-	private static long metric(Object metrics, String name) throws ReflectiveOperationException {
-		var accessor = metrics.getClass().getDeclaredMethod(name);
-		accessor.setAccessible(true);
-		return ((Number) accessor.invoke(metrics)).longValue();
-	}
 
 	public static Path checkedArtifactObjectPath(Path root, String objectPath) {
 		try {
@@ -246,10 +226,7 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 	private static long integer(JsonNode node, String field) { JsonNode value = node.path(field); if (!value.isIntegralNumber() || !value.canConvertToLong()) throw new IllegalArgumentException(field + " must be an integer"); return value.longValue(); }
 	private static void digests(JsonNode node, String... fields) { for (String field : fields) digest(text(node, field)); }
 	private static void digest(String value) { if (!DIGEST.matcher(value).matches()) throw new IllegalArgumentException("receipt digest is invalid"); }
-
-	private static JourneyRealtimePort realtimeMustNotBeCalled() {
-		return (request, snapshot, instant) -> { throw new AssertionError("benchmark corpus must not call a provider"); };
-	}
+	private static String digestValue(String value) { digest(value); return value.substring("sha256:".length()); }
 
 	private static String required(Map<String, String> environment, String name) {
 		String value = environment.get(name);
@@ -263,9 +240,8 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 	}
 
 	private static final class MutableCounters {
-		long artifactReadCount; long artifactReadBytes; long activeSnapshotLookups; long searchCalls;
+		long artifactReadCount; long artifactReadBytes;
 		MutableCounters() { }
 		MutableCounters(long artifactReadCount, long artifactReadBytes) { this.artifactReadCount = artifactReadCount; this.artifactReadBytes = artifactReadBytes; }
-		Counters snapshot() { return new Counters(artifactReadCount, artifactReadBytes, activeSnapshotLookups, searchCalls, 0, 0, 0, 0); }
 	}
 }
