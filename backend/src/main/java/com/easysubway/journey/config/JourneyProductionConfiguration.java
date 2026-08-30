@@ -29,10 +29,12 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
+import java.util.List;
+import java.util.concurrent.AbstractExecutorService;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
-import java.util.concurrent.SynchronousQueue;
-import java.util.concurrent.ThreadPoolExecutor;
+import java.util.concurrent.RejectedExecutionException;
+import java.util.concurrent.Semaphore;
 import java.util.concurrent.TimeUnit;
 import org.springframework.beans.factory.annotation.Qualifier;
 import org.springframework.beans.factory.annotation.Value;
@@ -157,14 +159,45 @@ public class JourneyProductionConfiguration {
 	@Bean(destroyMethod = "close")
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	ExecutorService journeyMeasurementExecutor() {
-		return new ThreadPoolExecutor(
-			1,
-			1,
-			0L,
-			TimeUnit.MILLISECONDS,
-			new SynchronousQueue<>(),
-			Thread.ofPlatform().name("journey-measurement-", 0).factory(),
-			new ThreadPoolExecutor.AbortPolicy());
+		return new FreshPlatformMeasurementExecutor();
+	}
+
+	private static final class FreshPlatformMeasurementExecutor extends AbstractExecutorService {
+		private final ExecutorService delegate = Executors.newThreadPerTaskExecutor(
+			Thread.ofPlatform().name("journey-measurement-", 0).factory());
+		private final Semaphore capacity = new Semaphore(1, true);
+
+		@Override
+		public void execute(Runnable command) {
+			Objects.requireNonNull(command, "command");
+			if (!capacity.tryAcquire()) throw new RejectedExecutionException("journey measurement is already running");
+			try {
+				delegate.execute(() -> {
+					try { command.run(); }
+					finally { capacity.release(); }
+				});
+			} catch (RuntimeException | Error exception) {
+				capacity.release();
+				throw exception;
+			}
+		}
+
+		@Override
+		public void shutdown() { delegate.shutdown(); }
+
+		@Override
+		public List<Runnable> shutdownNow() { return delegate.shutdownNow(); }
+
+		@Override
+		public boolean isShutdown() { return delegate.isShutdown(); }
+
+		@Override
+		public boolean isTerminated() { return delegate.isTerminated(); }
+
+		@Override
+		public boolean awaitTermination(long timeout, TimeUnit unit) throws InterruptedException {
+			return delegate.awaitTermination(timeout, unit);
+		}
 	}
 
 	@Bean

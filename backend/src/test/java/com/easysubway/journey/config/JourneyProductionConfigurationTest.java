@@ -43,7 +43,10 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -308,9 +311,34 @@ class JourneyProductionConfigurationTest {
 			assertThat(measurementExecutor.get()).isNotNull();
 			assertThat(measurementExecutor.get()).isNotSameAs(executor.get());
 			assertThat(measurementExecutor.get().isShutdown()).isFalse();
+			Thread firstMeasurementThread = CompletableFuture.supplyAsync(Thread::currentThread, measurementExecutor.get()).join();
+			Thread secondMeasurementThread = CompletableFuture.supplyAsync(Thread::currentThread, measurementExecutor.get()).join();
+			assertThat(secondMeasurementThread).isNotSameAs(firstMeasurementThread);
 		});
 		assertThat(executor.get().isShutdown()).isTrue();
 		assertThat(measurementExecutor.get().isShutdown()).isTrue();
+	}
+
+	@Test
+	@DisplayName("운영 Journey measurement executor는 동시 측정을 fail-closed로 거부한다")
+	void productionMeasurementExecutorRejectsConcurrentMeasurement() throws Exception {
+		validProductionContext().run(context -> {
+			ExecutorService measurementExecutor = context.getBean("journeyMeasurementExecutor", ExecutorService.class);
+			var started = new CountDownLatch(1);
+			var release = new CountDownLatch(1);
+			measurementExecutor.execute(() -> {
+				started.countDown();
+				try { release.await(); }
+				catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+			});
+			try {
+				assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+				assertThatThrownBy(() -> measurementExecutor.execute(() -> { }))
+					.isInstanceOf(RejectedExecutionException.class);
+			} finally {
+				release.countDown();
+			}
+		});
 	}
 
 	@Test

@@ -10,6 +10,7 @@ import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -139,6 +140,26 @@ class JourneyV3BenchmarkContractTest {
 	}
 
 	@Test
+	void bindsDeployedObservationTimeoutsToTheRequiredJourneySearchTimeout() {
+		var config = JourneyV3CurrentProductionScopeBenchmarkTest.Config.from(Map.of(
+			"EASYSUBWAY_BENCHMARK_WARMUP_ITERATIONS", "1",
+			"EASYSUBWAY_BENCHMARK_MEASUREMENT_ITERATIONS", "1",
+			"EASYSUBWAY_BENCHMARK_CORPUS_SHA256", SHA,
+			"EASYSUBWAY_BENCHMARK_OUTPUT_PATH", "result.json",
+			"EASYSUBWAY_JOURNEY_V3_BENCHMARK_BASE_URL", "https://journey.example",
+			"EASYSUBWAY_JOURNEY_V3_READINESS_TOKEN", "token",
+			"EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT", "PT2S",
+			"EASYSUBWAY_BENCHMARK_WEEKDAY_DATE", "2026-08-10",
+			"EASYSUBWAY_BENCHMARK_WEEKEND_DATE", "2026-08-08"));
+		var client = new JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient(
+			config.baseUri(), config.readinessToken(), config.searchTimeout(), config.requestTimeout());
+
+		assertThat(client.connectTimeout()).isEqualTo(Duration.ofSeconds(2));
+		assertThat(client.requestTimeout()).isEqualTo(Duration.ofSeconds(3));
+		assertThat(client.request("{}").timeout()).contains(Duration.ofSeconds(3));
+	}
+
+	@Test
 	void validatesCompleteActiveServingReceiptAndRejectsIdentityOrStateDrift() throws Exception {
 		byte[] valid = receipt("ACTIVE_SERVING", null);
 		JourneyV3BenchmarkRuntimeAdapter.verifyActiveReceipt(valid, "4".repeat(64), "5".repeat(40));
@@ -219,6 +240,12 @@ class JourneyV3BenchmarkContractTest {
 		byte[] first = Files.readAllBytes(output);
 		var persisted = new ObjectMapper().readTree(first);
 		assertThat(persisted.path("schemaVersion").asInt()).isOne();
+		var config = persisted.path("config");
+		assertThat(fieldNames(config)).isEqualTo(java.util.Set.of(
+			"warmupIterations", "measurementIterations", "corpusSha256", "outputPath", "baseUri",
+			"searchTimeout", "requestTimeout", "weekdayDate", "weekendDate"));
+		assertThat(config.path("searchTimeout").asText()).isEqualTo("PT2S");
+		assertThat(config.path("requestTimeout").asText()).isEqualTo("PT3S");
 		var source = evidence.cold().firstSearch();
 		var sample = persisted.path("cold").path("firstSearch");
 		assertThat(fieldNames(sample)).isEqualTo(java.util.Set.of(
@@ -341,6 +368,7 @@ class JourneyV3BenchmarkContractTest {
 	) {
 		return new JourneyV3CurrentProductionScopeBenchmarkTest.Config(warmup, measurement, corpusSha256,
 			Path.of("result.json"), java.net.URI.create("https://journey.example"), null,
+			Duration.ofSeconds(2),
 			java.time.LocalDate.parse("2026-08-10"), java.time.LocalDate.parse("2026-08-08"));
 	}
 

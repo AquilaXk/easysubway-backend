@@ -68,7 +68,8 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 
 		List<RequestCase> requests = corpus.cases().stream().map(testCase -> new RequestCase(testCase,
 			config.scheduledInstant(testCase.serviceDay(), testCase.departureLocalTime()))).toList();
-		var deployed = new DeployedJourneyClient(config.baseUri(), config.readinessToken());
+		var deployed = new DeployedJourneyClient(config.baseUri(), config.readinessToken(), config.searchTimeout(),
+			config.requestTimeout());
 		Sample firstSearch = run(deployed, requests.getFirst(), Profile.STANDARD, 0,
 			0, tuple.routeBundleSha256(), compiled.activationRequestIdentity(), compiled.activeServingProjection());
 		warm(deployed, requests, config.warmupIterations(), tuple.routeBundleSha256(), compiled.activationRequestIdentity(),
@@ -175,7 +176,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 
 	enum Profile { SLOW, STANDARD, FAST }
 	record Config(int warmupIterations, int measurementIterations, String corpusSha256, Path outputPath,
-		URI baseUri, String readinessToken, LocalDate weekdayDate, LocalDate weekendDate) {
+		URI baseUri, String readinessToken, Duration searchTimeout, LocalDate weekdayDate, LocalDate weekendDate) {
 		static Config from(Map<String, String> environment) {
 			return new Config(positive(environment, "EASYSUBWAY_BENCHMARK_WARMUP_ITERATIONS"),
 				positive(environment, "EASYSUBWAY_BENCHMARK_MEASUREMENT_ITERATIONS"),
@@ -183,9 +184,12 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				Path.of(required(environment, "EASYSUBWAY_BENCHMARK_OUTPUT_PATH")),
 				requiredHttpsUri(environment, "EASYSUBWAY_JOURNEY_V3_BENCHMARK_BASE_URL"),
 				required(environment, "EASYSUBWAY_JOURNEY_V3_READINESS_TOKEN"),
+				positiveDuration(environment, "EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT"),
 				requiredServiceDate(environment, "EASYSUBWAY_BENCHMARK_WEEKDAY_DATE", true),
 				requiredServiceDate(environment, "EASYSUBWAY_BENCHMARK_WEEKEND_DATE", false));
 		}
+
+		Duration requestTimeout() { return searchTimeout.plusSeconds(1); }
 
 		Instant scheduledInstant(String serviceDay, String departureLocalTime) {
 			LocalDate date = switch (serviceDay) {
@@ -238,7 +242,8 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				"FAST", JourneyRequest.WalkingPace.FAST.speedMetersPerHour()));
 			result.put("config", Map.of("warmupIterations", config.warmupIterations(), "corpusSha256", config.corpusSha256(),
 				"measurementIterations", config.measurementIterations(), "outputPath", config.outputPath().toString(),
-				"baseUri", config.baseUri().toString(), "weekdayDate", config.weekdayDate().toString(),
+				"baseUri", config.baseUri().toString(), "searchTimeout", config.searchTimeout().toString(),
+				"requestTimeout", config.requestTimeout().toString(), "weekdayDate", config.weekdayDate().toString(),
 				"weekendDate", config.weekendDate().toString()));
 			result.put("cold", cold); result.put("warm", warm); result.put("activationRequestIdentity", activationRequestIdentity); result.put("activeServingIdentity", activeServingIdentity); return result; }
 	}
@@ -281,13 +286,19 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 			"releaseTupleSha256", "backendImageDigest", "backendConfigSha256", "journeyContractSha256",
 			"routeBundleManifestSha256", "bundleId", "bundleReleaseSequence", "generation", "serviceTimezone",
 			"serviceDayCutoff", "trafficGeneration", "servingReady", "draining", "freshUntil", "activatedAt", "evidenceSha256");
-		private final HttpClient client = HttpClient.newBuilder().followRedirects(HttpClient.Redirect.NEVER).build();
+		private final HttpClient client;
 		private final URI endpoint;
 		private final String token;
+		private final Duration connectTimeout;
+		private final Duration requestTimeout;
 
-		DeployedJourneyClient(URI baseUri, String token) {
+		DeployedJourneyClient(URI baseUri, String token, Duration connectTimeout, Duration requestTimeout) {
 			endpoint = baseUri.resolve("/internal/v1/journey/benchmark-observation");
 			this.token = requireNonNull(token);
+			this.connectTimeout = positiveTimeout(connectTimeout, "benchmark connect timeout");
+			this.requestTimeout = positiveTimeout(requestTimeout, "benchmark request timeout");
+			client = HttpClient.newBuilder().connectTimeout(this.connectTimeout)
+				.followRedirects(HttpClient.Redirect.NEVER).build();
 		}
 
 		DeployedObservation search(String requestId, RequestCase request, Profile profile) {
@@ -297,9 +308,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 					"departure", Map.of("mode", "SCHEDULED", "requestedAt", request.scheduledInstant().toString()),
 					"timePolicy", "TIMETABLE_REQUIRED", "walkingPace", profile.name(), "mobilityProfile", "STANDARD",
 					"constraintMode", "NONE", "maxTransfers", 3, "alternativeCount", 1));
-				HttpResponse<byte[]> response = client.send(HttpRequest.newBuilder(endpoint)
-					.header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
-					.POST(HttpRequest.BodyPublishers.ofString(body)).build(), HttpResponse.BodyHandlers.ofByteArray());
+				HttpResponse<byte[]> response = client.send(request(body), HttpResponse.BodyHandlers.ofByteArray());
 				if (response.statusCode() != 200 || !"no-store".equals(response.headers().firstValue("Cache-Control").orElse(null))) {
 					throw new IllegalStateException("deployed Journey V3 observation request was not a no-store success");
 				}
@@ -310,6 +319,15 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				Thread.currentThread().interrupt();
 				throw new IllegalStateException("deployed Journey V3 observation request was interrupted", exception);
 			}
+		}
+
+		Duration connectTimeout() { return connectTimeout; }
+		Duration requestTimeout() { return requestTimeout; }
+
+		HttpRequest request(String body) {
+			return HttpRequest.newBuilder(endpoint).timeout(requestTimeout)
+				.header("Authorization", "Bearer " + token).header("Content-Type", "application/json")
+				.POST(HttpRequest.BodyPublishers.ofString(body)).build();
 		}
 
 		static DeployedObservation parse(byte[] body, String expectedRequestId) {
@@ -339,6 +357,11 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 			} catch (IOException | RuntimeException exception) {
 				throw new IllegalArgumentException("deployed Journey V3 observation response is invalid", exception);
 			}
+		}
+
+		private static Duration positiveTimeout(Duration value, String name) {
+			if (value == null || value.isZero() || value.isNegative()) throw new IllegalArgumentException(name + " must be positive");
+			return value;
 		}
 
 		private static String text(JsonNode object, String name) {
@@ -406,7 +429,10 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 			if (!evidence.asJson().keySet().equals(Set.of("schemaVersion", "tuple", "corpus", "scope", "jvm",
 				"walkingPaceMetersPerHour", "config", "cold", "warm", "activationRequestIdentity",
 				"activeServingIdentity"))) throw new IllegalArgumentException("benchmark output fields are incomplete");
-			if (evidence.config().warmupIterations() < 1 || evidence.config().measurementIterations() < 1 || !evidence.warm().keySet().equals(Set.of(Profile.values()))) throw new IllegalArgumentException("benchmark configuration is incomplete");
+			if (evidence.config().warmupIterations() < 1 || evidence.config().measurementIterations() < 1
+				|| evidence.config().searchTimeout().isZero() || evidence.config().searchTimeout().isNegative()
+				|| !evidence.config().requestTimeout().equals(evidence.config().searchTimeout().plusSeconds(1))
+				|| !evidence.warm().keySet().equals(Set.of(Profile.values()))) throw new IllegalArgumentException("benchmark configuration is incomplete");
 			for (long value : List.of(evidence.cold().loadNanos(), evidence.cold().loadAllocatedBytes(), evidence.cold().verificationNanos(), evidence.cold().verificationAllocatedBytes(), evidence.cold().compilationNanos(), evidence.cold().compilationAllocatedBytes())) if (value < 0) throw new IllegalArgumentException("cold evidence is invalid");
 			if (evidence.activationRequestIdentity() == null || evidence.activationRequestIdentity().isBlank()
 				|| evidence.activeServingIdentity() == null) throw new IllegalArgumentException("request identity is incomplete");
@@ -483,5 +509,15 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 	}
 	private static String requiredSha(Map<String, String> environment, String name) { String value = required(environment, name); if (!Contract.SHA.matcher(value).matches()) throw new IllegalArgumentException(name + " must be a SHA-256 digest"); return value; }
 	private static int positive(Map<String, String> environment, String name) { try { int value = Integer.parseInt(required(environment, name)); if (value < 1) throw new IllegalArgumentException(name + " must be positive"); return value; } catch (NumberFormatException exception) { throw new IllegalArgumentException(name + " must be an integer", exception); } }
+	private static Duration positiveDuration(Map<String, String> environment, String name) {
+		try {
+			Duration value = Duration.parse(required(environment, name));
+			if (value.isZero() || value.isNegative()) throw new IllegalArgumentException(name + " must be positive");
+			value.plusSeconds(1);
+			return value;
+		} catch (java.time.format.DateTimeParseException | ArithmeticException exception) {
+			throw new IllegalArgumentException(name + " must be an ISO-8601 duration", exception);
+		}
+	}
 	@FunctionalInterface interface CheckedSupplier<T> { T get() throws Exception; }
 }
