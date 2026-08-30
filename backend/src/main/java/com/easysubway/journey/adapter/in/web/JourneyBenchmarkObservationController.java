@@ -159,7 +159,7 @@ public final class JourneyBenchmarkObservationController {
 		String requestId,
 		String routeBundleSha256,
 		long bundleGeneration,
-		JourneyExecutionResult.ServiceDayIdentity serviceDay,
+		ServiceDayResponse serviceDay,
 		com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics scanMetrics,
 		JourneyExecutionResult.BoundaryObservation boundaryObservation,
 		long executionNanos,
@@ -169,9 +169,16 @@ public final class JourneyBenchmarkObservationController {
 		private static ObservationResponse from(JourneyExecutionResult.ExecutionObservation observation,
 			MeasuredCompleted measurement, JourneyReadinessService.ActiveReadiness activeReadiness) {
 			return new ObservationResponse(observation.requestId(), observation.routeBundleSha256(),
-				observation.bundleGeneration(), observation.serviceDay(), observation.scanMetrics(),
+				observation.bundleGeneration(), ServiceDayResponse.from(observation.serviceDay()), observation.scanMetrics(),
 				observation.boundaryObservation(), measurement.executionNanos(), measurement.allocatedBytes(),
 				activeReadiness);
+		}
+	}
+
+	private record ServiceDayResponse(String serviceDate, String timezone, String cutoffLocalTime) {
+		private static ServiceDayResponse from(JourneyExecutionResult.ServiceDayIdentity serviceDay) {
+			return new ServiceDayResponse(serviceDay.serviceDate().toString(), serviceDay.timezone(),
+				serviceDay.cutoffLocalTime());
 		}
 	}
 

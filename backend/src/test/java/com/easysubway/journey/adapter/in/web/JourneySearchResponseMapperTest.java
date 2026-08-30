@@ -288,7 +288,10 @@ class JourneySearchResponseMapperTest {
 			),
 			journeys,
 			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
+				timePolicy == JourneyRequest.TimePolicy.REALTIME_REQUIRED
+					? JourneyExecutionResult.BoundaryObservation.Status.UNOBSERVABLE
+					: JourneyExecutionResult.BoundaryObservation.Status.OBSERVED,
+				0L, 0L, 0L, 0L)
 		);
 	}
 }
