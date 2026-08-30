@@ -342,6 +342,20 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("운영 Journey measurement executor는 delegate 거부 뒤 capacity를 반환한다")
+	void productionMeasurementExecutorReleasesCapacityAfterDelegateRejection() {
+		validProductionContext().run(context -> {
+			ExecutorService measurementExecutor = context.getBean("journeyMeasurementExecutor", ExecutorService.class);
+			assertThat(measurementExecutor.shutdownNow()).isEmpty();
+			for (int attempt = 0; attempt < 2; attempt++) {
+				assertThatThrownBy(() -> measurementExecutor.execute(() -> { }))
+					.isInstanceOf(RejectedExecutionException.class)
+					.hasMessageNotContaining("journey measurement is already running");
+			}
+		});
+	}
+
+	@Test
 	@DisplayName("운영 Journey POST ingress만 controller에 전달한다")
 	void journeyIngressPermitsOnlyPost() {
 		validProductionContext().run(context -> {
