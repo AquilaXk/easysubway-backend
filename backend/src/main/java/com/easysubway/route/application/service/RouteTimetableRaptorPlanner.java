@@ -17,6 +17,8 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics;
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
@@ -52,8 +54,7 @@ import java.util.Set;
 
 class RouteTimetableRaptorPlanner {
 
-	private static final ZoneId SERVICE_ZONE = ZoneId.of("Asia/Seoul");
-	private static final int SERVICE_DAY_CUTOFF_HOUR = 3;
+	private static final ZoneId SERVICE_ZONE = ServiceDayResolver.ZONE;
 	private static final int PARETO_LIMIT = 4;
 	private static final int ENTRY_DURATION_SECONDS = 240;
 	private static final int ENTRY_DISTANCE_METERS = 180;
@@ -102,7 +103,7 @@ class RouteTimetableRaptorPlanner {
 			scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay));
 	}
 
-	List<JourneyItinerary> journeyItineraries(
+	JourneyPlan journeyItineraries(
 		SearchRouteV2Command command,
 		CompiledTimetable timetable,
 		RealtimeOverlay realtimeOverlay
@@ -110,11 +111,12 @@ class RouteTimetableRaptorPlanner {
 		ServiceDay serviceDay = serviceDay(command);
 		ScanResult scanResult = scanDestinationLabels(
 			command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay);
-		return scanResult.labels().stream()
+		List<JourneyItinerary> itineraries = scanResult.labels().stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.limit(candidateLimit(command))
 			.map(label -> toJourneyItinerary(command, timetable, serviceDay, realtimeOverlay, label))
 			.toList();
+		return new JourneyPlan(itineraries, scanResult.scanMetrics());
 	}
 
 	SearchOutcome searchWithDiagnostics(SearchRouteV2Command command, CompiledTimetable timetable) {
@@ -130,14 +132,15 @@ class RouteTimetableRaptorPlanner {
 			command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay);
 		List<RouteSearchResult> itineraries = results(command, timetable, serviceDay, realtimeOverlay, found);
 		if (!itineraries.isEmpty()) {
-			return new SearchOutcome(itineraries, null);
+			return new SearchOutcome(itineraries, null, found.scanMetrics());
 		}
 		ScanResult diagnostic = scanDestinationLabels(
 			command, timetable, serviceDay, serviceDay.departureSeconds(), true, realtimeOverlay);
 		if (diagnostic.labels().isEmpty()) {
-			return new SearchOutcome(List.of(), null);
+			return new SearchOutcome(List.of(), null, diagnostic.scanMetrics());
 		}
-		return new SearchOutcome(List.of(), blockedAccessibilityResult(command, serviceDay, diagnostic.labels().getFirst()));
+		return new SearchOutcome(List.of(), blockedAccessibilityResult(command, serviceDay, diagnostic.labels().getFirst()),
+			diagnostic.scanMetrics());
 	}
 	private static List<RouteSearchResult> results(
 		SearchRouteV2Command command,
@@ -275,16 +278,6 @@ class RouteTimetableRaptorPlanner {
 			LocalDateTime.of(serviceDay.date(), java.time.LocalTime.MIDNIGHT).plusSeconds(diagnostic.startSeconds())
 		);
 	}
-	ScanMetrics lastScanMetrics() {
-		ScanWorkspace workspace = scanWorkspaces.get();
-		return new ScanMetrics(
-			workspace.expandedRoutes,
-			workspace.expandedTrips,
-			workspace.expandedTransfers,
-			System.identityHashCode(workspace)
-		);
-	}
-
 	boolean isFeedStale(SearchRouteV2Command command, RouteTimetable timetable) {
 		return isFeedStale(command, compile(timetable));
 	}
@@ -523,12 +516,12 @@ class RouteTimetableRaptorPlanner {
 		ScanWorkspace workspace = scanWorkspaces.get();
 		workspace.prepare(timetable.stationCount(), timetable.lineCount(), timetable.routePatternCount());
 		if (activeServiceDay.trips().isEmpty()) {
-			return new ScanResult(serviceDay, List.of());
+			return new ScanResult(serviceDay, List.of(), scanMetrics(workspace));
 		}
 		int origin = timetable.stationIndex(command.originStationId());
 		int destination = timetable.stationIndex(command.destinationStationId());
 		if (origin < 0 || destination < 0) {
-			return new ScanResult(serviceDay, List.of());
+			return new ScanResult(serviceDay, List.of(), scanMetrics(workspace));
 		}
 		workspace.arrivalSeconds[workspace.slot(0, origin, workspace.noIncomingLine(), 0)] = startSeconds;
 		workspace.mark(origin);
@@ -562,7 +555,11 @@ class RouteTimetableRaptorPlanner {
 				command.destinationStationId(), timetable, workspace, destination, startSeconds,
 				accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay),
 			command);
-		return new ScanResult(serviceDay, destinationLabels);
+		return new ScanResult(serviceDay, destinationLabels, scanMetrics(workspace));
+	}
+
+	private static ScanMetrics scanMetrics(ScanWorkspace workspace) {
+		return new ScanMetrics(workspace.expandedRoutes, workspace.expandedTrips, workspace.expandedTransfers);
 	}
 
 	private static void collectMarkedPatterns(CompiledTimetable timetable, ScanWorkspace workspace) {
@@ -2664,22 +2661,14 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	private static ServiceDay serviceDay(SearchRouteV2Command command) {
-		ZonedDateTime departure = command.departureTime().atZoneSameInstant(SERVICE_ZONE);
-		LocalDate serviceDate = departure.toLocalDate();
-		if (departure.getHour() < SERVICE_DAY_CUTOFF_HOUR) {
-			serviceDate = serviceDate.minusDays(1);
-		}
-		int departureSeconds = Math.toIntExact(Duration.between(
-			serviceDate.atStartOfDay(SERVICE_ZONE),
-			departure
-		).toSeconds());
-		return new ServiceDay(serviceDate, departureSeconds);
+		var resolved = ServiceDayResolver.resolve(command.departureTime().toInstant());
+		return new ServiceDay(resolved.serviceDate(), resolved.secondsFromServiceDayStart());
 	}
 
 	private record ServiceDay(LocalDate date, int departureSeconds) {
 	}
 
-	private record ScanResult(ServiceDay serviceDay, List<Label> labels) {
+	private record ScanResult(ServiceDay serviceDay, List<Label> labels, ScanMetrics scanMetrics) {
 	}
 
 	private record ReadyBoarding(
@@ -2689,14 +2678,19 @@ class RouteTimetableRaptorPlanner {
 		byte warningBits
 	) {
 	}
-	record SearchOutcome(List<RouteSearchResult> itineraries, RouteSearchResult blockedAccessibility) {
+	record SearchOutcome(List<RouteSearchResult> itineraries, RouteSearchResult blockedAccessibility, ScanMetrics scanMetrics) {
 		SearchOutcome {
 			itineraries = List.copyOf(itineraries);
+			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 		}
 	}
 	private record BoardingPoint(String stationId, String lineId) {
 	}
-	record ScanMetrics(int expandedRoutes, int expandedTrips, int expandedTransfers, int workspaceIdentity) {
+	record JourneyPlan(List<JourneyItinerary> itineraries, ScanMetrics scanMetrics) {
+		JourneyPlan {
+			itineraries = List.copyOf(itineraries);
+			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
+		}
 	}
 
 	record JourneyItinerary(

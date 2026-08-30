@@ -26,7 +26,7 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 		var manifestSha256 = active.admissionEvidence().manifestSha256();
 		var fresh = !effectiveInstant.isBefore(identity.activeFromInstant())
 			&& effectiveInstant.isBefore(identity.freshUntilInstant());
-		return new ActiveJourneySnapshot(
+		var snapshot = new ActiveJourneySnapshot(
 			manifestSha256 + ":" + active.generation(),
 			identity.bundleId(),
 			manifestSha256,
@@ -35,6 +35,9 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 			active.generation(),
 			runtimeView,
 			identity.freshUntilInstant(),
-			fresh);
+			fresh,
+			fresh ? ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
+				: ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
+		return snapshot;
 	}
 }

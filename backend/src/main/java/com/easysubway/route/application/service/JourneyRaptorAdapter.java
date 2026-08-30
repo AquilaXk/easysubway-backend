@@ -41,14 +41,16 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay = requireRealtimeOverlay(
 			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull);
-		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = planner.journeyItineraries(
+		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
 			toCommand(requiredRequest, requiredEffectiveInstant),
 			routeRuntime.compiledTimetable(),
 			realtimeOverlay
 		);
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = planned.itineraries();
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 		if (itineraries.isEmpty()) {
-			return new PlanResult(requiredRequest.requestId(), List.of());
+			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics(),
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
@@ -58,7 +60,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			!= candidates.size()) {
 			throw new IllegalArgumentException("RAPTOR returned duplicate Journey paths");
 		}
-		return new PlanResult(requiredRequest.requestId(), candidates);
+		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 	}
 
 	static SearchRouteV2Command toCommand(JourneyRequest request, Instant effectiveInstant) {

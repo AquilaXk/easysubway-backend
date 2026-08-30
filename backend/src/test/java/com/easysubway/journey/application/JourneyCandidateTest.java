@@ -140,25 +140,42 @@ class JourneyCandidateTest {
 	void rejectsInvalidPortIdentityAndPreservesPlanResultBytes() {
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "BAD", "timetable-1", "accessibility-1", 1,
-			new TestRuntimeView("BAD", 1), ARRIVAL, true
+			new TestRuntimeView("BAD", 1), ARRIVAL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", 0,
-			new TestRuntimeView("a".repeat(64), 0), ARRIVAL, true
+			new TestRuntimeView("a".repeat(64), 0), ARRIVAL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", "BAD", new TestRealtimeView("realtime-1", "BAD", 1), ARRIVAL, true
 		)).isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult(" ", List.of()))
+		assertThatThrownBy(() -> new JourneyRaptorPort.PlanResult(" ", List.of(),
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3), JourneyRaptorPort.RouteBoundaryReceipt.observed(0)))
 			.isInstanceOf(IllegalArgumentException.class);
 
 		List<JourneyCandidate> candidates = new ArrayList<>(List.of(candidate(
 			"journey-1", JourneyCandidate.TimeSource.TIMETABLE, null, null, 300, 0, 50
 		)));
-		JourneyRaptorPort.PlanResult result = new JourneyRaptorPort.PlanResult("query-1", candidates);
+		JourneyRaptorPort.PlanResult result = new JourneyRaptorPort.PlanResult("query-1", candidates,
+			new JourneyRaptorPort.ScanMetrics(1, 2, 3), JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		candidates.clear();
 		assertThat(result.candidates()).extracting(JourneyCandidate::journeyId).containsExactly("journey-1");
 		assertThatThrownBy(() -> result.candidates().clear()).isInstanceOf(UnsupportedOperationException.class);
+
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotBoundaryReceipt(
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.UNOBSERVABLE, 0L, null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotBoundaryReceipt(
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED, null, 0L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteBoundaryReceipt(
+			JourneyRaptorPort.RouteBoundaryReceipt.Status.UNOBSERVABLE, 0L))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyRaptorPort.RouteBoundaryReceipt(
+			JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED, -1L))
+			.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	private static JourneyCandidate candidate(

@@ -61,7 +61,8 @@ public final class JourneyCandidateCanaryService {
 				command.candidateGeneration(),
 				runtimeView,
 				identity.freshUntilInstant(),
-				true);
+				true,
+				ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
 			request = new JourneyRequest(
 				command.requestId(),
 				command.originStationId(),

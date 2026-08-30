@@ -1,6 +1,7 @@
 package com.easysubway.journey.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -25,6 +26,7 @@ import com.easysubway.journey.application.StationTimetableSearchService;
 import com.easysubway.journey.activation.JourneyActivationService;
 import com.easysubway.journey.adapter.in.web.JourneyActivationController;
 import com.easysubway.journey.adapter.in.web.JourneyCandidateCanaryController;
+import com.easysubway.journey.adapter.in.web.JourneyBenchmarkObservationController;
 import com.easysubway.journey.adapter.in.web.JourneyReadinessController;
 import com.easysubway.journey.bundle.ActiveRouteBundleSnapshot;
 import com.easysubway.journey.bundle.RouteBundleAdmissionEvidence;
@@ -41,7 +43,10 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
+import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -76,6 +81,7 @@ class JourneyProductionConfigurationTest {
 	private static final String ACTIVE_READINESS_PATH = "/internal/v1/journey/readiness/active";
 	private static final String ACTIVATION_PATH = "/internal/v1/journey/activation";
 	private static final String CANARY_PATH = "/internal/v1/journey/canary";
+	private static final String BENCHMARK_OBSERVATION_PATH = "/internal/v1/journey/benchmark-observation";
 	private static final Instant VERIFIED_AT = Instant.parse("2026-08-12T00:00:00Z");
 	private static final Instant STAGED_AT = Instant.parse("2026-08-12T00:00:01Z");
 	private static final Instant ACTIVATED_AT = Instant.parse("2026-08-12T00:00:02Z");
@@ -89,6 +95,7 @@ class JourneyProductionConfigurationTest {
 			JourneyReadinessController.class,
 			JourneyActivationController.class,
 			JourneyCandidateCanaryController.class,
+			JourneyBenchmarkObservationController.class,
 			JourneyEndpointProbeController.class
 		);
 
@@ -108,7 +115,8 @@ class JourneyProductionConfigurationTest {
 			assertThat(context.getBean(JourneyRealtimePort.class)).isInstanceOf(JourneyRealtimeAdapter.class);
 			assertThat(context).hasSingleBean(JourneyApplicationService.class);
 			assertThat(context).hasSingleBean(StationTimetableSearchService.class);
-			assertThat(context).hasSingleBean(ExecutorService.class);
+			assertThat(context.getBeansOfType(ExecutorService.class)).hasSize(2)
+				.containsKeys("journeyApplicationExecutor", "journeyMeasurementExecutor");
 			assertThat(context).hasSingleBean(JourneyApplicationDeadlineExecutor.class);
 			assertThat(context).hasSingleBean(JourneyReadinessProperties.class);
 			assertThat(context).hasSingleBean(JourneyReadinessService.class);
@@ -117,6 +125,29 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyActivationController.class);
 			assertThat(context).hasSingleBean(JourneyCandidateCanaryService.class);
 			assertThat(context).hasSingleBean(JourneyCandidateCanaryController.class);
+			assertThat(context).hasSingleBean(JourneyBenchmarkObservationController.class);
+		});
+	}
+
+	@Test
+	@DisplayName("internal benchmark observation은 readiness Bearer로 exact POST만 허용한다")
+	void benchmarkObservationIngressRequiresReadinessBearer() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var mockMvc = MockMvcBuilders.webAppContextSetup(context)
+				.apply(springSecurity())
+				.build();
+
+			mockMvc.perform(post(BENCHMARK_OBSERVATION_PATH)
+					.contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+					.content("{}"))
+				.andExpect(status().isUnauthorized())
+				.andExpect(header().string(HttpHeaders.WWW_AUTHENTICATE, "Bearer"))
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
+			mockMvc.perform(get(BENCHMARK_OBSERVATION_PATH)
+					.header(HttpHeaders.AUTHORIZATION, "Bearer " + READINESS_TOKEN))
+				.andExpect(status().isForbidden())
+				.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "no-store"));
 		});
 	}
 
@@ -268,15 +299,60 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("운영 Journey executor는 context 종료 때 shutdown된다")
-	void productionExecutorShutsDownWithContext() {
+	@DisplayName("운영 Journey executors는 context 종료 때 shutdown된다")
+	void productionExecutorsShutDownWithContext() {
 		var executor = new AtomicReference<ExecutorService>();
+		var measurementExecutor = new AtomicReference<ExecutorService>();
 		validProductionContext().run(context -> {
 			executor.set(context.getBean("journeyApplicationExecutor", ExecutorService.class));
+			measurementExecutor.set(context.getBean("journeyMeasurementExecutor", ExecutorService.class));
 			assertThat(executor.get()).isNotNull();
 			assertThat(executor.get().isShutdown()).isFalse();
+			assertThat(measurementExecutor.get()).isNotNull();
+			assertThat(measurementExecutor.get()).isNotSameAs(executor.get());
+			assertThat(measurementExecutor.get().isShutdown()).isFalse();
+			Thread firstMeasurementThread = CompletableFuture.supplyAsync(Thread::currentThread, measurementExecutor.get()).join();
+			Thread secondMeasurementThread = CompletableFuture.supplyAsync(Thread::currentThread, measurementExecutor.get()).join();
+			assertThat(secondMeasurementThread).isNotSameAs(firstMeasurementThread);
 		});
 		assertThat(executor.get().isShutdown()).isTrue();
+		assertThat(measurementExecutor.get().isShutdown()).isTrue();
+	}
+
+	@Test
+	@DisplayName("운영 Journey measurement executor는 동시 측정을 fail-closed로 거부한다")
+	void productionMeasurementExecutorRejectsConcurrentMeasurement() throws Exception {
+		validProductionContext().run(context -> {
+			ExecutorService measurementExecutor = context.getBean("journeyMeasurementExecutor", ExecutorService.class);
+			var started = new CountDownLatch(1);
+			var release = new CountDownLatch(1);
+			measurementExecutor.execute(() -> {
+				started.countDown();
+				try { release.await(); }
+				catch (InterruptedException exception) { Thread.currentThread().interrupt(); }
+			});
+			try {
+				assertThat(started.await(5, java.util.concurrent.TimeUnit.SECONDS)).isTrue();
+				assertThatThrownBy(() -> measurementExecutor.execute(() -> { }))
+					.isInstanceOf(RejectedExecutionException.class);
+			} finally {
+				release.countDown();
+			}
+		});
+	}
+
+	@Test
+	@DisplayName("운영 Journey measurement executor는 delegate 거부 뒤 capacity를 반환한다")
+	void productionMeasurementExecutorReleasesCapacityAfterDelegateRejection() {
+		validProductionContext().run(context -> {
+			ExecutorService measurementExecutor = context.getBean("journeyMeasurementExecutor", ExecutorService.class);
+			assertThat(measurementExecutor.shutdownNow()).isEmpty();
+			for (int attempt = 0; attempt < 2; attempt++) {
+				assertThatThrownBy(() -> measurementExecutor.execute(() -> { }))
+					.isInstanceOf(RejectedExecutionException.class)
+					.hasMessageNotContaining("journey measurement is already running");
+			}
+		});
 	}
 
 	@Test
@@ -451,6 +527,39 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("Active readiness rejects a non-current route bundle service timezone")
+	void readinessRejectsNonCurrentActiveRouteBundleServiceTimezone() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var registry = context.getBean(RouteBundleActivationRegistry.class);
+			var availability = new MutableApplicationAvailability();
+			var readinessService = new JourneyReadinessService(
+				registry,
+				context.getBean(JourneyReadinessProperties.class),
+				availability);
+			var identity = mock(RouteBundleIdentity.class);
+			when(identity.serviceTimezone()).thenReturn("UTC");
+			var active = mock(ActiveRouteBundleSnapshot.class);
+			when(active.identity()).thenReturn(identity);
+
+			assertThatThrownBy(() -> readinessService.active(active))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("active route bundle service timezone is not current");
+		});
+	}
+
+	@Test
+	@DisplayName("Active readiness rejects a non-current service-day identity")
+	void activeReadinessRejectsNonCurrentServiceDayIdentity() {
+		assertThatThrownBy(() -> activeReadiness("UTC", "03:00"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("active readiness service-day identity is not current");
+		assertThatThrownBy(() -> activeReadiness("Asia/Seoul", "04:00"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("active readiness service-day identity is not current");
+	}
+
+	@Test
 	@DisplayName("readiness runtime identity 누락·형식 오류·non-positive traffic generation은 startup을 거부한다")
 	void productionProfileRejectsInvalidReadinessIdentity() {
 		productionContext(
@@ -577,6 +686,15 @@ class JourneyProductionConfigurationTest {
 
 	private static RouteBundleAdmissionEvidence evidence() {
 		return new RouteBundleAdmissionEvidence(SHA_A, "final", "promotion", "receipt", "activation");
+	}
+
+	private static JourneyReadinessService.ActiveReadiness activeReadiness(
+		String serviceTimezone,
+		String serviceDayCutoff) {
+		return new JourneyReadinessService.ActiveReadiness(
+			1, "journey-v3-active-readiness", "backend-a", SHA_A, "sha256:" + SHA_A,
+			SHA_A, SHA_A, SHA_A, "bundle-a", 1, 1, serviceTimezone, serviceDayCutoff,
+			31, true, false, VERIFIED_AT, ACTIVATED_AT, SHA_A);
 	}
 
 	private static String activationCommand() {

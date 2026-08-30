@@ -618,6 +618,7 @@ components:
         - effectiveDepartureTime
         - serviceDate
         - serviceTimezone
+        - serviceDayCutoff
         - sourceIdentity
         - requestPolicy
         - journeys
@@ -646,6 +647,9 @@ components:
         serviceTimezone:
           type: string
           enum: [Asia/Seoul]
+        serviceDayCutoff:
+          type: string
+          enum: ["03:00"]
         sourceIdentity:
           $ref: "#/components/schemas/JourneySourceIdentity"
         requestPolicy:

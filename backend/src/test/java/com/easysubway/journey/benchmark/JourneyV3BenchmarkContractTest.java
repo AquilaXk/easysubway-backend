@@ -3,12 +3,14 @@ package com.easysubway.journey.benchmark;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.bundle.JourneyV3BenchmarkRuntimeAdapter;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.security.MessageDigest;
+import java.time.Duration;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -19,62 +21,142 @@ import org.junit.jupiter.api.io.TempDir;
 class JourneyV3BenchmarkContractTest {
 
 	private static final String SHA = "a".repeat(64);
+	private static final String ACTIVATION_REQUEST_IDENTITY = "activation-request-test";
+	private static final JourneyExecutionResult.ActiveServingIdentity ACTIVE_SERVING_IDENTITY =
+		new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			SHA, "b".repeat(64), "sha256:" + "e".repeat(64), "d".repeat(40), "03:00");
 
 	@Test
 	void acceptsCompleteSameCorpusPaceMatrix() {
-		var corpus = JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(validCorpus());
-		var evidence = completeEvidence(corpus);
+		var corpus = JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(validCorpus());
+		var evidence = validatorFixture(corpus);
 
-		JourneyV3NationwideBenchmarkTest.Contract.validate(evidence);
+		JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(evidence);
 
-		assertThat(evidence.warm().get(JourneyV3NationwideBenchmarkTest.Profile.STANDARD).percentiles().p95Nanos())
+		assertThat(evidence.warm().get(JourneyV3CurrentProductionScopeBenchmarkTest.Profile.STANDARD).percentiles().p95Nanos())
 			.isEqualTo(20);
 	}
 
 	@Test
 	void rejectsTupleCorpusAndProfileMatrixDrift() {
-		var corpus = JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(validCorpus());
-		var missingDigest = completeEvidence(corpus);
+		var corpus = JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(validCorpus());
+		var missingDigest = validatorFixture(corpus);
 		var invalidTuple = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity("bad", "b".repeat(64), "c".repeat(64), "d".repeat(40));
-		var invalid = new JourneyV3NationwideBenchmarkTest.Evidence(invalidTuple, corpus, missingDigest.cold(),
-			missingDigest.warm(), missingDigest.warmStartCounters(), missingDigest.counters(), missingDigest.config());
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.validate(invalid))
+		var invalid = new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(invalidTuple, corpus, missingDigest.cold(),
+			missingDigest.warm(), missingDigest.activationRequestIdentity(),
+			missingDigest.activeServingIdentity(), missingDigest.config());
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(invalid))
 			.hasMessageContaining("SHA-256");
 
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.parseCorpus("""
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus("""
 			{"schemaVersion":1,"corpusVersion":"v1","cases":[{"id":"x","originStationId":"a","destinationStationId":"a","serviceDay":"WEEKDAY","departureLocalTime":"08:00"}]}
 			""")).hasMessageContaining("corpus entry");
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.parseCorpus("""
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus("""
 			{"schemaVersion":1,"corpusVersion":"v1","cases":[{"id":"x","originStationId":"a","destinationStationId":"b","serviceDay":"WEEKDAY","departureLocalTime":"25:00"}]}
 			""")).hasMessageContaining("corpus entry");
 
-		var digestMismatch = new JourneyV3NationwideBenchmarkTest.Evidence(missingDigest.tuple(), corpus,
-			missingDigest.cold(), missingDigest.warm(), missingDigest.warmStartCounters(), missingDigest.counters(),
-			new JourneyV3NationwideBenchmarkTest.Config(1, 1, "d".repeat(64), Path.of("result.json")));
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.validate(digestMismatch))
+		var digestMismatch = new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(missingDigest.tuple(), corpus,
+			missingDigest.cold(), missingDigest.warm(),
+			missingDigest.activationRequestIdentity(), missingDigest.activeServingIdentity(),
+			config(1, 1, "d".repeat(64)));
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(digestMismatch))
 			.hasMessageContaining("corpus digest");
 
-		var unequal = completeEvidence(corpus);
-		unequal.warm().get(JourneyV3NationwideBenchmarkTest.Profile.FAST).inputCaseIds().clear();
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.validate(unequal))
+		var unequal = validatorFixture(corpus);
+		unequal.warm().get(JourneyV3CurrentProductionScopeBenchmarkTest.Profile.FAST).inputCaseIds().clear();
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(unequal))
 			.hasMessageContaining("warm matrix");
 	}
 
 	@Test
-	void rejectsNonpositiveCountsAndForbiddenAdapterPaths() {
-		var corpus = JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(validCorpus());
-		var valid = completeEvidence(corpus);
-		var invalidConfig = new JourneyV3NationwideBenchmarkTest.Config(0, 1, corpus.sha256(), Path.of("result.json"));
-		var invalid = new JourneyV3NationwideBenchmarkTest.Evidence(valid.tuple(), corpus, valid.cold(), valid.warm(),
-			valid.warmStartCounters(), valid.counters(), invalidConfig);
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.validate(invalid))
+	void rejectsNonpositiveCounts() {
+		var corpus = JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(validCorpus());
+		var valid = validatorFixture(corpus);
+		var invalidConfig = config(0, 1, corpus.sha256());
+		var invalid = new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(valid.tuple(), corpus, valid.cold(), valid.warm(),
+			valid.activationRequestIdentity(),
+			valid.activeServingIdentity(), invalidConfig);
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(invalid))
 			.hasMessageContaining("configuration");
+	}
 
-		var forbidden = new JourneyV3BenchmarkRuntimeAdapter.Counters(1, 2, 13, 13, 1, 0, 0, 0);
-		var unsafe = new JourneyV3NationwideBenchmarkTest.Evidence(valid.tuple(), corpus, valid.cold(), valid.warm(),
-			valid.warmStartCounters(), forbidden, valid.config());
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.validate(unsafe))
-			.hasMessageContaining("forbidden");
+	@Test
+	void rejectsUnobservableOrNonzeroPerRequestBoundaryEvidence() {
+		var corpus = JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(validCorpus());
+		var valid = validatorFixture(corpus);
+		var first = valid.warm().get(JourneyV3CurrentProductionScopeBenchmarkTest.Profile.STANDARD).samples().getFirst();
+		var unobservableIdentity = new JourneyV3CurrentProductionScopeBenchmarkTest.RequestIdentity(
+			first.requestIdentity().requestId(), first.requestIdentity().routeBundleSha256(),
+			first.requestIdentity().activationRequestIdentity(), first.requestIdentity().activeServingIdentity(),
+			JourneyExecutionResult.BoundaryObservation.unobservable());
+		valid.warm().get(JourneyV3CurrentProductionScopeBenchmarkTest.Profile.STANDARD).samples().set(0,
+			new JourneyV3CurrentProductionScopeBenchmarkTest.Sample(first.caseId(), first.profile(), first.sequence(),
+				first.nanos(), first.allocatedBytes(), first.scanMetrics(), unobservableIdentity));
+
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(valid))
+			.hasMessageContaining("warm matrix");
+
+		var coldInvalid = validatorFixture(corpus);
+		var coldSample = coldInvalid.cold().firstSearch();
+		var coldIdentity = new JourneyV3CurrentProductionScopeBenchmarkTest.RequestIdentity(
+			coldSample.requestIdentity().requestId(), coldSample.requestIdentity().routeBundleSha256(),
+			coldSample.requestIdentity().activationRequestIdentity(), coldSample.requestIdentity().activeServingIdentity(),
+			JourneyExecutionResult.BoundaryObservation.unobservable());
+		var invalidCold = new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(
+			coldInvalid.tuple(), coldInvalid.corpus(), new JourneyV3CurrentProductionScopeBenchmarkTest.ColdEvidence(
+				coldInvalid.cold().loadNanos(), coldInvalid.cold().loadAllocatedBytes(),
+				coldInvalid.cold().verificationNanos(), coldInvalid.cold().verificationAllocatedBytes(),
+				coldInvalid.cold().compilationNanos(), coldInvalid.cold().compilationAllocatedBytes(),
+				new JourneyV3CurrentProductionScopeBenchmarkTest.Sample(coldSample.caseId(), coldSample.profile(),
+					coldSample.sequence(), coldSample.nanos(), coldSample.allocatedBytes(), coldSample.scanMetrics(), coldIdentity)),
+			coldInvalid.warm(), coldInvalid.activationRequestIdentity(), coldInvalid.activeServingIdentity(), coldInvalid.config());
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(invalidCold))
+			.hasMessageContaining("cold evidence");
+
+		var unavailableActiveServing = validatorFixture(corpus).withActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.unobservable());
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.validate(unavailableActiveServing))
+			.hasMessageContaining("active-serving identity is UNOBSERVABLE");
+
+	}
+
+	@Test
+	void parsesOnlyAClosedRequestBoundDeployedObservation() {
+		var parsed = JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(observationResponse(0),
+			"01K1Y000000000000000000000");
+
+		assertThat(parsed.requestId()).isEqualTo("01K1Y000000000000000000000");
+		assertThat(parsed.routeBundleSha256()).isEqualTo("c".repeat(64));
+		assertThat(parsed.boundaryObservation().providerCalls()).isZero();
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(
+			observationResponse(1), "01K1Y000000000000000000000"))
+			.hasMessageContaining("invalid");
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(
+			new String(observationResponse(0), StandardCharsets.UTF_8)
+				.replace("}", ",\"extra\":true}").getBytes(StandardCharsets.UTF_8),
+			"01K1Y000000000000000000000"))
+			.hasMessageContaining("invalid");
+	}
+
+	@Test
+	void bindsDeployedObservationTimeoutsToTheRequiredJourneySearchTimeout() {
+		var config = JourneyV3CurrentProductionScopeBenchmarkTest.Config.from(Map.of(
+			"EASYSUBWAY_BENCHMARK_WARMUP_ITERATIONS", "1",
+			"EASYSUBWAY_BENCHMARK_MEASUREMENT_ITERATIONS", "1",
+			"EASYSUBWAY_BENCHMARK_CORPUS_SHA256", SHA,
+			"EASYSUBWAY_BENCHMARK_OUTPUT_PATH", "result.json",
+			"EASYSUBWAY_JOURNEY_V3_BENCHMARK_BASE_URL", "https://journey.example",
+			"EASYSUBWAY_JOURNEY_V3_READINESS_TOKEN", "token",
+			"EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT", "PT2S",
+			"EASYSUBWAY_BENCHMARK_WEEKDAY_DATE", "2026-08-10",
+			"EASYSUBWAY_BENCHMARK_WEEKEND_DATE", "2026-08-08"));
+		var client = new JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient(
+			config.baseUri(), config.readinessToken(), config.searchTimeout(), config.requestTimeout());
+
+		assertThat(client.connectTimeout()).isEqualTo(Duration.ofSeconds(2));
+		assertThat(client.requestTimeout()).isEqualTo(Duration.ofSeconds(3));
+		assertThat(client.request("{}").timeout()).contains(Duration.ofSeconds(3));
 	}
 
 	@Test
@@ -131,7 +213,7 @@ class JourneyV3BenchmarkContractTest {
 			"{\"schemaVersion\":1,\"corpusVersion\":1,\"cases\":[]}",
 			"{\"schemaVersion\":1,\"corpusVersion\":\"v1\",\"cases\":{}}",
 			"{\"schemaVersion\":1,\"corpusVersion\":\"v1\",\"cases\":[\"case\"]}")) {
-			assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(invalid))
+			assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(invalid))
 				.isInstanceOf(IllegalArgumentException.class);
 		}
 	}
@@ -151,16 +233,75 @@ class JourneyV3BenchmarkContractTest {
 
 	@Test
 	void writesCompleteEvidenceExactlyOnce(@TempDir Path directory) throws Exception {
-		var evidence = completeEvidence(JourneyV3NationwideBenchmarkTest.Contract.parseCorpus(validCorpus()));
+		var evidence = validatorFixture(JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(validCorpus()));
 		Path output = directory.resolve("benchmark.json");
 
-		JourneyV3NationwideBenchmarkTest.writeEvidence(output, evidence);
+		JourneyV3CurrentProductionScopeBenchmarkTest.writeEvidence(output, evidence);
 		byte[] first = Files.readAllBytes(output);
-		assertThat(new ObjectMapper().readTree(first).path("schemaVersion").asInt()).isOne();
+		var persisted = new ObjectMapper().readTree(first);
+		assertThat(persisted.path("schemaVersion").asInt()).isOne();
+		var config = persisted.path("config");
+		assertThat(fieldNames(config)).isEqualTo(java.util.Set.of(
+			"warmupIterations", "measurementIterations", "corpusSha256", "outputPath", "baseUri",
+			"searchTimeout", "requestTimeout", "weekdayDate", "weekendDate"));
+		assertThat(config.path("searchTimeout").asText()).isEqualTo("PT2S");
+		assertThat(config.path("requestTimeout").asText()).isEqualTo("PT3S");
+		var source = evidence.cold().firstSearch();
+		var sample = persisted.path("cold").path("firstSearch");
+		assertThat(fieldNames(sample)).isEqualTo(java.util.Set.of(
+			"caseId", "profile", "sequence", "nanos", "allocatedBytes", "scanMetrics", "requestIdentity"));
+		assertThat(sample.path("caseId").asText()).isEqualTo(source.caseId());
+		assertThat(sample.path("profile").asText()).isEqualTo(source.profile());
+		assertThat(sample.path("sequence").asInt()).isEqualTo(source.sequence());
+		assertThat(sample.path("nanos").asLong()).isEqualTo(source.nanos());
+		assertThat(sample.path("allocatedBytes").asLong()).isEqualTo(source.allocatedBytes());
+		var scanMetrics = sample.path("scanMetrics");
+		assertThat(fieldNames(scanMetrics)).isEqualTo(java.util.Set.of(
+			"expandedRoutes", "expandedTrips", "expandedTransfers"));
+		assertThat(scanMetrics.path("expandedRoutes").asLong()).isEqualTo(source.scanMetrics().expandedRoutes());
+		assertThat(scanMetrics.path("expandedTrips").asLong()).isEqualTo(source.scanMetrics().expandedTrips());
+		assertThat(scanMetrics.path("expandedTransfers").asLong()).isEqualTo(source.scanMetrics().expandedTransfers());
+		var identity = sample.path("requestIdentity");
+		assertThat(fieldNames(identity)).isEqualTo(java.util.Set.of(
+			"requestId", "routeBundleSha256", "activationRequestIdentity", "activeServingIdentity", "boundaryObservation"));
+		assertThat(identity.path("requestId").asText()).isEqualTo(source.requestIdentity().requestId());
+		assertThat(identity.path("routeBundleSha256").asText())
+			.isEqualTo(source.requestIdentity().routeBundleSha256());
+		assertThat(identity.path("activationRequestIdentity").asText())
+			.isEqualTo(source.requestIdentity().activationRequestIdentity());
+		var activeServing = identity.path("activeServingIdentity");
+		assertThat(fieldNames(activeServing)).isEqualTo(java.util.Set.of(
+			"status", "descriptorSha256", "receiptSha256", "deploymentIdentity", "deploymentRevision", "serviceDayCutoff"));
+		assertThat(activeServing.path("status").asText())
+			.isEqualTo(source.requestIdentity().activeServingIdentity().status().name());
+		assertThat(activeServing.path("descriptorSha256").asText())
+			.isEqualTo(source.requestIdentity().activeServingIdentity().descriptorSha256());
+		assertThat(activeServing.path("receiptSha256").asText())
+			.isEqualTo(source.requestIdentity().activeServingIdentity().receiptSha256());
+		assertThat(activeServing.path("deploymentIdentity").asText())
+			.isEqualTo(source.requestIdentity().activeServingIdentity().deploymentIdentity());
+		assertThat(activeServing.path("deploymentRevision").asText())
+			.isEqualTo(source.requestIdentity().activeServingIdentity().deploymentRevision());
+		assertThat(activeServing.path("serviceDayCutoff").asText())
+			.isEqualTo(source.requestIdentity().activeServingIdentity().serviceDayCutoff());
+		var boundary = identity.path("boundaryObservation");
+		assertThat(fieldNames(boundary)).isEqualTo(java.util.Set.of(
+			"status", "providerCalls", "cacheHits", "staleArtifactUses", "fallbackUses"));
+		assertThat(boundary.path("status").asText()).isEqualTo(source.requestIdentity().boundaryObservation().status().name());
+		assertThat(boundary.path("providerCalls").asLong()).isEqualTo(source.requestIdentity().boundaryObservation().providerCalls());
+		assertThat(boundary.path("cacheHits").asLong()).isEqualTo(source.requestIdentity().boundaryObservation().cacheHits());
+		assertThat(boundary.path("staleArtifactUses").asLong()).isEqualTo(source.requestIdentity().boundaryObservation().staleArtifactUses());
+		assertThat(boundary.path("fallbackUses").asLong()).isEqualTo(source.requestIdentity().boundaryObservation().fallbackUses());
 
-		assertThatThrownBy(() -> JourneyV3NationwideBenchmarkTest.writeEvidence(output, evidence))
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.writeEvidence(output, evidence))
 			.isInstanceOf(java.nio.file.FileAlreadyExistsException.class);
 		assertThat(Files.readAllBytes(output)).isEqualTo(first);
+	}
+
+	private static java.util.Set<String> fieldNames(com.fasterxml.jackson.databind.JsonNode value) {
+		var names = new java.util.HashSet<String>();
+		value.fieldNames().forEachRemaining(names::add);
+		return java.util.Set.copyOf(names);
 	}
 
 	@Test
@@ -182,25 +323,53 @@ class JourneyV3BenchmarkContractTest {
 			.hasMessageContaining("manifest digest");
 	}
 
-	private static JourneyV3NationwideBenchmarkTest.Evidence completeEvidence(
-		JourneyV3NationwideBenchmarkTest.Corpus corpus
+	private static JourneyV3CurrentProductionScopeBenchmarkTest.Evidence validatorFixture(
+		JourneyV3CurrentProductionScopeBenchmarkTest.Corpus corpus
 	) {
-		var warm = new EnumMap<JourneyV3NationwideBenchmarkTest.Profile, JourneyV3NationwideBenchmarkTest.WarmEvidence>(
-			JourneyV3NationwideBenchmarkTest.Profile.class);
-		for (var profile : JourneyV3NationwideBenchmarkTest.Profile.values()) {
+		var warm = new EnumMap<JourneyV3CurrentProductionScopeBenchmarkTest.Profile, JourneyV3CurrentProductionScopeBenchmarkTest.WarmEvidence>(
+			JourneyV3CurrentProductionScopeBenchmarkTest.Profile.class);
+		for (var profile : JourneyV3CurrentProductionScopeBenchmarkTest.Profile.values()) {
 			var samples = new java.util.ArrayList<>(List.of(
-				new JourneyV3NationwideBenchmarkTest.Sample("capital-cross-city", profile.name(), 0, 10, 100),
-				new JourneyV3NationwideBenchmarkTest.Sample("regional-connection", profile.name(), 0, 20, 200)));
-			warm.put(profile, new JourneyV3NationwideBenchmarkTest.WarmEvidence(
-				new java.util.ArrayList<>(corpus.cases().stream().map(JourneyV3NationwideBenchmarkTest.Case::id).toList()), samples,
-				JourneyV3NationwideBenchmarkTest.Percentiles.from(samples), new JourneyV3NationwideBenchmarkTest.ScanMetrics(1, 2, 3)));
+				new JourneyV3CurrentProductionScopeBenchmarkTest.Sample("capital-cross-city", profile.name(), 0, 10, 100,
+					new JourneyV3CurrentProductionScopeBenchmarkTest.ScanMetrics(1, 2, 3), requestIdentity(profile, 0)),
+				new JourneyV3CurrentProductionScopeBenchmarkTest.Sample("regional-connection", profile.name(), 0, 20, 200,
+					new JourneyV3CurrentProductionScopeBenchmarkTest.ScanMetrics(1, 2, 3), requestIdentity(profile, 1))));
+			warm.put(profile, new JourneyV3CurrentProductionScopeBenchmarkTest.WarmEvidence(
+				new java.util.ArrayList<>(corpus.cases().stream().map(JourneyV3CurrentProductionScopeBenchmarkTest.Case::id).toList()), samples,
+				JourneyV3CurrentProductionScopeBenchmarkTest.Percentiles.from(samples), new JourneyV3CurrentProductionScopeBenchmarkTest.ScanMetrics(1, 2, 3)));
 		}
-		return new JourneyV3NationwideBenchmarkTest.Evidence(
+		var coldSearch = new JourneyV3CurrentProductionScopeBenchmarkTest.Sample(
+			"capital-cross-city", JourneyV3CurrentProductionScopeBenchmarkTest.Profile.STANDARD.name(), 0, 1, 1,
+			new JourneyV3CurrentProductionScopeBenchmarkTest.ScanMetrics(1, 2, 3), requestIdentity(
+				JourneyV3CurrentProductionScopeBenchmarkTest.Profile.STANDARD, 6));
+		return new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(
 			new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(SHA, "b".repeat(64), "c".repeat(64), "d".repeat(40)), corpus,
-			new JourneyV3NationwideBenchmarkTest.ColdEvidence(1, 1, 1, 1, 1, 1, 1, 1), warm,
-			new JourneyV3BenchmarkRuntimeAdapter.Counters(1, 2, 1, 1, 0, 0, 0, 0),
-			new JourneyV3BenchmarkRuntimeAdapter.Counters(1, 2, 13, 13, 0, 0, 0, 0),
-			new JourneyV3NationwideBenchmarkTest.Config(1, 1, corpus.sha256(), Path.of("result.json")));
+			new JourneyV3CurrentProductionScopeBenchmarkTest.ColdEvidence(1, 1, 1, 1, 1, 1, coldSearch), warm,
+			ACTIVATION_REQUEST_IDENTITY,
+			ACTIVE_SERVING_IDENTITY,
+			config(1, 1, corpus.sha256()));
+	}
+
+	private static JourneyV3CurrentProductionScopeBenchmarkTest.RequestIdentity requestIdentity(
+		JourneyV3CurrentProductionScopeBenchmarkTest.Profile profile,
+		int index
+	) {
+		return new JourneyV3CurrentProductionScopeBenchmarkTest.RequestIdentity(
+			String.format("0%025d", profile.ordinal() * 2 + index + 1),
+			"c".repeat(64), ACTIVATION_REQUEST_IDENTITY, ACTIVE_SERVING_IDENTITY,
+			new JourneyExecutionResult.BoundaryObservation(
+				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L));
+	}
+
+	private static JourneyV3CurrentProductionScopeBenchmarkTest.Config config(
+		int warmup,
+		int measurement,
+		String corpusSha256
+	) {
+		return new JourneyV3CurrentProductionScopeBenchmarkTest.Config(warmup, measurement, corpusSha256,
+			Path.of("result.json"), java.net.URI.create("https://journey.example"), null,
+			Duration.ofSeconds(2),
+			java.time.LocalDate.parse("2026-08-10"), java.time.LocalDate.parse("2026-08-08"));
 	}
 
 	private static String validCorpus() {
@@ -209,6 +378,23 @@ class JourneyV3BenchmarkContractTest {
 			{"id":"capital-cross-city","originStationId":"station-origin","destinationStationId":"station-destination","serviceDay":"WEEKDAY","departureLocalTime":"08:00"},
 			{"id":"regional-connection","originStationId":"station-regional-origin","destinationStationId":"station-regional-destination","serviceDay":"WEEKEND","departureLocalTime":"14:30"}]}
 			""";
+	}
+
+	private static byte[] observationResponse(int providerCalls) {
+		return ("""
+			{"requestId":"01K1Y000000000000000000000","routeBundleSha256":"%s","bundleGeneration":1,
+			"serviceDay":{"serviceDate":"2026-08-10","timezone":"Asia/Seoul","cutoffLocalTime":"03:00"},
+			"scanMetrics":{"expandedRoutes":1,"expandedTrips":2,"expandedTransfers":3},
+			"boundaryObservation":{"status":"OBSERVED","providerCalls":%d,"cacheHits":0,"staleArtifactUses":0,"fallbackUses":0},
+			"executionNanos":10,"allocatedBytes":20,
+			"activeReadiness":{"schemaVersion":1,"artifactKind":"journey-v3-active-readiness","instanceId":"backend-a",
+			"releaseTupleSha256":"%s","backendImageDigest":"sha256:%s","backendConfigSha256":"%s",
+			"journeyContractSha256":"%s","routeBundleManifestSha256":"%s","bundleId":"bundle-a",
+			"bundleReleaseSequence":1,"generation":1,"serviceTimezone":"Asia/Seoul","serviceDayCutoff":"03:00",
+			"trafficGeneration":1,"servingReady":true,"draining":false,"freshUntil":"2026-08-11T00:00:00Z",
+			"activatedAt":"2026-08-10T00:00:00Z","evidenceSha256":"%s"}}
+			""").formatted("c".repeat(64), providerCalls, "a".repeat(64), "b".repeat(64),
+			"c".repeat(64), "d".repeat(64), "c".repeat(64), "e".repeat(64)).getBytes(StandardCharsets.UTF_8);
 	}
 
 	private static byte[] receipt(String outcome, String tupleOverride) throws Exception {

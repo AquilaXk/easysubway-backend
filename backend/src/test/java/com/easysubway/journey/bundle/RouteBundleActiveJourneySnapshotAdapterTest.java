@@ -3,6 +3,7 @@ package com.easysubway.journey.bundle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Clock;
 import java.time.Instant;
@@ -37,7 +38,17 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(snapshot.runtimeView()).isSameAs(runtime);
 		assertThat(snapshot.validUntil()).isEqualTo(FRESH_UNTIL);
 		assertThat(snapshot.fresh()).isTrue();
+		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.observed(0, 0));
 		assertThat(clock.instantCalls()).isEqualTo(3);
+	}
+
+	@Test
+	void marksTheSnapshotReceiptUnobservableWhenFreshnessCannotBeProved() {
+		var adapter = new RouteBundleActiveJourneySnapshotAdapter(
+			activeRegistry(Clock.fixed(NOW, ZoneOffset.UTC), new TestRuntime(MANIFEST_SHA, 1)));
+
+		assertThat(adapter.requireActive(FRESH_UNTIL).boundaryReceipt())
+			.isEqualTo(SnapshotBoundaryReceipt.unobservable());
 	}
 
 	@Test
