@@ -18,6 +18,7 @@ public interface ActiveJourneySnapshotPort {
 		JourneyRaptorRuntimeView runtimeView,
 		Instant validUntil,
 		boolean fresh,
+		ActiveServingEvidence servingEvidence,
 		SnapshotBoundaryReceipt boundaryReceipt
 	) {
 		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
@@ -37,6 +38,7 @@ public interface ActiveJourneySnapshotPort {
 				throw new IllegalArgumentException("runtime view generation does not match snapshot");
 			}
 			validUntil = Objects.requireNonNull(validUntil, "validUntil");
+			servingEvidence = Objects.requireNonNull(servingEvidence, "servingEvidence");
 			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
 		}
 
@@ -52,6 +54,43 @@ public interface ActiveJourneySnapshotPort {
 			Objects.requireNonNull(value, name);
 			if (value.isBlank()) {
 				throw new IllegalArgumentException(name + " must not be blank");
+			}
+			return value;
+		}
+	}
+
+	/** Immutable serving evidence captured with this active snapshot generation. */
+	record ActiveServingEvidence(Status status, String descriptorSha256, String publicationReceiptSha256) {
+		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
+
+		enum Status { OBSERVED, UNOBSERVABLE }
+
+		public ActiveServingEvidence {
+			status = Objects.requireNonNull(status, "status");
+			if (status == Status.UNOBSERVABLE) {
+				if (descriptorSha256 != null || publicationReceiptSha256 != null) {
+					throw new IllegalArgumentException("unobservable serving evidence must not have digests");
+				}
+			} else {
+				descriptorSha256 = requireSha256(descriptorSha256, "descriptorSha256");
+				publicationReceiptSha256 = requireSha256(
+					publicationReceiptSha256, "publicationReceiptSha256");
+			}
+		}
+
+		public static ActiveServingEvidence observed(
+			String descriptorSha256, String publicationReceiptSha256) {
+			return new ActiveServingEvidence(Status.OBSERVED, descriptorSha256, publicationReceiptSha256);
+		}
+
+		public static ActiveServingEvidence unobservable() {
+			return new ActiveServingEvidence(Status.UNOBSERVABLE, null, null);
+		}
+
+		private static String requireSha256(String value, String name) {
+			value = Objects.requireNonNull(value, name);
+			if (!SHA256.matcher(value).matches()) {
+				throw new IllegalArgumentException(name + " must be lowercase SHA-256");
 			}
 			return value;
 		}

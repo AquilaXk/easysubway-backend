@@ -343,6 +343,7 @@ class JourneyRaptorAdapterTest {
 		var unknownSnapshot = new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION, unknown, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 
 		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
@@ -355,6 +356,7 @@ class JourneyRaptorAdapterTest {
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION + 1, runtime, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("generation");
@@ -556,6 +558,7 @@ class JourneyRaptorAdapterTest {
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION, runtime, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 	}
 

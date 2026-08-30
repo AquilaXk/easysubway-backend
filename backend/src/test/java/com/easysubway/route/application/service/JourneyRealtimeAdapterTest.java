@@ -268,6 +268,7 @@ class JourneyRealtimeAdapterTest {
 		return new ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION, runtime, NOW.plusSeconds(3_600), true,
+			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 	}
 

@@ -1,6 +1,7 @@
 package com.easysubway.journey.bundle;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Instant;
 import java.util.Objects;
@@ -36,8 +37,17 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 			runtimeView,
 			identity.freshUntilInstant(),
 			fresh,
+			projectServingEvidence(active.servingEvidence()),
 			fresh ? ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
 				: ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable());
 		return snapshot;
+	}
+
+	private static ActiveServingEvidence projectServingEvidence(RouteBundleServingEvidence evidence) {
+		return switch (evidence.status()) {
+			case OBSERVED -> ActiveServingEvidence.observed(
+				evidence.descriptorSha256(), evidence.publicationReceiptSha256());
+			case UNOBSERVABLE -> ActiveServingEvidence.unobservable();
+		};
 	}
 }

@@ -9,6 +9,7 @@ public final class ActiveRouteBundleSnapshot {
 	private final long generation;
 	private final RouteBundleIdentity identity;
 	private final RouteBundleAdmissionEvidence admissionEvidence;
+	private final RouteBundleServingEvidence servingEvidence;
 	private final RouteBundleRuntimeView runtimeView;
 	private final Instant activatedAt;
 
@@ -16,6 +17,7 @@ public final class ActiveRouteBundleSnapshot {
 		long generation,
 		RouteBundleIdentity identity,
 		RouteBundleAdmissionEvidence admissionEvidence,
+		RouteBundleServingEvidence servingEvidence,
 		RouteBundleRuntimeView runtimeView,
 		Instant activatedAt) {
 		if (generation < 1) {
@@ -24,6 +26,7 @@ public final class ActiveRouteBundleSnapshot {
 		this.generation = generation;
 		this.identity = Objects.requireNonNull(identity, "identity");
 		this.admissionEvidence = Objects.requireNonNull(admissionEvidence, "admissionEvidence");
+		this.servingEvidence = Objects.requireNonNull(servingEvidence, "servingEvidence");
 		this.runtimeView = Objects.requireNonNull(runtimeView, "runtimeView");
 		this.activatedAt = Objects.requireNonNull(activatedAt, "activatedAt");
 	}
@@ -38,6 +41,10 @@ public final class ActiveRouteBundleSnapshot {
 
 	public RouteBundleAdmissionEvidence admissionEvidence() {
 		return admissionEvidence;
+	}
+
+	public RouteBundleServingEvidence servingEvidence() {
+		return servingEvidence;
 	}
 
 	public RouteBundleRuntimeView runtimeView() {

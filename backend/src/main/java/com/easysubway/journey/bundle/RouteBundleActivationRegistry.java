@@ -94,6 +94,7 @@ public final class RouteBundleActivationRegistry {
 				stagedSnapshot.generation(),
 				candidate.identity(),
 				candidate.admissionEvidence(),
+				candidate.servingEvidence(),
 				candidate.runtimeView(),
 				activatedAt);
 			if (state.compareAndSet(current, new State(snapshot.generation(), snapshot, null, null))) {

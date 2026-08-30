@@ -88,7 +88,8 @@ class RouteBundleStartupCandidateLoaderTest {
 		when(identity.freshUntilInstant()).thenReturn(NOW.plusSeconds(600));
 		var evidence = mock(RouteBundleAdmissionEvidence.class);
 		var runtime = mock(RouteBundleRuntimeView.class);
-		var candidate = new VerifiedRouteBundleCandidate(identity, evidence, runtime, NOW);
+		var candidate = new VerifiedRouteBundleCandidate(
+			identity, evidence, RouteBundleServingEvidence.unobservable(), runtime, NOW);
 		var assembler = mock(RouteBundleCandidateAssembler.class);
 		when(assembler.assemble(verified, 1, NOW)).thenReturn(candidate);
 		var registry = new RouteBundleActivationRegistry(Clock.fixed(NOW, ZoneOffset.UTC));

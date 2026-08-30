@@ -466,7 +466,8 @@ class JourneyApplicationServiceTest {
 	) {
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1,
-			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh, boundaryReceipt
+			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(), boundaryReceipt
 		);
 	}
 
