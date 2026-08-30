@@ -1,4 +1,5 @@
 import org.gradle.api.tasks.compile.JavaCompile
+import org.gradle.process.CommandLineArgumentProvider
 
 plugins {
 	id 'java'
@@ -374,15 +375,33 @@ tasks.withType(JavaCompile).configureEach {
 def stageContracts = tasks.register('stageContracts', Exec) {
 	inputs.file(layout.projectDirectory.file('tools/stage-contracts.mjs'))
 	inputs.file(layout.projectDirectory.file('contracts.lock.json'))
-	inputs.file(contractsBundle)
+	inputs.files(providers.provider {
+		def bundle = contractsBundle.orNull
+		bundle == null || bundle.isBlank() ? [] : [file(bundle)]
+	})
+		.withPropertyName('contractsBundle')
+		.withPathSensitivity(PathSensitivity.ABSOLUTE)
 	outputs.dir(layout.buildDirectory.dir('contracts-staging'))
+	outputs.upToDateWhen {
+		def bundle = contractsBundle.orNull
+		bundle != null && !bundle.isBlank()
+			&& java.nio.file.Files.isRegularFile(file(bundle).toPath(), java.nio.file.LinkOption.NOFOLLOW_LINKS)
+	}
+	executable = 'node'
+	args 'tools/stage-contracts.mjs', '--lock', 'contracts.lock.json'
+	argumentProviders.add({
+		def bundle = contractsBundle.orNull
+		if (bundle == null || bundle.isBlank()) {
+			return []
+		}
+		return ['--input', bundle, '--output', 'build/contracts-staging']
+	} as CommandLineArgumentProvider)
 
 	doFirst {
 		def bundle = contractsBundle.orNull
 		if (bundle == null || bundle.isBlank()) {
 			throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
 		}
-		commandLine 'node', 'tools/stage-contracts.mjs', '--lock', 'contracts.lock.json', '--input', bundle, '--output', 'build/contracts-staging'
 	}
 }
 

@@ -15,7 +15,7 @@
     "spotbugsGradlePlugin": {
       "id": "com.github.spotbugs",
       "requestedVersion": "6.2.2",
-      "buildScriptSha256": "abc4fcccc156430f54497903f159502d18678d546ba6cb5208a89659302d5ff0",
+      "buildScriptSha256": "dc6b134b017edd47a289a7292d85387ec7104cc623237c19dcdf33f7e5cf2e48",
       "implementationClass": "com.github.spotbugs.snom.SpotBugsPlugin",
       "implementationJarSha256": "f37166fbbcde9258058f5f46827b527aed663f9cd8faea68138a153b1ceb4add"
     },
