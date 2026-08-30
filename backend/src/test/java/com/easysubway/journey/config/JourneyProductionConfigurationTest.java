@@ -1,6 +1,7 @@
 package com.easysubway.journey.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -480,6 +481,28 @@ class JourneyProductionConfigurationTest {
 				.isNotEqualTo(acceptingActive.evidenceSha256());
 
 			verify(registry, times(2)).candidateSnapshot();
+		});
+	}
+
+	@Test
+	@DisplayName("Active readiness rejects a non-current route bundle service timezone")
+	void readinessRejectsNonCurrentActiveRouteBundleServiceTimezone() {
+		validProductionContext().run(context -> {
+			assertThat(context).hasNotFailed();
+			var registry = context.getBean(RouteBundleActivationRegistry.class);
+			var availability = new MutableApplicationAvailability();
+			var readinessService = new JourneyReadinessService(
+				registry,
+				context.getBean(JourneyReadinessProperties.class),
+				availability);
+			var identity = mock(RouteBundleIdentity.class);
+			when(identity.serviceTimezone()).thenReturn("UTC");
+			var active = mock(ActiveRouteBundleSnapshot.class);
+			when(active.identity()).thenReturn(identity);
+
+			assertThatThrownBy(() -> readinessService.active(active))
+				.isInstanceOf(IllegalStateException.class)
+				.hasMessage("active route bundle service timezone is not current");
 		});
 	}
 
