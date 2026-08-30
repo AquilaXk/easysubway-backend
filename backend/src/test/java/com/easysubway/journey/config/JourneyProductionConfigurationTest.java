@@ -507,6 +507,17 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
+	@DisplayName("Active readiness rejects a non-current service-day identity")
+	void activeReadinessRejectsNonCurrentServiceDayIdentity() {
+		assertThatThrownBy(() -> activeReadiness("UTC", "03:00"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("active readiness service-day identity is not current");
+		assertThatThrownBy(() -> activeReadiness("Asia/Seoul", "04:00"))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("active readiness service-day identity is not current");
+	}
+
+	@Test
 	@DisplayName("readiness runtime identity 누락·형식 오류·non-positive traffic generation은 startup을 거부한다")
 	void productionProfileRejectsInvalidReadinessIdentity() {
 		productionContext(
@@ -633,6 +644,15 @@ class JourneyProductionConfigurationTest {
 
 	private static RouteBundleAdmissionEvidence evidence() {
 		return new RouteBundleAdmissionEvidence(SHA_A, "final", "promotion", "receipt", "activation");
+	}
+
+	private static JourneyReadinessService.ActiveReadiness activeReadiness(
+		String serviceTimezone,
+		String serviceDayCutoff) {
+		return new JourneyReadinessService.ActiveReadiness(
+			1, "journey-v3-active-readiness", "backend-a", SHA_A, "sha256:" + SHA_A,
+			SHA_A, SHA_A, SHA_A, "bundle-a", 1, 1, serviceTimezone, serviceDayCutoff,
+			31, true, false, VERIFIED_AT, ACTIVATED_AT, SHA_A);
 	}
 
 	private static String activationCommand() {
