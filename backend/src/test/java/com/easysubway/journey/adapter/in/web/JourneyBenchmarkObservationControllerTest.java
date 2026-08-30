@@ -76,7 +76,7 @@ class JourneyBenchmarkObservationControllerTest {
 	void rejectsInvalidDepartureBeforeExecution() throws Exception {
 		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
 				.contentType(MediaType.APPLICATION_JSON)
-				.content(validRequest().replace(",\"requestedAt\":\"2026-08-12T00:01:00Z\"", "")))
+				.content(validRequest().replace("\"mode\":\"SCHEDULED\",\n\"requestedAt\":\"2026-08-12T00:01:00Z\"", "\"mode\":\"SCHEDULED\"")))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.reason").value("INVALID_REQUEST"));
 
@@ -103,7 +103,7 @@ class JourneyBenchmarkObservationControllerTest {
 
 	@Test
 	void rejectsRequestAndActiveIdentityMismatches() throws Exception {
-		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success("different-request"), 11, 12));
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success("01K1Y000000000000000000001"), 11, 12));
 
 		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
 				.contentType(MediaType.APPLICATION_JSON)
