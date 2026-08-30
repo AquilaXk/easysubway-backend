@@ -136,6 +136,19 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	@Test
+	void activationPreservesServingEvidenceFromTheVerifiedCandidate() {
+		var registry = registryAt(T0);
+		var evidence = RouteBundleServingEvidence.observed("a".repeat(64), "b".repeat(64));
+		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60), T0, evidence);
+
+		registry.stage(candidate, 0);
+		var active = registry.activate(candidate.admissionEvidence().manifestSha256(), 0);
+
+		assertThat(active.servingEvidence()).isSameAs(evidence);
+		assertThat(registry.activeSnapshot().servingEvidence()).isSameAs(evidence);
+	}
+
+	@Test
 	void candidateExecutionSnapshotExposesTheExactRuntimeWithoutActivatingOrMutating() {
 		var registry = registryAt(T0);
 		var candidate = candidate("a", T0.minusSeconds(1), T0.plusSeconds(60));
@@ -347,15 +360,22 @@ class RouteBundleActivationRegistryTest {
 	}
 
 	private static VerifiedRouteBundleCandidate candidate(String manifestMarker, Instant activeFrom, Instant freshUntil) {
-		return candidate(manifestMarker, activeFrom, freshUntil, T0);
+		return candidate(manifestMarker, activeFrom, freshUntil, T0, RouteBundleServingEvidence.unobservable());
 	}
 
 	private static VerifiedRouteBundleCandidate candidate(
 		String manifestMarker, Instant activeFrom, Instant freshUntil, Instant verifiedAt) {
+		return candidate(manifestMarker, activeFrom, freshUntil, verifiedAt,
+			RouteBundleServingEvidence.unobservable());
+	}
+
+	private static VerifiedRouteBundleCandidate candidate(
+		String manifestMarker, Instant activeFrom, Instant freshUntil, Instant verifiedAt,
+		RouteBundleServingEvidence servingEvidence) {
 		return new VerifiedRouteBundleCandidate(
 			identity(manifestMarker, 1, "server-route-bundle", 1, activeFrom, freshUntil),
 			evidence(manifestMarker),
-			new CompiledRuntimeView("compiled-" + manifestMarker), verifiedAt);
+			servingEvidence, new CompiledRuntimeView("compiled-" + manifestMarker), verifiedAt);
 	}
 
 	private static RouteBundleIdentity identity(

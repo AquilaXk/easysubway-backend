@@ -45,6 +45,7 @@ class RouteBundleCandidateAssemblerTest {
 		assertThat(calls.get()).isEqualTo(1);
 		assertThat(candidate.identity()).isEqualTo(fixture.identity());
 		assertThat(candidate.admissionEvidence()).isEqualTo(fixture.handoff().admissionEvidence());
+		assertThat(candidate.servingEvidence()).isEqualTo(RouteBundleServingEvidence.unobservable());
 		assertThat(candidate.runtimeView()).isSameAs(runtime);
 		assertThat(candidate.verifiedAt()).isEqualTo(VERIFIED_AT);
 		assertThat(captured.get().routeBundleSha256()).isEqualTo(fixture.manifestSha256());
@@ -75,9 +76,21 @@ class RouteBundleCandidateAssemblerTest {
 		assertThat(calls.get()).isEqualTo(1);
 		assertThat(candidate.identity()).isEqualTo(fixture.identity());
 		assertThat(candidate.admissionEvidence()).isEqualTo(fixture.handoff().admissionEvidence());
+		assertThat(candidate.servingEvidence()).isEqualTo(RouteBundleServingEvidence.observed(
+			"d".repeat(64), "e".repeat(64)));
 		assertThat(captured.get().routeBundleSha256()).isEqualTo(fixture.manifestSha256());
 		assertThat(captured.get().generation()).isEqualTo(7);
 		assertThat(captured.get().admittedPayloadSha256s()).isEqualTo(fixture.payloadDigests());
+	}
+
+	@Test
+	void servingEvidenceRejectsMalformedObservedDigests() {
+		for (var evidence : List.<java.util.function.Supplier<RouteBundleServingEvidence>>of(
+			() -> RouteBundleServingEvidence.observed("A".repeat(64), "b".repeat(64)),
+			() -> RouteBundleServingEvidence.observed("a".repeat(63), "b".repeat(64)),
+			() -> RouteBundleServingEvidence.observed("a".repeat(64), "b".repeat(63)))) {
+			assertThatThrownBy(evidence::get).isInstanceOf(IllegalArgumentException.class);
+		}
 	}
 
 	@Test
@@ -191,6 +204,10 @@ class RouteBundleCandidateAssemblerTest {
 		when(signature.descriptor()).thenReturn(descriptor);
 		when(descriptor.identity()).thenReturn(fixture.identity());
 		when(descriptor.admissionEvidence()).thenReturn(fixture.handoff().admissionEvidence());
+		when(descriptor.descriptorSha256()).thenReturn("d".repeat(64));
+		var release = mock(RouteBundlePublicationDescriptor.ReleaseEvidence.class);
+		when(descriptor.release()).thenReturn(release);
+		when(release.publicationReceiptSha256()).thenReturn("e".repeat(64));
 		when(descriptor.objects()).thenReturn(fixture.handoff().objects().stream()
 			.map(object -> new RouteBundlePublicationDescriptor.PublishedObject(
 				object.path(), object.objectKey(), object.sizeBytes(), object.sha256()))

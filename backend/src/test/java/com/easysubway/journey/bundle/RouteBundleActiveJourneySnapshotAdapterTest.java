@@ -3,6 +3,7 @@ package com.easysubway.journey.bundle;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import java.time.Clock;
@@ -38,8 +39,22 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(snapshot.runtimeView()).isSameAs(runtime);
 		assertThat(snapshot.validUntil()).isEqualTo(FRESH_UNTIL);
 		assertThat(snapshot.fresh()).isTrue();
+		assertThat(snapshot.servingEvidence()).isEqualTo(ActiveServingEvidence.unobservable());
 		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.observed(0, 0));
 		assertThat(clock.instantCalls()).isEqualTo(3);
+	}
+
+	@Test
+	void projectsCapturedObservedServingEvidenceWithTheActiveGeneration() {
+		var servingEvidence = RouteBundleServingEvidence.observed("d".repeat(64), "e".repeat(64));
+		var registry = activeRegistry(Clock.fixed(NOW, ZoneOffset.UTC), new TestRuntime(MANIFEST_SHA, 1),
+			servingEvidence);
+
+		var snapshot = new RouteBundleActiveJourneySnapshotAdapter(registry).requireActive(NOW);
+
+		assertThat(snapshot.generation()).isOne();
+		assertThat(snapshot.servingEvidence()).isEqualTo(ActiveServingEvidence.observed(
+			"d".repeat(64), "e".repeat(64)));
 	}
 
 	@Test
@@ -95,6 +110,11 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 	}
 
 	private static RouteBundleActivationRegistry activeRegistry(Clock clock, RouteBundleRuntimeView runtime) {
+		return activeRegistry(clock, runtime, RouteBundleServingEvidence.unobservable());
+	}
+
+	private static RouteBundleActivationRegistry activeRegistry(
+		Clock clock, RouteBundleRuntimeView runtime, RouteBundleServingEvidence servingEvidence) {
 		var registry = new RouteBundleActivationRegistry(clock);
 		registry.stage(new VerifiedRouteBundleCandidate(
 			identity(),
@@ -104,6 +124,7 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 				"promotion-evidence",
 				"publication-receipt",
 				"activation-request"),
+			servingEvidence,
 			runtime,
 			NOW.minusSeconds(1)), 0);
 		registry.activate(MANIFEST_SHA, 0);

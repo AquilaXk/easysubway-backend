@@ -45,6 +45,7 @@ public final class RouteBundleCandidateAssembler {
 		return assemble(
 			handoff.identity(),
 			handoff.admissionEvidence(),
+			RouteBundleServingEvidence.unobservable(),
 			admittedPayloadDigests(handoff),
 			admission::objectBytes,
 			candidateGeneration,
@@ -61,6 +62,8 @@ public final class RouteBundleCandidateAssembler {
 		return assemble(
 			descriptor.identity(),
 			descriptor.admissionEvidence(),
+			RouteBundleServingEvidence.observed(
+				descriptor.descriptorSha256(), descriptor.release().publicationReceiptSha256()),
 			admittedPayloadDigests(descriptor),
 			admission::objectBytes,
 			candidateGeneration,
@@ -70,6 +73,7 @@ public final class RouteBundleCandidateAssembler {
 	private VerifiedRouteBundleCandidate assemble(
 		RouteBundleIdentity identity,
 		RouteBundleAdmissionEvidence admissionEvidence,
+		RouteBundleServingEvidence servingEvidence,
 		Map<String, String> payloadDigests,
 		ObjectBytes objectBytes,
 		long candidateGeneration,
@@ -104,7 +108,7 @@ public final class RouteBundleCandidateAssembler {
 		RouteBundleRuntimeView runtime = Objects.requireNonNull(
 			compiler.compile(input), "compiled runtime");
 		return new VerifiedRouteBundleCandidate(
-			identity, admissionEvidence, runtime, verifiedAt);
+			identity, admissionEvidence, servingEvidence, runtime, verifiedAt);
 	}
 
 	private static Map<String, String> admittedPayloadDigests(RouteBundleConsumerHandoff handoff) {

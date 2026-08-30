@@ -141,11 +141,13 @@ class JourneyCandidateTest {
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "BAD", "timetable-1", "accessibility-1", 1,
 			new TestRuntimeView("BAD", 1), ARRIVAL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", 0,
 			new TestRuntimeView("a".repeat(64), 0), ARRIVAL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(

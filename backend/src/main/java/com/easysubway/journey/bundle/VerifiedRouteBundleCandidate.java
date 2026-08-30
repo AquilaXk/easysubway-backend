@@ -8,16 +8,19 @@ public final class VerifiedRouteBundleCandidate {
 
 	private final RouteBundleIdentity identity;
 	private final RouteBundleAdmissionEvidence admissionEvidence;
+	private final RouteBundleServingEvidence servingEvidence;
 	private final RouteBundleRuntimeView runtimeView;
 	private final Instant verifiedAt;
 
 	VerifiedRouteBundleCandidate(
 		RouteBundleIdentity identity,
 		RouteBundleAdmissionEvidence admissionEvidence,
+		RouteBundleServingEvidence servingEvidence,
 		RouteBundleRuntimeView runtimeView,
 		Instant verifiedAt) {
 		this.identity = Objects.requireNonNull(identity, "identity");
 		this.admissionEvidence = Objects.requireNonNull(admissionEvidence, "admissionEvidence");
+		this.servingEvidence = Objects.requireNonNull(servingEvidence, "servingEvidence");
 		this.runtimeView = Objects.requireNonNull(runtimeView, "runtimeView");
 		this.verifiedAt = Objects.requireNonNull(verifiedAt, "verifiedAt");
 	}
@@ -28,6 +31,10 @@ public final class VerifiedRouteBundleCandidate {
 
 	public RouteBundleAdmissionEvidence admissionEvidence() {
 		return admissionEvidence;
+	}
+
+	public RouteBundleServingEvidence servingEvidence() {
+		return servingEvidence;
 	}
 
 	public RouteBundleRuntimeView runtimeView() {
