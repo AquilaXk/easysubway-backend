@@ -4,19 +4,19 @@
   "bundleVersion": "2.0.0",
   "producer": {
     "repository": "AquilaXk/easysubway-backend",
-    "gitSha": "1012036da2459519b1a487783b77b3df926133b7"
+    "gitSha": "6698c3812be74fe7fc94313ec491738d227f7748"
   },
   "artifact": {
     "repository": "ghcr.io/aquilaxk/easysubway-backend-contracts",
-    "manifestDigest": "sha256:12cfa77b1ae7c1ee38d686f27982e892ce2620e7c80d39793c1f9fb806154dc6",
+    "manifestDigest": "sha256:f06dda4484e88ede5afad819bd04f7659f6fe239cc13d823392271894e7147ae",
     "artifactType": "application/vnd.easysubway.journey.contract-bundle.v2"
   },
   "payload": {
     "fileName": "journey-v3-contract-bundle-v2.json",
     "mediaType": "application/vnd.easysubway.journey.contract-bundle.v2+json",
-    "sha256": "a1d63aa97fd880faeee6ccfb8340bb7978759dce87fef83a3df8bdb8d2679a7f"
+    "sha256": "e033eaa30c94ddf35b820873f18124c5f533310b8a268ad878128fffb5a988f8"
   },
-  "publicationReceiptSha256": "3ee49a63662d1acd2e84778600537b97401b816b2db7e2a290d3c252c9891e4e",
+  "publicationReceiptSha256": "cf975aa84afffa707a4202c9f5e4d93cad5192baab44345dd8964af4eb8a7687",
   "resources": [
     {
       "id": "journey-v3-error-catalog",
@@ -44,7 +44,7 @@
       "path": "contracts/api/journey-v3.openapi.yaml",
       "owner": "AquilaXk/easysubway-backend",
       "mediaType": "application/yaml",
-      "sha256": "a523a0502008e03c18d46bf65dff5ef82d8a88e27d93c0f7b67f8583e042c21c"
+      "sha256": "4c229b8a85d3d95ad55465963a2f76f446ba4b620b819b2f07a0c1a4c24da805"
     }
   ]
 }
