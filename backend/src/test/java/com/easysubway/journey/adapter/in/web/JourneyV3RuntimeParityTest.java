@@ -497,8 +497,7 @@ class JourneyV3RuntimeParityTest {
 				1
 			),
 			List.of(journey),
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
+			JourneyExecutionResult.SafetyBoundary.observed()
 		);
 	}
 

@@ -80,10 +80,15 @@ public final class JourneyApplicationService {
 			&& plan.boundaryReceipt().status() != JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED) {
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		}
-		if (plan.candidates().isEmpty()) return failure(JourneyExecutionFailure.Reason.NO_ROUTE);
+		if (plan.candidates().isEmpty()) {
+			var requestMeasurement = requestMeasurement(request, snapshot, plan, measurement);
+			return new JourneyExecutionFailure(JourneyExecutionFailure.Reason.NO_ROUTE,
+				executionObservation(request, snapshot, plan, effectiveInstant, requestMeasurement));
+		}
 		try {
 			Instant validUntil = realtime == null || snapshot.validUntil().isBefore(realtime.validUntil())
 				? snapshot.validUntil() : realtime.validUntil();
+			var requestMeasurement = requestMeasurement(request, snapshot, plan, measurement);
 			var result = new JourneyExecutionResult.Success(
 				request.requestId(),
 				plan.queryId(),
@@ -109,8 +114,8 @@ public final class JourneyApplicationService {
 					request.alternativeCount()
 				),
 				plan.candidates(),
-				boundaryObservation(request, snapshot, plan),
-				requestMeasurement(request, snapshot, plan, measurement)
+				safetyBoundary(request, snapshot, plan),
+				requestMeasurement
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {
@@ -155,19 +160,37 @@ public final class JourneyApplicationService {
 			: JourneyExecutionResult.RequestMeasurement.unobservable();
 	}
 
-	private static JourneyExecutionResult.BoundaryObservation boundaryObservation(
+	private static JourneyExecutionResult.SafetyBoundary safetyBoundary(
 		JourneyRequest request,
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
 		JourneyRaptorPort.PlanResult plan
 	) {
 		if (request.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
-			return JourneyExecutionResult.BoundaryObservation.unobservable();
+			return JourneyExecutionResult.SafetyBoundary.unobservable();
 		}
-		return JourneyExecutionResult.BoundaryObservation.observed(
-			0,
-			snapshot.boundaryReceipt().cacheHits(),
-			snapshot.boundaryReceipt().staleArtifactUses(),
-			plan.boundaryReceipt().fallbackUses());
+		if (snapshot.boundaryReceipt().status() != ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED
+			|| plan.boundaryReceipt().status() != JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED) {
+			return JourneyExecutionResult.SafetyBoundary.unobservable();
+		}
+		return JourneyExecutionResult.SafetyBoundary.observed();
+	}
+
+	private static JourneyExecutionResult.ExecutionObservation executionObservation(
+		JourneyRequest request,
+		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+		JourneyRaptorPort.PlanResult plan,
+		Instant effectiveInstant,
+		JourneyExecutionResult.RequestMeasurement requestMeasurement
+	) {
+		if (requestMeasurement.status() == JourneyExecutionResult.RequestMeasurement.Status.UNOBSERVABLE) {
+			return null;
+		}
+		var serviceDay = new JourneyExecutionResult.ServiceDayIdentity(
+			ServiceDayResolver.resolve(effectiveInstant).serviceDate(), JourneyExecutionResult.SERVICE_TIMEZONE,
+			ServiceDayResolver.CUTOFF_LOCAL_TIME);
+		return new JourneyExecutionResult.ExecutionObservation(request.requestId(), snapshot.routeBundleSha256(),
+			snapshot.generation(), serviceDay, plan.scanMetrics(), requestMeasurement.identity().activeReadinessIdentity(),
+			requestMeasurement.identity().activeServingIdentity(), requestMeasurement.boundaryObservation());
 	}
 
 	private static boolean isCurrent(Instant validUntil, Instant capturedInstant, Instant effectiveInstant) {

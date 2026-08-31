@@ -13,6 +13,7 @@ import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.MeasuredCompleted;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
 import com.easysubway.journey.application.JourneyCandidate;
+import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRaptorPort;
@@ -48,6 +49,8 @@ class JourneyBenchmarkObservationControllerTest {
 			.andExpect(jsonPath("$.requestId").value("01K1Y000000000000000000000"))
 			.andExpect(jsonPath("$.routeBundleSha256").value("a".repeat(64)))
 			.andExpect(jsonPath("$.bundleGeneration").value(1))
+			.andExpect(jsonPath("$.outcome.kind").value("SUCCESS"))
+			.andExpect(jsonPath("$.outcome.transferCount").value(0))
 			.andExpect(jsonPath("$.serviceDay.serviceDate").value("2026-08-12"))
 			.andExpect(jsonPath("$.boundaryObservation.status").value("OBSERVED"))
 			.andExpect(jsonPath("$.boundaryObservation.providerCalls").value(0))
@@ -66,6 +69,57 @@ class JourneyBenchmarkObservationControllerTest {
 			.andExpect(jsonPath("$.activeReadiness.servingReady").value(true))
 			.andExpect(jsonPath("$.activeReadiness.draining").value(false));
 		verify(executor).executeMeasured(any());
+	}
+
+	@Test
+	void exposesOnlyObservedNoRouteAsARequestBoundFailureOutcome() throws Exception {
+		var executionObservation = success().executionObservation();
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(
+			new JourneyExecutionFailure(JourneyExecutionFailure.Reason.NO_ROUTE, executionObservation), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isOk())
+			.andExpect(header().string("Cache-Control", "no-store"))
+			.andExpect(jsonPath("$.outcome.kind").value("FAILURE"))
+			.andExpect(jsonPath("$.outcome.reason").value("NO_ROUTE"));
+	}
+
+	@Test
+	void keepsUnobservedNoRouteUnavailable() throws Exception {
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(
+			new JourneyExecutionFailure(JourneyExecutionFailure.Reason.NO_ROUTE), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("UNOBSERVABLE"));
+	}
+
+	@Test
+	void keepsMultiJourneySuccessUnobservable() throws Exception {
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(
+			success(List.of(candidate("journey-1"), candidate("journey-2")), 2), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("UNOBSERVABLE"));
+	}
+
+	@Test
+	void keepsRaptorFailureUnavailable() throws Exception {
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(
+			new JourneyExecutionFailure(JourneyExecutionFailure.Reason.RAPTOR_FAILED), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("UNAVAILABLE"));
 	}
 
 	@Test
@@ -161,20 +215,43 @@ class JourneyBenchmarkObservationControllerTest {
 		String requestId,
 		JourneyExecutionResult.RequestMeasurement requestMeasurement
 	) {
+		return success(requestId, requestMeasurement, List.of(candidate("journey-1")), 1);
+	}
+
+	private static JourneyExecutionResult.Success success(List<JourneyCandidate> journeys, int alternativeCount) {
+		var activeServing = new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			"b".repeat(64), "c".repeat(64), "sha256:" + "d".repeat(64), "e".repeat(40), "03:00");
+		var identity = new com.easysubway.journey.application.ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000000", "a".repeat(64), 1, activeReadiness(), activeServing);
+		return success("01K1Y000000000000000000000", JourneyExecutionResult.RequestMeasurement.observed(identity,
+			JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0)), journeys, alternativeCount);
+	}
+
+	private static JourneyExecutionResult.Success success(
+		String requestId,
+		JourneyExecutionResult.RequestMeasurement requestMeasurement,
+		List<JourneyCandidate> journeys,
+		int alternativeCount
+	) {
 		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
-		var candidate = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300), null, null,
-			300, 0, 0, JourneyCandidate.TimeSource.TIMETABLE,
-			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(
-				new JourneyCandidate.Ride("line-1", "trip-1", "station-destination", "station-origin",
-					"station-destination", departure, departure.plusSeconds(300), null, null)));
 		return new JourneyExecutionResult.Success(requestId, "query-1", departure,
 			departure.plusSeconds(600), departure, LocalDate.parse("2026-08-12"), 1,
 			new JourneyRaptorPort.ScanMetrics(1, 2, 3), new JourneyExecutionResult.SourceIdentity("bundle-1",
 				"a".repeat(64), "timetable-1", "accessibility-1", null),
 			new JourneyExecutionResult.RequestPolicy(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 				JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
-				JourneyRequest.ConstraintMode.NONE, 1, 1), List.of(candidate),
-			JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0), requestMeasurement);
+				JourneyRequest.ConstraintMode.NONE, 1, alternativeCount), journeys,
+			JourneyExecutionResult.SafetyBoundary.observed(), requestMeasurement);
+	}
+
+	private static JourneyCandidate candidate(String journeyId) {
+		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
+		return new JourneyCandidate(journeyId, departure, departure.plusSeconds(300), null, null,
+			300, 0, 0, JourneyCandidate.TimeSource.TIMETABLE,
+			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(
+				new JourneyCandidate.Ride("line-1", "trip-1", "station-destination", "station-origin",
+					"station-destination", departure, departure.plusSeconds(300), null, null)));
 	}
 
 	private static JourneyExecutionResult.ActiveReadinessIdentity activeReadiness() {

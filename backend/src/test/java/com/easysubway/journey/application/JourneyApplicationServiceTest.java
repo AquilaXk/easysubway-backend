@@ -39,6 +39,17 @@ class JourneyApplicationServiceTest {
 	);
 
 	@Test
+	void rejectsNullActiveReadinessDigest() {
+		assertThatThrownBy(() -> new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", null,
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), ROUTE_BUNDLE_SHA,
+			"bundle-1", 1, 1, "Asia/Seoul", "03:00", 1, true, false,
+			VALID_UNTIL, CAPTURED_AT.minusSeconds(60), "3".repeat(64)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("active readiness digest is invalid");
+	}
+
+	@Test
 	void executesTimetableRequestWithCompletePinnedIdentityAndNoRealtime() {
 		Fakes fakes = new Fakes();
 		List<JourneyCandidate> plannerCandidates = new ArrayList<>(List.of(
@@ -114,6 +125,9 @@ class JourneyApplicationServiceTest {
 		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
 
 		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.observed());
+			assertThat(success.requestMeasurement().status())
+				.isEqualTo(JourneyExecutionResult.RequestMeasurement.Status.OBSERVED);
 			assertThat(success.executionObservation().activeReadinessIdentity())
 				.isEqualTo(ACTIVE_READINESS_IDENTITY);
 			assertThat(success.executionObservation().activeServingIdentity()).isEqualTo(ACTIVE_SERVING_IDENTITY);
@@ -147,6 +161,9 @@ class JourneyApplicationServiceTest {
 		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
 
 		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.observed());
+			assertThat(success.requestMeasurement())
+				.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
 			assertThat(success.executionObservation().activeServingIdentity())
 				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
@@ -190,6 +207,8 @@ class JourneyApplicationServiceTest {
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
 		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
+		assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.unobservable());
+		assertThat(success.requestMeasurement()).isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 		assertThat(success.sourceIdentity().realtimeSnapshotId()).isEqualTo("realtime-1");
 		assertThat(success.executionObservation().boundaryObservation())
 			.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
@@ -361,6 +380,35 @@ class JourneyApplicationServiceTest {
 	}
 
 	@Test
+	void bindsAnActualNoRouteToTheSameRequestMeasurement() {
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(
+			VALID_UNTIL,
+			true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
+		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(), OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+
+		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionFailure.class, failure -> {
+			assertThat(failure.reason()).isEqualTo(JourneyExecutionFailure.Reason.NO_ROUTE);
+			assertThat(failure.executionObservation().requestId()).isEqualTo("01K1Y000000000000000000000");
+			assertThat(failure.executionObservation().routeBundleSha256()).isEqualTo(ROUTE_BUNDLE_SHA);
+			assertThat(failure.executionObservation().activeReadinessIdentity()).isEqualTo(ACTIVE_READINESS_IDENTITY);
+			assertThat(failure.executionObservation().activeServingIdentity()).isEqualTo(ACTIVE_SERVING_IDENTITY);
+			assertThat(failure.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0));
+		});
+	}
+
+	@Test
 	void rejectsDuplicateOverLimitAndModeMismatchedPlannerOutput() {
 		Fakes duplicate = new Fakes();
 		duplicate.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(
@@ -407,8 +455,7 @@ class JourneyApplicationServiceTest {
 				1
 			),
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
+			JourneyExecutionResult.SafetyBoundary.observed()
 		)).isInstanceOf(IllegalArgumentException.class);
 	}
 
@@ -547,6 +594,9 @@ class JourneyApplicationServiceTest {
 
 	private static void assertUnobservableMeasurement(JourneyExecutionResult result) {
 		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.observed());
+			assertThat(success.requestMeasurement())
+				.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
 			assertThat(success.executionObservation().activeServingIdentity())
 				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());

@@ -288,8 +288,8 @@ class JourneySearchResponseMapperTest {
 			),
 			journeys,
 			timePolicy == JourneyRequest.TimePolicy.REALTIME_REQUIRED
-				? JourneyExecutionResult.BoundaryObservation.unobservable()
-				: JourneyExecutionResult.BoundaryObservation.observed(0L, 0L, 0L, 0L)
+				? JourneyExecutionResult.SafetyBoundary.unobservable()
+				: JourneyExecutionResult.SafetyBoundary.observed()
 		);
 	}
 }

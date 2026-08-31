@@ -30,34 +30,45 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		SourceIdentity sourceIdentity,
 		RequestPolicy requestPolicy,
 		List<JourneyCandidate> journeys,
-		BoundaryObservation boundaryObservation,
+		SafetyBoundary safetyBoundary,
 		RequestMeasurement requestMeasurement
 	) implements JourneyExecutionResult {
 		private static final Pattern REQUEST_ID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 
 		public Success {
-			requestId = requireText(requestId, "requestId");
+			requireText(requestId, "requestId");
 			if (!REQUEST_ID.matcher(requestId).matches()) {
 				throw new IllegalArgumentException("requestId must be a ULID");
 			}
-			queryId = requireText(queryId, "queryId");
-			calculatedAt = Objects.requireNonNull(calculatedAt, "calculatedAt");
-			validUntil = Objects.requireNonNull(validUntil, "validUntil");
+			requireText(queryId, "queryId");
+			validateTimes(calculatedAt, validUntil, effectiveDepartureTime, serviceDate);
+			if (bundleGeneration < 1) throw new IllegalArgumentException("bundleGeneration must be positive");
+			Objects.requireNonNull(scanMetrics, "scanMetrics");
+			Objects.requireNonNull(sourceIdentity, "sourceIdentity");
+			Objects.requireNonNull(requestPolicy, "requestPolicy");
+			journeys = List.copyOf(Objects.requireNonNull(journeys, "journeys"));
+			Objects.requireNonNull(safetyBoundary, "safetyBoundary");
+			Objects.requireNonNull(requestMeasurement, "requestMeasurement");
+			validateJourneys(journeys, requestPolicy);
+			validateSourcePolicy(sourceIdentity, requestPolicy, safetyBoundary);
+			validateMeasurement(requestId, bundleGeneration, sourceIdentity, requestMeasurement);
+		}
+
+		private static void validateTimes(Instant calculatedAt, Instant validUntil,
+			Instant effectiveDepartureTime, LocalDate serviceDate) {
+			Objects.requireNonNull(calculatedAt, "calculatedAt");
+			Objects.requireNonNull(validUntil, "validUntil");
 			if (!validUntil.isAfter(calculatedAt)) {
 				throw new IllegalArgumentException("validUntil must be after calculatedAt");
 			}
-			effectiveDepartureTime = Objects.requireNonNull(effectiveDepartureTime, "effectiveDepartureTime");
-			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate");
+			Objects.requireNonNull(effectiveDepartureTime, "effectiveDepartureTime");
+			Objects.requireNonNull(serviceDate, "serviceDate");
 			if (!serviceDate.equals(ServiceDayResolver.resolve(effectiveDepartureTime).serviceDate())) {
 				throw new IllegalArgumentException("serviceDate does not match effectiveDepartureTime");
 			}
-			if (bundleGeneration < 1) throw new IllegalArgumentException("bundleGeneration must be positive");
-			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
-			sourceIdentity = Objects.requireNonNull(sourceIdentity, "sourceIdentity");
-			requestPolicy = Objects.requireNonNull(requestPolicy, "requestPolicy");
-			journeys = List.copyOf(Objects.requireNonNull(journeys, "journeys"));
-			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
-			requestMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
+		}
+
+		private static void validateJourneys(List<JourneyCandidate> journeys, RequestPolicy requestPolicy) {
 			if (journeys.isEmpty() || journeys.size() > requestPolicy.alternativeCount() || journeys.size() > 3) {
 				throw new IllegalArgumentException("journey count does not match request policy");
 			}
@@ -75,18 +86,26 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 					throw new IllegalArgumentException("realtime request has timetable journey");
 				}
 			}
+		}
+
+		private static void validateSourcePolicy(SourceIdentity sourceIdentity, RequestPolicy requestPolicy,
+			SafetyBoundary safetyBoundary) {
 			if ((requestPolicy.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)
 				!= (sourceIdentity.realtimeSnapshotId() == null)) {
 				throw new IllegalArgumentException("realtime identity does not match request policy");
 			}
 			if (requestPolicy.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
-				&& boundaryObservation.status() != BoundaryObservation.Status.OBSERVED) {
+				&& safetyBoundary.status() != SafetyBoundary.Status.OBSERVED) {
 				throw new IllegalArgumentException("timetable success requires an observed snapshot boundary");
 			}
 			if (requestPolicy.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED
-				&& boundaryObservation.status() != BoundaryObservation.Status.UNOBSERVABLE) {
+				&& safetyBoundary.status() != SafetyBoundary.Status.UNOBSERVABLE) {
 				throw new IllegalArgumentException("realtime success requires a per-invocation receipt before observation");
 			}
+		}
+
+		private static void validateMeasurement(String requestId, long bundleGeneration,
+			SourceIdentity sourceIdentity, RequestMeasurement requestMeasurement) {
 			if (requestMeasurement.status() == RequestMeasurement.Status.OBSERVED) {
 				var identity = requestMeasurement.identity();
 				if (!requestId.equals(identity.requestId())
@@ -101,9 +120,9 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			Instant effectiveDepartureTime, LocalDate serviceDate, long bundleGeneration,
 			JourneyRaptorPort.ScanMetrics scanMetrics, SourceIdentity sourceIdentity,
 			RequestPolicy requestPolicy, List<JourneyCandidate> journeys,
-			BoundaryObservation boundaryObservation) {
+			SafetyBoundary safetyBoundary) {
 			this(requestId, queryId, calculatedAt, validUntil, effectiveDepartureTime, serviceDate,
-				bundleGeneration, scanMetrics, sourceIdentity, requestPolicy, journeys, boundaryObservation,
+				bundleGeneration, scanMetrics, sourceIdentity, requestPolicy, journeys, safetyBoundary,
 				RequestMeasurement.unobservable());
 		}
 
@@ -135,9 +154,25 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		}
 	}
 
+	record SafetyBoundary(Status status) {
+		public enum Status { OBSERVED, UNOBSERVABLE }
+
+		public SafetyBoundary {
+			requireStatus(status);
+		}
+
+		public static SafetyBoundary observed() {
+			return new SafetyBoundary(Status.OBSERVED);
+		}
+
+		public static SafetyBoundary unobservable() {
+			return new SafetyBoundary(Status.UNOBSERVABLE);
+		}
+	}
+
 	record ServiceDayIdentity(LocalDate serviceDate, String timezone, String cutoffLocalTime) {
 		public ServiceDayIdentity {
-			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate");
+			Objects.requireNonNull(serviceDate, "serviceDate");
 			if (!SERVICE_TIMEZONE.equals(timezone) || !ServiceDayResolver.CUTOFF_LOCAL_TIME.equals(cutoffLocalTime)) {
 				throw new IllegalArgumentException("service-day identity is not current");
 			}
@@ -155,16 +190,16 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		BoundaryObservation boundaryObservation
 	) {
 		public ExecutionObservation {
-			requestId = requireText(requestId, "requestId");
-			routeBundleSha256 = requireText(routeBundleSha256, "routeBundleSha256");
-			if (!routeBundleSha256.matches("^[a-f0-9]{64}$")) {
+			requireText(requestId, "requestId");
+			requireText(routeBundleSha256, "routeBundleSha256");
+			if (!isSha256(routeBundleSha256)) {
 				throw new IllegalArgumentException("routeBundleSha256 must be lowercase SHA-256");
 			}
 			if (bundleGeneration < 1) throw new IllegalArgumentException("bundleGeneration must be positive");
-			serviceDay = Objects.requireNonNull(serviceDay, "serviceDay");
-			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
-			activeServingIdentity = Objects.requireNonNull(activeServingIdentity, "activeServingIdentity");
-			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
+			Objects.requireNonNull(serviceDay, "serviceDay");
+			Objects.requireNonNull(scanMetrics, "scanMetrics");
+			Objects.requireNonNull(activeServingIdentity, "activeServingIdentity");
+			Objects.requireNonNull(boundaryObservation, "boundaryObservation");
 			if (activeServingIdentity.status() == ActiveServingIdentity.Status.OBSERVED) {
 				Objects.requireNonNull(activeReadinessIdentity, "activeReadinessIdentity");
 				if (boundaryObservation.status() != BoundaryObservation.Status.OBSERVED) {
@@ -188,7 +223,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		public enum Status { OBSERVED, UNOBSERVABLE }
 
 		public ActiveServingIdentity {
-			status = Objects.requireNonNull(status, "status");
+			requireStatus(status);
 			if (status == Status.UNOBSERVABLE) {
 				if (descriptorSha256 != null || receiptSha256 != null || deploymentIdentity != null
 					|| deploymentRevision != null || serviceDayCutoff != null) {
@@ -230,24 +265,23 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		Instant activatedAt,
 		String evidenceSha256
 	) {
-		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 		private static final Pattern IMAGE_DIGEST = Pattern.compile("^sha256:[a-f0-9]{64}$");
 
 		public ActiveReadinessIdentity {
 			if (schemaVersion != 1 || !"journey-v3-active-readiness".equals(artifactKind)) {
 				throw new IllegalArgumentException("active readiness contract is not current");
 			}
-			instanceId = requireText(instanceId, "instanceId");
+			requireText(instanceId, "instanceId");
 			for (String value : new String[] {releaseTupleSha256, backendConfigSha256,
 				journeyContractSha256, routeBundleManifestSha256, evidenceSha256}) {
-				if (value == null || !SHA256.matcher(value).matches()) {
+				if (!isSha256(value)) {
 					throw new IllegalArgumentException("active readiness digest is invalid");
 				}
 			}
 			if (backendImageDigest == null || !IMAGE_DIGEST.matcher(backendImageDigest).matches()) {
 				throw new IllegalArgumentException("active readiness image digest is invalid");
 			}
-			bundleId = requireText(bundleId, "bundleId");
+			requireText(bundleId, "bundleId");
 			if (bundleReleaseSequence < 1 || generation < 1 || trafficGeneration < 1) {
 				throw new IllegalArgumentException("active readiness generations must be positive");
 			}
@@ -255,8 +289,8 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 				|| !ServiceDayResolver.CUTOFF_LOCAL_TIME.equals(serviceDayCutoff)) {
 				throw new IllegalArgumentException("active readiness service-day identity is not current");
 			}
-			freshUntil = Objects.requireNonNull(freshUntil, "freshUntil");
-			activatedAt = Objects.requireNonNull(activatedAt, "activatedAt");
+			Objects.requireNonNull(freshUntil, "freshUntil");
+			Objects.requireNonNull(activatedAt, "activatedAt");
 		}
 	}
 
@@ -268,8 +302,8 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		public enum Status { OBSERVED, UNOBSERVABLE }
 
 		public RequestMeasurement {
-			status = Objects.requireNonNull(status, "status");
-			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
+			requireStatus(status);
+			Objects.requireNonNull(boundaryObservation, "boundaryObservation");
 			if (status == Status.OBSERVED) {
 				if (identity == null || boundaryObservation.status() != BoundaryObservation.Status.OBSERVED) {
 					throw new IllegalArgumentException("observed request measurement is incomplete");
@@ -301,7 +335,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		public enum Status { OBSERVED, UNOBSERVABLE }
 
 		public BoundaryObservation {
-			status = Objects.requireNonNull(status, "status");
+			requireStatus(status);
 			if (status == Status.UNOBSERVABLE) {
 				if (providerCalls != null || cacheHits != null || staleArtifactUses != null || fallbackUses != null) {
 					throw new IllegalArgumentException("unobservable boundary must not have counters");
@@ -332,18 +366,15 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		String accessibilitySnapshotId,
 		String realtimeSnapshotId
 	) {
-		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
-
 		public SourceIdentity {
-			routeBundleId = requireText(routeBundleId, "routeBundleId");
-			routeBundleSha256 = requireText(routeBundleSha256, "routeBundleSha256");
-			if (!SHA256.matcher(routeBundleSha256).matches()) {
+			requireText(routeBundleId, "routeBundleId");
+			requireText(routeBundleSha256, "routeBundleSha256");
+			if (!isSha256(routeBundleSha256)) {
 				throw new IllegalArgumentException("routeBundleSha256 must be lowercase SHA-256");
 			}
-			timetableSnapshotId = requireText(timetableSnapshotId, "timetableSnapshotId");
-			accessibilitySnapshotId = requireText(accessibilitySnapshotId, "accessibilitySnapshotId");
-			realtimeSnapshotId = realtimeSnapshotId == null
-				? null : requireText(realtimeSnapshotId, "realtimeSnapshotId");
+			requireText(timetableSnapshotId, "timetableSnapshotId");
+			requireText(accessibilitySnapshotId, "accessibilitySnapshotId");
+			if (realtimeSnapshotId != null) requireText(realtimeSnapshotId, "realtimeSnapshotId");
 		}
 	}
 
@@ -356,10 +387,10 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		int alternativeCount
 	) {
 		public RequestPolicy {
-			timePolicy = Objects.requireNonNull(timePolicy, "timePolicy");
-			walkingPace = Objects.requireNonNull(walkingPace, "walkingPace");
-			mobilityProfile = Objects.requireNonNull(mobilityProfile, "mobilityProfile");
-			constraintMode = Objects.requireNonNull(constraintMode, "constraintMode");
+			Objects.requireNonNull(timePolicy, "timePolicy");
+			Objects.requireNonNull(walkingPace, "walkingPace");
+			Objects.requireNonNull(mobilityProfile, "mobilityProfile");
+			Objects.requireNonNull(constraintMode, "constraintMode");
 			if (maxTransfers < 0 || maxTransfers > 3) {
 				throw new IllegalArgumentException("maxTransfers must be between 0 and 3");
 			}
@@ -377,5 +408,13 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		Objects.requireNonNull(value, name);
 		if (value.isBlank()) throw new IllegalArgumentException(name + " must not be blank");
 		return value;
+	}
+
+	private static boolean isSha256(String value) {
+		return value != null && value.matches("^[a-f0-9]{64}$");
+	}
+
+	private static void requireStatus(Object status) {
+		Objects.requireNonNull(status, "status");
 	}
 }
