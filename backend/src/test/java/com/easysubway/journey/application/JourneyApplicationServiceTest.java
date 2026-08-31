@@ -39,6 +39,17 @@ class JourneyApplicationServiceTest {
 	);
 
 	@Test
+	void rejectsNullActiveReadinessDigest() {
+		assertThatThrownBy(() -> new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", null,
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), ROUTE_BUNDLE_SHA,
+			"bundle-1", 1, 1, "Asia/Seoul", "03:00", 1, true, false,
+			VALID_UNTIL, CAPTURED_AT.minusSeconds(60), "3".repeat(64)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("active readiness digest is invalid");
+	}
+
+	@Test
 	void executesTimetableRequestWithCompletePinnedIdentityAndNoRealtime() {
 		Fakes fakes = new Fakes();
 		List<JourneyCandidate> plannerCandidates = new ArrayList<>(List.of(
