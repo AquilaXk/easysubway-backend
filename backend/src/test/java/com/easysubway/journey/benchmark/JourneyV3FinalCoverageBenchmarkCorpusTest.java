@@ -126,11 +126,18 @@ class JourneyV3FinalCoverageBenchmarkCorpusTest {
 		JourneyCandidate.TimeSource timeSource = timePolicy == JourneyRequest.TimePolicy.REALTIME_REQUIRED
 			? JourneyCandidate.TimeSource.REALTIME
 			: JourneyCandidate.TimeSource.TIMETABLE;
-		var journey = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300), null, null,
+		Instant realtimeDeparture = timeSource == JourneyCandidate.TimeSource.REALTIME
+			? departure.plusSeconds(15)
+			: null;
+		Instant realtimeArrival = timeSource == JourneyCandidate.TimeSource.REALTIME
+			? departure.plusSeconds(315)
+			: null;
+		var journey = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300),
+			realtimeDeparture, realtimeArrival,
 			300, 0, 0, timeSource,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(
 				new JourneyCandidate.Ride("line-1", "trip-1", "station-b", "station-a", "station-b",
-					departure, departure.plusSeconds(300), null, null)));
+					departure, departure.plusSeconds(300), realtimeDeparture, realtimeArrival)));
 		return new JourneyExecutionResult.Success("01K1Y000000000000000000000", "query-1", departure,
 			departure.plusSeconds(600), departure, LocalDate.parse("2026-08-12"), 1,
 			new JourneyRaptorPort.ScanMetrics(1, 2, 3), new JourneyExecutionResult.SourceIdentity("bundle-1",
