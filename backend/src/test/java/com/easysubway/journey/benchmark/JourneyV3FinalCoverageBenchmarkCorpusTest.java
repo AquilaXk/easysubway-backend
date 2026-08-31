@@ -123,8 +123,11 @@ class JourneyV3FinalCoverageBenchmarkCorpusTest {
 		JourneyExecutionResult.RequestMeasurement requestMeasurement
 	) {
 		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
+		JourneyCandidate.TimeSource timeSource = timePolicy == JourneyRequest.TimePolicy.REALTIME_REQUIRED
+			? JourneyCandidate.TimeSource.REALTIME
+			: JourneyCandidate.TimeSource.TIMETABLE;
 		var journey = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300), null, null,
-			300, 0, 0, JourneyCandidate.TimeSource.TIMETABLE,
+			300, 0, 0, timeSource,
 			new JourneyCandidate.Accessibility(true, List.of("STEP_FREE_PATH")), List.of(
 				new JourneyCandidate.Ride("line-1", "trip-1", "station-b", "station-a", "station-b",
 					departure, departure.plusSeconds(300), null, null)));
