@@ -164,7 +164,7 @@ public interface ActiveJourneySnapshotPort {
 
 	record SnapshotMeasurementReceipt(Status status, RequestExecutionIdentity identity,
 		Long providerCalls, Long cacheHits, Long staleArtifactUses) {
-		enum Status { OBSERVED, UNOBSERVABLE }
+		public enum Status { OBSERVED, UNOBSERVABLE }
 
 		public SnapshotMeasurementReceipt {
 			status = Objects.requireNonNull(status, "status");
