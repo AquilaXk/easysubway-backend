@@ -138,6 +138,22 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 	}
 
 	@Test
+	void keepsMeasurementUnobservableWhenActiveReadinessIsNotServingTraffic() {
+		var registry = activeRegistry(
+			Clock.fixed(NOW, ZoneOffset.UTC),
+			new TestRuntime(MANIFEST_SHA, 1),
+			RouteBundleServingEvidence.observed(DESCRIPTOR_SHA, RECEIPT_SHA));
+		var properties = readinessProperties(DEPLOYMENT_REVISION);
+		var availability = mock(ApplicationAvailability.class);
+		when(availability.getReadinessState()).thenReturn(ReadinessState.REFUSING_TRAFFIC);
+		var adapter = new RouteBundleActiveJourneySnapshotAdapter(registry, properties,
+			new JourneyReadinessService(registry, properties, availability));
+
+		assertThat(requireActive(adapter, NOW).measurementReceipt())
+			.isEqualTo(SnapshotMeasurementReceipt.unobservable());
+	}
+
+	@Test
 	void marksTheSnapshotReceiptUnobservableWhenFreshnessCannotBeProved() {
 		var adapter = new RouteBundleActiveJourneySnapshotAdapter(
 			activeRegistry(Clock.fixed(NOW, ZoneOffset.UTC), new TestRuntime(MANIFEST_SHA, 1)));

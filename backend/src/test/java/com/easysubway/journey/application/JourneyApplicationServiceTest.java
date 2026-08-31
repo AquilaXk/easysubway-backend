@@ -156,6 +156,31 @@ class JourneyApplicationServiceTest {
 	}
 
 	@Test
+	void keepsOrdinaryServingSuccessfulWhenRequestMeasurementReceiptsAreIncompleteOrDisagree() {
+		Fakes missingSnapshotMeasurement = measuredFakes(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable(),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		assertUnobservableMeasurement(missingSnapshotMeasurement.service().execute(
+			request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)));
+
+		Fakes missingRouteMeasurement = measuredFakes(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)),
+			JourneyRaptorPort.RouteMeasurementReceipt.unobservable());
+		assertUnobservableMeasurement(missingRouteMeasurement.service().execute(
+			request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)));
+
+		Fakes counterMismatch = measuredFakes(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 1, 0, 0)),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		assertUnobservableMeasurement(counterMismatch.service().execute(
+			request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)));
+	}
+
+	@Test
 	void executesRealtimeRequestUsingTheSameSnapshotAndMinimumValidity() {
 		Fakes fakes = new Fakes();
 		fakes.planResult = planResult(JourneyCandidate.TimeSource.REALTIME);
@@ -500,6 +525,34 @@ class JourneyApplicationServiceTest {
 
 	private static JourneyRequest request(JourneyRequest.TimePolicy timePolicy, int alternativeCount) {
 		return request(new JourneyRequest.Departure.Now(), timePolicy, alternativeCount, new AtomicBoolean());
+	}
+
+	private static Fakes measuredFakes(
+		ActiveJourneySnapshotPort.SnapshotMeasurementReceipt snapshotMeasurement,
+		JourneyRaptorPort.RouteMeasurementReceipt routeMeasurement
+	) {
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0), snapshotMeasurement);
+		fakes.planResult = new JourneyRaptorPort.PlanResult(
+			"query-1",
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			routeMeasurement);
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		return fakes;
+	}
+
+	private static void assertUnobservableMeasurement(JourneyExecutionResult result) {
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
+			assertThat(success.executionObservation().activeServingIdentity())
+				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
+			assertThat(success.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
+		});
 	}
 
 	private static JourneyRequest request(JourneyRequest.TimePolicy timePolicy, AtomicBoolean cancelled) {
