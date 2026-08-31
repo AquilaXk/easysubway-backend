@@ -81,7 +81,9 @@ class JourneyApplicationDeadlineExecutorTest {
 				throw new IllegalStateException("active snapshot unavailable");
 			},
 			(request, snapshot, effectiveInstant) -> { throw new AssertionError("realtime must not be called"); },
-			(request, snapshot, effectiveInstant, realtime) -> { throw new AssertionError("raptor must not be called"); },
+			(request, snapshot, effectiveInstant, realtime, measurement) -> {
+				throw new AssertionError("raptor must not be called");
+			},
 			Clock.systemUTC());
 
 		try (var searchWorkers = Executors.newVirtualThreadPerTaskExecutor();
