@@ -378,8 +378,7 @@ class JourneySearchControllerTest {
 				1
 			),
 			List.of(candidate),
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
+			JourneyExecutionResult.SafetyBoundary.observed()
 		);
 	}
 

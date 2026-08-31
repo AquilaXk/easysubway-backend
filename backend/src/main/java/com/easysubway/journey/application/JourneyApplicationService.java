@@ -114,7 +114,7 @@ public final class JourneyApplicationService {
 					request.alternativeCount()
 				),
 				plan.candidates(),
-				requestMeasurement.boundaryObservation(),
+				safetyBoundary(request, snapshot, plan),
 				requestMeasurement
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
@@ -158,6 +158,21 @@ public final class JourneyApplicationService {
 			snapshotMeasurement.staleArtifactUses(), routeMeasurement.fallbackUses());
 		return boundary.equals(recorded.boundaryObservation()) ? recorded
 			: JourneyExecutionResult.RequestMeasurement.unobservable();
+	}
+
+	private static JourneyExecutionResult.SafetyBoundary safetyBoundary(
+		JourneyRequest request,
+		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+		JourneyRaptorPort.PlanResult plan
+	) {
+		if (request.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
+			return JourneyExecutionResult.SafetyBoundary.unobservable();
+		}
+		if (snapshot.boundaryReceipt().status() != ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED
+			|| plan.boundaryReceipt().status() != JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED) {
+			return JourneyExecutionResult.SafetyBoundary.unobservable();
+		}
+		return JourneyExecutionResult.SafetyBoundary.observed();
 	}
 
 	private static JourneyExecutionResult.ExecutionObservation executionObservation(

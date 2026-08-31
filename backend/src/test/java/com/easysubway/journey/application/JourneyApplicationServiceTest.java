@@ -114,6 +114,9 @@ class JourneyApplicationServiceTest {
 		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
 
 		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.observed());
+			assertThat(success.requestMeasurement().status())
+				.isEqualTo(JourneyExecutionResult.RequestMeasurement.Status.OBSERVED);
 			assertThat(success.executionObservation().activeReadinessIdentity())
 				.isEqualTo(ACTIVE_READINESS_IDENTITY);
 			assertThat(success.executionObservation().activeServingIdentity()).isEqualTo(ACTIVE_SERVING_IDENTITY);
@@ -147,6 +150,9 @@ class JourneyApplicationServiceTest {
 		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
 
 		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.observed());
+			assertThat(success.requestMeasurement())
+				.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
 			assertThat(success.executionObservation().activeServingIdentity())
 				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
@@ -190,6 +196,8 @@ class JourneyApplicationServiceTest {
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
 		JourneyExecutionResult.Success success = (JourneyExecutionResult.Success) result;
+		assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.unobservable());
+		assertThat(success.requestMeasurement()).isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 		assertThat(success.sourceIdentity().realtimeSnapshotId()).isEqualTo("realtime-1");
 		assertThat(success.executionObservation().boundaryObservation())
 			.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
@@ -436,8 +444,7 @@ class JourneyApplicationServiceTest {
 				1
 			),
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L)
+			JourneyExecutionResult.SafetyBoundary.observed()
 		)).isInstanceOf(IllegalArgumentException.class);
 	}
 
@@ -576,6 +583,9 @@ class JourneyApplicationServiceTest {
 
 	private static void assertUnobservableMeasurement(JourneyExecutionResult result) {
 		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.safetyBoundary()).isEqualTo(JourneyExecutionResult.SafetyBoundary.observed());
+			assertThat(success.requestMeasurement())
+				.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
 			assertThat(success.executionObservation().activeServingIdentity())
 				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());

@@ -30,7 +30,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		SourceIdentity sourceIdentity,
 		RequestPolicy requestPolicy,
 		List<JourneyCandidate> journeys,
-		BoundaryObservation boundaryObservation,
+		SafetyBoundary safetyBoundary,
 		RequestMeasurement requestMeasurement
 	) implements JourneyExecutionResult {
 		private static final Pattern REQUEST_ID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
@@ -56,7 +56,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			sourceIdentity = Objects.requireNonNull(sourceIdentity, "sourceIdentity");
 			requestPolicy = Objects.requireNonNull(requestPolicy, "requestPolicy");
 			journeys = List.copyOf(Objects.requireNonNull(journeys, "journeys"));
-			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
+			safetyBoundary = Objects.requireNonNull(safetyBoundary, "safetyBoundary");
 			requestMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 			if (journeys.isEmpty() || journeys.size() > requestPolicy.alternativeCount() || journeys.size() > 3) {
 				throw new IllegalArgumentException("journey count does not match request policy");
@@ -80,11 +80,11 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 				throw new IllegalArgumentException("realtime identity does not match request policy");
 			}
 			if (requestPolicy.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED
-				&& boundaryObservation.status() != BoundaryObservation.Status.OBSERVED) {
+				&& safetyBoundary.status() != SafetyBoundary.Status.OBSERVED) {
 				throw new IllegalArgumentException("timetable success requires an observed snapshot boundary");
 			}
 			if (requestPolicy.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED
-				&& boundaryObservation.status() != BoundaryObservation.Status.UNOBSERVABLE) {
+				&& safetyBoundary.status() != SafetyBoundary.Status.UNOBSERVABLE) {
 				throw new IllegalArgumentException("realtime success requires a per-invocation receipt before observation");
 			}
 			if (requestMeasurement.status() == RequestMeasurement.Status.OBSERVED) {
@@ -101,9 +101,9 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			Instant effectiveDepartureTime, LocalDate serviceDate, long bundleGeneration,
 			JourneyRaptorPort.ScanMetrics scanMetrics, SourceIdentity sourceIdentity,
 			RequestPolicy requestPolicy, List<JourneyCandidate> journeys,
-			BoundaryObservation boundaryObservation) {
+			SafetyBoundary safetyBoundary) {
 			this(requestId, queryId, calculatedAt, validUntil, effectiveDepartureTime, serviceDate,
-				bundleGeneration, scanMetrics, sourceIdentity, requestPolicy, journeys, boundaryObservation,
+				bundleGeneration, scanMetrics, sourceIdentity, requestPolicy, journeys, safetyBoundary,
 				RequestMeasurement.unobservable());
 		}
 
@@ -132,6 +132,22 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 
 		public Source source() {
 			return Source.SERVER_TIMETABLE_RAPTOR;
+		}
+	}
+
+	record SafetyBoundary(Status status) {
+		public enum Status { OBSERVED, UNOBSERVABLE }
+
+		public SafetyBoundary {
+			status = Objects.requireNonNull(status, "status");
+		}
+
+		public static SafetyBoundary observed() {
+			return new SafetyBoundary(Status.OBSERVED);
+		}
+
+		public static SafetyBoundary unobservable() {
+			return new SafetyBoundary(Status.UNOBSERVABLE);
 		}
 	}
 
