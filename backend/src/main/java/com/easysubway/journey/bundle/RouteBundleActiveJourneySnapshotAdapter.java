@@ -5,6 +5,7 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServin
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.journey.readiness.JourneyReadinessProperties;
 import com.easysubway.journey.readiness.JourneyReadinessService;
@@ -32,14 +33,12 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 	}
 
 	@Override
-	public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
-		return requireActive(null, effectiveInstant);
-	}
-
-	@Override
-	public ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant) {
+	public ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant,
+		JourneyRequestMeasurement requestMeasurement) {
+		Objects.requireNonNull(request, "request");
 		Objects.requireNonNull(effectiveInstant, "effectiveInstant");
-		var active = registry.activeSnapshot();
+		Objects.requireNonNull(requestMeasurement, "requestMeasurement");
+		var active = registry.activeSnapshot(request.requestId(), requestMeasurement);
 		if (!(active.runtimeView() instanceof JourneyRaptorRuntimeView runtimeView)) {
 			throw new IllegalStateException("active route-bundle runtime is not a Journey RAPTOR runtime");
 		}
@@ -48,7 +47,7 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 		var manifestSha256 = active.admissionEvidence().manifestSha256();
 		var fresh = !effectiveInstant.isBefore(identity.activeFromInstant())
 			&& effectiveInstant.isBefore(identity.freshUntilInstant());
-		var measurement = measurement(active, request, manifestSha256, fresh);
+		var measurement = measurement(active, request, manifestSha256, fresh, requestMeasurement);
 		return new ActiveJourneySnapshot(
 			manifestSha256 + ":" + active.generation(),
 			identity.bundleId(),
@@ -65,10 +64,12 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 	}
 
 	private ActiveJourneySnapshotPort.SnapshotMeasurementReceipt measurement(
-		ActiveRouteBundleSnapshot active, JourneyRequest request, String manifestSha256, boolean fresh) {
-		if (!fresh || request == null || readinessProperties == null || readinessService == null
+		ActiveRouteBundleSnapshot active, JourneyRequest request, String manifestSha256, boolean fresh,
+		JourneyRequestMeasurement requestMeasurement) {
+		if (!fresh || readinessProperties == null || readinessService == null
 			|| readinessProperties.deploymentRevision() == null
 			|| active.servingEvidence().status() != RouteBundleServingEvidence.Status.OBSERVED) {
+			requestMeasurement.markUnobservable();
 			return ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable();
 		}
 		try {
@@ -77,8 +78,11 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 			var identity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
 				request.requestId(), manifestSha256, active.generation(), activeReadinessIdentity,
 				activeServingIdentity);
-			return ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(identity, 0, 0, 0);
+			var observation = requestMeasurement.bindActiveIdentity(identity);
+			return observation == null ? ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable()
+				: ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(observation);
 		} catch (IllegalArgumentException | IllegalStateException exception) {
+			requestMeasurement.markUnobservable();
 			return ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable();
 		}
 	}

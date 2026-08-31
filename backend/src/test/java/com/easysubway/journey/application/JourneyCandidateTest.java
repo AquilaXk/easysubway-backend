@@ -190,9 +190,13 @@ class JourneyCandidateTest {
 		var requestIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
 			"01K1Y000000000000000000000", "a".repeat(64), 1,
 			activeReadinessIdentity, activeServingIdentity);
+		var measurement = new JourneyRequestMeasurement(requestIdentity.requestId());
+		measurement.observeActiveRegistryRead(
+			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation());
 		assertThat(ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
-			requestIdentity, 0, 1, 0).identity()).isEqualTo(requestIdentity);
-		assertThat(JourneyRaptorPort.RouteMeasurementReceipt.observed(requestIdentity, 0).identity())
+			measurement.bindActiveIdentity(requestIdentity)).identity()).isEqualTo(requestIdentity);
+		assertThat(JourneyRaptorPort.RouteMeasurementReceipt.observed(measurement.observeDirectRaptor(
+			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation())).identity())
 			.isEqualTo(requestIdentity);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotMeasurementReceipt(
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.UNOBSERVABLE, null, 0L, null, null))

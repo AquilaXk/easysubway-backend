@@ -100,13 +100,16 @@ class JourneyApplicationServiceTest {
 			true,
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
-				REQUEST_EXECUTION_IDENTITY, 0, 0, 0));
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
 		fakes.planResult = new JourneyRaptorPort.PlanResult(
 			"query-1",
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
 			OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
-			JourneyRaptorPort.RouteMeasurementReceipt.observed(REQUEST_EXECUTION_IDENTITY, 0));
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
 
 		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
 
@@ -130,13 +133,16 @@ class JourneyApplicationServiceTest {
 			true,
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
-				REQUEST_EXECUTION_IDENTITY, 0, 0, 0));
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
 		fakes.planResult = new JourneyRaptorPort.PlanResult(
 			"query-1",
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
 			OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
-			JourneyRaptorPort.RouteMeasurementReceipt.observed(otherIdentity, 0));
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(otherIdentity, 0)));
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = otherIdentity;
 
 		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
 
@@ -642,6 +648,8 @@ class JourneyApplicationServiceTest {
 		private ActiveJourneySnapshotPort.ActiveJourneySnapshot lastSnapshot;
 		private JourneyRequest lastSnapshotRequest;
 		private JourneyRealtimePort.RealtimeObservation lastRealtime;
+		private ActiveJourneySnapshotPort.RequestExecutionIdentity snapshotMeasurementIdentity;
+		private ActiveJourneySnapshotPort.RequestExecutionIdentity routeMeasurementIdentity;
 		private Instant lastEffectiveInstant;
 		private final List<Instant> effectiveInstants = new ArrayList<>();
 		private final List<JourneyRequest> requests = new ArrayList<>();
@@ -650,12 +658,8 @@ class JourneyApplicationServiceTest {
 		private JourneyApplicationService service() {
 			return new JourneyApplicationService(new ActiveJourneySnapshotPort() {
 				@Override
-				public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
-					throw new AssertionError("service must use the request-aware snapshot boundary");
-				}
-
-				@Override
-				public ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant) {
+				public ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant,
+					JourneyRequestMeasurement measurement) {
 					snapshotCalls++;
 					lastSnapshotRequest = request;
 					record(effectiveInstant);
@@ -665,6 +669,11 @@ class JourneyApplicationServiceTest {
 					}
 					if (snapshotFailure != null) throw snapshotFailure;
 					if (cancelAfterSnapshot) cancelled.set(true);
+					if (snapshotMeasurementIdentity != null) {
+						measurement.observeActiveRegistryRead(snapshotMeasurementIdentity.requestId(),
+							snapshotMeasurementIdentity.routeBundleSha256(), snapshotMeasurementIdentity.generation());
+						measurement.bindActiveIdentity(snapshotMeasurementIdentity);
+					}
 					return snapshot;
 				}
 
@@ -680,7 +689,7 @@ class JourneyApplicationServiceTest {
 				if (realtimeFailure != null) throw realtimeFailure;
 				if (cancelAfterRealtime) cancelled.set(true);
 				return realtime;
-			}, (request, activeSnapshot, effectiveInstant, realtimeObservation) -> {
+			}, (request, activeSnapshot, effectiveInstant, realtimeObservation, measurement) -> {
 				raptorCalls++;
 				record(request);
 				lastSnapshot = activeSnapshot;
@@ -693,6 +702,10 @@ class JourneyApplicationServiceTest {
 				if (cancelAfterRaptor) cancelled.set(true);
 				if (raptorFailure != null) throw raptorFailure;
 				if (returnNullPlan) return null;
+				if (routeMeasurementIdentity != null) {
+					measurement.observeDirectRaptor(routeMeasurementIdentity.requestId(),
+						routeMeasurementIdentity.routeBundleSha256(), routeMeasurementIdentity.generation());
+				}
 				return planResult == null ? planResultFor(request.timePolicy()) : planResult;
 			}, clock);
 		}

@@ -29,10 +29,11 @@ public final class JourneyApplicationService {
 			? scheduled.requestedAt()
 			: capturedInstant;
 		if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
+		var measurement = new JourneyRequestMeasurement(request.requestId());
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		try {
-			snapshot = activeSnapshotPort.requireActive(request, effectiveInstant);
+			snapshot = activeSnapshotPort.requireActive(request, effectiveInstant, measurement);
 		} catch (RuntimeException exception) {
 			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
@@ -68,7 +69,7 @@ public final class JourneyApplicationService {
 
 		JourneyRaptorPort.PlanResult plan;
 		try {
-			plan = raptorPort.plan(request, snapshot, effectiveInstant, realtime);
+			plan = raptorPort.plan(request, snapshot, effectiveInstant, realtime, measurement);
 		} catch (RuntimeException exception) {
 			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
@@ -109,7 +110,7 @@ public final class JourneyApplicationService {
 				),
 				plan.candidates(),
 				boundaryObservation(request, snapshot, plan),
-				requestMeasurement(request, snapshot, plan)
+				requestMeasurement(request, snapshot, plan, measurement)
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {
@@ -120,16 +121,20 @@ public final class JourneyApplicationService {
 	private static JourneyExecutionResult.RequestMeasurement requestMeasurement(
 		JourneyRequest request,
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
-		JourneyRaptorPort.PlanResult plan
+		JourneyRaptorPort.PlanResult plan,
+		JourneyRequestMeasurement measurement
 	) {
 		if (request.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
 			return JourneyExecutionResult.RequestMeasurement.unobservable();
 		}
 		var snapshotMeasurement = snapshot.measurementReceipt();
 		var routeMeasurement = plan.measurementReceipt();
+		var recorded = measurement.complete(request, snapshot);
 		if (snapshotMeasurement.status() != ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED
 			|| routeMeasurement.status() != JourneyRaptorPort.RouteMeasurementReceipt.Status.OBSERVED
-			|| !snapshotMeasurement.identity().equals(routeMeasurement.identity())) {
+			|| recorded.status() != JourneyExecutionResult.RequestMeasurement.Status.OBSERVED
+			|| !snapshotMeasurement.identity().equals(routeMeasurement.identity())
+			|| !recorded.identity().equals(snapshotMeasurement.identity())) {
 			return JourneyExecutionResult.RequestMeasurement.unobservable();
 		}
 		var identity = snapshotMeasurement.identity();
@@ -143,10 +148,11 @@ public final class JourneyApplicationService {
 			|| !servingEvidence.publicationReceiptSha256().equals(serving.receiptSha256())) {
 			return JourneyExecutionResult.RequestMeasurement.unobservable();
 		}
-		return JourneyExecutionResult.RequestMeasurement.observed(identity,
-			JourneyExecutionResult.BoundaryObservation.observed(
-				snapshotMeasurement.providerCalls(), snapshotMeasurement.cacheHits(),
-				snapshotMeasurement.staleArtifactUses(), routeMeasurement.fallbackUses()));
+		var boundary = JourneyExecutionResult.BoundaryObservation.observed(
+			snapshotMeasurement.providerCalls(), snapshotMeasurement.cacheHits(),
+			snapshotMeasurement.staleArtifactUses(), routeMeasurement.fallbackUses());
+		return boundary.equals(recorded.boundaryObservation()) ? recorded
+			: JourneyExecutionResult.RequestMeasurement.unobservable();
 	}
 
 	private static JourneyExecutionResult.BoundaryObservation boundaryObservation(

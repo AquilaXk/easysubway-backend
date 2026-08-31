@@ -10,7 +10,8 @@ public interface JourneyRaptorPort {
 		JourneyRequest request,
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
 		Instant effectiveInstant,
-		JourneyRealtimePort.RealtimeObservation realtimeOrNull
+		JourneyRealtimePort.RealtimeObservation realtimeOrNull,
+		JourneyRequestMeasurement measurement
 	);
 
 	record PlanResult(
@@ -73,9 +74,9 @@ public interface JourneyRaptorPort {
 			}
 		}
 
-		public static RouteMeasurementReceipt observed(
-			ActiveJourneySnapshotPort.RequestExecutionIdentity identity, long fallbackUses) {
-			return new RouteMeasurementReceipt(Status.OBSERVED, identity, fallbackUses);
+		public static RouteMeasurementReceipt observed(JourneyRequestMeasurement.RouteObservation observation) {
+			Objects.requireNonNull(observation, "observation");
+			return new RouteMeasurementReceipt(Status.OBSERVED, observation.identity(), observation.fallbackUses());
 		}
 
 		public static RouteMeasurementReceipt unobservable() {

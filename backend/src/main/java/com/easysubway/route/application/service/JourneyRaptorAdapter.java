@@ -7,6 +7,7 @@ import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.domain.ConstraintMode;
@@ -32,11 +33,13 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		JourneyRequest request,
 		ActiveJourneySnapshot snapshot,
 		Instant effectiveInstant,
-		RealtimeObservation realtimeOrNull
+		RealtimeObservation realtimeOrNull,
+		JourneyRequestMeasurement requestMeasurement
 	) {
 		JourneyRequest requiredRequest = Objects.requireNonNull(request, "request");
 		ActiveJourneySnapshot requiredSnapshot = Objects.requireNonNull(snapshot, "snapshot");
 		Instant requiredEffectiveInstant = Objects.requireNonNull(effectiveInstant, "effectiveInstant");
+		JourneyRequestMeasurement requiredMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
@@ -45,14 +48,19 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
 			toCommand(requiredRequest, requiredEffectiveInstant),
 			routeRuntime.compiledTimetable(),
-			realtimeOverlay
+			realtimeOverlay,
+			requiredMeasurement,
+			requiredRequest.requestId(),
+			requiredSnapshot.routeBundleSha256(),
+			requiredSnapshot.generation()
 		);
 		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = planned.itineraries();
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 		if (itineraries.isEmpty()) {
 			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics(),
 				JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
-				measurementReceipt(requiredRequest, requiredSnapshot));
+				measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+					planned.measurementObservation()));
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
@@ -64,22 +72,27 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
-			measurementReceipt(requiredRequest, requiredSnapshot));
+			measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
+				planned.measurementObservation()));
 	}
 
 	private static JourneyRaptorPort.RouteMeasurementReceipt measurementReceipt(
-		JourneyRequest request, ActiveJourneySnapshot snapshot) {
+		JourneyRequest request, ActiveJourneySnapshot snapshot, JourneyRequestMeasurement requestMeasurement,
+		JourneyRequestMeasurement.RouteObservation observation) {
 		var measurement = snapshot.measurementReceipt();
 		if (measurement.status() != ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED) {
+			requestMeasurement.markUnobservable();
 			return JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
 		}
 		var identity = measurement.identity();
 		if (!request.requestId().equals(identity.requestId())
 			|| !snapshot.routeBundleSha256().equals(identity.routeBundleSha256())
 			|| snapshot.generation() != identity.generation()) {
+			requestMeasurement.markUnobservable();
 			return JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
 		}
-		return JourneyRaptorPort.RouteMeasurementReceipt.observed(identity, 0);
+		return observation == null ? JourneyRaptorPort.RouteMeasurementReceipt.unobservable()
+			: JourneyRaptorPort.RouteMeasurementReceipt.observed(observation);
 	}
 
 	static SearchRouteV2Command toCommand(JourneyRequest request, Instant effectiveInstant) {

@@ -4,13 +4,9 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-@FunctionalInterface
 public interface ActiveJourneySnapshotPort {
-	ActiveJourneySnapshot requireActive(Instant effectiveInstant);
-
-	default ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant) {
-		return requireActive(effectiveInstant);
-	}
+	ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant,
+		JourneyRequestMeasurement measurement);
 
 	record ActiveJourneySnapshot(
 		String identity,
@@ -182,10 +178,11 @@ public interface ActiveJourneySnapshotPort {
 			}
 		}
 
-		public static SnapshotMeasurementReceipt observed(RequestExecutionIdentity identity, long providerCalls,
-			long cacheHits, long staleArtifactUses) {
-			return new SnapshotMeasurementReceipt(Status.OBSERVED, identity, providerCalls, cacheHits,
-				staleArtifactUses);
+		public static SnapshotMeasurementReceipt observed(
+			JourneyRequestMeasurement.SnapshotObservation observation) {
+			Objects.requireNonNull(observation, "observation");
+			return new SnapshotMeasurementReceipt(Status.OBSERVED, observation.identity(),
+				observation.providerCalls(), observation.cacheHits(), observation.staleArtifactUses());
 		}
 
 		public static SnapshotMeasurementReceipt unobservable() {

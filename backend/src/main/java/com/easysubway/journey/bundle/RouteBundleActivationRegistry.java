@@ -1,5 +1,6 @@
 package com.easysubway.journey.bundle;
 
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.Objects;
@@ -109,6 +110,15 @@ public final class RouteBundleActivationRegistry {
 			throw failure(RouteBundleActivationException.Reason.BUNDLE_UNAVAILABLE);
 		}
 		requireIdentityIsCurrent(active.identity(), clock.instant());
+		return active;
+	}
+
+	public ActiveRouteBundleSnapshot activeSnapshot(
+		String requestId, JourneyRequestMeasurement measurement) {
+		Objects.requireNonNull(measurement, "measurement");
+		var active = activeSnapshot();
+		measurement.observeActiveRegistryRead(
+			requestId, active.admissionEvidence().manifestSha256(), active.generation());
 		return active;
 	}
 

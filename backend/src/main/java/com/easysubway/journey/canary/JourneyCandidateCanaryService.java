@@ -4,6 +4,7 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.bundle.RouteBundleActivationException;
 import com.easysubway.journey.bundle.RouteBundleActivationRegistry;
 import java.nio.charset.StandardCharsets;
@@ -82,7 +83,8 @@ public final class JourneyCandidateCanaryService {
 
 		JourneyRaptorPort.PlanResult plan;
 		try {
-			plan = raptorPort.plan(request, snapshot, capturedAt, null);
+			plan = raptorPort.plan(request, snapshot, capturedAt, null,
+				new JourneyRequestMeasurement(request.requestId()));
 		} catch (RuntimeException exception) {
 			throw failure(JourneyCandidateCanaryException.Kind.UNAVAILABLE);
 		}

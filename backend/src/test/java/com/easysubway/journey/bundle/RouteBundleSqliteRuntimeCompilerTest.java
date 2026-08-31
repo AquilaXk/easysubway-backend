@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -63,7 +64,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 
-		var planned = new JourneyRaptorAdapter().plan(request, snapshot, DEPARTURE, null);
+		var planned = new JourneyRaptorAdapter().plan(
+			request, snapshot, DEPARTURE, null, new JourneyRequestMeasurement(request.requestId()));
 
 		assertThat(planned.queryId()).isEqualTo(request.requestId());
 		assertThat(planned.candidates()).singleElement().satisfies(candidate -> {
