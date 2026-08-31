@@ -98,7 +98,7 @@ class JourneyApplicationServiceTest {
 		fakes.snapshot = snapshot(
 			VALID_UNTIL,
 			true,
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
 				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
 		fakes.planResult = new JourneyRaptorPort.PlanResult(
@@ -123,33 +123,6 @@ class JourneyApplicationServiceTest {
 	}
 
 	@Test
-	void projectsObservedProviderCallsFromTheExactSnapshotBoundaryReceipt() {
-		Fakes fakes = new Fakes();
-		var snapshotReceipt = ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(7, 2, 1);
-		fakes.snapshot = snapshot(
-			VALID_UNTIL,
-			true,
-			snapshotReceipt,
-			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
-				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 7, 2, 1)));
-		fakes.planResult = new JourneyRaptorPort.PlanResult(
-			"query-1",
-			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
-			OBSERVED_SCAN,
-			JourneyRaptorPort.RouteBoundaryReceipt.observed(3),
-			JourneyRaptorPort.RouteMeasurementReceipt.observed(
-				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 3)));
-		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
-		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
-
-		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
-
-		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success ->
-			assertThat(success.executionObservation().boundaryObservation())
-				.isEqualTo(JourneyExecutionResult.BoundaryObservation.observed(7, 2, 1, 3)));
-	}
-
-	@Test
 	void keepsOrdinaryServingSuccessfulWhenMeasurementIdentitiesDoNotMatch() {
 		var otherIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
 			"01K1Y000000000000000000001", ROUTE_BUNDLE_SHA, 1,
@@ -158,7 +131,7 @@ class JourneyApplicationServiceTest {
 		fakes.snapshot = snapshot(
 			VALID_UNTIL,
 			true,
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
 				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
 		fakes.planResult = new JourneyRaptorPort.PlanResult(
@@ -560,7 +533,7 @@ class JourneyApplicationServiceTest {
 	) {
 		Fakes fakes = new Fakes();
 		fakes.snapshot = snapshot(VALID_UNTIL, true,
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0), snapshotMeasurement);
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0), snapshotMeasurement);
 		fakes.planResult = new JourneyRaptorPort.PlanResult(
 			"query-1",
 			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
@@ -615,7 +588,7 @@ class JourneyApplicationServiceTest {
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant validUntil, boolean fresh) {
-		return snapshot(validUntil, fresh, ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
+		return snapshot(validUntil, fresh, ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
@@ -750,9 +723,8 @@ class JourneyApplicationServiceTest {
 					if (snapshotFailure != null) throw snapshotFailure;
 					if (cancelAfterSnapshot) cancelled.set(true);
 					if (snapshotMeasurementIdentity != null) {
-						measurement.observeSnapshotBoundary(snapshotMeasurementIdentity.requestId(),
-							snapshotMeasurementIdentity.routeBundleSha256(), snapshotMeasurementIdentity.generation(),
-							snapshot.boundaryReceipt());
+						measurement.observeActiveRegistryRead(snapshotMeasurementIdentity.requestId(),
+							snapshotMeasurementIdentity.routeBundleSha256(), snapshotMeasurementIdentity.generation());
 						measurement.bindActiveIdentity(snapshotMeasurementIdentity);
 					}
 					return snapshot;
@@ -784,10 +756,8 @@ class JourneyApplicationServiceTest {
 				if (raptorFailure != null) throw raptorFailure;
 				if (returnNullPlan) return null;
 				if (routeMeasurementIdentity != null) {
-					var planned = planResult == null ? planResultFor(request.timePolicy()) : planResult;
-					measurement.observeRouteBoundary(routeMeasurementIdentity.requestId(),
-						routeMeasurementIdentity.routeBundleSha256(), routeMeasurementIdentity.generation(),
-						planned.boundaryReceipt());
+					measurement.observeDirectRaptor(routeMeasurementIdentity.requestId(),
+						routeMeasurementIdentity.routeBundleSha256(), routeMeasurementIdentity.generation());
 				}
 				return planResult == null ? planResultFor(request.timePolicy()) : planResult;
 			}, clock);

@@ -91,8 +91,7 @@ class JourneyRaptorAdapterTest {
 		var requestIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
 			REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION, activeReadinessIdentity, activeServingIdentity);
 		var requestMeasurement = new JourneyRequestMeasurement(REQUEST_ID);
-		requestMeasurement.observeSnapshotBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION,
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
+		requestMeasurement.observeActiveRegistryRead(REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION);
 		var snapshotObservation = requestMeasurement.bindActiveIdentity(requestIdentity);
 		var measurement = ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(snapshotObservation);
 
@@ -109,9 +108,8 @@ class JourneyRaptorAdapterTest {
 			"01ARZ3NDEKTSV4RRFFQ69G5FAW", ROUTE_BUNDLE_SHA, GENERATION,
 			activeReadinessIdentity, activeServingIdentity);
 		var mismatchedMeasurement = new JourneyRequestMeasurement(otherIdentity.requestId());
-		mismatchedMeasurement.observeSnapshotBoundary(
-			otherIdentity.requestId(), otherIdentity.routeBundleSha256(), otherIdentity.generation(),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
+		mismatchedMeasurement.observeActiveRegistryRead(
+			otherIdentity.requestId(), otherIdentity.routeBundleSha256(), otherIdentity.generation());
 		var mismatched = new JourneyRaptorAdapter().plan(
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
 				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
@@ -396,7 +394,7 @@ class JourneyRaptorAdapterTest {
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION, unknown, VALID_UNTIL, true,
 			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
 
 		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
 			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
@@ -409,7 +407,7 @@ class JourneyRaptorAdapterTest {
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION + 1, runtime, VALID_UNTIL, true,
 			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0)))
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("generation");
 	}
@@ -639,7 +637,7 @@ class JourneyRaptorAdapterTest {
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION, runtime, VALID_UNTIL, true,
 			servingEvidence,
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
 			measurementReceipt);
 	}
 

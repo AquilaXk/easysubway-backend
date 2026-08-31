@@ -139,28 +139,26 @@ public interface ActiveJourneySnapshotPort {
 		}
 	}
 
-	record SnapshotBoundaryReceipt(Status status, Long providerCalls, Long cacheHits, Long staleArtifactUses) {
+	record SnapshotBoundaryReceipt(Status status, Long cacheHits, Long staleArtifactUses) {
 		enum Status { OBSERVED, UNOBSERVABLE }
 
 		public SnapshotBoundaryReceipt {
 			status = Objects.requireNonNull(status, "status");
 			if (status == Status.UNOBSERVABLE) {
-				if (providerCalls != null || cacheHits != null || staleArtifactUses != null) {
+				if (cacheHits != null || staleArtifactUses != null) {
 					throw new IllegalArgumentException("unobservable snapshot receipt must not have counters");
 				}
-			} else if (providerCalls == null || providerCalls < 0 || cacheHits == null || cacheHits < 0
-				|| staleArtifactUses == null || staleArtifactUses < 0) {
+			} else if (cacheHits == null || cacheHits < 0 || staleArtifactUses == null || staleArtifactUses < 0) {
 				throw new IllegalArgumentException("observed snapshot receipt is incomplete");
 			}
 		}
 
-		public static SnapshotBoundaryReceipt observed(
-			long providerCalls, long cacheHits, long staleArtifactUses) {
-			return new SnapshotBoundaryReceipt(Status.OBSERVED, providerCalls, cacheHits, staleArtifactUses);
+		public static SnapshotBoundaryReceipt observed(long cacheHits, long staleArtifactUses) {
+			return new SnapshotBoundaryReceipt(Status.OBSERVED, cacheHits, staleArtifactUses);
 		}
 
 		public static SnapshotBoundaryReceipt unobservable() {
-			return new SnapshotBoundaryReceipt(Status.UNOBSERVABLE, null, null, null);
+			return new SnapshotBoundaryReceipt(Status.UNOBSERVABLE, null, null);
 		}
 	}
 

@@ -1,39 +1,48 @@
 package com.easysubway.journey.application;
 
+import java.util.EnumMap;
+import java.util.Map;
 import java.util.Objects;
 
 /** Request-scoped event recorder for benchmark-only runtime boundary observations. */
 public final class JourneyRequestMeasurement {
 
+	private enum Event {
+		ACTIVE_REGISTRY_READ,
+		PROVIDER_CALL,
+		CACHE_HIT,
+		STALE_ARTIFACT_USE,
+		DIRECT_RAPTOR,
+		FALLBACK_USE
+	}
+
 	private final String requestId;
+	private final Map<Event, Long> events = new EnumMap<>(Event.class);
 	private String routeBundleSha256;
 	private long generation;
 	private ActiveJourneySnapshotPort.RequestExecutionIdentity identity;
-	private ActiveJourneySnapshotPort.SnapshotBoundaryReceipt snapshotReceipt;
-	private JourneyRaptorPort.RouteBoundaryReceipt routeReceipt;
 	private boolean unobservable;
 
 	public JourneyRequestMeasurement(String requestId) {
 		this.requestId = Objects.requireNonNull(requestId, "requestId");
 	}
 
-	public void observeSnapshotBoundary(String observedRequestId, String observedRouteBundleSha256,
-		long observedGeneration, ActiveJourneySnapshotPort.SnapshotBoundaryReceipt receipt) {
-		if (unobservable || snapshotReceipt != null
+	public void observeActiveRegistryRead(
+		String observedRequestId, String observedRouteBundleSha256, long observedGeneration) {
+		if (unobservable || count(Event.ACTIVE_REGISTRY_READ) != 0
 			|| !requestId.equals(observedRequestId) || observedRouteBundleSha256 == null
-			|| observedGeneration < 1 || receipt == null
-			|| receipt.status() != ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED) {
+			|| observedGeneration < 1) {
 			unobservable = true;
 			return;
 		}
 		routeBundleSha256 = observedRouteBundleSha256;
 		generation = observedGeneration;
-		snapshotReceipt = receipt;
+		record(Event.ACTIVE_REGISTRY_READ);
 	}
 
 	public SnapshotObservation bindActiveIdentity(
 		ActiveJourneySnapshotPort.RequestExecutionIdentity observedIdentity) {
-		if (unobservable || identity != null || snapshotReceipt == null
+		if (unobservable || identity != null || count(Event.ACTIVE_REGISTRY_READ) != 1
 			|| observedIdentity == null || !requestId.equals(observedIdentity.requestId())
 			|| !routeBundleSha256.equals(observedIdentity.routeBundleSha256())
 			|| generation != observedIdentity.generation()) {
@@ -41,19 +50,34 @@ public final class JourneyRequestMeasurement {
 			return null;
 		}
 		identity = observedIdentity;
-		return new SnapshotObservation(identity, snapshotReceipt.providerCalls(), snapshotReceipt.cacheHits(),
-			snapshotReceipt.staleArtifactUses());
+		return new SnapshotObservation(identity, count(Event.PROVIDER_CALL), count(Event.CACHE_HIT),
+			count(Event.STALE_ARTIFACT_USE));
 	}
 
-	public RouteObservation observeRouteBoundary(String observedRequestId, String routeBundleSha256,
-		long generation, JourneyRaptorPort.RouteBoundaryReceipt receipt) {
-		if (!matches(observedRequestId, routeBundleSha256, generation) || routeReceipt != null
-			|| receipt == null || receipt.status() != JourneyRaptorPort.RouteBoundaryReceipt.Status.OBSERVED) {
+	public void observeProviderCall(String observedRequestId, String routeBundleSha256, long generation) {
+		recordBound(Event.PROVIDER_CALL, observedRequestId, routeBundleSha256, generation);
+	}
+
+	public void observeCacheHit(String observedRequestId, String routeBundleSha256, long generation) {
+		recordBound(Event.CACHE_HIT, observedRequestId, routeBundleSha256, generation);
+	}
+
+	public void observeStaleArtifactUse(String observedRequestId, String routeBundleSha256, long generation) {
+		recordBound(Event.STALE_ARTIFACT_USE, observedRequestId, routeBundleSha256, generation);
+	}
+
+	public RouteObservation observeDirectRaptor(
+		String observedRequestId, String routeBundleSha256, long generation) {
+		if (!matches(observedRequestId, routeBundleSha256, generation)) {
 			unobservable = true;
 			return null;
 		}
-		routeReceipt = receipt;
-		return new RouteObservation(identity, receipt.fallbackUses());
+		record(Event.DIRECT_RAPTOR);
+		return new RouteObservation(identity, count(Event.FALLBACK_USE));
+	}
+
+	public void observeFallbackUse(String observedRequestId, String routeBundleSha256, long generation) {
+		recordBound(Event.FALLBACK_USE, observedRequestId, routeBundleSha256, generation);
 	}
 
 	public void markUnobservable() {
@@ -66,8 +90,8 @@ public final class JourneyRequestMeasurement {
 	) {
 		Objects.requireNonNull(request, "request");
 		Objects.requireNonNull(snapshot, "snapshot");
-		if (unobservable || identity == null || snapshotReceipt == null || routeReceipt == null
-			|| !request.requestId().equals(identity.requestId())
+		if (unobservable || identity == null || count(Event.ACTIVE_REGISTRY_READ) != 1
+			|| count(Event.DIRECT_RAPTOR) != 1 || !request.requestId().equals(identity.requestId())
 			|| !snapshot.routeBundleSha256().equals(identity.routeBundleSha256())
 			|| snapshot.generation() != identity.generation()) {
 			return JourneyExecutionResult.RequestMeasurement.unobservable();
@@ -81,8 +105,16 @@ public final class JourneyRequestMeasurement {
 		}
 		return JourneyExecutionResult.RequestMeasurement.observed(identity,
 			JourneyExecutionResult.BoundaryObservation.observed(
-				snapshotReceipt.providerCalls(), snapshotReceipt.cacheHits(), snapshotReceipt.staleArtifactUses(),
-				routeReceipt.fallbackUses()));
+				count(Event.PROVIDER_CALL), count(Event.CACHE_HIT), count(Event.STALE_ARTIFACT_USE),
+				count(Event.FALLBACK_USE)));
+	}
+
+	private void recordBound(Event event, String observedRequestId, String routeBundleSha256, long generation) {
+		if (!matches(observedRequestId, routeBundleSha256, generation)) {
+			unobservable = true;
+			return;
+		}
+		record(event);
 	}
 
 	private boolean matches(String observedRequestId, String routeBundleSha256, long generation) {
@@ -90,6 +122,13 @@ public final class JourneyRequestMeasurement {
 			&& identity.routeBundleSha256().equals(routeBundleSha256) && identity.generation() == generation;
 	}
 
+	private void record(Event event) {
+		events.merge(event, 1L, Long::sum);
+	}
+
+	private long count(Event event) {
+		return events.getOrDefault(event, 0L);
+	}
 
 	public record SnapshotObservation(ActiveJourneySnapshotPort.RequestExecutionIdentity identity,
 		long providerCalls, long cacheHits, long staleArtifactUses) {
