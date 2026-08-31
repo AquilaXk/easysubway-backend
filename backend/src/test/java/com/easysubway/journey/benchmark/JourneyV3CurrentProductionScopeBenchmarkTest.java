@@ -138,7 +138,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 		}
 		return new Sample(request.testCase().id(), profile.name(), sequence, observation.executionNanos(), observation.allocatedBytes(),
 			observation.scanMetrics(), new RequestIdentity(generatedRequestId, observation.routeBundleSha256(),
-				activationRequestIdentity, activeServingProjection.activeServingIdentity(), observation.boundaryObservation()));
+				activationRequestIdentity, observation.activeServingIdentity(), observation.boundaryObservation()));
 	}
 
 	private static String requestId(int value) {
@@ -251,11 +251,13 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 
 	record DeployedObservation(String requestId, String routeBundleSha256, long bundleGeneration,
 		ScanMetrics scanMetrics, JourneyExecutionResult.BoundaryObservation boundaryObservation,
-		long executionNanos, long allocatedBytes, RemoteActiveReadiness activeReadiness) {
+		long executionNanos, long allocatedBytes, RemoteActiveReadiness activeReadiness,
+		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity) {
 		boolean matches(JourneyV3BenchmarkRuntimeAdapter.ActiveServingProjection projection) {
 			return routeBundleSha256.equals(projection.routeBundleManifestSha256())
 				&& bundleGeneration == projection.candidateGeneration()
-				&& activeReadiness.matches(projection);
+				&& activeReadiness.matches(projection)
+				&& activeServingIdentity.equals(projection.activeServingIdentity());
 		}
 	}
 
@@ -282,7 +284,8 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 			.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 		private static final Set<String> RESPONSE_FIELDS = Set.of("requestId", "routeBundleSha256", "bundleGeneration",
-			"serviceDay", "scanMetrics", "boundaryObservation", "executionNanos", "allocatedBytes", "activeReadiness");
+			"serviceDay", "scanMetrics", "boundaryObservation", "executionNanos", "allocatedBytes", "activeReadiness",
+			"activeServingIdentity");
 		private static final Set<String> ACTIVE_READINESS_FIELDS = Set.of("schemaVersion", "artifactKind", "instanceId",
 			"releaseTupleSha256", "backendImageDigest", "backendConfigSha256", "journeyContractSha256",
 			"routeBundleManifestSha256", "bundleId", "bundleReleaseSequence", "generation", "serviceTimezone",
@@ -354,7 +357,8 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				long executionNanos = nonnegative(root, "executionNanos");
 				long allocatedBytes = nonnegative(root, "allocatedBytes");
 				return new DeployedObservation(requestId, routeBundleSha256, root.path("bundleGeneration").longValue(),
-					metrics, observation, executionNanos, allocatedBytes, activeReadiness(root.path("activeReadiness")));
+					metrics, observation, executionNanos, allocatedBytes, activeReadiness(root.path("activeReadiness")),
+					activeServingIdentity(root.path("activeServingIdentity")));
 			} catch (IOException | RuntimeException exception) {
 				throw new IllegalArgumentException("deployed Journey V3 observation response is invalid", exception);
 			}
@@ -404,6 +408,24 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				value.path("servingReady").booleanValue(), value.path("draining").booleanValue(), text(value, "evidenceSha256"));
 		}
 
+		private static JourneyExecutionResult.ActiveServingIdentity activeServingIdentity(JsonNode value) {
+			if (!hasExactFields(value, Set.of("status", "descriptorSha256", "receiptSha256",
+				"deploymentIdentity", "deploymentRevision", "serviceDayCutoff"))
+				|| !"OBSERVED".equals(text(value, "status"))
+				|| !text(value, "descriptorSha256").matches("[a-f0-9]{64}")
+				|| !text(value, "receiptSha256").matches("[a-f0-9]{64}")
+				|| !text(value, "deploymentIdentity").matches("sha256:[a-f0-9]{64}")
+				|| !text(value, "deploymentRevision").matches("[a-f0-9]{40}")
+				|| !"03:00".equals(text(value, "serviceDayCutoff"))) {
+				throw new IllegalArgumentException("active-serving identity is invalid");
+			}
+			return new JourneyExecutionResult.ActiveServingIdentity(
+				JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+				text(value, "descriptorSha256"), text(value, "receiptSha256"),
+				text(value, "deploymentIdentity"), text(value, "deploymentRevision"),
+				text(value, "serviceDayCutoff"));
+		}
+
 		private static long positiveLong(JsonNode object, String name) {
 			long value = nonnegative(object, name);
 			if (value < 1) throw new IllegalArgumentException();
@@ -426,7 +448,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				if (value.originStationId().equals(value.destinationStationId()) || !Set.of("WEEKDAY", "WEEKEND").contains(value.serviceDay()) || !value.departureLocalTime().matches("[0-2]\\d:[0-5]\\d") || !ids.add(value.id())) throw new IllegalArgumentException("corpus entry is invalid"); cases.add(value); }
 			if (cases.isEmpty()) throw new IllegalArgumentException("corpus must not be empty"); return new Corpus("v1", sha(json.getBytes(StandardCharsets.UTF_8)), List.copyOf(cases));
 		} catch (java.io.IOException exception) { throw new IllegalArgumentException("corpus is malformed", exception); } }
-		static void validate(Evidence evidence) { requireNonNull(evidence); requireSha(evidence.tuple().descriptorSha256(), "descriptorSha256"); requireSha(evidence.tuple().receiptSha256(), "receiptSha256"); requireSha(evidence.tuple().routeBundleSha256(), "routeBundleSha256"); if (evidence.tuple().deploymentRevision() == null || !evidence.tuple().deploymentRevision().matches("[a-f0-9]{40}")) throw new IllegalArgumentException("deployment revision is invalid"); requireSha(evidence.corpus().sha256(), "corpusSha256"); requireSha(evidence.config().corpusSha256(), "corpusSha256"); if (!evidence.corpus().sha256().equals(evidence.config().corpusSha256())) throw new IllegalArgumentException("corpus digest is invalid");
+		static void validate(Evidence evidence) { requireNonNull(evidence); requireSha(evidence.tuple().descriptorSha256(), "descriptorSha256"); requireSha(evidence.tuple().receiptSha256(), "receiptSha256"); requireSha(evidence.tuple().publicationReceiptSha256(), "publicationReceiptSha256"); requireSha(evidence.tuple().routeBundleSha256(), "routeBundleSha256"); if (evidence.tuple().deploymentRevision() == null || !evidence.tuple().deploymentRevision().matches("[a-f0-9]{40}")) throw new IllegalArgumentException("deployment revision is invalid"); requireSha(evidence.corpus().sha256(), "corpusSha256"); requireSha(evidence.config().corpusSha256(), "corpusSha256"); if (!evidence.corpus().sha256().equals(evidence.config().corpusSha256())) throw new IllegalArgumentException("corpus digest is invalid");
 			if (!evidence.asJson().keySet().equals(Set.of("schemaVersion", "tuple", "corpus", "scope", "jvm",
 				"walkingPaceMetersPerHour", "config", "cold", "warm", "activationRequestIdentity",
 				"activeServingIdentity"))) throw new IllegalArgumentException("benchmark output fields are incomplete");
@@ -442,7 +464,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				throw new IllegalArgumentException("active-serving identity is UNOBSERVABLE");
 			}
 			if (!activeServing.descriptorSha256().equals(evidence.tuple().descriptorSha256())
-				|| !activeServing.receiptSha256().equals(evidence.tuple().receiptSha256())
+				|| !activeServing.receiptSha256().equals(evidence.tuple().publicationReceiptSha256())
 				|| !activeServing.deploymentRevision().equals(evidence.tuple().deploymentRevision())
 				|| !activeServing.deploymentIdentity().matches("sha256:[0-9a-f]{64}")
 				|| !"03:00".equals(activeServing.serviceDayCutoff())) {

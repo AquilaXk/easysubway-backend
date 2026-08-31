@@ -4,9 +4,9 @@ import java.time.Instant;
 import java.util.Objects;
 import java.util.regex.Pattern;
 
-@FunctionalInterface
 public interface ActiveJourneySnapshotPort {
-	ActiveJourneySnapshot requireActive(Instant effectiveInstant);
+	ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant,
+		JourneyRequestMeasurement measurement);
 
 	record ActiveJourneySnapshot(
 		String identity,
@@ -19,7 +19,8 @@ public interface ActiveJourneySnapshotPort {
 		Instant validUntil,
 		boolean fresh,
 		ActiveServingEvidence servingEvidence,
-		SnapshotBoundaryReceipt boundaryReceipt
+		SnapshotBoundaryReceipt boundaryReceipt,
+		SnapshotMeasurementReceipt measurementReceipt
 	) {
 		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
 
@@ -40,6 +41,16 @@ public interface ActiveJourneySnapshotPort {
 			validUntil = Objects.requireNonNull(validUntil, "validUntil");
 			servingEvidence = Objects.requireNonNull(servingEvidence, "servingEvidence");
 			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
+			measurementReceipt = Objects.requireNonNull(measurementReceipt, "measurementReceipt");
+		}
+
+		public ActiveJourneySnapshot(String identity, String routeBundleId, String routeBundleSha256,
+			String timetableSnapshotId, String accessibilitySnapshotId, long generation,
+			JourneyRaptorRuntimeView runtimeView, Instant validUntil, boolean fresh,
+			ActiveServingEvidence servingEvidence, SnapshotBoundaryReceipt boundaryReceipt) {
+			this(identity, routeBundleId, routeBundleSha256, timetableSnapshotId, accessibilitySnapshotId,
+				generation, runtimeView, validUntil, fresh, servingEvidence, boundaryReceipt,
+				SnapshotMeasurementReceipt.unobservable());
 		}
 
 		private static String requireSha256(String value) {
@@ -96,7 +107,38 @@ public interface ActiveJourneySnapshotPort {
 		}
 	}
 
-	/** Immutable evidence emitted by the active-snapshot boundary for this captured snapshot. */
+	/** Immutable request and deployment identity captured by one Journey execution boundary. */
+	record RequestExecutionIdentity(String requestId, String routeBundleSha256, long generation,
+		JourneyExecutionResult.ActiveReadinessIdentity activeReadinessIdentity,
+		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity) {
+		private static final Pattern REQUEST_ID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
+		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
+
+		public RequestExecutionIdentity {
+			if (requestId == null || !REQUEST_ID.matcher(requestId).matches()) {
+				throw new IllegalArgumentException("requestId must be a ULID");
+			}
+			if (routeBundleSha256 == null || !SHA256.matcher(routeBundleSha256).matches()) {
+				throw new IllegalArgumentException("routeBundleSha256 is invalid");
+			}
+			if (generation < 1) throw new IllegalArgumentException("generation must be positive");
+			activeReadinessIdentity = Objects.requireNonNull(activeReadinessIdentity, "activeReadinessIdentity");
+			activeServingIdentity = Objects.requireNonNull(activeServingIdentity, "activeServingIdentity");
+			if (activeServingIdentity.status() != JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED) {
+				throw new IllegalArgumentException("request execution identity requires observed active identity");
+			}
+			if (!routeBundleSha256.equals(activeReadinessIdentity.routeBundleManifestSha256())
+				|| generation != activeReadinessIdentity.generation()
+				|| !activeReadinessIdentity.servingReady() || activeReadinessIdentity.draining()
+				|| !JourneyExecutionResult.SERVICE_TIMEZONE.equals(activeReadinessIdentity.serviceTimezone())
+				|| !activeReadinessIdentity.serviceDayCutoff().equals(activeServingIdentity.serviceDayCutoff())
+				|| !("sha256:" + activeReadinessIdentity.releaseTupleSha256())
+					.equals(activeServingIdentity.deploymentIdentity())) {
+				throw new IllegalArgumentException("request execution identities do not match");
+			}
+		}
+	}
+
 	record SnapshotBoundaryReceipt(Status status, Long cacheHits, Long staleArtifactUses) {
 		enum Status { OBSERVED, UNOBSERVABLE }
 
@@ -107,7 +149,7 @@ public interface ActiveJourneySnapshotPort {
 					throw new IllegalArgumentException("unobservable snapshot receipt must not have counters");
 				}
 			} else if (cacheHits == null || cacheHits < 0 || staleArtifactUses == null || staleArtifactUses < 0) {
-				throw new IllegalArgumentException("observed snapshot receipt counters must be nonnegative");
+				throw new IllegalArgumentException("observed snapshot receipt is incomplete");
 			}
 		}
 
@@ -117,6 +159,34 @@ public interface ActiveJourneySnapshotPort {
 
 		public static SnapshotBoundaryReceipt unobservable() {
 			return new SnapshotBoundaryReceipt(Status.UNOBSERVABLE, null, null);
+		}
+	}
+
+	record SnapshotMeasurementReceipt(Status status, RequestExecutionIdentity identity,
+		Long providerCalls, Long cacheHits, Long staleArtifactUses) {
+		public enum Status { OBSERVED, UNOBSERVABLE }
+
+		public SnapshotMeasurementReceipt {
+			status = Objects.requireNonNull(status, "status");
+			if (status == Status.OBSERVED && (identity == null || providerCalls == null || providerCalls < 0
+				|| cacheHits == null || cacheHits < 0 || staleArtifactUses == null || staleArtifactUses < 0)) {
+				throw new IllegalArgumentException("observed measurement is incomplete");
+			}
+			if (status == Status.UNOBSERVABLE
+				&& (identity != null || providerCalls != null || cacheHits != null || staleArtifactUses != null)) {
+				throw new IllegalArgumentException("unobservable measurement must not have values");
+			}
+		}
+
+		public static SnapshotMeasurementReceipt observed(
+			JourneyRequestMeasurement.SnapshotObservation observation) {
+			Objects.requireNonNull(observation, "observation");
+			return new SnapshotMeasurementReceipt(Status.OBSERVED, observation.identity(),
+				observation.providerCalls(), observation.cacheHits(), observation.staleArtifactUses());
+		}
+
+		public static SnapshotMeasurementReceipt unobservable() {
+			return new SnapshotMeasurementReceipt(Status.UNOBSERVABLE, null, null, null, null);
 		}
 	}
 }

@@ -11,11 +11,13 @@ public record JourneyReadinessProperties(
 	String backendImageDigest,
 	String backendConfigSha256,
 	String journeyContractSha256,
+	String deploymentRevision,
 	long trafficGeneration) {
 
 	private static final Pattern INSTANCE_ID = Pattern.compile("[A-Za-z0-9][A-Za-z0-9._:-]{0,127}");
 	private static final Pattern SHA_256 = Pattern.compile("[0-9a-f]{64}");
 	private static final Pattern IMAGE_DIGEST = Pattern.compile("sha256:[0-9a-f]{64}");
+	private static final Pattern GIT_REVISION = Pattern.compile("[0-9a-f]{40}");
 
 	public JourneyReadinessProperties {
 		requireToken(serviceToken);
@@ -28,6 +30,8 @@ public record JourneyReadinessProperties(
 		}
 		requireSha256(backendConfigSha256, "backendConfigSha256");
 		requireSha256(journeyContractSha256, "journeyContractSha256");
+		deploymentRevision = deploymentRevision != null && GIT_REVISION.matcher(deploymentRevision).matches()
+			? deploymentRevision : null;
 		if (trafficGeneration < 1) {
 			throw new IllegalArgumentException("trafficGeneration must be positive");
 		}

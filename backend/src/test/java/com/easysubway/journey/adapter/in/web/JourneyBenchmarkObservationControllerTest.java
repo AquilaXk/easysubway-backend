@@ -16,7 +16,6 @@ import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRaptorPort;
-import com.easysubway.journey.readiness.JourneyReadinessService;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -29,20 +28,17 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 class JourneyBenchmarkObservationControllerTest {
 
 	private JourneyApplicationDeadlineExecutor executor;
-	private JourneyReadinessService readinessService;
 	private MockMvc mockMvc;
 
 	@BeforeEach
 	void setUp() {
 		executor = mock(JourneyApplicationDeadlineExecutor.class);
-		readinessService = mock(JourneyReadinessService.class);
-		mockMvc = MockMvcBuilders.standaloneSetup(new JourneyBenchmarkObservationController(executor, readinessService)).build();
+		mockMvc = MockMvcBuilders.standaloneSetup(new JourneyBenchmarkObservationController(executor)).build();
 	}
 
 	@Test
 	void acceptsOnlyTheClosedJourneyRequestAndReturnsTheRequestBoundObservation() throws Exception {
 		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success(), 11, 12));
-		when(readinessService.active()).thenReturn(activeReadiness());
 
 		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
 				.contentType(MediaType.APPLICATION_JSON)
@@ -57,7 +53,18 @@ class JourneyBenchmarkObservationControllerTest {
 			.andExpect(jsonPath("$.boundaryObservation.providerCalls").value(0))
 			.andExpect(jsonPath("$.boundaryObservation.cacheHits").value(0))
 			.andExpect(jsonPath("$.boundaryObservation.staleArtifactUses").value(0))
-			.andExpect(jsonPath("$.boundaryObservation.fallbackUses").value(0));
+			.andExpect(jsonPath("$.boundaryObservation.fallbackUses").value(0))
+			.andExpect(jsonPath("$.activeServingIdentity.status").value("OBSERVED"))
+			.andExpect(jsonPath("$.activeServingIdentity.descriptorSha256").value("b".repeat(64)))
+			.andExpect(jsonPath("$.activeServingIdentity.receiptSha256").value("c".repeat(64)))
+			.andExpect(jsonPath("$.activeServingIdentity.deploymentIdentity")
+				.value("sha256:" + "d".repeat(64)))
+			.andExpect(jsonPath("$.activeServingIdentity.deploymentRevision").value("e".repeat(40)))
+			.andExpect(jsonPath("$.activeServingIdentity.serviceDayCutoff").value("03:00"))
+			.andExpect(jsonPath("$.activeReadiness.releaseTupleSha256").value("d".repeat(64)))
+			.andExpect(jsonPath("$.activeReadiness.routeBundleManifestSha256").value("a".repeat(64)))
+			.andExpect(jsonPath("$.activeReadiness.servingReady").value(true))
+			.andExpect(jsonPath("$.activeReadiness.draining").value(false));
 		verify(executor).executeMeasured(any());
 	}
 
@@ -102,7 +109,7 @@ class JourneyBenchmarkObservationControllerTest {
 	}
 
 	@Test
-	void rejectsRequestAndActiveIdentityMismatches() throws Exception {
+	void rejectsRequestMismatchAndUnobservableMeasurement() throws Exception {
 		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success("01K1Y000000000000000000001"), 11, 12));
 
 		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
@@ -110,19 +117,14 @@ class JourneyBenchmarkObservationControllerTest {
 				.content(validRequest()))
 			.andExpect(status().isServiceUnavailable())
 			.andExpect(jsonPath("$.reason").value("IDENTITY_MISMATCH"));
-		org.mockito.Mockito.verifyNoInteractions(readinessService);
 
-		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(success(), 11, 12));
-		when(readinessService.active()).thenReturn(new JourneyReadinessService.ActiveReadiness(
-			1, "journey-v3-active-readiness", "backend-a", "b".repeat(64), "sha256:" + "b".repeat(64),
-			"b".repeat(64), "b".repeat(64), "b".repeat(64), "bundle-a", 1, 1, "Asia/Seoul", "03:00", 1,
-			true, false, Instant.parse("2026-08-13T00:00:00Z"), Instant.parse("2026-08-12T00:00:00Z"), "b".repeat(64)));
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(unobservableSuccess(), 11, 12));
 
 		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(validRequest()))
 			.andExpect(status().isServiceUnavailable())
-			.andExpect(jsonPath("$.reason").value("IDENTITY_MISMATCH"));
+			.andExpect(jsonPath("$.reason").value("UNOBSERVABLE"));
 	}
 
 	private static String validRequest() {
@@ -140,6 +142,25 @@ class JourneyBenchmarkObservationControllerTest {
 	}
 
 	private static JourneyExecutionResult.Success success(String requestId) {
+		var activeServing = new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			"b".repeat(64), "c".repeat(64), "sha256:" + "d".repeat(64), "e".repeat(40), "03:00");
+		var activeReadiness = activeReadiness();
+		var identity = new com.easysubway.journey.application.ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			requestId, "a".repeat(64), 1, activeReadiness, activeServing);
+		return success(requestId, JourneyExecutionResult.RequestMeasurement.observed(identity,
+			JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0)));
+	}
+
+	private static JourneyExecutionResult.Success unobservableSuccess() {
+		return success("01K1Y000000000000000000000",
+			JourneyExecutionResult.RequestMeasurement.unobservable());
+	}
+
+	private static JourneyExecutionResult.Success success(
+		String requestId,
+		JourneyExecutionResult.RequestMeasurement requestMeasurement
+	) {
 		Instant departure = Instant.parse("2026-08-12T00:01:00Z");
 		var candidate = new JourneyCandidate("journey-1", departure, departure.plusSeconds(300), null, null,
 			300, 0, 0, JourneyCandidate.TimeSource.TIMETABLE,
@@ -153,14 +174,15 @@ class JourneyBenchmarkObservationControllerTest {
 			new JourneyExecutionResult.RequestPolicy(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 				JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
 				JourneyRequest.ConstraintMode.NONE, 1, 1), List.of(candidate),
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L));
+			JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0), requestMeasurement);
 	}
 
-	private static JourneyReadinessService.ActiveReadiness activeReadiness() {
-		String sha = "a".repeat(64);
-		return new JourneyReadinessService.ActiveReadiness(1, "journey-v3-active-readiness", "backend-a", sha,
-			"sha256:" + sha, sha, sha, sha, "bundle-a", 1, 1, "Asia/Seoul", "03:00", 1,
-			true, false, Instant.parse("2026-08-13T00:00:00Z"), Instant.parse("2026-08-12T00:00:00Z"), sha);
+	private static JourneyExecutionResult.ActiveReadinessIdentity activeReadiness() {
+		return new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", "d".repeat(64),
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), "a".repeat(64),
+			"bundle-1", 1, 1, "Asia/Seoul", "03:00", 1, true, false,
+			Instant.parse("2026-08-12T01:00:00Z"), Instant.parse("2026-08-11T23:00:00Z"),
+			"3".repeat(64));
 	}
 }

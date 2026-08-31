@@ -42,7 +42,8 @@ class JourneyV3BenchmarkContractTest {
 	void rejectsTupleCorpusAndProfileMatrixDrift() {
 		var corpus = JourneyV3CurrentProductionScopeBenchmarkTest.Contract.parseCorpus(validCorpus());
 		var missingDigest = validatorFixture(corpus);
-		var invalidTuple = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity("bad", "b".repeat(64), "c".repeat(64), "d".repeat(40));
+		var invalidTuple = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(
+			"bad", "f".repeat(64), "b".repeat(64), "c".repeat(64), "d".repeat(40));
 		var invalid = new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(invalidTuple, corpus, missingDigest.cold(),
 			missingDigest.warm(), missingDigest.activationRequestIdentity(),
 			missingDigest.activeServingIdentity(), missingDigest.config());
@@ -129,6 +130,8 @@ class JourneyV3BenchmarkContractTest {
 		assertThat(parsed.requestId()).isEqualTo("01K1Y000000000000000000000");
 		assertThat(parsed.routeBundleSha256()).isEqualTo("c".repeat(64));
 		assertThat(parsed.boundaryObservation().providerCalls()).isZero();
+		assertThat(parsed.activeServingIdentity().descriptorSha256()).isEqualTo("4".repeat(64));
+		assertThat(parsed.activeServingIdentity().receiptSha256()).isEqualTo("5".repeat(64));
 		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(
 			observationResponse(1), "01K1Y000000000000000000000"))
 			.hasMessageContaining("invalid");
@@ -308,19 +311,22 @@ class JourneyV3BenchmarkContractTest {
 	void rejectsDescriptorReceiptAndManifestTupleDrift() throws Exception {
 		byte[] receipt = "active-receipt".getBytes(StandardCharsets.UTF_8);
 		var expected = new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(
-			"1".repeat(64), digest("active-receipt"), "2".repeat(64), "5".repeat(40));
+			"1".repeat(64), digest("active-receipt"), "6".repeat(64), "2".repeat(64), "5".repeat(40));
 		JourneyV3BenchmarkRuntimeAdapter.verifyExpectedIdentity(
-			"1".repeat(64), receipt, "2".repeat(64), expected);
+			"1".repeat(64), receipt, "6".repeat(64), "2".repeat(64), expected);
 
 		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyExpectedIdentity(
-			"3".repeat(64), receipt, "2".repeat(64), expected))
+			"3".repeat(64), receipt, "6".repeat(64), "2".repeat(64), expected))
 			.hasMessageContaining("descriptor self-digest");
 		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyExpectedIdentity(
-			"1".repeat(64), "other".getBytes(StandardCharsets.UTF_8), "2".repeat(64), expected))
+			"1".repeat(64), "other".getBytes(StandardCharsets.UTF_8), "6".repeat(64), "2".repeat(64), expected))
 			.hasMessageContaining("receipt digest");
 		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyExpectedIdentity(
-			"1".repeat(64), receipt, "4".repeat(64), expected))
+			"1".repeat(64), receipt, "6".repeat(64), "4".repeat(64), expected))
 			.hasMessageContaining("manifest digest");
+		assertThatThrownBy(() -> JourneyV3BenchmarkRuntimeAdapter.verifyExpectedIdentity(
+			"1".repeat(64), receipt, "7".repeat(64), "2".repeat(64), expected))
+			.hasMessageContaining("publication receipt digest");
 	}
 
 	private static JourneyV3CurrentProductionScopeBenchmarkTest.Evidence validatorFixture(
@@ -343,7 +349,8 @@ class JourneyV3BenchmarkContractTest {
 			new JourneyV3CurrentProductionScopeBenchmarkTest.ScanMetrics(1, 2, 3), requestIdentity(
 				JourneyV3CurrentProductionScopeBenchmarkTest.Profile.STANDARD, 6));
 		return new JourneyV3CurrentProductionScopeBenchmarkTest.Evidence(
-			new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(SHA, "b".repeat(64), "c".repeat(64), "d".repeat(40)), corpus,
+			new JourneyV3BenchmarkRuntimeAdapter.ExpectedIdentity(
+				SHA, "f".repeat(64), "b".repeat(64), "c".repeat(64), "d".repeat(40)), corpus,
 			new JourneyV3CurrentProductionScopeBenchmarkTest.ColdEvidence(1, 1, 1, 1, 1, 1, coldSearch), warm,
 			ACTIVATION_REQUEST_IDENTITY,
 			ACTIVE_SERVING_IDENTITY,
@@ -392,9 +399,13 @@ class JourneyV3BenchmarkContractTest {
 			"journeyContractSha256":"%s","routeBundleManifestSha256":"%s","bundleId":"bundle-a",
 			"bundleReleaseSequence":1,"generation":1,"serviceTimezone":"Asia/Seoul","serviceDayCutoff":"03:00",
 			"trafficGeneration":1,"servingReady":true,"draining":false,"freshUntil":"2026-08-11T00:00:00Z",
-			"activatedAt":"2026-08-10T00:00:00Z","evidenceSha256":"%s"}}
+			"activatedAt":"2026-08-10T00:00:00Z","evidenceSha256":"%s"},
+			"activeServingIdentity":{"status":"OBSERVED","descriptorSha256":"%s","receiptSha256":"%s",
+			"deploymentIdentity":"sha256:%s","deploymentRevision":"%s","serviceDayCutoff":"03:00"}}
 			""").formatted("c".repeat(64), providerCalls, "a".repeat(64), "b".repeat(64),
-			"c".repeat(64), "d".repeat(64), "c".repeat(64), "e".repeat(64)).getBytes(StandardCharsets.UTF_8);
+			"c".repeat(64), "d".repeat(64), "c".repeat(64), "e".repeat(64),
+			"4".repeat(64), "5".repeat(64), "a".repeat(64), "6".repeat(40))
+			.getBytes(StandardCharsets.UTF_8);
 	}
 
 	private static byte[] receipt(String outcome, String tupleOverride) throws Exception {

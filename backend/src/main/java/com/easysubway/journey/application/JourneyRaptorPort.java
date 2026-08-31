@@ -10,14 +10,16 @@ public interface JourneyRaptorPort {
 		JourneyRequest request,
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
 		Instant effectiveInstant,
-		JourneyRealtimePort.RealtimeObservation realtimeOrNull
+		JourneyRealtimePort.RealtimeObservation realtimeOrNull,
+		JourneyRequestMeasurement measurement
 	);
 
 	record PlanResult(
 		String queryId,
 		List<JourneyCandidate> candidates,
 		ScanMetrics scanMetrics,
-		RouteBoundaryReceipt boundaryReceipt
+		RouteBoundaryReceipt boundaryReceipt,
+		RouteMeasurementReceipt measurementReceipt
 	) {
 		public PlanResult {
 			Objects.requireNonNull(queryId, "queryId");
@@ -25,6 +27,12 @@ public interface JourneyRaptorPort {
 			candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 			boundaryReceipt = Objects.requireNonNull(boundaryReceipt, "boundaryReceipt");
+			measurementReceipt = Objects.requireNonNull(measurementReceipt, "measurementReceipt");
+		}
+
+		public PlanResult(String queryId, List<JourneyCandidate> candidates, ScanMetrics scanMetrics,
+			RouteBoundaryReceipt boundaryReceipt) {
+			this(queryId, candidates, scanMetrics, boundaryReceipt, RouteMeasurementReceipt.unobservable());
 		}
 	}
 
@@ -39,7 +47,7 @@ public interface JourneyRaptorPort {
 					throw new IllegalArgumentException("unobservable route receipt must not have counters");
 				}
 			} else if (fallbackUses == null || fallbackUses < 0) {
-				throw new IllegalArgumentException("observed route receipt fallback uses must be nonnegative");
+				throw new IllegalArgumentException("observed route receipt is incomplete");
 			}
 		}
 
@@ -49,6 +57,30 @@ public interface JourneyRaptorPort {
 
 		public static RouteBoundaryReceipt unobservable() {
 			return new RouteBoundaryReceipt(Status.UNOBSERVABLE, null);
+		}
+	}
+
+	record RouteMeasurementReceipt(Status status, ActiveJourneySnapshotPort.RequestExecutionIdentity identity,
+		Long fallbackUses) {
+		enum Status { OBSERVED, UNOBSERVABLE }
+
+		public RouteMeasurementReceipt {
+			status = Objects.requireNonNull(status, "status");
+			if (status == Status.OBSERVED && (identity == null || fallbackUses == null || fallbackUses < 0)) {
+				throw new IllegalArgumentException("observed route measurement is incomplete");
+			}
+			if (status == Status.UNOBSERVABLE && (identity != null || fallbackUses != null)) {
+				throw new IllegalArgumentException("unobservable route measurement must not have values");
+			}
+		}
+
+		public static RouteMeasurementReceipt observed(JourneyRequestMeasurement.RouteObservation observation) {
+			Objects.requireNonNull(observation, "observation");
+			return new RouteMeasurementReceipt(Status.OBSERVED, observation.identity(), observation.fallbackUses());
+		}
+
+		public static RouteMeasurementReceipt unobservable() {
+			return new RouteMeasurementReceipt(Status.UNOBSERVABLE, null, null);
 		}
 	}
 

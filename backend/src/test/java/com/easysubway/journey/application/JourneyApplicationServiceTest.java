@@ -19,6 +19,20 @@ class JourneyApplicationServiceTest {
 	private static final Instant VALID_UNTIL = Instant.parse("2026-08-11T00:10:00Z");
 	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
 	private static final JourneyRaptorPort.ScanMetrics OBSERVED_SCAN = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
+	private static final JourneyExecutionResult.ActiveReadinessIdentity ACTIVE_READINESS_IDENTITY =
+		new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", "d".repeat(64),
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), ROUTE_BUNDLE_SHA,
+			"bundle-1", 1, 1, "Asia/Seoul", "03:00", 1, true, false,
+			VALID_UNTIL, CAPTURED_AT.minusSeconds(60), "3".repeat(64));
+	private static final JourneyExecutionResult.ActiveServingIdentity ACTIVE_SERVING_IDENTITY =
+		new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			"b".repeat(64), "c".repeat(64), "sha256:" + "d".repeat(64), "e".repeat(40), "03:00");
+	private static final ActiveJourneySnapshotPort.RequestExecutionIdentity REQUEST_EXECUTION_IDENTITY =
+		new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000000", ROUTE_BUNDLE_SHA, 1,
+			ACTIVE_READINESS_IDENTITY, ACTIVE_SERVING_IDENTITY);
 	private static final ActiveJourneySnapshotPort.ActiveJourneySnapshot SNAPSHOT = snapshot(VALID_UNTIL, true);
 	private static final JourneyRealtimePort.RealtimeObservation REALTIME = realtime(
 		Instant.parse("2026-08-11T00:08:00Z"), ROUTE_BUNDLE_SHA, true
@@ -34,9 +48,8 @@ class JourneyApplicationServiceTest {
 		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates, OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 
-		JourneyExecutionResult result = fakes.service().execute(request(
-			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2
-		));
+		JourneyRequest request = request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2);
+		JourneyExecutionResult result = fakes.service().execute(request);
 		plannerCandidates.clear();
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
@@ -50,9 +63,11 @@ class JourneyApplicationServiceTest {
 		assertThat(success.effectiveDepartureTime()).isEqualTo(CAPTURED_AT);
 		assertThat(success.serviceDate()).isEqualTo(LocalDate.parse("2026-08-11"));
 		assertThat(success.serviceTimezone()).isEqualTo("Asia/Seoul");
-		assertThat(success.executionObservation().boundaryObservation()).isEqualTo(
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L));
+		assertThat(success.executionObservation().activeServingIdentity())
+			.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
+		assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
+		assertThat(success.executionObservation().boundaryObservation())
+			.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
 		assertThat(success.sourceIdentity()).isEqualTo(new JourneyExecutionResult.SourceIdentity(
 			"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
 		));
@@ -73,7 +88,96 @@ class JourneyApplicationServiceTest {
 		assertThat(fakes.realtimeCalls).isZero();
 		assertThat(fakes.raptorCalls).isEqualTo(1);
 		assertThat(fakes.lastEffectiveInstant).isEqualTo(CAPTURED_AT);
+		assertThat(fakes.lastSnapshotRequest).isSameAs(request);
 		assertThat(fakes.clock.instantCalls).isEqualTo(1);
+	}
+
+	@Test
+	void bindsMeasurementToTheSameSnapshotAndRaptorRequestIdentity() {
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(
+			VALID_UNTIL,
+			true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
+		fakes.planResult = new JourneyRaptorPort.PlanResult(
+			"query-1",
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+
+		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.executionObservation().activeReadinessIdentity())
+				.isEqualTo(ACTIVE_READINESS_IDENTITY);
+			assertThat(success.executionObservation().activeServingIdentity()).isEqualTo(ACTIVE_SERVING_IDENTITY);
+			assertThat(success.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0));
+		});
+	}
+
+	@Test
+	void keepsOrdinaryServingSuccessfulWhenMeasurementIdentitiesDoNotMatch() {
+		var otherIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000001", ROUTE_BUNDLE_SHA, 1,
+			ACTIVE_READINESS_IDENTITY, ACTIVE_SERVING_IDENTITY);
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(
+			VALID_UNTIL,
+			true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
+		fakes.planResult = new JourneyRaptorPort.PlanResult(
+			"query-1",
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(otherIdentity, 0)));
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = otherIdentity;
+
+		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
+			assertThat(success.executionObservation().activeServingIdentity())
+				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
+			assertThat(success.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
+		});
+	}
+
+	@Test
+	void keepsOrdinaryServingSuccessfulWhenRequestMeasurementReceiptsAreIncompleteOrDisagree() {
+		Fakes missingSnapshotMeasurement = measuredFakes(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable(),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		assertUnobservableMeasurement(missingSnapshotMeasurement.service().execute(
+			request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)));
+
+		Fakes missingRouteMeasurement = measuredFakes(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)),
+			JourneyRaptorPort.RouteMeasurementReceipt.unobservable());
+		assertUnobservableMeasurement(missingRouteMeasurement.service().execute(
+			request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)));
+
+		Fakes counterMismatch = measuredFakes(
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 1, 0, 0)),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		assertUnobservableMeasurement(counterMismatch.service().execute(
+			request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)));
 	}
 
 	@Test
@@ -423,6 +527,34 @@ class JourneyApplicationServiceTest {
 		return request(new JourneyRequest.Departure.Now(), timePolicy, alternativeCount, new AtomicBoolean());
 	}
 
+	private static Fakes measuredFakes(
+		ActiveJourneySnapshotPort.SnapshotMeasurementReceipt snapshotMeasurement,
+		JourneyRaptorPort.RouteMeasurementReceipt routeMeasurement
+	) {
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0), snapshotMeasurement);
+		fakes.planResult = new JourneyRaptorPort.PlanResult(
+			"query-1",
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			routeMeasurement);
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		return fakes;
+	}
+
+	private static void assertUnobservableMeasurement(JourneyExecutionResult result) {
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
+			assertThat(success.executionObservation().activeServingIdentity())
+				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
+			assertThat(success.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
+		});
+	}
+
 	private static JourneyRequest request(JourneyRequest.TimePolicy timePolicy, AtomicBoolean cancelled) {
 		return request(new JourneyRequest.Departure.Now(), timePolicy, 1, cancelled);
 	}
@@ -464,10 +596,24 @@ class JourneyApplicationServiceTest {
 		boolean fresh,
 		ActiveJourneySnapshotPort.SnapshotBoundaryReceipt boundaryReceipt
 	) {
+		return snapshot(validUntil, fresh, boundaryReceipt,
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable());
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
+		Instant validUntil,
+		boolean fresh,
+		ActiveJourneySnapshotPort.SnapshotBoundaryReceipt boundaryReceipt,
+		ActiveJourneySnapshotPort.SnapshotMeasurementReceipt measurementReceipt
+	) {
+		var servingEvidence = measurementReceipt.status()
+			== ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED
+			? ActiveJourneySnapshotPort.ActiveServingEvidence.observed("b".repeat(64), "c".repeat(64))
+			: ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable();
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1,
 			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh,
-			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(), boundaryReceipt
+			servingEvidence, boundaryReceipt, measurementReceipt
 		);
 	}
 
@@ -553,7 +699,10 @@ class JourneyApplicationServiceTest {
 		private int realtimeCalls;
 		private int raptorCalls;
 		private ActiveJourneySnapshotPort.ActiveJourneySnapshot lastSnapshot;
+		private JourneyRequest lastSnapshotRequest;
 		private JourneyRealtimePort.RealtimeObservation lastRealtime;
+		private ActiveJourneySnapshotPort.RequestExecutionIdentity snapshotMeasurementIdentity;
+		private ActiveJourneySnapshotPort.RequestExecutionIdentity routeMeasurementIdentity;
 		private Instant lastEffectiveInstant;
 		private final List<Instant> effectiveInstants = new ArrayList<>();
 		private final List<JourneyRequest> requests = new ArrayList<>();
@@ -562,8 +711,10 @@ class JourneyApplicationServiceTest {
 		private JourneyApplicationService service() {
 			return new JourneyApplicationService(new ActiveJourneySnapshotPort() {
 				@Override
-				public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
+				public ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant,
+					JourneyRequestMeasurement measurement) {
 					snapshotCalls++;
+					lastSnapshotRequest = request;
 					record(effectiveInstant);
 					if (cancelAndFailSnapshot) {
 						cancelled.set(true);
@@ -571,6 +722,11 @@ class JourneyApplicationServiceTest {
 					}
 					if (snapshotFailure != null) throw snapshotFailure;
 					if (cancelAfterSnapshot) cancelled.set(true);
+					if (snapshotMeasurementIdentity != null) {
+						measurement.observeActiveRegistryRead(snapshotMeasurementIdentity.requestId(),
+							snapshotMeasurementIdentity.routeBundleSha256(), snapshotMeasurementIdentity.generation());
+						measurement.bindActiveIdentity(snapshotMeasurementIdentity);
+					}
 					return snapshot;
 				}
 
@@ -586,7 +742,7 @@ class JourneyApplicationServiceTest {
 				if (realtimeFailure != null) throw realtimeFailure;
 				if (cancelAfterRealtime) cancelled.set(true);
 				return realtime;
-			}, (request, activeSnapshot, effectiveInstant, realtimeObservation) -> {
+			}, (request, activeSnapshot, effectiveInstant, realtimeObservation, measurement) -> {
 				raptorCalls++;
 				record(request);
 				lastSnapshot = activeSnapshot;
@@ -599,6 +755,10 @@ class JourneyApplicationServiceTest {
 				if (cancelAfterRaptor) cancelled.set(true);
 				if (raptorFailure != null) throw raptorFailure;
 				if (returnNullPlan) return null;
+				if (routeMeasurementIdentity != null) {
+					measurement.observeDirectRaptor(routeMeasurementIdentity.requestId(),
+						routeMeasurementIdentity.routeBundleSha256(), routeMeasurementIdentity.generation());
+				}
 				return planResult == null ? planResultFor(request.timePolicy()) : planResult;
 			}, clock);
 		}

@@ -8,6 +8,7 @@ import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
@@ -76,7 +77,8 @@ class JourneyRealtimeAdapterTest {
 			request(JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false),
 			snapshot(runtime),
 			EFFECTIVE,
-			observation
+			observation,
+			new JourneyRequestMeasurement(REQUEST_ID)
 		).candidates().getFirst();
 		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
 		assertThat(candidate.realtimeDepartureTime()).isEqualTo(EFFECTIVE);
