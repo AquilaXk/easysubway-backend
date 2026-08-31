@@ -1,6 +1,7 @@
 package com.easysubway.journey.config;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatCode;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -336,6 +337,7 @@ class JourneyProductionConfigurationTest {
 			assertThat(measurementExecutor.get()).isNotSameAs(executor.get());
 			assertThat(measurementExecutor.get().isShutdown()).isFalse();
 			Thread firstMeasurementThread = CompletableFuture.supplyAsync(Thread::currentThread, measurementExecutor.get()).join();
+			assertThatCode(firstMeasurementThread::join).doesNotThrowAnyException();
 			Thread secondMeasurementThread = CompletableFuture.supplyAsync(Thread::currentThread, measurementExecutor.get()).join();
 			assertThat(secondMeasurementThread).isNotSameAs(firstMeasurementThread);
 		});
