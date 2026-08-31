@@ -30,7 +30,8 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		SourceIdentity sourceIdentity,
 		RequestPolicy requestPolicy,
 		List<JourneyCandidate> journeys,
-		BoundaryObservation boundaryObservation
+		BoundaryObservation boundaryObservation,
+		RequestMeasurement requestMeasurement
 	) implements JourneyExecutionResult {
 		private static final Pattern REQUEST_ID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 
@@ -56,6 +57,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			requestPolicy = Objects.requireNonNull(requestPolicy, "requestPolicy");
 			journeys = List.copyOf(Objects.requireNonNull(journeys, "journeys"));
 			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
+			requestMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 			if (journeys.isEmpty() || journeys.size() > requestPolicy.alternativeCount() || journeys.size() > 3) {
 				throw new IllegalArgumentException("journey count does not match request policy");
 			}
@@ -85,6 +87,24 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 				&& boundaryObservation.status() != BoundaryObservation.Status.UNOBSERVABLE) {
 				throw new IllegalArgumentException("realtime success requires a per-invocation receipt before observation");
 			}
+			if (requestMeasurement.status() == RequestMeasurement.Status.OBSERVED) {
+				var identity = requestMeasurement.identity();
+				if (!requestId.equals(identity.requestId())
+					|| !sourceIdentity.routeBundleSha256().equals(identity.routeBundleSha256())
+					|| bundleGeneration != identity.generation()) {
+					throw new IllegalArgumentException("request measurement identity does not match success");
+				}
+			}
+		}
+
+		public Success(String requestId, String queryId, Instant calculatedAt, Instant validUntil,
+			Instant effectiveDepartureTime, LocalDate serviceDate, long bundleGeneration,
+			JourneyRaptorPort.ScanMetrics scanMetrics, SourceIdentity sourceIdentity,
+			RequestPolicy requestPolicy, List<JourneyCandidate> journeys,
+			BoundaryObservation boundaryObservation) {
+			this(requestId, queryId, calculatedAt, validUntil, effectiveDepartureTime, serviceDate,
+				bundleGeneration, scanMetrics, sourceIdentity, requestPolicy, journeys, boundaryObservation,
+				RequestMeasurement.unobservable());
 		}
 
 		public String contractVersion() {
@@ -100,8 +120,14 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		}
 
 		public ExecutionObservation executionObservation() {
+			if (requestMeasurement.status() == RequestMeasurement.Status.UNOBSERVABLE) {
+				return new ExecutionObservation(requestId, sourceIdentity.routeBundleSha256(), bundleGeneration,
+					serviceDayIdentity(), scanMetrics, null, ActiveServingIdentity.unobservable(),
+					requestMeasurement.boundaryObservation());
+			}
 			return new ExecutionObservation(requestId, sourceIdentity.routeBundleSha256(), bundleGeneration,
-				serviceDayIdentity(), scanMetrics, ActiveServingIdentity.unobservable(), boundaryObservation);
+				serviceDayIdentity(), scanMetrics, requestMeasurement.identity().activeReadinessIdentity(),
+				requestMeasurement.identity().activeServingIdentity(), requestMeasurement.boundaryObservation());
 		}
 
 		public Source source() {
@@ -124,6 +150,7 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 		long bundleGeneration,
 		ServiceDayIdentity serviceDay,
 		JourneyRaptorPort.ScanMetrics scanMetrics,
+		ActiveReadinessIdentity activeReadinessIdentity,
 		ActiveServingIdentity activeServingIdentity,
 		BoundaryObservation boundaryObservation
 	) {
@@ -138,6 +165,15 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 			activeServingIdentity = Objects.requireNonNull(activeServingIdentity, "activeServingIdentity");
 			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
+			if (activeServingIdentity.status() == ActiveServingIdentity.Status.OBSERVED) {
+				Objects.requireNonNull(activeReadinessIdentity, "activeReadinessIdentity");
+				if (boundaryObservation.status() != BoundaryObservation.Status.OBSERVED) {
+					throw new IllegalArgumentException("observed execution identity requires observed boundary counters");
+				}
+			} else if (activeReadinessIdentity != null
+				|| boundaryObservation.status() != BoundaryObservation.Status.UNOBSERVABLE) {
+				throw new IllegalArgumentException("unobservable execution identity must not have measurement values");
+			}
 		}
 	}
 
@@ -170,6 +206,88 @@ public sealed interface JourneyExecutionResult permits JourneyExecutionResult.Su
 
 		public static ActiveServingIdentity unobservable() {
 			return new ActiveServingIdentity(Status.UNOBSERVABLE, null, null, null, null, null);
+		}
+	}
+
+	record ActiveReadinessIdentity(
+		int schemaVersion,
+		String artifactKind,
+		String instanceId,
+		String releaseTupleSha256,
+		String backendImageDigest,
+		String backendConfigSha256,
+		String journeyContractSha256,
+		String routeBundleManifestSha256,
+		String bundleId,
+		long bundleReleaseSequence,
+		long generation,
+		String serviceTimezone,
+		String serviceDayCutoff,
+		long trafficGeneration,
+		boolean servingReady,
+		boolean draining,
+		Instant freshUntil,
+		Instant activatedAt,
+		String evidenceSha256
+	) {
+		private static final Pattern SHA256 = Pattern.compile("^[a-f0-9]{64}$");
+		private static final Pattern IMAGE_DIGEST = Pattern.compile("^sha256:[a-f0-9]{64}$");
+
+		public ActiveReadinessIdentity {
+			if (schemaVersion != 1 || !"journey-v3-active-readiness".equals(artifactKind)) {
+				throw new IllegalArgumentException("active readiness contract is not current");
+			}
+			instanceId = requireText(instanceId, "instanceId");
+			for (String value : new String[] {releaseTupleSha256, backendConfigSha256,
+				journeyContractSha256, routeBundleManifestSha256, evidenceSha256}) {
+				if (value == null || !SHA256.matcher(value).matches()) {
+					throw new IllegalArgumentException("active readiness digest is invalid");
+				}
+			}
+			if (backendImageDigest == null || !IMAGE_DIGEST.matcher(backendImageDigest).matches()) {
+				throw new IllegalArgumentException("active readiness image digest is invalid");
+			}
+			bundleId = requireText(bundleId, "bundleId");
+			if (bundleReleaseSequence < 1 || generation < 1 || trafficGeneration < 1) {
+				throw new IllegalArgumentException("active readiness generations must be positive");
+			}
+			if (!SERVICE_TIMEZONE.equals(serviceTimezone)
+				|| !ServiceDayResolver.CUTOFF_LOCAL_TIME.equals(serviceDayCutoff)) {
+				throw new IllegalArgumentException("active readiness service-day identity is not current");
+			}
+			freshUntil = Objects.requireNonNull(freshUntil, "freshUntil");
+			activatedAt = Objects.requireNonNull(activatedAt, "activatedAt");
+		}
+	}
+
+	record RequestMeasurement(
+		Status status,
+		ActiveJourneySnapshotPort.RequestExecutionIdentity identity,
+		BoundaryObservation boundaryObservation
+	) {
+		public enum Status { OBSERVED, UNOBSERVABLE }
+
+		public RequestMeasurement {
+			status = Objects.requireNonNull(status, "status");
+			boundaryObservation = Objects.requireNonNull(boundaryObservation, "boundaryObservation");
+			if (status == Status.OBSERVED) {
+				if (identity == null || boundaryObservation.status() != BoundaryObservation.Status.OBSERVED) {
+					throw new IllegalArgumentException("observed request measurement is incomplete");
+				}
+			} else if (identity != null
+				|| boundaryObservation.status() != BoundaryObservation.Status.UNOBSERVABLE) {
+				throw new IllegalArgumentException("unobservable request measurement must not have values");
+			}
+		}
+
+		public static RequestMeasurement observed(
+			ActiveJourneySnapshotPort.RequestExecutionIdentity identity,
+			BoundaryObservation boundaryObservation) {
+			return new RequestMeasurement(Status.OBSERVED, identity, boundaryObservation);
+		}
+
+		public static RequestMeasurement unobservable() {
+			return new RequestMeasurement(Status.UNOBSERVABLE, null, BoundaryObservation.unobservable());
 		}
 	}
 

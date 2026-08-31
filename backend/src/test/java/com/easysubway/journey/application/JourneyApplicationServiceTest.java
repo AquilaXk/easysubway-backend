@@ -19,6 +19,20 @@ class JourneyApplicationServiceTest {
 	private static final Instant VALID_UNTIL = Instant.parse("2026-08-11T00:10:00Z");
 	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
 	private static final JourneyRaptorPort.ScanMetrics OBSERVED_SCAN = new JourneyRaptorPort.ScanMetrics(1, 2, 3);
+	private static final JourneyExecutionResult.ActiveReadinessIdentity ACTIVE_READINESS_IDENTITY =
+		new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", "d".repeat(64),
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), ROUTE_BUNDLE_SHA,
+			"bundle-1", 1, 1, "Asia/Seoul", "03:00", 1, true, false,
+			VALID_UNTIL, CAPTURED_AT.minusSeconds(60), "3".repeat(64));
+	private static final JourneyExecutionResult.ActiveServingIdentity ACTIVE_SERVING_IDENTITY =
+		new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			"b".repeat(64), "c".repeat(64), "sha256:" + "d".repeat(64), "e".repeat(40), "03:00");
+	private static final ActiveJourneySnapshotPort.RequestExecutionIdentity REQUEST_EXECUTION_IDENTITY =
+		new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000000", ROUTE_BUNDLE_SHA, 1,
+			ACTIVE_READINESS_IDENTITY, ACTIVE_SERVING_IDENTITY);
 	private static final ActiveJourneySnapshotPort.ActiveJourneySnapshot SNAPSHOT = snapshot(VALID_UNTIL, true);
 	private static final JourneyRealtimePort.RealtimeObservation REALTIME = realtime(
 		Instant.parse("2026-08-11T00:08:00Z"), ROUTE_BUNDLE_SHA, true
@@ -34,9 +48,8 @@ class JourneyApplicationServiceTest {
 		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", plannerCandidates, OBSERVED_SCAN,
 			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 
-		JourneyExecutionResult result = fakes.service().execute(request(
-			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2
-		));
+		JourneyRequest request = request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, 2);
+		JourneyExecutionResult result = fakes.service().execute(request);
 		plannerCandidates.clear();
 
 		assertThat(result).isInstanceOf(JourneyExecutionResult.Success.class);
@@ -50,9 +63,11 @@ class JourneyApplicationServiceTest {
 		assertThat(success.effectiveDepartureTime()).isEqualTo(CAPTURED_AT);
 		assertThat(success.serviceDate()).isEqualTo(LocalDate.parse("2026-08-11"));
 		assertThat(success.serviceTimezone()).isEqualTo("Asia/Seoul");
-		assertThat(success.executionObservation().boundaryObservation()).isEqualTo(
-			new JourneyExecutionResult.BoundaryObservation(
-				JourneyExecutionResult.BoundaryObservation.Status.OBSERVED, 0L, 0L, 0L, 0L));
+		assertThat(success.executionObservation().activeServingIdentity())
+			.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
+		assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
+		assertThat(success.executionObservation().boundaryObservation())
+			.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
 		assertThat(success.sourceIdentity()).isEqualTo(new JourneyExecutionResult.SourceIdentity(
 			"bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", null
 		));
@@ -73,7 +88,65 @@ class JourneyApplicationServiceTest {
 		assertThat(fakes.realtimeCalls).isZero();
 		assertThat(fakes.raptorCalls).isEqualTo(1);
 		assertThat(fakes.lastEffectiveInstant).isEqualTo(CAPTURED_AT);
+		assertThat(fakes.lastSnapshotRequest).isSameAs(request);
 		assertThat(fakes.clock.instantCalls).isEqualTo(1);
+	}
+
+	@Test
+	void bindsMeasurementToTheSameSnapshotAndRaptorRequestIdentity() {
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(
+			VALID_UNTIL,
+			true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				REQUEST_EXECUTION_IDENTITY, 0, 0, 0));
+		fakes.planResult = new JourneyRaptorPort.PlanResult(
+			"query-1",
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(REQUEST_EXECUTION_IDENTITY, 0));
+
+		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.executionObservation().activeReadinessIdentity())
+				.isEqualTo(ACTIVE_READINESS_IDENTITY);
+			assertThat(success.executionObservation().activeServingIdentity()).isEqualTo(ACTIVE_SERVING_IDENTITY);
+			assertThat(success.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0));
+		});
+	}
+
+	@Test
+	void keepsOrdinaryServingSuccessfulWhenMeasurementIdentitiesDoNotMatch() {
+		var otherIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01K1Y000000000000000000001", ROUTE_BUNDLE_SHA, 1,
+			ACTIVE_READINESS_IDENTITY, ACTIVE_SERVING_IDENTITY);
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(
+			VALID_UNTIL,
+			true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				REQUEST_EXECUTION_IDENTITY, 0, 0, 0));
+		fakes.planResult = new JourneyRaptorPort.PlanResult(
+			"query-1",
+			List.of(candidate("journey-1", JourneyCandidate.TimeSource.TIMETABLE)),
+			OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(otherIdentity, 0));
+
+		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionResult.Success.class, success -> {
+			assertThat(success.executionObservation().activeReadinessIdentity()).isNull();
+			assertThat(success.executionObservation().activeServingIdentity())
+				.isEqualTo(JourneyExecutionResult.ActiveServingIdentity.unobservable());
+			assertThat(success.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.unobservable());
+		});
 	}
 
 	@Test
@@ -464,10 +537,24 @@ class JourneyApplicationServiceTest {
 		boolean fresh,
 		ActiveJourneySnapshotPort.SnapshotBoundaryReceipt boundaryReceipt
 	) {
+		return snapshot(validUntil, fresh, boundaryReceipt,
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable());
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
+		Instant validUntil,
+		boolean fresh,
+		ActiveJourneySnapshotPort.SnapshotBoundaryReceipt boundaryReceipt,
+		ActiveJourneySnapshotPort.SnapshotMeasurementReceipt measurementReceipt
+	) {
+		var servingEvidence = measurementReceipt.status()
+			== ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED
+			? ActiveJourneySnapshotPort.ActiveServingEvidence.observed("b".repeat(64), "c".repeat(64))
+			: ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable();
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1,
 			new TestRuntimeView(ROUTE_BUNDLE_SHA, 1), validUntil, fresh,
-			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(), boundaryReceipt
+			servingEvidence, boundaryReceipt, measurementReceipt
 		);
 	}
 
@@ -553,6 +640,7 @@ class JourneyApplicationServiceTest {
 		private int realtimeCalls;
 		private int raptorCalls;
 		private ActiveJourneySnapshotPort.ActiveJourneySnapshot lastSnapshot;
+		private JourneyRequest lastSnapshotRequest;
 		private JourneyRealtimePort.RealtimeObservation lastRealtime;
 		private Instant lastEffectiveInstant;
 		private final List<Instant> effectiveInstants = new ArrayList<>();
@@ -563,7 +651,13 @@ class JourneyApplicationServiceTest {
 			return new JourneyApplicationService(new ActiveJourneySnapshotPort() {
 				@Override
 				public ActiveJourneySnapshot requireActive(Instant effectiveInstant) {
+					throw new AssertionError("service must use the request-aware snapshot boundary");
+				}
+
+				@Override
+				public ActiveJourneySnapshot requireActive(JourneyRequest request, Instant effectiveInstant) {
 					snapshotCalls++;
+					lastSnapshotRequest = request;
 					record(effectiveInstant);
 					if (cancelAndFailSnapshot) {
 						cancelled.set(true);

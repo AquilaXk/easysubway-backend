@@ -138,7 +138,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 		}
 		return new Sample(request.testCase().id(), profile.name(), sequence, observation.executionNanos(), observation.allocatedBytes(),
 			observation.scanMetrics(), new RequestIdentity(generatedRequestId, observation.routeBundleSha256(),
-				activationRequestIdentity, activeServingProjection.activeServingIdentity(), observation.boundaryObservation()));
+				activationRequestIdentity, observation.activeServingIdentity(), observation.boundaryObservation()));
 	}
 
 	private static String requestId(int value) {
@@ -251,11 +251,13 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 
 	record DeployedObservation(String requestId, String routeBundleSha256, long bundleGeneration,
 		ScanMetrics scanMetrics, JourneyExecutionResult.BoundaryObservation boundaryObservation,
-		long executionNanos, long allocatedBytes, RemoteActiveReadiness activeReadiness) {
+		long executionNanos, long allocatedBytes, RemoteActiveReadiness activeReadiness,
+		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity) {
 		boolean matches(JourneyV3BenchmarkRuntimeAdapter.ActiveServingProjection projection) {
 			return routeBundleSha256.equals(projection.routeBundleManifestSha256())
 				&& bundleGeneration == projection.candidateGeneration()
-				&& activeReadiness.matches(projection);
+				&& activeReadiness.matches(projection)
+				&& activeServingIdentity.equals(projection.activeServingIdentity());
 		}
 	}
 
@@ -282,7 +284,8 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 			.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 		private static final Set<String> RESPONSE_FIELDS = Set.of("requestId", "routeBundleSha256", "bundleGeneration",
-			"serviceDay", "scanMetrics", "boundaryObservation", "executionNanos", "allocatedBytes", "activeReadiness");
+			"serviceDay", "scanMetrics", "boundaryObservation", "executionNanos", "allocatedBytes", "activeReadiness",
+			"activeServingIdentity");
 		private static final Set<String> ACTIVE_READINESS_FIELDS = Set.of("schemaVersion", "artifactKind", "instanceId",
 			"releaseTupleSha256", "backendImageDigest", "backendConfigSha256", "journeyContractSha256",
 			"routeBundleManifestSha256", "bundleId", "bundleReleaseSequence", "generation", "serviceTimezone",
@@ -354,7 +357,8 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				long executionNanos = nonnegative(root, "executionNanos");
 				long allocatedBytes = nonnegative(root, "allocatedBytes");
 				return new DeployedObservation(requestId, routeBundleSha256, root.path("bundleGeneration").longValue(),
-					metrics, observation, executionNanos, allocatedBytes, activeReadiness(root.path("activeReadiness")));
+					metrics, observation, executionNanos, allocatedBytes, activeReadiness(root.path("activeReadiness")),
+					activeServingIdentity(root.path("activeServingIdentity")));
 			} catch (IOException | RuntimeException exception) {
 				throw new IllegalArgumentException("deployed Journey V3 observation response is invalid", exception);
 			}
@@ -402,6 +406,24 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				text(value, "routeBundleManifestSha256"), positiveLong(value, "generation"),
 				text(value, "serviceTimezone"), text(value, "serviceDayCutoff"), positiveLong(value, "trafficGeneration"),
 				value.path("servingReady").booleanValue(), value.path("draining").booleanValue(), text(value, "evidenceSha256"));
+		}
+
+		private static JourneyExecutionResult.ActiveServingIdentity activeServingIdentity(JsonNode value) {
+			if (!hasExactFields(value, Set.of("status", "descriptorSha256", "receiptSha256",
+				"deploymentIdentity", "deploymentRevision", "serviceDayCutoff"))
+				|| !"OBSERVED".equals(text(value, "status"))
+				|| !text(value, "descriptorSha256").matches("[a-f0-9]{64}")
+				|| !text(value, "receiptSha256").matches("[a-f0-9]{64}")
+				|| !text(value, "deploymentIdentity").matches("sha256:[a-f0-9]{64}")
+				|| !text(value, "deploymentRevision").matches("[a-f0-9]{40}")
+				|| !"03:00".equals(text(value, "serviceDayCutoff"))) {
+				throw new IllegalArgumentException("active-serving identity is invalid");
+			}
+			return new JourneyExecutionResult.ActiveServingIdentity(
+				JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+				text(value, "descriptorSha256"), text(value, "receiptSha256"),
+				text(value, "deploymentIdentity"), text(value, "deploymentRevision"),
+				text(value, "serviceDayCutoff"));
 		}
 
 		private static long positiveLong(JsonNode object, String name) {

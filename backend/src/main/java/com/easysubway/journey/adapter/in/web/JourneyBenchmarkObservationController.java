@@ -6,7 +6,6 @@ import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.Mea
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
-import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -45,12 +44,8 @@ public final class JourneyBenchmarkObservationController {
 		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount");
 
 	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
-	private final JourneyReadinessService readinessService;
-
-	public JourneyBenchmarkObservationController(JourneyApplicationDeadlineExecutor deadlineExecutor,
-		JourneyReadinessService readinessService) {
+	public JourneyBenchmarkObservationController(JourneyApplicationDeadlineExecutor deadlineExecutor) {
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
-		this.readinessService = Objects.requireNonNull(readinessService, "readinessService");
 	}
 
 	@PostMapping(value = PATH, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -74,23 +69,17 @@ public final class JourneyBenchmarkObservationController {
 			if (!request.requestId().equals(observation.requestId())) {
 				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("IDENTITY_MISMATCH"));
 			}
-			var activeReadiness = readinessService.active();
-			if (!matches(activeReadiness, observation)) {
-				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("IDENTITY_MISMATCH"));
+			if (observation.activeReadinessIdentity() == null
+				|| observation.activeServingIdentity().status()
+					!= JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED
+				|| observation.boundaryObservation().status()
+					!= JourneyExecutionResult.BoundaryObservation.Status.OBSERVED) {
+				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
 			}
-			return response(HttpStatus.OK, ObservationResponse.from(observation, completed, activeReadiness));
+			return response(HttpStatus.OK, ObservationResponse.from(observation, completed));
 		} catch (RuntimeException exception) {
 			return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNAVAILABLE"));
 		}
-	}
-
-	private static boolean matches(JourneyReadinessService.ActiveReadiness readiness,
-		JourneyExecutionResult.ExecutionObservation observation) {
-		return readiness.servingReady() && !readiness.draining()
-			&& readiness.routeBundleManifestSha256().equals(observation.routeBundleSha256())
-			&& readiness.generation() == observation.bundleGeneration()
-			&& readiness.serviceTimezone().equals(observation.serviceDay().timezone())
-			&& readiness.serviceDayCutoff().equals(observation.serviceDay().cutoffLocalTime());
 	}
 
 	private static ResponseEntity<?> response(HttpStatus status, Object body) {
@@ -164,14 +153,15 @@ public final class JourneyBenchmarkObservationController {
 		JourneyExecutionResult.BoundaryObservation boundaryObservation,
 		long executionNanos,
 		long allocatedBytes,
-		JourneyReadinessService.ActiveReadiness activeReadiness
+		JourneyExecutionResult.ActiveReadinessIdentity activeReadiness,
+		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity
 	) {
 		private static ObservationResponse from(JourneyExecutionResult.ExecutionObservation observation,
-			MeasuredCompleted measurement, JourneyReadinessService.ActiveReadiness activeReadiness) {
+			MeasuredCompleted measurement) {
 			return new ObservationResponse(observation.requestId(), observation.routeBundleSha256(),
 				observation.bundleGeneration(), ServiceDayResponse.from(observation.serviceDay()), observation.scanMetrics(),
 				observation.boundaryObservation(), measurement.executionNanos(), measurement.allocatedBytes(),
-				activeReadiness);
+				observation.activeReadinessIdentity(), observation.activeServingIdentity());
 		}
 	}
 

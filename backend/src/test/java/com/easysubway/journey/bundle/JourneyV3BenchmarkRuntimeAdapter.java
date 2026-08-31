@@ -126,7 +126,7 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 			var activeServingIdentity = new JourneyExecutionResult.ActiveServingIdentity(
 				JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
 				descriptor.descriptorSha256(),
-				sha(loaded.receiptBytes()),
+				descriptor.release().publicationReceiptSha256(),
 				text(release, "tupleSha256"),
 				deploymentRevision,
 				ServiceDayResolver.CUTOFF_LOCAL_TIME

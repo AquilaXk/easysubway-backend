@@ -119,8 +119,9 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	ActiveJourneySnapshotPort activeJourneySnapshotPort(RouteBundleActivationRegistry registry) {
-		return new RouteBundleActiveJourneySnapshotAdapter(registry);
+	ActiveJourneySnapshotPort activeJourneySnapshotPort(RouteBundleActivationRegistry registry,
+		JourneyReadinessProperties readinessProperties, JourneyReadinessService readinessService) {
+		return new RouteBundleActiveJourneySnapshotAdapter(registry, readinessProperties, readinessService);
 	}
 
 	@Bean

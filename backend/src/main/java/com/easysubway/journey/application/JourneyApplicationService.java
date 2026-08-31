@@ -32,7 +32,7 @@ public final class JourneyApplicationService {
 
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot;
 		try {
-			snapshot = activeSnapshotPort.requireActive(effectiveInstant);
+			snapshot = activeSnapshotPort.requireActive(request, effectiveInstant);
 		} catch (RuntimeException exception) {
 			if (request.isCancelled()) return failure(JourneyExecutionFailure.Reason.CANCELLED);
 			return failure(JourneyExecutionFailure.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE);
@@ -108,12 +108,45 @@ public final class JourneyApplicationService {
 					request.alternativeCount()
 				),
 				plan.candidates(),
-				boundaryObservation(request, snapshot, plan)
+				boundaryObservation(request, snapshot, plan),
+				requestMeasurement(request, snapshot, plan)
 			);
 			return request.isCancelled() ? failure(JourneyExecutionFailure.Reason.CANCELLED) : result;
 		} catch (RuntimeException exception) {
 			return failure(JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 		}
+	}
+
+	private static JourneyExecutionResult.RequestMeasurement requestMeasurement(
+		JourneyRequest request,
+		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+		JourneyRaptorPort.PlanResult plan
+	) {
+		if (request.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
+			return JourneyExecutionResult.RequestMeasurement.unobservable();
+		}
+		var snapshotMeasurement = snapshot.measurementReceipt();
+		var routeMeasurement = plan.measurementReceipt();
+		if (snapshotMeasurement.status() != ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED
+			|| routeMeasurement.status() != JourneyRaptorPort.RouteMeasurementReceipt.Status.OBSERVED
+			|| !snapshotMeasurement.identity().equals(routeMeasurement.identity())) {
+			return JourneyExecutionResult.RequestMeasurement.unobservable();
+		}
+		var identity = snapshotMeasurement.identity();
+		var serving = identity.activeServingIdentity();
+		var servingEvidence = snapshot.servingEvidence();
+		if (!request.requestId().equals(identity.requestId())
+			|| !snapshot.routeBundleSha256().equals(identity.routeBundleSha256())
+			|| snapshot.generation() != identity.generation()
+			|| servingEvidence.status() != ActiveJourneySnapshotPort.ActiveServingEvidence.Status.OBSERVED
+			|| !servingEvidence.descriptorSha256().equals(serving.descriptorSha256())
+			|| !servingEvidence.publicationReceiptSha256().equals(serving.receiptSha256())) {
+			return JourneyExecutionResult.RequestMeasurement.unobservable();
+		}
+		return JourneyExecutionResult.RequestMeasurement.observed(identity,
+			JourneyExecutionResult.BoundaryObservation.observed(
+				snapshotMeasurement.providerCalls(), snapshotMeasurement.cacheHits(),
+				snapshotMeasurement.staleArtifactUses(), routeMeasurement.fallbackUses()));
 	}
 
 	private static JourneyExecutionResult.BoundaryObservation boundaryObservation(

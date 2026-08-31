@@ -74,6 +74,7 @@ class JourneyProductionConfigurationTest {
 	private static final String SHA_B = "b".repeat(64);
 	private static final String SHA_C = "c".repeat(64);
 	private static final String SHA_D = "d".repeat(64);
+	private static final String DEPLOYMENT_REVISION = "e".repeat(40);
 	private static final String READINESS_TOKEN = "readiness-token-with-at-least-32-characters";
 	private static final String SESSION_PATH = "/api/v3/journeys/session";
 	private static final String SEARCH_PATH = "/api/v3/journeys/search";
@@ -127,6 +128,29 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyCandidateCanaryController.class);
 			assertThat(context).hasSingleBean(JourneyBenchmarkObservationController.class);
 		});
+	}
+
+	@Test
+	@DisplayName("optional deployment revision은 valid 값만 측정 identity로 보존한다")
+	void optionalDeploymentRevisionCannotBlockProductionComposition() {
+		validProductionContext()
+			.withPropertyValues("easysubway.journey-v3.readiness.deployment-revision=" + DEPLOYMENT_REVISION)
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context.getBean(JourneyReadinessProperties.class).deploymentRevision())
+					.isEqualTo(DEPLOYMENT_REVISION);
+				assertThat(context.getBean(ActiveJourneySnapshotPort.class))
+					.isInstanceOf(RouteBundleActiveJourneySnapshotAdapter.class);
+			});
+
+		validProductionContext()
+			.withPropertyValues("easysubway.journey-v3.readiness.deployment-revision=malformed")
+			.run(context -> {
+				assertThat(context).hasNotFailed();
+				assertThat(context.getBean(JourneyReadinessProperties.class).deploymentRevision()).isNull();
+				assertThat(context.getBean(ActiveJourneySnapshotPort.class))
+					.isInstanceOf(RouteBundleActiveJourneySnapshotAdapter.class);
+			});
 	}
 
 	@Test

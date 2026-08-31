@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyCandidate;
+import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRealtimePort;
@@ -75,6 +76,39 @@ class JourneyRaptorAdapterTest {
 		assertThat(result.scanMetrics().expandedTrips()).isGreaterThanOrEqualTo(0);
 		assertThat(result.scanMetrics().expandedTransfers()).isGreaterThanOrEqualTo(0);
 		assertThat(result.boundaryReceipt()).isEqualTo(JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+		assertThat(result.measurementReceipt()).isEqualTo(JourneyRaptorPort.RouteMeasurementReceipt.unobservable());
+	}
+
+	@Test
+	void bindsFallbackObservationToTheExactSnapshotRequestIdentity() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var activeServingIdentity = new JourneyExecutionResult.ActiveServingIdentity(
+			JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED,
+			"b".repeat(64), "c".repeat(64), "sha256:" + "d".repeat(64), "e".repeat(40), "03:00");
+		var activeReadinessIdentity = activeReadinessIdentity();
+		var requestIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION, activeReadinessIdentity, activeServingIdentity);
+		var measurement = ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+			requestIdentity, 0, 0, 0);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime, measurement), EFFECTIVE, null);
+
+		assertThat(result.measurementReceipt())
+			.isEqualTo(JourneyRaptorPort.RouteMeasurementReceipt.observed(requestIdentity, 0));
+
+		var otherIdentity = new ActiveJourneySnapshotPort.RequestExecutionIdentity(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAW", ROUTE_BUNDLE_SHA, GENERATION,
+			activeReadinessIdentity, activeServingIdentity);
+		var mismatched = new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime, ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				otherIdentity, 0, 0, 0)), EFFECTIVE, null);
+		assertThat(mismatched.measurementReceipt())
+			.isEqualTo(JourneyRaptorPort.RouteMeasurementReceipt.unobservable());
 	}
 
 	@Test
@@ -555,11 +589,31 @@ class JourneyRaptorAdapterTest {
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
 		RaptorRouteBundleRuntimeView runtime
 	) {
+		return snapshot(runtime, ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable());
+	}
+
+	private static JourneyExecutionResult.ActiveReadinessIdentity activeReadinessIdentity() {
+		return new JourneyExecutionResult.ActiveReadinessIdentity(
+			1, "journey-v3-active-readiness", "backend-a", "d".repeat(64),
+			"sha256:" + "f".repeat(64), "1".repeat(64), "2".repeat(64), ROUTE_BUNDLE_SHA,
+			"bundle-1", 1, GENERATION, "Asia/Seoul", "03:00", 1, true, false,
+			VALID_UNTIL, EFFECTIVE.minusSeconds(60), "3".repeat(64));
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
+		RaptorRouteBundleRuntimeView runtime,
+		ActiveJourneySnapshotPort.SnapshotMeasurementReceipt measurementReceipt
+	) {
+		var servingEvidence = measurementReceipt.status()
+			== ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED
+			? ActiveJourneySnapshotPort.ActiveServingEvidence.observed("b".repeat(64), "c".repeat(64))
+			: ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable();
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
 			GENERATION, runtime, VALID_UNTIL, true,
-			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+			servingEvidence,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			measurementReceipt);
 	}
 
 	private static RouteTimetable timetable(boolean verifiedAccess) {

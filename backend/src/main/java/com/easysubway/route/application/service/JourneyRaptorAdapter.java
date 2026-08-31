@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
@@ -50,7 +51,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 		if (itineraries.isEmpty()) {
 			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics(),
-				JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+				JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+				measurementReceipt(requiredRequest, requiredSnapshot));
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
@@ -61,7 +63,23 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			throw new IllegalArgumentException("RAPTOR returned duplicate Journey paths");
 		}
 		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
-			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			measurementReceipt(requiredRequest, requiredSnapshot));
+	}
+
+	private static JourneyRaptorPort.RouteMeasurementReceipt measurementReceipt(
+		JourneyRequest request, ActiveJourneySnapshot snapshot) {
+		var measurement = snapshot.measurementReceipt();
+		if (measurement.status() != ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.OBSERVED) {
+			return JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
+		}
+		var identity = measurement.identity();
+		if (!request.requestId().equals(identity.requestId())
+			|| !snapshot.routeBundleSha256().equals(identity.routeBundleSha256())
+			|| snapshot.generation() != identity.generation()) {
+			return JourneyRaptorPort.RouteMeasurementReceipt.unobservable();
+		}
+		return JourneyRaptorPort.RouteMeasurementReceipt.observed(identity, 0);
 	}
 
 	static SearchRouteV2Command toCommand(JourneyRequest request, Instant effectiveInstant) {
