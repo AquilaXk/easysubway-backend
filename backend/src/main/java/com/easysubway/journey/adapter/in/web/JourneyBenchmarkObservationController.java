@@ -37,13 +37,20 @@ public final class JourneyBenchmarkObservationController {
 
 	public static final String PATH = "/internal/v1/journey/benchmark-observation";
 	private static final int MAX_REQUEST_BYTES = 4_096;
+	private static final String ALTERNATIVE_COUNT = "alternativeCount";
+	private static final String MAX_TRANSFERS = "maxTransfers";
+	private static final String MOBILITY_PROFILE = "mobilityProfile";
+	private static final String REQUESTED_AT = "requestedAt";
+	private static final String REASON_UNAVAILABLE = "UNAVAILABLE";
+	private static final String REASON_UNOBSERVABLE = "UNOBSERVABLE";
+	private static final String WALKING_PACE = "walkingPace";
 	private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private static final BooleanSupplier NOT_CANCELLED = () -> false;
 	private static final Set<String> REQUEST_FIELDS = Set.of(
 		"requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
-		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount");
+		WALKING_PACE, MOBILITY_PROFILE, "constraintMode", MAX_TRANSFERS, ALTERNATIVE_COUNT);
 
 	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
 	public JourneyBenchmarkObservationController(JourneyApplicationDeadlineExecutor deadlineExecutor) {
@@ -62,38 +69,50 @@ public final class JourneyBenchmarkObservationController {
 			MeasuredOutcome outcome = deadlineExecutor.executeMeasured(request);
 			if (!(outcome instanceof MeasuredCompleted completed)) {
 				return response(outcome instanceof TimedOut ? HttpStatus.GATEWAY_TIMEOUT : HttpStatus.SERVICE_UNAVAILABLE,
-					new Failure(outcome instanceof TimedOut ? "TIMEOUT" : "UNAVAILABLE"));
+					new Failure(outcome instanceof TimedOut ? "TIMEOUT" : REASON_UNAVAILABLE));
 			}
-			JourneyExecutionResult.ExecutionObservation observation;
-			OutcomeResponse outcomeResponse;
-			if (completed.result() instanceof JourneyExecutionResult.Success success) {
-				if (success.journeys().size() != 1) return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
-				int transferCount = success.journeys().getFirst().transferCount();
-				if (transferCount < 0 || transferCount > 3) return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
-				observation = success.executionObservation();
-				outcomeResponse = OutcomeResponse.success(transferCount);
-			} else if (completed.result() instanceof JourneyExecutionFailure failure
-				&& failure.reason() == JourneyExecutionFailure.Reason.NO_ROUTE) {
-				observation = failure.executionObservation();
-				if (observation == null) return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
-				outcomeResponse = OutcomeResponse.noRoute();
-			} else {
-				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNAVAILABLE"));
-			}
-			if (!request.requestId().equals(observation.requestId())) {
-				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("IDENTITY_MISMATCH"));
-			}
-			if (observation.activeReadinessIdentity() == null
-				|| observation.activeServingIdentity().status()
-					!= JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED
-				|| observation.boundaryObservation().status()
-					!= JourneyExecutionResult.BoundaryObservation.Status.OBSERVED) {
-				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
-			}
-			return response(HttpStatus.OK, ObservationResponse.from(observation, completed, outcomeResponse));
+			return completedResponse(request, completed);
 		} catch (RuntimeException exception) {
-			return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNAVAILABLE"));
+			return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure(REASON_UNAVAILABLE));
 		}
+	}
+
+	private static ResponseEntity<?> completedResponse(JourneyRequest request, MeasuredCompleted completed) {
+		if (completed.result() instanceof JourneyExecutionResult.Success success) {
+			return successResponse(request, completed, success);
+		}
+		if (completed.result() instanceof JourneyExecutionFailure failure
+			&& failure.reason() == JourneyExecutionFailure.Reason.NO_ROUTE) {
+			if (failure.executionObservation() == null) return unobservable();
+			return observedResponse(request, completed, failure.executionObservation(), OutcomeResponse.noRoute());
+		}
+		return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure(REASON_UNAVAILABLE));
+	}
+
+	private static ResponseEntity<?> successResponse(JourneyRequest request, MeasuredCompleted completed,
+		JourneyExecutionResult.Success success) {
+		if (success.journeys().size() != 1) return unobservable();
+		int transferCount = success.journeys().getFirst().transferCount();
+		if (transferCount < 0 || transferCount > 3) return unobservable();
+		return observedResponse(request, completed, success.executionObservation(),
+			OutcomeResponse.success(transferCount));
+	}
+
+	private static ResponseEntity<?> observedResponse(JourneyRequest request, MeasuredCompleted completed,
+		JourneyExecutionResult.ExecutionObservation observation, OutcomeResponse outcome) {
+		if (!request.requestId().equals(observation.requestId())) {
+			return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("IDENTITY_MISMATCH"));
+		}
+		if (observation.activeReadinessIdentity() == null
+			|| observation.activeServingIdentity().status()
+				!= JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED
+			|| observation.boundaryObservation().status()
+				!= JourneyExecutionResult.BoundaryObservation.Status.OBSERVED) return unobservable();
+		return response(HttpStatus.OK, ObservationResponse.from(observation, completed, outcome));
+	}
+
+	private static ResponseEntity<?> unobservable() {
+		return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure(REASON_UNOBSERVABLE));
 	}
 
 	private static ResponseEntity<?> response(HttpStatus status, Object body) {
@@ -118,18 +137,18 @@ public final class JourneyBenchmarkObservationController {
 				|| !request.path("originStationId").isTextual()
 				|| !request.path("destinationStationId").isTextual()
 				|| !request.path("timePolicy").isTextual()
-				|| !request.path("walkingPace").isTextual()
-				|| !request.path("mobilityProfile").isTextual()
+				|| !request.path(WALKING_PACE).isTextual()
+				|| !request.path(MOBILITY_PROFILE).isTextual()
 				|| !request.path("constraintMode").isTextual()
-				|| !request.path("maxTransfers").isInt()
-				|| !request.path("alternativeCount").isInt()) throw new InvalidRequest();
+				|| !request.path(MAX_TRANSFERS).isInt()
+				|| !request.path(ALTERNATIVE_COUNT).isInt()) throw new InvalidRequest();
 			return new JourneyRequest(request.path("requestId").textValue(), request.path("originStationId").textValue(),
 				request.path("destinationStationId").textValue(), decodeDeparture(request.path("departure")),
 				JourneyRequest.TimePolicy.valueOf(request.path("timePolicy").textValue()),
-				JourneyRequest.WalkingPace.valueOf(request.path("walkingPace").textValue()),
-				JourneyRequest.MobilityProfile.valueOf(request.path("mobilityProfile").textValue()),
+				JourneyRequest.WalkingPace.valueOf(request.path(WALKING_PACE).textValue()),
+				JourneyRequest.MobilityProfile.valueOf(request.path(MOBILITY_PROFILE).textValue()),
 				JourneyRequest.ConstraintMode.valueOf(request.path("constraintMode").textValue()),
-				request.path("maxTransfers").intValue(), request.path("alternativeCount").intValue(), NOT_CANCELLED);
+				request.path(MAX_TRANSFERS).intValue(), request.path(ALTERNATIVE_COUNT).intValue(), NOT_CANCELLED);
 		} catch (IOException | RuntimeException exception) {
 			throw new InvalidRequest();
 		}
@@ -143,9 +162,10 @@ public final class JourneyBenchmarkObservationController {
 				yield new JourneyRequest.Departure.Now();
 			}
 			case "SCHEDULED" -> {
-				if (!hasExactFields(departure, Set.of("mode", "requestedAt"))
-					|| !departure.path("requestedAt").isTextual()) throw new InvalidRequest();
-				yield new JourneyRequest.Departure.Scheduled(OffsetDateTime.parse(departure.path("requestedAt").textValue()).toInstant());
+				if (!hasExactFields(departure, Set.of("mode", REQUESTED_AT))
+					|| !departure.path(REQUESTED_AT).isTextual()) throw new InvalidRequest();
+				yield new JourneyRequest.Departure.Scheduled(
+					OffsetDateTime.parse(departure.path(REQUESTED_AT).textValue()).toInstant());
 			}
 			default -> throw new InvalidRequest();
 		};
