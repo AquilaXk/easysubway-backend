@@ -48,7 +48,7 @@ final class JourneyV3FinalCoverageBenchmarkCorpus {
 		try {
 			JsonNode root = JSON.readTree(rawCorpus);
 			requireExactFields(root, ROOT_FIELDS, "corpus");
-			if (!root.path("schemaVersion").isIntegralNumber() || root.path("schemaVersion").intValue() != 2
+			if (!root.path("schemaVersion").isInt() || root.path("schemaVersion").intValue() != 2
 				|| !"v2".equals(requiredText(root, "corpusVersion", "corpus"))) {
 				throw invalid("corpus version is invalid");
 			}
@@ -73,6 +73,11 @@ final class JourneyV3FinalCoverageBenchmarkCorpus {
 			if (!(observed instanceof JourneyExecutionResult.Success success)) {
 				throw invalid("benchmark outcome does not match expected success");
 			}
+			if (success.requestMeasurement().status() != JourneyExecutionResult.RequestMeasurement.Status.OBSERVED
+				|| success.safetyBoundary().status() != JourneyExecutionResult.SafetyBoundary.Status.OBSERVED
+				|| !hasObservedExecutionEvidence(success.executionObservation())) {
+				throw invalid("benchmark success requires observed request measurement, serving, and boundary evidence");
+			}
 			if (success.journeys().size() != 1) {
 				throw invalid("benchmark success must contain exactly one journey");
 			}
@@ -88,6 +93,9 @@ final class JourneyV3FinalCoverageBenchmarkCorpus {
 		ExpectedOutcome.Failure expectedFailure = (ExpectedOutcome.Failure) expected;
 		if (failure.reason() != expectedFailure.reason()) {
 			throw invalid("benchmark failure reason does not match observed result");
+		}
+		if (!hasObservedExecutionEvidence(failure.executionObservation())) {
+			throw invalid("benchmark failure requires an observed execution observation");
 		}
 	}
 
@@ -156,11 +164,27 @@ final class JourneyV3FinalCoverageBenchmarkCorpus {
 
 	private static CoverageCell parseCoverageCell(JsonNode node, String label) {
 		requireExactFields(node, label.equals("case") ? CASE_FIELDS : COVERAGE_CELL_FIELDS, label);
+		JourneyRequest.MobilityProfile mobilityProfile = requiredEnum(
+			node, "mobilityProfile", JourneyRequest.MobilityProfile.class, label);
+		JourneyRequest.ConstraintMode constraintMode = requiredEnum(
+			node, "constraintMode", JourneyRequest.ConstraintMode.class, label);
+		if (mobilityProfile == JourneyRequest.MobilityProfile.NO_STAIRS
+			&& constraintMode == JourneyRequest.ConstraintMode.NONE) {
+			throw invalid("NO_STAIRS requires REQUIRE_STEP_FREE");
+		}
 		return new CoverageCell(requiredText(node, "regionId", label), requiredText(node, "operatorId", label),
 			requiredEnum(node, "transferBucket", TransferBucket.class, label), requiredText(node, "timeBand", label),
 			requiredEnum(node, "serviceDay", ServiceDay.class, label),
-			requiredEnum(node, "mobilityProfile", JourneyRequest.MobilityProfile.class, label),
-			requiredEnum(node, "constraintMode", JourneyRequest.ConstraintMode.class, label));
+			mobilityProfile, constraintMode);
+	}
+
+	private static boolean hasObservedExecutionEvidence(JourneyExecutionResult.ExecutionObservation observation) {
+		return observation != null
+			&& observation.activeReadinessIdentity() != null
+			&& observation.activeServingIdentity().status()
+				== JourneyExecutionResult.ActiveServingIdentity.Status.OBSERVED
+			&& observation.boundaryObservation().status()
+				== JourneyExecutionResult.BoundaryObservation.Status.OBSERVED;
 	}
 
 	private static ExpectedOutcome parseExpectedOutcome(JsonNode node) {
