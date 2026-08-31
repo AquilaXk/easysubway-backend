@@ -57,7 +57,7 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(snapshot.validUntil()).isEqualTo(FRESH_UNTIL);
 		assertThat(snapshot.fresh()).isTrue();
 		assertThat(snapshot.servingEvidence()).isEqualTo(ActiveServingEvidence.unobservable());
-		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.observed(0, 0));
+		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.observed(0, 0, 0));
 		assertThat(clock.instantCalls()).isEqualTo(3);
 	}
 

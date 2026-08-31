@@ -164,7 +164,7 @@ public final class JourneyApplicationService {
 			return JourneyExecutionResult.BoundaryObservation.unobservable();
 		}
 		return JourneyExecutionResult.BoundaryObservation.observed(
-			0,
+			snapshot.boundaryReceipt().providerCalls(),
 			snapshot.boundaryReceipt().cacheHits(),
 			snapshot.boundaryReceipt().staleArtifactUses(),
 			plan.boundaryReceipt().fallbackUses());

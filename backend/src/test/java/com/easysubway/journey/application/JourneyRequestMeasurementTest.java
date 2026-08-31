@@ -30,12 +30,9 @@ class JourneyRequestMeasurementTest {
 	void completesObservedCountersFromOneBoundRequestIdentity() {
 		var measurement = boundMeasurement();
 
-		measurement.observeProviderCall(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		measurement.observeCacheHit(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		measurement.observeStaleArtifactUse(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		measurement.observeFallbackUse(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		assertThat(measurement.observeDirectRaptor(REQUEST_ID, ROUTE_BUNDLE_SHA, 1))
-			.isEqualTo(new JourneyRequestMeasurement.RouteObservation(IDENTITY, 1));
+		var routeReceipt = JourneyRaptorPort.RouteBoundaryReceipt.observed(1);
+		assertThat(measurement.observeRouteBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, 1, routeReceipt))
+			.isEqualTo(new JourneyRequestMeasurement.RouteObservation(IDENTITY, routeReceipt.fallbackUses()));
 
 		assertThat(measurement.complete(request(), snapshot(DESCRIPTOR_SHA, RECEIPT_SHA)))
 			.isEqualTo(JourneyExecutionResult.RequestMeasurement.observed(IDENTITY,
@@ -45,14 +42,17 @@ class JourneyRequestMeasurementTest {
 	@Test
 	void marksMeasurementUnobservableWhenRegistryOrIdentityBindingIsNotExact() {
 		var duplicateRegistryRead = boundMeasurement();
-		duplicateRegistryRead.observeActiveRegistryRead(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
+		duplicateRegistryRead.observeSnapshotBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, 1,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
 		assertThat(duplicateRegistryRead.complete(request(), snapshot(DESCRIPTOR_SHA, RECEIPT_SHA)))
 			.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 
 		var differentRequest = new JourneyRequestMeasurement(REQUEST_ID);
-		differentRequest.observeActiveRegistryRead("01K1Y000000000000000000001", ROUTE_BUNDLE_SHA, 1);
+		differentRequest.observeSnapshotBoundary("01K1Y000000000000000000001", ROUTE_BUNDLE_SHA, 1,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
 		assertThat(differentRequest.bindActiveIdentity(IDENTITY)).isNull();
-		assertThat(differentRequest.observeDirectRaptor(REQUEST_ID, ROUTE_BUNDLE_SHA, 1)).isNull();
+		assertThat(differentRequest.observeRouteBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, 1,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0))).isNull();
 		assertThat(differentRequest.complete(request(), snapshot(DESCRIPTOR_SHA, RECEIPT_SHA)))
 			.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 	}
@@ -60,16 +60,16 @@ class JourneyRequestMeasurementTest {
 	@Test
 	void marksMeasurementUnobservableWhenAnyBoundaryEventOrServingEvidenceDoesNotMatch() {
 		var mismatchedBoundary = boundMeasurement();
-		mismatchedBoundary.observeProviderCall(REQUEST_ID, "f".repeat(64), 1);
-		mismatchedBoundary.observeCacheHit(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		mismatchedBoundary.observeStaleArtifactUse(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		mismatchedBoundary.observeFallbackUse(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
-		assertThat(mismatchedBoundary.observeDirectRaptor(REQUEST_ID, ROUTE_BUNDLE_SHA, 1)).isNull();
+		mismatchedBoundary.observeRouteBoundary(REQUEST_ID, "f".repeat(64), 1,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
+		assertThat(mismatchedBoundary.observeRouteBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, 1,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0))).isNull();
 		assertThat(mismatchedBoundary.complete(request(), snapshot(DESCRIPTOR_SHA, RECEIPT_SHA)))
 			.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 
 		var mismatchedEvidence = boundMeasurement();
-		mismatchedEvidence.observeDirectRaptor(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
+		mismatchedEvidence.observeRouteBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, 1,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0));
 		assertThat(mismatchedEvidence.complete(request(), snapshot("f".repeat(64), RECEIPT_SHA)))
 			.isEqualTo(JourneyExecutionResult.RequestMeasurement.unobservable());
 	}
@@ -86,9 +86,10 @@ class JourneyRequestMeasurementTest {
 
 	private static JourneyRequestMeasurement boundMeasurement() {
 		var measurement = new JourneyRequestMeasurement(REQUEST_ID);
-		measurement.observeActiveRegistryRead(REQUEST_ID, ROUTE_BUNDLE_SHA, 1);
+		measurement.observeSnapshotBoundary(REQUEST_ID, ROUTE_BUNDLE_SHA, 1,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(1, 1, 1));
 		assertThat(measurement.bindActiveIdentity(IDENTITY))
-			.isEqualTo(new JourneyRequestMeasurement.SnapshotObservation(IDENTITY, 0, 0, 0));
+			.isEqualTo(new JourneyRequestMeasurement.SnapshotObservation(IDENTITY, 1, 1, 1));
 		return measurement;
 	}
 
@@ -106,7 +107,7 @@ class JourneyRequestMeasurementTest {
 			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1", 1,
 			new TestRuntimeView(), Instant.parse("2026-08-11T00:10:00Z"), true,
 			ActiveJourneySnapshotPort.ActiveServingEvidence.observed(descriptorSha256, receiptSha256),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0),
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable());
 	}
 

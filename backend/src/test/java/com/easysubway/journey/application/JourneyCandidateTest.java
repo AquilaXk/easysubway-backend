@@ -142,13 +142,13 @@ class JourneyCandidateTest {
 			"snapshot-1", "bundle-1", "BAD", "timetable-1", "accessibility-1", 1,
 			new TestRuntimeView("BAD", 1), ARRIVAL, true,
 			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0)
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot-1", "bundle-1", "a".repeat(64), "timetable-1", "accessibility-1", 0,
 			new TestRuntimeView("a".repeat(64), 0), ARRIVAL, true,
 			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0)
 		)).isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", "BAD", new TestRealtimeView("realtime-1", "BAD", 1), ARRIVAL, true
@@ -167,10 +167,10 @@ class JourneyCandidateTest {
 		assertThatThrownBy(() -> result.candidates().clear()).isInstanceOf(UnsupportedOperationException.class);
 
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotBoundaryReceipt(
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.UNOBSERVABLE, 0L, null))
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.UNOBSERVABLE, 0L, null, null))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotBoundaryReceipt(
-			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED, null, 0L))
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.Status.OBSERVED, null, 0L, 0L))
 			.isInstanceOf(IllegalArgumentException.class);
 		assertThatThrownBy(() -> new JourneyRaptorPort.RouteBoundaryReceipt(
 			JourneyRaptorPort.RouteBoundaryReceipt.Status.UNOBSERVABLE, 0L))
@@ -191,12 +191,14 @@ class JourneyCandidateTest {
 			"01K1Y000000000000000000000", "a".repeat(64), 1,
 			activeReadinessIdentity, activeServingIdentity);
 		var measurement = new JourneyRequestMeasurement(requestIdentity.requestId());
-		measurement.observeActiveRegistryRead(
-			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation());
+		measurement.observeSnapshotBoundary(
+			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation(),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0));
 		assertThat(ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
 			measurement.bindActiveIdentity(requestIdentity)).identity()).isEqualTo(requestIdentity);
-		assertThat(JourneyRaptorPort.RouteMeasurementReceipt.observed(measurement.observeDirectRaptor(
-			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation())).identity())
+		assertThat(JourneyRaptorPort.RouteMeasurementReceipt.observed(measurement.observeRouteBoundary(
+			requestIdentity.requestId(), requestIdentity.routeBundleSha256(), requestIdentity.generation(),
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0))).identity())
 			.isEqualTo(requestIdentity);
 		assertThatThrownBy(() -> new ActiveJourneySnapshotPort.SnapshotMeasurementReceipt(
 			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.Status.UNOBSERVABLE, null, 0L, null, null))

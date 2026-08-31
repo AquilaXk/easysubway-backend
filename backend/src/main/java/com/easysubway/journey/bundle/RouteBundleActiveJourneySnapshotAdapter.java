@@ -38,7 +38,7 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 		Objects.requireNonNull(request, "request");
 		Objects.requireNonNull(effectiveInstant, "effectiveInstant");
 		Objects.requireNonNull(requestMeasurement, "requestMeasurement");
-		var active = registry.activeSnapshot(request.requestId(), requestMeasurement);
+		var active = registry.activeSnapshot();
 		if (!(active.runtimeView() instanceof JourneyRaptorRuntimeView runtimeView)) {
 			throw new IllegalStateException("active route-bundle runtime is not a Journey RAPTOR runtime");
 		}
@@ -47,6 +47,11 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 		var manifestSha256 = active.admissionEvidence().manifestSha256();
 		var fresh = !effectiveInstant.isBefore(identity.activeFromInstant())
 			&& effectiveInstant.isBefore(identity.freshUntilInstant());
+		var receipt = fresh
+			? ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0, 0)
+			: ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable();
+		requestMeasurement.observeSnapshotBoundary(
+			request.requestId(), manifestSha256, active.generation(), receipt);
 		var measurement = measurement(active, request, manifestSha256, fresh, requestMeasurement);
 		return new ActiveJourneySnapshot(
 			manifestSha256 + ":" + active.generation(),
@@ -59,8 +64,7 @@ public final class RouteBundleActiveJourneySnapshotAdapter implements ActiveJour
 			identity.freshUntilInstant(),
 			fresh,
 			projectServingEvidence(active.servingEvidence()),
-			fresh ? ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0)
-				: ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.unobservable(), measurement);
+			receipt, measurement);
 	}
 
 	private ActiveJourneySnapshotPort.SnapshotMeasurementReceipt measurement(

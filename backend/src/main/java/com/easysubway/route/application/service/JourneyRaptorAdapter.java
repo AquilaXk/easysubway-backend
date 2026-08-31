@@ -48,19 +48,18 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
 			toCommand(requiredRequest, requiredEffectiveInstant),
 			routeRuntime.compiledTimetable(),
-			realtimeOverlay,
-			requiredMeasurement,
-			requiredRequest.requestId(),
-			requiredSnapshot.routeBundleSha256(),
-			requiredSnapshot.generation()
+			realtimeOverlay
 		);
+		var receipt = JourneyRaptorPort.RouteBoundaryReceipt.observed(0);
+		var observation = requiredMeasurement.observeRouteBoundary(
+			requiredRequest.requestId(), requiredSnapshot.routeBundleSha256(), requiredSnapshot.generation(), receipt);
 		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = planned.itineraries();
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 		if (itineraries.isEmpty()) {
 			return new PlanResult(requiredRequest.requestId(), List.of(), planned.scanMetrics(),
-				JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+				receipt,
 				measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
-					planned.measurementObservation()));
+					observation));
 		}
 
 		List<JourneyCandidate> candidates = itineraries.stream()
@@ -71,9 +70,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			throw new IllegalArgumentException("RAPTOR returned duplicate Journey paths");
 		}
 		return new PlanResult(requiredRequest.requestId(), candidates, planned.scanMetrics(),
-			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			receipt,
 			measurementReceipt(requiredRequest, requiredSnapshot, requiredMeasurement,
-				planned.measurementObservation()));
+				observation));
 	}
 
 	private static JourneyRaptorPort.RouteMeasurementReceipt measurementReceipt(

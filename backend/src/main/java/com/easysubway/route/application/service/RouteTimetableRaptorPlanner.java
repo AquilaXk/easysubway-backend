@@ -18,7 +18,6 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitS
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
 import com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics;
-import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
@@ -107,11 +106,7 @@ class RouteTimetableRaptorPlanner {
 	JourneyPlan journeyItineraries(
 		SearchRouteV2Command command,
 		CompiledTimetable timetable,
-		RealtimeOverlay realtimeOverlay,
-		JourneyRequestMeasurement requestMeasurement,
-		String requestId,
-		String routeBundleSha256,
-		long generation
+		RealtimeOverlay realtimeOverlay
 	) {
 		ServiceDay serviceDay = serviceDay(command);
 		ScanResult scanResult = scanDestinationLabels(
@@ -121,9 +116,7 @@ class RouteTimetableRaptorPlanner {
 			.limit(candidateLimit(command))
 			.map(label -> toJourneyItinerary(command, timetable, serviceDay, realtimeOverlay, label))
 			.toList();
-		var measurementObservation = requestMeasurement.observeDirectRaptor(
-			requestId, routeBundleSha256, generation);
-		return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation);
+		return new JourneyPlan(itineraries, scanResult.scanMetrics());
 	}
 
 	SearchOutcome searchWithDiagnostics(SearchRouteV2Command command, CompiledTimetable timetable) {
@@ -2693,8 +2686,7 @@ class RouteTimetableRaptorPlanner {
 	}
 	private record BoardingPoint(String stationId, String lineId) {
 	}
-	record JourneyPlan(List<JourneyItinerary> itineraries, ScanMetrics scanMetrics,
-		JourneyRequestMeasurement.RouteObservation measurementObservation) {
+	record JourneyPlan(List<JourneyItinerary> itineraries, ScanMetrics scanMetrics) {
 		JourneyPlan {
 			itineraries = List.copyOf(itineraries);
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
