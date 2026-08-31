@@ -4,8 +4,10 @@ import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.MeasuredCompleted;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.MeasuredOutcome;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
+import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -62,10 +64,22 @@ public final class JourneyBenchmarkObservationController {
 				return response(outcome instanceof TimedOut ? HttpStatus.GATEWAY_TIMEOUT : HttpStatus.SERVICE_UNAVAILABLE,
 					new Failure(outcome instanceof TimedOut ? "TIMEOUT" : "UNAVAILABLE"));
 			}
-			if (!(completed.result() instanceof JourneyExecutionResult.Success success)) {
+			JourneyExecutionResult.ExecutionObservation observation;
+			OutcomeResponse outcomeResponse;
+			if (completed.result() instanceof JourneyExecutionResult.Success success) {
+				if (success.journeys().size() != 1) return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
+				int transferCount = success.journeys().getFirst().transferCount();
+				if (transferCount < 0 || transferCount > 3) return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
+				observation = success.executionObservation();
+				outcomeResponse = OutcomeResponse.success(transferCount);
+			} else if (completed.result() instanceof JourneyExecutionFailure failure
+				&& failure.reason() == JourneyExecutionFailure.Reason.NO_ROUTE) {
+				observation = failure.executionObservation();
+				if (observation == null) return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
+				outcomeResponse = OutcomeResponse.noRoute();
+			} else {
 				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNAVAILABLE"));
 			}
-			var observation = success.executionObservation();
 			if (!request.requestId().equals(observation.requestId())) {
 				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("IDENTITY_MISMATCH"));
 			}
@@ -76,7 +90,7 @@ public final class JourneyBenchmarkObservationController {
 					!= JourneyExecutionResult.BoundaryObservation.Status.OBSERVED) {
 				return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNOBSERVABLE"));
 			}
-			return response(HttpStatus.OK, ObservationResponse.from(observation, completed));
+			return response(HttpStatus.OK, ObservationResponse.from(observation, completed, outcomeResponse));
 		} catch (RuntimeException exception) {
 			return response(HttpStatus.SERVICE_UNAVAILABLE, new Failure("UNAVAILABLE"));
 		}
@@ -148,6 +162,7 @@ public final class JourneyBenchmarkObservationController {
 		String requestId,
 		String routeBundleSha256,
 		long bundleGeneration,
+		OutcomeResponse outcome,
 		ServiceDayResponse serviceDay,
 		com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics scanMetrics,
 		JourneyExecutionResult.BoundaryObservation boundaryObservation,
@@ -157,11 +172,32 @@ public final class JourneyBenchmarkObservationController {
 		JourneyExecutionResult.ActiveServingIdentity activeServingIdentity
 	) {
 		private static ObservationResponse from(JourneyExecutionResult.ExecutionObservation observation,
-			MeasuredCompleted measurement) {
+			MeasuredCompleted measurement, OutcomeResponse outcome) {
 			return new ObservationResponse(observation.requestId(), observation.routeBundleSha256(),
-				observation.bundleGeneration(), ServiceDayResponse.from(observation.serviceDay()), observation.scanMetrics(),
+				observation.bundleGeneration(), outcome, ServiceDayResponse.from(observation.serviceDay()), observation.scanMetrics(),
 				observation.boundaryObservation(), measurement.executionNanos(), measurement.allocatedBytes(),
 				observation.activeReadinessIdentity(), observation.activeServingIdentity());
+		}
+	}
+
+	@JsonInclude(JsonInclude.Include.NON_NULL)
+	private record OutcomeResponse(String kind, Integer transferCount, String reason) {
+		private OutcomeResponse {
+			if ("SUCCESS".equals(kind)) {
+				if (transferCount == null || transferCount < 0 || transferCount > 3 || reason != null) {
+					throw new IllegalArgumentException("success outcome is invalid");
+				}
+			} else if (!"FAILURE".equals(kind) || transferCount != null || !"NO_ROUTE".equals(reason)) {
+				throw new IllegalArgumentException("failure outcome is invalid");
+			}
+		}
+
+		private static OutcomeResponse success(int transferCount) {
+			return new OutcomeResponse("SUCCESS", transferCount, null);
+		}
+
+		private static OutcomeResponse noRoute() {
+			return new OutcomeResponse("FAILURE", null, "NO_ROUTE");
 		}
 	}
 

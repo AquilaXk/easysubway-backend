@@ -13,6 +13,7 @@ import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.MeasuredCompleted;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor.TimedOut;
 import com.easysubway.journey.application.JourneyCandidate;
+import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRaptorPort;
@@ -48,6 +49,8 @@ class JourneyBenchmarkObservationControllerTest {
 			.andExpect(jsonPath("$.requestId").value("01K1Y000000000000000000000"))
 			.andExpect(jsonPath("$.routeBundleSha256").value("a".repeat(64)))
 			.andExpect(jsonPath("$.bundleGeneration").value(1))
+			.andExpect(jsonPath("$.outcome.kind").value("SUCCESS"))
+			.andExpect(jsonPath("$.outcome.transferCount").value(0))
 			.andExpect(jsonPath("$.serviceDay.serviceDate").value("2026-08-12"))
 			.andExpect(jsonPath("$.boundaryObservation.status").value("OBSERVED"))
 			.andExpect(jsonPath("$.boundaryObservation.providerCalls").value(0))
@@ -66,6 +69,33 @@ class JourneyBenchmarkObservationControllerTest {
 			.andExpect(jsonPath("$.activeReadiness.servingReady").value(true))
 			.andExpect(jsonPath("$.activeReadiness.draining").value(false));
 		verify(executor).executeMeasured(any());
+	}
+
+	@Test
+	void exposesOnlyObservedNoRouteAsARequestBoundFailureOutcome() throws Exception {
+		var executionObservation = success().executionObservation();
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(
+			new JourneyExecutionFailure(JourneyExecutionFailure.Reason.NO_ROUTE, executionObservation), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isOk())
+			.andExpect(header().string("Cache-Control", "no-store"))
+			.andExpect(jsonPath("$.outcome.kind").value("FAILURE"))
+			.andExpect(jsonPath("$.outcome.reason").value("NO_ROUTE"));
+	}
+
+	@Test
+	void keepsUnobservedNoRouteUnavailable() throws Exception {
+		when(executor.executeMeasured(any())).thenReturn(new MeasuredCompleted(
+			new JourneyExecutionFailure(JourneyExecutionFailure.Reason.NO_ROUTE), 11, 12));
+
+		mockMvc.perform(post(JourneyBenchmarkObservationController.PATH)
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validRequest()))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.reason").value("UNOBSERVABLE"));
 	}
 
 	@Test

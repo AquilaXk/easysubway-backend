@@ -137,6 +137,12 @@ class JourneyV3BenchmarkContractTest {
 			.hasMessageContaining("invalid");
 		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(
 			new String(observationResponse(0), StandardCharsets.UTF_8)
+				.replace("\"outcome\":{\"kind\":\"SUCCESS\",\"transferCount\":0}",
+					"\"outcome\":{\"kind\":\"FAILURE\",\"reason\":\"NO_ROUTE\"}")
+				.getBytes(StandardCharsets.UTF_8), "01K1Y000000000000000000000"))
+			.hasMessageContaining("invalid");
+		assertThatThrownBy(() -> JourneyV3CurrentProductionScopeBenchmarkTest.DeployedJourneyClient.parse(
+			new String(observationResponse(0), StandardCharsets.UTF_8)
 				.replace("}", ",\"extra\":true}").getBytes(StandardCharsets.UTF_8),
 			"01K1Y000000000000000000000"))
 			.hasMessageContaining("invalid");
@@ -390,6 +396,7 @@ class JourneyV3BenchmarkContractTest {
 	private static byte[] observationResponse(int providerCalls) {
 		return ("""
 			{"requestId":"01K1Y000000000000000000000","routeBundleSha256":"%s","bundleGeneration":1,
+			"outcome":{"kind":"SUCCESS","transferCount":0},
 			"serviceDay":{"serviceDate":"2026-08-10","timezone":"Asia/Seoul","cutoffLocalTime":"03:00"},
 			"scanMetrics":{"expandedRoutes":1,"expandedTrips":2,"expandedTransfers":3},
 			"boundaryObservation":{"status":"OBSERVED","providerCalls":%d,"cacheHits":0,"staleArtifactUses":0,"fallbackUses":0},

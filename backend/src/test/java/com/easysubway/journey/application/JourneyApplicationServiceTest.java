@@ -361,6 +361,35 @@ class JourneyApplicationServiceTest {
 	}
 
 	@Test
+	void bindsAnActualNoRouteToTheSameRequestMeasurement() {
+		Fakes fakes = new Fakes();
+		fakes.snapshot = snapshot(
+			VALID_UNTIL,
+			true,
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.SnapshotObservation(REQUEST_EXECUTION_IDENTITY, 0, 0, 0)));
+		fakes.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(), OBSERVED_SCAN,
+			JourneyRaptorPort.RouteBoundaryReceipt.observed(0),
+			JourneyRaptorPort.RouteMeasurementReceipt.observed(
+				new JourneyRequestMeasurement.RouteObservation(REQUEST_EXECUTION_IDENTITY, 0)));
+		fakes.snapshotMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+		fakes.routeMeasurementIdentity = REQUEST_EXECUTION_IDENTITY;
+
+		var result = fakes.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyExecutionFailure.class, failure -> {
+			assertThat(failure.reason()).isEqualTo(JourneyExecutionFailure.Reason.NO_ROUTE);
+			assertThat(failure.executionObservation().requestId()).isEqualTo("01K1Y000000000000000000000");
+			assertThat(failure.executionObservation().routeBundleSha256()).isEqualTo(ROUTE_BUNDLE_SHA);
+			assertThat(failure.executionObservation().activeReadinessIdentity()).isEqualTo(ACTIVE_READINESS_IDENTITY);
+			assertThat(failure.executionObservation().activeServingIdentity()).isEqualTo(ACTIVE_SERVING_IDENTITY);
+			assertThat(failure.executionObservation().boundaryObservation())
+				.isEqualTo(JourneyExecutionResult.BoundaryObservation.observed(0, 0, 0, 0));
+		});
+	}
+
+	@Test
 	void rejectsDuplicateOverLimitAndModeMismatchedPlannerOutput() {
 		Fakes duplicate = new Fakes();
 		duplicate.planResult = new JourneyRaptorPort.PlanResult("query-1", List.of(

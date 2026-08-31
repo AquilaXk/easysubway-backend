@@ -283,7 +283,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 		private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
 			.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 			.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-		private static final Set<String> RESPONSE_FIELDS = Set.of("requestId", "routeBundleSha256", "bundleGeneration",
+		private static final Set<String> RESPONSE_FIELDS = Set.of("requestId", "routeBundleSha256", "bundleGeneration", "outcome",
 			"serviceDay", "scanMetrics", "boundaryObservation", "executionNanos", "allocatedBytes", "activeReadiness",
 			"activeServingIdentity");
 		private static final Set<String> ACTIVE_READINESS_FIELDS = Set.of("schemaVersion", "artifactKind", "instanceId",
@@ -341,6 +341,13 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				String requestId = text(root, "requestId"), routeBundleSha256 = text(root, "routeBundleSha256");
 				if (!requestId.equals(expectedRequestId) || !routeBundleSha256.matches("[a-f0-9]{64}")
 					|| !root.path("bundleGeneration").isIntegralNumber() || root.path("bundleGeneration").longValue() < 1) throw new IllegalArgumentException("benchmark response identity is invalid");
+				JsonNode outcome = root.path("outcome");
+				if (!hasExactFields(outcome, Set.of("kind", "transferCount"))
+					|| !"SUCCESS".equals(text(outcome, "kind"))
+					|| !outcome.path("transferCount").isInt()
+					|| outcome.path("transferCount").intValue() < 0 || outcome.path("transferCount").intValue() > 3) {
+					throw new IllegalArgumentException("benchmark outcome is invalid");
+				}
 				JsonNode serviceDay = root.path("serviceDay");
 				if (!hasExactFields(serviceDay, Set.of("serviceDate", "timezone", "cutoffLocalTime"))
 					|| !"Asia/Seoul".equals(text(serviceDay, "timezone")) || !"03:00".equals(text(serviceDay, "cutoffLocalTime"))) throw new IllegalArgumentException("benchmark response service day is invalid");
