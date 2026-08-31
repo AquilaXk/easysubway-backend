@@ -448,7 +448,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				if (value.originStationId().equals(value.destinationStationId()) || !Set.of("WEEKDAY", "WEEKEND").contains(value.serviceDay()) || !value.departureLocalTime().matches("[0-2]\\d:[0-5]\\d") || !ids.add(value.id())) throw new IllegalArgumentException("corpus entry is invalid"); cases.add(value); }
 			if (cases.isEmpty()) throw new IllegalArgumentException("corpus must not be empty"); return new Corpus("v1", sha(json.getBytes(StandardCharsets.UTF_8)), List.copyOf(cases));
 		} catch (java.io.IOException exception) { throw new IllegalArgumentException("corpus is malformed", exception); } }
-		static void validate(Evidence evidence) { requireNonNull(evidence); requireSha(evidence.tuple().descriptorSha256(), "descriptorSha256"); requireSha(evidence.tuple().receiptSha256(), "receiptSha256"); requireSha(evidence.tuple().routeBundleSha256(), "routeBundleSha256"); if (evidence.tuple().deploymentRevision() == null || !evidence.tuple().deploymentRevision().matches("[a-f0-9]{40}")) throw new IllegalArgumentException("deployment revision is invalid"); requireSha(evidence.corpus().sha256(), "corpusSha256"); requireSha(evidence.config().corpusSha256(), "corpusSha256"); if (!evidence.corpus().sha256().equals(evidence.config().corpusSha256())) throw new IllegalArgumentException("corpus digest is invalid");
+		static void validate(Evidence evidence) { requireNonNull(evidence); requireSha(evidence.tuple().descriptorSha256(), "descriptorSha256"); requireSha(evidence.tuple().receiptSha256(), "receiptSha256"); requireSha(evidence.tuple().publicationReceiptSha256(), "publicationReceiptSha256"); requireSha(evidence.tuple().routeBundleSha256(), "routeBundleSha256"); if (evidence.tuple().deploymentRevision() == null || !evidence.tuple().deploymentRevision().matches("[a-f0-9]{40}")) throw new IllegalArgumentException("deployment revision is invalid"); requireSha(evidence.corpus().sha256(), "corpusSha256"); requireSha(evidence.config().corpusSha256(), "corpusSha256"); if (!evidence.corpus().sha256().equals(evidence.config().corpusSha256())) throw new IllegalArgumentException("corpus digest is invalid");
 			if (!evidence.asJson().keySet().equals(Set.of("schemaVersion", "tuple", "corpus", "scope", "jvm",
 				"walkingPaceMetersPerHour", "config", "cold", "warm", "activationRequestIdentity",
 				"activeServingIdentity"))) throw new IllegalArgumentException("benchmark output fields are incomplete");
@@ -464,7 +464,7 @@ class JourneyV3CurrentProductionScopeBenchmarkTest {
 				throw new IllegalArgumentException("active-serving identity is UNOBSERVABLE");
 			}
 			if (!activeServing.descriptorSha256().equals(evidence.tuple().descriptorSha256())
-				|| !activeServing.receiptSha256().equals(evidence.tuple().receiptSha256())
+				|| !activeServing.receiptSha256().equals(evidence.tuple().publicationReceiptSha256())
 				|| !activeServing.deploymentRevision().equals(evidence.tuple().deploymentRevision())
 				|| !activeServing.deploymentIdentity().matches("sha256:[0-9a-f]{64}")
 				|| !"03:00".equals(activeServing.serviceDayCutoff())) {

@@ -24,8 +24,8 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 	private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
-	public record ExpectedIdentity(String descriptorSha256, String receiptSha256, String routeBundleSha256,
-		String deploymentRevision) { }
+	public record ExpectedIdentity(String descriptorSha256, String receiptSha256,
+		String publicationReceiptSha256, String routeBundleSha256, String deploymentRevision) { }
 	public record Loaded(byte[] descriptorBytes, byte[] receiptBytes,
 		List<RouteBundlePublicationObjectFetcher.FetchedObject> objects,
 		long artifactReadCount, long artifactReadBytes, String activationRequestIdentity, String currentKeyId,
@@ -50,6 +50,7 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 	public static ExpectedIdentity expectedIdentity(Map<String, String> environment) {
 		return new ExpectedIdentity(required(environment, "EASYSUBWAY_JOURNEY_V3_DESCRIPTOR_SHA256"),
 			required(environment, "EASYSUBWAY_JOURNEY_V3_RECEIPT_SHA256"),
+			required(environment, "EASYSUBWAY_JOURNEY_V3_PUBLICATION_RECEIPT_SHA256"),
 			required(environment, "EASYSUBWAY_JOURNEY_V3_ROUTE_BUNDLE_SHA256"),
 			required(environment, "EASYSUBWAY_JOURNEY_V3_DEPLOYMENT_REVISION"));
 	}
@@ -63,6 +64,7 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 		RouteBundlePublicationDescriptor descriptor = RouteBundleConsumerHandoffParser.parsePublicationDescriptor(
 			descriptorBytes, activationRequestIdentity);
 		verifyExpectedIdentity(descriptor.descriptorSha256(), receiptBytes,
+			descriptor.release().publicationReceiptSha256(),
 			descriptor.admissionEvidence().manifestSha256(), expected);
 		verifyActiveReceipt(receiptBytes, descriptor.admissionEvidence().manifestSha256(), expected.deploymentRevision());
 		var reads = new MutableCounters(2, descriptorBytes.length + receiptBytes.length);
@@ -89,11 +91,15 @@ public final class JourneyV3BenchmarkRuntimeAdapter {
 	}
 
 	public static void verifyExpectedIdentity(String descriptorSha256, byte[] receiptBytes,
-		String routeBundleSha256, ExpectedIdentity expected) {
+		String publicationReceiptSha256, String routeBundleSha256, ExpectedIdentity expected) {
 		if (!descriptorSha256.equals(expected.descriptorSha256())) throw new IllegalArgumentException(
 			"parsed descriptor self-digest does not match the active tuple");
 		if (!sha(receiptBytes).equals(expected.receiptSha256())) throw new IllegalArgumentException(
 			"raw activation receipt digest does not match the active tuple");
+		if (!publicationReceiptSha256.equals(expected.publicationReceiptSha256())) {
+			throw new IllegalArgumentException(
+				"descriptor publication receipt digest does not match the active tuple");
+		}
 		if (!routeBundleSha256.equals(expected.routeBundleSha256())) throw new IllegalArgumentException(
 			"descriptor manifest digest does not match the active tuple");
 		if (!expected.deploymentRevision().matches("[a-f0-9]{40}")) throw new IllegalArgumentException(
