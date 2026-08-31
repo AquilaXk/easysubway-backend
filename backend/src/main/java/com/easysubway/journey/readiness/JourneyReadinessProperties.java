@@ -37,13 +37,6 @@ public record JourneyReadinessProperties(
 		}
 	}
 
-	public JourneyReadinessProperties(String serviceToken, String instanceId, String releaseTupleSha256,
-		String backendImageDigest, String backendConfigSha256, String journeyContractSha256,
-		long trafficGeneration) {
-		this(serviceToken, instanceId, releaseTupleSha256, backendImageDigest, backendConfigSha256,
-			journeyContractSha256, null, trafficGeneration);
-	}
-
 	private static void requireToken(String value) {
 		if (value == null || value.length() < 32 || value.length() > 512
 			|| value.codePoints().anyMatch(codePoint -> codePoint < 0x21 || codePoint == 0x7f)) {
