@@ -1,7 +1,6 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
-import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
@@ -68,20 +67,37 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	@Test
-	void rejectsCrossServiceDayUntilTheProfileSplitterOwnsBothDays() {
+	void splitsCrossServiceDayWithoutMixingActiveCalendars() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
-			new JourneyRaptorQuery.DepartBetween(instantAt(96_000), instantAt(97_200)),
+			new JourneyRaptorQuery.DepartBetween(instantAt(96_000), instantAt(99_000)),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD,
 			JourneyRequest.ConstraintMode.NONE,
 			0, 1, () -> false);
 
-		assertThatThrownBy(() -> planner.departureProfile(
-			query, planner.compile(timetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty()))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("one service day");
+		var profile = planner.departureProfile(
+			query, planner.compile(crossCutoffTimetable()),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(profile)
+			.extracting(point -> point.serviceDate() + ":" + point.readyAtSeconds())
+			.containsExactly(
+				SERVICE_DATE.plusDays(1) + ":11640",
+				SERVICE_DATE + ":96240");
+		assertThat(onlyRide(profile.get(0)).tripId()).isEqualTo("after-cutoff");
+		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("before-cutoff");
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyRideProjection onlyRide(
+		RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint point
+	) {
+		return point.itineraries().getFirst().legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst()
+			.orElseThrow();
 	}
 
 	private static Instant instantAt(int readyAtSeconds) {
@@ -111,8 +127,41 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			accessData());
 	}
 
+	private static RouteTimetable crossCutoffTimetable() {
+		var route = new LoadRouteTimetablePort.TransitRoute(
+			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
+		return new RouteTimetable(
+			List.of(
+				calendar("day-before-cutoff", SERVICE_DATE),
+				calendar("day-after-cutoff", SERVICE_DATE.plusDays(1))),
+			List.of(),
+			List.of(route),
+			List.of(
+				trip("before-cutoff", "day-before-cutoff"),
+				trip("after-cutoff", "day-after-cutoff")),
+			List.of(
+				stop("before-cutoff", 1, "station-a", 96_600),
+				stop("before-cutoff", 2, "station-b", 96_900),
+				stop("after-cutoff", 1, "station-a", 12_000),
+				stop("after-cutoff", 2, "station-b", 12_300)),
+			List.of(),
+			List.of(),
+			null,
+			accessData());
+	}
+
+	private static LoadRouteTimetablePort.ServiceCalendar calendar(String id, LocalDate date) {
+		return new LoadRouteTimetablePort.ServiceCalendar(
+			id, true, true, true, true, true, true, true, date, date, "Asia/Seoul");
+	}
+
 	private static LoadRouteTimetablePort.TransitTrip trip(String id) {
-		return new LoadRouteTimetablePort.TransitTrip(id, "route", "daily", "Terminal", "0", "LOCAL", 0);
+		return trip(id, "daily");
+	}
+
+	private static LoadRouteTimetablePort.TransitTrip trip(String id, String serviceId) {
+		return new LoadRouteTimetablePort.TransitTrip(
+			id, "route", serviceId, "Terminal", "0", "LOCAL", 0);
 	}
 
 	private static LoadRouteTimetablePort.TransitStopTime stop(
