@@ -31,6 +31,8 @@ class JourneyProfileResourcePolicyTest {
 			.isEqualTo(3);
 		assertThat(policy.costUnitsFor(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1))))
 			.isEqualTo(4);
+		assertThat(policy.profilePlanningLimits()).isEqualTo(
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1_000, 8, 16, 32));
 	}
 
 	@Test

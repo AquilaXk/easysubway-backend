@@ -19,7 +19,7 @@ class JourneyProfileDeadlineExecutorTest {
 	void marksTheCopiedQueryCancelledBeforeSuppressingLateSuccess() {
 		var service = new JourneyProfileApplicationService(
 			(query, reference, measurement) -> snapshot(),
-			(query, snapshot, realtime) -> {
+			(query, snapshot, realtime, limits) -> {
 				while (!query.isCancelled()) Thread.onSpinWait();
 				throw new IllegalStateException("cancelled");
 			},
@@ -34,9 +34,9 @@ class JourneyProfileDeadlineExecutorTest {
 
 	@Test
 	void completesWithinTheCallerDeadline() {
-		var service = service((query, snapshot, realtime) ->
-			new JourneyProfileRaptorPort.DepartureWindowPlan(
-				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()));
+		var service = service((query, snapshot, realtime, limits) ->
+			new JourneyProfileRaptorPort.PlanningResult.Planned(new JourneyProfileRaptorPort.DepartureWindowPlan(
+				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var result = new JourneyProfileDeadlineExecutor(service, executor)
 				.execute(query(), JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(1)));
@@ -47,9 +47,9 @@ class JourneyProfileDeadlineExecutorTest {
 
 	@Test
 	void rejectsAnOverflowingDeadlineFromThePinnedPolicy() {
-		var service = service((query, snapshot, realtime) ->
-			new JourneyProfileRaptorPort.DepartureWindowPlan(
-				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()));
+		var service = service((query, snapshot, realtime, limits) ->
+			new JourneyProfileRaptorPort.PlanningResult.Planned(new JourneyProfileRaptorPort.DepartureWindowPlan(
+				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var deadlineExecutor = new JourneyProfileDeadlineExecutor(service, executor);
 

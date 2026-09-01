@@ -49,14 +49,24 @@ public final class JourneyProfileApplicationService {
 			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
 		}
 
-		JourneyProfileRaptorPort.TemporalPlan plan;
+		JourneyProfileRaptorPort.PlanningResult planning;
 		try {
-			plan = raptorPort.plan(requiredQuery, snapshot, null);
+			planning = raptorPort.plan(requiredQuery, snapshot, null, requiredPolicy.profilePlanningLimits());
 		} catch (RuntimeException exception) {
 			return requiredQuery.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
 				: failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
 		}
 		if (requiredQuery.isCancelled()) return failure(JourneyProfileExecutionResult.Reason.CANCELLED);
+		if (planning instanceof JourneyProfileRaptorPort.PlanningResult.AdmissionRejected rejected) {
+			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX);
+		}
+		if (planning instanceof JourneyProfileRaptorPort.PlanningResult.CapacityExceeded exceeded) {
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
+		}
+		if (!(planning instanceof JourneyProfileRaptorPort.PlanningResult.Planned planned)) {
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+		JourneyProfileRaptorPort.TemporalPlan plan = planned.temporalPlan();
 		if (plan == null || !requiredQuery.temporalQuery().equals(plan.temporalQuery())) {
 			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
 		}
@@ -120,4 +130,5 @@ public final class JourneyProfileApplicationService {
 	private static JourneyProfileExecutionResult.Failure failure(JourneyProfileExecutionResult.Reason reason) {
 		return new JourneyProfileExecutionResult.Failure(reason);
 	}
+
 }

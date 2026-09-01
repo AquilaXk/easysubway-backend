@@ -72,6 +72,26 @@ public record JourneyProfileResourcePolicy(
 		};
 	}
 
+	/** Exact planner limits captured with this policy; public alternatives are deliberately absent. */
+	public ProfilePlanningLimits profilePlanningLimits() {
+		return new ProfilePlanningLimits(maxEstimatedWork, maxLabelsPerState,
+			maxDestinationProfileLabels, maxProfileBreakpoints);
+	}
+
+	public record ProfilePlanningLimits(
+		long maxEstimatedWork,
+		int maxLabelsPerState,
+		int maxDestinationProfileLabels,
+		int maxProfileBreakpoints
+	) {
+		public ProfilePlanningLimits {
+			positive(maxEstimatedWork, "maxEstimatedWork");
+			positive(maxLabelsPerState, "maxLabelsPerState");
+			positive(maxDestinationProfileLabels, "maxDestinationProfileLabels");
+			positive(maxProfileBreakpoints, "maxProfileBreakpoints");
+		}
+	}
+
 	public record Identity(String resourcePolicyId, String semanticVersion, String resourcePolicySha256) {
 		private static final Pattern SHA_256 = Pattern.compile("^[a-f0-9]{64}$");
 
