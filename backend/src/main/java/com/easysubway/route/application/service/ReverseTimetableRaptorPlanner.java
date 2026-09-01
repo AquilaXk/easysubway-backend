@@ -1,8 +1,11 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
+import java.time.Instant;
+import java.time.LocalDate;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashSet;
@@ -75,14 +78,19 @@ final class ReverseTimetableRaptorPlanner {
 					if (!trip.allowsPickup(boardIndex)) {
 						continue;
 					}
-					best = better(best, traceToOrigin(
+					Candidate traced = traceToOrigin(
 						query, timetable, activeTrips, realtimeOverlay, trip, boardIndex, alightIndex,
-						destinationArrival, 0, new HashSet<>()));
+						destinationArrival, 0, new HashSet<>());
+					if (traced != null) {
+						best = better(best, traced.append(new TraceAccess(
+							Access.EXIT, exit, query.destinationStationId(), query.destinationStationId())));
+					}
 				}
 			}
 		}
 		if (best != null) {
-			return new Result(Outcome.FOUND, best.readyAtSeconds(), best.arrivalAtDestinationSeconds(), best.transfersUsed());
+			return new Result(Outcome.FOUND, best.readyAtSeconds(), best.arrivalAtDestinationSeconds(), best.transfersUsed(),
+				toItinerary(query, timetable, realtimeOverlay, best));
 		}
 		if (!verifiedExitExists) {
 			return Result.of(Outcome.NO_VERIFIED_EXIT);
@@ -123,7 +131,9 @@ final class ReverseTimetableRaptorPlanner {
 				int readyAt = downstreamDeparture - accessSeconds(query, timetable, entry, Access.ENTRY)
 					- query.boardingSlackSeconds();
 				return readyAt < query.earliestReadyAtSeconds()
-					? null : new Candidate(readyAt, arrivalAtDestinationSeconds, transfersUsed);
+					? null : new Candidate(readyAt, arrivalAtDestinationSeconds, transfersUsed, List.of(
+						new TraceAccess(Access.ENTRY, entry, query.originStationId(), boardStation),
+						new TraceRide(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex)));
 			}
 			if (transfersUsed >= query.maxTransfers()) {
 				return null;
@@ -156,9 +166,14 @@ final class ReverseTimetableRaptorPlanner {
 						if (!upstreamTrip.allowsPickup(upstreamBoardIndex)) {
 							continue;
 						}
-						best = better(best, traceToOrigin(
+						Candidate upstream = traceToOrigin(
 							query, timetable, activeTrips, realtimeOverlay, upstreamTrip, upstreamBoardIndex, upstreamAlightIndex,
-							arrivalAtDestinationSeconds, transfersUsed + 1, visiting));
+							arrivalAtDestinationSeconds, transfersUsed + 1, visiting);
+						if (upstream != null) {
+							best = better(best, upstream
+								.append(new TraceAccess(Access.TRANSFER, transfer, boardStation, boardStation))
+								.append(new TraceRide(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex)));
+						}
 					}
 				}
 			}
@@ -209,6 +224,77 @@ final class ReverseTimetableRaptorPlanner {
 		return candidate;
 	}
 
+	private static RouteTimetableRaptorPlanner.JourneyItinerary toItinerary(
+		Query query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		Candidate candidate
+	) {
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs = candidate.legs().stream()
+			.map(leg -> projectLeg(query, timetable, realtimeOverlay, leg))
+			.toList();
+		TraceAccess entry = (TraceAccess) candidate.legs().getFirst();
+		TraceRide firstRide = candidate.legs().stream().filter(TraceRide.class::isInstance)
+			.map(TraceRide.class::cast).findFirst().orElseThrow();
+		TraceRide lastRide = candidate.legs().stream().filter(TraceRide.class::isInstance)
+			.map(TraceRide.class::cast).reduce((ignored, current) -> current).orElseThrow();
+		TraceAccess exit = (TraceAccess) candidate.legs().getLast();
+		int plannedReadyAt = firstRide.trip().departureSeconds(firstRide.boardIndex())
+			- accessSeconds(query, timetable, entry.transition(), entry.access()) - query.boardingSlackSeconds();
+		int plannedArrivalAtDestination = lastRide.trip().arrivalSeconds(lastRide.alightIndex())
+			+ accessSeconds(query, timetable, exit.transition(), Access.EXIT);
+		return new RouteTimetableRaptorPlanner.JourneyItinerary(
+			query.serviceDate(),
+			serviceInstant(query.serviceDate(), plannedReadyAt),
+			serviceInstant(query.serviceDate(), plannedArrivalAtDestination),
+			realtimeOverlay.available() ? serviceInstant(query.serviceDate(), candidate.readyAtSeconds()) : null,
+			realtimeOverlay.available() ? serviceInstant(query.serviceDate(), candidate.arrivalAtDestinationSeconds()) : null,
+			legs
+		);
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyLegProjection projectLeg(
+		Query query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		TraceLeg leg
+	) {
+		if (leg instanceof TraceAccess access) {
+			return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+				switch (access.access()) {
+					case ENTRY -> RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY;
+					case TRANSFER -> RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER;
+					case EXIT -> RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT;
+				},
+				access.fromStationId(), access.toStationId(),
+				accessSeconds(query, timetable, access.transition(), access.access()),
+				timetable.transitionDistanceMeters(access.transition()),
+				timetable.transitionIncludesStairs(access.transition()),
+				timetable.transitionVerified(access.transition()),
+				timetable.transitionVerificationStatus(access.transition())
+			);
+		}
+		TraceRide ride = (TraceRide) leg;
+		boolean hasRealtimeEvidence = realtimeOverlay.evidence(ride.trip()) != null;
+		return new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			ride.trip().lineId(ride.boardIndex()),
+			ride.trip().trip().id(),
+			ride.trip().stopTimes().getLast().stationId(),
+			ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
+			ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
+			serviceInstant(query.serviceDate(), ride.trip().departureSeconds(ride.boardIndex())),
+			serviceInstant(query.serviceDate(), ride.trip().arrivalSeconds(ride.alightIndex())),
+			!hasRealtimeEvidence ? null : serviceInstant(query.serviceDate(),
+				realtimeOverlay.departureSeconds(ride.trip(), ride.boardIndex())),
+			!hasRealtimeEvidence ? null : serviceInstant(query.serviceDate(),
+				realtimeOverlay.arrivalSeconds(ride.trip(), ride.alightIndex()))
+		);
+	}
+
+	private static Instant serviceInstant(LocalDate serviceDate, int serviceSeconds) {
+		return serviceDate.atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(serviceSeconds).toInstant();
+	}
+
 	enum Outcome {
 		FOUND,
 		NO_ACTIVE_SERVICE,
@@ -221,6 +307,7 @@ final class ReverseTimetableRaptorPlanner {
 	record Query(
 		String originStationId,
 		String destinationStationId,
+		LocalDate serviceDate,
 		int earliestReadyAtSeconds,
 		int arrivalDeadlineSeconds,
 		int maxTransfers,
@@ -236,6 +323,7 @@ final class ReverseTimetableRaptorPlanner {
 				|| originStationId.equals(destinationStationId)) {
 				throw new IllegalArgumentException("origin and destination must be distinct nonblank station ids");
 			}
+			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate must not be null");
 			if (earliestReadyAtSeconds < 0 || arrivalDeadlineSeconds < earliestReadyAtSeconds || maxTransfers < 0
 				|| accessProfileBit <= 0 || boardingSlackSeconds < 0 || walkingSpeedMetersPerHour <= 0) {
 				throw new IllegalArgumentException("reverse query values must be explicit and valid");
@@ -245,20 +333,28 @@ final class ReverseTimetableRaptorPlanner {
 		}
 	}
 
-	record Result(Outcome outcome, Integer latestReadyAtSeconds, Integer arrivalAtDestinationSeconds, Integer transfersUsed) {
+	record Result(
+		Outcome outcome,
+		Integer latestReadyAtSeconds,
+		Integer arrivalAtDestinationSeconds,
+		Integer transfersUsed,
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+	) {
 		Result {
 			Objects.requireNonNull(outcome, "outcome must not be null");
 			if (outcome == Outcome.FOUND) {
 				Objects.requireNonNull(latestReadyAtSeconds, "found result needs latestReadyAtSeconds");
 				Objects.requireNonNull(arrivalAtDestinationSeconds, "found result needs arrivalAtDestinationSeconds");
 				Objects.requireNonNull(transfersUsed, "found result needs transfersUsed");
-			} else if (latestReadyAtSeconds != null || arrivalAtDestinationSeconds != null || transfersUsed != null) {
+				Objects.requireNonNull(itinerary, "found result needs itinerary");
+			} else if (latestReadyAtSeconds != null || arrivalAtDestinationSeconds != null || transfersUsed != null
+				|| itinerary != null) {
 				throw new IllegalArgumentException("non-found result must not contain a journey");
 			}
 		}
 
 		static Result of(Outcome outcome) {
-			return new Result(outcome, null, null, null);
+			return new Result(outcome, null, null, null, null);
 		}
 
 		static Result cancelled() {
@@ -272,7 +368,32 @@ final class ReverseTimetableRaptorPlanner {
 		EXIT
 	}
 
-	private record Candidate(int readyAtSeconds, int arrivalAtDestinationSeconds, int transfersUsed) {
+	private sealed interface TraceLeg permits TraceAccess, TraceRide {
+	}
+
+	private record TraceAccess(Access access, int transition, String fromStationId, String toStationId)
+		implements TraceLeg {
+	}
+
+	private record TraceRide(RouteTimetableRaptorPlanner.ScheduledTrip trip, int boardIndex, int alightIndex)
+		implements TraceLeg {
+	}
+
+	private record Candidate(
+		int readyAtSeconds,
+		int arrivalAtDestinationSeconds,
+		int transfersUsed,
+		List<TraceLeg> legs
+	) {
+		private Candidate {
+			legs = List.copyOf(legs);
+		}
+
+		private Candidate append(TraceLeg leg) {
+			List<TraceLeg> appended = new ArrayList<>(legs);
+			appended.add(leg);
+			return new Candidate(readyAtSeconds, arrivalAtDestinationSeconds, transfersUsed, appended);
+		}
 	}
 
 	private record TraceState(int tripIndex, int boardIndex, int alightIndex, int transfersUsed) {

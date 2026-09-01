@@ -40,6 +40,47 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("materializes a 24-hour reverse result as forward verified legs with pinned realtime times")
+	void materializesDirectItineraryWithPlannedAndRealtimeTimes() {
+		var compiled = forward.compile(directTimetable(87_000, 87_600, true, true, 300, 180));
+		var overlay = forward.compileRealtimeOverlay(compiled, updates(
+			new TimetableRealtimeUpdate("direct", 60, 60, false, "snapshot-delay",
+				Instant.parse("2026-07-01T00:00:00Z"))));
+
+		var result = arriveBy(compiled, "station-a", "station-b", 87_903, overlay);
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(87_060 - 405 - SLACK_SECONDS);
+		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(87_903);
+		assertThat(result.itinerary().serviceDate()).isEqualTo(SERVICE_DATE);
+		assertThat(result.itinerary().plannedDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:01:45Z"));
+		assertThat(result.itinerary().realtimeDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:02:45Z"));
+		assertThat(result.itinerary().plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:24:03Z"));
+		assertThat(result.itinerary().realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:25:03Z"));
+		assertThat(result.itinerary().legs()).hasSize(3);
+		assertThat(result.itinerary().legs().get(0))
+			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, entry -> {
+				assertThat(entry.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY);
+				assertThat(entry.durationSeconds()).isEqualTo(405);
+				assertThat(entry.verified()).isTrue();
+			});
+		assertThat(result.itinerary().legs().get(1))
+			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyRideProjection.class, ride -> {
+				assertThat(ride.tripId()).isEqualTo("direct");
+				assertThat(ride.plannedDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:10:00Z"));
+				assertThat(ride.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:20:00Z"));
+				assertThat(ride.realtimeDepartureTime()).isEqualTo(Instant.parse("2026-07-01T15:11:00Z"));
+				assertThat(ride.realtimeArrivalTime()).isEqualTo(Instant.parse("2026-07-01T15:21:00Z"));
+			});
+		assertThat(result.itinerary().legs().get(2))
+			.isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyAccessProjection.class, exit -> {
+				assertThat(exit.kind()).isEqualTo(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT);
+				assertThat(exit.durationSeconds()).isEqualTo(243);
+				assertThat(exit.verified()).isTrue();
+			});
+	}
+
+	@Test
 	@DisplayName("rejects one-way or unverified access instead of inverting it")
 	void rejectsUnverifiedOrWrongDirectionalAccess() {
 		var unverified = forward.compile(directTimetable(32_400, 33_000, true, false, 300, 180));
@@ -64,6 +105,12 @@ class ReverseTimetableRaptorPlannerTest {
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
 		assertThat(result.latestReadyAtSeconds()).isEqualTo(32_400 - 405 - SLACK_SECONDS);
 		assertThat(result.transfersUsed()).isEqualTo(1);
+		assertThat(result.itinerary().legs()).extracting(Object::getClass).containsExactly(
+			RouteTimetableRaptorPlanner.JourneyAccessProjection.class,
+			RouteTimetableRaptorPlanner.JourneyRideProjection.class,
+			RouteTimetableRaptorPlanner.JourneyAccessProjection.class,
+			RouteTimetableRaptorPlanner.JourneyRideProjection.class,
+			RouteTimetableRaptorPlanner.JourneyAccessProjection.class);
 	}
 
 	@Test
@@ -78,6 +125,7 @@ class ReverseTimetableRaptorPlannerTest {
 			new TimetableRealtimeUpdate("direct", 300, 300, false, "snapshot-delay", Instant.parse("2026-07-01T00:00:00Z"))));
 
 		assertThat(noService.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_ACTIVE_SERVICE);
+		assertThat(noService.itinerary()).isNull();
 		assertThat(arriveBy(compiled, "station-a", "station-b", 33_180, cancelled).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 		assertThat(arriveBy(compiled, "station-a", "station-b", 33_180, delayed).outcome())
@@ -111,7 +159,7 @@ class ReverseTimetableRaptorPlannerTest {
 
 	private static ReverseTimetableRaptorPlanner.Query query(String origin, String destination, int deadlineSeconds) {
 		return new ReverseTimetableRaptorPlanner.Query(
-			origin, destination, 0, deadlineSeconds, 1, PROFILE_BIT, SLACK_SECONDS,
+			origin, destination, SERVICE_DATE, 0, deadlineSeconds, 1, PROFILE_BIT, SLACK_SECONDS,
 			MobilityPreset.SLOW, 3_600, false, () -> false);
 	}
 
