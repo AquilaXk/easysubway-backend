@@ -56,26 +56,32 @@ public final class JourneyProfileApplicationService {
 			return requiredQuery.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
 				: failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
 		}
-		if (requiredQuery.isCancelled()) return failure(JourneyProfileExecutionResult.Reason.CANCELLED);
+		if (planning == null || !matches(requiredQuery, planning.countSnapshot())) {
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+		if (requiredQuery.isCancelled()) {
+			return failure(JourneyProfileExecutionResult.Reason.CANCELLED, planning.countSnapshot());
+		}
 		if (planning instanceof JourneyProfileRaptorPort.PlanningResult.AdmissionRejected rejected) {
-			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX);
+			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX, rejected.countSnapshot());
 		}
 		if (planning instanceof JourneyProfileRaptorPort.PlanningResult.CapacityExceeded exceeded) {
-			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
+				exceeded.countSnapshot());
 		}
 		if (!(planning instanceof JourneyProfileRaptorPort.PlanningResult.Planned planned)) {
 			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
 		}
 		JourneyProfileRaptorPort.TemporalPlan plan = planned.temporalPlan();
 		if (plan == null || !requiredQuery.temporalQuery().equals(plan.temporalQuery())) {
-			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED, planned.countSnapshot());
 		}
 		Instant completedAt = clock.instant();
 		if (!postvalid(snapshot.validUntil(), completedAt, plan)) {
-			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
+			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE, planned.countSnapshot());
 		}
 		return new JourneyProfileExecutionResult.Success(calculatedAt, snapshot.validUntil(), source(snapshot),
-			requiredPolicy.identity(), plan);
+			requiredPolicy.identity(), plan, planned.countSnapshot());
 	}
 
 	private static boolean fresh(ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot, Instant calculatedAt,
@@ -129,6 +135,29 @@ public final class JourneyProfileApplicationService {
 
 	private static JourneyProfileExecutionResult.Failure failure(JourneyProfileExecutionResult.Reason reason) {
 		return new JourneyProfileExecutionResult.Failure(reason);
+	}
+
+	private static JourneyProfileExecutionResult.Failure failure(
+		JourneyProfileExecutionResult.Reason reason,
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+	) {
+		return new JourneyProfileExecutionResult.Failure(reason, countSnapshot);
+	}
+
+	private static boolean matches(
+		JourneyRaptorQuery query,
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+	) {
+		if (countSnapshot == null || !query.requestId().equals(countSnapshot.requestId())) return false;
+		JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity expected = switch (query.temporalQuery()) {
+			case JourneyRaptorQuery.DepartBetween ignored -> JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR;
+			case JourneyRaptorQuery.ArriveBy ignored ->
+				JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR;
+			case JourneyRaptorQuery.LastConnection ignored ->
+				JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR;
+			case JourneyRaptorQuery.DepartAt ignored -> null;
+		};
+		return expected != null && expected.equals(countSnapshot.algorithmIdentity());
 	}
 
 }

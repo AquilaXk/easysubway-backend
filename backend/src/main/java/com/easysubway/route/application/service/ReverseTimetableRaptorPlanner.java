@@ -32,6 +32,17 @@ final class ReverseTimetableRaptorPlanner {
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
+		return lastConnection(query, timetable, activeServiceDay, realtimeOverlay, limits, null);
+	}
+
+	LastConnectionResult lastConnection(
+		LastConnectionQuery query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
 		Objects.requireNonNull(query, "query must not be null");
 		Objects.requireNonNull(timetable, "timetable must not be null");
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
@@ -40,7 +51,7 @@ final class ReverseTimetableRaptorPlanner {
 		if (query.cancelled().getAsBoolean()) {
 			return LastConnectionResult.cancelled();
 		}
-		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits);
+		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
 		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips = activeTrips(timetable, activeServiceDay);
 		if (activeTrips.isEmpty()) {
 			return new LastConnectionResult(Result.of(Outcome.NO_ACTIVE_SERVICE), null);
@@ -74,12 +85,23 @@ final class ReverseTimetableRaptorPlanner {
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
+		return arriveBy(query, timetable, activeServiceDay, realtimeOverlay, limits, null);
+	}
+
+	Result arriveBy(
+		Query query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
 		Objects.requireNonNull(query, "query must not be null");
 		Objects.requireNonNull(timetable, "timetable must not be null");
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
 		Objects.requireNonNull(limits, "limits must not be null");
-		return arriveBy(query, timetable, activeServiceDay, realtimeOverlay, new ReverseLimitTracker(limits));
+		return arriveBy(query, timetable, activeServiceDay, realtimeOverlay, new ReverseLimitTracker(limits, observations));
 	}
 
 	private Result arriveBy(
@@ -120,6 +142,7 @@ final class ReverseTimetableRaptorPlanner {
 				int exit = line < 0 ? -1 : timetable.exitTransition(
 					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
 				if (!verifiedTransition(timetable, exit)) {
+					limitTracker.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 					continue;
 				}
 				verifiedExitExists = true;
@@ -149,9 +172,10 @@ final class ReverseTimetableRaptorPlanner {
 				}
 			}
 		}
-		List<Candidate> frontier = destinationFrontier(candidates);
+		List<Candidate> frontier = destinationFrontier(candidates, limitTracker);
 		if (!frontier.isEmpty()) {
 			if (frontier.size() > limitTracker.maxDestinationProfileLabels()) {
+				limitTracker.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 				throw new ReversePlanningLimitException(PlanningLimit.MAX_DESTINATION_PROFILE_LABELS,
 					frontier.size(), limitTracker.maxDestinationProfileLabels());
 			}
@@ -192,6 +216,7 @@ final class ReverseTimetableRaptorPlanner {
 				int entry = origin < 0 || downstreamLine < 0 ? -1 : timetable.entryTransition(
 					origin, downstreamLine, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
 				if (!verifiedTransition(timetable, entry)) {
+					limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 					return List.of();
 				}
 				int readyAt = downstreamDeparture - accessSeconds(query, timetable, entry, Access.ENTRY)
@@ -227,6 +252,7 @@ final class ReverseTimetableRaptorPlanner {
 						: timetable.transferTransition(station, upstreamLine, downstreamLine, query.accessProfileBit(), false,
 							query.requiresVerifiedJourneyDistance());
 					if (!verifiedTransition(timetable, transfer)) {
+						limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 						continue;
 					}
 					int latestArrival = downstreamDeparture - accessSeconds(query, timetable, transfer, Access.TRANSFER)
@@ -380,13 +406,23 @@ final class ReverseTimetableRaptorPlanner {
 	}
 
 
-	private static List<Candidate> destinationFrontier(List<Candidate> candidates) {
+	private static List<Candidate> destinationFrontier(List<Candidate> candidates, ReverseLimitTracker limits) {
 		List<Candidate> frontier = new ArrayList<>();
 		for (Candidate candidate : candidates) {
 			boolean dominated = candidates.stream().anyMatch(other -> other != candidate && dominates(other, candidate));
-			if (!dominated && frontier.stream().noneMatch(existing -> sameVector(existing, candidate)
+			if (dominated) {
+				limits.count("REVERSE_DESTINATION_DOMINANCE_V1");
+			} else if (frontier.stream().anyMatch(existing -> sameVector(existing, candidate)
 				&& compareTrace(existing, candidate) <= 0)) {
-				frontier.removeIf(existing -> sameVector(existing, candidate) && compareTrace(candidate, existing) < 0);
+				limits.count("REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+			} else {
+				frontier.removeIf(existing -> {
+					if (sameVector(existing, candidate) && compareTrace(candidate, existing) < 0) {
+						limits.count("REVERSE_DESTINATION_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+						return true;
+					}
+					return false;
+				});
 				frontier.add(candidate);
 			}
 		}
@@ -730,8 +766,12 @@ final class ReverseTimetableRaptorPlanner {
 		private final JourneyProfileResourcePolicy.ProfilePlanningLimits limits;
 		private long work;
 
-		private ReverseLimitTracker(JourneyProfileResourcePolicy.ProfilePlanningLimits limits) {
+		private final JourneyProfilePruningObservationAccumulator observations;
+
+		private ReverseLimitTracker(JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+			JourneyProfilePruningObservationAccumulator observations) {
 			this.limits = Objects.requireNonNull(limits, "limits");
+			this.observations = observations;
 		}
 
 		private void consumeWork() {
@@ -745,6 +785,10 @@ final class ReverseTimetableRaptorPlanner {
 			return limits.maxDestinationProfileLabels();
 		}
 
+		private void count(String ruleId) {
+			if (observations != null) observations.increment(ruleId);
+		}
+
 		private List<Candidate> admit(Candidate candidate) {
 			return admitAll(List.of(candidate));
 		}
@@ -753,13 +797,30 @@ final class ReverseTimetableRaptorPlanner {
 			List<Candidate> frontier = new ArrayList<>();
 			for (Candidate candidate : candidates) {
 				consumeWork();
-				if (frontier.stream().anyMatch(existing -> dominates(existing, candidate)
-					|| sameVector(existing, candidate) && compareTrace(existing, candidate) <= 0)) continue;
-				frontier.removeIf(existing -> dominates(candidate, existing)
-					|| sameVector(existing, candidate) && compareTrace(candidate, existing) < 0);
+				if (frontier.stream().anyMatch(existing -> dominates(existing, candidate))) {
+					count("REVERSE_STATE_DOMINANCE_V1");
+					continue;
+				}
+				if (frontier.stream().anyMatch(existing -> sameVector(existing, candidate)
+					&& compareTrace(existing, candidate) <= 0)) {
+					count("REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+					continue;
+				}
+				frontier.removeIf(existing -> {
+					if (dominates(candidate, existing)) {
+						count("REVERSE_STATE_DOMINANCE_V1");
+						return true;
+					}
+					if (sameVector(existing, candidate) && compareTrace(candidate, existing) < 0) {
+						count("REVERSE_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+						return true;
+					}
+					return false;
+				});
 				frontier.add(candidate);
 				frontier.sort(ReverseTimetableRaptorPlanner::compareTrace);
 				if (frontier.size() > limits.maxLabelsPerState()) {
+					count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 					throw new ReversePlanningLimitException(PlanningLimit.MAX_LABELS_PER_STATE,
 						frontier.size(), limits.maxLabelsPerState());
 				}

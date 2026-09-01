@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -144,13 +145,18 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			JourneyRequest.ConstraintMode.NONE,
 			1, 3, () -> false);
 
+		var observations = new JourneyProfilePruningObservationAccumulator(
+			REQUEST_ID, JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
+
 		assertThatThrownBy(() -> planner.departureProfile(
 			query, planner.compile(frontierCollisionTimetable()),
-			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy(1).profilePlanningLimits()))
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy(1).profilePlanningLimits(), observations))
 			.isInstanceOf(RouteTimetableRaptorPlanner.ProfilePlanningLimitException.class)
 			.satisfies(exception -> assertThat(
 				((RouteTimetableRaptorPlanner.ProfilePlanningLimitException) exception).limit())
 				.isEqualTo(RouteTimetableRaptorPlanner.ProfilePlanningLimit.MAX_LABELS_PER_STATE));
+		assertThat(observations.snapshot().countsByRuleId().get("FAIL_CLOSED_FRONTIER_CAPACITY_V1"))
+			.isEqualTo(1L);
 	}
 
 	@Test

@@ -4,6 +4,7 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourne
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
@@ -41,33 +42,39 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RaptorRouteBundleRuntimeView runtime = requireRouteRuntime(snapshot);
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable = runtime.compiledTimetable();
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		JourneyProfilePruningObservationAccumulator observations = new JourneyProfilePruningObservationAccumulator(
+			requiredQuery.requestId(), algorithmIdentity(requiredQuery));
 
 		try {
 			TemporalPlan plan = switch (requiredQuery.temporalQuery()) {
 				case JourneyRaptorQuery.DepartBetween range -> new DepartureWindowPlan(range,
-					forward.departureProfile(requiredQuery, timetable, overlay, requiredLimits).stream()
+					forward.departureProfile(requiredQuery, timetable, overlay, requiredLimits, observations).stream()
 						.map(JourneyProfileRaptorAdapter::departurePoint)
 						.toList());
 				case JourneyRaptorQuery.ArriveBy arriveBy -> new ArriveByPlan(arriveBy,
-					reversePlan(requiredQuery, timetable, overlay, arriveBy, requiredLimits));
+					reversePlan(requiredQuery, timetable, overlay, arriveBy, requiredLimits, observations));
 				case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
-					requiredQuery, timetable, overlay, lastConnection, requiredLimits);
+					requiredQuery, timetable, overlay, lastConnection, requiredLimits, observations);
 				case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
 					"Journey profile adapter does not accept DEPART_AT");
 			};
-			return new PlanningResult.Planned(plan);
+			return new PlanningResult.Planned(plan, observations.snapshot());
 		} catch (RouteTimetableRaptorPlanner.ProfilePlanningLimitException exceeded) {
 			return switch (exceeded.limit()) {
-				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(exceeded.observed(), exceeded.max());
+				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(
+					exceeded.observed(), exceeded.max(), observations.snapshot());
 				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS, MAX_PROFILE_BREAKPOINTS ->
 					new PlanningResult.CapacityExceeded(
-						PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max());
+						PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max(),
+						observations.snapshot());
 			};
 		} catch (ReverseTimetableRaptorPlanner.ReversePlanningLimitException exceeded) {
 			return switch (exceeded.limit()) {
-				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(exceeded.observed(), exceeded.max());
+				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(
+					exceeded.observed(), exceeded.max(), observations.snapshot());
 				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS -> new PlanningResult.CapacityExceeded(
-					PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max());
+					PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max(),
+					observations.snapshot());
 			};
 		}
 	}
@@ -77,7 +84,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
 		JourneyRaptorQuery.ArriveBy arriveBy,
-		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
 	) {
 		var earliest = ServiceDayResolver.resolve(arriveBy.earliestReadyAt());
 		var deadline = ServiceDayResolver.resolve(arriveBy.arrivalDeadline());
@@ -87,7 +95,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		ReverseTimetableRaptorPlanner.Result result = reverse.arriveBy(
 			forward.reverseArriveByQuery(query, earliest.serviceDate(), earliest.secondsFromServiceDayStart(),
 				deadline.secondsFromServiceDayStart()),
-			timetable, timetable.activeServiceDay(earliest.serviceDate()), overlay, limits);
+				timetable, timetable.activeServiceDay(earliest.serviceDate()), overlay, limits, observations);
 		return reversePlan(result);
 	}
 
@@ -96,12 +104,13 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
 		JourneyRaptorQuery.LastConnection lastConnection,
-		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
 	) {
 		LocalDate serviceDate = lastConnection.serviceDate();
 		ReverseTimetableRaptorPlanner.LastConnectionResult result = reverse.lastConnection(
 			forward.reverseLastConnectionQuery(query, serviceDate),
-			timetable, timetable.activeServiceDay(serviceDate), overlay, limits);
+			timetable, timetable.activeServiceDay(serviceDate), overlay, limits, observations);
 		Instant terminal = result.terminalArrivalAtDestinationSeconds() == null ? null
 			: serviceInstant(serviceDate, result.terminalArrivalAtDestinationSeconds());
 		return new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection, reversePlan(result.result()), terminal);
@@ -163,5 +172,19 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 			throw new IllegalArgumentException("Journey profile runtime view does not match snapshot");
 		}
 		return runtime;
+	}
+
+	private static JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity algorithmIdentity(
+		JourneyRaptorQuery query
+	) {
+		return switch (query.temporalQuery()) {
+			case JourneyRaptorQuery.DepartBetween ignored -> JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR;
+			case JourneyRaptorQuery.ArriveBy ignored ->
+				JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR;
+			case JourneyRaptorQuery.LastConnection ignored ->
+				JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR;
+			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
+				"Journey profile adapter does not accept DEPART_AT");
+		};
 	}
 }

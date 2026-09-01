@@ -6,6 +6,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
@@ -29,6 +30,12 @@ class JourneyProfileRaptorAdapterTest {
 		var result = adapter.plan(query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
 			snapshot(), null, policy().profilePlanningLimits());
 		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
+		assertThat(planResult.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+		assertThat(planResult.countSnapshot().algorithmIdentity())
+			.isEqualTo(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
+		assertThat(planResult.countSnapshot().countsByRuleId().keySet())
+			.containsExactlyInAnyOrderElementsOf(
+				JourneyRaptorPruningInventoryV1.activeRuleIds(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR));
 
 		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.DepartureWindowPlan.class, plan -> {
 			assertThat(plan.points()).singleElement().satisfies(point -> {
@@ -55,6 +62,9 @@ class JourneyProfileRaptorAdapterTest {
 		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))),
 			snapshot(), null, policy().profilePlanningLimits());
 		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
+		assertThat(planResult.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+		assertThat(planResult.countSnapshot().algorithmIdentity())
+			.isEqualTo(JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR);
 
 		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
 			assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
@@ -78,6 +88,27 @@ class JourneyProfileRaptorAdapterTest {
 			rejected -> {
 				assertThat(rejected.observed()).isEqualTo(2);
 				assertThat(rejected.max()).isEqualTo(1);
+			});
+	}
+
+	@Test
+	void preservesTheRealForwardCapacityObservationWithoutReturningAPartialSuccess() {
+		var result = adapter.plan(
+			query(new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(36_000))),
+			snapshot(capacityTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.CapacityExceeded.class,
+			exceeded -> {
+				assertThat(exceeded.dimension())
+					.isEqualTo(JourneyProfileRaptorPort.PlanningCapacity.MAX_DESTINATION_PROFILE_LABELS);
+				assertThat(exceeded.observed()).isEqualTo(2);
+				assertThat(exceeded.max()).isEqualTo(1);
+				assertThat(exceeded.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+				assertThat(exceeded.countSnapshot().algorithmIdentity())
+					.isEqualTo(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
+				assertThat(exceeded.countSnapshot().countsByRuleId()
+					.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
 			});
 	}
 
@@ -127,7 +158,11 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot() {
-		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, 1, timetable());
+		return snapshot(timetable());
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(RouteTimetable timetable) {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, 1, timetable);
 		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
 			"snapshot", "bundle", ROUTE_BUNDLE_SHA, "timetable", "accessibility", 1, runtime,
 			Instant.parse("2026-07-03T00:00:00Z"), true,
@@ -157,6 +192,24 @@ class JourneyProfileRaptorAdapterTest {
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), List.of(trip),
 			List.of(stop("direct", 1, "station-a", 36_000), stop("direct", 2, "station-b", 36_600)),
+			List.of(), List.of(), null, accessData());
+	}
+
+	private static RouteTimetable capacityTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var route = new LoadRouteTimetablePort.TransitRoute(
+			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
+		var fast = new LoadRouteTimetablePort.TransitTrip(
+			"fast", "route", "daily", "Terminal", "0", "LOCAL", 0);
+		var late = new LoadRouteTimetablePort.TransitTrip(
+			"late", "route", "daily", "Terminal", "0", "LOCAL", 0);
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(route), List.of(fast, late),
+			List.of(
+				stop("fast", 1, "station-a", 36_000), stop("fast", 2, "station-b", 36_600),
+				stop("late", 1, "station-a", 36_200), stop("late", 2, "station-b", 37_000)),
 			List.of(), List.of(), null, accessData());
 	}
 

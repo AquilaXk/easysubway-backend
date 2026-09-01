@@ -24,26 +24,39 @@ public interface JourneyProfileRaptorPort {
 
 	sealed interface PlanningResult permits PlanningResult.Planned, PlanningResult.AdmissionRejected,
 		PlanningResult.CapacityExceeded {
-		record Planned(TemporalPlan temporalPlan) implements PlanningResult {
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot();
+
+		record Planned(
+			TemporalPlan temporalPlan,
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+		) implements PlanningResult {
 			public Planned {
 				temporalPlan = Objects.requireNonNull(temporalPlan, "temporalPlan");
+				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
 			}
 		}
 
-		record AdmissionRejected(long observed, long max) implements PlanningResult {
+		record AdmissionRejected(
+			long observed,
+			long max,
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+		) implements PlanningResult {
 			public AdmissionRejected {
 				if (observed < 0 || max < 1 || observed <= max) {
 					throw new IllegalArgumentException("admission rejection must exceed a positive maximum");
 				}
+				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
 			}
 		}
 
-		record CapacityExceeded(PlanningCapacity dimension, long observed, long max) implements PlanningResult {
+		record CapacityExceeded(PlanningCapacity dimension, long observed, long max,
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot) implements PlanningResult {
 			public CapacityExceeded {
 				dimension = Objects.requireNonNull(dimension, "dimension");
 				if (observed < 0 || max < 1 || observed <= max) {
 					throw new IllegalArgumentException("capacity exceedance must exceed a positive maximum");
 				}
+				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
 			}
 		}
 	}
