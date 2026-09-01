@@ -33,6 +33,7 @@ import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.Test;
 
 class JourneyRaptorAdapterTest {
@@ -381,6 +382,49 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void keepsStandardAndNoStairsAccessSelectionDistinct() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(directAccess(
+				new PathwayEdge(
+					"stairs-entry", "entrance", "platform-a", 60, 30, false, true, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+				new PathwayEdge(
+					"step-free-entry", "entrance", "platform-a", 120, 80, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"))));
+		var adapter = new JourneyRaptorAdapter();
+
+		var standard = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null, measurement());
+		var noStairs = adapter.plan(
+			request(JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED), snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(standard.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 60)));
+		assertThat(noStairs.candidates()).singleElement().satisfies(candidate ->
+			assertThat(candidate.legs().getFirst()).isEqualTo(new JourneyCandidate.Entry("station-a", 144)));
+	}
+
+	@Test
+	void stopsNativeJourneyScanWhenCancellationArrivesDuringTheMarkedRound() {
+		var cancellationChecks = new AtomicInteger();
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", new JourneyRaptorQuery.DepartAt(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1,
+			() -> cancellationChecks.incrementAndGet() > 1);
+		var planner = new RouteTimetableRaptorPlanner();
+
+		assertThatThrownBy(() -> planner.journeyItineraries(
+			query, planner.compile(timetable(true)), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			measurement(), REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessageContaining("scan cancelled");
+		assertThat(cancellationChecks.get()).isGreaterThan(1);
+	}
+
+	@Test
 	void rejectsNonPointJourneyTemporalQueriesWithoutAProfileFallback() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var query = new JourneyRaptorQuery(
@@ -610,6 +654,7 @@ class JourneyRaptorAdapterTest {
 			REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION);
 		assertThat(nativePlan.itineraries()).isEqualTo(legacyPlan.itineraries());
 		assertThat(nativePlan.scanMetrics()).isEqualTo(legacyPlan.scanMetrics());
+		assertThat(planner.realtimeQueries(query, timetable)).isEqualTo(planner.realtimeQueries(command, timetable));
 	}
 
 	private static SearchRouteV2Command legacyCommand(
