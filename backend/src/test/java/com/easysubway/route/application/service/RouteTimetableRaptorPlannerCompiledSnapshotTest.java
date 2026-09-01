@@ -90,7 +90,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 			new TimetableRealtimeUpdates("v1", true, List.of(
 				new TimetableRealtimeUpdate(
 					"trip-daily", 0, 0, true, "snapshot-1", java.time.Instant.parse("2026-07-01T00:00:00Z"))
-			)));
+			), null));
 
 		assertThat(compiled.patternOfScheduledTrip(scheduledTripIndex)).isZero();
 		assertThat(compiled.scheduledTripAtPattern(compiled.activeServiceDay(WEDNESDAY), 0, 0))
