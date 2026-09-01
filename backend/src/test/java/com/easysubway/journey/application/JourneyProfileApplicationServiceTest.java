@@ -60,6 +60,22 @@ class JourneyProfileApplicationServiceTest {
 	}
 
 	@Test
+	void rejectsReverseFrontierWhenAnyReturnedItineraryOutlivesTheCapturedSnapshot() {
+		Instant validUntil = NOW.plusSeconds(120);
+		var arriveBy = new JourneyRaptorQuery.ArriveBy(NOW, NOW.plusSeconds(60));
+		var service = new JourneyProfileApplicationService(
+			(query, freshnessReference, measurement) -> snapshot(validUntil),
+			(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
+				new JourneyProfileRaptorPort.ArriveByPlan(arriveBy,
+					new JourneyProfileRaptorPort.ReversePlan.Found(List.of(
+						itinerary(NOW.plusSeconds(60)), itinerary(NOW.plusSeconds(180)))))),
+			Clock.fixed(NOW, ZoneOffset.UTC));
+
+		assertThat(service.execute(query(arriveBy), policy())).isEqualTo(new JourneyProfileExecutionResult.Failure(
+			JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE));
+	}
+
+	@Test
 	void rejectsAPlanForAnotherTemporalQuery() {
 		var requested = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600));
 		var different = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(900));
@@ -157,5 +173,13 @@ class JourneyProfileApplicationServiceTest {
 			"snapshot", "bundle", SHA, "timetable", "accessibility", 1, runtime, validUntil, true,
 			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0));
+	}
+
+	private static JourneyProfileRaptorPort.Itinerary itinerary(Instant arrivalAtDestination) {
+		return new JourneyProfileRaptorPort.Itinerary(LocalDate.of(2026, 9, 1), NOW, arrivalAtDestination,
+			null, null, new JourneyProfileRaptorPort.ItineraryMetrics(
+				0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()),
+			List.of(new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
+				"station-a", "station-a", 0, 0, false, true, "VERIFIED")));
 	}
 }

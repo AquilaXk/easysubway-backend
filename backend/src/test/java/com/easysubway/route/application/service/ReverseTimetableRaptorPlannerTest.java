@@ -1,7 +1,9 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
@@ -60,6 +62,39 @@ class ReverseTimetableRaptorPlannerTest {
 			.containsExactlyInAnyOrder(
 				(long) accessMovementAt(300, 180),
 				(long) accessMovementAt(30, 180));
+	}
+
+	@Test
+	@DisplayName("fails closed instead of truncating a reverse destination frontier")
+	void rejectsReverseDestinationFrontierBeyondCallerLimit() {
+		var compiled = forward.compile(reverseFrontierTimetable());
+
+		assertThatThrownBy(() -> planner.arriveBy(
+			query("station-a", "station-b", deadlineAt(33_500, 180)), compiled,
+			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32)))
+			.isInstanceOfSatisfying(ReverseTimetableRaptorPlanner.ReversePlanningLimitException.class, exceeded -> {
+				assertThat(exceeded.limit()).isEqualTo(ReverseTimetableRaptorPlanner.PlanningLimit.MAX_DESTINATION_PROFILE_LABELS);
+				assertThat(exceeded.observed()).isEqualTo(2);
+				assertThat(exceeded.max()).isEqualTo(1);
+			});
+	}
+
+	@Test
+	@DisplayName("keeps a common upstream trace bound to each distinct downstream suffix")
+	void doesNotMixReverseCandidatesAcrossDownstreamSuffixes() {
+		var compiled = forward.compile(sharedUpstreamSuffixTimetable());
+
+		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).hasSize(2);
+		assertThat(result.itineraries()).extracting(itinerary -> itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.reduce((ignored, ride) -> ride).orElseThrow().tripId())
+			.containsExactlyInAnyOrder("fast-second", "safer-second");
 	}
 
 	@Test
@@ -141,7 +176,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void classifiesInactiveAndPinnedRealtimeChanges() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
 		var noService = planner.arriveBy(query("station-a", "station-b", deadlineAt(33_000, 180)), compiled,
-			compiled.activeServiceDay(SERVICE_DATE.plusDays(1)), RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+			compiled.activeServiceDay(SERVICE_DATE.plusDays(1)), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
 		var cancelled = forward.compileRealtimeOverlay(compiled, updates(
 			new TimetableRealtimeUpdate("direct", 0, 0, true, "snapshot-cancel", Instant.parse("2026-07-01T00:00:00Z"))));
 		var delayed = forward.compileRealtimeOverlay(compiled, updates(
@@ -176,7 +211,7 @@ class ReverseTimetableRaptorPlannerTest {
 		var resultWithHorizon = planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
 			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false,
 			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE),
-			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
 		var result = resultWithHorizon.result();
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -240,7 +275,7 @@ class ReverseTimetableRaptorPlannerTest {
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay
 	) {
 		return planner.arriveBy(query(origin, destination, deadlineSeconds), compiled,
-			compiled.activeServiceDay(SERVICE_DATE), overlay);
+			compiled.activeServiceDay(SERVICE_DATE), overlay, limits());
 	}
 
 	private ReverseTimetableRaptorPlanner.Result lastConnection(
@@ -250,7 +285,11 @@ class ReverseTimetableRaptorPlannerTest {
 	) {
 		return planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
 			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, mobilityPreset, 3_600, false,
-			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE), overlay).result();
+			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE), overlay, limits()).result();
+	}
+
+	private static JourneyProfileResourcePolicy.ProfilePlanningLimits limits() {
+		return new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32);
 	}
 
 	private static ReverseTimetableRaptorPlanner.Query query(String origin, String destination, int deadlineSeconds) {
@@ -306,6 +345,19 @@ class ReverseTimetableRaptorPlannerTest {
 				stop("first", 2, "station-transfer", "line-a", 33_000, 0, 0),
 				stop("second", 1, "station-transfer", "line-b", 34_200, 0, 0),
 				stop("second", 2, "station-b", "line-b", 34_800, 0, 0)),
+			access(true, true, 300, 180, true));
+	}
+
+	private static RouteTimetable sharedUpstreamSuffixTimetable() {
+		return timetable(
+			List.of(trip("shared-first", "route-a"), trip("fast-second", "route-b"),
+				trip("safer-second", "route-b")),
+			List.of(stop("shared-first", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("shared-first", 2, "station-transfer", "line-a", 33_000, 0, 0),
+				stop("fast-second", 1, "station-transfer", "line-b", 33_600, 0, 0),
+				stop("fast-second", 2, "station-b", "line-b", 34_200, 0, 0),
+				stop("safer-second", 1, "station-transfer", "line-b", 34_200, 0, 0),
+				stop("safer-second", 2, "station-b", "line-b", 34_800, 0, 0)),
 			access(true, true, 300, 180, true));
 	}
 
