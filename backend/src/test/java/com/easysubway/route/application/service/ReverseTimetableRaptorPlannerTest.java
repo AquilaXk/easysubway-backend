@@ -4,6 +4,10 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
@@ -14,6 +18,7 @@ import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -24,6 +29,9 @@ import org.junit.jupiter.api.Test;
 class ReverseTimetableRaptorPlannerTest {
 
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 1);
+	private static final String ORACLE_REQUEST_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+	private static final String ORACLE_ROUTE_BUNDLE_SHA = "a".repeat(64);
+	private static final long ORACLE_GENERATION = 1L;
 	private static final int PROFILE_BIT = RouteTimetableRaptorPlanner.profileBit(
 		MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS);
 	private static final int SLACK_SECONDS = BoardingSlackPolicy.secondsFor(MobilityType.SENIOR);
@@ -172,6 +180,25 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("matches an independent forward-point oracle for arrive-by directional access and tradeoffs")
+	void arriveByMatchesIndependentForwardPointOracle() {
+		var compiled = forward.compile(sharedUpstreamSuffixTimetable());
+		int deadline = deadlineAt(34_800, 180);
+
+		var result = arriveBy(compiled, "station-a", "station-b", deadline,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		var oracle = forwardPointOracle(compiled, "station-a", "station-b", 0, deadline, 1,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(oracle).extracting(this::tripIds).containsExactlyInAnyOrder(
+			List.of("shared-first", "fast-second"),
+			List.of("shared-first", "safer-second"));
+		assertThat(oracle).allSatisfy(this::assertVerifiedDirectionalJourney);
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).containsExactlyInAnyOrderElementsOf(oracle);
+	}
+
+	@Test
 	@DisplayName("distinguishes calendar exclusion, realtime cancellation, and delayed deadline misses")
 	void classifiesInactiveAndPinnedRealtimeChanges() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
@@ -222,6 +249,23 @@ class ReverseTimetableRaptorPlannerTest {
 			.containsExactly("feasible-first", "feasible-second");
 		assertThat(resultWithHorizon.terminalArrivalAtDestinationSeconds())
 			.isEqualTo(deadlineAt(39_300, 180));
+	}
+
+	@Test
+	@DisplayName("matches forward exhaustive feasible-departure selection for the O/D last connection")
+	void lastConnectionMatchesIndependentForwardPointOracle() {
+		var compiled = forward.compile(lastConnectionTransferTimetable());
+		var result = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		var oracle = forwardLastFeasibleDepartureOracle(compiled, "station-a", "station-b", 1,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(oracle).extracting(this::tripIds)
+			.containsExactly(List.of("feasible-first", "feasible-second"));
+		assertThat(oracle).allSatisfy(this::assertVerifiedDirectionalJourney);
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.latestReadyAtSeconds())
+			.isEqualTo(serviceSeconds(oracle.getFirst().plannedDepartureTime()));
+		assertThat(result.itineraries()).containsExactlyInAnyOrderElementsOf(oracle);
 	}
 
 	@Test
@@ -290,6 +334,123 @@ class ReverseTimetableRaptorPlannerTest {
 
 	private static JourneyProfileResourcePolicy.ProfilePlanningLimits limits() {
 		return new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32);
+	}
+
+	/**
+	 * Test-only fixture-exact oracle: enumerate actual origin departure events, calculate each
+	 * event's verified ENTRY-ready instant, and union the forward point planner outcomes. These
+	 * fixtures have at most two feasible candidates, below the point contract's public cap of three.
+	 * The oracle has no dependency on reverse trace, dominance, frontier, or terminal-horizon code.
+	 */
+	private List<RouteTimetableRaptorPlanner.JourneyItinerary> forwardPointOracle(
+		RouteTimetableRaptorPlanner.CompiledTimetable compiled,
+		String origin,
+		String destination,
+		int earliestReadyAtSeconds,
+		int arrivalDeadlineSeconds,
+		int maxTransfers,
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay
+	) {
+		var activeServiceDay = compiled.activeServiceDay(SERVICE_DATE);
+		int originIndex = compiled.stationIndex(origin);
+		return forward.departureEvents(
+			activeServiceDay, origin, 0, LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE - 1, overlay)
+			.stream()
+			.map(event -> forwardPointReadyAt(compiled, originIndex, event))
+			.filter(ForwardPointEvent::hasVerifiedEntry)
+			.filter(event -> event.readyAtSeconds() >= earliestReadyAtSeconds)
+			.flatMap(event -> forward.journeyItineraries(
+				pointQuery(origin, destination, event.readyAtSeconds(), maxTransfers), compiled, overlay,
+				new JourneyRequestMeasurement(ORACLE_REQUEST_ID), ORACLE_REQUEST_ID,
+				ORACLE_ROUTE_BUNDLE_SHA, ORACLE_GENERATION).itineraries().stream())
+			.filter(itinerary -> serviceSeconds(itinerary.plannedDepartureTime()) >= earliestReadyAtSeconds)
+			.filter(itinerary -> serviceSeconds(effectiveArrival(itinerary, overlay)) <= arrivalDeadlineSeconds)
+			.distinct()
+			.toList();
+	}
+
+	private List<RouteTimetableRaptorPlanner.JourneyItinerary> forwardLastFeasibleDepartureOracle(
+		RouteTimetableRaptorPlanner.CompiledTimetable compiled,
+		String origin,
+		String destination,
+		int maxTransfers,
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay
+	) {
+		var feasible = forwardPointOracle(compiled, origin, destination, 0, Integer.MAX_VALUE, maxTransfers, overlay);
+		int latestReadyAt = feasible.stream()
+			.mapToInt(itinerary -> serviceSeconds(itinerary.plannedDepartureTime()))
+			.max().orElseThrow();
+		return feasible.stream()
+			.filter(itinerary -> serviceSeconds(itinerary.plannedDepartureTime()) == latestReadyAt)
+			.toList();
+	}
+
+	private static ForwardPointEvent forwardPointReadyAt(
+		RouteTimetableRaptorPlanner.CompiledTimetable compiled,
+		int originIndex,
+		RouteTimetableRaptorPlanner.DepartureEvent event
+	) {
+		int lineIndex = compiled.lineIndex(event.scheduledTrip().lineId(event.stopIndex()));
+		int entryTransition = lineIndex < 0 ? -1
+			: compiled.entryTransition(originIndex, lineIndex, PROFILE_BIT, false, false);
+		if (entryTransition < 0 || !compiled.transitionVerified(entryTransition)) {
+			return ForwardPointEvent.noVerifiedEntry();
+		}
+		int entrySeconds = ProfileWalkTimeCalculator.estimateSeconds(
+			compiled.transitionDurationSeconds(entryTransition), MobilityPreset.SLOW,
+			WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
+		return new ForwardPointEvent(event.effectiveDepartureSeconds() - entrySeconds - SLACK_SECONDS, true);
+	}
+
+	private static JourneyRaptorQuery pointQuery(String origin, String destination, int readyAtSeconds, int maxTransfers) {
+		return new JourneyRaptorQuery(
+			ORACLE_REQUEST_ID, origin, destination, new JourneyRaptorQuery.DepartAt(serviceInstant(readyAtSeconds)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW, JourneyRequest.ConstraintMode.NONE,
+			maxTransfers, 3, () -> false);
+	}
+
+	private static Instant effectiveArrival(
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay
+	) {
+		return overlay.available() ? itinerary.realtimeArrivalTime() : itinerary.plannedArrivalTime();
+	}
+
+	private static Instant serviceInstant(int serviceSeconds) {
+		return SERVICE_DATE.atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(serviceSeconds).toInstant();
+	}
+
+	private static int serviceSeconds(Instant instant) {
+		return Math.toIntExact(Duration.between(
+			SERVICE_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant(), instant).toSeconds());
+	}
+
+	private List<String> tripIds(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		return itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId)
+			.toList();
+	}
+
+	private void assertVerifiedDirectionalJourney(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
+		assertThat(itinerary.legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
+			.extracting(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::cast)
+			.allSatisfy(access -> assertThat(access.verified()).isTrue());
+		assertThat(itinerary.legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::isInstance)
+			.extracting(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::cast)
+			.extracting(RouteTimetableRaptorPlanner.JourneyAccessProjection::kind)
+			.containsExactly(
+				RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY,
+				RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER,
+				RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT);
+	}
+
+	private record ForwardPointEvent(int readyAtSeconds, boolean hasVerifiedEntry) {
+		private static ForwardPointEvent noVerifiedEntry() {
+			return new ForwardPointEvent(0, false);
+		}
 	}
 
 	private static ReverseTimetableRaptorPlanner.Query query(String origin, String destination, int deadlineSeconds) {
