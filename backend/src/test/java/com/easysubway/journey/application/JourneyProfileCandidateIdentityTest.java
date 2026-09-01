@@ -64,6 +64,9 @@ class JourneyProfileCandidateIdentityTest {
 			rideArrival.plusSeconds(180),
 			realtimeReadyAt,
 			realtimeArrival == null ? null : realtimeArrival.plusSeconds(180),
+			new JourneyProfileRaptorPort.ItineraryMetrics(
+				0, entryDurationSeconds + 180L, 125, entryIncludesStairs ? 1 : 0,
+				new JourneyProfileRaptorPort.NoTransfer()),
 			List.of(
 				new JourneyProfileRaptorPort.AccessLeg(
 					JourneyProfileRaptorPort.AccessKind.ENTRY,

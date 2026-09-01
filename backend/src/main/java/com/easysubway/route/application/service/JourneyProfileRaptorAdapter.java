@@ -129,7 +129,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		}
 		return new JourneyProfileRaptorPort.Itinerary(
 			itinerary.serviceDate(), itinerary.plannedDepartureTime(), itinerary.plannedArrivalTime(),
-			itinerary.realtimeDepartureTime(), itinerary.realtimeArrivalTime(), legs);
+			itinerary.realtimeDepartureTime(), itinerary.realtimeArrivalTime(), itinerary.metrics(), legs);
 	}
 
 	private static Instant serviceInstant(LocalDate serviceDate, int secondsFromServiceDayStart) {

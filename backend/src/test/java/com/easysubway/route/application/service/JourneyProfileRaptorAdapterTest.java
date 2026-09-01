@@ -31,6 +31,8 @@ class JourneyProfileRaptorAdapterTest {
 			assertThat(plan.points()).singleElement().satisfies(point -> {
 				assertThat(point.serviceDate()).isEqualTo(SERVICE_DATE);
 				assertThat(point.itineraries()).singleElement().satisfies(itinerary -> {
+					assertThat(itinerary.metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+						0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
 					assertThat(itinerary.legs()).anySatisfy(leg -> assertThat(leg)
 						.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
 							ride -> assertThat(ride.tripId()).isEqualTo("direct")));
@@ -52,9 +54,28 @@ class JourneyProfileRaptorAdapterTest {
 
 		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
 			assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
-				found -> assertThat(found.itinerary().legs()).anySatisfy(leg -> assertThat(leg)
-					.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
-						ride -> assertThat(ride.tripId()).isEqualTo("direct")))));
+				found -> {
+					assertThat(found.itinerary().metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+						0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+					assertThat(found.itinerary().legs()).anySatisfy(leg -> assertThat(leg)
+						.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
+							ride -> assertThat(ride.tripId()).isEqualTo("direct")));
+				}));
+	}
+
+	@Test
+	void derivesTransferSlackAndAccessBurdenFromThePlannerNativeLegs() {
+		Instant base = instantAt(0);
+		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, 100, 20, false),
+			ride("first", base.plusSeconds(500), base.plusSeconds(1_000)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 180, 30, true),
+			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, 50, 10, false));
+
+		assertThat(RouteTimetableRaptorPlanner.itineraryMetrics(legs, 60))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+				1, 330, 60, 1, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)));
 	}
 
 	@Test
@@ -134,6 +155,21 @@ class JourneyProfileRaptorAdapterTest {
 		return new LoadRouteTimetablePort.PathwayEdge(
 			id, from, to, seconds, 50, false, false, 100,
 			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(
+		RouteTimetableRaptorPlanner.JourneyAccessKind kind, int duration, int distance, boolean stairs
+	) {
+		return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+			kind, "station", "station", duration, distance, stairs, true, "VERIFIED");
+	}
+
+	private static RouteTimetableRaptorPlanner.JourneyRideProjection ride(
+		String tripId, Instant departure, Instant arrival
+	) {
+		return new RouteTimetableRaptorPlanner.JourneyRideProjection(
+			"line", tripId, "terminal", "station", "station",
+			departure, arrival, null, null);
 	}
 
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(

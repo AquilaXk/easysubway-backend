@@ -87,8 +87,8 @@ public final class JourneyProfileSummaryPolicyV1 {
 		SelectedLabel last = inventory.labelFor(ObjectiveTag.LATEST_DEPARTURE);
 		SelectedLabel safest = inventory.labelFor(ObjectiveTag.SAFEST_CONNECTION);
 		List<String> saferAlternatives = safest.candidate().journeyId().equals(last.candidate().journeyId())
-			|| safest.candidate().minimumConnectionSlackSeconds()
-				<= last.candidate().minimumConnectionSlackSeconds()
+			|| JourneyProfileRaptorPort.ConnectionSlack.compareSafety(
+				safest.candidate().connectionSlack(), last.candidate().connectionSlack()) <= 0
 			? List.of() : List.of(safest.candidate().journeyId());
 		return new LastConnection(last.candidate().departure(), last.candidate().journeyId(), saferAlternatives,
 			recommended(inventory, alternativeCount, ObjectiveTag.LATEST_DEPARTURE,

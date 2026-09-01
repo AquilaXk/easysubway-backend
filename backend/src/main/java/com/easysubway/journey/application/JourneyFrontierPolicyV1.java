@@ -1,5 +1,6 @@
 package com.easysubway.journey.application;
 
+import com.easysubway.journey.application.JourneyProfileRaptorPort.ConnectionSlack;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -29,7 +30,7 @@ public final class JourneyFrontierPolicyV1 {
 		.thenComparingLong(FeasibleCandidate::walkingSeconds)
 		.thenComparingLong(FeasibleCandidate::walkingDistanceMeters)
 		.thenComparingLong(FeasibleCandidate::accessibilityBurden)
-		.thenComparingLong(FeasibleCandidate::minimumConnectionSlackSeconds);
+		.thenComparing(FeasibleCandidate::connectionSlack, ConnectionSlack::compareSafety);
 
 	private JourneyFrontierPolicyV1() {
 	}
@@ -132,14 +133,14 @@ public final class JourneyFrontierPolicyV1 {
 			&& left.walkingSeconds() <= right.walkingSeconds()
 			&& left.walkingDistanceMeters() <= right.walkingDistanceMeters()
 			&& left.accessibilityBurden() <= right.accessibilityBurden()
-			&& left.minimumConnectionSlackSeconds() >= right.minimumConnectionSlackSeconds()
+			&& ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) >= 0
 			&& (left.departure().isAfter(right.departure())
 				|| left.arrivalAtDestination().isBefore(right.arrivalAtDestination())
 				|| left.transfers() < right.transfers()
 				|| left.walkingSeconds() < right.walkingSeconds()
 				|| left.walkingDistanceMeters() < right.walkingDistanceMeters()
 				|| left.accessibilityBurden() < right.accessibilityBurden()
-				|| left.minimumConnectionSlackSeconds() > right.minimumConnectionSlackSeconds());
+				|| ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) > 0);
 	}
 
 	private static int compareFor(ObjectiveTag tag, FeasibleCandidate left, FeasibleCandidate right) {
@@ -149,8 +150,8 @@ public final class JourneyFrontierPolicyV1 {
 			case FEWEST_TRANSFERS -> Long.compare(left.transfers(), right.transfers());
 			case LOWEST_WALKING_BURDEN -> compareWalkingBurden(left, right);
 			case BEST_ACCESSIBILITY -> Long.compare(left.accessibilityBurden(), right.accessibilityBurden());
-			case SAFEST_CONNECTION -> Long.compare(
-				right.minimumConnectionSlackSeconds(), left.minimumConnectionSlackSeconds());
+			case SAFEST_CONNECTION -> ConnectionSlack.compareSafety(
+				right.connectionSlack(), left.connectionSlack());
 		};
 		return comparison != 0 ? comparison : CANONICAL_ORDER.compare(left, right);
 	}
@@ -191,7 +192,7 @@ public final class JourneyFrontierPolicyV1 {
 		long walkingSeconds,
 		long walkingDistanceMeters,
 		long accessibilityBurden,
-		long minimumConnectionSlackSeconds
+		ConnectionSlack connectionSlack
 	) {
 		public FeasibleCandidate {
 			journeyId = requireText(journeyId, "journeyId");
@@ -201,8 +202,13 @@ public final class JourneyFrontierPolicyV1 {
 				throw new IllegalArgumentException("arrivalAtDestination must be after departure");
 			}
 			if (transfers < 0 || walkingSeconds < 0 || walkingDistanceMeters < 0
-				|| accessibilityBurden < 0 || minimumConnectionSlackSeconds < 0) {
+				|| accessibilityBurden < 0) {
 				throw new IllegalArgumentException("feasible candidate metrics must not be negative");
+			}
+			connectionSlack = Objects.requireNonNull(connectionSlack, "connectionSlack");
+			if (transfers == 0 && !(connectionSlack instanceof JourneyProfileRaptorPort.NoTransfer)
+				|| transfers > 0 && !(connectionSlack instanceof JourneyProfileRaptorPort.MinimumTransferSeconds)) {
+				throw new IllegalArgumentException("connection slack must match transfer count");
 			}
 		}
 	}

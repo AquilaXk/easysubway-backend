@@ -17,6 +17,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -270,8 +271,65 @@ class RouteTimetableRaptorPlanner {
 			realtimeOverlay.available()
 				? serviceInstant(input.serviceDay(), lastRide.arrivalSeconds() + exitDurationSeconds)
 				: null,
+			itineraryMetrics(legs, input.boardingSlackSeconds()),
 			List.copyOf(legs)
 		);
+	}
+
+	static JourneyProfileRaptorPort.ItineraryMetrics itineraryMetrics(
+		List<JourneyLegProjection> legs,
+		int boardingSlackSeconds
+	) {
+		Objects.requireNonNull(legs, "legs");
+		if (boardingSlackSeconds < 0) throw new IllegalArgumentException("boardingSlackSeconds must not be negative");
+		long accessMovementSeconds = 0;
+		long accessDistanceMeters = 0;
+		long accessibilityBurden = 0;
+		int rideCount = 0;
+		JourneyRideProjection previousRide = null;
+		JourneyAccessProjection pendingTransfer = null;
+		Long minimumTransferSlack = null;
+		for (JourneyLegProjection leg : legs) {
+			if (leg instanceof JourneyAccessProjection access) {
+				if (access.verified()) {
+					accessMovementSeconds = Math.addExact(accessMovementSeconds, access.durationSeconds());
+					accessDistanceMeters = Math.addExact(accessDistanceMeters, access.distanceMeters());
+					if (access.includesStairs()) accessibilityBurden = Math.addExact(accessibilityBurden, 1);
+				}
+				if (access.kind() == JourneyAccessKind.TRANSFER) pendingTransfer = access;
+				continue;
+			}
+			JourneyRideProjection ride = (JourneyRideProjection) leg;
+			if (previousRide != null) {
+				if (pendingTransfer == null) {
+					throw new IllegalArgumentException("consecutive rides require a verified transfer");
+				}
+				Instant previousArrival = effectiveArrival(previousRide);
+				Instant nextDeparture = effectiveDeparture(ride);
+				long slack = Duration.between(previousArrival, nextDeparture).getSeconds()
+					- pendingTransfer.durationSeconds() - boardingSlackSeconds;
+				if (slack < 0) throw new IllegalArgumentException("selected transfer must remain feasible");
+				minimumTransferSlack = minimumTransferSlack == null ? slack : Math.min(minimumTransferSlack, slack);
+				pendingTransfer = null;
+			}
+			previousRide = ride;
+			rideCount += 1;
+		}
+		if (rideCount == 0) throw new IllegalArgumentException("profile metrics require at least one ride");
+		int transfersUsed = rideCount - 1;
+		JourneyProfileRaptorPort.ConnectionSlack connectionSlack = transfersUsed == 0
+			? new JourneyProfileRaptorPort.NoTransfer()
+			: new JourneyProfileRaptorPort.MinimumTransferSeconds(Objects.requireNonNull(minimumTransferSlack));
+		return new JourneyProfileRaptorPort.ItineraryMetrics(
+			transfersUsed, accessMovementSeconds, accessDistanceMeters, accessibilityBurden, connectionSlack);
+	}
+
+	private static Instant effectiveDeparture(JourneyRideProjection ride) {
+		return ride.realtimeDepartureTime() == null ? ride.plannedDepartureTime() : ride.realtimeDepartureTime();
+	}
+
+	private static Instant effectiveArrival(JourneyRideProjection ride) {
+		return ride.realtimeArrivalTime() == null ? ride.plannedArrivalTime() : ride.realtimeArrivalTime();
 	}
 
 	private static JourneyAccessProjection journeyAccessLeg(
@@ -3172,9 +3230,11 @@ class RouteTimetableRaptorPlanner {
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
+		JourneyProfileRaptorPort.ItineraryMetrics metrics,
 		List<JourneyLegProjection> legs
 	) {
 		JourneyItinerary {
+			metrics = Objects.requireNonNull(metrics, "metrics");
 			legs = List.copyOf(legs);
 		}
 	}
