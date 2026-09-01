@@ -41,9 +41,10 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				34_200 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				33_600 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				33_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS);
-		assertThat(profile)
-			.extracting(point -> point.scanMetrics().expandedRoutes())
-			.isStrictlyIncreasing();
+		for (int index = 1; index < profile.size(); index += 1) {
+			assertThat(profile.get(index).scanMetrics().expandedRoutes())
+				.isGreaterThan(profile.get(index - 1).scanMetrics().expandedRoutes());
+		}
 		assertThat(profile).allSatisfy(point -> assertThat(point.itineraries())
 			.isEqualTo(planner.search(commandAt(point.readyAtSeconds()), compiled,
 				RouteTimetableRaptorPlanner.RealtimeOverlay.empty())));
