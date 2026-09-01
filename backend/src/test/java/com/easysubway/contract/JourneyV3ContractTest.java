@@ -95,7 +95,7 @@ class JourneyV3ContractTest {
 		new ArtifactDigest("journey-v3-error-catalog.json", "894de4c24ac1e65abd8ef719667af3339d70a688b7f590fb205f6636e3b60ae5"),
 		new ArtifactDigest("journey-v3-error-disposition.json", "c9dfb53fa85dcf45cefa4b690615175059b5c08fcdb37d31f92dd3353f9b6692"),
 		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
-		new ArtifactDigest("journey-v3.openapi.yaml", "d412f5a6bc3a888a4c5b451056fde7f0afdc2b7f41ea73c75d00a722ef7a7023")
+		new ArtifactDigest("journey-v3.openapi.yaml", "2006fcc2d1f47f3f6aa9ea871384e28eb5cb7bf429f0b0f0aa8e391c3eeb526a")
 	);
 
 	@Test

@@ -5,19 +5,15 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourne
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRaptorPort;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
-import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
-import com.easysubway.route.domain.ConstraintMode;
-import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.HexFormat;
@@ -41,12 +37,13 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Instant requiredEffectiveInstant = Objects.requireNonNull(effectiveInstant, "effectiveInstant");
 		JourneyRequestMeasurement requiredMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
+		JourneyRaptorQuery query = JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant);
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay = requireRealtimeOverlay(
 			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull);
 		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
-			toCommand(requiredRequest, requiredEffectiveInstant),
+			query,
 			routeRuntime.compiledTimetable(),
 			realtimeOverlay,
 			requiredMeasurement,
@@ -93,39 +90,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		}
 		return observation == null ? JourneyRaptorPort.RouteMeasurementReceipt.unobservable()
 			: JourneyRaptorPort.RouteMeasurementReceipt.observed(observation);
-	}
-
-	static SearchRouteV2Command toCommand(JourneyRequest request, Instant effectiveInstant) {
-		Objects.requireNonNull(request, "request");
-		Objects.requireNonNull(effectiveInstant, "effectiveInstant");
-		MobilityType mobilityType = switch (request.mobilityProfile()) {
-			case STANDARD, NO_STAIRS -> MobilityType.LUGGAGE;
-			case SLOW -> MobilityType.SENIOR;
-			case STEP_FREE -> MobilityType.WHEELCHAIR;
-		};
-		MobilityPreset mobilityPreset = switch (request.mobilityProfile()) {
-			case STANDARD -> MobilityPreset.STANDARD;
-			case SLOW -> MobilityPreset.SLOW;
-			case NO_STAIRS -> MobilityPreset.NO_STAIRS;
-			case STEP_FREE -> MobilityPreset.STEP_FREE;
-		};
-		ConstraintMode constraintMode = request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
-			? ConstraintMode.STRICT_STEP_FREE
-			: request.mobilityProfile() == JourneyRequest.MobilityProfile.STEP_FREE
-				? ConstraintMode.PREFER_STEP_FREE
-				: ConstraintMode.ALLOW_WITH_WARNINGS;
-		return new SearchRouteV2Command(
-			request.originStationId(),
-			request.destinationStationId(),
-			effectiveInstant.atOffset(ZoneOffset.UTC),
-			mobilityType,
-			mobilityPreset,
-			constraintMode,
-			request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED,
-			request.maxTransfers(),
-			request.alternativeCount(),
-			request.walkingPace().speedMetersPerHour()
-		);
 	}
 
 	private static RaptorRouteBundleRuntimeView requireRouteRuntime(ActiveJourneySnapshot snapshot) {

@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
 import com.easysubway.journey.application.JourneyRealtimePort;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
@@ -46,7 +47,7 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
 		List<com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery> queries =
 			planner.realtimeQueries(
-				JourneyRaptorAdapter.toCommand(requiredRequest, requiredEffectiveInstant),
+				JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant),
 				routeRuntime.compiledTimetable()
 			);
 		if (queries.size() != 1) {

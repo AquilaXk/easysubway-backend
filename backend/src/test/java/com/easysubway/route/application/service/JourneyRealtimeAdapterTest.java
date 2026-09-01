@@ -7,11 +7,14 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourne
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
+import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
@@ -21,6 +24,8 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceC
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
@@ -88,6 +93,22 @@ class JourneyRealtimeAdapterTest {
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"),
 				Instant.parse("2026-07-01T00:01:00Z"), Instant.parse("2026-07-01T00:11:00Z")));
+	}
+
+	@Test
+	void preservesExactOriginRealtimeQueriesAcrossTheNativePlannerBoundary() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = planner.compile(directTimetable());
+		JourneyRequest request = request(
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false);
+		JourneyRaptorQuery query = JourneyRaptorQuery.from(request, EFFECTIVE);
+		var legacy = new SearchRouteV2Command(
+			"station-a", "station-b", EFFECTIVE.atOffset(ZoneOffset.UTC),
+			MobilityType.LUGGAGE, MobilityPreset.STANDARD, ConstraintMode.ALLOW_WITH_WARNINGS,
+			true, 0, 1, JourneyRequest.WalkingPace.STANDARD.speedMetersPerHour());
+
+		assertThat(planner.realtimeQueries(query, timetable))
+			.isEqualTo(planner.realtimeQueries(legacy, timetable));
 	}
 
 	@Test
