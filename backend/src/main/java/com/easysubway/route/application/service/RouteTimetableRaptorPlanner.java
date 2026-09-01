@@ -1476,6 +1476,33 @@ class RouteTimetableRaptorPlanner {
 		);
 	}
 
+	ReverseTimetableRaptorPlanner.Query reverseArriveByQuery(
+		JourneyRaptorQuery query,
+		LocalDate serviceDate,
+		int earliestReadyAtSeconds,
+		int arrivalDeadlineSeconds
+	) {
+		ScanInput input = scanInput(Objects.requireNonNull(query, "query"),
+			new ServiceDay(Objects.requireNonNull(serviceDate, "serviceDate"), earliestReadyAtSeconds));
+		return new ReverseTimetableRaptorPlanner.Query(
+			input.originStationId(), input.destinationStationId(), serviceDate, earliestReadyAtSeconds,
+			arrivalDeadlineSeconds, input.maxTransfers(), input.accessProfileBit(), input.boardingSlackSeconds(),
+			input.mobilityPreset(), input.walkingSpeedMetersPerHour(), input.requiresVerifiedJourneyDistance(),
+			input.cancellationSignal());
+	}
+
+	ReverseTimetableRaptorPlanner.LastConnectionQuery reverseLastConnectionQuery(
+		JourneyRaptorQuery query,
+		LocalDate serviceDate
+	) {
+		ScanInput input = scanInput(Objects.requireNonNull(query, "query"),
+			new ServiceDay(Objects.requireNonNull(serviceDate, "serviceDate"), 0));
+		return new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			input.originStationId(), input.destinationStationId(), serviceDate, input.maxTransfers(),
+			input.accessProfileBit(), input.boardingSlackSeconds(), input.mobilityPreset(),
+			input.walkingSpeedMetersPerHour(), input.requiresVerifiedJourneyDistance(), input.cancellationSignal());
+	}
+
 	private static ScanInput scanInput(SearchRouteV2Command command, ServiceDay serviceDay) {
 		return new ScanInput(
 			command.originStationId(), command.destinationStationId(), serviceDay, serviceDay.departureSeconds(),
