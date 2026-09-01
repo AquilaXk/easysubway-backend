@@ -46,8 +46,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 					.toList());
 			case JourneyRaptorQuery.ArriveBy arriveBy -> new ArriveByPlan(arriveBy,
 				reversePlan(requiredQuery, timetable, overlay, arriveBy));
-			case JourneyRaptorQuery.LastConnection lastConnection -> new LastConnectionPlan(lastConnection,
-				lastConnectionPlan(requiredQuery, timetable, overlay, lastConnection));
+			case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
+				requiredQuery, timetable, overlay, lastConnection);
 			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
 				"Journey profile adapter does not accept DEPART_AT");
 		};
@@ -71,17 +71,19 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		return reversePlan(result);
 	}
 
-	private JourneyProfileRaptorPort.ReversePlan lastConnectionPlan(
+	private JourneyProfileRaptorPort.LastConnectionPlan lastConnectionPlan(
 		JourneyRaptorQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
 		JourneyRaptorQuery.LastConnection lastConnection
 	) {
 		LocalDate serviceDate = lastConnection.serviceDate();
-		ReverseTimetableRaptorPlanner.Result result = reverse.lastConnection(
+		ReverseTimetableRaptorPlanner.LastConnectionResult result = reverse.lastConnection(
 			forward.reverseLastConnectionQuery(query, serviceDate),
 			timetable, timetable.activeServiceDay(serviceDate), overlay);
-		return reversePlan(result);
+		Instant terminal = result.terminalArrivalAtDestinationSeconds() == null ? null
+			: serviceInstant(serviceDate, result.terminalArrivalAtDestinationSeconds());
+		return new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection, reversePlan(result.result()), terminal);
 	}
 
 	private static JourneyProfileRaptorPort.DeparturePoint departurePoint(

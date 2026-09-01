@@ -47,7 +47,8 @@ public interface JourneyProfileRaptorPort {
 
 	record LastConnectionPlan(
 		JourneyRaptorQuery.LastConnection temporalQuery,
-		ReversePlan result
+		ReversePlan result,
+		Instant terminalArrivalAtDestination
 	) implements TemporalPlan {
 		public LastConnectionPlan {
 			temporalQuery = Objects.requireNonNull(temporalQuery, "temporalQuery");

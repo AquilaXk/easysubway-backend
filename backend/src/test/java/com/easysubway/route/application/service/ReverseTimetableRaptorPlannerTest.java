@@ -152,8 +152,11 @@ class ReverseTimetableRaptorPlannerTest {
 	@DisplayName("chooses the latest feasible O/D connection rather than an unconnectable later origin trip")
 	void lastConnectionUsesTransferFeasibility() {
 		var compiled = forward.compile(lastConnectionTransferTimetable());
-
-		var result = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		var resultWithHorizon = planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false,
+			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		var result = resultWithHorizon.result();
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
 		assertThat(result.latestReadyAtSeconds()).isEqualTo(36_000 - 405 - SLACK_SECONDS);
@@ -161,6 +164,8 @@ class ReverseTimetableRaptorPlannerTest {
 			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
 			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId)
 			.containsExactly("feasible-first", "feasible-second");
+		assertThat(resultWithHorizon.terminalArrivalAtDestinationSeconds())
+			.isEqualTo(deadlineAt(39_300, 180));
 	}
 
 	@Test
@@ -224,7 +229,7 @@ class ReverseTimetableRaptorPlannerTest {
 	) {
 		return planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
 			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, mobilityPreset, 3_600, false,
-			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE), overlay);
+			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE), overlay).result();
 	}
 
 	private static ReverseTimetableRaptorPlanner.Query query(String origin, String destination, int deadlineSeconds) {

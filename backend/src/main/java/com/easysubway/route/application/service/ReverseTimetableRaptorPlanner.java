@@ -23,7 +23,7 @@ import java.util.function.BooleanSupplier;
  */
 final class ReverseTimetableRaptorPlanner {
 
-	Result lastConnection(
+	LastConnectionResult lastConnection(
 		LastConnectionQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
@@ -34,28 +34,32 @@ final class ReverseTimetableRaptorPlanner {
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
 		if (query.cancelled().getAsBoolean()) {
-			return Result.cancelled();
+			return LastConnectionResult.cancelled();
 		}
 		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips = activeTrips(timetable, activeServiceDay);
 		if (activeTrips.isEmpty()) {
-			return Result.of(Outcome.NO_ACTIVE_SERVICE);
+			return new LastConnectionResult(Result.of(Outcome.NO_ACTIVE_SERVICE), null);
 		}
 
 		Integer terminalDeadline = terminalDeadline(query, timetable, activeTrips, realtimeOverlay);
 		if (query.cancelled().getAsBoolean()) {
-			return Result.cancelled();
+			return LastConnectionResult.cancelled();
 		}
 		if (terminalDeadline == null) {
-			return hasVerifiedExit(query, timetable, activeTrips)
+			return new LastConnectionResult(hasVerifiedExit(query, timetable, activeTrips)
 				? Result.of(Outcome.NO_OD_CONNECTION)
-				: Result.of(Outcome.NO_VERIFIED_EXIT);
+				: Result.of(Outcome.NO_VERIFIED_EXIT), null);
 		}
 		Result result = arriveBy(new Query(
 			query.originStationId(), query.destinationStationId(), query.serviceDate(), 0, terminalDeadline,
 			query.maxTransfers(), query.accessProfileBit(), query.boardingSlackSeconds(), query.mobilityPreset(),
 			query.walkingSpeedMetersPerHour(), query.requiresVerifiedJourneyDistance(), query.cancelled()),
 			timetable, activeServiceDay, realtimeOverlay);
-		return result.outcome() == Outcome.DEADLINE_MISS ? Result.of(Outcome.NO_OD_CONNECTION) : result;
+		if (result.outcome() == Outcome.CANCELLED) {
+			return LastConnectionResult.cancelled();
+		}
+		return new LastConnectionResult(result.outcome() == Outcome.DEADLINE_MISS
+			? Result.of(Outcome.NO_OD_CONNECTION) : result, terminalDeadline);
 	}
 
 	Result arriveBy(
@@ -468,6 +472,26 @@ final class ReverseTimetableRaptorPlanner {
 			}
 			mobilityPreset = Objects.requireNonNull(mobilityPreset, "mobilityPreset must not be null");
 			cancelled = Objects.requireNonNull(cancelled, "cancelled must not be null");
+		}
+	}
+
+	record LastConnectionResult(Result result, Integer terminalArrivalAtDestinationSeconds) {
+		LastConnectionResult {
+			result = Objects.requireNonNull(result, "result");
+			if (terminalArrivalAtDestinationSeconds != null && terminalArrivalAtDestinationSeconds < 0) {
+				throw new IllegalArgumentException("terminal arrival must not be negative");
+			}
+			if (result.outcome() == Outcome.FOUND && (terminalArrivalAtDestinationSeconds == null
+				|| terminalArrivalAtDestinationSeconds < result.arrivalAtDestinationSeconds())) {
+				throw new IllegalArgumentException("found last connection requires its terminal horizon");
+			}
+			if (result.outcome() == Outcome.CANCELLED && terminalArrivalAtDestinationSeconds != null) {
+				throw new IllegalArgumentException("cancelled last connection must not retain a terminal horizon");
+			}
+		}
+
+		static LastConnectionResult cancelled() {
+			return new LastConnectionResult(Result.cancelled(), null);
 		}
 	}
 
