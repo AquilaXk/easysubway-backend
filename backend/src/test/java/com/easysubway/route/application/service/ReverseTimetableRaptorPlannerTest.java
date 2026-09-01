@@ -9,7 +9,9 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.List;
@@ -86,10 +88,10 @@ class ReverseTimetableRaptorPlannerTest {
 		var unverified = forward.compile(directTimetable(32_400, 33_000, true, false, 300, 180));
 		var wrongDirection = forward.compile(directTimetable(32_400, 33_000, false, true, 300, 180));
 
-		assertThat(arriveBy(unverified, "station-a", "station-b", 33_180,
+		assertThat(arriveBy(unverified, "station-a", "station-b", deadlineAt(33_000, 180),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_VERIFIED_EXIT);
-		assertThat(arriveBy(wrongDirection, "station-a", "station-b", 33_180,
+		assertThat(arriveBy(wrongDirection, "station-a", "station-b", deadlineAt(33_000, 180),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 	}
@@ -99,7 +101,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void followsVerifiedDirectionalTransfer() {
 		var compiled = forward.compile(transferTimetable());
 
-		var result = arriveBy(compiled, "station-a", "station-b", 35_000,
+		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(34_800, 180),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
@@ -117,7 +119,7 @@ class ReverseTimetableRaptorPlannerTest {
 	@DisplayName("distinguishes calendar exclusion, realtime cancellation, and delayed deadline misses")
 	void classifiesInactiveAndPinnedRealtimeChanges() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
-		var noService = planner.arriveBy(query("station-a", "station-b", 33_180), compiled,
+		var noService = planner.arriveBy(query("station-a", "station-b", deadlineAt(33_000, 180)), compiled,
 			compiled.activeServiceDay(SERVICE_DATE.plusDays(1)), RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 		var cancelled = forward.compileRealtimeOverlay(compiled, updates(
 			new TimetableRealtimeUpdate("direct", 0, 0, true, "snapshot-cancel", Instant.parse("2026-07-01T00:00:00Z"))));
@@ -126,9 +128,9 @@ class ReverseTimetableRaptorPlannerTest {
 
 		assertThat(noService.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_ACTIVE_SERVICE);
 		assertThat(noService.itinerary()).isNull();
-		assertThat(arriveBy(compiled, "station-a", "station-b", 33_180, cancelled).outcome())
+		assertThat(arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180), cancelled).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
-		assertThat(arriveBy(compiled, "station-a", "station-b", 33_180, delayed).outcome())
+		assertThat(arriveBy(compiled, "station-a", "station-b", deadlineAt(33_000, 180), delayed).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.DEADLINE_MISS);
 	}
 
@@ -138,10 +140,10 @@ class ReverseTimetableRaptorPlannerTest {
 		var noPickup = forward.compile(directTimetableWithRestrictions(1, 0));
 		var noDropOff = forward.compile(directTimetableWithRestrictions(0, 1));
 
-		assertThat(arriveBy(noPickup, "station-a", "station-b", 33_180,
+		assertThat(arriveBy(noPickup, "station-a", "station-b", deadlineAt(33_000, 180),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
-		assertThat(arriveBy(noDropOff, "station-a", "station-b", 33_180,
+		assertThat(arriveBy(noDropOff, "station-a", "station-b", deadlineAt(33_000, 180),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 	}
@@ -161,6 +163,11 @@ class ReverseTimetableRaptorPlannerTest {
 		return new ReverseTimetableRaptorPlanner.Query(
 			origin, destination, SERVICE_DATE, 0, deadlineSeconds, 1, PROFILE_BIT, SLACK_SECONDS,
 			MobilityPreset.SLOW, 3_600, false, () -> false);
+	}
+
+	private static int deadlineAt(int trainArrivalSeconds, int baselineExitSeconds) {
+		return trainArrivalSeconds + ProfileWalkTimeCalculator.estimateSeconds(
+			baselineExitSeconds, MobilityPreset.SLOW, WalkTimeSource.MEASURED_PATHWAY, false).seconds();
 	}
 
 	private static RouteTimetable directTimetable(
