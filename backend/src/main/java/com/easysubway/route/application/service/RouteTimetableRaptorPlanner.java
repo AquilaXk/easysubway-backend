@@ -1411,6 +1411,34 @@ class RouteTimetableRaptorPlanner {
 		return new CompiledTimetable(timetable);
 	}
 
+	List<DepartureEvent> departureEvents(
+		ActiveServiceDay activeServiceDay,
+		String originStationId,
+		int earliestDepartureSeconds,
+		int latestDepartureSeconds,
+		RealtimeOverlay realtimeOverlay
+	) {
+		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
+		Objects.requireNonNull(originStationId, "originStationId must not be null");
+		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		if (earliestDepartureSeconds > latestDepartureSeconds) {
+			throw new IllegalArgumentException("earliestDepartureSeconds must not exceed latestDepartureSeconds");
+		}
+		return activeServiceDay.boardingsByStation().getOrDefault(originStationId, List.of()).stream()
+			.filter(boarding -> boarding.trip().allowsPickup(boarding.stopIndex()))
+			.filter(boarding -> !realtimeOverlay.cancelled(boarding.trip()))
+			.map(boarding -> new DepartureEvent(
+				boarding.trip(),
+				boarding.stopIndex(),
+				realtimeOverlay.departureSeconds(boarding.trip(), boarding.stopIndex())))
+			.filter(event -> event.effectiveDepartureSeconds() >= earliestDepartureSeconds
+				&& event.effectiveDepartureSeconds() <= latestDepartureSeconds)
+			.sorted(Comparator.comparingInt(DepartureEvent::effectiveDepartureSeconds).reversed()
+				.thenComparingInt(event -> event.scheduledTrip().index())
+				.thenComparingInt(DepartureEvent::stopIndex))
+			.toList();
+	}
+
 	List<TimetableRealtimeQuery> realtimeQueries(
 		JourneyRaptorQuery query,
 		CompiledTimetable timetable
@@ -2956,6 +2984,15 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	private record BoardingStop(ScheduledTrip trip, int stopIndex, TransitStopTime stopTime) {
+	}
+
+	static record DepartureEvent(ScheduledTrip scheduledTrip, int stopIndex, int effectiveDepartureSeconds) {
+		DepartureEvent {
+			Objects.requireNonNull(scheduledTrip, "scheduledTrip must not be null");
+			if (stopIndex < 0 || stopIndex >= scheduledTrip.stopTimes().size()) {
+				throw new IllegalArgumentException("stopIndex must address scheduledTrip");
+			}
+		}
 	}
 
 	private record ReachabilityState(String stationId, int readySeconds, int incomingLine, int transfersUsed) {
