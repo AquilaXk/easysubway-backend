@@ -153,7 +153,8 @@ class ReverseTimetableRaptorPlannerTest {
 			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
 		var routes = trips.stream().map(trip -> new LoadRouteTimetablePort.TransitRoute(
 			trip.routeId(), trip.routeId(), trip.routeId(), trip.routeId(), "terminal", "Asia/Seoul")).toList();
-		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), null, access);
+		return new RouteTimetable(
+			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
 	}
 
 	private static LoadRouteTimetablePort.TransitTrip trip(String id, String routeId) {
