@@ -1861,12 +1861,20 @@ class RouteTimetableRaptorPlanner {
 			return stopsByPattern.get(pattern);
 		}
 
+		int patternStopCount(int pattern) {
+			return stopsByPattern(pattern).length;
+		}
+
 		int[] patternsByStop(int station) {
 			return patternsByStop.getOrDefault(station, NO_PATTERNS);
 		}
 
 		ScheduledTrip scheduledTrip(int index) {
 			return scheduledTrips.get(index);
+		}
+
+		ScheduledTrip scheduledTripAtPattern(ActiveServiceDay serviceDay, int pattern, int tripOffset) {
+			return Objects.requireNonNull(serviceDay, "serviceDay").tripsByPattern(pattern).get(tripOffset);
 		}
 
 		int uniqueScheduledTripIndex(String tripId) {
@@ -2513,7 +2521,7 @@ class RouteTimetableRaptorPlanner {
 			return trips;
 		}
 
-		private List<ScheduledTrip> tripsByPattern(int pattern) {
+		List<ScheduledTrip> tripsByPattern(int pattern) {
 			return tripsByPattern.getOrDefault(pattern, List.of());
 		}
 
@@ -2916,7 +2924,7 @@ class RouteTimetableRaptorPlanner {
 	) {
 	}
 
-	private record ScheduledTrip(
+	static record ScheduledTrip(
 		int index,
 		TransitTrip trip,
 		TransitRoute route,
@@ -2927,22 +2935,22 @@ class RouteTimetableRaptorPlanner {
 			return new ScheduledTrip(denseIndex, trip, route, stopTimes, times);
 		}
 
-		private int arrivalSeconds(int stopIndex) {
+		int arrivalSeconds(int stopIndex) {
 			return times.arrivalSeconds(stopIndex);
 		}
 
-		private int departureSeconds(int stopIndex) {
+		int departureSeconds(int stopIndex) {
 			return times.departureSeconds(stopIndex);
 		}
 
-		private boolean allowsPickup(int stopIndex) {
+		boolean allowsPickup(int stopIndex) {
 			return times.allowsPickup(stopIndex);
 		}
 
-		private boolean allowsDropOff(int stopIndex) {
+		boolean allowsDropOff(int stopIndex) {
 			return times.allowsDropOff(stopIndex);
 		}
-		private String lineId(int stopIndex) {
+		String lineId(int stopIndex) {
 			return stopTimes.get(stopIndex).lineId();
 		}
 	}
