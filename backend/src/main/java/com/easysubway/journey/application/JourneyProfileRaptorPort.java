@@ -93,6 +93,9 @@ public interface JourneyProfileRaptorPort {
 				}
 				if (transfersUsed < 0) throw new IllegalArgumentException("transfersUsed must not be negative");
 				itinerary = Objects.requireNonNull(itinerary, "itinerary");
+				if (itinerary.metrics().transfersUsed() != transfersUsed) {
+					throw new IllegalArgumentException("reverse transfer count must match itinerary metrics");
+				}
 			}
 		}
 
@@ -109,6 +112,7 @@ public interface JourneyProfileRaptorPort {
 		Instant plannedArrivalAtDestination,
 		Instant realtimeReadyAt,
 		Instant realtimeArrivalAtDestination,
+		ItineraryMetrics metrics,
 		List<Leg> legs
 	) {
 		public Itinerary {
@@ -125,8 +129,50 @@ public interface JourneyProfileRaptorPort {
 			if (realtimeReadyAt != null && realtimeArrivalAtDestination.isBefore(realtimeReadyAt)) {
 				throw new IllegalArgumentException("realtime itinerary times must be ordered");
 			}
+			metrics = Objects.requireNonNull(metrics, "metrics");
 			legs = List.copyOf(Objects.requireNonNull(legs, "legs"));
 			if (legs.isEmpty()) throw new IllegalArgumentException("itinerary legs must not be empty");
+		}
+	}
+
+	record ItineraryMetrics(
+		int transfersUsed,
+		long accessMovementSeconds,
+		long accessDistanceMeters,
+		long accessibilityBurden,
+		ConnectionSlack connectionSlack
+	) {
+		public ItineraryMetrics {
+			if (transfersUsed < 0 || accessMovementSeconds < 0 || accessDistanceMeters < 0
+				|| accessibilityBurden < 0) {
+				throw new IllegalArgumentException("itinerary metrics must not be negative");
+			}
+			connectionSlack = Objects.requireNonNull(connectionSlack, "connectionSlack");
+			if (transfersUsed == 0 && !(connectionSlack instanceof NoTransfer)
+				|| transfersUsed > 0 && !(connectionSlack instanceof MinimumTransferSeconds)) {
+				throw new IllegalArgumentException("connection slack must match transfer count");
+			}
+		}
+	}
+
+	sealed interface ConnectionSlack permits NoTransfer, MinimumTransferSeconds {
+		/** Returns a positive value when {@code left} is safer than {@code right}. */
+		static int compareSafety(ConnectionSlack left, ConnectionSlack right) {
+			ConnectionSlack requiredLeft = Objects.requireNonNull(left, "left");
+			ConnectionSlack requiredRight = Objects.requireNonNull(right, "right");
+			if (requiredLeft instanceof NoTransfer) return requiredRight instanceof NoTransfer ? 0 : 1;
+			if (requiredRight instanceof NoTransfer) return -1;
+			return Long.compare(((MinimumTransferSeconds) requiredLeft).seconds(),
+				((MinimumTransferSeconds) requiredRight).seconds());
+		}
+	}
+
+	record NoTransfer() implements ConnectionSlack {
+	}
+
+	record MinimumTransferSeconds(long seconds) implements ConnectionSlack {
+		public MinimumTransferSeconds {
+			if (seconds < 0) throw new IllegalArgumentException("minimum transfer slack must not be negative");
 		}
 	}
 

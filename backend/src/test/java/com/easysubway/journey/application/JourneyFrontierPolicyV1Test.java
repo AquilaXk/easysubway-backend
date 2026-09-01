@@ -6,6 +6,8 @@ import static org.assertj.core.api.Assertions.tuple;
 
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.FeasibleCandidate;
 import com.easysubway.journey.application.JourneyFrontierPolicyV1.ObjectiveTag;
+import com.easysubway.journey.application.JourneyProfileRaptorPort.MinimumTransferSeconds;
+import com.easysubway.journey.application.JourneyProfileRaptorPort.NoTransfer;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -80,6 +82,21 @@ class JourneyFrontierPolicyV1Test {
 	}
 
 	@Test
+	void ranksADirectJourneyAsSaferThanEveryTransferConnectionWithoutANumericSentinel() {
+		FeasibleCandidate direct = new FeasibleCandidate("direct", START.plusSeconds(20), START.plusSeconds(80),
+			0, 100, 100, 0, new NoTransfer());
+		FeasibleCandidate transfer = new FeasibleCandidate("transfer", START.plusSeconds(20), START.plusSeconds(80),
+			1, 100, 100, 0, new MinimumTransferSeconds(600));
+
+		var outcome = JourneyFrontierPolicyV1.evaluate(List.of(transfer, direct),
+			EnumSet.of(ObjectiveTag.SAFEST_CONNECTION), 1);
+
+		var success = (JourneyFrontierPolicyV1.Success) outcome;
+		assertThat(success.labels()).singleElement().satisfies(label ->
+			assertThat(label.candidate().journeyId()).isEqualTo("direct"));
+	}
+
+	@Test
 	void rejectsConflictingDuplicateJourneyIdsAndDeduplicatesExactDuplicates() {
 		FeasibleCandidate original = candidate("same", 20, 80, 1, 100, 100, 1, 60);
 		assertThatThrownBy(() -> JourneyFrontierPolicyV1.evaluate(List.of(original,
@@ -129,7 +146,7 @@ class JourneyFrontierPolicyV1Test {
 	private static FeasibleCandidate candidate(String id, long departure, long arrival, int transfers,
 		long walkingSeconds, long walkingDistanceMeters, int accessibilityBurden, long slack) {
 		return new FeasibleCandidate(id, START.plusSeconds(departure), START.plusSeconds(arrival), transfers,
-			walkingSeconds, walkingDistanceMeters, accessibilityBurden, slack);
+			walkingSeconds, walkingDistanceMeters, accessibilityBurden, new MinimumTransferSeconds(slack));
 	}
 
 	private static TestLabel label(String id, long departure, long arrival, int transfers, long walkingSeconds,

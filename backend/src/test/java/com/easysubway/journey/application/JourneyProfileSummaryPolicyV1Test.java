@@ -126,6 +126,7 @@ class JourneyProfileSummaryPolicyV1Test {
 	private static SelectedLabel label(String journeyId, long departure, long arrival, long transfers,
 		long walkingSeconds, long walkingMeters, long accessibility, long slack, ObjectiveTag... tags) {
 		return new SelectedLabel(new FeasibleCandidate(journeyId, START.plusSeconds(departure),
-			START.plusSeconds(arrival), transfers, walkingSeconds, walkingMeters, accessibility, slack), List.of(tags));
+			START.plusSeconds(arrival), transfers, walkingSeconds, walkingMeters, accessibility,
+			new JourneyProfileRaptorPort.MinimumTransferSeconds(slack)), List.of(tags));
 	}
 }

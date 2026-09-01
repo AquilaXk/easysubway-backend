@@ -365,6 +365,7 @@ final class ReverseTimetableRaptorPlanner {
 			serviceInstant(query.serviceDate(), plannedArrivalAtDestination),
 			realtimeOverlay.available() ? serviceInstant(query.serviceDate(), candidate.readyAtSeconds()) : null,
 			realtimeOverlay.available() ? serviceInstant(query.serviceDate(), candidate.arrivalAtDestinationSeconds()) : null,
+			RouteTimetableRaptorPlanner.itineraryMetrics(legs, query.boardingSlackSeconds()),
 			legs
 		);
 	}
