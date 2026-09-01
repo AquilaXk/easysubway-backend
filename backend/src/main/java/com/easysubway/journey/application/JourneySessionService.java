@@ -36,7 +36,7 @@ public final class JourneySessionService {
 	private final Clock clock;
 	private final SecureRandom secureRandom;
 	private final String certificateDigest;
-	private final int maxSearchesPerSession;
+	private final int maxCostUnitsPerSession;
 
 	public JourneySessionService(
 		JourneySessionIntegrityPort integrityPort,
@@ -54,7 +54,7 @@ public final class JourneySessionService {
 		if (maxSearchesPerSession < 1 || maxSearchesPerSession > MAX_ALLOWED_SEARCHES_PER_SESSION) {
 			throw new IllegalArgumentException("maxSearchesPerSession must be between 1 and 50");
 		}
-		this.maxSearchesPerSession = maxSearchesPerSession;
+		this.maxCostUnitsPerSession = maxSearchesPerSession;
 	}
 
 	public IssuedSession issue(String integrityToken, String clientNonce) {
@@ -88,11 +88,18 @@ public final class JourneySessionService {
 	}
 
 	public AuthorizedSession authorize(String token) {
+		return authorize(token, 1);
+	}
+
+	public AuthorizedSession authorize(String token, int costUnits) {
 		if (token == null || token.isBlank()) throw failure(Kind.SESSION_REQUIRED);
+		if (costUnits < 1) throw new IllegalArgumentException("costUnits must be positive");
 		Instant now = clock.instant();
 		SessionUse use;
 		try {
-			use = store.authorizeAndConsume(sha256Hex(token), SCOPE, now, maxSearchesPerSession);
+			use = store.authorizeAndConsume(
+				sha256Hex(token), SCOPE, now, costUnits, maxCostUnitsPerSession
+			);
 		} catch (RuntimeException exception) {
 			throw failure(Kind.SESSION_REQUIRED);
 		}
