@@ -42,6 +42,27 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("preserves non-dominated reverse candidates across ready time and verified access cost")
+	void preservesReverseProfileFrontierCandidates() {
+		var compiled = forward.compile(reverseFrontierTimetable());
+
+		var result = arriveBy(compiled, "station-a", "station-b", deadlineAt(33_500, 180),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).hasSize(2);
+		assertThat(result.itineraries()).extracting(itinerary -> itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst().orElseThrow().tripId())
+			.containsExactlyInAnyOrder("later-ready", "lower-walk");
+		assertThat(result.itineraries()).extracting(itinerary -> itinerary.metrics().accessMovementSeconds())
+			.containsExactlyInAnyOrder(
+				(long) accessMovementAt(300, 180),
+				(long) accessMovementAt(30, 180));
+	}
+
+	@Test
 	@DisplayName("materializes a 24-hour reverse result as forward verified legs with pinned realtime times")
 	void materializesDirectItineraryWithPlannedAndRealtimeTimes() {
 		var compiled = forward.compile(directTimetable(87_000, 87_600, true, true, 300, 180));
@@ -243,6 +264,13 @@ class ReverseTimetableRaptorPlannerTest {
 			baselineExitSeconds, MobilityPreset.SLOW, WalkTimeSource.MEASURED_PATHWAY, false).seconds();
 	}
 
+	private static int accessMovementAt(int baselineEntrySeconds, int baselineExitSeconds) {
+		return ProfileWalkTimeCalculator.estimateSeconds(
+			baselineEntrySeconds, MobilityPreset.SLOW, WalkTimeSource.OFFICIAL_BASELINE, false).seconds()
+			+ ProfileWalkTimeCalculator.estimateSeconds(
+				baselineExitSeconds, MobilityPreset.SLOW, WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
+	}
+
 	private static RouteTimetable directTimetable(
 		int departure, int arrival, boolean entryForward, boolean exitVerified, int entrySeconds, int exitSeconds
 	) {
@@ -259,6 +287,16 @@ class ReverseTimetableRaptorPlannerTest {
 			List.of(stop("direct", 1, "station-a", "line-a", 32_400, pickupType, 0),
 				stop("direct", 2, "station-b", "line-a", 33_000, 0, dropOffType)),
 			access(true, true, 300, 180, false));
+	}
+
+	private static RouteTimetable reverseFrontierTimetable() {
+		return timetable(
+			List.of(trip("later-ready", "route-a"), trip("lower-walk", "route-b")),
+			List.of(stop("later-ready", 1, "station-a", "line-a", 33_000, 0, 0),
+				stop("later-ready", 2, "station-b", "line-a", 33_500, 0, 0),
+				stop("lower-walk", 1, "station-a", "line-b", 32_500, 0, 0),
+				stop("lower-walk", 2, "station-b", "line-b", 33_400, 0, 0)),
+			reverseFrontierAccess());
 	}
 
 	private static RouteTimetable transferTimetable() {
@@ -350,6 +388,29 @@ class ReverseTimetableRaptorPlannerTest {
 			"transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION", 300,
 			"transfer", null, "VERIFIED")) : List.<LoadRouteTimetablePort.TransferRule>of();
 		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence);
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData reverseFrontierAccess() {
+		var nodes = List.of(
+			new LoadRouteTimetablePort.PathwayNode("entry-outside-a", "station-a", null, "ENTRANCE"),
+			new LoadRouteTimetablePort.PathwayNode("entry-platform-a", "station-a", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("entry-outside-b", "station-a", null, "ENTRANCE"),
+			new LoadRouteTimetablePort.PathwayNode("entry-platform-b", "station-a", "line-b", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-platform-a", "station-b", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-outside-a", "station-b", null, "EXIT"),
+			new LoadRouteTimetablePort.PathwayNode("exit-platform-b", "station-b", "line-b", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-outside-b", "station-b", null, "EXIT"));
+		var edges = List.of(
+			edge("entry-a", "entry-outside-a", "entry-platform-a", 300, "VERIFIED"),
+			edge("entry-b", "entry-outside-b", "entry-platform-b", 30, "VERIFIED"),
+			edge("exit-a", "exit-platform-a", "exit-outside-a", 180, "VERIFIED"),
+			edge("exit-b", "exit-platform-b", "exit-outside-b", 180, "VERIFIED"));
+		var evidence = List.of(
+			evidence("entry-a-e", "station-a", "line-a", "entry-a", "ENTRY"),
+			evidence("entry-b-e", "station-a", "line-b", "entry-b", "ENTRY"),
+			evidence("exit-a-e", "station-b", "line-a", "exit-a", "EXIT"),
+			evidence("exit-b-e", "station-b", "line-b", "exit-b", "EXIT"));
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, List.of(), evidence);
 	}
 
 	private static LoadRouteTimetablePort.PathwayEdge edge(
