@@ -25,7 +25,8 @@ class JourneyProfileDeadlineExecutorTest {
 			},
 			Clock.fixed(NOW, ZoneOffset.UTC));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
-			var result = new JourneyProfileDeadlineExecutor(service, executor).execute(query(), Duration.ofNanos(1));
+			var result = new JourneyProfileDeadlineExecutor(service, executor)
+				.execute(query(), JourneyProfileResourcePolicyTest.policy(Duration.ofNanos(1)));
 
 			assertThat(result).isInstanceOf(JourneyProfileDeadlineExecutor.TimedOut.class);
 		}
@@ -38,23 +39,22 @@ class JourneyProfileDeadlineExecutorTest {
 				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var result = new JourneyProfileDeadlineExecutor(service, executor)
-				.execute(query(), Duration.ofSeconds(1));
+				.execute(query(), JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(1)));
 
 			assertThat(result).isInstanceOf(JourneyProfileDeadlineExecutor.Completed.class);
 		}
 	}
 
 	@Test
-	void rejectsNonPositiveAndOverflowingCallerDeadlines() {
+	void rejectsAnOverflowingDeadlineFromThePinnedPolicy() {
 		var service = service((query, snapshot, realtime) ->
 			new JourneyProfileRaptorPort.DepartureWindowPlan(
 				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var deadlineExecutor = new JourneyProfileDeadlineExecutor(service, executor);
 
-			assertThatThrownBy(() -> deadlineExecutor.execute(query(), Duration.ZERO))
-				.isInstanceOf(IllegalArgumentException.class);
-			assertThatThrownBy(() -> deadlineExecutor.execute(query(), Duration.ofSeconds(Long.MAX_VALUE)))
+			assertThatThrownBy(() -> deadlineExecutor.execute(query(),
+				JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(Long.MAX_VALUE))))
 				.isInstanceOf(IllegalArgumentException.class);
 		}
 	}
