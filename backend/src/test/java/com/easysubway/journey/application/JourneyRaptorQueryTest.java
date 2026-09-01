@@ -31,6 +31,10 @@ class JourneyRaptorQueryTest {
 		assertThatThrownBy(() -> new JourneyRaptorQuery.DepartBetween(CAPTURED, CAPTURED))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("later");
+		assertThatThrownBy(() -> new JourneyRaptorQuery.DepartBetween(
+			CAPTURED.plusNanos(1), CAPTURED.plusSeconds(1)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("DEPART_BETWEEN bounds must use whole seconds");
 		assertThatThrownBy(() -> new JourneyRaptorQuery.ArriveBy(CAPTURED, CAPTURED.minusSeconds(1)))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("later");

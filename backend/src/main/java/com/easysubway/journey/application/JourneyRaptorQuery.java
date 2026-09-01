@@ -88,6 +88,9 @@ public record JourneyRaptorQuery(
 		public DepartBetween {
 			earliestReadyAt = Objects.requireNonNull(earliestReadyAt, "earliestReadyAt");
 			latestReadyAt = Objects.requireNonNull(latestReadyAt, "latestReadyAt");
+			if (earliestReadyAt.getNano() != 0 || latestReadyAt.getNano() != 0) {
+				throw new IllegalArgumentException("DEPART_BETWEEN bounds must use whole seconds");
+			}
 			if (!latestReadyAt.isAfter(earliestReadyAt)) {
 				throw new IllegalArgumentException("latestReadyAt must be later than earliestReadyAt");
 			}
