@@ -24,8 +24,12 @@ public final class JourneyProfileApplicationService {
 		this.clock = Objects.requireNonNull(clock, "clock");
 	}
 
-	public JourneyProfileExecutionResult execute(JourneyRaptorQuery query) {
+	public JourneyProfileExecutionResult execute(
+		JourneyRaptorQuery query,
+		JourneyProfileResourcePolicy resourcePolicy
+	) {
 		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		JourneyProfileResourcePolicy requiredPolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
 		Instant calculatedAt = clock.instant();
 		if (requiredQuery.isCancelled()) return failure(JourneyProfileExecutionResult.Reason.CANCELLED);
 		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
@@ -60,7 +64,8 @@ public final class JourneyProfileApplicationService {
 		if (!postvalid(snapshot.validUntil(), completedAt, plan)) {
 			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
 		}
-		return new JourneyProfileExecutionResult.Success(calculatedAt, snapshot.validUntil(), source(snapshot), plan);
+		return new JourneyProfileExecutionResult.Success(calculatedAt, snapshot.validUntil(), source(snapshot),
+			requiredPolicy.identity(), plan);
 	}
 
 	private static boolean fresh(ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot, Instant calculatedAt,

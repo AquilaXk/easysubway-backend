@@ -10,6 +10,7 @@ public sealed interface JourneyProfileExecutionResult
 		Instant calculatedAt,
 		Instant validUntil,
 		SourceIdentity sourceIdentity,
+		JourneyProfileResourcePolicy.Identity resourcePolicyIdentity,
 		JourneyProfileRaptorPort.TemporalPlan temporalPlan
 	) implements JourneyProfileExecutionResult {
 		public Success {
@@ -19,6 +20,7 @@ public sealed interface JourneyProfileExecutionResult
 				throw new IllegalArgumentException("validUntil must be after calculatedAt");
 			}
 			sourceIdentity = Objects.requireNonNull(sourceIdentity, "sourceIdentity");
+			resourcePolicyIdentity = Objects.requireNonNull(resourcePolicyIdentity, "resourcePolicyIdentity");
 			temporalPlan = Objects.requireNonNull(temporalPlan, "temporalPlan");
 		}
 	}

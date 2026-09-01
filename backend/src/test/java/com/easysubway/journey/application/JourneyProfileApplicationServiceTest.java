@@ -3,6 +3,7 @@ package com.easysubway.journey.application;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -30,10 +31,12 @@ class JourneyProfileApplicationServiceTest {
 			Clock.fixed(NOW, ZoneOffset.UTC));
 		var latestReadyAt = Instant.parse("2026-09-01T01:30:00Z");
 
-		var result = service.execute(query(new JourneyRaptorQuery.DepartBetween(NOW, latestReadyAt)));
+		var result = service.execute(query(new JourneyRaptorQuery.DepartBetween(NOW, latestReadyAt)), policy());
 
 		assertThat(result).isInstanceOf(JourneyProfileExecutionResult.Success.class);
 		assertThat(reference.get()).isEqualTo(latestReadyAt);
+		assertThat(((JourneyProfileExecutionResult.Success) result).resourcePolicyIdentity())
+			.isEqualTo(policy().identity());
 	}
 
 	@Test
@@ -48,7 +51,7 @@ class JourneyProfileApplicationServiceTest {
 				validUntil),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		var result = service.execute(query(lastConnection));
+		var result = service.execute(query(lastConnection), policy());
 
 		assertThat(result).isEqualTo(new JourneyProfileExecutionResult.Failure(
 			JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE));
@@ -63,8 +66,9 @@ class JourneyProfileApplicationServiceTest {
 			(query, snapshot, realtime) -> new JourneyProfileRaptorPort.DepartureWindowPlan(different, List.of()),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		assertThat(service.execute(query(requested))).isEqualTo(new JourneyProfileExecutionResult.Failure(
-			JourneyProfileExecutionResult.Reason.RAPTOR_FAILED));
+		assertThat(service.execute(query(requested), policy()))
+			.isEqualTo(new JourneyProfileExecutionResult.Failure(
+				JourneyProfileExecutionResult.Reason.RAPTOR_FAILED));
 	}
 
 	@Test
@@ -88,9 +92,13 @@ class JourneyProfileApplicationServiceTest {
 			},
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		assertThat(service.execute(realtimeQuery)).isEqualTo(new JourneyProfileExecutionResult.Failure(
+		assertThat(service.execute(realtimeQuery, policy())).isEqualTo(new JourneyProfileExecutionResult.Failure(
 			JourneyProfileExecutionResult.Reason.REALTIME_UNAVAILABLE));
 		assertThat(calls).hasValue(0);
+	}
+
+	private static JourneyProfileResourcePolicy policy() {
+		return JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(1));
 	}
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporalQuery) {

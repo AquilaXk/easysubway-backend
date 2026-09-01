@@ -21,9 +21,10 @@ public final class JourneyProfileDeadlineExecutor {
 		this.executor = Objects.requireNonNull(executor, "executor");
 	}
 
-	public Outcome execute(JourneyRaptorQuery query, Duration deadline) {
+	public Outcome execute(JourneyRaptorQuery query, JourneyProfileResourcePolicy resourcePolicy) {
 		JourneyRaptorQuery original = Objects.requireNonNull(query, "query");
-		long deadlineNanos = positiveNanos(deadline);
+		JourneyProfileResourcePolicy requiredPolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
+		long deadlineNanos = positiveNanos(requiredPolicy.deadlineFor(original.temporalQuery()));
 		if (original.isCancelled()) {
 			return new Completed(new JourneyProfileExecutionResult.Failure(
 				JourneyProfileExecutionResult.Reason.CANCELLED));
@@ -33,7 +34,7 @@ public final class JourneyProfileDeadlineExecutor {
 		JourneyRaptorQuery bounded = copyWithCancellation(original, () -> original.isCancelled() || cancelled.get());
 		Future<JourneyProfileExecutionResult> future;
 		try {
-			future = executor.submit(() -> service.execute(bounded));
+			future = executor.submit(() -> service.execute(bounded, requiredPolicy));
 		} catch (RuntimeException exception) {
 			cancelled.set(true);
 			throw new DeadlineExecutionException(Reason.TASK_FAILED, exception);
