@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -90,6 +91,44 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("before-cutoff");
 	}
 
+	@Test
+	@DisplayName("profile keeps non-dominated transfer paths sharing the final incoming line")
+	void retainsWalkingAndConnectionSlackRepresentativeBeforePublicAlternativeSelection() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "origin", "destination",
+			new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 3, () -> false);
+
+		var profile = planner.departureProfile(
+			query, planner.compile(frontierCollisionTimetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(profile).singleElement().satisfies(point -> {
+			assertThat(point.readyAtSeconds()).isEqualTo(29_000);
+			assertThat(point.itineraries())
+				.extracting(itinerary -> itinerary.legs().stream()
+					.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+					.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+					.map(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId)
+					.toList())
+				.containsExactly(
+					List.of("origin-a", "shared-fast"),
+					List.of("origin-b", "shared-safe"));
+			assertThat(point.itineraries())
+				.extracting(RouteTimetableRaptorPlanner.JourneyItinerary::metrics)
+				.containsExactly(
+					new JourneyProfileRaptorPort.ItineraryMetrics(
+						1, 1_020, 1_010, 0,
+						new JourneyProfileRaptorPort.MinimumTransferSeconds(0)),
+					new JourneyProfileRaptorPort.ItineraryMetrics(
+						1, 308, 120, 0,
+						new JourneyProfileRaptorPort.MinimumTransferSeconds(332)));
+		});
+	}
+
 	private static RouteTimetableRaptorPlanner.JourneyRideProjection onlyRide(
 		RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint point
 	) {
@@ -150,6 +189,38 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			accessData());
 	}
 
+	private static RouteTimetable frontierCollisionTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		return new RouteTimetable(
+			List.of(calendar),
+			List.of(),
+			List.of(
+				route("route-origin-a", "line-a"),
+				route("route-origin-b", "line-b"),
+				route("route-shared-fast", "shared"),
+				route("route-shared-safe", "shared")),
+			List.of(
+				trip("origin-a", "daily", "route-origin-a"),
+				trip("origin-b", "daily", "route-origin-b"),
+				trip("shared-fast", "daily", "route-shared-fast"),
+				trip("shared-safe", "daily", "route-shared-safe")),
+			List.of(
+				stop("origin-a", 1, "origin", "line-a", 29_300),
+				stop("origin-a", 2, "hub", "line-a", 29_300),
+				stop("origin-b", 1, "origin", "line-b", 29_300),
+				stop("origin-b", 2, "hub", "line-b", 29_600),
+				stop("shared-fast", 1, "hub", "shared", 30_080),
+				stop("shared-fast", 2, "destination", "shared", 30_300),
+				stop("shared-safe", 1, "hub", "shared", 30_000),
+				stop("shared-safe", 2, "destination", "shared", 30_400)),
+			List.of(),
+			List.of(),
+			null,
+			frontierCollisionAccessData());
+	}
+
 	private static LoadRouteTimetablePort.ServiceCalendar calendar(String id, LocalDate date) {
 		return new LoadRouteTimetablePort.ServiceCalendar(
 			id, true, true, true, true, true, true, true, date, date, "Asia/Seoul");
@@ -164,11 +235,68 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			id, "route", serviceId, "Terminal", "0", "LOCAL", 0);
 	}
 
+	private static LoadRouteTimetablePort.TransitTrip trip(String id, String serviceId, String routeId) {
+		return new LoadRouteTimetablePort.TransitTrip(
+			id, routeId, serviceId, "Terminal", "0", "LOCAL", 0);
+	}
+
 	private static LoadRouteTimetablePort.TransitStopTime stop(
 		String tripId, int sequence, String stationId, int seconds
 	) {
+		return stop(tripId, sequence, stationId, "line", seconds);
+	}
+
+	private static LoadRouteTimetablePort.TransitStopTime stop(
+		String tripId, int sequence, String stationId, String lineId, int seconds
+	) {
 		return new LoadRouteTimetablePort.TransitStopTime(
-			tripId, sequence, stationId, "line", seconds, seconds, 0, 0);
+			tripId, sequence, stationId, lineId, seconds, seconds, 0, 0);
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData frontierCollisionAccessData() {
+		return new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new LoadRouteTimetablePort.PathwayNode("entry-a-outside", "origin", null, "ENTRANCE"),
+				new LoadRouteTimetablePort.PathwayNode("entry-a-platform", "origin", "line-a", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("entry-b-outside", "origin", null, "ENTRANCE"),
+				new LoadRouteTimetablePort.PathwayNode("entry-b-platform", "origin", "line-b", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("transfer-a-from", "hub", "line-a", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("transfer-a-to", "hub", "shared", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("transfer-b-from", "hub", "line-b", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("transfer-b-to", "hub", "shared", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-platform", "destination", "shared", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-outside", "destination", null, "EXIT")),
+			List.of(
+				pathway("entry-a", "entry-a-outside", "entry-a-platform", 240, 100),
+				pathway("entry-b", "entry-b-outside", "entry-b-platform", 240, 100),
+				pathway("transfer-a", "transfer-a-from", "transfer-a-to", 720, 900),
+				pathway("transfer-b", "transfer-b-from", "transfer-b-to", 8, 10),
+				pathway("exit", "exit-platform", "exit-outside", 60, 10)),
+			List.of(
+				transfer("transfer-a-rule", "line-a", "transfer-a", 720),
+				transfer("transfer-b-rule", "line-b", "transfer-b", 8)),
+			List.of(
+				evidence("entry-a-evidence", "origin", "line-a", "entry-a", "ENTRY"),
+				evidence("entry-b-evidence", "origin", "line-b", "entry-b", "ENTRY"),
+				evidence("transfer-a-evidence", "hub", "shared", "transfer-a", "TRANSFER"),
+				evidence("transfer-b-evidence", "hub", "shared", "transfer-b", "TRANSFER"),
+				evidence("exit-evidence", "destination", "shared", "exit", "EXIT")));
+	}
+
+	private static LoadRouteTimetablePort.PathwayEdge pathway(
+		String id, String from, String to, int seconds, int distanceMeters
+	) {
+		return new LoadRouteTimetablePort.PathwayEdge(
+			id, from, to, seconds, distanceMeters, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
+	private static LoadRouteTimetablePort.TransferRule transfer(
+		String id, String fromLineId, String edgeId, int seconds
+	) {
+		return new LoadRouteTimetablePort.TransferRule(
+			id, "hub", fromLineId, "hub", "shared", "IN_STATION", seconds,
+			edgeId, edgeId, "VERIFIED");
 	}
 
 	private static LoadRouteTimetablePort.RouteAccessData accessData() {
@@ -196,8 +324,14 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
 		String id, String stationId, String edgeId, String edgeType
 	) {
+		return evidence(id, stationId, "line", edgeId, edgeType);
+	}
+
+	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
+		String id, String stationId, String lineId, String edgeId, String edgeType
+	) {
 		return new LoadRouteTimetablePort.RouteEdgeEvidence(
-			id, stationId, "line", edgeId, edgeType,
+			id, stationId, lineId, edgeId, edgeType,
 			"OFFICIAL_SOURCE", "VERIFIED", true, null);
 	}
 }
