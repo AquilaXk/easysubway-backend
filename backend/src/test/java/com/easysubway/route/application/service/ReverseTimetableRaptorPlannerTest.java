@@ -148,6 +148,64 @@ class ReverseTimetableRaptorPlannerTest {
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 	}
 
+	@Test
+	@DisplayName("chooses the latest feasible O/D connection rather than an unconnectable later origin trip")
+	void lastConnectionUsesTransferFeasibility() {
+		var compiled = forward.compile(lastConnectionTransferTimetable());
+
+		var result = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(36_000 - 405 - SLACK_SECONDS);
+		assertThat(result.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId)
+			.containsExactly("feasible-first", "feasible-second");
+	}
+
+	@Test
+	@DisplayName("uses the actual extended-hour terminal event instead of a clock cutoff")
+	void lastConnectionUsesExtendedHourTerminalEvent() {
+		var compiled = forward.compile(directTimetable(93_000, 93_600, true, true, 300, 180));
+
+		var result = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.latestReadyAtSeconds()).isEqualTo(93_000 - 405 - SLACK_SECONDS);
+		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(deadlineAt(93_600, 180));
+	}
+
+	@Test
+	@DisplayName("applies mobility access cost when deriving the last feasible ready time")
+	void lastConnectionAppliesMobilityAccessCost() {
+		var compiled = forward.compile(directTimetable(40_000, 40_600, true, true, 300, 180));
+
+		var normal = lastConnection(compiled, MobilityPreset.NORMAL, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		var slow = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+
+		assertThat(normal.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(slow.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(slow.latestReadyAtSeconds()).isLessThan(normal.latestReadyAtSeconds());
+	}
+
+	@Test
+	@DisplayName("uses the pinned overlay for cancelled and delayed terminal events")
+	void lastConnectionUsesPinnedRealtimeTerminalEvents() {
+		var compiled = forward.compile(twoDirectTimetable());
+		var cancelledLatest = forward.compileRealtimeOverlay(compiled, updates(
+			new TimetableRealtimeUpdate("late", 0, 0, true, "cancel-late", Instant.parse("2026-07-01T00:00:00Z"))));
+		var delayedLatest = forward.compileRealtimeOverlay(compiled, updates(
+			new TimetableRealtimeUpdate("late", 300, 300, false, "delay-late", Instant.parse("2026-07-01T00:00:00Z"))));
+
+		var cancelled = lastConnection(compiled, MobilityPreset.SLOW, cancelledLatest);
+		var delayed = lastConnection(compiled, MobilityPreset.SLOW, delayedLatest);
+
+		assertThat(cancelled.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(cancelled.latestReadyAtSeconds()).isEqualTo(40_000 - 405 - SLACK_SECONDS);
+		assertThat(delayed.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(delayed.latestReadyAtSeconds()).isEqualTo(42_000 + 300 - 405 - SLACK_SECONDS);
+	}
+
 	private ReverseTimetableRaptorPlanner.Result arriveBy(
 		RouteTimetableRaptorPlanner.CompiledTimetable compiled,
 		String origin,
@@ -157,6 +215,16 @@ class ReverseTimetableRaptorPlannerTest {
 	) {
 		return planner.arriveBy(query(origin, destination, deadlineSeconds), compiled,
 			compiled.activeServiceDay(SERVICE_DATE), overlay);
+	}
+
+	private ReverseTimetableRaptorPlanner.Result lastConnection(
+		RouteTimetableRaptorPlanner.CompiledTimetable compiled,
+		MobilityPreset mobilityPreset,
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay
+	) {
+		return planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, mobilityPreset, 3_600, false,
+			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE), overlay);
 	}
 
 	private static ReverseTimetableRaptorPlanner.Query query(String origin, String destination, int deadlineSeconds) {
@@ -196,6 +264,31 @@ class ReverseTimetableRaptorPlannerTest {
 				stop("second", 1, "station-transfer", "line-b", 34_200, 0, 0),
 				stop("second", 2, "station-b", "line-b", 34_800, 0, 0)),
 			access(true, true, 300, 180, true));
+	}
+
+	private static RouteTimetable lastConnectionTransferTimetable() {
+		return timetable(
+			List.of(trip("feasible-first", "route-a"), trip("late-first", "route-a"),
+				trip("feasible-second", "route-b"), trip("late-second", "route-b")),
+			List.of(stop("feasible-first", 1, "station-a", "line-a", 36_000, 0, 0),
+				stop("feasible-first", 2, "station-transfer", "line-a", 36_600, 0, 0),
+				stop("late-first", 1, "station-a", "line-a", 38_000, 0, 0),
+				stop("late-first", 2, "station-transfer", "line-a", 38_600, 0, 0),
+				stop("feasible-second", 1, "station-transfer", "line-b", 37_200, 0, 0),
+				stop("feasible-second", 2, "station-b", "line-b", 37_800, 0, 0),
+				stop("late-second", 1, "station-transfer", "line-b", 38_700, 0, 0),
+				stop("late-second", 2, "station-b", "line-b", 39_300, 0, 0)),
+			access(true, true, 300, 180, true));
+	}
+
+	private static RouteTimetable twoDirectTimetable() {
+		return timetable(
+			List.of(trip("early", "route-direct"), trip("late", "route-direct")),
+			List.of(stop("early", 1, "station-a", "line-a", 40_000, 0, 0),
+				stop("early", 2, "station-b", "line-a", 40_600, 0, 0),
+				stop("late", 1, "station-a", "line-a", 42_000, 0, 0),
+				stop("late", 2, "station-b", "line-a", 42_600, 0, 0)),
+			access(true, true, 300, 180, false));
 	}
 
 	private static RouteTimetable timetable(
