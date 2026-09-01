@@ -4,6 +4,8 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
+import com.easysubway.journey.application.JourneyFrontierPolicyV1.ObjectiveTag;
+import com.easysubway.journey.application.JourneyProfileCandidateProjectionV1;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
@@ -15,7 +17,12 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.Comparator;
+import java.util.EnumMap;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
+import java.util.Set;
 import org.junit.jupiter.api.Test;
 
 class JourneyProfileRaptorAdapterTest {
@@ -23,6 +30,7 @@ class JourneyProfileRaptorAdapterTest {
 	private static final String REQUEST_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
 	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 1);
+	private static final int STANDARD_BOARDING_SLACK_SECONDS = 60;
 	private final JourneyProfileRaptorAdapter adapter = new JourneyProfileRaptorAdapter();
 
 	@Test
@@ -113,6 +121,80 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void preservesThreeIndependentDirectFactsAndEveryRequiredDepartureRepresentative() {
+		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_000));
+		var result = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan();
+		assertThat(plan.points()).singleElement().satisfies(point -> assertThat(point.readyAt()).isEqualTo(instantAt(35_000)));
+		var itineraries = plan.points().getFirst().itineraries();
+		List<ExpectedFact> actualFacts = normalize(itineraries);
+		assertThat(actualFacts).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertReadinessAlignment(threePathFacts());
+
+		var projected = JourneyProfileCandidateProjectionV1.projectDepartureWindow(profileQuery(temporal, 3), plan, 3);
+		assertThat(projected).isInstanceOf(JourneyProfileCandidateProjectionV1.Projected.class);
+		var projection = ((JourneyProfileCandidateProjectionV1.Projected) projected).projection();
+		Map<String, String> candidateIdsByPath = candidateIdsByPath(projection.candidates());
+		assertThat(candidateIdsByPath.keySet()).containsExactlyInAnyOrder("fast", "walk", "accessible");
+		var oracle = independentFrontier(threePathFacts(), candidateIdsByPath);
+		var actualOracle = independentFrontier(actualFacts, candidateIdsByPath);
+		assertThat(oracle.frontier()).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertThat(actualOracle).isEqualTo(oracle);
+		assertThat(oracle.representatives().keySet()).containsExactlyInAnyOrder(ObjectiveTag.values());
+		assertThat(Set.copyOf(oracle.representatives().values())).hasSize(3);
+		Map<String, String> pathsByCandidateId = candidateIdsByPath.entrySet().stream()
+			.collect(java.util.stream.Collectors.toMap(Map.Entry::getValue, Map.Entry::getKey));
+		var actualRepresentatives = new EnumMap<ObjectiveTag, String>(ObjectiveTag.class);
+		for (JourneyProfileCandidateProjectionV1.Candidate candidate : projection.candidates()) {
+			for (ObjectiveTag tag : candidate.objectiveTags()) {
+				actualRepresentatives.put(tag, pathsByCandidateId.get(candidate.candidateId()));
+			}
+		}
+		assertThat(actualRepresentatives).isEqualTo(oracle.representatives());
+		assertThat(projection.summary().earliestArrivalJourneyId())
+			.isEqualTo(candidateIdsByPath.get(oracle.representatives().get(ObjectiveTag.FASTEST_ARRIVAL)));
+		assertThat(projection.summary().latestDepartureJourneyId())
+			.isEqualTo(candidateIdsByPath.get(oracle.representatives().get(ObjectiveTag.LATEST_DEPARTURE)));
+
+		var exceeded = JourneyProfileCandidateProjectionV1.projectDepartureWindow(profileQuery(temporal, 3), plan, 2);
+		assertThat(exceeded).isInstanceOf(JourneyProfileCandidateProjectionV1.CapacityExceeded.class);
+		assertThat(((JourneyProfileCandidateProjectionV1.CapacityExceeded) exceeded).observed()).isEqualTo(3);
+		assertThat(((JourneyProfileCandidateProjectionV1.CapacityExceeded) exceeded).max()).isEqualTo(2);
+	}
+
+	@Test
+	void preservesThreeIndependentReverseFactsAndFailsClosedAtTheDestinationCapacity() {
+		var temporal = new JourneyRaptorQuery.ArriveBy(instantAt(35_000), instantAt(36_300));
+		var result = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
+			.temporalPlan();
+		var itineraries = ((JourneyProfileRaptorPort.ReversePlan.Found) plan.result()).itineraries();
+		List<ExpectedFact> actualFacts = normalize(itineraries);
+		assertThat(actualFacts).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertReadinessAlignment(threePathFacts());
+		Map<String, String> canonicalPathIds = threePathFacts().stream()
+			.collect(java.util.stream.Collectors.toMap(ExpectedFact::pathId, ExpectedFact::pathId));
+		var oracle = independentFrontier(threePathFacts(), canonicalPathIds);
+		var actualOracle = independentFrontier(actualFacts, canonicalPathIds);
+		assertThat(oracle.frontier()).containsExactlyInAnyOrderElementsOf(threePathFacts());
+		assertThat(actualOracle.representatives()).isEqualTo(oracle.representatives());
+		assertThat(actualOracle.representatives().keySet()).containsExactlyInAnyOrder(ObjectiveTag.values());
+
+		var exceeded = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 2, 32));
+		assertThat(exceeded).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.CapacityExceeded.class,
+			failure -> {
+				assertThat(failure.dimension()).isEqualTo(JourneyProfileRaptorPort.PlanningCapacity.MAX_DESTINATION_PROFILE_LABELS);
+				assertThat(failure.observed()).isEqualTo(3);
+				assertThat(failure.max()).isEqualTo(2);
+				assertThat(failure.countSnapshot().countsByRuleId().get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
+			});
+	}
+
+	@Test
 	void derivesTransferSlackAndAccessBurdenFromThePlannerNativeLegs() {
 		Instant base = instantAt(0);
 		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
@@ -151,10 +233,14 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		return profileQuery(temporalQuery, 1);
+	}
+
+	private static JourneyRaptorQuery profileQuery(JourneyRaptorQuery.TemporalQuery temporalQuery, int alternativeCount) {
 		return new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b", temporalQuery, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
 			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
-			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+			JourneyRequest.ConstraintMode.NONE, 0, alternativeCount, () -> false);
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot() {
@@ -213,9 +299,179 @@ class JourneyProfileRaptorAdapterTest {
 			List.of(), List.of(), null, accessData());
 	}
 
+	private static RouteTimetable threePathTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var fastRoute = new LoadRouteTimetablePort.TransitRoute("route-fast", "line-fast", "F", "Fast", "Terminal", "Asia/Seoul");
+		var walkRoute = new LoadRouteTimetablePort.TransitRoute("route-walk", "line-walk", "W", "Walk", "Terminal", "Asia/Seoul");
+		var accessibleRoute = new LoadRouteTimetablePort.TransitRoute("route-accessible", "line-accessible", "A", "Accessible", "Terminal", "Asia/Seoul");
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(fastRoute, walkRoute, accessibleRoute), List.of(
+				new LoadRouteTimetablePort.TransitTrip("fast", "route-fast", "daily", "Terminal", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("walk", "route-walk", "daily", "Terminal", "0", "LOCAL", 0),
+				new LoadRouteTimetablePort.TransitTrip("accessible", "route-accessible", "daily", "Terminal", "0", "LOCAL", 0)),
+			List.of(
+				stop("fast", 1, "station-a", "line-fast", 35_360), stop("fast", 2, "station-b", "line-fast", 36_000),
+				stop("walk", 1, "station-a", "line-walk", 35_180), stop("walk", 2, "station-b", "line-walk", 36_100),
+				stop("accessible", 1, "station-a", "line-accessible", 35_260), stop("accessible", 2, "station-b", "line-accessible", 36_200)),
+			List.of(), List.of(), null, threePathAccessData());
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData threePathAccessData() {
+		return new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new LoadRouteTimetablePort.PathwayNode("entry", "station-a", null, "ENTRANCE"),
+				new LoadRouteTimetablePort.PathwayNode("fast-platform-a", "station-a", "line-fast", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("walk-platform-a", "station-a", "line-walk", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("accessible-platform-a", "station-a", "line-accessible", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("fast-platform-b", "station-b", "line-fast", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("walk-platform-b", "station-b", "line-walk", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("accessible-platform-b", "station-b", "line-accessible", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit", "station-b", null, "EXIT")),
+			List.of(
+				edge("fast-entry", "entry", "fast-platform-a", 300, 100, true), edge("fast-exit", "fast-platform-b", "exit", 120, 50, true),
+				edge("walk-entry", "entry", "walk-platform-a", 120, 30, true), edge("walk-exit", "walk-platform-b", "exit", 80, 20, false),
+				edge("accessible-entry", "entry", "accessible-platform-a", 200, 80, false), edge("accessible-exit", "accessible-platform-b", "exit", 100, 20, false)),
+			List.of(), List.of(
+				evidence("fast-entry-evidence", "station-a", "line-fast", "fast-entry", "ENTRY"), evidence("fast-exit-evidence", "station-b", "line-fast", "fast-exit", "EXIT"),
+				evidence("walk-entry-evidence", "station-a", "line-walk", "walk-entry", "ENTRY"), evidence("walk-exit-evidence", "station-b", "line-walk", "walk-exit", "EXIT"),
+				evidence("accessible-entry-evidence", "station-a", "line-accessible", "accessible-entry", "ENTRY"), evidence("accessible-exit-evidence", "station-b", "line-accessible", "accessible-exit", "EXIT")));
+	}
+
 	private static LoadRouteTimetablePort.TransitStopTime stop(String tripId, int sequence, String station, int seconds) {
+		return stop(tripId, sequence, station, "line", seconds);
+	}
+
+	private static LoadRouteTimetablePort.TransitStopTime stop(
+		String tripId, int sequence, String station, String lineId, int seconds
+	) {
 		return new LoadRouteTimetablePort.TransitStopTime(
-			tripId, sequence, station, "line", seconds, seconds, 0, 0);
+			tripId, sequence, station, lineId, seconds, seconds, 0, 0);
+	}
+
+	private static List<ExpectedFact> threePathFacts() {
+		return List.of(
+			new ExpectedFact("fast", 35_000, 300, 35_300, 35_360, 36_000, 120, 36_120, 0, 420, 150, 2, true),
+			new ExpectedFact("walk", 35_000, 120, 35_120, 35_180, 36_100, 80, 36_180, 0, 200, 50, 1, true),
+			new ExpectedFact("accessible", 35_000, 200, 35_200, 35_260, 36_200, 100, 36_300, 0, 300, 100, 0, true));
+	}
+
+	private static void assertReadinessAlignment(List<ExpectedFact> facts) {
+		assertThat(facts).allSatisfy(fact -> {
+			assertThat(fact.entryCompleteSeconds()).isEqualTo(fact.readySeconds() + fact.entrySeconds());
+			assertThat(fact.firstBoardingSeconds()).isEqualTo(
+				fact.entryCompleteSeconds() + STANDARD_BOARDING_SLACK_SECONDS);
+			assertThat(fact.destinationArrivalSeconds()).isEqualTo(
+				fact.finalPlatformArrivalSeconds() + fact.exitSeconds());
+		});
+	}
+
+	private static List<ExpectedFact> normalize(List<JourneyProfileRaptorPort.Itinerary> itineraries) {
+		return itineraries.stream().map(itinerary -> {
+			List<JourneyProfileRaptorPort.RideLeg> rides = itinerary.legs().stream()
+				.filter(JourneyProfileRaptorPort.RideLeg.class::isInstance).map(JourneyProfileRaptorPort.RideLeg.class::cast).toList();
+			String tripId = rides.getFirst().tripId();
+			int entrySeconds = itinerary.legs().stream().filter(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
+				.map(JourneyProfileRaptorPort.AccessLeg.class::cast)
+				.filter(access -> access.kind() == JourneyProfileRaptorPort.AccessKind.ENTRY)
+				.mapToInt(JourneyProfileRaptorPort.AccessLeg::durationSeconds).findFirst().orElseThrow();
+			int exitSeconds = itinerary.legs().stream().filter(JourneyProfileRaptorPort.AccessLeg.class::isInstance)
+				.map(JourneyProfileRaptorPort.AccessLeg.class::cast)
+				.filter(access -> access.kind() == JourneyProfileRaptorPort.AccessKind.EXIT)
+				.mapToInt(JourneyProfileRaptorPort.AccessLeg::durationSeconds).findFirst().orElseThrow();
+			var metrics = itinerary.metrics();
+			int readySeconds = secondsAt(itinerary.plannedReadyAt());
+			return new ExpectedFact(tripId, readySeconds, entrySeconds, readySeconds + entrySeconds,
+				secondsAt(rides.getFirst().plannedDepartureTime()), secondsAt(rides.getLast().plannedArrivalTime()), exitSeconds,
+				secondsAt(itinerary.plannedArrivalAtDestination()),
+				metrics.transfersUsed(), metrics.accessMovementSeconds(), metrics.accessDistanceMeters(), metrics.accessibilityBurden(),
+				metrics.connectionSlack() instanceof JourneyProfileRaptorPort.NoTransfer);
+		}).sorted(Comparator.comparing(ExpectedFact::pathId)).toList();
+	}
+
+	private static Map<String, String> candidateIdsByPath(
+		List<JourneyProfileCandidateProjectionV1.Candidate> candidates
+	) {
+		Map<String, String> ids = new LinkedHashMap<>();
+		for (JourneyProfileCandidateProjectionV1.Candidate candidate : candidates) {
+			String pathId = candidate.itinerary().legs().stream().filter(JourneyProfileRaptorPort.RideLeg.class::isInstance)
+				.map(JourneyProfileRaptorPort.RideLeg.class::cast).map(JourneyProfileRaptorPort.RideLeg::tripId)
+				.findFirst().orElseThrow();
+			if (ids.putIfAbsent(pathId, candidate.candidateId()) != null) {
+				throw new IllegalArgumentException("duplicate fixture path: " + pathId);
+			}
+		}
+		return Map.copyOf(ids);
+	}
+
+	private static IndependentFrontier independentFrontier(List<ExpectedFact> facts, Map<String, String> canonicalKeys) {
+		List<ExpectedFact> frontier = facts.stream().filter(candidate -> facts.stream()
+			.noneMatch(other -> other != candidate && dominates(other, candidate))).toList();
+		var representatives = new EnumMap<ObjectiveTag, String>(ObjectiveTag.class);
+		for (ObjectiveTag tag : ObjectiveTag.values()) {
+			ExpectedFact selected = frontier.stream().min((left, right) -> compareFor(tag, left, right, canonicalKeys)).orElseThrow();
+			representatives.put(tag, selected.pathId());
+		}
+		return new IndependentFrontier(frontier, Map.copyOf(representatives));
+	}
+
+	private static boolean dominates(ExpectedFact left, ExpectedFact right) {
+		return left.readySeconds() >= right.readySeconds()
+			&& left.destinationArrivalSeconds() <= right.destinationArrivalSeconds()
+			&& left.transfers() <= right.transfers()
+			&& left.accessSeconds() <= right.accessSeconds()
+			&& left.accessMeters() <= right.accessMeters()
+			&& left.stairBurden() <= right.stairBurden()
+			&& (left.noTransfer() || !right.noTransfer())
+			&& (left.readySeconds() > right.readySeconds()
+				|| left.destinationArrivalSeconds() < right.destinationArrivalSeconds()
+				|| left.transfers() < right.transfers()
+				|| left.accessSeconds() < right.accessSeconds()
+				|| left.accessMeters() < right.accessMeters()
+				|| left.stairBurden() < right.stairBurden()
+				|| left.noTransfer() && !right.noTransfer());
+	}
+
+	private static int compareFor(
+		ObjectiveTag tag, ExpectedFact left, ExpectedFact right, Map<String, String> canonicalKeys
+	) {
+		int comparison = switch (tag) {
+			case FASTEST_ARRIVAL -> Integer.compare(left.destinationArrivalSeconds(), right.destinationArrivalSeconds());
+			case LATEST_DEPARTURE -> Integer.compare(right.readySeconds(), left.readySeconds());
+			case FEWEST_TRANSFERS -> Integer.compare(left.transfers(), right.transfers());
+			case LOWEST_WALKING_BURDEN -> left.compareWalking(right);
+			case BEST_ACCESSIBILITY -> Integer.compare(left.stairBurden(), right.stairBurden());
+			case SAFEST_CONNECTION -> Boolean.compare(right.noTransfer(), left.noTransfer());
+		};
+		return comparison != 0 ? comparison : canonicalKeys.get(left.pathId()).compareTo(canonicalKeys.get(right.pathId()));
+	}
+
+	private static int secondsAt(Instant instant) {
+		return Math.toIntExact(Duration.between(SERVICE_DATE.atStartOfDay().atOffset(ZoneOffset.ofHours(9)).toInstant(), instant).toSeconds());
+	}
+
+	private record ExpectedFact(
+		String pathId,
+		int readySeconds,
+		int entrySeconds,
+		int entryCompleteSeconds,
+		int firstBoardingSeconds,
+		int finalPlatformArrivalSeconds,
+		int exitSeconds,
+		int destinationArrivalSeconds,
+		int transfers,
+		long accessSeconds,
+		long accessMeters,
+		long stairBurden,
+		boolean noTransfer
+	) {
+		private int compareWalking(ExpectedFact other) {
+			int comparison = Long.compare(accessSeconds, other.accessSeconds);
+			return comparison != 0 ? comparison : Long.compare(accessMeters, other.accessMeters);
+		}
+	}
+
+	private record IndependentFrontier(List<ExpectedFact> frontier, Map<ObjectiveTag, String> representatives) {
 	}
 
 	private static LoadRouteTimetablePort.RouteAccessData accessData() {
@@ -238,6 +494,14 @@ class JourneyProfileRaptorAdapterTest {
 			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
 	}
 
+	private static LoadRouteTimetablePort.PathwayEdge edge(
+		String id, String from, String to, int seconds, int distance, boolean stairs
+	) {
+		return new LoadRouteTimetablePort.PathwayEdge(
+			id, from, to, seconds, distance, false, stairs, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
 	private static RouteTimetableRaptorPlanner.JourneyAccessProjection access(
 		RouteTimetableRaptorPlanner.JourneyAccessKind kind, int duration, int distance, boolean stairs
 	) {
@@ -256,7 +520,13 @@ class JourneyProfileRaptorAdapterTest {
 	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
 		String id, String stationId, String edgeId, String edgeType
 	) {
+		return evidence(id, stationId, "line", edgeId, edgeType);
+	}
+
+	private static LoadRouteTimetablePort.RouteEdgeEvidence evidence(
+		String id, String stationId, String lineId, String edgeId, String edgeType
+	) {
 		return new LoadRouteTimetablePort.RouteEdgeEvidence(
-			id, stationId, "line", edgeId, edgeType, "OFFICIAL_SOURCE", "VERIFIED", true, null);
+			id, stationId, lineId, edgeId, edgeType, "OFFICIAL_SOURCE", "VERIFIED", true, null);
 	}
 }
