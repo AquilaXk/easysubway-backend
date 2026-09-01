@@ -39,6 +39,7 @@ import java.time.DayOfWeek;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.time.ZoneId;
@@ -1543,11 +1544,50 @@ class RouteTimetableRaptorPlanner {
 		}
 		var earliest = ServiceDayResolver.resolve(range.earliestReadyAt());
 		var latest = ServiceDayResolver.resolve(range.latestReadyAt());
-		if (!earliest.serviceDate().equals(latest.serviceDate())) {
-			throw new IllegalArgumentException("Journey departure profile requires one service day per scan");
+		if (earliest.serviceDate().equals(latest.serviceDate())) {
+			return departureProfileSlice(
+				requiredQuery,
+				timetable,
+				realtimeOverlay,
+				earliest.serviceDate(),
+				earliest.secondsFromServiceDayStart(),
+				latest.secondsFromServiceDayStart());
 		}
-		ServiceDay serviceDay = new ServiceDay(latest.serviceDate(), latest.secondsFromServiceDayStart());
-		ScanInput profileInput = scanInput(requiredQuery, serviceDay);
+		if (!latest.serviceDate().equals(earliest.serviceDate().plusDays(1))) {
+			throw new IllegalArgumentException("Journey departure profile supports at most two adjacent service days");
+		}
+
+		List<JourneyDepartureProfilePoint> profile = new ArrayList<>();
+		profile.addAll(departureProfileSlice(
+			requiredQuery,
+			timetable,
+			realtimeOverlay,
+			latest.serviceDate(),
+			serviceDayCutoffSeconds(latest.serviceDate()),
+			latest.secondsFromServiceDayStart()));
+		profile.addAll(departureProfileSlice(
+			requiredQuery,
+			timetable,
+			realtimeOverlay,
+			earliest.serviceDate(),
+			earliest.secondsFromServiceDayStart(),
+			nextServiceDayCutoffSeconds(earliest.serviceDate()) - 1));
+		return List.copyOf(profile);
+	}
+
+	private List<JourneyDepartureProfilePoint> departureProfileSlice(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		LocalDate serviceDate,
+		int earliestReadyAtSeconds,
+		int latestReadyAtSeconds
+	) {
+		if (earliestReadyAtSeconds > latestReadyAtSeconds) {
+			return List.of();
+		}
+		ServiceDay serviceDay = new ServiceDay(serviceDate, latestReadyAtSeconds);
+		ScanInput profileInput = scanInput(query, serviceDay);
 		throwIfCancelled(profileInput);
 		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDay.date());
 		ScanWorkspace workspace = scanWorkspaces.get();
@@ -1573,8 +1613,8 @@ class RouteTimetableRaptorPlanner {
 			profileInput, timetable, origin, accessProfileBit, slackSeconds, event))
 			.filter(OptionalIntValue::present)
 			.mapToInt(OptionalIntValue::value)
-			.filter(readyAt -> readyAt >= earliest.secondsFromServiceDayStart()
-				&& readyAt <= latest.secondsFromServiceDayStart())
+			.filter(readyAt -> readyAt >= earliestReadyAtSeconds
+				&& readyAt <= latestReadyAtSeconds)
 			.boxed()
 			.distinct()
 			.toList();
@@ -1584,17 +1624,32 @@ class RouteTimetableRaptorPlanner {
 			if (!workspace.improveOrigin(origin, readyAtSeconds)) {
 				continue;
 			}
-			ScanInput input = scanInput(requiredQuery, new ServiceDay(serviceDay.date(), readyAtSeconds));
+			ScanInput input = scanInput(query, new ServiceDay(serviceDay.date(), readyAtSeconds));
 			scanMarkedRounds(
 				input, timetable, activeServiceDay, workspace, slackSeconds, accessProfileBit, false, realtimeOverlay);
 			ScanResult scanResult = destinationScanResult(
 				input, timetable, workspace, destination, accessProfileBit, false, realtimeOverlay);
 			profile.add(new JourneyDepartureProfilePoint(
+				serviceDay.date(),
 				readyAtSeconds,
 				journeyItineraries(input, timetable, realtimeOverlay, scanResult),
 				scanResult.scanMetrics()));
 		}
 		return List.copyOf(profile);
+	}
+
+	private static int serviceDayCutoffSeconds(LocalDate serviceDate) {
+		return Math.toIntExact(Duration.between(
+			serviceDate.atStartOfDay(SERVICE_ZONE),
+			serviceDate.atTime(LocalTime.parse(ServiceDayResolver.CUTOFF_LOCAL_TIME)).atZone(SERVICE_ZONE)
+		).toSeconds());
+	}
+
+	private static int nextServiceDayCutoffSeconds(LocalDate serviceDate) {
+		return Math.toIntExact(Duration.between(
+			serviceDate.atStartOfDay(SERVICE_ZONE),
+			serviceDate.plusDays(1).atTime(LocalTime.parse(ServiceDayResolver.CUTOFF_LOCAL_TIME)).atZone(SERVICE_ZONE)
+		).toSeconds());
 	}
 
 	private static OptionalIntValue readyAtBreakpoint(
@@ -3039,11 +3094,13 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	record JourneyDepartureProfilePoint(
+		LocalDate serviceDate,
 		int readyAtSeconds,
 		List<JourneyItinerary> itineraries,
 		ScanMetrics scanMetrics
 	) {
 		JourneyDepartureProfilePoint {
+			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate");
 			itineraries = List.copyOf(itineraries);
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 		}
