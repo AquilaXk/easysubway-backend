@@ -169,7 +169,7 @@ class JourneyV3ContractTest {
 
 		Set<String> successFields = Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
 			"temporalQuery", "serviceDays", "sourceIdentity", "algorithmIdentity", "frontierPolicyIdentity",
-			"journeys", "profileSegments", "summary");
+			"resourcePolicyIdentity", "journeys", "profileSegments", "summary");
 		assertClosedSchema(document, "JourneyProfileSuccess", successFields, successFields);
 		assertEnum(property(document, "JourneyProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
 		assertClosedSchema(document, "JourneyProfileJourneyCandidate",
@@ -180,6 +180,13 @@ class JourneyV3ContractTest {
 		assertClosedSchema(document, "JourneyProfileSegment",
 			Set.of("readyFromInclusive", "readyUntilExclusive", "journeyIds"),
 			Set.of("readyFromInclusive", "readyUntilExclusive", "journeyIds"));
+		assertThat(property(document, "JourneyProfileSegment", "journeyIds")).doesNotContainKey("minItems");
+		assertThat(property(document, "JourneyProfileJourneyCandidate", "readyAt").get("description"))
+			.isEqualTo("Latest representative readiness breakpoint for this candidate; an earlier containing " +
+				"segment means the passenger waits until this instant before following the journey.");
+		assertThat(property(document, "JourneyDepartBetweenQuery", "latestReadyAt").get("description"))
+			.isEqualTo("Inclusive whole-second terminal readiness; the final compressed segment ends one second " +
+				"later as an exclusive bound.");
 		assertThat(references(schema(document, "JourneyProfileSummary").get("oneOf"))).containsExactly(
 			"#/components/schemas/JourneyDepartureProfileSummary",
 			"#/components/schemas/JourneyArriveByProfileSummary",
@@ -195,6 +202,9 @@ class JourneyV3ContractTest {
 			Set.of("algorithmSuiteId", "queryAlgorithmId", "semanticVersion"));
 		assertClosedSchema(document, "JourneyFrontierPolicyIdentity",
 			Set.of("frontierPolicyId", "semanticVersion"), Set.of("frontierPolicyId", "semanticVersion"));
+		assertClosedSchema(document, "JourneyProfileResourcePolicyIdentity",
+			Set.of("resourcePolicyId", "semanticVersion", "resourcePolicySha256"),
+			Set.of("resourcePolicyId", "semanticVersion", "resourcePolicySha256"));
 	}
 
 	@Test

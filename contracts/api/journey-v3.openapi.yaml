@@ -718,8 +718,10 @@ components:
       type: object
       additionalProperties: false
       description: >-
-        A bounded ordered ready-time interval. The server rejects equal or reversed
-        bounds and intervals above the active temporal resource-policy limit.
+        A bounded ordered whole-second ready-time interval. Both bounds are inclusive;
+        the final compressed segment ends at latestReadyAt plus one second as an
+        exclusive bound. The server rejects equal or reversed bounds and intervals
+        above the active temporal resource-policy limit.
       required: [kind, earliestReadyAt, latestReadyAt]
       properties:
         kind:
@@ -731,6 +733,9 @@ components:
         latestReadyAt:
           type: string
           format: date-time
+          description: >-
+            Inclusive whole-second terminal readiness; the final compressed segment
+            ends one second later as an exclusive bound.
     JourneyArriveByQuery:
       type: object
       additionalProperties: false
@@ -975,6 +980,7 @@ components:
         - sourceIdentity
         - algorithmIdentity
         - frontierPolicyIdentity
+        - resourcePolicyIdentity
         - journeys
         - profileSegments
         - summary
@@ -1007,6 +1013,8 @@ components:
           $ref: "#/components/schemas/JourneyAlgorithmIdentity"
         frontierPolicyIdentity:
           $ref: "#/components/schemas/JourneyFrontierPolicyIdentity"
+        resourcePolicyIdentity:
+          $ref: "#/components/schemas/JourneyProfileResourcePolicyIdentity"
         journeys:
           type: array
           minItems: 1
@@ -1091,6 +1099,20 @@ components:
         semanticVersion:
           type: string
           minLength: 1
+    JourneyProfileResourcePolicyIdentity:
+      type: object
+      additionalProperties: false
+      required: [resourcePolicyId, semanticVersion, resourcePolicySha256]
+      properties:
+        resourcePolicyId:
+          type: string
+          minLength: 1
+        semanticVersion:
+          type: string
+          minLength: 1
+        resourcePolicySha256:
+          type: string
+          pattern: "^[a-f0-9]{64}$"
     JourneyProfileJourneyCandidate:
       type: object
       additionalProperties: false
@@ -1114,6 +1136,10 @@ components:
         readyAt:
           type: string
           format: date-time
+          description: >-
+            Latest representative readiness breakpoint for this candidate; an earlier
+            containing segment means the passenger waits until this instant before
+            following the journey.
         journeyStartTime:
           type: string
           format: date-time
@@ -1148,7 +1174,11 @@ components:
           format: date-time
         journeyIds:
           type: array
-          minItems: 1
+          description: >-
+            Ordered candidate references for this readiness interval. An empty array
+            represents a partial no-service interval; if every segment is empty the
+            operation fails with NO_SERVICE_IN_DEPARTURE_WINDOW. Every nonempty id
+            resolves in the response journey inventory.
           uniqueItems: true
           items:
             type: string
