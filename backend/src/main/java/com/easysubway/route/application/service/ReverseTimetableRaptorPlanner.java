@@ -23,6 +23,41 @@ import java.util.function.BooleanSupplier;
  */
 final class ReverseTimetableRaptorPlanner {
 
+	Result lastConnection(
+		LastConnectionQuery query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		Objects.requireNonNull(query, "query must not be null");
+		Objects.requireNonNull(timetable, "timetable must not be null");
+		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
+		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		if (query.cancelled().getAsBoolean()) {
+			return Result.cancelled();
+		}
+		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips = activeTrips(timetable, activeServiceDay);
+		if (activeTrips.isEmpty()) {
+			return Result.of(Outcome.NO_ACTIVE_SERVICE);
+		}
+
+		Integer terminalDeadline = terminalDeadline(query, timetable, activeTrips, realtimeOverlay);
+		if (query.cancelled().getAsBoolean()) {
+			return Result.cancelled();
+		}
+		if (terminalDeadline == null) {
+			return hasVerifiedExit(query, timetable, activeTrips)
+				? Result.of(Outcome.NO_OD_CONNECTION)
+				: Result.of(Outcome.NO_VERIFIED_EXIT);
+		}
+		Result result = arriveBy(new Query(
+			query.originStationId(), query.destinationStationId(), query.serviceDate(), 0, terminalDeadline,
+			query.maxTransfers(), query.accessProfileBit(), query.boardingSlackSeconds(), query.mobilityPreset(),
+			query.walkingSpeedMetersPerHour(), query.requiresVerifiedJourneyDistance(), query.cancelled()),
+			timetable, activeServiceDay, realtimeOverlay);
+		return result.outcome() == Outcome.DEADLINE_MISS ? Result.of(Outcome.NO_OD_CONNECTION) : result;
+	}
+
 	Result arriveBy(
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
@@ -183,6 +218,63 @@ final class ReverseTimetableRaptorPlanner {
 		}
 	}
 
+	private static Integer terminalDeadline(
+		LastConnectionQuery query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		Integer latest = null;
+		int destination = timetable.stationIndex(query.destinationStationId());
+		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+			if (query.cancelled().getAsBoolean()) {
+				return null;
+			}
+			if (realtimeOverlay.cancelled(trip)) {
+				continue;
+			}
+			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
+				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())
+					|| !trip.allowsDropOff(alightIndex)) {
+					continue;
+				}
+				int line = timetable.lineIndex(trip.lineId(alightIndex));
+				int exit = destination < 0 || line < 0 ? -1 : timetable.exitTransition(
+					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
+				if (!verifiedTransition(timetable, exit)) {
+					continue;
+				}
+				int arrivalAtDestination = Math.addExact(
+					realtimeOverlay.arrivalSeconds(trip, alightIndex), accessSeconds(query, timetable, exit, Access.EXIT));
+				latest = latest == null || arrivalAtDestination > latest ? arrivalAtDestination : latest;
+			}
+		}
+		return latest;
+	}
+
+	private static boolean hasVerifiedExit(
+		LastConnectionQuery query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips
+	) {
+		int destination = timetable.stationIndex(query.destinationStationId());
+		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
+				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())
+					|| !trip.allowsDropOff(alightIndex)) {
+					continue;
+				}
+				int line = timetable.lineIndex(trip.lineId(alightIndex));
+				int exit = destination < 0 || line < 0 ? -1 : timetable.exitTransition(
+					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
+				if (verifiedTransition(timetable, exit)) {
+					return true;
+				}
+			}
+		}
+		return false;
+	}
+
 	private static List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips(
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay
@@ -208,13 +300,33 @@ final class ReverseTimetableRaptorPlanner {
 	private static int accessSeconds(
 		Query query, RouteTimetableRaptorPlanner.CompiledTimetable timetable, int transition, Access access
 	) {
+		return accessSeconds(query.accessProfileBit(), query.mobilityPreset(), query.walkingSpeedMetersPerHour(),
+			query.requiresVerifiedJourneyDistance(), timetable, transition, access);
+	}
+
+	private static int accessSeconds(
+		LastConnectionQuery query, RouteTimetableRaptorPlanner.CompiledTimetable timetable, int transition, Access access
+	) {
+		return accessSeconds(query.accessProfileBit(), query.mobilityPreset(), query.walkingSpeedMetersPerHour(),
+			query.requiresVerifiedJourneyDistance(), timetable, transition, access);
+	}
+
+	private static int accessSeconds(
+		int accessProfileBit,
+		MobilityPreset mobilityPreset,
+		int walkingSpeedMetersPerHour,
+		boolean requiresVerifiedJourneyDistance,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		int transition,
+		Access access
+	) {
 		int baseline = timetable.transitionDurationSeconds(transition);
-		if (access == Access.TRANSFER && query.requiresVerifiedJourneyDistance()) {
+		if (access == Access.TRANSFER && requiresVerifiedJourneyDistance) {
 			return ProfileWalkTimeCalculator.journeySeconds(timetable.transitionDistanceMeters(transition),
-				query.walkingSpeedMetersPerHour(), query.mobilityPreset(), false);
+				walkingSpeedMetersPerHour, mobilityPreset, false);
 		}
 		return ProfileWalkTimeCalculator.estimateSeconds(
-			baseline, query.mobilityPreset(), WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
+			baseline, mobilityPreset, WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
 	}
 
 	private static Candidate better(Candidate current, Candidate candidate) {
@@ -327,6 +439,32 @@ final class ReverseTimetableRaptorPlanner {
 			if (earliestReadyAtSeconds < 0 || arrivalDeadlineSeconds < earliestReadyAtSeconds || maxTransfers < 0
 				|| accessProfileBit <= 0 || boardingSlackSeconds < 0 || walkingSpeedMetersPerHour <= 0) {
 				throw new IllegalArgumentException("reverse query values must be explicit and valid");
+			}
+			mobilityPreset = Objects.requireNonNull(mobilityPreset, "mobilityPreset must not be null");
+			cancelled = Objects.requireNonNull(cancelled, "cancelled must not be null");
+		}
+	}
+
+	record LastConnectionQuery(
+		String originStationId,
+		String destinationStationId,
+		LocalDate serviceDate,
+		int maxTransfers,
+		int accessProfileBit,
+		int boardingSlackSeconds,
+		MobilityPreset mobilityPreset,
+		int walkingSpeedMetersPerHour,
+		boolean requiresVerifiedJourneyDistance,
+		BooleanSupplier cancelled
+	) {
+		LastConnectionQuery {
+			if (originStationId == null || originStationId.isBlank() || destinationStationId == null || destinationStationId.isBlank()
+				|| originStationId.equals(destinationStationId)) {
+				throw new IllegalArgumentException("origin and destination must be distinct nonblank station ids");
+			}
+			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate must not be null");
+			if (maxTransfers < 0 || accessProfileBit <= 0 || boardingSlackSeconds < 0 || walkingSpeedMetersPerHour <= 0) {
+				throw new IllegalArgumentException("last-connection query values must be explicit and valid");
 			}
 			mobilityPreset = Objects.requireNonNull(mobilityPreset, "mobilityPreset must not be null");
 			cancelled = Objects.requireNonNull(cancelled, "cancelled must not be null");
