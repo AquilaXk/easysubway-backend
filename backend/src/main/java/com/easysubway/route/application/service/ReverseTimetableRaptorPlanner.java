@@ -1,5 +1,7 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
@@ -27,26 +29,29 @@ final class ReverseTimetableRaptorPlanner {
 		LastConnectionQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
-		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
 		Objects.requireNonNull(query, "query must not be null");
 		Objects.requireNonNull(timetable, "timetable must not be null");
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		Objects.requireNonNull(limits, "limits must not be null");
 		if (query.cancelled().getAsBoolean()) {
 			return LastConnectionResult.cancelled();
 		}
+		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits);
 		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips = activeTrips(timetable, activeServiceDay);
 		if (activeTrips.isEmpty()) {
 			return new LastConnectionResult(Result.of(Outcome.NO_ACTIVE_SERVICE), null);
 		}
 
-		Integer terminalDeadline = terminalDeadline(query, timetable, activeTrips, realtimeOverlay);
+		Integer terminalDeadline = terminalDeadline(query, timetable, activeTrips, realtimeOverlay, limitTracker);
 		if (query.cancelled().getAsBoolean()) {
 			return LastConnectionResult.cancelled();
 		}
 		if (terminalDeadline == null) {
-			return new LastConnectionResult(hasVerifiedExit(query, timetable, activeTrips)
+			return new LastConnectionResult(hasVerifiedExit(query, timetable, activeTrips, limitTracker)
 				? Result.of(Outcome.NO_OD_CONNECTION)
 				: Result.of(Outcome.NO_VERIFIED_EXIT), null);
 		}
@@ -54,7 +59,7 @@ final class ReverseTimetableRaptorPlanner {
 			query.originStationId(), query.destinationStationId(), query.serviceDate(), 0, terminalDeadline,
 			query.maxTransfers(), query.accessProfileBit(), query.boardingSlackSeconds(), query.mobilityPreset(),
 			query.walkingSpeedMetersPerHour(), query.requiresVerifiedJourneyDistance(), query.cancelled()),
-			timetable, activeServiceDay, realtimeOverlay);
+			timetable, activeServiceDay, realtimeOverlay, limitTracker);
 		if (result.outcome() == Outcome.CANCELLED) {
 			return LastConnectionResult.cancelled();
 		}
@@ -66,12 +71,24 @@ final class ReverseTimetableRaptorPlanner {
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
-		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
 		Objects.requireNonNull(query, "query must not be null");
 		Objects.requireNonNull(timetable, "timetable must not be null");
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		Objects.requireNonNull(limits, "limits must not be null");
+		return arriveBy(query, timetable, activeServiceDay, realtimeOverlay, new ReverseLimitTracker(limits));
+	}
+
+	private Result arriveBy(
+		Query query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		ReverseLimitTracker limitTracker
+	) {
 		if (query.cancelled().getAsBoolean()) {
 			return Result.cancelled();
 		}
@@ -87,12 +104,14 @@ final class ReverseTimetableRaptorPlanner {
 
 		boolean verifiedExitExists = false;
 		boolean exitCanMeetDeadline = false;
-		Candidate best = null;
+		List<Candidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+			limitTracker.consumeWork();
 			if (query.cancelled().getAsBoolean()) {
 				return Result.cancelled();
 			}
 			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
+				limitTracker.consumeWork();
 				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())
 					|| !trip.allowsDropOff(alightIndex)) {
 					continue;
@@ -114,22 +133,29 @@ final class ReverseTimetableRaptorPlanner {
 					continue;
 				}
 				for (int boardIndex = 0; boardIndex < alightIndex; boardIndex += 1) {
+					limitTracker.consumeWork();
 					if (!trip.allowsPickup(boardIndex)) {
 						continue;
 					}
-					Candidate traced = traceToOrigin(
+					List<Candidate> traced = traceToOrigin(
 						query, timetable, activeTrips, realtimeOverlay, trip, boardIndex, alightIndex,
-						destinationArrival, 0, new HashSet<>());
-					if (traced != null) {
-						best = better(best, traced.append(new TraceAccess(
-							Access.EXIT, exit, query.destinationStationId(), query.destinationStationId())));
+						destinationArrival, 0, new HashSet<>(), limitTracker);
+					for (Candidate candidate : traced) {
+						candidates.add(candidate.appendAccess(new TraceAccess(
+							Access.EXIT, exit, query.destinationStationId(), query.destinationStationId()),
+							accessSeconds(query, timetable, exit, Access.EXIT), timetable.transitionDistanceMeters(exit),
+							timetable.transitionIncludesStairs(exit)));
 					}
 				}
 			}
 		}
-		if (best != null) {
-			return new Result(Outcome.FOUND, best.readyAtSeconds(), best.arrivalAtDestinationSeconds(), best.transfersUsed(),
-				toItinerary(query, timetable, realtimeOverlay, best));
+		List<Candidate> frontier = destinationFrontier(candidates);
+		if (!frontier.isEmpty()) {
+			if (frontier.size() > limitTracker.maxDestinationProfileLabels()) {
+				throw new ReversePlanningLimitException(PlanningLimit.MAX_DESTINATION_PROFILE_LABELS,
+					frontier.size(), limitTracker.maxDestinationProfileLabels());
+			}
+			return Result.found(frontier, query, timetable, realtimeOverlay);
 		}
 		if (!verifiedExitExists) {
 			return Result.of(Outcome.NO_VERIFIED_EXIT);
@@ -137,7 +163,7 @@ final class ReverseTimetableRaptorPlanner {
 		return Result.of(exitCanMeetDeadline ? Outcome.NO_OD_CONNECTION : Outcome.DEADLINE_MISS);
 	}
 
-	private Candidate traceToOrigin(
+	private List<Candidate> traceToOrigin(
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
@@ -147,14 +173,15 @@ final class ReverseTimetableRaptorPlanner {
 		int downstreamAlightIndex,
 		int arrivalAtDestinationSeconds,
 		int transfersUsed,
-		Set<TraceState> visiting
+		Set<TraceState> visiting,
+		ReverseLimitTracker limits
 	) {
 		if (query.cancelled().getAsBoolean() || realtimeOverlay.cancelled(downstreamTrip)) {
-			return null;
+			return List.of();
 		}
 		TraceState state = new TraceState(downstreamTrip.index(), downstreamBoardIndex, downstreamAlightIndex, transfersUsed);
 		if (!visiting.add(state)) {
-			return null;
+			return List.of();
 		}
 		try {
 			String boardStation = downstreamTrip.stopTimes().get(downstreamBoardIndex).stationId();
@@ -165,25 +192,31 @@ final class ReverseTimetableRaptorPlanner {
 				int entry = origin < 0 || downstreamLine < 0 ? -1 : timetable.entryTransition(
 					origin, downstreamLine, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
 				if (!verifiedTransition(timetable, entry)) {
-					return null;
+					return List.of();
 				}
 				int readyAt = downstreamDeparture - accessSeconds(query, timetable, entry, Access.ENTRY)
 					- query.boardingSlackSeconds();
-				return readyAt < query.earliestReadyAtSeconds()
-					? null : new Candidate(readyAt, arrivalAtDestinationSeconds, transfersUsed, List.of(
+				if (readyAt < query.earliestReadyAtSeconds()) return List.of();
+				Candidate candidate = new Candidate(readyAt, arrivalAtDestinationSeconds, transfersUsed,
+					accessSeconds(query, timetable, entry, Access.ENTRY), timetable.transitionDistanceMeters(entry),
+					timetable.transitionIncludesStairs(entry) ? 1L : 0L,
+					new JourneyProfileRaptorPort.NoTransfer(), List.of(
 						new TraceAccess(Access.ENTRY, entry, query.originStationId(), boardStation),
 						new TraceRide(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex)));
+				return limits.admit(candidate);
 			}
 			if (transfersUsed >= query.maxTransfers()) {
-				return null;
+				return List.of();
 			}
 
-			Candidate best = null;
+			List<Candidate> candidates = new ArrayList<>();
 			for (RouteTimetableRaptorPlanner.ScheduledTrip upstreamTrip : activeTrips) {
+				limits.consumeWork();
 				if (query.cancelled().getAsBoolean() || realtimeOverlay.cancelled(upstreamTrip)) {
 					continue;
 				}
 				for (int upstreamAlightIndex = 1; upstreamAlightIndex < upstreamTrip.stopTimes().size(); upstreamAlightIndex += 1) {
+					limits.consumeWork();
 					if (!boardStation.equals(upstreamTrip.stopTimes().get(upstreamAlightIndex).stationId())
 						|| !upstreamTrip.allowsDropOff(upstreamAlightIndex)) {
 						continue;
@@ -202,21 +235,28 @@ final class ReverseTimetableRaptorPlanner {
 						continue;
 					}
 					for (int upstreamBoardIndex = 0; upstreamBoardIndex < upstreamAlightIndex; upstreamBoardIndex += 1) {
+						limits.consumeWork();
 						if (!upstreamTrip.allowsPickup(upstreamBoardIndex)) {
 							continue;
 						}
-						Candidate upstream = traceToOrigin(
+						List<Candidate> upstream = traceToOrigin(
 							query, timetable, activeTrips, realtimeOverlay, upstreamTrip, upstreamBoardIndex, upstreamAlightIndex,
-							arrivalAtDestinationSeconds, transfersUsed + 1, visiting);
-						if (upstream != null) {
-							best = better(best, upstream
-								.append(new TraceAccess(Access.TRANSFER, transfer, boardStation, boardStation))
-								.append(new TraceRide(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex)));
+							arrivalAtDestinationSeconds, transfersUsed + 1, visiting, limits);
+						for (Candidate candidate : upstream) {
+							long transferSlack = (long) downstreamDeparture
+								- realtimeOverlay.arrivalSeconds(upstreamTrip, upstreamAlightIndex)
+								- accessSeconds(query, timetable, transfer, Access.TRANSFER)
+								- query.boardingSlackSeconds();
+							candidates.add(candidate.appendTransferAndRide(
+								new TraceAccess(Access.TRANSFER, transfer, boardStation, boardStation),
+								accessSeconds(query, timetable, transfer, Access.TRANSFER),
+								timetable.transitionDistanceMeters(transfer), timetable.transitionIncludesStairs(transfer),
+								transferSlack, new TraceRide(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex)));
 						}
 					}
 				}
 			}
-			return best;
+			return limits.admitAll(candidates);
 		} finally {
 			visiting.remove(state);
 		}
@@ -226,11 +266,13 @@ final class ReverseTimetableRaptorPlanner {
 		LastConnectionQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
-		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		ReverseLimitTracker limits
 	) {
 		Integer latest = null;
 		int destination = timetable.stationIndex(query.destinationStationId());
 		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+			limits.consumeWork();
 			if (query.cancelled().getAsBoolean()) {
 				return null;
 			}
@@ -238,6 +280,7 @@ final class ReverseTimetableRaptorPlanner {
 				continue;
 			}
 			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
+				limits.consumeWork();
 				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())
 					|| !trip.allowsDropOff(alightIndex)) {
 					continue;
@@ -259,11 +302,14 @@ final class ReverseTimetableRaptorPlanner {
 	private static boolean hasVerifiedExit(
 		LastConnectionQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips
+		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
+		ReverseLimitTracker limits
 	) {
 		int destination = timetable.stationIndex(query.destinationStationId());
 		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+			limits.consumeWork();
 			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
+				limits.consumeWork();
 				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())
 					|| !trip.allowsDropOff(alightIndex)) {
 					continue;
@@ -333,11 +379,57 @@ final class ReverseTimetableRaptorPlanner {
 			baseline, mobilityPreset, WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
 	}
 
-	private static Candidate better(Candidate current, Candidate candidate) {
-		if (candidate == null || current != null && current.readyAtSeconds() >= candidate.readyAtSeconds()) {
-			return current;
+
+	private static List<Candidate> destinationFrontier(List<Candidate> candidates) {
+		List<Candidate> frontier = new ArrayList<>();
+		for (Candidate candidate : candidates) {
+			boolean dominated = candidates.stream().anyMatch(other -> other != candidate && dominates(other, candidate));
+			if (!dominated && frontier.stream().noneMatch(existing -> sameVector(existing, candidate)
+				&& compareTrace(existing, candidate) <= 0)) {
+				frontier.removeIf(existing -> sameVector(existing, candidate) && compareTrace(candidate, existing) < 0);
+				frontier.add(candidate);
+			}
 		}
-		return candidate;
+		frontier.sort(ReverseTimetableRaptorPlanner::compareTrace);
+		return List.copyOf(frontier);
+	}
+
+	private static boolean dominates(Candidate left, Candidate right) {
+		return left.readyAtSeconds() >= right.readyAtSeconds()
+			&& left.arrivalAtDestinationSeconds() <= right.arrivalAtDestinationSeconds()
+			&& left.transfersUsed() <= right.transfersUsed()
+			&& left.verifiedAccessSeconds() <= right.verifiedAccessSeconds()
+			&& left.verifiedAccessDistanceMeters() <= right.verifiedAccessDistanceMeters()
+			&& left.stairBurden() <= right.stairBurden()
+			&& JourneyProfileRaptorPort.ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) >= 0
+			&& (left.readyAtSeconds() > right.readyAtSeconds()
+				|| left.arrivalAtDestinationSeconds() < right.arrivalAtDestinationSeconds()
+				|| left.transfersUsed() < right.transfersUsed()
+				|| left.verifiedAccessSeconds() < right.verifiedAccessSeconds()
+				|| left.verifiedAccessDistanceMeters() < right.verifiedAccessDistanceMeters()
+				|| left.stairBurden() < right.stairBurden()
+				|| JourneyProfileRaptorPort.ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) > 0);
+	}
+
+	private static boolean sameVector(Candidate left, Candidate right) {
+		return left.readyAtSeconds() == right.readyAtSeconds()
+			&& left.arrivalAtDestinationSeconds() == right.arrivalAtDestinationSeconds()
+			&& left.transfersUsed() == right.transfersUsed()
+			&& left.verifiedAccessSeconds() == right.verifiedAccessSeconds()
+			&& left.verifiedAccessDistanceMeters() == right.verifiedAccessDistanceMeters()
+			&& left.stairBurden() == right.stairBurden()
+			&& JourneyProfileRaptorPort.ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) == 0;
+	}
+
+	private static int compareTrace(Candidate left, Candidate right) {
+		return traceKey(left).compareTo(traceKey(right));
+	}
+
+	private static String traceKey(Candidate candidate) {
+		return candidate.legs().stream().map(leg -> switch (leg) {
+			case TraceAccess access -> "a:" + access.transition();
+			case TraceRide ride -> "r:" + ride.trip().index() + ':' + ride.boardIndex() + ':' + ride.alightIndex();
+		}).reduce("", (left, right) -> left + '/' + right);
 	}
 
 	private static RouteTimetableRaptorPlanner.JourneyItinerary toItinerary(
@@ -501,7 +593,8 @@ final class ReverseTimetableRaptorPlanner {
 		Integer latestReadyAtSeconds,
 		Integer arrivalAtDestinationSeconds,
 		Integer transfersUsed,
-		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
+		RouteTimetableRaptorPlanner.JourneyItinerary itinerary,
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries
 	) {
 		Result {
 			Objects.requireNonNull(outcome, "outcome must not be null");
@@ -510,18 +603,39 @@ final class ReverseTimetableRaptorPlanner {
 				Objects.requireNonNull(arrivalAtDestinationSeconds, "found result needs arrivalAtDestinationSeconds");
 				Objects.requireNonNull(transfersUsed, "found result needs transfersUsed");
 				Objects.requireNonNull(itinerary, "found result needs itinerary");
+				itineraries = List.copyOf(Objects.requireNonNull(itineraries, "found result needs itineraries"));
+				if (itineraries.isEmpty() || !itineraries.contains(itinerary)) {
+					throw new IllegalArgumentException("found result must retain its immutable itinerary frontier");
+				}
 			} else if (latestReadyAtSeconds != null || arrivalAtDestinationSeconds != null || transfersUsed != null
-				|| itinerary != null) {
+				|| itinerary != null || itineraries != null && !itineraries.isEmpty()) {
 				throw new IllegalArgumentException("non-found result must not contain a journey");
+			} else {
+				itineraries = List.of();
 			}
 		}
 
 		static Result of(Outcome outcome) {
-			return new Result(outcome, null, null, null, null);
+			return new Result(outcome, null, null, null, null, List.of());
 		}
 
 		static Result cancelled() {
 			return of(Outcome.CANCELLED);
+		}
+
+		static Result found(
+			List<Candidate> candidates,
+			Query query,
+			RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+			RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+		) {
+			List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries = candidates.stream()
+				.map(candidate -> toItinerary(query, timetable, realtimeOverlay, candidate)).toList();
+			Candidate latest = candidates.stream().min(Comparator.comparingInt(Candidate::readyAtSeconds).reversed()
+				.thenComparing(ReverseTimetableRaptorPlanner::compareTrace)).orElseThrow();
+			int itineraryIndex = candidates.indexOf(latest);
+			return new Result(Outcome.FOUND, latest.readyAtSeconds(), latest.arrivalAtDestinationSeconds(),
+				latest.transfersUsed(), itineraries.get(itineraryIndex), itineraries);
 		}
 	}
 
@@ -546,16 +660,111 @@ final class ReverseTimetableRaptorPlanner {
 		int readyAtSeconds,
 		int arrivalAtDestinationSeconds,
 		int transfersUsed,
+		long verifiedAccessSeconds,
+		long verifiedAccessDistanceMeters,
+		long stairBurden,
+		JourneyProfileRaptorPort.ConnectionSlack connectionSlack,
 		List<TraceLeg> legs
 	) {
 		private Candidate {
+			if (verifiedAccessSeconds < 0 || verifiedAccessDistanceMeters < 0 || stairBurden < 0) {
+				throw new IllegalArgumentException("candidate access facts must not be negative");
+			}
+			connectionSlack = Objects.requireNonNull(connectionSlack, "connectionSlack");
 			legs = List.copyOf(legs);
 		}
 
-		private Candidate append(TraceLeg leg) {
+		private Candidate appendAccess(TraceAccess access, int seconds, int distanceMeters, boolean includesStairs) {
 			List<TraceLeg> appended = new ArrayList<>(legs);
-			appended.add(leg);
-			return new Candidate(readyAtSeconds, arrivalAtDestinationSeconds, transfersUsed, appended);
+			appended.add(access);
+			return new Candidate(readyAtSeconds, arrivalAtDestinationSeconds, transfersUsed,
+				Math.addExact(verifiedAccessSeconds, seconds), Math.addExact(verifiedAccessDistanceMeters, distanceMeters),
+				Math.addExact(stairBurden, includesStairs ? 1L : 0L), connectionSlack, appended);
+		}
+
+		private Candidate appendTransferAndRide(
+			TraceAccess access,
+			int seconds,
+			int distanceMeters,
+			boolean includesStairs,
+			long transferSlack,
+			TraceRide ride
+		) {
+			List<TraceLeg> appended = new ArrayList<>(legs);
+			appended.add(access);
+			appended.add(ride);
+			JourneyProfileRaptorPort.ConnectionSlack slack = connectionSlack instanceof JourneyProfileRaptorPort.NoTransfer
+				? new JourneyProfileRaptorPort.MinimumTransferSeconds(transferSlack)
+				: new JourneyProfileRaptorPort.MinimumTransferSeconds(Math.min(
+					((JourneyProfileRaptorPort.MinimumTransferSeconds) connectionSlack).seconds(), transferSlack));
+			return new Candidate(readyAtSeconds, arrivalAtDestinationSeconds, transfersUsed,
+				Math.addExact(verifiedAccessSeconds, seconds), Math.addExact(verifiedAccessDistanceMeters, distanceMeters),
+				Math.addExact(stairBurden, includesStairs ? 1L : 0L), slack, appended);
+		}
+	}
+
+	enum PlanningLimit {
+		MAX_ESTIMATED_WORK,
+		MAX_LABELS_PER_STATE,
+		MAX_DESTINATION_PROFILE_LABELS
+	}
+
+	static final class ReversePlanningLimitException extends RuntimeException {
+		private final PlanningLimit limit;
+		private final long observed;
+		private final long max;
+
+		private ReversePlanningLimitException(PlanningLimit limit, long observed, long max) {
+			super(Objects.requireNonNull(limit, "limit").name());
+			this.limit = limit;
+			this.observed = observed;
+			this.max = max;
+		}
+
+		PlanningLimit limit() { return limit; }
+		long observed() { return observed; }
+		long max() { return max; }
+	}
+
+	private static final class ReverseLimitTracker {
+		private final JourneyProfileResourcePolicy.ProfilePlanningLimits limits;
+		private long work;
+
+		private ReverseLimitTracker(JourneyProfileResourcePolicy.ProfilePlanningLimits limits) {
+			this.limits = Objects.requireNonNull(limits, "limits");
+		}
+
+		private void consumeWork() {
+			work = Math.addExact(work, 1L);
+			if (work > limits.maxEstimatedWork()) {
+				throw new ReversePlanningLimitException(PlanningLimit.MAX_ESTIMATED_WORK, work, limits.maxEstimatedWork());
+			}
+		}
+
+		private int maxDestinationProfileLabels() {
+			return limits.maxDestinationProfileLabels();
+		}
+
+		private List<Candidate> admit(Candidate candidate) {
+			return admitAll(List.of(candidate));
+		}
+
+		private List<Candidate> admitAll(List<Candidate> candidates) {
+			List<Candidate> frontier = new ArrayList<>();
+			for (Candidate candidate : candidates) {
+				consumeWork();
+				if (frontier.stream().anyMatch(existing -> dominates(existing, candidate)
+					|| sameVector(existing, candidate) && compareTrace(existing, candidate) <= 0)) continue;
+				frontier.removeIf(existing -> dominates(candidate, existing)
+					|| sameVector(existing, candidate) && compareTrace(candidate, existing) < 0);
+				frontier.add(candidate);
+				frontier.sort(ReverseTimetableRaptorPlanner::compareTrace);
+				if (frontier.size() > limits.maxLabelsPerState()) {
+					throw new ReversePlanningLimitException(PlanningLimit.MAX_LABELS_PER_STATE,
+						frontier.size(), limits.maxLabelsPerState());
+				}
+			}
+			return List.copyOf(frontier);
 		}
 	}
 

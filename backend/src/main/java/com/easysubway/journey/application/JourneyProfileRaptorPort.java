@@ -113,22 +113,11 @@ public interface JourneyProfileRaptorPort {
 		}
 
 		record Found(
-			Instant latestReadyAt,
-			Instant arrivalAtDestination,
-			int transfersUsed,
-			Itinerary itinerary
+			List<Itinerary> itineraries
 		) implements ReversePlan {
 			public Found {
-				latestReadyAt = Objects.requireNonNull(latestReadyAt, "latestReadyAt");
-				arrivalAtDestination = Objects.requireNonNull(arrivalAtDestination, "arrivalAtDestination");
-				if (arrivalAtDestination.isBefore(latestReadyAt)) {
-					throw new IllegalArgumentException("arrivalAtDestination must not precede latestReadyAt");
-				}
-				if (transfersUsed < 0) throw new IllegalArgumentException("transfersUsed must not be negative");
-				itinerary = Objects.requireNonNull(itinerary, "itinerary");
-				if (itinerary.metrics().transfersUsed() != transfersUsed) {
-					throw new IllegalArgumentException("reverse transfer count must match itinerary metrics");
-				}
+				itineraries = List.copyOf(Objects.requireNonNull(itineraries, "itineraries"));
+				if (itineraries.isEmpty()) throw new IllegalArgumentException("reverse frontier must not be empty");
 			}
 		}
 

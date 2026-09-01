@@ -59,12 +59,26 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
 			assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
 				found -> {
-					assertThat(found.itinerary().metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
-						0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
-					assertThat(found.itinerary().legs()).anySatisfy(leg -> assertThat(leg)
-						.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
-							ride -> assertThat(ride.tripId()).isEqualTo("direct")));
+					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
+						assertThat(itinerary.metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+							0, 420, 100, 0, new JourneyProfileRaptorPort.NoTransfer()));
+						assertThat(itinerary.legs()).anySatisfy(leg -> assertThat(leg)
+							.isInstanceOfSatisfying(JourneyProfileRaptorPort.RideLeg.class,
+								ride -> assertThat(ride.tripId()).isEqualTo("direct")));
+					});
 				}));
+	}
+
+	@Test
+	void mapsReverseWorkAdmissionWithoutReturningAPartialFrontier() {
+		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))),
+			snapshot(), null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.AdmissionRejected.class,
+			rejected -> {
+				assertThat(rejected.observed()).isEqualTo(2);
+				assertThat(rejected.max()).isEqualTo(1);
+			});
 	}
 
 	@Test

@@ -105,7 +105,7 @@ public final class JourneyProfileApplicationService {
 
 	private static void addReverseArrival(List<Instant> arrivals, JourneyProfileRaptorPort.ReversePlan result) {
 		if (result instanceof JourneyProfileRaptorPort.ReversePlan.Found found) {
-			arrivals.add(found.arrivalAtDestination());
+			found.itineraries().forEach(itinerary -> arrivals.add(itinerary.plannedArrivalAtDestination()));
 		}
 	}
 

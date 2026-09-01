@@ -49,9 +49,9 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 						.map(JourneyProfileRaptorAdapter::departurePoint)
 						.toList());
 				case JourneyRaptorQuery.ArriveBy arriveBy -> new ArriveByPlan(arriveBy,
-					reversePlan(requiredQuery, timetable, overlay, arriveBy));
+					reversePlan(requiredQuery, timetable, overlay, arriveBy, requiredLimits));
 				case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
-					requiredQuery, timetable, overlay, lastConnection);
+					requiredQuery, timetable, overlay, lastConnection, requiredLimits);
 				case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
 					"Journey profile adapter does not accept DEPART_AT");
 			};
@@ -63,6 +63,12 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 					new PlanningResult.CapacityExceeded(
 						PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max());
 			};
+		} catch (ReverseTimetableRaptorPlanner.ReversePlanningLimitException exceeded) {
+			return switch (exceeded.limit()) {
+				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(exceeded.observed(), exceeded.max());
+				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS -> new PlanningResult.CapacityExceeded(
+					PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max());
+			};
 		}
 	}
 
@@ -70,7 +76,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		JourneyRaptorQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
-		JourneyRaptorQuery.ArriveBy arriveBy
+		JourneyRaptorQuery.ArriveBy arriveBy,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
 		var earliest = ServiceDayResolver.resolve(arriveBy.earliestReadyAt());
 		var deadline = ServiceDayResolver.resolve(arriveBy.arrivalDeadline());
@@ -80,7 +87,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		ReverseTimetableRaptorPlanner.Result result = reverse.arriveBy(
 			forward.reverseArriveByQuery(query, earliest.serviceDate(), earliest.secondsFromServiceDayStart(),
 				deadline.secondsFromServiceDayStart()),
-			timetable, timetable.activeServiceDay(earliest.serviceDate()), overlay);
+			timetable, timetable.activeServiceDay(earliest.serviceDate()), overlay, limits);
 		return reversePlan(result);
 	}
 
@@ -88,12 +95,13 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		JourneyRaptorQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay,
-		JourneyRaptorQuery.LastConnection lastConnection
+		JourneyRaptorQuery.LastConnection lastConnection,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
 		LocalDate serviceDate = lastConnection.serviceDate();
 		ReverseTimetableRaptorPlanner.LastConnectionResult result = reverse.lastConnection(
 			forward.reverseLastConnectionQuery(query, serviceDate),
-			timetable, timetable.activeServiceDay(serviceDate), overlay);
+			timetable, timetable.activeServiceDay(serviceDate), overlay, limits);
 		Instant terminal = result.terminalArrivalAtDestinationSeconds() == null ? null
 			: serviceInstant(serviceDate, result.terminalArrivalAtDestinationSeconds());
 		return new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection, reversePlan(result.result()), terminal);
@@ -110,9 +118,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 	private static JourneyProfileRaptorPort.ReversePlan reversePlan(ReverseTimetableRaptorPlanner.Result result) {
 		return switch (result.outcome()) {
 			case FOUND -> new JourneyProfileRaptorPort.ReversePlan.Found(
-				serviceInstant(result.itinerary().serviceDate(), result.latestReadyAtSeconds()),
-				serviceInstant(result.itinerary().serviceDate(), result.arrivalAtDestinationSeconds()),
-				result.transfersUsed(), itinerary(result.itinerary()));
+				result.itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList());
 			case NO_ACTIVE_SERVICE, NO_VERIFIED_EXIT, DEADLINE_MISS, NO_OD_CONNECTION, CANCELLED ->
 				new JourneyProfileRaptorPort.ReversePlan.NotFound(
 					JourneyProfileRaptorPort.ReversePlan.Outcome.valueOf(result.outcome().name()));
