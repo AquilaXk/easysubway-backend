@@ -91,6 +91,76 @@
       "operation": "searchStationTimetables",
       "httpStatus": 503,
       "code": "TIMETABLE_IDENTITY_MISMATCH"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 400,
+      "code": "INVALID_TEMPORAL_QUERY"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 400,
+      "code": "TEMPORAL_WINDOW_TOO_LARGE"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 404,
+      "code": "STATION_NOT_FOUND"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 422,
+      "code": "NO_SERVICE_IN_DEPARTURE_WINDOW"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 422,
+      "code": "NO_ROUTE_ARRIVING_BY_DEADLINE"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 422,
+      "code": "NO_LAST_CONNECTION"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 422,
+      "code": "REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 422,
+      "code": "TEMPORAL_QUERY_TOO_COMPLEX"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "code": "REALTIME_REQUIRED_UNAVAILABLE"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "code": "ROUTING_BUNDLE_UNAVAILABLE"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "code": "ROUTING_BUNDLE_STALE"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "code": "ROUTING_IDENTITY_MISMATCH"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
+      "code": "RAPTOR_FRONTIER_CAPACITY_EXCEEDED"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 504,
+      "code": "JOURNEY_PROFILE_TIMEOUT"
     }
   ],
   "ingressErrors": [
@@ -111,6 +181,16 @@
     },
     {
       "operation": "searchStationTimetables",
+      "httpStatus": 429,
+      "code": "ROUTE_RATE_LIMITED"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 401,
+      "code": "ROUTE_SESSION_REQUIRED"
+    },
+    {
+      "operation": "profileJourneys",
       "httpStatus": 429,
       "code": "ROUTE_RATE_LIMITED"
     },
