@@ -15,11 +15,44 @@ import java.util.Objects;
 @FunctionalInterface
 public interface JourneyProfileRaptorPort {
 
-	TemporalPlan plan(
+	PlanningResult plan(
 		JourneyRaptorQuery query,
 		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
-		JourneyRealtimePort.RealtimeObservation realtimeOrNull
+		JourneyRealtimePort.RealtimeObservation realtimeOrNull,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	);
+
+	sealed interface PlanningResult permits PlanningResult.Planned, PlanningResult.AdmissionRejected,
+		PlanningResult.CapacityExceeded {
+		record Planned(TemporalPlan temporalPlan) implements PlanningResult {
+			public Planned {
+				temporalPlan = Objects.requireNonNull(temporalPlan, "temporalPlan");
+			}
+		}
+
+		record AdmissionRejected(long observed, long max) implements PlanningResult {
+			public AdmissionRejected {
+				if (observed < 0 || max < 1 || observed <= max) {
+					throw new IllegalArgumentException("admission rejection must exceed a positive maximum");
+				}
+			}
+		}
+
+		record CapacityExceeded(PlanningCapacity dimension, long observed, long max) implements PlanningResult {
+			public CapacityExceeded {
+				dimension = Objects.requireNonNull(dimension, "dimension");
+				if (observed < 0 || max < 1 || observed <= max) {
+					throw new IllegalArgumentException("capacity exceedance must exceed a positive maximum");
+				}
+			}
+		}
+	}
+
+	enum PlanningCapacity {
+		MAX_LABELS_PER_STATE,
+		MAX_DESTINATION_PROFILE_LABELS,
+		MAX_PROFILE_BREAKPOINTS
+	}
 
 	sealed interface TemporalPlan permits DepartureWindowPlan, ArriveByPlan, LastConnectionPlan {
 		JourneyRaptorQuery.TemporalQuery temporalQuery();

@@ -1,13 +1,16 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -40,7 +43,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			JourneyRequest.ConstraintMode.NONE,
 			0, 1, () -> false);
 		var profile = planner.departureProfile(
-			query, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+			query, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
 
 		assertThat(profile)
 			.extracting(RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint::readyAtSeconds)
@@ -80,7 +83,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 
 		var profile = planner.departureProfile(
 			query, planner.compile(crossCutoffTimetable()),
-			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
 
 		assertThat(profile)
 			.extracting(point -> point.serviceDate() + ":" + point.readyAtSeconds())
@@ -104,7 +107,8 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			1, 3, () -> false);
 
 		var profile = planner.departureProfile(
-			query, planner.compile(frontierCollisionTimetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+			query, planner.compile(frontierCollisionTimetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			policy().profilePlanningLimits());
 
 		assertThat(profile).singleElement().satisfies(point -> {
 			assertThat(point.readyAtSeconds()).isEqualTo(29_000);
@@ -129,6 +133,69 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 		});
 	}
 
+	@Test
+	void failsClosedWhenOneProfileStateNeedsMoreThanTheCallerSuppliedLabelBudget() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "origin", "destination",
+			new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 3, () -> false);
+
+		assertThatThrownBy(() -> planner.departureProfile(
+			query, planner.compile(frontierCollisionTimetable()),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy(1).profilePlanningLimits()))
+			.isInstanceOf(RouteTimetableRaptorPlanner.ProfilePlanningLimitException.class)
+			.satisfies(exception -> assertThat(
+				((RouteTimetableRaptorPlanner.ProfilePlanningLimitException) exception).limit())
+				.isEqualTo(RouteTimetableRaptorPlanner.ProfilePlanningLimit.MAX_LABELS_PER_STATE));
+	}
+
+	@Test
+	void keepsTheRawProfileFrontierIndependentOfPublicAlternativeCount() {
+		var one = new JourneyRaptorQuery(
+			REQUEST_ID, "origin", "destination", new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+		var three = new JourneyRaptorQuery(
+			REQUEST_ID, "origin", "destination", one.temporalQuery(), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
+		var compiled = planner.compile(frontierCollisionTimetable());
+
+		assertThat(planner.departureProfile(one, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			policy().profilePlanningLimits()))
+			.isEqualTo(planner.departureProfile(three, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+				policy().profilePlanningLimits()));
+	}
+
+	@Test
+	void keepsEarlierArrivalAndLaterSamePatternConnectionSlackRepresentatives() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "origin", "destination", new JourneyRaptorQuery.DepartBetween(instantAt(29_000), instantAt(29_001)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 3, () -> false);
+
+		var profile = planner.departureProfile(query, planner.compile(samePatternSlackTimetable()),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
+
+		assertThat(profile).singleElement().satisfies(point -> {
+			assertThat(point.itineraries()).extracting(itinerary -> itinerary.legs().stream()
+				.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+				.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+				.map(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId).toList())
+				.containsExactly(List.of("origin-to-hub", "fast"), List.of("origin-to-hub", "safe"));
+			assertThat(point.itineraries()).extracting(RouteTimetableRaptorPlanner.JourneyItinerary::metrics)
+				.containsExactly(
+					new JourneyProfileRaptorPort.ItineraryMetrics(
+						1, 300, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(640)),
+					new JourneyProfileRaptorPort.ItineraryMetrics(
+						1, 300, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(1_040)));
+		});
+	}
+
 	private static RouteTimetableRaptorPlanner.JourneyRideProjection onlyRide(
 		RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint point
 	) {
@@ -142,6 +209,18 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	private static Instant instantAt(int readyAtSeconds) {
 		return SERVICE_DATE.atStartOfDay().plusSeconds(readyAtSeconds)
 			.atOffset(ZoneOffset.ofHours(9)).toInstant();
+	}
+
+	private static JourneyProfileResourcePolicy policy() {
+		return policy(32);
+	}
+
+	private static JourneyProfileResourcePolicy policy(int maxLabelsPerState) {
+		return new JourneyProfileResourcePolicy(
+			new JourneyProfileResourcePolicy.Identity("test-profile", "1.0.0", "b".repeat(64)),
+			Duration.ofHours(2), 2, 100_000L, maxLabelsPerState, 32, 32,
+			Duration.ofMinutes(5), Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(1),
+			1, 1, 1, 1, 4);
 	}
 
 	private static RouteTimetable timetable() {
@@ -221,6 +300,25 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			frontierCollisionAccessData());
 	}
 
+	private static RouteTimetable samePatternSlackTimetable() {
+		var calendar = calendar("daily", SERVICE_DATE);
+		return new RouteTimetable(
+			List.of(calendar), List.of(),
+			List.of(route("route-origin", "origin-line"), route("route-shared", "shared-line")),
+			List.of(
+				trip("origin-to-hub", "daily", "route-origin"),
+				trip("fast", "daily", "route-shared"),
+				trip("safe", "daily", "route-shared")),
+			List.of(
+				stop("origin-to-hub", 1, "origin", "origin-line", 29_300),
+				stop("origin-to-hub", 2, "hub", "origin-line", 29_300),
+				stop("fast", 1, "hub", "shared-line", 30_000),
+				stop("fast", 2, "destination", "shared-line", 30_200),
+				stop("safe", 1, "hub", "shared-line", 30_400),
+				stop("safe", 2, "destination", "shared-line", 30_600)),
+			List.of(), List.of(), null, samePatternSlackAccessData());
+	}
+
 	private static LoadRouteTimetablePort.ServiceCalendar calendar(String id, LocalDate date) {
 		return new LoadRouteTimetablePort.ServiceCalendar(
 			id, true, true, true, true, true, true, true, date, date, "Asia/Seoul");
@@ -281,6 +379,26 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				evidence("transfer-a-evidence", "hub", "shared", "transfer-a", "TRANSFER"),
 				evidence("transfer-b-evidence", "hub", "shared", "transfer-b", "TRANSFER"),
 				evidence("exit-evidence", "destination", "shared", "exit", "EXIT")));
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData samePatternSlackAccessData() {
+		return new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new LoadRouteTimetablePort.PathwayNode("entry-outside", "origin", null, "ENTRANCE"),
+				new LoadRouteTimetablePort.PathwayNode("entry-platform", "origin", "origin-line", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("transfer-from", "hub", "origin-line", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("transfer-to", "hub", "shared-line", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-platform", "destination", "shared-line", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-outside", "destination", null, "EXIT")),
+			List.of(
+				pathway("entry", "entry-outside", "entry-platform", 240, 100),
+				pathway("transfer", "transfer-from", "transfer-to", 0, 10),
+				pathway("exit", "exit-platform", "exit-outside", 60, 10)),
+			List.of(transfer("transfer-rule", "origin-line", "transfer", 0)),
+			List.of(
+				evidence("entry-evidence", "origin", "origin-line", "entry", "ENTRY"),
+				evidence("transfer-evidence", "hub", "shared-line", "transfer", "TRANSFER"),
+				evidence("exit-evidence", "destination", "shared-line", "exit", "EXIT")));
 	}
 
 	private static LoadRouteTimetablePort.PathwayEdge pathway(

@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
@@ -25,12 +26,14 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 	private final ReverseTimetableRaptorPlanner reverse = new ReverseTimetableRaptorPlanner();
 
 	@Override
-	public TemporalPlan plan(
+	public PlanningResult plan(
 		JourneyRaptorQuery query,
 		ActiveJourneySnapshot snapshot,
-		RealtimeObservation realtimeOrNull
+		RealtimeObservation realtimeOrNull,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
 		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		JourneyProfileResourcePolicy.ProfilePlanningLimits requiredLimits = Objects.requireNonNull(limits, "limits");
 		if (requiredQuery.isCancelled()) throw new IllegalStateException("Journey profile planning was cancelled");
 		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED || realtimeOrNull != null) {
 			throw new IllegalArgumentException("Journey profile adapter currently requires TIMETABLE_REQUIRED without realtime");
@@ -39,18 +42,28 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable = runtime.compiledTimetable();
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
 
-		return switch (requiredQuery.temporalQuery()) {
-			case JourneyRaptorQuery.DepartBetween range -> new DepartureWindowPlan(range,
-				forward.departureProfile(requiredQuery, timetable, overlay).stream()
-					.map(JourneyProfileRaptorAdapter::departurePoint)
-					.toList());
-			case JourneyRaptorQuery.ArriveBy arriveBy -> new ArriveByPlan(arriveBy,
-				reversePlan(requiredQuery, timetable, overlay, arriveBy));
-			case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
-				requiredQuery, timetable, overlay, lastConnection);
-			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
-				"Journey profile adapter does not accept DEPART_AT");
-		};
+		try {
+			TemporalPlan plan = switch (requiredQuery.temporalQuery()) {
+				case JourneyRaptorQuery.DepartBetween range -> new DepartureWindowPlan(range,
+					forward.departureProfile(requiredQuery, timetable, overlay, requiredLimits).stream()
+						.map(JourneyProfileRaptorAdapter::departurePoint)
+						.toList());
+				case JourneyRaptorQuery.ArriveBy arriveBy -> new ArriveByPlan(arriveBy,
+					reversePlan(requiredQuery, timetable, overlay, arriveBy));
+				case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
+					requiredQuery, timetable, overlay, lastConnection);
+				case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
+					"Journey profile adapter does not accept DEPART_AT");
+			};
+			return new PlanningResult.Planned(plan);
+		} catch (RouteTimetableRaptorPlanner.ProfilePlanningLimitException exceeded) {
+			return switch (exceeded.limit()) {
+				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(exceeded.observed(), exceeded.max());
+				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS, MAX_PROFILE_BREAKPOINTS ->
+					new PlanningResult.CapacityExceeded(
+						PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max());
+			};
+		}
 	}
 
 	private JourneyProfileRaptorPort.ReversePlan reversePlan(

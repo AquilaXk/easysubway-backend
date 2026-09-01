@@ -5,10 +5,12 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -25,9 +27,10 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void dispatchesDepartureWindowAgainstTheCapturedRuntimeWithoutPointFallback() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
-			snapshot(), null);
+			snapshot(), null, policy().profilePlanningLimits());
+		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
 
-		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.DepartureWindowPlan.class, plan -> {
+		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.DepartureWindowPlan.class, plan -> {
 			assertThat(plan.points()).singleElement().satisfies(point -> {
 				assertThat(point.serviceDate()).isEqualTo(SERVICE_DATE);
 				assertThat(point.itineraries()).singleElement().satisfies(itinerary -> {
@@ -50,9 +53,10 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void dispatchesArriveByToTheNativeReversePrimitive() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))),
-			snapshot(), null);
+			snapshot(), null, policy().profilePlanningLimits());
+		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
 
-		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
+		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
 			assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
 				found -> {
 					assertThat(found.itinerary().metrics()).isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
@@ -80,9 +84,11 @@ class JourneyProfileRaptorAdapterTest {
 
 	@Test
 	void dispatchesLastConnectionToTheNativeTerminalEventPrimitive() {
-		var result = adapter.plan(query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE)), snapshot(), null);
+		var result = adapter.plan(query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE)), snapshot(), null,
+			policy().profilePlanningLimits());
+		var planResult = (JourneyProfileRaptorPort.PlanningResult.Planned) result;
 
-		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPlan.class, plan ->
+		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPlan.class, plan ->
 			assertThat(plan.result()).isInstanceOf(JourneyProfileRaptorPort.ReversePlan.Found.class));
 	}
 
@@ -94,7 +100,7 @@ class JourneyProfileRaptorAdapterTest {
 			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
 			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
 
-		assertThatThrownBy(() -> adapter.plan(query, snapshot(), null))
+		assertThatThrownBy(() -> adapter.plan(query, snapshot(), null, policy().profilePlanningLimits()))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("TIMETABLE_REQUIRED");
 	}
@@ -117,6 +123,14 @@ class JourneyProfileRaptorAdapterTest {
 
 	private static Instant instantAt(int seconds) {
 		return SERVICE_DATE.atStartOfDay().plusSeconds(seconds).atOffset(ZoneOffset.ofHours(9)).toInstant();
+	}
+
+	private static JourneyProfileResourcePolicy policy() {
+		return new JourneyProfileResourcePolicy(
+			new JourneyProfileResourcePolicy.Identity("test-profile", "1.0.0", "b".repeat(64)),
+			Duration.ofHours(2), 2, 100_000L, 32, 32, 32,
+			Duration.ofMinutes(5), Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(1),
+			1, 1, 1, 1, 4);
 	}
 
 	private static RouteTimetable timetable() {
