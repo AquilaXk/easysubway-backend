@@ -43,6 +43,49 @@ class JourneyProfileApplicationServiceTest {
 	}
 
 	@Test
+	void mapsTerminalTemporalPlansToFailuresBeforePublishingSuccess() {
+		var departBetween = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600));
+		var arriveBy = new JourneyRaptorQuery.ArriveBy(NOW, NOW.plusSeconds(600));
+		var lastConnection = new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1));
+		var cases = List.of(
+			new TerminalPlanCase(departBetween, new JourneyProfileRaptorPort.DepartureWindowPlan(departBetween,
+				List.of(emptyDeparturePoint())), JourneyProfileExecutionResult.Reason.NO_SERVICE_IN_DEPARTURE_WINDOW),
+			new TerminalPlanCase(arriveBy, new JourneyProfileRaptorPort.ArriveByPlan(arriveBy,
+				new JourneyProfileRaptorPort.ReversePlan.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.NO_OD_CONNECTION)),
+				JourneyProfileExecutionResult.Reason.NO_ROUTE_ARRIVING_BY_DEADLINE),
+			new TerminalPlanCase(lastConnection, new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection,
+				new JourneyProfileRaptorPort.ReversePlan.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.NO_OD_CONNECTION), null),
+				JourneyProfileExecutionResult.Reason.NO_LAST_CONNECTION),
+			new TerminalPlanCase(arriveBy, new JourneyProfileRaptorPort.ArriveByPlan(arriveBy,
+				new JourneyProfileRaptorPort.ReversePlan.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.CANCELLED)),
+				JourneyProfileExecutionResult.Reason.CANCELLED),
+			new TerminalPlanCase(lastConnection, new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection,
+				new JourneyProfileRaptorPort.ReversePlan.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.CANCELLED), null),
+				JourneyProfileExecutionResult.Reason.CANCELLED));
+
+		for (var terminal : cases) {
+			var requested = query(terminal.temporalQuery());
+			var counts = snapshot(requested);
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
+				(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
+					terminal.plan(), counts),
+				Clock.fixed(NOW, ZoneOffset.UTC));
+
+			var result = service.execute(requested, policy());
+
+			assertThat(result).isNotInstanceOf(JourneyProfileExecutionResult.Success.class);
+			var failure = (JourneyProfileExecutionResult.Failure) result;
+			assertThat(failure.reason()).isEqualTo(terminal.reason());
+			assertThat(failure.countSnapshot()).isSameAs(counts);
+		}
+	}
+
+	@Test
 	void rejectsLastConnectionWhenVerifiedTerminalHorizonExpiresTheSnapshotEvenWithoutOdJourney() {
 		Instant validUntil = Instant.parse("2026-09-01T01:00:00Z");
 		var lastConnection = new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1));
@@ -238,5 +281,17 @@ class JourneyProfileApplicationServiceTest {
 				0, 0, 0, 0, new JourneyProfileRaptorPort.NoTransfer()),
 			List.of(new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
 				"station-a", "station-a", 0, 0, false, true, "VERIFIED")));
+	}
+
+	private static JourneyProfileRaptorPort.DeparturePoint emptyDeparturePoint() {
+		return new JourneyProfileRaptorPort.DeparturePoint(LocalDate.of(2026, 9, 1), NOW, List.of(),
+			new JourneyRaptorPort.ScanMetrics(1, 1, 1));
+	}
+
+	private record TerminalPlanCase(
+		JourneyRaptorQuery.TemporalQuery temporalQuery,
+		JourneyProfileRaptorPort.TemporalPlan plan,
+		JourneyProfileExecutionResult.Reason reason
+	) {
 	}
 }

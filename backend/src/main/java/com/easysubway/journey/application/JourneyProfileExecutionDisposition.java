@@ -17,6 +17,10 @@ public sealed interface JourneyProfileExecutionDisposition
 			case TEMPORAL_QUERY_TOO_COMPLEX -> publicFailure(422, MachineCode.TEMPORAL_QUERY_TOO_COMPLEX);
 			case RAPTOR_FRONTIER_CAPACITY_EXCEEDED -> publicFailure(503,
 				MachineCode.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
+			case NO_SERVICE_IN_DEPARTURE_WINDOW -> publicFailure(422, MachineCode.NO_SERVICE_IN_DEPARTURE_WINDOW);
+			case NO_ROUTE_ARRIVING_BY_DEADLINE -> publicFailure(422,
+				MachineCode.NO_ROUTE_ARRIVING_BY_DEADLINE);
+			case NO_LAST_CONNECTION -> publicFailure(422, MachineCode.NO_LAST_CONNECTION);
 			case CANCELLED -> new Cancelled();
 			case RAPTOR_FAILED ->
 				new InternalFailure(failure.reason());
@@ -32,8 +36,12 @@ public sealed interface JourneyProfileExecutionDisposition
 		public PublicFailure {
 			machineCode = Objects.requireNonNull(machineCode, "machineCode");
 			if (httpStatus != 422 && httpStatus != 503) throw new IllegalArgumentException("profile failure status is closed");
-			if (machineCode == MachineCode.TEMPORAL_QUERY_TOO_COMPLEX && httpStatus != 422
-				|| machineCode != MachineCode.TEMPORAL_QUERY_TOO_COMPLEX && httpStatus != 503) {
+			boolean unprocessable = switch (machineCode) {
+				case TEMPORAL_QUERY_TOO_COMPLEX, NO_SERVICE_IN_DEPARTURE_WINDOW,
+					NO_ROUTE_ARRIVING_BY_DEADLINE, NO_LAST_CONNECTION -> true;
+				default -> false;
+			};
+			if (unprocessable && httpStatus != 422 || !unprocessable && httpStatus != 503) {
 				throw new IllegalArgumentException("profile failure status must match machine code");
 			}
 			if (retryable) throw new IllegalArgumentException("retryable must be false");
@@ -57,6 +65,9 @@ public sealed interface JourneyProfileExecutionDisposition
 		ROUTING_BUNDLE_STALE,
 		REALTIME_REQUIRED_UNAVAILABLE,
 		TEMPORAL_QUERY_TOO_COMPLEX,
-		RAPTOR_FRONTIER_CAPACITY_EXCEEDED
+		RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
+		NO_SERVICE_IN_DEPARTURE_WINDOW,
+		NO_ROUTE_ARRIVING_BY_DEADLINE,
+		NO_LAST_CONNECTION
 	}
 }

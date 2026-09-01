@@ -19,6 +19,12 @@ class JourneyProfileExecutionDispositionTest {
 			JourneyProfileExecutionDisposition.MachineCode.REALTIME_REQUIRED_UNAVAILABLE,
 			JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX,
 			JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_QUERY_TOO_COMPLEX,
+			JourneyProfileExecutionResult.Reason.NO_SERVICE_IN_DEPARTURE_WINDOW,
+			JourneyProfileExecutionDisposition.MachineCode.NO_SERVICE_IN_DEPARTURE_WINDOW,
+			JourneyProfileExecutionResult.Reason.NO_ROUTE_ARRIVING_BY_DEADLINE,
+			JourneyProfileExecutionDisposition.MachineCode.NO_ROUTE_ARRIVING_BY_DEADLINE,
+			JourneyProfileExecutionResult.Reason.NO_LAST_CONNECTION,
+			JourneyProfileExecutionDisposition.MachineCode.NO_LAST_CONNECTION,
 			JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
 			JourneyProfileExecutionDisposition.MachineCode.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
 
@@ -26,8 +32,11 @@ class JourneyProfileExecutionDispositionTest {
 			var disposition = JourneyProfileExecutionDisposition.from(
 				new JourneyProfileExecutionResult.Failure(reason));
 
-			int status = machineCode == JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_QUERY_TOO_COMPLEX
-				? 422 : 503;
+			int status = switch (machineCode) {
+				case TEMPORAL_QUERY_TOO_COMPLEX, NO_SERVICE_IN_DEPARTURE_WINDOW,
+					NO_ROUTE_ARRIVING_BY_DEADLINE, NO_LAST_CONNECTION -> 422;
+				default -> 503;
+			};
 			assertThat(disposition).isEqualTo(new JourneyProfileExecutionDisposition.PublicFailure(status, machineCode, false));
 		});
 	}
@@ -51,6 +60,10 @@ class JourneyProfileExecutionDispositionTest {
 			.hasMessage("profile failure status must match machine code");
 		assertThatThrownBy(() -> new JourneyProfileExecutionDisposition.PublicFailure(
 			503, JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_QUERY_TOO_COMPLEX, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("profile failure status must match machine code");
+		assertThatThrownBy(() -> new JourneyProfileExecutionDisposition.PublicFailure(
+			503, JourneyProfileExecutionDisposition.MachineCode.NO_LAST_CONNECTION, false))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("profile failure status must match machine code");
 	}

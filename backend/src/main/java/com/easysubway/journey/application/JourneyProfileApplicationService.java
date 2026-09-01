@@ -80,8 +80,35 @@ public final class JourneyProfileApplicationService {
 		if (!postvalid(snapshot.validUntil(), completedAt, plan)) {
 			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE, planned.countSnapshot());
 		}
+		JourneyProfileExecutionResult.Reason terminalFailure = terminalFailure(plan);
+		if (terminalFailure != null) {
+			return failure(terminalFailure, planned.countSnapshot());
+		}
 		return new JourneyProfileExecutionResult.Success(calculatedAt, snapshot.validUntil(), source(snapshot),
 			requiredPolicy.identity(), plan, planned.countSnapshot());
+	}
+
+	private static JourneyProfileExecutionResult.Reason terminalFailure(
+		JourneyProfileRaptorPort.TemporalPlan plan
+	) {
+		return switch (plan) {
+			case JourneyProfileRaptorPort.DepartureWindowPlan departure -> departure.points().stream()
+				.allMatch(point -> point.itineraries().isEmpty())
+				? JourneyProfileExecutionResult.Reason.NO_SERVICE_IN_DEPARTURE_WINDOW : null;
+			case JourneyProfileRaptorPort.ArriveByPlan arriveBy -> reverseTerminalFailure(arriveBy.result(),
+				JourneyProfileExecutionResult.Reason.NO_ROUTE_ARRIVING_BY_DEADLINE);
+			case JourneyProfileRaptorPort.LastConnectionPlan lastConnection -> reverseTerminalFailure(
+				lastConnection.result(), JourneyProfileExecutionResult.Reason.NO_LAST_CONNECTION);
+		};
+	}
+
+	private static JourneyProfileExecutionResult.Reason reverseTerminalFailure(
+		JourneyProfileRaptorPort.ReversePlan result,
+		JourneyProfileExecutionResult.Reason notFoundReason
+	) {
+		if (!(result instanceof JourneyProfileRaptorPort.ReversePlan.NotFound notFound)) return null;
+		return notFound.outcome() == JourneyProfileRaptorPort.ReversePlan.Outcome.CANCELLED
+			? JourneyProfileExecutionResult.Reason.CANCELLED : notFoundReason;
 	}
 
 	private static boolean fresh(ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot, Instant calculatedAt,
