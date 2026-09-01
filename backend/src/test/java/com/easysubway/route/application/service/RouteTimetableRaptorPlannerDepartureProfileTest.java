@@ -1,12 +1,14 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
-import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import com.easysubway.route.domain.ConstraintMode;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
@@ -16,6 +18,9 @@ import org.junit.jupiter.api.Test;
 @DisplayName("#308 event-driven forward departure profile")
 class RouteTimetableRaptorPlannerDepartureProfileTest {
 
+	private static final String REQUEST_ID = "01ARZ3NDEKTSV4RRFFQ69G5FAV";
+	private static final String ROUTE_BUNDLE_SHA = "a".repeat(64);
+	private static final long GENERATION = 1L;
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 1);
 	private static final int ENTRY_SECONDS = 300;
 	private static final int SENIOR_ENTRY_SECONDS = 405;
@@ -26,17 +31,19 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	@DisplayName("profiles scheduled, frequency, and 24-hour departures from ENTRY plus slack breakpoints")
 	void profilesCanonicalEventsLatestFirstAndMatchesIndependentPointOracle() {
 		var compiled = planner.compile(timetable());
-		var command = commandAt(32_000);
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(instantAt(32_000), instantAt(87_000)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> false);
 		var profile = planner.departureProfile(
-			command,
-			compiled,
-			compiled.activeServiceDay(SERVICE_DATE),
-			32_000,
-			87_000,
-			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+			query, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(profile)
-			.extracting(RouteTimetableRaptorPlanner.DepartureProfilePoint::readyAtSeconds)
+			.extracting(RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint::readyAtSeconds)
 			.containsExactly(87_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				34_200 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				33_600 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
@@ -45,16 +52,41 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			assertThat(profile.get(index).scanMetrics().expandedRoutes())
 				.isGreaterThan(profile.get(index - 1).scanMetrics().expandedRoutes());
 		}
-		assertThat(profile).allSatisfy(point -> assertThat(point.itineraries())
-			.isEqualTo(planner.search(commandAt(point.readyAtSeconds()), compiled,
-				RouteTimetableRaptorPlanner.RealtimeOverlay.empty())));
+		assertThat(profile).allSatisfy(point -> {
+			var pointQuery = new JourneyRaptorQuery(
+				REQUEST_ID, "station-a", "station-b",
+				new JourneyRaptorQuery.DepartAt(instantAt(point.readyAtSeconds())),
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.SLOW,
+				JourneyRequest.MobilityProfile.SLOW,
+				JourneyRequest.ConstraintMode.NONE,
+				0, 1, () -> false);
+			assertThat(point.itineraries()).isEqualTo(planner.journeyItineraries(
+				pointQuery, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+				new JourneyRequestMeasurement(REQUEST_ID), REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION).itineraries());
+		});
 	}
 
-	private static SearchRouteV2Command commandAt(int readyAtSeconds) {
-		return new SearchRouteV2Command(
-			"station-a", "station-b",
-			SERVICE_DATE.atStartOfDay().plusSeconds(readyAtSeconds).atOffset(ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 0, 1);
+	@Test
+	void rejectsCrossServiceDayUntilTheProfileSplitterOwnsBothDays() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(instantAt(96_000), instantAt(97_200)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> false);
+
+		assertThatThrownBy(() -> planner.departureProfile(
+			query, planner.compile(timetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("one service day");
+	}
+
+	private static Instant instantAt(int readyAtSeconds) {
+		return SERVICE_DATE.atStartOfDay().plusSeconds(readyAtSeconds)
+			.atOffset(ZoneOffset.ofHours(9)).toInstant();
 	}
 
 	private static RouteTimetable timetable() {

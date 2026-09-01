@@ -146,14 +146,24 @@ class RouteTimetableRaptorPlanner {
 		long generation
 	) {
 		ScanResult scanResult = scanDestinationLabels(input, timetable, false, realtimeOverlay);
-		List<JourneyItinerary> itineraries = scanResult.labels().stream()
+		List<JourneyItinerary> itineraries = journeyItineraries(
+			input, timetable, realtimeOverlay, scanResult);
+		var measurementObservation = requestMeasurement.observeDirectRaptor(
+			requestId, routeBundleSha256, generation);
+		return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation);
+	}
+
+	private static List<JourneyItinerary> journeyItineraries(
+		ScanInput input,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		ScanResult scanResult
+	) {
+		return scanResult.labels().stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.limit(input.candidateLimit())
 			.map(label -> toJourneyItinerary(input, timetable, realtimeOverlay, label))
 			.toList();
-		var measurementObservation = requestMeasurement.observeDirectRaptor(
-			requestId, routeBundleSha256, generation);
-		return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation);
 	}
 
 	SearchOutcome searchWithDiagnostics(SearchRouteV2Command command, CompiledTimetable timetable) {
@@ -1422,6 +1432,12 @@ class RouteTimetableRaptorPlanner {
 		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartAt departAt)) {
 			throw new IllegalArgumentException("Journey RAPTOR point planner does not support temporal profile queries");
 		}
+		var resolved = ServiceDayResolver.resolve(departAt.readyAt());
+		return scanInput(requiredQuery,
+			new ServiceDay(resolved.serviceDate(), resolved.secondsFromServiceDayStart()));
+	}
+
+	private static ScanInput scanInput(JourneyRaptorQuery requiredQuery, ServiceDay serviceDay) {
 		MobilityPreset mobilityPreset = switch (requiredQuery.mobilityProfile()) {
 			case STANDARD -> MobilityPreset.STANDARD;
 			case SLOW -> MobilityPreset.SLOW;
@@ -1440,12 +1456,11 @@ class RouteTimetableRaptorPlanner {
 			: accessProfile == JourneyAccessProfile.STEP_FREE
 				? ConstraintMode.PREFER_STEP_FREE
 				: ConstraintMode.ALLOW_WITH_WARNINGS;
-		var resolved = ServiceDayResolver.resolve(departAt.readyAt());
 		return new ScanInput(
 			requiredQuery.originStationId(),
 			requiredQuery.destinationStationId(),
-			new ServiceDay(resolved.serviceDate(), resolved.secondsFromServiceDayStart()),
-			resolved.secondsFromServiceDayStart(),
+			serviceDay,
+			serviceDay.departureSeconds(),
 			accessProfile.profileBit(constraintMode),
 			mobilityPreset,
 			constraintMode,
@@ -1515,69 +1530,75 @@ class RouteTimetableRaptorPlanner {
 			.toList();
 	}
 
-	List<DepartureProfilePoint> departureProfile(
-		SearchRouteV2Command command,
+	List<JourneyDepartureProfilePoint> departureProfile(
+		JourneyRaptorQuery query,
 		CompiledTimetable timetable,
-		ActiveServiceDay activeServiceDay,
-		int earliestReadyAtSeconds,
-		int latestReadyAtSeconds,
 		RealtimeOverlay realtimeOverlay
 	) {
-		Objects.requireNonNull(command, "command must not be null");
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query must not be null");
 		Objects.requireNonNull(timetable, "timetable must not be null");
-		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
-		if (earliestReadyAtSeconds > latestReadyAtSeconds) {
-			throw new IllegalArgumentException("earliestReadyAtSeconds must not exceed latestReadyAtSeconds");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartBetween range)) {
+			throw new IllegalArgumentException("Journey departure profile requires DEPART_BETWEEN");
 		}
-
-		ServiceDay serviceDay = serviceDay(command);
+		var earliest = ServiceDayResolver.resolve(range.earliestReadyAt());
+		var latest = ServiceDayResolver.resolve(range.latestReadyAt());
+		if (!earliest.serviceDate().equals(latest.serviceDate())) {
+			throw new IllegalArgumentException("Journey departure profile requires one service day per scan");
+		}
+		ServiceDay serviceDay = new ServiceDay(latest.serviceDate(), latest.secondsFromServiceDayStart());
+		ScanInput profileInput = scanInput(requiredQuery, serviceDay);
+		throwIfCancelled(profileInput);
+		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDay.date());
 		ScanWorkspace workspace = scanWorkspaces.get();
 		workspace.prepare(timetable.stationCount(), timetable.lineCount(), timetable.routePatternCount());
 		if (activeServiceDay.trips().isEmpty()) {
 			return List.of();
 		}
-		int origin = timetable.stationIndex(command.originStationId());
-		int destination = timetable.stationIndex(command.destinationStationId());
+		int origin = timetable.stationIndex(profileInput.originStationId());
+		int destination = timetable.stationIndex(profileInput.destinationStationId());
 		if (origin < 0 || destination < 0) {
 			return List.of();
 		}
 
-		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
-		int accessProfileBit = profileBit(command.mobilityType(), command.constraintMode());
+		int slackSeconds = profileInput.boardingSlackSeconds();
+		int accessProfileBit = profileInput.accessProfileBit();
 		List<Integer> breakpoints = departureEvents(
 			activeServiceDay,
-			command.originStationId(),
+			profileInput.originStationId(),
 			0,
 			LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE - 1,
 			realtimeOverlay
 		).stream().map(event -> readyAtBreakpoint(
-			command, timetable, origin, accessProfileBit, slackSeconds, event))
+			profileInput, timetable, origin, accessProfileBit, slackSeconds, event))
 			.filter(OptionalIntValue::present)
 			.mapToInt(OptionalIntValue::value)
-			.filter(readyAt -> readyAt >= earliestReadyAtSeconds && readyAt <= latestReadyAtSeconds)
+			.filter(readyAt -> readyAt >= earliest.secondsFromServiceDayStart()
+				&& readyAt <= latest.secondsFromServiceDayStart())
 			.boxed()
 			.distinct()
 			.toList();
 
-		List<DepartureProfilePoint> profile = new ArrayList<>(breakpoints.size());
+		List<JourneyDepartureProfilePoint> profile = new ArrayList<>(breakpoints.size());
 		for (int readyAtSeconds : breakpoints) {
 			if (!workspace.improveOrigin(origin, readyAtSeconds)) {
 				continue;
 			}
-			ScanInput input = scanInput(command, new ServiceDay(serviceDay.date(), readyAtSeconds));
+			ScanInput input = scanInput(requiredQuery, new ServiceDay(serviceDay.date(), readyAtSeconds));
 			scanMarkedRounds(
 				input, timetable, activeServiceDay, workspace, slackSeconds, accessProfileBit, false, realtimeOverlay);
-			List<RouteSearchResult> itineraries = results(
-				command, timetable, serviceDay, realtimeOverlay, destinationScanResult(
-					input, timetable, workspace, destination, accessProfileBit, false, realtimeOverlay));
-			profile.add(new DepartureProfilePoint(readyAtSeconds, itineraries, scanMetrics(workspace)));
+			ScanResult scanResult = destinationScanResult(
+				input, timetable, workspace, destination, accessProfileBit, false, realtimeOverlay);
+			profile.add(new JourneyDepartureProfilePoint(
+				readyAtSeconds,
+				journeyItineraries(input, timetable, realtimeOverlay, scanResult),
+				scanResult.scanMetrics()));
 		}
 		return List.copyOf(profile);
 	}
 
 	private static OptionalIntValue readyAtBreakpoint(
-		SearchRouteV2Command command,
+		ScanInput input,
 		CompiledTimetable timetable,
 		int origin,
 		int accessProfileBit,
@@ -1589,12 +1610,12 @@ class RouteTimetableRaptorPlanner {
 			return OptionalIntValue.empty();
 		}
 		int entryTransition = timetable.entryTransition(
-			origin, boardingLine, accessProfileBit, false, command.requiresVerifiedJourneyDistance());
+			origin, boardingLine, accessProfileBit, false, input.requiresVerifiedJourneyDistance());
 		if (entryTransition < 0) {
 			return OptionalIntValue.empty();
 		}
 		int entrySeconds = journeyAccessSeconds(
-			command,
+			input,
 			JourneyAccessKind.ENTRY,
 			timetable.transitionDurationSeconds(entryTransition),
 			timetable.transitionDistanceMeters(entryTransition));
@@ -3017,8 +3038,12 @@ class RouteTimetableRaptorPlanner {
 	private record ScanResult(ServiceDay serviceDay, List<Label> labels, ScanMetrics scanMetrics) {
 	}
 
-	record DepartureProfilePoint(int readyAtSeconds, List<RouteSearchResult> itineraries, ScanMetrics scanMetrics) {
-		DepartureProfilePoint {
+	record JourneyDepartureProfilePoint(
+		int readyAtSeconds,
+		List<JourneyItinerary> itineraries,
+		ScanMetrics scanMetrics
+	) {
+		JourneyDepartureProfilePoint {
 			itineraries = List.copyOf(itineraries);
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 		}
