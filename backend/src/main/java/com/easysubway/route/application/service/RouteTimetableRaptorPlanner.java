@@ -18,12 +18,15 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitS
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
 import com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
@@ -37,6 +40,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
+import java.time.ZoneOffset;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -102,6 +106,19 @@ class RouteTimetableRaptorPlanner {
 		ServiceDay serviceDay = serviceDay(command);
 		return results(command, timetable, serviceDay, realtimeOverlay,
 			scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay));
+	}
+
+	JourneyPlan journeyItineraries(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		JourneyRequestMeasurement requestMeasurement,
+		String requestId,
+		String routeBundleSha256,
+		long generation
+	) {
+		return journeyItineraries(
+			pointCommand(query), timetable, realtimeOverlay, requestMeasurement, requestId, routeBundleSha256, generation);
 	}
 
 	JourneyPlan journeyItineraries(
@@ -1352,8 +1369,53 @@ class RouteTimetableRaptorPlanner {
 		return Integer.toUnsignedString(key.toString().hashCode(), 36);
 	}
 
+	private static SearchRouteV2Command pointCommand(JourneyRaptorQuery query) {
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartAt departAt)) {
+			throw new IllegalArgumentException("Journey RAPTOR point planner does not support temporal profile queries");
+		}
+		MobilityType mobilityType = switch (requiredQuery.mobilityProfile()) {
+			case STANDARD, NO_STAIRS -> MobilityType.LUGGAGE;
+			case SLOW -> MobilityType.SENIOR;
+			case STEP_FREE -> MobilityType.WHEELCHAIR;
+		};
+		MobilityPreset mobilityPreset = switch (requiredQuery.mobilityProfile()) {
+			case STANDARD -> MobilityPreset.STANDARD;
+			case SLOW -> MobilityPreset.SLOW;
+			case NO_STAIRS -> MobilityPreset.NO_STAIRS;
+			case STEP_FREE -> MobilityPreset.STEP_FREE;
+		};
+		ConstraintMode constraintMode = requiredQuery.constraintMode()
+			== com.easysubway.journey.application.JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+			? ConstraintMode.STRICT_STEP_FREE
+			: requiredQuery.mobilityProfile()
+				== com.easysubway.journey.application.JourneyRequest.MobilityProfile.STEP_FREE
+					? ConstraintMode.PREFER_STEP_FREE
+					: ConstraintMode.ALLOW_WITH_WARNINGS;
+		return new SearchRouteV2Command(
+			requiredQuery.originStationId(),
+			requiredQuery.destinationStationId(),
+			departAt.readyAt().atOffset(ZoneOffset.UTC),
+			mobilityType,
+			mobilityPreset,
+			constraintMode,
+			requiredQuery.timePolicy()
+				== com.easysubway.journey.application.JourneyRequest.TimePolicy.REALTIME_REQUIRED,
+			requiredQuery.maxTransfers(),
+			requiredQuery.alternativeCount(),
+			requiredQuery.walkingPace().speedMetersPerHour()
+		);
+	}
+
 	CompiledTimetable compile(RouteTimetable timetable) {
 		return new CompiledTimetable(timetable);
+	}
+
+	List<TimetableRealtimeQuery> realtimeQueries(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable
+	) {
+		return realtimeQueries(pointCommand(query), timetable);
 	}
 
 	List<TimetableRealtimeQuery> realtimeQueries(
