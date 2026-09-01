@@ -7,6 +7,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -26,9 +27,8 @@ class JourneyProfileApplicationServiceTest {
 				reference.set(freshnessReference);
 				return snapshot(Instant.parse("2026-09-01T02:00:00Z"));
 			},
-			(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
-				new JourneyProfileRaptorPort.DepartureWindowPlan(
-					(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())),
+			(query, snapshot, realtime, limits) -> planned(query, new JourneyProfileRaptorPort.DepartureWindowPlan(
+				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 		var latestReadyAt = Instant.parse("2026-09-01T01:30:00Z");
 
@@ -38,6 +38,8 @@ class JourneyProfileApplicationServiceTest {
 		assertThat(reference.get()).isEqualTo(latestReadyAt);
 		assertThat(((JourneyProfileExecutionResult.Success) result).resourcePolicyIdentity())
 			.isEqualTo(policy().identity());
+		assertThat(((JourneyProfileExecutionResult.Success) result).countSnapshot().requestId())
+			.isEqualTo(REQUEST_ID);
 	}
 
 	@Test
@@ -46,8 +48,7 @@ class JourneyProfileApplicationServiceTest {
 		var lastConnection = new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1));
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(validUntil),
-			(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
-				new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection,
+			(query, snapshot, realtime, limits) -> planned(query, new JourneyProfileRaptorPort.LastConnectionPlan(lastConnection,
 				new JourneyProfileRaptorPort.ReversePlan.NotFound(
 					JourneyProfileRaptorPort.ReversePlan.Outcome.NO_OD_CONNECTION),
 				validUntil)),
@@ -55,8 +56,10 @@ class JourneyProfileApplicationServiceTest {
 
 		var result = service.execute(query(lastConnection), policy());
 
-		assertThat(result).isEqualTo(new JourneyProfileExecutionResult.Failure(
-			JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE));
+		var failure = (JourneyProfileExecutionResult.Failure) result;
+		assertThat(failure.reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
+		assertThat(failure.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
 	}
 
 	@Test
@@ -65,14 +68,13 @@ class JourneyProfileApplicationServiceTest {
 		var arriveBy = new JourneyRaptorQuery.ArriveBy(NOW, NOW.plusSeconds(60));
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(validUntil),
-			(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
-				new JourneyProfileRaptorPort.ArriveByPlan(arriveBy,
+			(query, snapshot, realtime, limits) -> planned(query, new JourneyProfileRaptorPort.ArriveByPlan(arriveBy,
 					new JourneyProfileRaptorPort.ReversePlan.Found(List.of(
 						itinerary(NOW.plusSeconds(60)), itinerary(NOW.plusSeconds(180)))))),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		assertThat(service.execute(query(arriveBy), policy())).isEqualTo(new JourneyProfileExecutionResult.Failure(
-			JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE));
+		assertThat(((JourneyProfileExecutionResult.Failure) service.execute(query(arriveBy), policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
 	}
 
 	@Test
@@ -81,13 +83,12 @@ class JourneyProfileApplicationServiceTest {
 		var different = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(900));
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
-			(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
+			(query, snapshot, realtime, limits) -> planned(query,
 				new JourneyProfileRaptorPort.DepartureWindowPlan(different, List.of())),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		assertThat(service.execute(query(requested), policy()))
-			.isEqualTo(new JourneyProfileExecutionResult.Failure(
-				JourneyProfileExecutionResult.Reason.RAPTOR_FAILED));
+		assertThat(((JourneyProfileExecutionResult.Failure) service.execute(query(requested), policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
 	}
 
 	@Test
@@ -106,9 +107,8 @@ class JourneyProfileApplicationServiceTest {
 			},
 			(query, snapshot, realtime, limits) -> {
 				calls.incrementAndGet();
-				return new JourneyProfileRaptorPort.PlanningResult.Planned(
-					new JourneyProfileRaptorPort.DepartureWindowPlan(
-						(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()));
+				return planned(query, new JourneyProfileRaptorPort.DepartureWindowPlan(
+					(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()));
 			},
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
@@ -119,21 +119,47 @@ class JourneyProfileApplicationServiceTest {
 
 	@Test
 	void exposesAPlannerCapacityLimitAsAnExactFailClosedResult() {
+		var requested = query(new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600)));
+		var capacityCounts = capacitySnapshot(requested);
 		JourneyProfileRaptorPort raptor = (
 				JourneyRaptorQuery query,
 				ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
 				JourneyRealtimePort.RealtimeObservation realtime,
 				JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 			) -> new JourneyProfileRaptorPort.PlanningResult.CapacityExceeded(
-				JourneyProfileRaptorPort.PlanningCapacity.MAX_LABELS_PER_STATE, 9, 8);
+				JourneyProfileRaptorPort.PlanningCapacity.MAX_LABELS_PER_STATE, 9, 8, capacityCounts);
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
 			raptor,
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		assertThat(service.execute(query(new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600))), policy()))
-			.isEqualTo(new JourneyProfileExecutionResult.Failure(
-				JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED));
+		var failure = (JourneyProfileExecutionResult.Failure) service.execute(requested, policy());
+		assertThat(failure.reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
+		assertThat(failure.countSnapshot()).isSameAs(capacityCounts);
+		assertThat(failure.countSnapshot().countsByRuleId()
+			.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
+	}
+
+	@Test
+	void rejectsPlanningEvidenceBoundToAnotherRequestOrTemporalAlgorithm() {
+		var temporalQuery = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600));
+		var requested = query(temporalQuery);
+		var plan = new JourneyProfileRaptorPort.DepartureWindowPlan(temporalQuery, List.of());
+		var forward = JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR;
+		var reverse = JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR;
+		for (var invalid : List.of(snapshot("01ARZ3NDEKTSV4RRFFQ69G5FAA", forward),
+			snapshot(REQUEST_ID, reverse))) {
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
+				(query, snapshot, realtime, limits) ->
+					new JourneyProfileRaptorPort.PlanningResult.Planned(plan, invalid),
+				Clock.fixed(NOW, ZoneOffset.UTC));
+
+			var failure = (JourneyProfileExecutionResult.Failure) service.execute(requested, policy());
+			assertThat(failure.reason()).isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+			assertThat(failure.countSnapshot()).isNull();
+		}
 	}
 
 	@Test
@@ -141,16 +167,16 @@ class JourneyProfileApplicationServiceTest {
 		var captured = new AtomicReference<JourneyProfileResourcePolicy.ProfilePlanningLimits>();
 		JourneyProfileRaptorPort raptor = (query, snapshot, realtime, limits) -> {
 			captured.set(limits);
-			return new JourneyProfileRaptorPort.PlanningResult.AdmissionRejected(1_001, 1_000);
+			return new JourneyProfileRaptorPort.PlanningResult.AdmissionRejected(1_001, 1_000, snapshot(query));
 		};
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
 			raptor,
 			Clock.fixed(NOW, ZoneOffset.UTC));
 
-		assertThat(service.execute(query(new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600))), policy()))
-			.isEqualTo(new JourneyProfileExecutionResult.Failure(
-				JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX));
+		assertThat(((JourneyProfileExecutionResult.Failure) service.execute(
+			query(new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600))), policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX);
 		assertThat(captured.get()).isEqualTo(policy().profilePlanningLimits());
 	}
 
@@ -162,6 +188,37 @@ class JourneyProfileApplicationServiceTest {
 		return new JourneyRaptorQuery(REQUEST_ID, "station-a", "station-b", temporalQuery,
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
 			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+	}
+
+	private static JourneyProfileRaptorPort.PlanningResult.Planned planned(
+		JourneyRaptorQuery query,
+		JourneyProfileRaptorPort.TemporalPlan plan
+	) {
+		return new JourneyProfileRaptorPort.PlanningResult.Planned(plan, snapshot(query));
+	}
+
+	private static JourneyRaptorPruningInventoryV1.CountSnapshot snapshot(JourneyRaptorQuery query) {
+		var identity = query.temporalQuery() instanceof JourneyRaptorQuery.DepartBetween
+			? JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR
+			: JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR;
+		return snapshot(query.requestId(), identity);
+	}
+
+	private static JourneyRaptorPruningInventoryV1.CountSnapshot snapshot(
+		String requestId,
+		JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity identity
+	) {
+		return new JourneyRaptorPruningInventoryV1.CountSnapshot(requestId, identity,
+			JourneyRaptorPruningInventoryV1.activeRuleIds(identity).stream()
+				.collect(java.util.stream.Collectors.toMap(rule -> rule, ignored -> 0L)));
+	}
+
+	private static JourneyRaptorPruningInventoryV1.CountSnapshot capacitySnapshot(JourneyRaptorQuery query) {
+		var observed = snapshot(query);
+		var counts = new LinkedHashMap<>(observed.countsByRuleId());
+		counts.put("FAIL_CLOSED_FRONTIER_CAPACITY_V1", 1L);
+		return new JourneyRaptorPruningInventoryV1.CountSnapshot(
+			observed.requestId(), observed.algorithmIdentity(), counts);
 	}
 
 	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(Instant validUntil) {

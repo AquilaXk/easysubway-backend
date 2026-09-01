@@ -34,9 +34,7 @@ class JourneyProfileDeadlineExecutorTest {
 
 	@Test
 	void completesWithinTheCallerDeadline() {
-		var service = service((query, snapshot, realtime, limits) ->
-			new JourneyProfileRaptorPort.PlanningResult.Planned(new JourneyProfileRaptorPort.DepartureWindowPlan(
-				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())));
+		var service = service((query, snapshot, realtime, limits) -> planned(query));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var result = new JourneyProfileDeadlineExecutor(service, executor)
 				.execute(query(), JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(1)));
@@ -47,9 +45,7 @@ class JourneyProfileDeadlineExecutorTest {
 
 	@Test
 	void rejectsAnOverflowingDeadlineFromThePinnedPolicy() {
-		var service = service((query, snapshot, realtime, limits) ->
-			new JourneyProfileRaptorPort.PlanningResult.Planned(new JourneyProfileRaptorPort.DepartureWindowPlan(
-				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())));
+		var service = service((query, snapshot, realtime, limits) -> planned(query));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var deadlineExecutor = new JourneyProfileDeadlineExecutor(service, executor);
 
@@ -62,6 +58,16 @@ class JourneyProfileDeadlineExecutorTest {
 	private static JourneyProfileApplicationService service(JourneyProfileRaptorPort raptor) {
 		return new JourneyProfileApplicationService(
 			(query, reference, measurement) -> snapshot(), raptor, Clock.fixed(NOW, ZoneOffset.UTC));
+	}
+
+	private static JourneyProfileRaptorPort.PlanningResult.Planned planned(JourneyRaptorQuery query) {
+		var identity = JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR;
+		var counts = JourneyRaptorPruningInventoryV1.activeRuleIds(identity).stream()
+			.collect(java.util.stream.Collectors.toMap(rule -> rule, ignored -> 0L));
+		return new JourneyProfileRaptorPort.PlanningResult.Planned(
+			new JourneyProfileRaptorPort.DepartureWindowPlan(
+				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()),
+			new JourneyRaptorPruningInventoryV1.CountSnapshot(query.requestId(), identity, counts));
 	}
 
 	private static JourneyRaptorQuery query() {

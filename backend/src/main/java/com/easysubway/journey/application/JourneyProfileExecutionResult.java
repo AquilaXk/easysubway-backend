@@ -11,7 +11,8 @@ public sealed interface JourneyProfileExecutionResult
 		Instant validUntil,
 		SourceIdentity sourceIdentity,
 		JourneyProfileResourcePolicy.Identity resourcePolicyIdentity,
-		JourneyProfileRaptorPort.TemporalPlan temporalPlan
+		JourneyProfileRaptorPort.TemporalPlan temporalPlan,
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
 	) implements JourneyProfileExecutionResult {
 		public Success {
 			calculatedAt = Objects.requireNonNull(calculatedAt, "calculatedAt");
@@ -22,12 +23,20 @@ public sealed interface JourneyProfileExecutionResult
 			sourceIdentity = Objects.requireNonNull(sourceIdentity, "sourceIdentity");
 			resourcePolicyIdentity = Objects.requireNonNull(resourcePolicyIdentity, "resourcePolicyIdentity");
 			temporalPlan = Objects.requireNonNull(temporalPlan, "temporalPlan");
+			countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
 		}
 	}
 
-	record Failure(Reason reason) implements JourneyProfileExecutionResult {
+	record Failure(
+		Reason reason,
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+	) implements JourneyProfileExecutionResult {
 		public Failure {
 			reason = Objects.requireNonNull(reason, "reason");
+		}
+
+		public Failure(Reason reason) {
+			this(reason, null);
 		}
 	}
 

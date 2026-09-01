@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -76,16 +77,20 @@ class ReverseTimetableRaptorPlannerTest {
 	@DisplayName("fails closed instead of truncating a reverse destination frontier")
 	void rejectsReverseDestinationFrontierBeyondCallerLimit() {
 		var compiled = forward.compile(reverseFrontierTimetable());
+		var observations = new JourneyProfilePruningObservationAccumulator(
+			ORACLE_REQUEST_ID, JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR);
 
 		assertThatThrownBy(() -> planner.arriveBy(
 			query("station-a", "station-b", deadlineAt(33_500, 180)), compiled,
 			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
-			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32)))
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32), observations))
 			.isInstanceOfSatisfying(ReverseTimetableRaptorPlanner.ReversePlanningLimitException.class, exceeded -> {
 				assertThat(exceeded.limit()).isEqualTo(ReverseTimetableRaptorPlanner.PlanningLimit.MAX_DESTINATION_PROFILE_LABELS);
 				assertThat(exceeded.observed()).isEqualTo(2);
 				assertThat(exceeded.max()).isEqualTo(1);
 			});
+		assertThat(observations.snapshot().countsByRuleId().get("FAIL_CLOSED_FRONTIER_CAPACITY_V1"))
+			.isEqualTo(1L);
 	}
 
 	@Test
