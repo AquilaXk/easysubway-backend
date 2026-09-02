@@ -967,6 +967,11 @@ components:
           items:
             $ref: "#/components/schemas/Journey"
     JourneyProfileSuccess:
+      oneOf:
+        - $ref: "#/components/schemas/DepartureProfileSuccess"
+        - $ref: "#/components/schemas/ArriveByProfileSuccess"
+        - $ref: "#/components/schemas/LastConnectionProfileSuccess"
+    DepartureProfileSuccess:
       type: object
       additionalProperties: false
       required:
@@ -1001,7 +1006,7 @@ components:
           type: string
           format: date-time
         temporalQuery:
-          $ref: "#/components/schemas/JourneyTemporalQuery"
+          $ref: "#/components/schemas/JourneyDepartBetweenQuery"
         serviceDays:
           type: array
           minItems: 1
@@ -1029,7 +1034,117 @@ components:
           items:
             $ref: "#/components/schemas/JourneyProfileSegment"
         summary:
-          $ref: "#/components/schemas/JourneyProfileSummary"
+          $ref: "#/components/schemas/JourneyDepartureProfileSummary"
+    ArriveByProfileSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - requestId
+        - queryId
+        - calculatedAt
+        - validUntil
+        - temporalQuery
+        - serviceDays
+        - sourceIdentity
+        - algorithmIdentity
+        - frontierPolicyIdentity
+        - resourcePolicyIdentity
+        - journeys
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_PROFILE_V1]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        queryId:
+          type: string
+          minLength: 1
+        calculatedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        temporalQuery:
+          $ref: "#/components/schemas/JourneyArriveByQuery"
+        serviceDays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileServiceDayIdentity"
+        sourceIdentity:
+          $ref: "#/components/schemas/JourneyProfileSourceIdentity"
+        algorithmIdentity:
+          $ref: "#/components/schemas/JourneyAlgorithmIdentity"
+        frontierPolicyIdentity:
+          $ref: "#/components/schemas/JourneyFrontierPolicyIdentity"
+        resourcePolicyIdentity:
+          $ref: "#/components/schemas/JourneyProfileResourcePolicyIdentity"
+        journeys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileJourneyCandidate"
+        summary:
+          $ref: "#/components/schemas/JourneyArriveByProfileSummary"
+    LastConnectionProfileSuccess:
+      type: object
+      additionalProperties: false
+      required:
+        - contractVersion
+        - requestId
+        - queryId
+        - calculatedAt
+        - validUntil
+        - temporalQuery
+        - serviceDays
+        - sourceIdentity
+        - algorithmIdentity
+        - frontierPolicyIdentity
+        - resourcePolicyIdentity
+        - journeys
+        - summary
+      properties:
+        contractVersion:
+          type: string
+          enum: [JOURNEY_PROFILE_V1]
+        requestId:
+          type: string
+          pattern: "^[0-7][0-9A-HJKMNP-TV-Z]{25}$"
+        queryId:
+          type: string
+          minLength: 1
+        calculatedAt:
+          type: string
+          format: date-time
+        validUntil:
+          type: string
+          format: date-time
+        temporalQuery:
+          $ref: "#/components/schemas/JourneyLastConnectionQuery"
+        serviceDays:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileServiceDayIdentity"
+        sourceIdentity:
+          $ref: "#/components/schemas/JourneyProfileSourceIdentity"
+        algorithmIdentity:
+          $ref: "#/components/schemas/JourneyAlgorithmIdentity"
+        frontierPolicyIdentity:
+          $ref: "#/components/schemas/JourneyFrontierPolicyIdentity"
+        resourcePolicyIdentity:
+          $ref: "#/components/schemas/JourneyProfileResourcePolicyIdentity"
+        journeys:
+          type: array
+          minItems: 1
+          items:
+            $ref: "#/components/schemas/JourneyProfileJourneyCandidate"
+        summary:
+          $ref: "#/components/schemas/JourneyLastConnectionProfileSummary"
     JourneyProfileServiceDayIdentity:
       type: object
       additionalProperties: false
@@ -1137,9 +1252,10 @@ components:
           type: string
           format: date-time
           description: >-
-            Latest representative readiness breakpoint for this candidate; an earlier
-            containing segment means the passenger waits until this instant before
-            following the journey.
+            Readiness instant bound to this candidate. For DEPART_BETWEEN this is the
+            latest representative breakpoint; an earlier containing segment means the
+            passenger waits until this instant. For ARRIVE_BY and LAST_CONNECTION this
+            is the native planned entry readiness and does not imply a readiness segment.
         journeyStartTime:
           type: string
           format: date-time
@@ -1183,11 +1299,6 @@ components:
           items:
             type: string
             minLength: 1
-    JourneyProfileSummary:
-      oneOf:
-        - $ref: "#/components/schemas/JourneyDepartureProfileSummary"
-        - $ref: "#/components/schemas/JourneyArriveByProfileSummary"
-        - $ref: "#/components/schemas/JourneyLastConnectionProfileSummary"
     JourneyDepartureProfileSummary:
       type: object
       additionalProperties: false

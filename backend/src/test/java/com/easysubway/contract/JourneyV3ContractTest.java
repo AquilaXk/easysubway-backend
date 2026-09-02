@@ -167,11 +167,35 @@ class JourneyV3ContractTest {
 		assertThat(schema(document, "JourneyDepartureScheduled").get("description"))
 			.isEqualTo("Retained wire alias for the canonical DEPART_AT product mode.");
 
-		Set<String> successFields = Set.of("contractVersion", "requestId", "queryId", "calculatedAt", "validUntil",
-			"temporalQuery", "serviceDays", "sourceIdentity", "algorithmIdentity", "frontierPolicyIdentity",
-			"resourcePolicyIdentity", "journeys", "profileSegments", "summary");
-		assertClosedSchema(document, "JourneyProfileSuccess", successFields, successFields);
-		assertEnum(property(document, "JourneyProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(references(schema(document, "JourneyProfileSuccess").get("oneOf"))).containsExactly(
+			"#/components/schemas/DepartureProfileSuccess",
+			"#/components/schemas/ArriveByProfileSuccess",
+			"#/components/schemas/LastConnectionProfileSuccess"
+		);
+		Set<String> commonSuccessFields = Set.of("contractVersion", "requestId", "queryId", "calculatedAt",
+			"validUntil", "temporalQuery", "serviceDays", "sourceIdentity", "algorithmIdentity",
+			"frontierPolicyIdentity", "resourcePolicyIdentity", "journeys", "summary");
+		Set<String> departureSuccessFields = new LinkedHashSet<>(commonSuccessFields);
+		departureSuccessFields.add("profileSegments");
+		assertClosedSchema(document, "DepartureProfileSuccess", departureSuccessFields, departureSuccessFields);
+		assertEnum(property(document, "DepartureProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(property(document, "DepartureProfileSuccess", "temporalQuery").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyDepartBetweenQuery");
+		assertThat(property(document, "DepartureProfileSuccess", "summary").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyDepartureProfileSummary");
+		assertThat(property(document, "DepartureProfileSuccess", "profileSegments").get("minItems")).isEqualTo(1);
+		assertClosedSchema(document, "ArriveByProfileSuccess", commonSuccessFields, commonSuccessFields);
+		assertEnum(property(document, "ArriveByProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(property(document, "ArriveByProfileSuccess", "temporalQuery").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyArriveByQuery");
+		assertThat(property(document, "ArriveByProfileSuccess", "summary").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyArriveByProfileSummary");
+		assertClosedSchema(document, "LastConnectionProfileSuccess", commonSuccessFields, commonSuccessFields);
+		assertEnum(property(document, "LastConnectionProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(property(document, "LastConnectionProfileSuccess", "temporalQuery").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyLastConnectionQuery");
+		assertThat(property(document, "LastConnectionProfileSuccess", "summary").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyLastConnectionProfileSummary");
 		assertClosedSchema(document, "JourneyProfileJourneyCandidate",
 			Set.of("journeyId", "readyAt", "journeyStartTime", "firstBoardingTime", "arrivalAtPlatform",
 				"arrivalAtDestination", "objectiveTags", "journey"),
@@ -182,16 +206,15 @@ class JourneyV3ContractTest {
 			Set.of("readyFromInclusive", "readyUntilExclusive", "journeyIds"));
 		assertThat(property(document, "JourneyProfileSegment", "journeyIds")).doesNotContainKey("minItems");
 		assertThat(property(document, "JourneyProfileJourneyCandidate", "readyAt").get("description"))
-			.isEqualTo("Latest representative readiness breakpoint for this candidate; an earlier containing " +
-				"segment means the passenger waits until this instant before following the journey.");
+			.isEqualTo("Readiness instant bound to this candidate. For DEPART_BETWEEN this is the latest " +
+				"representative breakpoint; an earlier containing segment means the passenger waits until this " +
+				"instant. For ARRIVE_BY and LAST_CONNECTION this is the native planned entry readiness and does " +
+				"not imply a readiness segment.");
 		assertThat(property(document, "JourneyDepartBetweenQuery", "latestReadyAt").get("description"))
 			.isEqualTo("Inclusive whole-second terminal readiness; the final compressed segment ends one second " +
 				"later as an exclusive bound.");
-		assertThat(references(schema(document, "JourneyProfileSummary").get("oneOf"))).containsExactly(
-			"#/components/schemas/JourneyDepartureProfileSummary",
-			"#/components/schemas/JourneyArriveByProfileSummary",
-			"#/components/schemas/JourneyLastConnectionProfileSummary"
-		);
+		assertThat(map(map(document.get("components")).get("schemas")))
+			.doesNotContainKey("JourneyProfileSummary");
 		assertClosedSchema(document, "JourneyProfileSourceIdentity",
 			Set.of("routeBundleId", "routeBundleGeneration", "routeBundleSha256", "timetableSnapshotId",
 				"accessibilitySnapshotId", "realtimeSnapshotId"),
