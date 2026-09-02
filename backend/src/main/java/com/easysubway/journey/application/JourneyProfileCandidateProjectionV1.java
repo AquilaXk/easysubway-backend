@@ -13,13 +13,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.Consumer;
 
 /**
- * Closed DEPART_BETWEEN-only projection from native planner facts to Profile V1 candidates.
+ * Closed temporal-profile projection from native planner facts to Profile V1 candidates.
  *
- * <p>This boundary deliberately does not project reverse temporal modes. Every candidate binds a
- * native physical itinerary to the departure point at which it was feasible, and every published
- * segment and summary reference resolves against one immutable inventory.</p>
+ * <p>Every candidate binds a native physical itinerary to its planned readiness fact, and every
+ * published segment and summary reference resolves against one immutable inventory.</p>
  */
 public final class JourneyProfileCandidateProjectionV1 {
 
@@ -92,6 +92,101 @@ public final class JourneyProfileCandidateProjectionV1 {
 		return new Projected(new DepartureWindowProjection(departureWindow, inventory, compressed.segments(), summary));
 	}
 
+	public static Outcome projectArriveBy(
+		JourneyRaptorQuery query,
+		JourneyProfileRaptorPort.ArriveByPlan plan,
+		int maxDestinationProfileLabels
+	) {
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		JourneyProfileRaptorPort.ArriveByPlan requiredPlan = Objects.requireNonNull(plan, "plan");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.ArriveBy arriveBy)
+			|| !arriveBy.equals(requiredPlan.temporalQuery())) {
+			throw new IllegalArgumentException("query temporal facts must equal ArriveByPlan.temporalQuery");
+		}
+		ReverseProjection reverse = projectReverse(requiredQuery, requireFound(requiredPlan.result()),
+			maxDestinationProfileLabels, itinerary -> {
+				if (itinerary.plannedReadyAt().isBefore(arriveBy.earliestReadyAt())
+					|| itinerary.plannedArrivalAtDestination().isAfter(arriveBy.arrivalDeadline())) {
+					throw new IllegalArgumentException("reverse itinerary falls outside arrive-by facts");
+				}
+			});
+		if (reverse instanceof ReverseCapacityExceeded exceeded) return exceeded.outcome();
+		ReverseSuccess success = (ReverseSuccess) reverse;
+		JourneyProfileSummaryPolicyV1.ArriveBy summary = (JourneyProfileSummaryPolicyV1.ArriveBy)
+			JourneyProfileSummaryPolicyV1.select(requiredQuery, success.frontier(), requiredQuery.alternativeCount());
+		requireResolvableReferences(success.inventory(), summary);
+		return new ArriveByProjected(new ArriveByProjection(arriveBy, success.inventory(), summary));
+	}
+
+	public static Outcome projectLastConnection(
+		JourneyRaptorQuery query,
+		JourneyProfileRaptorPort.LastConnectionPlan plan,
+		int maxDestinationProfileLabels
+	) {
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		JourneyProfileRaptorPort.LastConnectionPlan requiredPlan = Objects.requireNonNull(plan, "plan");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.LastConnection lastConnection)
+			|| !lastConnection.equals(requiredPlan.temporalQuery())) {
+			throw new IllegalArgumentException("query temporal facts must equal LastConnectionPlan.temporalQuery");
+		}
+		Instant terminalArrival = Objects.requireNonNull(requiredPlan.terminalArrivalAtDestination(),
+			"last-connection found plan requires terminalArrivalAtDestination");
+		ReverseProjection reverse = projectReverse(requiredQuery, requireFound(requiredPlan.result()),
+			maxDestinationProfileLabels, itinerary -> {
+				if (!itinerary.serviceDate().equals(lastConnection.serviceDate())
+					|| itinerary.plannedArrivalAtDestination().isAfter(terminalArrival)) {
+					throw new IllegalArgumentException("reverse itinerary falls outside last-connection service-day or terminal facts");
+				}
+			});
+		if (reverse instanceof ReverseCapacityExceeded exceeded) return exceeded.outcome();
+		ReverseSuccess success = (ReverseSuccess) reverse;
+		JourneyProfileSummaryPolicyV1.LastConnection summary = (JourneyProfileSummaryPolicyV1.LastConnection)
+			JourneyProfileSummaryPolicyV1.select(requiredQuery, success.frontier(), requiredQuery.alternativeCount());
+		requireResolvableReferences(success.inventory(), summary);
+		return new LastConnectionProjected(new LastConnectionProjection(lastConnection, success.inventory(), summary,
+			terminalArrival));
+	}
+
+	private static ReverseProjection projectReverse(
+		JourneyRaptorQuery query,
+		List<JourneyProfileRaptorPort.Itinerary> itineraries,
+		int maxDestinationProfileLabels,
+		Consumer<JourneyProfileRaptorPort.Itinerary> validateItinerary
+	) {
+		if (maxDestinationProfileLabels <= 0) {
+			throw new IllegalArgumentException("maxDestinationProfileLabels must be positive");
+		}
+		Map<String, RawCandidate> candidatesById = new LinkedHashMap<>();
+		for (JourneyProfileRaptorPort.Itinerary itinerary : itineraries) {
+			validateItinerary.accept(itinerary);
+			register(candidatesById, rawCandidate(query, itinerary.serviceDate(), itinerary.plannedReadyAt(), itinerary));
+		}
+		JourneyFrontierPolicyV1.Outcome outcome = JourneyFrontierPolicyV1.evaluate(
+			candidatesById.values().stream().map(RawCandidate::feasibleCandidate).toList(), REQUIRED_TAGS,
+			maxDestinationProfileLabels);
+		if (outcome instanceof JourneyFrontierPolicyV1.CapacityExceeded exceeded) {
+			return new ReverseCapacityExceeded(new CapacityExceeded(exceeded.metrics(), exceeded.requiredRepresentativeCount(),
+				exceeded.maxDestinationProfileLabels()));
+		}
+		JourneyFrontierPolicyV1.Success frontier = (JourneyFrontierPolicyV1.Success) outcome;
+		Map<String, EnumSet<ObjectiveTag>> tagsByCandidateId = new LinkedHashMap<>();
+		mergeTags(tagsByCandidateId, frontier.labels());
+		List<Candidate> inventory = tagsByCandidateId.entrySet().stream()
+			.map(entry -> candidatesById.get(entry.getKey()).project(entry.getValue()))
+			.sorted(CANDIDATE_ORDER)
+			.toList();
+		return new ReverseSuccess(inventory, frontier);
+	}
+
+	private static List<JourneyProfileRaptorPort.Itinerary> requireFound(
+		JourneyProfileRaptorPort.ReversePlan result
+	) {
+		if (!(result instanceof JourneyProfileRaptorPort.ReversePlan.Found found)) {
+			throw new IllegalArgumentException("reverse projection requires ReversePlan.Found");
+		}
+		return found.itineraries();
+	}
+
 	private static RawCandidate rawCandidate(
 		JourneyRaptorQuery query,
 		LocalDate serviceDate,
@@ -161,7 +256,41 @@ public final class JourneyProfileCandidateProjectionV1 {
 		}
 		requireResolved(byCandidateId, summary.earliestArrivalJourneyId());
 		requireResolved(byCandidateId, summary.latestDepartureJourneyId());
-		for (String candidateId : summary.recommendedJourneyIds()) requireResolved(byCandidateId, candidateId);
+		requireResolvableReferences(byCandidateId, summary);
+	}
+
+	private static void requireResolvableReferences(
+		List<Candidate> inventory,
+		JourneyProfileSummaryPolicyV1.Summary summary
+	) {
+		Map<String, Candidate> byCandidateId = new LinkedHashMap<>();
+		for (Candidate candidate : inventory) {
+			if (byCandidateId.putIfAbsent(candidate.candidateId(), candidate) != null) {
+				throw new IllegalArgumentException("duplicate inventory candidateId: " + candidate.candidateId());
+			}
+		}
+		requireResolvableReferences(byCandidateId, summary);
+	}
+
+	private static void requireResolvableReferences(
+		Map<String, Candidate> inventory,
+		JourneyProfileSummaryPolicyV1.Summary summary
+	) {
+		switch (summary) {
+			case JourneyProfileSummaryPolicyV1.Departure departure -> {
+				requireResolved(inventory, departure.earliestArrivalJourneyId());
+				requireResolved(inventory, departure.latestDepartureJourneyId());
+			}
+			case JourneyProfileSummaryPolicyV1.ArriveBy arriveBy ->
+				requireResolved(inventory, arriveBy.primaryJourneyId());
+			case JourneyProfileSummaryPolicyV1.LastConnection lastConnection -> {
+				requireResolved(inventory, lastConnection.lastConnectionJourneyId());
+				for (String candidateId : lastConnection.saferAlternativeJourneyIds()) {
+					requireResolved(inventory, candidateId);
+				}
+			}
+		}
+		for (String candidateId : summary.recommendedJourneyIds()) requireResolved(inventory, candidateId);
 	}
 
 	private static void requireResolved(Map<String, Candidate> inventory, String candidateId) {
@@ -170,11 +299,24 @@ public final class JourneyProfileCandidateProjectionV1 {
 		}
 	}
 
-	public sealed interface Outcome permits Projected, CapacityExceeded, NoService {
+	public sealed interface Outcome permits Projected, ArriveByProjected, LastConnectionProjected,
+		CapacityExceeded, NoService {
 	}
 
 	public record Projected(DepartureWindowProjection projection) implements Outcome {
 		public Projected {
+			projection = Objects.requireNonNull(projection, "projection");
+		}
+	}
+
+	public record ArriveByProjected(ArriveByProjection projection) implements Outcome {
+		public ArriveByProjected {
+			projection = Objects.requireNonNull(projection, "projection");
+		}
+	}
+
+	public record LastConnectionProjected(LastConnectionProjection projection) implements Outcome {
+		public LastConnectionProjected {
 			projection = Objects.requireNonNull(projection, "projection");
 		}
 	}
@@ -220,6 +362,35 @@ public final class JourneyProfileCandidateProjectionV1 {
 		}
 	}
 
+	public record ArriveByProjection(
+		JourneyRaptorQuery.ArriveBy temporalQuery,
+		List<Candidate> candidates,
+		JourneyProfileSummaryPolicyV1.ArriveBy summary
+	) {
+		public ArriveByProjection {
+			temporalQuery = Objects.requireNonNull(temporalQuery, "temporalQuery");
+			candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
+			summary = Objects.requireNonNull(summary, "summary");
+			if (candidates.isEmpty()) throw new IllegalArgumentException("arrive-by projection must not be empty");
+		}
+	}
+
+	public record LastConnectionProjection(
+		JourneyRaptorQuery.LastConnection temporalQuery,
+		List<Candidate> candidates,
+		JourneyProfileSummaryPolicyV1.LastConnection summary,
+		Instant terminalArrivalAtDestination
+	) {
+		public LastConnectionProjection {
+			temporalQuery = Objects.requireNonNull(temporalQuery, "temporalQuery");
+			candidates = List.copyOf(Objects.requireNonNull(candidates, "candidates"));
+			summary = Objects.requireNonNull(summary, "summary");
+			terminalArrivalAtDestination = Objects.requireNonNull(terminalArrivalAtDestination,
+				"terminalArrivalAtDestination");
+			if (candidates.isEmpty()) throw new IllegalArgumentException("last-connection projection must not be empty");
+		}
+	}
+
 	public record Candidate(
 		String candidateId,
 		String physicalItineraryId,
@@ -247,6 +418,18 @@ public final class JourneyProfileCandidateProjectionV1 {
 			}
 			itinerary = Objects.requireNonNull(itinerary, "itinerary");
 		}
+	}
+
+	private sealed interface ReverseProjection permits ReverseSuccess, ReverseCapacityExceeded {
+	}
+
+	private record ReverseSuccess(
+		List<Candidate> inventory,
+		JourneyFrontierPolicyV1.Success frontier
+	) implements ReverseProjection {
+	}
+
+	private record ReverseCapacityExceeded(CapacityExceeded outcome) implements ReverseProjection {
 	}
 
 	private record RawCandidate(
