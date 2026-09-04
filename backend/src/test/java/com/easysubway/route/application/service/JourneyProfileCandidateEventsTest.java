@@ -11,6 +11,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import java.time.LocalDate;
+import com.easysubway.journey.application.ServiceDayResolver;
 import java.util.List;
 import java.util.Set;
 import org.junit.jupiter.api.Test;
@@ -69,6 +70,33 @@ class JourneyProfileCandidateEventsTest {
 	}
 
 	private static RouteTimetableRaptorPlanner.CompiledTimetable fixture() {
+		return fixture(37_800);
+	}
+
+	@Test
+	void selectsActualEventsInsideTheHalfOpenCandidateWindow() {
+		var first = BASE_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant().plusSeconds(37_800);
+		var events = JourneyProfileCandidateEvents.events(fixture(), first, first.plusSeconds(300), Set.of("line-fixture"));
+		assertThat(events).hasSize(1);
+		assertThat(events.getFirst().stops().getFirst().departureSeconds()).isEqualTo(37_800);
+		assertThat(JourneyProfileCandidateEvents.events(fixture(), first.plusSeconds(121), first.plusSeconds(300), Set.of("line-fixture")))
+			.isEmpty();
+		assertThatThrownBy(() -> JourneyProfileCandidateEvents.events(fixture(), first, first, Set.of("line-fixture")))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	void includesPredecessorServiceDayEventsBeyondTheCutoff() {
+		int departure = 27 * 3600 + 60;
+		var instant = BASE_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant().plusSeconds(departure);
+		assertThat(ServiceDayResolver.resolve(instant).serviceDate()).isEqualTo(BASE_DATE.plusDays(1));
+		var events = JourneyProfileCandidateEvents.events(fixture(departure), instant, instant.plusSeconds(1), Set.of("line-fixture"));
+		assertThat(events).hasSize(1);
+		assertThat(events.getFirst().serviceDate()).isEqualTo(BASE_DATE);
+		assertThat(events.getFirst().stops().getFirst().departureSeconds()).isEqualTo(departure);
+	}
+
+	private static RouteTimetableRaptorPlanner.CompiledTimetable fixture(int frequencyStart) {
 		var source = new RouteTimetable(
 			List.of(new ServiceCalendar("service", true, true, true, true, true, true, true,
 				BASE_DATE, BASE_DATE.plusDays(1), "Asia/Seoul")),
@@ -79,7 +107,7 @@ class JourneyProfileCandidateEventsTest {
 			List.of(new TransitTrip("trip-fixture", "route-fixture", "service", "terminal", "0", "LOCAL", 0)),
 			List.of(new TransitStopTime("trip-fixture", 1, "station-a", "line-fixture", 36_000, 36_000, 0, 1),
 				new TransitStopTime("trip-fixture", 2, "station-b", "line-fixture", 36_120, 36_120, 1, 0)),
-			List.of(new TransitFrequency("trip-fixture", 37_800, 38_400, 300, true)));
+			List.of(new TransitFrequency("trip-fixture", frequencyStart, frequencyStart + 600, 300, true)));
 		return RaptorRouteBundleRuntimeView.compile("a".repeat(64), 1, source).compiledTimetable();
 	}
 }
