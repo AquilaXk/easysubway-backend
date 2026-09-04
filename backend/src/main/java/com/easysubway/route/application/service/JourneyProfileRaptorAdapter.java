@@ -58,23 +58,23 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 				case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
 					"Journey profile adapter does not accept DEPART_AT");
 			};
-			return new PlanningResult.Planned(plan, observations.snapshot());
+			return new PlanningResult.Planned(plan, observations.snapshot(), observations.planningMetrics());
 		} catch (RouteTimetableRaptorPlanner.ProfilePlanningLimitException exceeded) {
 			return switch (exceeded.limit()) {
 				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(
-					exceeded.observed(), exceeded.max(), observations.snapshot());
+					exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
 				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS, MAX_PROFILE_BREAKPOINTS ->
 					new PlanningResult.CapacityExceeded(
 						PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max(),
-						observations.snapshot());
+						observations.snapshot(), observations.planningMetrics());
 			};
 		} catch (ReverseTimetableRaptorPlanner.ReversePlanningLimitException exceeded) {
 			return switch (exceeded.limit()) {
 				case MAX_ESTIMATED_WORK -> new PlanningResult.AdmissionRejected(
-					exceeded.observed(), exceeded.max(), observations.snapshot());
+					exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
 				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS -> new PlanningResult.CapacityExceeded(
 					PlanningCapacity.valueOf(exceeded.limit().name()), exceeded.observed(), exceeded.max(),
-					observations.snapshot());
+					observations.snapshot(), observations.planningMetrics());
 			};
 		}
 	}

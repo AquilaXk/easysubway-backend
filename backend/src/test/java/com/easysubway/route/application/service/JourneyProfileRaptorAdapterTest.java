@@ -44,6 +44,9 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(planResult.countSnapshot().countsByRuleId().keySet())
 			.containsExactlyInAnyOrderElementsOf(
 				JourneyRaptorPruningInventoryV1.activeRuleIds(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR));
+		assertThat(planResult.planningMetrics().workConsumed()).isPositive();
+		assertThat(planResult.planningMetrics().peakStateLabels()).isPositive();
+		assertThat(planResult.planningMetrics().reservedProfileBreakpoints()).isPositive();
 
 		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.DepartureWindowPlan.class, plan -> {
 			assertThat(plan.points()).singleElement().satisfies(point -> {
@@ -73,6 +76,8 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(planResult.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
 		assertThat(planResult.countSnapshot().algorithmIdentity())
 			.isEqualTo(JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR);
+		assertThat(planResult.planningMetrics().workConsumed()).isPositive();
+		assertThat(planResult.planningMetrics().reservedProfileBreakpoints()).isZero();
 
 		assertThat(planResult.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
 			assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class,
@@ -96,7 +101,34 @@ class JourneyProfileRaptorAdapterTest {
 			rejected -> {
 				assertThat(rejected.observed()).isEqualTo(2);
 				assertThat(rejected.max()).isEqualTo(1);
+				assertThat(rejected.planningMetrics().workConsumed()).isEqualTo(rejected.observed());
+				assertThat(rejected.planningMetrics().reservedProfileBreakpoints()).isZero();
 			});
+	}
+
+	@Test
+	void keepsPlanningMetricsIsolatedBetweenRequestsOnTheSameAdapter() {
+		var captured = snapshot();
+		var first = adapter.plan(
+			query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
+			captured, null, policy().profilePlanningLimits());
+		var firstMetrics = first.planningMetrics();
+		assertThat(firstMetrics.reservedProfileBreakpoints()).isPositive();
+		var secondQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAW", "station-a", "station-b",
+			new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		var second = adapter.plan(secondQuery, captured, null,
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
+
+		assertThat(second).isInstanceOf(JourneyProfileRaptorPort.PlanningResult.AdmissionRejected.class);
+		assertThat(second.countSnapshot().requestId()).isEqualTo(secondQuery.requestId());
+		assertThat(second.planningMetrics().workConsumed()).isEqualTo(2);
+		assertThat(second.planningMetrics().reservedProfileBreakpoints()).isZero();
+		assertThat(first.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
+		assertThat(first.planningMetrics()).isEqualTo(firstMetrics);
 	}
 
 	@Test
@@ -117,6 +149,8 @@ class JourneyProfileRaptorAdapterTest {
 					.isEqualTo(JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
 				assertThat(exceeded.countSnapshot().countsByRuleId()
 					.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
+				assertThat(exceeded.planningMetrics().workConsumed()).isPositive();
+				assertThat(exceeded.planningMetrics().peakDestinationLabels()).isEqualTo(2);
 			});
 	}
 

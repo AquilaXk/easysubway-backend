@@ -67,7 +67,8 @@ class JourneyProfileDeadlineExecutorTest {
 		return new JourneyProfileRaptorPort.PlanningResult.Planned(
 			new JourneyProfileRaptorPort.DepartureWindowPlan(
 				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of()),
-			new JourneyRaptorPruningInventoryV1.CountSnapshot(query.requestId(), identity, counts));
+			new JourneyRaptorPruningInventoryV1.CountSnapshot(query.requestId(), identity, counts),
+			new JourneyProfileRaptorPort.PlanningMetrics(0, 0, 0, 0));
 	}
 
 	private static JourneyRaptorQuery query() {
