@@ -25,38 +25,59 @@ public interface JourneyProfileRaptorPort {
 	sealed interface PlanningResult permits PlanningResult.Planned, PlanningResult.AdmissionRejected,
 		PlanningResult.CapacityExceeded {
 		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot();
+		PlanningMetrics planningMetrics();
 
 		record Planned(
 			TemporalPlan temporalPlan,
-			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+			PlanningMetrics planningMetrics
 		) implements PlanningResult {
 			public Planned {
 				temporalPlan = Objects.requireNonNull(temporalPlan, "temporalPlan");
 				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
+				planningMetrics = Objects.requireNonNull(planningMetrics, "planningMetrics");
 			}
 		}
 
 		record AdmissionRejected(
 			long observed,
 			long max,
-			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+			PlanningMetrics planningMetrics
 		) implements PlanningResult {
 			public AdmissionRejected {
 				if (observed < 0 || max < 1 || observed <= max) {
 					throw new IllegalArgumentException("admission rejection must exceed a positive maximum");
 				}
 				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
+				planningMetrics = Objects.requireNonNull(planningMetrics, "planningMetrics");
 			}
 		}
 
 		record CapacityExceeded(PlanningCapacity dimension, long observed, long max,
-			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot) implements PlanningResult {
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+			PlanningMetrics planningMetrics) implements PlanningResult {
 			public CapacityExceeded {
 				dimension = Objects.requireNonNull(dimension, "dimension");
 				if (observed < 0 || max < 1 || observed <= max) {
 					throw new IllegalArgumentException("capacity exceedance must exceed a positive maximum");
 				}
 				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
+				planningMetrics = Objects.requireNonNull(planningMetrics, "planningMetrics");
+			}
+		}
+	}
+
+	record PlanningMetrics(
+		long workConsumed,
+		long peakStateLabels,
+		long peakDestinationLabels,
+		long reservedProfileBreakpoints
+	) {
+		public PlanningMetrics {
+			if (workConsumed < 0 || peakStateLabels < 0 || peakDestinationLabels < 0
+				|| reservedProfileBreakpoints < 0) {
+				throw new IllegalArgumentException("planning metrics must not be negative");
 			}
 		}
 	}

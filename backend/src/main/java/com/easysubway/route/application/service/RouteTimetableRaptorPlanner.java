@@ -3257,6 +3257,7 @@ class RouteTimetableRaptorPlanner {
 
 		private void reserveBreakpoints(int additional) {
 			breakpoints = Math.addExact(breakpoints, additional);
+			if (observations != null) observations.reserveProfileBreakpoints(additional);
 			if (breakpoints > limits.maxProfileBreakpoints()) {
 				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_PROFILE_BREAKPOINTS,
 					breakpoints, limits.maxProfileBreakpoints());
@@ -3265,6 +3266,7 @@ class RouteTimetableRaptorPlanner {
 
 		private void consumeWork() {
 			work = Math.addExact(work, 1L);
+			if (observations != null) observations.consumeWork();
 			if (work > limits.maxEstimatedWork()) {
 				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_ESTIMATED_WORK,
 					work, limits.maxEstimatedWork());
@@ -3281,6 +3283,14 @@ class RouteTimetableRaptorPlanner {
 
 		private void count(String ruleId) {
 			if (observations != null) observations.increment(ruleId);
+		}
+
+		private void observeStateLabels(int labels) {
+			if (observations != null) observations.observeStateLabels(labels);
+		}
+
+		private void observeDestinationLabels(int labels) {
+			if (observations != null) observations.observeDestinationLabels(labels);
 		}
 	}
 
@@ -3415,6 +3425,7 @@ class RouteTimetableRaptorPlanner {
 				}
 			}
 			List<ProfileDestinationLabel> frontier = destinationFrontier(candidates);
+			limits.observeDestinationLabels(frontier.size());
 			if (frontier.size() > limits.maxDestinationProfileLabels()) {
 				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_DESTINATION_PROFILE_LABELS,
@@ -3460,6 +3471,7 @@ class RouteTimetableRaptorPlanner {
 			});
 			labels.add(candidate);
 			labels.sort(ProfileMultiLabelForwardScan::compareTrace);
+			limits.observeStateLabels(labels.size());
 			if (labels.size() > limits.maxLabelsPerState()) {
 				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_LABELS_PER_STATE,
@@ -3903,6 +3915,10 @@ final class JourneyProfilePruningObservationAccumulator {
 	private final String requestId;
 	private final JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity algorithmIdentity;
 	private final Map<String, Long> counts = new LinkedHashMap<>();
+	private long workConsumed;
+	private long peakStateLabels;
+	private long peakDestinationLabels;
+	private long reservedProfileBreakpoints;
 
 	JourneyProfilePruningObservationAccumulator(
 		String requestId,
@@ -3918,7 +3934,28 @@ final class JourneyProfilePruningObservationAccumulator {
 		counts.compute(ruleId, (ignored, count) -> Math.addExact(count, 1L));
 	}
 
+	void consumeWork() {
+		workConsumed = Math.addExact(workConsumed, 1L);
+	}
+
+	void observeStateLabels(int labels) {
+		peakStateLabels = Math.max(peakStateLabels, labels);
+	}
+
+	void observeDestinationLabels(int labels) {
+		peakDestinationLabels = Math.max(peakDestinationLabels, labels);
+	}
+
+	void reserveProfileBreakpoints(int additional) {
+		reservedProfileBreakpoints = Math.addExact(reservedProfileBreakpoints, additional);
+	}
+
 	JourneyRaptorPruningInventoryV1.CountSnapshot snapshot() {
 		return new JourneyRaptorPruningInventoryV1.CountSnapshot(requestId, algorithmIdentity, counts);
+	}
+
+	JourneyProfileRaptorPort.PlanningMetrics planningMetrics() {
+		return new JourneyProfileRaptorPort.PlanningMetrics(
+			workConsumed, peakStateLabels, peakDestinationLabels, reservedProfileBreakpoints);
 	}
 }

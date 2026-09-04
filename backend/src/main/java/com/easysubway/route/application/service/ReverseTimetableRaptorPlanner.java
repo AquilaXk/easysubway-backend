@@ -173,6 +173,7 @@ final class ReverseTimetableRaptorPlanner {
 			}
 		}
 		List<Candidate> frontier = destinationFrontier(candidates, limitTracker);
+		limitTracker.observeDestinationLabels(frontier.size());
 		if (!frontier.isEmpty()) {
 			if (frontier.size() > limitTracker.maxDestinationProfileLabels()) {
 				limitTracker.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
@@ -776,6 +777,7 @@ final class ReverseTimetableRaptorPlanner {
 
 		private void consumeWork() {
 			work = Math.addExact(work, 1L);
+			if (observations != null) observations.consumeWork();
 			if (work > limits.maxEstimatedWork()) {
 				throw new ReversePlanningLimitException(PlanningLimit.MAX_ESTIMATED_WORK, work, limits.maxEstimatedWork());
 			}
@@ -787,6 +789,14 @@ final class ReverseTimetableRaptorPlanner {
 
 		private void count(String ruleId) {
 			if (observations != null) observations.increment(ruleId);
+		}
+
+		private void observeDestinationLabels(int labels) {
+			if (observations != null) observations.observeDestinationLabels(labels);
+		}
+
+		private void observeStateLabels(int labels) {
+			if (observations != null) observations.observeStateLabels(labels);
 		}
 
 		private List<Candidate> admit(Candidate candidate) {
@@ -819,6 +829,7 @@ final class ReverseTimetableRaptorPlanner {
 				});
 				frontier.add(candidate);
 				frontier.sort(ReverseTimetableRaptorPlanner::compareTrace);
+				observeStateLabels(frontier.size());
 				if (frontier.size() > limits.maxLabelsPerState()) {
 					count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 					throw new ReversePlanningLimitException(PlanningLimit.MAX_LABELS_PER_STATE,

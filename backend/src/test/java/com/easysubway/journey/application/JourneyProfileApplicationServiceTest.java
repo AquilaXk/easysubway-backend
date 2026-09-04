@@ -73,7 +73,7 @@ class JourneyProfileApplicationServiceTest {
 			var service = new JourneyProfileApplicationService(
 				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
 				(query, snapshot, realtime, limits) -> new JourneyProfileRaptorPort.PlanningResult.Planned(
-					terminal.plan(), counts),
+					terminal.plan(), counts, planningMetrics()),
 				Clock.fixed(NOW, ZoneOffset.UTC));
 
 			var result = service.execute(requested, policy());
@@ -170,7 +170,7 @@ class JourneyProfileApplicationServiceTest {
 				JourneyRealtimePort.RealtimeObservation realtime,
 				JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 			) -> new JourneyProfileRaptorPort.PlanningResult.CapacityExceeded(
-				JourneyProfileRaptorPort.PlanningCapacity.MAX_LABELS_PER_STATE, 9, 8, capacityCounts);
+				JourneyProfileRaptorPort.PlanningCapacity.MAX_LABELS_PER_STATE, 9, 8, capacityCounts, planningMetrics());
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
 			raptor,
@@ -196,7 +196,7 @@ class JourneyProfileApplicationServiceTest {
 			var service = new JourneyProfileApplicationService(
 				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
 				(query, snapshot, realtime, limits) ->
-					new JourneyProfileRaptorPort.PlanningResult.Planned(plan, invalid),
+					new JourneyProfileRaptorPort.PlanningResult.Planned(plan, invalid, planningMetrics()),
 				Clock.fixed(NOW, ZoneOffset.UTC));
 
 			var failure = (JourneyProfileExecutionResult.Failure) service.execute(requested, policy());
@@ -210,7 +210,7 @@ class JourneyProfileApplicationServiceTest {
 		var captured = new AtomicReference<JourneyProfileResourcePolicy.ProfilePlanningLimits>();
 		JourneyProfileRaptorPort raptor = (query, snapshot, realtime, limits) -> {
 			captured.set(limits);
-			return new JourneyProfileRaptorPort.PlanningResult.AdmissionRejected(1_001, 1_000, snapshot(query));
+			return new JourneyProfileRaptorPort.PlanningResult.AdmissionRejected(1_001, 1_000, snapshot(query), planningMetrics());
 		};
 		var service = new JourneyProfileApplicationService(
 			(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
@@ -237,7 +237,11 @@ class JourneyProfileApplicationServiceTest {
 		JourneyRaptorQuery query,
 		JourneyProfileRaptorPort.TemporalPlan plan
 	) {
-		return new JourneyProfileRaptorPort.PlanningResult.Planned(plan, snapshot(query));
+		return new JourneyProfileRaptorPort.PlanningResult.Planned(plan, snapshot(query), planningMetrics());
+	}
+
+	private static JourneyProfileRaptorPort.PlanningMetrics planningMetrics() {
+		return new JourneyProfileRaptorPort.PlanningMetrics(0, 0, 0, 0);
 	}
 
 	private static JourneyRaptorPruningInventoryV1.CountSnapshot snapshot(JourneyRaptorQuery query) {
