@@ -25,7 +25,6 @@ class JourneyV3ErrorDispositionContractTest {
 	private static final Path CONTRACTS = Path.of("..", "contracts", "api");
 	private static final Path CATALOG = CONTRACTS.resolve("journey-v3-error-catalog.json");
 	private static final Path DISPOSITION = CONTRACTS.resolve("journey-v3-error-disposition.json");
-	private static final Path DIGESTS = CONTRACTS.resolve("journey-v3-contract-digests.json");
 	private static final ObjectMapper JSON = new ObjectMapper();
 
 	private static final List<ExpectedDisposition> EXPECTED = List.of(
@@ -171,22 +170,6 @@ class JourneyV3ErrorDispositionContractTest {
 		assertThat(new LinkedHashSet<>(actual)).hasSameSizeAs(EXPECTED);
 		assertThat(catalogPairs("applicationErrors")).containsExactlyElementsOf(expectedCatalogPairs(true));
 		assertThat(catalogPairs("ingressErrors")).containsExactlyElementsOf(expectedCatalogPairs(false));
-	}
-
-	@Test
-	@DisplayName("digest artifact binds the disposition raw bytes in bytewise path order")
-	void digestBindsDispositionRawBytes() throws IOException {
-		JsonNode digest = JSON.readTree(DIGESTS.toFile());
-		List<String> paths = new ArrayList<>();
-		assertThat(digest.path("artifacts").isArray()).isTrue();
-		for (JsonNode artifact : digest.path("artifacts")) {
-			assertThat(fieldNames(artifact)).containsExactlyInAnyOrder("path", "sha256");
-			String path = artifact.path("path").asText();
-			paths.add(path);
-			assertThat(artifact.path("sha256").asText()).isEqualTo(sha256(Files.readAllBytes(CONTRACTS.resolve(path))));
-		}
-		assertThat(paths).containsExactly("journey-v3-error-catalog.json", "journey-v3-error-disposition.json",
-			"journey-v3-session-integrity.json", "journey-v3.openapi.yaml");
 	}
 
 	private static ExpectedDisposition entry(

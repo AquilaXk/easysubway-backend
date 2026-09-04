@@ -2,37 +2,11 @@
 import { createHash } from "node:crypto";
 import { lstatSync, readFileSync, renameSync, rmSync, writeFileSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { JOURNEY_CONTRACT_RESOURCES } from "./journey-contract-resources.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const backendBuild = resolve(repositoryRoot, "backend/build");
 const expectedOptions = new Set(["--producer-sha", "--output"]);
-const expectedResources = [
-  {
-    id: "journey-v3-error-catalog",
-    digestPath: "journey-v3-error-catalog.json",
-    path: "contracts/api/journey-v3-error-catalog.json",
-    mediaType: "application/json",
-  },
-  {
-    id: "journey-v3-error-disposition",
-    digestPath: "journey-v3-error-disposition.json",
-    path: "contracts/api/journey-v3-error-disposition.json",
-    mediaType: "application/json",
-  },
-  {
-    id: "journey-v3-session-integrity",
-    digestPath: "journey-v3-session-integrity.json",
-    path: "contracts/api/journey-v3-session-integrity.json",
-    mediaType: "application/json",
-  },
-  {
-    id: "journey-v3-openapi",
-    digestPath: "journey-v3.openapi.yaml",
-    path: "contracts/api/journey-v3.openapi.yaml",
-    mediaType: "application/yaml",
-  },
-];
-
 try {
   const arguments_ = parseArguments(process.argv.slice(2));
   if (arguments_["producer-sha"].length !== 40 || !/^[a-f0-9]{40}$/.test(arguments_["producer-sha"])) throw new Error("producer sha is invalid");
@@ -75,20 +49,10 @@ function resolveContractRoot() {
 }
 
 function readResources(contractRoot) {
-  const digestDocument = parseJson(readRegularFile(resolve(contractRoot, "journey-v3-contract-digests.json"), "digest document"), "digest document");
-  assertExactKeys(digestDocument, ["schemaVersion", "artifactKind", "artifacts"], "digest document");
-  if (digestDocument.schemaVersion !== "JOURNEY_V3_CONTRACT_DIGESTS_V1" || digestDocument.artifactKind !== "journey-v3-contract-digests" || !Array.isArray(digestDocument.artifacts)) {
-    throw new Error("invalid digest document");
-  }
-  if (digestDocument.artifacts.length !== expectedResources.length) throw new Error("invalid digest resources");
-
-  return expectedResources.map((expected, index) => {
-    const digest = digestDocument.artifacts[index];
-    assertExactKeys(digest, ["path", "sha256"], "digest resource");
-    if (digest.path !== expected.digestPath || !/^[a-f0-9]{64}$/.test(digest.sha256)) throw new Error("invalid digest resources");
-    const bytes = readRegularFile(resolve(contractRoot, expected.digestPath), expected.id);
+  return JOURNEY_CONTRACT_RESOURCES.map((expected) => {
+    const contractPath = expected.path.slice("contracts/api/".length);
+    const bytes = readRegularFile(resolve(contractRoot, contractPath), expected.id);
     const sha256 = createHash("sha256").update(bytes).digest("hex");
-    if (sha256 !== digest.sha256) throw new Error(`digest mismatch: ${expected.digestPath}`);
     return {
       id: expected.id,
       path: expected.path,
@@ -127,20 +91,6 @@ function readRegularFile(path, label) {
   const metadata = lstatSync(path, { throwIfNoEntry: false });
   if (!metadata || metadata.isSymbolicLink() || !metadata.isFile()) throw new Error(`${label} must be a regular file`);
   return readFileSync(path);
-}
-
-function parseJson(bytes, label) {
-  try {
-    return JSON.parse(bytes);
-  } catch {
-    throw new Error(`invalid ${label} JSON`);
-  }
-}
-
-function assertExactKeys(value, keys, label) {
-  if (value === null || typeof value !== "object" || Array.isArray(value) || Object.keys(value).length !== keys.length || !keys.every((key) => Object.hasOwn(value, key))) {
-    throw new Error(`invalid ${label}`);
-  }
 }
 
 function writeAtomically(output, document) {

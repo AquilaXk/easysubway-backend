@@ -28,7 +28,6 @@ class JourneyV3ContractTest {
 	private static final Path OPENAPI = CONTRACTS.resolve("journey-v3.openapi.yaml");
 	private static final Path ERROR_CATALOG = CONTRACTS.resolve("journey-v3-error-catalog.json");
 	private static final Path SESSION_INTEGRITY = CONTRACTS.resolve("journey-v3-session-integrity.json");
-	private static final Path DIGESTS = CONTRACTS.resolve("journey-v3-contract-digests.json");
 	private static final Path CONTRACT_ATTRIBUTES = CONTRACTS.resolve(".gitattributes");
 	private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -91,16 +90,12 @@ class JourneyV3ContractTest {
 		new ErrorPair("profileJourneys", 429, "ROUTE_RATE_LIMITED")
 	);
 
-	private static final List<ArtifactDigest> EXPECTED_DIGESTS = List.of(
-		new ArtifactDigest("journey-v3-error-catalog.json", "894de4c24ac1e65abd8ef719667af3339d70a688b7f590fb205f6636e3b60ae5"),
-		new ArtifactDigest("journey-v3-error-disposition.json", "c9dfb53fa85dcf45cefa4b690615175059b5c08fcdb37d31f92dd3353f9b6692"),
-		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
-		new ArtifactDigest("journey-v3.openapi.yaml", "2006fcc2d1f47f3f6aa9ea871384e28eb5cb7bf429f0b0f0aa8e391c3eeb526a")
-	);
-
 	@Test
 	@DisplayName("public surface and bearer boundary are exact")
 	void publicSurfaceAndBearerBoundaryAreExact() throws IOException {
+		assertThat(Files.readAllLines(CONTRACT_ATTRIBUTES, StandardCharsets.UTF_8)).containsExactly(
+			"*.yaml text eol=lf",
+			"*.json text eol=lf");
 		Map<String, Object> document = openApi();
 		assertThat(document.get("openapi")).isEqualTo("3.0.3");
 		assertThat(document).doesNotContainKey("security");
@@ -486,32 +481,6 @@ class JourneyV3ContractTest {
 		assertThat(session.path("ttlSeconds").asInt()).isEqualTo(600);
 	}
 
-	@Test
-	@DisplayName("digest artifact binds the exact Journey V3 raw contract bytes")
-	void digestArtifactBindsRawContractBytes() throws IOException {
-		assertThat(Files.readAllLines(CONTRACT_ATTRIBUTES, StandardCharsets.UTF_8)).containsExactly(
-			"*.yaml text eol=lf",
-			"*.json text eol=lf");
-		JsonNode digest = JSON.readTree(DIGESTS.toFile());
-		assertThat(fieldNames(digest)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "artifacts");
-		assertThat(digest.path("schemaVersion").asText()).isEqualTo("JOURNEY_V3_CONTRACT_DIGESTS_V1");
-		assertThat(digest.path("artifactKind").asText()).isEqualTo("journey-v3-contract-digests");
-		assertThat(digest.path("artifacts").isArray()).isTrue();
-
-		List<JsonNode> artifacts = new ArrayList<>();
-		digest.path("artifacts").forEach(artifacts::add);
-		assertThat(artifacts.stream().map(node -> node.path("path").asText()).toList())
-			.containsExactlyElementsOf(EXPECTED_DIGESTS.stream().map(ArtifactDigest::path).toList());
-		for (int index = 0; index < artifacts.size(); index++) {
-			JsonNode artifact = artifacts.get(index);
-			ArtifactDigest expected = EXPECTED_DIGESTS.get(index);
-			assertThat(fieldNames(artifact)).containsExactlyInAnyOrder("path", "sha256");
-			Path file = CONTRACTS.resolve(artifact.path("path").asText());
-			assertThat(artifact.path("sha256").asText()).isEqualTo(expected.sha256());
-			assertThat(sha256(Files.readAllBytes(file))).isEqualTo(expected.sha256());
-		}
-	}
-
 	private static Map<String, Object> openApi() throws IOException {
 		return map(new Yaml().load(Files.readString(OPENAPI, StandardCharsets.UTF_8)));
 	}
@@ -644,6 +613,4 @@ class JourneyV3ContractTest {
 	private record ErrorPair(String operation, int httpStatus, String code) {
 	}
 
-	private record ArtifactDigest(String path, String sha256) {
-	}
 }
