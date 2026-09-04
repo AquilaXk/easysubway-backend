@@ -8,6 +8,8 @@ import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
@@ -87,15 +89,17 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
 		JourneyProfilePruningObservationAccumulator observations
 	) {
-		var earliest = ServiceDayResolver.resolve(arriveBy.earliestReadyAt());
-		var deadline = ServiceDayResolver.resolve(arriveBy.arrivalDeadline());
-		if (!earliest.serviceDate().equals(deadline.serviceDate())) {
-			throw new IllegalArgumentException("ARRIVE_BY must resolve to one active service day");
-		}
+		LocalDate anchorServiceDate = arriveBy.earliestReadyAt().atZone(ServiceDayResolver.ZONE).toLocalDate();
+		Instant anchorMidnight = anchorServiceDate.atStartOfDay(ServiceDayResolver.ZONE).toInstant();
+		int earliestSeconds = Math.toIntExact(Duration.between(anchorMidnight, arriveBy.earliestReadyAt()).toSeconds());
+		int deadlineSeconds = Math.toIntExact(Duration.between(anchorMidnight, arriveBy.arrivalDeadline()).toSeconds());
+		LocalDate firstPotentialServiceDate = arriveBy.earliestReadyAt()
+			.minusSeconds(LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE - 1L)
+			.atZone(ServiceDayResolver.ZONE).toLocalDate();
+		LocalDate lastPotentialServiceDate = arriveBy.arrivalDeadline().atZone(ServiceDayResolver.ZONE).toLocalDate();
 		ReverseTimetableRaptorPlanner.Result result = reverse.arriveBy(
-			forward.reverseArriveByQuery(query, earliest.serviceDate(), earliest.secondsFromServiceDayStart(),
-				deadline.secondsFromServiceDayStart()),
-				timetable, timetable.activeServiceDay(earliest.serviceDate()), overlay, limits, observations);
+			forward.reverseArriveByQuery(query, anchorServiceDate, earliestSeconds, deadlineSeconds),
+			timetable, firstPotentialServiceDate, lastPotentialServiceDate, overlay, limits, observations);
 		return reversePlan(result);
 	}
 

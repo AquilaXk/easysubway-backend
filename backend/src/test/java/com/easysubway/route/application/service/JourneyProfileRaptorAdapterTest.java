@@ -93,6 +93,20 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void dispatchesArriveByAcrossTheServiceDayCutoffWithoutDroppingA27HourTrip() {
+		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(96_000), instantAt(98_043))),
+			snapshot(crossCutoffTimetable()), null, policy().profilePlanningLimits());
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.Planned.class, planned ->
+			assertThat(planned.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
+				assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class, found ->
+					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
+						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:54:00Z"));
+						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:13:00Z"));
+					}))));
+	}
+
+	@Test
 	void mapsReverseWorkAdmissionWithoutReturningAPartialFrontier() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))),
 			snapshot(), null, new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
@@ -330,6 +344,19 @@ class JourneyProfileRaptorAdapterTest {
 			List.of(
 				stop("fast", 1, "station-a", 36_000), stop("fast", 2, "station-b", 36_600),
 				stop("late", 1, "station-a", 36_200), stop("late", 2, "station-b", 37_000)),
+			List.of(), List.of(), null, accessData());
+	}
+
+	private static RouteTimetable crossCutoffTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), "Asia/Seoul");
+		var route = new LoadRouteTimetablePort.TransitRoute(
+			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
+		var trip = new LoadRouteTimetablePort.TransitTrip("late", "route", "daily", "Terminal", "0", "LOCAL", 0);
+		return new RouteTimetable(
+			List.of(calendar), List.of(), List.of(route), List.of(trip),
+			List.of(stop("late", 1, "station-a", 97_200), stop("late", 2, "station-b", 97_800)),
 			List.of(), List.of(), null, accessData());
 	}
 
