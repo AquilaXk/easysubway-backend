@@ -52,7 +52,10 @@ final class ReverseTimetableRaptorPlanner {
 			return LastConnectionResult.cancelled();
 		}
 		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips = activeTrips(timetable, activeServiceDay);
+		DatedTripCollection collection = activeTrips(
+			timetable, query.serviceDate(), query.serviceDate(), limitTracker, query.cancelled());
+		if (collection.cancelled()) return LastConnectionResult.cancelled();
+		List<DatedScheduledTrip> activeTrips = collection.trips();
 		if (activeTrips.isEmpty()) {
 			return new LastConnectionResult(Result.of(Outcome.NO_ACTIVE_SERVICE), null);
 		}
@@ -70,7 +73,7 @@ final class ReverseTimetableRaptorPlanner {
 			query.originStationId(), query.destinationStationId(), query.serviceDate(), 0, terminalDeadline,
 			query.maxTransfers(), query.accessProfileBit(), query.boardingSlackSeconds(), query.mobilityPreset(),
 			query.walkingSpeedMetersPerHour(), query.requiresVerifiedJourneyDistance(), query.cancelled()),
-			timetable, activeServiceDay, realtimeOverlay, limitTracker);
+			timetable, activeTrips, realtimeOverlay, limitTracker);
 		if (result.outcome() == Outcome.CANCELLED) {
 			return LastConnectionResult.cancelled();
 		}
@@ -101,20 +104,60 @@ final class ReverseTimetableRaptorPlanner {
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
 		Objects.requireNonNull(limits, "limits must not be null");
-		return arriveBy(query, timetable, activeServiceDay, realtimeOverlay, new ReverseLimitTracker(limits, observations));
+		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
+		DatedTripCollection collection = activeTrips(
+			timetable, query.serviceDate(), query.serviceDate(), limitTracker, query.cancelled());
+		if (collection.cancelled()) return Result.cancelled();
+		return arriveBy(query, timetable, collection.trips(), realtimeOverlay, limitTracker);
+	}
+
+	Result arriveBy(
+		Query query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		LocalDate firstServiceDate,
+		LocalDate lastServiceDate,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+	) {
+		return arriveBy(query, timetable, firstServiceDate, lastServiceDate, realtimeOverlay, limits, null);
+	}
+
+	Result arriveBy(
+		Query query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		LocalDate firstServiceDate,
+		LocalDate lastServiceDate,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
+		Objects.requireNonNull(query, "query must not be null");
+		Objects.requireNonNull(timetable, "timetable must not be null");
+		firstServiceDate = Objects.requireNonNull(firstServiceDate, "firstServiceDate must not be null");
+		lastServiceDate = Objects.requireNonNull(lastServiceDate, "lastServiceDate must not be null");
+		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		Objects.requireNonNull(limits, "limits must not be null");
+		if (lastServiceDate.isBefore(firstServiceDate)) {
+			throw new IllegalArgumentException("dated reverse search requires an ordered service-date range");
+		}
+		if (query.cancelled().getAsBoolean()) return Result.cancelled();
+		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
+		DatedTripCollection collection = activeTrips(
+			timetable, firstServiceDate, lastServiceDate, limitTracker, query.cancelled());
+		if (collection.cancelled()) return Result.cancelled();
+		return arriveBy(query, timetable, collection.trips(), realtimeOverlay, limitTracker);
 	}
 
 	private Result arriveBy(
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		List<DatedScheduledTrip> activeTrips,
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
 		ReverseLimitTracker limitTracker
 	) {
 		if (query.cancelled().getAsBoolean()) {
 			return Result.cancelled();
 		}
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips = activeTrips(timetable, activeServiceDay);
 		if (activeTrips.isEmpty()) {
 			return Result.of(Outcome.NO_ACTIVE_SERVICE);
 		}
@@ -127,7 +170,7 @@ final class ReverseTimetableRaptorPlanner {
 		boolean verifiedExitExists = false;
 		boolean exitCanMeetDeadline = false;
 		List<Candidate> candidates = new ArrayList<>();
-		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+		for (DatedScheduledTrip trip : activeTrips) {
 			limitTracker.consumeWork();
 			if (query.cancelled().getAsBoolean()) {
 				return Result.cancelled();
@@ -147,12 +190,12 @@ final class ReverseTimetableRaptorPlanner {
 				}
 				verifiedExitExists = true;
 				int destinationArrival = Math.addExact(
-					realtimeOverlay.arrivalSeconds(trip, alightIndex), accessSeconds(query, timetable, exit, Access.EXIT));
+					arrivalSeconds(query, trip, alightIndex, realtimeOverlay), accessSeconds(query, timetable, exit, Access.EXIT));
 				if (destinationArrival > query.arrivalDeadlineSeconds()) {
 					continue;
 				}
 				exitCanMeetDeadline = true;
-				if (realtimeOverlay.cancelled(trip)) {
+				if (realtimeOverlay.cancelled(trip.scheduledTrip())) {
 					continue;
 				}
 				for (int boardIndex = 0; boardIndex < alightIndex; boardIndex += 1) {
@@ -191,9 +234,9 @@ final class ReverseTimetableRaptorPlanner {
 	private List<Candidate> traceToOrigin(
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
+		List<DatedScheduledTrip> activeTrips,
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
-		RouteTimetableRaptorPlanner.ScheduledTrip downstreamTrip,
+		DatedScheduledTrip downstreamTrip,
 		int downstreamBoardIndex,
 		int downstreamAlightIndex,
 		int arrivalAtDestinationSeconds,
@@ -201,17 +244,17 @@ final class ReverseTimetableRaptorPlanner {
 		Set<TraceState> visiting,
 		ReverseLimitTracker limits
 	) {
-		if (query.cancelled().getAsBoolean() || realtimeOverlay.cancelled(downstreamTrip)) {
+		if (query.cancelled().getAsBoolean() || realtimeOverlay.cancelled(downstreamTrip.scheduledTrip())) {
 			return List.of();
 		}
-		TraceState state = new TraceState(downstreamTrip.index(), downstreamBoardIndex, downstreamAlightIndex, transfersUsed);
+		TraceState state = new TraceState(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex, transfersUsed);
 		if (!visiting.add(state)) {
 			return List.of();
 		}
 		try {
 			String boardStation = downstreamTrip.stopTimes().get(downstreamBoardIndex).stationId();
 			int downstreamLine = timetable.lineIndex(downstreamTrip.lineId(downstreamBoardIndex));
-			int downstreamDeparture = realtimeOverlay.departureSeconds(downstreamTrip, downstreamBoardIndex);
+			int downstreamDeparture = departureSeconds(query, downstreamTrip, downstreamBoardIndex, realtimeOverlay);
 			if (query.originStationId().equals(boardStation)) {
 				int origin = timetable.stationIndex(boardStation);
 				int entry = origin < 0 || downstreamLine < 0 ? -1 : timetable.entryTransition(
@@ -236,9 +279,9 @@ final class ReverseTimetableRaptorPlanner {
 			}
 
 			List<Candidate> candidates = new ArrayList<>();
-			for (RouteTimetableRaptorPlanner.ScheduledTrip upstreamTrip : activeTrips) {
+			for (DatedScheduledTrip upstreamTrip : activeTrips) {
 				limits.consumeWork();
-				if (query.cancelled().getAsBoolean() || realtimeOverlay.cancelled(upstreamTrip)) {
+				if (query.cancelled().getAsBoolean() || realtimeOverlay.cancelled(upstreamTrip.scheduledTrip())) {
 					continue;
 				}
 				for (int upstreamAlightIndex = 1; upstreamAlightIndex < upstreamTrip.stopTimes().size(); upstreamAlightIndex += 1) {
@@ -258,7 +301,7 @@ final class ReverseTimetableRaptorPlanner {
 					}
 					int latestArrival = downstreamDeparture - accessSeconds(query, timetable, transfer, Access.TRANSFER)
 						- query.boardingSlackSeconds();
-					if (realtimeOverlay.arrivalSeconds(upstreamTrip, upstreamAlightIndex) > latestArrival) {
+					if (arrivalSeconds(query, upstreamTrip, upstreamAlightIndex, realtimeOverlay) > latestArrival) {
 						continue;
 					}
 					for (int upstreamBoardIndex = 0; upstreamBoardIndex < upstreamAlightIndex; upstreamBoardIndex += 1) {
@@ -271,7 +314,7 @@ final class ReverseTimetableRaptorPlanner {
 							arrivalAtDestinationSeconds, transfersUsed + 1, visiting, limits);
 						for (Candidate candidate : upstream) {
 							long transferSlack = (long) downstreamDeparture
-								- realtimeOverlay.arrivalSeconds(upstreamTrip, upstreamAlightIndex)
+								- arrivalSeconds(query, upstreamTrip, upstreamAlightIndex, realtimeOverlay)
 								- accessSeconds(query, timetable, transfer, Access.TRANSFER)
 								- query.boardingSlackSeconds();
 							candidates.add(candidate.appendTransferAndRide(
@@ -292,18 +335,18 @@ final class ReverseTimetableRaptorPlanner {
 	private static Integer terminalDeadline(
 		LastConnectionQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
+		List<DatedScheduledTrip> activeTrips,
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
 		ReverseLimitTracker limits
 	) {
 		Integer latest = null;
 		int destination = timetable.stationIndex(query.destinationStationId());
-		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+		for (DatedScheduledTrip trip : activeTrips) {
 			limits.consumeWork();
 			if (query.cancelled().getAsBoolean()) {
 				return null;
 			}
-			if (realtimeOverlay.cancelled(trip)) {
+			if (realtimeOverlay.cancelled(trip.scheduledTrip())) {
 				continue;
 			}
 			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
@@ -318,8 +361,8 @@ final class ReverseTimetableRaptorPlanner {
 				if (!verifiedTransition(timetable, exit)) {
 					continue;
 				}
-				int arrivalAtDestination = Math.addExact(
-					realtimeOverlay.arrivalSeconds(trip, alightIndex), accessSeconds(query, timetable, exit, Access.EXIT));
+				int arrivalAtDestination = Math.addExact(arrivalSeconds(query.serviceDate(), trip, alightIndex,
+					realtimeOverlay), accessSeconds(query, timetable, exit, Access.EXIT));
 				latest = latest == null || arrivalAtDestination > latest ? arrivalAtDestination : latest;
 			}
 		}
@@ -329,11 +372,11 @@ final class ReverseTimetableRaptorPlanner {
 	private static boolean hasVerifiedExit(
 		LastConnectionQuery query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips,
+		List<DatedScheduledTrip> activeTrips,
 		ReverseLimitTracker limits
 	) {
 		int destination = timetable.stationIndex(query.destinationStationId());
-		for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeTrips) {
+		for (DatedScheduledTrip trip : activeTrips) {
 			limits.consumeWork();
 			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
 				limits.consumeWork();
@@ -352,23 +395,36 @@ final class ReverseTimetableRaptorPlanner {
 		return false;
 	}
 
-	private static List<RouteTimetableRaptorPlanner.ScheduledTrip> activeTrips(
+	private static DatedTripCollection activeTrips(
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay
+		LocalDate firstServiceDate,
+		LocalDate lastServiceDate,
+		ReverseLimitTracker limits,
+		BooleanSupplier cancelled
 	) {
-		List<RouteTimetableRaptorPlanner.ScheduledTrip> trips = new ArrayList<>();
-		Set<Integer> seen = new HashSet<>();
-		for (int pattern = 0; pattern < timetable.routePatternCount(); pattern += 1) {
-			for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeServiceDay.tripsByPattern(pattern)) {
-				if (seen.add(trip.index())) {
-					trips.add(trip);
+		List<DatedScheduledTrip> trips = new ArrayList<>();
+		for (LocalDate serviceDate = firstServiceDate; !serviceDate.isAfter(lastServiceDate);
+			serviceDate = serviceDate.plusDays(1)) {
+			if (cancelled.getAsBoolean()) return new DatedTripCollection(List.of(), true);
+			limits.consumeWork();
+			RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDate);
+			Set<Integer> seen = new HashSet<>();
+			for (int pattern = 0; pattern < timetable.routePatternCount(); pattern += 1) {
+				if (cancelled.getAsBoolean()) return new DatedTripCollection(List.of(), true);
+				limits.consumeWork();
+				for (RouteTimetableRaptorPlanner.ScheduledTrip trip : activeServiceDay.tripsByPattern(pattern)) {
+					if (cancelled.getAsBoolean()) return new DatedTripCollection(List.of(), true);
+					limits.consumeWork();
+					if (seen.add(trip.index())) trips.add(new DatedScheduledTrip(serviceDate, trip));
 				}
 			}
 		}
-		trips.sort(Comparator.comparingInt((RouteTimetableRaptorPlanner.ScheduledTrip trip) -> trip.departureSeconds(0))
-			.reversed().thenComparingInt(RouteTimetableRaptorPlanner.ScheduledTrip::index));
-		return List.copyOf(trips);
+		trips.sort(Comparator.comparingInt((DatedScheduledTrip trip) -> trip.departureSeconds(0))
+			.reversed().thenComparing(DatedScheduledTrip::serviceDate).thenComparingInt(DatedScheduledTrip::index));
+		return new DatedTripCollection(List.copyOf(trips), false);
 	}
+
+	private record DatedTripCollection(List<DatedScheduledTrip> trips, boolean cancelled) { }
 
 	private static boolean verifiedTransition(RouteTimetableRaptorPlanner.CompiledTimetable timetable, int transition) {
 		return transition >= 0 && timetable.transitionVerified(transition);
@@ -465,7 +521,8 @@ final class ReverseTimetableRaptorPlanner {
 	private static String traceKey(Candidate candidate) {
 		return candidate.legs().stream().map(leg -> switch (leg) {
 			case TraceAccess access -> "a:" + access.transition();
-			case TraceRide ride -> "r:" + ride.trip().index() + ':' + ride.boardIndex() + ':' + ride.alightIndex();
+			case TraceRide ride -> "r:" + ride.trip().serviceDate() + ':' + ride.trip().index() + ':'
+				+ ride.boardIndex() + ':' + ride.alightIndex();
 		}).reduce("", (left, right) -> left + '/' + right);
 	}
 
@@ -484,9 +541,11 @@ final class ReverseTimetableRaptorPlanner {
 		TraceRide lastRide = candidate.legs().stream().filter(TraceRide.class::isInstance)
 			.map(TraceRide.class::cast).reduce((ignored, current) -> current).orElseThrow();
 		TraceAccess exit = (TraceAccess) candidate.legs().getLast();
-		int plannedReadyAt = firstRide.trip().departureSeconds(firstRide.boardIndex())
+		int plannedReadyAt = serviceDateOffsetSeconds(query.serviceDate(), firstRide.trip().serviceDate())
+			+ firstRide.trip().departureSeconds(firstRide.boardIndex())
 			- accessSeconds(query, timetable, entry.transition(), entry.access()) - query.boardingSlackSeconds();
-		int plannedArrivalAtDestination = lastRide.trip().arrivalSeconds(lastRide.alightIndex())
+		int plannedArrivalAtDestination = serviceDateOffsetSeconds(query.serviceDate(), lastRide.trip().serviceDate())
+			+ lastRide.trip().arrivalSeconds(lastRide.alightIndex())
 			+ accessSeconds(query, timetable, exit.transition(), Access.EXIT);
 		return new RouteTimetableRaptorPlanner.JourneyItinerary(
 			query.serviceDate(),
@@ -521,24 +580,67 @@ final class ReverseTimetableRaptorPlanner {
 			);
 		}
 		TraceRide ride = (TraceRide) leg;
-		boolean hasRealtimeEvidence = realtimeOverlay.evidence(ride.trip()) != null;
+		boolean hasRealtimeEvidence = realtimeOverlay.evidence(ride.trip().scheduledTrip()) != null;
 		return new RouteTimetableRaptorPlanner.JourneyRideProjection(
 			ride.trip().lineId(ride.boardIndex()),
-			ride.trip().trip().id(),
+			ride.trip().scheduledTrip().trip().id(),
 			ride.trip().stopTimes().getLast().stationId(),
 			ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
 			ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
-			serviceInstant(query.serviceDate(), ride.trip().departureSeconds(ride.boardIndex())),
-			serviceInstant(query.serviceDate(), ride.trip().arrivalSeconds(ride.alightIndex())),
-			!hasRealtimeEvidence ? null : serviceInstant(query.serviceDate(),
-				realtimeOverlay.departureSeconds(ride.trip(), ride.boardIndex())),
-			!hasRealtimeEvidence ? null : serviceInstant(query.serviceDate(),
-				realtimeOverlay.arrivalSeconds(ride.trip(), ride.alightIndex()))
+			serviceInstant(ride.trip().serviceDate(), ride.trip().departureSeconds(ride.boardIndex())),
+			serviceInstant(ride.trip().serviceDate(), ride.trip().arrivalSeconds(ride.alightIndex())),
+			!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
+				realtimeOverlay.departureSeconds(ride.trip().scheduledTrip(), ride.boardIndex())),
+			!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
+				realtimeOverlay.arrivalSeconds(ride.trip().scheduledTrip(), ride.alightIndex()))
 		);
 	}
 
 	private static Instant serviceInstant(LocalDate serviceDate, int serviceSeconds) {
 		return serviceDate.atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(serviceSeconds).toInstant();
+	}
+
+	private static int departureSeconds(
+		Query query,
+		DatedScheduledTrip trip,
+		int stopIndex,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		return departureSeconds(query.serviceDate(), trip, stopIndex, realtimeOverlay);
+	}
+
+	private static int departureSeconds(
+		LocalDate anchorServiceDate,
+		DatedScheduledTrip trip,
+		int stopIndex,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		return Math.addExact(serviceDateOffsetSeconds(anchorServiceDate, trip.serviceDate()),
+			realtimeOverlay.departureSeconds(trip.scheduledTrip(), stopIndex));
+	}
+
+	private static int arrivalSeconds(
+		Query query,
+		DatedScheduledTrip trip,
+		int stopIndex,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		return arrivalSeconds(query.serviceDate(), trip, stopIndex, realtimeOverlay);
+	}
+
+	private static int arrivalSeconds(
+		LocalDate anchorServiceDate,
+		DatedScheduledTrip trip,
+		int stopIndex,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+	) {
+		return Math.addExact(serviceDateOffsetSeconds(anchorServiceDate, trip.serviceDate()),
+			realtimeOverlay.arrivalSeconds(trip.scheduledTrip(), stopIndex));
+	}
+
+	private static int serviceDateOffsetSeconds(LocalDate anchorServiceDate, LocalDate serviceDate) {
+		return Math.toIntExact(java.time.Duration.between(
+			anchorServiceDate.atStartOfDay(ServiceDayResolver.ZONE), serviceDate.atStartOfDay(ServiceDayResolver.ZONE)).toSeconds());
 	}
 
 	enum Outcome {
@@ -689,7 +791,24 @@ final class ReverseTimetableRaptorPlanner {
 		implements TraceLeg {
 	}
 
-	private record TraceRide(RouteTimetableRaptorPlanner.ScheduledTrip trip, int boardIndex, int alightIndex)
+	private record DatedScheduledTrip(LocalDate serviceDate, RouteTimetableRaptorPlanner.ScheduledTrip scheduledTrip) {
+		private DatedScheduledTrip {
+			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate");
+			scheduledTrip = Objects.requireNonNull(scheduledTrip, "scheduledTrip");
+		}
+
+		private int index() { return scheduledTrip.index(); }
+		private List<com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime> stopTimes() {
+			return scheduledTrip.stopTimes();
+		}
+		private int departureSeconds(int stopIndex) { return scheduledTrip.departureSeconds(stopIndex); }
+		private int arrivalSeconds(int stopIndex) { return scheduledTrip.arrivalSeconds(stopIndex); }
+		private boolean allowsPickup(int stopIndex) { return scheduledTrip.allowsPickup(stopIndex); }
+		private boolean allowsDropOff(int stopIndex) { return scheduledTrip.allowsDropOff(stopIndex); }
+		private String lineId(int stopIndex) { return scheduledTrip.lineId(stopIndex); }
+	}
+
+	private record TraceRide(DatedScheduledTrip trip, int boardIndex, int alightIndex)
 		implements TraceLeg {
 	}
 
@@ -840,6 +959,6 @@ final class ReverseTimetableRaptorPlanner {
 		}
 	}
 
-	private record TraceState(int tripIndex, int boardIndex, int alightIndex, int transfersUsed) {
+	private record TraceState(DatedScheduledTrip trip, int boardIndex, int alightIndex, int transfersUsed) {
 	}
 }

@@ -185,6 +185,73 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("searches dated trips across a cutoff instead of treating the cutoff as service end")
+	void followsOnlyFeasibleTransferFromPredecessorServiceDayIntoNextDay() {
+		var compiled = forward.compile(crossCutoffTransferTimetable(false));
+
+		var result = planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itinerary().legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection::plannedDepartureTime)
+			.containsExactly(Instant.parse("2026-07-01T18:00:00Z"), Instant.parse("2026-07-01T18:30:00Z"));
+	}
+
+	@Test
+	@DisplayName("keeps the same scheduled trip index on separate service dates as separate dated events")
+	void keepsSameScheduledTripIndexDistinctAcrossServiceDates() {
+		var compiled = forward.compile(repeatedDailyDirectTimetable());
+
+		var result = planner.arriveBy(crossDateQuery(35_000, 124_000), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).hasSize(2);
+		assertThat(result.itineraries()).extracting(itinerary -> itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst().orElseThrow().plannedDepartureTime())
+			.containsExactlyInAnyOrder(Instant.parse("2026-07-01T01:00:00Z"), Instant.parse("2026-07-02T01:00:00Z"));
+	}
+
+	@Test
+	@DisplayName("fails closed when a dated range exceeds work limits or the predecessor calendar is removed")
+	void failsClosedForDatedRangeLimitCancellationAndCalendarRemoval() {
+		var compiled = forward.compile(crossCutoffTransferTimetable(false));
+		assertThatThrownBy(() -> planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32)))
+			.isInstanceOfSatisfying(ReverseTimetableRaptorPlanner.ReversePlanningLimitException.class,
+				exceeded -> assertThat(exceeded.limit())
+					.isEqualTo(ReverseTimetableRaptorPlanner.PlanningLimit.MAX_ESTIMATED_WORK));
+		assertThat(planner.arriveBy(new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 96_000, deadlineAt(99_600, 180), 1, PROFILE_BIT,
+			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> true), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits()).outcome())
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.CANCELLED);
+		var removed = forward.compile(crossCutoffTransferTimetable(true));
+		assertThat(planner.arriveBy(crossDateQuery(96_000, deadlineAt(99_600, 180)), removed,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits()).outcome())
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
+	}
+
+	@Test
+	@DisplayName("observes cancellation during dated enumeration before spending the next work unit")
+	void cancelsDuringDatedEnumeration() {
+		var compiled = forward.compile(crossCutoffTransferTimetable(false));
+		var checks = new java.util.concurrent.atomic.AtomicInteger();
+		var query = new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 96_000, deadlineAt(99_600, 180), 1, PROFILE_BIT,
+			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> checks.incrementAndGet() >= 3);
+		assertThat(planner.arriveBy(query, compiled, SERVICE_DATE, SERVICE_DATE,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32)).outcome())
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.CANCELLED);
+	}
+
+	@Test
 	@DisplayName("matches an independent forward-point oracle for arrive-by directional access and tradeoffs")
 	void arriveByMatchesIndependentForwardPointOracle() {
 		var compiled = forward.compile(sharedUpstreamSuffixTimetable());
@@ -464,6 +531,12 @@ class ReverseTimetableRaptorPlannerTest {
 			MobilityPreset.SLOW, 3_600, false, () -> false);
 	}
 
+	private static ReverseTimetableRaptorPlanner.Query crossDateQuery(int earliest, int deadline) {
+		return new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, earliest, deadline, 1, PROFILE_BIT, SLACK_SECONDS,
+			MobilityPreset.SLOW, 3_600, false, () -> false);
+	}
+
 	private static int deadlineAt(int trainArrivalSeconds, int baselineExitSeconds) {
 		return trainArrivalSeconds + ProfileWalkTimeCalculator.estimateSeconds(
 			baselineExitSeconds, MobilityPreset.SLOW, WalkTimeSource.MEASURED_PATHWAY, false).seconds();
@@ -550,6 +623,37 @@ class ReverseTimetableRaptorPlannerTest {
 				stop("late", 1, "station-a", "line-a", 42_000, 0, 0),
 				stop("late", 2, "station-b", "line-a", 42_600, 0, 0)),
 			access(true, true, 300, 180, false));
+	}
+
+	private static RouteTimetable crossCutoffTransferTimetable(boolean removePredecessorServiceDay) {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), "Asia/Seoul");
+		var exceptions = removePredecessorServiceDay
+			? List.of(new LoadRouteTimetablePort.ServiceCalendarDate("daily", SERVICE_DATE, 2))
+			: List.<LoadRouteTimetablePort.ServiceCalendarDate>of();
+		var trips = List.of(trip("predecessor-27h", "route-a"), trip("next-day", "route-b"));
+		var routes = trips.stream().map(value -> new LoadRouteTimetablePort.TransitRoute(
+			value.routeId(), value.routeId(), value.routeId(), value.routeId(), "terminal", "Asia/Seoul")).toList();
+		return new RouteTimetable(List.of(calendar), exceptions, routes, trips, List.of(
+			stop("predecessor-27h", 1, "station-a", "line-a", 97_200, 0, 0),
+			stop("predecessor-27h", 2, "station-transfer", "line-a", 97_800, 0, 0),
+			stop("next-day", 1, "station-transfer", "line-b", 12_600, 0, 0),
+			stop("next-day", 2, "station-b", "line-b", 13_200, 0, 0)),
+			List.of(), List.of(), null, access(true, true, 300, 180, true));
+	}
+
+	private static RouteTimetable repeatedDailyDirectTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), "Asia/Seoul");
+		var direct = trip("same-index", "route-direct");
+		var route = new LoadRouteTimetablePort.TransitRoute(
+			"route-direct", "route-direct", "route-direct", "route-direct", "terminal", "Asia/Seoul");
+		return new RouteTimetable(List.of(calendar), List.of(), List.of(route), List.of(direct), List.of(
+			stop("same-index", 1, "station-a", "line-a", 36_000, 0, 0),
+			stop("same-index", 2, "station-b", "line-a", 36_600, 0, 0)),
+			List.of(), List.of(), null, access(true, true, 300, 180, false));
 	}
 
 	private static RouteTimetable timetable(
