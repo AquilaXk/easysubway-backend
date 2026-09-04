@@ -89,6 +89,39 @@ final class JourneyProfileMeasurementInputs {
 		return new CompiledMeasurementInputs(runtime, identity);
 	}
 
+	static Scope scope(PinnedInputs pinned) {
+		JsonNode fanIn = parse(pinned.fanInBytes(), "five-region source fan-in");
+		exactKeys(fanIn, Set.of("schemaVersion", "artifactKind", "evaluatedAt", "scope", "inputs", "scopeSha256",
+			"regionalMatrixSha256", "sourceSetSha256", "selectedSources", "fanInSha256"), "five-region source fan-in");
+		if (!isTwo(fanIn.path("schemaVersion")) || !"current-five-region-source-fan-in".equals(text(fanIn, "artifactKind"))
+			|| !pinned.measurementInput().regionalMatrixSha256().equals(sha(fanIn, "regionalMatrixSha256"))) fail("five-region source fan-in identity");
+		JsonNode scope = fanIn.path("scope");
+		exactKeys(scope, Set.of("targetVersion", "regionIds", "activeLineScopes", "requiredSourceDomains"), "five-region scope");
+		if (!REGION_IDS.equals(orderedTexts(scope, "regionIds")) || !scope.path("activeLineScopes").isArray()
+			|| !scope.path("requiredSourceDomains").isArray() || scope.path("activeLineScopes").isEmpty()
+			|| scope.path("requiredSourceDomains").isEmpty()) fail("five-region scope");
+		List<Line> lines = new ArrayList<>();
+		for (JsonNode line : scope.path("activeLineScopes")) {
+			exactKeys(line, Set.of("regionId", "operatorId", "lineId"), "five-region line");
+			String region = text(line, "regionId"); if (!REGION_IDS.contains(region)) fail("five-region line");
+			lines.add(new Line(region, text(line, "operatorId"), text(line, "lineId")));
+		}
+		List<String> lineKeys = lines.stream()
+			.map(line -> line.regionId() + ':' + line.operatorId() + ':' + line.lineId() + ':').toList();
+		if (lineKeys.size() != new java.util.HashSet<>(lineKeys).size()
+			|| !lineKeys.equals(lineKeys.stream().sorted().toList())) fail("five-region line order");
+		List<String> domains = new ArrayList<>();
+		for (JsonNode domain : scope.path("requiredSourceDomains")) {
+			domains.add(text(domain, "id"));
+		}
+		if (domains.size() != new java.util.HashSet<>(domains).size() || !domains.equals(domains.stream().sorted().toList())) fail("five-region domains");
+		if (!sha256(canonical(scope).getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(sha(fanIn, "scopeSha256"))) fail("five-region scope digest");
+		var payload = ((com.fasterxml.jackson.databind.node.ObjectNode) fanIn).deepCopy(); payload.remove("fanInSha256");
+		if (!sha256(canonical(payload).getBytes(java.nio.charset.StandardCharsets.UTF_8)).equals(sha(fanIn, "fanInSha256"))
+			|| !java.util.Arrays.equals(pinned.fanInBytes(), (canonical(fanIn) + "\n").getBytes(java.nio.charset.StandardCharsets.UTF_8))) fail("five-region self digest");
+		return new Scope(text(scope, "targetVersion"), sha(fanIn, "scopeSha256"), List.copyOf(lines));
+	}
+
 	private static MeasurementInput input(JsonNode node) {
 		exactKeys(node, Set.of("schemaVersion", "artifactKind", "backendHeadSha", "dataRepository", "dataHeadSha", "dataRunId",
 			"regionIds", "queryClasses", "fanIn", "routeBundleSha256", "regionalMatrixSha256", "componentSha256",
@@ -147,6 +180,13 @@ final class JourneyProfileMeasurementInputs {
 				.append(entry.sha256()).append("\",\"sizeBytes\":").append(entry.sizeBytes()).append('}');
 		}
 		return result.append(']').toString().getBytes(java.nio.charset.StandardCharsets.UTF_8);
+	}
+	private static String canonical(JsonNode node) {
+		if (node.isArray()) return "[" + java.util.stream.StreamSupport.stream(node.spliterator(), false).map(JourneyProfileMeasurementInputs::canonical).collect(java.util.stream.Collectors.joining(",")) + "]";
+		if (!node.isObject()) return node.toString();
+		return "{" + java.util.stream.StreamSupport.stream(java.util.Spliterators.spliteratorUnknownSize(node.fieldNames(), 0), false).sorted()
+			.map(name -> JSON.getNodeFactory().textNode(name).toString() + ":" + canonical(node.path(name)))
+			.collect(java.util.stream.Collectors.joining(",")) + "}";
 	}
 
 	private static JsonNode parse(byte[] bytes, String label) {
@@ -210,6 +250,7 @@ final class JourneyProfileMeasurementInputs {
 	private static String text(JsonNode node, String field) { return text(node.path(field)); }
 	private static String text(JsonNode node) { if (!node.isTextual() || node.textValue().isBlank()) fail("text"); return node.textValue(); }
 	private static boolean isOne(JsonNode node) { return node.isIntegralNumber() && node.canConvertToInt() && node.intValue() == 1; }
+	private static boolean isTwo(JsonNode node) { return node.isIntegralNumber() && node.canConvertToInt() && node.intValue() == 2; }
 	private static long positive(JsonNode node, String field) {
 		JsonNode value = node.path(field);
 		if (!value.isIntegralNumber() || !value.canConvertToLong()
@@ -256,4 +297,6 @@ final class JourneyProfileMeasurementInputs {
 		@Override public byte[] fanInBytes() { return fanInBytes.clone(); }
 	}
 	record CompiledMeasurementInputs(RaptorRouteBundleRuntimeView runtime, RouteBundleIdentity identity) { }
+	record Scope(String targetVersion, String scopeSha256, List<Line> activeLines) { public Scope { activeLines = List.copyOf(activeLines); } }
+	record Line(String regionId, String operatorId, String lineId) { }
 }
