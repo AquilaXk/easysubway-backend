@@ -5,6 +5,7 @@ import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, rmSync, symli
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import test from "node:test";
+import { JOURNEY_CONTRACT_RESOURCES } from "./journey-contract-resources.mjs";
 
 const repositoryRoot = resolve(import.meta.dirname, "../..");
 const script = join(repositoryRoot, "backend/tools/build-journey-contract-bundle.mjs");
@@ -29,28 +30,10 @@ test("Journey contract bundle v2 schema는 ordered resource identities와 comple
     assert.equal(value.length === resourceSchema.sha256.minLength && value.length === resourceSchema.sha256.maxLength && new RegExp(resourceSchema.sha256.pattern).test(value), false);
   }
   assert.equal(resources.items, false);
-  assert.deepEqual(resources.prefixItems.map((item) => item.allOf[1].properties), [
-    {
-      id: { const: "journey-v3-error-catalog" },
-      path: { const: "contracts/api/journey-v3-error-catalog.json" },
-      mediaType: { const: "application/json" },
-    },
-    {
-      id: { const: "journey-v3-error-disposition" },
-      path: { const: "contracts/api/journey-v3-error-disposition.json" },
-      mediaType: { const: "application/json" },
-    },
-    {
-      id: { const: "journey-v3-session-integrity" },
-      path: { const: "contracts/api/journey-v3-session-integrity.json" },
-      mediaType: { const: "application/json" },
-    },
-    {
-      id: { const: "journey-v3-openapi" },
-      path: { const: "contracts/api/journey-v3.openapi.yaml" },
-      mediaType: { const: "application/yaml" },
-    },
-  ]);
+  assert.deepEqual(resources.prefixItems.map((item) => item.allOf[1].properties),
+    JOURNEY_CONTRACT_RESOURCES.map(({ id, path, mediaType }) => ({
+      id: { const: id }, path: { const: path }, mediaType: { const: mediaType },
+    })));
 
   const base64 = new RegExp(resourceSchema.contentBase64.pattern);
   for (const value of ["YQ==", "YWI=", "YWJj", "YWJjYWJj"]) assert.match(value, base64);
@@ -77,18 +60,8 @@ test("Journey contract bundle v2는 exact raw resources를 deterministic하게 �
     assert.deepEqual(Object.keys(bundle), [
       "schemaVersion", "bundleVersion", "component", "producerRepository", "producerSha", "resources",
     ]);
-    assert.deepEqual(bundle.resources.map(({ path }) => path), [
-      "contracts/api/journey-v3-error-catalog.json",
-      "contracts/api/journey-v3-error-disposition.json",
-      "contracts/api/journey-v3-session-integrity.json",
-      "contracts/api/journey-v3.openapi.yaml",
-    ]);
-    assert.deepEqual(bundle.resources.map(({ id, owner, mediaType }) => ({ id, owner, mediaType })), [
-      { id: "journey-v3-error-catalog", owner: "AquilaXk/easysubway-backend", mediaType: "application/json" },
-      { id: "journey-v3-error-disposition", owner: "AquilaXk/easysubway-backend", mediaType: "application/json" },
-      { id: "journey-v3-session-integrity", owner: "AquilaXk/easysubway-backend", mediaType: "application/json" },
-      { id: "journey-v3-openapi", owner: "AquilaXk/easysubway-backend", mediaType: "application/yaml" },
-    ]);
+    assert.deepEqual(bundle.resources.map(({ id, path, mediaType }) => ({ id, path, mediaType })),
+      JOURNEY_CONTRACT_RESOURCES);
     for (const resource of bundle.resources) {
       assert.deepEqual(Object.keys(resource), ["id", "path", "owner", "mediaType", "sha256", "contentBase64"]);
       const raw = readFileSync(resolve(repositoryRoot, resource.path));
@@ -129,37 +102,37 @@ test("Journey contract bundle v2는 test override를 production 환경에서 거
   }
 });
 
-test("Journey contract bundle v2는 digest와 raw contract 불일치를 fail closed한다", () => {
+test("Journey contract bundle v2는 canonical raw 변경을 수동 digest 갱신 없이 rehash한다", () => {
+  const fixture = createFixture();
+  try {
+    const changedPath = join(fixture.contractRoot, "journey-v3.openapi.yaml");
+    const changedBytes = Buffer.concat([readFileSync(changedPath), Buffer.from("# changed raw contract\n")]);
+    writeFileSync(changedPath, changedBytes);
+
+    const output = join(fixture.outputDirectory, "changed.json");
+    const bundle = JSON.parse(run(producerSha, output, fixture.contractRoot));
+    const resource = bundle.resources.find(({ id }) => id === "journey-v3-openapi");
+    assert.equal(resource.sha256, sha256(changedBytes));
+    assert.deepEqual(Buffer.from(resource.contentBase64, "base64"), changedBytes);
+  } finally {
+    fixture.cleanup();
+  }
+});
+
+test("Journey contract bundle v2는 catalog의 필수 raw resource 누락·대체를 fail closed한다", () => {
   const cases = [
     {
-      name: "한 digest entry 변조",
+      name: "필수 resource 누락",
       mutate(root) {
-        const digests = readJson(join(root, "journey-v3-contract-digests.json"));
-        digests.artifacts[0].sha256 = "0".repeat(64);
-        writeJson(join(root, "journey-v3-contract-digests.json"), digests);
+        rmSync(join(root, "journey-v3-session-integrity.json"));
       },
     },
     {
-      name: "다섯 번째 digest entry 추가",
+      name: "symlink resource 대체",
       mutate(root) {
-        const digests = readJson(join(root, "journey-v3-contract-digests.json"));
-        digests.artifacts.push({ path: "unexpected.json", sha256: "0".repeat(64) });
-        writeJson(join(root, "journey-v3-contract-digests.json"), digests);
-      },
-    },
-    {
-      name: "필수 digest entry 제거",
-      mutate(root) {
-        const digests = readJson(join(root, "journey-v3-contract-digests.json"));
-        digests.artifacts.pop();
-        writeJson(join(root, "journey-v3-contract-digests.json"), digests);
-      },
-    },
-    {
-      name: "session integrity raw resource 손상",
-      mutate(root) {
-        const path = join(root, "journey-v3-session-integrity.json");
-        writeFileSync(path, Buffer.concat([readFileSync(path), Buffer.from(" ")]));
+        const path = join(root, "journey-v3.openapi.yaml");
+        rmSync(path);
+        symlinkSync(join(root, "journey-v3-error-catalog.json"), path);
       },
     },
   ];
@@ -209,10 +182,6 @@ function run(sha, output, contractRoot, nodeEnv = "test") {
 
 function readJson(path) {
   return JSON.parse(readFileSync(path, "utf8"));
-}
-
-function writeJson(path, value) {
-  writeFileSync(path, `${JSON.stringify(value)}\n`);
 }
 
 function sha256(bytes) {

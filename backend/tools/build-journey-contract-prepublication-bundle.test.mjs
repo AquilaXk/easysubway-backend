@@ -4,6 +4,7 @@ import { cpSync, mkdirSync, mkdtempSync, readFileSync, rmSync, writeFileSync } f
 import { join, resolve } from "node:path";
 import { tmpdir } from "node:os";
 import test from "node:test";
+import { JOURNEY_CONTRACT_RESOURCES } from "./journey-contract-resources.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const script = join(root, "backend/tools/build-journey-contract-prepublication-bundle.mjs");
@@ -21,10 +22,8 @@ test("prepublication producer는 trusted source의 네 fixed resource만 byte-de
     const bundle = JSON.parse(readFileSync(first));
     assert.equal(bundle.producerRepository, "AquilaXk/easysubway-backend");
     assert.equal(bundle.producerSha, sha);
-    assert.deepEqual(bundle.resources.map((resource) => resource.path), [
-      "contracts/api/journey-v3-error-catalog.json", "contracts/api/journey-v3-error-disposition.json",
-      "contracts/api/journey-v3-session-integrity.json", "contracts/api/journey-v3.openapi.yaml",
-    ]);
+    assert.deepEqual(bundle.resources.map(({ id, path, mediaType }) => ({ id, path, mediaType })),
+      JOURNEY_CONTRACT_RESOURCES);
     writeFileSync(join(source, "contracts/api/journey-v3.openapi.yaml"), "worktree race must not affect blob bytes\n");
     run(source, join(output, "after-worktree-change.json")); assert.deepEqual(readFileSync(first), readFileSync(join(output, "after-worktree-change.json")));
   } finally { rmSync(source, { recursive: true, force: true }); rmSync(output, { recursive: true, force: true }); }
