@@ -1,0 +1,85 @@
+package com.easysubway.route.application.service;
+
+import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
+
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendarDate;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import java.time.LocalDate;
+import java.util.List;
+import java.util.Set;
+import org.junit.jupiter.api.Test;
+
+class JourneyProfileCandidateEventsTest {
+	private static final LocalDate BASE_DATE = LocalDate.of(2024, 1, 1);
+
+	@Test
+	void rejectsAnEmptyCanonicalLineSetBeforeReadingCompiledData() {
+		assertThatThrownBy(() -> JourneyProfileCandidateEvents.events(null, BASE_DATE, Set.of()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("canonical lines");
+	}
+
+	@Test
+	void readsFrequencyExpandedTimesAndPickupRulesFromTheCompiledCandidate() {
+		var timetable = fixture();
+		var events = JourneyProfileCandidateEvents.events(timetable, BASE_DATE, Set.of("line-fixture"));
+
+		assertThat(events).hasSize(2);
+		assertThat(events).extracting(event -> event.stops().getFirst().departureSeconds())
+			.containsExactly(37_800, 38_100);
+		assertThat(events).extracting(event -> event.stops().getLast().arrivalSeconds())
+			.containsExactly(37_920, 38_220);
+		assertThat(events).extracting(JourneyProfileCandidateEvents.Event::scheduledTripIndex)
+			.doesNotHaveDuplicates();
+		for (var event : events) {
+			assertThat(event.routeId()).isEqualTo("route-fixture");
+			assertThat(event.routeLineId()).isEqualTo("line-fixture");
+			assertThat(event.tripId()).isEqualTo("trip-fixture");
+			assertThat(event.serviceDate()).isEqualTo(BASE_DATE);
+			assertThat(event.stops().getFirst().stationId()).isEqualTo("station-a");
+			assertThat(event.stops().getFirst().allowsPickup()).isTrue();
+			assertThat(event.stops().getFirst().allowsDropOff()).isFalse();
+			assertThat(event.stops().getLast().allowsPickup()).isFalse();
+			assertThat(event.stops().getLast().allowsDropOff()).isTrue();
+		}
+		assertThat(JourneyProfileCandidateEvents.events(timetable, BASE_DATE, Set.of("line-fixture")))
+			.isEqualTo(events);
+		assertThatThrownBy(events::clear).isInstanceOf(UnsupportedOperationException.class);
+		assertThatThrownBy(events.getFirst().stops()::clear).isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
+	void respectsCalendarRemovalAndAdditionWithoutAliasingUnknownLines() {
+		var timetable = fixture();
+		assertThat(JourneyProfileCandidateEvents.events(timetable, BASE_DATE.plusDays(1), Set.of("line-fixture")))
+			.isEmpty();
+		assertThat(JourneyProfileCandidateEvents.events(timetable, BASE_DATE.plusDays(2), Set.of("line-fixture")))
+			.hasSize(2).allSatisfy(event -> assertThat(event.serviceDate()).isEqualTo(BASE_DATE.plusDays(2)));
+		assertThat(JourneyProfileCandidateEvents.events(timetable, BASE_DATE.plusDays(3), Set.of("line-fixture")))
+			.isEmpty();
+		assertThat(JourneyProfileCandidateEvents.events(timetable, BASE_DATE, Set.of("line-idle"))).isEmpty();
+		assertThatThrownBy(() -> JourneyProfileCandidateEvents.events(timetable, BASE_DATE, Set.of("unknown-line")))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("not compiled");
+	}
+
+	private static RouteTimetableRaptorPlanner.CompiledTimetable fixture() {
+		var source = new RouteTimetable(
+			List.of(new ServiceCalendar("service", true, true, true, true, true, true, true,
+				BASE_DATE, BASE_DATE.plusDays(1), "Asia/Seoul")),
+			List.of(new ServiceCalendarDate("service", BASE_DATE.plusDays(1), 2),
+				new ServiceCalendarDate("service", BASE_DATE.plusDays(2), 1)),
+			List.of(new TransitRoute("route-fixture", "line-fixture", "test", "test", "outbound", "Asia/Seoul"),
+				new TransitRoute("route-idle", "line-idle", "idle", "idle", "outbound", "Asia/Seoul")),
+			List.of(new TransitTrip("trip-fixture", "route-fixture", "service", "terminal", "0", "LOCAL", 0)),
+			List.of(new TransitStopTime("trip-fixture", 1, "station-a", "line-fixture", 36_000, 36_000, 0, 1),
+				new TransitStopTime("trip-fixture", 2, "station-b", "line-fixture", 36_120, 36_120, 1, 0)),
+			List.of(new TransitFrequency("trip-fixture", 37_800, 38_400, 300, true)));
+		return RaptorRouteBundleRuntimeView.compile("a".repeat(64), 1, source).compiledTimetable();
+	}
+}
