@@ -29,6 +29,10 @@ class JourneyProfileMeasurementInputsTest {
 		assertThat(pinned.routeEntries()).hasSize(8);
 		byte[] copy = pinned.fanInBytes(); copy[0] ^= 1;
 		assertThat(pinned.fanInBytes()).isNotEqualTo(copy);
+		assertThatThrownBy(() -> JourneyProfileMeasurementInputs.compile(pinned, 1))
+			.isInstanceOfSatisfying(RouteBundleInspectionException.class, failure ->
+				assertThat(failure.reason()).isEqualTo(
+					RouteBundleInspectionException.Reason.MANIFEST_UTF8_OR_JSON_INVALID));
 	}
 
 	@Test

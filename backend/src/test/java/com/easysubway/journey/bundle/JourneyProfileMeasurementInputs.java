@@ -1,5 +1,6 @@
 package com.easysubway.journey.bundle;
 
+import com.easysubway.route.application.service.RaptorRouteBundleRuntimeView;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -13,7 +14,9 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 
 /** Strict reader for the workflow-produced measurement input; it does not admit a serving bundle. */
@@ -59,6 +62,31 @@ final class JourneyProfileMeasurementInputs {
 		String routeManifestSha256 = routeEntries.stream().filter(entry -> entry.path().equals("server-route-bundle/manifest.json"))
 			.findFirst().orElseThrow().sha256();
 		return new PinnedInputs(input, component, routeManifestSha256, inventoryBytes, componentBytes, fanInBytes, routeEntries);
+	}
+
+	// Serving admission을 수행하지 않으며 generation은 측정 요청에만 귀속된다.
+	static CompiledMeasurementInputs compile(PinnedInputs pinned, long generation) {
+		if (generation < 1) fail("measurement generation");
+		Map<String, byte[]> selected = new LinkedHashMap<>();
+		for (PinnedRouteEntry entry : pinned.routeEntries()) {
+			selected.put(entry.path().substring("server-route-bundle/".length()), entry.bytes());
+		}
+		Map<String, byte[]> payloads = new LinkedHashMap<>();
+		for (String path : List.of("payload/topology.sqlite.zst", "payload/timetable.sqlite.zst",
+			"payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst")) {
+			payloads.put(path, selected.get(path));
+		}
+		RouteBundlePayloadInspection inspection = RouteBundleArtifactInspector.inspect(selected.get("manifest.json"), payloads);
+		if (!inspection.manifestSha256().equals(pinned.routeManifestSha256())) fail("route manifest binding");
+		RouteBundleIdentity identity = inspection.identity();
+		Map<String, String> digests = Map.of("payload/topology.sqlite.zst", identity.topologySha256(),
+			"payload/timetable.sqlite.zst", identity.timetableSha256(), "payload/accessibility.sqlite.zst", identity.accessibilitySha256(),
+			"payload/fare.sqlite.zst", identity.fareSha256());
+		var compilerInput = new RouteBundleSqliteRuntimeCompiler.Input(
+			pinned.routeManifestSha256(), generation, identity.bundleId(), identity.releaseSequence(),
+			identity.stationSetSha256(), digests, payloads);
+		RaptorRouteBundleRuntimeView runtime = new RouteBundleSqliteRuntimeCompiler().compile(compilerInput);
+		return new CompiledMeasurementInputs(runtime, identity);
 	}
 
 	private static MeasurementInput input(JsonNode node) {
@@ -227,4 +255,5 @@ final class JourneyProfileMeasurementInputs {
 		@Override public byte[] componentManifestBytes() { return componentManifestBytes.clone(); }
 		@Override public byte[] fanInBytes() { return fanInBytes.clone(); }
 	}
+	record CompiledMeasurementInputs(RaptorRouteBundleRuntimeView runtime, RouteBundleIdentity identity) { }
 }
