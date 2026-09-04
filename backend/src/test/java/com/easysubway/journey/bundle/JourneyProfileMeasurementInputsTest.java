@@ -85,9 +85,65 @@ class JourneyProfileMeasurementInputsTest {
 	}
 
 	private static Fixture fixture(Path parent) throws Exception {
+		return fixture(parent, "fan-in".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+	}
+
+	@Test
+	void decodesTheExactFanInScopeAndRejectsSemanticDriftAfterByteBinding(@TempDir Path temp) throws Exception {
+		Fixture valid = fixture(temp.resolve("valid"), scopeBytes("valid"));
+		var pinned = JourneyProfileMeasurementInputs.read(valid.root(), valid.input());
+		var scope = JourneyProfileMeasurementInputs.scope(pinned);
+		assertThat(scope.targetVersion()).isEqualTo("fixture-scope");
+		assertThat(scope.activeLines()).extracting(JourneyProfileMeasurementInputs.Line::regionId)
+			.containsExactly("busan", "capital", "daegu", "daejeon", "gwangju");
+		for (String mutation : List.of("line-order", "duplicate-line", "scope-digest", "self-digest",
+			"regional-matrix", "unknown-field")) {
+			Fixture invalid = fixture(temp.resolve(mutation), scopeBytes(mutation));
+			var rebound = JourneyProfileMeasurementInputs.read(invalid.root(), invalid.input());
+			assertThatThrownBy(() -> JourneyProfileMeasurementInputs.scope(rebound))
+				.as(mutation).isInstanceOf(IllegalArgumentException.class);
+		}
+	}
+
+	private static byte[] scopeBytes(String mutation) throws Exception {
+		List<String> regions = List.of("busan", "capital", "daegu", "daejeon", "gwangju");
+		List<Map<String, String>> lines = new ArrayList<>();
+		for (String region : regions) {
+			lines.add(Map.of("regionId", region, "operatorId", "operator", "lineId", "line-" + region));
+		}
+		if (mutation.equals("line-order")) java.util.Collections.swap(lines, 0, 1);
+		if (mutation.equals("duplicate-line")) lines.add(lines.getLast());
+		Map<String, Object> scope = Map.of("targetVersion", "fixture-scope", "regionIds", regions,
+			"activeLineScopes", lines, "requiredSourceDomains",
+			List.of(Map.of("id", "schedule_timetable", "releaseTier", "LAUNCH_REQUIRED")));
+		Map<String, Object> payload = new java.util.TreeMap<>();
+		payload.put("schemaVersion", 2);
+		payload.put("artifactKind", "current-five-region-source-fan-in");
+		payload.put("evaluatedAt", "2024-01-01T00:00:00.000Z");
+		payload.put("scope", scope);
+		payload.put("inputs", Map.of());
+		payload.put("scopeSha256", mutation.equals("scope-digest") ? "0".repeat(64) : sha(canonicalFixture(scope)));
+		payload.put("regionalMatrixSha256", (mutation.equals("regional-matrix") ? "e" : "d").repeat(64));
+		payload.put("sourceSetSha256", "a".repeat(64));
+		payload.put("selectedSources", List.of());
+		if (mutation.equals("unknown-field")) payload.put("extra", true);
+		String selfHash = mutation.equals("self-digest") ? "0".repeat(64) : sha(canonicalFixture(payload));
+		payload.put("fanInSha256", selfHash);
+		byte[] json = canonicalFixture(payload);
+		byte[] withLf = java.util.Arrays.copyOf(json, json.length + 1);
+		withLf[json.length] = '\n';
+		return withLf;
+	}
+
+	private static byte[] canonicalFixture(Object value) throws Exception {
+		return JSON.writer().with(com.fasterxml.jackson.databind.SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+			.writeValueAsBytes(value);
+	}
+
+	private static Fixture fixture(Path parent, byte[] fanInBytes) throws Exception {
 		Path root = Files.createDirectories(parent.resolve("candidate"));
 		Map<String, byte[]> selected = new LinkedHashMap<>();
-		selected.put("tools/datapack/release/current-five-region-source-fan-in.json", "fan-in".getBytes());
+		selected.put("tools/datapack/release/current-five-region-source-fan-in.json", fanInBytes);
 		for (String path : List.of("compatibility.json", "manifest.json", "manifest.signing-input.json",
 			"payload/accessibility.sqlite.zst", "payload/fare.sqlite.zst", "payload/timetable.sqlite.zst",
 			"payload/topology.sqlite.zst", "provenance.json")) selected.put("server-route-bundle/" + path, path.getBytes());
