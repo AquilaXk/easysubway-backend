@@ -34,6 +34,38 @@ class JourneyProfileRaptorAdapterTest {
 	private final JourneyProfileRaptorAdapter adapter = new JourneyProfileRaptorAdapter();
 
 	@Test
+	void measurementCapturesOneCalculationAndRejectsUnavailableCounters() {
+		var captured = snapshot();
+		var runtime = (RaptorRouteBundleRuntimeView) captured.runtimeView();
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var calls = new java.util.concurrent.atomic.AtomicInteger();
+		var clockIndex = new java.util.concurrent.atomic.AtomicInteger();
+		var allocationIndex = new java.util.concurrent.atomic.AtomicInteger();
+		long[] clock = {100, 117};
+		long[] allocations = {200, 232};
+		var measurement = JourneyProfileMeasuredExecution.capture(request, runtime, () -> {
+			calls.incrementAndGet();
+			return adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits());
+		}, () -> clock[clockIndex.getAndIncrement()], () -> allocations[allocationIndex.getAndIncrement()]);
+		assertThat(calls.get()).isEqualTo(1);
+		assertThat(measurement.requestId()).isEqualTo(REQUEST_ID);
+		assertThat(measurement.routeBundleSha256()).isEqualTo(runtime.routeBundleSha256());
+		assertThat(measurement.generation()).isEqualTo(runtime.generation());
+		assertThat(measurement.durationNanos()).isEqualTo(17);
+		assertThat(measurement.allocatedBytes()).isEqualTo(32);
+		assertThat(measurement.result().planningMetrics().workConsumed()).isPositive();
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capture(request, runtime,
+			() -> { throw new AssertionError("calculation must not start without allocation observation"); },
+			() -> 0, () -> -1))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		allocationIndex.set(0);
+		long[] decreasing = {200, 199};
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capture(request, runtime,
+			measurement::result, () -> 0, () -> decreasing[allocationIndex.getAndIncrement()]))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+	}
+
+	@Test
 	void measurementRuntimeAndServingEntryUseTheSameProfileCalculation() {
 		var captured = snapshot();
 		var runtime = (RaptorRouteBundleRuntimeView) captured.runtimeView();
