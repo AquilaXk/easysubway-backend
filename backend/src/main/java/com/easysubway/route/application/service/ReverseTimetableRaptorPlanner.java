@@ -592,7 +592,7 @@ final class ReverseTimetableRaptorPlanner {
 		TraceRide ride = (TraceRide) leg;
 		boolean hasRealtimeEvidence = realtimeOverlay.evidence(ride.trip().scheduledTrip()) != null;
 		return new RouteTimetableRaptorPlanner.JourneyRideProjection(
-			ride.trip().lineId(ride.boardIndex()),
+			ride.trip().scheduledTrip().route().lineId(),
 			ride.trip().scheduledTrip().trip().id(),
 			ride.trip().stopTimes().getLast().stationId(),
 			ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
