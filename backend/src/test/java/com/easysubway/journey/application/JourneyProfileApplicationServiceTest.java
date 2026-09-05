@@ -28,7 +28,9 @@ class JourneyProfileApplicationServiceTest {
 				return snapshot(Instant.parse("2026-09-01T02:00:00Z"));
 			},
 			(query, snapshot, realtime, limits) -> planned(query, new JourneyProfileRaptorPort.DepartureWindowPlan(
-				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of())),
+				(JourneyRaptorQuery.DepartBetween) query.temporalQuery(), List.of(
+					new JourneyProfileRaptorPort.DeparturePoint(LocalDate.of(2026, 9, 1), NOW,
+						List.of(itinerary(NOW.plusSeconds(600))), new JourneyRaptorPort.ScanMetrics(1, 1, 1))))),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 		var latestReadyAt = Instant.parse("2026-09-01T01:30:00Z");
 

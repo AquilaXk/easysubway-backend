@@ -178,7 +178,7 @@ class JourneyProfileCandidateProjectionV1Test {
 				new JourneyProfileRaptorPort.ArriveByPlan(temporal,
 					new JourneyProfileRaptorPort.ReversePlan.Found(List.of(
 						itinerary(START, 601, "trip-a", 120, 150, 1)))), 3))
-			.withMessageContaining("arrival deadline");
+			.withMessageContaining("outside arrive-by facts");
 	}
 
 	@Test
