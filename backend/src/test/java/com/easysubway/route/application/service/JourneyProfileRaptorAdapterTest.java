@@ -34,6 +34,32 @@ class JourneyProfileRaptorAdapterTest {
 	private final JourneyProfileRaptorAdapter adapter = new JourneyProfileRaptorAdapter();
 
 	@Test
+	void measuresOnePointPlannerExecutionWithoutServingObservation() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var request = query(new JourneyRaptorQuery.DepartAt(instantAt(30_000)));
+		var clockIndex = new java.util.concurrent.atomic.AtomicInteger();
+		var allocationIndex = new java.util.concurrent.atomic.AtomicInteger();
+		long[] clock = {100, 117};
+		long[] allocations = {200, 232};
+
+		var measurement = JourneyProfileMeasuredExecution.capturePoint(request, runtime,
+			() -> clock[clockIndex.getAndIncrement()], () -> allocations[allocationIndex.getAndIncrement()]);
+
+		assertThat(measurement.requestId()).isEqualTo(REQUEST_ID);
+		assertThat(measurement.routeBundleSha256()).isEqualTo(runtime.routeBundleSha256());
+		assertThat(measurement.generation()).isEqualTo(runtime.generation());
+		assertThat(measurement.durationNanos()).isEqualTo(17);
+		assertThat(measurement.allocatedBytes()).isEqualTo(32);
+		assertThat(measurement.result().itineraries()).isNotEmpty();
+		assertThat(measurement.result().scanMetrics().expandedRoutes()).isPositive();
+		assertThat(measurement.result().measurementObservation()).isNull();
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capturePoint(
+			query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))), runtime,
+			() -> 0, () -> { throw new AssertionError("profile mode must be rejected before scan"); }))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("DepartAt");
+	}
+
+	@Test
 	void measurementCapturesOneCalculationAndRejectsUnavailableCounters() {
 		var captured = snapshot();
 		var runtime = (RaptorRouteBundleRuntimeView) captured.runtimeView();
