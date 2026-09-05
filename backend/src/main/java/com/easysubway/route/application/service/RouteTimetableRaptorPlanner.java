@@ -1707,7 +1707,9 @@ class RouteTimetableRaptorPlanner {
 
 		int slackSeconds = profileInput.boardingSlackSeconds();
 		int accessProfileBit = profileInput.accessProfileBit();
-		List<Integer> breakpoints = departureEvents(
+		// 시간대 이후 첫 열차를 기다릴 수 있으므로 마지막 준비시각에서도 탐색을 시작한다.
+		List<Integer> breakpoints = java.util.stream.Stream.concat(
+			java.util.stream.Stream.of(latestReadyAtSeconds), departureEvents(
 			activeServiceDay,
 			profileInput.originStationId(),
 			0,
@@ -1719,8 +1721,9 @@ class RouteTimetableRaptorPlanner {
 			.mapToInt(OptionalIntValue::value)
 			.filter(readyAt -> readyAt >= earliestReadyAtSeconds
 				&& readyAt <= latestReadyAtSeconds)
-			.boxed()
+			.boxed())
 			.distinct()
+			.sorted(Comparator.reverseOrder())
 			.toList();
 
 		limits.reserveBreakpoints(breakpoints.size());
@@ -1733,6 +1736,7 @@ class RouteTimetableRaptorPlanner {
 			scan.propagate();
 			List<JourneyItinerary> itineraries = scan.destinationItineraries(
 				input, destination, accessProfileBit);
+			if (itineraries.isEmpty()) continue;
 			profile.add(new JourneyDepartureProfilePoint(
 				serviceDay.date(),
 				readyAtSeconds,

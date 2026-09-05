@@ -139,6 +139,31 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void retainsWaitingForTheFirstTrainAfterTheDepartureWindow() {
+		var request = query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(31_000)));
+		var expected = new JourneyProfileExactOracle().solveDepartureWindow(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_000),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), instantAt(31_000),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		assertThat(expected).hasSize(1);
+		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(31_000));
+		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_720));
+		var result = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
+			request, snapshot(), null, policy().profilePlanningLimits());
+		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) result.temporalPlan();
+		assertThat(plan.points()).singleElement().satisfies(point -> {
+			assertThat(point.readyAt()).isEqualTo(instantAt(31_000));
+			assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, point.itineraries())).isTrue();
+		});
+		var exhausted = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
+			query(new JourneyRaptorQuery.DepartBetween(instantAt(37_000), instantAt(38_000))),
+			snapshot(), null, policy().profilePlanningLimits());
+		assertThat(((JourneyProfileRaptorPort.DepartureWindowPlan) exhausted.temporalPlan()).points()).isEmpty();
+	}
+
+	@Test
 	void dispatchesDepartureWindowAgainstTheCapturedRuntimeWithoutPointFallback() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
 			snapshot(), null, policy().profilePlanningLimits());
