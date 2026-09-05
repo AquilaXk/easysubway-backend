@@ -118,6 +118,27 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void matchesRawExactFrequencyOracleForArriveBy() {
+		var source = timetable(List.of(new LoadRouteTimetablePort.TransitFrequency(
+			"direct", 36_000, 36_600, 300, true)));
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_050)));
+		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_050),
+			0, STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		assertThat(expected).hasSize(2);
+		assertThat(expected).extracting(JourneyProfileExactOracle.Candidate::arrivalAtDestination)
+			.containsExactlyInAnyOrder(instantAt(36_720), instantAt(37_020));
+		var result = (JourneyProfileRaptorPort.PlanningResult.Planned) adapter.plan(
+			request, snapshot(source), null, policy().profilePlanningLimits());
+		var plan = (JourneyProfileRaptorPort.ArriveByPlan) result.temporalPlan();
+		var found = (JourneyProfileRaptorPort.ReversePlan.Found) plan.result();
+		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, found.itineraries())).isTrue();
+	}
+
+	@Test
 	void dispatchesDepartureWindowAgainstTheCapturedRuntimeWithoutPointFallback() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
 			snapshot(), null, policy().profilePlanningLimits());
@@ -401,6 +422,10 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	private static RouteTimetable timetable() {
+		return timetable(List.of());
+	}
+
+	private static RouteTimetable timetable(List<LoadRouteTimetablePort.TransitFrequency> frequencies) {
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
@@ -410,7 +435,7 @@ class JourneyProfileRaptorAdapterTest {
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), List.of(trip),
 			List.of(stop("direct", 1, "station-a", 36_000), stop("direct", 2, "station-b", 36_600)),
-			List.of(), List.of(), null, accessData());
+			frequencies, List.of(), null, accessData());
 	}
 
 	private static RouteTimetable crossCutoffTimetable() {
