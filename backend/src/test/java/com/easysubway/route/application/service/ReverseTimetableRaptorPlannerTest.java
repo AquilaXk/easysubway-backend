@@ -277,6 +277,25 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("matches the raw scheduled exact oracle for shared upstream arrive-by suffixes")
+	void arriveByMatchesRawScheduledExactOracleForSharedUpstreamSuffixes() {
+		var source = sharedUpstreamSuffixTimetable();
+		int deadline = deadlineAt(34_800, 180);
+		var expected = scheduledOracle(source, serviceInstant(0), serviceInstant(deadline));
+		var compiled = forward.compile(source);
+		var actual = planner.arriveBy(new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 0, deadline, 1, PROFILE_BIT, SLACK_SECONDS,
+			MobilityPreset.SLOW, 3_600, true, () -> false), compiled, compiled.activeServiceDay(SERVICE_DATE),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(expected).extracting(candidate -> candidate.rides().stream()
+			.map(JourneyProfileExactOracle.Ride::tripId).toList())
+			.containsExactlyInAnyOrder(List.of("shared-first", "fast-second"), List.of("shared-first", "safer-second"));
+		assertThat(actual.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertExactOracleMatches(source, expected, actual.itineraries());
+	}
+
+	@Test
 	@DisplayName("distinguishes calendar exclusion, realtime cancellation, and delayed deadline misses")
 	void classifiesInactiveAndPinnedRealtimeChanges() {
 		var compiled = forward.compile(directTimetable(32_400, 33_000, true, true, 300, 180));
@@ -350,6 +369,32 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	@DisplayName("matches the raw scheduled exact oracle for the last feasible transfer")
+	void lastConnectionMatchesRawScheduledExactOracleForLastFeasibleTransfer() {
+		var source = lastConnectionTransferTimetable();
+		var allExpected = scheduledOracle(source, serviceInstant(0), serviceInstant(deadlineAt(39_300, 180)));
+		var latestReadyAt = allExpected.stream().map(JourneyProfileExactOracle.Candidate::readyAt)
+			.max(Instant::compareTo).orElseThrow();
+		var expected = allExpected.stream()
+			.filter(candidate -> candidate.readyAt().equals(latestReadyAt))
+			.toList();
+		var compiled = forward.compile(source);
+		var actual = planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			"station-a", "station-b", SERVICE_DATE, 1, PROFILE_BIT, SLACK_SECONDS, MobilityPreset.SLOW, 3_600, true,
+			() -> false), compiled, compiled.activeServiceDay(SERVICE_DATE),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits()).result();
+
+		assertThat(expected).extracting(candidate -> candidate.rides().stream()
+			.map(JourneyProfileExactOracle.Ride::tripId).toList())
+			.containsExactlyInAnyOrder(List.of("feasible-first", "feasible-second"),
+				List.of("feasible-first", "late-second"));
+		assertThat(allExpected).extracting(candidate -> candidate.rides().stream()
+			.map(JourneyProfileExactOracle.Ride::tripId).toList()).doesNotContain(List.of("late-first", "late-second"));
+		assertThat(actual.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertExactOracleMatches(source, expected, actual.itineraries());
+	}
+
+	@Test
 	@DisplayName("uses the actual extended-hour terminal event instead of a clock cutoff")
 	void lastConnectionUsesExtendedHourTerminalEvent() {
 		var compiled = forward.compile(directTimetable(93_000, 93_600, true, true, 300, 180));
@@ -415,6 +460,82 @@ class ReverseTimetableRaptorPlannerTest {
 
 	private static JourneyProfileResourcePolicy.ProfilePlanningLimits limits() {
 		return new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 32, 32);
+	}
+
+	private static List<JourneyProfileExactOracle.Candidate> scheduledOracle(
+		RouteTimetable source, Instant earliestReadyAt, Instant arrivalDeadline
+	) {
+		return new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+			"station-a", "station-b", earliestReadyAt, arrivalDeadline, 1, SLACK_SECONDS, 100_000L, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 32),
+			JourneyProfileOracleAccessInputs.normalize(source.routeAccessData(), JourneyRequest.MobilityProfile.SLOW,
+				JourneyRequest.ConstraintMode.NONE, 3_600, 32));
+	}
+
+	private static void assertExactOracleMatches(
+		RouteTimetable source, List<JourneyProfileExactOracle.Candidate> expected,
+		List<RouteTimetableRaptorPlanner.JourneyItinerary> actual
+	) {
+		assertThat(actual).hasSize(expected.size());
+		var unmatched = new java.util.ArrayList<>(actual);
+		for (JourneyProfileExactOracle.Candidate candidate : expected) {
+			var matches = unmatched.stream().filter(itinerary -> matchesExactOracle(source, candidate, itinerary)).toList();
+			assertThat(matches).singleElement();
+			unmatched.remove(matches.getFirst());
+		}
+		assertThat(unmatched).isEmpty();
+	}
+
+	private static boolean matchesExactOracle(
+		RouteTimetable source, JourneyProfileExactOracle.Candidate expected,
+		RouteTimetableRaptorPlanner.JourneyItinerary actual
+	) {
+		if (!SERVICE_DATE.equals(actual.serviceDate()) || !expected.readyAt().equals(actual.plannedDepartureTime())
+			|| !expected.arrivalAtDestination().equals(actual.plannedArrivalTime())
+			|| actual.realtimeDepartureTime() != null || actual.realtimeArrivalTime() != null
+			|| expected.transfersUsed() != actual.metrics().transfersUsed()
+			|| expected.walkingSeconds() != actual.metrics().accessMovementSeconds()
+			|| expected.walkingDistanceMeters() != actual.metrics().accessDistanceMeters()
+			|| expected.accessibilityBurden() != actual.metrics().accessibilityBurden()
+			|| !sameSlack(expected.minimumConnectionSlack(), actual.metrics().connectionSlack())
+			|| actual.legs().size() != expected.accesses().size() + expected.rides().size()) return false;
+		for (int index = 0; index < expected.accesses().size(); index += 1) {
+			var access = expected.accesses().get(index);
+			if (!(actual.legs().get(index * 2) instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection observed)
+				|| !access.kind().name().equals(observed.kind().name())
+				|| !access.fromStationId().equals(observed.fromStationId()) || !access.toStationId().equals(observed.toStationId())
+				|| access.durationSeconds() != observed.durationSeconds() || access.walkingDistanceMeters() != observed.distanceMeters()
+				|| (access.accessibilityBurden() != 0) != observed.includesStairs()
+				|| !access.usable() || !observed.verified() || !"VERIFIED".equals(observed.verificationStatus())) return false;
+			if (index == expected.rides().size()) continue;
+			var ride = expected.rides().get(index);
+			if (!(actual.legs().get(index * 2 + 1) instanceof RouteTimetableRaptorPlanner.JourneyRideProjection observed)
+				|| !ride.tripId().equals(observed.tripId()) || !ride.fromStationId().equals(observed.fromStationId())
+				|| !ride.toStationId().equals(observed.toStationId()) || !ride.departureAt().equals(observed.plannedDepartureTime())
+				|| !ride.arrivalAt().equals(observed.plannedArrivalTime()) || observed.realtimeDepartureTime() != null
+				|| observed.realtimeArrivalTime() != null || !rawLineId(source, ride.tripId()).equals(observed.lineId())
+				|| !rawDirectionStationId(source, ride.tripId()).equals(observed.directionStationId())) return false;
+		}
+		return true;
+	}
+
+	private static boolean sameSlack(
+		JourneyProfileExactOracle.ConnectionSlack expected, com.easysubway.journey.application.JourneyProfileRaptorPort.ConnectionSlack actual
+	) {
+		return expected instanceof JourneyProfileExactOracle.ConnectionSlack.NoTransfer
+			? actual instanceof com.easysubway.journey.application.JourneyProfileRaptorPort.NoTransfer
+			: actual instanceof com.easysubway.journey.application.JourneyProfileRaptorPort.MinimumTransferSeconds observed
+				&& ((JourneyProfileExactOracle.ConnectionSlack.MinimumTransferSeconds) expected).seconds() == observed.seconds();
+	}
+
+	private static String rawLineId(RouteTimetable source, String tripId) {
+		var trip = source.transitTrips().stream().filter(value -> tripId.equals(value.id())).findFirst().orElseThrow();
+		return source.transitRoutes().stream().filter(route -> trip.routeId().equals(route.id())).findFirst().orElseThrow().lineId();
+	}
+
+	private static String rawDirectionStationId(RouteTimetable source, String tripId) {
+		return source.transitStopTimes().stream().filter(stop -> tripId.equals(stop.tripId()))
+			.max(java.util.Comparator.comparingInt(LoadRouteTimetablePort.TransitStopTime::stopSequence)).orElseThrow().stationId();
 	}
 
 	/**
@@ -674,7 +795,7 @@ class ReverseTimetableRaptorPlannerTest {
 			"daily", false, false, true, false, false, false, false,
 			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
 		var routes = trips.stream().map(trip -> new LoadRouteTimetablePort.TransitRoute(
-			trip.routeId(), trip.routeId(), trip.routeId(), trip.routeId(), "terminal", "Asia/Seoul")).toList();
+			trip.routeId(), trip.routeId(), trip.routeId(), trip.routeId(), "terminal", "Asia/Seoul")).distinct().toList();
 		return new RouteTimetable(
 			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
 	}
