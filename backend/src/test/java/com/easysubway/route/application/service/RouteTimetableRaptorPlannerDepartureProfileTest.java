@@ -121,6 +121,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 					.toList())
 				.containsExactly(
 					List.of("origin-a", "shared-fast"),
+					List.of("origin-a", "shared-safe"),
 					List.of("origin-b", "shared-safe"));
 			assertThat(point.itineraries())
 				.extracting(RouteTimetableRaptorPlanner.JourneyItinerary::metrics)
@@ -128,6 +129,9 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 					new JourneyProfileRaptorPort.ItineraryMetrics(
 						1, 1_020, 1_010, 0,
 						new JourneyProfileRaptorPort.MinimumTransferSeconds(0)),
+					new JourneyProfileRaptorPort.ItineraryMetrics(
+						1, 1_020, 1_010, 0,
+						new JourneyProfileRaptorPort.MinimumTransferSeconds(370)),
 					new JourneyProfileRaptorPort.ItineraryMetrics(
 						1, 308, 120, 0,
 						new JourneyProfileRaptorPort.MinimumTransferSeconds(332)));
@@ -299,11 +303,11 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				stop("origin-a", 1, "origin", "line-a", 29_300),
 				stop("origin-a", 2, "hub", "line-a", 29_300),
 				stop("origin-b", 1, "origin", "line-b", 29_300),
-				stop("origin-b", 2, "hub", "line-b", 29_600),
+				stop("origin-b", 2, "hub", "line-b", 30_050),
 				stop("shared-fast", 1, "hub", "shared", 30_080),
 				stop("shared-fast", 2, "destination", "shared", 30_300),
-				stop("shared-safe", 1, "hub", "shared", 30_000),
-				stop("shared-safe", 2, "destination", "shared", 30_400)),
+				stop("shared-safe", 1, "hub", "shared", 30_450),
+				stop("shared-safe", 2, "destination", "shared", 30_600)),
 			List.of(),
 			List.of(),
 			null,
