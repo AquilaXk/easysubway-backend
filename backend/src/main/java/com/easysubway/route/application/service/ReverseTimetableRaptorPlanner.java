@@ -15,6 +15,7 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 /**
  * Reverse, service-day-local primitive for arrive-by and O/D last-connection queries.
@@ -53,7 +54,8 @@ final class ReverseTimetableRaptorPlanner {
 		}
 		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
 		DatedTripCollection collection = activeTrips(
-			timetable, query.serviceDate(), query.serviceDate(), limitTracker, query.cancelled());
+			timetable, query.serviceDate(), query.serviceDate(), ignored -> activeServiceDay,
+			limitTracker, query.cancelled());
 		if (collection.cancelled()) return LastConnectionResult.cancelled();
 		List<DatedScheduledTrip> activeTrips = collection.trips();
 		if (activeTrips.isEmpty()) {
@@ -106,7 +108,8 @@ final class ReverseTimetableRaptorPlanner {
 		Objects.requireNonNull(limits, "limits must not be null");
 		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
 		DatedTripCollection collection = activeTrips(
-			timetable, query.serviceDate(), query.serviceDate(), limitTracker, query.cancelled());
+			timetable, query.serviceDate(), query.serviceDate(), ignored -> activeServiceDay,
+			limitTracker, query.cancelled());
 		if (collection.cancelled()) return Result.cancelled();
 		return arriveBy(query, timetable, collection.trips(), realtimeOverlay, limitTracker);
 	}
@@ -143,7 +146,8 @@ final class ReverseTimetableRaptorPlanner {
 		if (query.cancelled().getAsBoolean()) return Result.cancelled();
 		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
 		DatedTripCollection collection = activeTrips(
-			timetable, firstServiceDate, lastServiceDate, limitTracker, query.cancelled());
+			timetable, firstServiceDate, lastServiceDate, timetable::activeServiceDay,
+			limitTracker, query.cancelled());
 		if (collection.cancelled()) return Result.cancelled();
 		return arriveBy(query, timetable, collection.trips(), realtimeOverlay, limitTracker);
 	}
@@ -399,6 +403,7 @@ final class ReverseTimetableRaptorPlanner {
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		LocalDate firstServiceDate,
 		LocalDate lastServiceDate,
+		Function<LocalDate, RouteTimetableRaptorPlanner.ActiveServiceDay> activeDays,
 		ReverseLimitTracker limits,
 		BooleanSupplier cancelled
 	) {
@@ -407,7 +412,7 @@ final class ReverseTimetableRaptorPlanner {
 			serviceDate = serviceDate.plusDays(1)) {
 			if (cancelled.getAsBoolean()) return new DatedTripCollection(List.of(), true);
 			limits.consumeWork();
-			RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDate);
+			RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay = activeDays.apply(serviceDate);
 			Set<Integer> seen = new HashSet<>();
 			for (int pattern = 0; pattern < timetable.routePatternCount(); pattern += 1) {
 				if (cancelled.getAsBoolean()) return new DatedTripCollection(List.of(), true);
