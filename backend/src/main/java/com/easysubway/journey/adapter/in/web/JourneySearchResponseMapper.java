@@ -51,7 +51,7 @@ final class JourneySearchResponseMapper {
 		);
 	}
 
-	private static JourneyResponse mapJourney(JourneyCandidate journey) {
+	static JourneyResponse mapJourney(JourneyCandidate journey) {
 		return new JourneyResponse(
 			journey.journeyId(),
 			wire(journey.status()),
