@@ -171,6 +171,7 @@ final class ReverseTimetableRaptorPlanner {
 			return Result.of(Outcome.NO_OD_CONNECTION);
 		}
 
+		boolean permittedDestinationStopExists = false;
 		boolean verifiedExitExists = false;
 		boolean exitCanMeetDeadline = false;
 		List<Candidate> candidates = new ArrayList<>();
@@ -185,6 +186,7 @@ final class ReverseTimetableRaptorPlanner {
 					|| !trip.allowsDropOff(alightIndex)) {
 					continue;
 				}
+				permittedDestinationStopExists = true;
 				int line = timetable.lineIndex(trip.lineId(alightIndex));
 				int exit = line < 0 ? -1 : timetable.exitTransition(
 					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
@@ -228,6 +230,9 @@ final class ReverseTimetableRaptorPlanner {
 					frontier.size(), limitTracker.maxDestinationProfileLabels());
 			}
 			return Result.found(frontier, query, timetable, realtimeOverlay);
+		}
+		if (!permittedDestinationStopExists) {
+			return Result.of(Outcome.NO_OD_CONNECTION);
 		}
 		if (!verifiedExitExists) {
 			return Result.of(Outcome.NO_VERIFIED_EXIT);

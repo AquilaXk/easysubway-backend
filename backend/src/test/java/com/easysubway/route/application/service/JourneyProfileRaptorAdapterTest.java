@@ -217,7 +217,7 @@ class JourneyProfileRaptorAdapterTest {
 
 	@Test
 	void preservesThreeIndependentDirectFactsAndEveryRequiredDepartureRepresentative() {
-		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_000));
+		var temporal = new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001));
 		var result = adapter.plan(profileQuery(temporal, 3), snapshot(threePathTimetable()), null,
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 3, 32));
 		var plan = (JourneyProfileRaptorPort.DepartureWindowPlan) ((JourneyProfileRaptorPort.PlanningResult.Planned) result)
