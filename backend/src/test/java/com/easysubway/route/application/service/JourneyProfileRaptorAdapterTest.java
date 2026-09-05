@@ -34,6 +34,21 @@ class JourneyProfileRaptorAdapterTest {
 	private final JourneyProfileRaptorAdapter adapter = new JourneyProfileRaptorAdapter();
 
 	@Test
+	void measurementRuntimeAndServingEntryUseTheSameProfileCalculation() {
+		var captured = snapshot();
+		var runtime = (RaptorRouteBundleRuntimeView) captured.runtimeView();
+		List<JourneyRaptorQuery.TemporalQuery> modes = List.of(
+			new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000)),
+			new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)),
+			new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
+		for (var mode : modes) {
+			var request = query(mode);
+			assertThat(adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()))
+				.isEqualTo(adapter.plan(request, captured, null, policy().profilePlanningLimits()));
+		}
+	}
+
+	@Test
 	void dispatchesDepartureWindowAgainstTheCapturedRuntimeWithoutPointFallback() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.DepartBetween(instantAt(30_000), instantAt(37_000))),
 			snapshot(), null, policy().profilePlanningLimits());
