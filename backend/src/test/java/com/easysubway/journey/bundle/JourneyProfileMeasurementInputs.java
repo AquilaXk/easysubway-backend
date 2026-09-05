@@ -85,8 +85,10 @@ public final class JourneyProfileMeasurementInputs {
 		var compilerInput = new RouteBundleSqliteRuntimeCompiler.Input(
 			pinned.routeManifestSha256(), generation, identity.bundleId(), identity.releaseSequence(),
 			identity.stationSetSha256(), digests, payloads);
-		RaptorRouteBundleRuntimeView runtime = new RouteBundleSqliteRuntimeCompiler().compile(compilerInput);
-		return new CompiledMeasurementInputs(runtime, identity);
+		var sourceTimetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(compilerInput);
+		RaptorRouteBundleRuntimeView runtime = RaptorRouteBundleRuntimeView.compile(
+			pinned.routeManifestSha256(), generation, sourceTimetable);
+		return new CompiledMeasurementInputs(runtime, identity, sourceTimetable);
 	}
 
 	public static Scope scope(PinnedInputs pinned) {
@@ -296,7 +298,9 @@ public final class JourneyProfileMeasurementInputs {
 		@Override public byte[] componentManifestBytes() { return componentManifestBytes.clone(); }
 		@Override public byte[] fanInBytes() { return fanInBytes.clone(); }
 	}
-	public record CompiledMeasurementInputs(RaptorRouteBundleRuntimeView runtime, RouteBundleIdentity identity) { }
+	// Oracle는 compiled transition이 아닌 DTO를 사용한다. SQLite decoder 자체의 독립 검증은 아니다.
+	public record CompiledMeasurementInputs(RaptorRouteBundleRuntimeView runtime, RouteBundleIdentity identity,
+		com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable sourceTimetable) { }
 	public record Scope(String targetVersion, String scopeSha256, List<Line> activeLines) { public Scope { activeLines = List.copyOf(activeLines); } }
 	public record Line(String regionId, String operatorId, String lineId) { }
 }

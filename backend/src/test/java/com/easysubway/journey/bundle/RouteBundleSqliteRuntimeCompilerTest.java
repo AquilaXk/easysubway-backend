@@ -40,6 +40,20 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	Path temp;
 
 	@Test
+	void readsVerifiedTimetableAndDirectionalAccessBeforePlannerCompilation() throws Exception {
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads()));
+
+		assertThat(timetable.transitStopTimes()).extracting(stop -> stop.stationId())
+			.containsExactly("station-a", "station-b");
+		assertThat(timetable.routeAccessData().pathwayEdges()).extracting(edge -> edge.id())
+			.containsExactly("entry-a", "exit-b");
+		assertThat(timetable.routeAccessData().pathwayEdges()).extracting(edge -> edge.durationSeconds())
+			.containsExactly(120, 60);
+		assertThat(timetable.routeAccessData().pathwayEdges()).extracting(edge -> edge.distanceMeters())
+			.containsExactly(60, 40);
+	}
+
+	@Test
 	void compilesExactFourProducerPayloadsIntoOneWarmJourneyRuntime() throws Exception {
 		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
 
