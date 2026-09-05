@@ -96,7 +96,7 @@ class JourneyProfileResponseMapperTest {
 			(BooleanSupplier) () -> false);
 	}
 
-	private static JourneyProfileExecutionResult.Success success(
+	static JourneyProfileExecutionResult.Success success(
 		JourneyRaptorQuery query, JourneyProfileRaptorPort.TemporalPlan plan
 	) { return success(query, plan, "a".repeat(64)); }
 
@@ -113,13 +113,13 @@ class JourneyProfileResponseMapperTest {
 			new JourneyRaptorPruningInventoryV1.CountSnapshot(query.requestId(), algorithm, counts));
 	}
 
-	private static JourneyProfileResourcePolicy policy() {
+	static JourneyProfileResourcePolicy policy() {
 		return new JourneyProfileResourcePolicy(new JourneyProfileResourcePolicy.Identity("policy", "1.0.0", "a".repeat(64)),
 			Duration.ofHours(1), 2, 100, 8, 16, 16, Duration.ofHours(1), Duration.ofSeconds(2),
 			Duration.ofSeconds(5), Duration.ofSeconds(8), 1, 2, 3, 4, 10);
 	}
 
-	private static JourneyProfileRaptorPort.Itinerary itinerary(boolean verified) {
+	static JourneyProfileRaptorPort.Itinerary itinerary(boolean verified) {
 		return new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600), null, null,
 			new JourneyProfileRaptorPort.ItineraryMetrics(0, 120, 20, 0, new JourneyProfileRaptorPort.NoTransfer()),
 			java.util.List.of(

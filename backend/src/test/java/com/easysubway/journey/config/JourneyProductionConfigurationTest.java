@@ -18,6 +18,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationService;
+import com.easysubway.journey.application.JourneyProfileApplicationService;
+import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyProfileSnapshotPort;
 import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
@@ -42,6 +46,11 @@ import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.util.HexFormat;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
@@ -51,6 +60,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.io.TempDir;
 import org.springframework.boot.availability.ApplicationAvailability;
 import org.springframework.boot.availability.AvailabilityChangeEvent;
 import org.springframework.boot.availability.AvailabilityState;
@@ -69,6 +79,8 @@ import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 @DisplayName("Journey 운영 composition")
 class JourneyProductionConfigurationTest {
+	@TempDir
+	Path policyDirectory;
 
 	private static final String CERTIFICATE_SHA256 = "AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 	private static final String SHA_A = "a".repeat(64);
@@ -116,6 +128,11 @@ class JourneyProductionConfigurationTest {
 			assertThat(context).hasSingleBean(JourneyRealtimePort.class);
 			assertThat(context.getBean(JourneyRealtimePort.class)).isInstanceOf(JourneyRealtimeAdapter.class);
 			assertThat(context).hasSingleBean(JourneyApplicationService.class);
+			assertThat(context).hasSingleBean(JourneyProfileApplicationService.class);
+			assertThat(context).hasSingleBean(JourneyProfileDeadlineExecutor.class);
+			assertThat(context).hasSingleBean(JourneyProfileResourcePolicy.class);
+			assertThat(context.getBean(JourneyProfileSnapshotPort.class))
+				.isSameAs(context.getBean(ActiveJourneySnapshotPort.class));
 			assertThat(context).hasSingleBean(StationTimetableSearchService.class);
 			assertThat(context.getBeansOfType(ExecutorService.class)).hasSize(2)
 				.containsKeys("journeyApplicationExecutor", "journeyMeasurementExecutor");
@@ -673,7 +690,18 @@ class JourneyProductionConfigurationTest {
 	}
 
 	private WebApplicationContextRunner validProductionProperties() {
+		byte[] policyBytes = JourneyProfileResourcePolicyArtifactTest.validJson().getBytes(StandardCharsets.UTF_8);
+		Path policyPath = policyDirectory.resolve("resource-policy.json");
+		String policySha256;
+		try {
+			Files.write(policyPath, policyBytes);
+			policySha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(policyBytes));
+		} catch (Exception exception) {
+			throw new AssertionError(exception);
+		}
 		return productionContext(
+			"easysubway.journey.profile.resource-policy-path=" + policyPath,
+			"easysubway.journey.profile.resource-policy-sha256=" + policySha256,
 			"easysubway.journey.search.timeout=PT2S",
 			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
@@ -686,6 +714,14 @@ class JourneyProductionConfigurationTest {
 			"easysubway.journey-v3.readiness.journey-contract-sha256=" + SHA_D,
 			"easysubway.journey-v3.readiness.traffic-generation=31"
 		);
+	}
+
+	@Test
+	void rejectsMissingOrMismatchedProfilePolicyWithoutDefaults() {
+		validProductionContext().withPropertyValues("easysubway.journey.profile.resource-policy-sha256=" + SHA_B)
+			.run(context -> assertThat(context).hasFailed());
+		validProductionContext().withPropertyValues("easysubway.journey.profile.resource-policy-path=")
+			.run(context -> assertThat(context).hasFailed());
 	}
 
 	private static RouteBundleIdentity identity() {

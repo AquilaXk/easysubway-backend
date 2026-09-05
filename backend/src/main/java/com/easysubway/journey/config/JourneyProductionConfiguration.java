@@ -3,6 +3,11 @@ package com.easysubway.journey.config;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort;
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.application.JourneyApplicationService;
+import com.easysubway.journey.application.JourneyProfileApplicationService;
+import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyProfileSnapshotPort;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneySessionIntegrityPort;
@@ -23,10 +28,14 @@ import com.easysubway.journey.canary.JourneyCandidateCanaryService;
 import com.easysubway.journey.readiness.JourneyReadinessProperties;
 import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
+import com.easysubway.route.application.service.JourneyProfileRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.security.SecureRandom;
+import java.io.IOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Duration;
 import java.util.List;
@@ -61,6 +70,7 @@ public class JourneyProductionConfiguration {
 
 	private static final String SESSION_PATH = "/api/v3/journeys/session";
 	private static final String SEARCH_PATH = "/api/v3/journeys/search";
+	private static final String PROFILE_PATH = "/api/v3/journeys/profile";
 	private static final String STATION_TIMETABLE_PATH = "/api/v3/station-timetables/search";
 	private static final Clock CLOCK = Clock.systemUTC();
 	private static final Duration REALTIME_FRESHNESS_TTL = Duration.ofSeconds(90);
@@ -119,9 +129,43 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	ActiveJourneySnapshotPort activeJourneySnapshotPort(RouteBundleActivationRegistry registry,
+	RouteBundleActiveJourneySnapshotAdapter activeJourneySnapshotPort(RouteBundleActivationRegistry registry,
 		JourneyReadinessProperties readinessProperties, JourneyReadinessService readinessService) {
 		return new RouteBundleActiveJourneySnapshotAdapter(registry, readinessProperties, readinessService);
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyProfileResourcePolicy journeyProfileResourcePolicy(
+		@Value("${easysubway.journey.profile.resource-policy-path}") String policyPath,
+		@Value("${easysubway.journey.profile.resource-policy-sha256}") String policySha256
+	) throws IOException {
+		if (policyPath.isBlank()) throw new IllegalArgumentException("resource policy path is required");
+		// 배포가 제공한 독립 digest로 파일을 검증하고 point/profile 공통 정책으로 캡처한다.
+		return JourneyProfileResourcePolicyArtifact.read(Files.readAllBytes(Path.of(policyPath)), policySha256);
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyProfileRaptorPort journeyProfileRaptorPort() {
+		return new JourneyProfileRaptorAdapter();
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyProfileApplicationService journeyProfileApplicationService(
+		JourneyProfileSnapshotPort snapshotPort, JourneyProfileRaptorPort raptorPort
+	) {
+		return new JourneyProfileApplicationService(snapshotPort, raptorPort, CLOCK);
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyProfileDeadlineExecutor journeyProfileDeadlineExecutor(
+		JourneyProfileApplicationService service,
+		@Qualifier("journeyApplicationExecutor") ExecutorService executor
+	) {
+		return new JourneyProfileDeadlineExecutor(service, executor);
 	}
 
 	@Bean
@@ -222,6 +266,7 @@ public class JourneyProductionConfiguration {
 			.securityMatcher(
 				SESSION_PATH,
 				SEARCH_PATH,
+				PROFILE_PATH,
 				STATION_TIMETABLE_PATH,
 				JourneyActivationController.PATH,
 				JourneyBenchmarkObservationController.PATH,
@@ -231,7 +276,7 @@ public class JourneyProductionConfiguration {
 			.csrf(AbstractHttpConfigurer::disable)
 			.sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
 			.authorizeHttpRequests(authorize -> authorize
-				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH, STATION_TIMETABLE_PATH).permitAll()
+				.requestMatchers(HttpMethod.POST, SESSION_PATH, SEARCH_PATH, PROFILE_PATH, STATION_TIMETABLE_PATH).permitAll()
 				.requestMatchers(HttpMethod.POST, JourneyActivationController.PATH)
 				.hasRole("JOURNEY_READINESS")
 				.requestMatchers(HttpMethod.POST, JourneyCandidateCanaryController.PATH)

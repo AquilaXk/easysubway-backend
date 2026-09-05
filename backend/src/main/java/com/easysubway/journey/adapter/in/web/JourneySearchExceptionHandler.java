@@ -15,7 +15,8 @@ import org.springframework.web.bind.annotation.ExceptionHandler;
 import org.springframework.web.bind.annotation.RestControllerAdvice;
 
 @Order(Ordered.HIGHEST_PRECEDENCE)
-@RestControllerAdvice(assignableTypes = {JourneySearchController.class, StationTimetableSearchController.class})
+@RestControllerAdvice(assignableTypes = {
+	JourneySearchController.class, JourneyProfileController.class, StationTimetableSearchController.class})
 @ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 final class JourneySearchExceptionHandler {
 

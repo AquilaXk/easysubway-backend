@@ -77,7 +77,7 @@ class JourneyProfileResourcePolicyArtifactTest {
 			.isInstanceOf(IllegalArgumentException.class);
 	}
 
-	private static String validJson() {
+	static String validJson() {
 		return """
 			{"schemaVersion":1,"artifactKind":"journey-profile-resource-policy",
 			"resourcePolicyId":"RAPTOR_RESOURCE_POLICY_V1","semanticVersion":"1.0.0",
