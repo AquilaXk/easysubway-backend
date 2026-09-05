@@ -35,13 +35,23 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		RealtimeObservation realtimeOrNull,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	) {
+		return planRuntime(query, requireRouteRuntime(snapshot), realtimeOrNull, limits);
+	}
+
+	// 배포 전 측정은 serving 증거를 합성하지 않고 같은 runtime 계산을 호출한다.
+	PlanningResult planRuntime(
+		JourneyRaptorQuery query,
+		RaptorRouteBundleRuntimeView runtime,
+		RealtimeObservation realtimeOrNull,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+	) {
 		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
 		JourneyProfileResourcePolicy.ProfilePlanningLimits requiredLimits = Objects.requireNonNull(limits, "limits");
 		if (requiredQuery.isCancelled()) throw new IllegalStateException("Journey profile planning was cancelled");
 		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED || realtimeOrNull != null) {
 			throw new IllegalArgumentException("Journey profile adapter currently requires TIMETABLE_REQUIRED without realtime");
 		}
-		RaptorRouteBundleRuntimeView runtime = requireRouteRuntime(snapshot);
+		Objects.requireNonNull(runtime, "runtime");
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable = runtime.compiledTimetable();
 		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
 		JourneyProfilePruningObservationAccumulator observations = new JourneyProfilePruningObservationAccumulator(
