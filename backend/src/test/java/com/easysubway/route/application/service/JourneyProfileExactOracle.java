@@ -162,7 +162,10 @@ final class JourneyProfileExactOracle {
 		}
 		identity.append(encode("exit", exit.id()));
 		String pathIdentity = identity.toString();
-		return new Candidate(readyAt, arrivalAt, rides.size() - 1, walkingSeconds, walkingDistance, burden, slack, pathIdentity);
+		List<Access> completeAccesses = new ArrayList<>(accesses);
+		completeAccesses.add(exit);
+		return new Candidate(readyAt, arrivalAt, rides.size() - 1, walkingSeconds, walkingDistance, burden,
+			slack, pathIdentity, rides, completeAccesses);
 	}
 
 	private static Instant lastDeparture(Ride first, Access entry, int boardingSlackSeconds) {
@@ -250,12 +253,16 @@ final class JourneyProfileExactOracle {
 
 	record Candidate(
 		Instant readyAt, Instant arrivalAtDestination, int transfersUsed, long walkingSeconds, long walkingDistanceMeters,
-		long accessibilityBurden, ConnectionSlack minimumConnectionSlack, String pathIdentity
+		long accessibilityBurden, ConnectionSlack minimumConnectionSlack, String pathIdentity,
+		List<Ride> rides, List<Access> accesses
 	) {
 		Candidate {
 			readyAt = Objects.requireNonNull(readyAt, "readyAt"); arrivalAtDestination = Objects.requireNonNull(arrivalAtDestination, "arrivalAtDestination");
 			minimumConnectionSlack = Objects.requireNonNull(minimumConnectionSlack, "minimumConnectionSlack");
 			pathIdentity = text(pathIdentity, "pathIdentity");
+			// 집계 값이 같아도 다른 승차·접근 동선일 수 있으므로 원본 trace를 보존한다.
+			rides = List.copyOf(rides);
+			accesses = List.copyOf(accesses);
 		}
 	}
 

@@ -14,6 +14,22 @@ class JourneyProfileExactOracleTest {
 	private final JourneyProfileExactOracle oracle = new JourneyProfileExactOracle();
 
 	@Test
+	void retainsTheCompleteImmutableRideAndAccessTraceForDifferentialComparison() {
+		var first = ride("first", DAY, "origin", "a", "change", "a", at(100), at(200));
+		var second = ride("second", DAY, "change", "b", "destination", "b", at(300), at(400));
+		var entry = entry("a", 10);
+		var transfer = transfer("change", "a", "b", 20);
+		var exit = exit("b", 30);
+		var result = oracle.solve(query(at(0), at(500), 1, 0, 10_000, () -> false),
+			List.of(first, second), List.of(entry, transfer, exit));
+		assertThat(result).hasSize(1);
+		assertThat(result.getFirst().rides()).containsExactly(first, second);
+		assertThat(result.getFirst().accesses()).containsExactly(entry, transfer, exit);
+		assertThatThrownBy(result.getFirst().rides()::clear).isInstanceOf(UnsupportedOperationException.class);
+		assertThatThrownBy(result.getFirst().accesses()::clear).isInstanceOf(UnsupportedOperationException.class);
+	}
+
+	@Test
 	void retainsMoreThanThreeNonDominatedRoutesWithoutAPublicResultCap() {
 		var rides = List.of(
 			ride("one", DAY, "origin", "a", "destination", "a", at(100), at(500)),
