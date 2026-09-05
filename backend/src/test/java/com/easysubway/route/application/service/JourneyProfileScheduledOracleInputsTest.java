@@ -20,8 +20,12 @@ class JourneyProfileScheduledOracleInputsTest {
 
 	@Test
 	void includesOnlyTripsActiveOnTheExplicitServiceDate() {
-		var source = source(List.of(new ServiceCalendarDate("daily", ACTIVE_DATE.plusDays(1), 2)), List.of());
-		assertThat(JourneyProfileScheduledOracleInputs.rides(source, ACTIVE_DATE, 3)).hasSize(3);
+		var scheduled = source(List.of(new ServiceCalendarDate("daily", ACTIVE_DATE.plusDays(1), 2)), List.of());
+		assertThat(JourneyProfileScheduledOracleInputs.rides(scheduled, ACTIVE_DATE, 3)).hasSize(3);
+		assertThat(JourneyProfileScheduledOracleInputs.rides(scheduled, ACTIVE_DATE.plusDays(1), 3)).isEmpty();
+		var frequency = new TransitFrequency("trip", 90_000, 90_600, 300, true);
+		var source = source(List.of(new ServiceCalendarDate("daily", ACTIVE_DATE.plusDays(1), 2)), List.of(frequency));
+		assertThat(JourneyProfileScheduledOracleInputs.rides(source, ACTIVE_DATE, 6)).hasSize(6);
 		assertThat(JourneyProfileScheduledOracleInputs.rides(source, ACTIVE_DATE.plusDays(1), 3)).isEmpty();
 	}
 
@@ -45,16 +49,47 @@ class JourneyProfileScheduledOracleInputsTest {
 	}
 
 	@Test
-	void rejectsFrequencyBasedInputs() {
-		var frequency = new TransitFrequency("trip", 0, 60, 30, true);
-		assertThatThrownBy(() -> JourneyProfileScheduledOracleInputs.rides(source(List.of(), List.of(frequency)), ACTIVE_DATE, 3))
-			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("frequency");
+	void normalizesExactFrequencyEventsWithEndExclusiveExtendedHourOffsets() {
+		var frequency = new TransitFrequency("trip", 90_000, 90_600, 300, true);
+		var rides = JourneyProfileScheduledOracleInputs.rides(source(List.of(), List.of(frequency)), ACTIVE_DATE, 6);
+		assertThat(rides).hasSize(6);
+		assertThat(rides).extracting(JourneyProfileExactOracle.Ride::scheduledTripIndex).containsExactly(0, 0, 0, 1, 1, 1);
+		assertThat(rides).extracting(JourneyProfileExactOracle.Ride::departureAt)
+			.containsExactly(Instant.parse("2024-01-01T16:00:00Z"), Instant.parse("2024-01-01T16:00:00Z"),
+				Instant.parse("2024-01-01T16:01:00Z"), Instant.parse("2024-01-01T16:05:00Z"),
+				Instant.parse("2024-01-01T16:05:00Z"), Instant.parse("2024-01-01T16:06:00Z"));
+		assertThat(rides).extracting(JourneyProfileExactOracle.Ride::pickupAllowed)
+			.containsExactly(true, true, false, true, true, false);
+		assertThat(rides).extracting(JourneyProfileExactOracle.Ride::dropOffAllowed)
+			.containsExactly(false, true, true, false, true, true);
+	}
+
+	@Test
+	void rejectsNonexactAndOverlappingFrequencyWindows() {
+		assertThatThrownBy(() -> JourneyProfileScheduledOracleInputs.rides(source(List.of(),
+			List.of(new TransitFrequency("trip", 90_000, 90_600, 300, false))), ACTIVE_DATE, 6))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("nonexact");
+		assertThatThrownBy(() -> JourneyProfileScheduledOracleInputs.rides(source(List.of(), List.of(
+			new TransitFrequency("trip", 90_000, 90_600, 300, true),
+			new TransitFrequency("trip", 90_300, 90_900, 300, true))), ACTIVE_DATE, 6))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("overlapping");
 	}
 
 	@Test
 	void rejectsACompleteInputThatExceedsItsExplicitRideBound() {
 		assertThatThrownBy(() -> JourneyProfileScheduledOracleInputs.rides(source(List.of(), List.of()), ACTIVE_DATE, 2))
 			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("budget");
+		assertThatThrownBy(() -> JourneyProfileScheduledOracleInputs.rides(source(List.of(),
+			List.of(new TransitFrequency("trip", 90_000, 90_600, 300, true))), ACTIVE_DATE, 5))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("budget");
+	}
+
+	@Test
+	void rejectsShiftedEventsOutsideTheCanonicalServiceTimeRange() {
+		int limit = com.easysubway.route.application.port.out.LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE;
+		assertThatThrownBy(() -> JourneyProfileScheduledOracleInputs.rides(source(List.of(),
+			List.of(new TransitFrequency("trip", limit - 2, limit - 1, 1, true))), ACTIVE_DATE, 3))
+			.isInstanceOf(IllegalArgumentException.class);
 	}
 
 	private static RouteTimetable source(List<ServiceCalendarDate> dates, List<TransitFrequency> frequencies) {
