@@ -30,6 +30,34 @@ class JourneyProfileExactOracleTest {
 	}
 
 	@Test
+	void solvesPointAtFixedReadinessBeforeApplyingPareto() {
+		var earlier = ride("earlier", DAY, "origin", "a", "destination", "a", at(100), at(200));
+		var later = ride("later", DAY, "origin", "a", "destination", "a", at(200), at(300));
+		var query = query(at(0), at(400), 0, 0, 10_000, () -> false);
+		var accesses = List.of(entry("a", 0), exit("a", 0));
+
+		assertThat(oracle.solve(query, List.of(earlier, later), accesses)).hasSize(2);
+		var point = oracle.solvePoint(query, List.of(earlier, later), accesses);
+		assertThat(point).singleElement().satisfies(candidate -> {
+			assertThat(candidate.readyAt()).isEqualTo(at(0));
+			assertThat(candidate.rides()).containsExactly(earlier);
+			assertThat(candidate.accesses()).containsExactlyElementsOf(accesses);
+		});
+	}
+
+	@Test
+	void requiresExactEntryAndSlackFeasibilityBeforeFixingPointReadiness() {
+		var exact = ride("exact", DAY, "origin", "a", "destination", "a", at(100), at(200));
+		var late = ride("late", DAY, "origin", "a", "destination", "a", at(99), at(199));
+		var query = query(at(85), at(300), 0, 5, 10_000, () -> false);
+		var accesses = List.of(entry("a", 10), exit("a", 0));
+
+		assertThat(oracle.solvePoint(query, List.of(exact), accesses)).singleElement()
+			.extracting(JourneyProfileExactOracle.Candidate::readyAt).isEqualTo(at(85));
+		assertThat(oracle.solvePoint(query, List.of(late), accesses)).isEmpty();
+	}
+
+	@Test
 	void retainsMoreThanThreeNonDominatedRoutesWithoutAPublicResultCap() {
 		var rides = List.of(
 			ride("one", DAY, "origin", "a", "destination", "a", at(100), at(500)),

@@ -53,6 +53,17 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(measurement.result().itineraries()).isNotEmpty();
 		assertThat(measurement.result().scanMetrics().expandedRoutes()).isPositive();
 		assertThat(measurement.result().measurementObservation()).isNull();
+		var expected = new JourneyProfileExactOracle().solvePoint(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(30_000), instantAt(37_000),
+			request.maxTransfers(), STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(), request.constraintMode(),
+				request.walkingPace().speedMetersPerHour(), 10));
+		assertThat(expected).hasSize(1);
+		assertThat(expected.getFirst().readyAt()).isEqualTo(instantAt(30_000));
+		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_720));
+		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected,
+			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isTrue();
 		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capturePoint(
 			query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))), runtime,
 			() -> 0, () -> { throw new AssertionError("profile mode must be rejected before scan"); }))
