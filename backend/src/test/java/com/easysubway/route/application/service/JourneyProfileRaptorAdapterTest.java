@@ -195,8 +195,8 @@ class JourneyProfileRaptorAdapterTest {
 	@Test
 	void preservesTheRealForwardCapacityObservationWithoutReturningAPartialSuccess() {
 		var result = adapter.plan(
-			query(new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(36_000))),
-			snapshot(capacityTimetable()), null,
+			profileQuery(new JourneyRaptorQuery.DepartBetween(instantAt(35_000), instantAt(35_001)), 3),
+			snapshot(threePathTimetable()), null,
 			new JourneyProfileResourcePolicy.ProfilePlanningLimits(100_000L, 32, 1, 32));
 
 		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.CapacityExceeded.class,
@@ -373,24 +373,6 @@ class JourneyProfileRaptorAdapterTest {
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), List.of(trip),
 			List.of(stop("direct", 1, "station-a", 36_000), stop("direct", 2, "station-b", 36_600)),
-			List.of(), List.of(), null, accessData());
-	}
-
-	private static RouteTimetable capacityTimetable() {
-		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
-			"daily", true, true, true, true, true, true, true,
-			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
-		var route = new LoadRouteTimetablePort.TransitRoute(
-			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
-		var fast = new LoadRouteTimetablePort.TransitTrip(
-			"fast", "route", "daily", "Terminal", "0", "LOCAL", 0);
-		var late = new LoadRouteTimetablePort.TransitTrip(
-			"late", "route", "daily", "Terminal", "0", "LOCAL", 0);
-		return new RouteTimetable(
-			List.of(calendar), List.of(), List.of(route), List.of(fast, late),
-			List.of(
-				stop("fast", 1, "station-a", 36_000), stop("fast", 2, "station-b", 36_600),
-				stop("late", 1, "station-a", 36_200), stop("late", 2, "station-b", 37_000)),
 			List.of(), List.of(), null, accessData());
 	}
 
