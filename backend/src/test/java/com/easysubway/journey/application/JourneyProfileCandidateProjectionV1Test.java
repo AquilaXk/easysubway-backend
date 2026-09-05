@@ -113,7 +113,7 @@ class JourneyProfileCandidateProjectionV1Test {
 		assertThatIllegalArgumentException().isThrownBy(() ->
 			JourneyProfileCandidateProjectionV1.projectDepartureWindow(query,
 				plan((JourneyRaptorQuery.DepartBetween) query.temporalQuery(), point(START, first, conflicting)), 3))
-			.hasMessageContaining("conflicting duplicate candidateId");
+			.withMessageContaining("conflicting duplicate candidateId");
 	}
 
 	@Test
@@ -124,7 +124,7 @@ class JourneyProfileCandidateProjectionV1Test {
 			JourneyProfileCandidateProjectionV1.projectDepartureWindow(query,
 				plan((JourneyRaptorQuery.DepartBetween) query.temporalQuery(),
 					point(START, itinerary(START.minusSeconds(1), 600, "trip-a", 120, 150, 1))), 3))
-			.hasMessageContaining("readyAt must equal journeyStartTime");
+			.withMessageContaining("readyAt must equal journeyStartTime");
 	}
 
 	@Test
@@ -136,7 +136,7 @@ class JourneyProfileCandidateProjectionV1Test {
 		assertThatIllegalArgumentException().isThrownBy(() ->
 			JourneyProfileCandidateProjectionV1.projectDepartureWindow(query,
 				plan((JourneyRaptorQuery.DepartBetween) query.temporalQuery(), wrongDay), 3))
-			.hasMessageContaining("service day");
+			.withMessageContaining("service day");
 	}
 
 	@Test
@@ -172,13 +172,13 @@ class JourneyProfileCandidateProjectionV1Test {
 				new JourneyProfileRaptorPort.ArriveByPlan(temporal,
 					new JourneyProfileRaptorPort.ReversePlan.NotFound(
 						JourneyProfileRaptorPort.ReversePlan.Outcome.DEADLINE_MISS)), 3))
-			.hasMessageContaining("ReversePlan.Found");
+			.withMessageContaining("ReversePlan.Found");
 		assertThatIllegalArgumentException().isThrownBy(() ->
 			JourneyProfileCandidateProjectionV1.projectArriveBy(query,
 				new JourneyProfileRaptorPort.ArriveByPlan(temporal,
 					new JourneyProfileRaptorPort.ReversePlan.Found(List.of(
 						itinerary(START, 601, "trip-a", 120, 150, 1)))), 3))
-			.hasMessageContaining("arrival deadline");
+			.withMessageContaining("arrival deadline");
 	}
 
 	@Test

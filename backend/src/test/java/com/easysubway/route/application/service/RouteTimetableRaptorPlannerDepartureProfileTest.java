@@ -229,6 +229,10 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			1, 1, 1, 1, 4);
 	}
 
+	private static LoadRouteTimetablePort.TransitRoute route(String routeId, String lineId) {
+		return new LoadRouteTimetablePort.TransitRoute(routeId, lineId, lineId, lineId, "Terminal", "Asia/Seoul");
+	}
+
 	private static RouteTimetable timetable() {
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,

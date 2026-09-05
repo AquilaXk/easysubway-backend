@@ -548,7 +548,7 @@ class JourneyProfileRaptorAdapterTest {
 			case LATEST_DEPARTURE -> Integer.compare(right.readySeconds(), left.readySeconds());
 			case FEWEST_TRANSFERS -> Integer.compare(left.transfers(), right.transfers());
 			case LOWEST_WALKING_BURDEN -> left.compareWalking(right);
-			case BEST_ACCESSIBILITY -> Integer.compare(left.stairBurden(), right.stairBurden());
+			case BEST_ACCESSIBILITY -> Long.compare(left.stairBurden(), right.stairBurden());
 			case SAFEST_CONNECTION -> Boolean.compare(right.noTransfer(), left.noTransfer());
 		};
 		return comparison != 0 ? comparison : canonicalKeys.get(left.pathId()).compareTo(canonicalKeys.get(right.pathId()));

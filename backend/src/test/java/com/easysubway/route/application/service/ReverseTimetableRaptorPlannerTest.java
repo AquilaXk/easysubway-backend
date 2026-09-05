@@ -357,7 +357,7 @@ class ReverseTimetableRaptorPlannerTest {
 	void lastConnectionAppliesMobilityAccessCost() {
 		var compiled = forward.compile(directTimetable(40_000, 40_600, true, true, 300, 180));
 
-		var normal = lastConnection(compiled, MobilityPreset.NORMAL, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		var normal = lastConnection(compiled, MobilityPreset.STANDARD, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 		var slow = lastConnection(compiled, MobilityPreset.SLOW, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 
 		assertThat(normal.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
