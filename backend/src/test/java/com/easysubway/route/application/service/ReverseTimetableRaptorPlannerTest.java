@@ -301,6 +301,9 @@ class ReverseTimetableRaptorPlannerTest {
 		assertThat(arriveBy(noDropOff, "station-a", "station-b", deadlineAt(33_000, 180),
 			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
 			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
+		assertThat(lastConnection(noDropOff, MobilityPreset.SLOW,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).outcome())
+			.isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
 	}
 
 	@Test
