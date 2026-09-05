@@ -19,6 +19,14 @@ import java.util.function.BooleanSupplier;
 final class JourneyProfileExactOracle {
 
 	List<Candidate> solve(Query query, List<Ride> rides, List<Access> accesses) {
+		return solve(query, rides, accesses, ReadyAt.PROFILE);
+	}
+
+	List<Candidate> solvePoint(Query query, List<Ride> rides, List<Access> accesses) {
+		return solve(query, rides, accesses, ReadyAt.FIXED);
+	}
+
+	private List<Candidate> solve(Query query, List<Ride> rides, List<Access> accesses, ReadyAt readyAtMode) {
 		Objects.requireNonNull(query, "query");
 		rides = List.copyOf(Objects.requireNonNull(rides, "rides"));
 		accesses = List.copyOf(Objects.requireNonNull(accesses, "accesses"));
@@ -47,7 +55,7 @@ final class JourneyProfileExactOracle {
 				if (!matchesEntry(query, entry, first)) continue;
 				Instant readyAt = lastDeparture(first, entry, query.boardingSlackSeconds());
 				if (readyAt.isBefore(query.earliestReadyAt())) continue;
-				enumerate(query, rides, accesses, List.of(first), List.of(entry), candidates, work);
+				enumerate(query, rides, accesses, List.of(first), List.of(entry), candidates, work, readyAtMode);
 			}
 		}
 		return pareto(candidates, work);
@@ -60,7 +68,8 @@ final class JourneyProfileExactOracle {
 		List<Ride> chain,
 		List<Access> chainAccesses,
 		List<Candidate> candidates,
-		Work work
+		Work work,
+		ReadyAt readyAtMode
 	) {
 		Ride last = chain.getLast();
 		for (Access exit : accesses) {
@@ -70,7 +79,8 @@ final class JourneyProfileExactOracle {
 			Instant arrivalAt = last.arrivalAt().plusSeconds(exit.durationSeconds());
 			if (!readyAt.isBefore(query.earliestReadyAt()) && !arrivalAt.isAfter(query.arrivalDeadline())) {
 				work.consume();
-				candidates.add(candidate(chain, chainAccesses, exit, readyAt, arrivalAt, query.boardingSlackSeconds()));
+				candidates.add(candidate(chain, chainAccesses, exit,
+					readyAtMode == ReadyAt.FIXED ? query.earliestReadyAt() : readyAt, arrivalAt, query.boardingSlackSeconds()));
 			}
 		}
 		if (chain.size() - 1 >= query.maxTransfers()) return;
@@ -87,7 +97,7 @@ final class JourneyProfileExactOracle {
 				nextChain.add(next);
 				List<Access> nextAccesses = new ArrayList<>(chainAccesses);
 				nextAccesses.add(transfer);
-				enumerate(query, rides, accesses, List.copyOf(nextChain), List.copyOf(nextAccesses), candidates, work);
+			enumerate(query, rides, accesses, List.copyOf(nextChain), List.copyOf(nextAccesses), candidates, work, readyAtMode);
 			}
 		}
 	}
@@ -171,6 +181,8 @@ final class JourneyProfileExactOracle {
 	private static Instant lastDeparture(Ride first, Access entry, int boardingSlackSeconds) {
 		return first.departureAt().minusSeconds(entry.durationSeconds()).minusSeconds(boardingSlackSeconds);
 	}
+
+	private enum ReadyAt { PROFILE, FIXED }
 
 	private static boolean matchesEntry(Query query, Access access, Ride ride) {
 		return access.kind() == AccessKind.ENTRY && access.usable()

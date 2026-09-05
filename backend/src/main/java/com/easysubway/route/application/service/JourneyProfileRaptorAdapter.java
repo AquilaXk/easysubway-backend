@@ -148,7 +148,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		};
 	}
 
-	private static JourneyProfileRaptorPort.Itinerary itinerary(
+	// POINT 실측도 동일한 native projection을 사용하며 planner 실행 경로는 바꾸지 않는다.
+	static JourneyProfileRaptorPort.Itinerary itinerary(
 		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
 	) {
 		List<JourneyProfileRaptorPort.Leg> legs = new ArrayList<>(itinerary.legs().size());
