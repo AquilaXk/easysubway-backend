@@ -236,8 +236,10 @@ final class JourneyProfileExactOracle {
 		Access {
 			id = text(id, "access id");
 			kind = Objects.requireNonNull(kind, "kind");
-			fromStationId = text(fromStationId, "fromStationId"); fromLineId = text(fromLineId, "fromLineId");
-			toStationId = text(toStationId, "toStationId"); toLineId = text(toLineId, "toLineId");
+			fromStationId = text(fromStationId, "fromStationId");
+			toStationId = text(toStationId, "toStationId");
+			fromLineId = line(fromLineId, "fromLineId", kind == AccessKind.ENTRY);
+			toLineId = line(toLineId, "toLineId", kind == AccessKind.EXIT);
 			if (durationSeconds < 0 || walkingDistanceMeters < 0 || accessibilityBurden < 0) {
 				throw new IllegalArgumentException("access facts must not be negative");
 			}
@@ -294,6 +296,14 @@ final class JourneyProfileExactOracle {
 	private static String text(String value, String name) {
 		if (value == null || value.isBlank()) throw new IllegalArgumentException(name + " must be nonblank");
 		return value;
+	}
+
+	private static String line(String value, String name, boolean permitsNull) {
+		if (value == null) {
+			if (permitsNull) return null;
+			throw new IllegalArgumentException(name + " is required");
+		}
+		return text(value, name);
 	}
 
 	private static String encode(String... parts) {
