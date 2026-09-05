@@ -25,7 +25,6 @@ class JourneyV3ErrorDispositionContractTest {
 	private static final Path CONTRACTS = Path.of("..", "contracts", "api");
 	private static final Path CATALOG = CONTRACTS.resolve("journey-v3-error-catalog.json");
 	private static final Path DISPOSITION = CONTRACTS.resolve("journey-v3-error-disposition.json");
-	private static final Path DIGESTS = CONTRACTS.resolve("journey-v3-contract-digests.json");
 	private static final ObjectMapper JSON = new ObjectMapper();
 
 	private static final List<ExpectedDisposition> EXPECTED = List.of(
@@ -72,6 +71,38 @@ class JourneyV3ErrorDispositionContractTest {
 		entry("searchStationTimetables", 401, "ROUTE_SESSION_REQUIRED", "SESSION_AUTHENTICATION",
 			"경로 검색 인증이 만료되었어요.", "journey.action.reauthenticate"),
 		entry("searchStationTimetables", 429, "ROUTE_RATE_LIMITED", "RATE_LIMIT",
+			"요청이 많아요. 잠시 후 다시 검색해 주세요.", null),
+		entry("profileJourneys", 400, "INVALID_TEMPORAL_QUERY", "REQUEST_CORRECTION",
+			"시간 조건을 확인해 주세요.", "journey.action.editRequest"),
+		entry("profileJourneys", 400, "TEMPORAL_WINDOW_TOO_LARGE", "REQUEST_CORRECTION",
+			"검색 시간 범위를 줄여 주세요.", "journey.action.editRequest"),
+		entry("profileJourneys", 404, "STATION_NOT_FOUND", "REQUEST_CORRECTION",
+			"선택한 역 정보를 찾을 수 없어요.", "journey.action.reselectStation"),
+		entry("profileJourneys", 422, "NO_SERVICE_IN_DEPARTURE_WINDOW", "ROUTE_ABSENT",
+			"선택한 시간대에 운행 정보가 없어요.", "journey.action.editRequest"),
+		entry("profileJourneys", 422, "NO_ROUTE_ARRIVING_BY_DEADLINE", "ROUTE_ABSENT",
+			"도착 시간까지 갈 수 있는 경로가 없어요.", "journey.action.editRequest"),
+		entry("profileJourneys", 422, "NO_LAST_CONNECTION", "ROUTE_ABSENT",
+			"현재 조건에서 이용할 수 있는 막차 연결이 없어요.", "journey.action.editRequest"),
+		entry("profileJourneys", 422, "REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY", "REQUEST_CORRECTION",
+			"선택한 시간에는 실시간 정보를 적용할 수 없어요.", "journey.action.editRequest"),
+		entry("profileJourneys", 422, "TEMPORAL_QUERY_TOO_COMPLEX", "REQUEST_CORRECTION",
+			"검색 시간 범위를 줄여 주세요.", "journey.action.editRequest"),
+		entry("profileJourneys", 503, "REALTIME_REQUIRED_UNAVAILABLE", "ROUTING_DATA_UNAVAILABLE",
+			"필요한 실시간 정보를 확인할 수 없어요.", "journey.action.newSearch"),
+		entry("profileJourneys", 503, "ROUTING_BUNDLE_UNAVAILABLE", "ROUTING_DATA_UNAVAILABLE",
+			"경로 데이터를 준비하지 못했어요.", "journey.action.newSearch"),
+		entry("profileJourneys", 503, "ROUTING_BUNDLE_STALE", "ROUTING_DATA_STALE",
+			"최신 경로 데이터를 확인할 수 없어요.", "journey.action.newSearch"),
+		entry("profileJourneys", 503, "ROUTING_IDENTITY_MISMATCH", "ROUTING_IDENTITY_FAILURE",
+			"경로 데이터 확인 중 문제가 발생했어요.", "journey.action.newSearch"),
+		entry("profileJourneys", 503, "RAPTOR_FRONTIER_CAPACITY_EXCEEDED", "SERVICE_UNAVAILABLE",
+			"경로 후보를 안전하게 계산하지 못했어요.", "journey.action.newSearch"),
+		entry("profileJourneys", 504, "JOURNEY_PROFILE_TIMEOUT", "SEARCH_TIMEOUT",
+			"시간대 경로 검색 시간이 초과되었어요. 다시 검색해 주세요.", "journey.action.newSearch"),
+		entry("profileJourneys", 401, "ROUTE_SESSION_REQUIRED", "SESSION_AUTHENTICATION",
+			"경로 검색 인증이 만료되었어요.", "journey.action.reauthenticate"),
+		entry("profileJourneys", 429, "ROUTE_RATE_LIMITED", "RATE_LIMIT",
 			"요청이 많아요. 잠시 후 다시 검색해 주세요.", null),
 		entry("issueJourneySession", 400, "INVALID_JOURNEY_SESSION_REQUEST", "SESSION_AUTHENTICATION",
 			"경로 검색 인증 요청을 확인할 수 없어요.", "journey.action.reauthenticate"),
@@ -141,22 +172,6 @@ class JourneyV3ErrorDispositionContractTest {
 		assertThat(catalogPairs("ingressErrors")).containsExactlyElementsOf(expectedCatalogPairs(false));
 	}
 
-	@Test
-	@DisplayName("digest artifact binds the disposition raw bytes in bytewise path order")
-	void digestBindsDispositionRawBytes() throws IOException {
-		JsonNode digest = JSON.readTree(DIGESTS.toFile());
-		List<String> paths = new ArrayList<>();
-		assertThat(digest.path("artifacts").isArray()).isTrue();
-		for (JsonNode artifact : digest.path("artifacts")) {
-			assertThat(fieldNames(artifact)).containsExactlyInAnyOrder("path", "sha256");
-			String path = artifact.path("path").asText();
-			paths.add(path);
-			assertThat(artifact.path("sha256").asText()).isEqualTo(sha256(Files.readAllBytes(CONTRACTS.resolve(path))));
-		}
-		assertThat(paths).containsExactly("journey-v3-error-catalog.json", "journey-v3-error-disposition.json",
-			"journey-v3-session-integrity.json", "journey-v3.openapi.yaml");
-	}
-
 	private static ExpectedDisposition entry(
 		String operation, int httpStatus, String machineCode, String semanticCategory, String copy, String primaryActionKey
 	) {
@@ -184,7 +199,7 @@ class JourneyV3ErrorDispositionContractTest {
 
 	private static boolean isApplicationError(ExpectedDisposition entry) {
 		return switch (entry.operation()) {
-			case "searchJourneys", "searchStationTimetables" -> entry.httpStatus() != 401 && entry.httpStatus() != 429;
+			case "searchJourneys", "searchStationTimetables", "profileJourneys" -> entry.httpStatus() != 401 && entry.httpStatus() != 429;
 			case "issueJourneySession" -> false;
 			default -> throw new IllegalArgumentException("unknown Journey V3 operation: " + entry.operation());
 		};

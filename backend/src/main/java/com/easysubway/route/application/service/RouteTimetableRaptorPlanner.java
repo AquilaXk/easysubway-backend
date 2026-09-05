@@ -17,13 +17,19 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitR
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorPort.ScanMetrics;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.EtaSource;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
+import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
 import com.easysubway.route.domain.RouteSearchResult;
 import com.easysubway.route.domain.RouteSearchStatus;
@@ -31,15 +37,18 @@ import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
 import com.easysubway.route.domain.RouteSearchResult.OfficialFare;
-import java.time.Duration;
 import java.time.DayOfWeek;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
+import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Comparator;
@@ -52,6 +61,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
+import java.util.function.BooleanSupplier;
 
 class RouteTimetableRaptorPlanner {
 
@@ -100,8 +110,22 @@ class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay
 	) {
 		ServiceDay serviceDay = serviceDay(command);
+		ScanInput input = scanInput(command, serviceDay);
 		return results(command, timetable, serviceDay, realtimeOverlay,
-			scanDestinationLabels(command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay));
+			scanDestinationLabels(input, timetable, false, realtimeOverlay));
+	}
+
+	JourneyPlan journeyItineraries(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		JourneyRequestMeasurement requestMeasurement,
+		String requestId,
+		String routeBundleSha256,
+		long generation
+	) {
+		return journeyItineraries(scanInput(query), timetable, realtimeOverlay,
+			requestMeasurement, requestId, routeBundleSha256, generation);
 	}
 
 	JourneyPlan journeyItineraries(
@@ -113,17 +137,38 @@ class RouteTimetableRaptorPlanner {
 		String routeBundleSha256,
 		long generation
 	) {
-		ServiceDay serviceDay = serviceDay(command);
-		ScanResult scanResult = scanDestinationLabels(
-			command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay);
-		List<JourneyItinerary> itineraries = scanResult.labels().stream()
-			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(candidateLimit(command))
-			.map(label -> toJourneyItinerary(command, timetable, serviceDay, realtimeOverlay, label))
-			.toList();
+		return journeyItineraries(scanInput(command, serviceDay(command)), timetable, realtimeOverlay,
+			requestMeasurement, requestId, routeBundleSha256, generation);
+	}
+
+	private JourneyPlan journeyItineraries(
+		ScanInput input,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		JourneyRequestMeasurement requestMeasurement,
+		String requestId,
+		String routeBundleSha256,
+		long generation
+	) {
+		ScanResult scanResult = scanDestinationLabels(input, timetable, false, realtimeOverlay);
+		List<JourneyItinerary> itineraries = journeyItineraries(
+			input, timetable, realtimeOverlay, scanResult);
 		var measurementObservation = requestMeasurement.observeDirectRaptor(
 			requestId, routeBundleSha256, generation);
 		return new JourneyPlan(itineraries, scanResult.scanMetrics(), measurementObservation);
+	}
+
+	private static List<JourneyItinerary> journeyItineraries(
+		ScanInput input,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		ScanResult scanResult
+	) {
+		return scanResult.labels().stream()
+			.sorted(RouteTimetableRaptorPlanner::compareLabels)
+			.limit(input.candidateLimit())
+			.map(label -> toJourneyItinerary(input, timetable, realtimeOverlay, label))
+			.toList();
 	}
 
 	SearchOutcome searchWithDiagnostics(SearchRouteV2Command command, CompiledTimetable timetable) {
@@ -135,14 +180,15 @@ class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay
 	) {
 		ServiceDay serviceDay = serviceDay(command);
+		ScanInput input = scanInput(command, serviceDay);
 		ScanResult found = scanDestinationLabels(
-			command, timetable, serviceDay, serviceDay.departureSeconds(), false, realtimeOverlay);
+			input, timetable, false, realtimeOverlay);
 		List<RouteSearchResult> itineraries = results(command, timetable, serviceDay, realtimeOverlay, found);
 		if (!itineraries.isEmpty()) {
 			return new SearchOutcome(itineraries, null, found.scanMetrics());
 		}
 		ScanResult diagnostic = scanDestinationLabels(
-			command, timetable, serviceDay, serviceDay.departureSeconds(), true, realtimeOverlay);
+			input, timetable, true, realtimeOverlay);
 		if (diagnostic.labels().isEmpty()) {
 			return new SearchOutcome(List.of(), null, diagnostic.scanMetrics());
 		}
@@ -158,15 +204,14 @@ class RouteTimetableRaptorPlanner {
 	) {
 		return scanResult.labels().stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
-			.limit(candidateLimit(command))
+			.limit(scanInput(command, serviceDay).candidateLimit())
 			.map(label -> toRouteSearchResult(command, label, serviceDay, timetable, realtimeOverlay))
 			.toList();
 	}
 
 	private static JourneyItinerary toJourneyItinerary(
-		SearchRouteV2Command command,
+		ScanInput input,
 		CompiledTimetable timetable,
-		ServiceDay serviceDay,
 		RealtimeOverlay realtimeOverlay,
 		Label label
 	) {
@@ -176,9 +221,9 @@ class RouteTimetableRaptorPlanner {
 		int entryTransition = label.accessTransitions()[0];
 		legs.add(journeyAccessLeg(
 			JourneyAccessKind.ENTRY,
-			command.originStationId(),
+			input.originStationId(),
 			firstRide.from().stationId(),
-			command,
+			input,
 			timetable,
 			entryTransition
 		));
@@ -190,7 +235,7 @@ class RouteTimetableRaptorPlanner {
 					JourneyAccessKind.TRANSFER,
 					previous.to().stationId(),
 					ride.from().stationId(),
-					command,
+					input,
 					timetable,
 					label.accessTransitions()[index]
 				));
@@ -202,42 +247,99 @@ class RouteTimetableRaptorPlanner {
 				ride.scheduledTrip().stopTimes().getLast().stationId(),
 				ride.from().stationId(),
 				ride.to().stationId(),
-				serviceInstant(serviceDay, ride.scheduledTrip().departureSeconds(ride.fromIndex())),
-				serviceInstant(serviceDay, ride.scheduledTrip().arrivalSeconds(ride.toIndex())),
-				evidence == null ? null : serviceInstant(serviceDay, ride.departureSeconds()),
-				evidence == null ? null : serviceInstant(serviceDay, ride.arrivalSeconds())
+				serviceInstant(input.serviceDay(), ride.scheduledTrip().departureSeconds(ride.fromIndex())),
+				serviceInstant(input.serviceDay(), ride.scheduledTrip().arrivalSeconds(ride.toIndex())),
+				evidence == null ? null : serviceInstant(input.serviceDay(), ride.departureSeconds()),
+				evidence == null ? null : serviceInstant(input.serviceDay(), ride.arrivalSeconds())
 			));
 		}
 		RideLeg lastRide = path.getLast();
 		int exitDurationSeconds = journeyAccessSeconds(
-			command, JourneyAccessKind.EXIT, timetable.transitionDurationSeconds(label.exitTransition()),
+			input, JourneyAccessKind.EXIT, timetable.transitionDurationSeconds(label.exitTransition()),
 			timetable.transitionDistanceMeters(label.exitTransition()));
 		legs.add(journeyAccessLeg(
 			JourneyAccessKind.EXIT,
 			lastRide.to().stationId(),
-			command.destinationStationId(),
-			command,
+			input.destinationStationId(),
+			input,
 			timetable,
 			label.exitTransition()
 		));
 		return new JourneyItinerary(
-			serviceDay.date(),
-			serviceInstant(serviceDay, label.startSeconds()),
-			serviceInstant(serviceDay,
+			input.serviceDay().date(),
+			serviceInstant(input.serviceDay(), label.startSeconds()),
+			serviceInstant(input.serviceDay(),
 				lastRide.scheduledTrip().arrivalSeconds(lastRide.toIndex()) + exitDurationSeconds),
-			realtimeOverlay.available() ? serviceInstant(serviceDay, label.startSeconds()) : null,
+			realtimeOverlay.available() ? serviceInstant(input.serviceDay(), label.startSeconds()) : null,
 			realtimeOverlay.available()
-				? serviceInstant(serviceDay, lastRide.arrivalSeconds() + exitDurationSeconds)
+				? serviceInstant(input.serviceDay(), lastRide.arrivalSeconds() + exitDurationSeconds)
 				: null,
+			itineraryMetrics(legs, input.boardingSlackSeconds()),
 			List.copyOf(legs)
 		);
+	}
+
+	static JourneyProfileRaptorPort.ItineraryMetrics itineraryMetrics(
+		List<JourneyLegProjection> legs,
+		int boardingSlackSeconds
+	) {
+		Objects.requireNonNull(legs, "legs");
+		if (boardingSlackSeconds < 0) throw new IllegalArgumentException("boardingSlackSeconds must not be negative");
+		long accessMovementSeconds = 0;
+		long accessDistanceMeters = 0;
+		long accessibilityBurden = 0;
+		int rideCount = 0;
+		JourneyRideProjection previousRide = null;
+		JourneyAccessProjection pendingTransfer = null;
+		Long minimumTransferSlack = null;
+		for (JourneyLegProjection leg : legs) {
+			if (leg instanceof JourneyAccessProjection access) {
+				if (access.verified()) {
+					accessMovementSeconds = Math.addExact(accessMovementSeconds, access.durationSeconds());
+					accessDistanceMeters = Math.addExact(accessDistanceMeters, access.distanceMeters());
+					if (access.includesStairs()) accessibilityBurden = Math.addExact(accessibilityBurden, 1);
+				}
+				if (access.kind() == JourneyAccessKind.TRANSFER) pendingTransfer = access;
+				continue;
+			}
+			JourneyRideProjection ride = (JourneyRideProjection) leg;
+			if (previousRide != null) {
+				if (pendingTransfer == null) {
+					throw new IllegalArgumentException("consecutive rides require a verified transfer");
+				}
+				Instant previousArrival = effectiveArrival(previousRide);
+				Instant nextDeparture = effectiveDeparture(ride);
+				long slack = Duration.between(previousArrival, nextDeparture).getSeconds()
+					- pendingTransfer.durationSeconds() - boardingSlackSeconds;
+				if (slack < 0) throw new IllegalArgumentException("selected transfer must remain feasible");
+				minimumTransferSlack = minimumTransferSlack == null ? slack : Math.min(minimumTransferSlack, slack);
+				pendingTransfer = null;
+			}
+			previousRide = ride;
+			rideCount += 1;
+		}
+		if (rideCount == 0) throw new IllegalArgumentException("profile metrics require at least one ride");
+		int transfersUsed = rideCount - 1;
+		JourneyProfileRaptorPort.ConnectionSlack connectionSlack = transfersUsed == 0
+			? new JourneyProfileRaptorPort.NoTransfer()
+			: new JourneyProfileRaptorPort.MinimumTransferSeconds(Objects.requireNonNull(minimumTransferSlack));
+		return new JourneyProfileRaptorPort.ItineraryMetrics(
+			transfersUsed, accessMovementSeconds, accessDistanceMeters, accessibilityBurden, connectionSlack);
+	}
+
+	private static Instant effectiveDeparture(JourneyRideProjection ride) {
+		return ride.realtimeDepartureTime() == null ? ride.plannedDepartureTime() : ride.realtimeDepartureTime();
+	}
+
+	private static Instant effectiveArrival(JourneyRideProjection ride) {
+		return ride.realtimeArrivalTime() == null ? ride.plannedArrivalTime() : ride.realtimeArrivalTime();
 	}
 
 	private static JourneyAccessProjection journeyAccessLeg(
 		JourneyAccessKind kind,
 		String fromStationId,
 		String toStationId,
-		SearchRouteV2Command command,
+		ScanInput input,
 		CompiledTimetable timetable,
 		int transition
 	) {
@@ -245,7 +347,7 @@ class RouteTimetableRaptorPlanner {
 			kind,
 			fromStationId,
 			toStationId,
-			journeyAccessSeconds(command, kind, timetable.transitionDurationSeconds(transition),
+			journeyAccessSeconds(input, kind, timetable.transitionDurationSeconds(transition),
 				timetable.transitionDistanceMeters(transition)),
 			timetable.transitionDistanceMeters(transition),
 			timetable.transitionIncludesStairs(transition),
@@ -512,30 +614,44 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	private ScanResult scanDestinationLabels(
-		SearchRouteV2Command command,
+		ScanInput input,
 		CompiledTimetable timetable,
-		ServiceDay serviceDay,
-		int startSeconds,
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
-		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDay.date());
+		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(input.serviceDay().date());
 		ScanWorkspace workspace = scanWorkspaces.get();
 		workspace.prepare(timetable.stationCount(), timetable.lineCount(), timetable.routePatternCount());
 		if (activeServiceDay.trips().isEmpty()) {
-			return new ScanResult(serviceDay, List.of(), scanMetrics(workspace));
+			return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
 		}
-		int origin = timetable.stationIndex(command.originStationId());
-		int destination = timetable.stationIndex(command.destinationStationId());
+		int origin = timetable.stationIndex(input.originStationId());
+		int destination = timetable.stationIndex(input.destinationStationId());
 		if (origin < 0 || destination < 0) {
-			return new ScanResult(serviceDay, List.of(), scanMetrics(workspace));
+			return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
 		}
-		workspace.arrivalSeconds[workspace.slot(0, origin, workspace.noIncomingLine(), 0)] = startSeconds;
-		workspace.mark(origin);
+		workspace.improveOrigin(origin, input.readyAtSeconds());
 
-		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
-		int accessProfileBit = profileBit(command.mobilityType(), command.constraintMode());
-		for (int round = 0; round <= command.maxTransfers() && workspace.markedStopCount > 0; round += 1) {
+		int slackSeconds = input.boardingSlackSeconds();
+		int accessProfileBit = input.accessProfileBit();
+		scanMarkedRounds(
+			input, timetable, activeServiceDay, workspace, slackSeconds, accessProfileBit, ignoreAccessBlocks, realtimeOverlay);
+		return destinationScanResult(
+			input, timetable, workspace, destination, accessProfileBit, ignoreAccessBlocks, realtimeOverlay);
+	}
+
+	private static void scanMarkedRounds(
+		ScanInput input,
+		CompiledTimetable timetable,
+		ActiveServiceDay activeServiceDay,
+		ScanWorkspace workspace,
+		int slackSeconds,
+		int accessProfileBit,
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
+	) {
+		for (int round = 0; round <= input.maxTransfers() && workspace.markedStopCount > 0; round += 1) {
+			throwIfCancelled(input);
 			collectMarkedPatterns(timetable, workspace);
 			Arrays.sort(workspace.markedPatterns, 0, workspace.markedPatternCount);
 			for (int index = 0; index < workspace.markedPatternCount; index += 1) {
@@ -549,20 +665,30 @@ class RouteTimetableRaptorPlanner {
 					round,
 					slackSeconds,
 					accessProfileBit,
-					command,
+					input,
 					ignoreAccessBlocks,
 					realtimeOverlay
 				);
 			}
 			workspace.finishRound();
 		}
+	}
 
+	private static ScanResult destinationScanResult(
+		ScanInput input,
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		int destination,
+		int accessProfileBit,
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
+	) {
 		List<Label> destinationLabels = limitDestinationLabels(
 			destinationLabels(
-				command.destinationStationId(), timetable, workspace, destination, startSeconds,
-				accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay),
-			command);
-		return new ScanResult(serviceDay, destinationLabels, scanMetrics(workspace));
+				input.destinationStationId(), timetable, workspace, destination, input.readyAtSeconds(),
+				accessProfileBit, input, ignoreAccessBlocks, realtimeOverlay),
+			input);
+		return new ScanResult(input.serviceDay(), destinationLabels, scanMetrics(workspace));
 	}
 
 	private static ScanMetrics scanMetrics(ScanWorkspace workspace) {
@@ -602,7 +728,7 @@ class RouteTimetableRaptorPlanner {
 		int round,
 		int slackSeconds,
 		int accessProfileBit,
-		SearchRouteV2Command command,
+		ScanInput input,
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
@@ -614,7 +740,7 @@ class RouteTimetableRaptorPlanner {
 		if (realtimeOverlay.affectsPattern(pattern)) {
 			scanPatternWithRealtime(
 				timetable, workspace, pattern, firstMarkedPosition, round, slackSeconds,
-				accessProfileBit, command, ignoreAccessBlocks, realtimeOverlay, trips);
+				accessProfileBit, input, ignoreAccessBlocks, realtimeOverlay, trips);
 			return;
 		}
 		int[] stops = timetable.stopsByPattern(pattern);
@@ -625,6 +751,7 @@ class RouteTimetableRaptorPlanner {
 		int boardingReadySlot = -1;
 		byte boardingWarningBits = 0;
 		for (int position = firstMarkedPosition; position < stops.length; position += 1) {
+			throwIfCancelled(input);
 			int station = stops[position];
 			int boardingLine = timetable.lineIndex(trips.getFirst().lineId(position));
 			if (boardingLine < 0) {
@@ -646,7 +773,7 @@ class RouteTimetableRaptorPlanner {
 			}
 			ReadyBoarding ready = bestReadyBoarding(
 				timetable, workspace, station, boardingLine, round, slackSeconds,
-				accessProfileBit, command, ignoreAccessBlocks, UNREACHED);
+				accessProfileBit, input, ignoreAccessBlocks, UNREACHED);
 			if (ready == null) {
 				continue;
 			}
@@ -658,7 +785,7 @@ class RouteTimetableRaptorPlanner {
 			);
 			if (candidate != null) {
 				ready = bestReadyBoarding(timetable, workspace, station, boardingLine, round, slackSeconds,
-					accessProfileBit, command, ignoreAccessBlocks,
+					accessProfileBit, input, ignoreAccessBlocks,
 					candidate.departureSeconds(position));
 					earliestDepartureSeconds = ready.earliestDepartureSeconds();
 			}
@@ -697,13 +824,14 @@ class RouteTimetableRaptorPlanner {
 		int round,
 		int slackSeconds,
 		int accessProfileBit,
-		SearchRouteV2Command command,
+		ScanInput input,
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay,
 		List<ScheduledTrip> trips
 	) {
 		int[] stops = timetable.stopsByPattern(pattern);
 		for (ScheduledTrip trip : trips) {
+			throwIfCancelled(input);
 			if (realtimeOverlay.cancelled(trip)) {
 				continue;
 			}
@@ -713,6 +841,7 @@ class RouteTimetableRaptorPlanner {
 			int boardingReadySlot = -1;
 			byte boardingWarningBits = 0;
 			for (int position = firstMarkedPosition; position < stops.length; position += 1) {
+				throwIfCancelled(input);
 				int station = stops[position];
 				int boardingLine = timetable.lineIndex(trip.lineId(position));
 				if (boardingLine < 0) {
@@ -731,7 +860,7 @@ class RouteTimetableRaptorPlanner {
 				int departureSeconds = realtimeOverlay.departureSeconds(trip, position);
 				ReadyBoarding ready = bestReadyBoarding(
 					timetable, workspace, station, boardingLine, round, slackSeconds,
-					accessProfileBit, command, ignoreAccessBlocks, departureSeconds);
+					accessProfileBit, input, ignoreAccessBlocks, departureSeconds);
 				if (ready != null && (boardingPosition < 0 || compareReadyBoardingKeys(
 					ready.earliestDepartureSeconds(), ready.warningBits(), ready.readySlot(),
 					boardingEarliestDepartureSeconds, boardingWarningBits, boardingReadySlot, true) < 0)) {
@@ -754,7 +883,7 @@ class RouteTimetableRaptorPlanner {
 		int round,
 		int slackSeconds,
 		int accessProfileBit,
-		SearchRouteV2Command command,
+		ScanInput input,
 		boolean ignoreAccessBlocks,
 		int boardingDeadlineSeconds
 	) {
@@ -764,10 +893,10 @@ class RouteTimetableRaptorPlanner {
 		for (int incomingLine = firstIncomingLine; incomingLine < lastIncomingLine; incomingLine += 1) {
 			int accessTransition = round == 0
 				? timetable.entryTransition(station, boardingLine, accessProfileBit, ignoreAccessBlocks,
-					command.requiresVerifiedJourneyDistance())
+					input.requiresVerifiedJourneyDistance())
 				: timetable.transferTransition(
 					station, incomingLine, boardingLine, accessProfileBit, ignoreAccessBlocks,
-					command.requiresVerifiedJourneyDistance());
+					input.requiresVerifiedJourneyDistance());
 			if (accessTransition < 0) {
 				continue;
 			}
@@ -782,7 +911,7 @@ class RouteTimetableRaptorPlanner {
 				}
 				JourneyAccessKind accessKind = round == 0 ? JourneyAccessKind.ENTRY : JourneyAccessKind.TRANSFER;
 				int earliestDepartureSeconds = readySeconds
-					+ journeyAccessSeconds(command, accessKind, timetable.transitionDurationSeconds(accessTransition),
+					+ journeyAccessSeconds(input, accessKind, timetable.transitionDurationSeconds(accessTransition),
 						timetable.transitionDistanceMeters(accessTransition))
 					+ slackSeconds;
 				if (earliestDepartureSeconds > boardingDeadlineSeconds) {
@@ -832,7 +961,7 @@ class RouteTimetableRaptorPlanner {
 		int destination,
 		int startSeconds,
 		int accessProfileBit,
-		SearchRouteV2Command command,
+		ScanInput input,
 		boolean ignoreAccessBlocks,
 		RealtimeOverlay realtimeOverlay
 	) {
@@ -841,7 +970,7 @@ class RouteTimetableRaptorPlanner {
 		// "느리지만 무단차"인 대안이 소실된다. PREFER_*에서는 경고 상태별 최선 후보를 함께 담고
 		// 지배 판정은 paretoFront가 일괄 처리한다.
 		// 표시 정렬은 compareLabels(시간 우선)로 그대로 두고 여기서는 보존 집합만 넓힌다.
-		boolean preserveWarningAlternatives = prefersStepFree(command);
+		boolean preserveWarningAlternatives = input.prefersStepFree();
 		List<Label> labels = new ArrayList<>(PARETO_LIMIT * timetable.lineCount());
 		Label[] bestByWarningState = preserveWarningAlternatives
 			? new Label[WARNING_STATE_COUNT]
@@ -852,7 +981,7 @@ class RouteTimetableRaptorPlanner {
 			for (int incomingLine = 0; incomingLine < timetable.lineCount(); incomingLine += 1) {
 				int exitTransition = timetable.exitTransition(
 					destination, incomingLine, accessProfileBit, ignoreAccessBlocks,
-					command.requiresVerifiedJourneyDistance());
+					input.requiresVerifiedJourneyDistance());
 				if (exitTransition < 0) {
 					continue;
 				}
@@ -878,7 +1007,7 @@ class RouteTimetableRaptorPlanner {
 					Label candidate = new Label(
 						destinationStationId,
 						workspace.arrivalSeconds[slot]
-							+ journeyAccessSeconds(command, JourneyAccessKind.EXIT,
+							+ journeyAccessSeconds(input, JourneyAccessKind.EXIT,
 								timetable.transitionDurationSeconds(exitTransition),
 								timetable.transitionDistanceMeters(exitTransition)),
 						startSeconds,
@@ -954,16 +1083,16 @@ class RouteTimetableRaptorPlanner {
 	// 상한(candidateLimit) 자체는 그대로지만 PREFER_STEP_FREE에서는 실제 후보 수가 상한까지
 	// 채워지는 빈도가 높아지므로, 후보당 하류 비용(toRouteSearchResult 재구성·실시간 재계산·
 	// 직렬화)은 최악 상한배까지 늘 수 있다.
-	private static List<Label> limitDestinationLabels(List<Label> labels, SearchRouteV2Command command) {
+	private static List<Label> limitDestinationLabels(List<Label> labels, ScanInput input) {
 		List<Label> ordered = labels.stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.toList();
-		int limit = candidateLimit(command);
+		int limit = input.candidateLimit();
 		if (ordered.size() <= limit) {
 			return ordered;
 		}
 		List<Label> limited = new ArrayList<>(ordered.subList(0, limit));
-		if (!prefersStepFree(command)) {
+		if (!input.prefersStepFree()) {
 			return List.copyOf(limited);
 		}
 		Label preferred = ordered.stream().min(PREFERRED_WARNING_ORDER).orElseThrow();
@@ -992,9 +1121,6 @@ class RouteTimetableRaptorPlanner {
 		return -1;
 	}
 
-	private static boolean prefersStepFree(SearchRouteV2Command command) {
-		return command.constraintMode() == ConstraintMode.PREFER_STEP_FREE;
-	}
 	private static int compareDestinationLabels(Label left, Label right) {
 		RideLeg leftLast = left.path().getLast();
 		RideLeg rightLast = right.path().getLast();
@@ -1031,9 +1157,6 @@ class RouteTimetableRaptorPlanner {
 		return Integer.bitCount(Byte.toUnsignedInt(warningBits));
 	}
 
-	private static int candidateLimit(SearchRouteV2Command command) {
-		return Math.max(command.alternativeCount(), command.maxTransfers() + 1);
-	}
 
 	private static int compareLabels(Label left, Label right) {
 		return Comparator.comparingInt(Label::timeSeconds)
@@ -1231,6 +1354,20 @@ class RouteTimetableRaptorPlanner {
 		).seconds();
 	}
 
+	private static int journeyAccessSeconds(
+		ScanInput input,
+		JourneyAccessKind kind,
+		int baselineSeconds,
+		int distanceMeters
+	) {
+		if (kind == JourneyAccessKind.TRANSFER && input.requiresVerifiedJourneyDistance()) {
+			return ProfileWalkTimeCalculator.journeySeconds(
+				distanceMeters, input.walkingSpeedMetersPerHour(), input.mobilityPreset(), false);
+		}
+		return ProfileWalkTimeCalculator.estimateSeconds(
+			baselineSeconds, input.mobilityPreset(), WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
+	}
+
 	static int profileBit(com.easysubway.profile.domain.MobilityType mobilityType, ConstraintMode constraintMode) {
 		int mobility = switch (mobilityType) {
 			case SENIOR -> 0;
@@ -1352,8 +1489,331 @@ class RouteTimetableRaptorPlanner {
 		return Integer.toUnsignedString(key.toString().hashCode(), 36);
 	}
 
+	private static ScanInput scanInput(JourneyRaptorQuery query) {
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartAt departAt)) {
+			throw new IllegalArgumentException("Journey RAPTOR point planner does not support temporal profile queries");
+		}
+		var resolved = ServiceDayResolver.resolve(departAt.readyAt());
+		return scanInput(requiredQuery,
+			new ServiceDay(resolved.serviceDate(), resolved.secondsFromServiceDayStart()));
+	}
+
+	private static ScanInput scanInput(JourneyRaptorQuery requiredQuery, ServiceDay serviceDay) {
+		MobilityPreset mobilityPreset = switch (requiredQuery.mobilityProfile()) {
+			case STANDARD -> MobilityPreset.STANDARD;
+			case SLOW -> MobilityPreset.SLOW;
+			case NO_STAIRS -> MobilityPreset.NO_STAIRS;
+			case STEP_FREE -> MobilityPreset.STEP_FREE;
+		};
+		JourneyAccessProfile accessProfile = switch (requiredQuery.mobilityProfile()) {
+			case STANDARD -> JourneyAccessProfile.STANDARD;
+			case SLOW -> JourneyAccessProfile.SLOW;
+			case NO_STAIRS -> JourneyAccessProfile.NO_STAIRS;
+			case STEP_FREE -> JourneyAccessProfile.STEP_FREE;
+		};
+		ConstraintMode constraintMode = requiredQuery.constraintMode()
+			== com.easysubway.journey.application.JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+			? ConstraintMode.STRICT_STEP_FREE
+			: accessProfile == JourneyAccessProfile.STEP_FREE
+				? ConstraintMode.PREFER_STEP_FREE
+				: ConstraintMode.ALLOW_WITH_WARNINGS;
+		return new ScanInput(
+			requiredQuery.originStationId(),
+			requiredQuery.destinationStationId(),
+			serviceDay,
+			serviceDay.departureSeconds(),
+			accessProfile.profileBit(constraintMode),
+			mobilityPreset,
+			constraintMode,
+			requiredQuery.walkingPace().speedMetersPerHour(),
+			journeyBoardingSlackSeconds(accessProfile),
+			true,
+			requiredQuery.timePolicy()
+				== com.easysubway.journey.application.JourneyRequest.TimePolicy.REALTIME_REQUIRED,
+			requiredQuery.maxTransfers(),
+			Math.max(requiredQuery.alternativeCount(), requiredQuery.maxTransfers() + 1),
+			requiredQuery.cancellationSignal()
+		);
+	}
+
+	ReverseTimetableRaptorPlanner.Query reverseArriveByQuery(
+		JourneyRaptorQuery query,
+		LocalDate serviceDate,
+		int earliestReadyAtSeconds,
+		int arrivalDeadlineSeconds
+	) {
+		ScanInput input = scanInput(Objects.requireNonNull(query, "query"),
+			new ServiceDay(Objects.requireNonNull(serviceDate, "serviceDate"), earliestReadyAtSeconds));
+		return new ReverseTimetableRaptorPlanner.Query(
+			input.originStationId(), input.destinationStationId(), serviceDate, earliestReadyAtSeconds,
+			arrivalDeadlineSeconds, input.maxTransfers(), input.accessProfileBit(), input.boardingSlackSeconds(),
+			input.mobilityPreset(), input.walkingSpeedMetersPerHour(), input.requiresVerifiedJourneyDistance(),
+			input.cancellationSignal());
+	}
+
+	ReverseTimetableRaptorPlanner.LastConnectionQuery reverseLastConnectionQuery(
+		JourneyRaptorQuery query,
+		LocalDate serviceDate
+	) {
+		ScanInput input = scanInput(Objects.requireNonNull(query, "query"),
+			new ServiceDay(Objects.requireNonNull(serviceDate, "serviceDate"), 0));
+		return new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			input.originStationId(), input.destinationStationId(), serviceDate, input.maxTransfers(),
+			input.accessProfileBit(), input.boardingSlackSeconds(), input.mobilityPreset(),
+			input.walkingSpeedMetersPerHour(), input.requiresVerifiedJourneyDistance(), input.cancellationSignal());
+	}
+
+	private static ScanInput scanInput(SearchRouteV2Command command, ServiceDay serviceDay) {
+		return new ScanInput(
+			command.originStationId(), command.destinationStationId(), serviceDay, serviceDay.departureSeconds(),
+			profileBit(command.mobilityType(), command.constraintMode()), command.mobilityPreset(), command.constraintMode(),
+			command.journeyWalkingSpeedMetersPerHour(), BoardingSlackPolicy.secondsFor(command.mobilityType()),
+			command.requiresVerifiedJourneyDistance(), command.useRealtime(), command.maxTransfers(),
+			Math.max(command.alternativeCount(), command.maxTransfers() + 1), () -> false);
+	}
+
+	private static int journeyBoardingSlackSeconds(JourneyAccessProfile accessProfile) {
+		return switch (accessProfile) {
+			case STANDARD, NO_STAIRS -> 60;
+			case SLOW -> 90;
+			case STEP_FREE -> 180;
+		};
+	}
+
+	private static void throwIfCancelled(ScanInput input) {
+		if (input.cancellationSignal().getAsBoolean()) {
+			throw new IllegalStateException("Journey RAPTOR scan cancelled");
+		}
+	}
+
 	CompiledTimetable compile(RouteTimetable timetable) {
 		return new CompiledTimetable(timetable);
+	}
+
+	List<DepartureEvent> departureEvents(
+		ActiveServiceDay activeServiceDay,
+		String originStationId,
+		int earliestDepartureSeconds,
+		int latestDepartureSeconds,
+		RealtimeOverlay realtimeOverlay
+	) {
+		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
+		Objects.requireNonNull(originStationId, "originStationId must not be null");
+		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		if (earliestDepartureSeconds > latestDepartureSeconds) {
+			throw new IllegalArgumentException("earliestDepartureSeconds must not exceed latestDepartureSeconds");
+		}
+		return activeServiceDay.boardingsByStation().getOrDefault(originStationId, List.of()).stream()
+			.filter(boarding -> boarding.trip().allowsPickup(boarding.stopIndex()))
+			.filter(boarding -> !realtimeOverlay.cancelled(boarding.trip()))
+			.map(boarding -> new DepartureEvent(
+				boarding.trip(),
+				boarding.stopIndex(),
+				realtimeOverlay.departureSeconds(boarding.trip(), boarding.stopIndex())))
+			.filter(event -> event.effectiveDepartureSeconds() >= earliestDepartureSeconds
+				&& event.effectiveDepartureSeconds() <= latestDepartureSeconds)
+			.sorted(Comparator.comparingInt(DepartureEvent::effectiveDepartureSeconds).reversed()
+				.thenComparingInt(event -> event.scheduledTrip().index())
+				.thenComparingInt(DepartureEvent::stopIndex))
+			.toList();
+	}
+
+	List<JourneyDepartureProfilePoint> departureProfile(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits
+	) {
+		return departureProfile(query, timetable, realtimeOverlay, planningLimits, null);
+	}
+
+	List<JourneyDepartureProfilePoint> departureProfile(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query must not be null");
+		Objects.requireNonNull(timetable, "timetable must not be null");
+		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		JourneyProfileResourcePolicy.ProfilePlanningLimits requiredLimits = Objects.requireNonNull(
+			planningLimits, "planningLimits");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartBetween range)) {
+			throw new IllegalArgumentException("Journey departure profile requires DEPART_BETWEEN");
+		}
+		var earliest = ServiceDayResolver.resolve(range.earliestReadyAt());
+		var latest = ServiceDayResolver.resolve(range.latestReadyAt());
+		ProfileLimitTracker limits = new ProfileLimitTracker(requiredLimits, observations);
+		if (earliest.serviceDate().equals(latest.serviceDate())) {
+			return departureProfileSlice(
+				requiredQuery,
+				timetable,
+				realtimeOverlay,
+				earliest.serviceDate(),
+				earliest.secondsFromServiceDayStart(),
+				latest.secondsFromServiceDayStart(),
+				limits);
+		}
+		if (!latest.serviceDate().equals(earliest.serviceDate().plusDays(1))) {
+			throw new IllegalArgumentException("Journey departure profile supports at most two adjacent service days");
+		}
+
+		List<JourneyDepartureProfilePoint> profile = new ArrayList<>();
+		profile.addAll(departureProfileSlice(
+			requiredQuery,
+			timetable,
+			realtimeOverlay,
+			latest.serviceDate(),
+			serviceDayCutoffSeconds(latest.serviceDate()),
+			latest.secondsFromServiceDayStart(),
+			limits));
+		profile.addAll(departureProfileSlice(
+			requiredQuery,
+			timetable,
+			realtimeOverlay,
+			earliest.serviceDate(),
+			earliest.secondsFromServiceDayStart(),
+			nextServiceDayCutoffSeconds(earliest.serviceDate()) - 1,
+			limits));
+		return List.copyOf(profile);
+	}
+
+	private List<JourneyDepartureProfilePoint> departureProfileSlice(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RealtimeOverlay realtimeOverlay,
+		LocalDate serviceDate,
+		int earliestReadyAtSeconds,
+		int latestReadyAtSeconds,
+		ProfileLimitTracker limits
+	) {
+		if (earliestReadyAtSeconds > latestReadyAtSeconds) {
+			return List.of();
+		}
+		ServiceDay serviceDay = new ServiceDay(serviceDate, latestReadyAtSeconds);
+		ScanInput profileInput = scanInput(query, serviceDay);
+		throwIfCancelled(profileInput);
+		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(serviceDay.date());
+		if (activeServiceDay.trips().isEmpty()) {
+			return List.of();
+		}
+		int origin = timetable.stationIndex(profileInput.originStationId());
+		int destination = timetable.stationIndex(profileInput.destinationStationId());
+		if (origin < 0 || destination < 0) {
+			return List.of();
+		}
+
+		int slackSeconds = profileInput.boardingSlackSeconds();
+		int accessProfileBit = profileInput.accessProfileBit();
+		// 시간대 이후 첫 열차를 기다릴 수 있으므로 마지막 준비시각에서도 탐색을 시작한다.
+		List<Integer> breakpoints = java.util.stream.Stream.concat(
+			java.util.stream.Stream.of(latestReadyAtSeconds), departureEvents(
+			activeServiceDay,
+			profileInput.originStationId(),
+			0,
+			LoadRouteTimetablePort.SERVICE_DAY_SECONDS_LIMIT_EXCLUSIVE - 1,
+			realtimeOverlay
+		).stream().map(event -> readyAtBreakpoint(
+			profileInput, timetable, origin, accessProfileBit, slackSeconds, event, limits.observations))
+			.filter(OptionalIntValue::present)
+			.mapToInt(OptionalIntValue::value)
+			.filter(readyAt -> readyAt >= earliestReadyAtSeconds
+				&& readyAt <= latestReadyAtSeconds)
+			.boxed())
+			.distinct()
+			.sorted(Comparator.reverseOrder())
+			.toList();
+
+		limits.reserveBreakpoints(breakpoints.size());
+		ProfileMultiLabelForwardScan scan = new ProfileMultiLabelForwardScan(
+			profileInput, timetable, activeServiceDay, realtimeOverlay, limits);
+		List<JourneyDepartureProfilePoint> profile = new ArrayList<>(breakpoints.size());
+		for (int readyAtSeconds : breakpoints) {
+			ScanInput input = scanInput(query, new ServiceDay(serviceDay.date(), readyAtSeconds));
+			if (!scan.improveOrigin(origin, readyAtSeconds)) continue;
+			scan.propagate();
+			List<JourneyItinerary> itineraries = scan.destinationItineraries(
+				input, destination, accessProfileBit);
+			if (itineraries.isEmpty()) continue;
+			profile.add(new JourneyDepartureProfilePoint(
+				serviceDay.date(),
+				readyAtSeconds,
+				itineraries,
+				scan.scanMetrics()));
+		}
+		return List.copyOf(profile);
+	}
+
+	private static int serviceDayCutoffSeconds(LocalDate serviceDate) {
+		return Math.toIntExact(Duration.between(
+			serviceDate.atStartOfDay(SERVICE_ZONE),
+			serviceDate.atTime(LocalTime.parse(ServiceDayResolver.CUTOFF_LOCAL_TIME)).atZone(SERVICE_ZONE)
+		).toSeconds());
+	}
+
+	private static int nextServiceDayCutoffSeconds(LocalDate serviceDate) {
+		return Math.toIntExact(Duration.between(
+			serviceDate.atStartOfDay(SERVICE_ZONE),
+			serviceDate.plusDays(1).atTime(LocalTime.parse(ServiceDayResolver.CUTOFF_LOCAL_TIME)).atZone(SERVICE_ZONE)
+		).toSeconds());
+	}
+
+	private static OptionalIntValue readyAtBreakpoint(
+		ScanInput input,
+		CompiledTimetable timetable,
+		int origin,
+		int accessProfileBit,
+		int slackSeconds,
+		DepartureEvent event,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
+		int boardingLine = timetable.lineIndex(event.scheduledTrip().lineId(event.stopIndex()));
+		if (boardingLine < 0) {
+			return OptionalIntValue.empty();
+		}
+		int entryTransition = timetable.entryTransition(
+			origin, boardingLine, accessProfileBit, false, input.requiresVerifiedJourneyDistance());
+		if (entryTransition < 0) {
+			if (observations != null) observations.increment("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
+			return OptionalIntValue.empty();
+		}
+		int entrySeconds = journeyAccessSeconds(
+			input,
+			JourneyAccessKind.ENTRY,
+			timetable.transitionDurationSeconds(entryTransition),
+			timetable.transitionDistanceMeters(entryTransition));
+		return OptionalIntValue.of(event.effectiveDepartureSeconds() - entrySeconds - slackSeconds);
+	}
+
+	List<TimetableRealtimeQuery> realtimeQueries(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable
+	) {
+		ScanInput input = scanInput(query);
+		Map<String, List<TimetableTripDeparture>> departuresByLine = new LinkedHashMap<>();
+		for (ScheduledTrip trip : timetable.activeServiceDay(input.serviceDay().date()).trips()) {
+			if (trip.trip().trainNo() == null) {
+				continue;
+			}
+			for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
+				TransitStopTime stop = trip.stopTimes().get(stopIndex);
+				if (!input.originStationId().equals(stop.stationId()) || !trip.allowsPickup(stopIndex)) {
+					continue;
+				}
+				departuresByLine.computeIfAbsent(stop.lineId(), ignored -> new ArrayList<>())
+					.add(new TimetableTripDeparture(
+						trip.trip().id(), trip.trip().trainNo(), trip.trip().servicePattern(),
+						serviceInstant(input.serviceDay(), trip.arrivalSeconds(stopIndex)),
+						serviceInstant(input.serviceDay(), trip.departureSeconds(stopIndex))));
+				break;
+			}
+		}
+		Instant readyAt = serviceInstant(input.serviceDay(), input.readyAtSeconds());
+		return departuresByLine.entrySet().stream()
+			.map(entry -> new TimetableRealtimeQuery(input.originStationId(), entry.getKey(), readyAt, entry.getValue()))
+			.toList();
 	}
 
 	List<TimetableRealtimeQuery> realtimeQueries(
@@ -1799,12 +2259,20 @@ class RouteTimetableRaptorPlanner {
 			return stopsByPattern.get(pattern);
 		}
 
+		int patternStopCount(int pattern) {
+			return stopsByPattern(pattern).length;
+		}
+
 		int[] patternsByStop(int station) {
 			return patternsByStop.getOrDefault(station, NO_PATTERNS);
 		}
 
 		ScheduledTrip scheduledTrip(int index) {
 			return scheduledTrips.get(index);
+		}
+
+		ScheduledTrip scheduledTripAtPattern(ActiveServiceDay serviceDay, int pattern, int tripOffset) {
+			return Objects.requireNonNull(serviceDay, "serviceDay").tripsByPattern(pattern).get(tripOffset);
 		}
 
 		int uniqueScheduledTripIndex(String tripId) {
@@ -2451,7 +2919,7 @@ class RouteTimetableRaptorPlanner {
 			return trips;
 		}
 
-		private List<ScheduledTrip> tripsByPattern(int pattern) {
+		List<ScheduledTrip> tripsByPattern(int pattern) {
 			return tripsByPattern.getOrDefault(pattern, List.of());
 		}
 
@@ -2599,6 +3067,16 @@ class RouteTimetableRaptorPlanner {
 			}
 		}
 
+		private boolean improveOrigin(int origin, int readyAtSeconds) {
+			int slot = slot(0, origin, noIncomingLine(), 0);
+			if (arrivalSeconds[slot] <= readyAtSeconds) {
+				return false;
+			}
+			arrivalSeconds[slot] = readyAtSeconds;
+			mark(origin);
+			return true;
+		}
+
 		private void relax(
 			int station,
 			int boardings,
@@ -2675,7 +3153,482 @@ class RouteTimetableRaptorPlanner {
 	private record ServiceDay(LocalDate date, int departureSeconds) {
 	}
 
+	private record ScanInput(
+		String originStationId,
+		String destinationStationId,
+		ServiceDay serviceDay,
+		int readyAtSeconds,
+		int accessProfileBit,
+		MobilityPreset mobilityPreset,
+		ConstraintMode constraintMode,
+		int walkingSpeedMetersPerHour,
+		int boardingSlackSeconds,
+		boolean requiresVerifiedJourneyDistance,
+		boolean realtimeRequired,
+		int maxTransfers,
+		int candidateLimit,
+		BooleanSupplier cancellationSignal
+	) {
+		private ScanInput {
+			Objects.requireNonNull(originStationId, "originStationId");
+			Objects.requireNonNull(destinationStationId, "destinationStationId");
+			Objects.requireNonNull(serviceDay, "serviceDay");
+			Objects.requireNonNull(mobilityPreset, "mobilityPreset");
+			Objects.requireNonNull(constraintMode, "constraintMode");
+			Objects.requireNonNull(cancellationSignal, "cancellationSignal");
+		}
+
+		private boolean prefersStepFree() {
+			return constraintMode == ConstraintMode.PREFER_STEP_FREE;
+		}
+	}
+
+	private enum JourneyAccessProfile {
+		STANDARD(5),
+		SLOW(0),
+		NO_STAIRS(5),
+		STEP_FREE(2);
+
+		private final int index;
+
+		JourneyAccessProfile(int index) {
+			this.index = index;
+		}
+
+		private int profileBit(ConstraintMode constraintMode) {
+			return 1 << (index * ConstraintMode.values().length + constraintMode.ordinal());
+		}
+	}
+
 	private record ScanResult(ServiceDay serviceDay, List<Label> labels, ScanMetrics scanMetrics) {
+	}
+
+	record JourneyDepartureProfilePoint(
+		LocalDate serviceDate,
+		int readyAtSeconds,
+		List<JourneyItinerary> itineraries,
+		ScanMetrics scanMetrics
+	) {
+		JourneyDepartureProfilePoint {
+			serviceDate = Objects.requireNonNull(serviceDate, "serviceDate");
+			itineraries = List.copyOf(itineraries);
+			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
+		}
+	}
+
+	/**
+	 * Profile-only bounded work accounting. Point and Route V2 scans intentionally do not share
+	 * this state because their scalar workspace has a different correctness contract.
+	 */
+	static final class ProfilePlanningLimitException extends RuntimeException {
+		private final ProfilePlanningLimit limit;
+		private final long observed;
+		private final long max;
+
+		private ProfilePlanningLimitException(ProfilePlanningLimit limit, long observed, long max) {
+			super(Objects.requireNonNull(limit, "limit").name());
+			this.limit = limit;
+			this.observed = observed;
+			this.max = max;
+		}
+
+		ProfilePlanningLimit limit() {
+			return limit;
+		}
+
+		long observed() { return observed; }
+		long max() { return max; }
+	}
+
+	enum ProfilePlanningLimit {
+		MAX_ESTIMATED_WORK,
+		MAX_LABELS_PER_STATE,
+		MAX_DESTINATION_PROFILE_LABELS,
+		MAX_PROFILE_BREAKPOINTS
+	}
+
+	private static final class ProfileLimitTracker {
+		private final JourneyProfileResourcePolicy.ProfilePlanningLimits limits;
+		private final JourneyProfilePruningObservationAccumulator observations;
+		private long work;
+		private int breakpoints;
+
+		private ProfileLimitTracker(JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+			JourneyProfilePruningObservationAccumulator observations) {
+			this.limits = Objects.requireNonNull(limits, "limits");
+			this.observations = observations;
+		}
+
+		private void reserveBreakpoints(int additional) {
+			breakpoints = Math.addExact(breakpoints, additional);
+			if (observations != null) observations.reserveProfileBreakpoints(additional);
+			if (breakpoints > limits.maxProfileBreakpoints()) {
+				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_PROFILE_BREAKPOINTS,
+					breakpoints, limits.maxProfileBreakpoints());
+			}
+		}
+
+		private void consumeWork() {
+			work = Math.addExact(work, 1L);
+			if (observations != null) observations.consumeWork();
+			if (work > limits.maxEstimatedWork()) {
+				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_ESTIMATED_WORK,
+					work, limits.maxEstimatedWork());
+			}
+		}
+
+		private int maxLabelsPerState() {
+			return limits.maxLabelsPerState();
+		}
+
+		private int maxDestinationProfileLabels() {
+			return limits.maxDestinationProfileLabels();
+		}
+
+		private void count(String ruleId) {
+			if (observations != null) observations.increment(ruleId);
+		}
+
+		private void observeStateLabels(int labels) {
+			if (observations != null) observations.observeStateLabels(labels);
+		}
+
+		private void observeDestinationLabels(int labels) {
+			if (observations != null) observations.observeDestinationLabels(labels);
+		}
+	}
+
+	/**
+	 * Incremental, profile-only multi-label forward scan. A later breakpoint remains in the label
+	 * state while earlier breakpoints add only newly reachable labels, so this is not a repeated
+	 * point-query loop. The scalar ScanWorkspace remains the point/Route V2 implementation.
+	 */
+	private static final class ProfileMultiLabelForwardScan {
+		private final ScanInput input;
+		private final CompiledTimetable timetable;
+		private final ActiveServiceDay activeServiceDay;
+		private final RealtimeOverlay realtimeOverlay;
+		private final ProfileLimitTracker limits;
+		private final Map<ProfileStateKey, List<ProfileLabel>> labelsByState = new HashMap<>();
+		private final ArrayDeque<ProfileLabel> pending = new ArrayDeque<>();
+		private int expandedRoutes;
+		private int expandedTrips;
+		private int expandedTransfers;
+
+		private ProfileMultiLabelForwardScan(
+			ScanInput input,
+			CompiledTimetable timetable,
+			ActiveServiceDay activeServiceDay,
+			RealtimeOverlay realtimeOverlay,
+			ProfileLimitTracker limits
+		) {
+			this.input = Objects.requireNonNull(input, "input");
+			this.timetable = Objects.requireNonNull(timetable, "timetable");
+			this.activeServiceDay = Objects.requireNonNull(activeServiceDay, "activeServiceDay");
+			this.realtimeOverlay = Objects.requireNonNull(realtimeOverlay, "realtimeOverlay");
+			this.limits = Objects.requireNonNull(limits, "limits");
+		}
+
+		private boolean improveOrigin(int origin, int readyAtSeconds) {
+			return admit(new ProfileLabel(
+				readyAtSeconds, readyAtSeconds, 0, origin, -1, (byte) 0,
+				0L, 0L, 0L, new JourneyProfileRaptorPort.NoTransfer(), null));
+		}
+
+		private void propagate() {
+			while (!pending.isEmpty()) {
+				throwIfCancelled(input);
+				ProfileLabel label = pending.removeFirst();
+				if (!isCurrent(label)) continue;
+				if (label.boardings() > input.maxTransfers()) continue;
+				for (int pattern : timetable.patternsByStop(label.station())) {
+					limits.consumeWork();
+					expandedRoutes += 1;
+					int position = indexOf(timetable.stopsByPattern(pattern), label.station());
+					if (position < 0) continue;
+					List<ScheduledTrip> trips = activeServiceDay.tripsByPattern(pattern);
+					if (trips.isEmpty()) continue;
+					int boardingLine = timetable.lineIndex(trips.getFirst().lineId(position));
+					if (boardingLine < 0) continue;
+					int transition = label.boardings() == 0
+						? timetable.entryTransition(label.station(), boardingLine, input.accessProfileBit(), false,
+							input.requiresVerifiedJourneyDistance())
+						: timetable.transferTransition(label.station(), label.incomingLine(), boardingLine,
+							input.accessProfileBit(), false, input.requiresVerifiedJourneyDistance());
+					if (transition < 0) {
+						limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
+						continue;
+					}
+					if (label.boardings() > 0) expandedTransfers += 1;
+					JourneyAccessKind kind = label.boardings() == 0 ? JourneyAccessKind.ENTRY : JourneyAccessKind.TRANSFER;
+					int accessSeconds = journeyAccessSeconds(input, kind,
+						timetable.transitionDurationSeconds(transition), timetable.transitionDistanceMeters(transition));
+					int earliestDeparture = Math.addExact(Math.addExact(label.arrivalSeconds(), accessSeconds),
+						input.boardingSlackSeconds());
+					for (ScheduledTrip trip : trips) {
+						limits.consumeWork();
+						if (!trip.allowsPickup(position) || realtimeOverlay.cancelled(trip)
+							|| realtimeOverlay.departureSeconds(trip, position) < earliestDeparture) continue;
+						expandedTrips += 1;
+						long transferSlack = (long) realtimeOverlay.departureSeconds(trip, position)
+							- label.arrivalSeconds() - accessSeconds - input.boardingSlackSeconds();
+						if (transferSlack < 0) continue;
+						JourneyProfileRaptorPort.ConnectionSlack connectionSlack = label.boardings() == 0
+							? new JourneyProfileRaptorPort.NoTransfer()
+							: minimumSlack(label.connectionSlack(), transferSlack);
+						byte warnings = (byte) (label.warningBits()
+							| timetable.transitionWarningCodes(transition, input.accessProfileBit(), false));
+						for (int alight = position + 1; alight < trip.stopTimes().size(); alight += 1) {
+							limits.consumeWork();
+							if (!trip.allowsDropOff(alight)) continue;
+							admit(new ProfileLabel(
+								label.startSeconds(), realtimeOverlay.arrivalSeconds(trip, alight), label.boardings() + 1,
+								timetable.stopsByPattern(pattern)[alight], boardingLine, warnings,
+								Math.addExact(label.verifiedAccessSeconds(), accessSeconds),
+								Math.addExact(label.verifiedAccessDistanceMeters(), timetable.transitionDistanceMeters(transition)),
+								Math.addExact(label.stairBurden(), timetable.transitionIncludesStairs(transition) ? 1L : 0L),
+								connectionSlack,
+								new ProfileRideTrace(label, trip, position, alight, transition)));
+						}
+					}
+				}
+			}
+		}
+
+		private boolean isCurrent(ProfileLabel label) {
+			ProfileStateKey state = new ProfileStateKey(label.boardings(), label.station(), label.incomingLine());
+			return labelsByState.getOrDefault(state, List.of()).stream().anyMatch(existing -> existing == label);
+		}
+
+		private List<JourneyItinerary> destinationItineraries(
+			ScanInput pointInput,
+			int destination,
+			int accessProfileBit
+		) {
+			List<ProfileDestinationLabel> candidates = new ArrayList<>();
+			for (Map.Entry<ProfileStateKey, List<ProfileLabel>> entry : labelsByState.entrySet()) {
+				ProfileStateKey state = entry.getKey();
+				if (state.station() != destination || state.boardings() == 0) continue;
+				int exit = timetable.exitTransition(destination, state.incomingLine(), accessProfileBit, false,
+					pointInput.requiresVerifiedJourneyDistance());
+				if (exit < 0) {
+					limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
+					continue;
+				}
+				int exitSeconds = journeyAccessSeconds(pointInput, JourneyAccessKind.EXIT,
+					timetable.transitionDurationSeconds(exit), timetable.transitionDistanceMeters(exit));
+				byte exitWarnings = timetable.transitionWarningCodes(exit, accessProfileBit, false);
+				for (ProfileLabel label : entry.getValue()) {
+					limits.consumeWork();
+					candidates.add(new ProfileDestinationLabel(label, exit,
+						Math.addExact(label.arrivalSeconds(), exitSeconds),
+						Math.addExact(label.verifiedAccessSeconds(), exitSeconds),
+						Math.addExact(label.verifiedAccessDistanceMeters(), timetable.transitionDistanceMeters(exit)),
+						Math.addExact(label.stairBurden(), timetable.transitionIncludesStairs(exit) ? 1L : 0L),
+						(byte) (label.warningBits() | exitWarnings)));
+				}
+			}
+			List<ProfileDestinationLabel> frontier = destinationFrontier(candidates);
+			limits.observeDestinationLabels(frontier.size());
+			if (frontier.size() > limits.maxDestinationProfileLabels()) {
+				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
+				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_DESTINATION_PROFILE_LABELS,
+					frontier.size(), limits.maxDestinationProfileLabels());
+			}
+			return frontier.stream()
+				.map(candidate -> toJourneyItinerary(pointInput, timetable, realtimeOverlay,
+					candidate.toScalarLabel(realtimeOverlay, pointInput.readyAtSeconds())))
+				.sorted(Comparator.comparing(JourneyItinerary::plannedArrivalTime)
+					.thenComparing(JourneyItinerary::plannedDepartureTime))
+				.toList();
+		}
+
+		private ScanMetrics scanMetrics() {
+			return new ScanMetrics(expandedRoutes, expandedTrips, expandedTransfers);
+		}
+
+		private boolean admit(ProfileLabel candidate) {
+			limits.consumeWork();
+			ProfileStateKey state = new ProfileStateKey(
+				candidate.boardings(), candidate.station(), candidate.incomingLine());
+			List<ProfileLabel> labels = labelsByState.computeIfAbsent(state, ignored -> new ArrayList<>());
+			for (ProfileLabel existing : labels) {
+				if (dominates(existing, candidate)) {
+					limits.count("FORWARD_STATE_DOMINANCE_V1");
+					return false;
+				}
+				if (sameVector(existing, candidate) && compareTrace(existing, candidate) <= 0) {
+					limits.count("FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+					return false;
+				}
+			}
+			labels.removeIf(existing -> {
+				if (dominates(candidate, existing)) {
+					limits.count("FORWARD_STATE_DOMINANCE_V1");
+					return true;
+				}
+				if (sameVector(existing, candidate) && compareTrace(candidate, existing) < 0) {
+					limits.count("FORWARD_STATE_EQUAL_VECTOR_CANONICAL_TRACE_V1");
+					return true;
+				}
+				return false;
+			});
+			labels.add(candidate);
+			labels.sort(ProfileMultiLabelForwardScan::compareTrace);
+			limits.observeStateLabels(labels.size());
+			if (labels.size() > limits.maxLabelsPerState()) {
+				limits.count("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
+				throw new ProfilePlanningLimitException(ProfilePlanningLimit.MAX_LABELS_PER_STATE,
+					labels.size(), limits.maxLabelsPerState());
+			}
+			pending.addLast(candidate);
+			return true;
+		}
+
+		private static JourneyProfileRaptorPort.ConnectionSlack minimumSlack(
+			JourneyProfileRaptorPort.ConnectionSlack existing,
+			long candidate
+		) {
+			if (!(existing instanceof JourneyProfileRaptorPort.MinimumTransferSeconds minimum)) {
+				return new JourneyProfileRaptorPort.MinimumTransferSeconds(candidate);
+			}
+			return new JourneyProfileRaptorPort.MinimumTransferSeconds(Math.min(minimum.seconds(), candidate));
+		}
+
+		private List<ProfileDestinationLabel> destinationFrontier(List<ProfileDestinationLabel> labels) {
+			List<ProfileDestinationLabel> frontier = new ArrayList<>();
+			for (ProfileDestinationLabel candidate : labels) {
+				boolean dominated = labels.stream().anyMatch(other -> other != candidate
+					&& destinationDominates(other, candidate));
+				if (!dominated) frontier.add(candidate);
+				else limits.count("FORWARD_DESTINATION_DOMINANCE_V1");
+			}
+			frontier.sort(Comparator.comparing(ProfileDestinationLabel::canonicalTrace));
+			return List.copyOf(frontier);
+		}
+
+		private static boolean dominates(ProfileLabel left, ProfileLabel right) {
+			return left.startSeconds() >= right.startSeconds()
+				&& left.arrivalSeconds() <= right.arrivalSeconds()
+				&& left.verifiedAccessSeconds() <= right.verifiedAccessSeconds()
+				&& left.verifiedAccessDistanceMeters() <= right.verifiedAccessDistanceMeters()
+				&& left.stairBurden() <= right.stairBurden()
+				&& JourneyProfileRaptorPort.ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) >= 0
+				&& (left.warningBits() & right.warningBits()) == left.warningBits()
+				&& (left.startSeconds() > right.startSeconds()
+					|| left.arrivalSeconds() < right.arrivalSeconds()
+					|| left.verifiedAccessSeconds() < right.verifiedAccessSeconds()
+					|| left.verifiedAccessDistanceMeters() < right.verifiedAccessDistanceMeters()
+					|| left.stairBurden() < right.stairBurden()
+					|| JourneyProfileRaptorPort.ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) > 0
+					|| left.warningBits() != right.warningBits());
+		}
+
+		private static boolean destinationDominates(ProfileDestinationLabel left, ProfileDestinationLabel right) {
+			ProfileLabel leftLabel = left.label();
+			ProfileLabel rightLabel = right.label();
+			// 한 profile point의 준비 시각은 같다. 이전 iteration의 시작 시각은 state 재사용에만 쓴다.
+			return left.arrivalSeconds() <= right.arrivalSeconds()
+				&& leftLabel.boardings() <= rightLabel.boardings()
+				&& left.accessSeconds() <= right.accessSeconds()
+				&& left.accessDistanceMeters() <= right.accessDistanceMeters()
+				&& left.stairBurden() <= right.stairBurden()
+				&& JourneyProfileRaptorPort.ConnectionSlack.compareSafety(leftLabel.connectionSlack(), rightLabel.connectionSlack()) >= 0
+				&& (left.warningBits() & right.warningBits()) == left.warningBits()
+				&& (left.arrivalSeconds() < right.arrivalSeconds()
+					|| leftLabel.boardings() < rightLabel.boardings()
+					|| left.accessSeconds() < right.accessSeconds()
+					|| left.accessDistanceMeters() < right.accessDistanceMeters()
+					|| left.stairBurden() < right.stairBurden()
+					|| JourneyProfileRaptorPort.ConnectionSlack.compareSafety(leftLabel.connectionSlack(), rightLabel.connectionSlack()) > 0
+					|| left.warningBits() != right.warningBits());
+		}
+
+		private static boolean sameVector(ProfileLabel left, ProfileLabel right) {
+			return left.startSeconds() == right.startSeconds()
+				&& left.arrivalSeconds() == right.arrivalSeconds()
+				&& left.verifiedAccessSeconds() == right.verifiedAccessSeconds()
+				&& left.verifiedAccessDistanceMeters() == right.verifiedAccessDistanceMeters()
+				&& left.stairBurden() == right.stairBurden()
+				&& left.warningBits() == right.warningBits()
+				&& JourneyProfileRaptorPort.ConnectionSlack.compareSafety(left.connectionSlack(), right.connectionSlack()) == 0;
+		}
+
+		private static int compareTrace(ProfileLabel left, ProfileLabel right) {
+			return traceKey(left.trace()).compareTo(traceKey(right.trace()));
+		}
+
+		private static String traceKey(ProfileRideTrace trace) {
+			if (trace == null) return "";
+			return traceKey(trace.parent().trace()) + '/' + trace.trip().index() + ':' + trace.boardStop()
+				+ ':' + trace.alightStop() + ':' + trace.accessTransition();
+		}
+	}
+
+	private record ProfileStateKey(int boardings, int station, int incomingLine) {
+	}
+
+	private record ProfileLabel(
+		int startSeconds,
+		int arrivalSeconds,
+		int boardings,
+		int station,
+		int incomingLine,
+		byte warningBits,
+		long verifiedAccessSeconds,
+		long verifiedAccessDistanceMeters,
+		long stairBurden,
+		JourneyProfileRaptorPort.ConnectionSlack connectionSlack,
+		ProfileRideTrace trace
+	) {
+	}
+
+	private record ProfileRideTrace(
+		ProfileLabel parent,
+		ScheduledTrip trip,
+		int boardStop,
+		int alightStop,
+		int accessTransition
+	) {
+	}
+
+	private record ProfileDestinationLabel(
+		ProfileLabel label,
+		int exitTransition,
+		int arrivalSeconds,
+		long accessSeconds,
+		long accessDistanceMeters,
+		long stairBurden,
+		byte warningBits
+	) {
+		private String canonicalTrace() {
+			return ProfileMultiLabelForwardScan.traceKey(label.trace());
+		}
+
+		private Label toScalarLabel(RealtimeOverlay realtimeOverlay, int readyAtSeconds) {
+			List<RideLeg> reversePath = new ArrayList<>();
+			int[] transitions = new int[label.boardings()];
+			ProfileRideTrace current = label.trace();
+			for (int index = label.boardings() - 1; index >= 0; index -= 1) {
+				if (current == null) throw new IllegalStateException("profile label trace is incomplete");
+				reversePath.add(new RideLeg(current.trip(), current.boardStop(), current.alightStop(), realtimeOverlay));
+				transitions[index] = current.accessTransition();
+				current = current.parent().trace();
+			}
+			java.util.Collections.reverse(reversePath);
+			return new Label("", arrivalSeconds, readyAtSeconds, label.boardings(), List.copyOf(reversePath),
+				transitions, exitTransition, warningBits);
+		}
+	}
+
+	private record OptionalIntValue(boolean present, int value) {
+		private static OptionalIntValue empty() {
+			return new OptionalIntValue(false, 0);
+		}
+
+		private static OptionalIntValue of(int value) {
+			return new OptionalIntValue(true, value);
+		}
 	}
 
 	private record ReadyBoarding(
@@ -2707,9 +3660,11 @@ class RouteTimetableRaptorPlanner {
 		Instant plannedArrivalTime,
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
+		JourneyProfileRaptorPort.ItineraryMetrics metrics,
 		List<JourneyLegProjection> legs
 	) {
 		JourneyItinerary {
+			metrics = Objects.requireNonNull(metrics, "metrics");
 			legs = List.copyOf(legs);
 		}
 	}
@@ -2854,7 +3809,7 @@ class RouteTimetableRaptorPlanner {
 	) {
 	}
 
-	private record ScheduledTrip(
+	static record ScheduledTrip(
 		int index,
 		TransitTrip trip,
 		TransitRoute route,
@@ -2865,27 +3820,36 @@ class RouteTimetableRaptorPlanner {
 			return new ScheduledTrip(denseIndex, trip, route, stopTimes, times);
 		}
 
-		private int arrivalSeconds(int stopIndex) {
+		int arrivalSeconds(int stopIndex) {
 			return times.arrivalSeconds(stopIndex);
 		}
 
-		private int departureSeconds(int stopIndex) {
+		int departureSeconds(int stopIndex) {
 			return times.departureSeconds(stopIndex);
 		}
 
-		private boolean allowsPickup(int stopIndex) {
+		boolean allowsPickup(int stopIndex) {
 			return times.allowsPickup(stopIndex);
 		}
 
-		private boolean allowsDropOff(int stopIndex) {
+		boolean allowsDropOff(int stopIndex) {
 			return times.allowsDropOff(stopIndex);
 		}
-		private String lineId(int stopIndex) {
+		String lineId(int stopIndex) {
 			return stopTimes.get(stopIndex).lineId();
 		}
 	}
 
 	private record BoardingStop(ScheduledTrip trip, int stopIndex, TransitStopTime stopTime) {
+	}
+
+	static record DepartureEvent(ScheduledTrip scheduledTrip, int stopIndex, int effectiveDepartureSeconds) {
+		DepartureEvent {
+			Objects.requireNonNull(scheduledTrip, "scheduledTrip must not be null");
+			if (stopIndex < 0 || stopIndex >= scheduledTrip.stopTimes().size()) {
+				throw new IllegalArgumentException("stopIndex must address scheduledTrip");
+			}
+		}
 	}
 
 	private record ReachabilityState(String stationId, int readySeconds, int incomingLine, int transfersUsed) {
@@ -2946,5 +3910,55 @@ class RouteTimetableRaptorPlanner {
 	}
 
 	private record RealtimeEvidence(String providerSnapshotId, Instant providerObservedAt) {
+	}
+}
+
+/** Request-local observations only; dominance counts include both rejected and evicted labels. */
+final class JourneyProfilePruningObservationAccumulator {
+	private final String requestId;
+	private final JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity algorithmIdentity;
+	private final Map<String, Long> counts = new LinkedHashMap<>();
+	private long workConsumed;
+	private long peakStateLabels;
+	private long peakDestinationLabels;
+	private long reservedProfileBreakpoints;
+
+	JourneyProfilePruningObservationAccumulator(
+		String requestId,
+		JourneyRaptorPruningInventoryV1.AlgorithmSemanticIdentity algorithmIdentity
+	) {
+		this.requestId = Objects.requireNonNull(requestId, "requestId");
+		this.algorithmIdentity = Objects.requireNonNull(algorithmIdentity, "algorithmIdentity");
+		JourneyRaptorPruningInventoryV1.activeRuleIds(algorithmIdentity).forEach(rule -> counts.put(rule, 0L));
+	}
+
+	void increment(String ruleId) {
+		if (!counts.containsKey(ruleId)) throw new IllegalArgumentException("inactive pruning rule: " + ruleId);
+		counts.compute(ruleId, (ignored, count) -> Math.addExact(count, 1L));
+	}
+
+	void consumeWork() {
+		workConsumed = Math.addExact(workConsumed, 1L);
+	}
+
+	void observeStateLabels(int labels) {
+		peakStateLabels = Math.max(peakStateLabels, labels);
+	}
+
+	void observeDestinationLabels(int labels) {
+		peakDestinationLabels = Math.max(peakDestinationLabels, labels);
+	}
+
+	void reserveProfileBreakpoints(int additional) {
+		reservedProfileBreakpoints = Math.addExact(reservedProfileBreakpoints, additional);
+	}
+
+	JourneyRaptorPruningInventoryV1.CountSnapshot snapshot() {
+		return new JourneyRaptorPruningInventoryV1.CountSnapshot(requestId, algorithmIdentity, counts);
+	}
+
+	JourneyProfileRaptorPort.PlanningMetrics planningMetrics() {
+		return new JourneyProfileRaptorPort.PlanningMetrics(
+			workConsumed, peakStateLabels, peakDestinationLabels, reservedProfileBreakpoints);
 	}
 }
