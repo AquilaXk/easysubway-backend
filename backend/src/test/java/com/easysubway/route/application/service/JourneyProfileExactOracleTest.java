@@ -122,6 +122,28 @@ class JourneyProfileExactOracleTest {
 	}
 
 	@Test
+	void acceptsNullOnlyOnTheOffNetworkEndsOfEntryAndExit() {
+		var direct = ride("off-network", DAY, "origin", "a", "destination", "a", at(100), at(200));
+		var entry = new JourneyProfileExactOracle.Access("entry-null-from", JourneyProfileExactOracle.AccessKind.ENTRY,
+			"origin", null, "origin", "a", 0, 1, 0, true, true);
+		var exit = new JourneyProfileExactOracle.Access("exit-null-to", JourneyProfileExactOracle.AccessKind.EXIT,
+			"destination", "a", "destination", null, 0, 1, 0, true, true);
+
+		assertThat(oracle.solve(query(at(0), at(300), 0, 0, 10_000, () -> false), List.of(direct), List.of(entry, exit)))
+			.singleElement().satisfies(candidate -> assertThat(candidate.arrivalAtDestination()).isEqualTo(at(200)));
+		assertThatThrownBy(() -> new JourneyProfileExactOracle.Access("entry-null-to", JourneyProfileExactOracle.AccessKind.ENTRY,
+			"origin", null, "origin", null, 0, 1, 0, true, true)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyProfileExactOracle.Access("exit-null-from", JourneyProfileExactOracle.AccessKind.EXIT,
+			"destination", null, "destination", null, 0, 1, 0, true, true)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyProfileExactOracle.Access("transfer-null-from", JourneyProfileExactOracle.AccessKind.TRANSFER,
+			"change", null, "change", "b", 0, 1, 0, true, true)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyProfileExactOracle.Access("transfer-null-to", JourneyProfileExactOracle.AccessKind.TRANSFER,
+			"change", "a", "change", null, 0, 1, 0, true, true)).isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new JourneyProfileExactOracle.Access("entry-blank-from", JourneyProfileExactOracle.AccessKind.ENTRY,
+			"origin", "", "origin", "a", 0, 1, 0, true, true)).isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
 	void preservesDifferentAccessPathsForTheSameRideAndRejectsConflictingAccessIdentity() {
 		var direct = ride("direct", DAY, "origin", "a", "destination", "a", at(100), at(200));
 		var fastLong = new JourneyProfileExactOracle.Access("fast-long", JourneyProfileExactOracle.AccessKind.ENTRY,
