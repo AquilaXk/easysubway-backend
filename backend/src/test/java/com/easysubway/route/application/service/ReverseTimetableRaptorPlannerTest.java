@@ -50,6 +50,12 @@ class ReverseTimetableRaptorPlannerTest {
 		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
 		assertThat(result.latestReadyAtSeconds()).isEqualTo(87_000 - 405 - SLACK_SECONDS);
 		assertThat(result.arrivalAtDestinationSeconds()).isEqualTo(87_843);
+		assertThat(result.itineraries()).singleElement().satisfies(itinerary ->
+			assertThat(itinerary.legs().stream()
+				.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+				.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+				.map(RouteTimetableRaptorPlanner.JourneyRideProjection::lineId).toList())
+				.containsExactly("route-direct"));
 	}
 
 	@Test
