@@ -211,6 +211,13 @@ jobs:
             --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
             --output backend/build/journey-contracts-staging
 
+      - name: Test and package backend
+        id: test_backend
+        working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: ./gradlew test bootJar --no-daemon
+
       - name: Test backend-owned Node contracts
         run: |
           node --test backend/tools/*.test.mjs
@@ -225,13 +232,6 @@ jobs:
         run: |
           npm ci --prefix tools/qa --ignore-scripts
           npm test --prefix tools/qa
-
-      - name: Test and package backend
-        id: test_backend
-        working-directory: backend
-        env:
-          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
-        run: ./gradlew test bootJar --no-daemon
 
       - name: Run SpotBugs main analysis
         id: spotbugs_main
