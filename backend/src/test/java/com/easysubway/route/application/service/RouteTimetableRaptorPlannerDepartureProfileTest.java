@@ -200,9 +200,9 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			assertThat(point.itineraries()).extracting(RouteTimetableRaptorPlanner.JourneyItinerary::metrics)
 				.containsExactly(
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 300, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(640)),
+						1, 308, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(632)),
 					new JourneyProfileRaptorPort.ItineraryMetrics(
-						1, 300, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(1_040)));
+						1, 308, 120, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(1_032)));
 		});
 	}
 
