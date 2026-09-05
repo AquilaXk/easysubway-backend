@@ -20,7 +20,7 @@ import java.util.Map;
 import java.util.Set;
 
 /** Strict reader for the workflow-produced measurement input; it does not admit a serving bundle. */
-final class JourneyProfileMeasurementInputs {
+public final class JourneyProfileMeasurementInputs {
 	private static final ObjectMapper JSON = new ObjectMapper(JsonFactory.builder()
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
@@ -36,7 +36,7 @@ final class JourneyProfileMeasurementInputs {
 	private JourneyProfileMeasurementInputs() {
 	}
 
-	static PinnedInputs read(Path candidateRoot, Path measurementInput) throws IOException {
+	public static PinnedInputs read(Path candidateRoot, Path measurementInput) throws IOException {
 		Path root = requireDirectory(candidateRoot, "candidate root");
 		MeasurementInput input = input(parse(absoluteRegular(measurementInput, "measurement input"), "measurement input"));
 		byte[] inventoryBytes = regular(root, "data-artifact-inventory.json");
@@ -65,7 +65,7 @@ final class JourneyProfileMeasurementInputs {
 	}
 
 	// Serving admission을 수행하지 않으며 generation은 측정 요청에만 귀속된다.
-	static CompiledMeasurementInputs compile(PinnedInputs pinned, long generation) {
+	public static CompiledMeasurementInputs compile(PinnedInputs pinned, long generation) {
 		if (generation < 1) fail("measurement generation");
 		Map<String, byte[]> selected = new LinkedHashMap<>();
 		for (PinnedRouteEntry entry : pinned.routeEntries()) {
@@ -89,7 +89,7 @@ final class JourneyProfileMeasurementInputs {
 		return new CompiledMeasurementInputs(runtime, identity);
 	}
 
-	static Scope scope(PinnedInputs pinned) {
+	public static Scope scope(PinnedInputs pinned) {
 		JsonNode fanIn = parse(pinned.fanInBytes(), "five-region source fan-in");
 		exactKeys(fanIn, Set.of("schemaVersion", "artifactKind", "evaluatedAt", "scope", "inputs", "scopeSha256",
 			"regionalMatrixSha256", "sourceSetSha256", "selectedSources", "fanInSha256"), "five-region source fan-in");
@@ -268,20 +268,20 @@ final class JourneyProfileMeasurementInputs {
 	private static String sha256(byte[] bytes) { try { return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes)); } catch (NoSuchAlgorithmException exception) { throw new IllegalStateException(exception); } }
 	private static void fail(String label) { throw new IllegalArgumentException("invalid journey profile measurement input: " + label); }
 
-	record MeasurementInput(
+	public record MeasurementInput(
 		String backendHeadSha, String dataHeadSha, String dataRunId,
 		List<String> regionIds, List<String> queryClasses, PinnedDigest fanIn,
 		String routeBundleSha256, String regionalMatrixSha256, String componentSha256,
 		String inventorySha256, String releaseEvidenceSha256, String releaseDecisionSha256
 	) { }
-	record PinnedDigest(String path, String sha256) { }
-	record ComponentMetadata(String manifestSha256, String sourceSnapshotSetHash) { }
+	public record PinnedDigest(String path, String sha256) { }
+	public record ComponentMetadata(String manifestSha256, String sourceSnapshotSetHash) { }
 	record InventoryEntry(String path, long sizeBytes, String sha256) { }
-	record PinnedRouteEntry(String path, long sizeBytes, String sha256, byte[] bytes) {
+	public record PinnedRouteEntry(String path, long sizeBytes, String sha256, byte[] bytes) {
 		public PinnedRouteEntry { bytes = bytes.clone(); }
 		@Override public byte[] bytes() { return bytes.clone(); }
 	}
-	record PinnedInputs(
+	public record PinnedInputs(
 		MeasurementInput measurementInput, ComponentMetadata componentMetadata,
 		String routeManifestSha256, byte[] inventoryBytes, byte[] componentManifestBytes,
 		byte[] fanInBytes, List<PinnedRouteEntry> routeEntries
@@ -296,7 +296,7 @@ final class JourneyProfileMeasurementInputs {
 		@Override public byte[] componentManifestBytes() { return componentManifestBytes.clone(); }
 		@Override public byte[] fanInBytes() { return fanInBytes.clone(); }
 	}
-	record CompiledMeasurementInputs(RaptorRouteBundleRuntimeView runtime, RouteBundleIdentity identity) { }
-	record Scope(String targetVersion, String scopeSha256, List<Line> activeLines) { public Scope { activeLines = List.copyOf(activeLines); } }
-	record Line(String regionId, String operatorId, String lineId) { }
+	public record CompiledMeasurementInputs(RaptorRouteBundleRuntimeView runtime, RouteBundleIdentity identity) { }
+	public record Scope(String targetVersion, String scopeSha256, List<Line> activeLines) { public Scope { activeLines = List.copyOf(activeLines); } }
+	public record Line(String regionId, String operatorId, String lineId) { }
 }
