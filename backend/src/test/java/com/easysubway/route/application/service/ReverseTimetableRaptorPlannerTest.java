@@ -509,12 +509,12 @@ class ReverseTimetableRaptorPlannerTest {
 				|| !access.usable() || !observed.verified() || !"VERIFIED".equals(observed.verificationStatus())) return false;
 			if (index == expected.rides().size()) continue;
 			var ride = expected.rides().get(index);
-			if (!(actual.legs().get(index * 2 + 1) instanceof RouteTimetableRaptorPlanner.JourneyRideProjection observed)
-				|| !ride.tripId().equals(observed.tripId()) || !ride.fromStationId().equals(observed.fromStationId())
-				|| !ride.toStationId().equals(observed.toStationId()) || !ride.departureAt().equals(observed.plannedDepartureTime())
-				|| !ride.arrivalAt().equals(observed.plannedArrivalTime()) || observed.realtimeDepartureTime() != null
-				|| observed.realtimeArrivalTime() != null || !rawLineId(source, ride.tripId()).equals(observed.lineId())
-				|| !rawDirectionStationId(source, ride.tripId()).equals(observed.directionStationId())) return false;
+			if (!(actual.legs().get(index * 2 + 1) instanceof RouteTimetableRaptorPlanner.JourneyRideProjection observedRide)
+				|| !ride.tripId().equals(observedRide.tripId()) || !ride.fromStationId().equals(observedRide.fromStationId())
+				|| !ride.toStationId().equals(observedRide.toStationId()) || !ride.departureAt().equals(observedRide.plannedDepartureTime())
+				|| !ride.arrivalAt().equals(observedRide.plannedArrivalTime()) || observedRide.realtimeDepartureTime() != null
+				|| observedRide.realtimeArrivalTime() != null || !rawLineId(source, ride.tripId()).equals(observedRide.lineId())
+				|| !rawDirectionStationId(source, ride.tripId()).equals(observedRide.directionStationId())) return false;
 		}
 		return true;
 	}
