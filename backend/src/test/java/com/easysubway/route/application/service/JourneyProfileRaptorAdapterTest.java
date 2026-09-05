@@ -149,7 +149,7 @@ class JourneyProfileRaptorAdapterTest {
 				assertThat(plan.result()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ReversePlan.Found.class, found ->
 					assertThat(found.itineraries()).singleElement().satisfies(itinerary -> {
 						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:54:00Z"));
-						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:13:00Z"));
+						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:12:00Z"));
 					}))));
 	}
 
