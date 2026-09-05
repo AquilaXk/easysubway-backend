@@ -82,7 +82,7 @@ final class JourneySearchController {
 		};
 	}
 
-	private static String requireBearerToken(String authorization) {
+	static String requireBearerToken(String authorization) {
 		if (authorization == null) {
 			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
 		}
