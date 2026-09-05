@@ -14,6 +14,7 @@ public sealed interface JourneyProfileExecutionDisposition
 			case ACTIVE_SNAPSHOT_UNAVAILABLE -> publicFailure(503, MachineCode.ROUTING_BUNDLE_UNAVAILABLE);
 			case ACTIVE_SNAPSHOT_STALE -> publicFailure(503, MachineCode.ROUTING_BUNDLE_STALE);
 			case REALTIME_UNAVAILABLE -> publicFailure(503, MachineCode.REALTIME_REQUIRED_UNAVAILABLE);
+			case TEMPORAL_WINDOW_TOO_LARGE -> publicFailure(400, MachineCode.TEMPORAL_WINDOW_TOO_LARGE);
 			case TEMPORAL_QUERY_TOO_COMPLEX -> publicFailure(422, MachineCode.TEMPORAL_QUERY_TOO_COMPLEX);
 			case RAPTOR_FRONTIER_CAPACITY_EXCEEDED -> publicFailure(503,
 				MachineCode.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
@@ -35,13 +36,13 @@ public sealed interface JourneyProfileExecutionDisposition
 		implements JourneyProfileExecutionDisposition {
 		public PublicFailure {
 			machineCode = Objects.requireNonNull(machineCode, "machineCode");
-			if (httpStatus != 422 && httpStatus != 503) throw new IllegalArgumentException("profile failure status is closed");
-			boolean unprocessable = switch (machineCode) {
+			int expectedStatus = switch (machineCode) {
+				case TEMPORAL_WINDOW_TOO_LARGE -> 400;
 				case TEMPORAL_QUERY_TOO_COMPLEX, NO_SERVICE_IN_DEPARTURE_WINDOW,
-					NO_ROUTE_ARRIVING_BY_DEADLINE, NO_LAST_CONNECTION -> true;
-				default -> false;
+					NO_ROUTE_ARRIVING_BY_DEADLINE, NO_LAST_CONNECTION -> 422;
+				default -> 503;
 			};
-			if (unprocessable && httpStatus != 422 || !unprocessable && httpStatus != 503) {
+			if (httpStatus != expectedStatus) {
 				throw new IllegalArgumentException("profile failure status must match machine code");
 			}
 			if (retryable) throw new IllegalArgumentException("retryable must be false");
@@ -64,6 +65,7 @@ public sealed interface JourneyProfileExecutionDisposition
 		ROUTING_BUNDLE_UNAVAILABLE,
 		ROUTING_BUNDLE_STALE,
 		REALTIME_REQUIRED_UNAVAILABLE,
+		TEMPORAL_WINDOW_TOO_LARGE,
 		TEMPORAL_QUERY_TOO_COMPLEX,
 		RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
 		NO_SERVICE_IN_DEPARTURE_WINDOW,

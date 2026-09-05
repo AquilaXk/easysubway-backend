@@ -1,6 +1,7 @@
 package com.easysubway.journey.application;
 
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.util.ArrayList;
@@ -32,6 +33,17 @@ public final class JourneyProfileApplicationService {
 		JourneyProfileResourcePolicy requiredPolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
 		Instant calculatedAt = clock.instant();
 		if (requiredQuery.isCancelled()) return failure(JourneyProfileExecutionResult.Reason.CANCELLED);
+		Duration temporalWindow = switch (requiredQuery.temporalQuery()) {
+			case JourneyRaptorQuery.DepartBetween range -> Duration.between(range.earliestReadyAt(), range.latestReadyAt());
+			case JourneyRaptorQuery.ArriveBy arriveBy -> Duration.between(arriveBy.earliestReadyAt(), arriveBy.arrivalDeadline());
+			// 막차는 입력 시간 범위가 아니라 선택된 service day의 실제 시간표로 제한한다.
+			case JourneyRaptorQuery.LastConnection ignored -> Duration.ZERO;
+			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
+				"profile execution requires a temporal profile query");
+		};
+		if (temporalWindow.compareTo(requiredPolicy.maxTemporalWindow()) > 0) {
+			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE);
+		}
 		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
 			return failure(JourneyProfileExecutionResult.Reason.REALTIME_UNAVAILABLE);
 		}

@@ -32,7 +32,7 @@ class JourneyProfileApplicationServiceTest {
 					new JourneyProfileRaptorPort.DeparturePoint(LocalDate.of(2026, 9, 1), NOW,
 						List.of(itinerary(NOW.plusSeconds(600))), new JourneyRaptorPort.ScanMetrics(1, 1, 1))))),
 			Clock.fixed(NOW, ZoneOffset.UTC));
-		var latestReadyAt = Instant.parse("2026-09-01T01:30:00Z");
+		var latestReadyAt = NOW.plus(policy().maxTemporalWindow());
 
 		var result = service.execute(query(new JourneyRaptorQuery.DepartBetween(NOW, latestReadyAt)), policy());
 
@@ -42,6 +42,30 @@ class JourneyProfileApplicationServiceTest {
 			.isEqualTo(policy().identity());
 		assertThat(((JourneyProfileExecutionResult.Success) result).countSnapshot().requestId())
 			.isEqualTo(REQUEST_ID);
+	}
+
+	@Test
+	void rejectsOversizedWindowsBeforeSnapshotAcquisitionAndAcceptsTheExactPolicyBoundary() {
+		var snapshotCalls = new AtomicInteger();
+		var service = new JourneyProfileApplicationService((query, reference, measurement) -> {
+			snapshotCalls.incrementAndGet();
+			throw new IllegalStateException("no active snapshot in this fixture");
+		}, (query, snapshot, realtime, limits) -> {
+			throw new AssertionError("planner must not run without an active snapshot");
+		}, Clock.fixed(NOW, ZoneOffset.UTC));
+		var boundary = NOW.plus(policy().maxTemporalWindow());
+		for (var temporal : List.of(new JourneyRaptorQuery.DepartBetween(NOW, boundary.plusSeconds(1)),
+			new JourneyRaptorQuery.ArriveBy(NOW, boundary.plusNanos(1)))) {
+			assertThat(service.execute(query(temporal), policy())).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE));
+		}
+		assertThat(snapshotCalls).hasValue(0);
+		for (var temporal : List.of(new JourneyRaptorQuery.DepartBetween(NOW, boundary),
+			new JourneyRaptorQuery.ArriveBy(NOW, boundary))) {
+			assertThat(service.execute(query(temporal), policy())).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE));
+		}
+		assertThat(snapshotCalls).hasValue(2);
 	}
 
 	@Test
