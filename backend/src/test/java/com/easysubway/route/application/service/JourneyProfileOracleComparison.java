@@ -1,6 +1,8 @@
 package com.easysubway.route.application.service;
 
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import java.util.List;
+import java.util.Objects;
 
 /**
  * 응답에서 관측 가능한 시간표 trace만 비교한다. 물리 edge ID, stop position,
@@ -43,6 +45,32 @@ final class JourneyProfileOracleComparison {
 				|| !ride.departureAt().equals(observedRide.plannedDepartureTime())
 				|| !ride.arrivalAt().equals(observedRide.plannedArrivalTime())
 				|| observedRide.realtimeDepartureTime() != null || observedRide.realtimeArrivalTime() != null) return false;
+		}
+		return true;
+	}
+
+	/**
+	 * 공급된 observable multiset만 일대일 비교한다. bounded representative 정책, typed failure,
+	 * 또는 journey 성공을 입증하지 않으며 빈 집합 일치도 그 예외가 아니다.
+	 */
+	static boolean matchesObservableTimetableFrontier(
+		List<JourneyProfileExactOracle.Candidate> expected, List<JourneyProfileRaptorPort.Itinerary> actual
+	) {
+		expected = List.copyOf(Objects.requireNonNull(expected, "expected"));
+		actual = List.copyOf(Objects.requireNonNull(actual, "actual"));
+		if (expected.size() != actual.size()) return false;
+		boolean[] consumed = new boolean[actual.size()];
+		// 비교는 동일한 observable 필드의 동등성이다. 일치한 항목을 한 번씩 소비하면 충분하다.
+		for (var candidate : expected) {
+			boolean found = false;
+			for (int index = 0; index < actual.size(); index += 1) {
+				if (!consumed[index] && matchesObservableTimetableTrace(candidate, actual.get(index))) {
+					consumed[index] = true;
+					found = true;
+					break;
+				}
+			}
+			if (!found) return false;
 		}
 		return true;
 	}
