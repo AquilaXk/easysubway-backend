@@ -389,8 +389,8 @@ final class ReverseTimetableRaptorPlanner {
 			limits.consumeWork();
 			for (int alightIndex = 1; alightIndex < trip.stopTimes().size(); alightIndex += 1) {
 				limits.consumeWork();
-				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())
-					|| !trip.allowsDropOff(alightIndex)) {
+				// 출구 증거의 존재와 열차 하차 허용은 별개이며, 경로 허용은 terminalDeadline이 검증한다.
+				if (!query.destinationStationId().equals(trip.stopTimes().get(alightIndex).stationId())) {
 					continue;
 				}
 				int line = timetable.lineIndex(trip.lineId(alightIndex));
