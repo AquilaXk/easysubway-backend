@@ -6,6 +6,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceC
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitFrequency;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -25,34 +26,91 @@ final class JourneyProfileScheduledOracleInputs {
 		Objects.requireNonNull(source, "source is required");
 		Objects.requireNonNull(serviceDate, "serviceDate is required");
 		if (maxRides < 1) throw new IllegalArgumentException("oracle ride budget must be positive");
-		if (!source.transitFrequencies().isEmpty()) throw new IllegalArgumentException("frequency trips are not scheduled oracle input");
-
 		Map<String, ServiceCalendar> calendars = uniqueCalendars(source.serviceCalendars());
 		Map<ServiceDate, Integer> exceptions = uniqueExceptions(source.serviceCalendarDates(), calendars.keySet());
 		Map<String, TransitRoute> routes = uniqueRoutes(source.transitRoutes());
 		List<TransitTrip> trips = uniqueTrips(source.transitTrips(), routes.keySet(), calendars.keySet());
 		Map<String, List<TransitStopTime>> stops = orderedStops(source.transitStopTimes(), trips);
+		Map<String, List<TransitFrequency>> frequencies = frequencies(source.transitFrequencies(), trips);
+		List<Event> events = events(trips, routes, stops, frequencies, calendars, exceptions, serviceDate, maxRides);
 		List<JourneyProfileExactOracle.Ride> rides = new ArrayList<>();
-		for (int tripIndex = 0; tripIndex < trips.size(); tripIndex += 1) {
-			TransitTrip trip = trips.get(tripIndex);
-			ServiceCalendar calendar = calendars.get(trip.serviceId());
-			if (!active(calendar, exceptions.get(new ServiceDate(trip.serviceId(), serviceDate)), serviceDate)) continue;
-			TransitRoute route = routes.get(trip.routeId());
-			Instant midnight = serviceDate.atStartOfDay(ZoneId.of(route.timezone())).toInstant();
-			List<TransitStopTime> tripStops = stops.get(trip.id());
+		for (int eventIndex = 0; eventIndex < events.size(); eventIndex += 1) {
+			Event event = events.get(eventIndex);
+			Instant midnight = serviceDate.atStartOfDay(ZoneId.of(event.route().timezone())).toInstant();
+			List<TransitStopTime> tripStops = event.stops();
 			for (int from = 0; from < tripStops.size(); from += 1) {
 				for (int to = from + 1; to < tripStops.size(); to += 1) {
-					if (rides.size() == maxRides) throw new IllegalArgumentException("oracle ride budget exceeded");
 					TransitStopTime board = tripStops.get(from);
 					TransitStopTime alight = tripStops.get(to);
 					rides.add(new JourneyProfileExactOracle.Ride(
-						trip.id(), serviceDate, tripIndex, board.stationId(), board.lineId(), alight.stationId(), alight.lineId(),
+						event.trip().id(), serviceDate, eventIndex, board.stationId(), board.lineId(), alight.stationId(), alight.lineId(),
 						midnight.plusSeconds(board.departureSeconds()), midnight.plusSeconds(alight.arrivalSeconds()),
 						from, to, board.pickupType() != 1, alight.dropOffType() != 1));
 				}
 			}
 		}
 		return List.copyOf(rides);
+	}
+
+	private static Map<String, List<TransitFrequency>> frequencies(
+		List<TransitFrequency> values, List<TransitTrip> trips
+	) {
+		Set<String> tripIds = trips.stream().map(TransitTrip::id).collect(java.util.stream.Collectors.toUnmodifiableSet());
+		Map<String, List<TransitFrequency>> result = new HashMap<>();
+		for (TransitFrequency value : values) {
+			requireKnown(value.tripId(), tripIds, "frequency trip");
+			if (!value.exactTimes()) throw new IllegalArgumentException("nonexact frequency is not oracle input");
+			result.computeIfAbsent(value.tripId(), ignored -> new ArrayList<>()).add(value);
+		}
+		for (Map.Entry<String, List<TransitFrequency>> entry : result.entrySet()) {
+			entry.getValue().sort(java.util.Comparator.comparingInt(TransitFrequency::startTimeSeconds));
+			int previousEnd = -1;
+			for (TransitFrequency frequency : entry.getValue()) {
+				if (frequency.startTimeSeconds() < previousEnd) throw new IllegalArgumentException("overlapping frequency window");
+				previousEnd = frequency.endTimeSeconds();
+			}
+		}
+		return result;
+	}
+
+	private static List<Event> events(
+		List<TransitTrip> trips, Map<String, TransitRoute> routes, Map<String, List<TransitStopTime>> stops,
+		Map<String, List<TransitFrequency>> frequencies, Map<String, ServiceCalendar> calendars,
+		Map<ServiceDate, Integer> exceptions, LocalDate serviceDate, int maxRides
+	) {
+		List<Event> result = new ArrayList<>();
+		long plannedPairs = 0;
+		for (TransitTrip trip : trips) {
+			if (!active(calendars.get(trip.serviceId()), exceptions.get(new ServiceDate(trip.serviceId(), serviceDate)), serviceDate)) continue;
+			List<TransitStopTime> template = stops.get(trip.id());
+			List<TransitFrequency> scheduled = frequencies.get(trip.id());
+			if (scheduled == null) {
+				plannedPairs = reservePairs(template, plannedPairs, maxRides);
+				result.add(new Event(trip, routes.get(trip.routeId()), template, template.getFirst().departureSeconds()));
+				continue;
+			}
+			for (TransitFrequency frequency : scheduled) {
+				for (long departure = frequency.startTimeSeconds(); departure < frequency.endTimeSeconds(); departure += frequency.headwaySeconds()) {
+					plannedPairs = reservePairs(template, plannedPairs, maxRides);
+					result.add(new Event(trip, routes.get(trip.routeId()), shifted(template, (int) departure), (int) departure));
+				}
+			}
+		}
+		result.sort(java.util.Comparator.comparing((Event event) -> event.trip().id()).thenComparingInt(Event::departureSeconds));
+		return List.copyOf(result);
+	}
+
+	private static long reservePairs(List<TransitStopTime> stops, long plannedPairs, int maxRides) {
+		long pairs = (long) stops.size() * (stops.size() - 1) / 2;
+		if (pairs > maxRides - plannedPairs) throw new IllegalArgumentException("oracle ride budget exceeded");
+		return plannedPairs + pairs;
+	}
+
+	private static List<TransitStopTime> shifted(List<TransitStopTime> template, int departure) {
+		// 정규 입력 모델이 이동된 시각의 범위를 검증한다. 서비스 시간 상수를 복제하지 않는다.
+		int offset = departure - template.getFirst().departureSeconds();
+		return template.stream().map(stop -> new TransitStopTime(stop.tripId(), stop.stopSequence(), stop.stationId(), stop.lineId(),
+			stop.arrivalSeconds() + offset, stop.departureSeconds() + offset, stop.pickupType(), stop.dropOffType())).toList();
 	}
 
 	private static Map<String, ServiceCalendar> uniqueCalendars(List<ServiceCalendar> values) {
@@ -132,4 +190,5 @@ final class JourneyProfileScheduledOracleInputs {
 	}
 
 	private record ServiceDate(String serviceId, LocalDate date) { }
+	private record Event(TransitTrip trip, TransitRoute route, List<TransitStopTime> stops, int departureSeconds) { }
 }
