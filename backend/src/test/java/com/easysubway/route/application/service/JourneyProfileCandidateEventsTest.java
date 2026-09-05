@@ -20,6 +20,28 @@ class JourneyProfileCandidateEventsTest {
 	private static final LocalDate BASE_DATE = LocalDate.of(2024, 1, 1);
 
 	@Test
+	void mapsEveryDatedStopPairWithoutReplacingInterlineIdentity() {
+		var event = new JourneyProfileCandidateEvents.Event("route", "route-filter-line", "trip", 7, BASE_DATE, List.of(
+			new JourneyProfileCandidateEvents.Stop("a", "line-a", 100, 110, true, false),
+			new JourneyProfileCandidateEvents.Stop("b", "line-b", 200, 210, false, true),
+			new JourneyProfileCandidateEvents.Stop("c", "line-c", 300, 310, true, true)));
+		var rides = JourneyProfileCandidateEvents.oracleRides(List.of(event), 3);
+		assertThat(rides).hasSize(3);
+		var midnight = BASE_DATE.atStartOfDay(ServiceDayResolver.ZONE).toInstant();
+		assertThat(rides.get(1)).isEqualTo(new JourneyProfileExactOracle.Ride(
+			"trip", BASE_DATE, 7, "a", "line-a", "c", "line-c",
+			midnight.plusSeconds(110), midnight.plusSeconds(300), 0, 2, true, true));
+		assertThat(rides.get(2).pickupAllowed()).isFalse();
+		assertThat(rides).extracting(JourneyProfileExactOracle.Ride::identity).doesNotHaveDuplicates();
+		assertThatThrownBy(() -> JourneyProfileCandidateEvents.oracleRides(List.of(event), 2))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ride budget");
+		var missingLine = new JourneyProfileCandidateEvents.Event("route", "not-a-fallback", "trip", 7, BASE_DATE,
+			List.of(new JourneyProfileCandidateEvents.Stop("a", null, 100, 110, true, false), event.stops().getLast()));
+		assertThatThrownBy(() -> JourneyProfileCandidateEvents.oracleRides(List.of(missingLine), 1))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("fromLineId");
+	}
+
+	@Test
 	void rejectsAnEmptyCanonicalLineSetBeforeReadingCompiledData() {
 		assertThatThrownBy(() -> JourneyProfileCandidateEvents.events(null, BASE_DATE, Set.of()))
 			.isInstanceOf(IllegalArgumentException.class)
