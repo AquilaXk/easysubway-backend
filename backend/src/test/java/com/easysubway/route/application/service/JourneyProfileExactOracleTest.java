@@ -58,6 +58,39 @@ class JourneyProfileExactOracleTest {
 	}
 
 	@Test
+	void capsDepartureWindowReadinessBeforeApplyingParetoWithoutDroppingLaterTrains() {
+		var earlier = ride("earlier", DAY, "origin", "a", "destination", "a", at(100), at(200));
+		var later = ride("later", DAY, "origin", "a", "destination", "a", at(200), at(300));
+		var query = query(at(0), at(400), 0, 0, 10_000, () -> false);
+		var accesses = List.of(entry("a", 0), exit("a", 0));
+
+		assertThat(oracle.solve(query, List.of(earlier, later), accesses)).hasSize(2);
+		var window = oracle.solveDepartureWindow(query, at(50), List.of(earlier, later), accesses);
+		assertThat(window).singleElement().satisfies(candidate -> {
+			assertThat(candidate.readyAt()).isEqualTo(at(50));
+			assertThat(candidate.rides()).containsExactly(earlier);
+			assertThat(candidate.rides().getFirst().departureAt()).isEqualTo(at(100));
+			assertThat(candidate.rides().getFirst().arrivalAt()).isEqualTo(at(200));
+		});
+	}
+
+	@Test
+	void retainsExactEarliestFeasibilityAndRejectsInvalidDepartureWindows() {
+		var exact = ride("exact", DAY, "origin", "a", "destination", "a", at(100), at(200));
+		var late = ride("late", DAY, "origin", "a", "destination", "a", at(99), at(199));
+		var query = query(at(85), at(300), 0, 5, 10_000, () -> false);
+		var accesses = List.of(entry("a", 10), exit("a", 0));
+
+		assertThat(oracle.solveDepartureWindow(query, at(90), List.of(exact), accesses)).singleElement()
+			.extracting(JourneyProfileExactOracle.Candidate::readyAt).isEqualTo(at(85));
+		assertThat(oracle.solveDepartureWindow(query, at(90), List.of(late), accesses)).isEmpty();
+		assertThatThrownBy(() -> oracle.solveDepartureWindow(query, at(85), List.of(exact), accesses))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> oracle.solveDepartureWindow(query, at(301), List.of(exact), accesses))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
 	void retainsMoreThanThreeNonDominatedRoutesWithoutAPublicResultCap() {
 		var rides = List.of(
 			ride("one", DAY, "origin", "a", "destination", "a", at(100), at(500)),
