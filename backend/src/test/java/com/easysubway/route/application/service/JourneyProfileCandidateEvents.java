@@ -15,6 +15,27 @@ import java.util.Set;
 final class JourneyProfileCandidateEvents {
 	private JourneyProfileCandidateEvents() { }
 
+	/** 이미 선택된 event의 모든 승하차 쌍을 보존하며, 상한 초과는 부분 입력으로 숨기지 않는다. */
+	static List<JourneyProfileExactOracle.Ride> oracleRides(List<Event> events, int maximumRides) {
+		if (maximumRides < 1) throw new IllegalArgumentException("oracle ride budget must be positive");
+		List<JourneyProfileExactOracle.Ride> rides = new ArrayList<>();
+		for (Event event : events) {
+			Instant midnight = event.serviceDate().atStartOfDay(ServiceDayResolver.ZONE).toInstant();
+			for (int from = 0; from < event.stops().size(); from += 1) {
+				for (int to = from + 1; to < event.stops().size(); to += 1) {
+					if (rides.size() == maximumRides) throw new IllegalArgumentException("oracle ride budget exceeded");
+					Stop board = event.stops().get(from);
+					Stop alight = event.stops().get(to);
+					rides.add(new JourneyProfileExactOracle.Ride(event.tripId(), event.serviceDate(), event.scheduledTripIndex(),
+						board.stationId(), board.lineId(), alight.stationId(), alight.lineId(),
+						midnight.plusSeconds(board.departureSeconds()), midnight.plusSeconds(alight.arrivalSeconds()),
+						from, to, board.allowsPickup(), alight.allowsDropOff()));
+				}
+			}
+		}
+		return List.copyOf(rides);
+	}
+
 	static List<Event> events(
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		Instant activeFrom,
