@@ -381,8 +381,8 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				pathway("transfer-b", "transfer-b-from", "transfer-b-to", 8, 10),
 				pathway("exit", "exit-platform", "exit-outside", 60, 10)),
 			List.of(
-				transfer("transfer-a-rule", "line-a", "transfer-a", 720),
-				transfer("transfer-b-rule", "line-b", "transfer-b", 8)),
+				transfer("transfer-a-rule", "line-a", "shared", "transfer-a", 720),
+				transfer("transfer-b-rule", "line-b", "shared", "transfer-b", 8)),
 			List.of(
 				evidence("entry-a-evidence", "origin", "line-a", "entry-a", "ENTRY"),
 				evidence("entry-b-evidence", "origin", "line-b", "entry-b", "ENTRY"),
@@ -404,7 +404,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				pathway("entry", "entry-outside", "entry-platform", 240, 100),
 				pathway("transfer", "transfer-from", "transfer-to", 0, 10),
 				pathway("exit", "exit-platform", "exit-outside", 60, 10)),
-			List.of(transfer("transfer-rule", "origin-line", "transfer", 0)),
+			List.of(transfer("transfer-rule", "origin-line", "shared-line", "transfer", 0)),
 			List.of(
 				evidence("entry-evidence", "origin", "origin-line", "entry", "ENTRY"),
 				evidence("transfer-evidence", "hub", "shared-line", "transfer", "TRANSFER"),
@@ -420,10 +420,10 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	private static LoadRouteTimetablePort.TransferRule transfer(
-		String id, String fromLineId, String edgeId, int seconds
+		String id, String fromLineId, String toLineId, String edgeId, int seconds
 	) {
 		return new LoadRouteTimetablePort.TransferRule(
-			id, "hub", fromLineId, "hub", "shared", "IN_STATION", seconds,
+			id, "hub", fromLineId, "hub", toLineId, "IN_STATION", seconds,
 			edgeId, edgeId, "VERIFIED");
 	}
 
