@@ -3433,7 +3433,7 @@ class RouteTimetableRaptorPlanner {
 			}
 			return frontier.stream()
 				.map(candidate -> toJourneyItinerary(pointInput, timetable, realtimeOverlay,
-					candidate.toScalarLabel(realtimeOverlay)))
+					candidate.toScalarLabel(realtimeOverlay, pointInput.readyAtSeconds())))
 				.sorted(Comparator.comparing(JourneyItinerary::plannedArrivalTime)
 					.thenComparing(JourneyItinerary::plannedDepartureTime))
 				.toList();
@@ -3523,16 +3523,15 @@ class RouteTimetableRaptorPlanner {
 		private static boolean destinationDominates(ProfileDestinationLabel left, ProfileDestinationLabel right) {
 			ProfileLabel leftLabel = left.label();
 			ProfileLabel rightLabel = right.label();
-			return leftLabel.startSeconds() >= rightLabel.startSeconds()
-				&& left.arrivalSeconds() <= right.arrivalSeconds()
+			// 한 profile point의 준비 시각은 같다. 이전 iteration의 시작 시각은 state 재사용에만 쓴다.
+			return left.arrivalSeconds() <= right.arrivalSeconds()
 				&& leftLabel.boardings() <= rightLabel.boardings()
 				&& left.accessSeconds() <= right.accessSeconds()
 				&& left.accessDistanceMeters() <= right.accessDistanceMeters()
 				&& left.stairBurden() <= right.stairBurden()
 				&& JourneyProfileRaptorPort.ConnectionSlack.compareSafety(leftLabel.connectionSlack(), rightLabel.connectionSlack()) >= 0
 				&& (left.warningBits() & right.warningBits()) == left.warningBits()
-				&& (leftLabel.startSeconds() > rightLabel.startSeconds()
-					|| left.arrivalSeconds() < right.arrivalSeconds()
+				&& (left.arrivalSeconds() < right.arrivalSeconds()
 					|| leftLabel.boardings() < rightLabel.boardings()
 					|| left.accessSeconds() < right.accessSeconds()
 					|| left.accessDistanceMeters() < right.accessDistanceMeters()
@@ -3602,7 +3601,7 @@ class RouteTimetableRaptorPlanner {
 			return ProfileMultiLabelForwardScan.traceKey(label.trace());
 		}
 
-		private Label toScalarLabel(RealtimeOverlay realtimeOverlay) {
+		private Label toScalarLabel(RealtimeOverlay realtimeOverlay, int readyAtSeconds) {
 			List<RideLeg> reversePath = new ArrayList<>();
 			int[] transitions = new int[label.boardings()];
 			ProfileRideTrace current = label.trace();
@@ -3613,7 +3612,7 @@ class RouteTimetableRaptorPlanner {
 				current = current.parent().trace();
 			}
 			java.util.Collections.reverse(reversePath);
-			return new Label("", arrivalSeconds, label.startSeconds(), label.boardings(), List.copyOf(reversePath),
+			return new Label("", arrivalSeconds, readyAtSeconds, label.boardings(), List.copyOf(reversePath),
 				transitions, exitTransition, warningBits);
 		}
 	}
