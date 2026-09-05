@@ -203,7 +203,7 @@ class JourneyProfileRaptorAdapterTest {
 			exceeded -> {
 				assertThat(exceeded.dimension())
 					.isEqualTo(JourneyProfileRaptorPort.PlanningCapacity.MAX_DESTINATION_PROFILE_LABELS);
-				assertThat(exceeded.observed()).isEqualTo(2);
+				assertThat(exceeded.observed()).isEqualTo(threePathFacts().size());
 				assertThat(exceeded.max()).isEqualTo(1);
 				assertThat(exceeded.countSnapshot().requestId()).isEqualTo(REQUEST_ID);
 				assertThat(exceeded.countSnapshot().algorithmIdentity())
@@ -211,7 +211,7 @@ class JourneyProfileRaptorAdapterTest {
 				assertThat(exceeded.countSnapshot().countsByRuleId()
 					.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
 				assertThat(exceeded.planningMetrics().workConsumed()).isPositive();
-				assertThat(exceeded.planningMetrics().peakDestinationLabels()).isEqualTo(2);
+				assertThat(exceeded.planningMetrics().peakDestinationLabels()).isEqualTo(threePathFacts().size());
 			});
 	}
 
