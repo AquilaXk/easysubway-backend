@@ -42,6 +42,17 @@ class JourneyProfileExecutionDispositionTest {
 	}
 
 	@Test
+	void mapsOversizedTemporalWindowsToTheDeclaredRequestCorrectionStatus() {
+		assertThat(JourneyProfileExecutionDisposition.from(new JourneyProfileExecutionResult.Failure(
+			JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE)))
+			.isEqualTo(new JourneyProfileExecutionDisposition.PublicFailure(400,
+				JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_WINDOW_TOO_LARGE, false));
+		assertThatThrownBy(() -> new JourneyProfileExecutionDisposition.PublicFailure(503,
+			JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_WINDOW_TOO_LARGE, false))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
 	void keepsCancellationAndUnclassifiedPlannerFailureOutOfThePublicErrorSurface() {
 		assertThat(JourneyProfileExecutionDisposition.from(new JourneyProfileExecutionResult.Failure(
 			JourneyProfileExecutionResult.Reason.CANCELLED)))
