@@ -219,6 +219,41 @@ class ReverseTimetableRaptorPlannerTest {
 	}
 
 	@Test
+	void selectsDateLocalRealtimeOccurrencesForReverseSearchAndLastConnection() {
+		var source = repeatedDailyDirectTimetable();
+		var compiled = forward.compile(source);
+		var routeRuntime = RaptorRouteBundleRuntimeView.compile("a".repeat(64), 1, source);
+		var realtime = RaptorRealtimeRuntimeView.compile("reverse-native", routeRuntime, nativeUpdates(
+			nativeUpdate(SERVICE_DATE, 60, false),
+			nativeUpdate(SERVICE_DATE.plusDays(1), 0, true)));
+
+		var dated = planner.arriveBy(crossDateQuery(35_000, 124_000), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), realtime, limits(), null);
+		assertThat(dated.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(dated.itineraries()).singleElement().satisfies(itinerary -> {
+			assertThat(itinerary.serviceDate()).isEqualTo(SERVICE_DATE);
+			assertThat(itinerary.legs()).filteredOn(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+				.singleElement().isInstanceOfSatisfying(RouteTimetableRaptorPlanner.JourneyRideProjection.class,
+					ride -> assertThat(ride.realtimeDepartureTime()).isEqualTo(serviceInstant(36_060)));
+		});
+		var firstDay = planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			"station-a", "station-b", SERVICE_DATE, 0, PROFILE_BIT, SLACK_SECONDS, MobilityPreset.SLOW, 3_600,
+			false, () -> false), compiled, compiled.activeServiceDay(SERVICE_DATE), realtime, limits(), null).result();
+		var secondDay = planner.lastConnection(new ReverseTimetableRaptorPlanner.LastConnectionQuery(
+			"station-a", "station-b", SERVICE_DATE.plusDays(1), 0, PROFILE_BIT, SLACK_SECONDS, MobilityPreset.SLOW,
+			3_600, false, () -> false), compiled, compiled.activeServiceDay(SERVICE_DATE.plusDays(1)), realtime,
+			limits(), null).result();
+		assertThat(firstDay.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(secondDay.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.NO_OD_CONNECTION);
+
+		var missingDate = RaptorRealtimeRuntimeView.compile("reverse-native", routeRuntime,
+			nativeUpdates(nativeUpdate(SERVICE_DATE, 60, false)));
+		assertThatThrownBy(() -> planner.arriveBy(crossDateQuery(35_000, 124_000), compiled,
+			SERVICE_DATE, SERVICE_DATE.plusDays(1), missingDate, limits(), null))
+			.isInstanceOf(IllegalArgumentException.class).hasMessageContaining("service date");
+	}
+
+	@Test
 	@DisplayName("fails closed when a dated range exceeds work limits or the predecessor calendar is removed")
 	void failsClosedForDatedRangeLimitCancellationAndCalendarRemoval() {
 		var compiled = forward.compile(crossCutoffTransferTimetable(false));
@@ -734,5 +769,21 @@ class ReverseTimetableRaptorPlannerTest {
 
 	private static TimetableRealtimeUpdates updates(TimetableRealtimeUpdate... updates) {
 		return new TimetableRealtimeUpdates("reverse-test", true, List.of(updates), null);
+	}
+
+	private static JourneyTimetableRealtimeResolver.Updates nativeUpdates(
+		JourneyTimetableRealtimeResolver.Update... updates
+	) {
+		return new JourneyTimetableRealtimeResolver.Updates("reverse-native", true, List.of(updates), null);
+	}
+
+	private static JourneyTimetableRealtimeResolver.Update nativeUpdate(
+		LocalDate serviceDate, int deltaSeconds, boolean cancelled
+	) {
+		Instant scheduled = serviceDate.atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(36_000).toInstant();
+		return new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure(
+				"station-a", "line-a", "same-index", null, "LOCAL", serviceDate, 1, scheduled, scheduled),
+			deltaSeconds, deltaSeconds, cancelled, "reverse-native", Instant.parse("2026-07-01T00:00:00Z"));
 	}
 }

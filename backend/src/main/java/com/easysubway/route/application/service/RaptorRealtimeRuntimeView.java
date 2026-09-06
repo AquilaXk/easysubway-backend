@@ -5,26 +5,25 @@ import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableReal
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 
 public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeView {
 
 	private final String identity;
 	private final RaptorRouteBundleRuntimeView routeRuntimeView;
-	private final LocalDate serviceDate;
-	private final RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay;
+	private final Map<LocalDate, RouteTimetableRaptorPlanner.RealtimeOverlay> realtimeOverlays;
 
 	private RaptorRealtimeRuntimeView(
 		String identity,
 		RaptorRouteBundleRuntimeView routeRuntimeView,
-		LocalDate serviceDate,
-		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
+		Map<LocalDate, RouteTimetableRaptorPlanner.RealtimeOverlay> realtimeOverlays
 	) {
 		this.identity = requireText(identity, "identity");
 		this.routeRuntimeView = Objects.requireNonNull(routeRuntimeView, "routeRuntimeView");
-		this.serviceDate = Objects.requireNonNull(serviceDate, "serviceDate");
-		this.realtimeOverlay = Objects.requireNonNull(realtimeOverlay, "realtimeOverlay");
+		this.realtimeOverlays = Map.copyOf(Objects.requireNonNull(realtimeOverlays, "realtimeOverlays"));
 	}
 
 	public static RaptorRealtimeRuntimeView compile(
@@ -39,15 +38,19 @@ public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeVie
 			.anyMatch(update -> update == null || !requiredIdentity.equals(update.providerSnapshotId()))) {
 			throw new IllegalArgumentException("realtime updates do not match runtime identity");
 		}
-		LocalDate serviceDate = requireSingleServiceDate(updates);
-		TimetableRealtimeUpdates compilerInput = verifiedCompilerInput(
-			routeRuntimeView.compiledTimetable(), updates, serviceDate);
-		var overlay = new RouteTimetableRaptorPlanner().compileRealtimeOverlay(
-			routeRuntimeView.compiledTimetable(), compilerInput);
-		if (!overlay.available() || overlay.isEmpty()) {
-			throw new IllegalArgumentException("realtime overlay must contain valid updates");
+		Map<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> updatesByDate = updatesByServiceDate(updates);
+		Map<LocalDate, RouteTimetableRaptorPlanner.RealtimeOverlay> overlays = new LinkedHashMap<>();
+		for (Map.Entry<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> entry : updatesByDate.entrySet()) {
+			TimetableRealtimeUpdates compilerInput = verifiedCompilerInput(
+				routeRuntimeView.compiledTimetable(), updates.version(), entry.getValue(), entry.getKey());
+			var overlay = new RouteTimetableRaptorPlanner().compileRealtimeOverlay(
+				routeRuntimeView.compiledTimetable(), compilerInput);
+			if (!overlay.available() || overlay.isEmpty()) {
+				throw new IllegalArgumentException("realtime overlay must contain valid updates");
+			}
+			overlays.put(entry.getKey(), overlay);
 		}
-		return new RaptorRealtimeRuntimeView(requiredIdentity, routeRuntimeView, serviceDate, overlay);
+		return new RaptorRealtimeRuntimeView(requiredIdentity, routeRuntimeView, overlays);
 	}
 
 	@Override
@@ -69,40 +72,41 @@ public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeVie
 		return routeRuntimeView;
 	}
 
-	RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay() {
-		return realtimeOverlay;
+	RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay(LocalDate serviceDate) {
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = realtimeOverlays.get(serviceDate);
+		if (overlay == null) {
+			throw new IllegalArgumentException("realtime overlay is unavailable for service date");
+		}
+		return overlay;
 	}
 
-	LocalDate serviceDate() {
-		return serviceDate;
-	}
-
-	private static LocalDate requireSingleServiceDate(JourneyTimetableRealtimeResolver.Updates updates) {
-		LocalDate serviceDate = null;
+	private static Map<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> updatesByServiceDate(
+		JourneyTimetableRealtimeResolver.Updates updates
+	) {
+		Map<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> byDate = new LinkedHashMap<>();
 		for (JourneyTimetableRealtimeResolver.Update update : updates.updates()) {
 			if (update.departure() == null || update.departure().serviceDate() == null) {
 				throw new IllegalArgumentException("realtime overlay must contain valid updates");
 			}
-			if (serviceDate == null) {
-				serviceDate = update.departure().serviceDate();
-			} else if (!serviceDate.equals(update.departure().serviceDate())) {
-				throw new IllegalArgumentException("realtime overlay must contain valid updates");
-			}
+			byDate.computeIfAbsent(update.departure().serviceDate(), ignored -> new ArrayList<>()).add(update);
 		}
-		if (serviceDate == null) {
+		if (byDate.isEmpty()) {
 			throw new IllegalArgumentException("realtime overlay must contain valid updates");
 		}
-		return serviceDate;
+		Map<LocalDate, List<JourneyTimetableRealtimeResolver.Update>> immutable = new LinkedHashMap<>();
+		byDate.forEach((serviceDate, dateUpdates) -> immutable.put(serviceDate, List.copyOf(dateUpdates)));
+		return Map.copyOf(immutable);
 	}
 
 	private static TimetableRealtimeUpdates verifiedCompilerInput(
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		JourneyTimetableRealtimeResolver.Updates updates,
+		String version,
+		List<JourneyTimetableRealtimeResolver.Update> updates,
 		LocalDate serviceDate
 	) {
 		RouteTimetableRaptorPlanner planner = new RouteTimetableRaptorPlanner();
-		List<TimetableRealtimeUpdate> projected = new ArrayList<>(updates.updates().size());
-		for (JourneyTimetableRealtimeResolver.Update update : updates.updates()) {
+		List<TimetableRealtimeUpdate> projected = new ArrayList<>(updates.size());
+		for (JourneyTimetableRealtimeResolver.Update update : updates) {
 			if (!serviceDate.equals(update.departure().serviceDate())
 				|| !planner.matchesActiveJourneyRealtimeDeparture(timetable, update.departure())) {
 				throw new IllegalArgumentException("realtime overlay must contain valid updates");
@@ -111,7 +115,7 @@ public final class RaptorRealtimeRuntimeView implements JourneyRaptorRealtimeVie
 				update.departure().tripId(), update.arrivalDeltaSeconds(), update.departureDeltaSeconds(),
 				update.cancelled(), update.providerSnapshotId(), update.providerObservedAt()));
 		}
-		return new TimetableRealtimeUpdates(updates.version(), true, projected, null);
+		return new TimetableRealtimeUpdates(version, true, projected, null);
 	}
 
 	private static String requireText(String value, String name) {
