@@ -67,7 +67,7 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 					reversePlan(requiredQuery, timetable, overlay, arriveBy, requiredLimits, observations));
 				case JourneyRaptorQuery.LastConnection lastConnection -> lastConnectionPlan(
 					requiredQuery, timetable, overlay, lastConnection, requiredLimits, observations);
-				case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
+				default -> throw new IllegalArgumentException(
 					"Journey profile adapter does not accept DEPART_AT");
 			};
 			return new PlanningResult.Planned(plan, observations.snapshot(), observations.planningMetrics());

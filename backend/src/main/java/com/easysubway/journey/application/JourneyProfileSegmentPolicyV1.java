@@ -97,7 +97,7 @@ public final class JourneyProfileSegmentPolicyV1 {
 	public record Breakpoint(Instant readyAt, List<String> candidateIds) {
 		public Breakpoint {
 			readyAt = requireWholeSecond(readyAt, "readyAt");
-			candidateIds = orderedUniqueIds(candidateIds, "candidateIds");
+			candidateIds = List.copyOf(orderedUniqueIds(candidateIds, "candidateIds"));
 		}
 	}
 
@@ -108,7 +108,7 @@ public final class JourneyProfileSegmentPolicyV1 {
 			if (!readyUntilExclusive.isAfter(readyFromInclusive)) {
 				throw new IllegalArgumentException("readyUntilExclusive must be after readyFromInclusive");
 			}
-			journeyIds = orderedUniqueIds(journeyIds, "journeyIds");
+			journeyIds = List.copyOf(orderedUniqueIds(journeyIds, "journeyIds"));
 		}
 	}
 

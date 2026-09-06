@@ -101,7 +101,7 @@ public final class JourneyRaptorPruningInventoryV1 {
 		public CountSnapshot {
 			requestId = requireText(requestId, "requestId");
 			algorithmIdentity = requireKnownAlgorithm(algorithmIdentity);
-			countsByRuleId = immutableCounts(countsByRuleId);
+			countsByRuleId = Map.copyOf(immutableCounts(countsByRuleId));
 			requireExactActiveRules(algorithmIdentity, countsByRuleId.keySet(), "count observations");
 		}
 
