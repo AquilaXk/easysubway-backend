@@ -1181,8 +1181,10 @@ test('workflow preserves #87 and uploads exactly four Phase-1 files before final
   assert.equal(validateWorkflow(workflow), true);
   assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 0\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
   assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
-  assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
-  assert.match(workflow, /\.\/gradlew writeSpotbugsMainEvidence --no-daemon/);
+  assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        if: always\(\) && !cancelled\(\) && \(steps\.spotbugs_main\.outcome == 'success' \|\| steps\.spotbugs_main\.outcome == 'failure'\)\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
+  assert.match(workflow, /test -s build\/reports\/spotbugs\/spotbugsMain\.xml\n          test -s build\/reports\/spotbugs\/spotbugsMain\.html\n          \.\/gradlew writeSpotbugsMainEvidence --no-daemon -x spotbugsMain\n/);
+  assert.match(workflow, /name: Validate SpotBugs report and policy\n        id: spotbugs_validate\n        if: always\(\) && !cancelled\(\) && steps\.spotbugs_inputs\.outcome == 'success'\n/);
+  assert.ok(workflow.includes('test "${{ steps.spotbugs_main.outcome }}" = success'));
   assert.match(workflow, /cp build\/spotbugs\/spotbugsMain-evidence\.json/);
 });
 
