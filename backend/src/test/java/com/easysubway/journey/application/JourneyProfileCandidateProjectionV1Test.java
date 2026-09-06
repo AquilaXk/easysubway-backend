@@ -182,6 +182,19 @@ class JourneyProfileCandidateProjectionV1Test {
 	}
 
 	@Test
+	void rejectsLastConnectionFromAnotherNativeServiceDay() {
+		var nativeItinerary = itinerary(START, 600, "trip-a", 120, 150, 1);
+		var temporal = new JourneyRaptorQuery.LastConnection(nativeItinerary.serviceDate().plusDays(1));
+		var plan = new JourneyProfileRaptorPort.LastConnectionPlan(temporal,
+			new JourneyProfileRaptorPort.ReversePlan.Found(List.of(nativeItinerary)),
+			nativeItinerary.plannedArrivalAtDestination());
+
+		assertThatIllegalArgumentException().isThrownBy(() ->
+			JourneyProfileCandidateProjectionV1.projectLastConnection(query(temporal, 1), plan, 3))
+			.withMessageContaining("outside last-connection service-day or terminal facts");
+	}
+
+	@Test
 	void projectsLastConnectionAndFailsClosedWhenItsCandidateInventoryExceedsCapacity() {
 		var temporal = new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 2));
 		var query = query(temporal, 2);

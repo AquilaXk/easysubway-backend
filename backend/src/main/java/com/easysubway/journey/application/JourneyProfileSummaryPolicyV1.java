@@ -39,8 +39,8 @@ public final class JourneyProfileSummaryPolicyV1 {
 		return switch (query.temporalQuery()) {
 			case JourneyRaptorQuery.DepartBetween departure -> departureSummary(departure, inventory, alternativeCount);
 			case JourneyRaptorQuery.ArriveBy arriveBy -> arriveBySummary(arriveBy, inventory, alternativeCount);
-			case JourneyRaptorQuery.LastConnection lastConnection ->
-				lastConnectionSummary(lastConnection, inventory, alternativeCount);
+			case JourneyRaptorQuery.LastConnection ignored ->
+				lastConnectionSummary(inventory, alternativeCount);
 			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
 				"Journey profile summary requires a profile temporal query");
 		};
@@ -75,15 +75,11 @@ public final class JourneyProfileSummaryPolicyV1 {
 	}
 
 	private static LastConnection lastConnectionSummary(
-		JourneyRaptorQuery.LastConnection query,
 		Inventory inventory,
 		int alternativeCount
 	) {
-		for (SelectedLabel label : inventory.labels()) {
-			if (!ServiceDayResolver.resolve(label.candidate().departure()).serviceDate().equals(query.serviceDate())) {
-				throw new IllegalArgumentException("selected journey does not belong to last-connection service day");
-			}
-		}
+		// 운행일과 종료시각은 native itinerary를 가진 projection에서 검증한다.
+		// 출발시각으로 운행일을 다시 계산하면 다음 날 03시 이후의 정상 막차를 거부한다.
 		SelectedLabel last = inventory.labelFor(ObjectiveTag.LATEST_DEPARTURE);
 		SelectedLabel safest = inventory.labelFor(ObjectiveTag.SAFEST_CONNECTION);
 		List<String> saferAlternatives = safest.candidate().journeyId().equals(last.candidate().journeyId())
