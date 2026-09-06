@@ -46,6 +46,16 @@ class JourneyProfileMeasurementOdTest {
 	}
 
 	@Test
+	void distinguishesAnAbsentCandidateFromInvalidAttribution() {
+		var valid = scope(new Line("seoul", "operator", "line"));
+		assertThat(JourneyProfileMeasurementOd.findDirectOd(valid, "seoul", List.of(), List.of(),
+			ACTIVE_FROM, FRESH_UNTIL, 0)).isEmpty();
+		var ambiguous = scope(new Line("seoul", "operator-a", "shared"), new Line("busan", "operator-b", "shared"));
+		assertThatThrownBy(() -> JourneyProfileMeasurementOd.findDirectOd(ambiguous, "seoul", List.of(), List.of(),
+			ACTIVE_FROM, FRESH_UNTIL, 0)).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("ambiguous");
+	}
+
+	@Test
 	void rejectsWhenNoAllowedPairExists() {
 		var scope = scope(new Line("seoul", "operator", "line"));
 		var event = event("line", "trip", 1, stop("same", "line", 10, true, false), stop("same", "line", 20, false, true));

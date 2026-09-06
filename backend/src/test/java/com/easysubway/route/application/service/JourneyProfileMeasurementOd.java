@@ -20,6 +20,14 @@ final class JourneyProfileMeasurementOd {
 		Scope scope, String regionId, List<JourneyProfileCandidateEvents.Event> events,
 		List<JourneyProfileExactOracle.Access> accesses, Instant activeFrom, Instant freshUntil, int boardingSlackSeconds
 	) {
+		return findDirectOd(scope, regionId, events, accesses, activeFrom, freshUntil, boardingSlackSeconds)
+			.orElseThrow(() -> new IllegalArgumentException("no allowed direct OD candidate"));
+	}
+
+	static java.util.Optional<DirectOdCandidate> findDirectOd(
+		Scope scope, String regionId, List<JourneyProfileCandidateEvents.Event> events,
+		List<JourneyProfileExactOracle.Access> accesses, Instant activeFrom, Instant freshUntil, int boardingSlackSeconds
+	) {
 		Objects.requireNonNull(scope, "scope is required");
 		Objects.requireNonNull(regionId, "regionId is required");
 		Objects.requireNonNull(events, "events are required");
@@ -64,8 +72,7 @@ final class JourneyProfileMeasurementOd {
 				}
 			}
 		}
-		if (selected == null) throw new IllegalArgumentException("no allowed direct OD candidate");
-		return selected;
+		return java.util.Optional.ofNullable(selected);
 	}
 
 	private static boolean entry(JourneyProfileExactOracle.Access access, JourneyProfileCandidateEvents.Stop board) {
