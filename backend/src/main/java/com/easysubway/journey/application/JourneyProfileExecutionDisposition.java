@@ -14,6 +14,8 @@ public sealed interface JourneyProfileExecutionDisposition
 			case ACTIVE_SNAPSHOT_UNAVAILABLE -> publicFailure(503, MachineCode.ROUTING_BUNDLE_UNAVAILABLE);
 			case ACTIVE_SNAPSHOT_STALE -> publicFailure(503, MachineCode.ROUTING_BUNDLE_STALE);
 			case REALTIME_UNAVAILABLE -> publicFailure(503, MachineCode.REALTIME_REQUIRED_UNAVAILABLE);
+			case REALTIME_NOT_APPLICABLE -> publicFailure(422,
+				MachineCode.REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY);
 			case TEMPORAL_WINDOW_TOO_LARGE -> publicFailure(400, MachineCode.TEMPORAL_WINDOW_TOO_LARGE);
 			case TEMPORAL_QUERY_TOO_COMPLEX -> publicFailure(422, MachineCode.TEMPORAL_QUERY_TOO_COMPLEX);
 			case RAPTOR_FRONTIER_CAPACITY_EXCEEDED -> publicFailure(503,
@@ -38,7 +40,8 @@ public sealed interface JourneyProfileExecutionDisposition
 			machineCode = Objects.requireNonNull(machineCode, "machineCode");
 			int expectedStatus = switch (machineCode) {
 				case TEMPORAL_WINDOW_TOO_LARGE -> 400;
-				case TEMPORAL_QUERY_TOO_COMPLEX, NO_SERVICE_IN_DEPARTURE_WINDOW,
+				case REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY, TEMPORAL_QUERY_TOO_COMPLEX,
+					NO_SERVICE_IN_DEPARTURE_WINDOW,
 					NO_ROUTE_ARRIVING_BY_DEADLINE, NO_LAST_CONNECTION -> 422;
 				default -> 503;
 			};
@@ -65,6 +68,7 @@ public sealed interface JourneyProfileExecutionDisposition
 		ROUTING_BUNDLE_UNAVAILABLE,
 		ROUTING_BUNDLE_STALE,
 		REALTIME_REQUIRED_UNAVAILABLE,
+		REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY,
 		TEMPORAL_WINDOW_TOO_LARGE,
 		TEMPORAL_QUERY_TOO_COMPLEX,
 		RAPTOR_FRONTIER_CAPACITY_EXCEEDED,

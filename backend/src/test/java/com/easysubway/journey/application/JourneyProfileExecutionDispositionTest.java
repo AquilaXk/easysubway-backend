@@ -17,6 +17,8 @@ class JourneyProfileExecutionDispositionTest {
 			JourneyProfileExecutionDisposition.MachineCode.ROUTING_BUNDLE_STALE,
 			JourneyProfileExecutionResult.Reason.REALTIME_UNAVAILABLE,
 			JourneyProfileExecutionDisposition.MachineCode.REALTIME_REQUIRED_UNAVAILABLE,
+			JourneyProfileExecutionResult.Reason.REALTIME_NOT_APPLICABLE,
+			JourneyProfileExecutionDisposition.MachineCode.REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY,
 			JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX,
 			JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_QUERY_TOO_COMPLEX,
 			JourneyProfileExecutionResult.Reason.NO_SERVICE_IN_DEPARTURE_WINDOW,
@@ -33,7 +35,8 @@ class JourneyProfileExecutionDispositionTest {
 				new JourneyProfileExecutionResult.Failure(reason));
 
 			int status = switch (machineCode) {
-				case TEMPORAL_QUERY_TOO_COMPLEX, NO_SERVICE_IN_DEPARTURE_WINDOW,
+				case REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY, TEMPORAL_QUERY_TOO_COMPLEX,
+					NO_SERVICE_IN_DEPARTURE_WINDOW,
 					NO_ROUTE_ARRIVING_BY_DEADLINE, NO_LAST_CONNECTION -> 422;
 				default -> 503;
 			};
@@ -73,6 +76,14 @@ class JourneyProfileExecutionDispositionTest {
 			503, JourneyProfileExecutionDisposition.MachineCode.TEMPORAL_QUERY_TOO_COMPLEX, false))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("profile failure status must match machine code");
+		assertThatThrownBy(() -> new JourneyProfileExecutionDisposition.PublicFailure(
+			503, JourneyProfileExecutionDisposition.MachineCode.REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY, false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("profile failure status must match machine code");
+		assertThatThrownBy(() -> new JourneyProfileExecutionDisposition.PublicFailure(
+			422, JourneyProfileExecutionDisposition.MachineCode.REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY, true))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("retryable must be false");
 		assertThatThrownBy(() -> new JourneyProfileExecutionDisposition.PublicFailure(
 			503, JourneyProfileExecutionDisposition.MachineCode.NO_LAST_CONNECTION, false))
 			.isInstanceOf(IllegalArgumentException.class)
