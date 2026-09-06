@@ -21,10 +21,25 @@ import java.util.Map;
 import java.util.TreeMap;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.condition.EnabledIfEnvironmentVariable;
+import org.junit.jupiter.api.io.TempDir;
 
 class JourneyProfilePredeploymentMeasurementTest {
 
 	private static final ObjectMapper JSON = new ObjectMapper();
+	@TempDir Path temporaryDirectory;
+
+	@Test
+	void retainsCanonicalCorpusBytesWithoutOverwritingEvidence() throws Exception {
+		Path output = temporaryDirectory.resolve("corpus.json");
+		var corpus = Map.of("oracleLimits", Map.of("maxWork", Long.toString(Long.MAX_VALUE)));
+		writeCanonicalOnce(output, corpus);
+		assertThat(Files.readString(output)).isEqualTo(
+			"{\"oracleLimits\":{\"maxWork\":\"9223372036854775807\"}}\n");
+		assertThatThrownBy(() -> writeCanonicalOnce(output, Map.of("replacement", true)))
+			.isInstanceOf(java.nio.file.FileAlreadyExistsException.class);
+		assertThat(JSON.readTree(Files.readAllBytes(output)).path("oracleLimits").path("maxWork").textValue())
+			.isEqualTo(Long.toString(Long.MAX_VALUE));
+	}
 
 	@Test
 	void requiresExplicitDecimalOracleBoundsWithoutDefaults() {
@@ -53,7 +68,8 @@ class JourneyProfilePredeploymentMeasurementTest {
 	void measurePinnedCandidate() throws Exception {
 		Map<String, String> environment = System.getenv();
 		Path output = Path.of(required(environment, "MEASUREMENT_OUTPUT"));
-		if (Files.exists(output, LinkOption.NOFOLLOW_LINKS)) {
+		Path corpusOutput = Path.of(output.toString() + ".corpus.json");
+		if (Files.exists(output, LinkOption.NOFOLLOW_LINKS) || Files.exists(corpusOutput, LinkOption.NOFOLLOW_LINKS)) {
 			throw new IllegalArgumentException("measurement output already exists");
 		}
 		Path policyPath = Path.of(required(environment, "MEASUREMENT_POLICY"));
@@ -95,7 +111,12 @@ class JourneyProfilePredeploymentMeasurementTest {
 		observation.put("frontierSha256", digest(frontier));
 		observation.put("measurements", result.rows());
 		// 운영 관측값을 합성하지 않는다. Data의 closed-schema gate가 완전성과 parity를 판정한다.
-		byte[] bytes = (canonical(JSON.valueToTree(observation)) + "\n").getBytes(StandardCharsets.UTF_8);
+		writeCanonicalOnce(corpusOutput, corpus);
+		writeCanonicalOnce(output, observation);
+	}
+
+	private static void writeCanonicalOnce(Path output, Object value) throws Exception {
+		byte[] bytes = (canonical(JSON.valueToTree(value)) + "\n").getBytes(StandardCharsets.UTF_8);
 		try (var stream = Files.newByteChannel(output,
 			java.util.Set.of(StandardOpenOption.CREATE_NEW, StandardOpenOption.WRITE),
 			PosixFilePermissions.asFileAttribute(PosixFilePermissions.fromString("rw-------")))) {
