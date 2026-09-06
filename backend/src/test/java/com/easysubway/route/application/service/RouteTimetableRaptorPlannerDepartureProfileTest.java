@@ -16,6 +16,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicInteger;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -93,6 +94,72 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 				SERVICE_DATE + ":96240");
 		assertThat(onlyRide(profile.get(0)).tripId()).isEqualTo("after-cutoff");
 		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("before-cutoff");
+	}
+
+	@Test
+	void profilesEveryServiceDateAcrossThreeDaysLatestFirst() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(
+				instantAt(SERVICE_DATE, 10_800), instantAt(SERVICE_DATE.plusDays(2), 10_800)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> false);
+
+		var profile = planner.departureProfile(
+			query, planner.compile(threeDayTimetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			policy().profilePlanningLimits());
+
+		assertThat(profile)
+			.extracting(point -> point.serviceDate() + ":" + point.readyAtSeconds())
+			.containsExactly(
+				SERVICE_DATE.plusDays(2) + ":10800",
+				SERVICE_DATE.plusDays(1) + ":11640",
+				SERVICE_DATE + ":11640");
+	}
+
+	@Test
+	void chargesEmptyServiceDatesAgainstOneSharedWorkLimit() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(
+				instantAt(SERVICE_DATE, 10_800), instantAt(SERVICE_DATE.plusDays(2), 10_800)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> false);
+
+		assertThatThrownBy(() -> planner.departureProfile(
+			query, planner.compile(emptyCalendarTimetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			policy(32, 2).profilePlanningLimits()))
+			.isInstanceOf(RouteTimetableRaptorPlanner.ProfilePlanningLimitException.class)
+			.satisfies(exception -> assertThat(
+				((RouteTimetableRaptorPlanner.ProfilePlanningLimitException) exception).limit())
+				.isEqualTo(RouteTimetableRaptorPlanner.ProfilePlanningLimit.MAX_ESTIMATED_WORK));
+	}
+
+	@Test
+	void stopsBeforeVisitingTheNextServiceDateWhenCancelled() {
+		var cancellationChecks = new AtomicInteger();
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(
+				instantAt(SERVICE_DATE, 10_800), instantAt(SERVICE_DATE.plusDays(2), 10_800)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			0, 1, () -> cancellationChecks.incrementAndGet() > 2);
+
+		assertThatThrownBy(() -> planner.departureProfile(
+			query, planner.compile(emptyCalendarTimetable()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			policy().profilePlanningLimits()))
+			.isInstanceOf(IllegalStateException.class)
+			.hasMessage("Journey RAPTOR scan cancelled");
+		assertThat(cancellationChecks).hasValue(3);
 	}
 
 	@Test
@@ -217,7 +284,11 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	private static Instant instantAt(int readyAtSeconds) {
-		return SERVICE_DATE.atStartOfDay().plusSeconds(readyAtSeconds)
+		return instantAt(SERVICE_DATE, readyAtSeconds);
+	}
+
+	private static Instant instantAt(LocalDate date, int readyAtSeconds) {
+		return date.atStartOfDay().plusSeconds(readyAtSeconds)
 			.atOffset(ZoneOffset.ofHours(9)).toInstant();
 	}
 
@@ -226,9 +297,13 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	private static JourneyProfileResourcePolicy policy(int maxLabelsPerState) {
+		return policy(maxLabelsPerState, 100_000L);
+	}
+
+	private static JourneyProfileResourcePolicy policy(int maxLabelsPerState, long maxEstimatedWork) {
 		return new JourneyProfileResourcePolicy(
 			new JourneyProfileResourcePolicy.Identity("test-profile", "1.0.0", "b".repeat(64)),
-			Duration.ofHours(2), 2, 100_000L, maxLabelsPerState, 32, 32,
+			Duration.ofHours(2), 2, maxEstimatedWork, maxLabelsPerState, 32, 32,
 			Duration.ofMinutes(5), Duration.ofSeconds(1), Duration.ofSeconds(1), Duration.ofSeconds(1),
 			1, 1, 1, 1, 4);
 	}
@@ -280,6 +355,29 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			List.of(),
 			null,
 			accessData());
+	}
+
+	private static RouteTimetable threeDayTimetable() {
+		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			SERVICE_DATE, SERVICE_DATE.plusDays(2), "Asia/Seoul");
+		return new RouteTimetable(
+			List.of(calendar),
+			List.of(),
+			List.of(route("route", "line")),
+			List.of(trip("daily-trip")),
+			List.of(
+				stop("daily-trip", 1, "station-a", 12_000),
+				stop("daily-trip", 2, "station-b", 12_300)),
+			List.of(),
+			List.of(),
+			null,
+			accessData());
+	}
+
+	private static RouteTimetable emptyCalendarTimetable() {
+		return new RouteTimetable(
+			List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null, accessData());
 	}
 
 	private static RouteTimetable frontierCollisionTimetable() {
