@@ -49,8 +49,6 @@ import java.time.Clock;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.util.HexFormat;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.concurrent.CompletableFuture;
@@ -118,7 +116,6 @@ class JourneyProductionConfigurationTest {
 	void productionProfileComposesOneJourneyExecutionGraph() {
 		validProductionContext().run(context -> {
 			assertThat(context).hasNotFailed();
-			assertThat(context).hasSingleBean(JourneySearchPolicyProperties.class);
 			assertThat(context).hasSingleBean(JourneySessionService.class);
 			assertThat(context).hasSingleBean(ActiveJourneySnapshotPort.class);
 			assertThat(context.getBean(ActiveJourneySnapshotPort.class))
@@ -314,11 +311,9 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("search disabled 운영 프로필도 readiness registry를 요구하고 execution graph는 만들지 않는다")
+	@DisplayName("search disabled 운영 프로필도 유효 정책과 readiness registry를 요구하고 execution graph는 만들지 않는다")
 	void searchDisabledProductionProfileComposesSessionOnly() {
 		productionContext(
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
 			"easysubway.journey-v3.readiness.service-token=" + READINESS_TOKEN,
 			"easysubway.journey-v3.readiness.instance-id=backend-a",
@@ -606,8 +601,6 @@ class JourneyProductionConfigurationTest {
 	@DisplayName("readiness runtime identity 누락·형식 오류·non-positive traffic generation은 startup을 거부한다")
 	void productionProfileRejectsInvalidReadinessIdentity() {
 		productionContext(
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
 			"easysubway.journey-v3.search-web.enabled=true"
 		).withUserConfiguration(DependencyTestConfiguration.class)
@@ -625,39 +618,38 @@ class JourneyProductionConfigurationTest {
 	}
 
 	@Test
-	@DisplayName("운영 프로필은 timeout 누락을 거부한다")
-	void productionProfileRejectsMissingTimeout() {
-		productionContext(
-			"easysubway.journey.search.max-searches-per-session=12",
-			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
-		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
-			.run(context -> assertThat(context).hasFailed());
+	@DisplayName("운영 프로필은 정책 파일 누락을 거부한다")
+	void productionProfileRejectsMissingPolicyFile() {
+		for (boolean searchEnabled : new boolean[] {true, false}) {
+			validProductionContext()
+				.withPropertyValues(
+					"easysubway.journey-v3.search-web.enabled=" + searchEnabled,
+					"easysubway.journey.profile.resource-policy-path=" + policyDirectory.resolve("absent.json"))
+				.run(context -> assertThat(context).hasFailed());
+		}
 	}
 
 	@Test
-	@DisplayName("운영 프로필은 session limit 누락을 거부한다")
-	void productionProfileRejectsMissingSessionLimit() {
-		productionContext(
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256
-		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
-			.run(context -> assertThat(context).hasFailed());
+	@DisplayName("운영 프로필은 정책 SHA 누락을 거부한다")
+	void productionProfileRejectsMissingPolicySha256() {
+		for (boolean searchEnabled : new boolean[] {true, false}) {
+			validProductionContext()
+				.withPropertyValues(
+					"easysubway.journey-v3.search-web.enabled=" + searchEnabled,
+					"easysubway.journey.profile.resource-policy-sha256=")
+				.run(context -> assertThat(context).hasFailed());
+		}
 	}
 
 	@Test
 	@DisplayName("운영 프로필은 certificate 누락과 잘못된 값을 거부한다")
 	void productionProfileRejectsMissingOrInvalidCertificate() {
-		productionContext(
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.search.max-searches-per-session=12"
-		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+		validProductionContext()
+			.withPropertyValues("easysubway.journey.session.certificate-sha256=")
 			.run(context -> assertThat(context).hasFailed());
 
-		productionContext(
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.search.max-searches-per-session=12",
-			"easysubway.journey.session.certificate-sha256=invalid"
-		).withUserConfiguration(MissingRegistryDependencyTestConfiguration.class)
+		validProductionContext()
+			.withPropertyValues("easysubway.journey.session.certificate-sha256=invalid")
 			.run(context -> assertThat(context).hasFailed());
 	}
 
@@ -668,7 +660,7 @@ class JourneyProductionConfigurationTest {
 			.withPropertyValues("spring.profiles.active=dev")
 			.run(context -> {
 				assertThat(context).hasNotFailed();
-				assertThat(context).doesNotHaveBean(JourneySearchPolicyProperties.class);
+				assertThat(context).doesNotHaveBean(JourneyProfileResourcePolicy.class);
 				assertThat(context).doesNotHaveBean(JourneySessionService.class);
 			});
 	}
@@ -680,7 +672,7 @@ class JourneyProductionConfigurationTest {
 			.withPropertyValues("spring.profiles.active=prod,capacity-evidence")
 			.run(context -> {
 				assertThat(context).hasNotFailed();
-				assertThat(context).doesNotHaveBean(JourneySearchPolicyProperties.class);
+				assertThat(context).doesNotHaveBean(JourneyProfileResourcePolicy.class);
 				assertThat(context).doesNotHaveBean(JourneySessionService.class);
 			});
 	}
@@ -690,20 +682,7 @@ class JourneyProductionConfigurationTest {
 	}
 
 	private WebApplicationContextRunner validProductionProperties() {
-		byte[] policyBytes = JourneyProfileResourcePolicyArtifactTest.validJson().getBytes(StandardCharsets.UTF_8);
-		Path policyPath = policyDirectory.resolve("resource-policy.json");
-		String policySha256;
-		try {
-			Files.write(policyPath, policyBytes);
-			policySha256 = HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(policyBytes));
-		} catch (Exception exception) {
-			throw new AssertionError(exception);
-		}
 		return productionContext(
-			"easysubway.journey.profile.resource-policy-path=" + policyPath,
-			"easysubway.journey.profile.resource-policy-sha256=" + policySha256,
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=" + CERTIFICATE_SHA256,
 			"easysubway.journey-v3.search-web.enabled=true",
 			"easysubway.journey-v3.readiness.service-token=" + READINESS_TOKEN,
@@ -718,9 +697,28 @@ class JourneyProductionConfigurationTest {
 
 	@Test
 	void rejectsMissingOrMismatchedProfilePolicyWithoutDefaults() {
-		validProductionContext().withPropertyValues("easysubway.journey.profile.resource-policy-sha256=" + SHA_B)
-			.run(context -> assertThat(context).hasFailed());
+		for (boolean searchEnabled : new boolean[] {true, false}) {
+			validProductionContext().withPropertyValues(
+				"easysubway.journey-v3.search-web.enabled=" + searchEnabled,
+				"easysubway.journey.profile.resource-policy-sha256=" + SHA_B)
+				.run(context -> assertThat(context).hasFailed());
+		}
 		validProductionContext().withPropertyValues("easysubway.journey.profile.resource-policy-path=")
+			.run(context -> assertThat(context).hasFailed());
+		byte[] invalidPolicy = JourneyProfileResourcePolicyArtifactTest.validJson()
+			.replace("\"maxEstimatedWork\":1000", "\"maxEstimatedWork\":0")
+			.getBytes(StandardCharsets.UTF_8);
+		Path invalidPolicyPath = policyDirectory.resolve("invalid-resource-policy.json");
+		try {
+			Files.write(invalidPolicyPath, invalidPolicy);
+		} catch (Exception exception) {
+			throw new AssertionError(exception);
+		}
+		validProductionContext()
+			.withPropertyValues(
+				"easysubway.journey.profile.resource-policy-path=" + invalidPolicyPath,
+				"easysubway.journey.profile.resource-policy-sha256=" + JourneyProfileResourcePolicyTestFixture.sha256(invalidPolicy)
+			)
 			.run(context -> assertThat(context).hasFailed());
 	}
 
@@ -774,6 +772,10 @@ class JourneyProductionConfigurationTest {
 	private WebApplicationContextRunner productionContext(String... propertyValues) {
 		return contextRunner
 			.withPropertyValues("spring.profiles.active=prod")
+			.withPropertyValues(
+				"easysubway.journey.profile.resource-policy-path=" + JourneyProfileResourcePolicyTestFixture.path(),
+				"easysubway.journey.profile.resource-policy-sha256=" + JourneyProfileResourcePolicyTestFixture.sha256()
+			)
 			.withPropertyValues(propertyValues);
 	}
 

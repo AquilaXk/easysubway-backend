@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
 import com.easysubway.journey.bundle.RouteBundleStartupCandidateLoader;
 import com.easysubway.journey.canary.JourneyCandidateCanaryService;
+import com.easysubway.journey.config.JourneyProfileResourcePolicyTestFixture;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -16,6 +17,8 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.context.ApplicationContext;
 import org.springframework.core.env.Environment;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 
@@ -51,8 +54,6 @@ class EasySubwayBackendApplicationTests {
 			"easysubway.notifications.push.external-enabled=false",
 			"EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=synthetic-test-key",
 			"EASYSUBWAY_ADS_EVENT_DAILY_CAP=1000000",
-			"easysubway.journey.search.timeout=PT2S",
-			"easysubway.journey.search.max-searches-per-session=12",
 			"easysubway.journey.session.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
 			"easysubway.journey-v3.readiness.instance-id=backend-context-prod",
@@ -89,6 +90,13 @@ class EasySubwayBackendApplicationTests {
 	@AutoConfigureMockMvc
 	@DisplayName("운영 프로필 애플리케이션 컨텍스트")
 	static class ProductionProfileContextTests {
+
+		@DynamicPropertySource
+		static void journeyProfilePolicy(DynamicPropertyRegistry registry) {
+			registry.add("easysubway.journey.profile.resource-policy-path", JourneyProfileResourcePolicyTestFixture::path);
+			registry.add("easysubway.journey.profile.resource-policy-sha256", JourneyProfileResourcePolicyTestFixture::sha256);
+			registry.add("easysubway.journey.profile.max-request-bytes", () -> 65_536);
+		}
 
 		@MockitoBean
 		private RouteBundleStartupCandidateLoader startupCandidateLoader;
@@ -141,8 +149,6 @@ class EasySubwayBackendApplicationTests {
 			"EASYSUBWAY_PUSH_EXTERNAL_ENABLED=false",
 			"EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=synthetic-test-key",
 			"EASYSUBWAY_ADS_EVENT_DAILY_CAP=1000000",
-			"EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT=PT2S",
-			"EASYSUBWAY_JOURNEY_MAX_SEARCHES_PER_SESSION=12",
 			"EASYSUBWAY_JOURNEY_SESSION_CERTIFICATE_SHA256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 			"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
 			"easysubway.journey-v3.readiness.instance-id=backend-context-staging",
@@ -179,6 +185,13 @@ class EasySubwayBackendApplicationTests {
 	@AutoConfigureMockMvc
 	@DisplayName("운영 유사 프로필 애플리케이션 컨텍스트")
 	static class ProductionLikeProfileContextTests {
+
+		@DynamicPropertySource
+		static void journeyProfilePolicy(DynamicPropertyRegistry registry) {
+			registry.add("EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_PATH", JourneyProfileResourcePolicyTestFixture::path);
+			registry.add("EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256", JourneyProfileResourcePolicyTestFixture::sha256);
+			registry.add("EASYSUBWAY_JOURNEY_PROFILE_MAX_REQUEST_BYTES", () -> 65_536);
+		}
 
 		@MockitoBean
 		private RouteBundleStartupCandidateLoader startupCandidateLoader;
