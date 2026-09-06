@@ -420,7 +420,9 @@ final class ReverseTimetableRaptorPlanner {
 					continue;
 				}
 				int arrivalAtDestination = Math.addExact(arrivalSeconds(query.serviceDate(), trip, alightIndex), accessSeconds(query, timetable, exit, Access.EXIT));
-				latest = latest == null || arrivalAtDestination > latest ? arrivalAtDestination : latest;
+				if (latest == null || arrivalAtDestination > latest) {
+					latest = arrivalAtDestination;
+				}
 			}
 		}
 		return latest;

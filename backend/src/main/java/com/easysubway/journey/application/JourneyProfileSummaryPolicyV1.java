@@ -168,7 +168,7 @@ public final class JourneyProfileSummaryPolicyV1 {
 		public Departure {
 			earliestArrivalJourneyId = requireText(earliestArrivalJourneyId, "earliestArrivalJourneyId");
 			latestDepartureJourneyId = requireText(latestDepartureJourneyId, "latestDepartureJourneyId");
-			recommendedJourneyIds = ids(recommendedJourneyIds, true);
+			recommendedJourneyIds = List.copyOf(ids(recommendedJourneyIds, true));
 		}
 
 		@Override
@@ -190,7 +190,7 @@ public final class JourneyProfileSummaryPolicyV1 {
 				throw new IllegalArgumentException("latestFeasibleDeparture must not follow arrivalDeadline");
 			}
 			primaryJourneyId = requireText(primaryJourneyId, "primaryJourneyId");
-			recommendedJourneyIds = ids(recommendedJourneyIds, true);
+			recommendedJourneyIds = List.copyOf(ids(recommendedJourneyIds, true));
 		}
 
 		@Override
@@ -208,8 +208,8 @@ public final class JourneyProfileSummaryPolicyV1 {
 		public LastConnection {
 			latestFeasibleDeparture = Objects.requireNonNull(latestFeasibleDeparture, "latestFeasibleDeparture");
 			lastConnectionJourneyId = requireText(lastConnectionJourneyId, "lastConnectionJourneyId");
-			saferAlternativeJourneyIds = ids(saferAlternativeJourneyIds, false);
-			recommendedJourneyIds = ids(recommendedJourneyIds, true);
+			saferAlternativeJourneyIds = List.copyOf(ids(saferAlternativeJourneyIds, false));
+			recommendedJourneyIds = List.copyOf(ids(recommendedJourneyIds, true));
 		}
 
 		@Override
