@@ -412,6 +412,14 @@ class JourneySearchControllerTest {
 		runner.withBean(
 			JourneyApplicationDeadlineExecutor.class,
 			() -> mock(JourneyApplicationDeadlineExecutor.class)
+		).withPropertyValues(SEARCH_WEB_ENABLED).run(context ->
+			assertThat(context.getStartupFailure()).isNotNull());
+		runner.withBean(
+			JourneyApplicationDeadlineExecutor.class,
+			() -> mock(JourneyApplicationDeadlineExecutor.class)
+		).withBean(
+			JourneyProfileResourcePolicy.class,
+			JourneySearchControllerTest::policy
 		).withPropertyValues(SEARCH_WEB_ENABLED).run(context -> assertThat(context)
 			.hasSingleBean(JourneySearchController.class)
 			.hasSingleBean(JourneySearchExceptionHandler.class));
