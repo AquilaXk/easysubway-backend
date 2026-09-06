@@ -30,6 +30,8 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	private static final int ENTRY_SECONDS = 300;
 	private static final int SENIOR_ENTRY_SECONDS = 405;
 	private static final int SENIOR_SLACK_SECONDS = 90;
+	private static final int NEXT_CUTOFF_LAST_SECOND =
+		Math.toIntExact(Duration.ofDays(1).plusHours(3).toSeconds()) - 1;
 	private final RouteTimetableRaptorPlanner planner = new RouteTimetableRaptorPlanner();
 
 	@Test
@@ -49,7 +51,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 
 		assertThat(profile)
 			.extracting(RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint::readyAtSeconds)
-			.containsExactly(87_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
+			.containsExactly(87_000, 87_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				34_200 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				33_600 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS,
 				33_000 - SENIOR_ENTRY_SECONDS - SENIOR_SLACK_SECONDS);
@@ -57,7 +59,15 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			assertThat(profile.get(index).scanMetrics().expandedRoutes())
 				.isGreaterThan(profile.get(index - 1).scanMetrics().expandedRoutes());
 		}
-		assertThat(profile).allSatisfy(point -> {
+		// 기존 네 시점의 전체 경로 비교는 유지한다. 새 경계는 원본 다음 날 열차로 직접 증명한다.
+		assertThat(profile.getFirst().itineraries()).singleElement();
+		assertThat(profile.getFirst().serviceDate()).isEqualTo(SERVICE_DATE);
+		assertThat(onlyRide(profile.getFirst()).tripId()).isEqualTo("scheduled");
+		assertThat(onlyRide(profile.getFirst()).plannedDepartureTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(1), 33_000));
+		assertThat(onlyRide(profile.getFirst()).plannedArrivalTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(1), 33_600));
+		assertThat(profile.subList(1, profile.size())).allSatisfy(point -> {
 			var pointQuery = new JourneyRaptorQuery(
 				REQUEST_ID, "station-a", "station-b",
 				new JourneyRaptorQuery.DepartAt(instantAt(point.readyAtSeconds())),
@@ -91,9 +101,15 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			.extracting(point -> point.serviceDate() + ":" + point.readyAtSeconds())
 			.containsExactly(
 				SERVICE_DATE.plusDays(1) + ":11640",
+				SERVICE_DATE + ":" + NEXT_CUTOFF_LAST_SECOND,
 				SERVICE_DATE + ":96240");
 		assertThat(onlyRide(profile.get(0)).tripId()).isEqualTo("after-cutoff");
-		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("before-cutoff");
+		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("after-cutoff");
+		assertThat(onlyRide(profile.get(1)).plannedDepartureTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(1), 12_000));
+		assertThat(onlyRide(profile.get(1)).plannedArrivalTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(1), 12_300));
+		assertThat(onlyRide(profile.get(2)).tripId()).isEqualTo("before-cutoff");
 	}
 
 	@Test
@@ -116,8 +132,20 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			.extracting(point -> point.serviceDate() + ":" + point.readyAtSeconds())
 			.containsExactly(
 				SERVICE_DATE.plusDays(2) + ":10800",
+				SERVICE_DATE.plusDays(1) + ":" + NEXT_CUTOFF_LAST_SECOND,
 				SERVICE_DATE.plusDays(1) + ":11640",
+				SERVICE_DATE + ":" + NEXT_CUTOFF_LAST_SECOND,
 				SERVICE_DATE + ":11640");
+		assertThat(onlyRide(profile.get(1)).tripId()).isEqualTo("daily-trip");
+		assertThat(onlyRide(profile.get(1)).plannedDepartureTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(2), 12_000));
+		assertThat(onlyRide(profile.get(1)).plannedArrivalTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(2), 12_300));
+		assertThat(onlyRide(profile.get(3)).tripId()).isEqualTo("daily-trip");
+		assertThat(onlyRide(profile.get(3)).plannedDepartureTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(1), 12_000));
+		assertThat(onlyRide(profile.get(3)).plannedArrivalTime())
+			.isEqualTo(instantAt(SERVICE_DATE.plusDays(1), 12_300));
 	}
 
 	@Test
