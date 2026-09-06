@@ -4,6 +4,8 @@ import com.easysubway.journey.application.JourneyProfileRaptorPort.PlanningResul
 import com.easysubway.journey.application.JourneyProfileResourcePolicy.ProfilePlanningLimits;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import java.lang.management.ManagementFactory;
+import java.util.List;
+import java.util.Map;
 import java.util.Objects;
 import java.util.function.LongSupplier;
 import java.util.function.Supplier;
@@ -32,6 +34,26 @@ final class JourneyProfileMeasuredExecution {
 		JourneyRaptorQuery query, RaptorRouteBundleRuntimeView runtime
 	) {
 		return capturePoint(query, runtime, System::nanoTime, allocationCounter());
+	}
+
+	/** 실제 point 관측만 투영한다. 운영 경계 카운터나 profile 전용 지표를 합성하지 않는다. */
+	static Map<String, Object> pointRow(String regionId,
+		Observation<RouteTimetableRaptorPlanner.JourneyPlan> observation,
+		List<JourneyProfileExactOracle.Candidate> expected) {
+		if (regionId == null || regionId.isBlank()) throw new IllegalArgumentException("region is required");
+		Objects.requireNonNull(observation, "observation");
+		expected = List.copyOf(Objects.requireNonNull(expected, "expected"));
+		var actual = observation.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList();
+		boolean parity = JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, actual);
+		if (expected.isEmpty() || !parity) throw new Unobservable("point oracle frontier mismatch");
+		int loss = JourneyProfileOracleComparison.requiredObjectiveLoss(expected, actual);
+		if (loss != 0) throw new Unobservable("point oracle objective loss");
+		var scans = observation.result().scanMetrics();
+		return Map.of("regionId", regionId, "queryClass", "POINT",
+			"expandedRoutes", scans.expandedRoutes(), "expandedTrips", scans.expandedTrips(),
+			"expandedTransfers", scans.expandedTransfers(), "durationNanos", observation.durationNanos(),
+			"allocatedBytes", observation.allocatedBytes(), "requiredRepresentativeLoss", loss,
+			"oracleParity", parity, "profileMetrics", Map.of("status", "NOT_APPLICABLE"));
 	}
 
 	static Observation<RouteTimetableRaptorPlanner.JourneyPlan> capturePoint(
