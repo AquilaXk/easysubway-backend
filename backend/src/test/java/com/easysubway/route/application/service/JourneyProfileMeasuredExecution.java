@@ -1,5 +1,6 @@
 package com.easysubway.route.application.service;
 
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileRaptorPort.PlanningResult;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy.ProfilePlanningLimits;
 import com.easysubway.journey.application.JourneyRaptorQuery;
@@ -54,6 +55,44 @@ final class JourneyProfileMeasuredExecution {
 			"expandedTransfers", scans.expandedTransfers(), "durationNanos", observation.durationNanos(),
 			"allocatedBytes", observation.allocatedBytes(), "requiredRepresentativeLoss", loss,
 			"oracleParity", parity, "profileMetrics", Map.of("status", "NOT_APPLICABLE"));
+	}
+
+	/** 역방향 성공 행은 oracle과 관측 가능한 전체 경로 집합이 일치할 때만 생성한다. */
+	static Map<String, Object> reverseRow(String regionId, Observation<PlanningResult> observation,
+		List<JourneyProfileExactOracle.Candidate> expected) {
+		if (regionId == null || regionId.isBlank()) throw new IllegalArgumentException("region is required");
+		Objects.requireNonNull(observation, "observation");
+		expected = List.copyOf(Objects.requireNonNull(expected, "expected"));
+		if (!(observation.result() instanceof PlanningResult.Planned planned)) {
+			throw new Unobservable("reverse planner did not produce a plan");
+		}
+		String queryClass;
+		JourneyProfileRaptorPort.ReversePlan reverse;
+		if (planned.temporalPlan() instanceof JourneyProfileRaptorPort.ArriveByPlan plan) {
+			queryClass = "ARRIVE_BY";
+			reverse = plan.result();
+		} else if (planned.temporalPlan() instanceof JourneyProfileRaptorPort.LastConnectionPlan plan) {
+			queryClass = "LAST_CONNECTION";
+			reverse = plan.result();
+		} else {
+			throw new Unobservable("reverse observation requires a reverse temporal plan");
+		}
+		if (!(reverse instanceof JourneyProfileRaptorPort.ReversePlan.Found found)) {
+			throw new Unobservable("reverse planner did not find a route");
+		}
+		boolean parity = JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected, found.itineraries());
+		if (expected.isEmpty() || !parity) throw new Unobservable("reverse oracle frontier mismatch");
+		int loss = JourneyProfileOracleComparison.requiredObjectiveLoss(expected, found.itineraries());
+		if (loss != 0) throw new Unobservable("reverse oracle objective loss");
+		Long saturated = planned.countSnapshot().countsByRuleId().get("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
+		if (saturated == null) throw new Unobservable("frontier capacity observation is unavailable");
+		var metrics = planned.planningMetrics();
+		return Map.ofEntries(Map.entry("regionId", regionId), Map.entry("queryClass", queryClass),
+			Map.entry("observedWork", metrics.workConsumed()), Map.entry("observedStateLabels", metrics.peakStateLabels()),
+			Map.entry("observedDestinationLabels", metrics.peakDestinationLabels()),
+			Map.entry("observedBreakpoints", metrics.reservedProfileBreakpoints()),
+			Map.entry("durationNanos", observation.durationNanos()), Map.entry("allocatedBytes", observation.allocatedBytes()),
+			Map.entry("saturatedStates", saturated), Map.entry("requiredRepresentativeLoss", loss), Map.entry("oracleParity", parity));
 	}
 
 	static Observation<RouteTimetableRaptorPlanner.JourneyPlan> capturePoint(
