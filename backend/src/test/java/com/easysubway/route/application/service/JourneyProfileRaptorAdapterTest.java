@@ -607,6 +607,22 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void rejectsNativeLastConnectionPreparationAtItsWorkBudget() {
+		var request = query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE));
+		var result = adapter.prepareLastConnection(request, snapshot(),
+			new JourneyProfileResourcePolicy.ProfilePlanningLimits(1, 32, 32, 32));
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.AdmissionRejected.class,
+			rejected -> {
+				assertThat(rejected.max()).isEqualTo(1);
+				assertThat(rejected.observed()).isGreaterThan(rejected.max());
+				assertThat(rejected.planningMetrics().workConsumed()).isEqualTo(rejected.observed());
+				assertThat(rejected.countSnapshot().requestId()).isEqualTo(request.requestId());
+				assertThat(rejected.planningMetrics().reservedProfileBreakpoints()).isZero();
+			});
+	}
+
+	@Test
 	void rejectsRealtimeProfileInsteadOfUsingTimetableAsFallback() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
