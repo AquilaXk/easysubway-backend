@@ -121,6 +121,83 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	@Test
+	void retainsPreviousServiceDayTripAfterTheReadinessCutoff() {
+		// 03:00 구분은 28:xx 열차를 취소하지 않는다. 원본 운행일과 실제 승차시각을 직접 확인한다.
+		int departureSeconds = Math.toIntExact(Duration.ofHours(28).toSeconds());
+		var source = new RouteTimetable(
+			List.of(calendar("previous-service-day", SERVICE_DATE)), List.of(),
+			List.of(route("route", "line")),
+			List.of(trip("late-native-trip", "previous-service-day")),
+			List.of(stop("late-native-trip", 1, "station-a", departureSeconds),
+				stop("late-native-trip", 2, "station-b", departureSeconds + 600)),
+			List.of(), List.of(), null, accessData());
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(
+				instantAt(departureSeconds - 900), instantAt(departureSeconds)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		var profile = planner.departureProfile(query, planner.compile(source),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
+
+		assertThat(profile).singleElement().satisfies(point -> {
+			assertThat(onlyRide(point).tripId()).isEqualTo("late-native-trip");
+			assertThat(onlyRide(point).plannedDepartureTime()).isEqualTo(instantAt(departureSeconds));
+			assertThat(onlyRide(point).plannedArrivalTime()).isEqualTo(instantAt(departureSeconds + 600));
+			// profile 날짜는 준비시각 좌표의 기준일이며 원본 열차의 운행일과 구분한다.
+			assertThat(point.serviceDate()).isEqualTo(SERVICE_DATE.plusDays(1));
+			int readySecondsFromNativeDate = departureSeconds - ENTRY_SECONDS
+				- Math.toIntExact(Duration.ofMinutes(1).toSeconds());
+			assertThat(point.readyAtSeconds()).isEqualTo(
+				readySecondsFromNativeDate - Math.toIntExact(Duration.ofDays(1).toSeconds()));
+			assertThat(instantAt(point.serviceDate(), point.readyAtSeconds()))
+				.isEqualTo(instantAt(readySecondsFromNativeDate));
+		});
+	}
+
+	@Test
+	void retainsOneForwardFrontierAcrossLateAndNextNativeServiceDates() {
+		var source = new RouteTimetable(
+			List.of(calendar("late-day", SERVICE_DATE), calendar("next-day", SERVICE_DATE.plusDays(1))),
+			List.of(),
+			List.of(route("route-origin", "origin-line"), route("route-next", "shared-line")),
+			List.of(
+				trip("late-origin", "late-day", "route-origin"),
+				trip("next-native", "next-day", "route-next")),
+			List.of(
+				stop("late-origin", 1, "origin", "origin-line", 97_200),
+				stop("late-origin", 2, "hub", "origin-line", 97_500),
+				stop("next-native", 1, "hub", "shared-line", 12_000),
+				stop("next-native", 2, "destination", "shared-line", 12_300)),
+			List.of(), List.of(), null, samePatternSlackAccessData());
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "origin", "destination",
+			new JourneyRaptorQuery.DepartBetween(instantAt(96_500), instantAt(97_000)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+
+		var profile = planner.departureProfile(query, planner.compile(source),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
+
+		assertThat(profile).filteredOn(point -> point.readyAtSeconds() == 96_900)
+			.singleElement().satisfies(point -> {
+				var rides = point.itineraries().getFirst().legs().stream()
+					.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+					.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+					.toList();
+				assertThat(rides)
+					.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection::tripId)
+					.containsExactly("late-origin", "next-native");
+				assertThat(rides)
+					.extracting(RouteTimetableRaptorPlanner.JourneyRideProjection::plannedDepartureTime)
+					.containsExactly(instantAt(97_200), instantAt(SERVICE_DATE.plusDays(1), 12_000));
+			});
+	}
+
+	@Test
 	void chargesEmptyServiceDatesAgainstOneSharedWorkLimit() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
