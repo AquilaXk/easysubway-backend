@@ -7,7 +7,7 @@ import java.util.Objects;
 /**
  * 응답에서 관측 가능한 시간표 trace만 비교한다. 물리 edge ID, stop position,
  * 방향 종착역과 노선 identity는 양쪽 모델의 공통 필드가 아니므로 이 비교로 입증하지 않는다.
- * 전체 frontier parity나 필수 representative 보존 여부는 호출자가 별도로 검증해야 한다.
+ * 전체 frontier parity, canonical tie-selected ID, wire parity는 이 비교로 입증하지 않는다.
  */
 final class JourneyProfileOracleComparison {
 
@@ -75,6 +75,71 @@ final class JourneyProfileOracleComparison {
 		return true;
 	}
 
+	/**
+	 * 독립 oracle의 여섯 목적별 최적 경로가 실제 trace에 남아 있는지 센다.
+	 * 동률 경로의 canonical ID 선택, 전체 frontier 또는 wire parity는 별도로 검증한다.
+	 */
+	static int requiredObjectiveLoss(
+		List<JourneyProfileExactOracle.Candidate> expected, List<JourneyProfileRaptorPort.Itinerary> actual
+	) {
+		expected = List.copyOf(Objects.requireNonNull(expected, "expected"));
+		actual = List.copyOf(Objects.requireNonNull(actual, "actual"));
+		if (expected.isEmpty()) throw new IllegalArgumentException("expected candidates must not be empty");
+		int loss = 0;
+		for (Objective objective : Objective.values()) {
+			JourneyProfileExactOracle.Candidate best = expected.getFirst();
+			for (JourneyProfileExactOracle.Candidate candidate : expected) {
+				if (objective.compare(candidate, best) > 0) best = candidate;
+			}
+			boolean preserved = false;
+			for (JourneyProfileExactOracle.Candidate candidate : expected) {
+				if (objective.compare(candidate, best) == 0 && actual.stream()
+					.anyMatch(itinerary -> matchesObservableTimetableTrace(candidate, itinerary))) {
+					preserved = true;
+					break;
+				}
+			}
+			if (!preserved) loss += 1;
+		}
+		return loss;
+	}
+
+	private enum Objective {
+		EARLIEST_ARRIVAL {
+			@Override int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right) {
+				return right.arrivalAtDestination().compareTo(left.arrivalAtDestination());
+			}
+		},
+		LATEST_READY {
+			@Override int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right) {
+				return left.readyAt().compareTo(right.readyAt());
+			}
+		},
+		FEWEST_TRANSFERS {
+			@Override int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right) {
+				return Integer.compare(right.transfersUsed(), left.transfersUsed());
+			}
+		},
+		LEAST_WALKING {
+			@Override int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right) {
+				int seconds = Long.compare(right.walkingSeconds(), left.walkingSeconds());
+				return seconds != 0 ? seconds : Long.compare(right.walkingDistanceMeters(), left.walkingDistanceMeters());
+			}
+		},
+		LEAST_ACCESSIBILITY_BURDEN {
+			@Override int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right) {
+				return Long.compare(right.accessibilityBurden(), left.accessibilityBurden());
+			}
+		},
+		GREATEST_CONNECTION_SLACK {
+			@Override int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right) {
+				return compareSlack(left.minimumConnectionSlack(), right.minimumConnectionSlack());
+			}
+		};
+
+		abstract int compare(JourneyProfileExactOracle.Candidate left, JourneyProfileExactOracle.Candidate right);
+	}
+
 	private static boolean sameSlack(
 		JourneyProfileExactOracle.ConnectionSlack expected, JourneyProfileRaptorPort.ConnectionSlack actual
 	) {
@@ -83,5 +148,16 @@ final class JourneyProfileOracleComparison {
 		}
 		return actual instanceof JourneyProfileRaptorPort.MinimumTransferSeconds observed
 			&& ((JourneyProfileExactOracle.ConnectionSlack.MinimumTransferSeconds) expected).seconds() == observed.seconds();
+	}
+
+	private static int compareSlack(
+		JourneyProfileExactOracle.ConnectionSlack left, JourneyProfileExactOracle.ConnectionSlack right
+	) {
+		if (left instanceof JourneyProfileExactOracle.ConnectionSlack.NoTransfer) {
+			return right instanceof JourneyProfileExactOracle.ConnectionSlack.NoTransfer ? 0 : 1;
+		}
+		if (right instanceof JourneyProfileExactOracle.ConnectionSlack.NoTransfer) return -1;
+		return Long.compare(((JourneyProfileExactOracle.ConnectionSlack.MinimumTransferSeconds) left).seconds(),
+			((JourneyProfileExactOracle.ConnectionSlack.MinimumTransferSeconds) right).seconds());
 	}
 }
