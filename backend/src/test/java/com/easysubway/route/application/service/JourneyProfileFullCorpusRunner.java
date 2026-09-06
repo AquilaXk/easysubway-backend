@@ -469,8 +469,9 @@ public final class JourneyProfileFullCorpusRunner {
 		value.put("initialCase", orderedMap(Map.of(
 			"walkingPace", WALKING_PACE.name(), "walkingSpeedMetersPerHour", WALKING_PACE.speedMetersPerHour(),
 			"mobilityProfile", PROFILE.name(), "constraintMode", CONSTRAINT.name(), "timePolicy", TIME_POLICY.name())));
-		value.put("oracleLimits", orderedMap(Map.of("maxWork", limits.maxWork(), "maxRides", limits.maxRides(),
-			"maxAccesses", limits.maxAccesses(), "boardingSlackSeconds", boardingSlackSeconds)));
+		value.put("oracleLimits", orderedMap(Map.of("maxWork", Long.toString(limits.maxWork()),
+			"maxRides", Integer.toString(limits.maxRides()), "maxAccesses", Integer.toString(limits.maxAccesses()),
+			"boardingSlackSeconds", Integer.toString(boardingSlackSeconds))));
 		value.put("resourcePolicyIdentity", orderedMap(Map.of(
 			"resourcePolicyId", policy.identity().resourcePolicyId(), "semanticVersion", policy.identity().semanticVersion(),
 			"resourcePolicySha256", policy.identity().resourcePolicySha256())));
