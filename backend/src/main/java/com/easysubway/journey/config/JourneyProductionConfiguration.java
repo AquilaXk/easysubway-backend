@@ -65,7 +65,7 @@ import org.springframework.security.web.authentication.UsernamePasswordAuthentic
 
 @Configuration(proxyBeanMethods = false)
 @Profile("(prod | staging | release | prod-like) & !capacity-evidence")
-@EnableConfigurationProperties({JourneySearchPolicyProperties.class, JourneyReadinessProperties.class})
+@EnableConfigurationProperties(JourneyReadinessProperties.class)
 public class JourneyProductionConfiguration {
 
 	private static final String SESSION_PATH = "/api/v3/journeys/session";
@@ -114,7 +114,7 @@ public class JourneyProductionConfiguration {
 	JourneySessionService journeySessionService(
 		JourneySessionIntegrityPort integrityPort,
 		JourneySessionStore sessionStore,
-		JourneySearchPolicyProperties searchPolicy,
+		JourneyProfileResourcePolicy resourcePolicy,
 		@Value("${easysubway.journey.session.certificate-sha256}") String certificateSha256
 	) {
 		return new JourneySessionService(
@@ -123,7 +123,7 @@ public class JourneyProductionConfiguration {
 			CLOCK,
 			new SecureRandom(),
 			certificateSha256,
-			searchPolicy.maxSearchesPerSession()
+			resourcePolicy.maxCostUnitsPerSession()
 		);
 	}
 
@@ -135,7 +135,6 @@ public class JourneyProductionConfiguration {
 	}
 
 	@Bean
-	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	JourneyProfileResourcePolicy journeyProfileResourcePolicy(
 		@Value("${easysubway.journey.profile.resource-policy-path}") String policyPath,
 		@Value("${easysubway.journey.profile.resource-policy-sha256}") String policySha256
@@ -252,9 +251,10 @@ public class JourneyProductionConfiguration {
 		JourneyApplicationService service,
 		@Qualifier("journeyApplicationExecutor") ExecutorService executor,
 		@Qualifier("journeyMeasurementExecutor") ExecutorService measurementExecutor,
-		JourneySearchPolicyProperties searchPolicy
+		JourneyProfileResourcePolicy resourcePolicy
 	) {
-		return new JourneyApplicationDeadlineExecutor(service, executor, measurementExecutor, searchPolicy.timeout());
+		return new JourneyApplicationDeadlineExecutor(service, executor, measurementExecutor,
+			resourcePolicy.pointSearchDeadline());
 	}
 
 	@Bean

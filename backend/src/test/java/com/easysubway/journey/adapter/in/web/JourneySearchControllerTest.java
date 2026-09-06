@@ -21,6 +21,7 @@ import com.easysubway.journey.application.JourneyExecutionFailure;
 import com.easysubway.journey.application.JourneyExecutionFailure.Reason;
 import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionService.AuthorizedSession;
@@ -30,6 +31,7 @@ import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
 import java.security.SecureRandom;
 import java.time.Clock;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -58,13 +60,15 @@ class JourneySearchControllerTest {
 
 	private JourneySessionService sessionService;
 	private JourneyApplicationDeadlineExecutor deadlineExecutor;
+	private JourneyProfileResourcePolicy resourcePolicy;
 	private MockMvc mockMvc;
 
 	@BeforeEach
 	void setUp() {
 		sessionService = mock(JourneySessionService.class);
 		deadlineExecutor = mock(JourneyApplicationDeadlineExecutor.class);
-		mockMvc = MockMvcBuilders.standaloneSetup(new JourneySearchController(sessionService, deadlineExecutor))
+		resourcePolicy = policy();
+		mockMvc = MockMvcBuilders.standaloneSetup(new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy))
 			.setControllerAdvice(new JourneySearchExceptionHandler(
 				Clock.fixed(NOW, ZoneOffset.UTC),
 				new SecureRandom(new byte[] {1, 2, 3, 4})
@@ -95,7 +99,7 @@ class JourneySearchControllerTest {
 			"effectiveDepartureTime", "serviceDate", "serviceTimezone", "serviceDayCutoff", "sourceIdentity",
 			"requestPolicy", "journeys"
 		);
-		verify(sessionService).authorize("session-token");
+		verify(sessionService).authorize("session-token", 2);
 		var request = ArgumentCaptor.forClass(JourneyRequest.class);
 		verify(deadlineExecutor).execute(request.capture());
 		assertThat(request.getValue()).satisfies(command -> {
@@ -169,14 +173,14 @@ class JourneySearchControllerTest {
 			if (!authorization.isEmpty()) request.header(HttpHeaders.AUTHORIZATION, authorization);
 			assertError(request, 401, "ROUTE_SESSION_REQUIRED", false);
 		}
-		when(sessionService.authorize("rejected-token"))
+		when(sessionService.authorize("rejected-token", 2))
 			.thenThrow(new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED));
 		assertError(post("/api/v3/journeys/search")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer rejected-token")
 			.contentType(MediaType.APPLICATION_JSON)
 			.content(validRequest("{\"mode\":\"NOW\"}")), 401, "ROUTE_SESSION_REQUIRED", false);
 
-		verify(sessionService).authorize("rejected-token");
+		verify(sessionService).authorize("rejected-token", 2);
 		verifyNoInteractions(deadlineExecutor);
 	}
 
@@ -192,7 +196,7 @@ class JourneySearchControllerTest {
 			.content(validRequest("{\"mode\":\"NOW\"}")))
 			.andExpect(status().isOk());
 
-		verify(sessionService).authorize("session-token");
+		verify(sessionService).authorize("session-token", 2);
 		verify(deadlineExecutor).execute(any());
 	}
 
@@ -209,14 +213,14 @@ class JourneySearchControllerTest {
 	@Test
 	@DisplayName("session lifetime limit은 body/application 실행 전에 exact 429로 닫힌다")
 	void rejectsRateLimitedSessionBeforeRequestExecution() throws Exception {
-		when(sessionService.authorize("session-token"))
+		when(sessionService.authorize("session-token", 2))
 			.thenThrow(new JourneySessionException(JourneySessionException.Kind.RATE_LIMITED));
 
 		assertError(post("/api/v3/journeys/search")
 			.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 			.contentType(MediaType.APPLICATION_JSON), 429, "ROUTE_RATE_LIMITED", false);
 
-		verify(sessionService).authorize("session-token");
+		verify(sessionService).authorize("session-token", 2);
 		verifyNoInteractions(deadlineExecutor);
 	}
 
@@ -229,13 +233,13 @@ class JourneySearchControllerTest {
 
 		var exception = assertThrows(
 			JourneySearchController.JourneySearchWebException.class,
-			() -> new JourneySearchController(sessionService, deadlineExecutor)
+			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy)
 				.search("Bearer session-token", request)
 		);
 
 		assertThat(exception.httpStatus()).isEqualTo(400);
 		assertThat(exception.machineCode()).isEqualTo("INVALID_JOURNEY_REQUEST");
-		verify(sessionService).authorize("session-token");
+		verify(sessionService).authorize("session-token", 2);
 		verifyNoInteractions(deadlineExecutor);
 	}
 
@@ -265,7 +269,7 @@ class JourneySearchControllerTest {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body), 400, "INVALID_JOURNEY_REQUEST", false);
 		}
-		verify(sessionService, times(14)).authorize("session-token");
+		verify(sessionService, times(14)).authorize("session-token", 2);
 		verifyNoInteractions(deadlineExecutor);
 	}
 
@@ -291,7 +295,7 @@ class JourneySearchControllerTest {
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(validRequest("{\"mode\":\"NOW\"}")), failure.status(), failure.code(), true);
 		}
-		verify(sessionService, times(8)).authorize("session-token");
+		verify(sessionService, times(8)).authorize("session-token", 2);
 		verify(deadlineExecutor, times(8)).execute(any());
 	}
 
@@ -329,8 +333,15 @@ class JourneySearchControllerTest {
 	}
 
 	private void allowSession() {
-		when(sessionService.authorize("session-token"))
+		when(sessionService.authorize("session-token", 2))
 			.thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
+	}
+
+	private static JourneyProfileResourcePolicy policy() {
+		return new JourneyProfileResourcePolicy(new JourneyProfileResourcePolicy.Identity(
+			"point-policy", "1.0.0", "a".repeat(64)), Duration.ofHours(1), 2, 100, 8, 16, 16,
+			Duration.ofHours(1), Duration.ofSeconds(2), Duration.ofSeconds(5), Duration.ofSeconds(8),
+			2, 2, 3, 4, 10);
 	}
 
 	private static String validRequest(String departure) {

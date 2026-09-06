@@ -67,7 +67,10 @@ class JourneyProfileResourcePolicyArtifactTest {
 	}
 
 	@Test
-	void preservesTheExistingRequestCostCeilingValidation() {
+	void rejectsNonPositiveDeadlinesAndRequestCostsOutsideThePolicyBudget() {
+		assertInvalid(validJson().replace("\"pointSearchDeadlineSeconds\":2", "\"pointSearchDeadlineSeconds\":0"));
+		assertInvalid(validJson().replace("\"profileSearchDeadlineSeconds\":5", "\"profileSearchDeadlineSeconds\":-1"));
+		assertInvalid(validJson().replace("\"lastConnectionDeadlineSeconds\":8", "\"lastConnectionDeadlineSeconds\":0"));
 		assertInvalid(validJson().replace("\"lastConnectionCostUnits\":4", "\"lastConnectionCostUnits\":11"));
 	}
 
