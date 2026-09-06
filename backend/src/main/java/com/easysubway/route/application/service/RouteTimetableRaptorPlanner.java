@@ -292,7 +292,7 @@ class RouteTimetableRaptorPlanner {
 		int rideCount = 0;
 		JourneyRideProjection previousRide = null;
 		JourneyAccessProjection pendingTransfer = null;
-		Long minimumTransferSlack = null;
+		long minimumTransferSlack = Long.MAX_VALUE;
 		for (JourneyLegProjection leg : legs) {
 			if (leg instanceof JourneyAccessProjection access) {
 				if (access.verified()) {
@@ -313,7 +313,7 @@ class RouteTimetableRaptorPlanner {
 				long slack = Duration.between(previousArrival, nextDeparture).getSeconds()
 					- pendingTransfer.durationSeconds() - boardingSlackSeconds;
 				if (slack < 0) throw new IllegalArgumentException("selected transfer must remain feasible");
-				minimumTransferSlack = minimumTransferSlack == null ? slack : Math.min(minimumTransferSlack, slack);
+				minimumTransferSlack = Math.min(minimumTransferSlack, slack);
 				pendingTransfer = null;
 			}
 			previousRide = ride;
@@ -323,7 +323,7 @@ class RouteTimetableRaptorPlanner {
 		int transfersUsed = rideCount - 1;
 		JourneyProfileRaptorPort.ConnectionSlack connectionSlack = transfersUsed == 0
 			? new JourneyProfileRaptorPort.NoTransfer()
-			: new JourneyProfileRaptorPort.MinimumTransferSeconds(Objects.requireNonNull(minimumTransferSlack));
+			: new JourneyProfileRaptorPort.MinimumTransferSeconds(minimumTransferSlack);
 		return new JourneyProfileRaptorPort.ItineraryMetrics(
 			transfersUsed, accessMovementSeconds, accessDistanceMeters, accessibilityBurden, connectionSlack);
 	}

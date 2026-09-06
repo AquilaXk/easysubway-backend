@@ -564,6 +564,26 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void preservesTheSmallestSlackAcrossSuccessiveTransfers() {
+		Instant base = instantAt(0);
+		var legs = List.<RouteTimetableRaptorPlanner.JourneyLegProjection>of(
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY, 100, 20, false),
+			ride("first", base.plusSeconds(500), base.plusSeconds(1_000)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 180, 30, false),
+			ride("second", base.plusSeconds(1_300), base.plusSeconds(1_600)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 120, 20, false),
+			ride("third", base.plusSeconds(1_800), base.plusSeconds(2_000)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER, 120, 20, false),
+			ride("fourth", base.plusSeconds(2_300), base.plusSeconds(2_600)),
+			access(RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT, 50, 10, false));
+
+		// 환승 여유 60·20·120초 중 최솟값을 보존한다. 마지막 값으로 덮어쓰지 않는다.
+		assertThat(RouteTimetableRaptorPlanner.itineraryMetrics(legs, 60))
+			.isEqualTo(new JourneyProfileRaptorPort.ItineraryMetrics(
+				3, 570, 100, 0, new JourneyProfileRaptorPort.MinimumTransferSeconds(20)));
+	}
+
+	@Test
 	void dispatchesLastConnectionToTheNativeTerminalEventPrimitive() {
 		var result = adapter.plan(query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE)), snapshot(), null,
 			policy().profilePlanningLimits());

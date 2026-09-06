@@ -167,24 +167,72 @@ final class JourneyProfileResponseMapper {
 
 	private static JourneyCandidate toJourney(JourneyRaptorQuery query, JourneyProfileCandidateProjectionV1.Candidate candidate) {
 		var itinerary = candidate.itinerary();
-		if (itinerary.realtimeReadyAt() != null || itinerary.realtimeArrivalAtDestination() != null) throw invalid();
+		if (itinerary.realtimeReadyAt() != null || itinerary.realtimeArrivalAtDestination() != null) {
+			throw invalid();
+		}
 		List<JourneyCandidate.Leg> legs = new ArrayList<>();
-		long distance = 0; int transfers = 0; boolean stairs = false; String last = null; boolean rideSeen = false; int stage = 0;
+		long distance = 0;
+		int transfers = 0;
+		boolean stairs = false;
+		String last = null;
+		boolean rideSeen = false;
+		int stage = 0;
 		for (JourneyProfileRaptorPort.Leg nativeLeg : itinerary.legs()) {
 			if (nativeLeg instanceof JourneyProfileRaptorPort.AccessLeg access) {
-				if (!access.verified() || (query.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE && access.includesStairs())) throw invalid();
-				distance += access.distanceMeters(); stairs |= access.includesStairs();
+				if (!access.verified()
+						|| (query.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+						&& access.includesStairs())) {
+					throw invalid();
+				}
+				distance += access.distanceMeters();
+				stairs |= access.includesStairs();
 				switch (access.kind()) {
-					case ENTRY -> { if (stage != 0 || !access.fromStationId().equals(query.originStationId())) throw invalid(); legs.add(new JourneyCandidate.Entry(access.fromStationId(), access.durationSeconds())); stage = 1; last = access.toStationId(); }
-					case TRANSFER -> { if (stage != 2 || !access.fromStationId().equals(last)) throw invalid(); legs.add(new JourneyCandidate.Transfer(access.fromStationId(), access.toStationId(), access.durationSeconds())); transfers++; stage = 1; last = access.toStationId(); }
-					case EXIT -> { if (stage != 2 || !access.fromStationId().equals(last) || !access.toStationId().equals(query.destinationStationId())) throw invalid(); legs.add(new JourneyCandidate.Exit(access.fromStationId(), access.durationSeconds())); stage = 3; }
+					case ENTRY -> {
+						if (stage != 0 || !access.fromStationId().equals(query.originStationId())) {
+							throw invalid();
+						}
+						legs.add(new JourneyCandidate.Entry(access.fromStationId(), access.durationSeconds()));
+						stage = 1;
+						last = access.toStationId();
+					}
+					case TRANSFER -> {
+						if (stage != 2 || !access.fromStationId().equals(last)) {
+							throw invalid();
+						}
+						legs.add(new JourneyCandidate.Transfer(
+								access.fromStationId(), access.toStationId(), access.durationSeconds()));
+						transfers++;
+						stage = 1;
+						last = access.toStationId();
+					}
+					case EXIT -> {
+						if (stage != 2 || !access.fromStationId().equals(last)
+								|| !access.toStationId().equals(query.destinationStationId())) {
+							throw invalid();
+						}
+						legs.add(new JourneyCandidate.Exit(access.fromStationId(), access.durationSeconds()));
+						stage = 3;
+					}
 				}
 			} else if (nativeLeg instanceof JourneyProfileRaptorPort.RideLeg ride) {
-				if (stage != 1 || !ride.fromStationId().equals(last) || ride.realtimeDepartureTime() != null || ride.realtimeArrivalTime() != null) throw invalid();
-				legs.add(new JourneyCandidate.Ride(ride.lineId(), ride.tripId(), ride.directionStationId(), ride.fromStationId(), ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(), null, null)); stage = 2; last = ride.toStationId(); rideSeen = true;
-			} else throw invalid();
+				if (stage != 1 || !ride.fromStationId().equals(last)
+						|| ride.realtimeDepartureTime() != null || ride.realtimeArrivalTime() != null) {
+					throw invalid();
+				}
+				legs.add(new JourneyCandidate.Ride(
+						ride.lineId(), ride.tripId(), ride.directionStationId(), ride.fromStationId(),
+						ride.toStationId(), ride.plannedDepartureTime(), ride.plannedArrivalTime(), null, null));
+				stage = 2;
+				last = ride.toStationId();
+				rideSeen = true;
+			} else {
+				throw invalid();
+			}
 		}
-		if (!rideSeen || stage != 3 || distance != itinerary.metrics().accessDistanceMeters() || transfers != itinerary.metrics().transfersUsed()) throw invalid();
+		if (!rideSeen || stage != 3 || distance != itinerary.metrics().accessDistanceMeters()
+				|| transfers != itinerary.metrics().transfersUsed()) {
+			throw invalid();
+		}
 		return new JourneyCandidate(candidate.candidateId(), candidate.readyAt(), candidate.arrivalAtDestination(), null, null,
 			Duration.between(candidate.readyAt(), candidate.arrivalAtDestination()).toSeconds(), transfers, distance,
 			JourneyCandidate.TimeSource.TIMETABLE, new JourneyCandidate.Accessibility(!stairs, List.of("ACCESSIBILITY_VERIFIED")), legs);
