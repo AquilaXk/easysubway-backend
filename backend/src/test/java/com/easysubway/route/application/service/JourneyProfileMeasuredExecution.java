@@ -136,6 +136,24 @@ final class JourneyProfileMeasuredExecution {
 		return profileRow(regionId, "DEPARTURE_PROFILE", observation, planned, totalLoss, allParity);
 	}
 
+	/** 별도 planner 없이 실제 서비스일 경계를 넘는 도착 희망 질의를 측정한다. */
+	static Map<String, Object> cutoffRow(String regionId, Observation<PlanningResult> observation,
+		List<JourneyProfileExactOracle.Candidate> expected) {
+		Objects.requireNonNull(observation, "observation");
+		if (!(observation.result() instanceof PlanningResult.Planned planned)
+			|| !(planned.temporalPlan() instanceof JourneyProfileRaptorPort.ArriveByPlan arriveBy)) {
+			throw new Unobservable("cutoff observation requires an arrive-by plan");
+		}
+		var temporal = arriveBy.temporalQuery();
+		if (com.easysubway.journey.application.ServiceDayResolver.resolve(temporal.earliestReadyAt()).serviceDate()
+			.equals(com.easysubway.journey.application.ServiceDayResolver.resolve(temporal.arrivalDeadline()).serviceDate())) {
+			throw new Unobservable("cutoff query does not cross a service-day boundary");
+		}
+		var row = new LinkedHashMap<>(reverseRow(regionId, observation, expected));
+		row.put("queryClass", "CUTOFF");
+		return Map.copyOf(row);
+	}
+
 	/** 실제 도착기한 실패와 독립 oracle의 무경로 결과를 비교한다. HTTP/serving 증거는 아니다. */
 	static Map<String, Object> deadlineFailureRow(String regionId, Observation<PlanningResult> observation,
 		List<JourneyProfileExactOracle.Candidate> expected) {
