@@ -136,6 +136,24 @@ final class JourneyProfileMeasuredExecution {
 		return profileRow(regionId, "DEPARTURE_PROFILE", observation, planned, totalLoss, allParity);
 	}
 
+	/** 실제 도착기한 실패와 독립 oracle의 무경로 결과를 비교한다. HTTP/serving 증거는 아니다. */
+	static Map<String, Object> deadlineFailureRow(String regionId, Observation<PlanningResult> observation,
+		List<JourneyProfileExactOracle.Candidate> expected) {
+		if (regionId == null || regionId.isBlank()) throw new IllegalArgumentException("region is required");
+		Objects.requireNonNull(observation, "observation");
+		expected = List.copyOf(Objects.requireNonNull(expected, "expected"));
+		if (!(observation.result() instanceof PlanningResult.Planned planned)
+			|| !(planned.temporalPlan() instanceof JourneyProfileRaptorPort.ArriveByPlan arriveBy)
+			|| !(arriveBy.result() instanceof JourneyProfileRaptorPort.ReversePlan.NotFound notFound)
+			|| notFound.outcome() != JourneyProfileRaptorPort.ReversePlan.Outcome.DEADLINE_MISS) {
+			throw new Unobservable("planner did not observe a deadline failure");
+		}
+		boolean parity = expected.isEmpty();
+		if (!parity) throw new Unobservable("oracle found a connection despite planner deadline failure");
+		// 가능한 oracle 경로가 없으므로 보존해야 할 대표 경로도 없다. 성공 행의 loss 계산을 우회하지 않는다.
+		return profileRow(regionId, "TYPED_FAILURE", observation, planned, expected.size(), parity);
+	}
+
 	private static Map<String, Object> profileRow(
 		String regionId,
 		String queryClass,

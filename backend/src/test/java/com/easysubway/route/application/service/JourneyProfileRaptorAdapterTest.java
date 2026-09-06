@@ -206,6 +206,37 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void measuresADeadlineFailureOnlyWhenIndependentOracleFindsNoConnection() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(36_000)));
+		var rides = JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10);
+		var accesses = JourneyProfileOracleAccessInputs.normalize(accessData(), request.mobilityProfile(),
+			request.constraintMode(), request.walkingPace().speedMetersPerHour(), 10);
+		var oracle = new JourneyProfileExactOracle();
+		var expected = oracle.solve(new JourneyProfileExactOracle.Query(request.originStationId(),
+			request.destinationStationId(), instantAt(30_000), instantAt(36_000), request.maxTransfers(),
+			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), rides, accesses);
+		assertThat(expected).isEmpty();
+		var measured = JourneyProfileMeasuredExecution.capture(request, runtime,
+			() -> adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		var row = JourneyProfileMeasuredExecution.deadlineFailureRow("fixture-region", measured, expected);
+		assertThat(row).containsEntry("queryClass", "TYPED_FAILURE")
+			.containsEntry("oracleParity", true).containsEntry("requiredRepresentativeLoss", 0)
+			.containsEntry("observedWork", measured.result().planningMetrics().workConsumed());
+		var feasible = oracle.solve(new JourneyProfileExactOracle.Query(request.originStationId(),
+			request.destinationStationId(), instantAt(30_000), instantAt(37_000), request.maxTransfers(),
+			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false), rides, accesses);
+		assertThat(feasible).isNotEmpty();
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.deadlineFailureRow("fixture-region", measured, feasible))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		var successQuery = query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)));
+		var success = JourneyProfileMeasuredExecution.capture(successQuery, runtime,
+			() -> adapter.planRuntime(successQuery, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.deadlineFailureRow("fixture-region", success, expected))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+	}
+
+	@Test
 	void matchesRawExactFrequencyOracleForArriveBy() {
 		var source = timetable(List.of(new LoadRouteTimetablePort.TransitFrequency(
 			"direct", 36_000, 36_600, 300, true)));
