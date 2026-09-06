@@ -623,6 +623,20 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void preservesNoActiveServiceWithoutInventingALastConnectionTerminal() {
+		var request = query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE.plusDays(1)));
+		var result = adapter.prepareLastConnection(request, snapshot(), policy().profilePlanningLimits());
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.Prepared.class,
+			prepared -> {
+				assertThat(prepared.terminal()).isEqualTo(new JourneyProfileRaptorPort.Terminal.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.NO_ACTIVE_SERVICE));
+				assertThat(prepared.terminalArrivalAtDestination()).isNull();
+				assertThat(prepared.countSnapshot().requestId()).isEqualTo(request.requestId());
+			});
+	}
+
+	@Test
 	void rejectsRealtimeProfileInsteadOfUsingTimetableAsFallback() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
