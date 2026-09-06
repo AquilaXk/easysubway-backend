@@ -61,9 +61,19 @@ public final class JourneyProfileFullCorpusRunner {
 		var pinned = JourneyProfileMeasurementInputs.read(
 			Objects.requireNonNull(candidateRoot, "candidateRoot"),
 			Objects.requireNonNull(measurementInput, "measurementInput"));
+		return run(pinned, requiredPolicy, requiredLimits, expectedBoardingSlackSeconds, runtimeGeneration);
+	}
+
+	public static CorpusResult run(
+		JourneyProfileMeasurementInputs.PinnedInputs pinned,
+		JourneyProfileResourcePolicy resourcePolicy,
+		OracleLimits oracleLimits,
+		int expectedBoardingSlackSeconds,
+		long runtimeGeneration
+	) {
 		return run(JourneyProfileMeasurementInputs.compile(pinned, runtimeGeneration),
-			JourneyProfileMeasurementInputs.scope(pinned), pinned.measurementInput().regionIds(), requiredPolicy,
-			requiredLimits, expectedBoardingSlackSeconds);
+			JourneyProfileMeasurementInputs.scope(pinned), pinned.measurementInput().regionIds(), resourcePolicy,
+			oracleLimits, expectedBoardingSlackSeconds);
 	}
 
 	static CorpusResult run(
