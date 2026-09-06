@@ -135,6 +135,42 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void projectsMeasuredReverseResultsOnlyAfterIndependentOracleParity() {
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot().runtimeView();
+		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+			"station-a", "station-b", instantAt(30_000), instantAt(37_000), 0,
+			STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(timetable(), SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(accessData(), JourneyRequest.MobilityProfile.STANDARD,
+				JourneyRequest.ConstraintMode.NONE, JourneyRequest.WalkingPace.STANDARD.speedMetersPerHour(), 10));
+		for (var mode : List.of(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000)),
+			new JourneyRaptorQuery.LastConnection(SERVICE_DATE))) {
+			var request = query(mode);
+			var observation = JourneyProfileMeasuredExecution.capture(request, runtime,
+				() -> adapter.planRuntime(request, runtime, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+			var row = JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation, expected);
+			assertThat(row.keySet()).containsExactlyInAnyOrder("regionId", "queryClass", "observedWork",
+				"observedStateLabels", "observedDestinationLabels", "observedBreakpoints", "durationNanos",
+				"allocatedBytes", "saturatedStates", "requiredRepresentativeLoss", "oracleParity");
+			assertThat(row).containsEntry("queryClass", mode instanceof JourneyRaptorQuery.ArriveBy ? "ARRIVE_BY" : "LAST_CONNECTION")
+				.containsEntry("observedWork", observation.result().planningMetrics().workConsumed())
+				.containsEntry("observedStateLabels", observation.result().planningMetrics().peakStateLabels())
+				.containsEntry("observedDestinationLabels", observation.result().planningMetrics().peakDestinationLabels())
+				.containsEntry("observedBreakpoints", observation.result().planningMetrics().reservedProfileBreakpoints())
+				.containsEntry("durationNanos", observation.durationNanos())
+				.containsEntry("allocatedBytes", observation.allocatedBytes())
+				.containsEntry("saturatedStates", observation.result().countSnapshot().countsByRuleId()
+					.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1"))
+				.containsEntry("requiredRepresentativeLoss", 0).containsEntry("oracleParity", true);
+			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation, List.of()))
+				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation,
+				java.util.stream.Stream.concat(expected.stream(), expected.stream()).toList()))
+				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		}
+	}
+
+	@Test
 	void matchesRawExactFrequencyOracleForArriveBy() {
 		var source = timetable(List.of(new LoadRouteTimetablePort.TransitFrequency(
 			"direct", 36_000, 36_600, 300, true)));
