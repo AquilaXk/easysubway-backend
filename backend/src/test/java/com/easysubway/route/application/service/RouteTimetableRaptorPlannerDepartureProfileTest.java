@@ -186,6 +186,42 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	@Test
+	void preservesPickupRestrictionsForPreviousServiceDayTrips() {
+		int departure = Math.toIntExact(Duration.ofHours(28).toSeconds());
+		int allowedDeparture = departure + 120;
+		var source = new RouteTimetable(
+			List.of(calendar("previous-service-day", SERVICE_DATE)), List.of(),
+			List.of(route("route", "line")),
+			List.of(trip("no-pickup", "previous-service-day"),
+				trip("allowed", "previous-service-day")),
+			List.of(new LoadRouteTimetablePort.TransitStopTime(
+				"no-pickup", 1, "station-a", "line", departure, departure, 1, 0),
+				stop("no-pickup", 2, "station-b", departure + 300),
+				stop("allowed", 1, "station-a", allowedDeparture),
+				stop("allowed", 2, "station-b", allowedDeparture + 600)),
+			List.of(), List.of(), null, accessData());
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(instantAt(departure - 900), instantAt(departure)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		var profile = planner.departureProfile(query, planner.compile(source),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits());
+
+		// 날짜 좌표를 바꿔도 원본 승차 금지를 잃거나 금지 열차의 breakpoint를 만들면 안 된다.
+		assertThat(profile).singleElement().satisfies(point -> {
+			assertThat(onlyRide(point).tripId()).isEqualTo("allowed");
+			assertThat(onlyRide(point).plannedDepartureTime()).isEqualTo(instantAt(allowedDeparture));
+			assertThat(onlyRide(point).plannedArrivalTime()).isEqualTo(instantAt(allowedDeparture + 600));
+			assertThat(instantAt(point.serviceDate(), point.readyAtSeconds()))
+				.isEqualTo(instantAt(allowedDeparture - ENTRY_SECONDS
+					- Math.toIntExact(Duration.ofMinutes(1).toSeconds())));
+		});
+	}
+
+	@Test
 	void retainsOneForwardFrontierAcrossLateAndNextNativeServiceDates() {
 		var source = new RouteTimetable(
 			List.of(calendar("late-day", SERVICE_DATE), calendar("next-day", SERVICE_DATE.plusDays(1))),
