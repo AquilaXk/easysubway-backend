@@ -50,7 +50,7 @@ final class JourneyProfileResponseMapper {
 			if (!success.countSnapshot().algorithmIdentity().equals(projection.algorithm())) throw invalid();
 			ObjectNode root = common(query, success, serverQueryId);
 			root.set("temporalQuery", temporal(query.temporalQuery()));
-			root.set("serviceDays", serviceDays(projection.candidates()));
+			root.set("serviceDays", serviceDays(query, projection.candidates()));
 			ArrayNode journeys = root.putArray("journeys");
 			for (JourneyProfileCandidateProjectionV1.Candidate candidate : projection.candidates()) {
 				ObjectNode profileCandidate = journeys.addObject();
@@ -153,9 +153,15 @@ final class JourneyProfileResponseMapper {
 		return node;
 	}
 
-	private static ArrayNode serviceDays(List<JourneyProfileCandidateProjectionV1.Candidate> candidates) {
+	private static ArrayNode serviceDays(JourneyRaptorQuery query,
+		List<JourneyProfileCandidateProjectionV1.Candidate> candidates) {
 		Set<String> dates = new LinkedHashSet<>();
-		for (var candidate : candidates) dates.add(ServiceDayResolver.resolve(candidate.readyAt()).serviceDate().toString());
+		for (var candidate : candidates) {
+			// 막차의 운행일은 선택된 시간표에 속하며, 다음 날 03:00 이후에도 바뀌지 않는다.
+			var date = query.temporalQuery() instanceof JourneyRaptorQuery.LastConnection
+				? candidate.itinerary().serviceDate() : ServiceDayResolver.resolve(candidate.readyAt()).serviceDate();
+			dates.add(date.toString());
+		}
 		if (dates.isEmpty()) throw invalid();
 		ArrayNode values = JSON.createArrayNode();
 		for (String date : dates) {

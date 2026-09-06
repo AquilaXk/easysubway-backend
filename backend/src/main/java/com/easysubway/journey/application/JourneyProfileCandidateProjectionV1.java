@@ -195,7 +195,8 @@ public final class JourneyProfileCandidateProjectionV1 {
 	) {
 		JourneyProfileRaptorPort.Itinerary requiredItinerary = Objects.requireNonNull(itinerary, "itinerary");
 		if (!requiredItinerary.serviceDate().equals(serviceDate)
-			|| !ServiceDayResolver.resolve(pointReadyAt).serviceDate().equals(serviceDate)) {
+			|| (!(query.temporalQuery() instanceof JourneyRaptorQuery.LastConnection)
+				&& !ServiceDayResolver.resolve(pointReadyAt).serviceDate().equals(serviceDate))) {
 			throw new IllegalArgumentException("profile point, ready instant, and itinerary service day must match");
 		}
 		String physicalItineraryId = JourneyProfileCandidateIdentity.physicalItineraryId(

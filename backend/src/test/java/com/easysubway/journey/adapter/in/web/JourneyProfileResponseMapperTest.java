@@ -87,6 +87,31 @@ class JourneyProfileResponseMapperTest {
 	}
 
 	@Test
+	void preservesLastConnectionServiceDateAfterTheNextDaysCutoff() {
+		Instant ready = DATE.atStartOfDay(com.easysubway.journey.application.ServiceDayResolver.ZONE)
+			.toInstant().plus(Duration.ofHours(29));
+		var query = query(new JourneyRaptorQuery.LastConnection(DATE));
+		var original = itinerary(true);
+		var legs = new java.util.ArrayList<>(original.legs());
+		legs.set(1, new JourneyProfileRaptorPort.RideLeg("line", "late-trip", "destination", "board", "platform",
+			ready.plusSeconds(60), ready.plusSeconds(540), null, null));
+		var late = new JourneyProfileRaptorPort.Itinerary(DATE, ready, ready.plusSeconds(600),
+			null, null, original.metrics(), legs);
+		var plan = new JourneyProfileRaptorPort.LastConnectionPlan(
+			(JourneyRaptorQuery.LastConnection) query.temporalQuery(),
+			new JourneyProfileRaptorPort.ReversePlan.Found(java.util.List.of(late)), ready.plusSeconds(600));
+		var template = success(query, plan);
+		var execution = new JourneyProfileExecutionResult.Success(ready, ready.plusSeconds(900),
+			template.sourceIdentity(), template.resourcePolicyIdentity(), plan, template.countSnapshot());
+
+		var json = JourneyProfileResponseMapper.map(query, execution, policy(), "late-last");
+
+		assertThat(json.path("serviceDays")).hasSize(1);
+		assertThat(json.path("serviceDays").get(0).path("serviceDate").asText()).isEqualTo(DATE.toString());
+		assertThat(json.path("summary").path("latestFeasibleDeparture").asText()).isEqualTo(ready.toString());
+	}
+
+	@Test
 	void rejectsRealtimeTimesAndVerifiedStairsInStepFreeTimetableResponses() {
 		var query = query(new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(600)));
 		var valid = itinerary(true);
