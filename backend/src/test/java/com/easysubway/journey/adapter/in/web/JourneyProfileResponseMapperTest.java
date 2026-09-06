@@ -112,6 +112,51 @@ class JourneyProfileResponseMapperTest {
 	}
 
 	private static final Instant START = Instant.parse("2026-09-01T00:00:00Z");
+
+	@Test
+	void preservesVerifiedTransferChainsAndRejectsDisconnectedTransfers() {
+		var query = query(new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(600)));
+		var legs = new java.util.ArrayList<JourneyProfileRaptorPort.Leg>(java.util.List.of(
+			new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
+				"origin", "board", 60, 10, false, true, "VERIFIED"),
+			new JourneyProfileRaptorPort.RideLeg("line-a", "trip-a", "interchange", "board", "interchange",
+				START.plusSeconds(60), START.plusSeconds(240), null, null),
+			new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER,
+				"interchange", "next-board", 60, 10, false, true, "VERIFIED"),
+			new JourneyProfileRaptorPort.RideLeg("line-b", "trip-b", "destination", "next-board", "platform",
+				START.plusSeconds(360), START.plusSeconds(540), null, null),
+			new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.EXIT,
+				"platform", "destination", 60, 10, false, true, "VERIFIED")));
+		var metrics = new JourneyProfileRaptorPort.ItineraryMetrics(1, 180, 30, 0,
+			new JourneyProfileRaptorPort.MinimumTransferSeconds(60));
+		var itinerary = new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600),
+			null, null, metrics, legs);
+		var plan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+			new JourneyProfileRaptorPort.ReversePlan.Found(java.util.List.of(itinerary)));
+		var journey = JourneyProfileResponseMapper.map(query, success(query, plan), policy(), "transfer-query")
+			.path("journeys").get(0).path("journey");
+		assertThat(journey.path("transferCount").asInt()).isEqualTo(1);
+		assertThat(journey.path("walkingDistanceMeters").asLong()).isEqualTo(30);
+		assertThat(journey.path("legs").size()).isEqualTo(5);
+		var transfer = journey.path("legs").get(2);
+		assertThat(transfer.path("type").asText()).isEqualTo("TRANSFER");
+		assertThat(transfer.path("fromStationId").asText())
+			.isEqualTo(journey.path("legs").get(1).path("toStationId").asText()).isEqualTo("interchange");
+		assertThat(transfer.path("toStationId").asText())
+			.isEqualTo(journey.path("legs").get(3).path("fromStationId").asText()).isEqualTo("next-board");
+
+		legs.set(2, new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.TRANSFER,
+			"disconnected", "next-board", 60, 10, false, true, "VERIFIED"));
+		var invalid = new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600),
+			null, null, metrics, legs);
+		var invalidPlan = new JourneyProfileRaptorPort.ArriveByPlan((JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+			new JourneyProfileRaptorPort.ReversePlan.Found(java.util.List.of(invalid)));
+		assertThatThrownBy(() -> JourneyProfileResponseMapper.map(query, success(query, invalidPlan), policy(), "invalid"))
+			.isInstanceOf(JourneyProfileResponseMapper.MappingException.class)
+			.extracting(exception -> ((JourneyProfileResponseMapper.MappingException) exception).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+	}
+
 	private static final LocalDate DATE = LocalDate.of(2026, 9, 1);
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporal) {
