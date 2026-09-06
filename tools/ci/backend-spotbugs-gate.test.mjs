@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'dc6b134b017edd47a289a7292d85387ec7104cc623237c19dcdf33f7e5cf2e48', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: '3f0b644de0bde33704012f9e530ce37ad9f778f1fa7d0aac80fbda2ae6140c29', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
