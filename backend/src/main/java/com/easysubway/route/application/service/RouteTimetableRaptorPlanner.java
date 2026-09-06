@@ -62,6 +62,7 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
+import java.util.function.Function;
 
 class RouteTimetableRaptorPlanner {
 
@@ -1656,7 +1657,7 @@ class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits
 	) {
-		return departureProfile(query, timetable, realtimeOverlay, planningLimits, null);
+		return departureProfile(query, timetable, ignored -> realtimeOverlay, planningLimits, null);
 	}
 
 	List<JourneyDepartureProfilePoint> departureProfile(
@@ -1666,9 +1667,30 @@ class RouteTimetableRaptorPlanner {
 		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits,
 		JourneyProfilePruningObservationAccumulator observations
 	) {
+		return departureProfile(query, timetable, ignored -> realtimeOverlay, planningLimits, observations);
+	}
+
+	List<JourneyDepartureProfilePoint> departureProfile(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		RaptorRealtimeRuntimeView realtimeRuntime,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
+		Objects.requireNonNull(realtimeRuntime, "realtimeRuntime must not be null");
+		return departureProfile(query, timetable, realtimeRuntime::realtimeOverlay, planningLimits, observations);
+	}
+
+	private List<JourneyDepartureProfilePoint> departureProfile(
+		JourneyRaptorQuery query,
+		CompiledTimetable timetable,
+		Function<LocalDate, RealtimeOverlay> overlays,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits planningLimits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
 		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query must not be null");
 		Objects.requireNonNull(timetable, "timetable must not be null");
-		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		Objects.requireNonNull(overlays, "overlays must not be null");
 		JourneyProfileResourcePolicy.ProfilePlanningLimits requiredLimits = Objects.requireNonNull(
 			planningLimits, "planningLimits");
 		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartBetween range)) {
@@ -1688,7 +1710,7 @@ class RouteTimetableRaptorPlanner {
 			profile.addAll(departureProfileSlice(
 				requiredQuery,
 				timetable,
-				realtimeOverlay,
+				overlays,
 				serviceDate,
 				earliestReadyAtSeconds,
 				latestReadyAtSeconds,
@@ -1701,7 +1723,7 @@ class RouteTimetableRaptorPlanner {
 	private List<JourneyDepartureProfilePoint> departureProfileSlice(
 		JourneyRaptorQuery query,
 		CompiledTimetable timetable,
-		RealtimeOverlay realtimeOverlay,
+		Function<LocalDate, RealtimeOverlay> overlays,
 		LocalDate serviceDate,
 		int earliestReadyAtSeconds,
 		int latestReadyAtSeconds,
@@ -1717,6 +1739,8 @@ class RouteTimetableRaptorPlanner {
 		if (activeServiceDay.trips().isEmpty()) {
 			return List.of();
 		}
+		RealtimeOverlay realtimeOverlay = Objects.requireNonNull(overlays.apply(serviceDay.date()),
+			"realtime overlay must not be null");
 		int origin = timetable.stationIndex(profileInput.originStationId());
 		int destination = timetable.stationIndex(profileInput.destinationStationId());
 		if (origin < 0 || destination < 0) {

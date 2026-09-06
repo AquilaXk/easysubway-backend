@@ -125,10 +125,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			|| snapshot.generation() != realtimeRuntime.generation()) {
 			throw new IllegalArgumentException("realtime runtime view does not match captured Journey generation");
 		}
-		if (!realtimeRuntime.serviceDate().equals(serviceDate(query))) {
-			throw new IllegalArgumentException("realtime runtime service date does not match Journey query");
-		}
-		return realtimeRuntime.realtimeOverlay();
+		return realtimeRuntime.realtimeOverlay(serviceDate(query));
 	}
 
 	private static java.time.LocalDate serviceDate(JourneyRaptorQuery query) {
