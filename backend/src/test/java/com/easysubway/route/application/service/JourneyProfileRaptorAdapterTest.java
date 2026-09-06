@@ -164,6 +164,8 @@ class JourneyProfileRaptorAdapterTest {
 				.containsEntry("requiredRepresentativeLoss", 0).containsEntry("oracleParity", true);
 			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation, List.of()))
 				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.cutoffRow("fixture-region", observation, expected))
+				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
 			assertThatThrownBy(() -> JourneyProfileMeasuredExecution.reverseRow("fixture-region", observation,
 				java.util.stream.Stream.concat(expected.stream(), expected.stream()).toList()))
 				.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
@@ -343,8 +345,13 @@ class JourneyProfileRaptorAdapterTest {
 
 	@Test
 	void dispatchesArriveByAcrossTheServiceDayCutoffWithoutDroppingA27HourTrip() {
-		var result = adapter.plan(query(new JourneyRaptorQuery.ArriveBy(instantAt(96_000), instantAt(98_043))),
-			snapshot(crossCutoffTimetable()), null, policy().profilePlanningLimits());
+		var source = crossCutoffTimetable();
+		var captured = snapshot(source);
+		var request = query(new JourneyRaptorQuery.ArriveBy(instantAt(96_000), instantAt(98_043)));
+		var measurement = JourneyProfileMeasuredExecution.capture(request,
+			(RaptorRouteBundleRuntimeView) captured.runtimeView(),
+			() -> adapter.plan(request, captured, null, policy().profilePlanningLimits()), () -> 1, () -> 1);
+		var result = measurement.result();
 
 		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.PlanningResult.Planned.class, planned ->
 			assertThat(planned.temporalPlan()).isInstanceOfSatisfying(JourneyProfileRaptorPort.ArriveByPlan.class, plan ->
@@ -353,6 +360,16 @@ class JourneyProfileRaptorAdapterTest {
 						assertThat(itinerary.plannedReadyAt()).isEqualTo(Instant.parse("2026-07-01T17:54:00Z"));
 						assertThat(itinerary.plannedArrivalAtDestination()).isEqualTo(Instant.parse("2026-07-01T18:12:00Z"));
 					}))));
+		var expected = new JourneyProfileExactOracle().solve(new JourneyProfileExactOracle.Query(
+			request.originStationId(), request.destinationStationId(), instantAt(96_000), instantAt(98_043),
+			request.maxTransfers(), STANDARD_BOARDING_SLACK_SECONDS, 10_000, () -> false),
+			JourneyProfileScheduledOracleInputs.rides(source, SERVICE_DATE, 10),
+			JourneyProfileOracleAccessInputs.normalize(source.routeAccessData(), request.mobilityProfile(),
+				request.constraintMode(), request.walkingPace().speedMetersPerHour(), 10));
+		var row = JourneyProfileMeasuredExecution.cutoffRow("fixture-region", measurement, expected);
+		assertThat(row).containsEntry("queryClass", "CUTOFF").containsEntry("oracleParity", true)
+			.containsEntry("requiredRepresentativeLoss", 0)
+			.containsEntry("observedWork", result.planningMetrics().workConsumed());
 	}
 
 	@Test
