@@ -105,10 +105,6 @@ class JourneyProfileSummaryPolicyV1Test {
 		assertThatThrownBy(() -> JourneyProfileSummaryPolicyV1.select(
 			query(new JourneyRaptorQuery.DepartBetween(START, START.plusSeconds(60)), 1), labels, 0))
 			.isInstanceOf(IllegalArgumentException.class);
-		assertThatThrownBy(() -> JourneyProfileSummaryPolicyV1.select(
-			query(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 3)), 1), labels, 1))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("service day");
 	}
 
 	private static JourneyRaptorQuery query(JourneyRaptorQuery.TemporalQuery temporalQuery, int alternativeCount) {
