@@ -73,38 +73,71 @@ final class ReverseTimetableRaptorPlanner {
 		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
 		Objects.requireNonNull(overlays, "overlays must not be null");
 		Objects.requireNonNull(limits, "limits must not be null");
-		if (query.cancelled().getAsBoolean()) {
-			return LastConnectionResult.cancelled();
+		PreparedLastConnection preparation = prepareLastConnection(
+			query, timetable, activeServiceDay, overlays, limits, observations);
+		if (preparation.outcome() != Outcome.FOUND) {
+			return new LastConnectionResult(Result.of(preparation.outcome()), null);
 		}
-		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
-		DatedTripCollection collection = activeTrips(
-			timetable, query.serviceDate(), query.serviceDate(), ignored -> activeServiceDay,
-			overlays, limitTracker, query.cancelled());
-		if (collection.cancelled()) return LastConnectionResult.cancelled();
-		List<DatedScheduledTrip> activeTrips = collection.trips();
-		if (activeTrips.isEmpty()) {
-			return new LastConnectionResult(Result.of(Outcome.NO_ACTIVE_SERVICE), null);
-		}
-
-		Integer terminalDeadline = terminalDeadline(query, timetable, activeTrips, limitTracker);
-		if (query.cancelled().getAsBoolean()) {
-			return LastConnectionResult.cancelled();
-		}
-		if (terminalDeadline == null) {
-			return new LastConnectionResult(hasVerifiedExit(query, timetable, activeTrips, limitTracker)
-				? Result.of(Outcome.NO_OD_CONNECTION)
-				: Result.of(Outcome.NO_VERIFIED_EXIT), null);
-		}
+		Integer terminalDeadline = preparation.terminalArrivalAtDestinationSeconds();
 		Result result = arriveBy(new Query(
 			query.originStationId(), query.destinationStationId(), query.serviceDate(), 0, terminalDeadline,
 			query.maxTransfers(), query.accessProfileBit(), query.boardingSlackSeconds(), query.mobilityPreset(),
 			query.walkingSpeedMetersPerHour(), query.requiresVerifiedJourneyDistance(), query.cancelled()),
-			timetable, activeTrips, limitTracker);
+			timetable, preparation.activeTrips(), preparation.limitTracker());
 		if (result.outcome() == Outcome.CANCELLED) {
 			return LastConnectionResult.cancelled();
 		}
 		return new LastConnectionResult(result.outcome() == Outcome.DEADLINE_MISS
 			? Result.of(Outcome.NO_OD_CONNECTION) : result, terminalDeadline);
+	}
+
+	LastConnectionPreparation prepareLastConnection(
+		LastConnectionQuery query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
+		Objects.requireNonNull(realtimeOverlay, "realtimeOverlay must not be null");
+		PreparedLastConnection preparation = prepareLastConnection(
+			query, timetable, activeServiceDay, ignored -> realtimeOverlay, limits, observations);
+		return new LastConnectionPreparation(preparation.outcome(), preparation.terminalArrivalAtDestinationSeconds());
+	}
+
+	private PreparedLastConnection prepareLastConnection(
+		LastConnectionQuery query,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		RouteTimetableRaptorPlanner.ActiveServiceDay activeServiceDay,
+		Function<LocalDate, RouteTimetableRaptorPlanner.RealtimeOverlay> overlays,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits,
+		JourneyProfilePruningObservationAccumulator observations
+	) {
+		Objects.requireNonNull(query, "query must not be null");
+		Objects.requireNonNull(timetable, "timetable must not be null");
+		Objects.requireNonNull(activeServiceDay, "activeServiceDay must not be null");
+		Objects.requireNonNull(overlays, "overlays must not be null");
+		Objects.requireNonNull(limits, "limits must not be null");
+		ReverseLimitTracker limitTracker = new ReverseLimitTracker(limits, observations);
+		if (query.cancelled().getAsBoolean()) {
+			return PreparedLastConnection.terminal(Outcome.CANCELLED, limitTracker);
+		}
+		DatedTripCollection collection = activeTrips(
+			timetable, query.serviceDate(), query.serviceDate(), ignored -> activeServiceDay,
+			overlays, limitTracker, query.cancelled());
+		if (collection.cancelled()) return PreparedLastConnection.terminal(Outcome.CANCELLED, limitTracker);
+		List<DatedScheduledTrip> activeTrips = collection.trips();
+		if (activeTrips.isEmpty()) return PreparedLastConnection.terminal(Outcome.NO_ACTIVE_SERVICE, limitTracker);
+
+		Integer terminalDeadline = terminalDeadline(query, timetable, activeTrips, limitTracker);
+		if (query.cancelled().getAsBoolean()) return PreparedLastConnection.terminal(Outcome.CANCELLED, limitTracker);
+		if (terminalDeadline != null) {
+			return new PreparedLastConnection(Outcome.FOUND, terminalDeadline, activeTrips, limitTracker);
+		}
+		boolean verifiedExit = hasVerifiedExit(query, timetable, activeTrips, limitTracker);
+		if (query.cancelled().getAsBoolean()) return PreparedLastConnection.terminal(Outcome.CANCELLED, limitTracker);
+		return PreparedLastConnection.terminal(
+			verifiedExit ? Outcome.NO_OD_CONNECTION : Outcome.NO_VERIFIED_EXIT, limitTracker);
 	}
 
 	Result arriveBy(
@@ -783,6 +816,40 @@ final class ReverseTimetableRaptorPlanner {
 
 		static LastConnectionResult cancelled() {
 			return new LastConnectionResult(Result.cancelled(), null);
+		}
+	}
+
+	record LastConnectionPreparation(Outcome outcome, Integer terminalArrivalAtDestinationSeconds) {
+		LastConnectionPreparation {
+			outcome = Objects.requireNonNull(outcome, "outcome");
+			if (outcome == Outcome.FOUND && terminalArrivalAtDestinationSeconds == null
+				|| outcome != Outcome.FOUND && terminalArrivalAtDestinationSeconds != null) {
+				throw new IllegalArgumentException("terminal arrival must match preparation outcome");
+			}
+		}
+	}
+
+	private record PreparedLastConnection(
+		Outcome outcome,
+		Integer terminalArrivalAtDestinationSeconds,
+		List<DatedScheduledTrip> activeTrips,
+		ReverseLimitTracker limitTracker
+	) {
+		private PreparedLastConnection {
+			outcome = Objects.requireNonNull(outcome, "outcome");
+			limitTracker = Objects.requireNonNull(limitTracker, "limitTracker");
+			if (outcome == Outcome.FOUND) {
+				Objects.requireNonNull(terminalArrivalAtDestinationSeconds, "found preparation needs terminal arrival");
+				activeTrips = List.copyOf(Objects.requireNonNull(activeTrips, "found preparation needs active trips"));
+			} else if (terminalArrivalAtDestinationSeconds != null || activeTrips != null && !activeTrips.isEmpty()) {
+				throw new IllegalArgumentException("terminal failure must not retain active trips or terminal arrival");
+			} else {
+				activeTrips = List.of();
+			}
+		}
+
+		static PreparedLastConnection terminal(Outcome outcome, ReverseLimitTracker limitTracker) {
+			return new PreparedLastConnection(outcome, null, List.of(), limitTracker);
 		}
 	}
 

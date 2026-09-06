@@ -12,7 +12,6 @@ import java.util.Objects;
  * compression, summaries, resource-policy projection, and HTTP serialization belong to later
  * contract-owned layers.</p>
  */
-@FunctionalInterface
 public interface JourneyProfileRaptorPort {
 
 	PlanningResult plan(
@@ -21,6 +20,82 @@ public interface JourneyProfileRaptorPort {
 		JourneyRealtimePort.RealtimeObservation realtimeOrNull,
 		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
 	);
+
+	/**
+	 * Resolves only the verified native terminal event used to decide whether a realtime
+	 * last-connection request is within the configured future horizon. This does not plan a route.
+	 */
+	LastConnectionPreparation prepareLastConnection(
+		JourneyRaptorQuery query,
+		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+	);
+
+	sealed interface LastConnectionPreparation permits LastConnectionPreparation.Prepared,
+		LastConnectionPreparation.AdmissionRejected, LastConnectionPreparation.CapacityExceeded {
+		JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot();
+		PlanningMetrics planningMetrics();
+
+		record Prepared(
+			Terminal terminal,
+			Instant terminalArrivalAtDestination,
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+			PlanningMetrics planningMetrics
+		) implements LastConnectionPreparation {
+			public Prepared {
+				terminal = Objects.requireNonNull(terminal, "terminal");
+				if (terminal instanceof Terminal.Found && terminalArrivalAtDestination == null
+					|| terminal instanceof Terminal.NotFound && terminalArrivalAtDestination != null) {
+					throw new IllegalArgumentException("terminal arrival must match terminal outcome");
+				}
+				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
+				planningMetrics = Objects.requireNonNull(planningMetrics, "planningMetrics");
+			}
+		}
+
+		record AdmissionRejected(
+			long observed,
+			long max,
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+			PlanningMetrics planningMetrics
+		) implements LastConnectionPreparation {
+			public AdmissionRejected {
+				if (observed < 0 || max < 1 || observed <= max) {
+					throw new IllegalArgumentException("admission rejection must exceed a positive maximum");
+				}
+				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
+				planningMetrics = Objects.requireNonNull(planningMetrics, "planningMetrics");
+			}
+		}
+
+		record CapacityExceeded(
+			PlanningCapacity dimension,
+			long observed,
+			long max,
+			JourneyRaptorPruningInventoryV1.CountSnapshot countSnapshot,
+			PlanningMetrics planningMetrics
+		) implements LastConnectionPreparation {
+			public CapacityExceeded {
+				dimension = Objects.requireNonNull(dimension, "dimension");
+				if (observed < 0 || max < 1 || observed <= max) {
+					throw new IllegalArgumentException("capacity exceedance must exceed a positive maximum");
+				}
+				countSnapshot = Objects.requireNonNull(countSnapshot, "countSnapshot");
+				planningMetrics = Objects.requireNonNull(planningMetrics, "planningMetrics");
+			}
+		}
+	}
+
+	sealed interface Terminal permits Terminal.Found, Terminal.NotFound {
+		record Found() implements Terminal {
+		}
+
+		record NotFound(ReversePlan.Outcome outcome) implements Terminal {
+			public NotFound {
+				outcome = Objects.requireNonNull(outcome, "outcome");
+			}
+		}
+	}
 
 	sealed interface PlanningResult permits PlanningResult.Planned, PlanningResult.AdmissionRejected,
 		PlanningResult.CapacityExceeded {

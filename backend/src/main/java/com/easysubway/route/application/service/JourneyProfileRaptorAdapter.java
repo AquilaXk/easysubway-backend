@@ -38,6 +38,55 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		return planRuntime(query, requireRouteRuntime(snapshot), realtimeOrNull, limits);
 	}
 
+	@Override
+	public LastConnectionPreparation prepareLastConnection(
+		JourneyRaptorQuery query,
+		ActiveJourneySnapshot snapshot,
+		JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+	) {
+		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
+		JourneyProfileResourcePolicy.ProfilePlanningLimits requiredLimits = Objects.requireNonNull(limits, "limits");
+		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.LastConnection lastConnection)) {
+			throw new IllegalArgumentException("last-connection preparation requires LAST_CONNECTION");
+		}
+		if (requiredQuery.isCancelled()) throw new IllegalStateException("Journey profile planning was cancelled");
+		RaptorRouteBundleRuntimeView runtime = requireRouteRuntime(snapshot);
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable = runtime.compiledTimetable();
+		var observations = new JourneyProfilePruningObservationAccumulator(
+			requiredQuery.requestId(), algorithmIdentity(requiredQuery));
+		try {
+			ReverseTimetableRaptorPlanner.LastConnectionPreparation preparation = reverse.prepareLastConnection(
+				forward.reverseLastConnectionQuery(requiredQuery, lastConnection.serviceDate()), timetable,
+				timetable.activeServiceDay(lastConnection.serviceDate()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+				requiredLimits, observations);
+			JourneyProfileRaptorPort.Terminal terminal = preparation.outcome()
+				== ReverseTimetableRaptorPlanner.Outcome.FOUND
+				? new JourneyProfileRaptorPort.Terminal.Found()
+				: new JourneyProfileRaptorPort.Terminal.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.valueOf(preparation.outcome().name()));
+			Instant terminalArrival = preparation.terminalArrivalAtDestinationSeconds() == null ? null
+				: serviceInstant(lastConnection.serviceDate(), preparation.terminalArrivalAtDestinationSeconds());
+			return new LastConnectionPreparation.Prepared(terminal, terminalArrival, observations.snapshot(),
+				observations.planningMetrics());
+		} catch (RouteTimetableRaptorPlanner.ProfilePlanningLimitException exceeded) {
+			return switch (exceeded.limit()) {
+				case MAX_ESTIMATED_WORK -> new LastConnectionPreparation.AdmissionRejected(
+					exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
+				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS, MAX_PROFILE_BREAKPOINTS ->
+					new LastConnectionPreparation.CapacityExceeded(PlanningCapacity.valueOf(exceeded.limit().name()),
+						exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
+			};
+		} catch (ReverseTimetableRaptorPlanner.ReversePlanningLimitException exceeded) {
+			return switch (exceeded.limit()) {
+				case MAX_ESTIMATED_WORK -> new LastConnectionPreparation.AdmissionRejected(
+					exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
+				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS ->
+					new LastConnectionPreparation.CapacityExceeded(PlanningCapacity.valueOf(exceeded.limit().name()),
+						exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
+			};
+		}
+	}
+
 	// 배포 전 측정은 serving 증거를 합성하지 않고 같은 runtime 계산을 호출한다.
 	PlanningResult planRuntime(
 		JourneyRaptorQuery query,

@@ -594,6 +594,19 @@ class JourneyProfileRaptorAdapterTest {
 	}
 
 	@Test
+	void preparesTheNativeExtendedServiceDayTerminalWithoutRunningLastConnectionRouting() {
+		var result = adapter.prepareLastConnection(query(new JourneyRaptorQuery.LastConnection(SERVICE_DATE)),
+			snapshot(crossCutoffTimetable()), policy().profilePlanningLimits());
+
+		assertThat(result).isInstanceOfSatisfying(JourneyProfileRaptorPort.LastConnectionPreparation.Prepared.class,
+			prepared -> {
+				assertThat(prepared.terminal()).isInstanceOf(JourneyProfileRaptorPort.Terminal.Found.class);
+				// 27:10 운행과 검증된 2분 출구 접근: 03:00이나 자정으로 절단하지 않는다.
+				assertThat(prepared.terminalArrivalAtDestination()).isEqualTo(instantAt(97_920));
+			});
+	}
+
+	@Test
 	void rejectsRealtimeProfileInsteadOfUsingTimetableAsFallback() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
