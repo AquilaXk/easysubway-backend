@@ -11,12 +11,16 @@ import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRaptorPruningInventoryV1;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.ServiceDayResolver;
+import com.easysubway.journey.bundle.JourneyProfileMeasurementInputs;
+import com.easysubway.journey.bundle.RouteBundleIdentity;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
+import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
@@ -32,6 +36,41 @@ class JourneyProfileRaptorAdapterTest {
 	private static final LocalDate SERVICE_DATE = LocalDate.of(2026, 7, 1);
 	private static final int STANDARD_BOARDING_SLACK_SECONDS = 60;
 	private final JourneyProfileRaptorAdapter adapter = new JourneyProfileRaptorAdapter();
+
+	@Test
+	void runsAllSixMeasurementClassesAgainstOneSmallMorningTimetable() throws Exception {
+		var base = timetable();
+		var source = new RouteTimetable(base.serviceCalendars(), base.serviceCalendarDates(),
+			base.transitRoutes(), base.transitTrips(),
+			List.of(stop("direct", 1, "station-a", 4 * 3_600), stop("direct", 2, "station-b", 4 * 3_600 + 600)),
+			base.transitFrequencies(), List.of(), null, accessData());
+		var runtime = (RaptorRouteBundleRuntimeView) snapshot(source).runtimeView();
+		var formatter = DateTimeFormatter.ofPattern("yyyy-MM-dd'T'HH:mm:ss.SSSXXX");
+		var identity = new RouteBundleIdentity(
+			1, "server-route-bundle", "fixture-bundle", 1,
+			ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA,
+			ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, ROUTE_BUNDLE_SHA, "Asia/Seoul",
+			SERVICE_DATE.atStartOfDay(ServiceDayResolver.ZONE).format(formatter),
+			SERVICE_DATE.plusDays(1).atStartOfDay(ServiceDayResolver.ZONE).format(formatter),
+			new RouteBundleIdentity.SchemaCompatibility(3, 3), "fixture-key",
+			new RouteBundleIdentity.Signature("rsa-sha256-server-route-bundle-v1", "fixture"));
+		var compiled = new JourneyProfileMeasurementInputs.CompiledMeasurementInputs(
+			runtime, identity, source);
+		var scope = new JourneyProfileMeasurementInputs.Scope("fixture", ROUTE_BUNDLE_SHA,
+			List.of(new JourneyProfileMeasurementInputs.Line("fixture-region", "operator", "line")));
+
+		var result = JourneyProfileFullCorpusRunner.run(compiled, scope, List.of("fixture-region"), policy(),
+			new JourneyProfileFullCorpusRunner.OracleLimits(100_000, 10, 10), STANDARD_BOARDING_SLACK_SECONDS);
+
+		assertThat(result.rows()).extracting(row -> row.get("queryClass")).containsExactly(
+			"POINT", "DEPARTURE_PROFILE", "ARRIVE_BY", "LAST_CONNECTION", "CUTOFF", "TYPED_FAILURE");
+		assertThat(result.rows()).allSatisfy(row -> {
+			assertThat(row).containsEntry("oracleParity", true).containsEntry("requiredRepresentativeLoss", 0);
+			assertThat(((Number) row.get("durationNanos")).longValue()).isGreaterThanOrEqualTo(0);
+			assertThat(((Number) row.get("allocatedBytes")).longValue()).isGreaterThanOrEqualTo(0);
+		});
+		assertThat(result.corpus().get("regionIds")).isEqualTo(List.of("fixture-region"));
+	}
 
 	@Test
 	void measuresOnePointPlannerExecutionWithoutServingObservation() {
