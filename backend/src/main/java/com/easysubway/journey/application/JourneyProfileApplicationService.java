@@ -47,6 +47,9 @@ public final class JourneyProfileApplicationService {
 			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE);
 		}
 		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
+			if (realtimeNotApplicable(requiredQuery.temporalQuery(), calculatedAt, requiredPolicy)) {
+				return failure(JourneyProfileExecutionResult.Reason.REALTIME_NOT_APPLICABLE);
+			}
 			return failure(JourneyProfileExecutionResult.Reason.REALTIME_UNAVAILABLE);
 		}
 		Instant freshnessReference = freshnessReference(requiredQuery.temporalQuery());
@@ -118,6 +121,32 @@ public final class JourneyProfileApplicationService {
 	private static long inclusiveServiceDays(Instant earliest, Instant latest) {
 		return ChronoUnit.DAYS.between(ServiceDayResolver.resolve(earliest).serviceDate(),
 			ServiceDayResolver.resolve(latest).serviceDate()) + 1;
+	}
+
+	private static boolean realtimeNotApplicable(
+		JourneyRaptorQuery.TemporalQuery temporalQuery,
+		Instant calculatedAt,
+		JourneyProfileResourcePolicy resourcePolicy
+	) {
+		return switch (temporalQuery) {
+			case JourneyRaptorQuery.DepartBetween range -> exceedsRealtimeFutureHorizon(
+				calculatedAt, range.latestReadyAt(), resourcePolicy);
+			case JourneyRaptorQuery.ArriveBy arriveBy -> exceedsRealtimeFutureHorizon(
+				calculatedAt, arriveBy.arrivalDeadline(), resourcePolicy);
+			// 막차는 실제 시간표 terminal horizon이 필요하며, 현재는 실시간 unavailable을 유지한다.
+			case JourneyRaptorQuery.LastConnection ignored -> false;
+			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
+				"profile execution requires a temporal profile query");
+		};
+	}
+
+	private static boolean exceedsRealtimeFutureHorizon(
+		Instant calculatedAt,
+		Instant end,
+		JourneyProfileResourcePolicy resourcePolicy
+	) {
+		return Duration.between(calculatedAt, end)
+			.compareTo(resourcePolicy.realtimeApplicableFutureHorizon()) > 0;
 	}
 
 	private static JourneyProfileExecutionResult.Reason terminalFailure(
