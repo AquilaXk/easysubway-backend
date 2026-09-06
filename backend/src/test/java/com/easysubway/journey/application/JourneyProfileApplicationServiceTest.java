@@ -317,6 +317,119 @@ class JourneyProfileApplicationServiceTest {
 	}
 
 	@Test
+	void containsRealtimeLastConnectionPreparationExceptionsWithCancellationPrecedence() {
+		for (boolean cancelDuringPreparation : List.of(false, true)) {
+			var cancelled = new AtomicBoolean();
+			var original = query(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1)));
+			var requested = new JourneyRaptorQuery(original.requestId(), original.originStationId(),
+				original.destinationStationId(), original.temporalQuery(), JourneyRequest.TimePolicy.REALTIME_REQUIRED,
+				original.walkingPace(), original.mobilityProfile(), original.constraintMode(), original.maxTransfers(),
+				original.alternativeCount(), cancelled::get);
+			var preparationCalls = new AtomicInteger();
+			var fullPlanCalls = new AtomicInteger();
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(86_400)),
+				raptor((query, snapshot, realtime, limits) -> {
+					fullPlanCalls.incrementAndGet();
+					throw new AssertionError("realtime last-connection classification must not plan a route");
+				}, (query, snapshot, limits) -> {
+					preparationCalls.incrementAndGet();
+					cancelled.set(cancelDuringPreparation);
+					throw new IllegalStateException("preparation failure in this fixture");
+				}), Clock.fixed(NOW, ZoneOffset.UTC));
+
+			assertThat(((JourneyProfileExecutionResult.Failure) service.execute(requested, policy())).reason()).isEqualTo(
+				cancelDuringPreparation ? JourneyProfileExecutionResult.Reason.CANCELLED
+					: JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+			assertThat(preparationCalls).hasValue(1);
+			assertThat(fullPlanCalls).hasValue(0);
+		}
+	}
+
+	@Test
+	void rejectsInvalidRealtimeLastConnectionPreparationEvidenceWithoutPlanningARoute() {
+		var requested = realtimeRequired(query(new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1))));
+		var fullPlanCalls = new AtomicInteger();
+		for (LastConnectionPreparer preparer : List.<LastConnectionPreparer>of(
+			(query, snapshot, limits) -> null,
+			(query, snapshot, limits) -> new JourneyProfileRaptorPort.LastConnectionPreparation.Prepared(
+				new JourneyProfileRaptorPort.Terminal.Found(), NOW.plusSeconds(60),
+				snapshot("01ARZ3NDEKTSV4RRFFQ69G5FAA", JourneyRaptorPruningInventoryV1.REVERSE_RANGE_RAPTOR),
+				planningMetrics())
+		)) {
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(86_400)),
+				raptor((query, snapshot, realtime, limits) -> {
+					fullPlanCalls.incrementAndGet();
+					throw new AssertionError("realtime last-connection classification must not plan a route");
+				}, preparer), Clock.fixed(NOW, ZoneOffset.UTC));
+
+			assertThat(((JourneyProfileExecutionResult.Failure) service.execute(requested, policy())).reason())
+				.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+		assertThat(fullPlanCalls).hasValue(0);
+	}
+
+	@Test
+	void mapsRealtimeLastConnectionPreparationOutcomesWithoutPlanningAFullRoute() {
+		var temporal = new JourneyRaptorQuery.LastConnection(LocalDate.of(2026, 9, 1));
+		var requested = realtimeRequired(query(temporal));
+		var matchingCounts = snapshot(requested);
+		var cancelledCounts = snapshot(requested);
+		var fullPlanCalls = new AtomicInteger();
+		var cancelled = new AtomicBoolean();
+		var cancelledRequest = new JourneyRaptorQuery(requested.requestId(), requested.originStationId(),
+			requested.destinationStationId(), requested.temporalQuery(), requested.timePolicy(), requested.walkingPace(),
+			requested.mobilityProfile(), requested.constraintMode(), requested.maxTransfers(), requested.alternativeCount(),
+			cancelled::get);
+		var admissionService = realtimeLastConnectionService(fullPlanCalls, NOW.plusSeconds(86_400),
+			(query, snapshot, limits) -> new JourneyProfileRaptorPort.LastConnectionPreparation.AdmissionRejected(
+				1_001, 1_000, matchingCounts, planningMetrics()));
+		var capacityService = realtimeLastConnectionService(fullPlanCalls, NOW.plusSeconds(86_400),
+			(query, snapshot, limits) -> new JourneyProfileRaptorPort.LastConnectionPreparation.CapacityExceeded(
+				JourneyProfileRaptorPort.PlanningCapacity.MAX_LABELS_PER_STATE, 9, 8, matchingCounts, planningMetrics()));
+		var cancelledService = realtimeLastConnectionService(fullPlanCalls, NOW.plusSeconds(86_400),
+			(query, snapshot, limits) -> {
+				cancelled.set(true);
+				return new JourneyProfileRaptorPort.LastConnectionPreparation.Prepared(
+					new JourneyProfileRaptorPort.Terminal.Found(), NOW.plusSeconds(60), cancelledCounts, planningMetrics());
+			});
+		var expiryBoundary = NOW.plusSeconds(68_400);
+		var staleService = realtimeLastConnectionService(fullPlanCalls, expiryBoundary,
+			(query, snapshot, limits) -> preparedTerminal(query, expiryBoundary));
+		var nativeCancelledService = realtimeLastConnectionService(fullPlanCalls, NOW.plusSeconds(86_400),
+			(query, snapshot, limits) -> new JourneyProfileRaptorPort.LastConnectionPreparation.Prepared(
+				new JourneyProfileRaptorPort.Terminal.NotFound(
+					JourneyProfileRaptorPort.ReversePlan.Outcome.CANCELLED), null, matchingCounts, planningMetrics()));
+
+		assertThat(((JourneyProfileExecutionResult.Failure) admissionService.execute(requested, policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX);
+		assertThat(((JourneyProfileExecutionResult.Failure) capacityService.execute(requested, policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED);
+		var cancellation = (JourneyProfileExecutionResult.Failure) cancelledService.execute(cancelledRequest, policy());
+		assertThat(cancellation.reason()).isEqualTo(JourneyProfileExecutionResult.Reason.CANCELLED);
+		assertThat(cancellation.countSnapshot()).isSameAs(cancelledCounts);
+		assertThat(((JourneyProfileExecutionResult.Failure) staleService.execute(requested, policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
+		assertThat(((JourneyProfileExecutionResult.Failure) nativeCancelledService.execute(requested, policy())).reason())
+			.isEqualTo(JourneyProfileExecutionResult.Reason.CANCELLED);
+		assertThat(fullPlanCalls).hasValue(0);
+	}
+
+	private static JourneyProfileApplicationService realtimeLastConnectionService(
+		AtomicInteger fullPlanCalls,
+		Instant snapshotValidUntil,
+		LastConnectionPreparer preparer
+	) {
+		return new JourneyProfileApplicationService(
+			(query, freshnessReference, measurement) -> snapshot(snapshotValidUntil),
+			raptor((query, snapshot, realtime, limits) -> {
+				fullPlanCalls.incrementAndGet();
+				throw new AssertionError("realtime last-connection classification must not plan a route");
+			}, preparer), Clock.fixed(NOW, ZoneOffset.UTC));
+	}
+
+	@Test
 	void keepsTimetableProfilesIndependentOfRealtimeFutureHorizon() {
 		var policy = policy();
 		var end = NOW.plus(policy.realtimeApplicableFutureHorizon()).plusSeconds(1);
