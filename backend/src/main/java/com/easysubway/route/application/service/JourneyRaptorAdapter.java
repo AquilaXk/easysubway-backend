@@ -9,6 +9,7 @@ import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.journey.application.ServiceDayResolver;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -41,7 +42,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay = requireRealtimeOverlay(
-			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull);
+			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull, query);
 		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
 			query,
 			routeRuntime.compiledTimetable(),
@@ -107,7 +108,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		JourneyRequest request,
 		ActiveJourneySnapshot snapshot,
 		RaptorRouteBundleRuntimeView routeRuntime,
-		RealtimeObservation realtimeOrNull
+		RealtimeObservation realtimeOrNull,
+		JourneyRaptorQuery query
 	) {
 		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
 			if (realtimeOrNull != null) {
@@ -123,7 +125,17 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			|| snapshot.generation() != realtimeRuntime.generation()) {
 			throw new IllegalArgumentException("realtime runtime view does not match captured Journey generation");
 		}
+		if (!realtimeRuntime.serviceDate().equals(serviceDate(query))) {
+			throw new IllegalArgumentException("realtime runtime service date does not match Journey query");
+		}
 		return realtimeRuntime.realtimeOverlay();
+	}
+
+	private static java.time.LocalDate serviceDate(JourneyRaptorQuery query) {
+		if (!(query.temporalQuery() instanceof JourneyRaptorQuery.DepartAt departure)) {
+			throw new IllegalArgumentException("Journey realtime requires a point query");
+		}
+		return ServiceDayResolver.resolve(departure.readyAt()).serviceDate();
 	}
 
 	private static JourneyCandidate toCandidate(
