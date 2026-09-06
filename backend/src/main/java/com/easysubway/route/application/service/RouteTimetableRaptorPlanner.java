@@ -1646,37 +1646,24 @@ class RouteTimetableRaptorPlanner {
 		var earliest = ServiceDayResolver.resolve(range.earliestReadyAt());
 		var latest = ServiceDayResolver.resolve(range.latestReadyAt());
 		ProfileLimitTracker limits = new ProfileLimitTracker(requiredLimits, observations);
-		if (earliest.serviceDate().equals(latest.serviceDate())) {
-			return departureProfileSlice(
+		List<JourneyDepartureProfilePoint> profile = new ArrayList<>();
+		for (LocalDate serviceDate = latest.serviceDate();; serviceDate = serviceDate.minusDays(1)) {
+			int earliestReadyAtSeconds = serviceDate.equals(earliest.serviceDate())
+				? earliest.secondsFromServiceDayStart() : serviceDayCutoffSeconds(serviceDate);
+			int latestReadyAtSeconds = serviceDate.equals(latest.serviceDate())
+				? latest.secondsFromServiceDayStart() : nextServiceDayCutoffSeconds(serviceDate) - 1;
+			throwIfCancelled(scanInput(requiredQuery, new ServiceDay(serviceDate, latestReadyAtSeconds)));
+			limits.consumeWork();
+			profile.addAll(departureProfileSlice(
 				requiredQuery,
 				timetable,
 				realtimeOverlay,
-				earliest.serviceDate(),
-				earliest.secondsFromServiceDayStart(),
-				latest.secondsFromServiceDayStart(),
-				limits);
+				serviceDate,
+				earliestReadyAtSeconds,
+				latestReadyAtSeconds,
+				limits));
+			if (serviceDate.equals(earliest.serviceDate())) break;
 		}
-		if (!latest.serviceDate().equals(earliest.serviceDate().plusDays(1))) {
-			throw new IllegalArgumentException("Journey departure profile supports at most two adjacent service days");
-		}
-
-		List<JourneyDepartureProfilePoint> profile = new ArrayList<>();
-		profile.addAll(departureProfileSlice(
-			requiredQuery,
-			timetable,
-			realtimeOverlay,
-			latest.serviceDate(),
-			serviceDayCutoffSeconds(latest.serviceDate()),
-			latest.secondsFromServiceDayStart(),
-			limits));
-		profile.addAll(departureProfileSlice(
-			requiredQuery,
-			timetable,
-			realtimeOverlay,
-			earliest.serviceDate(),
-			earliest.secondsFromServiceDayStart(),
-			nextServiceDayCutoffSeconds(earliest.serviceDate()) - 1,
-			limits));
 		return List.copyOf(profile);
 	}
 
