@@ -64,6 +64,8 @@ class JourneyProfileRaptorAdapterTest {
 		assertThat(expected.getFirst().arrivalAtDestination()).isEqualTo(instantAt(36_720));
 		assertThat(JourneyProfileOracleComparison.matchesObservableTimetableFrontier(expected,
 			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isTrue();
+		assertThat(JourneyProfileOracleComparison.requiredObjectiveLoss(expected,
+			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isZero();
 		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capturePoint(
 			query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))), runtime,
 			() -> 0, () -> { throw new AssertionError("profile mode must be rejected before scan"); }))
