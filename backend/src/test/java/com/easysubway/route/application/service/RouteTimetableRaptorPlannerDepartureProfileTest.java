@@ -262,6 +262,20 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 	}
 
 	@Test
+	void returnsNoProfileWhenTheSelectedNativeDatesHaveNoService() {
+		var query = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b",
+			new JourneyRaptorQuery.DepartBetween(instantAt(32_000), instantAt(33_000)),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		assertThat(planner.departureProfile(query, planner.compile(emptyCalendarTimetable()),
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), policy().profilePlanningLimits()))
+			.isEmpty();
+	}
+
+	@Test
 	void chargesEmptyServiceDatesAgainstOneSharedWorkLimit() {
 		var query = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b",
