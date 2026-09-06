@@ -69,6 +69,44 @@ class JourneyProfileApplicationServiceTest {
 	}
 
 	@Test
+	void enforcesInputServiceDayCountAtTheCutoffAndAdmitsOneLastConnectionDay() {
+		var snapshotCalls = new AtomicInteger();
+		var service = new JourneyProfileApplicationService((query, reference, measurement) -> {
+			snapshotCalls.incrementAndGet();
+			throw new IllegalStateException("no active snapshot in this fixture");
+		}, (query, snapshot, realtime, limits) -> {
+			throw new AssertionError("planner must not run without an active snapshot");
+		}, Clock.fixed(NOW, ZoneOffset.UTC));
+		// 2024-01-02 03:00 KST: 자정이 아니라 계약상 cutoff에서 입력 운행일이 바뀐다.
+		var cutoff = Instant.parse("2024-01-01T18:00:00Z");
+		var base = policy();
+		var oneDay = new JourneyProfileResourcePolicy(base.identity(), base.maxTemporalWindow(), 1,
+			base.maxEstimatedWork(), base.maxLabelsPerState(), base.maxDestinationProfileLabels(),
+			base.maxProfileBreakpoints(), base.realtimeApplicableFutureHorizon(), base.pointSearchDeadline(),
+			base.profileSearchDeadline(), base.lastConnectionDeadline(), base.pointSearchCostUnits(),
+			base.shortDepartureProfileCostUnits(), base.arriveByProfileCostUnits(), base.lastConnectionCostUnits(),
+			base.maxCostUnitsPerSession());
+		var crossing = List.of(new JourneyRaptorQuery.DepartBetween(cutoff.minusSeconds(1), cutoff),
+			new JourneyRaptorQuery.ArriveBy(cutoff.minusSeconds(1), cutoff));
+		for (var temporal : crossing) {
+			assertThat(service.execute(query(temporal), oneDay)).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE));
+		}
+		assertThat(snapshotCalls).hasValue(0);
+		for (var temporal : crossing) {
+			assertThat(service.execute(query(temporal), base)).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE));
+		}
+		for (var temporal : List.of(new JourneyRaptorQuery.DepartBetween(cutoff.minusSeconds(2), cutoff.minusSeconds(1)),
+			new JourneyRaptorQuery.ArriveBy(cutoff.minusSeconds(2), cutoff.minusSeconds(1)),
+			new JourneyRaptorQuery.LastConnection(LocalDate.of(2024, 1, 1)))) {
+			assertThat(service.execute(query(temporal), oneDay)).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_UNAVAILABLE));
+		}
+		assertThat(snapshotCalls).hasValue(5);
+	}
+
+	@Test
 	void mapsTerminalTemporalPlansToFailuresBeforePublishingSuccess() {
 		var departBetween = new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600));
 		var arriveBy = new JourneyRaptorQuery.ArriveBy(NOW, NOW.plusSeconds(600));

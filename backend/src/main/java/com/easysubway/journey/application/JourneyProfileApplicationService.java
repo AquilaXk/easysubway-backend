@@ -4,6 +4,7 @@ import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Objects;
@@ -41,7 +42,8 @@ public final class JourneyProfileApplicationService {
 			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
 				"profile execution requires a temporal profile query");
 		};
-		if (temporalWindow.compareTo(requiredPolicy.maxTemporalWindow()) > 0) {
+		if (temporalWindow.compareTo(requiredPolicy.maxTemporalWindow()) > 0
+			|| inputServiceDayCount(requiredQuery.temporalQuery()) > requiredPolicy.maxServiceDayCount()) {
 			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE);
 		}
 		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
@@ -98,6 +100,24 @@ public final class JourneyProfileApplicationService {
 		}
 		return new JourneyProfileExecutionResult.Success(calculatedAt, snapshot.validUntil(), source(snapshot),
 			requiredPolicy.identity(), plan, planned.countSnapshot());
+	}
+
+	private static long inputServiceDayCount(JourneyRaptorQuery.TemporalQuery temporalQuery) {
+		// 입력 범위의 운행일 수만 제한한다. 이전 운행일의 24:xx+ 열차 선택은 planner가 보존한다.
+		return switch (temporalQuery) {
+			case JourneyRaptorQuery.DepartBetween range -> inclusiveServiceDays(
+				range.earliestReadyAt(), range.latestReadyAt());
+			case JourneyRaptorQuery.ArriveBy arriveBy -> inclusiveServiceDays(
+				arriveBy.earliestReadyAt(), arriveBy.arrivalDeadline());
+			case JourneyRaptorQuery.LastConnection ignored -> 1;
+			case JourneyRaptorQuery.DepartAt ignored -> throw new IllegalArgumentException(
+				"profile execution requires a temporal profile query");
+		};
+	}
+
+	private static long inclusiveServiceDays(Instant earliest, Instant latest) {
+		return ChronoUnit.DAYS.between(ServiceDayResolver.resolve(earliest).serviceDate(),
+			ServiceDayResolver.resolve(latest).serviceDate()) + 1;
 	}
 
 	private static JourneyProfileExecutionResult.Reason terminalFailure(
