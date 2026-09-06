@@ -66,6 +66,21 @@ class JourneyProfileRaptorAdapterTest {
 			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isTrue();
 		assertThat(JourneyProfileOracleComparison.requiredObjectiveLoss(expected,
 			measurement.result().itineraries().stream().map(JourneyProfileRaptorAdapter::itinerary).toList())).isZero();
+		var row = JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement, expected);
+		assertThat(row.keySet()).containsExactlyInAnyOrder("regionId", "queryClass", "expandedRoutes",
+			"expandedTrips", "expandedTransfers", "durationNanos", "allocatedBytes",
+			"requiredRepresentativeLoss", "oracleParity", "profileMetrics");
+		assertThat(row).containsEntry("durationNanos", 17L).containsEntry("allocatedBytes", 32L)
+			.containsEntry("expandedRoutes", measurement.result().scanMetrics().expandedRoutes())
+			.containsEntry("expandedTrips", measurement.result().scanMetrics().expandedTrips())
+			.containsEntry("expandedTransfers", measurement.result().scanMetrics().expandedTransfers())
+			.containsEntry("oracleParity", true).containsEntry("requiredRepresentativeLoss", 0)
+			.containsEntry("profileMetrics", Map.of("status", "NOT_APPLICABLE"));
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement, List.of()))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
+		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.pointRow("fixture-region", measurement,
+			List.of(expected.getFirst(), expected.getFirst())))
+			.isInstanceOf(JourneyProfileMeasuredExecution.Unobservable.class);
 		assertThatThrownBy(() -> JourneyProfileMeasuredExecution.capturePoint(
 			query(new JourneyRaptorQuery.ArriveBy(instantAt(30_000), instantAt(37_000))), runtime,
 			() -> 0, () -> { throw new AssertionError("profile mode must be rejected before scan"); }))
