@@ -12,9 +12,8 @@ import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
@@ -28,6 +27,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitS
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
+import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -320,10 +320,7 @@ class JourneyRaptorAdapterTest {
 		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
 			"realtime-1",
 			runtime,
-			new TimetableRealtimeUpdates("overlay-v1", true, List.of(
-				new TimetableRealtimeUpdate(
-					"trip", 60, 60, false, "realtime-1", Instant.parse("2026-06-30T23:49:30Z"))
-			), null)
+			updates("trip", 60, 60, false, "realtime-1")
 		);
 		var observation = new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
@@ -351,10 +348,7 @@ class JourneyRaptorAdapterTest {
 		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
 			"realtime-1",
 			runtime,
-			new TimetableRealtimeUpdates("overlay-v1", true, List.of(
-				new TimetableRealtimeUpdate(
-					"trip-late", 60, 60, false, "realtime-1", Instant.parse("2026-06-30T23:49:30Z"))
-			), null)
+			updates("trip-late", 60, 60, false, "realtime-1")
 		);
 		var observation = new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
@@ -365,6 +359,22 @@ class JourneyRaptorAdapterTest {
 			snapshot(runtime), EFFECTIVE, observation, measurement()))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("incomplete");
+	}
+
+	@Test
+	void rejectsPointRuntimeReuseForAnotherEffectiveServiceDate() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates("trip", 60, 60, false, "realtime-1"));
+		var observation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+
+		assertThatThrownBy(() -> new JourneyRaptorAdapter().plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.REALTIME_REQUIRED),
+			snapshot(runtime), EFFECTIVE.plus(Duration.ofDays(1)), observation, measurement()))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("service date");
 	}
 
 	@Test
@@ -482,21 +492,22 @@ class JourneyRaptorAdapterTest {
 
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
 		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
-			"realtime-1", runtime, TimetableRealtimeUpdates.unavailable("NO_DATA")))
+			"realtime-1", runtime, JourneyTimetableRealtimeResolver.Updates.unavailable("NO_DATA")))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("identity");
 		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
-			"realtime-1", runtime, new TimetableRealtimeUpdates("overlay-v1", true, List.of(
-				new TimetableRealtimeUpdate(
-					"trip", 0, 0, false, "different", Instant.parse("2026-06-30T23:49:30Z"))
-			), null)))
+			"realtime-1", runtime, updates("trip", 0, 0, false, "different")))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("identity");
 		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
-			"realtime-1", runtime, new TimetableRealtimeUpdates("overlay-v1", true, List.of(
-				new TimetableRealtimeUpdate(
-					"unknown-trip", 0, 0, false, "realtime-1", Instant.parse("2026-06-30T23:49:30Z"))
-			), null)))
+			"realtime-1", runtime, updates("unknown-trip", 0, 0, false, "realtime-1")))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("valid updates");
+		assertThatThrownBy(() -> RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates(new JourneyTimetableRealtimeResolver.Departure(
+				"station-a", "line", "trip", "1001", "LOCAL", LocalDate.of(2026, 7, 2), 1,
+				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:00:00Z")),
+				0, 0, false, "realtime-1")))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("valid updates");
 	}
@@ -506,10 +517,7 @@ class JourneyRaptorAdapterTest {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
 		var otherRuntime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
 		var otherRealtime = RaptorRealtimeRuntimeView.compile(
-			"realtime-1", otherRuntime, new TimetableRealtimeUpdates("overlay-v1", true, List.of(
-				new TimetableRealtimeUpdate(
-					"trip", 0, 0, false, "realtime-1", Instant.parse("2026-06-30T23:49:30Z"))
-			), null));
+			"realtime-1", otherRuntime, updates("trip", 0, 0, false, "realtime-1"));
 		var observation = new JourneyRealtimePort.RealtimeObservation(
 			"realtime-1", ROUTE_BUNDLE_SHA, otherRealtime, VALID_UNTIL, true);
 
@@ -654,7 +662,23 @@ class JourneyRaptorAdapterTest {
 			REQUEST_ID, ROUTE_BUNDLE_SHA, GENERATION);
 		assertThat(nativePlan.itineraries()).isEqualTo(legacyPlan.itineraries());
 		assertThat(nativePlan.scanMetrics()).isEqualTo(legacyPlan.scanMetrics());
-		assertThat(planner.realtimeQueries(query, timetable)).isEqualTo(planner.realtimeQueries(command, timetable));
+		assertThat(planner.realtimeQueries(query, timetable)).singleElement().satisfies(nativeQuery -> {
+			var legacyQuery = planner.realtimeQueries(command, timetable).getFirst();
+			assertThat(nativeQuery.stationId()).isEqualTo(legacyQuery.stationId());
+			assertThat(nativeQuery.lineId()).isEqualTo(legacyQuery.lineId());
+			assertThat(nativeQuery.readyAt()).isEqualTo(legacyQuery.readyAt());
+			assertThat(nativeQuery.departures()).extracting(
+				JourneyTimetableRealtimeResolver.Departure::tripId,
+				JourneyTimetableRealtimeResolver.Departure::trainNo,
+				JourneyTimetableRealtimeResolver.Departure::servicePattern,
+				JourneyTimetableRealtimeResolver.Departure::scheduledArrivalAt,
+				JourneyTimetableRealtimeResolver.Departure::scheduledDepartureAt)
+				.containsExactlyElementsOf(legacyQuery.departures().stream()
+					.map(departure -> org.assertj.core.groups.Tuple.tuple(
+						departure.tripId(), departure.trainNo(), departure.servicePattern(),
+						departure.scheduledArrivalAt(), departure.scheduledDepartureAt()))
+					.toList());
+		});
 	}
 
 	private static SearchRouteV2Command legacyCommand(
@@ -703,6 +727,35 @@ class JourneyRaptorAdapterTest {
 		RaptorRouteBundleRuntimeView runtime
 	) {
 		return snapshot(runtime, ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable());
+	}
+
+	private static JourneyTimetableRealtimeResolver.Updates updates(
+		String tripId,
+		int arrivalDeltaSeconds,
+		int departureDeltaSeconds,
+		boolean cancelled,
+		String identity
+	) {
+		String trainNo = "trip-late".equals(tripId) ? "1002" : "1001";
+		int seconds = "trip-late".equals(tripId) ? 36_000 : 32_400;
+		return updates(new JourneyTimetableRealtimeResolver.Departure(
+			"station-a", "line", tripId, trainNo, "LOCAL", LocalDate.of(2026, 7, 1), 1,
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(seconds).toInstant(),
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(seconds).toInstant()),
+			arrivalDeltaSeconds, departureDeltaSeconds, cancelled, identity);
+	}
+
+	private static JourneyTimetableRealtimeResolver.Updates updates(
+		JourneyTimetableRealtimeResolver.Departure departure,
+		int arrivalDeltaSeconds,
+		int departureDeltaSeconds,
+		boolean cancelled,
+		String identity
+	) {
+		return new JourneyTimetableRealtimeResolver.Updates("overlay-v1", true, List.of(
+			new JourneyTimetableRealtimeResolver.Update(
+				departure, arrivalDeltaSeconds, departureDeltaSeconds, cancelled, identity,
+				Instant.parse("2026-06-30T23:49:30Z"))), null);
 	}
 
 	private static JourneyExecutionResult.ActiveReadinessIdentity activeReadinessIdentity() {

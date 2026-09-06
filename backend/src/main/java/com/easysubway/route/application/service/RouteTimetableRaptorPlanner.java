@@ -1591,6 +1591,37 @@ class RouteTimetableRaptorPlanner {
 		return new CompiledTimetable(timetable);
 	}
 
+	boolean matchesActiveJourneyRealtimeDeparture(
+		CompiledTimetable timetable,
+		JourneyTimetableRealtimeResolver.Departure departure
+	) {
+		if (timetable == null || departure == null || departure.serviceDate() == null) {
+			return false;
+		}
+		int matches = 0;
+		for (ScheduledTrip trip : timetable.activeServiceDay(departure.serviceDate()).trips()) {
+			if (!trip.trip().id().equals(departure.tripId())
+				|| !Objects.equals(trip.trip().trainNo(), departure.trainNo())
+				|| !Objects.equals(trip.trip().servicePattern(), departure.servicePattern())) {
+				continue;
+			}
+			for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
+				TransitStopTime stop = trip.stopTimes().get(stopIndex);
+				if (stop.stopSequence() != departure.stopSequence()
+					|| !Objects.equals(stop.stationId(), departure.stationId())
+					|| !Objects.equals(stop.lineId(), departure.lineId())
+					|| !serviceInstant(new ServiceDay(departure.serviceDate(), 0), trip.arrivalSeconds(stopIndex))
+						.equals(departure.scheduledArrivalAt())
+					|| !serviceInstant(new ServiceDay(departure.serviceDate(), 0), trip.departureSeconds(stopIndex))
+						.equals(departure.scheduledDepartureAt())) {
+					continue;
+				}
+				matches += 1;
+			}
+		}
+		return matches == 1;
+	}
+
 	List<DepartureEvent> departureEvents(
 		ActiveServiceDay activeServiceDay,
 		String originStationId,
@@ -1774,12 +1805,12 @@ class RouteTimetableRaptorPlanner {
 		return OptionalIntValue.of(event.effectiveDepartureSeconds() - entrySeconds - slackSeconds);
 	}
 
-	List<TimetableRealtimeQuery> realtimeQueries(
+	List<JourneyTimetableRealtimeResolver.Query> realtimeQueries(
 		JourneyRaptorQuery query,
 		CompiledTimetable timetable
 	) {
 		ScanInput input = scanInput(query);
-		Map<String, List<TimetableTripDeparture>> departuresByLine = new LinkedHashMap<>();
+		Map<String, List<JourneyTimetableRealtimeResolver.Departure>> departuresByLine = new LinkedHashMap<>();
 		for (ScheduledTrip trip : timetable.activeServiceDay(input.serviceDay().date()).trips()) {
 			if (trip.trip().trainNo() == null) {
 				continue;
@@ -1790,8 +1821,9 @@ class RouteTimetableRaptorPlanner {
 					continue;
 				}
 				departuresByLine.computeIfAbsent(stop.lineId(), ignored -> new ArrayList<>())
-					.add(new TimetableTripDeparture(
-						trip.trip().id(), trip.trip().trainNo(), trip.trip().servicePattern(),
+					.add(new JourneyTimetableRealtimeResolver.Departure(
+						stop.stationId(), stop.lineId(), trip.trip().id(), trip.trip().trainNo(), trip.trip().servicePattern(),
+						input.serviceDay().date(), stop.stopSequence(),
 						serviceInstant(input.serviceDay(), trip.arrivalSeconds(stopIndex)),
 						serviceInstant(input.serviceDay(), trip.departureSeconds(stopIndex))));
 				break;
@@ -1799,7 +1831,8 @@ class RouteTimetableRaptorPlanner {
 		}
 		Instant readyAt = serviceInstant(input.serviceDay(), input.readyAtSeconds());
 		return departuresByLine.entrySet().stream()
-			.map(entry -> new TimetableRealtimeQuery(input.originStationId(), entry.getKey(), readyAt, entry.getValue()))
+			.map(entry -> new JourneyTimetableRealtimeResolver.Query(
+				input.originStationId(), entry.getKey(), readyAt, entry.getValue()))
 			.toList();
 	}
 

@@ -4,8 +4,6 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourne
 import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Duration;
@@ -45,7 +43,7 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		requireNotCancelled(requiredRequest);
 
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
-		List<com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery> queries =
+		List<JourneyTimetableRealtimeResolver.Query> queries =
 			planner.realtimeQueries(
 				JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant),
 				routeRuntime.compiledTimetable()
@@ -55,7 +53,7 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		}
 		requireNotCancelled(requiredRequest);
 
-		TimetableRealtimeUpdates updates = resolver.resolve(List.copyOf(queries));
+		JourneyTimetableRealtimeResolver.Updates updates = resolver.resolve(List.copyOf(queries));
 		requireNotCancelled(requiredRequest);
 		ValidatedObservation validated = validateUpdates(updates, clock.instant(), requiredEffectiveInstant);
 		RaptorRealtimeRuntimeView realtimeRuntime = RaptorRealtimeRuntimeView.compile(
@@ -71,7 +69,7 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 	}
 
 	private ValidatedObservation validateUpdates(
-		TimetableRealtimeUpdates updates,
+		JourneyTimetableRealtimeResolver.Updates updates,
 		Instant capturedNow,
 		Instant effectiveInstant
 	) {
@@ -83,7 +81,7 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 		}
 		String identity = requireSingleIdentity(updates.version());
 		Instant validUntil = null;
-		for (TimetableRealtimeUpdate update : updates.updates()) {
+		for (JourneyTimetableRealtimeResolver.Update update : updates.updates()) {
 			if (!identity.equals(update.providerSnapshotId())) {
 				throw new IllegalArgumentException("realtime update identity is mixed");
 			}
