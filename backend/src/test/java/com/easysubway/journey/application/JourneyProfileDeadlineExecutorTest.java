@@ -19,10 +19,10 @@ class JourneyProfileDeadlineExecutorTest {
 	void marksTheCopiedQueryCancelledBeforeSuppressingLateSuccess() {
 		var service = new JourneyProfileApplicationService(
 			(query, reference, measurement) -> snapshot(),
-			(query, snapshot, realtime, limits) -> {
+			raptor((query, snapshot, realtime, limits) -> {
 				while (!query.isCancelled()) Thread.onSpinWait();
 				throw new IllegalStateException("cancelled");
-			},
+			}),
 			Clock.fixed(NOW, ZoneOffset.UTC));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var result = new JourneyProfileDeadlineExecutor(service, executor)
@@ -34,7 +34,7 @@ class JourneyProfileDeadlineExecutorTest {
 
 	@Test
 	void completesWithinTheCallerDeadline() {
-		var service = service((query, snapshot, realtime, limits) -> planned(query));
+		var service = service(raptor((query, snapshot, realtime, limits) -> planned(query)));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var result = new JourneyProfileDeadlineExecutor(service, executor)
 				.execute(query(), JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(1)));
@@ -45,7 +45,7 @@ class JourneyProfileDeadlineExecutorTest {
 
 	@Test
 	void rejectsAnOverflowingDeadlineFromThePinnedPolicy() {
-		var service = service((query, snapshot, realtime, limits) -> planned(query));
+		var service = service(raptor((query, snapshot, realtime, limits) -> planned(query)));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
 			var deadlineExecutor = new JourneyProfileDeadlineExecutor(service, executor);
 
@@ -58,6 +58,39 @@ class JourneyProfileDeadlineExecutorTest {
 	private static JourneyProfileApplicationService service(JourneyProfileRaptorPort raptor) {
 		return new JourneyProfileApplicationService(
 			(query, reference, measurement) -> snapshot(), raptor, Clock.fixed(NOW, ZoneOffset.UTC));
+	}
+
+	private static JourneyProfileRaptorPort raptor(Planning planning) {
+		return new JourneyProfileRaptorPort() {
+			@Override
+			public PlanningResult plan(
+				JourneyRaptorQuery query,
+				ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+				JourneyRealtimePort.RealtimeObservation realtime,
+				JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+			) {
+				return planning.plan(query, snapshot, realtime, limits);
+			}
+
+			@Override
+			public LastConnectionPreparation prepareLastConnection(
+				JourneyRaptorQuery query,
+				ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+				JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+			) {
+				throw new AssertionError("last-connection preparation is not expected by this fixture");
+			}
+		};
+	}
+
+	@FunctionalInterface
+	private interface Planning {
+		JourneyProfileRaptorPort.PlanningResult plan(
+			JourneyRaptorQuery query,
+			ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+			JourneyRealtimePort.RealtimeObservation realtime,
+			JourneyProfileResourcePolicy.ProfilePlanningLimits limits
+		);
 	}
 
 	private static JourneyProfileRaptorPort.PlanningResult.Planned planned(JourneyRaptorQuery query) {

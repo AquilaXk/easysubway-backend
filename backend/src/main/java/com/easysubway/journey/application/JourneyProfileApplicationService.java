@@ -46,7 +46,8 @@ public final class JourneyProfileApplicationService {
 			|| inputServiceDayCount(requiredQuery.temporalQuery()) > requiredPolicy.maxServiceDayCount()) {
 			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_WINDOW_TOO_LARGE);
 		}
-		if (requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
+		boolean realtimeRequired = requiredQuery.timePolicy() != JourneyRequest.TimePolicy.TIMETABLE_REQUIRED;
+		if (realtimeRequired && !(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.LastConnection)) {
 			if (realtimeNotApplicable(requiredQuery.temporalQuery(), calculatedAt, requiredPolicy)) {
 				return failure(JourneyProfileExecutionResult.Reason.REALTIME_NOT_APPLICABLE);
 			}
@@ -64,6 +65,9 @@ public final class JourneyProfileApplicationService {
 		if (requiredQuery.isCancelled()) return failure(JourneyProfileExecutionResult.Reason.CANCELLED);
 		if (!fresh(snapshot, calculatedAt, freshnessReference)) {
 			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE);
+		}
+		if (realtimeRequired) {
+			return classifyRealtimeLastConnection(requiredQuery, requiredPolicy, snapshot, calculatedAt);
 		}
 
 		JourneyProfileRaptorPort.PlanningResult planning;
@@ -103,6 +107,48 @@ public final class JourneyProfileApplicationService {
 		}
 		return new JourneyProfileExecutionResult.Success(calculatedAt, snapshot.validUntil(), source(snapshot),
 			requiredPolicy.identity(), plan, planned.countSnapshot());
+	}
+
+	private JourneyProfileExecutionResult classifyRealtimeLastConnection(
+		JourneyRaptorQuery query,
+		JourneyProfileResourcePolicy resourcePolicy,
+		ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot,
+		Instant calculatedAt
+	) {
+		JourneyProfileRaptorPort.LastConnectionPreparation preparation;
+		try {
+			preparation = raptorPort.prepareLastConnection(query, snapshot, resourcePolicy.profilePlanningLimits());
+		} catch (RuntimeException exception) {
+			return query.isCancelled() ? failure(JourneyProfileExecutionResult.Reason.CANCELLED)
+				: failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+		if (preparation == null || !matches(query, preparation.countSnapshot())) {
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+		if (query.isCancelled()) {
+			return failure(JourneyProfileExecutionResult.Reason.CANCELLED, preparation.countSnapshot());
+		}
+		if (preparation instanceof JourneyProfileRaptorPort.LastConnectionPreparation.AdmissionRejected rejected) {
+			return failure(JourneyProfileExecutionResult.Reason.TEMPORAL_QUERY_TOO_COMPLEX, rejected.countSnapshot());
+		}
+		if (preparation instanceof JourneyProfileRaptorPort.LastConnectionPreparation.CapacityExceeded exceeded) {
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FRONTIER_CAPACITY_EXCEEDED,
+				exceeded.countSnapshot());
+		}
+		if (!(preparation instanceof JourneyProfileRaptorPort.LastConnectionPreparation.Prepared prepared)) {
+			return failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+		Instant completedAt = clock.instant();
+		if (!postvalid(snapshot.validUntil(), completedAt, prepared)) {
+			return failure(JourneyProfileExecutionResult.Reason.ACTIVE_SNAPSHOT_STALE, prepared.countSnapshot());
+		}
+		JourneyProfileExecutionResult.Reason terminalFailure = terminalFailure(prepared.terminal(),
+			JourneyProfileExecutionResult.Reason.REALTIME_UNAVAILABLE);
+		if (terminalFailure != null) return failure(terminalFailure, prepared.countSnapshot());
+		if (exceedsRealtimeFutureHorizon(calculatedAt, prepared.terminalArrivalAtDestination(), resourcePolicy)) {
+			return failure(JourneyProfileExecutionResult.Reason.REALTIME_NOT_APPLICABLE, prepared.countSnapshot());
+		}
+		return failure(JourneyProfileExecutionResult.Reason.REALTIME_UNAVAILABLE, prepared.countSnapshot());
 	}
 
 	private static long inputServiceDayCount(JourneyRaptorQuery.TemporalQuery temporalQuery) {
@@ -172,6 +218,15 @@ public final class JourneyProfileApplicationService {
 			? JourneyProfileExecutionResult.Reason.CANCELLED : notFoundReason;
 	}
 
+	private static JourneyProfileExecutionResult.Reason terminalFailure(
+		JourneyProfileRaptorPort.Terminal terminal,
+		JourneyProfileExecutionResult.Reason notFoundReason
+	) {
+		if (!(terminal instanceof JourneyProfileRaptorPort.Terminal.NotFound notFound)) return null;
+		return notFound.outcome() == JourneyProfileRaptorPort.ReversePlan.Outcome.CANCELLED
+			? JourneyProfileExecutionResult.Reason.CANCELLED : notFoundReason;
+	}
+
 	private static boolean fresh(ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot, Instant calculatedAt,
 		Instant freshnessReference) {
 		return snapshot != null && snapshot.fresh()
@@ -195,6 +250,16 @@ public final class JourneyProfileApplicationService {
 			}
 		}
 		return arrivals.stream().allMatch(validUntil::isAfter);
+	}
+
+	private static boolean postvalid(
+		Instant validUntil,
+		Instant completedAt,
+		JourneyProfileRaptorPort.LastConnectionPreparation.Prepared preparation
+	) {
+		if (!validUntil.isAfter(completedAt)) return false;
+		return !(preparation.terminal() instanceof JourneyProfileRaptorPort.Terminal.Found)
+			|| validUntil.isAfter(preparation.terminalArrivalAtDestination());
 	}
 
 	private static void addReverseArrival(List<Instant> arrivals, JourneyProfileRaptorPort.ReversePlan result) {
