@@ -5,6 +5,7 @@ import com.easysubway.journey.application.JourneyProfileRaptorPort.PlanningResul
 import com.easysubway.journey.application.JourneyProfileResourcePolicy.ProfilePlanningLimits;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import java.lang.management.ManagementFactory;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -84,6 +85,65 @@ final class JourneyProfileMeasuredExecution {
 		if (expected.isEmpty() || !parity) throw new Unobservable("reverse oracle frontier mismatch");
 		int loss = JourneyProfileOracleComparison.requiredObjectiveLoss(expected, found.itineraries());
 		if (loss != 0) throw new Unobservable("reverse oracle objective loss");
+		return profileRow(regionId, queryClass, observation, planned, loss, parity);
+	}
+
+	/** 각 실제 departure breakpoint의 independent oracle frontier가 모두 보존된 경우에만 행을 만든다. */
+	static Map<String, Object> departureRow(
+		String regionId,
+		Observation<PlanningResult> observation,
+		Map<java.time.Instant, List<JourneyProfileExactOracle.Candidate>> expectedByBreakpoint
+	) {
+		if (regionId == null || regionId.isBlank()) throw new IllegalArgumentException("region is required");
+		Objects.requireNonNull(observation, "observation");
+		Objects.requireNonNull(expectedByBreakpoint, "expectedByBreakpoint");
+		if (!(observation.result() instanceof PlanningResult.Planned planned)
+			|| !(planned.temporalPlan() instanceof JourneyProfileRaptorPort.DepartureWindowPlan departure)) {
+			throw new Unobservable("departure planner did not produce a departure window plan");
+		}
+		var expected = new LinkedHashMap<java.time.Instant, List<JourneyProfileExactOracle.Candidate>>();
+		for (var entry : expectedByBreakpoint.entrySet()) {
+			java.time.Instant readyAt = Objects.requireNonNull(entry.getKey(), "expected breakpoint");
+			List<JourneyProfileExactOracle.Candidate> candidates = List.copyOf(
+				Objects.requireNonNull(entry.getValue(), "expected candidates"));
+			if (candidates.isEmpty()) throw new Unobservable("departure oracle breakpoint is empty");
+			expected.put(readyAt, candidates);
+		}
+		if (expected.isEmpty()) throw new Unobservable("departure oracle breakpoints are required");
+		var actual = new LinkedHashMap<java.time.Instant, JourneyProfileRaptorPort.DeparturePoint>();
+		for (JourneyProfileRaptorPort.DeparturePoint point : departure.points()) {
+			if (actual.put(point.readyAt(), point) != null) {
+				throw new Unobservable("duplicate actual departure breakpoint");
+			}
+		}
+		if (!actual.keySet().equals(expected.keySet())) {
+			throw new Unobservable("departure oracle breakpoints do not match actual points");
+		}
+		int totalLoss = 0;
+		boolean allParity = true;
+		for (var entry : expected.entrySet()) {
+			List<JourneyProfileRaptorPort.Itinerary> actualItineraries = actual.get(entry.getKey()).itineraries();
+			boolean parity = JourneyProfileOracleComparison.matchesObservableTimetableFrontier(
+				entry.getValue(), actualItineraries);
+			allParity &= parity;
+			if (!parity) throw new Unobservable("departure oracle frontier mismatch");
+			int loss = JourneyProfileOracleComparison.requiredObjectiveLoss(entry.getValue(), actualItineraries);
+			totalLoss += loss;
+			if (loss != 0) {
+				throw new Unobservable("departure oracle objective loss");
+			}
+		}
+		return profileRow(regionId, "DEPARTURE_PROFILE", observation, planned, totalLoss, allParity);
+	}
+
+	private static Map<String, Object> profileRow(
+		String regionId,
+		String queryClass,
+		Observation<PlanningResult> observation,
+		PlanningResult.Planned planned,
+		int loss,
+		boolean parity
+	) {
 		Long saturated = planned.countSnapshot().countsByRuleId().get("FAIL_CLOSED_FRONTIER_CAPACITY_V1");
 		if (saturated == null) throw new Unobservable("frontier capacity observation is unavailable");
 		var metrics = planned.planningMetrics();
