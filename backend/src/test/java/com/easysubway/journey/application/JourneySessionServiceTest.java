@@ -176,7 +176,7 @@ class JourneySessionServiceTest {
 	}
 
 	@Test
-	void mapsOnlyConsumedSessionLimitToRateLimitedAndRequiresExplicitSafeLimit() {
+	void mapsOnlyConsumedSessionLimitToRateLimitedAndRequiresPositivePolicyBudget() {
 		Fakes limited = new Fakes();
 		limited.authorization = new SessionUse(
 			AuthorizationStatus.LIMITED, "journey:v3", NOW.plusSeconds(600)
@@ -185,11 +185,23 @@ class JourneySessionServiceTest {
 		assertThat(limited.authorizeCalls).isEqualTo(1);
 		assertThat(limited.maxCostUnitsPerSession).isEqualTo(MAX_SEARCHES_PER_SESSION);
 
-		for (int invalidLimit : List.of(0, 51)) {
+		for (int invalidLimit : List.of(0, -1)) {
 			assertThatThrownBy(() -> limited.service(invalidLimit))
 				.isInstanceOf(IllegalArgumentException.class)
-				.hasMessage("maxSearchesPerSession must be between 1 and 50");
+				.hasMessage("maxCostUnitsPerSession must be positive");
 		}
+	}
+
+	@Test
+	void passesTheSuppliedFiniteBudgetWithoutASecondDevelopmentCeiling() {
+		Fakes fakes = new Fakes();
+		int policyBudget = 73;
+
+		fakes.service(policyBudget).authorize("opaque-token", 3);
+
+		assertThat(fakes.authorizeCalls).isOne();
+		assertThat(fakes.costUnits).isEqualTo(3);
+		assertThat(fakes.maxCostUnitsPerSession).isEqualTo(policyBudget);
 	}
 
 	private static Verdict validVerdict() {
