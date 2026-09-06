@@ -9,6 +9,7 @@ import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 import org.junit.jupiter.api.Test;
@@ -301,6 +302,32 @@ class JourneyProfileApplicationServiceTest {
 		assertThat(failure.countSnapshot()).isSameAs(capacityCounts);
 		assertThat(failure.countSnapshot().countsByRuleId()
 			.get("FAIL_CLOSED_FRONTIER_CAPACITY_V1")).isEqualTo(1L);
+	}
+
+	@Test
+	void containsPlannerExceptionsAndPreservesCancellationPrecedence() {
+		for (boolean cancelDuringPlanning : List.of(false, true)) {
+			var cancelled = new AtomicBoolean();
+			var original = query(new JourneyRaptorQuery.DepartBetween(NOW, NOW.plusSeconds(600)));
+			var requested = new JourneyRaptorQuery(original.requestId(), original.originStationId(),
+				original.destinationStationId(), original.temporalQuery(), original.timePolicy(),
+				original.walkingPace(), original.mobilityProfile(), original.constraintMode(),
+				original.maxTransfers(), original.alternativeCount(), cancelled::get);
+			var plannerCalls = new AtomicInteger();
+			var service = new JourneyProfileApplicationService(
+				(query, freshnessReference, measurement) -> snapshot(NOW.plusSeconds(1_800)),
+				(query, snapshot, realtime, limits) -> {
+					plannerCalls.incrementAndGet();
+					cancelled.set(cancelDuringPlanning);
+					throw new IllegalStateException("planner failure in this fixture");
+				}, Clock.fixed(NOW, ZoneOffset.UTC));
+
+			assertThat(service.execute(requested, policy())).isEqualTo(
+				new JourneyProfileExecutionResult.Failure(cancelDuringPlanning
+					? JourneyProfileExecutionResult.Reason.CANCELLED
+					: JourneyProfileExecutionResult.Reason.RAPTOR_FAILED));
+			assertThat(plannerCalls).hasValue(1);
+		}
 	}
 
 	@Test

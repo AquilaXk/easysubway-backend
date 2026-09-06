@@ -86,6 +86,31 @@ class JourneyProfileResponseMapperTest {
 			.isInstanceOf(JourneyProfileResponseMapper.MappingException.class);
 	}
 
+	@Test
+	void rejectsRealtimeTimesAndVerifiedStairsInStepFreeTimetableResponses() {
+		var query = query(new JourneyRaptorQuery.ArriveBy(START, START.plusSeconds(600)));
+		var valid = itinerary(true);
+		var stairs = new java.util.ArrayList<>(valid.legs());
+		stairs.set(0, new JourneyProfileRaptorPort.AccessLeg(JourneyProfileRaptorPort.AccessKind.ENTRY,
+			"origin", "board", 60, 10, true, true, "VERIFIED"));
+		var invalidItineraries = java.util.List.of(
+			new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600), START, START.plusSeconds(600),
+				valid.metrics(), valid.legs()),
+			new JourneyProfileRaptorPort.Itinerary(DATE, START, START.plusSeconds(600), null, null,
+				valid.metrics(), stairs));
+
+		for (var invalid : invalidItineraries) {
+			var plan = new JourneyProfileRaptorPort.ArriveByPlan(
+				(JourneyRaptorQuery.ArriveBy) query.temporalQuery(),
+				new JourneyProfileRaptorPort.ReversePlan.Found(java.util.List.of(invalid)));
+			assertThatThrownBy(() -> JourneyProfileResponseMapper.map(
+				query, success(query, plan), policy(), "query"))
+				.isInstanceOf(JourneyProfileResponseMapper.MappingException.class)
+				.extracting(exception -> ((JourneyProfileResponseMapper.MappingException) exception).reason())
+				.isEqualTo(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED);
+		}
+	}
+
 	private static final Instant START = Instant.parse("2026-09-01T00:00:00Z");
 	private static final LocalDate DATE = LocalDate.of(2026, 9, 1);
 
