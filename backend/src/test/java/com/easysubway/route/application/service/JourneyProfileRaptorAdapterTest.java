@@ -319,7 +319,8 @@ class JourneyProfileRaptorAdapterTest {
 		var oracle = independentFrontier(threePathFacts(), candidateIdsByPath);
 		var actualOracle = independentFrontier(actualFacts, candidateIdsByPath);
 		assertThat(oracle.frontier()).containsExactlyInAnyOrderElementsOf(threePathFacts());
-		assertThat(actualOracle).isEqualTo(oracle);
+		assertThat(actualOracle.frontier()).containsExactlyInAnyOrderElementsOf(oracle.frontier());
+		assertThat(actualOracle.representatives()).isEqualTo(oracle.representatives());
 		assertThat(oracle.representatives().keySet()).containsExactlyInAnyOrder(ObjectiveTag.values());
 		assertThat(Set.copyOf(oracle.representatives().values())).hasSize(3);
 		Map<String, String> pathsByCandidateId = candidateIdsByPath.entrySet().stream()
