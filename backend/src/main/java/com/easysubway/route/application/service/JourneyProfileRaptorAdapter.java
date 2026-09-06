@@ -68,22 +68,10 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 				: serviceInstant(lastConnection.serviceDate(), preparation.terminalArrivalAtDestinationSeconds());
 			return new LastConnectionPreparation.Prepared(terminal, terminalArrival, observations.snapshot(),
 				observations.planningMetrics());
-		} catch (RouteTimetableRaptorPlanner.ProfilePlanningLimitException exceeded) {
-			return switch (exceeded.limit()) {
-				case MAX_ESTIMATED_WORK -> new LastConnectionPreparation.AdmissionRejected(
-					exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
-				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS, MAX_PROFILE_BREAKPOINTS ->
-					new LastConnectionPreparation.CapacityExceeded(PlanningCapacity.valueOf(exceeded.limit().name()),
-						exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
-			};
 		} catch (ReverseTimetableRaptorPlanner.ReversePlanningLimitException exceeded) {
-			return switch (exceeded.limit()) {
-				case MAX_ESTIMATED_WORK -> new LastConnectionPreparation.AdmissionRejected(
-					exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
-				case MAX_LABELS_PER_STATE, MAX_DESTINATION_PROFILE_LABELS ->
-					new LastConnectionPreparation.CapacityExceeded(PlanningCapacity.valueOf(exceeded.limit().name()),
-						exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
-			};
+			// 사전 준비는 라벨 탐색 없이 consumeWork만 실행하므로 작업 예산 거절만 발생한다.
+			return new LastConnectionPreparation.AdmissionRejected(
+				exceeded.observed(), exceeded.max(), observations.snapshot(), observations.planningMetrics());
 		}
 	}
 
