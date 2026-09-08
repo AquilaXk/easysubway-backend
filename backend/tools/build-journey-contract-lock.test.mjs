@@ -190,7 +190,7 @@ test("symlink/non-regular artifact and output overlap/symlink은 redirect 없이
     const artifact = createArtifact(join(directory, "artifact"));
     const bundle = join(artifact, "journey-v3-contract-bundle-v2.json");
     rmSync(bundle);
-    symlinkSync(join(repositoryRoot, "contracts/api/journey-v3-contract-digests.json"), bundle);
+    symlinkSync(join(repositoryRoot, "contracts/api/journey-v3-error-catalog.json"), bundle);
     fail(artifact, join(directory, "output.json"));
     const cleanArtifact = createArtifact(join(directory, "clean"));
     fail(cleanArtifact, join(cleanArtifact, "output.json"));

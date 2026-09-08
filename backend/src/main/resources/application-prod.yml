@@ -38,9 +38,10 @@ spring:
 
 easysubway:
   journey:
-    search:
-      timeout: ${EASYSUBWAY_JOURNEY_SEARCH_TIMEOUT}
-      max-searches-per-session: ${EASYSUBWAY_JOURNEY_MAX_SEARCHES_PER_SESSION}
+    profile:
+      resource-policy-path: ${EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_PATH}
+      resource-policy-sha256: ${EASYSUBWAY_JOURNEY_PROFILE_RESOURCE_POLICY_SHA256}
+      max-request-bytes: ${EASYSUBWAY_JOURNEY_PROFILE_MAX_REQUEST_BYTES}
     session:
       certificate-sha256: ${EASYSUBWAY_JOURNEY_SESSION_CERTIFICATE_SHA256}
   journey-v3:

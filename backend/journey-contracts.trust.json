@@ -3,17 +3,17 @@
   "artifactKind": "journey-contract-publication-trust",
   "producer": {
     "repository": "AquilaXk/easysubway-backend",
-    "gitSha": "6698c3812be74fe7fc94313ec491738d227f7748"
+    "gitSha": "5f183ec268ea24c96d8234afab588a37472212d5"
   },
   "artifact": {
     "repository": "ghcr.io/aquilaxk/easysubway-backend-contracts",
-    "manifestDigest": "sha256:f06dda4484e88ede5afad819bd04f7659f6fe239cc13d823392271894e7147ae",
+    "manifestDigest": "sha256:2d010a7a627b9367246be806236ad314a03094e59f230be0c09895cdc9592866",
     "artifactType": "application/vnd.easysubway.journey.contract-bundle.v2"
   },
   "payload": {
     "fileName": "journey-v3-contract-bundle-v2.json",
     "mediaType": "application/vnd.easysubway.journey.contract-bundle.v2+json",
-    "sha256": "e033eaa30c94ddf35b820873f18124c5f533310b8a268ad878128fffb5a988f8"
+    "sha256": "64e6d2035fb153d350ede4706471213973519d60518b841f733581862cefc7f3"
   },
   "artifactInventory": [
     "evidence-ledger.sha256",
@@ -24,11 +24,11 @@
     "journey-v3-contract-bundle-v2.json"
   ],
   "artifactTrustAnchors": {
-    "evidence-ledger.sha256": "06015f6e68e824339f66f70ef4f5f9da8bfea332334cab6f49c9ed6c9b872705",
-    "journey-contract-prepublication-run-metadata.json": "68386a5c5c6fa5ea22eac0b5655e80f67135dd78bc9171050539e1baf04534cd",
-    "journey-v3-contract-bundle-v2-descriptor.json": "9ae1d9691a6ee92c9160d65eeee09bb17e14c1e5e6cb48dd4c8fef4572c4501d",
-    "journey-v3-contract-bundle-v2-manifest.json": "f06dda4484e88ede5afad819bd04f7659f6fe239cc13d823392271894e7147ae",
-    "journey-v3-contract-bundle-v2-receipt.json": "cf975aa84afffa707a4202c9f5e4d93cad5192baab44345dd8964af4eb8a7687",
-    "journey-v3-contract-bundle-v2.json": "e033eaa30c94ddf35b820873f18124c5f533310b8a268ad878128fffb5a988f8"
+    "evidence-ledger.sha256": "5ba2abee7f7c29f33236913ffbec82d09ee22da7b6f508dcae3e1288fac0547d",
+    "journey-contract-prepublication-run-metadata.json": "62ee6ae32fdd1849cedb71ff737e60e9a04a5774e2852f4b5454e4dc00b7195a",
+    "journey-v3-contract-bundle-v2-descriptor.json": "93af7b45ff39f4421d86011f63516ec10ed4ba42de247cc1bd9ab77a65051e24",
+    "journey-v3-contract-bundle-v2-manifest.json": "2d010a7a627b9367246be806236ad314a03094e59f230be0c09895cdc9592866",
+    "journey-v3-contract-bundle-v2-receipt.json": "744ce104885ac10e41fab9c340f617c2ae6512b26294ab4dd2a19715fc22a15c",
+    "journey-v3-contract-bundle-v2.json": "64e6d2035fb153d350ede4706471213973519d60518b841f733581862cefc7f3"
   }
 }

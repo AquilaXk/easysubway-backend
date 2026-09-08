@@ -75,6 +75,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	public RaptorRouteBundleRuntimeView compile(Input input) {
+		RouteTimetable timetable = readTimetable(input);
+		return RaptorRouteBundleRuntimeView.compile(input.routeBundleSha256(), input.generation(), timetable);
+	}
+
+	// 검증·해제 수명은 여기서 끝내고 탐색용 인덱스 생성과 분리한다.
+	RouteTimetable readTimetable(Input input) {
 		Objects.requireNonNull(input, "input");
 		Map<String, byte[]> payloads = input.compressedPayloads();
 		if (!payloads.keySet().equals(PAYLOAD_PATHS)) {
@@ -107,10 +113,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var evaluations = validateAccessibility(
 				byPath.get(ACCESSIBILITY_PATH).connection(), input.bundleId(), topology);
 			validateFare(byPath.get(FARE_PATH).connection());
-			RouteTimetable timetable = loadTimetable(
+			return loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations);
-			return RaptorRouteBundleRuntimeView.compile(
-				input.routeBundleSha256(), input.generation(), timetable);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {

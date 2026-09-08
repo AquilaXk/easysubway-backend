@@ -28,7 +28,6 @@ class JourneyV3ContractTest {
 	private static final Path OPENAPI = CONTRACTS.resolve("journey-v3.openapi.yaml");
 	private static final Path ERROR_CATALOG = CONTRACTS.resolve("journey-v3-error-catalog.json");
 	private static final Path SESSION_INTEGRITY = CONTRACTS.resolve("journey-v3-session-integrity.json");
-	private static final Path DIGESTS = CONTRACTS.resolve("journey-v3-contract-digests.json");
 	private static final Path CONTRACT_ATTRIBUTES = CONTRACTS.resolve(".gitattributes");
 	private static final ObjectMapper JSON = new ObjectMapper();
 
@@ -69,27 +68,47 @@ class JourneyV3ContractTest {
 		new ErrorPair("searchStationTimetables", 429, "ROUTE_RATE_LIMITED")
 	);
 
-	private static final List<ArtifactDigest> EXPECTED_DIGESTS = List.of(
-		new ArtifactDigest("journey-v3-error-catalog.json", "0f9fe2731765b5a704c3493cd85fd5280e4629c8074269ac980edaa9303a7095"),
-		new ArtifactDigest("journey-v3-error-disposition.json", "2452ba70dd4109eb01b5b1714151002333c8a08bd3c1b48494d3590f1d3686b0"),
-		new ArtifactDigest("journey-v3-session-integrity.json", "06e4fce1260ef807c5a1cc226789ea9e952d2c49f0a50bd0bd7d954b4f1910ad"),
-		new ArtifactDigest("journey-v3.openapi.yaml", "4c229b8a85d3d95ad55465963a2f76f446ba4b620b819b2f07a0c1a4c24da805")
+	private static final List<ErrorPair> PROFILE_APPLICATION_ERRORS = List.of(
+		new ErrorPair("profileJourneys", 400, "INVALID_TEMPORAL_QUERY"),
+		new ErrorPair("profileJourneys", 400, "TEMPORAL_WINDOW_TOO_LARGE"),
+		new ErrorPair("profileJourneys", 404, "STATION_NOT_FOUND"),
+		new ErrorPair("profileJourneys", 422, "NO_SERVICE_IN_DEPARTURE_WINDOW"),
+		new ErrorPair("profileJourneys", 422, "NO_ROUTE_ARRIVING_BY_DEADLINE"),
+		new ErrorPair("profileJourneys", 422, "NO_LAST_CONNECTION"),
+		new ErrorPair("profileJourneys", 422, "REALTIME_NOT_APPLICABLE_TO_TEMPORAL_QUERY"),
+		new ErrorPair("profileJourneys", 422, "TEMPORAL_QUERY_TOO_COMPLEX"),
+		new ErrorPair("profileJourneys", 503, "REALTIME_REQUIRED_UNAVAILABLE"),
+		new ErrorPair("profileJourneys", 503, "ROUTING_BUNDLE_UNAVAILABLE"),
+		new ErrorPair("profileJourneys", 503, "ROUTING_BUNDLE_STALE"),
+		new ErrorPair("profileJourneys", 503, "ROUTING_IDENTITY_MISMATCH"),
+		new ErrorPair("profileJourneys", 503, "RAPTOR_FRONTIER_CAPACITY_EXCEEDED"),
+		new ErrorPair("profileJourneys", 504, "JOURNEY_PROFILE_TIMEOUT")
+	);
+
+	private static final List<ErrorPair> PROFILE_INGRESS_ERRORS = List.of(
+		new ErrorPair("profileJourneys", 401, "ROUTE_SESSION_REQUIRED"),
+		new ErrorPair("profileJourneys", 429, "ROUTE_RATE_LIMITED")
 	);
 
 	@Test
 	@DisplayName("public surface and bearer boundary are exact")
 	void publicSurfaceAndBearerBoundaryAreExact() throws IOException {
+		assertThat(Files.readAllLines(CONTRACT_ATTRIBUTES, StandardCharsets.UTF_8)).containsExactly(
+			"*.yaml text eol=lf",
+			"*.json text eol=lf");
 		Map<String, Object> document = openApi();
 		assertThat(document.get("openapi")).isEqualTo("3.0.3");
 		assertThat(document).doesNotContainKey("security");
 		assertThat(map(document.get("paths")).keySet()).containsExactly(
 			"/api/v3/journeys/session",
 			"/api/v3/journeys/search",
+			"/api/v3/journeys/profile",
 			"/api/v3/station-timetables/search"
 		);
 
 		Map<String, Object> session = operation(document, "/api/v3/journeys/session");
 		Map<String, Object> search = operation(document, "/api/v3/journeys/search");
+		Map<String, Object> profile = operation(document, "/api/v3/journeys/profile");
 		Map<String, Object> stationTimetable = operation(document, "/api/v3/station-timetables/search");
 		assertThat(session.get("operationId")).isEqualTo("issueJourneySession");
 		assertThat(session).doesNotContainKey("security");
@@ -97,6 +116,10 @@ class JourneyV3ContractTest {
 		assertThat(list(search.get("security"))).containsExactly(Map.of("JourneySessionBearer", List.of()));
 		assertOperationSchemaRefs(session, "JourneySessionRequest", "JourneySessionResponse");
 		assertOperationSchemaRefs(search, "JourneySearchRequest", "JourneySearchSuccess");
+		assertThat(profile.get("operationId")).isEqualTo("profileJourneys");
+		assertThat(list(profile.get("security"))).containsExactly(Map.of("JourneySessionBearer", List.of()));
+		assertOperationSchemaRefs(profile, "JourneyProfileRequest", "JourneyProfileSuccess");
+		assertThat(profile.get("x-easysubway-cache-control")).isEqualTo("private, no-store");
 		assertThat(stationTimetable.get("operationId")).isEqualTo("searchStationTimetables");
 		assertThat(list(stationTimetable.get("security"))).containsExactly(Map.of("JourneySessionBearer", List.of()));
 		assertOperationSchemaRefs(stationTimetable, "StationTimetableSearchRequest", "StationTimetableSearchSuccess");
@@ -111,6 +134,95 @@ class JourneyV3ContractTest {
 			Map.entry("scheme", "bearer"),
 			Map.entry("bearerFormat", "opaque-route-session")
 		);
+	}
+
+	@Test
+	@DisplayName("profile operation fixes the closed temporal union and compressed identity-bound response")
+	void profileOperationIsClosedAndIdentityBound() throws IOException {
+		Map<String, Object> document = openApi();
+		assertClosedSchema(document, "JourneyProfileRequest",
+			Set.of("requestId", "originStationId", "destinationStationId", "temporalQuery", "timePolicy",
+				"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"),
+			Set.of("requestId", "originStationId", "destinationStationId", "temporalQuery", "timePolicy",
+				"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
+		assertThat(references(schema(document, "JourneyTemporalQuery").get("oneOf"))).containsExactly(
+			"#/components/schemas/JourneyDepartBetweenQuery",
+			"#/components/schemas/JourneyArriveByQuery",
+			"#/components/schemas/JourneyLastConnectionQuery"
+		);
+		assertTemporalQuery(document, "JourneyDepartBetweenQuery", "DEPART_BETWEEN",
+			Set.of("kind", "earliestReadyAt", "latestReadyAt"));
+		assertTemporalQuery(document, "JourneyArriveByQuery", "ARRIVE_BY",
+			Set.of("kind", "earliestReadyAt", "arrivalDeadline"));
+		assertTemporalQuery(document, "JourneyLastConnectionQuery", "LAST_CONNECTION", Set.of("kind", "serviceDate"));
+		assertThat(schema(document, "JourneyProfileRequest").get("description")).isEqualTo(
+			"Closed JSON input; implementations reject duplicate keys, unknown fields, and " +
+				"trailing tokens before temporal semantic validation."
+		);
+		assertThat(schema(document, "JourneyDepartureScheduled").get("description"))
+			.isEqualTo("Retained wire alias for the canonical DEPART_AT product mode.");
+
+		assertThat(references(schema(document, "JourneyProfileSuccess").get("oneOf"))).containsExactly(
+			"#/components/schemas/DepartureProfileSuccess",
+			"#/components/schemas/ArriveByProfileSuccess",
+			"#/components/schemas/LastConnectionProfileSuccess"
+		);
+		Set<String> commonSuccessFields = Set.of("contractVersion", "requestId", "queryId", "calculatedAt",
+			"validUntil", "temporalQuery", "serviceDays", "sourceIdentity", "algorithmIdentity",
+			"frontierPolicyIdentity", "resourcePolicyIdentity", "journeys", "summary");
+		Set<String> departureSuccessFields = new LinkedHashSet<>(commonSuccessFields);
+		departureSuccessFields.add("profileSegments");
+		assertClosedSchema(document, "DepartureProfileSuccess", departureSuccessFields, departureSuccessFields);
+		assertEnum(property(document, "DepartureProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(property(document, "DepartureProfileSuccess", "temporalQuery").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyDepartBetweenQuery");
+		assertThat(property(document, "DepartureProfileSuccess", "summary").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyDepartureProfileSummary");
+		assertThat(property(document, "DepartureProfileSuccess", "profileSegments").get("minItems")).isEqualTo(1);
+		assertClosedSchema(document, "ArriveByProfileSuccess", commonSuccessFields, commonSuccessFields);
+		assertEnum(property(document, "ArriveByProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(property(document, "ArriveByProfileSuccess", "temporalQuery").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyArriveByQuery");
+		assertThat(property(document, "ArriveByProfileSuccess", "summary").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyArriveByProfileSummary");
+		assertClosedSchema(document, "LastConnectionProfileSuccess", commonSuccessFields, commonSuccessFields);
+		assertEnum(property(document, "LastConnectionProfileSuccess", "contractVersion"), "JOURNEY_PROFILE_V1");
+		assertThat(property(document, "LastConnectionProfileSuccess", "temporalQuery").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyLastConnectionQuery");
+		assertThat(property(document, "LastConnectionProfileSuccess", "summary").get("$ref"))
+			.isEqualTo("#/components/schemas/JourneyLastConnectionProfileSummary");
+		assertClosedSchema(document, "JourneyProfileJourneyCandidate",
+			Set.of("journeyId", "readyAt", "journeyStartTime", "firstBoardingTime", "arrivalAtPlatform",
+				"arrivalAtDestination", "objectiveTags", "journey"),
+			Set.of("journeyId", "readyAt", "journeyStartTime", "firstBoardingTime", "arrivalAtPlatform",
+				"arrivalAtDestination", "objectiveTags", "journey"));
+		assertClosedSchema(document, "JourneyProfileSegment",
+			Set.of("readyFromInclusive", "readyUntilExclusive", "journeyIds"),
+			Set.of("readyFromInclusive", "readyUntilExclusive", "journeyIds"));
+		assertThat(property(document, "JourneyProfileSegment", "journeyIds")).doesNotContainKey("minItems");
+		assertThat(property(document, "JourneyProfileJourneyCandidate", "readyAt").get("description"))
+			.isEqualTo("Readiness instant bound to this candidate. For DEPART_BETWEEN this is the latest " +
+				"representative breakpoint; an earlier containing segment means the passenger waits until this " +
+				"instant. For ARRIVE_BY and LAST_CONNECTION this is the native planned entry readiness and does " +
+				"not imply a readiness segment.");
+		assertThat(property(document, "JourneyDepartBetweenQuery", "latestReadyAt").get("description"))
+			.isEqualTo("Inclusive whole-second terminal readiness; the final compressed segment ends one second " +
+				"later as an exclusive bound.");
+		assertThat(map(map(document.get("components")).get("schemas")))
+			.doesNotContainKey("JourneyProfileSummary");
+		assertClosedSchema(document, "JourneyProfileSourceIdentity",
+			Set.of("routeBundleId", "routeBundleGeneration", "routeBundleSha256", "timetableSnapshotId",
+				"accessibilitySnapshotId", "realtimeSnapshotId"),
+			Set.of("routeBundleId", "routeBundleGeneration", "routeBundleSha256", "timetableSnapshotId",
+				"accessibilitySnapshotId", "realtimeSnapshotId"));
+		assertClosedSchema(document, "JourneyAlgorithmIdentity",
+			Set.of("algorithmSuiteId", "queryAlgorithmId", "semanticVersion"),
+			Set.of("algorithmSuiteId", "queryAlgorithmId", "semanticVersion"));
+		assertClosedSchema(document, "JourneyFrontierPolicyIdentity",
+			Set.of("frontierPolicyId", "semanticVersion"), Set.of("frontierPolicyId", "semanticVersion"));
+		assertClosedSchema(document, "JourneyProfileResourcePolicyIdentity",
+			Set.of("resourcePolicyId", "semanticVersion", "resourcePolicySha256"),
+			Set.of("resourcePolicyId", "semanticVersion", "resourcePolicySha256"));
 	}
 
 	@Test
@@ -241,10 +353,11 @@ class JourneyV3ContractTest {
 			"schemaVersion", "artifactKind", "applicationErrors", "ingressErrors");
 		assertThat(catalog.path("schemaVersion").asText()).isEqualTo("JOURNEY_ERROR_CATALOG_V1");
 		assertThat(catalog.path("artifactKind").asText()).isEqualTo("journey-v3-error-catalog");
-		List<ErrorPair> applicationErrors = concat(APPLICATION_ERRORS, STATION_TIMETABLE_APPLICATION_ERRORS);
+		List<ErrorPair> applicationErrors = concat(concat(APPLICATION_ERRORS, STATION_TIMETABLE_APPLICATION_ERRORS), PROFILE_APPLICATION_ERRORS);
 		List<ErrorPair> ingressErrors = List.of(
 			INGRESS_ERRORS.get(0), INGRESS_ERRORS.get(1),
 			STATION_TIMETABLE_INGRESS_ERRORS.get(0), STATION_TIMETABLE_INGRESS_ERRORS.get(1),
+			PROFILE_INGRESS_ERRORS.get(0), PROFILE_INGRESS_ERRORS.get(1),
 			INGRESS_ERRORS.get(2), INGRESS_ERRORS.get(3), INGRESS_ERRORS.get(4));
 		assertThat(errorPairs(catalog.path("applicationErrors"))).containsExactlyElementsOf(applicationErrors);
 		assertThat(errorPairs(catalog.path("ingressErrors"))).containsExactlyElementsOf(ingressErrors);
@@ -259,6 +372,8 @@ class JourneyV3ContractTest {
 		));
 		assertThat(responsePairs(operation(document, "/api/v3/station-timetables/search"))).containsExactlyElementsOf(
 			concat(STATION_TIMETABLE_APPLICATION_ERRORS, STATION_TIMETABLE_INGRESS_ERRORS));
+		assertThat(responsePairs(operation(document, "/api/v3/journeys/profile"))).containsExactlyElementsOf(
+			concat(PROFILE_APPLICATION_ERRORS, PROFILE_INGRESS_ERRORS));
 		assertThat(sessionPairs).containsExactlyElementsOf(
 			INGRESS_ERRORS.stream().filter(pair -> pair.operation().equals("issueJourneySession")).toList()
 		);
@@ -268,6 +383,13 @@ class JourneyV3ContractTest {
 		assertEnum(property(document, "JourneyError", "contractVersion"), "JOURNEY_ERROR_V1");
 		assertEnum(schema(document, "JourneyErrorCode"), concat(applicationErrors, ingressErrors).stream()
 			.map(ErrorPair::code).distinct().toArray(String[]::new));
+	}
+
+	private static void assertTemporalQuery(
+		Map<String, Object> document, String schemaName, String kind, Set<String> fields
+	) {
+		assertClosedSchema(document, schemaName, fields, fields);
+		assertEnum(property(document, schemaName, "kind"), kind);
 	}
 
 	@Test
@@ -357,32 +479,6 @@ class JourneyV3ContractTest {
 		assertThat(session.path("scope").asText()).isEqualTo("journey:v3");
 		assertThat(session.path("ttlSeconds").isIntegralNumber()).isTrue();
 		assertThat(session.path("ttlSeconds").asInt()).isEqualTo(600);
-	}
-
-	@Test
-	@DisplayName("digest artifact binds the exact Journey V3 raw contract bytes")
-	void digestArtifactBindsRawContractBytes() throws IOException {
-		assertThat(Files.readAllLines(CONTRACT_ATTRIBUTES, StandardCharsets.UTF_8)).containsExactly(
-			"*.yaml text eol=lf",
-			"*.json text eol=lf");
-		JsonNode digest = JSON.readTree(DIGESTS.toFile());
-		assertThat(fieldNames(digest)).containsExactlyInAnyOrder("schemaVersion", "artifactKind", "artifacts");
-		assertThat(digest.path("schemaVersion").asText()).isEqualTo("JOURNEY_V3_CONTRACT_DIGESTS_V1");
-		assertThat(digest.path("artifactKind").asText()).isEqualTo("journey-v3-contract-digests");
-		assertThat(digest.path("artifacts").isArray()).isTrue();
-
-		List<JsonNode> artifacts = new ArrayList<>();
-		digest.path("artifacts").forEach(artifacts::add);
-		assertThat(artifacts.stream().map(node -> node.path("path").asText()).toList())
-			.containsExactlyElementsOf(EXPECTED_DIGESTS.stream().map(ArtifactDigest::path).toList());
-		for (int index = 0; index < artifacts.size(); index++) {
-			JsonNode artifact = artifacts.get(index);
-			ArtifactDigest expected = EXPECTED_DIGESTS.get(index);
-			assertThat(fieldNames(artifact)).containsExactlyInAnyOrder("path", "sha256");
-			Path file = CONTRACTS.resolve(artifact.path("path").asText());
-			assertThat(artifact.path("sha256").asText()).isEqualTo(expected.sha256());
-			assertThat(sha256(Files.readAllBytes(file))).isEqualTo(expected.sha256());
-		}
 	}
 
 	private static Map<String, Object> openApi() throws IOException {
@@ -517,6 +613,4 @@ class JourneyV3ContractTest {
 	private record ErrorPair(String operation, int httpStatus, String code) {
 	}
 
-	private record ArtifactDigest(String path, String sha256) {
-	}
 }

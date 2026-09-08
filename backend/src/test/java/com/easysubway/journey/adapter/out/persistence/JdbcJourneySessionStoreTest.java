@@ -123,17 +123,17 @@ class JdbcJourneySessionStoreTest {
 			"e".repeat(64), "journey:v3", NOW.minusSeconds(601), NOW
 		);
 
-		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2).status())
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1, 2).status())
 			.isEqualTo(AuthorizationStatus.VALID);
-		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2).status())
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1, 2).status())
 			.isEqualTo(AuthorizationStatus.VALID);
-		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2).status())
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1, 2).status())
 			.isEqualTo(AuthorizationStatus.LIMITED);
-		assertThat(store.authorizeAndConsume(TOKEN_HASH, "other", NOW, 2).status())
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "other", NOW, 1, 2).status())
 			.isEqualTo(AuthorizationStatus.SCOPE_MISMATCH);
-		assertThat(store.authorizeAndConsume("e".repeat(64), "journey:v3", NOW, 2).status())
+		assertThat(store.authorizeAndConsume("e".repeat(64), "journey:v3", NOW, 1, 2).status())
 			.isEqualTo(AuthorizationStatus.EXPIRED);
-		assertThat(store.authorizeAndConsume("f".repeat(64), "journey:v3", NOW, 2).status())
+		assertThat(store.authorizeAndConsume("f".repeat(64), "journey:v3", NOW, 1, 2).status())
 			.isEqualTo(AuthorizationStatus.MISSING);
 		assertThat(jdbcTemplate.queryForObject(
 			"SELECT request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
@@ -171,11 +171,11 @@ class JdbcJourneySessionStoreTest {
 			var calls = List.of(
 				executor.submit(() -> {
 					start.await();
-					return store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1).status();
+					return store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2, 3).status();
 				}),
 				executor.submit(() -> {
 					start.await();
-					return store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1).status();
+					return store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2, 3).status();
 				})
 			);
 			start.countDown();
@@ -186,7 +186,38 @@ class JdbcJourneySessionStoreTest {
 			"SELECT request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
 			Integer.class,
 			TOKEN_HASH
-		)).isOne();
+		)).isEqualTo(2);
+	}
+
+	@Test
+	@DisplayName("weighted consume은 exact-unit boundary를 지키고 over-limit을 소비하지 않는다")
+	void weightedConsumeUsesExactUnitsWithoutPartialConsumption() {
+		store.claimNonceAndSaveSession(
+			NONCE_HASH,
+			NOW.plusSeconds(120),
+			NOW,
+			new Session(TOKEN_HASH, "journey:v3", NOW, NOW.plusSeconds(600))
+		);
+
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 2, 5).status())
+			.isEqualTo(AuthorizationStatus.VALID);
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 3, 5).status())
+			.isEqualTo(AuthorizationStatus.VALID);
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1, 5).status())
+			.isEqualTo(AuthorizationStatus.LIMITED);
+		assertThat(store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 6, 5).status())
+			.isEqualTo(AuthorizationStatus.LIMITED);
+		assertThat(jdbcTemplate.queryForObject(
+			"SELECT request_count FROM journey_v3_sessions WHERE token_sha256 = ?",
+			Integer.class,
+			TOKEN_HASH
+		)).isEqualTo(5);
+		assertThatThrownBy(() -> store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 0, 5))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("costUnits must be positive");
+		assertThatThrownBy(() -> store.authorizeAndConsume(TOKEN_HASH, "journey:v3", NOW, 1, 0))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("maxCostUnitsPerSession must be positive");
 	}
 
 	@Test

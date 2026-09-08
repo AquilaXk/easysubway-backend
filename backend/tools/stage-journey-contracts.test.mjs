@@ -1,7 +1,7 @@
 import assert from "node:assert/strict";
 import { execFileSync } from "node:child_process";
 import { createHash } from "node:crypto";
-import { cpSync, existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
+import { existsSync, mkdtempSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, symlinkSync, writeFileSync } from "node:fs";
 import { join, resolve } from "node:path";
 import test from "node:test";
 import { pathToFileURL } from "node:url";
@@ -68,8 +68,8 @@ test("stage-journey-contracts는 lock과 일치하는 raw resources만 원자적
   const fixture = createFixture();
   try {
     runStager(fixture);
-    for (const resource of fixture.lock.resources) {
-      assert.deepEqual(readFileSync(join(fixture.output, resource.path)), readFileSync(join(repositoryRoot, resource.path)));
+    for (const resource of fixture.originalResources) {
+      assert.deepEqual(readFileSync(join(fixture.output, resource.path)), resource.bytes);
     }
     assert.equal(readFileSync(join(fixture.output, ".stage-complete"), "utf8"), `${fixture.lock.payload.sha256}\n`);
   } finally {
@@ -248,8 +248,32 @@ function createFixture({ mutate } = {}) {
   mkdirSync(outputRoot, { recursive: true });
   const directory = mkdtempSync(join(outputRoot, "fixture-"));
   const lockPath = join(directory, "journey-contracts.lock.json");
-  cpSync(trackedLock, lockPath);
-  const lock = JSON.parse(readFileSync(lockPath, "utf8"));
+  // 실제 OCI 결속은 위 workflow 테스트가 소유한다. 파일 안전성 테스트는
+  // 편집 중인 계약과 과거 발행 lock을 섞지 않고 독립 원문을 사용한다.
+  const originalResources = [
+    { path: "contracts/a.json", bytes: Buffer.from('{"value":"first"}\n') },
+    { path: "contracts/b.json", bytes: Buffer.from('{"value":"second"}\n') },
+  ];
+  const digest = (bytes) => createHash("sha256").update(bytes).digest("hex");
+  const lock = {
+    schemaVersion: 2,
+    component: "backend",
+    bundleVersion: "fixture-v1",
+    producer: { repository: "fixture/backend", gitSha: "1".repeat(40) },
+    artifact: {
+      repository: "fixture.invalid/contracts",
+      manifestDigest: `sha256:${digest("fixture manifest")}`,
+      artifactType: "application/vnd.easysubway.journey.contract-bundle.v2",
+    },
+    payload: {
+      fileName: "fixture-bundle.json",
+      mediaType: "application/vnd.easysubway.journey.contract-bundle.v2+json",
+    },
+    publicationReceiptSha256: digest("fixture receipt"),
+    resources: originalResources.map(({ path, bytes }) => ({
+      id: path, path, owner: "fixture/backend", mediaType: "application/json", sha256: digest(bytes),
+    })),
+  };
   const input = join(directory, lock.payload.fileName);
   const bundle = Buffer.from(`${JSON.stringify({
     schemaVersion: 2,
@@ -257,16 +281,18 @@ function createFixture({ mutate } = {}) {
     component: lock.component,
     producerRepository: lock.producer.repository,
     producerSha: lock.producer.gitSha,
-    resources: lock.resources.map((resource) => ({
+    resources: lock.resources.map((resource, index) => ({
       ...resource,
-      contentBase64: readFileSync(join(repositoryRoot, resource.path)).toString("base64"),
+      contentBase64: originalResources[index].bytes.toString("base64"),
     })),
   })}\n`);
-  assert.equal(createHash("sha256").update(bundle).digest("hex"), lock.payload.sha256);
+  lock.payload.sha256 = digest(bundle);
+  writeJson(lockPath, lock);
   writeFileSync(input, bundle);
   if (mutate) mutate({ directory, lock, lockPath, input });
   return {
     directory,
+    originalResources,
     lock: JSON.parse(readFileSync(lockPath, "utf8")),
     lockPath,
     input,

@@ -10,6 +10,7 @@ import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionService;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.fasterxml.jackson.core.JsonFactory;
 import com.fasterxml.jackson.core.StreamReadFeature;
 import com.fasterxml.jackson.databind.DeserializationFeature;
@@ -45,13 +46,16 @@ final class JourneySearchController {
 
 	private final JourneySessionService sessionService;
 	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
+	private final JourneyProfileResourcePolicy resourcePolicy;
 
 	JourneySearchController(
 		JourneySessionService sessionService,
-		JourneyApplicationDeadlineExecutor deadlineExecutor
+		JourneyApplicationDeadlineExecutor deadlineExecutor,
+		JourneyProfileResourcePolicy resourcePolicy
 	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
+		this.resourcePolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
 	}
 
 	@PostMapping("/api/v3/journeys/search")
@@ -59,7 +63,7 @@ final class JourneySearchController {
 		@RequestHeader(name = HttpHeaders.AUTHORIZATION, required = false) String authorization,
 		HttpServletRequest servletRequest
 	) {
-		sessionService.authorize(requireBearerToken(authorization));
+		sessionService.authorize(requireBearerToken(authorization), resourcePolicy.pointSearchCostUnits());
 		JourneyRequest request = decodeRequest(readRequest(servletRequest));
 		Outcome outcome;
 		try {
@@ -82,7 +86,7 @@ final class JourneySearchController {
 		};
 	}
 
-	private static String requireBearerToken(String authorization) {
+	static String requireBearerToken(String authorization) {
 		if (authorization == null) {
 			throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);
 		}

@@ -17,7 +17,8 @@ public interface JourneySessionStore {
 		String tokenSha256,
 		String requiredScope,
 		Instant now,
-		int maxSearchesPerSession
+		int costUnits,
+		int maxCostUnitsPerSession
 	);
 
 	record Session(String tokenSha256, String scope, Instant issuedAt, Instant expiresAt) {

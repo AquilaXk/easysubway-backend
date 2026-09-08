@@ -3,6 +3,8 @@ package com.easysubway.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.StationTimetableSearchService;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -27,7 +29,8 @@ import org.springframework.test.context.bean.override.mockito.MockitoBean;
 
 @SpringBootTest(properties = {
 	"easysubway.journey-v3.session-web.enabled=true",
-	"easysubway.journey-v3.search-web.enabled=true"
+	"easysubway.journey-v3.search-web.enabled=true",
+	"easysubway.journey.profile.max-request-bytes=65536"
 })
 @DisplayName("프로젝트 HTTP API catalog 계약")
 class ApiOperationCatalogContractTest {
@@ -43,6 +46,12 @@ class ApiOperationCatalogContractTest {
 
 	@MockitoBean
 	private JourneyApplicationDeadlineExecutor journeyApplicationDeadlineExecutor;
+
+	@MockitoBean
+	private JourneyProfileDeadlineExecutor journeyProfileDeadlineExecutor;
+
+	@MockitoBean
+	private JourneyProfileResourcePolicy journeyProfileResourcePolicy;
 
 	@MockitoBean
 	private StationTimetableSearchService stationTimetableSearchService;

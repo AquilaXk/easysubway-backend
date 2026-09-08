@@ -3,6 +3,8 @@ package com.easysubway.route.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
+import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
@@ -35,6 +37,80 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		assertThat(compiled.routePatternCount()).isOne();
 		assertThat(compiled.scheduledTripCount()).isEqualTo(3);
 		assertThat(compiled.primitiveTimeArrayCount()).isEqualTo(3);
+	}
+
+	@Test
+	@DisplayName("active pattern trip boundary preserves scheduled, frequency, and 24:xx time order")
+	void exposesNondecreasingCanonicalActivePatternTripsAcrossServiceDayTimes() {
+		var compiled = planner.compile(overnightFrequencyTimetable());
+		var activeDay = compiled.activeServiceDay(WEDNESDAY);
+
+		for (int pattern = 0; pattern < compiled.routePatternCount(); pattern += 1) {
+			var trips = activeDay.tripsByPattern(pattern);
+			assertThat(trips).isNotEmpty();
+			for (int position = 0; position < compiled.patternStopCount(pattern); position += 1) {
+				for (int trip = 1; trip < trips.size(); trip += 1) {
+					assertThat(trips.get(trip - 1).arrivalSeconds(position))
+						.isLessThanOrEqualTo(trips.get(trip).arrivalSeconds(position));
+					assertThat(trips.get(trip - 1).departureSeconds(position))
+						.isLessThanOrEqualTo(trips.get(trip).departureSeconds(position));
+				}
+			}
+		}
+		assertThat(activeDay.tripsByPattern(0))
+			.extracting(trip -> trip.departureSeconds(0))
+			.containsExactly(85800, 86400, 87000, 87600);
+	}
+
+	@Test
+	@DisplayName("calendar exception active snapshots keep other service dates immutable")
+	void exposesCalendarExceptionScopedActivePatternSnapshots() {
+		var compiled = planner.compile(calendarExceptionTimetable());
+		var wednesday = compiled.activeServiceDay(WEDNESDAY);
+		var removedThursday = compiled.activeServiceDay(WEDNESDAY.plusDays(1));
+		var friday = compiled.activeServiceDay(WEDNESDAY.plusDays(2));
+
+		assertThat(wednesday.tripsByPattern(0)).extracting(trip -> trip.trip().id())
+			.containsExactly("trip-weekday");
+		assertThat(removedThursday.tripsByPattern(0)).isEmpty();
+		assertThat(friday.tripsByPattern(0)).extracting(trip -> trip.trip().id())
+			.containsExactly("trip-weekday");
+		assertThat(compiled.activeServiceDay(WEDNESDAY)).isSameAs(wednesday);
+		assertThat(wednesday.tripsByPattern(0)).extracting(trip -> trip.trip().id())
+			.containsExactly("trip-weekday");
+	}
+
+	@Test
+	@DisplayName("cancelled realtime update remains bound to its canonical scheduled trip and pattern")
+	void exposesCanonicalTripIdentityForRealtimeCancellation() {
+		var compiled = planner.compile(everyDayTimetable());
+		int scheduledTripIndex = compiled.uniqueScheduledTripIndex("trip-daily");
+		var scheduledTrip = compiled.scheduledTrip(scheduledTripIndex);
+		var overlay = planner.compileRealtimeOverlay(compiled,
+			new TimetableRealtimeUpdates("v1", true, List.of(
+				new TimetableRealtimeUpdate(
+					"trip-daily", 0, 0, true, "snapshot-1", java.time.Instant.parse("2026-07-01T00:00:00Z"))
+			), null));
+
+		assertThat(compiled.patternOfScheduledTrip(scheduledTripIndex)).isZero();
+		assertThat(compiled.scheduledTripAtPattern(compiled.activeServiceDay(WEDNESDAY), 0, 0))
+			.isSameAs(scheduledTrip);
+		assertThat(overlay.affectsPattern(compiled.patternOfScheduledTrip(scheduledTripIndex))).isTrue();
+		assertThat(overlay.cancelled(scheduledTrip)).isTrue();
+	}
+
+	@Test
+	@DisplayName("one-way entry evidence is not synthesized as a reverse exit transition")
+	void doesNotSynthesizeReverseAccessTransition() {
+		var compiled = planner.compile(withAccess(everyDayTimetable(),
+			entryAccess("VERIFIED", "OFFICIAL_SOURCE", true, false)));
+		int station = compiled.stationIndex("station-a");
+		int line = compiled.lineIndex("line");
+		int strict = RouteTimetableRaptorPlanner.profileBit(
+			MobilityType.WHEELCHAIR, ConstraintMode.STRICT_STEP_FREE);
+
+		assertThat(compiled.entryTransition(station, line, strict, false)).isGreaterThanOrEqualTo(0);
+		assertThat(compiled.exitTransition(station, line, strict, false)).isEqualTo(-1);
 	}
 
 	@Test
@@ -688,6 +764,21 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 			),
 			List.of(new LoadRouteTimetablePort.TransitFrequency(
 				"trip-frequency", 32400, 34200, 600, false))
+		);
+	}
+
+	private static RouteTimetable overnightFrequencyTimetable() {
+		return timetable(
+			List.of(weekday("weekday")),
+			List.of(),
+			List.of(new LoadRouteTimetablePort.TransitTrip(
+				"trip-overnight", "route", "weekday", "도착", "0", "LOCAL", 0)),
+			List.of(
+				stop("trip-overnight", 1, "station-a", 85800),
+				stop("trip-overnight", 2, "station-b", 86400)
+			),
+			List.of(new LoadRouteTimetablePort.TransitFrequency(
+				"trip-overnight", 85800, 88200, 600, false))
 		);
 	}
 

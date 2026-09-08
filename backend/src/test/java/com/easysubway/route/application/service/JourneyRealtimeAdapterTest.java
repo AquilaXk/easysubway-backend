@@ -7,11 +7,9 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourne
 import com.easysubway.journey.application.JourneyCandidate;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
@@ -45,7 +43,7 @@ class JourneyRealtimeAdapterTest {
 	void producesOneFreshSameHandleObservationAndCompleteDirectCandidate() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, directTimetable());
 		var resolverCalls = new AtomicInteger();
-		var capturedQueries = new AtomicReference<List<TimetableRealtimeQuery>>();
+		var capturedQueries = new AtomicReference<List<JourneyTimetableRealtimeResolver.Query>>();
 		var adapter = new JourneyRealtimeAdapter(queries -> {
 			resolverCalls.incrementAndGet();
 			capturedQueries.set(queries);
@@ -63,8 +61,14 @@ class JourneyRealtimeAdapterTest {
 			assertThat(query.stationId()).isEqualTo("station-a");
 			assertThat(query.lineId()).isEqualTo("line");
 			assertThat(query.readyAt()).isEqualTo(EFFECTIVE);
-			assertThat(query.departures()).extracting(departure -> departure.tripId())
+			assertThat(query.departures()).extracting(JourneyTimetableRealtimeResolver.Departure::tripId)
 				.containsExactly("trip", "trip-late");
+			assertThat(query.departures().getLast()).satisfies(departure -> {
+				assertThat(departure.serviceDate()).isEqualTo(LocalDate.of(2026, 7, 1));
+				assertThat(departure.stopSequence()).isEqualTo(1);
+				assertThat(departure.scheduledDepartureAt())
+					.isEqualTo(Instant.parse("2026-07-01T16:00:00Z"));
+			});
 		});
 		assertThat(observation.identity()).isEqualTo("realtime-1");
 		assertThat(observation.routeBundleSha256()).isEqualTo(ROUTE_BUNDLE_SHA);
@@ -88,6 +92,27 @@ class JourneyRealtimeAdapterTest {
 				"line", "trip", "station-b", "station-a", "station-b",
 				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"),
 				Instant.parse("2026-07-01T00:01:00Z"), Instant.parse("2026-07-01T00:11:00Z")));
+	}
+
+	@Test
+	void preservesDatedOriginOccurrencesAcrossTheNativePlannerBoundary() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = planner.compile(directTimetable());
+		JourneyRequest request = request(
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, EFFECTIVE, "station-a", () -> false);
+		JourneyRaptorQuery query = JourneyRaptorQuery.from(request, EFFECTIVE);
+
+		assertThat(planner.realtimeQueries(query, timetable)).singleElement().satisfies(nativeQuery -> {
+			assertThat(nativeQuery.stationId()).isEqualTo("station-a");
+			assertThat(nativeQuery.lineId()).isEqualTo("line");
+			assertThat(nativeQuery.readyAt()).isEqualTo(EFFECTIVE);
+			assertThat(nativeQuery.departures()).extracting(
+				JourneyTimetableRealtimeResolver.Departure::stopSequence,
+				JourneyTimetableRealtimeResolver.Departure::serviceDate)
+				.containsExactly(
+					org.assertj.core.groups.Tuple.tuple(1, LocalDate.of(2026, 7, 1)),
+					org.assertj.core.groups.Tuple.tuple(1, LocalDate.of(2026, 7, 1)));
+		});
 	}
 
 	@Test
@@ -161,14 +186,12 @@ class JourneyRealtimeAdapterTest {
 	void rejectsUnavailableNullAndIdentityMixedUpdatesAfterOneAttempt() {
 		assertRejectedAfterOneCall(null, EFFECTIVE, "updates");
 		assertRejectedAfterOneCall(
-			TimetableRealtimeUpdates.unavailable("PROVIDER_UNAVAILABLE"), EFFECTIVE, "unavailable");
-		assertRejectedAfterOneCall(new TimetableRealtimeUpdates(
-			"realtime-1", true, List.of(new TimetableRealtimeUpdate(
-				"trip", 60, 60, false, "realtime-2", NOW.minusSeconds(10))), null),
+		JourneyTimetableRealtimeResolver.Updates.unavailable("PROVIDER_UNAVAILABLE"), EFFECTIVE, "unavailable");
+		assertRejectedAfterOneCall(new JourneyTimetableRealtimeResolver.Updates(
+			"realtime-1", true, List.of(update("realtime-2", NOW.minusSeconds(10))), null),
 			EFFECTIVE, "identity");
-		assertRejectedAfterOneCall(new TimetableRealtimeUpdates(
-			"realtime-1+realtime-2", true, List.of(new TimetableRealtimeUpdate(
-				"trip", 60, 60, false, "realtime-1+realtime-2", NOW.minusSeconds(10))), null),
+		assertRejectedAfterOneCall(new JourneyTimetableRealtimeResolver.Updates(
+			"realtime-1+realtime-2", true, List.of(update("realtime-1+realtime-2", NOW.minusSeconds(10))), null),
 			EFFECTIVE, "single");
 	}
 
@@ -223,7 +246,7 @@ class JourneyRealtimeAdapterTest {
 	}
 
 	private static void assertRejectedAfterOneCall(
-		TimetableRealtimeUpdates updates,
+		JourneyTimetableRealtimeResolver.Updates updates,
 		Instant effectiveInstant,
 		String message
 	) {
@@ -247,9 +270,16 @@ class JourneyRealtimeAdapterTest {
 		return Clock.fixed(NOW, ZoneOffset.UTC);
 	}
 
-	private static TimetableRealtimeUpdates updates(String identity, Instant observedAt) {
-		return new TimetableRealtimeUpdates(identity, true, List.of(
-			new TimetableRealtimeUpdate("trip", 60, 60, false, identity, observedAt)), null);
+	private static JourneyTimetableRealtimeResolver.Updates updates(String identity, Instant observedAt) {
+		return new JourneyTimetableRealtimeResolver.Updates(identity, true, List.of(update(identity, observedAt)), null);
+	}
+
+	private static JourneyTimetableRealtimeResolver.Update update(String identity, Instant observedAt) {
+		return new JourneyTimetableRealtimeResolver.Update(
+			new JourneyTimetableRealtimeResolver.Departure(
+				"station-a", "line", "trip", "1001", "LOCAL", LocalDate.of(2026, 7, 1), 1,
+				Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:00:00Z")),
+			60, 60, false, identity, observedAt);
 	}
 
 	private static JourneyRequest request(
@@ -284,8 +314,8 @@ class JourneyRealtimeAdapterTest {
 		var stopTimes = List.of(
 			new TransitStopTime("trip", 1, "station-a", "line", 32_400, 32_400, 0, 0),
 			new TransitStopTime("trip", 2, "station-b", "line", 33_000, 33_000, 0, 0),
-			new TransitStopTime("trip-late", 1, "station-a", "line", 36_000, 36_000, 0, 0),
-			new TransitStopTime("trip-late", 2, "station-b", "line", 36_600, 36_600, 0, 0));
+			new TransitStopTime("trip-late", 1, "station-a", "line", 90_000, 90_000, 0, 0),
+			new TransitStopTime("trip-late", 2, "station-b", "line", 90_600, 90_600, 0, 0));
 		return new RouteTimetable(
 			List.of(calendar), List.of(), List.of(route), trips, stopTimes,
 			List.of(), List.of(), null, verifiedAccess());
