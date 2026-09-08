@@ -37,7 +37,7 @@ jobs:
       - name: Scan immutable PR base
         if: ${{ github.event_name == 'pull_request' }}
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        uses: google/osv-scanner-action/osv-scanner-action@8e5cf47b818121e8b405931c82126c2630b0b20d
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
@@ -62,7 +62,7 @@ jobs:
       - name: Scan tested PR head
         if: ${{ github.event_name == 'pull_request' }}
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        uses: google/osv-scanner-action/osv-scanner-action@8e5cf47b818121e8b405931c82126c2630b0b20d
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
@@ -75,7 +75,7 @@ jobs:
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/base-results.json" "${{ runner.temp }}/head-results.json"
       - name: Report PR dependency vulnerabilities
         if: ${{ github.event_name == 'pull_request' }}
-        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        uses: google/osv-scanner-action/osv-reporter-action@8e5cf47b818121e8b405931c82126c2630b0b20d
         with:
           scan-args: |-
             --output=/github/runner_temp/results.sarif
@@ -111,7 +111,7 @@ jobs:
       - name: Scan immutable dispatch SHA
         if: ${{ github.event_name == 'workflow_dispatch' }}
         continue-on-error: true
-        uses: google/osv-scanner-action/osv-scanner-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        uses: google/osv-scanner-action/osv-scanner-action@8e5cf47b818121e8b405931c82126c2630b0b20d
         with:
           scan-args: |-
             --lockfile=backend/gradle.lockfile
@@ -124,7 +124,7 @@ jobs:
         run: node tools/ci/backend-ci-lifecycle.mjs validate-osv-results "${{ runner.temp }}/results.json"
       - name: Report dispatch dependency vulnerabilities
         if: ${{ github.event_name == 'workflow_dispatch' }}
-        uses: google/osv-scanner-action/osv-reporter-action@8dc09193bb540e09b23da07ad7e30bd33bf87018
+        uses: google/osv-scanner-action/osv-reporter-action@8e5cf47b818121e8b405931c82126c2630b0b20d
         with:
           scan-args: |-
             --output=/github/runner_temp/results.sarif
