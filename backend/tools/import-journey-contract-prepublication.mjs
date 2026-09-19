@@ -5,6 +5,7 @@ import { closeSync, constants, fchmodSync, fsyncSync, fstatSync, lstatSync, open
 import { dirname, resolve } from "node:path";
 import { pathToFileURL } from "node:url";
 import { isDeepStrictEqual } from "node:util";
+import { JOURNEY_CONTRACT_RESOURCES } from "./journey-contract-resources.mjs";
 
 const repository = "AquilaXk/easysubway-backend";
 const artifactRepository = "ghcr.io/aquilaxk/easysubway-backend-contracts";
@@ -18,7 +19,6 @@ const maxArchiveBytes = 8 * 1024 * 1024;
 const maxCentralBytes = 64 * 1024;
 const maxEntryBytes = 4 * 1024 * 1024;
 const inventory = ["evidence-ledger.sha256", "journey-contract-prepublication-run-metadata.json", "journey-v3-contract-bundle-v2-descriptor.json", "journey-v3-contract-bundle-v2-manifest.json", "journey-v3-contract-bundle-v2-receipt.json", payloadName];
-const resources = [["journey-v3-error-catalog", "contracts/api/journey-v3-error-catalog.json", "application/json"], ["journey-v3-error-disposition", "contracts/api/journey-v3-error-disposition.json", "application/json"], ["journey-v3-session-integrity", "contracts/api/journey-v3-session-integrity.json", "application/json"], ["journey-v3-openapi", "contracts/api/journey-v3.openapi.yaml", "application/yaml"]];
 
 if (process.argv[1] && import.meta.url === pathToFileURL(resolve(process.argv[1])).href) {
   try { importJourneyContractPrepublication(process.argv.slice(2)); } catch (error) {
@@ -179,9 +179,9 @@ function validateReceipt(bytes, metadata) {
 function validateBundle(bytes, receipt) {
   if (hash(bytes) !== receipt.payload.sha256) throw new Error("bundle sha256 is invalid");
   const value = json(bytes, "bundle"); keys(value, ["schemaVersion", "bundleVersion", "component", "producerRepository", "producerSha", "resources"], "bundle");
-  if (value.schemaVersion !== 2 || value.bundleVersion !== "2.0.0" || value.component !== "backend" || value.producerRepository !== repository || value.producerSha !== receipt.producer.gitSha || !Array.isArray(value.resources) || value.resources.length !== resources.length) throw new Error("bundle is invalid");
+  if (value.schemaVersion !== 2 || value.bundleVersion !== "2.0.0" || value.component !== "backend" || value.producerRepository !== repository || value.producerSha !== receipt.producer.gitSha || !Array.isArray(value.resources) || value.resources.length !== JOURNEY_CONTRACT_RESOURCES.length) throw new Error("bundle is invalid");
   return value.resources.map((resource, index) => {
-    const [id, path, mediaType] = resources[index]; keys(resource, ["id", "path", "owner", "mediaType", "sha256", "contentBase64"], "bundle resource");
+    const { id, path, mediaType } = JOURNEY_CONTRACT_RESOURCES[index]; keys(resource, ["id", "path", "owner", "mediaType", "sha256", "contentBase64"], "bundle resource");
     if (resource.id !== id || resource.path !== path || resource.owner !== repository || resource.mediaType !== mediaType || !digest(resource.sha256) || typeof resource.contentBase64 !== "string" || !/^(?:[A-Za-z0-9+/]{4})*(?:[A-Za-z0-9+/]{2}==|[A-Za-z0-9+/]{3}=)?$/.test(resource.contentBase64) || resource.contentBase64.length === 0 || Buffer.from(resource.contentBase64, "base64").toString("base64") !== resource.contentBase64 || hash(Buffer.from(resource.contentBase64, "base64")) !== resource.sha256) throw new Error("bundle resource is invalid");
     return { id: resource.id, path: resource.path, owner: resource.owner, mediaType: resource.mediaType, sha256: resource.sha256 };
   });

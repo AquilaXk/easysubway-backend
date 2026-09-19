@@ -54,7 +54,27 @@ class JourneySessionServiceTest {
 		fakes.service().authorize(issued.token());
 		assertThat(fakes.authorizeCalls).isEqualTo(1);
 		assertThat(fakes.requiredScope).isEqualTo("journey:v3");
+		assertThat(fakes.costUnits).isOne();
+		assertThat(fakes.maxCostUnitsPerSession).isEqualTo(MAX_SEARCHES_PER_SESSION);
 		assertThat(fakes.authorizedTokenSha256).isEqualTo(fakes.savedSession.tokenSha256());
+	}
+
+	@Test
+	void delegatesExplicitPositiveAuthorizationCostWithoutChangingPointCost() {
+		Fakes fakes = new Fakes();
+
+		fakes.service().authorize("opaque-token", 3);
+
+		assertThat(fakes.authorizeCalls).isEqualTo(1);
+		assertThat(fakes.costUnits).isEqualTo(3);
+		assertThat(fakes.maxCostUnitsPerSession).isEqualTo(MAX_SEARCHES_PER_SESSION);
+		assertThatThrownBy(() -> fakes.service().authorize("opaque-token", 0))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("costUnits must be positive");
+		assertThatThrownBy(() -> fakes.service().authorize("opaque-token", -1))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("costUnits must be positive");
+		assertThat(fakes.authorizeCalls).isEqualTo(1);
 	}
 
 	@Test
@@ -156,20 +176,32 @@ class JourneySessionServiceTest {
 	}
 
 	@Test
-	void mapsOnlyConsumedSessionLimitToRateLimitedAndRequiresExplicitSafeLimit() {
+	void mapsOnlyConsumedSessionLimitToRateLimitedAndRequiresPositivePolicyBudget() {
 		Fakes limited = new Fakes();
 		limited.authorization = new SessionUse(
 			AuthorizationStatus.LIMITED, "journey:v3", NOW.plusSeconds(600)
 		);
 		assertFailure(() -> limited.service().authorize("opaque-token"), Kind.RATE_LIMITED);
 		assertThat(limited.authorizeCalls).isEqualTo(1);
-		assertThat(limited.maxSearchesPerSession).isEqualTo(MAX_SEARCHES_PER_SESSION);
+		assertThat(limited.maxCostUnitsPerSession).isEqualTo(MAX_SEARCHES_PER_SESSION);
 
-		for (int invalidLimit : List.of(0, 51)) {
+		for (int invalidLimit : List.of(0, -1)) {
 			assertThatThrownBy(() -> limited.service(invalidLimit))
 				.isInstanceOf(IllegalArgumentException.class)
-				.hasMessage("maxSearchesPerSession must be between 1 and 50");
+				.hasMessage("maxCostUnitsPerSession must be positive");
 		}
+	}
+
+	@Test
+	void passesTheSuppliedFiniteBudgetWithoutASecondDevelopmentCeiling() {
+		Fakes fakes = new Fakes();
+		int policyBudget = 73;
+
+		fakes.service(policyBudget).authorize("opaque-token", 3);
+
+		assertThat(fakes.authorizeCalls).isOne();
+		assertThat(fakes.costUnits).isEqualTo(3);
+		assertThat(fakes.maxCostUnitsPerSession).isEqualTo(policyBudget);
 	}
 
 	private static Verdict validVerdict() {
@@ -248,7 +280,8 @@ class JourneySessionServiceTest {
 		private JourneySessionStore.Session savedSession;
 		private String authorizedTokenSha256;
 		private String requiredScope;
-		private int maxSearchesPerSession;
+		private int costUnits;
+		private int maxCostUnitsPerSession;
 
 		private JourneySessionService service() {
 			return service(MAX_SEARCHES_PER_SESSION);
@@ -282,12 +315,14 @@ class JourneySessionServiceTest {
 						String tokenSha256,
 						String scope,
 						Instant now,
-						int maxSearches
+						int cost,
+						int maxCostUnits
 					) {
 						authorizeCalls++;
 						authorizedTokenSha256 = tokenSha256;
 						requiredScope = scope;
-						maxSearchesPerSession = maxSearches;
+						costUnits = cost;
+						maxCostUnitsPerSession = maxCostUnits;
 						if (authorizationFailure != null) throw authorizationFailure;
 						return authorization;
 					}

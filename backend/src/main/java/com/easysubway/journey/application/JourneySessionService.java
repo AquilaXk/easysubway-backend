@@ -25,7 +25,6 @@ public final class JourneySessionService {
 	private static final Duration VERDICT_MAX_AGE = Duration.ofSeconds(120);
 	private static final Duration NONCE_CLAIM_TTL = Duration.ofSeconds(120);
 	private static final Duration SESSION_TTL = Duration.ofSeconds(600);
-	private static final int MAX_ALLOWED_SEARCHES_PER_SESSION = 50;
 	private static final Pattern NONCE = Pattern.compile("^[A-Za-z0-9_-]{21}[AQgw]$");
 	private static final Pattern CERTIFICATE_DIGEST = Pattern.compile("^[A-Za-z0-9_-]{43}$");
 	private static final Base64.Encoder BASE64_URL = Base64.getUrlEncoder().withoutPadding();
@@ -36,7 +35,7 @@ public final class JourneySessionService {
 	private final Clock clock;
 	private final SecureRandom secureRandom;
 	private final String certificateDigest;
-	private final int maxSearchesPerSession;
+	private final int maxCostUnitsPerSession;
 
 	public JourneySessionService(
 		JourneySessionIntegrityPort integrityPort,
@@ -44,17 +43,18 @@ public final class JourneySessionService {
 		Clock clock,
 		SecureRandom secureRandom,
 		String certificateDigest,
-		int maxSearchesPerSession
+		int maxCostUnitsPerSession
 	) {
 		this.integrityPort = Objects.requireNonNull(integrityPort, "integrityPort");
 		this.store = Objects.requireNonNull(store, "store");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.secureRandom = Objects.requireNonNull(secureRandom, "secureRandom");
 		this.certificateDigest = validateCertificateDigest(certificateDigest);
-		if (maxSearchesPerSession < 1 || maxSearchesPerSession > MAX_ALLOWED_SEARCHES_PER_SESSION) {
-			throw new IllegalArgumentException("maxSearchesPerSession must be between 1 and 50");
+		if (maxCostUnitsPerSession < 1) {
+			throw new IllegalArgumentException("maxCostUnitsPerSession must be positive");
 		}
-		this.maxSearchesPerSession = maxSearchesPerSession;
+		// 검증된 운영 정책의 유한 예산을 그대로 사용하고, 원자적 차감은 store가 담당한다.
+		this.maxCostUnitsPerSession = maxCostUnitsPerSession;
 	}
 
 	public IssuedSession issue(String integrityToken, String clientNonce) {
@@ -88,11 +88,18 @@ public final class JourneySessionService {
 	}
 
 	public AuthorizedSession authorize(String token) {
+		return authorize(token, 1);
+	}
+
+	public AuthorizedSession authorize(String token, int costUnits) {
 		if (token == null || token.isBlank()) throw failure(Kind.SESSION_REQUIRED);
+		if (costUnits < 1) throw new IllegalArgumentException("costUnits must be positive");
 		Instant now = clock.instant();
 		SessionUse use;
 		try {
-			use = store.authorizeAndConsume(sha256Hex(token), SCOPE, now, maxSearchesPerSession);
+			use = store.authorizeAndConsume(
+				sha256Hex(token), SCOPE, now, costUnits, maxCostUnitsPerSession
+			);
 		} catch (RuntimeException exception) {
 			throw failure(Kind.SESSION_REQUIRED);
 		}

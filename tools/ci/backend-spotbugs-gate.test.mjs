@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'dc6b134b017edd47a289a7292d85387ec7104cc623237c19dcdf33f7e5cf2e48', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: '3f0b644de0bde33704012f9e530ce37ad9f778f1fa7d0aac80fbda2ae6140c29', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '87eab0a2dcd2eb03e83c152e2c2bd2d27ccbc526ce1f2a787e1d85f57169bb35');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '57460388fff7557061377677475af09074f205fe06d690f67ff43fc93049b73d');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -1181,8 +1181,10 @@ test('workflow preserves #87 and uploads exactly four Phase-1 files before final
   assert.equal(validateWorkflow(workflow), true);
   assert.throws(() => validateWorkflow(workflow.replace('          fetch-depth: 0\n', '          fetch-depth: 1\n')), /prior-policy checkout history/);
   assert.match(workflow, /name: Run SpotBugs main analysis\n        id: spotbugs_main\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json\n        run: \.\/gradlew spotbugsMain --no-daemon/);
-  assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
-  assert.match(workflow, /\.\/gradlew writeSpotbugsMainEvidence --no-daemon/);
+  assert.match(workflow, /name: Capture SpotBugs main evidence\n        id: spotbugs_inputs\n        if: always\(\) && !cancelled\(\) && \(steps\.spotbugs_main\.outcome == 'success' \|\| steps\.spotbugs_main\.outcome == 'failure'\)\n        shell: bash\n        working-directory: backend\n        env:\n          EASYSUBWAY_CONTRACTS_BUNDLE: \$\{\{ runner\.temp \}\}\/backend-contracts\.json/);
+  assert.match(workflow, /test -s build\/reports\/spotbugs\/spotbugsMain\.xml\n          test -s build\/reports\/spotbugs\/spotbugsMain\.html\n          \.\/gradlew writeSpotbugsMainEvidence --no-daemon -x spotbugsMain\n/);
+  assert.match(workflow, /name: Validate SpotBugs report and policy\n        id: spotbugs_validate\n        if: always\(\) && !cancelled\(\) && steps\.spotbugs_inputs\.outcome == 'success'\n/);
+  assert.ok(workflow.includes('test "${{ steps.spotbugs_main.outcome }}" = success'));
   assert.match(workflow, /cp build\/spotbugs\/spotbugsMain-evidence\.json/);
 });
 

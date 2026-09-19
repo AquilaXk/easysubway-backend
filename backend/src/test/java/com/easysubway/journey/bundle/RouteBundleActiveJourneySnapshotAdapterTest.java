@@ -10,6 +10,7 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveServin
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotBoundaryReceipt;
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.SnapshotMeasurementReceipt;
 import com.easysubway.journey.application.JourneyExecutionResult;
+import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
@@ -170,6 +171,23 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(requireActive(adapter, ACTIVE_FROM).fresh()).isTrue();
 		assertThat(requireActive(adapter, FRESH_UNTIL).fresh()).isFalse();
 		assertThat(requireActive(adapter, ACTIVE_FROM.minusNanos(1)).fresh()).isFalse();
+	}
+
+	@Test
+	void mapsTheProfileQueryWithItsOwnFreshnessReference() {
+		var adapter = new RouteBundleActiveJourneySnapshotAdapter(
+			activeRegistry(Clock.fixed(NOW, ZoneOffset.UTC), new TestRuntime(MANIFEST_SHA, 1)));
+		var query = new JourneyRaptorQuery(REQUEST_ID, "origin", "destination",
+			new JourneyRaptorQuery.DepartBetween(ACTIVE_FROM, FRESH_UNTIL),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 1, 1, () -> false);
+
+		var snapshot = adapter.requireActive(query, FRESH_UNTIL,
+			new JourneyRequestMeasurement(REQUEST_ID));
+
+		assertThat(snapshot.routeBundleSha256()).isEqualTo(MANIFEST_SHA);
+		assertThat(snapshot.fresh()).isFalse();
+		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.unobservable());
 	}
 
 	@Test

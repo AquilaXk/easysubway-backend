@@ -2,15 +2,16 @@ package com.easysubway.route.adapter.out.realtime;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeQuery;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
-import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableTripDeparture;
 import com.easysubway.route.application.port.out.RealtimeArrivalResolver;
+import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver.Departure;
+import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver.Query;
+import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver.Update;
+import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver.Updates;
 import com.easysubway.route.domain.ArrivalCandidate;
 import com.easysubway.route.domain.ArrivalFreshness;
 import com.easysubway.route.domain.EtaConfidence;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -44,7 +45,7 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 		));
 		var resolver = new JourneyTimetableRealtimeArrivalResolver(gateway);
 
-		TimetableRealtimeUpdates result = resolver.resolve(List.of(query(
+		Updates result = resolver.resolve(List.of(query(
 			departure("trip-b", "T2", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"),
 			departure("trip-d", "T4", "2026-08-12T09:59:00Z", "2026-08-12T10:01:00Z"),
 			departure("trip-a", "T1", "2026-08-12T10:02:00Z", "2026-08-12T10:03:00Z"),
@@ -57,22 +58,27 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 			"station-a", "line-4", null, null, null, "", READY_AT));
 		assertThat(result.version()).isEqualTo(SNAPSHOT_ID);
 		assertThat(result.available()).isTrue();
-		assertThat(result.fallbackCode()).isNull();
+		assertThat(result.unavailableReason()).isNull();
 		assertThat(result.updates()).containsExactly(
-			new TimetableRealtimeUpdate(
-				"trip-b", 120, 120, false, SNAPSHOT_ID,
+			new Update(
+				departure("trip-b", "T2", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"),
+				120, 120, false, SNAPSHOT_ID,
 				Instant.parse("2026-08-12T09:59:55Z")),
-			new TimetableRealtimeUpdate(
-				"trip-c", 0, 0, true, SNAPSHOT_ID, SNAPSHOT_RECEIVED_AT),
-			new TimetableRealtimeUpdate(
-				"trip-d", 30, 30, false, SNAPSHOT_ID,
+			new Update(
+				departure("trip-c", "T3", "2026-08-12T10:10:00Z", "2026-08-12T10:11:00Z"),
+				0, 0, true, SNAPSHOT_ID, SNAPSHOT_RECEIVED_AT),
+			new Update(
+				departure("trip-d", "T4", "2026-08-12T09:59:00Z", "2026-08-12T10:01:00Z"),
+				30, 30, false, SNAPSHOT_ID,
 				Instant.parse("2026-08-12T09:59:57Z"))
 		);
+		assertThat(result.updates().get(1).departure()).isEqualTo(
+			departure("trip-c", "T3", "2026-08-12T10:10:00Z", "2026-08-12T10:11:00Z"));
 	}
 
 	@Test
 	void mapsEveryProviderOrProjectionFailureToOneClosedUnavailableResult() {
-		TimetableRealtimeQuery validQuery = query(
+		Query validQuery = query(
 			departure("trip", "T2", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"));
 		ArrivalCandidate matching = candidate(
 			"T2", "2026-08-12T10:07:00Z", "2026-08-12T09:59:55Z");
@@ -101,7 +107,7 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 				Instant.parse("2026-08-12T10:07:00Z"), null,
 				ArrivalFreshness.FRESH_REALTIME, EtaConfidence.HIGH)), List.of()));
 
-		TimetableRealtimeQuery conflicting = query(
+		Query conflicting = query(
 			departure("same-trip", "T1", "2026-08-12T10:03:00Z", "2026-08-12T10:04:00Z"),
 			departure("same-trip", "T2", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"));
 		assertProviderUnavailable(conflicting, new RealtimeArrivalResolver.Resolution(
@@ -120,23 +126,27 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 	void rejectsInvalidQueryInventoryBeforeCallingTheProvider() {
 		var gateway = new FakeRealtimeArrivalResolver(new AssertionError("provider must not be called"));
 		var resolver = new JourneyTimetableRealtimeArrivalResolver(gateway);
-		TimetableRealtimeQuery valid = query(
+		Query valid = query(
 			departure("trip", "T1", "2026-08-12T10:03:00Z", "2026-08-12T10:04:00Z"));
-		TimetableRealtimeQuery duplicateTrain = query(
+		Query duplicateTrain = query(
 			departure("trip-1", "T1", "2026-08-12T10:03:00Z", "2026-08-12T10:04:00Z"),
 			departure("trip-2", "T1", "2026-08-12T10:05:00Z", "2026-08-12T10:06:00Z"));
+		Query mismatchedOccurrence = new Query("station-a", "line-4", READY_AT, List.of(
+			new Departure("station-other", "line-4", "trip", "T2", "LOCAL", LocalDate.of(2026, 8, 12), 7,
+				Instant.parse("2026-08-12T10:03:00Z"), Instant.parse("2026-08-12T10:04:00Z"))));
 
 		assertUnavailable(resolver.resolve(null));
 		assertUnavailable(resolver.resolve(List.of()));
 		assertUnavailable(resolver.resolve(List.of(valid, valid)));
-		assertUnavailable(resolver.resolve(Arrays.asList((TimetableRealtimeQuery) null)));
+		assertUnavailable(resolver.resolve(Arrays.asList((Query) null)));
 		assertUnavailable(resolver.resolve(List.of(query())));
 		assertUnavailable(resolver.resolve(List.of(duplicateTrain)));
+		assertUnavailable(resolver.resolve(List.of(mismatchedOccurrence)));
 		assertThat(gateway.calls).hasValue(0);
 	}
 
 	private static void assertProviderUnavailable(
-		TimetableRealtimeQuery query,
+		Query query,
 		RealtimeArrivalResolver.Resolution resolution
 	) {
 		var gateway = new FakeRealtimeArrivalResolver(resolution);
@@ -144,22 +154,23 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 		assertThat(gateway.calls).hasValue(1);
 	}
 
-	private static void assertUnavailable(TimetableRealtimeUpdates result) {
-		assertThat(result).isEqualTo(TimetableRealtimeUpdates.unavailable(UNAVAILABLE));
+	private static void assertUnavailable(Updates result) {
+		assertThat(result).isEqualTo(Updates.unavailable(UNAVAILABLE));
 	}
 
-	private static TimetableRealtimeQuery query(TimetableTripDeparture... departures) {
-		return new TimetableRealtimeQuery("station-a", "line-4", READY_AT, List.of(departures));
+	private static Query query(Departure... departures) {
+		return new Query("station-a", "line-4", READY_AT, List.of(departures));
 	}
 
-	private static TimetableTripDeparture departure(
+	private static Departure departure(
 		String tripId,
 		String trainNo,
 		String scheduledArrivalAt,
 		String scheduledDepartureAt
 	) {
-		return new TimetableTripDeparture(
-			tripId, trainNo, null, Instant.parse(scheduledArrivalAt), Instant.parse(scheduledDepartureAt));
+		return new Departure(
+			"station-a", "line-4", tripId, trainNo, "LOCAL", LocalDate.of(2026, 8, 12), 7,
+			Instant.parse(scheduledArrivalAt), Instant.parse(scheduledDepartureAt));
 	}
 
 	private static ArrivalCandidate candidate(String trainNo, String arrivalAt, String observedAt) {
@@ -181,7 +192,7 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 		private final Resolution resolution;
 		private final Throwable failure;
 		private final AtomicInteger calls = new AtomicInteger();
-		private final AtomicReference<Query> query = new AtomicReference<>();
+		private final AtomicReference<RealtimeArrivalResolver.Query> query = new AtomicReference<>();
 
 		private FakeRealtimeArrivalResolver(Resolution resolution) {
 			this.resolution = resolution;
@@ -194,7 +205,7 @@ class JourneyTimetableRealtimeArrivalResolverTest {
 		}
 
 		@Override
-		public Resolution resolve(Query query) {
+		public Resolution resolve(RealtimeArrivalResolver.Query query) {
 			calls.incrementAndGet();
 			this.query.set(query);
 			if (failure instanceof RuntimeException runtimeException) {

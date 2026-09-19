@@ -3,6 +3,8 @@ package com.easysubway.contract;
 import static org.assertj.core.api.Assertions.assertThat;
 
 import com.easysubway.journey.application.JourneyApplicationDeadlineExecutor;
+import com.easysubway.journey.application.JourneyProfileDeadlineExecutor;
+import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.StationTimetableSearchService;
 import java.io.Reader;
@@ -70,7 +72,8 @@ import org.yaml.snakeyaml.Yaml;
  */
 @SpringBootTest(properties = {
 	"easysubway.journey-v3.session-web.enabled=true",
-	"easysubway.journey-v3.search-web.enabled=true"
+	"easysubway.journey-v3.search-web.enabled=true",
+	"easysubway.journey.profile.max-request-bytes=65536"
 })
 @DisplayName("공개 OpenAPI 계약과 controller mapping 정합")
 class PublicOpenApiContractTest {
@@ -104,6 +107,7 @@ class PublicOpenApiContractTest {
 	private static final ParameterNameDiscoverer PARAMETER_NAMES = new DefaultParameterNameDiscoverer();
 	private static final Set<String> MANUAL_REQUEST_BODY_HANDLERS = Set.of(
 		"com.easysubway.journey.adapter.in.web.JourneySearchController#search",
+		"com.easysubway.journey.adapter.in.web.JourneyProfileController#profile",
 		"com.easysubway.journey.adapter.in.web.StationTimetableSearchController#search"
 	);
 
@@ -112,6 +116,12 @@ class PublicOpenApiContractTest {
 
 	@MockitoBean
 	private JourneyApplicationDeadlineExecutor journeyApplicationDeadlineExecutor;
+
+	@MockitoBean
+	private JourneyProfileDeadlineExecutor journeyProfileDeadlineExecutor;
+
+	@MockitoBean
+	private JourneyProfileResourcePolicy journeyProfileResourcePolicy;
 
 	@MockitoBean
 	private StationTimetableSearchService stationTimetableSearchService;

@@ -85,7 +85,7 @@ class JourneyV3RuntimeParityTest {
 				.andReturn();
 			assertResponseContract(openApi, "issueJourneySession", session, runtime.json());
 
-			when(runtime.sessionService().authorize("session-token"))
+			when(runtime.sessionService().authorize("session-token", 1))
 				.thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
 			when(runtime.deadlineExecutor().execute(any())).thenReturn(new Completed(success()));
 			MvcResult search = runtime.mockMvc().perform(post("/api/v3/journeys/search")
@@ -166,7 +166,7 @@ class JourneyV3RuntimeParityTest {
 	@DisplayName("a wrong nested scalar type makes the recursive response-schema assertion red")
 	void rejectsWrongNestedScalarTypeMutation() throws Exception {
 		withRuntime(runtime -> {
-			when(runtime.sessionService().authorize("session-token"))
+			when(runtime.sessionService().authorize("session-token", 1))
 				.thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
 			when(runtime.deadlineExecutor().execute(any())).thenReturn(new Completed(success()));
 			MvcResult search = runtime.mockMvc().perform(post("/api/v3/journeys/search")
@@ -551,7 +551,8 @@ class JourneyV3RuntimeParityTest {
 			JourneySessionService sessionService,
 			JourneyApplicationDeadlineExecutor deadlineExecutor
 		) {
-			return new JourneySearchController(sessionService, deadlineExecutor);
+			return new JourneySearchController(sessionService, deadlineExecutor,
+				JourneyProfileResponseMapperTest.policy());
 		}
 
 		@Bean

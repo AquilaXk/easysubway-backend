@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.journey.bundle.RouteBundleStartupCandidateLoader;
+import com.easysubway.journey.config.JourneyProfileResourcePolicyTestFixture;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase;
 import com.easysubway.route.application.port.in.RouteV2SearchUseCase;
@@ -51,6 +52,8 @@ import org.springframework.context.ApplicationContext;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.DynamicPropertyRegistry;
+import org.springframework.test.context.DynamicPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
@@ -72,8 +75,6 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 	"easysubway.notifications.push.external-enabled=false",
 	"EASYSUBWAY_SEOUL_TOPIS_SERVICE_KEY=synthetic-test-key",
 	"EASYSUBWAY_ADS_EVENT_DAILY_CAP=1000000",
-	"easysubway.journey.search.timeout=PT2S",
-	"easysubway.journey.search.max-searches-per-session=12",
 	"easysubway.journey.session.certificate-sha256=AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA",
 	"easysubway.journey-v3.readiness.service-token=synthetic-context-readiness-token-0001",
 	"easysubway.journey-v3.readiness.instance-id=backend-context-route-closure",
@@ -110,6 +111,13 @@ import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilde
 @ExtendWith(OutputCaptureExtension.class)
 @DisplayName("운영 경로검색 API 폐쇄")
 class ProductionRouteApiClosureTest {
+
+	@DynamicPropertySource
+	static void journeyProfilePolicy(DynamicPropertyRegistry registry) {
+		registry.add("easysubway.journey.profile.resource-policy-path", JourneyProfileResourcePolicyTestFixture::path);
+		registry.add("easysubway.journey.profile.resource-policy-sha256", JourneyProfileResourcePolicyTestFixture::sha256);
+		registry.add("easysubway.journey.profile.max-request-bytes", () -> 65_536);
+	}
 
 	private static final String PAYLOAD_MARKER = "route-payload-marker-1913";
 	private static final List<String> HEADER_MARKERS = List.of(

@@ -3,18 +3,18 @@ import { createHash, randomUUID } from "node:crypto";
 import { execFileSync } from "node:child_process";
 import { closeSync, fchmodSync, fsyncSync, linkSync, lstatSync, openSync, readFileSync, rmSync, writeSync } from "node:fs";
 import { dirname, relative, resolve } from "node:path";
+import { JOURNEY_CONTRACT_RESOURCES } from "./journey-contract-resources.mjs";
 
 const root = resolve(import.meta.dirname, "../..");
 const build = resolve(root, "backend/build");
 const repository = "AquilaXk/easysubway-backend";
-const resources = [["journey-v3-error-catalog", "contracts/api/journey-v3-error-catalog.json", "application/json"], ["journey-v3-error-disposition", "contracts/api/journey-v3-error-disposition.json", "application/json"], ["journey-v3-session-integrity", "contracts/api/journey-v3-session-integrity.json", "application/json"], ["journey-v3-openapi", "contracts/api/journey-v3.openapi.yaml", "application/yaml"]];
 
 try {
   const args = parse(process.argv.slice(2));
   if (!/^[a-f0-9]{40}$/.test(args.sourceSha)) throw new Error("source sha is invalid");
   const gitDirectory = directory(args.gitDirectory, "git directory"); const output = outputPath(args.output);
   if (git(gitDirectory, ["rev-parse", "FETCH_HEAD"]).trim() !== args.sourceSha || git(gitDirectory, ["cat-file", "-t", args.sourceSha]).trim() !== "commit") throw new Error("fetched source identity is invalid");
-  const bundled = resources.map(([id, path, mediaType]) => { const entry = git(gitDirectory, ["ls-tree", args.sourceSha, "--", path]).trim(); const match = /^100644 blob ([a-f0-9]{40})\t/.exec(entry); if (!match) throw new Error(`source tree entry is not a regular blob: ${path}`); const bytes = gitBytes(gitDirectory, ["cat-file", "blob", match[1]]); return { id, path, owner: repository, mediaType, sha256: hash(bytes), contentBase64: bytes.toString("base64") }; });
+  const bundled = JOURNEY_CONTRACT_RESOURCES.map(({ id, path, mediaType }) => { const entry = git(gitDirectory, ["ls-tree", args.sourceSha, "--", path]).trim(); const match = /^100644 blob ([a-f0-9]{40})\t/.exec(entry); if (!match) throw new Error(`source tree entry is not a regular blob: ${path}`); const bytes = gitBytes(gitDirectory, ["cat-file", "blob", match[1]]); return { id, path, owner: repository, mediaType, sha256: hash(bytes), contentBase64: bytes.toString("base64") }; });
   writeNew(output, { schemaVersion: 2, bundleVersion: "2.0.0", component: "backend", producerRepository: repository, producerSha: args.sourceSha, resources: bundled });
 } catch (error) { process.stderr.write(`build-journey-contract-prepublication-bundle: ${error instanceof Error ? error.message : "invalid input"}\n`); process.exitCode = 1; }
 

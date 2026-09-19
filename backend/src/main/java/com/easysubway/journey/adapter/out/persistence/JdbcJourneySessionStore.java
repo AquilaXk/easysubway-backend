@@ -95,21 +95,28 @@ public class JdbcJourneySessionStore implements JourneySessionStore {
 		String tokenSha256,
 		String requiredScope,
 		Instant now,
-		int maxSearchesPerSession
+		int costUnits,
+		int maxCostUnitsPerSession
 	) {
+		if (costUnits < 1) throw new IllegalArgumentException("costUnits must be positive");
+		if (maxCostUnitsPerSession < 1) {
+			throw new IllegalArgumentException("maxCostUnitsPerSession must be positive");
+		}
+		int maximumPreviousCost = maxCostUnitsPerSession - costUnits;
 		int consumed = jdbcTemplate.update(
 			"""
 				UPDATE journey_v3_sessions
-				SET request_count = request_count + 1
+				SET request_count = request_count + ?
 				WHERE token_sha256 = ?
 					AND scope = ?
 					AND expires_at > ?
-					AND request_count < ?
+					AND request_count <= ?
 				""",
+			costUnits,
 			tokenSha256,
 			requiredScope,
 			Timestamp.from(now),
-			maxSearchesPerSession
+			maximumPreviousCost
 		);
 		List<SessionRow> sessions = jdbcTemplate.query(
 			"SELECT scope, expires_at FROM journey_v3_sessions WHERE token_sha256 = ?",
