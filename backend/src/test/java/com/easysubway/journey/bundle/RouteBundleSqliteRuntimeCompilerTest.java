@@ -169,6 +169,39 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			.hasMessageContaining("not PASS");
 	}
 
+	@Test
+	void compilesRouteBundleWithDistinctDataCandidateIdInAccessibilityEvidence() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-distinct-candidate", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of(), "nationwide-candidate-20260909");
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
+	void rejectsAccessibilityEvidenceWithBlankCandidateId() throws Exception {
+		var payloads = payloads();
+		var accessibility = sqlite("accessibility-blank-candidate", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(topologyEdges(), Map.of(), "   ");
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("accessibility evidence identity is invalid");
+	}
+
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
 		return input(payloads, payloadSha256s(payloads));
 	}
@@ -333,6 +366,11 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	private static ObjectNode evaluation(List<Edge> edges, Map<String, String> states) throws Exception {
+		return evaluation(edges, states, BUNDLE_ID);
+	}
+
+	private static ObjectNode evaluation(
+		List<Edge> edges, Map<String, String> states, String candidateId) throws Exception {
 		var results = JSON.createArrayNode();
 		var stateCounts = new LinkedHashMap<String, Integer>();
 		for (var edge : edges) {
@@ -360,7 +398,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			results.add(result);
 		}
 		var payload = JSON.createObjectNode();
-		payload.set("candidate", JSON.createObjectNode().put("candidateId", BUNDLE_ID));
+		payload.set("candidate", JSON.createObjectNode().put("candidateId", candidateId));
 		payload.put("evaluationAt", "2026-08-12T00:00:00.000Z");
 		payload.set("denominator", JSON.createObjectNode().put("edgeCount", edges.size()).put("digest", "e".repeat(64)));
 		payload.set("results", results);
