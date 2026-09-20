@@ -15,20 +15,6 @@
       "destinationStationId": "station-sangnoksu",
       "serviceDay": "WEEKEND",
       "departureLocalTime": "14:30"
-    },
-    {
-      "id": "incheon-line1-gyeyang-to-songdo-weekday",
-      "originStationId": "station-2671dacf496f",
-      "destinationStationId": "station-dc474ca1fe74",
-      "serviceDay": "WEEKDAY",
-      "departureLocalTime": "08:00"
-    },
-    {
-      "id": "incheon-line2-to-line1-transfer-weekday",
-      "originStationId": "station-b8b7c93b0203",
-      "destinationStationId": "station-dc474ca1fe74",
-      "serviceDay": "WEEKDAY",
-      "departureLocalTime": "08:00"
     }
   ]
 }
