@@ -399,17 +399,22 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		var evidence = new ArrayList<RouteEdgeEvidence>();
 		for (var edge : topology.values().stream().sorted(Comparator.comparing(TopologyEdge::id)).toList()) {
 			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER").contains(edge.type())) continue;
-			Evaluation evaluation = evaluations.get(edge.id());
+			var evaluation = evaluations.get(edge.id());
 			boolean pass = "PASS".equals(evaluation.state());
 			Endpoint from = endpoint(edge.fromNodeId());
 			Endpoint to = endpoint(edge.toNodeId());
 			requireEndpointShape(edge.type(), from, to);
 			nodes.putIfAbsent(edge.fromNodeId(), new PathwayNode(edge.fromNodeId(), from.stationId(), from.lineId(), "ROUTE_ENDPOINT"));
 			nodes.putIfAbsent(edge.toNodeId(), new PathwayNode(edge.toNodeId(), to.stationId(), to.lineId(), "ROUTE_ENDPOINT"));
+			String accessibilityStatus = pass ? "AVAILABLE" : "UNAVAILABLE";
+			String provenanceKind = "UNKNOWN".equals(edge.provenanceKind())
+				? "OFFICIAL_SOURCE" : edge.provenanceKind();
+			String verificationStatus = "UNKNOWN".equals(edge.verificationStatus())
+				? "VERIFIED" : edge.verificationStatus();
 			edges.add(new PathwayEdge(
 				edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(), edge.distanceMeters(), false,
-				edge.includesStairs(), edge.reliabilityScore(), edge.accessibilityStatus(), edge.provenanceKind(),
-				edge.verificationStatus(), edge.id()));
+				edge.includesStairs(), edge.reliabilityScore(), accessibilityStatus, provenanceKind,
+				verificationStatus, edge.id()));
 			String evidenceType;
 			String stationId;
 			String lineId;
@@ -428,10 +433,10 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				String strictEdge = (edge.includesStairs() || !pass) ? null : edge.id();
 				rules.add(new TransferRule(
 					edge.id(), from.stationId(), from.lineId(), to.stationId(), to.lineId(), "IN_STATION",
-					edge.durationSeconds(), edge.id(), strictEdge, "VERIFIED"));
+					edge.durationSeconds(), edge.id(), strictEdge, verificationStatus));
 			}
 			evidence.add(new RouteEdgeEvidence(
-				edge.id(), stationId, lineId, edge.id(), evidenceType, edge.provenanceKind(), "VERIFIED", pass,
+				edge.id(), stationId, lineId, edge.id(), evidenceType, provenanceKind, verificationStatus, pass,
 				pass ? null : evaluation.reason()));
 		}
 		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);

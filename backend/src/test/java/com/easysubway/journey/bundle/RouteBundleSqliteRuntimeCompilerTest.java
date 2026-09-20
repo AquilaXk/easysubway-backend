@@ -260,6 +260,58 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			.hasMessageContaining("accessibility evidence identity is invalid");
 	}
 
+	@Test
+	void projectsUnknownTopologyAttributesIntoEvaluatedStates() throws Exception {
+		var transferEdges = List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
+			new Edge("transfer-pass", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
+
+		var states = Map.of("transfer-blocked", "BLOCKED");
+		var payloads = payloads(transferEdges, value -> value, "UNKNOWN", "UNKNOWN", "UNKNOWN");
+		var accessibility = sqlite("accessibility-unknown", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(transferEdges, states);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var edges = timetable.routeAccessData().pathwayEdges();
+
+		var entryA = edges.stream().filter(e -> "entry-a".equals(e.id())).findFirst().orElseThrow();
+		assertThat(entryA.accessibilityStatus()).isEqualTo("AVAILABLE");
+		assertThat(entryA.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
+		assertThat(entryA.verificationStatus()).isEqualTo("VERIFIED");
+
+		var transferBlocked = edges.stream().filter(e -> "transfer-blocked".equals(e.id())).findFirst().orElseThrow();
+		assertThat(transferBlocked.accessibilityStatus()).isEqualTo("UNAVAILABLE");
+		assertThat(transferBlocked.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
+		assertThat(transferBlocked.verificationStatus()).isEqualTo("VERIFIED");
+
+		var rules = timetable.routeAccessData().transferRules();
+		var passRule = rules.stream().filter(r -> "transfer-pass".equals(r.id())).findFirst().orElseThrow();
+		assertThat(passRule.verificationStatus()).isEqualTo("VERIFIED");
+
+		var evidenceList = timetable.routeAccessData().routeEdgeEvidence();
+		var exitEvidence = evidenceList.stream().filter(e -> "exit-b".equals(e.edgeId())).findFirst().orElseThrow();
+		assertThat(exitEvidence.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
+		assertThat(exitEvidence.verificationStatus()).isEqualTo("VERIFIED");
+		assertThat(exitEvidence.strictRouteEligible()).isTrue();
+
+		var blockedEvidence = evidenceList.stream().filter(e -> "transfer-blocked".equals(e.edgeId())).findFirst().orElseThrow();
+		assertThat(blockedEvidence.provenanceKind()).isEqualTo("OFFICIAL_SOURCE");
+		assertThat(blockedEvidence.verificationStatus()).isEqualTo("VERIFIED");
+		assertThat(blockedEvidence.strictRouteEligible()).isFalse();
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
 		return input(payloads, payloadSha256s(payloads));
 	}
@@ -292,6 +344,16 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		java.util.function.UnaryOperator<String> identityTransform,
 		String accessibilityStatus
 	) throws Exception {
+		return payloads(edges, identityTransform, accessibilityStatus, "OFFICIAL_SOURCE", "VERIFIED");
+	}
+
+	private Map<String, byte[]> payloads(
+		List<Edge> edges,
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus,
+		String provenanceKind,
+		String verificationStatus
+	) throws Exception {
 		var topology = sqlite("topology", connection -> {
 			common(connection, identityTransform.apply(identitySql()));
 			execute(connection, """
@@ -310,7 +372,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
 					edge.serviceClass(), edge.includesStairs(), "VERIFIED_PRESENT", accessibilityStatus, 100, "official", "snapshot",
-					"d".repeat(64), "OFFICIAL_SOURCE", "VERIFIED", null, 1_786_485_600_000L,
+					"d".repeat(64), provenanceKind, verificationStatus, null, 1_786_485_600_000L,
 					"e".repeat(64));
 			}
 		});
