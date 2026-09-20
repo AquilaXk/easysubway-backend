@@ -153,7 +153,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
-	void rejectsNonPassAccessibilityForAJourneyProjectedEdge() throws Exception {
+	void projectsBlockedAccessibilityEdgesWithoutFailingCompilation() throws Exception {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-blocked", connection -> {
 			common(connection, identitySql());
@@ -164,9 +164,23 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		});
 		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
 
-		assertThatThrownBy(() -> new RouteBundleSqliteRuntimeCompiler().compile(input(payloads)))
-			.isInstanceOf(IllegalArgumentException.class)
-			.hasMessageContaining("not PASS");
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var entryEvidence = timetable.routeAccessData().routeEdgeEvidence().stream()
+			.filter(edge -> "entry-a".equals(edge.edgeId()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(entryEvidence.strictRouteEligible()).isFalse();
+		assertThat(entryEvidence.blockerReason()).isEqualTo("verified fixture");
+
+		var exitEvidence = timetable.routeAccessData().routeEdgeEvidence().stream()
+			.filter(edge -> "exit-b".equals(edge.edgeId()))
+			.findFirst()
+			.orElseThrow();
+		assertThat(exitEvidence.strictRouteEligible()).isTrue();
+		assertThat(exitEvidence.blockerReason()).isNull();
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
 	}
 
 	@Test
