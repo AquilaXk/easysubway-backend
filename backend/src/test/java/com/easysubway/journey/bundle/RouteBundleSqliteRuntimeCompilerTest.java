@@ -184,6 +184,50 @@ class RouteBundleSqliteRuntimeCompilerTest {
 	}
 
 	@Test
+	void projectsTransferEdgesWithStrictAndBlockedStates() throws Exception {
+		var transferEdges = List.of(
+			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
+			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
+			new Edge("transfer-pass", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-stairs", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 1),
+			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-blocked-stairs", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 1),
+			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
+
+		var states = Map.of(
+			"transfer-blocked", "BLOCKED",
+			"transfer-blocked-stairs", "BLOCKED");
+
+		var payloads = payloads(transferEdges, value -> value, "AVAILABLE");
+		var accessibility = sqlite("accessibility-transfers", connection -> {
+			common(connection, identitySql());
+			execute(connection, "CREATE TABLE route_accessibility_edge_evidence (evaluation_digest TEXT NOT NULL PRIMARY KEY, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL)");
+			var evaluation = evaluation(transferEdges, states);
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+		});
+		payloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, Zstd.compress(accessibility, 10));
+
+		var timetable = new RouteBundleSqliteRuntimeCompiler().readTimetable(input(payloads));
+		var rules = timetable.routeAccessData().transferRules();
+
+		var passRule = rules.stream().filter(r -> "transfer-pass".equals(r.id())).findFirst().orElseThrow();
+		assertThat(passRule.strictStepFreePathwayEdgeId()).isEqualTo("transfer-pass");
+
+		var stairsRule = rules.stream().filter(r -> "transfer-stairs".equals(r.id())).findFirst().orElseThrow();
+		assertThat(stairsRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var blockedRule = rules.stream().filter(r -> "transfer-blocked".equals(r.id())).findFirst().orElseThrow();
+		assertThat(blockedRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var blockedStairsRule = rules.stream().filter(r -> "transfer-blocked-stairs".equals(r.id())).findFirst().orElseThrow();
+		assertThat(blockedStairsRule.strictStepFreePathwayEdgeId()).isNull();
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads));
+		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
+	}
+
+	@Test
 	void compilesRouteBundleWithDistinctDataCandidateIdInAccessibilityEvidence() throws Exception {
 		var payloads = payloads();
 		var accessibility = sqlite("accessibility-distinct-candidate", connection -> {
@@ -240,6 +284,14 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		java.util.function.UnaryOperator<String> identityTransform,
 		String accessibilityStatus
 	) throws Exception {
+		return payloads(topologyEdges(), identityTransform, accessibilityStatus);
+	}
+
+	private Map<String, byte[]> payloads(
+		List<Edge> edges,
+		java.util.function.UnaryOperator<String> identityTransform,
+		String accessibilityStatus
+	) throws Exception {
 		var topology = sqlite("topology", connection -> {
 			common(connection, identityTransform.apply(identitySql()));
 			execute(connection, """
@@ -254,10 +306,10 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				 verification_status TEXT NOT NULL, facility_id TEXT,
 				 last_verified_at INTEGER, evidence_hash TEXT NOT NULL)
 				""");
-			for (var edge : topologyEdges()) {
+			for (var edge : edges) {
 				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
 					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(),
-					edge.serviceClass(), 0, "VERIFIED_PRESENT", accessibilityStatus, 100, "official", "snapshot",
+					edge.serviceClass(), edge.includesStairs(), "VERIFIED_PRESENT", accessibilityStatus, 100, "official", "snapshot",
 					"d".repeat(64), "OFFICIAL_SOURCE", "VERIFIED", null, 1_786_485_600_000L,
 					"e".repeat(64));
 			}
@@ -359,8 +411,10 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		insert(connection, "INSERT INTO stations VALUES(?)", "station-a");
 		insert(connection, "INSERT INTO stations VALUES(?)", "station-b");
 		insert(connection, "INSERT INTO lines VALUES(?)", "line-1");
+		insert(connection, "INSERT INTO lines VALUES(?)", "line-2");
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-a", "line-1", 1);
 		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-1", 2);
+		insert(connection, "INSERT INTO station_lines VALUES(?,?,?)", "station-b", "line-2", 3);
 	}
 
 	private static String identitySql() {
@@ -495,6 +549,9 @@ class RouteBundleSqliteRuntimeCompilerTest {
 
 	private record Edge(
 		String id, String from, String to, int duration, int distance, String type, String pattern,
-		String serviceClass) {
+		String serviceClass, int includesStairs) {
+		Edge(String id, String from, String to, int duration, int distance, String type, String pattern, String serviceClass) {
+			this(id, from, to, duration, distance, type, pattern, serviceClass, 0);
+		}
 	}
 }

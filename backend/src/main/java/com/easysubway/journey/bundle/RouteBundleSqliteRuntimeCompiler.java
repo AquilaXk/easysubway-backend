@@ -400,9 +400,6 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		for (var edge : topology.values().stream().sorted(Comparator.comparing(TopologyEdge::id)).toList()) {
 			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER").contains(edge.type())) continue;
 			Evaluation evaluation = evaluations.get(edge.id());
-			if (evaluation == null) {
-				throw new IllegalArgumentException("accessibility evaluation missing for edge: " + edge.id());
-			}
 			boolean pass = "PASS".equals(evaluation.state());
 			Endpoint from = endpoint(edge.fromNodeId());
 			Endpoint to = endpoint(edge.toNodeId());
