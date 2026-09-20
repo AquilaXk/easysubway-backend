@@ -16,7 +16,9 @@ import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.easysubway.ads.application.port.out.AdRepository;
 import com.easysubway.ads.domain.AdCreative;
 import com.easysubway.common.error.InvalidRequestException;
+import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.ZoneOffset;
 import java.util.List;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.BeforeEach;
@@ -278,6 +280,40 @@ class AdminAdsPageControllerTest {
 		AdCreative created = repository.findById(id).orElseThrow();
 		assertThat(created.startsAt()).isEqualTo(LocalDateTime.parse("2026-07-11T14:30:00"));
 		assertThat(created.endsAt()).isEqualTo(LocalDateTime.parse("2026-07-12T18:00:00"));
+	}
+
+	@Test
+	@DisplayName("오프셋이 포함된 시작·종료 일시 입력을 UTC instant로 정상 변환한다")
+	void acceptsOffsetDatetimeFormat() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		String id = "offset-ad";
+		postCreative(
+			session, id, "광고주", "오프셋 일시 등록",
+			"2026-07-11T14:30:00+09:00", "2026-07-12T18:00:00-05:00")
+			.andExpect(status().is3xxRedirection());
+		AdCreative created = repository.findById(id).orElseThrow();
+		assertThat(created.startsAt()).isEqualTo(LocalDateTime.ofInstant(Instant.parse("2026-07-11T14:30:00+09:00"), ZoneOffset.UTC));
+		assertThat(created.endsAt()).isEqualTo(LocalDateTime.ofInstant(Instant.parse("2026-07-12T18:00:00-05:00"), ZoneOffset.UTC));
+	}
+
+	@Test
+	@DisplayName("잘못된 형식의 일시 입력은 400 Bad Request로 거부한다")
+	void rejectsMalformedDatetimeInputs() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		postCreative(
+			session, "malformed-start", "광고주", "잘못된 시작 일시",
+			"not-a-datetime", "2026-07-12T18:00")
+			.andExpect(status().isBadRequest());
+
+		postCreative(
+			session, "blank-start", "광고주", "빈 시작 일시",
+			"   ", "2026-07-12T18:00")
+			.andExpect(status().isBadRequest());
+
+		postCreative(
+			session, "malformed-end", "광고주", "잘못된 종료 일시",
+			"2026-07-11T14:30", "invalid-ends-at")
+			.andExpect(status().isBadRequest());
 	}
 
 	private org.springframework.test.web.servlet.ResultActions postCreative(

@@ -245,6 +245,16 @@ class AdminOperationsPageControllerTest {
 				assertThat(event.reason()).startsWith("resolutionLength=");
 				assertThat(event.reason()).doesNotContain("secret");
 			});
+
+		String html = mockMvc.perform(get("/admin/incidents/page")
+				.with(httpBasic("admin-user", "admin-test-password")))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		assertThat(html)
+			.contains(incidentId)
+			.contains("종결");
 	}
 
 	@Test

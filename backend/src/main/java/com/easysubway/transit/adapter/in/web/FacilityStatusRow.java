@@ -36,15 +36,28 @@ record FacilityStatusRow(
 	}
 
 	static String statusLabel(AccessibilityFacilityStatus status) {
-		return status.label();
+		return switch (status) {
+			case NORMAL -> status.label();
+			case BROKEN -> status.label();
+			case UNDER_CONSTRUCTION -> status.label();
+			case CLOSED -> status.label();
+			case UNKNOWN -> status.label();
+			case USER_REPORTED -> status.label();
+			case ADMIN_VERIFIED -> status.label();
+		};
 	}
 
 	private static String typeLabel(AccessibilityFacilityType type) {
 		return type.label();
 	}
 
-	private static String confidenceLabel(DataConfidenceLevel confidence) {
-		return confidence.label();
+	static String confidenceLabel(DataConfidenceLevel confidence) {
+		return switch (confidence) {
+			case HIGH -> confidence.label();
+			case MEDIUM -> confidence.label();
+			case LOW -> confidence.label();
+			case NEEDS_VERIFICATION -> confidence.label();
+		};
 	}
 
 	// #2313 F1: 출처 유형 표시 라벨의 단일 원본은 DataSourceType.label()이다. 이전에는 공식 계열
