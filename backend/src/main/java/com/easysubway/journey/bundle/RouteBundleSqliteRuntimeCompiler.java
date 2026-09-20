@@ -400,9 +400,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		for (var edge : topology.values().stream().sorted(Comparator.comparing(TopologyEdge::id)).toList()) {
 			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER").contains(edge.type())) continue;
 			Evaluation evaluation = evaluations.get(edge.id());
-			if (!"PASS".equals(evaluation.state())) {
-				throw new IllegalArgumentException("projected accessibility edge is not PASS");
-			}
+			boolean pass = "PASS".equals(evaluation.state());
 			Endpoint from = endpoint(edge.fromNodeId());
 			Endpoint to = endpoint(edge.toNodeId());
 			requireEndpointShape(edge.type(), from, to);
@@ -427,14 +425,14 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				evidenceType = "TRANSFER";
 				stationId = to.stationId();
 				lineId = to.lineId();
-				String strictEdge = edge.includesStairs() ? null : edge.id();
+				String strictEdge = (edge.includesStairs() || !pass) ? null : edge.id();
 				rules.add(new TransferRule(
 					edge.id(), from.stationId(), from.lineId(), to.stationId(), to.lineId(), "IN_STATION",
 					edge.durationSeconds(), edge.id(), strictEdge, "VERIFIED"));
 			}
 			evidence.add(new RouteEdgeEvidence(
-				edge.id(), stationId, lineId, edge.id(), evidenceType, edge.provenanceKind(), "VERIFIED", true,
-				"PASS".equals(evaluation.state()) ? null : evaluation.reason()));
+				edge.id(), stationId, lineId, edge.id(), evidenceType, edge.provenanceKind(), "VERIFIED", pass,
+				pass ? null : evaluation.reason()));
 		}
 		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);
 	}
