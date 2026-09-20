@@ -399,22 +399,18 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		var evidence = new ArrayList<RouteEdgeEvidence>();
 		for (var edge : topology.values().stream().sorted(Comparator.comparing(TopologyEdge::id)).toList()) {
 			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER").contains(edge.type())) continue;
-			Evaluation evaluation = evaluations.get(edge.id());
-			boolean pass = evaluation != null && "PASS".equals(evaluation.state());
-			boolean evaluated = evaluation != null && Set.of("PASS", "BLOCKED").contains(evaluation.state());
+			var evaluation = evaluations.get(edge.id());
+			boolean pass = "PASS".equals(evaluation.state());
 			Endpoint from = endpoint(edge.fromNodeId());
 			Endpoint to = endpoint(edge.toNodeId());
 			requireEndpointShape(edge.type(), from, to);
 			nodes.putIfAbsent(edge.fromNodeId(), new PathwayNode(edge.fromNodeId(), from.stationId(), from.lineId(), "ROUTE_ENDPOINT"));
 			nodes.putIfAbsent(edge.toNodeId(), new PathwayNode(edge.toNodeId(), to.stationId(), to.lineId(), "ROUTE_ENDPOINT"));
-			String accessibilityStatus = pass ? "AVAILABLE"
-				: (evaluated && "BLOCKED".equals(evaluation.state()) ? "UNAVAILABLE" : edge.accessibilityStatus());
-			String provenanceKind = evaluated && "UNKNOWN".equals(edge.provenanceKind())
-				? "OFFICIAL_SOURCE"
-				: (isTrustedProvenance(edge.provenanceKind()) ? edge.provenanceKind() : "OFFICIAL_SOURCE");
-			String verificationStatus = evaluated && "UNKNOWN".equals(edge.verificationStatus())
-				? "VERIFIED"
-				: edge.verificationStatus();
+			String accessibilityStatus = pass ? "AVAILABLE" : "UNAVAILABLE";
+			String provenanceKind = "UNKNOWN".equals(edge.provenanceKind())
+				? "OFFICIAL_SOURCE" : edge.provenanceKind();
+			String verificationStatus = "UNKNOWN".equals(edge.verificationStatus())
+				? "VERIFIED" : edge.verificationStatus();
 			edges.add(new PathwayEdge(
 				edge.id(), edge.fromNodeId(), edge.toNodeId(), edge.durationSeconds(), edge.distanceMeters(), false,
 				edge.includesStairs(), edge.reliabilityScore(), accessibilityStatus, provenanceKind,
@@ -441,15 +437,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			}
 			evidence.add(new RouteEdgeEvidence(
 				edge.id(), stationId, lineId, edge.id(), evidenceType, provenanceKind, verificationStatus, pass,
-				pass ? null : (evaluation == null ? null : evaluation.reason())));
+				pass ? null : evaluation.reason()));
 		}
 		return new RouteAccessData(List.copyOf(nodes.values()), edges, rules, evidence);
-	}
-
-	private static boolean isTrustedProvenance(String provenance) {
-		return "OFFICIAL_SOURCE".equals(provenance)
-			|| "OPERATOR_CONFIRMED".equals(provenance)
-			|| "FIELD_VERIFIED".equals(provenance);
 	}
 
 	private static void requireEndpointShape(String type, Endpoint from, Endpoint to) {
