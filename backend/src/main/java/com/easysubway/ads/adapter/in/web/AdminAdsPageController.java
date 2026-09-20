@@ -127,13 +127,21 @@ class AdminAdsPageController {
 		}
 
 		private static LocalDateTime parseInstant(String value, String field) {
-			if (value == null) {
+			if (value == null || value.isBlank()) {
 				throw new InvalidRequestException(field + " 형식이 올바르지 않습니다.");
 			}
+			String trimmed = value.trim();
 			try {
-				return LocalDateTime.ofInstant(Instant.parse(value), ZoneOffset.UTC);
+				if (trimmed.endsWith("Z") || trimmed.contains("+") || (trimmed.lastIndexOf('-') > 10)) {
+					return LocalDateTime.ofInstant(Instant.parse(trimmed), ZoneOffset.UTC);
+				}
+				return LocalDateTime.parse(trimmed);
 			} catch (DateTimeParseException exception) {
-				throw new InvalidRequestException(field + " 형식이 올바르지 않습니다.", exception);
+				try {
+					return LocalDateTime.ofInstant(Instant.parse(trimmed), ZoneOffset.UTC);
+				} catch (DateTimeParseException ex2) {
+					throw new InvalidRequestException(field + " 형식이 올바르지 않습니다.", exception);
+				}
 			}
 		}
 	}

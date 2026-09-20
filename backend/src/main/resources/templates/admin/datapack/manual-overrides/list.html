@@ -143,8 +143,14 @@
 					<span th:insert="~{admin/fragments/missing-value :: value(${row.approvedBy}, '미상')}">approver</span>
 					<span th:insert="~{admin/fragments/missing-value :: value(${row.approvedAt}, '미상')}">—</span>
 				</td>
-				<td th:text="${row.approvalStatus}">APPROVED</td>
-				<td th:text="${row.conflictStatus}">NONE</td>
+				<td>
+					<span th:text="${row.approvalStatus == 'PENDING' ? '대기' : (row.approvalStatus == 'APPROVED' ? '승인됨' : (row.approvalStatus == 'EXPIRED' ? '만료됨' : (row.approvalStatus == 'REJECTED' ? '반려됨' : (row.approvalStatus == 'SUPERSEDED' ? '대체됨' : row.approvalStatus))))}">APPROVED</span>
+					<span class="meta" th:text="${row.approvalStatus}">APPROVED</span>
+				</td>
+				<td>
+					<span th:text="${row.conflictStatus == 'NONE' ? '충돌 없음' : (row.conflictStatus == 'RESOLVED' ? '해결됨' : (row.conflictStatus == 'UNRESOLVED' ? '충돌 미해결' : row.conflictStatus))}">충돌 없음</span>
+					<span class="meta" th:text="${row.conflictStatus}">NONE</span>
+				</td>
 				<td>
 					<span th:text="${row.strictRouteEligible ? 'strict 요청' : 'strict 아님'}">strict 아님</span>
 					<span th:insert="~{admin/fragments/missing-value :: value(${row.routeSafetyApprovedBy}, '미상')}">—</span>
@@ -156,30 +162,33 @@
 				<td th:insert="~{admin/fragments/missing-value :: value(${row.supersededBy}, '미상')}">—</td>
 				<td th:text="${row.productionStatus}">candidate 가능</td>
 				<td>
-					<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/approve'}">
-						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<input type="hidden" name="idempotencyKey" th:value="${'manual-override-approve-' + row.id}">
-						<label>
-							<span class="sr-only">승인 사유</span>
-							<input name="reason" value="manual override reviewed" required>
-						</label>
-						<button type="submit" class="primary">승인 저장</button>
-					</form>
-					<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/expire'}">
-						<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
-						<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
-						<input type="hidden" name="idempotencyKey" th:value="${'manual-override-expire-' + row.id}">
-						<label>
-							<span class="sr-only">만료 사유</span>
-							<input name="reason" value="manual override expired" required>
-						</label>
-						<details class="admin-action-confirm">
-							<summary class="danger">만료…</summary>
-							<p class="meta">이 수동 오버라이드를 만료할까요? 이 작업은 되돌리기 어렵습니다.</p>
-							<button type="submit" class="danger">만료 저장</button>
-						</details>
-					</form>
+					<details class="admin-table-action-drawer">
+						<summary class="admin-btn outline small">작업</summary>
+						<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/approve'}">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="idempotencyKey" th:value="${'manual-override-approve-' + row.id}">
+							<label>
+								<span class="sr-only">승인 사유</span>
+								<input name="reason" value="manual override reviewed" required>
+							</label>
+							<button type="submit" class="primary">승인 저장</button>
+						</form>
+						<form class="admin-form" method="post" th:action="@{'/admin/datapack/manual-overrides/' + ${row.id} + '/expire'}">
+							<input type="hidden" th:name="${_csrf.parameterName}" th:value="${_csrf.token}">
+							<input type="hidden" name="commandToken" th:value="${commandTokens.next()}">
+							<input type="hidden" name="idempotencyKey" th:value="${'manual-override-expire-' + row.id}">
+							<label>
+								<span class="sr-only">만료 사유</span>
+								<input name="reason" value="manual override expired" required>
+							</label>
+							<details class="admin-action-confirm">
+								<summary class="danger">만료…</summary>
+								<p class="meta">이 수동 오버라이드를 만료할까요? 이 작업은 되돌리기 어렵습니다.</p>
+								<button type="submit" class="danger">만료 저장</button>
+							</details>
+						</form>
+					</details>
 				</td>
 			</tr>
 			</tbody>
@@ -188,6 +197,7 @@
 	</section>
 </main>
 </div>
+<th:block th:replace="~{admin/fragments/shell :: drawer}"></th:block>
 <th:block th:replace="~{admin/fragments/shell :: scripts}"></th:block>
 </body>
 </html>

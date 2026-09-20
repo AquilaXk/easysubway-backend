@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="icon" href="data:,">
 	<title>운영기관 접근성 현황 보고서</title>
-	<link rel="stylesheet" href="/css/operator-v3.css">
+	<link rel="stylesheet" th:href="@{/css/operator-v3.css}" href="/css/operator-v3.css">
 </head>
 <body>
 <div class="desktop-frame">
@@ -20,7 +20,7 @@
 					<h1>운영기관 접근성 시설 현황</h1>
 					<p>기관 담당 노선의 역·시설 품질과 개선 우선순위를 확인합니다.</p>
 				</div>
-				<a class="desk-btn primary" href="/operator/api/accessibility-report/proposal.csv">협력 제안서 CSV</a>
+				<a class="desk-btn primary" th:href="@{/operator/api/accessibility-report/proposal.csv}" href="/operator/api/accessibility-report/proposal.csv">협력 제안서 CSV</a>
 			</div>
 
 			<div class="metric-grid" aria-label="접근성 시설 현황 요약">
@@ -31,7 +31,7 @@
 				<div class="metric"><span>확인일 누락 역</span><strong th:text="${report.missingStationVerificationDateCount}">0</strong></div>
 			</div>
 
-			<form class="table-toolbar" method="get" action="/operator/accessibility-report/page">
+			<form class="table-toolbar" method="get" th:action="@{/operator/accessibility-report/page}" action="/operator/accessibility-report/page">
 				<label>
 					<span>검색</span>
 					<input type="search" name="q" th:value="${query.q}" placeholder="지역·역·시설·사유">
@@ -39,7 +39,7 @@
 				<input type="hidden" name="sort" th:value="${query.sort}">
 				<input type="hidden" name="direction" th:value="${query.direction}">
 				<button type="submit">필터 적용</button>
-				<a class="desk-btn" href="/operator/accessibility-report/page">초기화</a>
+				<a class="desk-btn" th:href="@{/operator/accessibility-report/page}" href="/operator/accessibility-report/page">초기화</a>
 			</form>
 
 			<section class="panel chart-panel">

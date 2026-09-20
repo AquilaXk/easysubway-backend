@@ -9,6 +9,7 @@ import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.common.web.pagination.EgovPaginationView;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxRequest;
 import io.github.wimdeblauwe.htmx.spring.boot.mvc.HxTrigger;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -309,6 +310,8 @@ class AdminAuditPageController {
 		String occurredAt
 	) {
 
+		private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
 		static AuditEventRow from(AdminAuditEvent event) {
 			return new AuditEventRow(
 				event.id(),
@@ -328,7 +331,7 @@ class AdminAuditPageController {
 				orDash(event.reason()),
 				// 사유 누락은 표시 문자열("—")이 아니라 실제 도메인 값(null·공백)으로 판정한다.
 				event.reason() == null || event.reason().isBlank(),
-				event.occurredAt().toString()
+				event.occurredAt().format(DATE_TIME_FORMATTER)
 			);
 		}
 

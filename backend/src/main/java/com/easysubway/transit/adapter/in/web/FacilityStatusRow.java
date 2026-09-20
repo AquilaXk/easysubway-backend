@@ -37,13 +37,13 @@ record FacilityStatusRow(
 
 	static String statusLabel(AccessibilityFacilityStatus status) {
 		return switch (status) {
-			case NORMAL -> "정상";
-			case BROKEN -> "고장";
-			case UNDER_CONSTRUCTION -> "공사 중";
-			case CLOSED -> "폐쇄";
-			case UNKNOWN -> "확인 필요";
-			case USER_REPORTED -> "사용자 제보";
-			case ADMIN_VERIFIED -> "관리자 확인";
+			case NORMAL -> status.label();
+			case BROKEN -> status.label();
+			case UNDER_CONSTRUCTION -> status.label();
+			case CLOSED -> status.label();
+			case UNKNOWN -> status.label();
+			case USER_REPORTED -> status.label();
+			case ADMIN_VERIFIED -> status.label();
 		};
 	}
 
@@ -51,12 +51,12 @@ record FacilityStatusRow(
 		return type.label();
 	}
 
-	private static String confidenceLabel(DataConfidenceLevel confidence) {
+	static String confidenceLabel(DataConfidenceLevel confidence) {
 		return switch (confidence) {
-			case HIGH -> "최근 확인된 정보";
-			case MEDIUM -> "일부 확인된 정보";
-			case LOW -> "확인이 더 필요한 정보";
-			case NEEDS_VERIFICATION -> "확인이 더 필요해요";
+			case HIGH -> confidence.label();
+			case MEDIUM -> confidence.label();
+			case LOW -> confidence.label();
+			case NEEDS_VERIFICATION -> confidence.label();
 		};
 	}
 

@@ -18,6 +18,8 @@ import com.easysubway.health.application.port.in.CheckHealthUseCase;
 import com.easysubway.health.domain.HealthStatus;
 import jakarta.servlet.http.HttpServletRequest;
 import java.security.Principal;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
@@ -297,6 +299,12 @@ class AdminOperationsPageController {
 		}
 	}
 
+	private static final DateTimeFormatter DATE_TIME_FORMATTER = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm");
+
+	private static String formatDateTime(LocalDateTime dateTime) {
+		return dateTime == null ? null : dateTime.format(DATE_TIME_FORMATTER);
+	}
+
 	record IncidentRow(
 		String incidentId,
 		String severity,
@@ -325,8 +333,8 @@ class AdminOperationsPageController {
 				incident.source(),
 				incident.summary(),
 				incident.owner(),
-				String.valueOf(incident.openedAt()),
-				incident.resolvedAt() == null ? "—" : String.valueOf(incident.resolvedAt()),
+				formatDateTime(incident.openedAt()),
+				formatDateTime(incident.resolvedAt()),
 				incident.resolution(),
 				!incident.status().isResolved(),
 				incident.stationId(),
@@ -354,7 +362,7 @@ class AdminOperationsPageController {
 			return new TransitionRow(
 				transition.isInitial() ? "—" : transition.fromStatus().label(),
 				transition.toStatus().label(),
-				String.valueOf(transition.changedAt()),
+				formatDateTime(transition.changedAt()),
 				transition.changedBy(),
 				transition.note() == null ? "" : transition.note(),
 				transition.isInitial()
