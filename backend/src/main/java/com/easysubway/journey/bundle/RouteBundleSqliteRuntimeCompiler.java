@@ -111,7 +111,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			requireEqualReferences(components);
 			var topology = loadTopology(byPath.get(TOPOLOGY_PATH).connection());
 			var evaluations = validateAccessibility(
-				byPath.get(ACCESSIBILITY_PATH).connection(), input.bundleId(), topology);
+				byPath.get(ACCESSIBILITY_PATH).connection(), topology);
 			validateFare(byPath.get(FARE_PATH).connection());
 			return loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations);
@@ -242,7 +242,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	private static Map<String, Evaluation> validateAccessibility(
-		Connection connection, String bundleId, Map<String, TopologyEdge> topology) throws SQLException {
+		Connection connection, Map<String, TopologyEdge> topology) throws SQLException {
 		requireColumns(connection, "route_accessibility_edge_evidence",
 			List.of("evaluation_digest", "materialization_digest", "canonical_json"));
 		try (var statement = connection.createStatement(); var rows = statement.executeQuery(
@@ -254,9 +254,10 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			if (rows.next()) throw new IllegalArgumentException("accessibility evidence must contain one row");
 			try {
 				JsonNode root = JSON.readTree(rawJson);
+				String candidateId = root.path("candidate").path("candidateId").textValue();
 				if (!rawJson.equals(canonical(root)) || !root.isObject()
 					|| !evaluationDigest.equals(root.path("evaluationDigest").textValue())
-					|| !bundleId.equals(root.path("candidate").path("candidateId").textValue())
+					|| candidateId == null || candidateId.isBlank()
 					|| !root.path("eligible").isBoolean() || !root.path("eligible").booleanValue()) {
 					throw new IllegalArgumentException("accessibility evidence identity is invalid");
 				}
