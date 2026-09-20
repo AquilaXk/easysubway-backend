@@ -92,10 +92,12 @@
 	text-decoration: underline;
 }
 
-.admin-v3 .tiny-btn {
-	min-height: 30px;
+.admin-v3 .tiny-btn,
+.admin-v3 .admin-btn.small,
+.admin-v3 button.small {
+	min-height: 28px;
 	padding: 0 9px;
-	font-size: 12px;
+	font-size: var(--admin-fs-meta);
 }
 
 .admin-v3 .sha-inline {
@@ -327,6 +329,51 @@
 .admin-v3 tbody tr:hover .row-actions,
 .admin-v3 tbody tr:focus-within .row-actions {
 	visibility: visible;
+}
+
+/* 테이블 인라인 액션 드로어(#318): 표 내부 거대 폼을 접을 수 있게 정리 */
+.admin-table-action-drawer {
+	position: relative;
+	margin-top: 6px;
+}
+
+.admin-table-action-drawer > summary {
+	list-style: none;
+	display: inline-flex;
+	cursor: pointer;
+}
+
+.admin-table-action-drawer > summary::-webkit-details-marker {
+	display: none;
+}
+
+.admin-table-action-drawer[open] {
+	padding: 10px;
+	margin-top: 8px;
+	background: var(--admin-surface);
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-card);
+}
+
+.admin-table-action-drawer[open] form {
+	display: flex;
+	flex-direction: column;
+	gap: 8px;
+	margin-top: 8px;
+}
+
+.admin-table-action-drawer[open] form label {
+	display: flex;
+	flex-direction: column;
+	gap: 4px;
+	font-size: var(--admin-fs-meta);
+}
+
+.admin-table-action-drawer[open] form input,
+.admin-table-action-drawer[open] form select {
+	min-height: 32px;
+	padding: 4px 8px;
+	font-size: var(--admin-fs-control);
 }
 
 .admin-v3 .metric-grid {
@@ -1108,6 +1155,37 @@
 .admin-panel form label {
 	display: grid;
 	gap: 6px;
+}
+
+/* 체크박스/라디오 인라인 정렬: label 기본 display: grid 로 인한 줄바꿈 분리 해소 */
+.admin-form label:has(input[type="checkbox"]),
+.admin-form label:has(input[type="radio"]),
+.admin-panel form label:has(input[type="checkbox"]),
+.admin-panel form label:has(input[type="radio"]),
+.admin-choice,
+label.admin-checkbox,
+label.admin-radio {
+	display: inline-flex;
+	align-items: center;
+	gap: 8px;
+	cursor: pointer;
+	user-select: none;
+	width: fit-content;
+}
+
+.admin-form label:has(input[type="checkbox"]) input[type="checkbox"],
+.admin-form label:has(input[type="radio"]) input[type="radio"],
+.admin-panel form label:has(input[type="checkbox"]) input[type="checkbox"],
+.admin-panel form label:has(input[type="radio"]) input[type="radio"],
+.admin-choice input[type="checkbox"],
+.admin-choice input[type="radio"],
+label.admin-checkbox input[type="checkbox"],
+label.admin-radio input[type="radio"] {
+	width: 16px;
+	height: 16px;
+	margin: 0;
+	flex-shrink: 0;
+	accent-color: var(--admin-primary);
 }
 
 .admin-form button {

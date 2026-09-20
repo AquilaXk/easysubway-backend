@@ -337,6 +337,12 @@ public class SecurityConfig {
 				.defaultSuccessUrl("/operator/accessibility-report/page", true)
 				.permitAll()
 			)
+			.logout(logout -> logout
+				.logoutRequestMatcher(new AntPathRequestMatcher("/operator/logout"))
+				.logoutSuccessHandler((request, response, authentication) ->
+					response.sendRedirect(request.getContextPath() + "/operator/login?logout"))
+				.permitAll()
+			)
 			.addFilterAfter(auditFilter, BasicAuthenticationFilter.class);
 		configureBasicAuth(configured, basicAuthEnabled);
 		return configured.build();

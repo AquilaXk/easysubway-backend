@@ -266,6 +266,20 @@ class AdminAdsPageControllerTest {
 			.andExpect(status().isNoContent());
 	}
 
+	@Test
+	@DisplayName("datetime-local 형식의 시작·종료 일시 입력을 정상 파싱하여 저장한다")
+	void acceptsDatetimeLocalFormat() throws Exception {
+		MockHttpSession session = new MockHttpSession();
+		String id = "datetime-local-ad";
+		postCreative(
+			session, id, "광고주", "datetime-local 등록",
+			"2026-07-11T14:30", "2026-07-12T18:00")
+			.andExpect(status().is3xxRedirection());
+		AdCreative created = repository.findById(id).orElseThrow();
+		assertThat(created.startsAt()).isEqualTo(LocalDateTime.parse("2026-07-11T14:30:00"));
+		assertThat(created.endsAt()).isEqualTo(LocalDateTime.parse("2026-07-12T18:00:00"));
+	}
+
 	private org.springframework.test.web.servlet.ResultActions postCreative(
 		MockHttpSession session,
 		String advertiserName,

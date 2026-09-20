@@ -4,11 +4,11 @@
 	<meta charset="utf-8">
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<title>운영기관 로그인</title>
-	<link rel="stylesheet" href="/css/operator-v3.css">
+	<link rel="stylesheet" th:href="@{/css/operator-v3.css}" href="/css/operator-v3.css">
 </head>
 <body>
 <main class="login-screen">
-	<form class="login-card" method="post" action="/operator/login">
+	<form class="login-card" method="post" th:action="@{/operator/login}" action="/operator/login">
 		<div class="desktop-brand">
 			<div><strong>쉬운 지하철</strong><span>운영기관 포털</span></div>
 		</div>
@@ -23,6 +23,9 @@
 			<input id="password" name="password" type="password" autocomplete="current-password" required>
 		</div>
 		<button class="login-submit primary" type="submit">로그인</button>
+		<div class="login-note info"
+		     role="status"
+		     th:if="${param.logout != null}">로그아웃되었습니다.</div>
 		<div class="login-note"
 		     role="alert"
 		     th:if="${loginNotice == T(com.easysubway.common.security.LoginNotice).RETRY_WARNING}">아이디 또는 비밀번호를 확인하고 다시 시도해 주세요.</div>

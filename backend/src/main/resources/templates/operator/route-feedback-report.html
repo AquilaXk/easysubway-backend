@@ -5,7 +5,7 @@
 	<meta name="viewport" content="width=device-width, initial-scale=1">
 	<link rel="icon" href="data:,">
 	<title>운영기관 현장 차단 피드백</title>
-	<link rel="stylesheet" href="/css/operator-v3.css">
+	<link rel="stylesheet" th:href="@{/css/operator-v3.css}" href="/css/operator-v3.css">
 </head>
 <body>
 <div class="desktop-frame">
@@ -34,7 +34,7 @@
 				<span th:text="|총 ${summary.blockedByRealWorldCount}건 · 시설 고장·공사·통로 적치 가능성을 확인하세요.|">총 0건</span>
 			</div>
 
-			<form class="table-toolbar" method="get" action="/operator/route-feedback-report/page">
+			<form class="table-toolbar" method="get" th:action="@{/operator/route-feedback-report/page}" action="/operator/route-feedback-report/page">
 				<label>
 					<span>검색</span>
 					<input type="search" name="q" th:value="${query.q}" placeholder="출발역·도착역·이동 프로필">
@@ -50,7 +50,7 @@
 				<input type="hidden" name="sort" th:value="${query.sort}">
 				<input type="hidden" name="direction" th:value="${query.direction}">
 				<button type="submit">필터 적용</button>
-				<a class="desk-btn" href="/operator/route-feedback-report/page">초기화</a>
+				<a class="desk-btn" th:href="@{/operator/route-feedback-report/page}" href="/operator/route-feedback-report/page">초기화</a>
 			</form>
 
 			<section class="panel chart-panel">

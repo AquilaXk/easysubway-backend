@@ -21,4 +21,19 @@ class AccessibilityFacilityStatusTest {
 		assertThat(AccessibilityFacilityStatus.NORMAL.needsAttention()).isFalse();
 		assertThat(AccessibilityFacilityStatus.ADMIN_VERIFIED.needsAttention()).isFalse();
 	}
+
+	@Test
+	@DisplayName("모든 시설 상태는 한국어 라벨을 제공한다")
+	void allStatusesHaveKoreanLabels() {
+		for (AccessibilityFacilityStatus status : AccessibilityFacilityStatus.values()) {
+			assertThat(status.label()).isNotBlank();
+		}
+		assertThat(AccessibilityFacilityStatus.NORMAL.label()).isEqualTo("정상");
+		assertThat(AccessibilityFacilityStatus.BROKEN.label()).isEqualTo("고장");
+		assertThat(AccessibilityFacilityStatus.UNDER_CONSTRUCTION.label()).isEqualTo("공사 중");
+		assertThat(AccessibilityFacilityStatus.CLOSED.label()).isEqualTo("폐쇄");
+		assertThat(AccessibilityFacilityStatus.UNKNOWN.label()).isEqualTo("확인 필요");
+		assertThat(AccessibilityFacilityStatus.USER_REPORTED.label()).isEqualTo("사용자 제보");
+		assertThat(AccessibilityFacilityStatus.ADMIN_VERIFIED.label()).isEqualTo("관리자 확인");
+	}
 }

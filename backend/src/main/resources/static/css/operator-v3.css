@@ -144,6 +144,32 @@ input:focus-visible {
 	font-weight: var(--admin-w-strong);
 }
 
+.operator-logout-btn {
+	display: inline-flex;
+	align-items: center;
+	text-decoration: none;
+	background: transparent;
+	border: 1px solid var(--admin-border);
+	border-radius: var(--admin-radius-control);
+	color: var(--admin-ink-2);
+	font-size: var(--admin-fs-meta);
+	font-weight: var(--admin-w-strong);
+	padding: 4px 8px;
+	cursor: pointer;
+	line-height: 1.2;
+	margin-left: auto;
+}
+
+.operator-logout-btn:hover {
+	color: var(--admin-ink);
+	border-color: var(--admin-border-strong);
+}
+
+.operator-logout-btn:focus-visible {
+	outline: 3px solid var(--admin-focus);
+	outline-offset: 1px;
+}
+
 .desktop-workspace {
 	min-width: 0;
 }
@@ -711,6 +737,11 @@ input:focus-visible {
 	font-size: 12px;
 	font-weight: var(--admin-w-strong);
 	line-height: 1.5;
+}
+
+.login-note.info {
+	border-top-color: var(--admin-primary);
+	color: var(--admin-ink);
 }
 
 @media (max-width: 980px) {

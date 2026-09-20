@@ -57,4 +57,24 @@ class OperatorLoginPageControllerTest {
 			.andExpect(status().is3xxRedirection())
 			.andExpect(redirectedUrl("/operator/accessibility-report/page"));
 	}
+
+	@Test
+	@DisplayName("운영기관 로그아웃은 GET 및 POST 요청 모두 세션을 파기하고 로그인 화면으로 리다이렉트한다")
+	void operatorLogoutRedirectsToLoginWithNotice() throws Exception {
+		mockMvc.perform(post("/operator/logout").with(csrf()))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/operator/login?logout"));
+
+		mockMvc.perform(get("/operator/logout"))
+			.andExpect(status().is3xxRedirection())
+			.andExpect(redirectedUrl("/operator/login?logout"));
+
+		String html = mockMvc.perform(get("/operator/login").param("logout", ""))
+			.andExpect(status().isOk())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+
+		assertThat(html).contains("로그아웃되었습니다.");
+	}
 }
