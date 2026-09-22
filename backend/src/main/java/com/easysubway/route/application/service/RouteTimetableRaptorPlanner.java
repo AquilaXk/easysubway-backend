@@ -2363,6 +2363,15 @@ class RouteTimetableRaptorPlanner {
 			result = 31 * result + Arrays.hashCode(candidateTransitions);
 			return result;
 		}
+
+		@Override
+		public String toString() {
+			return "OutOfStationFootpath[fromStation=" + fromStation
+				+ ", fromLine=" + fromLine
+				+ ", toStation=" + toStation
+				+ ", toLine=" + toLine
+				+ ", candidateTransitions=" + Arrays.toString(candidateTransitions) + "]";
+		}
 	}
 
 	static final class CompiledTimetable {
@@ -3467,10 +3476,8 @@ class RouteTimetableRaptorPlanner {
 			if (isDominatedByTarget(station, candidateArrivalSeconds, candidateWarningState)) {
 				return;
 			}
-			if (station == targetStation) {
-				if (candidateArrivalSeconds < bestTargetArrivalSeconds[candidateWarningState]) {
-					bestTargetArrivalSeconds[candidateWarningState] = candidateArrivalSeconds;
-				}
+			if (station == targetStation && candidateArrivalSeconds < bestTargetArrivalSeconds[candidateWarningState]) {
+				bestTargetArrivalSeconds[candidateWarningState] = candidateArrivalSeconds;
 			}
 			int candidateSlot = slot(boardings, station, incomingLine, candidateWarningState);
 			int existingArrivalSeconds = arrivalSeconds[candidateSlot];
@@ -4321,6 +4328,10 @@ class RouteTimetableRaptorPlanner {
 		byte warningBits,
 		int penaltySeconds
 	) {
+		Label {
+			accessTransitions = accessTransitions == null ? new int[0] : accessTransitions.clone();
+		}
+
 		Label(
 			String stationId,
 			int timeSeconds,
@@ -4336,6 +4347,46 @@ class RouteTimetableRaptorPlanner {
 
 		int virtualCostSeconds() {
 			return timeSeconds + penaltySeconds;
+		}
+
+		@Override
+		public int[] accessTransitions() {
+			return accessTransitions.clone();
+		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) return true;
+			if (!(obj instanceof Label other)) return false;
+			return timeSeconds == other.timeSeconds
+				&& startSeconds == other.startSeconds
+				&& boardings == other.boardings
+				&& exitTransition == other.exitTransition
+				&& warningBits == other.warningBits
+				&& penaltySeconds == other.penaltySeconds
+				&& Objects.equals(stationId, other.stationId)
+				&& Objects.equals(path, other.path)
+				&& Arrays.equals(accessTransitions, other.accessTransitions);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = Objects.hash(stationId, timeSeconds, startSeconds, boardings, path, exitTransition, warningBits, penaltySeconds);
+			result = 31 * result + Arrays.hashCode(accessTransitions);
+			return result;
+		}
+
+		@Override
+		public String toString() {
+			return "Label[stationId=" + stationId
+				+ ", timeSeconds=" + timeSeconds
+				+ ", startSeconds=" + startSeconds
+				+ ", boardings=" + boardings
+				+ ", path=" + path
+				+ ", accessTransitions=" + Arrays.toString(accessTransitions)
+				+ ", exitTransition=" + exitTransition
+				+ ", warningBits=" + warningBits
+				+ ", penaltySeconds=" + penaltySeconds + "]";
 		}
 	}
 

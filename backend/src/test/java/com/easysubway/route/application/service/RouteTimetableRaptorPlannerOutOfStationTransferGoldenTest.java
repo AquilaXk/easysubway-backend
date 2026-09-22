@@ -132,7 +132,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		var dayItinerary = dayPlan.itineraries().getFirst();
 		var dayTransferLeg = dayItinerary.legs().stream()
 			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
-			.map(leg -> (JourneyAccessProjection) leg)
+			.map(JourneyAccessProjection.class::cast)
 			.findFirst().orElseThrow();
 		assertThat(dayTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(dayTransferLeg.farePenaltyApplies()).isTrue();
@@ -153,7 +153,7 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		var nightItinerary = nightPlan.itineraries().getFirst();
 		var nightTransferLeg = nightItinerary.legs().stream()
 			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
-			.map(leg -> (JourneyAccessProjection) leg)
+			.map(JourneyAccessProjection.class::cast)
 			.findFirst().orElseThrow();
 		assertThat(nightTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
 		assertThat(nightTransferLeg.farePenaltyApplies()).isFalse();
