@@ -35,7 +35,6 @@ import com.easysubway.route.domain.RouteSearchStatus;
 import com.easysubway.route.domain.RouteStep;
 import com.easysubway.route.domain.RouteWarning;
 import com.easysubway.route.domain.RouteWarningCode;
-import com.easysubway.route.domain.RealtimeEtaOverlay;
 import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -98,7 +97,6 @@ public class RouteSearchService implements RouteSearchUseCase {
 	private final LoadTransitMasterPort loadTransitMasterPort;
 	private final Clock clock;
 	private final RealtimeArrivalResolver realtimeArrivalResolver;
-	private final RealtimeEtaOverlay realtimeEtaOverlay;
 
 	@Autowired
 	public RouteSearchService(
@@ -156,7 +154,6 @@ public class RouteSearchService implements RouteSearchUseCase {
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.clock = clock;
 		this.realtimeArrivalResolver = realtimeArrivalResolver;
-		this.realtimeEtaOverlay = new RealtimeEtaOverlay();
 	}
 
 	@Override
@@ -318,12 +315,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 		SearchRouteCommand command,
 		List<RouteSearchResult> timetableResults
 	) {
-		if (!command.useRealtime()) {
-			return List.copyOf(timetableResults);
-		}
-		return timetableResults.stream()
-			.map(result -> withSteps(result, realtimeAwareRouteSteps(command, result.steps())))
-			.toList();
+		return List.copyOf(timetableResults);
 	}
 
 	@Override
@@ -598,10 +590,7 @@ public class RouteSearchService implements RouteSearchUseCase {
 			);
 		}
 
-		List<RouteStep> routeSteps = realtimeAwareRouteSteps(
-			command,
-			routeSteps(origin, destination, routePlan, profileWeight)
-		);
+		List<RouteStep> routeSteps = routeSteps(origin, destination, routePlan, profileWeight);
 		return new RouteSearchResult(
 			newRouteSearchId(),
 			origin.id(),
@@ -1512,155 +1501,6 @@ public class RouteSearchService implements RouteSearchUseCase {
 		return routeAssembler.assemble(directLineSteps(origin, destination, routePlan.directLine().orElseThrow(), profileWeight));
 	}
 
-	private List<RouteStep> realtimeAwareRouteSteps(SearchRouteCommand command, List<RouteStep> plannedSteps) {
-		if (!command.useRealtime() || realtimeArrivalResolver == null || command.departureTime() == null) {
-			return plannedSteps;
-		}
-		List<RouteStep> realtimeSteps = new ArrayList<>(plannedSteps);
-		int elapsedSeconds = 0;
-		for (int index = 0; index < realtimeSteps.size(); index++) {
-			RouteStep step = realtimeSteps.get(index);
-			if (!"ride".equals(step.stepType())) {
-				elapsedSeconds += durationSeconds(step);
-				continue;
-			}
-			if (EtaSource.REALTIME.name().equals(step.timeSource())) {
-				elapsedSeconds += durationSeconds(step);
-				continue;
-			}
-			int boardingSlackSeconds = boardingSlackSeconds(command.mobilityType());
-			Instant readyAt = command.departureTime().toInstant().plusSeconds(elapsedSeconds + boardingSlackSeconds);
-			RealtimeArrivalResolver.Resolution resolution;
-			try {
-				resolution = realtimeArrivalResolver.resolve(realtimeQuery(step, readyAt));
-			} catch (RuntimeException exception) {
-				// Per-step overlay failure falls back to UNAVAILABLE without failing the whole route.
-				log.warn(
-					"Post-scan realtime fallback query failed for {} / {}; step stays unavailable",
-					step.fromStationId(),
-					step.lineId(),
-					exception
-				);
-				resolution = new RealtimeArrivalResolver.Resolution(
-					ArrivalFreshness.UNAVAILABLE,
-					"REALTIME_PROVIDER_ERROR",
-					null,
-					null,
-					List.of()
-				);
-			}
-			RealtimeEtaOverlay.Result overlay = realtimeEtaOverlay.overlay(
-				readyAt,
-				durationSeconds(step),
-				directionFor(step),
-				resolution.status(),
-				resolution.fallbackCode(),
-				resolution.providerSnapshotId(),
-				resolution.providerReceivedAt(),
-				resolution.candidates().size(),
-				realtimeCandidatesFor(step, resolution.candidates())
-			);
-			RouteStep realtimeStep = withEtaOverlay(step, overlay);
-			realtimeSteps.set(index, realtimeStep);
-			elapsedSeconds += boardingSlackSeconds + realtimeWaitSeconds(overlay) + durationSeconds(step);
-		}
-		return List.copyOf(realtimeSteps);
-	}
-
-	private List<ArrivalCandidate> realtimeCandidatesFor(RouteStep step, List<ArrivalCandidate> candidates) {
-		if (step.trainNo() == null || step.trainNo().isBlank()) {
-			return candidates;
-		}
-		return candidates.stream()
-			.filter(candidate -> candidate != null && step.trainNo().equals(candidate.trainNo()))
-			.toList();
-	}
-
-	private RealtimeArrivalResolver.Query realtimeQuery(RouteStep step, Instant readyAt) {
-		Station station = loadActiveStation(step.fromStationId());
-		SubwayLine line = loadActiveLine(step.lineId());
-		return new RealtimeArrivalResolver.Query(
-			station.id(),
-			line.id(),
-			providerLineId(line),
-			station.nameKo(),
-			line.name(),
-			directionFor(step),
-			readyAt
-		);
-	}
-
-	private RouteStep withEtaOverlay(RouteStep step, RealtimeEtaOverlay.Result overlay) {
-		return new RouteStep(
-			step.sequence(),
-			step.stepType(),
-			step.title(),
-			step.description(),
-			step.lineId(),
-			step.lineName(),
-			step.fromStationId(),
-			step.toStationId(),
-			step.estimatedMinutes() + ((realtimeWaitSeconds(overlay) + 59) / 60),
-			step.distanceMeters(),
-			step.includesStairs(),
-			step.stairAccessState(),
-			step.requiresAccessibilityCheck(),
-			overlay.etaSource().name(),
-			step.distanceSource(),
-			overlay.confidence().name(),
-			reasonCodesFor(overlay),
-			overlay.providerSnapshotId(),
-			formatInstant(overlay.providerObservedAt()),
-			formatInstant(overlay.gatewayReceivedAt()),
-			formatInstant(Instant.now(clock)),
-			step.walkSeconds(),
-			step.tripId(),
-			step.trainNo(),
-			step.serviceClass(),
-			step.servicePattern(),
-			step.plannedDepartureTime(),
-			step.plannedArrivalTime()
-		);
-	}
-
-	private List<String> reasonCodesFor(RealtimeEtaOverlay.Result overlay) {
-		if (overlay.etaSource() != EtaSource.REALTIME) {
-			return overlay.warningCodes();
-		}
-		List<String> reasonCodes = new ArrayList<>();
-		reasonCodes.add(MATCHED_REALTIME_REASON);
-		reasonCodes.add(POST_SCAN_REALTIME_FALLBACK_REASON);
-		reasonCodes.addAll(overlay.warningCodes());
-		return List.copyOf(reasonCodes);
-	}
-
-	private String formatInstant(Instant instant) {
-		return instant == null ? null : instant.toString();
-	}
-
-	private int durationSeconds(RouteStep step) {
-		return Math.max(0, step.estimatedMinutes()) * 60;
-	}
-
-	private int realtimeWaitSeconds(RealtimeEtaOverlay.Result overlay) {
-		if (overlay.etaSource() != EtaSource.REALTIME) {
-			return 0;
-		}
-		return Math.max(0, overlay.waitSeconds());
-	}
-
-	private int boardingSlackSeconds(MobilityType mobilityType) {
-		return BoardingSlackPolicy.secondsFor(mobilityType);
-	}
-
-	private String directionFor(RouteStep step) {
-		try {
-			return loadActiveStation(step.toStationId()).nameKo() + " 방면";
-		} catch (StationNotFoundException ignored) {
-			// Display-only direction label; missing station name must not fail the step overlay.
-			return "";
-		}
-	}
 
 	private String providerLineId(SubwayLine line) {
 		return line.lineCode() == null || line.lineCode().isBlank() ? line.id() : line.lineCode();
