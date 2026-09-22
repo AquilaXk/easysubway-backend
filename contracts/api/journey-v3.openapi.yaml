@@ -1582,6 +1582,18 @@ components:
         durationSeconds:
           type: integer
           minimum: 0
+        transferType:
+          type: string
+          enum: [IN_STATION, OUT_OF_STATION]
+        farePenaltyApplies:
+          type: boolean
+          default: false
+        additionalFareWon:
+          type: integer
+          default: 0
+        transferLimitMinutes:
+          type: integer
+          minimum: 0
     JourneyExitLeg:
       type: object
       additionalProperties: false

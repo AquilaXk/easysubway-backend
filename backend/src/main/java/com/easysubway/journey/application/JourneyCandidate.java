@@ -149,11 +149,23 @@ public record JourneyCandidate(
 		}
 	}
 
-	public record Transfer(String fromStationId, String toStationId, long durationSeconds) implements Leg {
+	public record Transfer(
+		String fromStationId,
+		String toStationId,
+		long durationSeconds,
+		String transferType,
+		Boolean farePenaltyApplies,
+		Integer additionalFareWon,
+		Integer transferLimitMinutes
+	) implements Leg {
 		public Transfer {
 			fromStationId = requireText(fromStationId, "fromStationId");
 			toStationId = requireText(toStationId, "toStationId");
 			if (durationSeconds < 0) throw new IllegalArgumentException("durationSeconds must not be negative");
+		}
+
+		public Transfer(String fromStationId, String toStationId, long durationSeconds) {
+			this(fromStationId, toStationId, durationSeconds, null, null, null, null);
 		}
 
 		@Override

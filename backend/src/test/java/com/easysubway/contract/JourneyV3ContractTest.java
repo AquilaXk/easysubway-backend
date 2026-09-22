@@ -334,8 +334,17 @@ class JourneyV3ContractTest {
 		);
 		assertLeg(document, "JourneyEntryLeg", "ENTRY", Set.of("type", "fromStationId", "durationSeconds"));
 		assertLeg(document, "JourneyExitLeg", "EXIT", Set.of("type", "fromStationId", "durationSeconds"));
-		assertLeg(document, "JourneyTransferLeg", "TRANSFER",
-			Set.of("type", "fromStationId", "toStationId", "durationSeconds"));
+		assertClosedSchema(
+			document,
+			"JourneyTransferLeg",
+			Set.of("type", "fromStationId", "toStationId", "durationSeconds"),
+			Set.of(
+				"type", "fromStationId", "toStationId", "durationSeconds",
+				"transferType", "farePenaltyApplies", "additionalFareWon", "transferLimitMinutes"
+			)
+		);
+		assertEnum(property(document, "JourneyTransferLeg", "type"), "TRANSFER");
+		assertEnum(property(document, "JourneyTransferLeg", "transferType"), "IN_STATION", "OUT_OF_STATION");
 		Set<String> rideFields = Set.of("type", "lineId", "tripId", "directionStationId", "fromStationId",
 			"toStationId", "plannedDepartureTime", "plannedArrivalTime", "realtimeDepartureTime",
 			"realtimeArrivalTime");

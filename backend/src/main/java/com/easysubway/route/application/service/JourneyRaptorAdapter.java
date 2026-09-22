@@ -164,7 +164,14 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 					case TRANSFER -> {
 						transferCount = Math.addExact(transferCount, 1);
 						legs.add(new JourneyCandidate.Transfer(
-							access.fromStationId(), access.toStationId(), access.durationSeconds()));
+							access.fromStationId(),
+							access.toStationId(),
+							access.durationSeconds(),
+							access.transferType(),
+							access.farePenaltyApplies(),
+							access.additionalFareWon(),
+							access.transferLimitMinutes()
+						));
 					}
 					case EXIT -> legs.add(new JourneyCandidate.Exit(
 						access.fromStationId(), access.durationSeconds()));
