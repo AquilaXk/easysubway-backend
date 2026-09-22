@@ -285,7 +285,7 @@ class RouteOutOfStationCoverageTest {
 		var planner = new RouteTimetableRaptorPlanner();
 		var timetable = RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest.timetable();
 		var compiled = planner.compile(timetable);
-		assertThat(compiled.outOfStationFootpaths()).isNotNull();
+		assertThat(compiled.footpathsToStationLine(0, 0)).isNull();
 		assertThat(compiled.isOutOfStationTransition(0)).isFalse();
 		int[] cands = new int[] {0};
 		int sel = compiled.selectTransition(cands, 0, false, false);
