@@ -398,7 +398,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		var rules = new ArrayList<TransferRule>();
 		var evidence = new ArrayList<RouteEdgeEvidence>();
 		for (var edge : topology.values().stream().sorted(Comparator.comparing(TopologyEdge::id)).toList()) {
-			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER").contains(edge.type())) continue;
+			if (!Set.of("ENTRY", "EXIT", "IN_STATION_TRANSFER", "OUT_OF_STATION_TRANSFER").contains(edge.type())) continue;
 			var evaluation = evaluations.get(edge.id());
 			boolean pass = "PASS".equals(evaluation.state());
 			Endpoint from = endpoint(edge.fromNodeId());
@@ -431,8 +431,9 @@ public final class RouteBundleSqliteRuntimeCompiler {
 				stationId = to.stationId();
 				lineId = to.lineId();
 				String strictEdge = (edge.includesStairs() || !pass) ? null : edge.id();
+				String transferType = "OUT_OF_STATION_TRANSFER".equals(edge.type()) ? "OUT_OF_STATION" : "IN_STATION";
 				rules.add(new TransferRule(
-					edge.id(), from.stationId(), from.lineId(), to.stationId(), to.lineId(), "IN_STATION",
+					edge.id(), from.stationId(), from.lineId(), to.stationId(), to.lineId(), transferType,
 					edge.durationSeconds(), edge.id(), strictEdge, verificationStatus));
 			}
 			evidence.add(new RouteEdgeEvidence(
@@ -448,6 +449,8 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			case "EXIT" -> from.lineId() != null && to.lineId() == null && from.stationId().equals(to.stationId());
 			case "IN_STATION_TRANSFER" -> from.lineId() != null && to.lineId() != null
 				&& from.stationId().equals(to.stationId()) && !from.lineId().equals(to.lineId());
+			case "OUT_OF_STATION_TRANSFER" -> from.lineId() != null && to.lineId() != null
+				&& !from.stationId().equals(to.stationId());
 			default -> false;
 		};
 		if (!valid) throw new IllegalArgumentException("projected topology endpoint is invalid");

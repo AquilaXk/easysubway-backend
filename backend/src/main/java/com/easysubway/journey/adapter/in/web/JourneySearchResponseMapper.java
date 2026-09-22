@@ -96,7 +96,11 @@ final class JourneySearchResponseMapper {
 				"TRANSFER",
 				transfer.fromStationId(),
 				transfer.toStationId(),
-				transfer.durationSeconds()
+				transfer.durationSeconds(),
+				transfer.transferType(),
+				transfer.farePenaltyApplies(),
+				transfer.additionalFareWon(),
+				transfer.transferLimitMinutes()
 			);
 			case JourneyCandidate.Exit exit -> new ExitLegResponse(
 				"EXIT",
@@ -245,7 +249,15 @@ final class JourneySearchResponseMapper {
 		String type,
 		String fromStationId,
 		String toStationId,
-		long durationSeconds
+		long durationSeconds,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		String transferType,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Boolean farePenaltyApplies,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer additionalFareWon,
+		@com.fasterxml.jackson.annotation.JsonInclude(com.fasterxml.jackson.annotation.JsonInclude.Include.NON_NULL)
+		Integer transferLimitMinutes
 	) implements LegResponse {
 	}
 
