@@ -240,4 +240,55 @@ class RouteOutOfStationCoverageTest {
 			new RouteTimetableRaptorPlanner.DepartureEvent(scheduledTrip, -1, 100)
 		).isInstanceOf(IllegalArgumentException.class).hasMessageContaining("stopIndex must address scheduledTrip");
 	}
+
+	@Test
+	@DisplayName("Label 레코드 메서드, 방어적 복사 및 equals/hashCode/toString 검증")
+	void labelDefensiveCopyAndRecordMethods() {
+		int[] transitions = new int[] {10, 20};
+		var label1 = new Label("st-a", 1000, 900, 1, List.of(), transitions, 5, (byte) 2, 300);
+		transitions[0] = 999;
+		assertThat(label1.accessTransitions()).containsExactly(10, 20);
+		assertThat(label1.virtualCostSeconds()).isEqualTo(1300);
+
+		int[] returned = label1.accessTransitions();
+		returned[0] = 888;
+		assertThat(label1.accessTransitions()).containsExactly(10, 20);
+
+		var label2 = new Label("st-a", 1000, 900, 1, List.of(), new int[] {10, 20}, 5, (byte) 2, 300);
+		assertThat(label1).isEqualTo(label2);
+		assertThat(label1.equals(label1)).isTrue();
+		assertThat(label1.equals(null)).isFalse();
+		assertThat(label1.equals("not-a-label")).isFalse();
+		assertThat(label1.hashCode()).isEqualTo(label2.hashCode());
+		assertThat(label1.toString()).contains("st-a").contains("1000");
+
+		assertThat(label1.equals(new Label("st-b", 1000, 900, 1, List.of(), new int[] {10, 20}, 5, (byte) 2, 300))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 9999, 900, 1, List.of(), new int[] {10, 20}, 5, (byte) 2, 300))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 1000, 9999, 1, List.of(), new int[] {10, 20}, 5, (byte) 2, 300))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 1000, 900, 9, List.of(), new int[] {10, 20}, 5, (byte) 2, 300))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 1000, 900, 1, List.of(), new int[] {10, 20}, 99, (byte) 2, 300))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 1000, 900, 1, List.of(), new int[] {10, 20}, 5, (byte) 9, 300))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 1000, 900, 1, List.of(), new int[] {10, 20}, 5, (byte) 2, 999))).isFalse();
+		assertThat(label1.equals(new Label("st-a", 1000, 900, 1, List.of(), new int[] {99}, 5, (byte) 2, 300))).isFalse();
+
+		var nullTransLabel = new Label("st-c", 500, 400, 0, List.of(), null, -1, (byte) 0, 0);
+		assertThat(nullTransLabel.accessTransitions()).isEmpty();
+
+		var eightArgLabel = new Label("st-d", 600, 500, 1, List.of(), new int[] {1}, 0, (byte) 0);
+		assertThat(eightArgLabel.penaltySeconds()).isZero();
+		assertThat(eightArgLabel.virtualCostSeconds()).isEqualTo(600);
+	}
+
+	@Test
+	@DisplayName("CompiledRouteTimetable outOfStation 메서드 및 transition 선택 검증")
+	void compiledRouteTimetableOutOfStationMethods() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest.timetable();
+		var compiled = planner.compile(timetable);
+		assertThat(compiled.outOfStationFootpaths()).isNotNull();
+		assertThat(compiled.isOutOfStationTransition(0)).isFalse();
+		int[] cands = new int[] {0};
+		int sel = compiled.selectTransition(cands, 0, false, false);
+		assertThat(sel).isGreaterThanOrEqualTo(0);
+	}
 }
