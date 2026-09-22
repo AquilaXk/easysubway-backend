@@ -2336,7 +2336,16 @@ class RouteTimetableRaptorPlanner {
 		int toStation,
 		int toLine,
 		int[] candidateTransitions
-	) {}
+	) {
+		public OutOfStationFootpath {
+			candidateTransitions = candidateTransitions == null ? new int[0] : candidateTransitions.clone();
+		}
+
+		@Override
+		public int[] candidateTransitions() {
+			return candidateTransitions.clone();
+		}
+	}
 
 	static final class CompiledTimetable {
 
