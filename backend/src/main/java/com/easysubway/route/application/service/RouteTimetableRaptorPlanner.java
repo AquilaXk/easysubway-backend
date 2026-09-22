@@ -698,7 +698,7 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	private static void relaxFootpaths(
+	static void relaxFootpaths(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
 		int round
@@ -1168,7 +1168,7 @@ class RouteTimetableRaptorPlanner {
 		return List.copyOf(front);
 	}
 
-	private static boolean dominates(Label other, Label candidate, boolean warningDimension, boolean earlier) {
+	static boolean dominates(Label other, Label candidate, boolean warningDimension, boolean earlier) {
 		if (other.boardings() > candidate.boardings() || other.virtualCostSeconds() > candidate.virtualCostSeconds()) {
 			return false;
 		}
@@ -2345,6 +2345,24 @@ class RouteTimetableRaptorPlanner {
 		public int[] candidateTransitions() {
 			return candidateTransitions.clone();
 		}
+
+		@Override
+		public boolean equals(Object obj) {
+			if (this == obj) return true;
+			if (!(obj instanceof OutOfStationFootpath other)) return false;
+			return fromStation == other.fromStation
+				&& fromLine == other.fromLine
+				&& toStation == other.toStation
+				&& toLine == other.toLine
+				&& Arrays.equals(candidateTransitions, other.candidateTransitions);
+		}
+
+		@Override
+		public int hashCode() {
+			int result = Objects.hash(fromStation, fromLine, toStation, toLine);
+			result = 31 * result + Arrays.hashCode(candidateTransitions);
+			return result;
+		}
 	}
 
 	static final class CompiledTimetable {
@@ -3316,11 +3334,11 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	private static final class ScanWorkspace {
+	static final class ScanWorkspace {
 
 		private int stationCount;
 		private int lineStateCount;
-		private int[] arrivalSeconds = new int[0];
+		int[] arrivalSeconds = new int[0];
 		private int[] parentTrip = new int[0];
 		private int[] parentBoardStop = new int[0];
 		private int[] parentAlightStop = new int[0];
@@ -3328,21 +3346,21 @@ class RouteTimetableRaptorPlanner {
 		private int[] parentLabelSlot = new int[0];
 		private byte[] warningBits = new byte[0];
 		private int[] markedStops = new int[0];
-		private int[] nextMarkedStops = new int[0];
+		int[] nextMarkedStops = new int[0];
 		private boolean[] marked = new boolean[0];
-		private boolean[] nextMarked = new boolean[0];
+		boolean[] nextMarked = new boolean[0];
 		private int markedStopCount;
-		private int nextMarkedStopCount;
+		int nextMarkedStopCount;
 		private int[] markedPatterns = new int[0];
 		private int[] firstMarkedPosition = new int[0];
 		private int markedPatternCount;
 		private int expandedRoutes;
 		private int expandedTrips;
 		private int expandedTransfers;
-		private final int[] bestTargetArrivalSeconds = new int[WARNING_STATE_COUNT];
+		final int[] bestTargetArrivalSeconds = new int[WARNING_STATE_COUNT];
 		private int targetStation = -1;
 
-		private void prepare(int requiredStationCount, int lineCount, int patternCount) {
+		void prepare(int requiredStationCount, int lineCount, int patternCount) {
 			stationCount = requiredStationCount;
 			lineStateCount = Math.addExact(lineCount, 1);
 			int labelSlots = Math.multiplyExact(Math.multiplyExact(requiredStationCount, LABEL_SLOT_COUNT),
@@ -3386,11 +3404,11 @@ class RouteTimetableRaptorPlanner {
 			expandedTransfers = 0;
 		}
 
-		private void setTargetStation(int destination) {
+		void setTargetStation(int destination) {
 			targetStation = destination;
 		}
 
-		private boolean isDominatedByTarget(int station, int candidateArrivalSeconds, int candidateWarningState) {
+		boolean isDominatedByTarget(int station, int candidateArrivalSeconds, int candidateWarningState) {
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
 				if ((warningState & candidateWarningState) == warningState) {
 					int best = bestTargetArrivalSeconds[warningState];
@@ -3402,14 +3420,14 @@ class RouteTimetableRaptorPlanner {
 			return false;
 		}
 
-		private void markNext(int station) {
+		void markNext(int station) {
 			if (!nextMarked[station]) {
 				nextMarked[station] = true;
 				nextMarkedStops[nextMarkedStopCount++] = station;
 			}
 		}
 
-		private int slot(int boardings, int station, int incomingLine, int warningState) {
+		int slot(int boardings, int station, int incomingLine, int warningState) {
 			return ((boardings * stationCount + station) * lineStateCount + incomingLine) * WARNING_STATE_COUNT + warningState;
 		}
 		private int noIncomingLine() {
@@ -4292,7 +4310,7 @@ class RouteTimetableRaptorPlanner {
 	) {
 	}
 
-	private record Label(
+	record Label(
 		String stationId,
 		int timeSeconds,
 		int startSeconds,

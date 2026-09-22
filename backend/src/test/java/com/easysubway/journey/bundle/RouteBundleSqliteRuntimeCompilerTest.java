@@ -266,6 +266,7 @@ class RouteBundleSqliteRuntimeCompilerTest {
 			new Edge("entry-a", "station-a", "station-a:line-1:platform-a", 120, 60, "ENTRY", "", "SUBWAY", 0),
 			new Edge("ride-a-b", "station-a:line-1:platform-a", "station-b:line-1:platform-b", 600, 1000, "RIDE", "LOCAL", "SUBWAY", 0),
 			new Edge("transfer-pass", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
+			new Edge("transfer-out", "station-b:line-1:platform-b", "station-c:line-2:platform-c", 120, 80, "OUT_OF_STATION_TRANSFER", "", "SUBWAY", 0),
 			new Edge("transfer-blocked", "station-b:line-1:platform-b", "station-b:line-2:platform-b", 90, 50, "IN_STATION_TRANSFER", "", "SUBWAY", 0),
 			new Edge("exit-b", "station-b:line-2:platform-b", "station-b", 60, 40, "EXIT", "", "SUBWAY", 0));
 
@@ -296,6 +297,9 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		var rules = timetable.routeAccessData().transferRules();
 		var passRule = rules.stream().filter(r -> "transfer-pass".equals(r.id())).findFirst().orElseThrow();
 		assertThat(passRule.verificationStatus()).isEqualTo("VERIFIED");
+
+		var outRule = rules.stream().filter(r -> "transfer-out".equals(r.id())).findFirst().orElseThrow();
+		assertThat(outRule.transferType()).isEqualTo("OUT_OF_STATION");
 
 		var evidenceList = timetable.routeAccessData().routeEdgeEvidence();
 		var exitEvidence = evidenceList.stream().filter(e -> "exit-b".equals(e.edgeId())).findFirst().orElseThrow();

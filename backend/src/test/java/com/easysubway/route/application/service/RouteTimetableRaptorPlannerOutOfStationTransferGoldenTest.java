@@ -24,6 +24,10 @@ import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessKind;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessProjection;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspace;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
@@ -107,7 +111,77 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		assertThat(result.officialFare().adultFareWon()).isEqualTo(2800);
 	}
 
-	private static RouteTimetable timetable() {
+	@Test
+	@DisplayName("journeyItineraries 투영에서 노외 환승의 transferType, farePenalty, additionalFare, transferLimit 단언")
+	void journeyItinerariesProjectsOutOfStationTransferFields() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = timetable();
+		var compiled = planner.compile(timetable);
+
+		// Daytime command (elapsed 40 min > limit 30 min -> timeout = true)
+		var dayCommand = new SearchRouteV2Command(
+			ORIGIN, DESTINATION,
+			OffsetDateTime.of(2026, 7, 6, 13, 30, 0, 0, ZoneOffset.ofHours(9)),
+			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 2
+		);
+		var dayPlan = planner.journeyItineraries(
+			dayCommand, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-day"), "req-day", "sha", 1L
+		);
+		assertThat(dayPlan.itineraries()).isNotEmpty();
+		var dayItinerary = dayPlan.itineraries().getFirst();
+		var dayTransferLeg = dayItinerary.legs().stream()
+			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
+			.map(leg -> (JourneyAccessProjection) leg)
+			.findFirst().orElseThrow();
+		assertThat(dayTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(dayTransferLeg.farePenaltyApplies()).isTrue();
+		assertThat(dayTransferLeg.additionalFareWon()).isEqualTo(1400);
+		assertThat(dayTransferLeg.transferLimitMinutes()).isEqualTo(30);
+
+		// Nighttime command (elapsed 40 min <= limit 60 min -> timeout = false)
+		var nightCommand = new SearchRouteV2Command(
+			ORIGIN, DESTINATION,
+			OffsetDateTime.of(2026, 7, 6, 20, 20, 0, 0, ZoneOffset.ofHours(9)),
+			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 2
+		);
+		var nightPlan = planner.journeyItineraries(
+			nightCommand, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+			new JourneyRequestMeasurement("req-night"), "req-night", "sha", 1L
+		);
+		assertThat(nightPlan.itineraries()).isNotEmpty();
+		var nightItinerary = nightPlan.itineraries().getFirst();
+		var nightTransferLeg = nightItinerary.legs().stream()
+			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
+			.map(leg -> (JourneyAccessProjection) leg)
+			.findFirst().orElseThrow();
+		assertThat(nightTransferLeg.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(nightTransferLeg.farePenaltyApplies()).isFalse();
+		assertThat(nightTransferLeg.additionalFareWon()).isEqualTo(0);
+		assertThat(nightTransferLeg.transferLimitMinutes()).isEqualTo(60);
+	}
+
+	@Test
+	@DisplayName("relaxFootpaths 도달 상태 및 미도달 상태 분기 검증")
+	void relaxFootpathsReachedAndUnreachedBranches() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = timetable();
+		var compiled = planner.compile(timetable);
+
+		var workspace = new ScanWorkspace();
+		workspace.prepare(10, 5, 5);
+
+		// station-b(index 1)을 nextMarkedStops에 추가하지만 slot arrivalSeconds는 UNREACHED
+		// -> reached가 false로 유지되어 markNext가 호출되지 않음
+		workspace.nextMarkedStops[0] = 1;
+		workspace.nextMarkedStopCount = 1;
+
+		RouteTimetableRaptorPlanner.relaxFootpaths(compiled, workspace, 0);
+		// reached == false -> toStation(station-c)이 마킹되지 않음
+		assertThat(workspace.nextMarkedStopCount).isEqualTo(1);
+	}
+
+	static RouteTimetable timetable() {
 		var daily = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			SERVICE_DATE, SERVICE_DATE.plusDays(7), "Asia/Seoul");
@@ -170,6 +244,18 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		List<TransferRule> transferRules = List.of(
 			new TransferRule(
 				"b-c-transfer-rule", MID_OUT, "l1", MID_IN, "l2", "OUT_OF_STATION",
+				600, transferEdgeId, transferEdgeId, "VERIFIED"
+			),
+			new TransferRule(
+				"empty-out-rule", MID_OUT, "l1", DESTINATION, "l2", "OUT_OF_STATION",
+				0, "nonexistent-edge", "nonexistent-edge", "VERIFIED"
+			),
+			new TransferRule(
+				"unknown-st-rule", "unknown-station", "l1", MID_IN, "l2", "OUT_OF_STATION",
+				600, null, null, "VERIFIED"
+			),
+			new TransferRule(
+				"diff-st-no-type-rule", MID_OUT, "l1", MID_IN, "l2", null,
 				600, transferEdgeId, transferEdgeId, "VERIFIED"
 			)
 		);
