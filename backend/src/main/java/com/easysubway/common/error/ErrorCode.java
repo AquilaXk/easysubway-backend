@@ -26,6 +26,12 @@ public enum ErrorCode {
 		HttpStatus.SERVICE_UNAVAILABLE,
 		"error.itx-timetable-unavailable"
 	),
+	TRANSIT_DATA_UNAVAILABLE(
+		"TRANSIT_DATA_UNAVAILABLE",
+		ErrorCategory.DEPENDENCY,
+		HttpStatus.SERVICE_UNAVAILABLE,
+		"error.transit-data-unavailable"
+	),
 	ROUTE_SCOPE_INVALID("ROUTE_SCOPE_INVALID", ErrorCategory.USER, HttpStatus.UNPROCESSABLE_ENTITY, "error.route-scope-invalid"),
 	ROUTE_SESSION_REQUIRED("ROUTE_SESSION_REQUIRED", ErrorCategory.USER, HttpStatus.UNAUTHORIZED, "error.route-session-required"),
 	ROUTE_RATE_LIMITED("ROUTE_RATE_LIMITED", ErrorCategory.USER, HttpStatus.TOO_MANY_REQUESTS, "error.route-rate-limited"),

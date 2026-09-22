@@ -1,8 +1,15 @@
 package com.easysubway.transit.adapter.out.persistence;
 
+import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.MasterDataCapability;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.application.port.out.RollbackTransitMasterOverridePort;
+import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
+import com.easysubway.transit.application.port.out.SaveRouteNodePort;
+import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
+import com.easysubway.transit.application.port.out.SaveStationLayoutSourcePort;
 import com.easysubway.transit.application.port.out.TransitMasterOverrideAudit;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -11,11 +18,19 @@ import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
+import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.SubwayLine;
+import com.easysubway.transit.domain.TransitOperator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -35,8 +50,16 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 @Profile("prod | staging | release | prod-like")
-public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMasterRepository
-	implements RollbackTransitMasterOverridePort, InitializingBean {
+public class JdbcTransitMasterOverrideRepository implements
+	LoadTransitMasterPort,
+	MasterDataCapabilityPort,
+	SaveAccessibilityFacilityStatusPort,
+	SaveStationLayoutSourcePort,
+	SaveSimplifiedStationLayoutStatusPort,
+	SaveRouteNodePort,
+	SaveRouteEdgePort,
+	RollbackTransitMasterOverridePort,
+	InitializingBean {
 
 	public static final String FACILITY = "ACCESSIBILITY_FACILITY";
 	public static final String LAYOUT_SOURCE = "STATION_LAYOUT_SOURCE";
@@ -47,13 +70,37 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectReader jsonReader;
 	private final ObjectWriter jsonWriter;
+	private final LoadTransitMasterPort baseTransitMasterRepository;
+	private final Counter dbFailureCounter;
 	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
+		this(dataSource, objectMapper, new InMemoryTransitMasterRepository(), new SimpleMeterRegistry());
+	}
+
+	public JdbcTransitMasterOverrideRepository(
+		DataSource dataSource,
+		ObjectMapper objectMapper,
+		MeterRegistry meterRegistry
+	) {
+		this(dataSource, objectMapper, new InMemoryTransitMasterRepository(), meterRegistry);
+	}
+
+	public JdbcTransitMasterOverrideRepository(
+		DataSource dataSource,
+		ObjectMapper objectMapper,
+		LoadTransitMasterPort baseTransitMasterRepository,
+		MeterRegistry meterRegistry
+	) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
 		this.jsonReader = objectMapper.reader();
 		this.jsonWriter = objectMapper.writer();
+		this.baseTransitMasterRepository = baseTransitMasterRepository != null
+			? baseTransitMasterRepository
+			: new InMemoryTransitMasterRepository();
+		this.dbFailureCounter = (meterRegistry != null ? meterRegistry : new SimpleMeterRegistry())
+			.counter("transit_master_db_failure_total");
 	}
 
 	@Override
@@ -80,7 +127,7 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 				MasterDataCapabilityStatus.READ_ONLY,
 				true,
 				false,
-				"static-seed",
+				"unready",
 				"override-store-unready",
 				null
 			);
@@ -88,28 +135,53 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	@Override
+	public List<TransitOperator> loadOperators() {
+		return baseTransitMasterRepository.loadOperators();
+	}
+
+	@Override
+	public List<SubwayLine> loadLines() {
+		return baseTransitMasterRepository.loadLines();
+	}
+
+	@Override
+	public List<Station> loadStations() {
+		return baseTransitMasterRepository.loadStations();
+	}
+
+	@Override
+	public List<StationLine> loadStationLines() {
+		return baseTransitMasterRepository.loadStationLines();
+	}
+
+	@Override
+	public List<StationExit> loadStationExits() {
+		return baseTransitMasterRepository.loadStationExits();
+	}
+
+	@Override
 	public List<AccessibilityFacility> loadAccessibilityFacilities() {
-		return merge(super.loadAccessibilityFacilities(), AccessibilityFacility::id, FACILITY, AccessibilityFacility.class);
+		return merge(baseTransitMasterRepository.loadAccessibilityFacilities(), AccessibilityFacility::id, FACILITY, AccessibilityFacility.class);
 	}
 
 	@Override
 	public List<StationLayoutSource> loadStationLayoutSources() {
-		return merge(super.loadStationLayoutSources(), StationLayoutSource::id, LAYOUT_SOURCE, StationLayoutSource.class);
+		return merge(baseTransitMasterRepository.loadStationLayoutSources(), StationLayoutSource::id, LAYOUT_SOURCE, StationLayoutSource.class);
 	}
 
 	@Override
 	public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
-		return merge(super.loadSimplifiedStationLayouts(), SimplifiedStationLayout::id, LAYOUT, SimplifiedStationLayout.class);
+		return merge(baseTransitMasterRepository.loadSimplifiedStationLayouts(), SimplifiedStationLayout::id, LAYOUT, SimplifiedStationLayout.class);
 	}
 
 	@Override
 	public List<RouteNode> loadRouteNodes() {
-		return merge(super.loadRouteNodes(), RouteNode::id, ROUTE_NODE, RouteNode.class);
+		return merge(baseTransitMasterRepository.loadRouteNodes(), RouteNode::id, ROUTE_NODE, RouteNode.class);
 	}
 
 	@Override
 	public List<RouteEdge> loadRouteEdges() {
-		return merge(super.loadRouteEdges(), RouteEdge::id, ROUTE_EDGE, RouteEdge.class);
+		return merge(baseTransitMasterRepository.loadRouteEdges(), RouteEdge::id, ROUTE_EDGE, RouteEdge.class);
 	}
 
 	@Override
@@ -126,23 +198,28 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 		LocalDate updatedAt,
 		String updatedBy
 	) {
-		lockTarget(FACILITY, facilityId);
-		loadAccessibilityFacility(facilityId).ifPresent(facility -> saveLockedOverride(FACILITY, facilityId, new AccessibilityFacility(
-			facility.id(),
-			facility.stationId(),
-			facility.exitId(),
-			facility.type(),
-			facility.name(),
-			facility.floorFrom(),
-			facility.floorTo(),
-			facility.latitude(),
-			facility.longitude(),
-			facility.description(),
-			status,
-			facility.dataConfidence(),
-			DataSourceType.ADMIN_VERIFIED,
-			updatedAt
-		), updatedBy));
+		try {
+			lockTarget(FACILITY, facilityId);
+			loadAccessibilityFacility(facilityId).ifPresent(facility -> saveLockedOverride(FACILITY, facilityId, new AccessibilityFacility(
+				facility.id(),
+				facility.stationId(),
+				facility.exitId(),
+				facility.type(),
+				facility.name(),
+				facility.floorFrom(),
+				facility.floorTo(),
+				facility.latitude(),
+				facility.longitude(),
+				facility.description(),
+				status,
+				facility.dataConfidence(),
+				DataSourceType.ADMIN_VERIFIED,
+				updatedAt
+			), updatedBy));
+		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 facility 상태 저장 실패: " + facilityId, exception);
+		}
 	}
 
 	@Override
@@ -177,22 +254,27 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 		String reviewedBy,
 		LocalDate updatedAt
 	) {
-		lockTarget(LAYOUT, layoutId);
-		loadSimplifiedStationLayout(layoutId).ifPresent(layout -> saveLockedOverride(LAYOUT, layoutId, new SimplifiedStationLayout(
-			layout.id(),
-			layout.stationId(),
-			layout.version() + 1,
-			status,
-			layout.sourceIds(),
-			layout.confidenceLevel(),
-			layout.baseFloor(),
-			layout.layoutJson(),
-			layout.renderedPreviewUrl(),
-			layout.createdBy(),
-			reviewedBy,
-			status == SimplifiedStationLayoutStatus.PUBLISHED ? updatedAt : layout.publishedAt(),
-			updatedAt
-		), reviewedBy));
+		try {
+			lockTarget(LAYOUT, layoutId);
+			loadSimplifiedStationLayout(layoutId).ifPresent(layout -> saveLockedOverride(LAYOUT, layoutId, new SimplifiedStationLayout(
+				layout.id(),
+				layout.stationId(),
+				layout.version() + 1,
+				status,
+				layout.sourceIds(),
+				layout.confidenceLevel(),
+				layout.baseFloor(),
+				layout.layoutJson(),
+				layout.renderedPreviewUrl(),
+				layout.createdBy(),
+				reviewedBy,
+				status == SimplifiedStationLayoutStatus.PUBLISHED ? updatedAt : layout.publishedAt(),
+				updatedAt
+			), reviewedBy));
+		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 layout 상태 저장 실패: " + layoutId, exception);
+		}
 	}
 
 	@Override
@@ -222,42 +304,52 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	@Override
 	@Transactional
 	public void rollbackMasterDataOverride(String entityType, String entityId, String updatedBy) {
-		lockTarget(entityType, entityId);
-		String currentPayload = activePayload(entityType, entityId).orElse(null);
-		if (currentPayload == null) {
-			return;
+		try {
+			lockTarget(entityType, entityId);
+			String currentPayload = activePayload(entityType, entityId).orElse(null);
+			if (currentPayload == null) {
+				return;
+			}
+			String previousPayload = lastPreviousPayload(entityType, entityId, currentPayload).orElse(null);
+			if (previousPayload == null) {
+				jdbcTemplate.update("""
+					DELETE FROM transit_master_overrides
+					WHERE entity_type = ? AND entity_id = ?
+					""", entityType, entityId);
+			} else {
+				jdbcTemplate.update("""
+					UPDATE transit_master_overrides
+					SET payload_json = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
+					WHERE entity_type = ? AND entity_id = ?
+					""", previousPayload, updatedBy, entityType, entityId);
+			}
+			insertAudit(entityType, entityId, "ROLLBACK", updatedBy, currentPayload, previousPayload);
+		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 override 롤백 실패: " + entityType + ":" + entityId, exception);
 		}
-		String previousPayload = lastPreviousPayload(entityType, entityId, currentPayload).orElse(null);
-		if (previousPayload == null) {
-			jdbcTemplate.update("""
-				DELETE FROM transit_master_overrides
-				WHERE entity_type = ? AND entity_id = ?
-				""", entityType, entityId);
-		} else {
-			jdbcTemplate.update("""
-				UPDATE transit_master_overrides
-				SET payload_json = ?, updated_by = ?, updated_at = CURRENT_TIMESTAMP
-				WHERE entity_type = ? AND entity_id = ?
-				""", previousPayload, updatedBy, entityType, entityId);
-		}
-		insertAudit(entityType, entityId, "ROLLBACK", updatedBy, currentPayload, previousPayload);
 	}
 
 	@Override
 	public List<TransitMasterOverrideAudit> listMasterDataOverrideAudits(String entityType, String entityId) {
-		return jdbcTemplate.query("""
-			SELECT audit_id, entity_type, entity_id, action, updated_by, updated_at
-			FROM transit_master_override_audits
-			WHERE entity_type = ? AND entity_id = ?
-			ORDER BY audit_id DESC
-			""", (resultSet, rowNumber) -> new TransitMasterOverrideAudit(
-			resultSet.getLong("audit_id"),
-			resultSet.getString("entity_type"),
-			resultSet.getString("entity_id"),
-			resultSet.getString("action"),
-			resultSet.getString("updated_by"),
-			resultSet.getTimestamp("updated_at").toLocalDateTime()
-		), entityType, entityId);
+		try {
+			return jdbcTemplate.query("""
+				SELECT audit_id, entity_type, entity_id, action, updated_by, updated_at
+				FROM transit_master_override_audits
+				WHERE entity_type = ? AND entity_id = ?
+				ORDER BY audit_id DESC
+				""", (resultSet, rowNumber) -> new TransitMasterOverrideAudit(
+				resultSet.getLong("audit_id"),
+				resultSet.getString("entity_type"),
+				resultSet.getString("entity_id"),
+				resultSet.getString("action"),
+				resultSet.getString("updated_by"),
+				resultSet.getTimestamp("updated_at").toLocalDateTime()
+			), entityType, entityId);
+		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 override audit 조회 실패", exception);
+		}
 	}
 
 	private <T> List<T> merge(List<T> catalog, Function<T, String> id, String entityType, Class<T> type) {
@@ -278,7 +370,8 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 				ORDER BY entity_id ASC
 				""", (resultSet, rowNumber) -> readJson(resultSet.getString("payload_json"), type), entityType);
 		} catch (DataAccessException exception) {
-			return List.of();
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 override 조회 실패: " + entityType, exception);
 		}
 	}
 
@@ -290,8 +383,13 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	}
 
 	private void saveOverride(String entityType, String entityId, Object value, String updatedBy) {
-		lockTarget(entityType, entityId);
-		saveLockedOverride(entityType, entityId, value, updatedBy);
+		try {
+			lockTarget(entityType, entityId);
+			saveLockedOverride(entityType, entityId, value, updatedBy);
+		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 override 저장 실패: " + entityType + ":" + entityId, exception);
+		}
 	}
 
 	private void saveLockedOverride(String entityType, String entityId, Object value, String updatedBy) {

@@ -434,6 +434,41 @@ class JdbcTransitMasterOverrideRepositoryTest {
 		});
 	}
 
+	@Test
+	@DisplayName("PostgreSQL 조회 장애 시 static-seed로 마스킹하지 않고 TransitDataAccessException 방출 및 메트릭 증가")
+	void dataAccessExceptionThrowsTransitDataAccessException() {
+		DataSource brokenDataSource = emptyDataSource();
+		var meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+		var repository = new JdbcTransitMasterOverrideRepository(brokenDataSource, objectMapper(), meterRegistry);
+
+		assertThatThrownBy(repository::loadAccessibilityFacilities)
+			.isInstanceOf(TransitDataAccessException.class);
+		assertThat(meterRegistry.counter("transit_master_db_failure_total").count()).isEqualTo(1.0);
+	}
+
+	@Test
+	@DisplayName("PostgreSQL 저장 및 롤백 장애 시 TransitDataAccessException 방출 및 메트릭 증가")
+	void writeAndRollbackFailureThrowsTransitDataAccessException() {
+		DataSource brokenDataSource = emptyDataSource();
+		var meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
+		var repository = new JdbcTransitMasterOverrideRepository(brokenDataSource, objectMapper(), meterRegistry);
+
+		assertThatThrownBy(() -> repository.saveFacilityStatus(
+			"facility-1",
+			AccessibilityFacilityStatus.NORMAL,
+			LocalDate.of(2026, 6, 27),
+			"admin"
+		)).isInstanceOf(TransitDataAccessException.class);
+
+		assertThatThrownBy(() -> repository.rollbackMasterDataOverride(
+			JdbcTransitMasterOverrideRepository.FACILITY,
+			"facility-1",
+			"admin"
+		)).isInstanceOf(TransitDataAccessException.class);
+
+		assertThat(meterRegistry.counter("transit_master_db_failure_total").count()).isEqualTo(2.0);
+	}
+
 	private DataSource databaseProductDataSource(String productName) throws Exception {
 		DataSource dataSource = mock(DataSource.class);
 		Connection connection = mock(Connection.class);

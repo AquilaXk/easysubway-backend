@@ -169,9 +169,26 @@ class ErrorContractIntegrationTest {
 			throw new ResponseStatusException(HttpStatus.UNAUTHORIZED);
 		}
 
+		@GetMapping("/api/test/error-contract/transit-unavailable")
+		ApiResponse<Void> transitUnavailable() {
+			throw new com.easysubway.transit.adapter.out.persistence.TransitDataAccessException("DB connection timeout");
+		}
+
 		@GetMapping("/api/test/error-contract/ok")
 		ApiResponse<String> ok() {
 			return ApiResponse.ok("fine");
 		}
+	}
+
+	@Test
+	@DisplayName("503 TransitDataAccessException 응답에 code·correlationId·한국어 message를 싣는다")
+	void transitDataAccessUnavailableIncludesErrorContract() throws Exception {
+		mockMvc.perform(get("/api/test/error-contract/transit-unavailable"))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(header().exists(CorrelationId.HEADER))
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.code").value("TRANSIT_DATA_UNAVAILABLE"))
+			.andExpect(jsonPath("$.message").value("마스터 데이터 저장소에 일시적인 장애가 발생했습니다."))
+			.andExpect(jsonPath("$.correlationId").isString());
 	}
 }

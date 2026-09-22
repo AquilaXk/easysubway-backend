@@ -111,14 +111,61 @@ class RealtimeControllerTest {
 			.andExpect(jsonPath("$.data.sourceNotice").value("열차 위치는 GPS가 아니라 운행 정보 기준 위치입니다."));
 	}
 
+	@Test
+	@DisplayName("실시간 도착 정보 결측 시 UNAVAILABLE 상태를 명시적으로 반환한다")
+	void missingArrivalsReturnExplicitUnavailableStatus() throws Exception {
+		TestRealtimeProviderConfiguration.returnEmpty = true;
+		try {
+			mockMvc.perform(get("/api/v1/realtime/arrivals")
+					.param("stationId", "station-sangnoksu")
+					.param("lineId", "seoul-4")
+					.param("providerLineId", "1004")
+					.param("stationQueryName", "상록수"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.success").value(true))
+				.andExpect(jsonPath("$.data.status").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.data.fallbackCode").isNotEmpty());
+		} finally {
+			TestRealtimeProviderConfiguration.returnEmpty = false;
+		}
+	}
+
+	@Test
+	@DisplayName("실시간 도착 정보 오류 발생 시 UNAVAILABLE 상태를 명시적으로 반환한다")
+	void errorArrivalsReturnExplicitUnavailableStatus() throws Exception {
+		TestRealtimeProviderConfiguration.throwError = true;
+		try {
+			mockMvc.perform(get("/api/v1/realtime/arrivals")
+					.param("stationId", "station-sangnoksu")
+					.param("lineId", "seoul-4")
+					.param("providerLineId", "1004")
+					.param("stationQueryName", "상록수"))
+				.andExpect(status().isOk())
+				.andExpect(jsonPath("$.success").value(true))
+				.andExpect(jsonPath("$.data.status").value("UNAVAILABLE"))
+				.andExpect(jsonPath("$.data.fallbackCode").value("PROVIDER_ERROR"));
+		} finally {
+			TestRealtimeProviderConfiguration.throwError = false;
+		}
+	}
+
 	@TestConfiguration(proxyBeanMethods = false)
 	static class TestRealtimeProviderConfiguration {
+		static volatile boolean returnEmpty = false;
+		static volatile boolean throwError = false;
+
 		@Bean
 		@Primary
 		RealtimeProvider testRealtimeProvider() {
 			return new RealtimeProvider() {
 				@Override
 				public List<RealtimeArrival> arrivals(RealtimeQuery query) {
+					if (throwError) {
+						throw new RuntimeException("Provider connection failure");
+					}
+					if (returnEmpty) {
+						return List.of();
+					}
 					return List.of(new RealtimeArrival("4", "상록수", "당고개", "상행", "4123", 180,
 						"3분 후", "전역 출발", Instant.now().toString()));
 				}
