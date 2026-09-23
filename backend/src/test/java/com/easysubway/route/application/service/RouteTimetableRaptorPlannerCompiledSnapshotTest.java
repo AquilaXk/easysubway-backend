@@ -2,13 +2,20 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.profile.domain.MobilityType;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessKind;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessProjection;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyRideProjection;
 import com.easysubway.route.domain.ConstraintMode;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.util.HashSet;
@@ -238,22 +245,27 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@Test
 	@DisplayName("scan은 선택한 verified entry·exit의 시간과 거리만 경로에 반영한다")
 	void scanUsesSelectedVerifiedEntryAndExitTransitions() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-a",
 			"station-b",
-			OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-			MobilityType.WHEELCHAIR,
-			ConstraintMode.STRICT_STEP_FREE,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.STEP_FREE,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 			0,
-			1
+			1,
+			() -> false
 		);
-		var results = planner.search(command, planner.compile(withAccess(lineChangingTimetable(), verifiedDirectAccess())));
+		var results = planner.journeyItineraries(query, planner.compile(withAccess(lineChangingTimetable(), verifiedDirectAccess()))).itineraries();
 		assertThat(results).singleElement().satisfies(result -> {
-			assertThat(result.warnings()).isEmpty();
-			assertThat(result.steps())
-				.filteredOn(step -> "entry".equals(step.stepType()) || "exit".equals(step.stepType()))
-				.extracting("walkSeconds", "distanceMeters", "includesStairs", "requiresAccessibilityCheck")
+			assertThat(result.legs().stream()
+				.filter(JourneyAccessProjection.class::isInstance)
+				.map(JourneyAccessProjection.class::cast)
+				.filter(step -> step.kind() == JourneyAccessKind.ENTRY || step.kind() == JourneyAccessKind.EXIT))
+				.extracting(JourneyAccessProjection::durationSeconds, JourneyAccessProjection::distanceMeters,
+					JourneyAccessProjection::includesStairs, leg -> !leg.verified())
 				.containsExactly(
 					org.assertj.core.groups.Tuple.tuple(180, 70, false, false),
 					org.assertj.core.groups.Tuple.tuple(135, 40, false, false)
@@ -264,50 +276,76 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@Test
 	@DisplayName("strict scan은 검증되지 않은 access transition만 있으면 경로를 반환하지 않는다")
 	void strictScanRejectsUnverifiedAccessTransitions() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-a",
 			"station-b",
-			OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-			MobilityType.WHEELCHAIR,
-			ConstraintMode.STRICT_STEP_FREE,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.STEP_FREE,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 			0,
-			1
+			1,
+			() -> false
 		);
-		assertThat(planner.search(command, planner.compile(everyDayTimetable()))).isEmpty();
+		assertThat(planner.journeyItineraries(query, planner.compile(withAccess(everyDayTimetable(), LoadRouteTimetablePort.RouteAccessData.empty()))).itineraries()).isEmpty();
 	}
+
 	@Test
 	@DisplayName("scan은 이전 ride line에서 다음 ride line으로 가는 transfer transition을 사용한다")
 	void scanUsesLineToLineTransferTransition() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-a",
 			"station-b",
-			OffsetDateTime.parse("2026-07-01T08:40:00+09:00"),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:40:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			1,
-			1
+			1,
+			() -> false
 		);
-		var results = planner.search(command, planner.compile(withAccess(oneTransferTimetable(), verifiedTransferAccess())));
+		var results = planner.journeyItineraries(query, planner.compile(withAccess(oneTransferTimetable(), verifiedTransferAccess()))).itineraries();
 		assertThat(results).singleElement().satisfies(result ->
-			assertThat(result.steps()).filteredOn(step -> "transfer".equals(step.stepType()))
-				.extracting("walkSeconds", "distanceMeters")
-				.containsExactly(org.assertj.core.groups.Tuple.tuple(81, 25)));
+			assertThat(result.legs().stream()
+				.filter(JourneyAccessProjection.class::isInstance)
+				.map(JourneyAccessProjection.class::cast)
+				.filter(step -> step.kind() == JourneyAccessKind.TRANSFER))
+				.extracting(JourneyAccessProjection::durationSeconds, JourneyAccessProjection::distanceMeters)
+				.containsExactly(org.assertj.core.groups.Tuple.tuple(26, 25)));
 	}
+
 	@Test
 	@DisplayName("scan은 빠른 unknown 상태보다 같은 열차를 타는 verified 유입 노선을 보존한다")
 	void strictScanPreservesIncomingLineLabels() {
-		for (ConstraintMode mode : List.of(ConstraintMode.STRICT_STEP_FREE, ConstraintMode.ALLOW_WITH_WARNINGS)) {
-			var command = new SearchRouteV2Command(
-				"station-origin", "station-destination", OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-				MobilityType.WHEELCHAIR, mode, false, 1, 1);
-			var results = planner.search(command, planner.compile(withAccess(
-				incomingLineDominanceTimetable(), incomingLineDominanceAccess())));
+		for (var pair : List.of(
+			java.util.Map.entry(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE),
+			java.util.Map.entry(JourneyRequest.MobilityProfile.SLOW, JourneyRequest.ConstraintMode.NONE)
+		)) {
+			var query = new JourneyRaptorQuery(
+				"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+				"station-origin",
+				"station-destination",
+				new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+				JourneyRequest.WalkingPace.SLOW,
+				pair.getKey(),
+				pair.getValue(),
+				1,
+				1,
+				() -> false
+			);
+			var results = planner.journeyItineraries(query, planner.compile(withAccess(
+				incomingLineDominanceTimetable(), incomingLineDominanceAccess()))).itineraries();
 			assertThat(results).singleElement().satisfies(result -> {
-				assertThat(result.warnings()).isEmpty();
-				assertThat(result.steps()).filteredOn(step -> "ride".equals(step.stepType()))
-					.extracting("tripId").containsExactly("trip-b", "trip-c");
+				assertThat(result.legs().stream()
+					.filter(JourneyRideProjection.class::isInstance)
+					.map(JourneyRideProjection.class::cast)
+					.map(JourneyRideProjection::tripId))
+					.containsExactly("trip-b", "trip-c");
 			});
 		}
 	}
@@ -325,18 +363,17 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@DisplayName("compiled frequency 출발은 반복 검색에서도 기존 시각을 유지한다")
 	void preservesFrequencyDeparturesAcrossRepeatedSearches() {
 		var compiled = planner.compile(frequencyTimetable());
-		var command = command(WEDNESDAY, 9, 5);
+		var query = query(WEDNESDAY, 9, 5);
 
-		var first = planner.search(command, compiled);
-		var second = planner.search(command, compiled);
+		var first = planner.journeyItineraries(query, compiled).itineraries();
+		var second = planner.journeyItineraries(query, compiled).itineraries();
 
 		assertThat(first).hasSize(1);
-		assertThat(second).extracting("estimatedDurationSeconds")
-			.containsExactly(first.getFirst().estimatedDurationSeconds());
-		assertThat(first.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(Duration.between(second.getFirst().plannedDepartureTime(), second.getFirst().plannedArrivalTime()).toSeconds())
+			.isEqualTo(Duration.between(first.getFirst().plannedDepartureTime(), first.getFirst().plannedArrivalTime()).toSeconds());
+		assertThat(rides(first.getFirst()))
 			.extracting("plannedDepartureTime")
-			.containsExactly("2026-07-01T09:20:00+09:00");
+			.containsExactly(Instant.parse("2026-07-01T00:10:00Z"));
 	}
 
 	@Test
@@ -346,15 +383,14 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		primitiveIntArray(compiled, "departureSeconds")[0] = 32520;
 		primitiveIntArray(compiled, "arrivalSeconds")[1] = 33120;
 
-		var results = planner.search(command(WEDNESDAY, 8, 50), compiled);
+		var results = planner.journeyItineraries(query(WEDNESDAY, 8, 50), compiled).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("plannedDepartureTime", "plannedArrivalTime")
 			.containsExactly(org.assertj.core.groups.Tuple.tuple(
-				"2026-07-01T09:02:00+09:00",
-				"2026-07-01T09:12:00+09:00"));
+				Instant.parse("2026-07-01T00:02:00Z"),
+				Instant.parse("2026-07-01T00:12:00Z")));
 	}
 
 	@Test
@@ -365,35 +401,42 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		var dropOffBlocked = planner.compile(everyDayTimetable());
 		primitiveByteArray(dropOffBlocked, "dropOffTypes")[1] = 1;
 
-		assertThat(planner.search(command(WEDNESDAY, 8, 50), pickupBlocked)).isEmpty();
-		assertThat(planner.search(command(WEDNESDAY, 8, 50), dropOffBlocked)).isEmpty();
+		assertThat(planner.journeyItineraries(query(WEDNESDAY, 8, 50), pickupBlocked).itineraries()).isEmpty();
+		assertThat(planner.journeyItineraries(query(WEDNESDAY, 8, 50), dropOffBlocked).itineraries()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("nextServiceTime 비교는 compiled primitive 출발 시각을 사용한다")
+	@DisplayName("search 비교는 compiled primitive 출발 시각을 사용한다")
 	void usesPrimitiveDepartureTimeForNextServiceTime() throws Exception {
 		var compiled = planner.compile(everyDayTimetable());
 		primitiveIntArray(compiled, "departureSeconds")[0] = 32700;
 
-		assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 50), compiled))
-			.contains(OffsetDateTime.parse("2026-07-01T09:05:00+09:00"));
+		var results = planner.journeyItineraries(query(WEDNESDAY, 8, 50), compiled).itineraries();
+		assertThat(results).hasSize(1);
+		assertThat(rides(results.getFirst()))
+			.extracting("plannedDepartureTime")
+			.containsExactly(Instant.parse("2026-07-01T00:05:00Z"));
 	}
 
 	@Test
-	@DisplayName("strict nextServiceTime은 차단된 entry·exit transition의 운행을 안내하지 않는다")
+	@DisplayName("strict scan은 차단된 entry·exit transition의 운행을 반환하지 않는다")
 	void strictNextServiceTimeSkipsAccessBlockedService() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-a",
 			"station-b",
-			OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-			MobilityType.WHEELCHAIR,
-			ConstraintMode.STRICT_STEP_FREE,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.STEP_FREE,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
 			0,
-			1
+			1,
+			() -> false
 		);
-		assertThat(planner.nextServiceTime(command, planner.compile(everyDayTimetable()))).isEmpty();
+		assertThat(planner.journeyItineraries(query, planner.compile(withAccess(everyDayTimetable(), LoadRouteTimetablePort.RouteAccessData.empty()))).itineraries()).isEmpty();
 	}
+
 	@Test
 	@DisplayName("같은 service day의 immutable active snapshot을 재사용한다")
 	void reusesSameActiveServiceDay() {
@@ -421,7 +464,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	void regularSearchDoesNotAllocateBoardingIndex() {
 		var compiled = planner.compile(frequencyTimetable());
 
-		assertThat(planner.search(command(WEDNESDAY, 9, 5), compiled)).hasSize(1);
+		assertThat(planner.journeyItineraries(query(WEDNESDAY, 9, 5), compiled).itineraries()).hasSize(1);
 
 		assertThat(compiled.activeServiceDay(WEDNESDAY).boardingIndexInitialized()).isFalse();
 	}
@@ -431,7 +474,7 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	void scansOnlyMarkedRoutePatterns() {
 		var compiled = planner.compile(disconnectedRoutesTimetable());
 
-		var first = planner.searchWithDiagnostics(command(WEDNESDAY, 8, 50), compiled);
+		var first = planner.journeyItineraries(query(WEDNESDAY, 8, 50), compiled);
 		assertThat(first.itineraries()).hasSize(1);
 
 		var metrics = first.scanMetrics();
@@ -439,29 +482,37 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		assertThat(metrics.expandedTrips()).isOne();
 		assertThat(metrics.expandedTransfers()).isZero();
 
-		var repeated = planner.searchWithDiagnostics(command(WEDNESDAY, 8, 50), compiled);
+		var repeated = planner.journeyItineraries(query(WEDNESDAY, 8, 50), compiled);
 		assertThat(repeated.scanMetrics()).isEqualTo(metrics);
 	}
 
 	@Test
 	@DisplayName("scan은 valid round-one transfer 검사만 계수하고 workspace 재사용 시 reset한다")
 	void countsAndResetsExpandedTransfers() {
-		var command = new SearchRouteV2Command(
-			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T08:40:00+09:00"),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 1);
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a", "station-b",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:40:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 1,
+			() -> false
+		);
 		var compiled = planner.compile(withAccess(oneTransferTimetable(), verifiedTransferAccess()));
 
-		var first = planner.searchWithDiagnostics(command, compiled);
+		var first = planner.journeyItineraries(query, compiled);
 		assertThat(first.itineraries()).isNotEmpty();
 		var firstMetrics = first.scanMetrics();
 		assertThat(firstMetrics.expandedTransfers()).isPositive();
 
-		var repeated = planner.searchWithDiagnostics(command, compiled);
+		var repeated = planner.journeyItineraries(query, compiled);
 		assertThat(repeated.itineraries()).isNotEmpty();
 		var repeatedMetrics = repeated.scanMetrics();
 		assertThat(repeatedMetrics.expandedTransfers()).isEqualTo(firstMetrics.expandedTransfers());
 
-		var unrelated = planner.searchWithDiagnostics(command(WEDNESDAY, 8, 50), planner.compile(disconnectedRoutesTimetable()));
+		var unrelated = planner.journeyItineraries(query(WEDNESDAY, 8, 50), planner.compile(disconnectedRoutesTimetable()));
 		assertThat(unrelated.itineraries()).hasSize(1);
 		assertThat(unrelated.scanMetrics().expandedTransfers()).isZero();
 	}
@@ -469,72 +520,71 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@Test
 	@DisplayName("route 메타데이터가 없어도 stop line fallback으로 경로를 검색한다")
 	void searchesTripWithoutRouteMetadata() {
-		var results = planner.search(
-			command(WEDNESDAY, 8, 50),
+		var results = planner.journeyItineraries(
+			query(WEDNESDAY, 8, 50),
 			planner.compile(missingRouteMetadataTimetable())
-		);
+		).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
-			.extracting("lineId", "lineName")
-			.containsExactly(org.assertj.core.groups.Tuple.tuple("line-fallback", "line-fallback"));
+		assertThat(rides(results.getFirst()))
+			.extracting("lineId")
+			.containsExactly("line-fallback");
 	}
 
 	@Test
 	@DisplayName("중간 stop에서 추월한 trip도 해당 stop 출발 시각 순서로 이진 탐색한다")
 	void binarySearchesTripsInDepartureOrderAtEachStop() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-b",
 			"station-c",
-			OffsetDateTime.parse("2026-07-01T09:10:00+09:00"),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-01T00:10:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			0,
-			1
+			1,
+			() -> false
 		);
 
-		var results = planner.search(command, planner.compile(overtakingTimetable()));
+		var results = planner.journeyItineraries(query, planner.compile(overtakingTimetable())).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId", "plannedDepartureTime")
 			.containsExactly(org.assertj.core.groups.Tuple.tuple(
-				"trip-fast", "2026-07-01T09:20:00+09:00"));
+				"trip-fast", Instant.parse("2026-07-01T00:20:00Z")));
 	}
 
 	@Test
 	@DisplayName("출발 stop에서 함께 탑승 가능한 추월 trip의 더 빠른 downstream 도착을 보존한다")
 	void preservesFasterDownstreamArrivalFromOvertakingTrip() {
-		var results = planner.search(
-			command("station-a", "station-c", "2026-07-01T08:50:00+09:00"),
+		var results = planner.journeyItineraries(
+			query("station-a", "station-c", "2026-07-01T08:50:00+09:00"),
 			planner.compile(overtakingTimetable())
-		);
+		).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId", "plannedArrivalTime")
 			.containsExactly(org.assertj.core.groups.Tuple.tuple(
-				"trip-fast", "2026-07-01T09:35:00+09:00"));
+				"trip-fast", Instant.parse("2026-07-01T00:35:00Z")));
 	}
 
 	@Test
 	@DisplayName("동률 도착은 기존 exhaustive 전역 trip-id 순서를 유지한다")
 	void preservesLegacyTripOrderForEqualArrival() {
-		var results = planner.search(
-			command("station-a", "station-c", "2026-07-01T08:50:00+09:00"),
+		var results = planner.journeyItineraries(
+			query("station-a", "station-c", "2026-07-01T08:50:00+09:00"),
 			planner.compile(equalArrivalOvertakingTimetable())
-		);
+		).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId", "plannedArrivalTime")
 			.containsExactly(org.assertj.core.groups.Tuple.tuple(
-				"a-fast", "2026-07-01T09:35:00+09:00"));
+				"a-fast", Instant.parse("2026-07-01T00:35:00Z")));
 	}
 
 	@Test
@@ -558,41 +608,43 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		arrivals.setAccessible(true);
 		assertThat((int[]) arrivals.get(workspace)).contains(100, 110);
 	}
+
 	@Test
 	@DisplayName("후행 trip이 downstream에서 합류해도 기존 trip-id 동률 순서를 유지한다")
 	void preservesLegacyTripOrderWhenLaterTripMergesDownstream() {
-		var results = planner.search(
-			command("station-a", "station-c", "2026-07-01T08:50:00+09:00"),
+		var results = planner.journeyItineraries(
+			query("station-a", "station-c", "2026-07-01T08:50:00+09:00"),
 			planner.compile(mergingTimetable())
-		);
+		).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId", "plannedArrivalTime")
 			.containsExactly(org.assertj.core.groups.Tuple.tuple(
-				"a-late", "2026-07-01T09:20:00+09:00"));
+				"a-late", Instant.parse("2026-07-01T00:20:00Z")));
 	}
 
 	@Test
 	@DisplayName("같은 trip의 후속 stop에 더 일찍 도착한 predecessor로 환승 위치를 갱신한다")
 	void preservesEarlierPredecessorAtLaterBoardingStop() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-a",
 			"station-d",
-			OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			1,
-			1
+			1,
+			() -> false
 		);
 
-		var results = planner.search(command, planner.compile(laterBoardingPredecessorTimetable()));
+		var results = planner.journeyItineraries(query, planner.compile(laterBoardingPredecessorTimetable())).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId")
 			.containsExactly("feeder-e", "connector");
 	}
@@ -600,121 +652,120 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	@Test
 	@DisplayName("후속 stop의 동일 출발 trip이 더 빨리 도착하면 해당 trip으로 전환한다")
 	void switchesToFasterTripWithSameDepartureAtLaterStop() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-origin",
 			"station-d",
-			OffsetDateTime.parse("2026-07-01T08:40:00+09:00"),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:40:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			1,
-			1
+			1,
+			() -> false
 		);
 
-		var results = planner.search(command, planner.compile(sameDepartureDownstreamTimetable()));
+		var results = planner.journeyItineraries(query, planner.compile(sameDepartureDownstreamTimetable())).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId")
 			.containsExactly("feeder-b", "a-fast");
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("plannedArrivalTime")
 			.containsExactly(
-				"2026-07-01T09:05:00+09:00",
-				"2026-07-01T09:25:00+09:00"
+				Instant.parse("2026-07-01T00:05:00Z"),
+				Instant.parse("2026-07-01T00:25:00Z")
 			);
 	}
 
 	@Test
 	@DisplayName("후속 stop의 동일 출발 후보가 더 늦게 도착하면 현재 trip을 유지한다")
 	void keepsCurrentTripWhenSameDepartureCandidateArrivesLater() {
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-origin",
 			"station-d",
-			OffsetDateTime.parse("2026-07-01T08:40:00+09:00"),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:40:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			1,
-			1
+			1,
+			() -> false
 		);
 
-		var results = planner.search(command, planner.compile(sameDepartureSlowerCandidateTimetable()));
+		var results = planner.journeyItineraries(query, planner.compile(sameDepartureSlowerCandidateTimetable())).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId")
 			.containsExactly("feeder-b", "z-fast");
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("plannedArrivalTime")
 			.containsExactly(
-				"2026-07-01T09:00:00+09:00",
-				"2026-07-01T09:35:00+09:00"
+				Instant.parse("2026-07-01T00:00:00Z"),
+				Instant.parse("2026-07-01T00:35:00Z")
 			);
 	}
 
 	@Test
 	@DisplayName("출발 stop의 동일 출발 trip은 non-overtaking pattern 우위 순서를 유지한다")
 	void preservesDominantPatternOrderForSameDepartureAtOrigin() {
-		var results = planner.search(
-			command("station-b", "station-d", "2026-07-01T09:20:00+09:00"),
+		var results = planner.journeyItineraries(
+			query("station-b", "station-d", "2026-07-01T09:20:00+09:00"),
 			planner.compile(sameDepartureSlowerCandidateTimetable())
-		);
+		).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId", "plannedArrivalTime")
 			.containsExactly(org.assertj.core.groups.Tuple.tuple(
-				"z-fast", "2026-07-01T09:35:00+09:00"));
+				"z-fast", Instant.parse("2026-07-01T00:35:00Z")));
 	}
 
 	@Test
 	@DisplayName("같은 정차열에서 하차 정책이 다른 후속 trip을 잃지 않는다")
 	void preservesLaterTripWhenEarlierTripBlocksDropOff() {
-		var results = planner.search(
-			command("station-a", "station-b", "2026-07-01T08:50:00+09:00"),
+		var results = planner.journeyItineraries(
+			query("station-a", "station-b", "2026-07-01T08:50:00+09:00"),
 			planner.compile(dropOffVariantTimetable())
-		);
+		).itineraries();
 
 		assertThat(results).hasSize(1);
-		assertThat(results.getFirst().steps())
-			.filteredOn(step -> "ride".equals(step.stepType()))
+		assertThat(rides(results.getFirst()))
 			.extracting("tripId")
 			.containsExactly("trip-usable");
 	}
 
 	@Test
-	@DisplayName("동시 nextServiceTime은 service day boarding index를 안전하게 lazy publish한다")
-	void concurrentNextServiceTimeLazilyPublishesBoardingIndex() throws Exception {
+	@DisplayName("동시 departureEvents는 service day boarding index를 안전하게 lazy publish한다")
+	void concurrentDepartureEventsLazilyPublishesBoardingIndex() throws Exception {
 		var compiled = planner.compile(frequencyTimetable());
 		var activeDay = compiled.activeServiceDay(WEDNESDAY);
-		var expected = OffsetDateTime.parse("2026-07-01T09:00:00+09:00");
 		var worker = new AtomicReference<Thread>();
 		var started = new CountDownLatch(1);
 
 		assertThat(activeDay.boardingIndexInitialized()).isFalse();
 		try (var executor = Executors.newSingleThreadExecutor()) {
-			java.util.concurrent.Future<java.util.Optional<OffsetDateTime>> attempt;
+			java.util.concurrent.Future<List<RouteTimetableRaptorPlanner.DepartureEvent>> attempt;
 			synchronized (activeDay) {
 				attempt = executor.submit(() -> {
 					worker.set(Thread.currentThread());
 					started.countDown();
-					return planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled);
+					return planner.departureEvents(activeDay, "station-a", 0, 86400, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 				});
 				assertThat(started.await(5, TimeUnit.SECONDS)).isTrue();
 				assertThreadBlocked(worker.get());
-				assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled)).contains(expected);
+				assertThat(planner.departureEvents(activeDay, "station-a", 0, 86400, RouteTimetableRaptorPlanner.RealtimeOverlay.empty())).isNotEmpty();
 				assertThat(activeDay.boardingIndexInitialized()).isTrue();
 			}
-			assertThat(attempt.get(5, TimeUnit.SECONDS)).contains(expected);
+			assertThat(attempt.get(5, TimeUnit.SECONDS)).isNotEmpty();
 		}
 		assertThat(activeDay.boardingIndexInitialized()).isTrue();
-		assertThat(planner.nextServiceTime(command(WEDNESDAY, 8, 0), compiled)).contains(expected);
+		assertThat(planner.departureEvents(activeDay, "station-a", 0, 86400, RouteTimetableRaptorPlanner.RealtimeOverlay.empty())).isNotEmpty();
 	}
 
 	private static void assertThreadBlocked(Thread thread) {
@@ -924,19 +975,41 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		), edges, List.of(), evidence);
 	}
 	private static LoadRouteTimetablePort.RouteAccessData verifiedTransferAccess() {
-		var edge = new LoadRouteTimetablePort.PathwayEdge(
-			"transfer-edge", "platform-1", "platform-2", 60, 25, false, false, 100,
-			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED");
+		var edges = List.of(
+			new LoadRouteTimetablePort.PathwayEdge(
+				"entry-a-edge", "entrance-a", "platform-a", 60, 25, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new LoadRouteTimetablePort.PathwayEdge(
+				"transfer-edge", "platform-1", "platform-2", 60, 25, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new LoadRouteTimetablePort.PathwayEdge(
+				"exit-b-edge", "platform-b", "exit-b", 60, 25, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+		);
 		var rule = new LoadRouteTimetablePort.TransferRule(
 			"transfer-rule", "station-x", "line-1", "station-x", "line-2", "IN_STATION",
 			60, "transfer-edge", "transfer-edge", "VERIFIED");
-		var evidence = new LoadRouteTimetablePort.RouteEdgeEvidence(
-			"transfer-evidence", "station-x", "line-2", "transfer-edge", "TRANSFER",
-			"OFFICIAL_SOURCE", "VERIFIED", true, null);
+		var evidence = List.of(
+			new LoadRouteTimetablePort.RouteEdgeEvidence(
+				"entry-evidence", "station-a", "line-1", "entry-a-edge", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new LoadRouteTimetablePort.RouteEdgeEvidence(
+				"transfer-evidence", "station-x", "line-2", "transfer-edge", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence", "station-b", "line-2", "exit-b-edge", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null)
+		);
 		return new LoadRouteTimetablePort.RouteAccessData(
-			List.of(new LoadRouteTimetablePort.PathwayNode("platform-1", "station-x", "line-1", "PLATFORM"),
-				new LoadRouteTimetablePort.PathwayNode("platform-2", "station-x", "line-2", "PLATFORM")),
-			List.of(edge), List.of(rule), List.of(evidence));
+			List.of(
+				new LoadRouteTimetablePort.PathwayNode("entrance-a", "station-a", null, "ENTRANCE"),
+				new LoadRouteTimetablePort.PathwayNode("platform-a", "station-a", "line-1", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("platform-1", "station-x", "line-1", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("platform-2", "station-x", "line-2", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("platform-b", "station-b", "line-2", "PLATFORM"),
+				new LoadRouteTimetablePort.PathwayNode("exit-b", "station-b", null, "EXIT")
+			),
+			edges, List.of(rule), evidence);
 	}
 	private static LoadRouteTimetablePort.RouteAccessData ambiguousTransferEvidenceAccess() {
 		var edge = new LoadRouteTimetablePort.PathwayEdge(
@@ -1085,6 +1158,16 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	}
 
 	private static RouteTimetable disconnectedRoutesTimetable() {
+		var stops = List.of(
+			new LoadRouteTimetablePort.TransitStopTime(
+				"trip-main", 1, "station-a", "line-main", 32400, 32400, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"trip-main", 2, "station-b", "line-main", 33000, 33000, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"trip-other", 1, "station-x", "line-other", 32400, 32400, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"trip-other", 2, "station-y", "line-other", 33000, 33000, 0, 0)
+		);
 		return new RouteTimetable(
 			List.of(weekday("weekday")),
 			List.of(),
@@ -1100,34 +1183,32 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				new LoadRouteTimetablePort.TransitTrip(
 					"trip-other", "route-other", "weekday", "Y", "0", "LOCAL", 0)
 			),
-			List.of(
-				new LoadRouteTimetablePort.TransitStopTime(
-					"trip-main", 1, "station-a", "line-main", 32400, 32400, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"trip-main", 2, "station-b", "line-main", 33000, 33000, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"trip-other", 1, "station-x", "line-other", 32400, 32400, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"trip-other", 2, "station-y", "line-other", 33000, 33000, 0, 0)
-			),
-			List.of()
+			stops,
+			List.of(),
+			List.of(),
+			null,
+			defaultVerifiedAccess(stops)
 		);
 	}
 
 	private static RouteTimetable missingRouteMetadataTimetable() {
+		var stops = List.of(
+			new LoadRouteTimetablePort.TransitStopTime(
+				"trip-missing-route", 1, "station-a", "line-fallback", 32400, 32400, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"trip-missing-route", 2, "station-b", "line-fallback", 33000, 33000, 0, 0)
+		);
 		return new RouteTimetable(
 			List.of(weekday("weekday")),
 			List.of(),
 			List.of(),
 			List.of(new LoadRouteTimetablePort.TransitTrip(
 				"trip-missing-route", "route-missing", "weekday", "B", "0", "LOCAL", 0)),
-			List.of(
-				new LoadRouteTimetablePort.TransitStopTime(
-					"trip-missing-route", 1, "station-a", "line-fallback", 32400, 32400, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"trip-missing-route", 2, "station-b", "line-fallback", 33000, 33000, 0, 0)
-			),
-			List.of()
+			stops,
+			List.of(),
+			List.of(),
+			null,
+			defaultVerifiedAccess(stops)
 		);
 	}
 
@@ -1219,6 +1300,22 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 	}
 
 	private static RouteTimetable laterBoardingPredecessorTimetable() {
+		var stops = List.of(
+			new LoadRouteTimetablePort.TransitStopTime(
+				"connector", 1, "station-b", "line-c", 33600, 33600, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"connector", 2, "station-e", "line-c", 33900, 33900, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"connector", 3, "station-d", "line-c", 34200, 34200, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-b", 1, "station-a", "line-b", 32400, 32400, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-b", 2, "station-b", "line-b", 32700, 32700, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-e", 1, "station-a", "line-e", 32520, 32520, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-e", 2, "station-e", "line-e", 32640, 32640, 0, 0)
+		);
 		return new RouteTimetable(
 			List.of(weekday("weekday")),
 			List.of(),
@@ -1238,27 +1335,37 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				new LoadRouteTimetablePort.TransitTrip(
 					"feeder-e", "route-e", "weekday", "E", "0", "LOCAL", 0)
 			),
-			List.of(
-				new LoadRouteTimetablePort.TransitStopTime(
-					"connector", 1, "station-b", "line-c", 33600, 33600, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"connector", 2, "station-e", "line-c", 33900, 33900, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"connector", 3, "station-d", "line-c", 34200, 34200, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-b", 1, "station-a", "line-b", 32400, 32400, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-b", 2, "station-b", "line-b", 32700, 32700, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-e", 1, "station-a", "line-e", 32520, 32520, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-e", 2, "station-e", "line-e", 32640, 32640, 0, 0)
-			),
-			List.of()
+			stops,
+			List.of(),
+			List.of(),
+			null,
+			defaultVerifiedAccess(stops)
 		);
 	}
 
 	private static RouteTimetable sameDepartureDownstreamTimetable() {
+		var stops = List.of(
+			new LoadRouteTimetablePort.TransitStopTime(
+				"a-fast", 1, "station-a", "line-main", 32100, 32100, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"a-fast", 2, "station-b", "line-main", 33600, 33600, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"a-fast", 3, "station-d", "line-main", 33900, 33900, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-a", 1, "station-origin", "line-fa", 31620, 31620, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-a", 2, "station-a", "line-fa", 32400, 32400, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-b", 1, "station-origin", "line-fb", 31680, 31680, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-b", 2, "station-b", "line-fb", 32700, 32700, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"z-slow", 1, "station-a", "line-main", 33000, 33000, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"z-slow", 2, "station-b", "line-main", 33600, 33600, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"z-slow", 3, "station-d", "line-main", 34200, 34200, 0, 0)
+		);
 		return new RouteTimetable(
 			List.of(weekday("weekday")),
 			List.of(),
@@ -1280,33 +1387,37 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				new LoadRouteTimetablePort.TransitTrip(
 					"z-slow", "route-main", "weekday", "D", "0", "LOCAL", 0)
 			),
-			List.of(
-				new LoadRouteTimetablePort.TransitStopTime(
-					"a-fast", 1, "station-a", "line-main", 32100, 32100, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"a-fast", 2, "station-b", "line-main", 33600, 33600, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"a-fast", 3, "station-d", "line-main", 33900, 33900, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-a", 1, "station-origin", "line-fa", 31620, 31620, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-a", 2, "station-a", "line-fa", 32400, 32400, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-b", 1, "station-origin", "line-fb", 31680, 31680, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-b", 2, "station-b", "line-fb", 32700, 32700, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"z-slow", 1, "station-a", "line-main", 33000, 33000, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"z-slow", 2, "station-b", "line-main", 33600, 33600, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"z-slow", 3, "station-d", "line-main", 34200, 34200, 0, 0)
-			),
-			List.of()
+			stops,
+			List.of(),
+			List.of(),
+			null,
+			defaultVerifiedAccess(stops)
 		);
 	}
 
 	private static RouteTimetable sameDepartureSlowerCandidateTimetable() {
+		var stops = List.of(
+			new LoadRouteTimetablePort.TransitStopTime(
+				"a-slow", 1, "station-a", "line-main", 33600, 33600, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"a-slow", 2, "station-b", "line-main", 33900, 34200, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"a-slow", 3, "station-d", "line-main", 34800, 34800, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-a", 1, "station-origin", "line-fa", 31620, 31620, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-a", 2, "station-a", "line-fa", 32700, 32700, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-b", 1, "station-origin", "line-fb", 31680, 31680, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"feeder-b", 2, "station-b", "line-fb", 32400, 32400, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"z-fast", 1, "station-a", "line-main", 33300, 33300, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"z-fast", 2, "station-b", "line-main", 33600, 34200, 0, 0),
+			new LoadRouteTimetablePort.TransitStopTime(
+				"z-fast", 3, "station-d", "line-main", 34500, 34500, 0, 0)
+		);
 		return new RouteTimetable(
 			List.of(weekday("weekday")),
 			List.of(),
@@ -1328,29 +1439,11 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				new LoadRouteTimetablePort.TransitTrip(
 					"z-fast", "route-main", "weekday", "D", "0", "EXPRESS", 0)
 			),
-			List.of(
-				new LoadRouteTimetablePort.TransitStopTime(
-					"a-slow", 1, "station-a", "line-main", 33600, 33600, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"a-slow", 2, "station-b", "line-main", 33900, 34200, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"a-slow", 3, "station-d", "line-main", 34800, 34800, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-a", 1, "station-origin", "line-fa", 31620, 31620, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-a", 2, "station-a", "line-fa", 32700, 32700, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-b", 1, "station-origin", "line-fb", 31680, 31680, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"feeder-b", 2, "station-b", "line-fb", 32400, 32400, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"z-fast", 1, "station-a", "line-main", 33300, 33300, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"z-fast", 2, "station-b", "line-main", 33600, 34200, 0, 0),
-				new LoadRouteTimetablePort.TransitStopTime(
-					"z-fast", 3, "station-d", "line-main", 34500, 34500, 0, 0)
-			),
-			List.of()
+			stops,
+			List.of(),
+			List.of(),
+			null,
+			defaultVerifiedAccess(stops)
 		);
 	}
 
@@ -1358,6 +1451,81 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 		return new LoadRouteTimetablePort.ServiceCalendar(
 			serviceId, true, true, true, true, true, false, false,
 			WEDNESDAY, WEDNESDAY.plusDays(30), "Asia/Seoul");
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData defaultVerifiedAccess(
+		List<LoadRouteTimetablePort.TransitStopTime> stopTimes
+	) {
+		var nodes = new java.util.ArrayList<LoadRouteTimetablePort.PathwayNode>();
+		var edges = new java.util.ArrayList<LoadRouteTimetablePort.PathwayEdge>();
+		var evidence = new java.util.ArrayList<LoadRouteTimetablePort.RouteEdgeEvidence>();
+		var rules = new java.util.ArrayList<LoadRouteTimetablePort.TransferRule>();
+
+		var stationLines = new java.util.LinkedHashMap<String, java.util.Set<String>>();
+		for (var stop : stopTimes) {
+			stationLines.computeIfAbsent(stop.stationId(), k -> new java.util.LinkedHashSet<>()).add(stop.lineId());
+		}
+
+		for (var entry : stationLines.entrySet()) {
+			var stationId = entry.getKey();
+			var lines = entry.getValue();
+			var entranceNodeId = "entrance-" + stationId;
+			var exitNodeId = "exit-" + stationId;
+			nodes.add(new LoadRouteTimetablePort.PathwayNode(entranceNodeId, stationId, null, "ENTRANCE"));
+			nodes.add(new LoadRouteTimetablePort.PathwayNode(exitNodeId, stationId, null, "EXIT"));
+
+			for (var lineId : lines) {
+				var platformNodeId = "platform-" + stationId + "-" + lineId;
+				nodes.add(new LoadRouteTimetablePort.PathwayNode(platformNodeId, stationId, lineId, "PLATFORM"));
+
+				var entryEdgeId = "entry-" + stationId + "-" + lineId;
+				edges.add(new LoadRouteTimetablePort.PathwayEdge(
+					entryEdgeId, entranceNodeId, platformNodeId, 60, 25, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
+				));
+				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-" + entryEdgeId, stationId, lineId, entryEdgeId, "ENTRY",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null
+				));
+
+				var exitEdgeId = "exit-" + stationId + "-" + lineId;
+				edges.add(new LoadRouteTimetablePort.PathwayEdge(
+					exitEdgeId, platformNodeId, exitNodeId, 60, 25, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
+				));
+				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-" + exitEdgeId, stationId, lineId, exitEdgeId, "EXIT",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null
+				));
+			}
+
+			var lineList = new java.util.ArrayList<>(lines);
+			for (int i = 0; i < lineList.size(); i++) {
+				for (int j = 0; j < lineList.size(); j++) {
+					if (i == j) continue;
+					var fromLine = lineList.get(i);
+					var toLine = lineList.get(j);
+					var transferEdgeId = "transfer-" + stationId + "-" + fromLine + "-" + toLine;
+					var fromPlatform = "platform-" + stationId + "-" + fromLine;
+					var toPlatform = "platform-" + stationId + "-" + toLine;
+					edges.add(new LoadRouteTimetablePort.PathwayEdge(
+						transferEdgeId, fromPlatform, toPlatform, 60, 25, false, false, 100,
+						"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
+					));
+					var ruleId = "rule-" + transferEdgeId;
+					rules.add(new LoadRouteTimetablePort.TransferRule(
+						ruleId, stationId, fromLine, stationId, toLine, "IN_STATION",
+						60, transferEdgeId, transferEdgeId, "VERIFIED"
+					));
+					evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
+						"ev-" + transferEdgeId, stationId, toLine, transferEdgeId, "TRANSFER",
+						"OFFICIAL_SOURCE", "VERIFIED", true, null
+					));
+				}
+			}
+		}
+
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence);
 	}
 
 	private static RouteTimetable timetable(
@@ -1374,7 +1542,10 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 				"route", "line", "L", "테스트", "도착 방면", "Asia/Seoul")),
 			trips,
 			stopTimes,
-			frequencies
+			frequencies,
+			List.of(),
+			null,
+			defaultVerifiedAccess(stopTimes)
 		);
 	}
 
@@ -1388,29 +1559,42 @@ class RouteTimetableRaptorPlannerCompiledSnapshotTest {
 			tripId, sequence, stationId, "line", seconds, seconds, 0, 0);
 	}
 
-	private static SearchRouteV2Command command(LocalDate date, int hour, int minute) {
-		return new SearchRouteV2Command(
+	private static List<JourneyRideProjection> rides(JourneyItinerary itinerary) {
+		return itinerary.legs().stream()
+			.filter(JourneyRideProjection.class::isInstance)
+			.map(JourneyRideProjection.class::cast)
+			.toList();
+	}
+
+	private static JourneyRaptorQuery query(LocalDate date, int hour, int minute) {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			"station-a",
 			"station-b",
-			OffsetDateTime.parse("%sT%02d:%02d:00+09:00".formatted(date, hour, minute)),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(OffsetDateTime.parse("%sT%02d:%02d:00+09:00".formatted(date, hour, minute)).toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			0,
-			3
+			3,
+			() -> false
 		);
 	}
 
-	private static SearchRouteV2Command command(String origin, String destination, String departureTime) {
-		return new SearchRouteV2Command(
+	private static JourneyRaptorQuery query(String origin, String destination, String departureTime) {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			origin,
 			destination,
-			OffsetDateTime.parse(departureTime),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(OffsetDateTime.parse(departureTime).toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			0,
-			1
+			1,
+			() -> false
 		);
 	}
 

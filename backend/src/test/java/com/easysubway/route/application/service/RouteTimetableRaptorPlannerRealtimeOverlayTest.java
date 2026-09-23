@@ -2,20 +2,19 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdate;
 import com.easysubway.route.application.port.in.RouteSearchUseCase.TimetableRealtimeUpdates;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceCalendar;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
-import com.easysubway.route.domain.ConstraintMode;
-import com.easysubway.route.domain.EtaSource;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyRideProjection;
 import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -34,10 +33,10 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TimetableRealtimeUpdate("trip-express", 900, 900, false, "snapshot-delay", OBSERVED_AT)
 		));
 
-		var result = planner.search(command(), compiled, overlay).getFirst();
+		var result = planner.journeyItineraries(query(), compiled, overlay).itineraries().getFirst();
 
 		assertThat(ride(result).tripId()).isEqualTo("trip-local");
-		assertThat(result.etaSource()).isEqualTo(EtaSource.PLANNED);
+		assertThat(ride(result).realtimeDepartureTime()).isNull();
 	}
 
 	@Test
@@ -47,37 +46,30 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TimetableRealtimeUpdate("trip-express", 0, 0, true, "snapshot-cancel", OBSERVED_AT)
 		));
 
-		assertThat(ride(planner.search(command(), compiled, overlay).getFirst()).tripId())
+		assertThat(ride(planner.journeyItineraries(query(), compiled, overlay).itineraries().getFirst()).tripId())
 			.isEqualTo("trip-local");
 	}
 
 	@Test
-	@DisplayName("현재 service day의 취소 열차는 nextServiceTime에서도 제외한다")
+	@DisplayName("현재 service day의 모든 열차가 취소되면 경로가 없다")
 	void cancellationExcludesTripFromCurrentNextServiceTime() {
 		var overlay = planner.compileRealtimeOverlay(compiled, updates(
 			new TimetableRealtimeUpdate("trip-local", 0, 0, true, "snapshot-cancel", OBSERVED_AT),
 			new TimetableRealtimeUpdate("trip-express", 0, 0, true, "snapshot-cancel", OBSERVED_AT)
 		));
 
-		assertThat(planner.search(command(), compiled, overlay)).isEmpty();
-		assertThat(planner.nextServiceTime(command(), compiled, overlay))
-			.contains(OffsetDateTime.parse("2026-07-02T09:00:00+09:00"));
+		assertThat(planner.journeyItineraries(query(), compiled, overlay).itineraries()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("출발 열차 지연으로 환승을 놓치면 현재 service day를 nextServiceTime으로 안내하지 않는다")
+	@DisplayName("출발 열차 지연으로 환승을 놓치면 경로가 없다")
 	void delayedArrivalInvalidatesCurrentDayTransferForNextServiceTime() {
 		var transferCompiled = planner.compile(transferTimetable());
 		var overlay = planner.compileRealtimeOverlay(transferCompiled, updates(
 			new TimetableRealtimeUpdate("trip-first", 900, 900, false, "snapshot-delay", OBSERVED_AT)
 		));
-		var command = new SearchRouteV2Command(
-			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, true, 1, 1);
 
-		assertThat(planner.search(command, transferCompiled, overlay)).isEmpty();
-		assertThat(planner.nextServiceTime(command, transferCompiled, overlay))
-			.contains(OffsetDateTime.parse("2026-07-02T09:00:00+09:00"));
+		assertThat(planner.journeyItineraries(transferQuery(), transferCompiled, overlay).itineraries()).isEmpty();
 	}
 
 	@Test
@@ -87,13 +79,11 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TimetableRealtimeUpdate("trip-express", 60, 60, false, "snapshot-live", OBSERVED_AT)
 		));
 
-		var ride = ride(planner.search(command(), compiled, overlay).getFirst());
+		var ride = ride(planner.journeyItineraries(query(), compiled, overlay).itineraries().getFirst());
 
 		assertThat(ride.tripId()).isEqualTo("trip-express");
-		assertThat(ride.timeSource()).isEqualTo(EtaSource.REALTIME.name());
-		assertThat(ride.reasonCodes()).containsExactly("REALTIME_PRE_SCAN_OVERLAY");
-		assertThat(ride.providerSnapshotId()).isEqualTo("snapshot-live");
-		assertThat(ride.providerObservedAt()).isEqualTo(OBSERVED_AT.toString());
+		assertThat(ride.realtimeDepartureTime()).isEqualTo(ride.plannedDepartureTime().plusSeconds(60));
+		assertThat(ride.realtimeArrivalTime()).isEqualTo(ride.plannedArrivalTime().plusSeconds(60));
 	}
 
 	@Test
@@ -104,7 +94,7 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TimetableRealtimeUpdate("trip-first", 600, 600, false, "snapshot-overtake", OBSERVED_AT)
 		));
 
-		assertThat(ride(planner.search(command(), overtakingCompiled, overlay).getFirst()).tripId())
+		assertThat(ride(planner.journeyItineraries(query(), overtakingCompiled, overlay).itineraries().getFirst()).tripId())
 			.isEqualTo("trip-second");
 	}
 
@@ -124,27 +114,56 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 	@Test
 	@DisplayName("overlay가 없으면 기존 golden 선택과 PLANNED semantics가 동일하다")
 	void absentOverlayPreservesPlannedResult() {
-		var baseline = planner.search(command(), compiled).getFirst();
-		var withoutOverlay = planner.search(
-			command(), compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).getFirst();
+		var baseline = planner.journeyItineraries(query(), compiled).itineraries().getFirst();
+		var withoutOverlay = planner.journeyItineraries(
+			query(), compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty()).itineraries().getFirst();
 
 		assertThat(withoutOverlay).isEqualTo(baseline);
 		assertThat(ride(withoutOverlay).tripId()).isEqualTo("trip-express");
-		assertThat(withoutOverlay.etaSource()).isEqualTo(EtaSource.PLANNED);
+		assertThat(ride(withoutOverlay).realtimeDepartureTime()).isNull();
 	}
 
 	private static TimetableRealtimeUpdates updates(TimetableRealtimeUpdate... updates) {
 		return new TimetableRealtimeUpdates("overlay-v1", true, List.of(updates), null);
 	}
 
-	private static com.easysubway.route.domain.RouteStep ride(com.easysubway.route.domain.RouteSearchResult result) {
-		return result.steps().stream().filter(step -> "ride".equals(step.stepType())).findFirst().orElseThrow();
+	private static JourneyRideProjection ride(JourneyItinerary result) {
+		return result.legs().stream()
+			.filter(JourneyRideProjection.class::isInstance)
+			.map(JourneyRideProjection.class::cast)
+			.findFirst().orElseThrow();
 	}
 
-	private static SearchRouteV2Command command() {
-		return new SearchRouteV2Command(
-			"station-a", "station-b", OffsetDateTime.parse("2026-07-01T08:50:00+09:00"),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, true, 0, 1);
+	private static JourneyRaptorQuery query() {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a",
+			"station-b",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			0,
+			1,
+			() -> false
+		);
+	}
+
+	private static JourneyRaptorQuery transferQuery() {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a",
+			"station-b",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1,
+			1,
+			() -> false
+		);
 	}
 
 	private static RouteTimetable timetable() {
@@ -167,7 +186,7 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TransitStopTime("trip-express", 1, "station-a", "line", 32_700, 32_700, 0, 0),
 			new TransitStopTime("trip-express", 2, "station-b", "line", 33_300, 33_300, 0, 0)
 		);
-		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of());
+		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, verifiedAccess("line"));
 	}
 
 	private static RouteTimetable nonOvertakingTimetable() {
@@ -185,7 +204,7 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TransitStopTime("trip-first", 2, "station-b", "line", 33_600, 33_600, 0, 0),
 			new TransitStopTime("trip-second", 1, "station-a", "line", 32_700, 32_700, 0, 0),
 			new TransitStopTime("trip-second", 2, "station-b", "line", 33_900, 33_900, 0, 0));
-		return new RouteTimetable(List.of(calendar), List.of(), List.of(route), trips, stopTimes, List.of());
+		return new RouteTimetable(List.of(calendar), List.of(), List.of(route), trips, stopTimes, List.of(), List.of(), null, verifiedAccess("line"));
 	}
 
 	private static RouteTimetable transferTimetable() {
@@ -205,6 +224,65 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
 			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
 			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
-		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of());
+		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, transferAccess());
+	}
+
+	private static com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData verifiedAccess(String lineId) {
+		var edges = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit", "platform-b", "outside", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var evidence = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"entry-evidence", "station-a", lineId, "entry", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence", "station-b", lineId, "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		return new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-a", "station-a", lineId, "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-b", "station-b", lineId, "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "station-b", null, "EXIT")),
+			edges, List.of(), evidence);
+	}
+
+	private static com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData transferAccess() {
+		var edges = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"transfer", "platform-transfer-a", "platform-transfer-b", 300, 300, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit", "platform-b", "outside", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var evidence = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"entry-evidence", "station-a", "line-a", "entry", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"transfer-evidence", "station-transfer", "line-b", "transfer", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence", "station-b", "line-b", "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		var transferRule = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule(
+			"transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b",
+			"IN_STATION", 300, "transfer", "transfer", "VERIFIED");
+		return new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-a", "station-a", "line-a", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-transfer-a", "station-transfer", "line-a", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-transfer-b", "station-transfer", "line-b", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "station-b", null, "EXIT")),
+			edges, List.of(transferRule), evidence);
 	}
 }

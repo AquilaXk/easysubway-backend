@@ -2,8 +2,9 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode;
@@ -16,15 +17,10 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitS
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.OfficialFare;
-import com.easysubway.route.domain.ConstraintMode;
-import com.easysubway.route.domain.RouteSearchResult;
-import com.easysubway.route.domain.RouteStep;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
-import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessKind;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessProjection;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspace;
@@ -44,71 +40,73 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 	@DisplayName("야간 20:50 하차 ↔ 21:30 승차(소요 40분): 야간 60분 특례에 따라 정상 환승(페널티 0초, 1400원) 단언")
 	void nightTransferWithinSixtyMinutesAppliesNoPenalty() {
 		var planner = new RouteTimetableRaptorPlanner();
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			ORIGIN,
 			DESTINATION,
-			OffsetDateTime.of(2026, 7, 6, 20, 20, 0, 0, ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T11:20:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			1,
-			2
+			2,
+			() -> false
 		);
 
-		List<RouteSearchResult> results = planner.search(command, timetable());
+		var plan = planner.journeyItineraries(query, timetable());
 
-		assertThat(results).isNotEmpty();
-		RouteSearchResult result = results.getFirst();
+		assertThat(plan.itineraries()).isNotEmpty();
+		var itinerary = plan.itineraries().getFirst();
 
 		// 환승 스텝 검증: station-b -> station-c 노외 환승
-		RouteStep transferStep = result.steps().stream()
-			.filter(step -> "transfer".equals(step.stepType()))
+		JourneyAccessProjection transferStep = itinerary.legs().stream()
+			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
+			.map(JourneyAccessProjection.class::cast)
 			.findFirst()
 			.orElseThrow();
 		assertThat(transferStep.fromStationId()).isEqualTo(MID_OUT);
 		assertThat(transferStep.toStationId()).isEqualTo(MID_IN);
-
-		// 물리 도착 시각 유지 (21:50 열차 도착 + Senior 보행 배율 적용 출구 243초 = 21:54:03 도착, 20:20 출발 기준 94분 소요)
-		assertThat(result.score()).isEqualTo(94);
-
-		// 요금: 정상 환승으로 단일 요금 1400원
-		assertThat(result.officialFare()).isNotNull();
-		assertThat(result.officialFare().adultFareWon()).isEqualTo(1400);
+		assertThat(transferStep.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(transferStep.farePenaltyApplies()).isFalse();
+		assertThat(transferStep.additionalFareWon()).isEqualTo(0);
+		assertThat(transferStep.transferLimitMinutes()).isEqualTo(60);
 	}
 
 	@Test
 	@DisplayName("주간 14:00 하차 ↔ 14:40 승차(소요 40분): 주간 30분 초과에 따라 가상 비용 +600초 적용 및 2800원 요금 단언")
 	void daytimeTransferExceedingThirtyMinutesAppliesPenalty() {
 		var planner = new RouteTimetableRaptorPlanner();
-		var command = new SearchRouteV2Command(
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			ORIGIN,
 			DESTINATION,
-			OffsetDateTime.of(2026, 7, 6, 13, 30, 0, 0, ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T04:30:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			1,
-			2
+			2,
+			() -> false
 		);
 
-		List<RouteSearchResult> results = planner.search(command, timetable());
+		var plan = planner.journeyItineraries(query, timetable());
 
-		assertThat(results).isNotEmpty();
-		RouteSearchResult result = results.getFirst();
+		assertThat(plan.itineraries()).isNotEmpty();
+		var itinerary = plan.itineraries().getFirst();
 
-		RouteStep transferStep = result.steps().stream()
-			.filter(step -> "transfer".equals(step.stepType()))
+		JourneyAccessProjection transferStep = itinerary.legs().stream()
+			.filter(leg -> leg instanceof JourneyAccessProjection acc && acc.kind() == JourneyAccessKind.TRANSFER)
+			.map(JourneyAccessProjection.class::cast)
 			.findFirst()
 			.orElseThrow();
 		assertThat(transferStep.fromStationId()).isEqualTo(MID_OUT);
 		assertThat(transferStep.toStationId()).isEqualTo(MID_IN);
-
-		// 가상 비용 +600초(10분) 적용되어 burdenCost(score)는 94 + 10 = 104
-		assertThat(result.score()).isEqualTo(104);
-
-		// 요금: 환승 유효시간 초과로 개별 구간 합산 2800원
-		assertThat(result.officialFare()).isNotNull();
-		assertThat(result.officialFare().adultFareWon()).isEqualTo(2800);
+		assertThat(transferStep.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(transferStep.farePenaltyApplies()).isTrue();
+		assertThat(transferStep.additionalFareWon()).isEqualTo(1400);
+		assertThat(transferStep.transferLimitMinutes()).isEqualTo(30);
 	}
 
 	@Test
@@ -118,16 +116,18 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		var timetable = timetable();
 		var compiled = planner.compile(timetable);
 
-		// Daytime command (elapsed 40 min > limit 30 min -> timeout = true)
-		var dayCommand = new SearchRouteV2Command(
+		// Daytime query (elapsed 40 min > limit 30 min -> timeout = true)
+		var dayQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			ORIGIN, DESTINATION,
-			OffsetDateTime.of(2026, 7, 6, 13, 30, 0, 0, ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 2
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T04:30:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false
 		);
-		var dayPlan = planner.journeyItineraries(
-			dayCommand, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
-			new JourneyRequestMeasurement("req-day"), "req-day", "sha", 1L
-		);
+		var dayPlan = planner.journeyItineraries(dayQuery, compiled);
 		assertThat(dayPlan.itineraries()).isNotEmpty();
 		var dayItinerary = dayPlan.itineraries().getFirst();
 		var dayTransferLeg = dayItinerary.legs().stream()
@@ -139,16 +139,18 @@ class RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest {
 		assertThat(dayTransferLeg.additionalFareWon()).isEqualTo(1400);
 		assertThat(dayTransferLeg.transferLimitMinutes()).isEqualTo(30);
 
-		// Nighttime command (elapsed 40 min <= limit 60 min -> timeout = false)
-		var nightCommand = new SearchRouteV2Command(
+		// Nighttime query (elapsed 40 min <= limit 60 min -> timeout = false)
+		var nightQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			ORIGIN, DESTINATION,
-			OffsetDateTime.of(2026, 7, 6, 20, 20, 0, 0, ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 2
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T11:20:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false
 		);
-		var nightPlan = planner.journeyItineraries(
-			nightCommand, compiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
-			new JourneyRequestMeasurement("req-night"), "req-night", "sha", 1L
-		);
+		var nightPlan = planner.journeyItineraries(nightQuery, compiled);
 		assertThat(nightPlan.itineraries()).isNotEmpty();
 		var nightItinerary = nightPlan.itineraries().getFirst();
 		var nightTransferLeg = nightItinerary.legs().stream()

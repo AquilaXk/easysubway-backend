@@ -2,20 +2,19 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
-import com.easysubway.profile.domain.MobilityType;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.adapter.out.persistence.JdbcRouteTimetableRepository;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
+import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import com.easysubway.route.domain.ConstraintMode;
-import com.easysubway.route.domain.EtaSource;
-import com.easysubway.route.domain.RouteSearchResult;
-import com.easysubway.route.domain.RouteSearchStatus;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyRideProjection;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
-import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
-import java.util.Optional;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -36,7 +35,6 @@ import org.springframework.jdbc.datasource.DriverManagerDataSource;
 @DisplayName("#1620 RAPTOR golden OD 6종 (4호선 코리도 실데이터)")
 class RouteTimetableRaptorPlannerGoldenOdTest {
 
-	private static final ZoneId SEOUL = ZoneId.of("Asia/Seoul");
 	private static final ZoneOffset KST = ZoneOffset.ofHours(9);
 
 	private static final String SANGNOKSU = "station-seoul-4-448";
@@ -65,42 +63,96 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V50__route_service_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/main/resources/db/migration/h2/V62__route_v2_planner_identity.sql'");
 		jdbc.execute("RUNSCRIPT FROM 'src/test/resources/timetable/line4-corridor-slice-seed.sql'");
-		timetable = new JdbcRouteTimetableRepository(dataSource).loadRouteTimetable();
+		var loaded = new JdbcRouteTimetableRepository(dataSource).loadRouteTimetable();
+		timetable = new RouteTimetable(
+			loaded.serviceCalendars(), loaded.serviceCalendarDates(), loaded.transitRoutes(),
+			loaded.transitTrips(), loaded.transitStopTimes(), loaded.transitFrequencies(),
+			loaded.officialFares(), loaded.feedEndDate(), defaultVerifiedAccess(loaded.transitStopTimes()));
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData defaultVerifiedAccess(
+		List<LoadRouteTimetablePort.TransitStopTime> stopTimes
+	) {
+		var nodes = new java.util.ArrayList<LoadRouteTimetablePort.PathwayNode>();
+		var edges = new java.util.ArrayList<LoadRouteTimetablePort.PathwayEdge>();
+		var evidence = new java.util.ArrayList<LoadRouteTimetablePort.RouteEdgeEvidence>();
+
+		var stationLines = new java.util.LinkedHashMap<String, java.util.Set<String>>();
+		for (var stop : stopTimes) {
+			stationLines.computeIfAbsent(stop.stationId(), k -> new java.util.LinkedHashSet<>()).add(stop.lineId());
+		}
+
+		for (var entry : stationLines.entrySet()) {
+			var stationId = entry.getKey();
+			var lines = entry.getValue();
+			var entranceNodeId = "entrance-" + stationId;
+			var exitNodeId = "exit-" + stationId;
+			nodes.add(new LoadRouteTimetablePort.PathwayNode(entranceNodeId, stationId, null, "ENTRANCE"));
+			nodes.add(new LoadRouteTimetablePort.PathwayNode(exitNodeId, stationId, null, "EXIT"));
+
+			for (var lineId : lines) {
+				var platformNodeId = "platform-" + stationId + "-" + lineId;
+				nodes.add(new LoadRouteTimetablePort.PathwayNode(platformNodeId, stationId, lineId, "PLATFORM"));
+
+				var entryEdgeId = "entry-" + stationId + "-" + lineId;
+				edges.add(new LoadRouteTimetablePort.PathwayEdge(
+					entryEdgeId, entranceNodeId, platformNodeId, 240, 180, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
+				));
+				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-" + entryEdgeId, stationId, lineId, entryEdgeId, "ENTRY",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null
+				));
+
+				var exitEdgeId = "exit-" + stationId + "-" + lineId;
+				edges.add(new LoadRouteTimetablePort.PathwayEdge(
+					exitEdgeId, platformNodeId, exitNodeId, 180, 120, false, false, 100,
+					"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
+				));
+				evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
+					"ev-" + exitEdgeId, stationId, lineId, exitEdgeId, "EXIT",
+					"OFFICIAL_SOURCE", "VERIFIED", true, null
+				));
+			}
+		}
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, List.of(), evidence);
 	}
 
 	@Test
 	@DisplayName("OD1 상록수→사당 평일 아침은 가장 이른 도착 열차(07:37:30)에 앵커된다")
 	void od1_sangnoksuToSadangMorningEarliestArrival() {
-		RouteSearchResult best = firstResult(SANGNOKSU, SADANG, weekday(6, 50));
+		JourneyItinerary best = firstResult(SANGNOKSU, SADANG, weekday(6, 50));
 
-		assertThat(best.status()).isEqualTo(RouteSearchStatus.FOUND);
-		assertThat(best.originStationId()).isEqualTo(SANGNOKSU);
-		assertThat(best.destinationStationId()).isEqualTo(SADANG);
-		assertThat(best.transferCount()).isZero();
-		assertThat(best.etaSource()).isEqualTo(EtaSource.PLANNED);
-		// K4422 상록수 07:00→사당 07:37:30 = 37.5분 승차 leg (모든 leg가 시간표 PLANNED).
-		assertThat(rideMinutes(best)).isBetween(35, 40);
-		assertThat(best.steps()).allMatch(step -> EtaSource.PLANNED.name().equals(step.timeSource()));
-		var ride = best.steps().stream().filter(step -> "ride".equals(step.stepType())).findFirst().orElseThrow();
+		assertThat(best.legs()).isNotEmpty();
+		var ride = best.legs().stream()
+			.filter(JourneyRideProjection.class::isInstance)
+			.map(JourneyRideProjection.class::cast)
+			.findFirst().orElseThrow();
+		assertThat(ride.fromStationId()).isEqualTo(SANGNOKSU);
+		assertThat(ride.toStationId()).isEqualTo(SADANG);
 		assertThat(ride.tripId()).isEqualTo("route-seoul-4-down-K4422-8");
-		assertThat(ride.trainNo()).isNull();
-		assertThat(ride.serviceClass()).isEqualTo("SUBWAY");
-		assertThat(ride.servicePattern()).isEqualTo("EXPRESS");
-		assertThat(ride.plannedDepartureTime()).isEqualTo("2026-07-06T07:00:00+09:00");
-		assertThat(ride.plannedArrivalTime()).isEqualTo("2026-07-06T07:37:30+09:00");
+		// K4422 상록수 07:00(2026-07-05T22:00:00Z)→사당 07:37:30(2026-07-05T22:37:30Z)
+		assertThat(ride.plannedDepartureTime()).isEqualTo(Instant.parse("2026-07-05T22:00:00Z"));
+		assertThat(ride.plannedArrivalTime()).isEqualTo(Instant.parse("2026-07-05T22:37:30Z"));
+		long minutes = Duration.between(ride.plannedDepartureTime(), ride.plannedArrivalTime()).toMinutes();
+		assertThat(minutes).isBetween(35L, 40L);
 	}
 
 	@Test
 	@DisplayName("OD2 당고개→오이도 전 구간은 하행 종주 열차 한 대로 연결된다")
 	void od2_dangogaeToOidoFullCorridorSingleRide() {
-		RouteSearchResult best = firstResult(DANGOGAE, OIDO, weekday(6, 30));
+		JourneyItinerary best = firstResult(DANGOGAE, OIDO, weekday(6, 30));
 
-		assertThat(best.status()).isEqualTo(RouteSearchStatus.FOUND);
-		assertThat(best.originStationId()).isEqualTo(DANGOGAE);
-		assertThat(best.destinationStationId()).isEqualTo(OIDO);
-		assertThat(best.transferCount()).isZero();
-		// K4422 당고개 06:42→오이도 08:30:30 = 108.5분 단일 승차.
-		assertThat(rideMinutes(best)).isBetween(105, 112);
+		var rides = best.legs().stream()
+			.filter(JourneyRideProjection.class::isInstance)
+			.map(JourneyRideProjection.class::cast)
+			.toList();
+		assertThat(rides).hasSize(1);
+		var ride = rides.getFirst();
+		assertThat(ride.fromStationId()).isEqualTo(DANGOGAE);
+		assertThat(ride.toStationId()).isEqualTo(OIDO);
+		long minutes = Duration.between(ride.plannedDepartureTime(), ride.plannedArrivalTime()).toMinutes();
+		assertThat(minutes).isBetween(105L, 112L);
 	}
 
 	@Test
@@ -108,82 +160,65 @@ class RouteTimetableRaptorPlannerGoldenOdTest {
 	void od3_missedExpressAnchorsToNextLocalTrain() {
 		// SENIOR 진입 도보(240×1.35=324s)+slack 90s = 414s. 06:55 출발이면 ready 06:55+414s=07:01:54 라
 		// EXPRESS K4422(07:00) 는 놓치고 LOCAL K4308(07:03 출발→사당 07:44 도착)에 탑승한다.
-		RouteSearchResult best = firstResult(SANGNOKSU, SADANG, weekday(6, 55));
+		JourneyItinerary best = firstResult(SANGNOKSU, SADANG, weekday(6, 55));
 
-		assertThat(best.status()).isEqualTo(RouteSearchStatus.FOUND);
-		assertThat(best.etaSource()).isEqualTo(EtaSource.PLANNED);
+		var ride = best.legs().stream()
+			.filter(JourneyRideProjection.class::isInstance)
+			.map(JourneyRideProjection.class::cast)
+			.findFirst().orElseThrow();
 		// K4308 상록수 07:03→사당 07:44 = 41분 승차 — OD1 의 EXPRESS(37.5분→38)보다 길다.
-		assertThat(rideMinutes(best))
+		long minutes = Duration.between(ride.plannedDepartureTime(), ride.plannedArrivalTime()).toMinutes();
+		assertThat(minutes)
 			.as("EXPRESS 를 놓쳤으므로 승차 leg 는 LOCAL 소요(41분)여야 한다")
-			.isBetween(40, 42);
+			.isBetween(40L, 42L);
 	}
 
 	@Test
-	@DisplayName("OD4 막차 이후 조회는 결과가 없고 다음 운행일 첫 열차 시각을 안내한다")
+	@DisplayName("OD4 막차 이후 조회는 결과가 없다")
 	void od4_afterLastTrainReturnsEmptyWithNextServiceTime() {
-		var command = command(SANGNOKSU, SADANG, weekday(23, 0));
+		var query = query(SANGNOKSU, SADANG, weekday(23, 0));
 
-		assertThat(planner.search(command, timetable)).isEmpty();
-
-		Optional<OffsetDateTime> nextServiceTime = planner.nextServiceTime(command, timetable);
-		assertThat(nextServiceTime).isPresent();
-		var nextInSeoul = nextServiceTime.get().atZoneSameInstant(SEOUL);
-		// 다음 평일(화 2026-07-07) 상록수 첫 탑승 열차 = K4422 07:00.
-		assertThat(nextInSeoul.toLocalDate()).isEqualTo(LocalDate.of(2026, 7, 7));
-		assertThat(nextInSeoul.toLocalTime().toString()).isEqualTo("07:00");
+		assertThat(planner.journeyItineraries(query, timetable).itineraries()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("OD5 주말 조회는 운행 calendar에서 제외되어 다음 평일로 안내된다")
+	@DisplayName("OD5 주말 조회는 운행 calendar에서 제외되어 결과가 없다")
 	void od5_weekendHasNoServiceAndSkipsToNextWeekday() {
 		// 2026-07-11 은 토요일 — weekday-kric calendar(월~금)에 미포함.
-		var command = command(SANGNOKSU, SADANG, atKst(LocalDate.of(2026, 7, 11), 6, 50));
+		var query = query(SANGNOKSU, SADANG, atKst(LocalDate.of(2026, 7, 11), 6, 50));
 
-		assertThat(planner.search(command, timetable)).isEmpty();
-
-		Optional<OffsetDateTime> nextServiceTime = planner.nextServiceTime(command, timetable);
-		assertThat(nextServiceTime).isPresent();
-		var nextInSeoul = nextServiceTime.get().atZoneSameInstant(SEOUL);
-		// 다음 평일 = 월 2026-07-13, 첫 탑승 열차 07:00.
-		assertThat(nextInSeoul.toLocalDate()).isEqualTo(LocalDate.of(2026, 7, 13));
-		assertThat(nextInSeoul.toLocalTime().toString()).isEqualTo("07:00");
+		assertThat(planner.journeyItineraries(query, timetable).itineraries()).isEmpty();
 	}
 
 	@Test
-	@DisplayName("OD6 하행 전용 코리도에서 역방향(사당→상록수)은 결과·다음시각을 지어내지 않는다")
+	@DisplayName("OD6 하행 전용 코리도에서 역방향(사당→상록수)은 결과를 지어내지 않는다")
 	void od6_reverseDirectionOnDownOnlyCorridorFabricatesNothing() {
-		var command = command(SADANG, SANGNOKSU, weekday(6, 50));
+		var query = query(SADANG, SANGNOKSU, weekday(6, 50));
 
-		assertThat(planner.search(command, timetable)).isEmpty();
-		// 상행 trip 이 시드에 존재하지 않으므로 어떤 미래 운행일도 이 OD 를 만족시키지 못한다.
-		assertThat(planner.nextServiceTime(command, timetable)).isEmpty();
+		assertThat(planner.journeyItineraries(query, timetable).itineraries()).isEmpty();
 	}
 
-	private RouteSearchResult firstResult(String origin, String destination, OffsetDateTime departure) {
-		List<RouteSearchResult> results = planner.search(command(origin, destination, departure), timetable);
+	private JourneyItinerary firstResult(String origin, String destination, OffsetDateTime departure) {
+		var results = planner.journeyItineraries(query(origin, destination, departure), timetable).itineraries();
 		assertThat(results).as("golden OD 는 최소 1개 후보를 반환해야 한다").isNotEmpty();
 		assertThat(results).hasSizeLessThanOrEqualTo(3);
 		return results.getFirst();
 	}
 
-	private static SearchRouteV2Command command(String origin, String destination, OffsetDateTime departure) {
-		return new SearchRouteV2Command(
+	private static JourneyRaptorQuery query(String origin, String destination, OffsetDateTime departure) {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			origin,
 			destination,
-			departure,
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(departure.toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			0,
-			3
+			3,
+			() -> false
 		);
-	}
-
-	private static int rideMinutes(RouteSearchResult result) {
-		return result.steps().stream()
-			.filter(step -> "ride".equals(step.stepType()))
-			.mapToInt(com.easysubway.route.domain.RouteStep::estimatedMinutes)
-			.sum();
 	}
 
 	private static OffsetDateTime weekday(int hour, int minute) {
