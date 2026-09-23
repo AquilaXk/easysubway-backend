@@ -286,14 +286,20 @@ class JourneySearchControllerTest {
 			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
 				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"\","),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
-				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":null,")
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":null,"),
+			"[]",
+			"\"just-string\"",
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":123,"),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"station-via\",\n\"extraField\":true,")
 		)) {
 			assertError(post("/api/v3/journeys/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body), 400, "INVALID_JOURNEY_REQUEST", false);
 		}
-		verify(sessionService, times(18)).authorize("session-token", 2);
+		verify(sessionService, times(22)).authorize("session-token", 2);
 		verifyNoInteractions(deadlineExecutor);
 	}
 

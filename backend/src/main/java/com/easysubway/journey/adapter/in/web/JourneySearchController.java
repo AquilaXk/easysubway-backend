@@ -118,7 +118,8 @@ final class JourneySearchController {
 	private static JourneyRequest decodeRequest(byte[] requestBytes) {
 		try {
 			JsonNode request = REQUEST_JSON.readTree(requestBytes);
-			if (!isValidFields(request)
+			Set<String> expectedFields = request.has("viaStationId") ? ALLOWED_FIELDS : REQUIRED_FIELDS;
+			if (!hasExactFields(request, expectedFields)
 				|| !request.path("requestId").isTextual()
 				|| !request.path("originStationId").isTextual()
 				|| !request.path("destinationStationId").isTextual()
@@ -184,13 +185,6 @@ final class JourneySearchController {
 			}
 			default -> throw invalidRequest();
 		};
-	}
-
-	private static boolean isValidFields(JsonNode value) {
-		if (value == null || !value.isObject()) return false;
-		var actual = new java.util.HashSet<String>();
-		value.fieldNames().forEachRemaining(actual::add);
-		return actual.containsAll(REQUIRED_FIELDS) && ALLOWED_FIELDS.containsAll(actual);
 	}
 
 	private static boolean hasExactFields(JsonNode value, Set<String> expected) {

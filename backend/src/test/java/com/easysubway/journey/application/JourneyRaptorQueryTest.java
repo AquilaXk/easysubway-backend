@@ -52,6 +52,37 @@ class JourneyRaptorQueryTest {
 			JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("NO_STAIRS");
+		assertThatThrownBy(() -> new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", "   ", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("viaStationId must not be blank");
+		assertThatThrownBy(() -> new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", "station-a", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("viaStationId cannot be originStationId or destinationStationId");
+		assertThatThrownBy(() -> new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", "station-b", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("viaStationId cannot be originStationId or destinationStationId");
+
+		var withVia = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", "station-via", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+		assertThat(withVia.viaStationId()).isEqualTo("station-via");
+
+		JourneyRaptorQuery fromWithVia = JourneyRaptorQuery.from(new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-via", new JourneyRequest.Departure.Now(),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false
+		), CAPTURED);
+		assertThat(fromWithVia.viaStationId()).isEqualTo("station-via");
 	}
 
 	@Test
