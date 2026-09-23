@@ -152,6 +152,7 @@ public final class JourneyApplicationDeadlineExecutor {
 			request.requestId(),
 			request.originStationId(),
 			request.destinationStationId(),
+			request.viaStationId(),
 			request.departure(),
 			request.timePolicy(),
 			request.walkingPace(),

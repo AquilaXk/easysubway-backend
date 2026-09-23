@@ -265,42 +265,87 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		int station = timetable.stationIndex(via);
 		int fromLine = timetable.lineIndex(lastRide1.lineId());
 		int toLine = timetable.lineIndex(firstRide2.lineId());
-
-		int duration = 180;
-		int distance = 0;
-		boolean includesStairs = false;
-		boolean verified = true;
-		String status = "VERIFIED";
-
-		if (fromLine != toLine) {
-			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
-			int transition = -1;
-			if (station >= 0 && fromLine >= 0 && toLine >= 0) {
-				transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false);
-				if (transition < 0) {
-					transition = timetable.transferTransition(station, fromLine, toLine, 0, true);
-				}
-			}
-			if (transition >= 0) {
-				if (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
-					&& timetable.transitionIncludesStairs(transition)) {
-					return null;
-				}
-				duration = timetable.transitionDurationSeconds(transition);
-				distance = timetable.transitionDistanceMeters(transition);
-				includesStairs = timetable.transitionIncludesStairs(transition);
-				verified = timetable.transitionVerified(transition);
-				status = timetable.transitionVerificationStatus(transition);
-			} else {
-				distance = 50;
-			}
+		if (station < 0 || fromLine < 0 || toLine < 0) {
+			return null;
 		}
 
 		long availableSlack = Duration.between(lastRide1.plannedArrivalTime(), firstRide2.plannedDepartureTime()).getSeconds();
 		if (availableSlack < 0) {
 			return null;
 		}
-		duration = (int) Math.min(duration, availableSlack);
+
+		int duration = 0;
+		int distance = 0;
+		boolean includesStairs = false;
+		boolean verified = true;
+		String status = "VERIFIED";
+		String transferType = null;
+		Boolean farePenaltyApplies = null;
+		Integer additionalFareWon = null;
+		Integer transferLimitMinutes = null;
+
+		if (fromLine != toLine) {
+			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
+			int inTransition = timetable.transferTransition(station, fromLine, toLine, profileBit, false);
+			if (inTransition < 0 && request.constraintMode() != JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
+				inTransition = timetable.transferTransition(station, fromLine, toLine, 0, false);
+			}
+
+			int transition = -1;
+			if (inTransition >= 0 && timetable.transitionVerified(inTransition)) {
+				transition = inTransition;
+			} else {
+				RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths = timetable.footpathsFromStation(station);
+				if (footpaths != null) {
+					for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
+						if (fp.fromLine() == fromLine && fp.toLine() == toLine) {
+							int t = timetable.selectTransition(fp.candidateTransitions(), profileBit, false, false);
+							if (t < 0 && request.constraintMode() != JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
+								t = timetable.selectTransition(fp.candidateTransitions(), 0, false, false);
+							}
+							if (t >= 0 && timetable.transitionVerified(t)) {
+								transition = t;
+								break;
+							}
+						}
+					}
+				}
+			}
+
+			if (transition < 0) {
+				return null;
+			}
+			if (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+				&& timetable.transitionIncludesStairs(transition)) {
+				return null;
+			}
+
+			duration = timetable.transitionDurationSeconds(transition);
+			distance = timetable.transitionDistanceMeters(transition);
+			includesStairs = timetable.transitionIncludesStairs(transition);
+			verified = timetable.transitionVerified(transition);
+			status = timetable.transitionVerificationStatus(transition);
+
+			if (timetable.isOutOfStationTransition(transition)) {
+				transferType = "OUT_OF_STATION";
+				int alightSeconds = (int) Duration.between(
+					lastRide1.plannedArrivalTime().atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
+					lastRide1.plannedArrivalTime()).getSeconds();
+				int boardSeconds = (int) Duration.between(
+					firstRide2.plannedDepartureTime().atZone(JourneyExecutionResult.SERVICE_ZONE).toLocalDate().atStartOfDay(JourneyExecutionResult.SERVICE_ZONE).toInstant(),
+					firstRide2.plannedDepartureTime()).getSeconds();
+				int elapsed = (int) availableSlack;
+				int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
+				boolean timeout = elapsed > limit;
+				farePenaltyApplies = timeout;
+				additionalFareWon = timeout ? 1400 : 0;
+				transferLimitMinutes = limit / 60;
+			}
+		}
+
+		if (availableSlack < Math.max(duration, 180)) {
+			return null;
+		}
 
 		RouteTimetableRaptorPlanner.JourneyAccessProjection junctionTransfer =
 			new RouteTimetableRaptorPlanner.JourneyAccessProjection(
@@ -312,10 +357,10 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				includesStairs,
 				verified,
 				status,
-				null,
-				false,
-				0,
-				null
+				transferType,
+				farePenaltyApplies,
+				additionalFareWon,
+				transferLimitMinutes
 			);
 
 		List<RouteTimetableRaptorPlanner.JourneyLegProjection> combinedLegs = new ArrayList<>();

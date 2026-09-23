@@ -330,12 +330,113 @@ class JourneyRaptorAdapterTest {
 		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
 		assertThat(transfer.fromStationId()).isEqualTo("station-transfer");
 		assertThat(transfer.toStationId()).isEqualTo("station-transfer");
-		assertThat(transfer.farePenaltyApplies()).isFalse();
-		assertThat(transfer.additionalFareWon()).isZero();
+		assertThat(transfer.durationSeconds()).isEqualTo(120);
+		assertThat(transfer.transferType()).isNull();
+		assertThat(transfer.farePenaltyApplies()).isNull();
+		assertThat(transfer.additionalFareWon()).isNull();
+		assertThat(transfer.transferLimitMinutes()).isNull();
 		assertThat(candidate.legs().get(3)).isEqualTo(new JourneyCandidate.Ride(
 			"line-b", "trip-second", "station-b", "station-transfer", "station-b",
 			Instant.parse("2026-07-01T00:30:00Z"), Instant.parse("2026-07-01T00:40:00Z"), null, null));
 		assertThat(candidate.legs().get(4)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
+	}
+
+	@Test
+	void plansWaypointTransferOnSameLineWithZeroWalkingMovementAndPlatformDwell() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, sameLineWaypointTimetable());
+		var sameLineRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-via", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			sameLineRequest, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+
+		assertThat(candidate.transferCount()).isEqualTo(1);
+		assertThat(candidate.walkingDistanceMeters()).isEqualTo(200); // entry (100) + exit (100), 0 from dwell
+		assertThat(candidate.legs()).hasSize(5);
+		assertThat(candidate.legs().get(0)).isEqualTo(new JourneyCandidate.Entry("station-a", 120));
+		assertThat(candidate.legs().get(1)).isEqualTo(new JourneyCandidate.Ride(
+			"line-a", "trip-first", "station-via", "station-a", "station-via",
+			Instant.parse("2026-07-01T00:00:00Z"), Instant.parse("2026-07-01T00:10:00Z"), null, null));
+		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
+		assertThat(transfer.fromStationId()).isEqualTo("station-via");
+		assertThat(transfer.toStationId()).isEqualTo("station-via");
+		assertThat(transfer.durationSeconds()).isZero();
+		assertThat(transfer.transferType()).isNull();
+		assertThat(transfer.farePenaltyApplies()).isNull();
+		assertThat(candidate.legs().get(3)).isEqualTo(new JourneyCandidate.Ride(
+			"line-a", "trip-second", "station-b", "station-via", "station-b",
+			Instant.parse("2026-07-01T00:20:00Z"), Instant.parse("2026-07-01T00:30:00Z"), null, null));
+		assertThat(candidate.legs().get(4)).isEqualTo(new JourneyCandidate.Exit("station-b", 60));
+	}
+
+	@Test
+	void plansOutOfStationWaypointTransferWithinTimeLimitWithoutPenalty() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			waypointTimetable("OUT_OF_STATION", 120, 34_200, true)); // 1,200s elapsed < 1,800s limit
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+
+		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
+		assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(transfer.farePenaltyApplies()).isFalse();
+		assertThat(transfer.additionalFareWon()).isZero();
+		assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
+	}
+
+	@Test
+	void plansOutOfStationWaypointTransferWithTimeoutPenaltyWhenExceedingLimit() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			waypointTimetable("OUT_OF_STATION", 120, 35_400, true)); // 2,400s elapsed > 1,800s limit
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, null, measurement()).candidates().getFirst();
+
+		var transfer = (JourneyCandidate.Transfer) candidate.legs().get(2);
+		assertThat(transfer.transferType()).isEqualTo("OUT_OF_STATION");
+		assertThat(transfer.farePenaltyApplies()).isTrue();
+		assertThat(transfer.additionalFareWon()).isEqualTo(1400);
+		assertThat(transfer.transferLimitMinutes()).isEqualTo(30);
+	}
+
+	@Test
+	void rejectsWaypointWhenNoTransferTransitionExistsBetweenLines() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			waypointTimetable("IN_STATION", 120, 34_200, false)); // hasTransferRule = false
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void rejectsWaypointWhenTransferDurationExceedsAvailableSlack() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION,
+			waypointTimetable("IN_STATION", 1500, 34_200, true)); // 1,500s walk > 1,200s slack
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(result.candidates()).isEmpty();
 	}
 
 	@Test
@@ -940,6 +1041,10 @@ class JourneyRaptorAdapterTest {
 	}
 
 	private static RouteTimetable waypointTimetable() {
+		return waypointTimetable("IN_STATION", 120, 34_200, true);
+	}
+
+	private static RouteTimetable waypointTimetable(String transferType, int transferDuration, int tripSecondDeparture, boolean hasTransferRule) {
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
@@ -958,14 +1063,14 @@ class JourneyRaptorAdapterTest {
 			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
 			new TransitStopTime("trip-second-fast", 1, "station-transfer", "line-b", 33_120, 33_120, 0, 0),
 			new TransitStopTime("trip-second-fast", 2, "station-b", "line-b", 33_720, 33_720, 0, 0),
-			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
-			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
+			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", tripSecondDeparture, tripSecondDeparture, 0, 0),
+			new TransitStopTime("trip-second", 2, "station-b", "line-b", tripSecondDeparture + 600, tripSecondDeparture + 600, 0, 0));
 		var edges = List.of(
 			new PathwayEdge(
 				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
 			new PathwayEdge(
-				"transfer", "platform-transfer-a", "platform-transfer-b", 120, 100, false, false, 100,
+				"transfer", "platform-transfer-a", "platform-transfer-b", transferDuration, 100, false, false, 100,
 				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
 			new PathwayEdge(
 				"exit", "platform-b", "outside", 60, 100, false, false, 100,
@@ -987,9 +1092,9 @@ class JourneyRaptorAdapterTest {
 				new PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
 				new PathwayNode("outside", "station-b", null, "EXIT")),
 			edges,
-			List.of(new TransferRule(
-				"transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b", "IN_STATION",
-				120, "transfer", "transfer", "VERIFIED")),
+			hasTransferRule ? List.of(new TransferRule(
+				"transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b", transferType,
+				transferDuration, "transfer", "transfer", "VERIFIED")) : List.of(),
 			List.of(
 				new RouteEdgeEvidence(
 					"entry-evidence", "station-a", "line-a", "entry", "ENTRY",
@@ -1006,6 +1111,55 @@ class JourneyRaptorAdapterTest {
 				new RouteEdgeEvidence(
 					"exit-transfer-evidence", "station-transfer", "line-a", "exit-transfer", "EXIT",
 					"OFFICIAL_SOURCE", "VERIFIED", true, null)));
+		return new RouteTimetable(
+			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
+	}
+
+	private static RouteTimetable sameLineWaypointTimetable() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-line", "line-a", "A", "LineA", "station-b", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip(
+				"trip-first", "route-line", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2001", 0),
+			new TransitTrip(
+				"trip-second", "route-line", "daily", "station-b", "down", "SUBWAY", "LOCAL", "2002", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-first", 2, "station-via", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second", 1, "station-via", "line-a", 33_600, 33_600, 0, 0),
+			new TransitStopTime("trip-second", 2, "station-b", "line-a", 34_200, 34_200, 0, 0));
+		var edges = List.of(
+			new PathwayEdge(
+				"entry", "entrance", "platform-a", 120, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge(
+				"exit", "platform-b", "outside", 60, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge(
+				"entry-via", "entrance-via", "platform-via", 120, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge(
+				"exit-via", "platform-via", "outside-via", 60, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var access = new LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new PathwayNode("platform-a", "station-a", "line-a", "PLATFORM"),
+				new PathwayNode("entrance-via", "station-via", null, "ENTRANCE"),
+				new PathwayNode("platform-via", "station-via", "line-a", "PLATFORM"),
+				new PathwayNode("outside-via", "station-via", null, "EXIT"),
+				new PathwayNode("platform-b", "station-b", "line-a", "PLATFORM"),
+				new PathwayNode("outside", "station-b", null, "EXIT")),
+			edges,
+			List.of(),
+			List.of(
+				new RouteEdgeEvidence("entry-evidence", "station-a", "line-a", "entry", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new RouteEdgeEvidence("exit-evidence", "station-b", "line-a", "exit", "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new RouteEdgeEvidence("entry-via-evidence", "station-via", "line-a", "entry-via", "ENTRY", "OFFICIAL_SOURCE", "VERIFIED", true, null),
+				new RouteEdgeEvidence("exit-via-evidence", "station-via", "line-a", "exit-via", "EXIT", "OFFICIAL_SOURCE", "VERIFIED", true, null)));
 		return new RouteTimetable(
 			List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, access);
 	}
