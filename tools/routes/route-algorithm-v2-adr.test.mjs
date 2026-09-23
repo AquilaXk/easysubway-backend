@@ -18,9 +18,9 @@ test("route algorithm ADR identifies only the active point capability", () => {
   assert.doesNotMatch(JSON.stringify(adr.pointQuery), /range raptor/i);
 });
 
-test("route algorithm ADR keeps temporal profile capability inactive until PR 312", () => {
+test("route algorithm ADR activates temporal profile capability after PR 312", () => {
   assert.deepEqual(adr.profileQuery, {
-    status: "inactive",
+    status: "active",
     activationRequirement: "Backend PR #312 is terminal",
     supportedModes: ["DEPART_BETWEEN", "ARRIVE_BY", "LAST_CONNECTION"],
   });
