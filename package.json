@@ -1,0 +1,13 @@
+{
+  "name": "@easysubway/backend",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "test": "node --test tools/ci/*.test.mjs backend/tools/*.test.mjs",
+    "test:ci": "node --test tools/ci/*.test.mjs",
+    "test:tools": "node --test backend/tools/*.test.mjs",
+    "check:fragment": "node tools/ci/check-documentation-fragment-sync.mjs --base origin/main",
+    "refresh:fragment": "node tools/repo/refresh-documentation-fragment.mjs --worktree"
+  }
+}
