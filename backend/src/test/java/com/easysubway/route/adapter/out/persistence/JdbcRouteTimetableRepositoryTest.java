@@ -277,7 +277,7 @@ class JdbcRouteTimetableRepositoryTest {
 		var initialSnapshot = repository.loadStationTimetableSnapshot();
 		String cacheKey = initialSnapshot.cacheKey();
 
-		repository.stationTimetableCache = null;
+		repository.stationTimetableCache.set(null);
 
 		var threadStarted = new java.util.concurrent.CountDownLatch(1);
 		var snapshotResult = new java.util.concurrent.atomic.AtomicReference<com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetableSnapshot>();
@@ -291,8 +291,10 @@ class JdbcRouteTimetableRepositoryTest {
 			thread.start();
 
 			threadStarted.await();
-			Thread.sleep(50);
-			repository.stationTimetableCache = new JdbcRouteTimetableRepository.StationTimetableCache(cacheKey, initialSnapshot);
+			while (thread.isAlive() && thread.getState() != Thread.State.BLOCKED && thread.getState() != Thread.State.WAITING) {
+				Thread.onSpinWait();
+			}
+			repository.stationTimetableCache.set(new JdbcRouteTimetableRepository.StationTimetableCache(cacheKey, initialSnapshot));
 		}
 
 		thread.join();
