@@ -596,6 +596,10 @@ components:
         destinationStationId:
           type: string
           minLength: 1
+        viaStationId:
+          type: string
+          minLength: 1
+          description: "선택적 경유 역사 식별자. originStationId 및 destinationStationId와 중복 불가."
         departure:
           $ref: "#/components/schemas/JourneyDeparture"
         timePolicy:

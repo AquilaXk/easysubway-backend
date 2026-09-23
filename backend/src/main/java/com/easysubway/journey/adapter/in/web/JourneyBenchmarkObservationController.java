@@ -48,8 +48,11 @@ public final class JourneyBenchmarkObservationController {
 		.enable(StreamReadFeature.STRICT_DUPLICATE_DETECTION).build())
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private static final BooleanSupplier NOT_CANCELLED = () -> false;
-	private static final Set<String> REQUEST_FIELDS = Set.of(
+	private static final Set<String> REQUIRED_FIELDS = Set.of(
 		"requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
+		WALKING_PACE, MOBILITY_PROFILE, "constraintMode", MAX_TRANSFERS, ALTERNATIVE_COUNT);
+	private static final Set<String> ALLOWED_FIELDS = Set.of(
+		"requestId", "originStationId", "destinationStationId", "viaStationId", "departure", "timePolicy",
 		WALKING_PACE, MOBILITY_PROFILE, "constraintMode", MAX_TRANSFERS, ALTERNATIVE_COUNT);
 
 	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
@@ -132,7 +135,7 @@ public final class JourneyBenchmarkObservationController {
 	private static JourneyRequest decode(byte[] requestBytes) {
 		try {
 			JsonNode request = JSON.readTree(requestBytes);
-			if (!hasExactFields(request, REQUEST_FIELDS)
+			if (!isValidFields(request)
 				|| !request.path("requestId").isTextual()
 				|| !request.path("originStationId").isTextual()
 				|| !request.path("destinationStationId").isTextual()
@@ -142,8 +145,21 @@ public final class JourneyBenchmarkObservationController {
 				|| !request.path("constraintMode").isTextual()
 				|| !request.path(MAX_TRANSFERS).isInt()
 				|| !request.path(ALTERNATIVE_COUNT).isInt()) throw new InvalidRequest();
-			return new JourneyRequest(request.path("requestId").textValue(), request.path("originStationId").textValue(),
-				request.path("destinationStationId").textValue(), decodeDeparture(request.path("departure")),
+			String origin = request.path("originStationId").textValue();
+			String destination = request.path("destinationStationId").textValue();
+			String viaStationId = null;
+			if (request.has("viaStationId")) {
+				JsonNode viaNode = request.path("viaStationId");
+				if (!viaNode.isTextual() || viaNode.textValue().isBlank()) {
+					throw new InvalidRequest();
+				}
+				viaStationId = viaNode.textValue();
+				if (viaStationId.equals(origin) || viaStationId.equals(destination)) {
+					throw new InvalidRequest();
+				}
+			}
+			return new JourneyRequest(request.path("requestId").textValue(), origin,
+				destination, viaStationId, decodeDeparture(request.path("departure")),
 				JourneyRequest.TimePolicy.valueOf(request.path("timePolicy").textValue()),
 				JourneyRequest.WalkingPace.valueOf(request.path(WALKING_PACE).textValue()),
 				JourneyRequest.MobilityProfile.valueOf(request.path(MOBILITY_PROFILE).textValue()),
@@ -169,6 +185,13 @@ public final class JourneyBenchmarkObservationController {
 			}
 			default -> throw new InvalidRequest();
 		};
+	}
+
+	private static boolean isValidFields(JsonNode value) {
+		if (value == null || !value.isObject()) return false;
+		var actual = new HashSet<String>();
+		value.fieldNames().forEachRemaining(actual::add);
+		return actual.containsAll(REQUIRED_FIELDS) && ALLOWED_FIELDS.containsAll(actual);
 	}
 
 	private static boolean hasExactFields(JsonNode value, Set<String> expected) {
