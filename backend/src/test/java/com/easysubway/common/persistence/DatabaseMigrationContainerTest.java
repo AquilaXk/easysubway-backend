@@ -113,9 +113,9 @@ class DatabaseMigrationContainerTest {
 				"facility_evidence",
 				"manual_overrides",
 				"route_edge_evidence",
-				"route_v2_nonce_replays",
-				"route_v2_sessions",
-				"route_v2_states",
+				"zz_deprecated_route_v2_nonce_replays",
+				"zz_deprecated_route_v2_sessions",
+				"zz_deprecated_route_v2_states",
 				"transit_master_overrides",
 				"transit_master_override_audits",
 				"transit_master_override_locks",
@@ -127,7 +127,7 @@ class DatabaseMigrationContainerTest {
 				"train_search_cache",
 				"train_provider_call_quota_state"
 			);
-		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70");
+		assertThat(successfulMigrationVersions(jdbcTemplate)).contains("1", "14", "16", "17", "18", "19", "20", "21", "22", "23", "25", "26", "48", "51", "52", "53", "54", "55", "56", "57", "59", "60", "61", "65", "70", "75");
 		assertThat(jdbcTemplate.queryForObject("""
 			SELECT COUNT(*)
 			FROM pg_index i
@@ -657,11 +657,11 @@ class DatabaseMigrationContainerTest {
 	}
 
 	private void assertRouteV2AllowlistSchema(JdbcTemplate jdbcTemplate) {
-		assertThat(columns(jdbcTemplate, "route_v2_sessions"))
+		assertThat(columns(jdbcTemplate, "zz_deprecated_route_v2_sessions"))
 			.containsExactly("expires_at", "issued_at", "request_count", "scope", "token_sha256");
-		assertThat(columns(jdbcTemplate, "route_v2_nonce_replays"))
+		assertThat(columns(jdbcTemplate, "zz_deprecated_route_v2_nonce_replays"))
 			.containsExactly("expires_at", "nonce_sha256");
-		assertThat(columns(jdbcTemplate, "route_v2_states")).containsExactly(
+		assertThat(columns(jdbcTemplate, "zz_deprecated_route_v2_states")).containsExactly(
 			"created_at",
 			"destination_station_id",
 			"expires_at",
@@ -674,11 +674,11 @@ class DatabaseMigrationContainerTest {
 			"transport_scope"
 		);
 		assertThatThrownBy(() -> jdbcTemplate.update("""
-			INSERT INTO route_v2_sessions (token_sha256, scope, issued_at, expires_at, request_count)
+			INSERT INTO zz_deprecated_route_v2_sessions (token_sha256, scope, issued_at, expires_at, request_count)
 			VALUES (?, 'route:v2:itx', CURRENT_TIMESTAMP, CURRENT_TIMESTAMP + INTERVAL '10 minutes', 51)
 			""", "a".repeat(64))).isInstanceOf(DataAccessException.class);
 		assertThatThrownBy(() -> jdbcTemplate.update("""
-			INSERT INTO route_v2_states (
+			INSERT INTO zz_deprecated_route_v2_states (
 				route_state_id, origin_station_id, destination_station_id, transport_scope,
 				requested_departure_at, itinerary_json, timetable_artifact_id,
 				created_at, planned_arrival_at, expires_at
@@ -686,8 +686,8 @@ class DatabaseMigrationContainerTest {
 				CURRENT_TIMESTAMP, '{}', 'artifact', CURRENT_TIMESTAMP,
 				CURRENT_TIMESTAMP + INTERVAL '10 minutes', CURRENT_TIMESTAMP + INTERVAL '1 hour')
 			""", "invalid-expiry")).isInstanceOf(DataAccessException.class);
-		assertThat(indexNames(jdbcTemplate, "route_v2_sessions")).contains("idx_route_v2_sessions_expires_at");
-		assertThat(indexNames(jdbcTemplate, "route_v2_nonce_replays")).contains("idx_route_v2_nonce_replays_expires_at");
+		assertThat(indexNames(jdbcTemplate, "zz_deprecated_route_v2_sessions")).contains("idx_route_v2_sessions_expires_at");
+		assertThat(indexNames(jdbcTemplate, "zz_deprecated_route_v2_nonce_replays")).contains("idx_route_v2_nonce_replays_expires_at");
 	}
 
 	private List<String> indexNames(JdbcTemplate jdbcTemplate, String tableName) {
