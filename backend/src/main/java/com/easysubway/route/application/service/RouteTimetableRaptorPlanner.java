@@ -679,6 +679,8 @@ class RouteTimetableRaptorPlanner {
 						continue;
 					}
 					workspace.expandedTransfers += 1;
+					boolean footpathDominated = true;
+					int minDepartureForFootpath = Integer.MAX_VALUE;
 					for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
 						int readySlot = workspace.slot(round, footpath.fromStation(), footpath.fromLine(), warningState);
 						int readySeconds = workspace.arrivalSeconds[readySlot];
@@ -690,6 +692,9 @@ class RouteTimetableRaptorPlanner {
 								timetable.transitionDurationSeconds(accessTransition),
 								timetable.transitionDistanceMeters(accessTransition))
 							+ slackSeconds;
+						if (earliestDepartureSeconds < minDepartureForFootpath) {
+							minDepartureForFootpath = earliestDepartureSeconds;
+						}
 						if (earliestDepartureSeconds > boardingDeadlineSeconds) {
 							continue;
 						}
@@ -698,6 +703,7 @@ class RouteTimetableRaptorPlanner {
 						if (workspace.isDominatedByTarget(station, earliestDepartureSeconds, Byte.toUnsignedInt(warningBits))) {
 							continue;
 						}
+						footpathDominated = false;
 						if (best == null || compareReadyBoardingKeys(
 							earliestDepartureSeconds, warningBits, readySlot,
 							best.earliestDepartureSeconds(), best.warningBits(), best.readySlot(),
@@ -705,6 +711,10 @@ class RouteTimetableRaptorPlanner {
 						) < 0) {
 							best = new ReadyBoarding(readySlot, accessTransition, earliestDepartureSeconds, warningBits);
 						}
+					}
+					if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
+						&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
+						break;
 					}
 				}
 			}
@@ -1715,6 +1725,12 @@ class RouteTimetableRaptorPlanner {
 			footpathsByToStationLine = new OutOfStationFootpath[numStations * numLines][];
 			for (int i = 0; i < numStations * numLines; i += 1) {
 				List<OutOfStationFootpath> list = toList.get(i);
+				if (!list.isEmpty()) {
+					list.sort(Comparator.comparingInt((OutOfStationFootpath fp) ->
+						accessTransitions.durationSeconds(fp.candidateTransitions()[0]))
+						.thenComparingInt(OutOfStationFootpath::fromStation)
+						.thenComparingInt(OutOfStationFootpath::fromLine));
+				}
 				footpathsByToStationLine[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
 			}
 		}
@@ -2679,6 +2695,20 @@ class RouteTimetableRaptorPlanner {
 				}
 			}
 			return false;
+		}
+
+		boolean isTargetDominatingDeparture(int station, int earliestDepartureSeconds) {
+			boolean anyTargetReached = false;
+			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
+				int best = bestTargetArrivalSeconds[warningState];
+				if (best != UNREACHED) {
+					anyTargetReached = true;
+					if (station == targetStation ? earliestDepartureSeconds <= best : earliestDepartureSeconds < best) {
+						return false;
+					}
+				}
+			}
+			return anyTargetReached;
 		}
 
 		void markNext(int station) {

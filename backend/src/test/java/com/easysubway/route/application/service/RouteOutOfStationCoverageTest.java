@@ -294,4 +294,37 @@ class RouteOutOfStationCoverageTest {
 		int sel = compiled.selectTransition(cands, 0, false, false);
 		assertThat(sel).isGreaterThanOrEqualTo(0);
 	}
+
+	@Test
+	@DisplayName("ScanWorkspace isTargetDominatingDeparture 조기 가지치기 분기 검증")
+	void scanWorkspaceTargetDominatingDeparture() {
+		var workspace = new ScanWorkspace();
+		workspace.prepare(5, 5, 5);
+		int target = 3;
+		workspace.setTargetStation(target);
+
+		// 1. 타겟 도달 전 (UNREACHED): 어떤 departure도 지배하지 못함
+		assertThat(workspace.isTargetDominatingDeparture(2, 5000)).isFalse();
+
+		// 2. 타겟 도달 시각 5000초 설정 (warningState 0)
+		workspace.bestTargetArrivalSeconds[0] = 5000;
+
+		// station != targetStation: earliestDepartureSeconds >= best 이면 지배 (조기 종료 가능)
+		assertThat(workspace.isTargetDominatingDeparture(2, 5000)).isTrue();
+		assertThat(workspace.isTargetDominatingDeparture(2, 5001)).isTrue();
+		assertThat(workspace.isTargetDominatingDeparture(2, 4999)).isFalse();
+
+		// station == targetStation: earliestDepartureSeconds > best 일 때만 지배
+		assertThat(workspace.isTargetDominatingDeparture(target, 5001)).isTrue();
+		assertThat(workspace.isTargetDominatingDeparture(target, 5000)).isFalse();
+		assertThat(workspace.isTargetDominatingDeparture(target, 4999)).isFalse();
+
+		// 다중 warningState 활성화: 모든 reached target에 대해 earliestDepartureSeconds >= best 만족해야 함
+		workspace.bestTargetArrivalSeconds[1] = 4000;
+		// 4500초: warningState 1 (4000초)에는 >= 이지만, 4500 < 5000 (warningState 0)이므로 false
+		assertThat(workspace.isTargetDominatingDeparture(2, 4500)).isFalse();
+		// 5000초: warningState 0 (5000초) >= 5000 && warningState 1 (4000초) >= 5000 -> true!
+		assertThat(workspace.isTargetDominatingDeparture(2, 5000)).isTrue();
+	}
 }
+
