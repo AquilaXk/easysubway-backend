@@ -1,0 +1,3 @@
+ALTER TABLE route_v2_sessions RENAME TO zz_deprecated_route_v2_sessions;
+ALTER TABLE route_v2_nonce_replays RENAME TO zz_deprecated_route_v2_nonce_replays;
+ALTER TABLE route_v2_states RENAME TO zz_deprecated_route_v2_states;

@@ -10,6 +10,7 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicReference;
 import javax.sql.DataSource;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,7 +30,8 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
-	private volatile StationTimetableCache stationTimetableCache;
+	final Object stationTimetableLock = new Object();
+	final AtomicReference<StationTimetableCache> stationTimetableCache = new AtomicReference<>();
 	@Autowired
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource), Clock.systemUTC());
@@ -94,17 +96,21 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	}
 
 	@Override
-	public synchronized RouteTimetableSnapshot loadStationTimetableSnapshot() {
+	public RouteTimetableSnapshot loadStationTimetableSnapshot() {
 		Optional<ItxArtifact> artifact = admissibleItxArtifact();
 		if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
 		String cacheKey = cacheKey(artifact.get());
-		StationTimetableCache cached = stationTimetableCache;
+		StationTimetableCache cached = stationTimetableCache.get();
 		if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
-		RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
-			cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
-			parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
-		stationTimetableCache = new StationTimetableCache(cacheKey, snapshot);
-		return snapshot;
+		synchronized (stationTimetableLock) {
+			cached = stationTimetableCache.get();
+			if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
+			RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
+				cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
+				parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
+			stationTimetableCache.set(new StationTimetableCache(cacheKey, snapshot));
+			return snapshot;
+		}
 	}
 
 	private static RouteTimetableSnapshot unavailableStationTimetableSnapshot() {
@@ -394,7 +400,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	) {
 	}
 
-	private record StationTimetableCache(String cacheKey, RouteTimetableSnapshot snapshot) {
+	record StationTimetableCache(String cacheKey, RouteTimetableSnapshot snapshot) {
 	}
 
 	private static String cacheKey(ItxArtifact artifact) {

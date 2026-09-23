@@ -81,6 +81,14 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("active artifact가 있어도 readable trip이 없으면 availability는 false를 반환한다")
+	void availabilityReturnsFalseWhenActiveArtifactPresentWithoutTrips() {
+		insertActiveArtifactOnly("2026-07-20T00:00:00+09:00");
+		assertThat(repository.hasRouteTimetable()).isFalse();
+		assertThat(repository.hasActivatableRouteTimetable()).isFalse();
+	}
+
+	@Test
 	@DisplayName("만료된 active snapshot은 런타임에서 fail closed한다")
 	void rejectsExpiredActiveSnapshotAtRequestTime() {
 		insertTimetableRows();
@@ -261,6 +269,39 @@ class JdbcRouteTimetableRepositoryTest {
 	}
 
 	@Test
+	@DisplayName("락 진입 전 캐시 미스였으나 락 획득 후 다른 스레드에 의해 채워진 캐시를 반환한다")
+	void returnsCachedSnapshotPopulatedByAnotherThreadUnderLock() throws Exception {
+		insertTimetableRows();
+		insertItxRows("2999-01-01T00:00:00Z");
+
+		var initialSnapshot = repository.loadStationTimetableSnapshot();
+		String cacheKey = initialSnapshot.cacheKey();
+
+		repository.stationTimetableCache.set(null);
+
+		var threadStarted = new java.util.concurrent.CountDownLatch(1);
+		var snapshotResult = new java.util.concurrent.atomic.AtomicReference<com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetableSnapshot>();
+
+		Thread thread;
+		synchronized (repository.stationTimetableLock) {
+			thread = new Thread(() -> {
+				threadStarted.countDown();
+				snapshotResult.set(repository.loadStationTimetableSnapshot());
+			});
+			thread.start();
+
+			threadStarted.await();
+			while (thread.isAlive() && thread.getState() != Thread.State.BLOCKED && thread.getState() != Thread.State.WAITING) {
+				Thread.onSpinWait();
+			}
+			repository.stationTimetableCache.set(new JdbcRouteTimetableRepository.StationTimetableCache(cacheKey, initialSnapshot));
+		}
+
+		thread.join();
+		assertThat(snapshotResult.get()).isSameAs(initialSnapshot);
+	}
+
+	@Test
 	@DisplayName("접근성 4개 테이블을 timetable snapshot row로 함께 읽는다")
 	void loadsRouteAccessDataWithTimetableSnapshot() {
 		insertTimetableRows();
@@ -434,12 +475,28 @@ class JdbcRouteTimetableRepositoryTest {
 			"e".repeat(64),
 			"f".repeat(64),
 			"1".repeat(64),
-			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM service_calendars", Integer.class),
-			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_routes", Integer.class),
-			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class),
-			jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_stop_times", Integer.class)
+			Math.max(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM service_calendars", Integer.class)),
+			Math.max(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_routes", Integer.class)),
+			Math.max(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_trips", Integer.class)),
+			Math.max(1, jdbcTemplate.queryForObject("SELECT COUNT(*) FROM transit_stop_times", Integer.class))
 		);
 	}
+
+	private void insertActiveArtifactOnly(String freshUntil) {
+		jdbcTemplate.update("""
+			INSERT INTO route_service_artifact_evidence (
+				service_class, timetable_artifact_id, timetable_artifact_sha256,
+				canonical_pack_id, canonical_pack_sha256, canonical_pack_sqlite_sha256,
+				admission_status, admission_eligible, fresh_until, source_issue
+			) VALUES ('ITX_CHEONGCHUN', 'itx-test', ?, 'capital', ?, ?, 'ADMITTED', TRUE, ?, 2135)
+			""", "a".repeat(64), "b".repeat(64), "c".repeat(64), freshUntil);
+		insertSnapshotHistory("a".repeat(64), "snapshot-test", freshUntil);
+		jdbcTemplate.update(
+			"INSERT INTO timetable_snapshot_active (singleton_id, snapshot_sha256) VALUES (1, ?)",
+			"a".repeat(64)
+		);
+	}
+
 	private void insertRouteAccessRows() {
 		jdbcTemplate.update("""
 			INSERT INTO data_source_snapshots (

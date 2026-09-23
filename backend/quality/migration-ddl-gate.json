@@ -47,6 +47,10 @@
     {
       "file": "V74__route_service_station_catalog_evidence.sql",
       "sha256": "76bba8f898cbdfa9a243f954ee86bc9c49d4d1df587e3c596efc7bcef7ba701b"
+    },
+    {
+      "file": "V75__soft_drop_route_v2_tables.sql",
+      "sha256": "c4ac7bf3ea74afa52455386e7edd9d3b928824778a0cf11197af66c0047dbb9d"
     }
   ],
   "allowlist": [
@@ -70,6 +74,13 @@
       "approval": "https://github.com/AquilaXk/easysubway-backend/issues/178",
       "expiresAt": "2030-01-01T00:00:00.000Z",
       "sha256": "07659f2ecd87aee399eab72f50976b4c170c72328dacaae1108340318f42d3ff"
+    },
+    {
+      "file": "V75__soft_drop_route_v2_tables.sql",
+      "reason": "Route V2 폐기에 따른 route_v2_sessions, route_v2_nonce_replays, route_v2_states 테이블 soft rename. 이전 코드 및 런타임에서 더 이상 참조하지 않으며 파괴적 DROP 대신 안전한 soft rename 단계를 거친다.",
+      "approval": "https://github.com/AquilaXk/easysubway-backend/issues/334",
+      "expiresAt": "2030-01-01T00:00:00.000Z",
+      "sha256": "c4ac7bf3ea74afa52455386e7edd9d3b928824778a0cf11197af66c0047dbb9d"
     }
   ]
 }
