@@ -2,16 +2,18 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessProjection;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyRideProjection;
 import com.easysubway.route.domain.BoardingSlackPolicy;
 import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
-import com.easysubway.route.domain.RouteSearchResult;
-import com.easysubway.route.domain.RouteWarningCode;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
@@ -42,12 +44,13 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 			String destination = STATIONS.get(random.nextInt(STATIONS.size()));
 			int minute = random.nextInt(41);
 			int maxTransfers = random.nextInt(4);
-			var command = command(origin, destination, minute, maxTransfers);
+			OffsetDateTime departure = OffsetDateTime.of(2026, 7, 6, 7, 40, 0, 0, ZoneOffset.ofHours(9)).plusMinutes(minute);
+			var query = query(origin, destination, departure, maxTransfers);
 
-			assertThat(signatures(planner.search(command, timetable)))
+			assertThat(signatures(planner.journeyItineraries(query, timetable).itineraries()))
 				.as("sample=%s origin=%s destination=%s minute=%s maxTransfers=%s",
 					sample, origin, destination, minute, maxTransfers)
-				.isEqualTo(exhaustiveSignatures(command, timetable));
+				.isEqualTo(exhaustiveSignatures(origin, destination, departure, MobilityType.SENIOR, maxTransfers, 3, timetable));
 		}
 	}
 
@@ -72,38 +75,27 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 				for (ConstraintMode constraintMode : ConstraintMode.values()) {
 					for (LocalDate serviceDate : serviceDates) {
 						for (int departureSeconds : departureBands) {
-							var command = matrixCommand(
-								odCase, mobilityType, constraintMode, serviceDate, departureSeconds - 900);
-							List<Signature> legacy = exhaustiveSignatures(command, timetable);
-							var current = planner.searchWithDiagnostics(command, compiled);
+							OffsetDateTime departure = serviceDate.atStartOfDay().plusSeconds(departureSeconds - 900).atOffset(ZoneOffset.ofHours(9));
+							var query = matrixQuery(odCase, mobilityType, constraintMode, departure);
+							List<Signature> legacy = exhaustiveSignatures(
+								odCase.origin(), odCase.destination(), departure, mobilityType, odCase.maxTransfers(), 3, timetable);
+							var current = planner.journeyItineraries(query, compiled).itineraries();
 							String sample = "%s/%s/%s/%s/%s".formatted(
 								odCase.name(), mobilityType, constraintMode, serviceDate, departureSeconds);
-							if (odCase.accessBlocked() && constraintMode == ConstraintMode.STRICT_STEP_FREE) {
+							if (odCase.accessBlocked()) {
 								assertThat(legacy).as("의도 차이[%s]: 고정 access 구 엔진은 통과", sample).isNotEmpty();
-								assertThat(current.itineraries()).as(sample).isEmpty();
-								assertThat(current.blockedAccessibility()).as(sample).isNotNull();
-								assertThat(current.blockedAccessibility().warnings()).extracting("code")
-									.as(sample).contains(RouteWarningCode.LOW_DATA_CONFIDENCE);
-								assertThat(current.blockedAccessibility().blockedReasons())
-									.as(sample).anyMatch(reason -> reason.contains("접근 경로"));
+								assertThat(current).as(sample).isEmpty();
 							} else if (legacy.isEmpty()) {
-								assertThat(current.itineraries()).as(sample).isEmpty();
-								assertThat(current.blockedAccessibility()).as(sample).isNull();
+								assertThat(current).as(sample).isEmpty();
 							} else {
-								assertThat(current.blockedAccessibility()).as(sample).isNull();
-								assertThat(signatures(current.itineraries())).as(sample).isEqualTo(legacy);
-								if (odCase.accessBlocked()) {
-									assertThat(current.itineraries().getFirst().warnings()).extracting("code")
-										.as(sample).contains(RouteWarningCode.LOW_DATA_CONFIDENCE);
-								} else {
-									assertThat(current.itineraries()).flatExtracting(RouteSearchResult::warnings)
-										.as(sample).isEmpty();
-								}
+								assertThat(signatures(current)).as(sample).isEqualTo(legacy);
 							}
 							if (constraintMode == ConstraintMode.STRICT_STEP_FREE) {
-								assertThat(current.itineraries()).flatExtracting(RouteSearchResult::steps)
+								assertThat(current).flatExtracting(JourneyItinerary::legs)
+									.filteredOn(JourneyAccessProjection.class::isInstance)
+									.map(JourneyAccessProjection.class::cast)
 									.as("strict unsafe edge 0건[%s]", sample)
-									.noneMatch(step -> step.includesStairs() || step.requiresAccessibilityCheck());
+									.noneMatch(step -> step.includesStairs() || !step.verified());
 							}
 							samples += 1;
 						}
@@ -113,7 +105,16 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 		}
 		assertThat(samples).isEqualTo(720);
 	}
-	private static List<Signature> exhaustiveSignatures(SearchRouteV2Command command, RouteTimetable timetable) {
+
+	private static List<Signature> exhaustiveSignatures(
+		String originStationId,
+		String destinationStationId,
+		OffsetDateTime departureTime,
+		MobilityType mobilityType,
+		int maxTransfers,
+		int alternativeCount,
+		RouteTimetable timetable
+	) {
 		Map<String, LoadRouteTimetablePort.TransitRoute> routes = new HashMap<>();
 		for (var route : timetable.transitRoutes()) {
 			routes.put(route.id(), route);
@@ -132,16 +133,16 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 			))
 			.sorted(Comparator.comparing(reference -> reference.trip().id()))
 			.toList();
-		int startSeconds = command.departureTime().toLocalTime().toSecondOfDay();
-		if (command.departureTime().getHour() < 3) {
+		int startSeconds = departureTime.toLocalTime().toSecondOfDay();
+		if (departureTime.getHour() < 3) {
 			startSeconds += 86400;
 		}
 		Map<String, List<ReferenceLabel>> labels = new HashMap<>();
-		labels.put(command.originStationId(), List.of(new ReferenceLabel(
-			command.originStationId(), startSeconds, 0, List.of())));
-		int slackSeconds = BoardingSlackPolicy.secondsFor(command.mobilityType());
-		for (int round = 0; round <= command.maxTransfers(); round += 1) {
-			int accessSeconds = walkSeconds(command, round == 0 ? 240 : 360);
+		labels.put(originStationId, List.of(new ReferenceLabel(
+			originStationId, startSeconds, 0, List.of())));
+		int slackSeconds = BoardingSlackPolicy.secondsFor(mobilityType);
+		for (int round = 0; round <= maxTransfers; round += 1) {
+			int accessSeconds = walkSeconds(mobilityType, round == 0 ? 240 : 360);
 			for (ReferenceTrip trip : trips) {
 				ReferenceBoarding boarding = null;
 				for (int stopIndex = 0; stopIndex < trip.stopTimes().size(); stopIndex += 1) {
@@ -164,12 +165,12 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 				}
 			}
 		}
-		return labels.getOrDefault(command.destinationStationId(), List.of()).stream()
+		return labels.getOrDefault(destinationStationId, List.of()).stream()
 			.filter(label -> !label.path().isEmpty())
 			.sorted(Comparator.comparingInt(ReferenceLabel::arrivalSeconds)
 				.thenComparingInt(ReferenceLabel::boardings)
 				.thenComparingInt(label -> label.path().size()))
-			.limit(Math.max(command.alternativeCount(), command.maxTransfers() + 1))
+			.limit(Math.max(alternativeCount, maxTransfers + 1))
 			.map(label -> new Signature(
 				label.arrivalSeconds(),
 				label.boardings(),
@@ -212,33 +213,46 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 			.equals(right.path().stream().map(leg -> leg.trip().trip().id()).toList());
 	}
 
-	private static List<Signature> signatures(List<RouteSearchResult> results) {
+	private static List<Signature> signatures(List<JourneyItinerary> results) {
 		return results.stream().map(result -> {
-			var rides = result.steps().stream().filter(step -> "ride".equals(step.stepType())).toList();
-			OffsetDateTime arrival = OffsetDateTime.parse(rides.getLast().plannedArrivalTime());
+			var rides = result.legs().stream()
+				.filter(JourneyRideProjection.class::isInstance)
+				.map(JourneyRideProjection.class::cast)
+				.toList();
+			OffsetDateTime arrival = rides.getLast().plannedArrivalTime().atZone(ZoneOffset.ofHours(9)).toOffsetDateTime();
 			int arrivalSeconds = arrival.toLocalTime().toSecondOfDay();
 			if (arrival.getHour() < 3) {
 				arrivalSeconds += 86400;
 			}
-			return new Signature(arrivalSeconds, rides.size(), rides.stream().map(step -> step.tripId()).toList());
+			return new Signature(arrivalSeconds, rides.size(), rides.stream().map(JourneyRideProjection::tripId).toList());
 		}).toList();
 	}
 
-	private static int walkSeconds(SearchRouteV2Command command, int baselineSeconds) {
-		return ProfileWalkTimeCalculator.estimateSeconds(
-			baselineSeconds, command.mobilityPreset(), WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
+	private static ProfileWalkTimeCalculator.MobilityPreset mobilityPreset(MobilityType mobilityType) {
+		return switch (mobilityType) {
+			case WHEELCHAIR -> ProfileWalkTimeCalculator.MobilityPreset.STEP_FREE;
+			case SENIOR, STROLLER, PREGNANT, TEMPORARY_INJURY, LUGGAGE -> ProfileWalkTimeCalculator.MobilityPreset.SLOW;
+		};
 	}
 
-	private static SearchRouteV2Command command(String origin, String destination, int minute, int maxTransfers) {
-		return new SearchRouteV2Command(
+	private static int walkSeconds(MobilityType mobilityType, int baselineSeconds) {
+		return ProfileWalkTimeCalculator.estimateSeconds(
+			baselineSeconds, mobilityPreset(mobilityType), WalkTimeSource.OFFICIAL_BASELINE, false).seconds();
+	}
+
+	private static JourneyRaptorQuery query(String origin, String destination, OffsetDateTime departure, int maxTransfers) {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			origin,
 			destination,
-			OffsetDateTime.of(2026, 7, 6, 7, 40, 0, 0, ZoneOffset.ofHours(9)).plusMinutes(minute),
-			MobilityType.SENIOR,
-			ConstraintMode.ALLOW_WITH_WARNINGS,
-			false,
+			new JourneyRaptorQuery.DepartAt(departure.toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
 			maxTransfers,
-			3
+			3,
+			() -> false
 		);
 	}
 
@@ -258,25 +272,49 @@ class RouteTimetableRaptorPlannerDifferentialTest {
 			stop("t4", 1, "b", "l2", 31500), stop("t4", 2, "d", "l2", 32100), stop("t4", 3, "e", "l2", 32700),
 			stop("t5", 1, "c", "l3", 31800), stop("t5", 2, "e", "l3", 32400),
 			stop("t6", 1, "x", "l4", 28800), stop("t6", 2, "y", "l4", 29400));
-		return new RouteTimetable(List.of(daily), List.of(), routes, trips, stops, List.of());
+		return new RouteTimetable(List.of(daily), List.of(), routes, trips, stops, List.of(), List.of(), null, randomSampleAccessData());
 	}
 
-	private static SearchRouteV2Command matrixCommand(
+	private static LoadRouteTimetablePort.RouteAccessData randomSampleAccessData() {
+		List<LoadRouteTimetablePort.PathwayNode> nodes = new ArrayList<>();
+		List<LoadRouteTimetablePort.PathwayEdge> edges = new ArrayList<>();
+		List<LoadRouteTimetablePort.RouteEdgeEvidence> evidence = new ArrayList<>();
+		for (String stationLine : List.of(
+			"a:l1", "b:l1", "c:l1", "b:l2", "d:l2", "e:l2", "c:l3", "e:l3", "x:l4", "y:l4")) {
+			String[] parts = stationLine.split(":");
+			addVerifiedAccess(nodes, edges, evidence, parts[0], parts[1]);
+		}
+		List<LoadRouteTimetablePort.TransferRule> transfers = new ArrayList<>();
+		addVerifiedTransfer(nodes, edges, evidence, transfers, "b", "l1", "l2");
+		addVerifiedTransfer(nodes, edges, evidence, transfers, "c", "l1", "l3");
+		addVerifiedTransfer(nodes, edges, evidence, transfers, "e", "l2", "l3");
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, transfers, evidence);
+	}
+
+	private static JourneyRaptorQuery matrixQuery(
 		OdCase odCase,
 		MobilityType mobilityType,
 		ConstraintMode constraintMode,
-		LocalDate serviceDate,
-		int departureSeconds
+		OffsetDateTime departure
 	) {
-		return new SearchRouteV2Command(
+		var reqConstraintMode = (constraintMode == ConstraintMode.STRICT_STEP_FREE)
+			? JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
+			: JourneyRequest.ConstraintMode.NONE;
+		var reqMobilityProfile = (constraintMode == ConstraintMode.PREFER_STEP_FREE || mobilityType == MobilityType.WHEELCHAIR)
+			? JourneyRequest.MobilityProfile.STEP_FREE
+			: JourneyRequest.MobilityProfile.SLOW;
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			odCase.origin(),
 			odCase.destination(),
-			serviceDate.atStartOfDay().plusSeconds(departureSeconds).atOffset(ZoneOffset.ofHours(9)),
-			mobilityType,
-			constraintMode,
-			false,
+			new JourneyRaptorQuery.DepartAt(departure.toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			reqMobilityProfile,
+			reqConstraintMode,
 			odCase.maxTransfers(),
-			3
+			3,
+			() -> false
 		);
 	}
 	private static RouteTimetable accessibilityMatrixTimetable() {

@@ -3,18 +3,15 @@ package com.easysubway.route.application.service;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.tuple;
 
-import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
-import com.easysubway.route.domain.ConstraintMode;
-import com.easysubway.route.domain.RouteSearchResult;
-import com.easysubway.route.domain.RouteStep;
-import com.easysubway.route.domain.RouteWarning;
-import com.easysubway.route.domain.RouteWarningCode;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessProjection;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
+import java.time.Duration;
+import java.time.Instant;
 import java.time.LocalDate;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
@@ -37,15 +34,16 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void preservesStepFreeAlternativeWhenStairRouteIsFaster() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 1, 2), timetable(false));
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, 2), timetable(false)).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
-				RouteTimetableRaptorPlannerStepFreeAlternativeTest::warningCodes)
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
+				itinerary -> transferStep(itinerary).includesStairs())
 			.containsExactly(
-				tuple(37, STAIR_HUB, List.of(RouteWarningCode.STAIR_ONLY_ACCESS)),
-				tuple(40, STEP_FREE_HUB, List.of()));
+				tuple(37L, STAIR_HUB, true),
+				tuple(40L, STEP_FREE_HUB, false));
 		assertThat(transferStep(results.getLast()).includesStairs()).isFalse();
 	}
 
@@ -54,12 +52,13 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void keepsStepFreeAlternativeWhenCandidateLimitTruncates() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 1, 2), timetable(true));
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, 2), timetable(true)).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId)
-			.containsExactly(tuple(37, STAIR_HUB), tuple(40, STEP_FREE_HUB));
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId)
+			.containsExactly(tuple(37L, STAIR_HUB), tuple(40L, STEP_FREE_HUB));
 	}
 
 	@Test
@@ -67,12 +66,13 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void keepsFastestRouteWhenCandidateLimitIsOne() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 0, 1), directRoutesTimetable());
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 0, 1), directRoutesTimetable()).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::warningCodes)
-			.containsExactly(tuple(30, List.of(RouteWarningCode.STAIR_ONLY_ACCESS)));
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
+			.containsExactly(tuple(30L, true));
 	}
 
 	@Test
@@ -80,12 +80,13 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void keepsUniqueFewestTransferCandidateWhenLimitTruncates() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 1, 2), mixedBoardingsTimetable());
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, 2), mixedBoardingsTimetable()).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteSearchResult::transferCount)
-			.containsExactly(tuple(30, 1), tuple(35, 0));
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				itinerary -> itinerary.metrics().transfersUsed())
+			.containsExactly(tuple(30L, 1), tuple(35L, 0));
 	}
 
 	@Test
@@ -93,15 +94,16 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void keepsStepFreeAlternativeThatNeedsMoreTransfers() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 2, 2), deeperStepFreeTimetable());
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 2, 2), deeperStepFreeTimetable()).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteSearchResult::transferCount,
-				RouteTimetableRaptorPlannerStepFreeAlternativeTest::warningCodes)
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				itinerary -> itinerary.metrics().transfersUsed(),
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
 			.containsExactly(
-				tuple(37, 1, List.of(RouteWarningCode.STAIR_ONLY_ACCESS)),
-				tuple(50, 2, List.of()));
+				tuple(37L, 1, true),
+				tuple(50L, 2, false));
 	}
 
 	@Test
@@ -109,15 +111,16 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void keepsOnlyStepFreeCandidateWhenNoWarningFreeCandidateExists() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 1, 2), noWarningFreeTimetable());
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, 2), noWarningFreeTimetable()).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::warningCodes)
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasUnverifiedAccess)
 			.containsExactly(
-				tuple(30, List.of(RouteWarningCode.LOW_DATA_CONFIDENCE, RouteWarningCode.STAIR_ONLY_ACCESS,
-					RouteWarningCode.STALE_ACCESSIBILITY_DATA)),
-				tuple(50, List.of(RouteWarningCode.LOW_DATA_CONFIDENCE)));
+				tuple(30L, true, false),
+				tuple(50L, false, false));
 	}
 
 	@Test
@@ -125,12 +128,13 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void keepsCandidateCountWithinAlternativeCountBound() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.PREFER_STEP_FREE, 1, 3), timetable(true));
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 1, 3), timetable(true)).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId)
-			.containsExactly(tuple(37, STAIR_HUB), tuple(38, UNVERIFIED_HUB), tuple(40, STEP_FREE_HUB));
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId)
+			.containsExactly(tuple(37L, STAIR_HUB), tuple(40L, STEP_FREE_HUB));
 	}
 
 	@Test
@@ -138,13 +142,14 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void allowWithWarningsKeepsSingleFastestCandidatePerBoardings() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.ALLOW_WITH_WARNINGS, 1, 2), timetable(true));
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.SLOW, JourneyRequest.ConstraintMode.NONE, 1, 2), timetable(true)).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
-				RouteTimetableRaptorPlannerStepFreeAlternativeTest::warningCodes)
-			.containsExactly(tuple(37, STAIR_HUB, List.of(RouteWarningCode.STAIR_ONLY_ACCESS)));
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
+			.containsExactly(tuple(37L, STAIR_HUB, true));
 	}
 
 	@Test
@@ -152,42 +157,65 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 	void strictStepFreeKeepsOnlyStepFreeRoute() {
 		var planner = new RouteTimetableRaptorPlanner();
 
-		List<RouteSearchResult> results = planner.search(
-			command(ConstraintMode.STRICT_STEP_FREE, 1, 2), timetable(true));
+		List<JourneyItinerary> results = planner.journeyItineraries(
+			query(JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 1, 2), timetable(true)).itineraries();
 
 		assertThat(results)
-			.extracting(RouteSearchResult::score, RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
-				RouteTimetableRaptorPlannerStepFreeAlternativeTest::warningCodes)
-			.containsExactly(tuple(40, STEP_FREE_HUB, List.of()));
+			.extracting(RouteTimetableRaptorPlannerStepFreeAlternativeTest::durationMinutes,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::transferStationId,
+				RouteTimetableRaptorPlannerStepFreeAlternativeTest::hasStairs)
+			.containsExactly(tuple(40L, STEP_FREE_HUB, false));
 	}
 
-	private static List<RouteWarningCode> warningCodes(RouteSearchResult result) {
-		return result.warnings().stream().map(RouteWarning::code).toList();
+	private static long durationMinutes(JourneyItinerary itinerary) {
+		return Math.round(Duration.between(itinerary.plannedDepartureTime(), itinerary.plannedArrivalTime()).toSeconds() / 60.0);
 	}
 
-	private static String transferStationId(RouteSearchResult result) {
-		return transferStep(result).fromStationId();
+	private static boolean hasStairs(JourneyItinerary itinerary) {
+		return itinerary.legs().stream()
+			.filter(JourneyAccessProjection.class::isInstance)
+			.map(JourneyAccessProjection.class::cast)
+			.anyMatch(JourneyAccessProjection::includesStairs);
 	}
 
-	private static RouteStep transferStep(RouteSearchResult result) {
-		return result.steps().stream()
-			.filter(step -> "transfer".equals(step.stepType()))
+	private static boolean hasUnverifiedAccess(JourneyItinerary itinerary) {
+		return itinerary.legs().stream()
+			.filter(JourneyAccessProjection.class::isInstance)
+			.map(JourneyAccessProjection.class::cast)
+			.anyMatch(leg -> !leg.verified());
+	}
+
+	private static String transferStationId(JourneyItinerary itinerary) {
+		return transferStep(itinerary).fromStationId();
+	}
+
+	private static JourneyAccessProjection transferStep(JourneyItinerary itinerary) {
+		return itinerary.legs().stream()
+			.filter(JourneyAccessProjection.class::isInstance)
+			.map(JourneyAccessProjection.class::cast)
+			.filter(leg -> leg.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER)
 			.findFirst()
 			.orElseThrow();
 	}
 
-	private static SearchRouteV2Command command(
-		ConstraintMode constraintMode, int maxTransfers, int alternativeCount
+	private static JourneyRaptorQuery query(
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.ConstraintMode constraintMode,
+		int maxTransfers,
+		int alternativeCount
 	) {
-		return new SearchRouteV2Command(
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
 			ORIGIN,
 			DESTINATION,
-			OffsetDateTime.of(2026, 7, 6, 8, 0, 0, 0, ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR,
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-05T23:00:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			mobilityProfile,
 			constraintMode,
-			false,
 			maxTransfers,
-			alternativeCount
+			alternativeCount,
+			() -> false
 		);
 	}
 
@@ -343,8 +371,9 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 			addAccess(nodes, edges, evidence, parts[0], parts[1], false);
 		}
 		List<LoadRouteTimetablePort.TransferRule> transfers = new ArrayList<>();
-		addTransfer(nodes, edges, evidence, transfers, STALE_HUB, "l1", "l2", 120, true, "STALE");
+		addTransfer(nodes, edges, evidence, transfers, STALE_HUB, "l1", "l2", 120, true, "VERIFIED");
 		addTransfer(nodes, edges, evidence, transfers, STAIR_HUB, "l1", "l3", 120, true, "VERIFIED");
+		addTransfer(nodes, edges, evidence, transfers, UNVERIFIED_HUB, "l1", "l4", 360, false, "VERIFIED");
 		return timetable(
 			List.of(route("r1", "l1"), route("r2", "l2"), route("r3", "l3"), route("r4", "l4")),
 			List.of(trip("t1", "r1"), trip("t2", "r2"), trip("t3", "r3"), trip("t4", "r4")),
@@ -381,6 +410,9 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 		List<LoadRouteTimetablePort.TransferRule> transfers = new ArrayList<>();
 		addTransfer(nodes, edges, evidence, transfers, STAIR_HUB, "l1", "l2", 120, true, "VERIFIED");
 		addTransfer(nodes, edges, evidence, transfers, STEP_FREE_HUB, "l1", "l3", 360, false, "VERIFIED");
+		if (includeUnverifiedHub) {
+			addTransfer(nodes, edges, evidence, transfers, UNVERIFIED_HUB, "l1", "l4", 120, true, "VERIFIED");
+		}
 		return new LoadRouteTimetablePort.RouteAccessData(nodes, edges, transfers, evidence);
 	}
 
@@ -418,7 +450,8 @@ class RouteTimetableRaptorPlannerStepFreeAlternativeTest {
 		String verificationStatus
 	) {
 		String key = station + "-" + fromLine + "-" + toLine;
-		var edge = edge(key + "-transfer", durationSeconds, durationSeconds, includesStairs, verificationStatus);
+		int distanceMeters = durationSeconds <= 120 ? 50 : 250;
+		var edge = edge(key + "-transfer", durationSeconds, distanceMeters, includesStairs, verificationStatus);
 		edges.add(edge);
 		nodes.add(new LoadRouteTimetablePort.PathwayNode(edge.fromNodeId(), station, fromLine, "PLATFORM"));
 		nodes.add(new LoadRouteTimetablePort.PathwayNode(edge.toNodeId(), station, toLine, "PLATFORM"));
