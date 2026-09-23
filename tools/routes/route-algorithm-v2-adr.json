@@ -9,7 +9,7 @@
     "supportedModes": ["NOW", "DEPART_AT"]
   },
   "profileQuery": {
-    "status": "inactive",
+    "status": "active",
     "activationRequirement": "Backend PR #312 is terminal",
     "supportedModes": ["DEPART_BETWEEN", "ARRIVE_BY", "LAST_CONNECTION"]
   },
