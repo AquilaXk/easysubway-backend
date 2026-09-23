@@ -9,13 +9,10 @@ management:
         include: "health,info,prometheus"
 spring:
   datasource:
-    url: ${EASYSUBWAY_DATASOURCE_URL:jdbc:postgresql://localhost:5432/easysubway}
-    driver-class-name: org.postgresql.Driver
-    username: ${EASYSUBWAY_DATASOURCE_USERNAME:postgres}
-    password: ${EASYSUBWAY_DATASOURCE_PASSWORD:postgres}
-  flyway:
-    enabled: true
-    locations: classpath:db/migration/postgresql
+    url: ${EASYSUBWAY_DATASOURCE_URL:jdbc:h2:mem:easysubway-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE}
+    driver-class-name: ${EASYSUBWAY_DATASOURCE_DRIVER:org.h2.Driver}
+    username: ${EASYSUBWAY_DATASOURCE_USERNAME:sa}
+    password: ${EASYSUBWAY_DATASOURCE_PASSWORD:}
 easysubway:
   report:
     abuse-control:
