@@ -671,7 +671,8 @@ class RouteTimetableRaptorPlanner {
 		if (round > 0) {
 			OutOfStationFootpath[] footpaths = timetable.footpathsToStationLine(station, boardingLine);
 			if (footpaths != null) {
-				for (OutOfStationFootpath footpath : footpaths) {
+				for (int fpIndex = 0; fpIndex < footpaths.length; fpIndex += 1) {
+					OutOfStationFootpath footpath = footpaths[fpIndex];
 					int accessTransition = timetable.selectTransition(
 						footpath.candidateTransitions(), accessProfileBit, ignoreAccessBlocks,
 						input.requiresVerifiedJourneyDistance());
@@ -714,7 +715,12 @@ class RouteTimetableRaptorPlanner {
 					}
 					if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
 						&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
-						break;
+						while (fpIndex + 1 < footpaths.length && footpaths[fpIndex + 1].fromStation() == footpath.fromStation()) {
+							fpIndex += 1;
+						}
+						if (fpIndex + 1 == footpaths.length) {
+							break;
+						}
 					}
 				}
 			}
@@ -1726,9 +1732,9 @@ class RouteTimetableRaptorPlanner {
 			for (int i = 0; i < numStations * numLines; i += 1) {
 				List<OutOfStationFootpath> list = toList.get(i);
 				if (!list.isEmpty()) {
-					list.sort(Comparator.comparingInt((OutOfStationFootpath fp) ->
-						accessTransitions.durationSeconds(fp.candidateTransitions()[0]))
-						.thenComparingInt(OutOfStationFootpath::fromStation)
+					list.sort(Comparator.comparingInt(OutOfStationFootpath::fromStation)
+						.thenComparingInt((OutOfStationFootpath fp) ->
+							accessTransitions.durationSeconds(fp.candidateTransitions()[0]))
 						.thenComparingInt(OutOfStationFootpath::fromLine));
 				}
 				footpathsByToStationLine[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
