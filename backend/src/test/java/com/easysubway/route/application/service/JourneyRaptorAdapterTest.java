@@ -537,6 +537,97 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void skipsLegTwoWhenMaxTransfersIsZero() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable());
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		var result = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, null, measurement());
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+
+	@Test
+	void plansChainedWaypointCandidateForDifferentMobilityProfiles() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable());
+
+		var slowRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+		var slowResult = new JourneyRaptorAdapter().plan(
+			slowRequest, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(slowResult.candidates()).isNotEmpty();
+
+		var stepFreeRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STEP_FREE, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+		var stepFreeResult = new JourneyRaptorAdapter().plan(
+			stepFreeRequest, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(stepFreeResult.candidates()).isNotEmpty();
+
+		var noStairsRequest = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.NO_STAIRS, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, 2, 1, () -> false);
+		var noStairsResult = new JourneyRaptorAdapter().plan(
+			noStairsRequest, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(noStairsResult.candidates()).isNotEmpty();
+	}
+
+	@Test
+	void plansChainedWaypointCandidateWithRealtimeRequiredPolicy() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable());
+		var departure1 = new JourneyTimetableRealtimeResolver.Departure(
+			"station-a", "line-a", "trip-first", "2001", "LOCAL", LocalDate.of(2026, 7, 1), 1,
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(32_400).toInstant(),
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(32_400).toInstant());
+		var departure2 = new JourneyTimetableRealtimeResolver.Departure(
+			"station-transfer", "line-b", "trip-second", "2002", "LOCAL", LocalDate.of(2026, 7, 1), 1,
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(34_200).toInstant(),
+			LocalDate.of(2026, 7, 1).atStartOfDay(ServiceDayResolver.ZONE).plusSeconds(34_200).toInstant());
+		var update1 = new JourneyTimetableRealtimeResolver.Update(
+			departure1, 60, 60, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var update2 = new JourneyTimetableRealtimeResolver.Update(
+			departure2, 30, 30, false, "realtime-1", Instant.parse("2026-07-01T00:00:00Z"));
+		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(
+			"realtime-1", runtime, updates(List.of(update1, update2)));
+		var observation = new JourneyRealtimePort.RealtimeObservation(
+			"realtime-1", ROUTE_BUNDLE_SHA, realtimeRuntime, VALID_UNTIL, true);
+
+		var request = new JourneyRequest(
+			REQUEST_ID, "station-a", "station-b", "station-transfer", new JourneyRequest.Departure.Scheduled(EFFECTIVE),
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 2, 1, () -> false);
+
+		var candidate = new JourneyRaptorAdapter().plan(
+			request, snapshot(runtime), EFFECTIVE, observation, measurement()).candidates().getFirst();
+
+		assertThat(candidate.timeSource()).isEqualTo(JourneyCandidate.TimeSource.REALTIME);
+		assertThat(candidate.realtimeDepartureTime()).isNotNull();
+		assertThat(candidate.realtimeArrivalTime()).isNotNull();
+	}
+
+	@Test
+	void resolvesFootpathTransitionsExplicitly() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, waypointTimetable());
+		var timetable = runtime.compiledTimetable();
+		assertThat(JourneyRaptorAdapter.resolveFootpathTransition(null, 0, 1, 0, timetable)).isEqualTo(-1);
+
+		var dummy = new RouteTimetableRaptorPlanner.OutOfStationFootpath[] {
+			new RouteTimetableRaptorPlanner.OutOfStationFootpath(999, 999, 998, 998, new int[]{0}),
+			new RouteTimetableRaptorPlanner.OutOfStationFootpath(0, 0, 1, 998, new int[]{0}),
+			new RouteTimetableRaptorPlanner.OutOfStationFootpath(0, 0, 1, 1, new int[0])
+		};
+		assertThat(JourneyRaptorAdapter.resolveFootpathTransition(dummy, 0, 1, 0, timetable)).isEqualTo(-1);
+	}
+
+	@Test
 	void preservesPlannedAndCompleteRealtimePairsFromTheSameRuntime() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
 		var realtimeRuntime = RaptorRealtimeRuntimeView.compile(

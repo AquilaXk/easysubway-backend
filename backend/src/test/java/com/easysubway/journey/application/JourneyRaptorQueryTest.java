@@ -71,6 +71,31 @@ class JourneyRaptorQueryTest {
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("viaStationId cannot be originStationId or destinationStationId");
 
+		assertThatThrownBy(() -> new JourneyRaptorQuery(
+			REQUEST_ID, "   ", "station-b", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("originStationId must not be blank");
+		assertThatThrownBy(() -> new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, -1, 1, () -> false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("maxTransfers must be between 0 and 3");
+		assertThatThrownBy(() -> new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 0, () -> false))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessage("alternativeCount must be between 1 and 3");
+
+		var cancelledQuery = new JourneyRaptorQuery(
+			REQUEST_ID, "station-a", "station-b", new JourneyRaptorQuery.DepartAt(CAPTURED),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE, 0, 1, () -> true);
+		assertThat(cancelledQuery.isCancelled()).isTrue();
+
 		var withVia = new JourneyRaptorQuery(
 			REQUEST_ID, "station-a", "station-b", "station-via", new JourneyRaptorQuery.DepartAt(CAPTURED),
 			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, JourneyRequest.WalkingPace.STANDARD,

@@ -130,8 +130,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			requiredSnapshot.generation()
 		);
 
-		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
-
 		List<RouteTimetableRaptorPlanner.JourneyItinerary> itineraries1 = planned1.itineraries();
 		if (itineraries1.isEmpty()) {
 			return new PlanResult(requiredRequest.requestId(), List.of(), planned1.scanMetrics(),
@@ -149,8 +147,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		List<RouteTimetableRaptorPlanner.JourneyItinerary> chainedItineraries = new ArrayList<>();
 
 		for (RouteTimetableRaptorPlanner.JourneyItinerary leg1 : selectedLeg1) {
-			if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
-
 			RouteTimetableRaptorPlanner.JourneyRideProjection lastRide1 = findLastRide(leg1);
 			int leg1RideCount = countRides(leg1);
 			int maxTransfers2 = requiredRequest.maxTransfers() - leg1RideCount;
@@ -158,13 +154,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				continue;
 			}
 
-			Instant arrTime1 = (requiredRequest.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED
-				&& lastRide1.realtimeArrivalTime() != null)
-				? lastRide1.realtimeArrivalTime()
-				: lastRide1.plannedArrivalTime();
-
-			int junctionBufferSeconds = 180;
-			Instant leg2ReadyAt = arrTime1.plusSeconds(junctionBufferSeconds);
+			Instant leg2ReadyAt = lastRide1.plannedArrivalTime().plusSeconds(180);
 
 			JourneyRequest leg2Request = new JourneyRequest(
 				requiredRequest.requestId(),
@@ -214,8 +204,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			}
 		}
 
-		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
-
 		JourneyRaptorPort.ScanMetrics combinedScanMetrics = new JourneyRaptorPort.ScanMetrics(
 			totalRoutes, totalTrips, totalTransfers);
 
@@ -228,10 +216,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 		List<JourneyCandidate> candidates = new ArrayList<>();
 		for (RouteTimetableRaptorPlanner.JourneyItinerary itinerary : chainedItineraries) {
-			try {
-				candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary));
-			} catch (IllegalArgumentException ignored) {
-			}
+			candidates.add(toCandidate(requiredRequest, requiredEffectiveInstant, itinerary));
 		}
 
 		candidates.sort(Comparator
@@ -263,16 +248,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	) {
 		String via = request.viaStationId();
 		int station = timetable.stationIndex(via);
-		int fromLine = timetable.lineIndex(lastRide1.lineId());
-		int toLine = timetable.lineIndex(firstRide2.lineId());
-		if (station < 0 || fromLine < 0 || toLine < 0) {
-			return null;
-		}
-
 		long availableSlack = Duration.between(lastRide1.plannedArrivalTime(), firstRide2.plannedDepartureTime()).getSeconds();
-		if (availableSlack < 0) {
-			return null;
-		}
 
 		int duration = 0;
 		int distance = 0;
@@ -284,39 +260,16 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Integer additionalFareWon = null;
 		Integer transferLimitMinutes = null;
 
+		int fromLine = timetable.lineIndex(lastRide1.lineId());
+		int toLine = timetable.lineIndex(firstRide2.lineId());
 		if (fromLine != toLine) {
 			int profileBit = accessProfileBit(request.mobilityProfile(), request.constraintMode());
-			int inTransition = timetable.transferTransition(station, fromLine, toLine, profileBit, false);
-			if (inTransition < 0 && request.constraintMode() != JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
-				inTransition = timetable.transferTransition(station, fromLine, toLine, 0, false);
-			}
-
-			int transition = -1;
-			if (inTransition >= 0 && timetable.transitionVerified(inTransition)) {
-				transition = inTransition;
-			} else {
-				RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths = timetable.footpathsFromStation(station);
-				if (footpaths != null) {
-					for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
-						if (fp.fromLine() == fromLine && fp.toLine() == toLine) {
-							int t = timetable.selectTransition(fp.candidateTransitions(), profileBit, false, false);
-							if (t < 0 && request.constraintMode() != JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
-								t = timetable.selectTransition(fp.candidateTransitions(), 0, false, false);
-							}
-							if (t >= 0 && timetable.transitionVerified(t)) {
-								transition = t;
-								break;
-							}
-						}
-					}
-				}
+			int transition = timetable.transferTransition(station, fromLine, toLine, profileBit, false);
+			if (transition < 0 || !timetable.transitionVerified(transition)) {
+				transition = resolveFootpathTransition(timetable.footpathsFromStation(station), fromLine, toLine, profileBit, timetable);
 			}
 
 			if (transition < 0) {
-				return null;
-			}
-			if (request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE
-				&& timetable.transitionIncludesStairs(transition)) {
 				return null;
 			}
 
@@ -374,12 +327,8 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			combinedLegs.add(legs2.get(i));
 		}
 
-		JourneyProfileRaptorPort.ItineraryMetrics metrics;
-		try {
-			metrics = RouteTimetableRaptorPlanner.itineraryMetrics(combinedLegs, 0);
-		} catch (IllegalArgumentException exception) {
-			return null;
-		}
+		JourneyProfileRaptorPort.ItineraryMetrics metrics =
+			RouteTimetableRaptorPlanner.itineraryMetrics(combinedLegs, 0);
 
 		boolean realtime = request.timePolicy() == JourneyRequest.TimePolicy.REALTIME_REQUIRED;
 		return new RouteTimetableRaptorPlanner.JourneyItinerary(
@@ -393,26 +342,45 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		);
 	}
 
+	static int resolveFootpathTransition(
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
+		int fromLine,
+		int toLine,
+		int profileBit,
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable
+	) {
+		if (footpaths == null) {
+			return -1;
+		}
+		for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
+			if (fp.fromLine() == fromLine && fp.toLine() == toLine) {
+				int t = timetable.selectTransition(fp.candidateTransitions(), profileBit, false, true);
+				if (t >= 0) {
+					return t;
+				}
+			}
+		}
+		return -1;
+	}
+
 	private static RouteTimetableRaptorPlanner.JourneyRideProjection findLastRide(
 		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
 	) {
-		for (int i = itinerary.legs().size() - 1; i >= 0; i--) {
-			if (itinerary.legs().get(i) instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
-				return ride;
-			}
-		}
-		throw new IllegalArgumentException("itinerary contains no ride");
+		return itinerary.legs().reversed().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst()
+			.orElseThrow();
 	}
 
 	private static RouteTimetableRaptorPlanner.JourneyRideProjection findFirstRide(
 		RouteTimetableRaptorPlanner.JourneyItinerary itinerary
 	) {
-		for (RouteTimetableRaptorPlanner.JourneyLegProjection leg : itinerary.legs()) {
-			if (leg instanceof RouteTimetableRaptorPlanner.JourneyRideProjection ride) {
-				return ride;
-			}
-		}
-		throw new IllegalArgumentException("itinerary contains no ride");
+		return itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.findFirst()
+			.orElseThrow();
 	}
 
 	private static int countRides(RouteTimetableRaptorPlanner.JourneyItinerary itinerary) {
