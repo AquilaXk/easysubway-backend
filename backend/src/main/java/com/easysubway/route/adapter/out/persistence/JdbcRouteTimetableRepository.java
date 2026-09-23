@@ -29,8 +29,8 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
-	private final Object stationTimetableLock = new Object();
-	private volatile StationTimetableCache stationTimetableCache;
+	final Object stationTimetableLock = new Object();
+	volatile StationTimetableCache stationTimetableCache;
 	@Autowired
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
 		this(new JdbcTemplate(dataSource), Clock.systemUTC());
@@ -399,7 +399,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	) {
 	}
 
-	private record StationTimetableCache(String cacheKey, RouteTimetableSnapshot snapshot) {
+	record StationTimetableCache(String cacheKey, RouteTimetableSnapshot snapshot) {
 	}
 
 	private static String cacheKey(ItxArtifact artifact) {
