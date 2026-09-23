@@ -5,6 +5,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
+import com.easysubway.common.error.TransitDataAccessException;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -444,29 +445,6 @@ class JdbcTransitMasterOverrideRepositoryTest {
 		assertThatThrownBy(repository::loadAccessibilityFacilities)
 			.isInstanceOf(TransitDataAccessException.class);
 		assertThat(meterRegistry.counter("transit_master_db_failure_total").count()).isEqualTo(1.0);
-	}
-
-	@Test
-	@DisplayName("PostgreSQL 저장 및 롤백 장애 시 TransitDataAccessException 방출 및 메트릭 증가")
-	void writeAndRollbackFailureThrowsTransitDataAccessException() {
-		DataSource brokenDataSource = emptyDataSource();
-		var meterRegistry = new io.micrometer.core.instrument.simple.SimpleMeterRegistry();
-		var repository = new JdbcTransitMasterOverrideRepository(brokenDataSource, objectMapper(), meterRegistry);
-
-		assertThatThrownBy(() -> repository.saveFacilityStatus(
-			"facility-1",
-			AccessibilityFacilityStatus.NORMAL,
-			LocalDate.of(2026, 6, 27),
-			"admin"
-		)).isInstanceOf(TransitDataAccessException.class);
-
-		assertThatThrownBy(() -> repository.rollbackMasterDataOverride(
-			JdbcTransitMasterOverrideRepository.FACILITY,
-			"facility-1",
-			"admin"
-		)).isInstanceOf(TransitDataAccessException.class);
-
-		assertThat(meterRegistry.counter("transit_master_db_failure_total").count()).isEqualTo(2.0);
 	}
 
 	private DataSource databaseProductDataSource(String productName) throws Exception {

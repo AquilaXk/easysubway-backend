@@ -44,21 +44,13 @@ class RealtimeController {
 		HttpServletRequest request
 	) {
 		rejectSecretBearingProviderParameters(request);
-		try {
-			RealtimeArrivalResult result = realtimeGatewayService.arrivals(new RealtimeQuery(
-				stationId,
-				lineId,
-				providerLineId,
-				stationQueryName,
-				null
-			));
-			if (result == null || (result.status() == com.easysubway.realtime.domain.RealtimeStatus.FRESH && result.arrivals().isEmpty())) {
-				return ApiResponse.ok(RealtimeArrivalResult.unavailable("DATA_MISSING"));
-			}
-			return ApiResponse.ok(result);
-		} catch (Exception exception) {
-			return ApiResponse.ok(RealtimeArrivalResult.unavailable("PROVIDER_ERROR"));
-		}
+		return ApiResponse.ok(realtimeGatewayService.arrivals(new RealtimeQuery(
+			stationId,
+			lineId,
+			providerLineId,
+			stationQueryName,
+			null
+		)));
 	}
 
 	@GetMapping("/api/v1/realtime/train-positions")
@@ -69,21 +61,13 @@ class RealtimeController {
 		HttpServletRequest request
 	) {
 		rejectSecretBearingProviderParameters(request);
-		try {
-			RealtimeTrainPositionResult result = realtimeGatewayService.trainPositions(new RealtimeQuery(
-				null,
-				lineId,
-				providerLineId,
-				null,
-				lineName
-			));
-			if (result == null || (result.status() == com.easysubway.realtime.domain.RealtimeStatus.FRESH && result.trainPositions().isEmpty())) {
-				return ApiResponse.ok(RealtimeTrainPositionResult.unavailable("DATA_MISSING"));
-			}
-			return ApiResponse.ok(result);
-		} catch (Exception exception) {
-			return ApiResponse.ok(RealtimeTrainPositionResult.unavailable("PROVIDER_ERROR"));
-		}
+		return ApiResponse.ok(realtimeGatewayService.trainPositions(new RealtimeQuery(
+			null,
+			lineId,
+			providerLineId,
+			null,
+			lineName
+		)));
 	}
 
 	private void rejectSecretBearingProviderParameters(HttpServletRequest request) {

@@ -171,7 +171,7 @@ class ErrorContractIntegrationTest {
 
 		@GetMapping("/api/test/error-contract/transit-unavailable")
 		ApiResponse<Void> transitUnavailable() {
-			throw new com.easysubway.transit.adapter.out.persistence.TransitDataAccessException("DB connection timeout");
+			throw new com.easysubway.common.error.TransitDataAccessException("DB connection timeout");
 		}
 
 		@GetMapping("/api/test/error-contract/ok")

@@ -1,4 +1,4 @@
-package com.easysubway.transit.adapter.out.persistence;
+package com.easysubway.common.error;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.web.bind.annotation.ResponseStatus;

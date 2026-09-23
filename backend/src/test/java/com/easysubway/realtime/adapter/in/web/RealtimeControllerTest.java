@@ -8,6 +8,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.easysubway.realtime.application.RealtimeProvider;
+import com.easysubway.realtime.application.RealtimeProviderException;
 import com.easysubway.realtime.application.RealtimeQuery;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
@@ -161,7 +162,7 @@ class RealtimeControllerTest {
 				@Override
 				public List<RealtimeArrival> arrivals(RealtimeQuery query) {
 					if (throwError) {
-						throw new RuntimeException("Provider connection failure");
+						throw new RealtimeProviderException("PROVIDER_ERROR");
 					}
 					if (returnEmpty) {
 						return List.of();

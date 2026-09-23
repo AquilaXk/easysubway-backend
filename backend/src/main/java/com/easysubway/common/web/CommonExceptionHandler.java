@@ -6,7 +6,8 @@ import com.easysubway.common.error.CorrelationId;
 import com.easysubway.common.error.ErrorCode;
 import com.easysubway.common.error.InvalidRequestException;
 import com.easysubway.common.error.ResourceNotFoundException;
-import com.easysubway.transit.adapter.out.persistence.TransitDataAccessException;
+import com.easysubway.common.error.TransitDataAccessException;
+import org.springframework.dao.DataAccessException;
 import jakarta.servlet.http.HttpServletRequest;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -110,10 +111,10 @@ class CommonExceptionHandler {
 		return ResponseEntity.status(HttpStatus.UNAUTHORIZED).build();
 	}
 
-	@ExceptionHandler(TransitDataAccessException.class)
+	@ExceptionHandler({TransitDataAccessException.class, DataAccessException.class})
 	ResponseEntity<ApiResponse<Void>> handleTransitDataAccess(
 		HttpServletRequest request,
-		TransitDataAccessException exception
+		Exception exception
 	) {
 		String correlationId = CorrelationId.currentOrCreate(request);
 		log.error("transit data access failure correlationId={}", correlationId, exception);
