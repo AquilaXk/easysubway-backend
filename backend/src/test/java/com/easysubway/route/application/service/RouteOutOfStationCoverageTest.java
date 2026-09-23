@@ -403,6 +403,22 @@ class RouteOutOfStationCoverageTest {
 			compiled, ws4, stationC, lineL2, 1, 0, 0, input, false, 50000
 		);
 		assertThat(ready4).isNull();
+
+		// 5. 다중 warningState에서 첫 번째보다 늦은 두 번째 상태는 갱신되지 않음 (compare >= 0 분기 커버)
+		var ws5 = new ScanWorkspace();
+		ws5.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws5.setTargetStation(targetStation);
+		ws5.bestTargetArrivalSeconds[0] = 999999;
+		int slotB50 = ws5.slot(1, stationB, lineL1, 0);
+		int slotB51 = ws5.slot(1, stationB, lineL1, 1);
+		ws5.arrivalSeconds[slotB50] = 50000;
+		ws5.arrivalSeconds[slotB51] = 50001;
+
+		var ready5 = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws5, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
+		);
+		assertThat(ready5).isNotNull();
+		assertThat(ready5).isEqualTo(ready2);
 	}
 }
 
