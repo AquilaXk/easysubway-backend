@@ -9,10 +9,10 @@ management:
         include: "health,info,prometheus"
 spring:
   datasource:
-    url: jdbc:h2:mem:easysubway-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE
-    driver-class-name: org.h2.Driver
-    username: sa
-    password: ""
+    url: ${EASYSUBWAY_DATASOURCE_URL:jdbc:h2:mem:easysubway-${random.uuid};MODE=PostgreSQL;DB_CLOSE_DELAY=-1;DB_CLOSE_ON_EXIT=FALSE}
+    driver-class-name: ${EASYSUBWAY_DATASOURCE_DRIVER:org.h2.Driver}
+    username: ${EASYSUBWAY_DATASOURCE_USERNAME:sa}
+    password: ${EASYSUBWAY_DATASOURCE_PASSWORD:}
 easysubway:
   report:
     abuse-control:

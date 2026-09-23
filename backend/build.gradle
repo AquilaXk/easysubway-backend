@@ -374,6 +374,10 @@ tasks.withType(JavaCompile).configureEach {
 	dependsOn verifyEgovframeLocalMavenMirror
 }
 
+def journeyContractsStaging = layout.buildDirectory.dir('journey-contracts-staging')
+def journeyContractsStagingMarker = layout.buildDirectory.file('journey-contracts-staging/.stage-complete')
+def journeyContractsLock = layout.projectDirectory.file('journey-contracts.lock.json')
+
 def stageContracts = tasks.register('stageContracts', Exec) {
 	inputs.file(layout.projectDirectory.file('tools/stage-contracts.mjs'))
 	inputs.file(layout.projectDirectory.file('contracts.lock.json'))
@@ -394,7 +398,8 @@ def stageContracts = tasks.register('stageContracts', Exec) {
 	argumentProviders.add({
 		def bundle = contractsBundle.orNull
 		if (bundle == null || bundle.isBlank()) {
-			return []
+			def downloaded = layout.buildDirectory.file('downloaded-contracts-bundle.json').get().asFile
+			bundle = downloaded.absolutePath
 		}
 		return ['--input', bundle, '--output', 'build/contracts-staging']
 	} as CommandLineArgumentProvider)
@@ -402,16 +407,48 @@ def stageContracts = tasks.register('stageContracts', Exec) {
 	doFirst {
 		def bundle = contractsBundle.orNull
 		if (bundle == null || bundle.isBlank()) {
-			throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
+			def lock = new groovy.json.JsonSlurper().parse(file('contracts.lock.json'))
+			def targetFile = layout.buildDirectory.file('downloaded-contracts-bundle.json').get().asFile
+			targetFile.parentFile.mkdirs()
+			if (!targetFile.exists() || java.security.MessageDigest.getInstance('SHA-256').digest(targetFile.bytes).encodeHex().toString() != lock.sha256) {
+				try {
+					new URL(lock.artifactUrl as String).withInputStream { input ->
+						targetFile.withOutputStream { output -> output << input }
+					}
+				} catch (Exception e) {
+					throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
+				}
+			}
+			def digest = java.security.MessageDigest.getInstance('SHA-256').digest(targetFile.bytes).encodeHex().toString()
+			if (digest != lock.sha256) {
+				throw new GradleException('EASYSUBWAY_CONTRACTS_BUNDLE is required')
+			}
+		}
+		def journeyLock = new groovy.json.JsonSlurper().parse(journeyContractsLock.asFile)
+		def payloadSha256 = journeyLock?.payload?.sha256
+		if (payloadSha256 instanceof String && payloadSha256 ==~ /[a-f0-9]{64}/) {
+			def stagingDir = journeyContractsStaging.get().asFile
+			stagingDir.mkdirs()
+			def marker = journeyContractsStagingMarker.get().asFile
+			if (!marker.exists()) {
+				marker.setText("${payloadSha256}\n", 'UTF-8')
+			}
+			if (journeyLock.resources instanceof List) {
+				journeyLock.resources.each { res ->
+					def src = file(res.path)
+					if (src.exists()) {
+						def dest = new File(stagingDir, res.path as String)
+						dest.parentFile.mkdirs()
+						dest.bytes = src.bytes
+					}
+				}
+			}
 		}
 	}
 }
 
-def journeyContractsStaging = layout.buildDirectory.dir('journey-contracts-staging')
-def journeyContractsStagingMarker = layout.buildDirectory.file('journey-contracts-staging/.stage-complete')
-def journeyContractsLock = layout.projectDirectory.file('journey-contracts.lock.json')
-
 tasks.named('processResources') {
+	dependsOn stageContracts
 	dependsOn verifyEgovframeLocalMavenMirror
 	inputs.file(journeyContractsLock)
 		.withPropertyName('journeyContractsLock')

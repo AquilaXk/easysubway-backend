@@ -8,18 +8,18 @@ name: Automerge Queue
 # 만들지 않고 예외는 workflow_dispatch와 repository_dispatch뿐이므로, 이 코디네이터가
 # 끊게 되는 immutable image producer 체인을 head_sha 기준으로 명시 dispatch로 잇는다.
 # PR head는 coordinator가 만들지 않고 PR-owning worktree의 push로만 CI를 붙인다.
-# 그 사이 트리거 공백은 schedule cron이 메운다.
+# 그 외 트리거 공백은 pull_request_review 및 workflow_run 완료 이벤트가 메운다.
 
 on:
   pull_request_target:
     types: [labeled]
+  pull_request_review:
+    types: [submitted]
   workflow_run:
     workflows: [Backend CI]
     types: [completed]
   push:
     branches: [main]
-  schedule:
-    - cron: "*/10 * * * *"
   workflow_dispatch:
 
 permissions: {}
