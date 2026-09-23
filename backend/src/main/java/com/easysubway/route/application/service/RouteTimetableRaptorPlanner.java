@@ -612,7 +612,7 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	private static ReadyBoarding bestReadyBoarding(
+	static ReadyBoarding bestReadyBoarding(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
 		int station,
@@ -671,8 +671,7 @@ class RouteTimetableRaptorPlanner {
 		if (round > 0) {
 			OutOfStationFootpath[] footpaths = timetable.footpathsToStationLine(station, boardingLine);
 			if (footpaths != null) {
-				for (int fpIndex = 0; fpIndex < footpaths.length; fpIndex += 1) {
-					OutOfStationFootpath footpath = footpaths[fpIndex];
+				for (OutOfStationFootpath footpath : footpaths) {
 					int accessTransition = timetable.selectTransition(
 						footpath.candidateTransitions(), accessProfileBit, ignoreAccessBlocks,
 						input.requiresVerifiedJourneyDistance());
@@ -715,12 +714,7 @@ class RouteTimetableRaptorPlanner {
 					}
 					if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
 						&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
-						while (fpIndex + 1 < footpaths.length && footpaths[fpIndex + 1].fromStation() == footpath.fromStation()) {
-							fpIndex += 1;
-						}
-						if (fpIndex + 1 == footpaths.length) {
-							break;
-						}
+						break;
 					}
 				}
 			}
@@ -1028,7 +1022,7 @@ class RouteTimetableRaptorPlanner {
 	}
 
 
-	private static ScanInput scanInput(JourneyRaptorQuery query) {
+	static ScanInput scanInput(JourneyRaptorQuery query) {
 		JourneyRaptorQuery requiredQuery = Objects.requireNonNull(query, "query");
 		if (!(requiredQuery.temporalQuery() instanceof JourneyRaptorQuery.DepartAt departAt)) {
 			throw new IllegalArgumentException("Journey RAPTOR point planner does not support temporal profile queries");
@@ -1732,9 +1726,9 @@ class RouteTimetableRaptorPlanner {
 			for (int i = 0; i < numStations * numLines; i += 1) {
 				List<OutOfStationFootpath> list = toList.get(i);
 				if (!list.isEmpty()) {
-					list.sort(Comparator.comparingInt(OutOfStationFootpath::fromStation)
-						.thenComparingInt((OutOfStationFootpath fp) ->
-							accessTransitions.durationSeconds(fp.candidateTransitions()[0]))
+					list.sort(Comparator.comparingInt((OutOfStationFootpath fp) ->
+						accessTransitions.durationSeconds(fp.candidateTransitions()[0]))
+						.thenComparingInt(OutOfStationFootpath::fromStation)
 						.thenComparingInt(OutOfStationFootpath::fromLine));
 				}
 				footpathsByToStationLine[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
