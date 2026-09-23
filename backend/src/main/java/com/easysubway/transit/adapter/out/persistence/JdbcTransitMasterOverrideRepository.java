@@ -1,8 +1,16 @@
 package com.easysubway.transit.adapter.out.persistence;
 
+import com.easysubway.common.error.TransitDataAccessException;
+import com.easysubway.transit.application.port.out.LoadTransitMasterPort;
 import com.easysubway.transit.application.port.out.MasterDataCapability;
+import com.easysubway.transit.application.port.out.MasterDataCapabilityPort;
 import com.easysubway.transit.application.port.out.MasterDataCapabilityStatus;
 import com.easysubway.transit.application.port.out.RollbackTransitMasterOverridePort;
+import com.easysubway.transit.application.port.out.SaveAccessibilityFacilityStatusPort;
+import com.easysubway.transit.application.port.out.SaveRouteEdgePort;
+import com.easysubway.transit.application.port.out.SaveRouteNodePort;
+import com.easysubway.transit.application.port.out.SaveSimplifiedStationLayoutStatusPort;
+import com.easysubway.transit.application.port.out.SaveStationLayoutSourcePort;
 import com.easysubway.transit.application.port.out.TransitMasterOverrideAudit;
 import com.easysubway.transit.domain.AccessibilityFacility;
 import com.easysubway.transit.domain.AccessibilityFacilityStatus;
@@ -11,11 +19,19 @@ import com.easysubway.transit.domain.RouteEdge;
 import com.easysubway.transit.domain.RouteNode;
 import com.easysubway.transit.domain.SimplifiedStationLayout;
 import com.easysubway.transit.domain.SimplifiedStationLayoutStatus;
+import com.easysubway.transit.domain.Station;
+import com.easysubway.transit.domain.StationExit;
 import com.easysubway.transit.domain.StationLayoutSource;
+import com.easysubway.transit.domain.StationLine;
+import com.easysubway.transit.domain.SubwayLine;
+import com.easysubway.transit.domain.TransitOperator;
 import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.ObjectReader;
 import com.fasterxml.jackson.databind.ObjectWriter;
+import io.micrometer.core.instrument.Counter;
+import io.micrometer.core.instrument.MeterRegistry;
+import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.LinkedHashMap;
@@ -47,13 +63,23 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectReader jsonReader;
 	private final ObjectWriter jsonWriter;
+	private final Counter dbFailureCounter;
 	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
+		this(dataSource, objectMapper, new SimpleMeterRegistry());
+	}
+
+	public JdbcTransitMasterOverrideRepository(
+		DataSource dataSource,
+		ObjectMapper objectMapper,
+		MeterRegistry meterRegistry
+	) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
 		this.jsonReader = objectMapper.reader();
 		this.jsonWriter = objectMapper.writer();
+		this.dbFailureCounter = meterRegistry.counter("transit_master_db_failure_total");
 	}
 
 	@Override
@@ -76,11 +102,12 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 				Instant.now()
 			);
 		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
 			return new MasterDataCapability(
 				MasterDataCapabilityStatus.READ_ONLY,
 				true,
 				false,
-				"static-seed",
+				"static-seed+overrides",
 				"override-store-unready",
 				null
 			);
@@ -278,7 +305,8 @@ public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMaste
 				ORDER BY entity_id ASC
 				""", (resultSet, rowNumber) -> readJson(resultSet.getString("payload_json"), type), entityType);
 		} catch (DataAccessException exception) {
-			return List.of();
+			dbFailureCounter.increment();
+			throw new TransitDataAccessException("PostgreSQL 마스터 override 조회 실패: " + entityType, exception);
 		}
 	}
 
