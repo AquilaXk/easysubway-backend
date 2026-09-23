@@ -9,6 +9,7 @@ public record JourneyRequest(
 	String requestId,
 	String originStationId,
 	String destinationStationId,
+	String viaStationId,
 	Departure departure,
 	TimePolicy timePolicy,
 	WalkingPace walkingPace,
@@ -20,10 +21,32 @@ public record JourneyRequest(
 ) {
 	private static final Pattern ULID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 
+	public JourneyRequest(
+		String requestId,
+		String originStationId,
+		String destinationStationId,
+		Departure departure,
+		TimePolicy timePolicy,
+		WalkingPace walkingPace,
+		MobilityProfile mobilityProfile,
+		ConstraintMode constraintMode,
+		int maxTransfers,
+		int alternativeCount,
+		BooleanSupplier cancellationSignal
+	) {
+		this(requestId, originStationId, destinationStationId, null, departure, timePolicy, walkingPace, mobilityProfile, constraintMode, maxTransfers, alternativeCount, cancellationSignal);
+	}
+
 	public JourneyRequest {
 		requestId = requireUlid(requestId);
 		originStationId = requireText(originStationId, "originStationId");
 		destinationStationId = requireText(destinationStationId, "destinationStationId");
+		if (viaStationId != null) {
+			if (viaStationId.isBlank()) throw new IllegalArgumentException("viaStationId must not be blank");
+			if (originStationId.equals(viaStationId) || destinationStationId.equals(viaStationId)) {
+				throw new IllegalArgumentException("viaStationId cannot be originStationId or destinationStationId");
+			}
+		}
 		departure = Objects.requireNonNull(departure, "departure");
 		timePolicy = Objects.requireNonNull(timePolicy, "timePolicy");
 		walkingPace = Objects.requireNonNull(walkingPace, "walkingPace");

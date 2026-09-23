@@ -44,6 +44,31 @@ class JourneyProfileDeadlineExecutorTest {
 	}
 
 	@Test
+	void preservesViaStationIdWhenExecuting() {
+		var capturedQuery = new java.util.concurrent.atomic.AtomicReference<JourneyRaptorQuery>();
+		var service = service(raptor((query, snapshot, realtime, limits) -> {
+			capturedQuery.set(query);
+			return planned(query);
+		}));
+		var queryWithVia = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-b", "station-via",
+			new JourneyRaptorQuery.DepartBetween(Instant.parse("2026-09-01T00:00:00Z"),
+				Instant.parse("2026-09-01T00:01:00Z")), JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, 0, 1, () -> false);
+
+		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {
+			var deadlineExecutor = new JourneyProfileDeadlineExecutor(service, executor);
+			var result = deadlineExecutor.execute(queryWithVia,
+				JourneyProfileResourcePolicyTest.policy(Duration.ofSeconds(1)));
+
+			assertThat(result).isInstanceOf(JourneyProfileDeadlineExecutor.Completed.class);
+			assertThat(capturedQuery.get()).isNotNull();
+			assertThat(capturedQuery.get().viaStationId()).isEqualTo("station-via");
+		}
+	}
+
+	@Test
 	void rejectsAnOverflowingDeadlineFromThePinnedPolicy() {
 		var service = service(raptor((query, snapshot, realtime, limits) -> planned(query)));
 		try (ExecutorService executor = Executors.newSingleThreadExecutor()) {

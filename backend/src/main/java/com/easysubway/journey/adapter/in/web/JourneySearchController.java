@@ -39,8 +39,12 @@ final class JourneySearchController {
 		.enable(DeserializationFeature.FAIL_ON_TRAILING_TOKENS);
 	private static final Pattern SESSION_TOKEN = Pattern.compile("^[A-Za-z0-9_-]+$");
 	private static final BooleanSupplier NOT_CANCELLED = () -> false;
-	private static final Set<String> REQUEST_FIELDS = Set.of(
+	private static final Set<String> REQUIRED_FIELDS = Set.of(
 		"requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
+		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
+	);
+	private static final Set<String> ALLOWED_FIELDS = Set.of(
+		"requestId", "originStationId", "destinationStationId", "viaStationId", "departure", "timePolicy",
 		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
 	);
 
@@ -114,7 +118,8 @@ final class JourneySearchController {
 	private static JourneyRequest decodeRequest(byte[] requestBytes) {
 		try {
 			JsonNode request = REQUEST_JSON.readTree(requestBytes);
-			if (!hasExactFields(request, REQUEST_FIELDS)
+			Set<String> expectedFields = request.has("viaStationId") ? ALLOWED_FIELDS : REQUIRED_FIELDS;
+			if (!hasExactFields(request, expectedFields)
 				|| !request.path("requestId").isTextual()
 				|| !request.path("originStationId").isTextual()
 				|| !request.path("destinationStationId").isTextual()
@@ -126,10 +131,24 @@ final class JourneySearchController {
 				|| !request.path("alternativeCount").isInt()) {
 				throw invalidRequest();
 			}
+			String origin = request.path("originStationId").textValue();
+			String destination = request.path("destinationStationId").textValue();
+			String viaStationId = null;
+			if (request.has("viaStationId")) {
+				JsonNode viaNode = request.path("viaStationId");
+				if (!viaNode.isTextual() || viaNode.textValue().isBlank()) {
+					throw invalidRequest();
+				}
+				viaStationId = viaNode.textValue();
+				if (viaStationId.equals(origin) || viaStationId.equals(destination)) {
+					throw invalidRequest();
+				}
+			}
 			return new JourneyRequest(
 				request.path("requestId").textValue(),
-				request.path("originStationId").textValue(),
-				request.path("destinationStationId").textValue(),
+				origin,
+				destination,
+				viaStationId,
 				decodeDeparture(request.path("departure")),
 				JourneyRequest.TimePolicy.valueOf(request.path("timePolicy").textValue()),
 				JourneyRequest.WalkingPace.valueOf(request.path("walkingPace").textValue()),

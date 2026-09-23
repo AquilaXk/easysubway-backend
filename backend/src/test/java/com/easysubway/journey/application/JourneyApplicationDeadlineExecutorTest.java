@@ -71,6 +71,45 @@ class JourneyApplicationDeadlineExecutorTest {
 	}
 
 	@Test
+	void execute와executeMeasured는viaStationId를누락없이보존하여위임한다() {
+		var service = mock(JourneyApplicationService.class);
+		var result = new JourneyExecutionFailure(NO_ROUTE);
+		when(service.execute(any())).thenReturn(result);
+
+		var requestWithVia = new JourneyRequest(
+			"01K1Y000000000000000000000",
+			"station-origin",
+			"station-destination",
+			"station-via",
+			new JourneyRequest.Departure.Now(),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.STANDARD,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			2,
+			3,
+			() -> false
+		);
+
+		try (var workers = Executors.newSingleThreadExecutor(); var measurementWorkers = Executors.newSingleThreadExecutor()) {
+			var executor = new JourneyApplicationDeadlineExecutor(service, workers, measurementWorkers, Duration.ofSeconds(1));
+
+			assertThat(executor.execute(requestWithVia))
+				.isEqualTo(new JourneyApplicationDeadlineExecutor.Completed(result));
+			assertThat(executor.executeMeasured(requestWithVia))
+				.isInstanceOf(JourneyApplicationDeadlineExecutor.MeasuredCompleted.class);
+		}
+
+		var captor = ArgumentCaptor.forClass(JourneyRequest.class);
+		verify(service, org.mockito.Mockito.times(2)).execute(captor.capture());
+		assertThat(captor.getAllValues()).allSatisfy(captured -> {
+			assertThat(captured.viaStationId()).isEqualTo("station-via");
+			assertThat(captured.originStationId()).isEqualTo("station-origin");
+			assertThat(captured.destinationStationId()).isEqualTo("station-destination");
+		});
+	}
+
+	@Test
 	void measured실행은전용platformWorker에서실제서버측시간과할당을측정한다() {
 		var workerVirtualStates = new ConcurrentLinkedQueue<Boolean>();
 		var retainedBoundaryAllocation = new AtomicReference<byte[]>();

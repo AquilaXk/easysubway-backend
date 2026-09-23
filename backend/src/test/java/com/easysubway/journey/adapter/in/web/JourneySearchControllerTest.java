@@ -244,6 +244,22 @@ class JourneySearchControllerTest {
 	}
 
 	@Test
+	@DisplayName("valid viaStationId가 포함된 요청을 수용하여 JourneyRequest에 바인딩한다")
+	void acceptsAndBindsValidViaStationId() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
+
+		perform(validRequest("{\"mode\":\"NOW\"}").replace(
+			"\"destinationStationId\":\"station-destination\",",
+			"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"station-via\","
+		)).andExpect(status().isOk());
+
+		var request = ArgumentCaptor.forClass(JourneyRequest.class);
+		verify(deadlineExecutor).execute(request.capture());
+		assertThat(request.getValue().viaStationId()).isEqualTo("station-via");
+	}
+
+	@Test
 	@DisplayName("malformed·duplicate·trailing·extra request는 authorize 뒤 execute 없이 exact 400이다")
 	void rejectsNonContractRequestsBeforeExecution() throws Exception {
 		allowSession();
@@ -262,14 +278,28 @@ class JourneySearchControllerTest {
 			validRequest("{\"mode\":\"NOW\"}").replace("\"walkingPace\":\"STANDARD\"", "\"walkingPace\":\"UNKNOWN\""),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"maxTransfers\":2", "\"maxTransfers\":4"),
 			validRequest("{\"mode\":\"NOW\"}").replace("\"mobilityProfile\":\"STEP_FREE\"", "\"mobilityProfile\":\"NO_STAIRS\"")
-				.replace("\"constraintMode\":\"REQUIRE_STEP_FREE\"", "\"constraintMode\":\"NONE\"")
+				.replace("\"constraintMode\":\"REQUIRE_STEP_FREE\"", "\"constraintMode\":\"NONE\""),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"station-origin\","),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"station-destination\","),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"\","),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":null,"),
+			"[]",
+			"\"just-string\"",
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":123,"),
+			validRequest("{\"mode\":\"NOW\"}").replace("\"destinationStationId\":\"station-destination\",",
+				"\"destinationStationId\":\"station-destination\",\n\"viaStationId\":\"station-via\",\n\"extraField\":true,")
 		)) {
 			assertError(post("/api/v3/journeys/search")
 				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content(body), 400, "INVALID_JOURNEY_REQUEST", false);
 		}
-		verify(sessionService, times(14)).authorize("session-token", 2);
+		verify(sessionService, times(22)).authorize("session-token", 2);
 		verifyNoInteractions(deadlineExecutor);
 	}
 

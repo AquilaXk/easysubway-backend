@@ -85,7 +85,7 @@ public final class JourneyProfileDeadlineExecutor {
 		java.util.function.BooleanSupplier cancellationSignal
 	) {
 		return new JourneyRaptorQuery(query.requestId(), query.originStationId(), query.destinationStationId(),
-			query.temporalQuery(), query.timePolicy(), query.walkingPace(), query.mobilityProfile(),
+			query.viaStationId(), query.temporalQuery(), query.timePolicy(), query.walkingPace(), query.mobilityProfile(),
 			query.constraintMode(), query.maxTransfers(), query.alternativeCount(), cancellationSignal);
 	}
 

@@ -17,6 +17,7 @@ public record JourneyRaptorQuery(
 	String requestId,
 	String originStationId,
 	String destinationStationId,
+	String viaStationId,
 	TemporalQuery temporalQuery,
 	JourneyRequest.TimePolicy timePolicy,
 	JourneyRequest.WalkingPace walkingPace,
@@ -28,10 +29,32 @@ public record JourneyRaptorQuery(
 ) {
 	private static final Pattern ULID = Pattern.compile("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
 
+	public JourneyRaptorQuery(
+		String requestId,
+		String originStationId,
+		String destinationStationId,
+		TemporalQuery temporalQuery,
+		JourneyRequest.TimePolicy timePolicy,
+		JourneyRequest.WalkingPace walkingPace,
+		JourneyRequest.MobilityProfile mobilityProfile,
+		JourneyRequest.ConstraintMode constraintMode,
+		int maxTransfers,
+		int alternativeCount,
+		BooleanSupplier cancellationSignal
+	) {
+		this(requestId, originStationId, destinationStationId, null, temporalQuery, timePolicy, walkingPace, mobilityProfile, constraintMode, maxTransfers, alternativeCount, cancellationSignal);
+	}
+
 	public JourneyRaptorQuery {
 		requestId = requireUlid(requestId);
 		originStationId = requireText(originStationId, "originStationId");
 		destinationStationId = requireText(destinationStationId, "destinationStationId");
+		if (viaStationId != null) {
+			if (viaStationId.isBlank()) throw new IllegalArgumentException("viaStationId must not be blank");
+			if (originStationId.equals(viaStationId) || destinationStationId.equals(viaStationId)) {
+				throw new IllegalArgumentException("viaStationId cannot be originStationId or destinationStationId");
+			}
+		}
 		temporalQuery = Objects.requireNonNull(temporalQuery, "temporalQuery");
 		timePolicy = Objects.requireNonNull(timePolicy, "timePolicy");
 		walkingPace = Objects.requireNonNull(walkingPace, "walkingPace");
@@ -56,6 +79,7 @@ public record JourneyRaptorQuery(
 			request.requestId(),
 			request.originStationId(),
 			request.destinationStationId(),
+			request.viaStationId(),
 			new DepartAt(Objects.requireNonNull(effectiveInstant, "effectiveInstant")),
 			request.timePolicy(),
 			request.walkingPace(),
