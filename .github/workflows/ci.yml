@@ -218,6 +218,12 @@ jobs:
           EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
         run: ./gradlew test bootJar --no-daemon
 
+      - name: Check documentation fragment preflight sync
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: node tools/ci/check-documentation-fragment-sync.mjs --base "${BASE_REF}"
+
       - name: Test backend-owned Node contracts
         run: |
           node --test backend/tools/*.test.mjs
