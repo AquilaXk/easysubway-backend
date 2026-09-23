@@ -50,16 +50,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 @Repository
 @Profile("prod | staging | release | prod-like")
-public class JdbcTransitMasterOverrideRepository implements
-	LoadTransitMasterPort,
-	MasterDataCapabilityPort,
-	SaveAccessibilityFacilityStatusPort,
-	SaveStationLayoutSourcePort,
-	SaveSimplifiedStationLayoutStatusPort,
-	SaveRouteNodePort,
-	SaveRouteEdgePort,
-	RollbackTransitMasterOverridePort,
-	InitializingBean {
+public class JdbcTransitMasterOverrideRepository extends UnavailableTransitMasterRepository
+	implements RollbackTransitMasterOverridePort, InitializingBean {
 
 	public static final String FACILITY = "ACCESSIBILITY_FACILITY";
 	public static final String LAYOUT_SOURCE = "STATION_LAYOUT_SOURCE";
@@ -70,35 +62,22 @@ public class JdbcTransitMasterOverrideRepository implements
 	private final JdbcTemplate jdbcTemplate;
 	private final ObjectReader jsonReader;
 	private final ObjectWriter jsonWriter;
-	private final LoadTransitMasterPort baseTransitMasterRepository;
 	private final Counter dbFailureCounter;
 	private volatile DatabaseDialect databaseDialect;
 
 	@Autowired
 	public JdbcTransitMasterOverrideRepository(DataSource dataSource, ObjectMapper objectMapper) {
-		this(dataSource, objectMapper, new InMemoryTransitMasterRepository(), new SimpleMeterRegistry());
+		this(dataSource, objectMapper, new SimpleMeterRegistry());
 	}
 
 	public JdbcTransitMasterOverrideRepository(
 		DataSource dataSource,
 		ObjectMapper objectMapper,
-		MeterRegistry meterRegistry
-	) {
-		this(dataSource, objectMapper, new InMemoryTransitMasterRepository(), meterRegistry);
-	}
-
-	public JdbcTransitMasterOverrideRepository(
-		DataSource dataSource,
-		ObjectMapper objectMapper,
-		LoadTransitMasterPort baseTransitMasterRepository,
 		MeterRegistry meterRegistry
 	) {
 		this.jdbcTemplate = new JdbcTemplate(dataSource);
 		this.jsonReader = objectMapper.reader();
 		this.jsonWriter = objectMapper.writer();
-		this.baseTransitMasterRepository = baseTransitMasterRepository != null
-			? baseTransitMasterRepository
-			: new InMemoryTransitMasterRepository();
 		this.dbFailureCounter = (meterRegistry != null ? meterRegistry : new SimpleMeterRegistry())
 			.counter("transit_master_db_failure_total");
 	}
@@ -123,11 +102,12 @@ public class JdbcTransitMasterOverrideRepository implements
 				Instant.now()
 			);
 		} catch (DataAccessException exception) {
+			dbFailureCounter.increment();
 			return new MasterDataCapability(
 				MasterDataCapabilityStatus.READ_ONLY,
 				true,
 				false,
-				"unready",
+				"static-seed+overrides",
 				"override-store-unready",
 				null
 			);
@@ -135,53 +115,28 @@ public class JdbcTransitMasterOverrideRepository implements
 	}
 
 	@Override
-	public List<TransitOperator> loadOperators() {
-		return baseTransitMasterRepository.loadOperators();
-	}
-
-	@Override
-	public List<SubwayLine> loadLines() {
-		return baseTransitMasterRepository.loadLines();
-	}
-
-	@Override
-	public List<Station> loadStations() {
-		return baseTransitMasterRepository.loadStations();
-	}
-
-	@Override
-	public List<StationLine> loadStationLines() {
-		return baseTransitMasterRepository.loadStationLines();
-	}
-
-	@Override
-	public List<StationExit> loadStationExits() {
-		return baseTransitMasterRepository.loadStationExits();
-	}
-
-	@Override
 	public List<AccessibilityFacility> loadAccessibilityFacilities() {
-		return merge(baseTransitMasterRepository.loadAccessibilityFacilities(), AccessibilityFacility::id, FACILITY, AccessibilityFacility.class);
+		return merge(super.loadAccessibilityFacilities(), AccessibilityFacility::id, FACILITY, AccessibilityFacility.class);
 	}
 
 	@Override
 	public List<StationLayoutSource> loadStationLayoutSources() {
-		return merge(baseTransitMasterRepository.loadStationLayoutSources(), StationLayoutSource::id, LAYOUT_SOURCE, StationLayoutSource.class);
+		return merge(super.loadStationLayoutSources(), StationLayoutSource::id, LAYOUT_SOURCE, StationLayoutSource.class);
 	}
 
 	@Override
 	public List<SimplifiedStationLayout> loadSimplifiedStationLayouts() {
-		return merge(baseTransitMasterRepository.loadSimplifiedStationLayouts(), SimplifiedStationLayout::id, LAYOUT, SimplifiedStationLayout.class);
+		return merge(super.loadSimplifiedStationLayouts(), SimplifiedStationLayout::id, LAYOUT, SimplifiedStationLayout.class);
 	}
 
 	@Override
 	public List<RouteNode> loadRouteNodes() {
-		return merge(baseTransitMasterRepository.loadRouteNodes(), RouteNode::id, ROUTE_NODE, RouteNode.class);
+		return merge(super.loadRouteNodes(), RouteNode::id, ROUTE_NODE, RouteNode.class);
 	}
 
 	@Override
 	public List<RouteEdge> loadRouteEdges() {
-		return merge(baseTransitMasterRepository.loadRouteEdges(), RouteEdge::id, ROUTE_EDGE, RouteEdge.class);
+		return merge(super.loadRouteEdges(), RouteEdge::id, ROUTE_EDGE, RouteEdge.class);
 	}
 
 	@Override
