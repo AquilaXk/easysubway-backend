@@ -7,12 +7,10 @@ import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.Jour
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.Label;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.OutOfStationFootpath;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspace;
-import com.easysubway.profile.domain.MobilityType;
-import com.easysubway.route.application.port.in.RouteV2SearchUseCase.SearchRouteV2Command;
+import com.easysubway.journey.application.JourneyRaptorQuery;
+import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
-import com.easysubway.route.domain.ConstraintMode;
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
+import java.time.Instant;
 import java.util.List;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
@@ -216,17 +214,22 @@ class RouteOutOfStationCoverageTest {
 	}
 
 	@Test
-	@DisplayName("isFeedStale 및 nextServiceTime RouteTimetable 오버로드 검증")
-	void isFeedStaleAndNextServiceTimeOverloads() {
+	@DisplayName("journeyItineraries RouteTimetable 오버로드 검증")
+	void journeyItinerariesRouteTimetableOverload() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var timetable = RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest.timetable();
-		var command = new SearchRouteV2Command(
-			"station-a", "station-d",
-			OffsetDateTime.of(2026, 7, 6, 12, 0, 0, 0, ZoneOffset.ofHours(9)),
-			MobilityType.SENIOR, ConstraintMode.ALLOW_WITH_WARNINGS, false, 1, 2
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-d",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T03:00:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false
 		);
-		assertThat(planner.isFeedStale(command, timetable)).isFalse();
-		assertThat(planner.nextServiceTime(command, timetable)).isNotNull();
+		var plan = planner.journeyItineraries(query, timetable);
+		assertThat(plan).isNotNull();
+		assertThat(plan.itineraries()).isNotEmpty();
 	}
 
 	@Test
