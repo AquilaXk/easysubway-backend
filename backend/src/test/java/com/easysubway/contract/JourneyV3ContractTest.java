@@ -257,7 +257,7 @@ class JourneyV3ContractTest {
 		assertClosedSchema(document, "JourneySearchRequest",
 			Set.of("requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
 				"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"),
-			Set.of("requestId", "originStationId", "destinationStationId", "departure", "timePolicy",
+			Set.of("requestId", "originStationId", "destinationStationId", "viaStationId", "departure", "timePolicy",
 				"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"));
 		assertThat(property(document, "JourneySearchRequest", "requestId").get("pattern"))
 			.isEqualTo("^[0-7][0-9A-HJKMNP-TV-Z]{25}$");
