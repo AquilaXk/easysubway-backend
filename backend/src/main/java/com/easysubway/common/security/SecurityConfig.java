@@ -11,9 +11,6 @@ import com.easysubway.admin.identity.domain.AdminIdentityAuthMethod;
 import com.easysubway.admin.identity.domain.AdminIdentityRole;
 import com.easysubway.admin.identity.domain.AdminIdentityStatus;
 import com.easysubway.admin.web.AdminHtmlAccessDeniedHandler;
-import com.easysubway.route.adapter.in.web.RouteV2IngressSecurity;
-import com.easysubway.route.adapter.in.web.RouteV2Metrics;
-import com.easysubway.route.application.port.out.RouteV2AccessStore;
 import jakarta.servlet.DispatcherType;
 import java.time.Clock;
 import java.time.Duration;
@@ -368,41 +365,6 @@ public class SecurityConfig {
 			.build();
 	}
 
-	@Bean
-	@Order(4)
-	@Profile("prod | staging | release | prod-like")
-	@ConditionalOnBean(RouteV2AccessStore.class)
-	SecurityFilterChain routeV2IngressSecurityFilterChain(
-		HttpSecurity http,
-		RouteV2AccessStore routeV2AccessStore,
-		RouteV2Metrics routeV2Metrics,
-		@Value("${easysubway.route-v2.origin-secret:}") String originSecret
-	) throws Exception {
-		return RouteV2IngressSecurity.configure(http, routeV2AccessStore, routeV2Metrics, originSecret);
-	}
-
-	@Bean
-	@Order(4)
-	@Profile("!prod & !staging & !release & !prod-like")
-	SecurityFilterChain routeSearchSecurityFilterChain(HttpSecurity http) throws Exception {
-		return http
-			.securityMatcher(
-				"/api/v1/routes/search",
-				"/api/v2/routes/search",
-				"/api/v2/routes/*/refresh"
-			)
-			.csrf(AbstractHttpConfigurer::disable)
-			.authorizeHttpRequests(authorize -> authorize
-				.requestMatchers(
-					HttpMethod.POST,
-					"/api/v1/routes/search",
-					"/api/v2/routes/search",
-					"/api/v2/routes/*/refresh"
-				).permitAll()
-				.anyRequest().denyAll()
-			)
-			.build();
-	}
 
 	@Bean
 	@Order(5)

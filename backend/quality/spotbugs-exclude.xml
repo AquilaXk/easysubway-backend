@@ -300,11 +300,6 @@
 		<Method name="&lt;init&gt;" params="java.lang.String" returns="void"/>
 	</Match>
 	<Match>
-		<Bug pattern="EI_EXPOSE_REP2"/>
-		<Class name="com.easysubway.route.adapter.in.web.RouteV2Metrics"/>
-		<Method name="&lt;init&gt;" params="io.micrometer.core.instrument.MeterRegistry" returns="void"/>
-	</Match>
-	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteSearchRepository"/>
 		<Method name="&lt;init&gt;" params="javax.sql.DataSource,com.fasterxml.jackson.databind.ObjectMapper" returns="void"/>
@@ -326,21 +321,6 @@
 	</Match>
 	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
-		<Method name="&lt;init&gt;" params="javax.sql.DataSource,int" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
-		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore"/>
-		<Method name="&lt;init&gt;" params="org.springframework.jdbc.core.JdbcTemplate,int" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.route.application.service.RouteSearchService"/>
 		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort" returns="void"/>
 	</Match>
@@ -353,16 +333,6 @@
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.route.application.service.RouteSearchService"/>
 		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.out.LoadRouteSearchPort,com.easysubway.route.application.port.out.SaveRouteSearchPort,com.easysubway.transit.application.port.out.LoadTransitMasterPort,java.time.Clock,com.easysubway.route.application.port.out.RealtimeArrivalResolver" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.route.application.service.RouteV2Planner"/>
-		<Method name="&lt;init&gt;" params="com.easysubway.route.application.port.in.RouteSearchUseCase,org.springframework.beans.factory.ObjectProvider,org.springframework.core.env.Environment,io.micrometer.core.instrument.MeterRegistry" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="RCN_REDUNDANT_NULLCHECK_OF_NONNULL_VALUE"/>
-		<Class name="com.easysubway.route.application.service.RouteV2Planner"/>
-		<Method name="resolveRealtimeUpdates" params="java.util.List" returns="com.easysubway.route.application.port.in.RouteSearchUseCase$TimetableRealtimeUpdates"/>
 	</Match>
 	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>

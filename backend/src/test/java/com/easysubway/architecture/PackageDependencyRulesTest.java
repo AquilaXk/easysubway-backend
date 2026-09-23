@@ -46,13 +46,6 @@ class PackageDependencyRulesTest {
 		.should().dependOnClassesThat().resideInAnyPackage("com.easysubway.route.application.port.out..");
 
 	@ArchTest
-	static final ArchRule journey_raptor_adapters는_route_v2_command를_모른다 = noClasses()
-		.that().haveFullyQualifiedName("com.easysubway.route.application.service.JourneyRaptorAdapter")
-		.or().haveFullyQualifiedName("com.easysubway.route.application.service.JourneyRealtimeAdapter")
-		.should().dependOnClassesThat().haveFullyQualifiedName(
-			"com.easysubway.route.application.port.in.RouteV2SearchUseCase$SearchRouteV2Command");
-
-	@ArchTest
 	static final ArchRule journey_raptor_adapters는_legacy_mobility를_모른다 = noClasses()
 		.that().haveFullyQualifiedName("com.easysubway.route.application.service.JourneyRaptorAdapter")
 		.or().haveFullyQualifiedName("com.easysubway.route.application.service.JourneyRealtimeAdapter")

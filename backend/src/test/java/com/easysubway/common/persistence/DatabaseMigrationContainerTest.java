@@ -7,9 +7,6 @@ import com.easysubway.collection.adapter.out.persistence.JdbcDataCollectionRunRe
 import com.easysubway.collection.domain.DataCollectionSource;
 import com.easysubway.datapack.adapter.out.persistence.JdbcDatapackReleaseDeliveryRepository;
 import com.easysubway.datapack.domain.DatapackReleaseDelivery;
-import com.easysubway.route.adapter.out.persistence.JdbcRouteV2AccessStore;
-import com.easysubway.route.application.port.out.RouteV2AccessStore.RouteV2Session;
-import com.easysubway.route.application.port.out.RouteV2AccessStore.SessionStatus;
 import com.easysubway.train.adapter.out.persistence.JdbcTrainSearchCache;
 import com.easysubway.train.application.TrainSearchCache.CachedLeg;
 import com.zaxxer.hikari.HikariDataSource;
@@ -418,58 +415,6 @@ class DatabaseMigrationContainerTest {
 		}
 	}
 
-	@Test
-	@DisplayName("PostgreSQL도 100개 동시 요청에서 session 전체 50회만 원자적으로 소비한다")
-	void postgresqlConsumesRouteV2SessionAtMostFiftyTimesUnderConcurrency() throws Exception {
-		String schema = "route_v2_concurrency_" + System.nanoTime();
-		var migrationDataSource = new DriverManagerDataSource(
-			POSTGRES.getJdbcUrl(),
-			POSTGRES.getUsername(),
-			POSTGRES.getPassword()
-		);
-		migrate(migrationDataSource, "classpath:db/migration/postgresql", schema);
-		try (var dataSource = new HikariDataSource()) {
-			dataSource.setJdbcUrl(POSTGRES.getJdbcUrl());
-			dataSource.setUsername(POSTGRES.getUsername());
-			dataSource.setPassword(POSTGRES.getPassword());
-			dataSource.setSchema(schema);
-			dataSource.setMaximumPoolSize(20);
-			var store = new JdbcRouteV2AccessStore(dataSource, 50);
-			Instant now = Instant.parse("2026-07-16T09:00:00Z");
-			String tokenHash = "e".repeat(64);
-			store.saveSession(new RouteV2Session(tokenHash, "route:v2:itx", now, now.plusSeconds(600), 0));
-			var ready = new CountDownLatch(100);
-			var start = new CountDownLatch(1);
-
-			try (var executor = Executors.newFixedThreadPool(100)) {
-				var attempts = java.util.stream.IntStream.range(0, 100)
-					.mapToObj(ignored -> executor.submit(() -> {
-						ready.countDown();
-						start.await();
-						return store.consumeSession(tokenHash, now.plusSeconds(1)).status();
-					}))
-					.toList();
-				boolean allReady = ready.await(10, TimeUnit.SECONDS);
-				start.countDown();
-				assertThat(allReady).isTrue();
-				var statuses = attempts.stream().map(future -> {
-					try {
-						return future.get(10, TimeUnit.SECONDS);
-					} catch (Exception exception) {
-						throw new IllegalStateException(exception);
-					}
-				}).toList();
-
-				assertThat(statuses).filteredOn(SessionStatus.VALID::equals).hasSize(50);
-				assertThat(statuses).filteredOn(SessionStatus.LIMITED::equals).hasSize(50);
-			}
-			assertThat(new JdbcTemplate(dataSource).queryForObject(
-				"SELECT request_count FROM route_v2_sessions WHERE token_sha256 = ?",
-				Integer.class,
-				tokenHash
-			)).isEqualTo(50);
-		}
-	}
 
 	@Test
 	@DisplayName("H2 migration도 ledger row의 source와 snapshot source 불일치를 차단한다")

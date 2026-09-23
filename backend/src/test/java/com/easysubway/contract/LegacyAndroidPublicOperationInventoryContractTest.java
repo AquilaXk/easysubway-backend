@@ -21,10 +21,10 @@ class LegacyAndroidPublicOperationInventoryContractTest {
 	private static final Path INTERNAL_API_INDEX = CONTRACTS.resolve("internal-api-index.json");
 	private static final ObjectMapper JSON = new ObjectMapper();
 	private static final List<ExpectedEntry> EXPECTED = List.of(
-		entry("POST", "/api/v1/routes/search", "route-v1-search", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeSearchErrorMessage"),
-		entry("POST", "/api/v2/routes/session", "route-v2-session", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_v2_ingress.dart#RouteSearchOnlineException"),
-		entry("POST", "/api/v2/routes/search", "route-v2-search", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeOnlineSearchErrorMessage"),
-		entry("POST", "/api/v2/routes/{routeSearchId}/refresh", "route-v2-refresh", "ROUTE", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeRefreshErrorMessage"),
+		entry("POST", "/api/v1/routes/search", "route-v1-search", "ROUTE", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeSearchErrorMessage"),
+		entry("POST", "/api/v2/routes/session", "route-v2-session", "ROUTE", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_v2_ingress.dart#RouteSearchOnlineException"),
+		entry("POST", "/api/v2/routes/search", "route-v2-search", "ROUTE", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeOnlineSearchErrorMessage"),
+		entry("POST", "/api/v2/routes/{routeSearchId}/refresh", "route-v2-refresh", "ROUTE", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "REPLACE_WITH_JOURNEY_V3", "apps/mobile/lib/route_search.dart#_routeRefreshErrorMessage"),
 		entry("POST", "/api/v1/routes/{routeSearchId}/feedback", "route-v1-feedback", "ROUTE", "MOBILE_CONSUMED_BACKEND_UNMAPPED", "RECONCILE_ORPHAN", "apps/mobile/lib/route_search.dart#_routeFeedbackErrorMessage"),
 		entry("GET", "/api/v1/realtime/arrivals", "realtime-arrivals", "REALTIME", "MOBILE_CONSUMED_BACKEND_EXPOSED", "REVIEW_NON_ROUTE", "apps/mobile/lib/features/realtime/realtime_repository.dart#RealtimeException"),
 		entry("GET", "/api/v1/realtime/train-positions", "realtime-train-positions", "REALTIME", "BACKEND_EXPOSED_MOBILE_UNCONSUMED", "REVIEW_NON_ROUTE", null),
