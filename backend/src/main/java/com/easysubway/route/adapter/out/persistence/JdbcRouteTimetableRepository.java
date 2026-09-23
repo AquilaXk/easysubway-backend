@@ -29,6 +29,7 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 
 	private final JdbcTemplate jdbcTemplate;
 	private final Clock clock;
+	private final Object stationTimetableLock = new Object();
 	private volatile StationTimetableCache stationTimetableCache;
 	@Autowired
 	public JdbcRouteTimetableRepository(DataSource dataSource) {
@@ -94,17 +95,21 @@ public class JdbcRouteTimetableRepository implements LoadRouteTimetablePort {
 	}
 
 	@Override
-	public synchronized RouteTimetableSnapshot loadStationTimetableSnapshot() {
+	public RouteTimetableSnapshot loadStationTimetableSnapshot() {
 		Optional<ItxArtifact> artifact = admissibleItxArtifact();
 		if (artifact.isEmpty()) return unavailableStationTimetableSnapshot();
 		String cacheKey = cacheKey(artifact.get());
 		StationTimetableCache cached = stationTimetableCache;
 		if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
-		RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
-			cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
-			parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
-		stationTimetableCache = new StationTimetableCache(cacheKey, snapshot);
-		return snapshot;
+		synchronized (stationTimetableLock) {
+			cached = stationTimetableCache;
+			if (cached != null && cached.cacheKey().equals(cacheKey)) return cached.snapshot();
+			RouteTimetableSnapshot snapshot = new RouteTimetableSnapshot(
+				cacheKey, artifact.get().snapshotId(), artifact.get().plannerIdentity(),
+				parseFreshUntil(artifact.get().freshUntil()), loadRouteTimetable());
+			stationTimetableCache = new StationTimetableCache(cacheKey, snapshot);
+			return snapshot;
+		}
 	}
 
 	private static RouteTimetableSnapshot unavailableStationTimetableSnapshot() {

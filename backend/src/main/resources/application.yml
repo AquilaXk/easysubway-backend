@@ -16,6 +16,12 @@ spring:
     enabled: true
     locations: classpath:db/migration/{vendor}
 
+server:
+  compression:
+    enabled: true
+    mime-types: application/json,application/xml,text/html,text/xml,text/plain,application/javascript,text/css
+    min-response-size: 1024
+
 management:
   endpoints:
     web:
