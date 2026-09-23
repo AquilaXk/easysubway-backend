@@ -294,4 +294,131 @@ class RouteOutOfStationCoverageTest {
 		int sel = compiled.selectTransition(cands, 0, false, false);
 		assertThat(sel).isGreaterThanOrEqualTo(0);
 	}
+
+	@Test
+	@DisplayName("ScanWorkspace isTargetDominatingDeparture 조기 가지치기 분기 검증")
+	void scanWorkspaceTargetDominatingDeparture() {
+		var workspace = new ScanWorkspace();
+		workspace.prepare(5, 5, 5);
+		int target = 3;
+		workspace.setTargetStation(target);
+
+		// 1. 타겟 도달 전 (UNREACHED): 어떤 departure도 지배하지 못함
+		assertThat(workspace.isTargetDominatingDeparture(2, 5000)).isFalse();
+
+		// 2. 타겟 도달 시각 5000초 설정 (warningState 0)
+		workspace.bestTargetArrivalSeconds[0] = 5000;
+
+		// station != targetStation: earliestDepartureSeconds >= best 이면 지배 (조기 종료 가능)
+		assertThat(workspace.isTargetDominatingDeparture(2, 5000)).isTrue();
+		assertThat(workspace.isTargetDominatingDeparture(2, 5001)).isTrue();
+		assertThat(workspace.isTargetDominatingDeparture(2, 4999)).isFalse();
+
+		// station == targetStation: earliestDepartureSeconds > best 일 때만 지배
+		assertThat(workspace.isTargetDominatingDeparture(target, 5001)).isTrue();
+		assertThat(workspace.isTargetDominatingDeparture(target, 5000)).isFalse();
+		assertThat(workspace.isTargetDominatingDeparture(target, 4999)).isFalse();
+
+		// 다중 warningState 활성화: 모든 reached target에 대해 earliestDepartureSeconds >= best 만족해야 함
+		workspace.bestTargetArrivalSeconds[1] = 4000;
+		// 4500초: warningState 1 (4000초)에는 >= 이지만, 4500 < 5000 (warningState 0)이므로 false
+		assertThat(workspace.isTargetDominatingDeparture(2, 4500)).isFalse();
+		// 5000초: warningState 0 (5000초) >= 5000 && warningState 1 (4000초) >= 5000 -> true!
+		assertThat(workspace.isTargetDominatingDeparture(2, 5000)).isTrue();
+	}
+
+	@Test
+	@DisplayName("bestReadyBoarding 노외 환승 조기 가지치기(Early Pruning) 분기 완전 커버리지 검증")
+	void bestReadyBoardingEarlyPruningBranches() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest.timetable();
+		var compiled = planner.compile(timetable);
+
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a",
+			"station-d",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T11:20:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1,
+			2,
+			() -> false
+		);
+		var input = RouteTimetableRaptorPlanner.scanInput(query);
+
+		int stationC = compiled.stationIndex("station-c");
+		int lineL2 = compiled.lineIndex("l2");
+		int stationB = compiled.stationIndex("station-b");
+		int lineL1 = compiled.lineIndex("l1");
+		int targetStation = compiled.stationIndex("station-d");
+
+		// 1. 조기 가지치기 실행 (footpathDominated && departure >= bestTargetArrival -> break)
+		var ws1 = new ScanWorkspace();
+		ws1.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws1.setTargetStation(targetStation);
+		ws1.bestTargetArrivalSeconds[0] = 50000;
+		int slotB = ws1.slot(1, stationB, lineL1, 0);
+		ws1.arrivalSeconds[slotB] = 60000;
+
+		var ready1 = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws1, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
+		);
+		assertThat(ready1).isNull();
+
+		// 2. 조기 가지치기 미발생 (departure < bestTargetArrival -> 정상 readyBoarding 반환)
+		var ws2 = new ScanWorkspace();
+		ws2.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws2.setTargetStation(targetStation);
+		ws2.bestTargetArrivalSeconds[0] = 80000;
+		int slotB2 = ws2.slot(1, stationB, lineL1, 0);
+		ws2.arrivalSeconds[slotB2] = 50000;
+
+		var ready2 = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws2, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
+		);
+		assertThat(ready2).isNotNull();
+
+		// 3. arrivalSeconds가 UNREACHED인 경우 (minDepartureForFootpath == Integer.MAX_VALUE)
+		var ws3 = new ScanWorkspace();
+		ws3.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws3.setTargetStation(targetStation);
+		ws3.bestTargetArrivalSeconds[0] = 50000;
+
+		var ready3 = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws3, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
+		);
+		assertThat(ready3).isNull();
+
+		// 4. 타겟 미도달 상태에서 boardingDeadline 초과 케이스
+		var ws4 = new ScanWorkspace();
+		ws4.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws4.setTargetStation(targetStation);
+		int slotB4 = ws4.slot(1, stationB, lineL1, 0);
+		ws4.arrivalSeconds[slotB4] = 60000;
+
+		var ready4 = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws4, stationC, lineL2, 1, 0, 0, input, false, 50000
+		);
+		assertThat(ready4).isNull();
+
+		// 5. 다중 warningState에서 첫 번째보다 늦은 두 번째 상태는 갱신되지 않음 (compare >= 0 분기 커버)
+		var ws5 = new ScanWorkspace();
+		ws5.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws5.setTargetStation(targetStation);
+		ws5.bestTargetArrivalSeconds[0] = 999999;
+		int slotB50 = ws5.slot(1, stationB, lineL1, 0);
+		int slotB51 = ws5.slot(1, stationB, lineL1, 1);
+		ws5.arrivalSeconds[slotB50] = 50000;
+		ws5.arrivalSeconds[slotB51] = 50001;
+
+		var ready5 = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws5, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
+		);
+		assertThat(ready5).isNotNull();
+		assertThat(ready5).isEqualTo(ready2);
+	}
 }
+
