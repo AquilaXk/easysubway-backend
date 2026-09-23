@@ -629,6 +629,7 @@ class RouteTimetableRaptorPlanner {
 		return currentBest;
 	}
 
+	@SuppressWarnings({"java:S107", "java:S3776"})
 	private static ReadyBoarding evaluateFootpaths(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
@@ -690,6 +691,7 @@ class RouteTimetableRaptorPlanner {
 		return best;
 	}
 
+	@SuppressWarnings({"java:S107", "java:S3776"})
 	static ReadyBoarding bestReadyBoarding(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
