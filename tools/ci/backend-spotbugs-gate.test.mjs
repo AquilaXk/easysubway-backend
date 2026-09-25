@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'bc67b1100f2a59b0f022ab4ecb21532af337c285b6fe62dcb2e1b4912d9e8cf0', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'd06a23c354d6caccfb0a81a079dc2c6bde103cff3b3b02ba1375215062fc1488', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '6b7712e46b9f1e5a9bbc8e88ce503c2134954dc7369d6ffde587260e29103e9b');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '881b90fb0adede11d8b64470ef9aaab30a7fda82bfee91a949dbd679c682c496');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -1201,4 +1201,21 @@ test('PR-head provenance binds a distinct synthetic checkout head and rejects mi
     const sameSourceAndPrHead = run(['validate', ...options.map((value) => value === prHeadSha ? sourceSha : value)]); assert.equal(sameSourceAndPrHead.status, 1); assert.match(sameSourceAndPrHead.stderr, /head SHA must differ/);
     assert.equal(pullRequestHeadSha('none'), null); assert.equal(pullRequestHeadSha(prHeadSha), prHeadSha); assert.throws(() => pullRequestHeadSha('invalid'), /pull-request-head-sha/);
   } finally { rmSync(dir, { recursive: true, force: true }); }
+});
+
+test('writeSpotbugsMainEvidence declares stable task, report, and classpath inputs for deterministic freshness (Backend #101)', () => {
+  const build = readFileSync(new URL('../../backend/build.gradle', import.meta.url), 'utf8');
+  assert.match(build, /inputs\.file\(spotbugsMain\.flatMap \{ it\.reports\.xml\.outputLocation \}\)/);
+  assert.match(build, /inputs\.file\(spotbugsMain\.flatMap \{ it\.reports\.html\.outputLocation \}\)/);
+  assert.match(build, /inputs\.file\(spotbugsMain\.flatMap \{ it\.excludeFilter \}\)/);
+  assert.match(build, /inputs\.files\(spotbugsMain\.map \{ it\.classes \}\)/);
+  assert.match(build, /inputs\.files\(spotbugsMain\.map \{ it\.sourceDirs \}\)/);
+  assert.match(build, /inputs\.files\(configurations\.spotbugs\)/);
+  assert.match(build, /inputs\.files\(configurations\.spotbugsSlf4j\)/);
+  assert.match(build, /inputs\.files\(configurations\.compileClasspath\)/);
+  assert.match(build, /inputs\.files\(configurations\.spotbugsPlugins\)/);
+  assert.match(build, /inputs\.file\(spotbugsMain\.flatMap \{ it\.launcher\.map \{ it\.executablePath \} \}\)/);
+  assert.match(build, /inputs\.property\('spotbugsToolVersion', spotbugs\.toolVersion\)/);
+  assert.match(build, /inputs\.property\('spotbugsIgnoreFailures', spotbugsMain\.flatMap \{ provider \{ it\.ignoreFailures \} \}\)/);
+  assert.doesNotMatch(build, /writeSpotbugsMainEvidence[^{]*\{[^}]*upToDateWhen/);
 });
