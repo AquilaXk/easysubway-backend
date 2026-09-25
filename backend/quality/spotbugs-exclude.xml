@@ -221,16 +221,6 @@
 	</Match>
 	<Match>
 		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
-		<Class name="com.easysubway.report.adapter.in.web.FacilityReportAbuseControl"/>
-		<Method name="&lt;init&gt;" params="long,int,int,int,int,int,int,java.lang.String,java.lang.String,org.springframework.beans.factory.ObjectProvider" returns="void"/>
-	</Match>
-	<Match>
-		<Bug pattern="JLM_JSR166_UTILCONCURRENT_MONITORENTER"/>
-		<Class name="com.easysubway.report.adapter.in.web.FacilityReportAbuseControlLimiter"/>
-		<Method name="counterFor" params="com.easysubway.report.adapter.in.web.FacilityReportAbuseControlLimiter$LimiterKey,long" returns="com.easysubway.report.adapter.in.web.FacilityReportAbuseControlLimiter$WindowCounter"/>
-	</Match>
-	<Match>
-		<Bug pattern="CT_CONSTRUCTOR_THROW"/>
 		<Class name="com.easysubway.report.adapter.in.web.FacilityReportUploadIntents"/>
 		<Method name="&lt;init&gt;" params="long,long,int,long,int,long,java.lang.String" returns="void"/>
 	</Match>
