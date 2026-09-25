@@ -263,6 +263,50 @@ class FacilityReportPhotoProcessorTest {
 	}
 
 	@Test
+	@DisplayName("processBytes는 최대 크기(900KB)를 초과한 바이트 배열을 거부한다")
+	void processBytesRejectsOversizedBytes() {
+		byte[] oversized = new byte[900 * 1024 + 1];
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", "image/jpeg", oversized))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("processBytes는 파일명 또는 콘텐츠 유형이 없거나 공백이면 거부한다")
+	void processBytesRejectsMissingMetadata() {
+		byte[] jpegBytes = new byte[] { (byte) 0xff, (byte) 0xd8, (byte) 0xff };
+		assertThatThrownBy(() -> processor.processBytes(null, "image/jpeg", jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("  ", "image/jpeg", jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", null, jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", "   ", jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("processBytes는 webp 형식 바이트를 정상 처리한다")
+	void processBytesProcessesWebp() {
+		byte[] webpBytes = VALID_WEBP_BYTES;
+		FacilityReportPhotoAttachment attachment = processor.processBytes(
+			"elevator.webp",
+			"image/webp",
+			webpBytes
+		);
+		assertThat(attachment.fileName()).isEqualTo("elevator.webp");
+		assertThat(attachment.contentType()).isEqualTo("image/webp");
+		assertThat(attachment.storedBytes()).isNotEmpty();
+	}
+
+	@Test
 	@DisplayName("PhotoMediaType은 canonical 미디어 타입과 확장을 올바르게 반환하고 비교한다")
 	void photoMediaTypeCanonicalAndExtension() {
 		com.easysubway.report.domain.FacilityReport.PhotoMediaType jpeg =

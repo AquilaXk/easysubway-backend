@@ -27,11 +27,6 @@ final class FacilityReportPhotoProcessor {
 	private static final int MAX_PHOTO_HEIGHT = 4_096;
 	private static final long MAX_PHOTO_PIXELS = 12_000_000;
 	private static final int THUMBNAIL_MAX_SIDE = 320;
-	private static final Set<String> ALLOWED_PHOTO_CONTENT_TYPES = Set.of(
-		"image/jpeg",
-		"image/png",
-		"image/webp"
-	);
 
 	FacilityReportPhotoAttachment processBytes(String fileName, String contentType, byte[] rawBytes) {
 		validateAttachmentMetadata(fileName, contentType);
@@ -82,7 +77,8 @@ final class FacilityReportPhotoProcessor {
 	}
 
 	private void validateCompleteAttachment(String fileName, String contentType, String photoBase64) {
-		if (!hasText(fileName) || !hasText(contentType) || !hasText(photoBase64)) {
+		validateAttachmentMetadata(fileName, contentType);
+		if (!hasText(photoBase64)) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
 	}
