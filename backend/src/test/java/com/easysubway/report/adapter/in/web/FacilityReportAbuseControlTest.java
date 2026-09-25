@@ -13,8 +13,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import com.jayway.jsonpath.JsonPath;
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.Map;
+import java.util.concurrent.atomic.AtomicLong;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -23,6 +25,7 @@ import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.boot.test.context.TestConfiguration;
 import org.springframework.context.annotation.Bean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.request.RequestPostProcessor;
 
@@ -372,6 +375,149 @@ class FacilityReportAbuseControlTest {
 			.with(remoteAddr(remoteAddr))
 			.header("X-Forwarded-For", forwardedFor)
 			.header("X-Easysubway-Report-Receipt-Token", "receipt-token-for-rate-limit"));
+	}
+
+	@Test
+	@DisplayName("CIDR 및 IP 파서의 에러 및 엣지 케이스가 규약대로 동작한다")
+	void cidrAndIpParserEdgeCases() {
+		// IpCidr.parse edge cases
+		assertThatThrownBy(() -> IpCidr.parse(""))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> IpCidr.parse("/24"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> IpCidr.parse("invalid-ip/24"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/abc"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/-1"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/33"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> IpCidr.parse("2001:db8::/129"))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		// IpCidr.parse without prefix defaults
+		IpCidr ipv4Default = IpCidr.parse("192.168.1.1");
+		assertThat(ipv4Default.prefixLength()).isEqualTo(32);
+		IpCidr ipv6Default = IpCidr.parse("2001:db8::1");
+		assertThat(ipv6Default.prefixLength()).isEqualTo(128);
+
+		// IpCidr.contains edge cases
+		IpCidr unaligned = IpCidr.parse("192.168.1.16/28");
+		assertThat(unaligned.contains("192.168.1.20")).isTrue();
+		assertThat(unaligned.contains("192.168.1.35")).isFalse();
+		assertThat(unaligned.contains(null)).isFalse();
+		assertThat(unaligned.contains("unknown")).isFalse();
+		assertThat(unaligned.contains("2001:db8::1")).isFalse();
+		assertThat(unaligned.contains("invalid-address")).isFalse();
+
+		// IpCidr.isValidIp
+		assertThat(IpCidr.isValidIp("192.168.1.1")).isTrue();
+		assertThat(IpCidr.isValidIp("2001:db8::1")).isTrue();
+		assertThat(IpCidr.isValidIp("invalid-ip")).isFalse();
+
+		// normalizeAddress edge cases
+		assertThat(FacilityReportClientIdentityResolver.normalizeAddress(null)).isEqualTo("unknown");
+		assertThat(FacilityReportClientIdentityResolver.normalizeAddress("")).isEqualTo("unknown");
+		assertThat(FacilityReportClientIdentityResolver.normalizeAddress("invalid-ip")).isEqualTo("unknown");
+
+		// parseLiteral edge cases
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral(null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("   "))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThat(FacilityReportClientIdentityResolver.parseLiteral("192.168.1.1:8080").getHostAddress()).isEqualTo("192.168.1.1");
+		assertThat(FacilityReportClientIdentityResolver.parseLiteral("fe80::1%eth0").getHostAddress()).contains("fe80:");
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("2001:db8::invalid!"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1:2:3:4:5:6:7:8:9"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1.2.3"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1.2.3.a"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1.2.3.300"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1.2.3.99999999999"))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> FacilityReportClientIdentityResolver.parseLiteral("1.2..4"))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	@DisplayName("limiter의 maxCounterKeys 상한 초과 처리가 정상 동작한다")
+	void limiterCapacityPressure() {
+		var policy = new FacilityReportAbuseControlPolicy(
+			60,
+			1,
+			"local",
+			Map.of(
+				ReportAbuseGroup.UPLOAD_INTENT, 1,
+				ReportAbuseGroup.UPLOAD_CLAIM, 1,
+				ReportAbuseGroup.REPORT_SUBMIT, 1,
+				ReportAbuseGroup.STATUS, 1,
+				ReportAbuseGroup.CONFIRM, 1
+			)
+		);
+		var limiter = new FacilityReportAbuseControlLimiter(policy, Clock.fixed(Instant.parse("2026-06-22T00:00:00Z"), ZoneOffset.UTC));
+
+		// first key allowed
+		assertThat(limiter.acquire(ReportAbuseGroup.UPLOAD_INTENT, "client-1").allowed()).isTrue();
+		// same key increments and hits limit
+		assertThat(limiter.acquire(ReportAbuseGroup.UPLOAD_INTENT, "client-1").allowed()).isFalse();
+
+		// second key exceeds maxCounterKeys (max is 1) -> counter == null -> returns limit
+		var result = limiter.acquire(ReportAbuseGroup.UPLOAD_INTENT, "client-2");
+		assertThat(result.allowed()).isFalse();
+		assertThat(result.retryAfterSeconds()).isGreaterThanOrEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("abuse control 정책 생성 시 유효성 검증 예외를 던진다")
+	void policyValidationEdgeCases() {
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(0, 1, "local", completeLimits(1)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(60, 0, "local", completeLimits(1)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(60, 1, "invalid-mode", completeLimits(1)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(60, 1, "local", Map.of(ReportAbuseGroup.UPLOAD_INTENT, 1)))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new FacilityReportAbuseControlPolicy(60, 1, "local", completeLimits(0)))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	@DisplayName("윈도우 전환 시 카운터가 리셋되고 리졸버의 빈 프록시 설정이 처리된다")
+	void limiterWindowRollAndResolverEdgeCases() {
+		// Mock request non-matching route
+		MockHttpServletRequest unmatchedRequest = new MockHttpServletRequest("GET", "/api/v1/unmatched");
+		assertThat(ReportAbuseGroup.from(unmatchedRequest)).isEmpty();
+
+		// Resolver with null and empty proxies
+		FacilityReportClientIdentityResolver emptyResolver = new FacilityReportClientIdentityResolver("");
+		assertThat(emptyResolver.resolve(unmatchedRequest)).isEqualTo("ip:127.0.0.1");
+
+		FacilityReportClientIdentityResolver nullResolver = new FacilityReportClientIdentityResolver(null);
+		assertThat(nullResolver.resolve(unmatchedRequest)).isEqualTo("ip:127.0.0.1");
+
+		// Window rollover resets counter
+		AtomicLong epochSeconds = new AtomicLong(1000);
+		Clock mutableClock = new Clock() {
+			@Override public ZoneId getZone() { return ZoneOffset.UTC; }
+			@Override public Clock withZone(ZoneId zone) { return this; }
+			@Override public Instant instant() { return Instant.ofEpochSecond(epochSeconds.get()); }
+		};
+
+		var policy = new FacilityReportAbuseControlPolicy(60, 10, "local", completeLimits(1));
+		var limiter = new FacilityReportAbuseControlLimiter(policy, mutableClock);
+
+		assertThat(limiter.acquire(ReportAbuseGroup.UPLOAD_INTENT, "client-1").allowed()).isTrue();
+		assertThat(limiter.acquire(ReportAbuseGroup.UPLOAD_INTENT, "client-1").allowed()).isFalse();
+
+		// Advance clock past the 60s window boundary
+		epochSeconds.addAndGet(70);
+		assertThat(limiter.acquire(ReportAbuseGroup.UPLOAD_INTENT, "client-1").allowed()).isTrue();
 	}
 
 	private static RequestPostProcessor remoteAddr(String remoteAddr) {

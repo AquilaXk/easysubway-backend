@@ -176,9 +176,6 @@ class FacilityReportAbuseControlLimiter {
 
 	AcquireResult acquire(ReportAbuseGroup group, String clientIdentity) {
 		int limit = policy.limit(group);
-		if (limit < 1) {
-			return AcquireResult.allow();
-		}
 		Instant now = Instant.now(clock);
 		long windowStartedAt = currentWindowStartedAt(now);
 		long elapsed = now.getEpochSecond() - windowStartedAt;
@@ -415,15 +412,6 @@ record IpCidr(byte[] address, int prefixLength) {
 		}
 	}
 
-	static boolean isValidIpv4(String value) {
-		try {
-			InetAddress inet = FacilityReportClientIdentityResolver.parseLiteral(value);
-			return inet instanceof java.net.Inet4Address;
-		} catch (IllegalArgumentException exception) {
-			return false;
-		}
-	}
-
 	static boolean isValidIp(String value) {
 		try {
 			FacilityReportClientIdentityResolver.parseLiteral(value);
@@ -432,9 +420,5 @@ record IpCidr(byte[] address, int prefixLength) {
 			return false;
 		}
 	}
-
-	@Override
-	public byte[] address() {
-		return address.clone();
-	}
 }
+
