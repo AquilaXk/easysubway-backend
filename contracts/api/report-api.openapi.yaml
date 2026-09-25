@@ -521,16 +521,6 @@ components:
           $ref: "#/components/schemas/PhotoSha256"
         photoSizeBytes:
           $ref: "#/components/schemas/PhotoSizeBytes"
-        photoDataBase64:
-          type: string
-          description: |
-            사진 본문을 base64로 직접 실어 보내는 경로입니다. **인증 자격 증명이 있는
-            호출자에게만 동작하며**, 익명 접수 요청에서는 값이 버려집니다. 이때
-            `photoFileName`·`photoContentType`만 남아 첨부가 불완전해지므로 `400`이 됩니다.
-
-            이 경로의 존치 여부는 아직 확정되지 않았습니다(이슈 #27). 결정이 나면
-            이 항목의 서술이 바뀌거나 삭제됩니다. 새 연동에서는
-            `photoObjectKey` 경로를 사용하십시오.
         latitude:
           type: number
           description: 제보 위치 위도. 선택 항목입니다.

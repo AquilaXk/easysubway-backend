@@ -756,13 +756,23 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private FacilityReportPhotoAttachment preparePhoto(CreateFacilityReportCommand command) {
+		if (hasText(command.photoDataBase64())) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
 		if (hasText(command.photoObjectKey())) {
 			return processObjectPhoto(command);
 		}
-		if (!photoProcessor.hasAnyPhotoField(command.photoFileName(), command.photoContentType(), command.photoDataBase64())) {
-			return null;
+		if (hasAnyPhotoMetadata(command)) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
-		return photoProcessor.process(command.photoFileName(), command.photoContentType(), command.photoDataBase64());
+		return null;
+	}
+
+	private boolean hasAnyPhotoMetadata(CreateFacilityReportCommand command) {
+		return hasText(command.photoFileName())
+			|| hasText(command.photoContentType())
+			|| hasText(command.photoSha256())
+			|| command.photoSizeBytes() != null;
 	}
 
 	private FacilityReportPhotoAttachment processObjectPhoto(CreateFacilityReportCommand command) {

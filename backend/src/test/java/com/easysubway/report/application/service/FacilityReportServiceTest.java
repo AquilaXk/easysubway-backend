@@ -253,55 +253,62 @@ class FacilityReportServiceTest {
 	}
 
 	@Test
-	@DisplayName("시설 신고 사진은 허용된 이미지 형식만 저장한다")
-	void createReportRequiresAllowedPhotoContentType() {
+	@DisplayName("시설 신고는 direct-base64 사진 본문 전송을 거부한다")
+	void createReportRejectsDirectPhotoDataBase64() {
 		assertThatThrownBy(() -> service.createReport(photoReportCommand(
-			"memo.txt",
-			"text/plain",
-			"aW1hZ2UtYnl0ZXM="
+			"elevator.jpg",
+			"image/jpeg",
+			validJpegBase64()
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
-			.hasMessage("사진 파일 형식을 확인해야 합니다.");
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
 	}
 
 	@Test
-	@DisplayName("시설 신고 사진은 저장 전에 공백과 형식을 정리한다")
-	void createReportNormalizesPhotoFieldsBeforeSaving() {
-		FacilityReport report = service.createReport(photoReportCommand(
-			" elevator.jpg ",
-			" IMAGE/JPEG ",
-			" " + validJpegBase64() + " "
-		));
-
-		assertThat(report.photoFileName()).isEqualTo("elevator.jpg");
-		assertThat(report.photoContentType()).isEqualTo("image/jpeg");
-		assertThat(report.photoObjectKey()).startsWith("facility-reports/" + report.id() + "/");
-		assertThat(report.photoThumbnailObjectKey()).startsWith("facility-reports/" + report.id() + "/");
-		assertThat(report.photoSha256()).matches("[0-9a-f]{64}");
-		assertThat(report.photoSizeBytes()).isPositive();
-	}
-
-	@Test
-	@DisplayName("시설 신고 사진은 서버 크기 제한을 넘을 수 없다")
-	void createReportRejectsOversizedPhotoPayload() {
-		String largePhotoBase64 = Base64.getEncoder().encodeToString(new byte[(900 * 1024) + 1]);
-
-		assertThatThrownBy(() -> service.createReport(photoReportCommand(
-			"large.jpg",
+	@DisplayName("시설 신고는 object key 없는 사진 메타데이터 전송을 거부한다")
+	void createReportRejectsPhotoMetadataWithoutObjectKey() {
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
 			"image/jpeg",
-			largePhotoBase64
+			null,
+			null,
+			null
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
-			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
 	}
 
 	@Test
-	@DisplayName("시설 신고 사진은 올바른 base64 본문을 요구한다")
-	void createReportRequiresValidPhotoPayload() {
-		assertThatThrownBy(() -> service.createReport(photoReportCommand(
-			"broken.jpg",
+	@DisplayName("시설 신고는 direct-base64와 objectKey 동시 전송 모호성을 거부한다")
+	void createReportRejectsDirectBodyAndObjectKeyAmbiguity() {
+		byte[] jpegBytes = validJpegBytes();
+		FacilityReportService serviceWithPhoto = serviceWithUploadedPhoto(
+			"facility-reports/unclaimed/client-submission-ambiguity-photo.jpg",
 			"image/jpeg",
-			"not-base64"
+			jpegBytes
+		);
+
+		assertThatThrownBy(() -> serviceWithPhoto.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-ambiguity-1",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			validJpegBase64(),
+			"facility-reports/unclaimed/client-submission-ambiguity-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
