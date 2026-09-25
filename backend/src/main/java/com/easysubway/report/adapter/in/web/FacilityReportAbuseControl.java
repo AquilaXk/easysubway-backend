@@ -25,7 +25,7 @@ import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 
 @Component
-class FacilityReportAbuseControl extends OncePerRequestFilter {
+final class FacilityReportAbuseControl extends OncePerRequestFilter {
 
 	private final FacilityReportAbuseControlLimiter limiter;
 	private final FacilityReportClientIdentityResolver clientIdentityResolver;
@@ -166,6 +166,7 @@ class FacilityReportAbuseControlLimiter {
 
 	private final FacilityReportAbuseControlPolicy policy;
 	private final Clock clock;
+	private final Object monitor = new Object();
 	private final Map<LimiterKey, WindowCounter> counters = new ConcurrentHashMap<>();
 
 	FacilityReportAbuseControlLimiter(FacilityReportAbuseControlPolicy policy, Clock clock) {
@@ -200,7 +201,7 @@ class FacilityReportAbuseControlLimiter {
 		if (existingCounter != null) {
 			return existingCounter;
 		}
-		synchronized (counters) {
+		synchronized (monitor) {
 			WindowCounter counter = counters.get(key);
 			if (counter != null) {
 				return counter;
