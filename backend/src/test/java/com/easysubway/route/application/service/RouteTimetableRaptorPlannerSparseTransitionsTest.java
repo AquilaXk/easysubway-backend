@@ -48,6 +48,44 @@ class RouteTimetableRaptorPlannerSparseTransitionsTest {
 	}
 
 	@Test
+	@DisplayName("범위 밖 역/호선 인덱스는 radix 키 연산으로 인한 aliasing 없이 안전하게 NO_TRANSITIONS를 반환한다 (#356)")
+	void rejectsOutOfBoundsIndicesWithoutKeyAliasing() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = createMultiLineTransferTimetable();
+		var compiled = planner.compile(timetable);
+
+		int stationCount = compiled.coveredStationIds().size();
+		int lineCount = timetable.transitRoutes().size();
+		int station1 = compiled.stationIndex("station-1");
+		int station2 = compiled.stationIndex("station-2");
+		int line1 = compiled.lineIndex("line-1");
+		int line2 = compiled.lineIndex("line-2");
+
+		// station 경계 검사: station < 0 또는 station >= stationCount
+		assertThat(compiled.transferTransitions(-1, line1, line2)).isEmpty();
+		assertThat(compiled.transferTransitions(stationCount, line1, line2)).isEmpty();
+		assertThat(compiled.transferTransitions(9999, line1, line2)).isEmpty();
+
+		// fromLine 경계 검사: fromLine < 0 또는 fromLine >= lineCount
+		assertThat(compiled.transferTransitions(station2, -1, line2)).isEmpty();
+		assertThat(compiled.transferTransitions(station2, lineCount, line2)).isEmpty();
+		assertThat(compiled.transferTransitions(station2, 9999, line2)).isEmpty();
+
+		// toLine 경계 검사: toLine < 0 또는 toLine >= lineCount
+		assertThat(compiled.transferTransitions(station2, line1, -1)).isEmpty();
+		assertThat(compiled.transferTransitions(station2, line1, lineCount)).isEmpty();
+		assertThat(compiled.transferTransitions(station2, line1, 9999)).isEmpty();
+
+		// Carry / Borrow로 인해 다른 역/노선의 키와 충돌(aliasing)하는 입력에 대한 방어 검증
+		// station1(=0)에서 fromLine=2, toLine=0 -> (0*2+2)*2+0 = 4 (station2(=1)의 line1->line1 키)
+		assertThat(compiled.transferTransitions(station1, 2, 0)).isEmpty();
+		// station2(=1)에서 fromLine=0, toLine=2 -> (1*2+0)*2+2 = 6 (station2(=1)의 line2->line1 키)
+		assertThat(compiled.transferTransitions(station2, 0, 2)).isEmpty();
+		// station2(=1)에서 fromLine=-1, toLine=2 -> (1*2-1)*2+2 = 4 (station2(=1)의 line1->line1 키)
+		assertThat(compiled.transferTransitions(station2, -1, 2)).isEmpty();
+	}
+
+	@Test
 	@DisplayName("결정론적 희소 컴파일 및 순서 보존")
 	void deterministicSparseCompilation() {
 		var planner = new RouteTimetableRaptorPlanner();
