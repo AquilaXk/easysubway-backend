@@ -250,6 +250,7 @@ class FacilityReportAbuseControlLimiter {
 
 class FacilityReportClientIdentityResolver {
 
+	static final String UNKNOWN_CLIENT = "unknown";
 	private final List<IpCidr> trustedProxies;
 
 	FacilityReportClientIdentityResolver(String trustedProxyCidrs) {
@@ -271,11 +272,11 @@ class FacilityReportClientIdentityResolver {
 		String[] addresses = forwardedFor.split(",");
 		for (int index = addresses.length - 1; index >= 0; index--) {
 			String candidate = normalizeAddress(addresses[index]);
-			if (!"unknown".equals(candidate) && !isTrustedProxy(candidate) && IpCidr.isValidIp(candidate)) {
+			if (!UNKNOWN_CLIENT.equals(candidate) && !isTrustedProxy(candidate) && IpCidr.isValidIp(candidate)) {
 				return candidate;
 			}
 		}
-		return "unknown";
+		return UNKNOWN_CLIENT;
 	}
 
 	private boolean isTrustedProxy(String remoteAddress) {
@@ -284,12 +285,12 @@ class FacilityReportClientIdentityResolver {
 
 	static String normalizeAddress(String address) {
 		if (address == null || address.isBlank()) {
-			return "unknown";
+			return UNKNOWN_CLIENT;
 		}
 		try {
 			return parseLiteral(address).getHostAddress().toLowerCase(Locale.ROOT);
 		} catch (IllegalArgumentException exception) {
-			return "unknown";
+			return UNKNOWN_CLIENT;
 		}
 	}
 
@@ -362,6 +363,15 @@ class FacilityReportClientIdentityResolver {
 
 record IpCidr(byte[] address, int prefixLength) {
 
+	IpCidr {
+		address = address.clone();
+	}
+
+	@Override
+	public byte[] address() {
+		return address.clone();
+	}
+
 	static IpCidr parse(String value) {
 		String[] parts = value.split("/", -1);
 		if (parts.length < 1 || parts.length > 2 || parts[0].isBlank()) {
@@ -388,7 +398,7 @@ record IpCidr(byte[] address, int prefixLength) {
 	}
 
 	boolean contains(String candidateAddress) {
-		if (candidateAddress == null || "unknown".equals(candidateAddress)) {
+		if (candidateAddress == null || FacilityReportClientIdentityResolver.UNKNOWN_CLIENT.equals(candidateAddress)) {
 			return false;
 		}
 		try {
@@ -398,14 +408,16 @@ record IpCidr(byte[] address, int prefixLength) {
 				return false;
 			}
 			int fullBytes = prefixLength / Byte.SIZE;
-			if (!Arrays.equals(Arrays.copyOf(address, fullBytes), Arrays.copyOf(other, fullBytes))) {
-				return false;
+			for (int index = 0; index < fullBytes; index++) {
+				if (address[index] != other[index]) {
+					return false;
+				}
 			}
 			int remainingBits = prefixLength % Byte.SIZE;
 			if (remainingBits == 0) {
 				return true;
 			}
-			int mask = 0xff << (Byte.SIZE - remainingBits);
+			int mask = (0xFF << (Byte.SIZE - remainingBits)) & 0xFF;
 			return (address[fullBytes] & mask) == (other[fullBytes] & mask);
 		} catch (IllegalArgumentException exception) {
 			return false;
@@ -419,6 +431,27 @@ record IpCidr(byte[] address, int prefixLength) {
 		} catch (IllegalArgumentException exception) {
 			return false;
 		}
+	}
+
+	@Override
+	public boolean equals(Object obj) {
+		if (this == obj) {
+			return true;
+		}
+		if (!(obj instanceof IpCidr other)) {
+			return false;
+		}
+		return prefixLength == other.prefixLength && Arrays.equals(address, other.address);
+	}
+
+	@Override
+	public int hashCode() {
+		return 31 * Arrays.hashCode(address) + Integer.hashCode(prefixLength);
+	}
+
+	@Override
+	public String toString() {
+		return "IpCidr[address=" + Arrays.toString(address) + ", prefixLength=" + prefixLength + "]";
 	}
 }
 

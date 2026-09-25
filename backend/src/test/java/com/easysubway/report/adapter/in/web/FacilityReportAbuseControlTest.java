@@ -416,6 +416,19 @@ class FacilityReportAbuseControlTest {
 		assertThat(IpCidr.isValidIp("2001:db8::1")).isTrue();
 		assertThat(IpCidr.isValidIp("invalid-ip")).isFalse();
 
+		// IpCidr equals, hashCode, toString, address
+		IpCidr cidrA = IpCidr.parse("192.168.1.0/24");
+		IpCidr cidrB = IpCidr.parse("192.168.1.0/24");
+		IpCidr cidrC = IpCidr.parse("192.168.2.0/24");
+		assertThat(cidrA).isEqualTo(cidrA);
+		assertThat(cidrA).isEqualTo(cidrB);
+		assertThat(cidrA.hashCode()).isEqualTo(cidrB.hashCode());
+		assertThat(cidrA).isNotEqualTo(cidrC);
+		assertThat(cidrA).isNotEqualTo(null);
+		assertThat(cidrA).isNotEqualTo("other-type");
+		assertThat(cidrA.toString()).contains("prefixLength=24");
+		assertThat(cidrA.address()).isEqualTo(cidrB.address());
+
 		// normalizeAddress edge cases
 		assertThat(FacilityReportClientIdentityResolver.normalizeAddress(null)).isEqualTo("unknown");
 		assertThat(FacilityReportClientIdentityResolver.normalizeAddress("")).isEqualTo("unknown");
