@@ -2594,10 +2594,6 @@ class RouteTimetableRaptorPlanner {
 			for (int k = 0; k < transferKeys.length; k += 1) {
 				long key = transferKeys[k];
 				List<Candidate> candidates = transfers.get(key);
-				if (candidates == null || candidates.isEmpty()) {
-					transferIds[k] = NO_TRANSITIONS;
-					continue;
-				}
 				candidates.sort(CANDIDATE_ORDER);
 				int[] ids = new int[candidates.size()];
 				for (int index = 0; index < candidates.size(); index += 1) {
@@ -2895,13 +2891,9 @@ class RouteTimetableRaptorPlanner {
 			return transferKeys.length;
 		}
 		private int[] transferCandidates(int station, int fromLine, int toLine) {
-			if (station < 0 || fromLine < 0 || toLine < 0 || fromLine >= lineCount || toLine >= lineCount) {
-				return NO_TRANSITIONS;
-			}
 			long key = transferKey(station, fromLine, toLine, lineCount);
 			int index = Arrays.binarySearch(transferKeys, key);
-			return index >= 0 && transferTransitions[index] != null
-				? transferTransitions[index] : NO_TRANSITIONS;
+			return index >= 0 ? transferTransitions[index] : NO_TRANSITIONS;
 		}
 		private int[] exitCandidates(int station, int line) {
 			int key = stationLineKey(station, line, lineCount);
