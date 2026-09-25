@@ -262,6 +262,22 @@ class FacilityReportServiceTest {
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> service.createReport(photoReportCommand(
+			null,
+			null,
+			""
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> service.createReport(photoReportCommand(
+			null,
+			null,
+			"   "
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
 	}
 
 	@Test
@@ -675,6 +691,47 @@ class FacilityReportServiceTest {
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// parameterized content-type rejection
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-param-type",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg; charset=utf-8",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 형식을 확인해야 합니다.");
+
+		// mixed case content-type acceptance
+		FacilityReport mixedCaseReport = service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-mixed-case",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"IMAGE/JPEG",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		));
+		assertThat(mixedCaseReport.photoContentType()).isEqualTo("image/jpeg");
 	}
 
 	@Test

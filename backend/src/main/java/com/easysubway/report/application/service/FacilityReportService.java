@@ -756,7 +756,7 @@ public class FacilityReportService implements FacilityReportUseCase {
 	}
 
 	private FacilityReportPhotoAttachment preparePhoto(CreateFacilityReportCommand command) {
-		if (hasText(command.photoDataBase64())) {
+		if (command.photoDataBase64() != null) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
 		if (hasText(command.photoObjectKey())) {
@@ -794,7 +794,9 @@ public class FacilityReportService implements FacilityReportUseCase {
 		}
 		LoadedFacilityReportPhoto uploadedPhoto = loadFacilityReportPhotoPort.loadFacilityReportPhoto(photoObjectKey)
 			.orElseThrow(() -> new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다."));
-		if (!command.photoContentType().trim().equals(uploadedPhoto.contentType())) {
+		FacilityReport.PhotoMediaType requestedMediaType = FacilityReport.PhotoMediaType.from(command.photoContentType());
+		FacilityReport.PhotoMediaType objectMediaType = FacilityReport.PhotoMediaType.from(uploadedPhoto.contentType());
+		if (!requestedMediaType.equals(objectMediaType)) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
 		if (uploadedPhoto.bytes().length != command.photoSizeBytes()) {
@@ -803,10 +805,10 @@ public class FacilityReportService implements FacilityReportUseCase {
 		if (!command.photoSha256().trim().equals(sha256Hex(uploadedPhoto.bytes()))) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
-		return photoProcessor.process(
+		return photoProcessor.processBytes(
 			command.photoFileName(),
-			command.photoContentType(),
-			Base64.getEncoder().encodeToString(uploadedPhoto.bytes())
+			requestedMediaType.canonicalValue(),
+			uploadedPhoto.bytes()
 		);
 	}
 

@@ -197,4 +197,69 @@ public record FacilityReport(
 		return "ES-" + Integer.toUnsignedString(String.valueOf(reportId).hashCode(), 36)
 			.toUpperCase(Locale.ROOT);
 	}
+
+	public static final class PhotoMediaType {
+		public static final String IMAGE_JPEG_VALUE = "image/jpeg";
+		public static final String IMAGE_PNG_VALUE = "image/png";
+		public static final String IMAGE_WEBP_VALUE = "image/webp";
+
+		public static final PhotoMediaType IMAGE_JPEG = new PhotoMediaType(IMAGE_JPEG_VALUE);
+		public static final PhotoMediaType IMAGE_PNG = new PhotoMediaType(IMAGE_PNG_VALUE);
+		public static final PhotoMediaType IMAGE_WEBP = new PhotoMediaType(IMAGE_WEBP_VALUE);
+
+		private final String canonicalValue;
+
+		private PhotoMediaType(String canonicalValue) {
+			this.canonicalValue = canonicalValue;
+		}
+
+		public static PhotoMediaType from(String rawContentType) {
+			if (rawContentType == null || rawContentType.isBlank()) {
+				throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
+			}
+			if (rawContentType.contains(";") || rawContentType.contains("*")) {
+				throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
+			}
+			String normalized = rawContentType.trim().toLowerCase(Locale.ROOT);
+			return switch (normalized) {
+				case IMAGE_JPEG_VALUE -> IMAGE_JPEG;
+				case IMAGE_PNG_VALUE -> IMAGE_PNG;
+				case IMAGE_WEBP_VALUE -> IMAGE_WEBP;
+				default -> throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
+			};
+		}
+
+		public String canonicalValue() {
+			return canonicalValue;
+		}
+
+		public String extension() {
+			return switch (canonicalValue) {
+				case IMAGE_PNG_VALUE -> ".png";
+				case IMAGE_WEBP_VALUE -> ".webp";
+				default -> ".jpg";
+			};
+		}
+
+		@Override
+		public boolean equals(Object o) {
+			if (this == o) {
+				return true;
+			}
+			if (!(o instanceof PhotoMediaType that)) {
+				return false;
+			}
+			return canonicalValue.equals(that.canonicalValue);
+		}
+
+		@Override
+		public int hashCode() {
+			return canonicalValue.hashCode();
+		}
+
+		@Override
+		public String toString() {
+			return canonicalValue;
+		}
+	}
 }
