@@ -6,6 +6,8 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
+import static org.hamcrest.Matchers.containsString;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import com.jayway.jsonpath.JsonPath;
@@ -221,6 +223,74 @@ class FacilityReportAbuseControlTest {
 		assertThatThrownBy(() -> IpCidr.parse("10.0.0.0/8/extra"))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessageContaining("invalid IPv4 CIDR");
+	}
+
+	@Test
+	@DisplayName("호출 한도 초과 시 429와 함께 Retry-After 및 Cache-Control no-store 헤더를 반환하고 본문은 비어 있다")
+	void rateLimitedResponseIncludesRetryAfterAndNoStoreHeadersWithEmptyBody() throws Exception {
+		createUploadIntent("abuse-retry-1", "198.51.100.99").andExpect(status().isCreated());
+		createUploadIntent("abuse-retry-2", "198.51.100.99").andExpect(status().isCreated());
+
+		createUploadIntent("abuse-retry-3", "198.51.100.99")
+			.andExpect(status().isTooManyRequests())
+			.andExpect(header().string("Cache-Control", containsString("no-store")))
+			.andExpect(header().string("Retry-After", "60"));
+	}
+
+	@Test
+	@DisplayName("직접 접속한 IPv6 client도 호출 한도에 걸리면 429를 반환한다")
+	void directIpv6ClientIsRateLimited() throws Exception {
+		createUploadIntent("abuse-ipv6-1", "2001:db8::10").andExpect(status().isCreated());
+		createUploadIntent("abuse-ipv6-2", "2001:db8::10").andExpect(status().isCreated());
+
+		createUploadIntent("abuse-ipv6-3", "2001:db8::10")
+			.andExpect(status().isTooManyRequests())
+			.andExpect(header().string("Retry-After", "60"));
+	}
+
+	@Test
+	@DisplayName("trusted proxy 요청은 X-Forwarded-For의 IPv6 client IP로 한도를 분리한다")
+	void trustedProxyForwardedIpv6ClientSeparatesRateLimitIdentity() throws Exception {
+		getUnknownStatusFromForwardedClient("2001:db8:85a3::8a2e:370:7334").andExpect(status().isNotFound());
+		getUnknownStatusFromForwardedClient("2001:db8:85a3::8a2e:370:7334").andExpect(status().isNotFound());
+
+		getUnknownStatusFromForwardedClient("2001:db8:85a3::8a2e:370:7334")
+			.andExpect(status().isTooManyRequests());
+
+		getUnknownStatusFromForwardedClient("2001:db8:85a3::8a2e:370:7335")
+			.andExpect(status().isNotFound());
+	}
+
+	@Test
+	@DisplayName("IPv6 CIDR trusted proxy 파싱 및 일치 검사가 정상 동작한다")
+	void ipv6CidrTrustedProxyParsesAndMatches() {
+		var resolver = new FacilityReportClientIdentityResolver("2001:db8::/32, 10.0.0.0/8");
+		org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+		request.setRemoteAddr("2001:db8::1");
+		request.addHeader("X-Forwarded-For", "203.0.113.50");
+		assertThat(resolver.resolve(request)).isEqualTo("ip:203.0.113.50");
+	}
+
+	@Test
+	@DisplayName("IPv4-mapped IPv6 및 bracket/port 형태가 결정론적으로 정규화된다")
+	void bracketAndPortAndIpv4MappedIpv6Normalized() {
+		var resolver = new FacilityReportClientIdentityResolver("10.0.0.0/8");
+		org.springframework.mock.web.MockHttpServletRequest request = new org.springframework.mock.web.MockHttpServletRequest();
+		request.setRemoteAddr("10.0.0.1");
+		request.addHeader("X-Forwarded-For", "[2001:db8::1]:8080");
+		assertThat(resolver.resolve(request)).isEqualTo("ip:2001:db8:0:0:0:0:0:1");
+
+		org.springframework.mock.web.MockHttpServletRequest request2 = new org.springframework.mock.web.MockHttpServletRequest();
+		request2.setRemoteAddr("10.0.0.1");
+		request2.addHeader("X-Forwarded-For", "::ffff:203.0.113.55");
+		assertThat(resolver.resolve(request2)).isEqualTo("ip:203.0.113.55");
+	}
+
+	@Test
+	@DisplayName("single-serving-replica storeMode 정책은 정상 허용된다")
+	void singleServingReplicaStoreModeIsAllowed() {
+		var policy = new FacilityReportAbuseControlPolicy(60, 10, "single-serving-replica", completeLimits(1));
+		assertThat(policy.usesReleaseBlockingLocalStore()).isFalse();
 	}
 
 	private org.springframework.test.web.servlet.ResultActions createUploadIntent(String clientSubmissionId, String remoteAddr)

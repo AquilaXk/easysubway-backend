@@ -5,9 +5,12 @@ import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
 import java.io.IOException;
+import java.net.InetAddress;
+import java.net.UnknownHostException;
 import java.time.Clock;
 import java.time.Instant;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
@@ -67,8 +70,14 @@ class FacilityReportAbuseControl extends OncePerRequestFilter {
 		Optional<ReportAbuseGroup> reportAbuseGroup = ReportAbuseGroup.from(request);
 		if (reportAbuseGroup.isPresent()) {
 			ReportAbuseGroup group = reportAbuseGroup.get();
-			if (!limiter.tryAcquire(group, clientIdentityResolver.resolve(request))) {
+			FacilityReportAbuseControlLimiter.AcquireResult result = limiter.acquire(
+				group,
+				clientIdentityResolver.resolve(request)
+			);
+			if (!result.allowed()) {
 				response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+				response.setHeader("Cache-Control", "no-store");
+				response.setHeader("Retry-After", Long.toString(result.retryAfterSeconds()));
 				return;
 			}
 		}
@@ -123,8 +132,8 @@ record FacilityReportAbuseControlPolicy(
 		if (maxCounterKeys < 1) {
 			throw new IllegalArgumentException("report abuse control max counter keys must be positive");
 		}
-		if (!"local".equals(storeMode)) {
-			throw new IllegalArgumentException("report abuse control store mode must be local until distributed store is implemented");
+		if (!"local".equals(storeMode) && !"single-serving-replica".equals(storeMode) && !"single-replica".equals(storeMode)) {
+			throw new IllegalArgumentException("report abuse control store mode must be local or single-serving-replica until distributed store is implemented");
 		}
 		for (ReportAbuseGroup group : ReportAbuseGroup.values()) {
 			Integer limit = limits.get(group);
@@ -145,6 +154,16 @@ record FacilityReportAbuseControlPolicy(
 
 class FacilityReportAbuseControlLimiter {
 
+	record AcquireResult(boolean allowed, long retryAfterSeconds) {
+		static AcquireResult allow() {
+			return new AcquireResult(true, 0);
+		}
+
+		static AcquireResult limit(long retryAfterSeconds) {
+			return new AcquireResult(false, Math.max(1, retryAfterSeconds));
+		}
+	}
+
 	private final FacilityReportAbuseControlPolicy policy;
 	private final Clock clock;
 	private final Map<LimiterKey, WindowCounter> counters = new ConcurrentHashMap<>();
@@ -154,18 +173,26 @@ class FacilityReportAbuseControlLimiter {
 		this.clock = clock;
 	}
 
-	boolean tryAcquire(ReportAbuseGroup group, String clientIdentity) {
+	AcquireResult acquire(ReportAbuseGroup group, String clientIdentity) {
 		int limit = policy.limit(group);
 		if (limit < 1) {
-			return true;
+			return AcquireResult.allow();
 		}
-		long windowStartedAt = currentWindowStartedAt(Instant.now(clock));
+		Instant now = Instant.now(clock);
+		long windowStartedAt = currentWindowStartedAt(now);
+		long elapsed = now.getEpochSecond() - windowStartedAt;
+		long retryAfterSeconds = Math.max(1, policy.windowSeconds() - elapsed);
+
 		WindowCounter counter = counterFor(new LimiterKey(group, clientIdentity), windowStartedAt);
 		if (counter == null) {
-			return false;
+			return AcquireResult.limit(retryAfterSeconds);
 		}
 		boolean allowed = counter.incrementWithin(windowStartedAt, limit);
-		return allowed;
+		return allowed ? AcquireResult.allow() : AcquireResult.limit(retryAfterSeconds);
+	}
+
+	boolean tryAcquire(ReportAbuseGroup group, String clientIdentity) {
+		return acquire(group, clientIdentity).allowed();
 	}
 
 	private WindowCounter counterFor(LimiterKey key, long windowStartedAt) {
@@ -246,7 +273,7 @@ class FacilityReportClientIdentityResolver {
 		String[] addresses = forwardedFor.split(",");
 		for (int index = addresses.length - 1; index >= 0; index--) {
 			String candidate = normalizeAddress(addresses[index]);
-			if (!isTrustedProxy(candidate) && IpCidr.isValidIpv4(candidate)) {
+			if (!"unknown".equals(candidate) && !isTrustedProxy(candidate) && IpCidr.isValidIp(candidate)) {
 				return candidate;
 			}
 		}
@@ -257,11 +284,67 @@ class FacilityReportClientIdentityResolver {
 		return trustedProxies.stream().anyMatch(proxy -> proxy.contains(remoteAddress));
 	}
 
-	private static String normalizeAddress(String address) {
+	static String normalizeAddress(String address) {
 		if (address == null || address.isBlank()) {
 			return "unknown";
 		}
-		return address.trim().toLowerCase(Locale.ROOT);
+		try {
+			return parseLiteral(address).getHostAddress().toLowerCase(Locale.ROOT);
+		} catch (IllegalArgumentException exception) {
+			return "unknown";
+		}
+	}
+
+	static InetAddress parseLiteral(String value) {
+		if (value == null) {
+			throw new IllegalArgumentException("IP address cannot be null");
+		}
+		String candidate = value.trim();
+		if (candidate.startsWith("[") && candidate.contains("]")) {
+			int closeBracket = candidate.indexOf("]");
+			candidate = candidate.substring(1, closeBracket);
+		} else if (candidate.contains(":") && candidate.indexOf(":") == candidate.lastIndexOf(":")) {
+			candidate = candidate.substring(0, candidate.indexOf(":"));
+		}
+		if (candidate.contains("%")) {
+			candidate = candidate.substring(0, candidate.indexOf("%"));
+		}
+		if (candidate.isBlank()) {
+			throw new IllegalArgumentException("invalid IP address: " + value);
+		}
+		if (candidate.contains(":")) {
+			if (!candidate.matches("[0-9A-Fa-f:.]+")) {
+				throw new IllegalArgumentException("invalid IPv6 address: " + value);
+			}
+		} else if (!validIpv4(candidate)) {
+			throw new IllegalArgumentException("invalid IPv4 address: " + value);
+		}
+		try {
+			return InetAddress.getByName(candidate);
+		} catch (UnknownHostException exception) {
+			throw new IllegalArgumentException("invalid IP address: " + value, exception);
+		}
+	}
+
+	private static boolean validIpv4(String value) {
+		String[] parts = value.split("\\.", -1);
+		if (parts.length != 4) {
+			return false;
+		}
+		for (String part : parts) {
+			if (part.isEmpty() || !part.chars().allMatch(Character::isDigit)) {
+				return false;
+			}
+			try {
+				int octet = Integer.parseInt(part);
+				if (octet < 0 || octet > 255) {
+					return false;
+				}
+			} catch (NumberFormatException exception) {
+				return false;
+			}
+		}
+		return true;
 	}
 
 	private static List<IpCidr> parseTrustedProxies(String trustedProxyCidrs) {
@@ -279,25 +362,53 @@ class FacilityReportClientIdentityResolver {
 	}
 }
 
-record IpCidr(int address, int mask) {
+record IpCidr(byte[] address, int prefixLength) {
 
 	static IpCidr parse(String value) {
 		String[] parts = value.split("/", -1);
 		if (parts.length < 1 || parts.length > 2 || parts[0].isBlank()) {
 			throw new IllegalArgumentException("invalid IPv4 CIDR: " + value);
 		}
-		String address = parts[0].trim();
-		int prefixLength = parts.length == 2 ? Integer.parseInt(parts[1].trim()) : 32;
-		if (prefixLength < 0 || prefixLength > 32) {
+		InetAddress inetAddress;
+		try {
+			inetAddress = FacilityReportClientIdentityResolver.parseLiteral(parts[0].trim());
+		} catch (IllegalArgumentException e) {
+			throw new IllegalArgumentException("invalid IPv4 CIDR: " + value, e);
+		}
+		byte[] addressBytes = inetAddress.getAddress();
+		int maxPrefix = addressBytes.length * Byte.SIZE;
+		int prefixLength;
+		try {
+			prefixLength = parts.length == 2 ? Integer.parseInt(parts[1].trim()) : maxPrefix;
+		} catch (NumberFormatException e) {
+			throw new IllegalArgumentException("invalid IPv4 CIDR prefix: " + value, e);
+		}
+		if (prefixLength < 0 || prefixLength > maxPrefix) {
 			throw new IllegalArgumentException("invalid IPv4 CIDR prefix: " + value);
 		}
-		int mask = prefixLength == 0 ? 0 : -1 << (32 - prefixLength);
-		return new IpCidr(ipv4ToInt(address), mask);
+		return new IpCidr(addressBytes, prefixLength);
 	}
 
 	boolean contains(String candidateAddress) {
+		if (candidateAddress == null || "unknown".equals(candidateAddress)) {
+			return false;
+		}
 		try {
-			return (ipv4ToInt(candidateAddress) & mask) == (address & mask);
+			InetAddress inetAddress = FacilityReportClientIdentityResolver.parseLiteral(candidateAddress);
+			byte[] other = inetAddress.getAddress();
+			if (address.length != other.length) {
+				return false;
+			}
+			int fullBytes = prefixLength / Byte.SIZE;
+			if (!Arrays.equals(Arrays.copyOf(address, fullBytes), Arrays.copyOf(other, fullBytes))) {
+				return false;
+			}
+			int remainingBits = prefixLength % Byte.SIZE;
+			if (remainingBits == 0) {
+				return true;
+			}
+			int mask = 0xff << (Byte.SIZE - remainingBits);
+			return (address[fullBytes] & mask) == (other[fullBytes] & mask);
 		} catch (IllegalArgumentException exception) {
 			return false;
 		}
@@ -305,26 +416,24 @@ record IpCidr(int address, int mask) {
 
 	static boolean isValidIpv4(String value) {
 		try {
-			ipv4ToInt(value);
+			InetAddress inet = FacilityReportClientIdentityResolver.parseLiteral(value);
+			return inet instanceof java.net.Inet4Address;
+		} catch (IllegalArgumentException exception) {
+			return false;
+		}
+	}
+
+	static boolean isValidIp(String value) {
+		try {
+			FacilityReportClientIdentityResolver.parseLiteral(value);
 			return true;
 		} catch (IllegalArgumentException exception) {
 			return false;
 		}
 	}
 
-	private static int ipv4ToInt(String value) {
-		String[] octets = value.trim().split("\\.");
-		if (octets.length != 4) {
-			throw new IllegalArgumentException("only IPv4 CIDR is supported");
-		}
-		int result = 0;
-		for (String octet : octets) {
-			int parsed = Integer.parseInt(octet);
-			if (parsed < 0 || parsed > 255) {
-				throw new IllegalArgumentException("invalid IPv4 address: " + value);
-			}
-			result = (result << 8) | parsed;
-		}
-		return result;
+	@Override
+	public byte[] address() {
+		return address.clone();
 	}
 }
