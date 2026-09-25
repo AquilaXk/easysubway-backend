@@ -115,6 +115,128 @@ class FacilityReportPhotoProcessorTest {
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
 	}
 
+	@Test
+	@DisplayName("지원하지 않는 MIME type은 거부한다")
+	void rejectUnsupportedContentType() {
+		assertThatThrownBy(() -> processor.process(
+			"memo.txt",
+			"text/plain",
+			"aW1hZ2UtYnl0ZXM="
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 형식을 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("사진 첨부 필드는 공백을 정상적으로 trim 처리한다")
+	void normalizePhotoFields() throws IOException {
+		byte[] jpegBytes = encodedImage("jpg", 640, 360);
+		FacilityReportPhotoAttachment attachment = processor.process(
+			" elevator.jpg ",
+			" IMAGE/JPEG ",
+			" " + Base64.getEncoder().encodeToString(jpegBytes) + " "
+		);
+		assertThat(attachment.fileName()).isEqualTo("elevator.jpg");
+		assertThat(attachment.contentType()).isEqualTo("image/jpeg");
+	}
+
+	@Test
+	@DisplayName("Base64 문자열이 너무 길면 거부한다")
+	void rejectOversizedBase64Chars() {
+		String largePhotoBase64 = "A".repeat(((900 * 1024 + 2) / 3) * 4 + 4);
+		assertThatThrownBy(() -> processor.process(
+			"large.jpg",
+			"image/jpeg",
+			largePhotoBase64
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("디코딩된 사진 바이트 크기가 900KB를 초과하면 거부한다")
+	void rejectOversizedDecodedBytes() {
+		String largePhotoBase64 = Base64.getEncoder().encodeToString(new byte[(900 * 1024) + 1]);
+		assertThatThrownBy(() -> processor.process(
+			"large.jpg",
+			"image/jpeg",
+			largePhotoBase64
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("유효하지 않은 base64 본문은 거부한다")
+	void rejectInvalidBase64() {
+		assertThatThrownBy(() -> processor.process(
+			"broken.jpg",
+			"image/jpeg",
+			"not-base64"
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("첨부 파일명이나 본문이 비어있으면 거부한다")
+	void rejectBlankAttachmentFields() {
+		assertThatThrownBy(() -> processor.process(
+			"   ",
+			"image/jpeg",
+			"valid"
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		assertThatThrownBy(() -> processor.process(
+			null,
+			"image/jpeg",
+			"valid"
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		assertThatThrownBy(() -> processor.process(
+			"photo.jpg",
+			"   ",
+			"valid"
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+		assertThatThrownBy(() -> processor.process(
+			"photo.jpg",
+			"image/jpeg",
+			"   "
+		))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("hasAnyPhotoField는 하나라도 채워져 있으면 true를 반환한다")
+	void hasAnyPhotoFieldChecks() {
+		assertThat(processor.hasAnyPhotoField(null, null, null)).isFalse();
+		assertThat(processor.hasAnyPhotoField("", " ", "\t")).isFalse();
+		assertThat(processor.hasAnyPhotoField("photo.jpg", null, null)).isTrue();
+		assertThat(processor.hasAnyPhotoField(null, "image/jpeg", null)).isTrue();
+		assertThat(processor.hasAnyPhotoField(null, null, "base64")).isTrue();
+	}
+
+	@Test
+	@DisplayName("PNG 신고 사진은 원본을 재작성하고 thumbnail을 생성한다")
+	void processPngPhoto() throws IOException {
+		byte[] pngBytes = encodedImage("png", 320, 240);
+		FacilityReportPhotoAttachment attachment = processor.process(
+			"elevator.png",
+			"image/png",
+			Base64.getEncoder().encodeToString(pngBytes)
+		);
+		assertThat(attachment.fileName()).isEqualTo("elevator.png");
+		assertThat(attachment.contentType()).isEqualTo("image/png");
+		assertThat(attachment.storedBytes()).isNotEmpty();
+		assertThat(attachment.thumbnailBytes()).isNotEmpty();
+	}
+
+
 	private byte[] encodedImage(String formatName, int width, int height) throws IOException {
 		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
 		for (int y = 0; y < height; y++) {

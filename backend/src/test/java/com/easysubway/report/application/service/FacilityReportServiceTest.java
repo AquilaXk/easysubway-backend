@@ -267,20 +267,125 @@ class FacilityReportServiceTest {
 	@Test
 	@DisplayName("시설 신고는 object key 없는 사진 메타데이터 전송을 거부한다")
 	void createReportRejectsPhotoMetadataWithoutObjectKey() {
+		// photoFileName only
 		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
 			"anonymous-user-photo",
+			"client-submission-name-only",
 			"station-sangnoksu",
 			"facility-sangnoksu-elevator-1",
 			FacilityReportType.BROKEN,
 			"사진 첨부 신고입니다.",
 			"elevator.jpg",
-			"image/jpeg",
+			null,
+			null,
+			null,
+			null,
+			null,
 			null,
 			null,
 			null
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// photoContentType only
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-type-only",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			null,
+			"image/jpeg",
+			null,
+			null,
+			null,
+			null,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// photoSha256 only
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-sha-only",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			null,
+			null,
+			null,
+			null,
+			"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+			null,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// photoSizeBytes only
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-size-only",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			null,
+			null,
+			null,
+			null,
+			null,
+			100L,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 사진은 저장 전에 공백과 형식을 정리한다")
+	void createReportNormalizesPhotoFieldsBeforeSaving() {
+		byte[] jpegBytes = validJpegBytes();
+		FacilityReportService serviceWithPhoto = serviceWithUploadedPhoto(
+			"facility-reports/unclaimed/client-submission-normalize-photo.jpg",
+			"image/jpeg",
+			jpegBytes
+		);
+
+		FacilityReport report = serviceWithPhoto.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-normalize-1",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			" elevator.jpg ",
+			" image/jpeg ",
+			null,
+			"facility-reports/unclaimed/client-submission-normalize-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		));
+
+		assertThat(report.photoFileName()).isEqualTo("elevator.jpg");
+		assertThat(report.photoContentType()).isEqualTo("image/jpeg");
+		assertThat(report.photoObjectKey()).startsWith("facility-reports/" + report.id() + "/");
+		assertThat(report.photoThumbnailObjectKey()).startsWith("facility-reports/" + report.id() + "/");
+		assertThat(report.photoSha256()).matches("[0-9a-f]{64}");
+		assertThat(report.photoSizeBytes()).isPositive();
 	}
 
 	@Test
@@ -346,6 +451,227 @@ class FacilityReportServiceTest {
 			"facility-reports/unclaimed/client-submission-1-photo.jpg",
 			"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
 			(long) jpegBytes.length
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("시설 신고 object 사진은 유효하지 않은 object 메타데이터를 거부한다")
+	void createReportRejectsInvalidObjectPhotoMetadata() {
+		byte[] jpegBytes = validJpegBytes();
+		FacilityReportService service = serviceWithUploadedPhoto(
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			"image/jpeg",
+			jpegBytes
+		);
+
+		// invalid object key prefix
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-key-prefix",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"invalid-prefix/photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// blank fileName with objectKey
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-blank-name",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"   ",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// blank contentType with objectKey
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-blank-type",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"   ",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// blank sha256 with objectKey
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-blank-sha",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			"   ",
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// null sizeBytes with objectKey
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-null-size",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			null,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// invalid sha256 pattern
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-bad-sha",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			"not-a-valid-sha-256",
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// sizeBytes < 1
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-zero-size",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			0L,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+
+		// sizeBytes > 900KB
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-oversized",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(900L * 1024L) + 1L,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+
+		// content type mismatch between command and loaded photo
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-type-mismatch",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.png",
+			"image/png",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length,
+			null,
+			null,
+			null
+		)))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		// size mismatch between command and loaded photo
+		assertThatThrownBy(() -> service.createReport(new CreateFacilityReportCommand(
+			"anonymous-user-photo",
+			"client-submission-size-mismatch",
+			"station-sangnoksu",
+			"facility-sangnoksu-elevator-1",
+			FacilityReportType.BROKEN,
+			"사진 첨부 신고입니다.",
+			"elevator.jpg",
+			"image/jpeg",
+			null,
+			"facility-reports/unclaimed/client-submission-valid-photo.jpg",
+			sha256Hex(jpegBytes),
+			(long) jpegBytes.length + 1L,
+			null,
+			null,
+			null
 		)))
 			.isInstanceOf(InvalidFacilityReportException.class)
 			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
