@@ -6,6 +6,7 @@ import static org.springframework.security.test.web.servlet.request.SecurityMock
 import static org.springframework.security.test.web.servlet.request.SecurityMockMvcRequestPostProcessors.user;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -15,6 +16,7 @@ import com.easysubway.admin.audit.domain.AdminAuditOutcome;
 import com.easysubway.admin.audit.domain.AdminAuditEventType;
 import com.jayway.jsonpath.JsonPath;
 import jakarta.servlet.http.HttpSession;
+import java.util.Base64;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 import org.junit.jupiter.api.DisplayName;
@@ -698,19 +700,70 @@ class FacilityReportAdminPageControllerTest {
 	}
 
 	private String createReportWithPhotoAndLocation(String description) throws Exception {
+		byte[] pngBytes = Base64.getDecoder().decode(VALID_PNG_BASE64);
+		String clientSubmissionId = "client-sub-admin-" + java.util.UUID.randomUUID();
+		UploadedObject uploaded = uploadReportPhotoObject(clientSubmissionId, "image/png", pngBytes);
 		return createReport(
 			description,
 			"BROKEN",
 			"""
 				,
+						  "clientSubmissionId": "%s",
 						  "photoFileName": "elevator-notice.png",
 						  "photoContentType": "image/png",
-						  "photoDataBase64": "%s",
+						  "photoObjectKey": "%s",
+						  "photoSha256": "%s",
+						  "photoSizeBytes": %d,
 						  "latitude": 37.302421,
 						  "longitude": 126.866221
 					"""
-					.formatted(VALID_PNG_BASE64)
-			);
+					.formatted(clientSubmissionId, uploaded.objectKey(), uploaded.sha256(), pngBytes.length)
+		);
+	}
+
+	private UploadedObject uploadReportPhotoObject(
+		String clientSubmissionId,
+		String contentType,
+		byte[] bytes
+	) throws Exception {
+		String sha256 = sha256Hex(bytes);
+		String intentResponse = mockMvc.perform(post("/api/v1/report-uploads")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "%s",
+					  "photoFileName": "elevator-notice.png",
+					  "photoContentType": "%s",
+					  "photoSha256": "%s",
+					  "photoSizeBytes": %d
+					}
+					""".formatted(clientSubmissionId, contentType, sha256, bytes.length)))
+			.andExpect(status().isCreated())
+			.andReturn()
+			.getResponse()
+			.getContentAsString();
+		String uploadUrl = JsonPath.read(intentResponse, "$.data.uploadUrl");
+		String objectKey = JsonPath.read(intentResponse, "$.data.objectKey");
+
+		mockMvc.perform(put(uploadUrl)
+				.header("Content-Type", contentType)
+				.header("x-easysubway-upload-sha256", sha256)
+				.header("x-easysubway-upload-size", String.valueOf(bytes.length))
+				.content(bytes))
+			.andExpect(status().isNoContent());
+
+		return new UploadedObject(objectKey, sha256);
+	}
+
+	private String sha256Hex(byte[] bytes) {
+		try {
+			return java.util.HexFormat.of().formatHex(java.security.MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (java.security.NoSuchAlgorithmException exception) {
+			throw new IllegalStateException("SHA-256 algorithm is unavailable", exception);
+		}
+	}
+
+	private record UploadedObject(String objectKey, String sha256) {
 	}
 
 	private String createReport(String description, String optionalJson) throws Exception {

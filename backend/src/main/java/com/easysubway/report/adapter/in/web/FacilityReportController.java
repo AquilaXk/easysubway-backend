@@ -127,6 +127,9 @@ class FacilityReportController {
 		@RequestBody CreateFacilityReportRequest request,
 		Principal principal
 	) {
+		if (request.hasDirectPhoto()) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
 		if (request.hasReceiptSubmission() && principal == null) {
 			boolean duplicateSubmission = hasExistingClientSubmission(request);
 			if (!duplicateSubmission) {
@@ -261,6 +264,10 @@ class FacilityReportController {
 		BigDecimal longitude
 	) {
 
+		boolean hasDirectPhoto() {
+			return photoDataBase64 != null && !photoDataBase64.isBlank();
+		}
+
 		boolean hasReceiptSubmission() {
 			return clientSubmissionId != null && !clientSubmissionId.isBlank();
 		}
@@ -275,7 +282,7 @@ class FacilityReportController {
 				description,
 				photoFileName,
 				photoContentType,
-				photoDataBase64,
+				null,
 				photoObjectKey,
 				photoSha256,
 				photoSizeBytes,

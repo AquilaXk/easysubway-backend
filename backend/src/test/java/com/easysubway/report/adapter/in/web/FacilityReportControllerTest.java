@@ -857,23 +857,32 @@ class FacilityReportControllerTest {
 	@Test
 	@DisplayName("관리자는 신고 상세에서 사진 첨부와 위치 정보를 확인한다")
 	void adminReadsReportDetailWithPhotoAndLocation() throws Exception {
+		UploadedObject uploaded = uploadReportPhotoObject(
+			"client-submission-admin-detail-1",
+			"image/png",
+			validPngBytes()
+		);
+
 		String response = mockMvc.perform(post("/api/v1/reports")
 				.with(httpBasic("basic-user", "user-test-password"))
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
+					  "clientSubmissionId": "client-submission-admin-detail-1",
 					  "userId": "anonymous-user-admin-detail",
 					  "stationId": "station-sangnoksu",
 					  "facilityId": "facility-sangnoksu-elevator-1",
 					  "reportType": "BROKEN",
 					  "description": "엘리베이터 앞 안내문이 떨어져 있습니다.",
-						  "photoFileName": "elevator-notice.png",
-						  "photoContentType": "image/png",
-						  "photoDataBase64": "%s",
+					  "photoFileName": "elevator-notice.png",
+					  "photoContentType": "image/png",
+					  "photoObjectKey": "%s",
+					  "photoSha256": "%s",
+					  "photoSizeBytes": %d,
 					  "latitude": 37.302421,
 					  "longitude": 126.866221
-						}
-						""".formatted(VALID_PNG_BASE64)))
+					}
+					""".formatted(uploaded.objectKey(), uploaded.sha256(), validPngBytes().length)))
 			.andExpect(status().isCreated())
 			.andReturn()
 			.getResponse()
@@ -932,26 +941,78 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
-	@DisplayName("사진 형식이 잘못된 신고 생성은 공통 400 응답을 반환한다")
-	void createReportRejectsUnsupportedPhotoContentType() throws Exception {
-		mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+	@DisplayName("신고 사진 업로드 의도는 지원하지 않는 파일 형식을 거부한다")
+	void createReportUploadIntentRejectsUnsupportedPhotoContentType() throws Exception {
+		mockMvc.perform(post("/api/v1/report-uploads")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
-					  "userId": "spoofed-user",
-					  "stationId": "station-sangnoksu",
-					  "facilityId": "facility-sangnoksu-elevator-1",
-					  "reportType": "BROKEN",
-					  "description": "이미지 형식이 아닌 파일입니다.",
+					  "clientSubmissionId": "client-submission-unsupported-type-1",
 					  "photoFileName": "memo.txt",
 					  "photoContentType": "text/plain",
-					  "photoDataBase64": "aW1hZ2UtYnl0ZXM="
+					  "photoSha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+					  "photoSizeBytes": 11
 					}
 					"""))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("사진 파일 형식을 확인해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("신고 생성은 direct base64 사진 본문 전송을 거부한다")
+	void createReportRejectsDirectPhotoDataBase64() throws Exception {
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "basic-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "direct base64 사진 신고입니다.",
+					  "photoFileName": "elevator.png",
+					  "photoContentType": "image/png",
+					  "photoDataBase64": "%s"
+					}
+					""".formatted(VALID_PNG_BASE64)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
+	}
+
+	@Test
+	@DisplayName("신고 생성은 direct base64와 objectKey 동시 전송 모호성을 거부한다")
+	void createReportRejectsDirectBodyAndObjectKeyAmbiguity() throws Exception {
+		UploadedObject uploaded = uploadReportPhotoObject(
+			"client-submission-ambiguity-1",
+			"image/png",
+			validPngBytes()
+		);
+
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-ambiguity-1",
+					  "userId": "basic-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "모호한 사진 신고입니다.",
+					  "photoFileName": "elevator.png",
+					  "photoContentType": "image/png",
+					  "photoObjectKey": "%s",
+					  "photoSha256": "%s",
+					  "photoSizeBytes": %d,
+					  "photoDataBase64": "aW1hZ2UtYnl0ZXM="
+					}
+					""".formatted(uploaded.objectKey(), uploaded.sha256(), validPngBytes().length)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
 	}
 
 	@Test
@@ -1045,25 +1106,19 @@ class FacilityReportControllerTest {
 	}
 
 	@Test
-	@DisplayName("사진 크기가 큰 신고 생성은 공통 400 응답을 반환한다")
-	void createReportRejectsLargePhotoPayload() throws Exception {
-		String largePhotoBase64 = Base64.getEncoder().encodeToString(new byte[(900 * 1024) + 1]);
-
-		mockMvc.perform(post("/api/v1/reports")
-				.with(httpBasic("basic-user", "user-test-password"))
+	@DisplayName("신고 사진 업로드 의도는 서버 크기 제한을 넘는 사진을 거부한다")
+	void createReportUploadIntentRejectsOversizedPhotoPayload() throws Exception {
+		mockMvc.perform(post("/api/v1/report-uploads")
 				.contentType(MediaType.APPLICATION_JSON)
 				.content("""
 					{
-					  "userId": "spoofed-user",
-					  "stationId": "station-sangnoksu",
-					  "facilityId": "facility-sangnoksu-elevator-1",
-					  "reportType": "BROKEN",
-					  "description": "사진이 너무 큰 신고입니다.",
+					  "clientSubmissionId": "client-submission-oversized-1",
 					  "photoFileName": "large.jpg",
 					  "photoContentType": "image/jpeg",
-					  "photoDataBase64": "%s"
+					  "photoSha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+					  "photoSizeBytes": %d
 					}
-					""".formatted(largePhotoBase64)))
+					""".formatted((900L * 1024L) + 1L)))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("사진 파일 크기를 줄여야 합니다."));
@@ -1110,6 +1165,12 @@ class FacilityReportControllerTest {
 		String userId,
 		String description
 	) throws Exception {
+		String clientSubmissionId = "client-sub-" + java.util.UUID.randomUUID();
+		UploadedObject uploaded = uploadReportPhotoObject(
+			clientSubmissionId,
+			"image/png",
+			validPngBytes()
+		);
 		return createReport(
 			username,
 			password,
@@ -1117,12 +1178,15 @@ class FacilityReportControllerTest {
 			description,
 			"""
 				,
+						  "clientSubmissionId": "%s",
 						  "photoFileName": "elevator-notice.png",
 						  "photoContentType": "image/png",
-						  "photoDataBase64": "%s"
+						  "photoObjectKey": "%s",
+						  "photoSha256": "%s",
+						  "photoSizeBytes": %d
 					"""
-					.formatted(VALID_PNG_BASE64)
-			);
+					.formatted(clientSubmissionId, uploaded.objectKey(), uploaded.sha256(), validPngBytes().length)
+		);
 	}
 
 	private String createReport(
@@ -1231,6 +1295,10 @@ class FacilityReportControllerTest {
 			  "photoSizeBytes": %d
 			}
 			""".formatted(clientSubmissionId, objectKey, sha256, sizeBytes);
+	}
+
+	private byte[] validPngBytes() {
+		return Base64.getDecoder().decode(VALID_PNG_BASE64);
 	}
 
 	private String sha256Hex(byte[] bytes) {
