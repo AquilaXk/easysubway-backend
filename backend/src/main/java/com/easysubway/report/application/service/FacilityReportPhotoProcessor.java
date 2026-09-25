@@ -1,5 +1,6 @@
 package com.easysubway.report.application.service;
 
+import com.easysubway.report.domain.FacilityReport;
 import com.easysubway.report.domain.InvalidFacilityReportException;
 import java.awt.Graphics2D;
 import java.awt.RenderingHints;
@@ -26,28 +27,28 @@ final class FacilityReportPhotoProcessor {
 	private static final int MAX_PHOTO_HEIGHT = 4_096;
 	private static final long MAX_PHOTO_PIXELS = 12_000_000;
 	private static final int THUMBNAIL_MAX_SIDE = 320;
-	private static final Set<String> ALLOWED_PHOTO_CONTENT_TYPES = Set.of(
-		"image/jpeg",
-		"image/png",
-		"image/webp"
-	);
 
-	FacilityReportPhotoAttachment process(String fileName, String contentType, String photoBase64) {
-		validateCompleteAttachment(fileName, contentType, photoBase64);
+	FacilityReportPhotoAttachment processBytes(String fileName, String contentType, byte[] rawBytes) {
+		validateAttachmentMetadata(fileName, contentType);
+		if (rawBytes == null || rawBytes.length == 0) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+		if (rawBytes.length > MAX_PHOTO_BYTES) {
+			throw new InvalidFacilityReportException("사진 파일 크기를 줄여야 합니다.");
+		}
 		String normalizedContentType = normalizeContentType(contentType);
 		String normalizedFileName = normalizeFileName(fileName);
 		requireAllowedExtension(normalizedFileName, normalizedContentType);
 
-		byte[] decodedBytes = decode(photoBase64);
-		requireSupportedMagic(decodedBytes, normalizedContentType);
-		requireAllowedDimensions(readDimensions(decodedBytes, normalizedContentType));
+		requireSupportedMagic(rawBytes, normalizedContentType);
+		requireAllowedDimensions(readDimensions(rawBytes, normalizedContentType));
 		byte[] sanitizedBytes;
 		byte[] thumbnailBytes;
 		if ("image/webp".equals(normalizedContentType)) {
-			sanitizedBytes = stripWebpMetadata(decodedBytes);
+			sanitizedBytes = stripWebpMetadata(rawBytes);
 			thumbnailBytes = sanitizedBytes;
 		} else {
-			BufferedImage image = readImage(decodedBytes);
+			BufferedImage image = readImage(rawBytes);
 			sanitizedBytes = rewriteImage(image, normalizedContentType);
 			thumbnailBytes = rewriteImage(thumbnail(image), normalizedContentType);
 		}
@@ -65,22 +66,31 @@ final class FacilityReportPhotoProcessor {
 		);
 	}
 
+	FacilityReportPhotoAttachment process(String fileName, String contentType, String photoBase64) {
+		validateCompleteAttachment(fileName, contentType, photoBase64);
+		byte[] decodedBytes = decode(photoBase64);
+		return processBytes(fileName, contentType, decodedBytes);
+	}
+
 	boolean hasAnyPhotoField(String fileName, String contentType, String photoBase64) {
 		return hasText(fileName) || hasText(contentType) || hasText(photoBase64);
 	}
 
 	private void validateCompleteAttachment(String fileName, String contentType, String photoBase64) {
-		if (!hasText(fileName) || !hasText(contentType) || !hasText(photoBase64)) {
+		validateAttachmentMetadata(fileName, contentType);
+		if (!hasText(photoBase64)) {
+			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
+		}
+	}
+
+	private void validateAttachmentMetadata(String fileName, String contentType) {
+		if (!hasText(fileName) || !hasText(contentType)) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
 	}
 
 	private String normalizeContentType(String contentType) {
-		String normalized = contentType.trim().toLowerCase(Locale.ROOT);
-		if (!ALLOWED_PHOTO_CONTENT_TYPES.contains(normalized)) {
-			throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
-		}
-		return normalized;
+		return FacilityReport.PhotoMediaType.from(contentType).canonicalValue();
 	}
 
 	private String normalizeFileName(String fileName) {

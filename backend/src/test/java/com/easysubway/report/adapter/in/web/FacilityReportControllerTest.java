@@ -957,6 +957,22 @@ class FacilityReportControllerTest {
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("사진 파일 형식을 확인해야 합니다."));
+
+		// parameterized content type
+		mockMvc.perform(post("/api/v1/report-uploads")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "clientSubmissionId": "client-submission-param-type-1",
+					  "photoFileName": "elevator.jpg",
+					  "photoContentType": "image/jpeg; charset=utf-8",
+					  "photoSha256": "2c8648d103e3dd7ad87660da0f126a1443b6d21ac1bd3ec000c5e24e2373a90c",
+					  "photoSizeBytes": 11
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 파일 형식을 확인해야 합니다."));
 	}
 
 	@Test
@@ -977,6 +993,40 @@ class FacilityReportControllerTest {
 					  "photoDataBase64": "%s"
 					}
 					""".formatted(VALID_PNG_BASE64)))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
+
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "basic-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "direct base64 빈 문자열 사진 신고입니다.",
+					  "photoDataBase64": ""
+					}
+					"""))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.success").value(false))
+			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));
+
+		mockMvc.perform(post("/api/v1/reports")
+				.with(httpBasic("basic-user", "user-test-password"))
+				.contentType(MediaType.APPLICATION_JSON)
+				.content("""
+					{
+					  "userId": "basic-user",
+					  "stationId": "station-sangnoksu",
+					  "facilityId": "facility-sangnoksu-elevator-1",
+					  "reportType": "BROKEN",
+					  "description": "direct base64 공백 사진 신고입니다.",
+					  "photoDataBase64": "   "
+					}
+					"""))
 			.andExpect(status().isBadRequest())
 			.andExpect(jsonPath("$.success").value(false))
 			.andExpect(jsonPath("$.message").value("사진 첨부 정보를 확인해야 합니다."));

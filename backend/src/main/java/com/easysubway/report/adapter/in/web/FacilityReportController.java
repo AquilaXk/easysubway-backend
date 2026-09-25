@@ -108,9 +108,10 @@ class FacilityReportController {
 			|| activeProfiles.contains("prod-like")) {
 			throw new InvalidFacilityReportException("사진 첨부 정보를 확인해야 합니다.");
 		}
+		String normalizedContentType = contentType;
 		FacilityReportUploadIntents.UploadIntent intent = uploadIntents.requireUpload(
 			uploadId,
-			contentType,
+			normalizedContentType,
 			uploadSha256,
 			requiredUploadSize(uploadSizeBytes),
 			body.length
@@ -265,7 +266,7 @@ class FacilityReportController {
 	) {
 
 		boolean hasDirectPhoto() {
-			return photoDataBase64 != null && !photoDataBase64.isBlank();
+			return photoDataBase64 != null;
 		}
 
 		boolean hasReceiptSubmission() {
@@ -336,12 +337,7 @@ class FacilityReportController {
 		}
 
 		String normalizedPhotoContentType() {
-			return switch (photoContentType == null ? "" : photoContentType.trim().toLowerCase(Locale.ROOT)) {
-				case "image/png" -> "image/png";
-				case "image/webp" -> "image/webp";
-				case "image/jpeg" -> "image/jpeg";
-				default -> throw new InvalidFacilityReportException("사진 파일 형식을 확인해야 합니다.");
-			};
+			return FacilityReport.PhotoMediaType.from(photoContentType).canonicalValue();
 		}
 	}
 

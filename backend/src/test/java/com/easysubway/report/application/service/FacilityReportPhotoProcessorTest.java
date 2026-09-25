@@ -236,6 +236,119 @@ class FacilityReportPhotoProcessorTest {
 		assertThat(attachment.thumbnailBytes()).isNotEmpty();
 	}
 
+	@Test
+	@DisplayName("processBytes는 raw byte[]를 직접 수신하여 정상 처리한다")
+	void processBytesProcessesDirectBytes() throws IOException {
+		byte[] jpegBytes = encodedImage("jpg", 320, 240);
+		FacilityReportPhotoAttachment attachment = processor.processBytes(
+			"elevator.jpg",
+			"image/jpeg",
+			jpegBytes
+		);
+		assertThat(attachment.fileName()).isEqualTo("elevator.jpg");
+		assertThat(attachment.contentType()).isEqualTo("image/jpeg");
+		assertThat(attachment.storedBytes()).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("processBytes는 null 또는 빈 바이트 배열을 거부한다")
+	void processBytesRejectsNullOrEmptyBytes() {
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", "image/jpeg", null))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", "image/jpeg", new byte[0]))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("processBytes는 최대 크기(900KB)를 초과한 바이트 배열을 거부한다")
+	void processBytesRejectsOversizedBytes() {
+		byte[] oversized = new byte[900 * 1024 + 1];
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", "image/jpeg", oversized))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 파일 크기를 줄여야 합니다.");
+	}
+
+	@Test
+	@DisplayName("processBytes는 파일명 또는 콘텐츠 유형이 없거나 공백이면 거부한다")
+	void processBytesRejectsMissingMetadata() {
+		byte[] jpegBytes = new byte[] { (byte) 0xff, (byte) 0xd8, (byte) 0xff };
+		assertThatThrownBy(() -> processor.processBytes(null, "image/jpeg", jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("  ", "image/jpeg", jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", null, jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+
+		assertThatThrownBy(() -> processor.processBytes("elevator.jpg", "   ", jpegBytes))
+			.isInstanceOf(InvalidFacilityReportException.class)
+			.hasMessage("사진 첨부 정보를 확인해야 합니다.");
+	}
+
+	@Test
+	@DisplayName("processBytes는 webp 형식 바이트를 정상 처리한다")
+	void processBytesProcessesWebp() {
+		byte[] webpBytes = VALID_WEBP_BYTES;
+		FacilityReportPhotoAttachment attachment = processor.processBytes(
+			"elevator.webp",
+			"image/webp",
+			webpBytes
+		);
+		assertThat(attachment.fileName()).isEqualTo("elevator.webp");
+		assertThat(attachment.contentType()).isEqualTo("image/webp");
+		assertThat(attachment.storedBytes()).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("PhotoMediaType은 canonical 미디어 타입과 확장을 올바르게 반환하고 비교한다")
+	void photoMediaTypeCanonicalAndExtension() {
+		com.easysubway.report.domain.FacilityReport.PhotoMediaType jpeg =
+			com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("IMAGE/JPEG");
+		assertThat(jpeg.canonicalValue()).isEqualTo("image/jpeg");
+		assertThat(jpeg.extension()).isEqualTo(".jpg");
+		assertThat(jpeg).isEqualTo(com.easysubway.report.domain.FacilityReport.PhotoMediaType.IMAGE_JPEG);
+		assertThat(jpeg.hashCode()).isEqualTo(com.easysubway.report.domain.FacilityReport.PhotoMediaType.IMAGE_JPEG.hashCode());
+		assertThat(jpeg.toString()).isEqualTo("image/jpeg");
+		assertThat(jpeg.equals(jpeg)).isTrue();
+		assertThat(jpeg.equals(null)).isFalse();
+		assertThat(jpeg.equals("other")).isFalse();
+
+		com.easysubway.report.domain.FacilityReport.PhotoMediaType png =
+			com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("image/png");
+		assertThat(png.canonicalValue()).isEqualTo("image/png");
+		assertThat(png.extension()).isEqualTo(".png");
+		assertThat(jpeg.equals(png)).isFalse();
+
+		com.easysubway.report.domain.FacilityReport.PhotoMediaType webp =
+			com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("IMAGE/WEBP");
+		assertThat(webp.canonicalValue()).isEqualTo("image/webp");
+		assertThat(webp.extension()).isEqualTo(".webp");
+	}
+
+	@Test
+	@DisplayName("PhotoMediaType은 파라미터, 와일드카드, 빈 문자열, 지원하지 않는 타입을 거부한다")
+	void photoMediaTypeRejectsInvalidInputs() {
+		assertThatThrownBy(() -> com.easysubway.report.domain.FacilityReport.PhotoMediaType.from(null))
+			.isInstanceOf(InvalidFacilityReportException.class);
+		assertThatThrownBy(() -> com.easysubway.report.domain.FacilityReport.PhotoMediaType.from(""))
+			.isInstanceOf(InvalidFacilityReportException.class);
+		assertThatThrownBy(() -> com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("   "))
+			.isInstanceOf(InvalidFacilityReportException.class);
+		assertThatThrownBy(() -> com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("image/jpeg; charset=utf-8"))
+			.isInstanceOf(InvalidFacilityReportException.class);
+		assertThatThrownBy(() -> com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("image/*"))
+			.isInstanceOf(InvalidFacilityReportException.class);
+		assertThatThrownBy(() -> com.easysubway.report.domain.FacilityReport.PhotoMediaType.from("image/gif"))
+			.isInstanceOf(InvalidFacilityReportException.class);
+	}
+
 
 	private byte[] encodedImage(String formatName, int width, int height) throws IOException {
 		BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
