@@ -2153,6 +2153,9 @@ class RouteTimetableRaptorPlanner {
 		int[] transferTransitions(int station, int fromLine, int toLine) {
 			return accessTransitions.transferCandidates(station, fromLine, toLine);
 		}
+		int allocatedTransferSlotCount() {
+			return accessTransitions.allocatedTransferSlotCount();
+		}
 		int[] exitTransitions(int station, int line) {
 			return accessTransitions.exitCandidates(station, line);
 		}
@@ -2406,6 +2409,7 @@ class RouteTimetableRaptorPlanner {
 		private final int lineCount;
 		private final int[][] entryTransitions;
 		private final int[][] exitTransitions;
+		private final long[] transferKeys;
 		private final int[][] transferTransitions;
 		private final int[] durationSeconds;
 		private final int[] distanceMeters;
@@ -2422,6 +2426,7 @@ class RouteTimetableRaptorPlanner {
 			int lineCount,
 			int[][] entryTransitions,
 			int[][] exitTransitions,
+			long[] transferKeys,
 			int[][] transferTransitions,
 			List<Candidate> candidates,
 			boolean[] outOfStation,
@@ -2431,6 +2436,7 @@ class RouteTimetableRaptorPlanner {
 			this.lineCount = lineCount;
 			this.entryTransitions = entryTransitions;
 			this.exitTransitions = exitTransitions;
+			this.transferKeys = transferKeys;
 			this.transferTransitions = transferTransitions;
 			this.outOfStation = outOfStation;
 			this.outOfStationFootpaths = outOfStationFootpaths;
@@ -2465,7 +2471,7 @@ class RouteTimetableRaptorPlanner {
 			int lineCount = lineIndex.size();
 			List<List<Candidate>> entries = candidateLists(stationCount * lineCount);
 			List<List<Candidate>> exits = candidateLists(stationCount * lineCount);
-			List<List<Candidate>> transfers = candidateLists(stationCount * lineCount * lineCount);
+			Map<Long, List<Candidate>> transfers = new HashMap<>();
 			Map<String, PathwayEdge> edges = new HashMap<>();
 			Set<String> ambiguousEdgeIds = new HashSet<>();
 			for (PathwayEdge edge : timetable.routeAccessData().pathwayEdges()) {
@@ -2521,7 +2527,8 @@ class RouteTimetableRaptorPlanner {
 					outFootpathCandidates.add(candidates);
 					outFootpathEndpoints.add(new int[] {fromStation, fromLine, toStation, toLine});
 				} else {
-					candidates = transfers.get(transferKey(fromStation, fromLine, toLine, lineCount));
+					long key = transferKey(fromStation, fromLine, toLine, lineCount);
+					candidates = transfers.computeIfAbsent(key, ignored -> new ArrayList<>());
 				}
 				PathwayEdge normalEdge = ownedByRule(edges.get(rule.pathwayEdgeId()), rule, nodes);
 				PathwayEdge strictEdge = ownedByRule(edges.get(rule.strictStepFreePathwayEdgeId()), rule, nodes);
@@ -2567,8 +2574,10 @@ class RouteTimetableRaptorPlanner {
 					addDefaultIfEmpty(exits.get(stationLineKey(station, line, lineCount)), EXIT_DURATION_SECONDS, EXIT_DISTANCE_METERS);
 					for (int toLine = 0; toLine < lineCount; toLine += 1) {
 						if (served[station][toLine]) {
+							long key = transferKey(station, line, toLine, lineCount);
+							List<Candidate> transferList = transfers.computeIfAbsent(key, ignored -> new ArrayList<>());
 							addDefaultIfEmpty(
-								transfers.get(transferKey(station, line, toLine, lineCount)),
+								transferList,
 								TRANSFER_DURATION_SECONDS,
 								TRANSFER_DISTANCE_METERS
 							);
@@ -2579,7 +2588,24 @@ class RouteTimetableRaptorPlanner {
 			List<Candidate> flattened = new ArrayList<>();
 			int[][] entryIds = flatten(entries, flattened);
 			int[][] exitIds = flatten(exits, flattened);
-			int[][] transferIds = flatten(transfers, flattened);
+
+			long[] transferKeys = transfers.keySet().stream().mapToLong(Long::longValue).sorted().toArray();
+			int[][] transferIds = new int[transferKeys.length][];
+			for (int k = 0; k < transferKeys.length; k += 1) {
+				long key = transferKeys[k];
+				List<Candidate> candidates = transfers.get(key);
+				if (candidates == null || candidates.isEmpty()) {
+					transferIds[k] = NO_TRANSITIONS;
+					continue;
+				}
+				candidates.sort(CANDIDATE_ORDER);
+				int[] ids = new int[candidates.size()];
+				for (int index = 0; index < candidates.size(); index += 1) {
+					ids[index] = flattened.size();
+					flattened.add(candidates.get(index));
+				}
+				transferIds[k] = ids;
+			}
 			int inStationCount = flattened.size();
 
 			List<OutOfStationFootpath> outOfStationFootpaths = new ArrayList<>();
@@ -2601,7 +2627,7 @@ class RouteTimetableRaptorPlanner {
 			for (int i = inStationCount; i < flattened.size(); i += 1) {
 				outOfStation[i] = true;
 			}
-			return new AccessTransitions(lineCount, entryIds, exitIds, transferIds, flattened, outOfStation, outOfStationFootpaths, unsupported);
+			return new AccessTransitions(lineCount, entryIds, exitIds, transferKeys, transferIds, flattened, outOfStation, outOfStationFootpaths, unsupported);
 		}
 		private static void indexEdge(Map<String, PathwayEdge> edges, Set<String> ambiguous, String id, PathwayEdge edge) {
 			if (id == null || id.isBlank() || ambiguous.contains(id)) {
@@ -2779,8 +2805,8 @@ class RouteTimetableRaptorPlanner {
 		private static int stationLineKey(int station, int line, int lineCount) {
 			return station * lineCount + line;
 		}
-		private static int transferKey(int station, int fromLine, int toLine, int lineCount) {
-			return (station * lineCount + fromLine) * lineCount + toLine;
+		private static long transferKey(int station, int fromLine, int toLine, int lineCount) {
+			return (((long) station) * lineCount + fromLine) * lineCount + toLine;
 		}
 		private int entry(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
 			return select(entryTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
@@ -2793,7 +2819,7 @@ class RouteTimetableRaptorPlanner {
 		private int transfer(
 			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
 		) {
-			return select(transferTransitions[transferKey(station, fromLine, toLine, lineCount)], profileBit,
+			return select(transferCandidates(station, fromLine, toLine), profileBit,
 				ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance);
 		}
 		private int select(
@@ -2865,10 +2891,17 @@ class RouteTimetableRaptorPlanner {
 			return key >= 0 && key < entryTransitions.length && entryTransitions[key] != null
 				? entryTransitions[key] : NO_TRANSITIONS;
 		}
+		int allocatedTransferSlotCount() {
+			return transferKeys.length;
+		}
 		private int[] transferCandidates(int station, int fromLine, int toLine) {
-			int key = transferKey(station, fromLine, toLine, lineCount);
-			return key >= 0 && key < transferTransitions.length && transferTransitions[key] != null
-				? transferTransitions[key] : NO_TRANSITIONS;
+			if (station < 0 || fromLine < 0 || toLine < 0 || fromLine >= lineCount || toLine >= lineCount) {
+				return NO_TRANSITIONS;
+			}
+			long key = transferKey(station, fromLine, toLine, lineCount);
+			int index = Arrays.binarySearch(transferKeys, key);
+			return index >= 0 && transferTransitions[index] != null
+				? transferTransitions[index] : NO_TRANSITIONS;
 		}
 		private int[] exitCandidates(int station, int line) {
 			int key = stationLineKey(station, line, lineCount);
