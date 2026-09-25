@@ -15,7 +15,7 @@ const policy = () => ({
   origin: { repository: 'AquilaXk/easysubway-backend', foundationSha: '3a15efb833b37d5ce051e9591161311dd7952c79' },
   toolchain: {
     gradleVersion: null,
-    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: 'd06a23c354d6caccfb0a81a079dc2c6bde103cff3b3b02ba1375215062fc1488', implementationClass: null, implementationJarSha256: null },
+    spotbugsGradlePlugin: { id: 'com.github.spotbugs', requestedVersion: '6.2.2', buildScriptSha256: '89745bbbb0eed3f62696e7e68de50c6d83ad8e3b1c0a31cf59be8193747dba0d', implementationClass: null, implementationJarSha256: null },
     spotbugsEngine: { toolVersion: null, classpath: null }, javaLauncher: { vendorSpec: 'ADOPTIUM', languageVersion: 21 }, task: 'spotbugsMain'
   },
   analysis: { sourceSet: 'main', sourceRoot: 'backend/src/main/java', classOutputRoot: 'backend/build/classes/java/main', excludeFilter: 'backend/quality/spotbugs-exclude.xml', gradleIgnoreFailures: true },
@@ -36,7 +36,7 @@ test('tracked tests and policy are self-contained reviewed inventory evidence', 
   assert.doesNotMatch(testSource, new RegExp(['easysubway', 'backend', '35', '31323747558'].join('-')));
   assert.match(gateSource, /classpathDigest: 'a4cb5b9f0203fd6348669e13756c6973ea2532d8c2d792f48b20d5ea792580c6'/);
   const tracked = JSON.parse(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url), 'utf8'));
-  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '881b90fb0adede11d8b64470ef9aaab30a7fda82bfee91a949dbd679c682c496');
+  assert.equal(digest(readFileSync(new URL('../../backend/quality/spotbugs-suppression-policy.json', import.meta.url))), '28fd8833e7d82d7924509436b96a067a2e3e0faecb0efc24037397c39665d733');
   assert.equal(digest(JSON.stringify(tracked.findings.map(({ identity }) => identity))), '405bdc428a32ac1c642ff02900e6f5de2bb45a12362ae4a7477f01dcff6e5dd0');
   assert.equal(tracked.findings[0].identity, '5994a5bb6b4c75a7ae92a4c62d5cb7d3b831c38f264e93c2699ed4e94ed2219e');
   assert.equal(tracked.findings.at(-1).identity, '33589339d5de1740438fbf4e4cd8c74505c776de053b876f93ffe140078bfae4');
@@ -1216,6 +1216,6 @@ test('writeSpotbugsMainEvidence declares stable task, report, and classpath inpu
   assert.match(build, /inputs\.files\(configurations\.spotbugsPlugins\)/);
   assert.match(build, /inputs\.file\(spotbugsMain\.flatMap \{ it\.launcher\.map \{ it\.executablePath \} \}\)/);
   assert.match(build, /inputs\.property\('spotbugsToolVersion', spotbugs\.toolVersion\)/);
-  assert.match(build, /inputs\.property\('spotbugsIgnoreFailures', spotbugsMain\.flatMap \{ provider \{ it\.ignoreFailures \} \}\)/);
+  assert.match(build, /inputs\.property\('spotbugsIgnoreFailures', spotbugsMain\.flatMap \{ task -> provider \{ task\.ignoreFailures \} \}\)/);
   assert.doesNotMatch(build, /writeSpotbugsMainEvidence[^{]*\{[^}]*upToDateWhen/);
 });

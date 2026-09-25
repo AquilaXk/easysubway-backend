@@ -316,7 +316,7 @@ tasks.register('writeSpotbugsMainEvidence') {
 		.withPropertyName('pluginJar')
 		.withPathSensitivity(PathSensitivity.NONE)
 	inputs.property('spotbugsToolVersion', spotbugs.toolVersion)
-	inputs.property('spotbugsIgnoreFailures', spotbugsMain.flatMap { provider { it.ignoreFailures } })
+	inputs.property('spotbugsIgnoreFailures', spotbugsMain.flatMap { task -> provider { task.ignoreFailures } })
 	outputs.file(spotbugsMainEvidence)
 
 	doLast {
