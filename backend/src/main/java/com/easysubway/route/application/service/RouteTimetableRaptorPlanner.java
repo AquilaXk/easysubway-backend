@@ -2406,6 +2406,7 @@ class RouteTimetableRaptorPlanner {
 			.thenComparingInt(candidate -> Integer.bitCount(candidate.warningCodes()))
 			.thenComparingInt(Candidate::distanceMeters)
 			.thenComparing(candidate -> candidate.edgeId() == null ? "" : candidate.edgeId());
+		private final int stationCount;
 		private final int lineCount;
 		private final int[][] entryTransitions;
 		private final int[][] exitTransitions;
@@ -2423,6 +2424,7 @@ class RouteTimetableRaptorPlanner {
 		private final List<OutOfStationFootpath> outOfStationFootpaths;
 		private final int unsupportedTransferCount;
 		private AccessTransitions(
+			int stationCount,
 			int lineCount,
 			int[][] entryTransitions,
 			int[][] exitTransitions,
@@ -2433,6 +2435,7 @@ class RouteTimetableRaptorPlanner {
 			List<OutOfStationFootpath> outOfStationFootpaths,
 			int unsupportedTransferCount
 		) {
+			this.stationCount = stationCount;
 			this.lineCount = lineCount;
 			this.entryTransitions = entryTransitions;
 			this.exitTransitions = exitTransitions;
@@ -2623,7 +2626,7 @@ class RouteTimetableRaptorPlanner {
 			for (int i = inStationCount; i < flattened.size(); i += 1) {
 				outOfStation[i] = true;
 			}
-			return new AccessTransitions(lineCount, entryIds, exitIds, transferKeys, transferIds, flattened, outOfStation, outOfStationFootpaths, unsupported);
+			return new AccessTransitions(stationCount, lineCount, entryIds, exitIds, transferKeys, transferIds, flattened, outOfStation, outOfStationFootpaths, unsupported);
 		}
 		private static void indexEdge(Map<String, PathwayEdge> edges, Set<String> ambiguous, String id, PathwayEdge edge) {
 			if (id == null || id.isBlank() || ambiguous.contains(id)) {
@@ -2891,6 +2894,9 @@ class RouteTimetableRaptorPlanner {
 			return transferKeys.length;
 		}
 		private int[] transferCandidates(int station, int fromLine, int toLine) {
+			if (station < 0 || station >= stationCount || fromLine < 0 || fromLine >= lineCount || toLine < 0 || toLine >= lineCount) {
+				return NO_TRANSITIONS;
+			}
 			long key = transferKey(station, fromLine, toLine, lineCount);
 			int index = Arrays.binarySearch(transferKeys, key);
 			return index >= 0 ? transferTransitions[index] : NO_TRANSITIONS;
