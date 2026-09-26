@@ -962,6 +962,7 @@ class RouteTimetableRaptorPlanner {
 		if (footpaths == null) {
 			return;
 		}
+		FOOTPATHS_LOOP:
 		for (OutOfStationFootpath footpath : footpaths) {
 			boolean footpathDominated = true;
 			int minDepartureForFootpath = Integer.MAX_VALUE;
@@ -1001,7 +1002,7 @@ class RouteTimetableRaptorPlanner {
 				}
 				if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
 					&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
-					break;
+					break FOOTPATHS_LOOP;
 				}
 			}
 		}
