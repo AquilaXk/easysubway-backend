@@ -866,6 +866,7 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
+	@SuppressWarnings("java:S107")
 	static void collectReadyBoardings(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
@@ -1057,101 +1058,143 @@ class RouteTimetableRaptorPlanner {
 		if (footpaths == null) {
 			return;
 		}
-		boolean earlyPruned = false;
 		for (int fpIndex = 0; fpIndex < footpaths.length; fpIndex += 1) {
 			OutOfStationFootpath footpath = footpaths[fpIndex];
-			boolean footpathDominated = true;
-			int minDepartureForFootpath = Integer.MAX_VALUE;
-			for (int accessTransition : footpath.candidateTransitions()) {
-				if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(accessTransition))
-					|| !timetable.isTransitionEligible(
-					accessTransition, accessProfileBit, ignoreAccessBlocks,
-					input.requiresVerifiedJourneyDistance(), true)) {
-					continue;
-				}
-				for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-					int readySlot = workspace.slot(round, footpath.fromStation(), footpath.fromLine(), warningState);
-					int readySeconds = workspace.arrivalSeconds[readySlot];
-					if (readySeconds == UNREACHED) {
-						continue;
-					}
-					int earliestDepartureSeconds = readySeconds
-						+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER,
-							timetable.transitionDurationSeconds(accessTransition),
-							timetable.transitionDistanceMeters(accessTransition))
-						+ slackSeconds;
-					if (earliestDepartureSeconds < minDepartureForFootpath) {
-						minDepartureForFootpath = earliestDepartureSeconds;
-					}
-					if (earliestDepartureSeconds > boardingDeadlineSeconds) {
-						continue;
-					}
-					byte warningBits = (byte) (workspace.warningBits[readySlot]
-						| timetable.transitionWarningCodes(accessTransition, accessProfileBit, ignoreAccessBlocks));
-					int candidateWarningState = Byte.toUnsignedInt(warningBits);
-					if (workspace.isDominatedByTarget(station, earliestDepartureSeconds, candidateWarningState)) {
-						continue;
-					}
-					footpathDominated = false;
-					updateReadyBoarding(
-						workspace, candidateWarningState, readySlot, accessTransition,
-						earliestDepartureSeconds, warningBits, boardingDeadlineSeconds != UNREACHED);
-				}
-				if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
-					&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
-					break;
-				}
-			}
-			if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
-				&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
-				boolean allRemainingDominated = true;
-				for (int nextIdx = fpIndex + 1; nextIdx < footpaths.length; nextIdx += 1) {
-					OutOfStationFootpath nextFp = footpaths[nextIdx];
-					boolean thisFootpathDominated = true;
-					for (int nextCandidate : nextFp.candidateTransitions()) {
-						if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(nextCandidate))
-							|| !timetable.isTransitionEligible(
-							nextCandidate, accessProfileBit, ignoreAccessBlocks,
-							input.requiresVerifiedJourneyDistance(), true)) {
-							continue;
-						}
-						for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-							int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
-							int ready = workspace.arrivalSeconds[slot];
-							if (ready == UNREACHED) {
-								continue;
-							}
-							int dep = ready
-								+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER,
-									timetable.transitionDurationSeconds(nextCandidate),
-									timetable.transitionDistanceMeters(nextCandidate))
-								+ slackSeconds;
-							byte warningBits = (byte) (workspace.warningBits[slot]
-								| timetable.transitionWarningCodes(nextCandidate, accessProfileBit, ignoreAccessBlocks));
-							int candidateWarningState = Byte.toUnsignedInt(warningBits);
-							if (!workspace.isDominatedByTarget(station, dep, candidateWarningState)) {
-								thisFootpathDominated = false;
-								break;
-							}
-						}
-						if (!thisFootpathDominated) {
-							break;
-						}
-					}
-					if (!thisFootpathDominated) {
-						allRemainingDominated = false;
-						break;
-					}
-				}
-				if (allRemainingDominated) {
-					earlyPruned = true;
-					break;
-				}
-			}
-			if (earlyPruned) {
+			boolean footpathDominated = evaluateFootpathTransitions(
+				timetable, workspace, footpath, station, round, slackSeconds,
+				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds, realtimeOverlay
+			);
+			if (footpathDominated && canPruneRemainingFootpaths(
+				timetable, workspace, footpaths, fpIndex + 1, station, round,
+				slackSeconds, accessProfileBit, input, ignoreAccessBlocks, realtimeOverlay
+			)) {
 				break;
 			}
 		}
+	}
+
+	@SuppressWarnings("java:S107")
+	private static boolean evaluateFootpathTransitions(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		OutOfStationFootpath footpath,
+		int station,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		ScanInput input,
+		boolean ignoreAccessBlocks,
+		int boardingDeadlineSeconds,
+		RealtimeOverlay realtimeOverlay
+	) {
+		boolean footpathDominated = true;
+		int minDepartureForFootpath = Integer.MAX_VALUE;
+		for (int accessTransition : footpath.candidateTransitions()) {
+			if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(accessTransition))
+				|| !timetable.isTransitionEligible(
+				accessTransition, accessProfileBit, ignoreAccessBlocks,
+				input.requiresVerifiedJourneyDistance(), true)) {
+				continue;
+			}
+			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
+				int readySlot = workspace.slot(round, footpath.fromStation(), footpath.fromLine(), warningState);
+				int readySeconds = workspace.arrivalSeconds[readySlot];
+				if (readySeconds == UNREACHED) {
+					continue;
+				}
+				int earliestDepartureSeconds = readySeconds
+					+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER,
+						timetable.transitionDurationSeconds(accessTransition),
+						timetable.transitionDistanceMeters(accessTransition))
+					+ slackSeconds;
+				if (earliestDepartureSeconds < minDepartureForFootpath) {
+					minDepartureForFootpath = earliestDepartureSeconds;
+				}
+				if (earliestDepartureSeconds > boardingDeadlineSeconds) {
+					continue;
+				}
+				byte warningBits = (byte) (workspace.warningBits[readySlot]
+					| timetable.transitionWarningCodes(accessTransition, accessProfileBit, ignoreAccessBlocks));
+				int candidateWarningState = Byte.toUnsignedInt(warningBits);
+				if (workspace.isDominatedByTarget(station, earliestDepartureSeconds, candidateWarningState)) {
+					continue;
+				}
+				footpathDominated = false;
+				updateReadyBoarding(
+					workspace, candidateWarningState, readySlot, accessTransition,
+					earliestDepartureSeconds, warningBits, boardingDeadlineSeconds != UNREACHED);
+			}
+		}
+		return footpathDominated
+			&& minDepartureForFootpath != Integer.MAX_VALUE
+			&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath);
+	}
+
+	@SuppressWarnings("java:S107")
+	private static boolean canPruneRemainingFootpaths(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		OutOfStationFootpath[] footpaths,
+		int startIndex,
+		int station,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		ScanInput input,
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
+	) {
+		for (int nextIdx = startIndex; nextIdx < footpaths.length; nextIdx += 1) {
+			if (!isFootpathCandidateDominated(
+				timetable, workspace, footpaths[nextIdx], station, round,
+				slackSeconds, accessProfileBit, input, ignoreAccessBlocks, realtimeOverlay
+			)) {
+				return false;
+			}
+		}
+		return true;
+	}
+
+	@SuppressWarnings("java:S107")
+	private static boolean isFootpathCandidateDominated(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		OutOfStationFootpath nextFp,
+		int station,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		ScanInput input,
+		boolean ignoreAccessBlocks,
+		RealtimeOverlay realtimeOverlay
+	) {
+		for (int nextCandidate : nextFp.candidateTransitions()) {
+			if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(nextCandidate))
+				|| !timetable.isTransitionEligible(
+				nextCandidate, accessProfileBit, ignoreAccessBlocks,
+				input.requiresVerifiedJourneyDistance(), true)) {
+				continue;
+			}
+			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
+				int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
+				int ready = workspace.arrivalSeconds[slot];
+				if (ready == UNREACHED) {
+					continue;
+				}
+				int dep = ready
+					+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER,
+						timetable.transitionDurationSeconds(nextCandidate),
+						timetable.transitionDistanceMeters(nextCandidate))
+					+ slackSeconds;
+				byte warningBits = (byte) (workspace.warningBits[slot]
+					| timetable.transitionWarningCodes(nextCandidate, accessProfileBit, ignoreAccessBlocks));
+				int candidateWarningState = Byte.toUnsignedInt(warningBits);
+				if (!workspace.isDominatedByTarget(station, dep, candidateWarningState)) {
+					return false;
+				}
+			}
+		}
+		return true;
 	}
 
 	static ReadyBoarding updateBestReadyBoarding(
