@@ -1011,24 +1011,37 @@ class RouteTimetableRaptorPlanner {
 				boolean allRemainingDominated = true;
 				for (int nextIdx = fpIndex + 1; nextIdx < footpaths.length; nextIdx += 1) {
 					OutOfStationFootpath nextFp = footpaths[nextIdx];
-					int minDepartureForNext = Integer.MAX_VALUE;
-					int nextCandidate = nextFp.candidateTransitions()[0];
-					int nextMinDuration = timetable.transitionDurationSeconds(nextCandidate);
-					int nextMinDistance = timetable.transitionDistanceMeters(nextCandidate);
-					for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
-						int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
-						int ready = workspace.arrivalSeconds[slot];
-						if (ready != UNREACHED) {
+					boolean thisFootpathDominated = true;
+					for (int nextCandidate : nextFp.candidateTransitions()) {
+						if (!timetable.isTransitionEligible(
+							nextCandidate, accessProfileBit, ignoreAccessBlocks,
+							input.requiresVerifiedJourneyDistance(), true)) {
+							continue;
+						}
+						for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
+							int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
+							int ready = workspace.arrivalSeconds[slot];
+							if (ready == UNREACHED) {
+								continue;
+							}
 							int dep = ready
-								+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER, nextMinDuration, nextMinDistance)
+								+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER,
+									timetable.transitionDurationSeconds(nextCandidate),
+									timetable.transitionDistanceMeters(nextCandidate))
 								+ slackSeconds;
-							if (dep < minDepartureForNext) {
-								minDepartureForNext = dep;
+							byte warningBits = (byte) (workspace.warningBits[slot]
+								| timetable.transitionWarningCodes(nextCandidate, accessProfileBit, ignoreAccessBlocks));
+							int candidateWarningState = Byte.toUnsignedInt(warningBits);
+							if (!workspace.isDominatedByTarget(station, dep, candidateWarningState)) {
+								thisFootpathDominated = false;
+								break;
 							}
 						}
+						if (!thisFootpathDominated) {
+							break;
+						}
 					}
-					if (minDepartureForNext != Integer.MAX_VALUE
-						&& !workspace.isTargetDominatingDeparture(station, minDepartureForNext)) {
+					if (!thisFootpathDominated) {
 						allRemainingDominated = false;
 						break;
 					}
