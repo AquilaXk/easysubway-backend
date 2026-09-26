@@ -60,8 +60,8 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 						AND lm.line_id = sm.line_id
 					WHERE sm.provider_id = ?
 						AND sm.station_id = ?
-						AND (? IS NULL OR ? = '' OR sm.line_id = ? OR sm.line_id LIKE CONCAT('%-', ?))
-						AND (? IS NULL OR ? = '' OR sm.provider_line_id = ? OR sm.provider_station_id LIKE CONCAT('%', ?))
+						AND (CAST(? AS VARCHAR) IS NULL OR CAST(? AS VARCHAR) = '' OR sm.line_id = ? OR sm.line_id LIKE CONCAT('%-', ?))
+						AND (CAST(? AS VARCHAR) IS NULL OR CAST(? AS VARCHAR) = '' OR sm.provider_line_id = ? OR sm.provider_station_id LIKE CONCAT('%', ?))
 						AND (lm.valid_from IS NULL OR lm.valid_from <= CURRENT_TIMESTAMP)
 						AND (lm.valid_until IS NULL OR lm.valid_until > CURRENT_TIMESTAMP)
 					""",
@@ -101,10 +101,10 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 					FROM realtime_provider_line_mappings lm
 					WHERE lm.provider_id = ?
 						AND (
-							(? IS NOT NULL AND ? <> '' AND (lm.line_id = ? OR lm.line_id LIKE CONCAT('%-', ?)))
-							OR ((? IS NULL OR ? = '') AND lm.provider_line_name = ?)
+							(CAST(? AS VARCHAR) IS NOT NULL AND CAST(? AS VARCHAR) <> '' AND (lm.line_id = ? OR lm.line_id LIKE CONCAT('%-', ?)))
+							OR ((CAST(? AS VARCHAR) IS NULL OR CAST(? AS VARCHAR) = '') AND lm.provider_line_name = ?)
 						)
-						AND (? IS NULL OR ? = '' OR lm.provider_line_id = ?)
+						AND (CAST(? AS VARCHAR) IS NULL OR CAST(? AS VARCHAR) = '' OR lm.provider_line_id = ?)
 						AND (lm.valid_from IS NULL OR lm.valid_from <= CURRENT_TIMESTAMP)
 						AND (lm.valid_until IS NULL OR lm.valid_until > CURRENT_TIMESTAMP)
 					""",
@@ -150,8 +150,8 @@ public class JdbcRealtimeMappingRepository implements RealtimeMappingPort {
 					cache_version
 				FROM realtime_provider_trip_mappings
 				WHERE provider_id = ?
-					AND (? IS NULL OR ? = '' OR line_id = ? OR line_id LIKE CONCAT('%-', ?))
-					AND (? IS NULL OR ? = '' OR provider_line_id = ?)
+					AND (CAST(? AS VARCHAR) IS NULL OR CAST(? AS VARCHAR) = '' OR line_id = ? OR line_id LIKE CONCAT('%-', ?))
+					AND (CAST(? AS VARCHAR) IS NULL OR CAST(? AS VARCHAR) = '' OR provider_line_id = ?)
 					AND (raw_direction = ? OR raw_direction = '')
 					AND (raw_destination = ? OR raw_destination = '')
 					AND (raw_service_pattern = ? OR raw_service_pattern = '')
