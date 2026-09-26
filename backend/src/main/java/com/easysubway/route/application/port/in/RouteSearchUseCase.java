@@ -162,14 +162,18 @@ public interface RouteSearchUseCase {
 		String version,
 		boolean available,
 		List<TimetableRealtimeUpdate> updates,
+		List<String> blockedPathwayEdgeIds,
 		String fallbackCode
 	) {
 		public TimetableRealtimeUpdates {
 			updates = List.copyOf(Objects.requireNonNull(updates, "updates must not be null"));
-			if (available && ((version == null || version.isBlank()) || updates.isEmpty())) {
-				throw new IllegalArgumentException("available realtime updates require a version and sparse updates");
+			blockedPathwayEdgeIds = blockedPathwayEdgeIds == null
+				? List.of()
+				: List.copyOf(blockedPathwayEdgeIds);
+			if (available && ((version == null || version.isBlank()) || (updates.isEmpty() && blockedPathwayEdgeIds.isEmpty()))) {
+				throw new IllegalArgumentException("available realtime updates require a version and sparse updates or blocked edges");
 			}
-			if (!available && !updates.isEmpty()) {
+			if (!available && (!updates.isEmpty() || !blockedPathwayEdgeIds.isEmpty())) {
 				throw new IllegalArgumentException("unavailable realtime updates must be empty");
 			}
 			if (!available) {
@@ -177,8 +181,17 @@ public interface RouteSearchUseCase {
 			}
 		}
 
+		public TimetableRealtimeUpdates(
+			String version,
+			boolean available,
+			List<TimetableRealtimeUpdate> updates,
+			String fallbackCode
+		) {
+			this(version, available, updates, List.of(), fallbackCode);
+		}
+
 		public static TimetableRealtimeUpdates unavailable(String fallbackCode) {
-			return new TimetableRealtimeUpdates(null, false, List.of(), fallbackCode);
+			return new TimetableRealtimeUpdates(null, false, List.of(), List.of(), fallbackCode);
 		}
 	}
 
