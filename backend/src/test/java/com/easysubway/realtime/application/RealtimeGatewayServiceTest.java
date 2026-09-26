@@ -1339,6 +1339,41 @@ class RealtimeGatewayServiceTest {
 		assertThat(TopisRealtimeProvider.parseEtaFromMessage("당역 진입")).isNull();
 		assertThat(TopisRealtimeProvider.parseEtaFromMessage("")).isNull();
 		assertThat(TopisRealtimeProvider.parseEtaFromMessage(null)).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("0분 0초 후")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("0초 후")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("0분 후")).isNull();
+	}
+
+	@Test
+	@DisplayName("positiveInt는 숫자, 문자열 숫자, 음수/0, 잘못된 포맷 및 누락 필드를 적절히 처리한다")
+	void positiveIntHandlesAllNodeTypesAndBoundaries() {
+		ObjectMapper mapper = new ObjectMapper();
+		var intNode = mapper.createObjectNode().put("barvlDt", 120);
+		assertThat(TopisRealtimeProvider.positiveInt(intNode, "barvlDt")).isEqualTo(120);
+
+		var zeroIntNode = mapper.createObjectNode().put("barvlDt", 0);
+		assertThat(TopisRealtimeProvider.positiveInt(zeroIntNode, "barvlDt")).isNull();
+
+		var negativeIntNode = mapper.createObjectNode().put("barvlDt", -5);
+		assertThat(TopisRealtimeProvider.positiveInt(negativeIntNode, "barvlDt")).isNull();
+
+		var textNode = mapper.createObjectNode().put("barvlDt", " 180 ");
+		assertThat(TopisRealtimeProvider.positiveInt(textNode, "barvlDt")).isEqualTo(180);
+
+		var zeroTextNode = mapper.createObjectNode().put("barvlDt", "0");
+		assertThat(TopisRealtimeProvider.positiveInt(zeroTextNode, "barvlDt")).isNull();
+
+		var negativeTextNode = mapper.createObjectNode().put("barvlDt", "-10");
+		assertThat(TopisRealtimeProvider.positiveInt(negativeTextNode, "barvlDt")).isNull();
+
+		var invalidTextNode = mapper.createObjectNode().put("barvlDt", "not-a-number");
+		assertThat(TopisRealtimeProvider.positiveInt(invalidTextNode, "barvlDt")).isNull();
+
+		var booleanNode = mapper.createObjectNode().put("barvlDt", true);
+		assertThat(TopisRealtimeProvider.positiveInt(booleanNode, "barvlDt")).isNull();
+
+		var missingNode = mapper.createObjectNode();
+		assertThat(TopisRealtimeProvider.positiveInt(missingNode, "barvlDt")).isNull();
 	}
 
 	private RealtimeQuery sangnoksuQuery() {

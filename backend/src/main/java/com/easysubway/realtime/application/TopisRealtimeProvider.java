@@ -172,19 +172,21 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		return value.isTextual() || value.isNumber() ? value.asText() : "";
 	}
 
-	private Integer positiveInt(JsonNode node, String fieldName) {
+	static Integer positiveInt(JsonNode node, String fieldName) {
 		JsonNode value = node.path(fieldName);
-		int val = -1;
 		if (value.isInt()) {
-			val = value.asInt();
-		} else if (value.isTextual()) {
+			int val = value.asInt();
+			return val > 0 ? val : null;
+		}
+		if (value.isTextual()) {
 			try {
-				val = Integer.parseInt(value.asText().trim());
+				int val = Integer.parseInt(value.asText().trim());
+				return val > 0 ? val : null;
 			} catch (NumberFormatException exception) {
 				return null;
 			}
 		}
-		return val > 0 ? val : null;
+		return null;
 	}
 
 	static Integer parseEtaFromMessage(String message) {
@@ -192,19 +194,17 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 			return null;
 		}
 		var matcher = ETA_PATTERN.matcher(message);
-		if (matcher.find()) {
-			if (matcher.group(1) != null) {
-				int minutes = Integer.parseInt(matcher.group(1));
-				int seconds = matcher.group(2) != null ? Integer.parseInt(matcher.group(2)) : 0;
-				int total = minutes * 60 + seconds;
-				return total > 0 ? total : null;
-			}
-			if (matcher.group(3) != null) {
-				int seconds = Integer.parseInt(matcher.group(3));
-				return seconds > 0 ? seconds : null;
-			}
+		if (!matcher.find()) {
+			return null;
 		}
-		return null;
+		if (matcher.group(1) != null) {
+			int minutes = Integer.parseInt(matcher.group(1));
+			int seconds = matcher.group(2) != null ? Integer.parseInt(matcher.group(2)) : 0;
+			int total = minutes * 60 + seconds;
+			return total > 0 ? total : null;
+		}
+		int seconds = Integer.parseInt(matcher.group(3));
+		return seconds > 0 ? seconds : null;
 	}
 
 }
