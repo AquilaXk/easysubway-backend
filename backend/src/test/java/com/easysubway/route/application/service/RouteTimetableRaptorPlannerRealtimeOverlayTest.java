@@ -11,6 +11,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceC
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyAccessProjection;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyRideProjection;
 import java.time.Instant;
@@ -123,8 +124,85 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		assertThat(ride(withoutOverlay).realtimeDepartureTime()).isNull();
 	}
 
+	@Test
+	@DisplayName("승강기 장애 edge가 주입되면 overlay가 transition을 차단 상태로 표시한다")
+	void overlayMarksBlockedTransitionsForPathwayEdge() {
+		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+		int[] entryTransitions = compiled.transitionIdsForEdge("entry");
+
+		assertThat(entryTransitions).isNotEmpty();
+		for (int transition : entryTransitions) {
+			assertThat(overlay.isTransitionBlocked(transition)).isTrue();
+		}
+	}
+
+	@Test
+	@DisplayName("출발역 승강기 고장 시 대체 경로가 없으면 fail-closed로 빈 결과를 반환한다")
+	void elevatorOutageExcludesEntryPathwayAndFailsClosedWhenNoAlternative() {
+		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+
+		var results = planner.journeyItineraries(wheelchairQuery(), compiled, overlay).itineraries();
+
+		assertThat(results).isEmpty();
+	}
+
+	@Test
+	@DisplayName("환승 승강기 고장 시 우회 승강기를 자동으로 대체 선택한다")
+	void elevatorOutageSelectsAlternativeDetourElevatorForTransfer() {
+		var altCompiled = planner.compile(transferTimetableWithAlternatives());
+		var baseline = planner.journeyItineraries(wheelchairTransferQuery(), altCompiled).itineraries().getFirst();
+		var baselineTransfer = baseline.legs().stream()
+			.filter(JourneyAccessProjection.class::isInstance)
+			.map(JourneyAccessProjection.class::cast)
+			.filter(leg -> leg.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER)
+			.findFirst().orElseThrow();
+		assertThat(baselineTransfer.durationSeconds()).isEqualTo(155);
+		assertThat(baselineTransfer.distanceMeters()).isEqualTo(150);
+
+		var overlay = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
+		var detourResult = planner.journeyItineraries(wheelchairTransferQuery(), altCompiled, overlay).itineraries().getFirst();
+		var detourTransfer = detourResult.legs().stream()
+			.filter(JourneyAccessProjection.class::isInstance)
+			.map(JourneyAccessProjection.class::cast)
+			.filter(leg -> leg.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER)
+			.findFirst().orElseThrow();
+		assertThat(detourTransfer.durationSeconds()).isEqualTo(258);
+		assertThat(detourTransfer.distanceMeters()).isEqualTo(250);
+	}
+
+	@Test
+	@DisplayName("도착역 승강기 고장 시 대체 경로가 없으면 fail-closed로 빈 결과를 반환한다")
+	void elevatorOutageExcludesExitPathwayAndFailsClosedWhenNoAlternative() {
+		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
+
+		var results = planner.journeyItineraries(wheelchairQuery(), compiled, overlay).itineraries();
+
+		assertThat(results).isEmpty();
+	}
+
+	@Test
+	@DisplayName("edgeId가 null이거나 미존재할 때 빈 transition 목록을 반환하고 음수 transition은 차단되지 않는다")
+	void transitionEdgeLookupAndNegativeTransitionSafety() {
+		assertThat(compiled.transitionIdsForEdge(null)).isEmpty();
+		assertThat(compiled.transitionIdsForEdge("")).isEmpty();
+		assertThat(compiled.transitionIdsForEdge("non-existent")).isEmpty();
+
+		var emptyOverlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		assertThat(emptyOverlay.isEmpty()).isTrue();
+		assertThat(emptyOverlay.isTransitionBlocked(0)).isFalse();
+		assertThat(emptyOverlay.isTransitionBlocked(-1)).isFalse();
+
+		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+		assertThat(overlay.isEmpty()).isFalse();
+		assertThat(overlay.isTransitionBlocked(-1)).isFalse();
+	}
+
 	private static TimetableRealtimeUpdates updates(TimetableRealtimeUpdate... updates) {
 		return new TimetableRealtimeUpdates("overlay-v1", true, List.of(updates), null);
+	}
+
+	private static TimetableRealtimeUpdates updatesWithBlockedEdges(List<String> blockedEdges, TimetableRealtimeUpdate... updates) {
+		return new TimetableRealtimeUpdates("overlay-v1", true, List.of(updates), blockedEdges, null);
 	}
 
 	private static JourneyRideProjection ride(JourneyItinerary result) {
@@ -284,5 +362,101 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
 				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "station-b", null, "EXIT")),
 			edges, List.of(transferRule), evidence);
+	}
+
+	private static JourneyRaptorQuery wheelchairQuery() {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a",
+			"station-b",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.NO_STAIRS,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			0,
+			1,
+			() -> false
+		);
+	}
+
+	private static JourneyRaptorQuery wheelchairTransferQuery() {
+		return new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a",
+			"station-b",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.NO_STAIRS,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+			1,
+			1,
+			() -> false
+		);
+	}
+
+	private static RouteTimetable transferTimetableWithAlternatives() {
+		var calendar = new ServiceCalendar(
+			"daily", true, true, true, true, true, true, true,
+			LocalDate.of(2026, 1, 1), LocalDate.of(2026, 12, 31), "Asia/Seoul");
+		var routes = List.of(
+			new TransitRoute("route-first", "line-a", "A", "First", "transfer", "Asia/Seoul"),
+			new TransitRoute("route-second", "line-b", "B", "Second", "destination", "Asia/Seoul"));
+		var trips = List.of(
+			new TransitTrip("trip-first", "route-first", "daily", "station-transfer", "down",
+				"SUBWAY", "LOCAL", "3001", 0),
+			new TransitTrip("trip-second", "route-second", "daily", "station-b", "down",
+				"SUBWAY", "LOCAL", "3002", 0));
+		var stopTimes = List.of(
+			new TransitStopTime("trip-first", 1, "station-a", "line-a", 32_400, 32_400, 0, 0),
+			new TransitStopTime("trip-first", 2, "station-transfer", "line-a", 33_000, 33_000, 0, 0),
+			new TransitStopTime("trip-second", 1, "station-transfer", "line-b", 34_200, 34_200, 0, 0),
+			new TransitStopTime("trip-second", 2, "station-b", "line-b", 34_800, 34_800, 0, 0));
+		return new RouteTimetable(List.of(calendar), List.of(), routes, trips, stopTimes, List.of(), List.of(), null, transferAccessWithAlternatives());
+	}
+
+	private static com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData transferAccessWithAlternatives() {
+		var edges = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"entry", "entrance", "platform-a", 120, 60, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"transfer-primary", "platform-transfer-a", "platform-transfer-b", 180, 150, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"transfer-detour", "platform-transfer-a", "platform-transfer-b", 300, 250, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit", "platform-b", "outside", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var evidence = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"entry-evidence", "station-a", "line-a", "entry", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"transfer-evidence-primary", "station-transfer", "line-b", "transfer-primary", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"transfer-evidence-detour", "station-transfer", "line-b", "transfer-detour", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence", "station-b", "line-b", "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		var transferRulePrimary = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule(
+			"transfer-rule-primary", "station-transfer", "line-a", "station-transfer", "line-b",
+			"IN_STATION", 180, "transfer-primary", "transfer-primary", "VERIFIED");
+		var transferRuleDetour = new com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransferRule(
+			"transfer-rule-detour", "station-transfer", "line-a", "station-transfer", "line-b",
+			"IN_STATION", 300, "transfer-detour", "transfer-detour", "VERIFIED");
+		return new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData(
+			List.of(
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("entrance", "station-a", null, "ENTRANCE"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-a", "station-a", "line-a", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-transfer-a", "station-transfer", "line-a", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-transfer-b", "station-transfer", "line-b", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-b", "station-b", "line-b", "PLATFORM"),
+				new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "station-b", null, "EXIT")),
+			edges, List.of(transferRulePrimary, transferRuleDetour), evidence);
 	}
 }

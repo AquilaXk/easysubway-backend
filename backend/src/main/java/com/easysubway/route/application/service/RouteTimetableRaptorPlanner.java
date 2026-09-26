@@ -35,6 +35,7 @@ import java.time.ZoneId;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.BitSet;
 import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
@@ -508,7 +509,7 @@ class RouteTimetableRaptorPlanner {
 			}
 			collectReadyBoardings(
 				timetable, workspace, station, boardingLine, round, slackSeconds,
-				accessProfileBit, input, ignoreAccessBlocks, UNREACHED);
+				accessProfileBit, input, ignoreAccessBlocks, UNREACHED, realtimeOverlay);
 
 			for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
 				if (!workspace.readyActive[w]) {
@@ -590,7 +591,7 @@ class RouteTimetableRaptorPlanner {
 				int departureSeconds = realtimeOverlay.departureSeconds(trip, position);
 				collectReadyBoardings(
 					timetable, workspace, station, boardingLine, round, slackSeconds,
-					accessProfileBit, input, ignoreAccessBlocks, departureSeconds);
+					accessProfileBit, input, ignoreAccessBlocks, departureSeconds, realtimeOverlay);
 
 				for (int w = 0; w < WARNING_STATE_COUNT; w += 1) {
 					if (!workspace.readyActive[w]) {
@@ -792,7 +793,6 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
-	@SuppressWarnings({"java:S107", "java:S3776"})
 	static void collectReadyBoardings(
 		CompiledTimetable timetable,
 		ScanWorkspace workspace,
@@ -805,6 +805,25 @@ class RouteTimetableRaptorPlanner {
 		boolean ignoreAccessBlocks,
 		int boardingDeadlineSeconds
 	) {
+		collectReadyBoardings(
+			timetable, workspace, station, boardingLine, round, slackSeconds,
+			accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds, null);
+	}
+
+	@SuppressWarnings({"java:S107", "java:S3776"})
+	static void collectReadyBoardings(
+		CompiledTimetable timetable,
+		ScanWorkspace workspace,
+		int station,
+		int boardingLine,
+		int round,
+		int slackSeconds,
+		int accessProfileBit,
+		ScanInput input,
+		boolean ignoreAccessBlocks,
+		int boardingDeadlineSeconds,
+		RealtimeOverlay realtimeOverlay
+	) {
 		workspace.clearReady();
 		int lineCount = round == 0 ? 1 : timetable.stationLineCount(station);
 		int lineOffset = round == 0 ? 0 : timetable.stationLineOffset(station);
@@ -812,9 +831,9 @@ class RouteTimetableRaptorPlanner {
 			int incomingLine = round == 0 ? workspace.noIncomingLine() : timetable.stationLine(lineOffset + i);
 			int canonicalTransition = round == 0
 				? timetable.entryTransition(station, boardingLine, accessProfileBit, ignoreAccessBlocks,
-					input.requiresVerifiedJourneyDistance())
+					input.requiresVerifiedJourneyDistance(), realtimeOverlay)
 				: timetable.transferTransition(station, incomingLine, boardingLine, accessProfileBit, ignoreAccessBlocks,
-					input.requiresVerifiedJourneyDistance());
+					input.requiresVerifiedJourneyDistance(), realtimeOverlay);
 			if (canonicalTransition < 0) {
 				continue;
 			}
@@ -834,6 +853,7 @@ class RouteTimetableRaptorPlanner {
 				int bestAlternative = -1;
 				for (int alt : candidates) {
 					if (alt == canonicalTransition
+						|| (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(alt))
 						|| !timetable.isTransitionEligible(alt, accessProfileBit, ignoreAccessBlocks,
 							input.requiresVerifiedJourneyDistance(), round > 0)) {
 						continue;
@@ -855,7 +875,7 @@ class RouteTimetableRaptorPlanner {
 		if (round > 0) {
 			evaluateFootpathsIntoReady(
 				timetable, workspace, station, boardingLine, round, slackSeconds,
-				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds);
+				accessProfileBit, input, ignoreAccessBlocks, boardingDeadlineSeconds, realtimeOverlay);
 		}
 		enforceReadyCapacity(workspace, PARETO_LIMIT);
 	}
@@ -957,7 +977,8 @@ class RouteTimetableRaptorPlanner {
 		int accessProfileBit,
 		ScanInput input,
 		boolean ignoreAccessBlocks,
-		int boardingDeadlineSeconds
+		int boardingDeadlineSeconds,
+		RealtimeOverlay realtimeOverlay
 	) {
 		OutOfStationFootpath[] footpaths = timetable.footpathsToStationLine(station, boardingLine);
 		if (footpaths == null) {
@@ -969,7 +990,8 @@ class RouteTimetableRaptorPlanner {
 			boolean footpathDominated = true;
 			int minDepartureForFootpath = Integer.MAX_VALUE;
 			for (int accessTransition : footpath.candidateTransitions()) {
-				if (!timetable.isTransitionEligible(
+				if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(accessTransition))
+					|| !timetable.isTransitionEligible(
 					accessTransition, accessProfileBit, ignoreAccessBlocks,
 					input.requiresVerifiedJourneyDistance(), true)) {
 					continue;
@@ -1014,7 +1036,8 @@ class RouteTimetableRaptorPlanner {
 					OutOfStationFootpath nextFp = footpaths[nextIdx];
 					boolean thisFootpathDominated = true;
 					for (int nextCandidate : nextFp.candidateTransitions()) {
-						if (!timetable.isTransitionEligible(
+						if ((realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(nextCandidate))
+							|| !timetable.isTransitionEligible(
 							nextCandidate, accessProfileBit, ignoreAccessBlocks,
 							input.requiresVerifiedJourneyDistance(), true)) {
 							continue;
@@ -1160,7 +1183,7 @@ class RouteTimetableRaptorPlanner {
 				int incomingLine = timetable.stationLine(lineOffset + lineIdx);
 				int exitTransition = timetable.exitTransition(
 					destination, incomingLine, accessProfileBit, ignoreAccessBlocks,
-					input.requiresVerifiedJourneyDistance());
+					input.requiresVerifiedJourneyDistance(), realtimeOverlay);
 				if (exitTransition < 0) {
 					continue;
 				}
@@ -1814,17 +1837,30 @@ class RouteTimetableRaptorPlanner {
 		if (realtimeUpdates == null || !realtimeUpdates.available()) {
 			return RealtimeOverlay.empty();
 		}
+		BitSet blockedTransitions = new BitSet();
+		if (realtimeUpdates.blockedPathwayEdgeIds() != null) {
+			for (String edgeId : realtimeUpdates.blockedPathwayEdgeIds()) {
+				if (edgeId != null && !edgeId.isBlank()) {
+					for (int transition : timetable.transitionIdsForEdge(edgeId)) {
+						blockedTransitions.set(transition);
+					}
+				}
+			}
+		}
 		List<IndexedRealtimeUpdate> indexed = new ArrayList<>();
 		Set<Integer> seen = new HashSet<>();
 		Set<Integer> affectedPatterns = new HashSet<>();
-		for (TimetableRealtimeUpdate update : realtimeUpdates.updates()) {
-			int scheduledTripIndex = timetable.uniqueScheduledTripIndex(update.tripId());
-			if (scheduledTripIndex < 0 || !seen.add(scheduledTripIndex)
-				|| !validRealtimeUpdate(timetable.scheduledTrip(scheduledTripIndex), update)) {
-				return RealtimeOverlay.empty();
+		List<TimetableRealtimeUpdate> updatesList = realtimeUpdates.updates();
+		if (updatesList != null) {
+			for (TimetableRealtimeUpdate update : updatesList) {
+				int scheduledTripIndex = timetable.uniqueScheduledTripIndex(update.tripId());
+				if (scheduledTripIndex < 0 || !seen.add(scheduledTripIndex)
+					|| !validRealtimeUpdate(timetable.scheduledTrip(scheduledTripIndex), update)) {
+					return RealtimeOverlay.empty();
+				}
+				indexed.add(new IndexedRealtimeUpdate(scheduledTripIndex, update));
+				affectedPatterns.add(timetable.patternOfScheduledTrip(scheduledTripIndex));
 			}
-			indexed.add(new IndexedRealtimeUpdate(scheduledTripIndex, update));
-			affectedPatterns.add(timetable.patternOfScheduledTrip(scheduledTripIndex));
 		}
 		indexed.sort(Comparator.comparingInt(IndexedRealtimeUpdate::scheduledTripIndex));
 		int[] tripIndexes = new int[indexed.size()];
@@ -1844,7 +1880,8 @@ class RouteTimetableRaptorPlanner {
 		}
 		return new RealtimeOverlay(
 			realtimeUpdates.version(), true, tripIndexes, arrivalDeltas, departureDeltas, cancelled, evidence,
-			affectedPatterns.stream().mapToInt(Integer::intValue).sorted().toArray());
+			affectedPatterns.stream().mapToInt(Integer::intValue).sorted().toArray(),
+			blockedTransitions);
 	}
 
 	private static boolean validRealtimeUpdate(ScheduledTrip trip, TimetableRealtimeUpdate update) {
@@ -2226,30 +2263,52 @@ class RouteTimetableRaptorPlanner {
 		int lineIndex(String lineId) {
 			return lineIndex.getOrDefault(lineId, -1);
 		}
+
+		int[] transitionIdsForEdge(String edgeId) {
+			return accessTransitions.transitionIdsForEdge(edgeId);
+		}
+		int entryTransition(
+			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance,
+			RealtimeOverlay realtimeOverlay
+		) {
+			return accessTransitions.entry(station, line, profileBit, ignoreBlocked, requireVerifiedDistance, realtimeOverlay);
+		}
 		int entryTransition(
 			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
 		) {
-			return accessTransitions.entry(station, line, profileBit, ignoreBlocked, requireVerifiedDistance);
+			return entryTransition(station, line, profileBit, ignoreBlocked, requireVerifiedDistance, null);
 		}
 		int entryTransition(int station, int line, int profileBit, boolean ignoreBlocked) {
-			return entryTransition(station, line, profileBit, ignoreBlocked, false);
+			return entryTransition(station, line, profileBit, ignoreBlocked, false, null);
+		}
+		int exitTransition(
+			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance,
+			RealtimeOverlay realtimeOverlay
+		) {
+			return accessTransitions.exit(station, line, profileBit, ignoreBlocked, requireVerifiedDistance, realtimeOverlay);
 		}
 		int exitTransition(
 			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
 		) {
-			return accessTransitions.exit(station, line, profileBit, ignoreBlocked, requireVerifiedDistance);
+			return exitTransition(station, line, profileBit, ignoreBlocked, requireVerifiedDistance, null);
 		}
 		int exitTransition(int station, int line, int profileBit, boolean ignoreBlocked) {
-			return exitTransition(station, line, profileBit, ignoreBlocked, false);
+			return exitTransition(station, line, profileBit, ignoreBlocked, false, null);
+		}
+		int transferTransition(
+			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance,
+			RealtimeOverlay realtimeOverlay
+		) {
+			return accessTransitions.transfer(
+				station, fromLine, toLine, profileBit, ignoreBlocked, requireVerifiedDistance, realtimeOverlay);
 		}
 		int transferTransition(
 			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
 		) {
-			return accessTransitions.transfer(
-				station, fromLine, toLine, profileBit, ignoreBlocked, requireVerifiedDistance);
+			return transferTransition(station, fromLine, toLine, profileBit, ignoreBlocked, requireVerifiedDistance, null);
 		}
 		int transferTransition(int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked) {
-			return transferTransition(station, fromLine, toLine, profileBit, ignoreBlocked, false);
+			return transferTransition(station, fromLine, toLine, profileBit, ignoreBlocked, false, null);
 		}
 		int transitionDurationSeconds(int transition) {
 			return accessTransitions.durationSeconds(transition);
@@ -2558,6 +2617,7 @@ class RouteTimetableRaptorPlanner {
 		private final byte[] warningCodes;
 		private final boolean[] includesStairs;
 		private final String[] edgeIds;
+		private final Map<String, int[]> edgeTransitions;
 		private final String[] verificationStatuses;
 		private final boolean[] outOfStation;
 		private final List<OutOfStationFootpath> outOfStationFootpaths;
@@ -2591,6 +2651,7 @@ class RouteTimetableRaptorPlanner {
 			includesStairs = new boolean[candidates.size()];
 			edgeIds = new String[candidates.size()];
 			verificationStatuses = new String[candidates.size()];
+			Map<String, List<Integer>> edgeMap = new HashMap<>();
 			for (int index = 0; index < candidates.size(); index += 1) {
 				Candidate candidate = candidates.get(index);
 				durationSeconds[index] = candidate.durationSeconds();
@@ -2601,7 +2662,15 @@ class RouteTimetableRaptorPlanner {
 				includesStairs[index] = candidate.includesStairs();
 				edgeIds[index] = candidate.edgeId();
 				verificationStatuses[index] = candidate.verificationStatus();
+				if (candidate.edgeId() != null && !candidate.edgeId().isBlank()) {
+					edgeMap.computeIfAbsent(candidate.edgeId(), ignored -> new ArrayList<>()).add(index);
+				}
 			}
+			Map<String, int[]> compiledEdgeTransitions = new HashMap<>();
+			for (Map.Entry<String, List<Integer>> entry : edgeMap.entrySet()) {
+				compiledEdgeTransitions.put(entry.getKey(), entry.getValue().stream().mapToInt(Integer::intValue).toArray());
+			}
+			this.edgeTransitions = Map.copyOf(compiledEdgeTransitions);
 		}
 
 		private static AccessTransitions compile(
@@ -2946,30 +3015,45 @@ class RouteTimetableRaptorPlanner {
 		private static long transferKey(int station, int fromLine, int toLine, int lineCount) {
 			return (((long) station) * lineCount + fromLine) * lineCount + toLine;
 		}
-		private int entry(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
-			return select(entryTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
-				requireVerifiedDistance, false);
+		int[] transitionIdsForEdge(String edgeId) {
+			if (edgeId == null || edgeId.isBlank()) {
+				return NO_TRANSITIONS;
+			}
+			int[] ids = edgeTransitions.get(edgeId);
+			return ids != null ? ids : NO_TRANSITIONS;
 		}
-		private int exit(int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
+		private int entry(
+			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance, RealtimeOverlay realtimeOverlay
+		) {
+			return select(entryTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
+				requireVerifiedDistance, false, realtimeOverlay);
+		}
+		private int exit(
+			int station, int line, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance, RealtimeOverlay realtimeOverlay
+		) {
 			return select(exitTransitions[stationLineKey(station, line, lineCount)], profileBit, ignoreBlocked,
-				requireVerifiedDistance, false);
+				requireVerifiedDistance, false, realtimeOverlay);
 		}
 		private int transfer(
-			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance
+			int station, int fromLine, int toLine, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance, RealtimeOverlay realtimeOverlay
 		) {
 			return select(transferCandidates(station, fromLine, toLine), profileBit,
-				ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance);
+				ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance, realtimeOverlay);
 		}
 		private int select(
 			int[] candidates,
 			int profileBit,
 			boolean ignoreBlocked,
 			boolean requireVerified,
-			boolean requirePositiveDistance
+			boolean requirePositiveDistance,
+			RealtimeOverlay realtimeOverlay
 		) {
 			if (requireVerified) {
 				int selected = -1;
 				for (int transition : candidates) {
+					if (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(transition)) {
+						continue;
+					}
 					if ((ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0)
 						&& (!requirePositiveDistance || distanceMeters[transition] > 0)
 						&& "VERIFIED".equals(verificationStatuses[transition])
@@ -2981,6 +3065,9 @@ class RouteTimetableRaptorPlanner {
 				return selected;
 			}
 			for (int transition : candidates) {
+				if (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(transition)) {
+					continue;
+				}
 				if (ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0) {
 					return transition;
 				}
@@ -3022,7 +3109,7 @@ class RouteTimetableRaptorPlanner {
 			return outOfStationFootpaths;
 		}
 		private int select(int[] candidates, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance) {
-			return select(candidates, profileBit, ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance);
+			return select(candidates, profileBit, ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance, null);
 		}
 		private int[] entryCandidates(int station, int line) {
 			int key = stationLineKey(station, line, lineCount);
@@ -4247,7 +4334,7 @@ class RouteTimetableRaptorPlanner {
 	static final class RealtimeOverlay {
 
 		private static final RealtimeOverlay EMPTY = new RealtimeOverlay(
-			null, false, new int[0], new int[0], new int[0], new boolean[0], new RealtimeEvidence[0], new int[0]);
+			null, false, new int[0], new int[0], new int[0], new boolean[0], new RealtimeEvidence[0], new int[0], new BitSet(0));
 		private final String version;
 		private final boolean available;
 		private final int[] tripIndexes;
@@ -4256,6 +4343,7 @@ class RouteTimetableRaptorPlanner {
 		private final boolean[] cancelled;
 		private final RealtimeEvidence[] evidence;
 		private final int[] affectedPatterns;
+		private final BitSet blockedTransitions;
 
 		private RealtimeOverlay(
 			String version,
@@ -4265,7 +4353,8 @@ class RouteTimetableRaptorPlanner {
 			int[] departureDeltas,
 			boolean[] cancelled,
 			RealtimeEvidence[] evidence,
-			int[] affectedPatterns
+			int[] affectedPatterns,
+			BitSet blockedTransitions
 		) {
 			this.version = version;
 			this.available = available;
@@ -4275,6 +4364,7 @@ class RouteTimetableRaptorPlanner {
 			this.cancelled = cancelled;
 			this.evidence = evidence;
 			this.affectedPatterns = affectedPatterns;
+			this.blockedTransitions = blockedTransitions != null ? (BitSet) blockedTransitions.clone() : new BitSet(0);
 		}
 
 		static RealtimeOverlay empty() {
@@ -4290,7 +4380,11 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		boolean isEmpty() {
-			return tripIndexes.length == 0;
+			return tripIndexes.length == 0 && blockedTransitions.isEmpty();
+		}
+
+		boolean isTransitionBlocked(int transition) {
+			return transition >= 0 && blockedTransitions.get(transition);
 		}
 
 		boolean affectsPattern(int pattern) {
