@@ -16,7 +16,7 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitS
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.JourneyItinerary;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.RealtimeOverlay;
-import com.easysubway.route.domain.RoutePersona;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.RoutePersona;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;

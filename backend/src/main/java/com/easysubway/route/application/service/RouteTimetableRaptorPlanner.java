@@ -1448,10 +1448,7 @@ class RouteTimetableRaptorPlanner {
 		if (itinerary.metrics().connectionSlack() instanceof JourneyProfileRaptorPort.MinimumTransferSeconds min) {
 			return min.seconds();
 		}
-		if (itinerary.metrics().connectionSlack() instanceof JourneyProfileRaptorPort.NoTransfer) {
-			return Long.MAX_VALUE;
-		}
-		return 0;
+		return itinerary.metrics().connectionSlack() instanceof JourneyProfileRaptorPort.NoTransfer ? Long.MAX_VALUE : 0;
 	}
 
 	static List<JourneyItinerary> assignPersonas(List<JourneyItinerary> itineraries) {
@@ -1460,30 +1457,15 @@ class RouteTimetableRaptorPlanner {
 		}
 		Map<RoutePersona, JourneyItinerary> personas = classifyPersonas(itineraries);
 		List<JourneyItinerary> result = new ArrayList<>(itineraries.size());
-		Set<RoutePersona> assigned = EnumSet.noneOf(RoutePersona.class);
 
 		for (JourneyItinerary it : itineraries) {
-			RoutePersona personaToAssign = null;
-			if (!assigned.contains(RoutePersona.FASTEST) && it == personas.get(RoutePersona.FASTEST)) {
-				personaToAssign = RoutePersona.FASTEST;
-			} else if (!assigned.contains(RoutePersona.STEP_FREE) && it == personas.get(RoutePersona.STEP_FREE)) {
-				personaToAssign = RoutePersona.STEP_FREE;
-			} else if (!assigned.contains(RoutePersona.MIN_WALK) && it == personas.get(RoutePersona.MIN_WALK)) {
-				personaToAssign = RoutePersona.MIN_WALK;
-			} else if (!assigned.contains(RoutePersona.RELAXED_SLACK) && it == personas.get(RoutePersona.RELAXED_SLACK)) {
-				personaToAssign = RoutePersona.RELAXED_SLACK;
-			} else {
-				for (Map.Entry<RoutePersona, JourneyItinerary> entry : personas.entrySet()) {
-					if (entry.getValue() == it) {
-						personaToAssign = entry.getKey();
-						break;
-					}
-				}
-				if (personaToAssign == null) {
-					personaToAssign = RoutePersona.FASTEST;
+			RoutePersona personaToAssign = RoutePersona.FASTEST;
+			for (RoutePersona persona : RoutePersona.values()) {
+				if (personas.get(persona) == it) {
+					personaToAssign = persona;
+					break;
 				}
 			}
-			assigned.add(personaToAssign);
 			result.add(it.withPersona(personaToAssign));
 		}
 		return List.copyOf(result);
@@ -4239,36 +4221,6 @@ class RouteTimetableRaptorPlanner {
 			return idx;
 		}
 
-		int size() {
-			return size;
-		}
-
-		void clear() {
-			Arrays.fill(serviceDate, 0, size, null);
-			Arrays.fill(trip, 0, size, null);
-			Arrays.fill(connectionSlack, 0, size, null);
-			size = 0;
-		}
-
-		int startSeconds(int index) { return startSeconds[index]; }
-		int arrivalSeconds(int index) { return arrivalSeconds[index]; }
-		int boardings(int index) { return boardings[index]; }
-		int station(int index) { return station[index]; }
-		int incomingLine(int index) { return incomingLine[index]; }
-		byte warningBits(int index) { return warningBits[index]; }
-		int accessSeconds(int index) { return accessSeconds[index]; }
-		int accessDistanceMeters(int index) { return accessDistanceMeters[index]; }
-		int stairBurden(int index) { return stairBurden[index]; }
-		int slackSeconds(int index) { return slackSeconds[index]; }
-		int parentIndex(int index) { return parentIndex[index]; }
-		int tripIndex(int index) { return tripIndex[index]; }
-		int fromStopIndex(int index) { return fromStopIndex[index]; }
-		int toStopIndex(int index) { return toStopIndex[index]; }
-		int transition(int index) { return transition[index]; }
-		LocalDate serviceDate(int index) { return serviceDate[index]; }
-		ProfileDatedTrip trip(int index) { return trip[index]; }
-		JourneyProfileRaptorPort.ConnectionSlack connectionSlack(int index) { return connectionSlack[index]; }
-
 		static boolean dominates(PrimitiveProfileLabelPool pool, int left, int right) {
 			if (left == right) {
 				return false;
@@ -4661,6 +4613,13 @@ class RouteTimetableRaptorPlanner {
 			itineraries = List.copyOf(itineraries);
 			scanMetrics = Objects.requireNonNull(scanMetrics, "scanMetrics");
 		}
+	}
+
+	public enum RoutePersona {
+		FASTEST,
+		STEP_FREE,
+		MIN_WALK,
+		RELAXED_SLACK
 	}
 
 	record JourneyItinerary(
