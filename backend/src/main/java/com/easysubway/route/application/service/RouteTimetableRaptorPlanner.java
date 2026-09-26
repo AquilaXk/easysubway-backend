@@ -3017,7 +3017,7 @@ class RouteTimetableRaptorPlanner {
 			return (((long) station) * lineCount + fromLine) * lineCount + toLine;
 		}
 		int[] transitionIdsForEdge(String edgeId) {
-			if (edgeId == null || edgeId.isBlank()) {
+			if (edgeId == null) {
 				return NO_TRANSITIONS;
 			}
 			int[] ids = edgeTransitions.get(edgeId);
@@ -4631,22 +4631,6 @@ class RouteTimetableRaptorPlanner {
 
 		String lineId() {
 			return scheduledTrip.route() == null ? from().lineId() : scheduledTrip.route().lineId();
-		}
-
-		String lineName() {
-			TransitRoute route = scheduledTrip.route();
-			if (route == null) {
-				return from().lineId();
-			}
-			String routeLongName = route.routeLongName();
-			if (routeLongName != null && !routeLongName.isBlank()) {
-				return routeLongName;
-			}
-			String routeShortName = route.routeShortName();
-			if (routeShortName != null && !routeShortName.isBlank()) {
-				return routeShortName;
-			}
-			return route.lineId();
 		}
 	}
 
