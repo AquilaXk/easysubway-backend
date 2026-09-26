@@ -1248,6 +1248,134 @@ class RealtimeGatewayServiceTest {
 		assertThat(arrivals.getFirst().servicePattern()).isEqualTo("급행");
 	}
 
+	@Test
+	@DisplayName("TOPIS barvlDt가 0이고 arvlMsg2가 전역 출발이면 etaSeconds는 null이고 메시지가 보존된다")
+	void topisZeroBarvlDtWithDescriptiveMessageLeavesEtaNullAndPreservesMessage() throws Exception {
+		ObjectMapper objectMapper = new ObjectMapper();
+		TopisRealtimeProvider provider = new TopisRealtimeProvider(
+			"backend-key",
+			objectMapper,
+			java.net.http.HttpClient.newHttpClient()
+		);
+
+		List<RealtimeArrival> arrivals = provider.arrivalsFromPayload(
+			objectMapper.readTree("""
+				{
+				  "errorMessage": {"code": "INFO-000"},
+				  "realtimeArrivalList": [
+				    {
+				      "subwayId": "1004",
+				      "statnNm": "상록수",
+				      "trainLineNm": "당고개행 - 반월방면",
+				      "updnLine": "상행",
+				      "btrainNo": "4002",
+				      "barvlDt": "0",
+				      "arvlMsg2": "전역 출발",
+				      "recptnDt": "2026-06-26 17:00:00"
+				    }
+				  ]
+				}
+				"""),
+			sangnoksuQuery()
+		);
+
+		assertThat(arrivals).hasSize(1);
+		assertThat(arrivals.getFirst().etaSeconds()).isNull();
+		assertThat(arrivals.getFirst().message()).isEqualTo("전역 출발");
+
+		// Gateway adjustArrivalEta도 etaSeconds==null이면 "곧 도착"으로 덮어쓰지 않고 메시지를 보존한다.
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		RealtimeGatewayService service = service(q -> arrivals, clock);
+		RealtimeArrivalResult result = service.arrivals(sangnoksuQuery());
+		assertThat(result.arrivals()).hasSize(1);
+		assertThat(result.arrivals().getFirst().etaSeconds()).isNull();
+		assertThat(result.arrivals().getFirst().message()).isEqualTo("전역 출발");
+	}
+
+	@Test
+	@DisplayName("TOPIS barvlDt가 0이어도 arvlMsg2에 분/초 패턴이 있으면 etaSeconds를 파싱한다")
+	void topisZeroBarvlDtWithMinuteSecondsMessageParsesEtaSeconds() throws Exception {
+		ObjectMapper objectMapper = new ObjectMapper();
+		TopisRealtimeProvider provider = new TopisRealtimeProvider(
+			"backend-key",
+			objectMapper,
+			java.net.http.HttpClient.newHttpClient()
+		);
+
+		List<RealtimeArrival> arrivals = provider.arrivalsFromPayload(
+			objectMapper.readTree("""
+				{
+				  "errorMessage": {"code": "INFO-000"},
+				  "realtimeArrivalList": [
+				    {
+				      "subwayId": "1004",
+				      "statnNm": "상록수",
+				      "trainLineNm": "오이도행",
+				      "updnLine": "하행",
+				      "btrainNo": "4003",
+				      "barvlDt": "0",
+				      "arvlMsg2": "3분 20초 후 (상록수)"
+				    }
+				  ]
+				}
+				"""),
+			sangnoksuQuery()
+		);
+
+		assertThat(arrivals).hasSize(1);
+		assertThat(arrivals.getFirst().etaSeconds()).isEqualTo(200);
+		assertThat(arrivals.getFirst().message()).isEqualTo("3분 20초 후 (상록수)");
+	}
+
+	@Test
+	@DisplayName("parseEtaFromMessage는 다양한 한국어 시간 형식을 초로 파싱한다")
+	void parseEtaFromMessageParsesKoreanTimeFormats() {
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("3분 20초 후 (상록수)")).isEqualTo(200);
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("4분 후")).isEqualTo(240);
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("45초 후")).isEqualTo(45);
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("1분")).isEqualTo(60);
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("전역 출발")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("[2]번째 전역")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("당역 진입")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage(null)).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("0분 0초 후")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("0초 후")).isNull();
+		assertThat(TopisRealtimeProvider.parseEtaFromMessage("0분 후")).isNull();
+	}
+
+	@Test
+	@DisplayName("positiveInt는 숫자, 문자열 숫자, 음수/0, 잘못된 포맷 및 누락 필드를 적절히 처리한다")
+	void positiveIntHandlesAllNodeTypesAndBoundaries() {
+		ObjectMapper mapper = new ObjectMapper();
+		var intNode = mapper.createObjectNode().put("barvlDt", 120);
+		assertThat(TopisRealtimeProvider.positiveInt(intNode, "barvlDt")).isEqualTo(120);
+
+		var zeroIntNode = mapper.createObjectNode().put("barvlDt", 0);
+		assertThat(TopisRealtimeProvider.positiveInt(zeroIntNode, "barvlDt")).isNull();
+
+		var negativeIntNode = mapper.createObjectNode().put("barvlDt", -5);
+		assertThat(TopisRealtimeProvider.positiveInt(negativeIntNode, "barvlDt")).isNull();
+
+		var textNode = mapper.createObjectNode().put("barvlDt", " 180 ");
+		assertThat(TopisRealtimeProvider.positiveInt(textNode, "barvlDt")).isEqualTo(180);
+
+		var zeroTextNode = mapper.createObjectNode().put("barvlDt", "0");
+		assertThat(TopisRealtimeProvider.positiveInt(zeroTextNode, "barvlDt")).isNull();
+
+		var negativeTextNode = mapper.createObjectNode().put("barvlDt", "-10");
+		assertThat(TopisRealtimeProvider.positiveInt(negativeTextNode, "barvlDt")).isNull();
+
+		var invalidTextNode = mapper.createObjectNode().put("barvlDt", "not-a-number");
+		assertThat(TopisRealtimeProvider.positiveInt(invalidTextNode, "barvlDt")).isNull();
+
+		var booleanNode = mapper.createObjectNode().put("barvlDt", true);
+		assertThat(TopisRealtimeProvider.positiveInt(booleanNode, "barvlDt")).isNull();
+
+		var missingNode = mapper.createObjectNode();
+		assertThat(TopisRealtimeProvider.positiveInt(missingNode, "barvlDt")).isNull();
+	}
+
 	private RealtimeQuery sangnoksuQuery() {
 		return new RealtimeQuery("station-sangnoksu", "seoul-4", "1004", "상록수", null);
 	}

@@ -15,6 +15,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.regex.Pattern;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -24,6 +25,7 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 
 	private static final URI TOPIS_BASE_URI = URI.create("http://swopenapi.seoul.go.kr/api/subway/");
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMillis(1500);
+	private static final Pattern ETA_PATTERN = Pattern.compile("(\\d+)\\s*분(?:\\s*(\\d+)\\s*초)?|(\\d+)\\s*초");
 
 	private final String serviceKey;
 	private final ObjectMapper objectMapper;
@@ -67,14 +69,17 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		}
 		List<RealtimeArrival> arrivals = new ArrayList<>();
 		for (JsonNode item : items) {
+			String arvlMsg2 = stringOrEmpty(item, "arvlMsg2");
+			Integer barvlDt = positiveInt(item, "barvlDt");
+			Integer etaSeconds = barvlDt != null ? barvlDt : parseEtaFromMessage(arvlMsg2);
 			arrivals.add(new RealtimeArrival(
 				stringOrFallback(item, "subwayId", query.lineId()),
 				stringOrFallback(item, "statnNm", query.stationQueryName()),
 				destination(item),
 				stringOrEmpty(item, "updnLine"),
 				stringOrEmpty(item, "btrainNo"),
-				optionalInt(item, "barvlDt"),
-				stringOrEmpty(item, "arvlMsg2"),
+				etaSeconds,
+				arvlMsg2,
 				stringOrEmpty(item, "arvlMsg3"),
 				stringOrEmpty(item, "recptnDt"),
 				stringOrEmpty(item, "btrainSttus")
@@ -167,19 +172,39 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		return value.isTextual() || value.isNumber() ? value.asText() : "";
 	}
 
-	private Integer optionalInt(JsonNode node, String fieldName) {
+	static Integer positiveInt(JsonNode node, String fieldName) {
 		JsonNode value = node.path(fieldName);
 		if (value.isInt()) {
-			return value.asInt();
+			int val = value.asInt();
+			return val > 0 ? val : null;
 		}
 		if (value.isTextual()) {
 			try {
-				return Integer.parseInt(value.asText());
+				int val = Integer.parseInt(value.asText().trim());
+				return val > 0 ? val : null;
 			} catch (NumberFormatException exception) {
 				return null;
 			}
 		}
 		return null;
+	}
+
+	static Integer parseEtaFromMessage(String message) {
+		if (message == null || message.isBlank()) {
+			return null;
+		}
+		var matcher = ETA_PATTERN.matcher(message);
+		if (!matcher.find()) {
+			return null;
+		}
+		if (matcher.group(1) != null) {
+			int minutes = Integer.parseInt(matcher.group(1));
+			int seconds = matcher.group(2) != null ? Integer.parseInt(matcher.group(2)) : 0;
+			int total = minutes * 60 + seconds;
+			return total > 0 ? total : null;
+		}
+		int seconds = Integer.parseInt(matcher.group(3));
+		return seconds > 0 ? seconds : null;
 	}
 
 }
