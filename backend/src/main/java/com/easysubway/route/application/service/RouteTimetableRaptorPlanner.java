@@ -38,12 +38,14 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
 import java.util.EnumMap;
+import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
+import java.util.PriorityQueue;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.function.Function;
@@ -140,11 +142,12 @@ class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay,
 		ScanResult scanResult
 	) {
-		return scanResult.labels().stream()
+		List<JourneyItinerary> raw = scanResult.labels().stream()
 			.sorted(RouteTimetableRaptorPlanner::compareLabels)
 			.limit(input.candidateLimit())
 			.map(label -> toJourneyItinerary(input, timetable, label))
 			.toList();
+		return assignPersonas(raw);
 	}
 
 
@@ -320,6 +323,63 @@ class RouteTimetableRaptorPlanner {
 		return serviceDay.date().atStartOfDay(SERVICE_ZONE).plusSeconds(seconds).toInstant();
 	}
 
+	private record StationDistance(int station, int distance) implements Comparable<StationDistance> {
+		@Override
+		public int compareTo(StationDistance other) {
+			return Integer.compare(this.distance, other.distance);
+		}
+	}
+
+	static int[] computeStationLowerBounds(CompiledTimetable timetable, int destinationStation) {
+		int stationCount = timetable.stationCount();
+		int[] lb = new int[stationCount];
+		Arrays.fill(lb, Integer.MAX_VALUE / 2);
+		if (destinationStation < 0 || destinationStation >= stationCount) {
+			return lb;
+		}
+		lb[destinationStation] = 0;
+		PriorityQueue<StationDistance> pq = new PriorityQueue<>();
+		pq.add(new StationDistance(destinationStation, 0));
+
+		while (!pq.isEmpty()) {
+			StationDistance curr = pq.poll();
+			int u = curr.station();
+			int dist = curr.distance();
+			if (dist > lb[u]) {
+				continue;
+			}
+
+			for (int pattern : timetable.patternsByStop(u)) {
+				int[] stops = timetable.stopsByPattern(pattern);
+				int pos = indexOf(stops, u);
+				if (pos <= 0) {
+					continue;
+				}
+				for (int prevPos = 0; prevPos < pos; prevPos += 1) {
+					int v = stops[prevPos];
+					int runTime = timetable.minPatternRunningTime(pattern, prevPos, pos);
+					if (runTime < Integer.MAX_VALUE / 2 && dist + runTime < lb[v]) {
+						lb[v] = dist + runTime;
+						pq.add(new StationDistance(v, lb[v]));
+					}
+				}
+			}
+
+			OutOfStationFootpath[] incoming = timetable.footpathsToStation(u);
+			if (incoming != null) {
+				for (OutOfStationFootpath fp : incoming) {
+					int v = fp.fromStation();
+					int[] cand = fp.candidateTransitions();
+					int footTime = cand.length > 0 ? timetable.transitionDurationSeconds(cand[0]) : 0;
+					if (dist + footTime < lb[v]) {
+						lb[v] = dist + footTime;
+						pq.add(new StationDistance(v, lb[v]));
+					}
+				}
+			}
+		}
+		return lb;
+	}
 
 	private ScanResult scanDestinationLabels(
 		ScanInput input,
@@ -338,7 +398,8 @@ class RouteTimetableRaptorPlanner {
 		if (origin < 0 || destination < 0) {
 			return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
 		}
-		workspace.setTargetStation(destination);
+		int[] lowerBounds = computeStationLowerBounds(timetable, destination);
+		workspace.setTargetStation(destination, lowerBounds);
 		workspace.improveOrigin(origin, input.readyAtSeconds());
 
 		int slackSeconds = input.boardingSlackSeconds();
@@ -1347,6 +1408,68 @@ class RouteTimetableRaptorPlanner {
 		return false;
 	}
 
+	static Map<RoutePersona, JourneyItinerary> classifyPersonas(List<JourneyItinerary> itineraries) {
+		if (itineraries == null || itineraries.isEmpty()) {
+			return Map.of();
+		}
+		Map<RoutePersona, JourneyItinerary> map = new EnumMap<>(RoutePersona.class);
+
+		JourneyItinerary fastest = itineraries.stream()
+			.min(Comparator.comparing((JourneyItinerary it) -> Duration.between(it.plannedDepartureTime(), it.plannedArrivalTime()))
+				.thenComparing(JourneyItinerary::plannedArrivalTime))
+			.orElse(itineraries.getFirst());
+		map.put(RoutePersona.FASTEST, fastest);
+
+		JourneyItinerary stepFree = itineraries.stream()
+			.min(Comparator.comparing((JourneyItinerary it) -> it.metrics().accessibilityBurden())
+				.thenComparing(it -> Duration.between(it.plannedDepartureTime(), it.plannedArrivalTime())))
+			.orElse(fastest);
+		map.put(RoutePersona.STEP_FREE, stepFree);
+
+		JourneyItinerary minWalk = itineraries.stream()
+			.min(Comparator.comparing((JourneyItinerary it) -> it.metrics().accessDistanceMeters())
+				.thenComparing(it -> Duration.between(it.plannedDepartureTime(), it.plannedArrivalTime())))
+			.orElse(fastest);
+		map.put(RoutePersona.MIN_WALK, minWalk);
+
+		JourneyItinerary relaxedSlack = itineraries.stream()
+			.filter(it -> slackSeconds(it) >= 300)
+			.min(Comparator.comparing((JourneyItinerary it) -> Duration.between(it.plannedDepartureTime(), it.plannedArrivalTime())))
+			.orElseGet(() -> itineraries.stream()
+				.max(Comparator.comparing(RouteTimetableRaptorPlanner::slackSeconds))
+				.orElse(fastest));
+		map.put(RoutePersona.RELAXED_SLACK, relaxedSlack);
+
+		return map;
+	}
+
+	static long slackSeconds(JourneyItinerary itinerary) {
+		if (itinerary.metrics().connectionSlack() instanceof JourneyProfileRaptorPort.MinimumTransferSeconds min) {
+			return min.seconds();
+		}
+		return itinerary.metrics().connectionSlack() instanceof JourneyProfileRaptorPort.NoTransfer ? Long.MAX_VALUE : 0;
+	}
+
+	static List<JourneyItinerary> assignPersonas(List<JourneyItinerary> itineraries) {
+		if (itineraries == null || itineraries.isEmpty()) {
+			return List.of();
+		}
+		Map<RoutePersona, JourneyItinerary> personas = classifyPersonas(itineraries);
+		List<JourneyItinerary> result = new ArrayList<>(itineraries.size());
+
+		for (JourneyItinerary it : itineraries) {
+			RoutePersona personaToAssign = RoutePersona.FASTEST;
+			for (RoutePersona persona : RoutePersona.values()) {
+				if (personas.get(persona) == it) {
+					personaToAssign = persona;
+					break;
+				}
+			}
+			result.add(it.withPersona(personaToAssign));
+		}
+		return List.copyOf(result);
+	}
+
 	private static int compareDestinationLabels(Label left, Label right) {
 		RideLeg leftLast = left.path().getLast();
 		RideLeg rightLast = right.path().getLast();
@@ -1751,7 +1874,7 @@ class RouteTimetableRaptorPlanner {
 			profile.add(new JourneyDepartureProfilePoint(
 				serviceDay.date(),
 				readyAtSeconds,
-				itineraries,
+				assignPersonas(itineraries),
 				scan.scanMetrics()));
 		}
 		return List.copyOf(profile);
@@ -2078,6 +2201,8 @@ class RouteTimetableRaptorPlanner {
 		private final AccessTransitions accessTransitions;
 		private final OutOfStationFootpath[][] footpathsByFromStation;
 		private final OutOfStationFootpath[][] footpathsByToStationLine;
+		private final OutOfStationFootpath[][] footpathsByToStation;
+		private final Map<Integer, int[]> minPatternRunningTimes;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
 		private final int[] stationLineOffsets;
 		private final int[] stationLines;
@@ -2142,14 +2267,24 @@ class RouteTimetableRaptorPlanner {
 			for (int i = 0; i < numStations * numLines; i += 1) {
 				toList.add(new ArrayList<>());
 			}
+			List<List<OutOfStationFootpath>> toStationList = new ArrayList<>(numStations);
+			for (int i = 0; i < numStations; i += 1) {
+				toStationList.add(new ArrayList<>());
+			}
 			for (OutOfStationFootpath footpath : accessTransitions.outOfStationFootpaths()) {
 				fromList.get(footpath.fromStation()).add(footpath);
 				toList.get(footpath.toStation() * numLines + footpath.toLine()).add(footpath);
+				toStationList.get(footpath.toStation()).add(footpath);
 			}
 			footpathsByFromStation = new OutOfStationFootpath[numStations][];
 			for (int i = 0; i < numStations; i += 1) {
 				List<OutOfStationFootpath> list = fromList.get(i);
 				footpathsByFromStation[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
+			}
+			footpathsByToStation = new OutOfStationFootpath[numStations][];
+			for (int i = 0; i < numStations; i += 1) {
+				List<OutOfStationFootpath> list = toStationList.get(i);
+				footpathsByToStation[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
 			}
 			footpathsByToStationLine = new OutOfStationFootpath[numStations * numLines][];
 			for (int i = 0; i < numStations * numLines; i += 1) {
@@ -2162,6 +2297,29 @@ class RouteTimetableRaptorPlanner {
 				}
 				footpathsByToStationLine[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
 			}
+
+			Map<Integer, int[]> minHopsMap = new HashMap<>();
+			for (Map.Entry<Integer, int[]> entry : stopsByPattern.entrySet()) {
+				int pattern = entry.getKey();
+				int[] pStops = entry.getValue();
+				int numStops = pStops.length;
+				int[] minHops = new int[numStops * numStops];
+				Arrays.fill(minHops, Integer.MAX_VALUE / 2);
+				List<ScheduledTrip> pTrips = tripsByPattern.getOrDefault(pattern, List.of());
+				for (ScheduledTrip trip : pTrips) {
+					for (int i = 0; i < numStops; i += 1) {
+						for (int j = i + 1; j < numStops; j += 1) {
+							int dur = trip.arrivalSeconds(j) - trip.departureSeconds(i);
+							int idx = i * numStops + j;
+							if (dur < minHops[idx]) {
+								minHops[idx] = dur;
+							}
+						}
+					}
+				}
+				minHopsMap.put(pattern, minHops);
+			}
+			minPatternRunningTimes = Map.copyOf(minHopsMap);
 
 			List<Set<Integer>> linesByStation = new ArrayList<>(numStations);
 			for (int i = 0; i < numStations; i += 1) {
@@ -2242,6 +2400,19 @@ class RouteTimetableRaptorPlanner {
 
 		int totalStationSlots() {
 			return totalStationSlots;
+		}
+
+		int minPatternRunningTime(int pattern, int fromPos, int toPos) {
+			int[] hops = minPatternRunningTimes.get(pattern);
+			if (hops == null) {
+				return Integer.MAX_VALUE / 2;
+			}
+			int numStops = stopsByPattern.get(pattern).length;
+			return hops[fromPos * numStops + toPos];
+		}
+
+		OutOfStationFootpath[] footpathsToStation(int station) {
+			return (station >= 0 && station < footpathsByToStation.length) ? footpathsByToStation[station] : null;
 		}
 
 
@@ -3289,6 +3460,7 @@ class RouteTimetableRaptorPlanner {
 		private int expandedTransfers;
 		final int[] bestTargetArrivalSeconds = new int[WARNING_STATE_COUNT];
 		private int targetStation = -1;
+		int[] lowerBounds = null;
 
 		final ScheduledTrip[] bagTrips = new ScheduledTrip[WARNING_STATE_COUNT];
 		final int[] bagBoardPositions = new int[WARNING_STATE_COUNT];
@@ -3385,6 +3557,7 @@ class RouteTimetableRaptorPlanner {
 			}
 			epoch += 1;
 			targetStation = -1;
+			lowerBounds = null;
 			Arrays.fill(bestTargetArrivalSeconds, 0, WARNING_STATE_COUNT, UNREACHED);
 			Arrays.fill(arrivalSeconds, 0, labelSlots, UNREACHED);
 			Arrays.fill(parentTrip, 0, labelSlots, -1);
@@ -3475,14 +3648,21 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		void setTargetStation(int destination) {
+			setTargetStation(destination, null);
+		}
+
+		void setTargetStation(int destination, int[] bounds) {
 			targetStation = destination;
+			lowerBounds = bounds;
 		}
 
 		boolean isDominatedByTarget(int station, int candidateArrivalSeconds, int candidateWarningState) {
+			int lb = (lowerBounds != null && station >= 0 && station < lowerBounds.length) ? lowerBounds[station] : 0;
+			int estimatedArrival = candidateArrivalSeconds + lb;
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
 				if ((warningState & candidateWarningState) == warningState) {
 					int best = bestTargetArrivalSeconds[warningState];
-					if (station == targetStation ? best < candidateArrivalSeconds : best <= candidateArrivalSeconds) {
+					if (station == targetStation ? best < candidateArrivalSeconds : best <= estimatedArrival) {
 						return true;
 					}
 				}
@@ -3491,12 +3671,14 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		boolean isTargetDominatingDeparture(int station, int earliestDepartureSeconds) {
+			int lb = (lowerBounds != null && station >= 0 && station < lowerBounds.length) ? lowerBounds[station] : 0;
+			int estimatedArrival = earliestDepartureSeconds + lb;
 			boolean anyTargetReached = false;
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
 				int best = bestTargetArrivalSeconds[warningState];
 				if (best != UNREACHED) {
 					anyTargetReached = true;
-					if (station == targetStation ? earliestDepartureSeconds <= best : earliestDepartureSeconds < best) {
+					if (station == targetStation ? earliestDepartureSeconds <= best : estimatedArrival < best) {
 						return false;
 					}
 				}
@@ -3919,6 +4101,170 @@ class RouteTimetableRaptorPlanner {
 	) {
 	}
 
+	static final class PrimitiveProfileLabelPool {
+		private int capacity;
+		private int size;
+
+		private int[] startSeconds;
+		private int[] arrivalSeconds;
+		private int[] boardings;
+		private int[] station;
+		private int[] incomingLine;
+		private byte[] warningBits;
+		private int[] accessSeconds;
+		private int[] accessDistanceMeters;
+		private int[] stairBurden;
+		private int[] slackSeconds;
+		private int[] parentIndex;
+		private int[] tripIndex;
+		private int[] fromStopIndex;
+		private int[] toStopIndex;
+		private int[] transition;
+		private LocalDate[] serviceDate;
+		private ProfileDatedTrip[] trip;
+		private JourneyProfileRaptorPort.ConnectionSlack[] connectionSlack;
+
+		PrimitiveProfileLabelPool(int initialCapacity) {
+			this.capacity = Math.max(1, initialCapacity);
+			this.size = 0;
+			initArrays(this.capacity);
+		}
+
+		private void initArrays(int cap) {
+			startSeconds = new int[cap];
+			arrivalSeconds = new int[cap];
+			boardings = new int[cap];
+			station = new int[cap];
+			incomingLine = new int[cap];
+			warningBits = new byte[cap];
+			accessSeconds = new int[cap];
+			accessDistanceMeters = new int[cap];
+			stairBurden = new int[cap];
+			slackSeconds = new int[cap];
+			parentIndex = new int[cap];
+			tripIndex = new int[cap];
+			fromStopIndex = new int[cap];
+			toStopIndex = new int[cap];
+			transition = new int[cap];
+			serviceDate = new LocalDate[cap];
+			trip = new ProfileDatedTrip[cap];
+			connectionSlack = new JourneyProfileRaptorPort.ConnectionSlack[cap];
+		}
+
+		private void ensureCapacity(int minCapacity) {
+			if (minCapacity <= capacity) {
+				return;
+			}
+			int newCap = Math.max(minCapacity, capacity * 2);
+			startSeconds = Arrays.copyOf(startSeconds, newCap);
+			arrivalSeconds = Arrays.copyOf(arrivalSeconds, newCap);
+			boardings = Arrays.copyOf(boardings, newCap);
+			station = Arrays.copyOf(station, newCap);
+			incomingLine = Arrays.copyOf(incomingLine, newCap);
+			warningBits = Arrays.copyOf(warningBits, newCap);
+			accessSeconds = Arrays.copyOf(accessSeconds, newCap);
+			accessDistanceMeters = Arrays.copyOf(accessDistanceMeters, newCap);
+			stairBurden = Arrays.copyOf(stairBurden, newCap);
+			slackSeconds = Arrays.copyOf(slackSeconds, newCap);
+			parentIndex = Arrays.copyOf(parentIndex, newCap);
+			tripIndex = Arrays.copyOf(tripIndex, newCap);
+			fromStopIndex = Arrays.copyOf(fromStopIndex, newCap);
+			toStopIndex = Arrays.copyOf(toStopIndex, newCap);
+			transition = Arrays.copyOf(transition, newCap);
+			serviceDate = Arrays.copyOf(serviceDate, newCap);
+			trip = Arrays.copyOf(trip, newCap);
+			connectionSlack = Arrays.copyOf(connectionSlack, newCap);
+			capacity = newCap;
+		}
+
+		int allocate(
+			int start,
+			int arrival,
+			int boardingsCount,
+			int stationIndex,
+			int lineIndex,
+			byte warnings,
+			int accessSec,
+			int accessMeters,
+			int stairs,
+			int slack,
+			int parent,
+			int tripIdx,
+			int fromStop,
+			int toStop,
+			int trans,
+			LocalDate date,
+			ProfileDatedTrip datedTrip,
+			JourneyProfileRaptorPort.ConnectionSlack slackObj
+		) {
+			ensureCapacity(size + 1);
+			int idx = size++;
+			startSeconds[idx] = start;
+			arrivalSeconds[idx] = arrival;
+			boardings[idx] = boardingsCount;
+			station[idx] = stationIndex;
+			incomingLine[idx] = lineIndex;
+			warningBits[idx] = warnings;
+			accessSeconds[idx] = accessSec;
+			accessDistanceMeters[idx] = accessMeters;
+			stairBurden[idx] = stairs;
+			slackSeconds[idx] = slack;
+			parentIndex[idx] = parent;
+			tripIndex[idx] = tripIdx;
+			fromStopIndex[idx] = fromStop;
+			toStopIndex[idx] = toStop;
+			transition[idx] = trans;
+			serviceDate[idx] = date;
+			trip[idx] = datedTrip;
+			connectionSlack[idx] = slackObj;
+			return idx;
+		}
+
+		static boolean dominates(PrimitiveProfileLabelPool pool, int left, int right) {
+			if (left == right) {
+				return false;
+			}
+			int lStart = pool.startSeconds[left];
+			int rStart = pool.startSeconds[right];
+			int lArrival = pool.arrivalSeconds[left];
+			int rArrival = pool.arrivalSeconds[right];
+			int lAccessSec = pool.accessSeconds[left];
+			int rAccessSec = pool.accessSeconds[right];
+			int lAccessMeters = pool.accessDistanceMeters[left];
+			int rAccessMeters = pool.accessDistanceMeters[right];
+			int lStairs = pool.stairBurden[left];
+			int rStairs = pool.stairBurden[right];
+			int lSlack = pool.slackSeconds[left];
+			int rSlack = pool.slackSeconds[right];
+			byte lWarnings = pool.warningBits[left];
+			byte rWarnings = pool.warningBits[right];
+			int lBoardings = pool.boardings[left];
+			int rBoardings = pool.boardings[right];
+
+			boolean noWorse = lStart >= rStart
+				&& lArrival <= rArrival
+				&& lAccessSec <= rAccessSec
+				&& lAccessMeters <= rAccessMeters
+				&& lStairs <= rStairs
+				&& lSlack >= rSlack
+				&& lBoardings <= rBoardings
+				&& (lWarnings & rWarnings) == lWarnings;
+
+			if (!noWorse) {
+				return false;
+			}
+
+			return lStart > rStart
+				|| lArrival < rArrival
+				|| lAccessSec < rAccessSec
+				|| lAccessMeters < rAccessMeters
+				|| lStairs < rStairs
+				|| lSlack > rSlack
+				|| lBoardings < rBoardings
+				|| lWarnings != rWarnings;
+		}
+	}
+
 	/**
 	 * Incremental, profile-only multi-label forward scan. A later breakpoint remains in the label
 	 * state while earlier breakpoints add only newly reachable labels, so this is not a repeated
@@ -4268,6 +4614,13 @@ class RouteTimetableRaptorPlanner {
 		}
 	}
 
+	public enum RoutePersona {
+		FASTEST,
+		STEP_FREE,
+		MIN_WALK,
+		RELAXED_SLACK
+	}
+
 	record JourneyItinerary(
 		LocalDate serviceDate,
 		Instant plannedDepartureTime,
@@ -4275,11 +4628,31 @@ class RouteTimetableRaptorPlanner {
 		Instant realtimeDepartureTime,
 		Instant realtimeArrivalTime,
 		JourneyProfileRaptorPort.ItineraryMetrics metrics,
-		List<JourneyLegProjection> legs
+		List<JourneyLegProjection> legs,
+		RoutePersona persona
 	) {
 		JourneyItinerary {
 			metrics = Objects.requireNonNull(metrics, "metrics");
 			legs = List.copyOf(legs);
+		}
+
+		JourneyItinerary(
+			LocalDate serviceDate,
+			Instant plannedDepartureTime,
+			Instant plannedArrivalTime,
+			Instant realtimeDepartureTime,
+			Instant realtimeArrivalTime,
+			JourneyProfileRaptorPort.ItineraryMetrics metrics,
+			List<JourneyLegProjection> legs
+		) {
+			this(serviceDate, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime, metrics, legs, null);
+		}
+
+		JourneyItinerary withPersona(RoutePersona newPersona) {
+			return new JourneyItinerary(
+				serviceDate, plannedDepartureTime, plannedArrivalTime, realtimeDepartureTime, realtimeArrivalTime,
+				metrics, legs, newPersona
+			);
 		}
 	}
 
