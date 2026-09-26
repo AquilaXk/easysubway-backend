@@ -60,9 +60,22 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 
 		// When candidate is UNREACHED (Integer.MAX_VALUE), it must be dominated, not wrap to negative
 		assertThat(workspace.isDominatedByTarget(sta2, RouteTimetableRaptorPlanner.UNREACHED, 0)).isTrue();
+		// Target station itself with UNREACHED
+		assertThat(workspace.isDominatedByTarget(sta1, RouteTimetableRaptorPlanner.UNREACHED, 0)).isTrue();
+		// Earlier arrival is not dominated
+		assertThat(workspace.isDominatedByTarget(sta2, 29000, 0)).isFalse();
 
 		// When departure is UNREACHED, target must dominate it
 		assertThat(workspace.isTargetDominatingDeparture(sta2, RouteTimetableRaptorPlanner.UNREACHED)).isTrue();
+		// Earlier departure is not dominated
+		assertThat(workspace.isTargetDominatingDeparture(sta2, 28000)).isFalse();
+		// Target station itself with earlier departure
+		assertThat(workspace.isTargetDominatingDeparture(sta1, 29000)).isFalse();
+
+		// When target has NOT been reached, neither should be dominated
+		workspace.bestTargetArrivalSeconds[0] = RouteTimetableRaptorPlanner.UNREACHED;
+		assertThat(workspace.isDominatedByTarget(sta2, RouteTimetableRaptorPlanner.UNREACHED, 0)).isFalse();
+		assertThat(workspace.isTargetDominatingDeparture(sta2, RouteTimetableRaptorPlanner.UNREACHED)).isFalse();
 	}
 
 	@Test
@@ -90,30 +103,41 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 	}
 
 	@Test
-	@DisplayName("entryTransition과 exitTransition에 음수 인덱스 전달 시 예외 없이 안전하게 -1을 반환한다")
+	@DisplayName("entry, exit, transfer transition에 유효하지 않은 경계 인덱스 전달 시 예외 없이 안전하게 -1을 반환한다")
 	void accessTransitionsEntryAndExitBoundsSafe() {
 		var planner = new RouteTimetableRaptorPlanner();
 		var timetable = circularTimetable();
 		var compiled = planner.compile(timetable);
 
+		int stationCount = compiled.stationCount();
+		int lineCount = compiled.lineCount();
+
+		// entryTransition boundary checks
 		assertThatNoException().isThrownBy(() -> {
-			int entry = compiled.entryTransition(-1, 0, 1, false, false);
-			assertThat(entry).isEqualTo(-1);
+			assertThat(compiled.entryTransition(-1, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.entryTransition(stationCount, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.entryTransition(0, -1, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.entryTransition(0, lineCount, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.entryTransition(0, 0, 1, false, false)).isGreaterThanOrEqualTo(0);
 		});
 
+		// exitTransition boundary checks
 		assertThatNoException().isThrownBy(() -> {
-			int entry = compiled.entryTransition(0, -1, 1, false, false);
-			assertThat(entry).isEqualTo(-1);
+			assertThat(compiled.exitTransition(-1, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.exitTransition(stationCount, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.exitTransition(0, -1, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.exitTransition(0, lineCount, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.exitTransition(0, 0, 1, false, false)).isGreaterThanOrEqualTo(0);
 		});
 
+		// transferTransition boundary checks
 		assertThatNoException().isThrownBy(() -> {
-			int exit = compiled.exitTransition(-1, 0, 1, false, false);
-			assertThat(exit).isEqualTo(-1);
-		});
-
-		assertThatNoException().isThrownBy(() -> {
-			int exit = compiled.exitTransition(0, -1, 1, false, false);
-			assertThat(exit).isEqualTo(-1);
+			assertThat(compiled.transferTransition(-1, 0, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(stationCount, 0, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, -1, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, lineCount, 0, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, 0, -1, 1, false, false)).isEqualTo(-1);
+			assertThat(compiled.transferTransition(0, 0, lineCount, 1, false, false)).isEqualTo(-1);
 		});
 	}
 
@@ -129,22 +153,47 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 
 		int sta1 = compiled.stationIndex("sta-1");
 		int sta2 = compiled.stationIndex("sta-2");
+		int sta3 = compiled.stationIndex("sta-3");
 		int line = compiled.lineIndex("line-circ");
 
-		// Improve origin: touches origin slot
-		workspace.improveOrigin(sta1, 28800);
+		// Improve origin: touches origin slot (first time UNREACHED)
+		assertThat(workspace.improveOrigin(sta1, 28800)).isTrue();
 		int originSlot = workspace.slot(0, sta1, workspace.noIncomingLine(), 0);
 		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(28800);
 
-		// Relax sta-2: touches sta-2 slot
+		// Improve origin again with earlier arrival (not UNREACHED)
+		assertThat(workspace.improveOrigin(sta1, 28000)).isTrue();
+		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(28000);
+
+		// Attempt to improve origin with later arrival (returns false)
+		assertThat(workspace.improveOrigin(sta1, 29000)).isFalse();
+
+		// Relax sta-2: touches sta-2 slot (first time UNREACHED)
 		workspace.relax(sta2, 1, line, 29000, 0, 0, 1, 0, originSlot, (byte) 0);
 		int sta2Slot = workspace.slot(1, sta2, line, 0);
 		assertThat(workspace.arrivalSeconds[sta2Slot]).isEqualTo(29000);
 
-		// Re-prepare workspace: should advance epoch and reset touched slots to UNREACHED
+		// Relax sta-2 again with earlier arrival (not UNREACHED)
+		workspace.relax(sta2, 1, line, 28500, 0, 0, 1, 0, originSlot, (byte) 0);
+		assertThat(workspace.arrivalSeconds[sta2Slot]).isEqualTo(28500);
+
+		// Exercise touchedSlots expansion by relaxing multiple boarding/warning variants
+		for (int b = 0; b < 3; b += 1) {
+			for (int w = 0; w < 4; w += 1) {
+				workspace.relax(sta3, b, line, 30000 + b * 100 + w, 0, 0, 1, 0, originSlot, (byte) w);
+				workspace.relax(sta1, b, line, 31000 + b * 100 + w, 0, 0, 1, 0, originSlot, (byte) w);
+				workspace.relax(sta2, b, line, 32000 + b * 100 + w, 0, 0, 1, 0, originSlot, (byte) w);
+			}
+		}
+
+		// Re-prepare workspace: should reset touched slots to UNREACHED (touchedSlotCount > 0 branch)
 		workspace.prepare(compiled);
 		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
 		assertThat(workspace.arrivalSeconds[sta2Slot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+
+		// Immediate second prepare: exercises touchedSlotCount == 0 branch
+		workspace.prepare(compiled);
+		assertThat(workspace.arrivalSeconds[originSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
 	}
 
 	private static RouteTimetable circularTimetable() {

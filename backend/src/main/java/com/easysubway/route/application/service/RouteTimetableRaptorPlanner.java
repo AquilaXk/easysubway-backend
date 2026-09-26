@@ -358,12 +358,10 @@ class RouteTimetableRaptorPlanner {
 					for (int prevPos = 0; prevPos < pos; prevPos += 1) {
 						int v = stops[prevPos];
 						int runTime = timetable.minPatternRunningTime(pattern, prevPos, pos);
-						if (runTime < Integer.MAX_VALUE / 2) {
-							long nextDist = (long) dist + runTime;
-							if (nextDist < lb[v]) {
-								lb[v] = (int) Math.min(nextDist, Integer.MAX_VALUE / 2);
-								pq.add(new StationDistance(v, lb[v]));
-							}
+						long nextDist = (long) dist + runTime;
+						if (nextDist < lb[v]) {
+							lb[v] = (int) nextDist;
+							pq.add(new StationDistance(v, lb[v]));
 						}
 					}
 				}
@@ -377,7 +375,7 @@ class RouteTimetableRaptorPlanner {
 					int footTime = cand.length > 0 ? timetable.transitionDurationSeconds(cand[0]) : 0;
 					long nextDist = (long) dist + footTime;
 					if (nextDist < lb[v]) {
-						lb[v] = (int) Math.min(nextDist, Integer.MAX_VALUE / 2);
+						lb[v] = (int) nextDist;
 						pq.add(new StationDistance(v, lb[v]));
 					}
 				}
@@ -3290,9 +3288,11 @@ class RouteTimetableRaptorPlanner {
 			return select(candidates, profileBit, ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance, null);
 		}
 		private int[] entryCandidates(int station, int line) {
+			if (station < 0 || station >= stationCount || line < 0 || line >= lineCount) {
+				return NO_TRANSITIONS;
+			}
 			int key = stationLineKey(station, line, lineCount);
-			return key >= 0 && key < entryTransitions.length && entryTransitions[key] != null
-				? entryTransitions[key] : NO_TRANSITIONS;
+			return entryTransitions[key];
 		}
 		int allocatedTransferSlotCount() {
 			return transferKeys.length;
@@ -3306,9 +3306,11 @@ class RouteTimetableRaptorPlanner {
 			return index >= 0 ? transferTransitions[index] : NO_TRANSITIONS;
 		}
 		private int[] exitCandidates(int station, int line) {
+			if (station < 0 || station >= stationCount || line < 0 || line >= lineCount) {
+				return NO_TRANSITIONS;
+			}
 			int key = stationLineKey(station, line, lineCount);
-			return key >= 0 && key < exitTransitions.length && exitTransitions[key] != null
-				? exitTransitions[key] : NO_TRANSITIONS;
+			return exitTransitions[key];
 		}
 		private boolean isEligible(
 			int transition, int profileBit, boolean ignoreBlocked, boolean requireVerifiedDistance, boolean requirePositiveDistance
@@ -3527,9 +3529,6 @@ class RouteTimetableRaptorPlanner {
 		private int touchedSlotCount;
 
 		private void recordTouchedSlot(int slot) {
-			if (slot >= totalSlots()) {
-				return;
-			}
 			if (touchedSlotCount >= touchedSlots.length) {
 				touchedSlots = Arrays.copyOf(touchedSlots, Math.max(32, touchedSlots.length * 2));
 			}
@@ -3705,9 +3704,6 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		boolean isDominatedByTarget(int station, int candidateArrivalSeconds, int candidateWarningState) {
-			if (candidateArrivalSeconds == UNREACHED) {
-				return true;
-			}
 			int lb = (lowerBounds != null && station >= 0 && station < lowerBounds.length) ? lowerBounds[station] : 0;
 			long estimatedArrival = (long) candidateArrivalSeconds + lb;
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
@@ -3724,9 +3720,6 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		boolean isTargetDominatingDeparture(int station, int earliestDepartureSeconds) {
-			if (earliestDepartureSeconds == UNREACHED) {
-				return true;
-			}
 			int lb = (lowerBounds != null && station >= 0 && station < lowerBounds.length) ? lowerBounds[station] : 0;
 			long estimatedArrival = (long) earliestDepartureSeconds + lb;
 			boolean anyTargetReached = false;
@@ -3734,7 +3727,7 @@ class RouteTimetableRaptorPlanner {
 				int best = bestTargetArrivalSeconds[warningState];
 				if (best != UNREACHED) {
 					anyTargetReached = true;
-					if (station == targetStation ? earliestDepartureSeconds <= best : estimatedArrival < (long) best) {
+					if (station == targetStation ? (long) earliestDepartureSeconds <= best : estimatedArrival < (long) best) {
 						return false;
 					}
 				}
@@ -3762,11 +3755,6 @@ class RouteTimetableRaptorPlanner {
 		}
 
 		int slot(int boardings, int station, int incomingLine, int warningState) {
-			if (station < 0 || stationLineOffsets == null || station >= stationLineOffsets.length - 1
-				|| boardings < 0 || boardings >= LABEL_SLOT_COUNT
-				|| warningState < 0 || warningState >= WARNING_STATE_COUNT) {
-				return dummyUnreachedSlot(Math.max(0, Math.min(warningState, WARNING_STATE_COUNT - 1)));
-			}
 			int localIndex;
 			if (incomingLine == noIncomingLine()) {
 				localIndex = stationLineOffsets[station + 1] - stationLineOffsets[station];
