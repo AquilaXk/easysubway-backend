@@ -2662,8 +2662,9 @@ class RouteTimetableRaptorPlanner {
 				includesStairs[index] = candidate.includesStairs();
 				edgeIds[index] = candidate.edgeId();
 				verificationStatuses[index] = candidate.verificationStatus();
-				if (candidate.edgeId() != null && !candidate.edgeId().isBlank()) {
-					edgeMap.computeIfAbsent(candidate.edgeId(), ignored -> new ArrayList<>()).add(index);
+				String edgeId = candidate.edgeId();
+				if (edgeId != null) {
+					edgeMap.computeIfAbsent(edgeId, ignored -> new ArrayList<>()).add(index);
 				}
 			}
 			Map<String, int[]> compiledEdgeTransitions = new HashMap<>();
@@ -3048,10 +3049,11 @@ class RouteTimetableRaptorPlanner {
 			boolean requirePositiveDistance,
 			RealtimeOverlay realtimeOverlay
 		) {
+			RealtimeOverlay overlay = realtimeOverlay != null ? realtimeOverlay : RealtimeOverlay.empty();
 			if (requireVerified) {
 				int selected = -1;
 				for (int transition : candidates) {
-					if (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(transition)) {
+					if (overlay.isTransitionBlocked(transition)) {
 						continue;
 					}
 					if ((ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0)
@@ -3065,7 +3067,7 @@ class RouteTimetableRaptorPlanner {
 				return selected;
 			}
 			for (int transition : candidates) {
-				if (realtimeOverlay != null && realtimeOverlay.isTransitionBlocked(transition)) {
+				if (overlay.isTransitionBlocked(transition)) {
 					continue;
 				}
 				if (ignoreBlocked || (blockedProfiles[transition] & profileBit) == 0) {
@@ -4364,7 +4366,7 @@ class RouteTimetableRaptorPlanner {
 			this.cancelled = cancelled;
 			this.evidence = evidence;
 			this.affectedPatterns = affectedPatterns;
-			this.blockedTransitions = blockedTransitions != null ? (BitSet) blockedTransitions.clone() : new BitSet(0);
+			this.blockedTransitions = (BitSet) Objects.requireNonNull(blockedTransitions, "blockedTransitions").clone();
 		}
 
 		static RealtimeOverlay empty() {

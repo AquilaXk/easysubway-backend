@@ -1,6 +1,7 @@
 package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
@@ -195,6 +196,123 @@ class RouteTimetableRaptorPlannerRealtimeOverlayTest {
 		var overlay = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
 		assertThat(overlay.isEmpty()).isFalse();
 		assertThat(overlay.isTransitionBlocked(-1)).isFalse();
+	}
+
+	@Test
+	@DisplayName("TimetableRealtimeUpdates 계약 및 예외 분기를 철저히 검증한다")
+	void timetableRealtimeUpdatesValidationContracts() {
+		var updatesWithNullEdges = new TimetableRealtimeUpdates("v1", true, List.of(new TimetableRealtimeUpdate("trip1", 0, 0, false, "snapshot-1", OBSERVED_AT)), null, null);
+		assertThat(updatesWithNullEdges.blockedPathwayEdgeIds()).isEmpty();
+
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates(null, true, List.of(new TimetableRealtimeUpdate("trip1", 0, 0, false, "snapshot-1", OBSERVED_AT)), List.of(), null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates("   ", true, List.of(new TimetableRealtimeUpdate("trip1", 0, 0, false, "snapshot-1", OBSERVED_AT)), List.of(), null))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates("v1", true, List.of(), List.of(), null))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates(null, false, List.of(new TimetableRealtimeUpdate("trip1", 0, 0, false, "snapshot-1", OBSERVED_AT)), List.of(), "FALLBACK"))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates(null, false, List.of(), List.of("edge1"), "FALLBACK"))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates(null, false, List.of(), List.of(), null))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> new TimetableRealtimeUpdates(null, false, List.of(), List.of(), "   "))
+			.isInstanceOf(IllegalArgumentException.class);
+
+		var fourArg = new TimetableRealtimeUpdates("v1", true, List.of(new TimetableRealtimeUpdate("trip1", 0, 0, false, "snapshot-1", OBSERVED_AT)), null);
+		assertThat(fourArg.blockedPathwayEdgeIds()).isEmpty();
+		var unavail = TimetableRealtimeUpdates.unavailable("GATEWAY_TIMEOUT");
+		assertThat(unavail.available()).isFalse();
+		assertThat(unavail.fallbackCode()).isEqualTo("GATEWAY_TIMEOUT");
+	}
+
+	@Test
+	@DisplayName("일반/경고허용 모드에서도 승강기 고장 시 해당 전이가 배제된다")
+	void nonVerifiedSelectWithBlockedOverlay() {
+		var altCompiled = planner.compile(transferTimetableWithAlternatives());
+		var standardQuery = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"station-a",
+			"station-b",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-06-30T23:50:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE,
+			1,
+			1,
+			() -> false
+		);
+		var overlay = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
+		var results = planner.journeyItineraries(standardQuery, altCompiled, overlay).itineraries();
+		assertThat(results).isNotEmpty();
+	}
+
+	@Test
+	@DisplayName("CompiledTimetable 전이 조회 편의 오버로드들을 모두 검증한다")
+	void compiledTimetableOverloads() {
+		int originStation = compiled.stationIndex("station-a");
+		int line0 = 0;
+		int profileBit = 1;
+
+		assertThat(compiled.entryTransition(originStation, line0, profileBit, false, false)).isGreaterThanOrEqualTo(0);
+		assertThat(compiled.entryTransition(originStation, line0, profileBit, false)).isGreaterThanOrEqualTo(0);
+
+		int destStation = compiled.stationIndex("station-b");
+		assertThat(compiled.exitTransition(destStation, line0, profileBit, false, false)).isGreaterThanOrEqualTo(0);
+		assertThat(compiled.exitTransition(destStation, line0, profileBit, false)).isGreaterThanOrEqualTo(0);
+
+		var altCompiled = planner.compile(transferTimetableWithAlternatives());
+		int transferStation = altCompiled.stationIndex("station-transfer");
+		int line1 = 1;
+		assertThat(altCompiled.transferTransition(transferStation, line0, line1, profileBit, false, false)).isGreaterThanOrEqualTo(0);
+		assertThat(altCompiled.transferTransition(transferStation, line0, line1, profileBit, false)).isGreaterThanOrEqualTo(0);
+
+		var entryOutage = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+		assertThat(compiled.entryTransition(originStation, line0, profileBit, false, false, entryOutage)).isEqualTo(-1);
+
+		var altOverlay = planner.compileRealtimeOverlay(altCompiled, updatesWithBlockedEdges(List.of("transfer-primary")));
+		assertThat(altCompiled.transferTransition(transferStation, line0, line1, profileBit, false, false, altOverlay)).isGreaterThanOrEqualTo(0);
+
+		var exitOutage = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("exit")));
+		assertThat(compiled.exitTransition(destStation, line0, profileBit, false, false, exitOutage)).isEqualTo(-1);
+	}
+
+	@Test
+	@DisplayName("RealtimeOverlay의 모든 분기(isEmpty 조합 및 음수/양수/미차단/차단)를 검증한다")
+	void realtimeOverlayExhaustiveBranches() {
+		var emptyOverlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		assertThat(emptyOverlay.isEmpty()).isTrue();
+		assertThat(emptyOverlay.isTransitionBlocked(-1)).isFalse();
+		assertThat(emptyOverlay.isTransitionBlocked(0)).isFalse();
+
+		var outageOnly = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry")));
+		assertThat(outageOnly.isEmpty()).isFalse();
+		int entryTrans = compiled.transitionIdsForEdge("entry")[0];
+		assertThat(outageOnly.isTransitionBlocked(entryTrans)).isTrue();
+		assertThat(outageOnly.isTransitionBlocked(999999)).isFalse();
+
+		var tripOnly = planner.compileRealtimeOverlay(compiled, updates(new TimetableRealtimeUpdate("trip-local", 10, 10, false, "snapshot-1", OBSERVED_AT)));
+		assertThat(tripOnly.isEmpty()).isFalse();
+		assertThat(tripOnly.isTransitionBlocked(entryTrans)).isFalse();
+
+		var both = planner.compileRealtimeOverlay(compiled, updatesWithBlockedEdges(List.of("entry"), new TimetableRealtimeUpdate("trip-local", 10, 10, false, "snapshot-1", OBSERVED_AT)));
+		assertThat(both.isEmpty()).isFalse();
+		assertThat(both.isTransitionBlocked(entryTrans)).isTrue();
+	}
+
+	@Test
+	@DisplayName("transitionIdsForEdge의 모든 경계조건(null, blank, empty, 미존재, 존재)을 검증한다")
+	void transitionIdsForEdgeAllBranches() {
+		assertThat(compiled.transitionIdsForEdge(null)).isEmpty();
+		assertThat(compiled.transitionIdsForEdge("")).isEmpty();
+		assertThat(compiled.transitionIdsForEdge("   ")).isEmpty();
+		assertThat(compiled.transitionIdsForEdge("unknown-edge")).isEmpty();
+		assertThat(compiled.transitionIdsForEdge("entry")).isNotEmpty();
 	}
 
 	private static TimetableRealtimeUpdates updates(TimetableRealtimeUpdate... updates) {
