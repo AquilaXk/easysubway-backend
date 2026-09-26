@@ -328,7 +328,7 @@ class RouteTimetableRaptorPlanner {
 	) {
 		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(input.serviceDay().date());
 		ScanWorkspace workspace = scanWorkspaces.get();
-		workspace.prepare(timetable.stationCount(), timetable.lineCount(), timetable.routePatternCount());
+		workspace.prepare(timetable);
 		if (activeServiceDay.trips().isEmpty()) {
 			return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
 		}
@@ -806,9 +806,10 @@ class RouteTimetableRaptorPlanner {
 		int boardingDeadlineSeconds
 	) {
 		workspace.clearReady();
-		int firstIncomingLine = round == 0 ? workspace.noIncomingLine() : 0;
-		int lastIncomingLine = round == 0 ? firstIncomingLine + 1 : timetable.lineCount();
-		for (int incomingLine = firstIncomingLine; incomingLine < lastIncomingLine; incomingLine += 1) {
+		int lineCount = round == 0 ? 1 : timetable.stationLineCount(station);
+		int lineOffset = round == 0 ? 0 : timetable.stationLineOffset(station);
+		for (int i = 0; i < lineCount; i += 1) {
+			int incomingLine = round == 0 ? workspace.noIncomingLine() : timetable.stationLine(lineOffset + i);
 			int canonicalTransition = round == 0
 				? timetable.entryTransition(station, boardingLine, accessProfileBit, ignoreAccessBlocks,
 					input.requiresVerifiedJourneyDistance())
@@ -1153,7 +1154,10 @@ class RouteTimetableRaptorPlanner {
 		for (int boardings = 1; boardings <= PARETO_LIMIT; boardings += 1) {
 			Label bestForBoardings = null;
 			Arrays.fill(bestByWarningState, null);
-			for (int incomingLine = 0; incomingLine < timetable.lineCount(); incomingLine += 1) {
+			int lineOffset = timetable.stationLineOffset(destination);
+			int lineCountAtStation = timetable.stationLineCount(destination);
+			for (int lineIdx = 0; lineIdx < lineCountAtStation; lineIdx += 1) {
+				int incomingLine = timetable.stationLine(lineOffset + lineIdx);
 				int exitTransition = timetable.exitTransition(
 					destination, incomingLine, accessProfileBit, ignoreAccessBlocks,
 					input.requiresVerifiedJourneyDistance());
@@ -2038,6 +2042,10 @@ class RouteTimetableRaptorPlanner {
 		private final OutOfStationFootpath[][] footpathsByFromStation;
 		private final OutOfStationFootpath[][] footpathsByToStationLine;
 		private final LinkedHashMap<LocalDate, ActiveServiceDay> activeServiceDays = new LinkedHashMap<>(16, 0.75f, true);
+		private final int[] stationLineOffsets;
+		private final int[] stationLines;
+		private final int[] stationSlotOffsets;
+		private final int totalStationSlots;
 
 		private CompiledTimetable(RouteTimetable source) {
 			this.source = Objects.requireNonNull(source, "timetable must not be null");
@@ -2117,7 +2125,88 @@ class RouteTimetableRaptorPlanner {
 				}
 				footpathsByToStationLine[i] = list.isEmpty() ? null : list.toArray(OutOfStationFootpath[]::new);
 			}
+
+			List<Set<Integer>> linesByStation = new ArrayList<>(numStations);
+			for (int i = 0; i < numStations; i += 1) {
+				linesByStation.add(new java.util.TreeSet<>());
+			}
+			for (TransitStopTime st : source.transitStopTimes()) {
+				Integer station = stationIndex.get(st.stationId());
+				Integer line = lineIndex.get(st.lineId());
+				if (station != null && line != null) {
+					linesByStation.get(station).add(line);
+				}
+			}
+			for (OutOfStationFootpath fp : accessTransitions.outOfStationFootpaths()) {
+				linesByStation.get(fp.fromStation()).add(fp.fromLine());
+				linesByStation.get(fp.toStation()).add(fp.toLine());
+			}
+			stationLineOffsets = new int[numStations + 1];
+			stationSlotOffsets = new int[numStations + 1];
+			int totalLines = 0;
+			for (int i = 0; i < numStations; i += 1) {
+				stationLineOffsets[i] = totalLines;
+				totalLines += linesByStation.get(i).size();
+			}
+			stationLineOffsets[numStations] = totalLines;
+			stationLines = new int[totalLines];
+			int writePos = 0;
+			int totalSlots = 0;
+			for (int i = 0; i < numStations; i += 1) {
+				stationSlotOffsets[i] = totalSlots;
+				Set<Integer> lines = linesByStation.get(i);
+				for (int line : lines) {
+					stationLines[writePos++] = line;
+				}
+				totalSlots += lines.size() + 1;
+			}
+			stationSlotOffsets[numStations] = totalSlots;
+			totalStationSlots = totalSlots;
 		}
+
+		int[] stationLineOffsets() {
+			return stationLineOffsets.clone();
+		}
+
+		int[] stationLines() {
+			return stationLines.clone();
+		}
+
+		int[] stationSlotOffsets() {
+			return stationSlotOffsets.clone();
+		}
+
+		int stationLineCount(int station) {
+			return stationLineOffsets[station + 1] - stationLineOffsets[station];
+		}
+
+		int stationLine(int station, int localIndex) {
+			return stationLines[stationLineOffsets[station] + localIndex];
+		}
+
+		int stationLine(int globalOffset) {
+			return stationLines[globalOffset];
+		}
+
+		int stationLineOffset(int station) {
+			return stationLineOffsets[station];
+		}
+
+		int stationLineLocalIndex(int station, int line) {
+			int start = stationLineOffsets[station];
+			int end = stationLineOffsets[station + 1];
+			for (int i = start; i < end; i += 1) {
+				if (stationLines[i] == line) {
+					return i - start;
+				}
+			}
+			return -1;
+		}
+
+		int totalStationSlots() {
+			return totalStationSlots;
+		}
+
 
 		RouteTimetable source() {
 			return source;
@@ -3084,8 +3173,12 @@ class RouteTimetableRaptorPlanner {
 
 	static final class ScanWorkspace {
 
-		private int stationCount;
 		private int lineStateCount;
+		private int[] stationLineOffsets = new int[0];
+		private int[] stationLines = new int[0];
+		private int[] stationSlotOffsets = new int[0];
+		private int totalStationSlots;
+		private int epoch = 0;
 		int[] arrivalSeconds = new int[0];
 		private int[] parentTrip = new int[0];
 		private int[] parentBoardStop = new int[0];
@@ -3128,11 +3221,60 @@ class RouteTimetableRaptorPlanner {
 		final int[] rtReadySlots = new int[WARNING_STATE_COUNT];
 		final byte[] rtWarningBits = new byte[WARNING_STATE_COUNT];
 
+		void prepare(CompiledTimetable timetable) {
+			prepareInternal(
+				timetable.stationCount(),
+				timetable.lineCount(),
+				timetable.routePatternCount(),
+				timetable.stationLineOffsets,
+				timetable.stationLines,
+				timetable.stationSlotOffsets,
+				timetable.totalStationSlots
+			);
+		}
+
 		void prepare(int requiredStationCount, int lineCount, int patternCount) {
-			stationCount = requiredStationCount;
+			int[] offsets = new int[requiredStationCount + 1];
+			int[] slotOffsets = new int[requiredStationCount + 1];
+			int[] lines = new int[requiredStationCount * lineCount];
+			for (int s = 0; s < requiredStationCount; s += 1) {
+				offsets[s] = s * lineCount;
+				slotOffsets[s] = s * (lineCount + 1);
+				for (int l = 0; l < lineCount; l += 1) {
+					lines[s * lineCount + l] = l;
+				}
+			}
+			offsets[requiredStationCount] = requiredStationCount * lineCount;
+			slotOffsets[requiredStationCount] = requiredStationCount * (lineCount + 1);
+			prepareInternal(
+				requiredStationCount,
+				lineCount,
+				patternCount,
+				offsets,
+				lines,
+				slotOffsets,
+				requiredStationCount * (lineCount + 1)
+			);
+		}
+
+		private void prepareInternal(
+			int requiredStationCount,
+			int lineCount,
+			int patternCount,
+			int[] offsets,
+			int[] lines,
+			int[] slotOffsets,
+			int totalSlots
+		) {
 			lineStateCount = Math.addExact(lineCount, 1);
-			int labelSlots = Math.multiplyExact(Math.multiplyExact(requiredStationCount, LABEL_SLOT_COUNT),
-				Math.multiplyExact(lineStateCount, WARNING_STATE_COUNT));
+			stationLineOffsets = offsets;
+			stationLines = lines;
+			stationSlotOffsets = slotOffsets;
+			totalStationSlots = totalSlots;
+			int labelSlots = Math.addExact(
+				Math.multiplyExact(Math.multiplyExact(totalSlots, LABEL_SLOT_COUNT), WARNING_STATE_COUNT),
+				WARNING_STATE_COUNT
+			);
 			if (arrivalSeconds.length < labelSlots) {
 				arrivalSeconds = new int[labelSlots];
 				parentTrip = new int[labelSlots];
@@ -3152,6 +3294,7 @@ class RouteTimetableRaptorPlanner {
 				markedPatterns = new int[patternCount];
 				firstMarkedPosition = new int[patternCount];
 			}
+			epoch += 1;
 			targetStation = -1;
 			Arrays.fill(bestTargetArrivalSeconds, 0, WARNING_STATE_COUNT, UNREACHED);
 			Arrays.fill(arrivalSeconds, 0, labelSlots, UNREACHED);
@@ -3279,8 +3422,38 @@ class RouteTimetableRaptorPlanner {
 			}
 		}
 
+		int epoch() {
+			return epoch;
+		}
+
+		int totalSlots() {
+			return totalStationSlots * LABEL_SLOT_COUNT * WARNING_STATE_COUNT;
+		}
+
+		private int dummyUnreachedSlot(int warningState) {
+			return totalStationSlots * LABEL_SLOT_COUNT * WARNING_STATE_COUNT + warningState;
+		}
+
 		int slot(int boardings, int station, int incomingLine, int warningState) {
-			return ((boardings * stationCount + station) * lineStateCount + incomingLine) * WARNING_STATE_COUNT + warningState;
+			int localIndex;
+			if (incomingLine == noIncomingLine()) {
+				localIndex = stationLineOffsets[station + 1] - stationLineOffsets[station];
+			} else {
+				localIndex = -1;
+				int start = stationLineOffsets[station];
+				int end = stationLineOffsets[station + 1];
+				for (int i = start; i < end; i += 1) {
+					if (stationLines[i] == incomingLine) {
+						localIndex = i - start;
+						break;
+					}
+				}
+				if (localIndex < 0) {
+					return dummyUnreachedSlot(warningState);
+				}
+			}
+			int stationSlot = stationSlotOffsets[station] + localIndex;
+			return (stationSlot * LABEL_SLOT_COUNT + boardings) * WARNING_STATE_COUNT + warningState;
 		}
 		int noIncomingLine() {
 			return lineStateCount - 1;
