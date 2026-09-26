@@ -963,7 +963,8 @@ class RouteTimetableRaptorPlanner {
 			return;
 		}
 		boolean earlyPruned = false;
-		for (OutOfStationFootpath footpath : footpaths) {
+		for (int fpIndex = 0; fpIndex < footpaths.length; fpIndex += 1) {
+			OutOfStationFootpath footpath = footpaths[fpIndex];
 			boolean footpathDominated = true;
 			int minDepartureForFootpath = Integer.MAX_VALUE;
 			for (int accessTransition : footpath.candidateTransitions()) {
@@ -1002,6 +1003,50 @@ class RouteTimetableRaptorPlanner {
 				}
 				if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
 					&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
+					break;
+				}
+			}
+			if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
+				&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
+				boolean allRemainingDominated = true;
+				for (int nextIdx = fpIndex + 1; nextIdx < footpaths.length; nextIdx += 1) {
+					OutOfStationFootpath nextFp = footpaths[nextIdx];
+					boolean thisFootpathDominated = true;
+					for (int nextCandidate : nextFp.candidateTransitions()) {
+						if (!timetable.isTransitionEligible(
+							nextCandidate, accessProfileBit, ignoreAccessBlocks,
+							input.requiresVerifiedJourneyDistance(), true)) {
+							continue;
+						}
+						for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
+							int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
+							int ready = workspace.arrivalSeconds[slot];
+							if (ready == UNREACHED) {
+								continue;
+							}
+							int dep = ready
+								+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER,
+									timetable.transitionDurationSeconds(nextCandidate),
+									timetable.transitionDistanceMeters(nextCandidate))
+								+ slackSeconds;
+							byte warningBits = (byte) (workspace.warningBits[slot]
+								| timetable.transitionWarningCodes(nextCandidate, accessProfileBit, ignoreAccessBlocks));
+							int candidateWarningState = Byte.toUnsignedInt(warningBits);
+							if (!workspace.isDominatedByTarget(station, dep, candidateWarningState)) {
+								thisFootpathDominated = false;
+								break;
+							}
+						}
+						if (!thisFootpathDominated) {
+							break;
+						}
+					}
+					if (!thisFootpathDominated) {
+						allRemainingDominated = false;
+						break;
+					}
+				}
+				if (allRemainingDominated) {
 					earlyPruned = true;
 					break;
 				}
