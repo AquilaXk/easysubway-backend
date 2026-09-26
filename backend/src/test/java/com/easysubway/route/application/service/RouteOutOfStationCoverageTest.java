@@ -487,17 +487,88 @@ class RouteOutOfStationCoverageTest {
 		// 타깃 목적지 도착 최적 시각: 50,000초
 		ws.bestTargetArrivalSeconds[0] = 50000;
 
-		// 첫 번째 도보 간선(fromStation=B)의 출발 시각: 60,000 + 600 = 60,600초 >= 50,000초 (타깃 지배 성립!)
+		// 첫 번째 도보 간선(fromStation=B)의 출발 시각: 60,000 + 600 = 60,600초 >= 50,000초 (타깃 지배 성립)
 		int slotB = ws.slot(1, stationB, lineL1, 0);
 		ws.arrivalSeconds[slotB] = 60000;
 
 		// 두 번째 도보 간선(fromStation=A)의 출발 시각: 40,000 + 900 = 40,900초 (< 50,000초)
-		// 만약 첫 번째 도보에서 외부 FOOTPATHS_LOOP 조기 차단(break)이 누락되면 두 번째 간선이 불필요하게 스캔되어
-		// readyActive에 후보가 등록되는 결함이 발생함.
+		// 첫 번째 간선이 지배되었더라도, 출발역이 다른 두 번째 간선은 타깃보다 빠른 출발 시각을 가지므로
+		// 조기 차단으로 인해 누락(path-loss)되지 않고 정상적으로 보존되어야 함.
 		int slotA = ws.slot(1, stationA, lineL1, 0);
 		ws.arrivalSeconds[slotA] = 40000;
 
-		// 조기 가지치기 발동 시 footpaths loop 전체가 중단되어 두 번째 간선이 스캔되지 않아야 함 (null 반환)
+		var ready = RouteTimetableRaptorPlanner.bestReadyBoarding(
+			compiled, ws, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
+		);
+		assertThat(ready).isNotNull();
+		assertThat(ready.earliestDepartureSeconds()).isEqualTo(40618);
+	}
+
+	@Test
+	@DisplayName("모든 잔여 도보 간선이 타깃 지배될 때 evaluateFootpaths 조기 차단 정상 작동 검증")
+	void evaluateFootpathsEarlyPruningWhenAllRemainingFootpathsDominated() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var base = RouteTimetableRaptorPlannerOutOfStationTransferGoldenTest.timetable();
+		var baseAccess = base.routeAccessData();
+		var nodes = new java.util.ArrayList<>(baseAccess.pathwayNodes());
+		var edges = new java.util.ArrayList<>(baseAccess.pathwayEdges());
+		var evidence = new java.util.ArrayList<>(baseAccess.routeEdgeEvidence());
+		var rules = new java.util.ArrayList<>(baseAccess.transferRules());
+
+		String transferEdge2Id = "a-c-out-transfer-edge";
+		edges.add(new LoadRouteTimetablePort.PathwayEdge(
+			transferEdge2Id, "station-a:l1", "station-c:l2", 900, 600, false, false, 100,
+			"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"
+		));
+		evidence.add(new LoadRouteTimetablePort.RouteEdgeEvidence(
+			"a-c-transfer-evidence", "station-c", "l2", transferEdge2Id, "TRANSFER",
+			"OFFICIAL_SOURCE", "VERIFIED", true, null
+		));
+		rules.add(new LoadRouteTimetablePort.TransferRule(
+			"a-c-transfer-rule", "station-a", "l1", "station-c", "l2", "OUT_OF_STATION",
+			900, transferEdge2Id, transferEdge2Id, "VERIFIED"
+		));
+
+		var multiFootpathAccess = new LoadRouteTimetablePort.RouteAccessData(nodes, edges, rules, evidence);
+		var multiFootpathTimetable = new LoadRouteTimetablePort.RouteTimetable(
+			base.serviceCalendars(), base.serviceCalendarDates(), base.transitRoutes(),
+			base.transitTrips(), base.transitStopTimes(), base.transitFrequencies(),
+			base.officialFares(), base.feedEndDate(), multiFootpathAccess
+		);
+
+		var compiled = planner.compile(multiFootpathTimetable);
+		int stationA = compiled.stationIndex("station-a");
+		int stationB = compiled.stationIndex("station-b");
+		int stationC = compiled.stationIndex("station-c");
+		int targetStation = compiled.stationIndex("station-d");
+		int lineL1 = compiled.lineIndex("l1");
+		int lineL2 = compiled.lineIndex("l2");
+
+		var query = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV", "station-a", "station-d",
+			new JourneyRaptorQuery.DepartAt(Instant.parse("2026-07-06T11:20:00Z")),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1, 2, () -> false
+		);
+		var input = RouteTimetableRaptorPlanner.scanInput(query);
+
+		var ws = new ScanWorkspace();
+		ws.prepare(compiled.stationCount(), compiled.lineCount(), 10);
+		ws.setTargetStation(targetStation);
+		ws.bestTargetArrivalSeconds[0] = 50000;
+
+		// 첫 번째 간선(B): 60,000 + 600 = 60,600초 >= 50,000초 (타깃 지배)
+		int slotB = ws.slot(1, stationB, lineL1, 0);
+		ws.arrivalSeconds[slotB] = 60000;
+
+		// 두 번째 간선(A): 55,000 + 900 = 55,900초 >= 50,000초 (타깃 지배)
+		int slotA = ws.slot(1, stationA, lineL1, 0);
+		ws.arrivalSeconds[slotA] = 55000;
+
+		// 모든 잔여 도보 간선이 지배되므로 조기 차단되어 ready가 null이어야 함
 		var ready = RouteTimetableRaptorPlanner.bestReadyBoarding(
 			compiled, ws, stationC, lineL2, 1, 0, 0, input, false, Integer.MAX_VALUE
 		);

@@ -963,7 +963,8 @@ class RouteTimetableRaptorPlanner {
 			return;
 		}
 		boolean earlyPruned = false;
-		for (OutOfStationFootpath footpath : footpaths) {
+		for (int fpIndex = 0; fpIndex < footpaths.length; fpIndex += 1) {
+			OutOfStationFootpath footpath = footpaths[fpIndex];
 			boolean footpathDominated = true;
 			int minDepartureForFootpath = Integer.MAX_VALUE;
 			for (int accessTransition : footpath.candidateTransitions()) {
@@ -1002,6 +1003,37 @@ class RouteTimetableRaptorPlanner {
 				}
 				if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
 					&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
+					break;
+				}
+			}
+			if (footpathDominated && minDepartureForFootpath != Integer.MAX_VALUE
+				&& workspace.isTargetDominatingDeparture(station, minDepartureForFootpath)) {
+				boolean allRemainingDominated = true;
+				for (int nextIdx = fpIndex + 1; nextIdx < footpaths.length; nextIdx += 1) {
+					OutOfStationFootpath nextFp = footpaths[nextIdx];
+					int minDepartureForNext = Integer.MAX_VALUE;
+					int nextCandidate = nextFp.candidateTransitions()[0];
+					int nextMinDuration = timetable.transitionDurationSeconds(nextCandidate);
+					int nextMinDistance = timetable.transitionDistanceMeters(nextCandidate);
+					for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
+						int slot = workspace.slot(round, nextFp.fromStation(), nextFp.fromLine(), warningState);
+						int ready = workspace.arrivalSeconds[slot];
+						if (ready != UNREACHED) {
+							int dep = ready
+								+ journeyAccessSeconds(input, JourneyAccessKind.TRANSFER, nextMinDuration, nextMinDistance)
+								+ slackSeconds;
+							if (dep < minDepartureForNext) {
+								minDepartureForNext = dep;
+							}
+						}
+					}
+					if (minDepartureForNext != Integer.MAX_VALUE
+						&& !workspace.isTargetDominatingDeparture(station, minDepartureForNext)) {
+						allRemainingDominated = false;
+						break;
+					}
+				}
+				if (allRemainingDominated) {
 					earlyPruned = true;
 					break;
 				}
