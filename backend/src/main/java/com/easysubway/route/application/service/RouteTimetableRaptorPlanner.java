@@ -26,7 +26,6 @@ import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
-import com.easysubway.route.domain.RoutePersona;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;

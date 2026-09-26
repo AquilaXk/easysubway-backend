@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge;
@@ -175,6 +176,162 @@ class RouteTimetableRaptorPlannerPrimitiveBagBmrapTest {
 		}
 	}
 
+	@Test
+	@DisplayName("PrimitiveProfileLabelPool 용량 확장 및 전 차원 지배/비지배 분기를 철저히 검증한다")
+	void primitiveProfileLabelPoolExpandsCapacityAndHandlesEdgeDominance() {
+		var pool = new RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool(1);
+
+		// 초기 용량 1에서 l0 할당, l1 할당 시 ensureCapacity 2배 확장 트리거
+		int l0 = pool.allocate(
+			100, 1000, 1, 10, 1, (byte) 0,
+			100, 100, 0, 300,
+			-1, 1, 0, 1, 5,
+			SERVICE_DATE, null, null
+		);
+		int l1 = pool.allocate(
+			100, 1000, 1, 10, 1, (byte) 0,
+			100, 100, 0, 300,
+			-1, 1, 0, 1, 5,
+			SERVICE_DATE, null, null
+		);
+
+		// 1. 동일 인덱스 (left == right)
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, l0, l0)).isFalse();
+		// 2. 값 동일 (어느 쪽도 우세하지 않음)
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, l0, l1)).isFalse();
+
+		// 3. 각 차원별 단독 우세 (strictly better) 검증
+		// 3-1. 출발 시각 더 늦음 (더 늦게 출발해도 동착)
+		int lStart = pool.allocate(110, 1000, 1, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lStart, l0)).isTrue();
+
+		// 3-2. 도착 시각 더 빠름
+		int lArrival = pool.allocate(100, 990, 1, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lArrival, l0)).isTrue();
+
+		// 3-3. 접근 시간 더 적음
+		int lAccessSec = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 90, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lAccessSec, l0)).isTrue();
+
+		// 3-4. 접근 거리 더 짧음
+		int lAccessMeters = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 100, 90, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lAccessMeters, l0)).isTrue();
+
+		// 3-5. 계단 부담 더 적음
+		int rStairs = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 100, 100, 1, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, l0, rStairs)).isTrue();
+
+		// 3-6. 여유 시간 더 큼
+		int lSlack = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 100, 100, 0, 350, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, lSlack, l0)).isTrue();
+
+		// 3-7. 환승 횟수 더 적음
+		int rBoardings = pool.allocate(100, 1000, 2, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, l0, rBoardings)).isTrue();
+
+		// 3-8. 경고 비트 더 적음
+		int rWarnings = pool.allocate(100, 1000, 1, 10, 1, (byte) 1, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, l0, rWarnings)).isTrue();
+
+		// 4. 각 차원별 단독 열세 (noWorse 실패) 검증
+		int wStart = pool.allocate(90, 1000, 1, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wStart, l0)).isFalse();
+
+		int wArrival = pool.allocate(100, 1010, 1, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wArrival, l0)).isFalse();
+
+		int wAccessSec = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 110, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wAccessSec, l0)).isFalse();
+
+		int wMeters = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 100, 110, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wMeters, l0)).isFalse();
+
+		int wStairs = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 100, 100, 1, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wStairs, l0)).isFalse();
+
+		int wSlack = pool.allocate(100, 1000, 1, 10, 1, (byte) 0, 100, 100, 0, 250, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wSlack, l0)).isFalse();
+
+		int wBoardings = pool.allocate(100, 1000, 2, 10, 1, (byte) 0, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wBoardings, l0)).isFalse();
+
+		int wWarnings = pool.allocate(100, 1000, 1, 10, 1, (byte) 2, 100, 100, 0, 300, -1, 1, 0, 1, 5, SERVICE_DATE, null, null);
+		assertThat(RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.dominates(pool, wWarnings, l0)).isFalse();
+	}
+
+	@Test
+	@DisplayName("BMRAP 역방향 하한선 경계값 및 도보(Footpath) 연결선 Dijkstra 완화를 검증한다")
+	void bmrapBoundariesAndOutOfStationFootpathLowerBounds() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = multiStationTimetable();
+		var compiled = planner.compile(timetable);
+
+		// 1. 유효하지 않은 목적지 인덱스 (-1, 초과 인덱스)
+		int[] lbNeg = RouteTimetableRaptorPlanner.computeStationLowerBounds(compiled, -1);
+		assertThat(lbNeg).containsOnly(Integer.MAX_VALUE / 2);
+
+		int[] lbOob = RouteTimetableRaptorPlanner.computeStationLowerBounds(compiled, compiled.stationCount() + 10);
+		assertThat(lbOob).containsOnly(Integer.MAX_VALUE / 2);
+
+		// 2. 도보(OutOfStationFootpath) 환승 규칙이 있는 시간표에서의 하한선 완화
+		var compiledFp = planner.compile(multiStationTimetableWithFootpath());
+		int destIdx = compiledFp.stationIndex(DESTINATION);
+		int[] lbFp = RouteTimetableRaptorPlanner.computeStationLowerBounds(compiledFp, destIdx);
+		int branchIdx = compiledFp.stationIndex("sta-branch");
+		// sta-branch -> DESTINATION 도보 300초 연결선이 존재하므로 lb는 300이어야 함
+		assertThat(lbFp[branchIdx]).isEqualTo(300);
+
+		// 3. 미존재 패턴의 주행시간 조회 및 out-of-range footpathsToStation
+		assertThat(compiled.minPatternRunningTime(9999, 0, 1)).isEqualTo(Integer.MAX_VALUE / 2);
+		assertThat(compiled.footpathsToStation(-1)).isNull();
+		assertThat(compiled.footpathsToStation(9999)).isNull();
+	}
+
+	@Test
+	@DisplayName("페르소나 분류 널/빈목록 가드 및 slackSeconds fallback 분기를 검증한다")
+	void personaEdgeCasesAndSlackCalculations() {
+		assertThat(RouteTimetableRaptorPlanner.classifyPersonas(null)).isEmpty();
+		assertThat(RouteTimetableRaptorPlanner.classifyPersonas(List.of())).isEmpty();
+		assertThat(RouteTimetableRaptorPlanner.assignPersonas(null)).isEmpty();
+		assertThat(RouteTimetableRaptorPlanner.assignPersonas(List.of())).isEmpty();
+
+		// 모든 여정의 connectionSlack < 300초일 때 orElseGet(최대 slack 선택) 분기 검증
+		Instant t0 = Instant.parse("2026-07-06T08:00:00Z");
+		var it1 = new JourneyItinerary(
+			SERVICE_DATE, t0, t0.plusSeconds(1200), t0, t0.plusSeconds(1200),
+			new JourneyProfileRaptorPort.ItineraryMetrics(
+				1, 100, 100, 10, new JourneyProfileRaptorPort.MinimumTransferSeconds(60)
+			),
+			List.of()
+		);
+		var it2 = new JourneyItinerary(
+			SERVICE_DATE, t0, t0.plusSeconds(1400), t0, t0.plusSeconds(1400),
+			new JourneyProfileRaptorPort.ItineraryMetrics(
+				1, 120, 120, 15, new JourneyProfileRaptorPort.MinimumTransferSeconds(180)
+			),
+			List.of()
+		);
+		var directIt = new JourneyItinerary(
+			SERVICE_DATE, t0, t0.plusSeconds(1500), t0, t0.plusSeconds(1500),
+			new JourneyProfileRaptorPort.ItineraryMetrics(
+				0, 50, 50, 0, new JourneyProfileRaptorPort.NoTransfer()
+			),
+			List.of()
+		);
+
+		var classified = RouteTimetableRaptorPlanner.classifyPersonas(List.of(it1, it2));
+		assertThat(classified.get(RoutePersona.RELAXED_SLACK)).isSameAs(it2);
+
+		// slackSeconds 검증
+		assertThat(RouteTimetableRaptorPlanner.slackSeconds(it1)).isEqualTo(60);
+		assertThat(RouteTimetableRaptorPlanner.slackSeconds(directIt)).isEqualTo(Long.MAX_VALUE);
+
+		// assignPersonas 검증
+		List<JourneyItinerary> assigned = RouteTimetableRaptorPlanner.assignPersonas(List.of(it1, it2));
+		assertThat(assigned).hasSize(2);
+		assertThat(assigned.getFirst().persona()).isNotNull();
+	}
+
 	// ------------------ Timetable Fixtures ------------------
 
 	private static RouteTimetable multiStationTimetable() {
@@ -246,5 +403,61 @@ class RouteTimetableRaptorPlannerPrimitiveBagBmrapTest {
 		);
 
 		return new RouteAccessData(nodes, edges, List.of(transferRule), evidence);
+	}
+
+	private static RouteTimetable multiStationTimetableWithFootpath() {
+		var calendar = new ServiceCalendar("cal-1", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var routeMain = new TransitRoute("route-main", "line-main", "1", "Main Line", "up", "Asia/Seoul");
+		var routeBranch = new TransitRoute("route-branch", "line-branch", "2", "Branch Line", "up", "Asia/Seoul");
+
+		var tripMain = new TransitTrip("trip-main", "route-main", "cal-1", "dest", "0", "LOCAL", 28800);
+		var st1 = new TransitStopTime("trip-main", 1, ORIGIN, "line-main", 28800, 28800, 0, 0);
+		var st2 = new TransitStopTime("trip-main", 2, "sta-2", "line-main", 29400, 29400, 1, 0);
+		var st3 = new TransitStopTime("trip-main", 3, DESTINATION, "line-main", 30000, 30000, 2, 0);
+
+		var tripBranch = new TransitTrip("trip-branch", "route-branch", "cal-1", "sta-2", "0", "LOCAL", 28800);
+		var st4 = new TransitStopTime("trip-branch", 1, "sta-branch", "line-branch", 28800, 28800, 0, 0);
+		var st5 = new TransitStopTime("trip-branch", 2, "sta-2", "line-branch", 29280, 29280, 1, 0);
+
+		var edges = List.of(
+			new PathwayEdge("fp-edge", "node-branch-p", "node-dest-p", 300, 250, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge("entry-origin", "node-origin-e", "node-origin-p", 120, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new PathwayEdge("exit-dest", "node-dest-p", "node-dest-e", 120, 100, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED")
+		);
+		var nodes = List.of(
+			new PathwayNode("node-origin-e", ORIGIN, null, "ENTRANCE"),
+			new PathwayNode("node-origin-p", ORIGIN, "line-main", "PLATFORM"),
+			new PathwayNode("node-branch-p", "sta-branch", "line-branch", "PLATFORM"),
+			new PathwayNode("node-dest-p", DESTINATION, "line-main", "PLATFORM"),
+			new PathwayNode("node-dest-e", DESTINATION, null, "EXIT")
+		);
+		var transferRule = new TransferRule(
+			"fp-rule", "sta-branch", "line-branch", DESTINATION, "line-main",
+			"OUT_OF_STATION", 300, "fp-edge", "fp-edge", "VERIFIED"
+		);
+		var evidence = List.of(
+			new RouteEdgeEvidence("entry-origin-ev", ORIGIN, "line-main", "entry-origin", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new RouteEdgeEvidence("fp-ev", "sta-branch", "line-branch", "fp-edge", "TRANSFER",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new RouteEdgeEvidence("exit-dest-ev", DESTINATION, "line-main", "exit-dest", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null)
+		);
+		var accessData = new RouteAccessData(nodes, edges, List.of(transferRule), evidence);
+
+		return new RouteTimetable(
+			List.of(calendar),
+			List.of(),
+			List.of(routeMain, routeBranch),
+			List.of(tripMain, tripBranch),
+			List.of(st1, st2, st3, st4, st5),
+			List.of(),
+			List.of(),
+			null,
+			accessData
+		);
 	}
 }
