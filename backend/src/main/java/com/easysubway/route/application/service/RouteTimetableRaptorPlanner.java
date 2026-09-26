@@ -38,7 +38,6 @@ import java.util.Arrays;
 import java.util.BitSet;
 import java.util.Comparator;
 import java.util.EnumMap;
-import java.util.EnumSet;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
@@ -348,32 +347,25 @@ class RouteTimetableRaptorPlanner {
 			if (dist > lb[u]) {
 				continue;
 			}
+			propagatePatternLowerBounds(timetable, u, dist, lb, pq);
+			propagateFootpathLowerBounds(timetable, u, dist, lb, pq);
+		}
+		return lb;
+	}
 
-			for (int pattern : timetable.patternsByStop(u)) {
-				int[] stops = timetable.stopsByPattern(pattern);
-				for (int pos = 1; pos < stops.length; pos += 1) {
-					if (stops[pos] != u) {
-						continue;
-					}
-					for (int prevPos = 0; prevPos < pos; prevPos += 1) {
-						int v = stops[prevPos];
-						int runTime = timetable.minPatternRunningTime(pattern, prevPos, pos);
-						long nextDist = (long) dist + runTime;
-						if (nextDist < lb[v]) {
-							lb[v] = (int) nextDist;
-							pq.add(new StationDistance(v, lb[v]));
-						}
-					}
+	private static void propagatePatternLowerBounds(
+		CompiledTimetable timetable, int u, int dist, int[] lb, PriorityQueue<StationDistance> pq
+	) {
+		for (int pattern : timetable.patternsByStop(u)) {
+			int[] stops = timetable.stopsByPattern(pattern);
+			for (int pos = 1; pos < stops.length; pos += 1) {
+				if (stops[pos] != u) {
+					continue;
 				}
-			}
-
-			OutOfStationFootpath[] incoming = timetable.footpathsToStation(u);
-			if (incoming != null) {
-				for (OutOfStationFootpath fp : incoming) {
-					int v = fp.fromStation();
-					int[] cand = fp.candidateTransitions();
-					int footTime = cand.length > 0 ? timetable.transitionDurationSeconds(cand[0]) : 0;
-					long nextDist = (long) dist + footTime;
+				for (int prevPos = 0; prevPos < pos; prevPos += 1) {
+					int v = stops[prevPos];
+					int runTime = timetable.minPatternRunningTime(pattern, prevPos, pos);
+					long nextDist = (long) dist + runTime;
 					if (nextDist < lb[v]) {
 						lb[v] = (int) nextDist;
 						pq.add(new StationDistance(v, lb[v]));
@@ -381,7 +373,24 @@ class RouteTimetableRaptorPlanner {
 				}
 			}
 		}
-		return lb;
+	}
+
+	private static void propagateFootpathLowerBounds(
+		CompiledTimetable timetable, int u, int dist, int[] lb, PriorityQueue<StationDistance> pq
+	) {
+		OutOfStationFootpath[] incoming = timetable.footpathsToStation(u);
+		if (incoming != null) {
+			for (OutOfStationFootpath fp : incoming) {
+				int v = fp.fromStation();
+				int[] cand = fp.candidateTransitions();
+				int footTime = cand.length > 0 ? timetable.transitionDurationSeconds(cand[0]) : 0;
+				long nextDist = (long) dist + footTime;
+				if (nextDist < lb[v]) {
+					lb[v] = (int) nextDist;
+					pq.add(new StationDistance(v, lb[v]));
+				}
+			}
+		}
 	}
 
 	private ScanResult scanDestinationLabels(
@@ -3709,10 +3718,8 @@ class RouteTimetableRaptorPlanner {
 			for (int warningState = 0; warningState < WARNING_STATE_COUNT; warningState += 1) {
 				if ((warningState & candidateWarningState) == warningState) {
 					int best = bestTargetArrivalSeconds[warningState];
-					if (best != UNREACHED) {
-						if (station == targetStation ? best < candidateArrivalSeconds : (long) best <= estimatedArrival) {
-							return true;
-						}
+					if (best != UNREACHED && (station == targetStation ? best < candidateArrivalSeconds : best <= estimatedArrival)) {
+						return true;
 					}
 				}
 			}
@@ -3727,7 +3734,7 @@ class RouteTimetableRaptorPlanner {
 				int best = bestTargetArrivalSeconds[warningState];
 				if (best != UNREACHED) {
 					anyTargetReached = true;
-					if (station == targetStation ? (long) earliestDepartureSeconds <= best : estimatedArrival < (long) best) {
+					if (station == targetStation ? earliestDepartureSeconds <= best : estimatedArrival < best) {
 						return false;
 					}
 				}
