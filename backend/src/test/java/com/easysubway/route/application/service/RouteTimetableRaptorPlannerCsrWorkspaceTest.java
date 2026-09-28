@@ -97,9 +97,9 @@ class RouteTimetableRaptorPlannerCsrWorkspaceTest {
 		int invalidSlot = workspace.slot(1, sta1, line2, 0); // line-2 does not stop at sta-1
 		assertThat(workspace.arrivalSeconds[invalidSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
 
-		// Touch origin slot properly and record it in touchedSlots
-		workspace.recordTouchedSlot(slotOrigin);
-		workspace.arrivalSeconds[slotOrigin] = 28800;
+		// Touch origin slot properly via real production entrypoint
+		assertThat(workspace.improveOrigin(sta1, 28800)).isTrue();
+		assertThat(workspace.arrivalSeconds[slotOrigin]).isEqualTo(28800);
 		assertThat(workspace.touchedSlotCount()).isEqualTo(1);
 
 		// Set an untouched canary slot to prove that prepare performs selective reset, NOT a full array wipe
@@ -143,13 +143,16 @@ class RouteTimetableRaptorPlannerCsrWorkspaceTest {
 
 		// After reallocation, touchedSlotCount must be 0 and all slots must be properly initialized
 		assertThat(workspace.touchedSlotCount()).isZero();
-		for (int s = 0; s < workspace.totalSlots(); s += 1) {
+		for (int s = 0; s < workspace.arrivalSeconds.length; s += 1) {
 			assertThat(workspace.arrivalSeconds[s])
 				.as("Slot %d must be UNREACHED after reallocation", s)
 				.isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
 			assertThat(workspace.parentTrip(s))
 				.as("Slot %d parentTrip must be -1 after reallocation", s)
 				.isEqualTo(-1);
+			assertThat(workspace.warningBits[s])
+				.as("Slot %d warningBits must be 0 after reallocation", s)
+				.isZero();
 		}
 
 		// improveOrigin must succeed on the expanded workspace
@@ -161,7 +164,8 @@ class RouteTimetableRaptorPlannerCsrWorkspaceTest {
 	@Test
 	@DisplayName("쿼리 간 시간표 확장으로 버퍼 재할당이 발생해도 자가 치유 지연 없이 첫 쿼리부터 정상 탐색된다")
 	void journeySearchSucceedsImmediatelyAfterBufferReallocationWithoutSelfHealingLag() {
-		var planner = new RouteTimetableRaptorPlanner();
+		var pool = new RouteTimetableRaptorPlanner.ScanWorkspacePool(1);
+		var planner = new RouteTimetableRaptorPlanner(pool);
 		var smallTimetable = smallTimetable();
 		var compiledSmall = planner.compile(smallTimetable);
 
