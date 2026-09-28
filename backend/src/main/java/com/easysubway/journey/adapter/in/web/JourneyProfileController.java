@@ -32,14 +32,6 @@ final class JourneyProfileController {
 	private final JourneyProfileResourcePolicy resourcePolicy;
 	private final int maxRequestBytes;
 
-	JourneyProfileController(
-		JourneySessionService sessionService,
-		JourneyProfileDeadlineExecutor deadlineExecutor,
-		JourneyProfileResourcePolicy resourcePolicy
-	) {
-		this(sessionService, deadlineExecutor, resourcePolicy, DEFAULT_MAX_REQUEST_BYTES);
-	}
-
 	@Autowired
 	JourneyProfileController(
 		JourneySessionService sessionService,

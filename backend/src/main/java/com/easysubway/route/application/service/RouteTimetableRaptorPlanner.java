@@ -1738,29 +1738,17 @@ public final class RouteTimetableRaptorPlanner {
 		try {
 			MessageDigest digest = MessageDigest.getInstance("SHA-256");
 			for (TransitRoute route : timetable.transitRoutes()) {
-				if (route.id() != null) {
-					digest.update(route.id().getBytes(StandardCharsets.UTF_8));
-				}
+				digest.update(Objects.toString(route.id(), "").getBytes(StandardCharsets.UTF_8));
 			}
 			for (TransitTrip trip : timetable.transitTrips()) {
-				if (trip.id() != null) {
-					digest.update(trip.id().getBytes(StandardCharsets.UTF_8));
-				}
-				if (trip.routeId() != null) {
-					digest.update(trip.routeId().getBytes(StandardCharsets.UTF_8));
-				}
+				digest.update(Objects.toString(trip.id(), "").getBytes(StandardCharsets.UTF_8));
+				digest.update(Objects.toString(trip.routeId(), "").getBytes(StandardCharsets.UTF_8));
 			}
 			ByteBuffer buffer = ByteBuffer.allocate(8);
 			for (TransitStopTime stopTime : timetable.transitStopTimes()) {
-				if (stopTime.tripId() != null) {
-					digest.update(stopTime.tripId().getBytes(StandardCharsets.UTF_8));
-				}
-				if (stopTime.stationId() != null) {
-					digest.update(stopTime.stationId().getBytes(StandardCharsets.UTF_8));
-				}
-				if (stopTime.lineId() != null) {
-					digest.update(stopTime.lineId().getBytes(StandardCharsets.UTF_8));
-				}
+				digest.update(Objects.toString(stopTime.tripId(), "").getBytes(StandardCharsets.UTF_8));
+				digest.update(Objects.toString(stopTime.stationId(), "").getBytes(StandardCharsets.UTF_8));
+				digest.update(Objects.toString(stopTime.lineId(), "").getBytes(StandardCharsets.UTF_8));
 				buffer.clear();
 				buffer.putInt(stopTime.departureSeconds()).putInt(stopTime.arrivalSeconds());
 				digest.update(buffer.array());
@@ -5072,20 +5060,15 @@ public final class RouteTimetableRaptorPlanner {
 			BitSet mergedBlocked = (BitSet) a.blockedTransitions.clone();
 			mergedBlocked.or(b.blockedTransitions);
 
-			int[] mergedPatterns;
-			if (a.affectedPatterns.length == 0) {
-				mergedPatterns = b.affectedPatterns;
-			} else if (b.affectedPatterns.length == 0) {
-				mergedPatterns = a.affectedPatterns;
-			} else {
-				mergedPatterns = java.util.stream.IntStream.concat(
-					java.util.Arrays.stream(a.affectedPatterns),
-					java.util.Arrays.stream(b.affectedPatterns))
-					.distinct().sorted().toArray();
-			}
+			int[] mergedPatterns = java.util.stream.IntStream.concat(
+				java.util.Arrays.stream(a.affectedPatterns),
+				java.util.Arrays.stream(b.affectedPatterns))
+				.distinct().sorted().toArray();
+
+			String version = a.version != null ? a.version : b.version;
 
 			return new RealtimeOverlay(
-				a.version != null ? a.version : b.version,
+				version,
 				a.available || b.available,
 				a.tripIndexes,
 				a.arrivalDeltas,
