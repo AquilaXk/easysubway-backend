@@ -27,8 +27,13 @@ import com.easysubway.journey.application.JourneySessionService;
 import com.easysubway.journey.application.JourneySessionService.AuthorizedSession;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
 import jakarta.servlet.http.HttpServletRequest;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
+import java.nio.charset.StandardCharsets;
 import java.security.SecureRandom;
 import java.time.Clock;
 import java.time.Duration;
@@ -36,6 +41,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -46,6 +52,7 @@ import org.springframework.boot.test.context.runner.ApplicationContextRunner;
 import org.springframework.context.annotation.Import;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
+import org.springframework.test.util.ReflectionTestUtils;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.MvcResult;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
@@ -244,6 +251,140 @@ class JourneySearchControllerTest {
 	}
 
 	@Test
+	@DisplayName("request body 크기가 maxRequestBytes를 초과하면 execute 없이 exact 400으로 닫힌다")
+	void rejectsOversizedAuthorizedRequestBeforeExecution() throws Exception {
+		allowSession();
+		int maxBytes = 100;
+		var controller = new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, maxBytes);
+		var mvc = MockMvcBuilders.standaloneSetup(controller)
+			.setControllerAdvice(new JourneySearchExceptionHandler(
+				Clock.fixed(NOW, ZoneOffset.UTC),
+				new SecureRandom(new byte[] {1, 2, 3, 4})
+			))
+			.build();
+
+		String largeBody = validRequest("{\"mode\":\"NOW\"}");
+		assertThat(largeBody.getBytes(StandardCharsets.UTF_8).length).isGreaterThan(maxBytes);
+
+		assertError(mvc, post("/api/v3/journeys/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(largeBody), 400, "INVALID_JOURNEY_REQUEST", false);
+
+		verify(sessionService).authorize("session-token", 2);
+		verifyNoInteractions(deadlineExecutor);
+	}
+
+	@Test
+	@DisplayName("request body 크기가 정확히 maxRequestBytes 이하이면 정상 수용되고 초과 시 차단된다")
+	void acceptsExactBoundaryAndRejectsOneByteOver() throws Exception {
+		allowSession();
+		String validBody = validRequest("{\"mode\":\"NOW\"}");
+		int exactLength = validBody.getBytes(StandardCharsets.UTF_8).length;
+
+		// 정확히 exactLength 바이트 허용: 200 성공
+		var allowedExecutor = mock(JourneyApplicationDeadlineExecutor.class);
+		when(allowedExecutor.execute(any())).thenReturn(new Completed(success()));
+		var allowedController = new JourneySearchController(sessionService, allowedExecutor, resourcePolicy, exactLength);
+		var allowedMvc = MockMvcBuilders.standaloneSetup(allowedController).build();
+		allowedMvc.perform(post("/api/v3/journeys/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validBody))
+			.andExpect(status().isOk());
+		verify(allowedExecutor).execute(any());
+
+		// exactLength - 1 바이트 허용 (1바이트 부족): 400 차단
+		var rejectedExecutor = mock(JourneyApplicationDeadlineExecutor.class);
+		var rejectedController = new JourneySearchController(sessionService, rejectedExecutor, resourcePolicy, exactLength - 1);
+		var rejectedMvc = MockMvcBuilders.standaloneSetup(rejectedController)
+			.setControllerAdvice(new JourneySearchExceptionHandler(Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom(new byte[] {1, 2, 3, 4})))
+			.build();
+		assertError(rejectedMvc, post("/api/v3/journeys/search")
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(validBody), 400, "INVALID_JOURNEY_REQUEST", false);
+		verifyNoInteractions(rejectedExecutor);
+	}
+
+	@Test
+	@DisplayName("chunked/stream 방식으로 Content-Length 없이 maxRequestBytes를 초과하는 바디도 exact 400으로 차단된다")
+	void rejectsOversizedStreamWithoutContentLengthBeforeExecution() throws Exception {
+		allowSession();
+		when(deadlineExecutor.execute(any())).thenReturn(new Completed(success()));
+		String validBody = validRequest("{\"mode\":\"NOW\"}");
+		byte[] validBytes = validBody.getBytes(StandardCharsets.UTF_8);
+		int maxBytes = validBytes.length;
+		var controller = new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, maxBytes);
+
+		byte[] streamBytes = new byte[maxBytes + 10];
+		System.arraycopy(validBytes, 0, streamBytes, 0, maxBytes);
+		Arrays.fill(streamBytes, maxBytes, streamBytes.length, (byte) ' ');
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getContentLengthLong()).thenReturn(-1L);
+		var stream = new ServletInputStream() {
+			private final InputStream delegate = new ByteArrayInputStream(streamBytes);
+			@Override public boolean isFinished() { try { return delegate.available() == 0; } catch (IOException e) { return true; } }
+			@Override public boolean isReady() { return true; }
+			@Override public void setReadListener(ReadListener readListener) {}
+			@Override public int read() throws IOException { return delegate.read(); }
+		};
+		when(request.getInputStream()).thenReturn(stream);
+
+		var exception = assertThrows(
+			JourneySearchController.JourneySearchWebException.class,
+			() -> controller.search("Bearer session-token", request)
+		);
+
+		assertThat(exception.httpStatus()).isEqualTo(400);
+		assertThat(exception.machineCode()).isEqualTo("INVALID_JOURNEY_REQUEST");
+		verify(sessionService).authorize("session-token", 2);
+		verifyNoInteractions(deadlineExecutor);
+	}
+
+	@Test
+	@DisplayName("maxRequestBytes가 0 이하이면 생성자에서 IllegalArgumentException이 발생한다")
+	void constructorRejectsNonPositiveMaxRequestBytes() {
+		assertThrows(IllegalArgumentException.class,
+			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, 0));
+		assertThrows(IllegalArgumentException.class,
+			() -> new JourneySearchController(sessionService, deadlineExecutor, resourcePolicy, -1));
+	}
+
+	@Test
+	@DisplayName("@Value max-request-bytes 설정이 JourneySearchController에 올바르게 바인딩된다")
+	void bindsMaxRequestBytesConfigurationProperty() {
+		var runner = new ApplicationContextRunner()
+			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withBean(JourneyApplicationDeadlineExecutor.class, () -> mock(JourneyApplicationDeadlineExecutor.class))
+			.withBean(JourneyProfileResourcePolicy.class, JourneySearchControllerTest::policy)
+			.withUserConfiguration(SearchWebConfiguration.class)
+			.withPropertyValues(SEARCH_WEB_ENABLED);
+
+		// 기본값 검증 (설정 미제공 시 DEFAULT_MAX_REQUEST_BYTES: 65536)
+		runner.run(context -> {
+			assertThat(context).hasSingleBean(JourneySearchController.class);
+			var controller = context.getBean(JourneySearchController.class);
+			assertThat(ReflectionTestUtils.getField(controller, "maxRequestBytes"))
+				.isEqualTo(JourneySearchController.DEFAULT_MAX_REQUEST_BYTES);
+		});
+
+		// 명시적 프로퍼티 바인딩 검증
+		runner.withPropertyValues("easysubway.journey.search.max-request-bytes=32768").run(context -> {
+			assertThat(context).hasSingleBean(JourneySearchController.class);
+			var controller = context.getBean(JourneySearchController.class);
+			assertThat(ReflectionTestUtils.getField(controller, "maxRequestBytes"))
+				.isEqualTo(32_768);
+		});
+
+		// 0 이하 비정상 값 바인딩 시 context startup failure
+		runner.withPropertyValues("easysubway.journey.search.max-request-bytes=0").run(context ->
+			assertThat(context.getStartupFailure())
+				.hasRootCauseInstanceOf(IllegalArgumentException.class)
+				.hasRootCauseMessage("maxRequestBytes must be positive"));
+	}
+
+	@Test
 	@DisplayName("valid viaStationId가 포함된 요청을 수용하여 JourneyRequest에 바인딩한다")
 	void acceptsAndBindsValidViaStationId() throws Exception {
 		allowSession();
@@ -342,7 +483,17 @@ class JourneySearchControllerTest {
 		String code,
 		boolean preservesRequestId
 	) throws Exception {
-		var response = mockMvc.perform(request)
+		assertError(mockMvc, request, httpStatus, code, preservesRequestId);
+	}
+
+	private void assertError(
+		MockMvc targetMvc,
+		org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder request,
+		int httpStatus,
+		String code,
+		boolean preservesRequestId
+	) throws Exception {
+		var response = targetMvc.perform(request)
 			.andExpect(status().is(httpStatus))
 			.andExpect(header().string(HttpHeaders.CACHE_CONTROL, "private, no-store"))
 			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"))
