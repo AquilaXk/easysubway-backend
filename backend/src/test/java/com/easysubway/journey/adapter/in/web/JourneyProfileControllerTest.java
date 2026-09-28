@@ -27,7 +27,12 @@ import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 import org.springframework.test.web.servlet.setup.MockMvcBuilders;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.util.ReflectionTestUtils;
 
 class JourneyProfileControllerTest {
 	private static final String PATH = "/api/v3/journeys/profile";
@@ -101,12 +106,36 @@ class JourneyProfileControllerTest {
 		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.TimedOut());
 		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
 			.andExpect(status().isGatewayTimeout()).andExpect(jsonPath("$.code").value("JOURNEY_PROFILE_TIMEOUT"));
+
+		// RAPTOR_FAILED maps to ROUTE_SERVICE_UNAVAILABLE 503
 		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.Completed(
 			new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.RAPTOR_FAILED)));
-		var mvc = mvc(4096);
-		assertThatThrownBy(() -> mvc.perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session")
-			.content(request(ARRIVE_BY))))
-			.hasRootCauseInstanceOf(IllegalStateException.class);
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.code").value("ROUTE_SERVICE_UNAVAILABLE"))
+			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"));
+
+		// CANCELLED maps to ROUTE_SERVICE_UNAVAILABLE 503
+		when(executor.execute(any(), same(policy))).thenReturn(new JourneyProfileDeadlineExecutor.Completed(
+			new JourneyProfileExecutionResult.Failure(JourneyProfileExecutionResult.Reason.CANCELLED)));
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.code").value("ROUTE_SERVICE_UNAVAILABLE"))
+			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"));
+
+		// Unexpected runtime exception during executor.execute maps to ROUTE_SERVICE_UNAVAILABLE 503
+		when(executor.execute(any(), same(policy))).thenThrow(new RuntimeException("Simulated executor crash"));
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.code").value("ROUTE_SERVICE_UNAVAILABLE"))
+			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"));
+
+		// null outcome maps to ROUTE_SERVICE_UNAVAILABLE 503
+		when(executor.execute(any(), same(policy))).thenReturn(null);
+		mvc(4096).perform(post(PATH).header(HttpHeaders.AUTHORIZATION, "Bearer session").content(request(ARRIVE_BY)))
+			.andExpect(status().isServiceUnavailable())
+			.andExpect(jsonPath("$.code").value("ROUTE_SERVICE_UNAVAILABLE"))
+			.andExpect(jsonPath("$.contractVersion").value("JOURNEY_ERROR_V1"));
 	}
 
 	private MockMvc mvc(int maxBytes) {
@@ -129,5 +158,43 @@ class JourneyProfileControllerTest {
 			mock(JourneyProfileResourcePolicy.class), 0))
 			.isInstanceOf(IllegalArgumentException.class)
 			.hasMessage("maxRequestBytes must be positive");
+	}
+
+	@Test
+	@DisplayName("@Value max-request-bytes 설정이 JourneyProfileController에 올바르게 바인딩된다")
+	void bindsMaxRequestBytesConfigurationProperty() {
+		var runner = new ApplicationContextRunner()
+			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withBean(JourneyProfileDeadlineExecutor.class, () -> mock(JourneyProfileDeadlineExecutor.class))
+			.withBean(JourneyProfileResourcePolicy.class, () -> policy)
+			.withUserConfiguration(ProfileWebConfiguration.class)
+			.withPropertyValues("easysubway.journey-v3.search-web.enabled=true");
+
+		// 기본값 검증 (설정 미제공 시 DEFAULT_MAX_REQUEST_BYTES: 65536)
+		runner.run(context -> {
+			assertThat(context).hasSingleBean(JourneyProfileController.class);
+			var controller = context.getBean(JourneyProfileController.class);
+			assertThat(ReflectionTestUtils.getField(controller, "maxRequestBytes"))
+				.isEqualTo(JourneyProfileController.DEFAULT_MAX_REQUEST_BYTES);
+		});
+
+		// 명시적 프로퍼티 바인딩 검증
+		runner.withPropertyValues("easysubway.journey.profile.max-request-bytes=32768").run(context -> {
+			assertThat(context).hasSingleBean(JourneyProfileController.class);
+			var controller = context.getBean(JourneyProfileController.class);
+			assertThat(ReflectionTestUtils.getField(controller, "maxRequestBytes"))
+				.isEqualTo(32_768);
+		});
+
+		// 0 이하 비정상 값 바인딩 시 context startup failure
+		runner.withPropertyValues("easysubway.journey.profile.max-request-bytes=0").run(context ->
+			assertThat(context.getStartupFailure())
+				.hasRootCauseInstanceOf(IllegalArgumentException.class)
+				.hasRootCauseMessage("maxRequestBytes must be positive"));
+	}
+
+	@TestConfiguration
+	@Import({JourneyProfileController.class, JourneySearchExceptionHandler.class})
+	static class ProfileWebConfiguration {
 	}
 }

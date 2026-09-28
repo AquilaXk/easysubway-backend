@@ -12,8 +12,9 @@ import java.io.IOException;
 import java.io.InputStream;
 import java.util.Objects;
 import java.util.UUID;
-import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
+import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -24,16 +25,19 @@ import org.springframework.web.bind.annotation.RestController;
 @ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 final class JourneyProfileController {
 
+	public static final int DEFAULT_MAX_REQUEST_BYTES = 65_536;
+
 	private final JourneySessionService sessionService;
 	private final JourneyProfileDeadlineExecutor deadlineExecutor;
 	private final JourneyProfileResourcePolicy resourcePolicy;
 	private final int maxRequestBytes;
 
+	@Autowired
 	JourneyProfileController(
 		JourneySessionService sessionService,
 		JourneyProfileDeadlineExecutor deadlineExecutor,
 		JourneyProfileResourcePolicy resourcePolicy,
-		@Value("${easysubway.journey.profile.max-request-bytes}") int maxRequestBytes
+		@Value("${easysubway.journey.profile.max-request-bytes:65536}") int maxRequestBytes
 	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
@@ -50,7 +54,15 @@ final class JourneyProfileController {
 		String token = JourneySearchController.requireBearerToken(authorization);
 		JourneyRaptorQuery query = decode(readRequest(servletRequest));
 		sessionService.authorize(token, resourcePolicy.costUnitsFor(query.temporalQuery()));
-		JourneyProfileDeadlineExecutor.Outcome outcome = deadlineExecutor.execute(query, resourcePolicy);
+		JourneyProfileDeadlineExecutor.Outcome outcome;
+		try {
+			outcome = deadlineExecutor.execute(query, resourcePolicy);
+		} catch (RuntimeException exception) {
+			throw serviceUnavailable(query.requestId());
+		}
+		if (outcome == null) {
+			throw serviceUnavailable(query.requestId());
+		}
 		JourneyProfileExecutionResult result = switch (outcome) {
 			case JourneyProfileDeadlineExecutor.Completed completed -> completed.result();
 			case JourneyProfileDeadlineExecutor.TimedOut ignored -> throw webFailure(query.requestId(), 504,
@@ -96,8 +108,8 @@ final class JourneyProfileController {
 		return switch (JourneyProfileExecutionDisposition.from(failure)) {
 			case JourneyProfileExecutionDisposition.PublicFailure publicFailure -> webFailure(requestId,
 				publicFailure.httpStatus(), publicFailure.machineCode().name());
-			case JourneyProfileExecutionDisposition.Cancelled ignored -> internalFailure();
-			case JourneyProfileExecutionDisposition.InternalFailure ignored -> internalFailure();
+			case JourneyProfileExecutionDisposition.Cancelled ignored -> serviceUnavailable(requestId);
+			case JourneyProfileExecutionDisposition.InternalFailure ignored -> serviceUnavailable(requestId);
 		};
 	}
 
@@ -105,13 +117,13 @@ final class JourneyProfileController {
 		return webFailure(null, 400, "INVALID_TEMPORAL_QUERY");
 	}
 
+	private static JourneySearchController.JourneySearchWebException serviceUnavailable(String requestId) {
+		return webFailure(requestId, 503, "ROUTE_SERVICE_UNAVAILABLE");
+	}
+
 	private static JourneySearchController.JourneySearchWebException webFailure(
 		String requestId, int status, String code
 	) {
 		return new JourneySearchController.JourneySearchWebException(requestId, status, code);
-	}
-
-	private static IllegalStateException internalFailure() {
-		return new IllegalStateException("Journey profile execution failed");
 	}
 }

@@ -2,6 +2,7 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatNoException;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteTimetable;
@@ -244,5 +245,49 @@ class RouteTimetableRaptorPlannerBugsRegressionTest {
 			List.of(),
 			evidence
 		);
+	}
+
+	@Test
+	@DisplayName("[P1-4] CompiledTimetable은 'test-bundle' 매직 식별자 없이 유효한 SHA-256 및 generation을 캡슐화한다")
+	void compiledTimetableEncapsulatesDeterministicSha256AndGeneration() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var timetable = circularTimetable();
+		var compiled = planner.compile(timetable);
+
+		assertThat(compiled.routeBundleSha256()).matches("^[a-f0-9]{64}$");
+		assertThat(compiled.generation()).isEqualTo(1L);
+
+		// 명시적 주입 오버로드 검증
+		String explicitSha = "b".repeat(64);
+		var explicitCompiled = planner.compile(explicitSha, 42L, timetable);
+		assertThat(explicitCompiled.routeBundleSha256()).isEqualTo(explicitSha);
+		assertThat(explicitCompiled.generation()).isEqualTo(42L);
+
+		// 유효하지 않은 SHA-256 및 generation 차단 검증 (Fail-Closed)
+		assertThatThrownBy(() -> planner.compile("invalid-sha", 1L, timetable))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("lowercase SHA-256");
+
+		assertThatThrownBy(() -> planner.compile(explicitSha, 0L, timetable))
+			.isInstanceOf(IllegalArgumentException.class)
+			.hasMessageContaining("generation must be positive");
+
+		// journeyItineraries 3-arg 오버로드 호출 시 measurement에 유효한 SHA-256과 generation이 전달됨을 검증
+		var query = new com.easysubway.journey.application.JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FAV",
+			"sta-1",
+			"sta-3",
+			new com.easysubway.journey.application.JourneyRaptorQuery.DepartAt(java.time.Instant.parse("2026-07-06T08:00:00Z")),
+			com.easysubway.journey.application.JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			com.easysubway.journey.application.JourneyRequest.WalkingPace.STANDARD,
+			com.easysubway.journey.application.JourneyRequest.MobilityProfile.STANDARD,
+			com.easysubway.journey.application.JourneyRequest.ConstraintMode.NONE,
+			3,
+			3,
+			() -> false
+		);
+		var plan = planner.journeyItineraries(query, explicitCompiled, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
+		assertThat(plan).isNotNull();
+		assertThat(explicitCompiled.routeBundleSha256()).isNotEqualTo("test-bundle");
 	}
 }
