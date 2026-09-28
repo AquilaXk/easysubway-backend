@@ -13,6 +13,7 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.format.DateTimeFormatter;
@@ -21,6 +22,8 @@ import java.util.List;
 import java.util.Objects;
 import java.util.Set;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
@@ -40,12 +43,26 @@ final class StationTimetableSearchController {
 	private static final Set<String> REQUEST_FIELDS = Set.of("stationId", "lineId", "selector");
 	private static final DateTimeFormatter SEOUL_RFC3339_SECONDS = DateTimeFormatter.ofPattern("uuuu-MM-dd'T'HH:mm:ssXXX");
 
+	public static final int DEFAULT_MAX_REQUEST_BYTES = 65_536;
+
 	private final JourneySessionService sessionService;
 	private final StationTimetableSearchService service;
+	private final int maxRequestBytes;
 
 	StationTimetableSearchController(JourneySessionService sessionService, StationTimetableSearchService service) {
+		this(sessionService, service, DEFAULT_MAX_REQUEST_BYTES);
+	}
+
+	@Autowired
+	StationTimetableSearchController(
+		JourneySessionService sessionService,
+		StationTimetableSearchService service,
+		@Value("${easysubway.journey.station-timetable.max-request-bytes:65536}") int maxRequestBytes
+	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.service = Objects.requireNonNull(service, "service");
+		if (maxRequestBytes <= 0) throw new IllegalArgumentException("maxRequestBytes must be positive");
+		this.maxRequestBytes = maxRequestBytes;
 	}
 
 	@PostMapping(value = PATH, consumes = MediaType.APPLICATION_JSON_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
@@ -130,8 +147,18 @@ final class StationTimetableSearchController {
 		};
 	}
 
-	private static byte[] readRequest(HttpServletRequest request) {
-		try { return request.getInputStream().readAllBytes(); } catch (IOException exception) { throw invalid(); }
+	private byte[] readRequest(HttpServletRequest request) {
+		long contentLength = request.getContentLengthLong();
+		if (contentLength > maxRequestBytes) {
+			throw invalid();
+		}
+		try (InputStream input = request.getInputStream()) {
+			byte[] bytes = input.readNBytes(maxRequestBytes);
+			if (input.read() != -1) throw invalid();
+			return bytes;
+		} catch (IOException exception) {
+			throw invalid();
+		}
 	}
 	private static String requireBearerToken(String authorization) {
 		if (authorization == null) throw new JourneySessionException(JourneySessionException.Kind.SESSION_REQUIRED);

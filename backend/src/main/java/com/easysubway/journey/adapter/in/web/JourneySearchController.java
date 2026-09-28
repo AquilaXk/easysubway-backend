@@ -18,11 +18,14 @@ import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.servlet.http.HttpServletRequest;
 import java.io.IOException;
+import java.io.InputStream;
 import java.time.OffsetDateTime;
 import java.util.Objects;
 import java.util.Set;
 import java.util.function.BooleanSupplier;
 import java.util.regex.Pattern;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -48,18 +51,33 @@ final class JourneySearchController {
 		"walkingPace", "mobilityProfile", "constraintMode", "maxTransfers", "alternativeCount"
 	);
 
+	public static final int DEFAULT_MAX_REQUEST_BYTES = 65_536;
+
 	private final JourneySessionService sessionService;
 	private final JourneyApplicationDeadlineExecutor deadlineExecutor;
 	private final JourneyProfileResourcePolicy resourcePolicy;
+	private final int maxRequestBytes;
 
 	JourneySearchController(
 		JourneySessionService sessionService,
 		JourneyApplicationDeadlineExecutor deadlineExecutor,
 		JourneyProfileResourcePolicy resourcePolicy
 	) {
+		this(sessionService, deadlineExecutor, resourcePolicy, DEFAULT_MAX_REQUEST_BYTES);
+	}
+
+	@Autowired
+	JourneySearchController(
+		JourneySessionService sessionService,
+		JourneyApplicationDeadlineExecutor deadlineExecutor,
+		JourneyProfileResourcePolicy resourcePolicy,
+		@Value("${easysubway.journey.search.max-request-bytes:65536}") int maxRequestBytes
+	) {
 		this.sessionService = Objects.requireNonNull(sessionService, "sessionService");
 		this.deadlineExecutor = Objects.requireNonNull(deadlineExecutor, "deadlineExecutor");
 		this.resourcePolicy = Objects.requireNonNull(resourcePolicy, "resourcePolicy");
+		if (maxRequestBytes <= 0) throw new IllegalArgumentException("maxRequestBytes must be positive");
+		this.maxRequestBytes = maxRequestBytes;
 	}
 
 	@PostMapping("/api/v3/journeys/search")
@@ -107,9 +125,17 @@ final class JourneySearchController {
 		return token;
 	}
 
-	private static byte[] readRequest(HttpServletRequest request) {
-		try {
-			return request.getInputStream().readAllBytes();
+	private byte[] readRequest(HttpServletRequest request) {
+		long contentLength = request.getContentLengthLong();
+		if (contentLength > maxRequestBytes) {
+			throw invalidRequest();
+		}
+		try (InputStream input = request.getInputStream()) {
+			byte[] bytes = input.readNBytes(maxRequestBytes);
+			if (input.read() != -1) {
+				throw invalidRequest();
+			}
+			return bytes;
 		} catch (IOException exception) {
 			throw invalidRequest();
 		}
@@ -118,6 +144,9 @@ final class JourneySearchController {
 	private static JourneyRequest decodeRequest(byte[] requestBytes) {
 		try {
 			JsonNode request = REQUEST_JSON.readTree(requestBytes);
+			if (request == null || !request.isObject()) {
+				throw invalidRequest();
+			}
 			Set<String> expectedFields = request.has("viaStationId") ? ALLOWED_FIELDS : REQUIRED_FIELDS;
 			if (!hasExactFields(request, expectedFields)
 				|| !request.path("requestId").isTextual()

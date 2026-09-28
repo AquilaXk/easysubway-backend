@@ -2,15 +2,25 @@ package com.easysubway.journey.adapter.in.web;
 
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.spy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+import org.springframework.boot.test.context.TestConfiguration;
+import org.springframework.boot.test.context.runner.ApplicationContextRunner;
+import org.springframework.context.annotation.Import;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import org.junit.jupiter.api.DisplayName;
 
 import com.easysubway.journey.application.JourneySessionException;
 import com.easysubway.journey.application.JourneySessionService;
@@ -26,10 +36,17 @@ import com.easysubway.route.application.port.out.LoadRouteTimetablePort.ServiceC
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitRoute;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitStopTime;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.TransitTrip;
-import java.security.SecureRandom;
+import jakarta.servlet.ReadListener;
+import jakarta.servlet.ServletInputStream;
+import jakarta.servlet.http.HttpServletRequest;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.lang.reflect.InvocationTargetException;
 import java.lang.reflect.Method;
+import java.nio.charset.StandardCharsets;
+import java.security.SecureRandom;
+import java.util.Arrays;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -177,8 +194,157 @@ class StationTimetableSearchControllerTest {
 		}
 		var servletRequest = mock(jakarta.servlet.http.HttpServletRequest.class);
 		when(servletRequest.getInputStream()).thenThrow(new IOException("read failure"));
-		assertThatThrownBy(() -> new StationTimetableSearchController(sessions, service()).search("Bearer session-token", servletRequest))
-			.isInstanceOf(StationTimetableSearchController.StationTimetableSearchWebException.class);
+		var unreadableException = assertThrows(
+			StationTimetableSearchController.StationTimetableSearchWebException.class,
+			() -> new StationTimetableSearchController(sessions, service()).search("Bearer session-token", servletRequest)
+		);
+		assertThat(unreadableException.httpStatus()).isEqualTo(400);
+		assertThat(unreadableException.machineCode()).isEqualTo("INVALID_JOURNEY_REQUEST");
+	}
+
+	@Test
+	@DisplayName("request body 크기가 maxRequestBytes를 초과하면 service 호출 없이 exact 400으로 닫힌다")
+	void rejectsOversizedAuthorizedRequestBeforeExecution() throws Exception {
+		when(sessions.authorize("session-token")).thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
+		int maxBytes = 30;
+		var service = mock(StationTimetableSearchService.class);
+		var controller = new StationTimetableSearchController(sessions, service, maxBytes);
+		var mvc = MockMvcBuilders.standaloneSetup(controller)
+			.setControllerAdvice(new JourneySearchExceptionHandler(Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom()))
+			.build();
+
+		String body = request();
+		assertThat(body.getBytes(StandardCharsets.UTF_8).length).isGreaterThan(maxBytes);
+
+		mvc.perform(post(StationTimetableSearchController.PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_JOURNEY_REQUEST"));
+
+		verify(sessions).authorize("session-token");
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	@DisplayName("request body 크기가 정확히 maxRequestBytes 이하이면 정상 수용되고 초과 시 차단된다")
+	void acceptsExactBoundaryAndRejectsOneByteOver() throws Exception {
+		when(sessions.authorize("session-token")).thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
+		String body = request();
+		int exactLength = body.getBytes(StandardCharsets.UTF_8).length;
+
+		// 정확히 exactLength 바이트 허용: 200 성공
+		var allowedService = spy(service());
+		var allowedController = new StationTimetableSearchController(sessions, allowedService, exactLength);
+		var allowedMvc = MockMvcBuilders.standaloneSetup(allowedController).build();
+		allowedMvc.perform(post(StationTimetableSearchController.PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body))
+			.andExpect(status().isOk());
+		verify(allowedService).search(any());
+
+		// exactLength - 1 바이트 허용 (1바이트 부족): 400 차단
+		var rejectedService = spy(service());
+		var rejectedController = new StationTimetableSearchController(sessions, rejectedService, exactLength - 1);
+		var rejectedMvc = MockMvcBuilders.standaloneSetup(rejectedController)
+			.setControllerAdvice(new JourneySearchExceptionHandler(Clock.fixed(NOW, ZoneOffset.UTC), new SecureRandom()))
+			.build();
+		rejectedMvc.perform(post(StationTimetableSearchController.PATH)
+				.header(HttpHeaders.AUTHORIZATION, "Bearer session-token")
+				.contentType(MediaType.APPLICATION_JSON)
+				.content(body))
+			.andExpect(status().isBadRequest())
+			.andExpect(jsonPath("$.code").value("INVALID_JOURNEY_REQUEST"));
+		verifyNoInteractions(rejectedService);
+	}
+
+	@Test
+	@DisplayName("chunked/stream 방식으로 Content-Length 없이 maxRequestBytes를 초과하는 바디도 exact 400으로 차단된다")
+	void rejectsOversizedStreamWithoutContentLengthBeforeExecution() throws Exception {
+		when(sessions.authorize("session-token")).thenReturn(new AuthorizedSession("journey:v3", NOW.plusSeconds(600)));
+		var service = spy(service());
+		String validBody = request();
+		byte[] validBytes = validBody.getBytes(StandardCharsets.UTF_8);
+		int maxBytes = validBytes.length;
+		var controller = new StationTimetableSearchController(sessions, service, maxBytes);
+
+		byte[] streamBytes = new byte[maxBytes + 10];
+		System.arraycopy(validBytes, 0, streamBytes, 0, maxBytes);
+		Arrays.fill(streamBytes, maxBytes, streamBytes.length, (byte) ' ');
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getContentLengthLong()).thenReturn(-1L);
+		var stream = new ServletInputStream() {
+			private final InputStream delegate = new ByteArrayInputStream(streamBytes);
+			@Override public boolean isFinished() { try { return delegate.available() == 0; } catch (IOException e) { return true; } }
+			@Override public boolean isReady() { return true; }
+			@Override public void setReadListener(ReadListener readListener) {}
+			@Override public int read() throws IOException { return delegate.read(); }
+		};
+		when(request.getInputStream()).thenReturn(stream);
+
+		var exception = assertThrows(
+			StationTimetableSearchController.StationTimetableSearchWebException.class,
+			() -> controller.search("Bearer session-token", request)
+		);
+
+		assertThat(exception.httpStatus()).isEqualTo(400);
+		assertThat(exception.machineCode()).isEqualTo("INVALID_JOURNEY_REQUEST");
+
+		verify(sessions).authorize("session-token");
+		verifyNoInteractions(service);
+	}
+
+	@Test
+	@DisplayName("maxRequestBytes가 0 이하이면 생성자에서 IllegalArgumentException이 발생한다")
+	void constructorRejectsNonPositiveMaxRequestBytes() {
+		assertThrows(IllegalArgumentException.class, () -> new StationTimetableSearchController(sessions, service(), 0));
+		assertThrows(IllegalArgumentException.class, () -> new StationTimetableSearchController(sessions, service(), -1));
+	}
+
+	@Test
+	@DisplayName("@Value max-request-bytes 설정이 StationTimetableSearchController에 올바르게 바인딩된다")
+	void bindsMaxRequestBytesConfigurationProperty() {
+		var runner = new ApplicationContextRunner()
+			.withBean(JourneySessionService.class, () -> mock(JourneySessionService.class))
+			.withBean(StationTimetableSearchService.class, StationTimetableSearchControllerTest::service)
+			.withUserConfiguration(StationTimetableWebConfiguration.class);
+
+		// property off: bean not loaded
+		runner.run(context -> assertThat(context).doesNotHaveBean(StationTimetableSearchController.class));
+
+		// property on, default maxRequestBytes (65536)
+		runner.withPropertyValues("easysubway.journey-v3.search-web.enabled=true").run(context -> {
+			assertThat(context).hasSingleBean(StationTimetableSearchController.class);
+			var controller = context.getBean(StationTimetableSearchController.class);
+			assertThat(ReflectionTestUtils.getField(controller, "maxRequestBytes"))
+				.isEqualTo(StationTimetableSearchController.DEFAULT_MAX_REQUEST_BYTES);
+		});
+
+		// property on, custom maxRequestBytes (16384)
+		runner.withPropertyValues(
+			"easysubway.journey-v3.search-web.enabled=true",
+			"easysubway.journey.station-timetable.max-request-bytes=16384"
+		).run(context -> {
+			assertThat(context).hasSingleBean(StationTimetableSearchController.class);
+			var controller = context.getBean(StationTimetableSearchController.class);
+			assertThat(ReflectionTestUtils.getField(controller, "maxRequestBytes"))
+				.isEqualTo(16_384);
+		});
+
+		// 0 이하 비정상 값 바인딩 시 context startup failure
+		runner.withPropertyValues(
+			"easysubway.journey-v3.search-web.enabled=true",
+			"easysubway.journey.station-timetable.max-request-bytes=0"
+		).run(context -> assertThat(context.getStartupFailure())
+			.hasRootCauseInstanceOf(IllegalArgumentException.class)
+			.hasRootCauseMessage("maxRequestBytes must be positive"));
+	}
+
+	@TestConfiguration
+	@Import(StationTimetableSearchController.class)
+	static class StationTimetableWebConfiguration {
 	}
 
 	@Test
