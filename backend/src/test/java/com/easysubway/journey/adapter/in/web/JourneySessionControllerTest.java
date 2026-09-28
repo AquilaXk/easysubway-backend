@@ -98,6 +98,8 @@ class JourneySessionControllerTest {
 	@DisplayName("malformed·missing·extra·wrong-type request는 service 호출 없이 exact 400이다")
 	void rejectsNonContractRequestsBeforeService() throws Exception {
 		for (String body : List.of(
+			"",
+			"   ",
 			"{not-json",
 			"[]",
 			"{}",
