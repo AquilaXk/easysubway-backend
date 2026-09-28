@@ -108,6 +108,7 @@ class PublicOpenApiContractTest {
 	private static final Set<String> MANUAL_REQUEST_BODY_HANDLERS = Set.of(
 		"com.easysubway.journey.adapter.in.web.JourneySearchController#search",
 		"com.easysubway.journey.adapter.in.web.JourneyProfileController#profile",
+		"com.easysubway.journey.adapter.in.web.JourneySessionController#issue",
 		"com.easysubway.journey.adapter.in.web.StationTimetableSearchController#search"
 	);
 
