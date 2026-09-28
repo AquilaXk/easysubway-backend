@@ -79,7 +79,10 @@ public final class RouteTimetableRaptorPlanner {
 		.thenComparingInt(Label::boardings);
 	private static final Label[] NO_WARNING_ALTERNATIVES = new Label[0];
 	private static final int STRICT_PROFILE_MASK = profileMask(ConstraintMode.STRICT_STEP_FREE);
-	private static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
+	static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
+	static boolean prefersStepFree(int profileBit) {
+		return (profileBit & PREFER_STEP_FREE_PROFILE_MASK) != 0;
+	}
 	private static final int NON_STRICT_PROFILE_MASK = profileMask(
 		ConstraintMode.PREFER_STEP_FREE, ConstraintMode.ALLOW_WITH_WARNINGS);
 	private final ScanWorkspacePool workspacePool;
@@ -2257,6 +2260,7 @@ public final class RouteTimetableRaptorPlanner {
 
 		private final RouteTimetable source;
 		private final Map<String, Integer> stationIndex;
+		private final String[] stationIds;
 		private final Map<String, Integer> routeIndex;
 		private final Map<String, Integer> tripIndex;
 		private final Map<String, Integer> lineIndex;
@@ -2281,6 +2285,10 @@ public final class RouteTimetableRaptorPlanner {
 		private CompiledTimetable(RouteTimetable source) {
 			this.source = Objects.requireNonNull(source, "timetable must not be null");
 			stationIndex = denseIndex(source.transitStopTimes().stream().map(TransitStopTime::stationId).toList());
+			stationIds = new String[stationIndex.size()];
+			for (Map.Entry<String, Integer> entry : stationIndex.entrySet()) {
+				stationIds[entry.getValue()] = entry.getKey();
+			}
 			routeIndex = denseIndex(source.transitRoutes().stream().map(TransitRoute::id).toList());
 			tripIndex = denseIndex(source.transitTrips().stream().map(TransitTrip::id).toList());
 			lineIndex = denseIndex(source.transitStopTimes().stream().map(TransitStopTime::lineId).toList());
@@ -2498,6 +2506,10 @@ public final class RouteTimetableRaptorPlanner {
 		}
 		int stationIndex(String stationId) {
 			return stationIndex.getOrDefault(stationId, -1);
+		}
+
+		String stationId(int station) {
+			return station >= 0 && station < stationIds.length ? stationIds[station] : null;
 		}
 
 		int lineIndex(String lineId) {
@@ -3317,7 +3329,7 @@ public final class RouteTimetableRaptorPlanner {
 			return -1;
 		}
 		private boolean isPreferredVerifiedTransition(int candidate, int selected, int profileBit) {
-			boolean preferStepFree = (profileBit & PREFER_STEP_FREE_PROFILE_MASK) != 0;
+			boolean preferStepFree = prefersStepFree(profileBit);
 			boolean candidateHasStairs = (warningCodes[candidate] & WARNING_STAIRS) != 0;
 			boolean selectedHasStairs = (warningCodes[selected] & WARNING_STAIRS) != 0;
 			if (preferStepFree && candidateHasStairs != selectedHasStairs) {
