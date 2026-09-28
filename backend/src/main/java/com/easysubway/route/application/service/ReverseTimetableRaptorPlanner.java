@@ -371,6 +371,22 @@ final class ReverseTimetableRaptorPlanner {
 			}
 
 			List<Candidate> candidates = new ArrayList<>();
+			int station = timetable.stationIndex(boardStation);
+			RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths = station >= 0 && downstreamLine >= 0
+				? timetable.footpathsToStationLine(station, downstreamLine)
+				: null;
+			boolean hasFootpaths = footpaths != null && footpaths.length > 0;
+			Set<String> candidateStationIds = null;
+			if (hasFootpaths) {
+				candidateStationIds = new HashSet<>(footpaths.length + 1);
+				candidateStationIds.add(boardStation);
+				for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
+					String fromStationId = timetable.stationId(fp.fromStation());
+					if (fromStationId != null) {
+						candidateStationIds.add(fromStationId);
+					}
+				}
+			}
 			for (DatedScheduledTrip upstreamTrip : activeTrips) {
 				limits.consumeWork();
 				if (query.cancelled().getAsBoolean() || upstreamTrip.realtimeOverlay().cancelled(upstreamTrip.scheduledTrip())) {
@@ -378,19 +394,27 @@ final class ReverseTimetableRaptorPlanner {
 				}
 				for (int upstreamAlightIndex = 1; upstreamAlightIndex < upstreamTrip.stopTimes().size(); upstreamAlightIndex += 1) {
 					limits.consumeWork();
-					if (!boardStation.equals(upstreamTrip.stopTimes().get(upstreamAlightIndex).stationId())
-						|| !upstreamTrip.allowsDropOff(upstreamAlightIndex)) {
+					if (!upstreamTrip.allowsDropOff(upstreamAlightIndex)) {
 						continue;
 					}
-					int station = timetable.stationIndex(boardStation);
+					String upstreamStationId = upstreamTrip.stopTimes().get(upstreamAlightIndex).stationId();
+					if (hasFootpaths ? !candidateStationIds.contains(upstreamStationId) : !boardStation.equals(upstreamStationId)) {
+						continue;
+					}
+					int upstreamStation = boardStation.equals(upstreamStationId) ? station : timetable.stationIndex(upstreamStationId);
 					int upstreamLine = timetable.lineIndex(upstreamTrip.lineId(upstreamAlightIndex));
-					int transfer = station < 0 || upstreamLine < 0 || downstreamLine < 0 ? -1
-						: timetable.transferTransition(station, upstreamLine, downstreamLine, query.accessProfileBit(), false,
-							query.requiresVerifiedJourneyDistance());
-					if (!verifiedTransition(timetable, transfer)) {
-						limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
+					TransferEvaluation eval = evaluateTransfer(
+						timetable, query, station, boardStation, downstreamLine,
+						upstreamStation, upstreamStationId, upstreamLine, footpaths);
+					if (eval.match() == null) {
+						if (eval.hasOpportunity()) {
+							limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
+						}
 						continue;
 					}
+					TransferMatch match = eval.match();
+					int transfer = match.transition();
+					String fromStationId = match.fromStationId();
 					int latestArrival = downstreamDeparture - accessSeconds(query, timetable, transfer, Access.TRANSFER)
 						- query.boardingSlackSeconds();
 					if (arrivalSeconds(query, upstreamTrip, upstreamAlightIndex) > latestArrival) {
@@ -410,7 +434,7 @@ final class ReverseTimetableRaptorPlanner {
 								- accessSeconds(query, timetable, transfer, Access.TRANSFER)
 								- query.boardingSlackSeconds();
 							candidates.add(candidate.appendTransferAndRide(
-								new TraceAccess(Access.TRANSFER, transfer, boardStation, boardStation),
+								new TraceAccess(Access.TRANSFER, transfer, fromStationId, boardStation),
 								accessSeconds(query, timetable, transfer, Access.TRANSFER),
 								timetable.transitionDistanceMeters(transfer), timetable.transitionIncludesStairs(transfer),
 								transferSlack, new TraceRide(downstreamTrip, downstreamBoardIndex, downstreamAlightIndex)));
@@ -422,6 +446,135 @@ final class ReverseTimetableRaptorPlanner {
 		} finally {
 			visiting.remove(state);
 		}
+	}
+
+	record TransferMatch(int transition, String fromStationId) {
+	}
+
+	record TransferEvaluation(TransferMatch match, boolean hasOpportunity) {
+		static final TransferEvaluation NONE = new TransferEvaluation(null, false);
+		static final TransferEvaluation INELIGIBLE = new TransferEvaluation(null, true);
+
+		static TransferEvaluation of(TransferMatch match) {
+			return new TransferEvaluation(match, true);
+		}
+	}
+
+	private static int selectTransferTransition(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		int[] candidates,
+		Query query
+	) {
+		if (candidates == null || candidates.length == 0) {
+			return -1;
+		}
+		int transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, true);
+		if (transfer < 0 && !query.requiresVerifiedJourneyDistance()) {
+			transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, false);
+		}
+		return transfer;
+	}
+
+	private static TransferMatch findBestFootpath(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		Query query,
+		int upstreamStation,
+		String upstreamStationId,
+		int upstreamLine,
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
+		boolean preferStepFree
+	) {
+		if (footpaths == null) {
+			return null;
+		}
+		TransferMatch bestMatch = null;
+		for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
+			if (fp.fromStation() == upstreamStation && fp.fromLine() == upstreamLine) {
+				int fpTransfer = selectTransferTransition(timetable, fp.candidateTransitions(), query);
+				if (verifiedTransition(timetable, fpTransfer)) {
+					boolean fpHasStairs = timetable.transitionIncludesStairs(fpTransfer);
+					if (bestMatch == null) {
+						bestMatch = new TransferMatch(fpTransfer, upstreamStationId);
+						if (!preferStepFree || !fpHasStairs) {
+							break;
+						}
+					} else if (preferStepFree && !fpHasStairs && timetable.transitionIncludesStairs(bestMatch.transition())) {
+						bestMatch = new TransferMatch(fpTransfer, upstreamStationId);
+						break;
+					}
+				}
+			}
+		}
+		return bestMatch;
+	}
+
+	static TransferEvaluation evaluateTransfer(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		Query query,
+		int station,
+		String boardStation,
+		int downstreamLine,
+		int upstreamStation,
+		String upstreamStationId,
+		int upstreamLine,
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths
+	) {
+		if (station < 0 || downstreamLine < 0 || upstreamStation < 0 || upstreamLine < 0) {
+			return TransferEvaluation.NONE;
+		}
+		boolean preferStepFree = RouteTimetableRaptorPlanner.prefersStepFree(query.accessProfileBit());
+		if (upstreamStation == station) {
+			int inTransfer = selectTransferTransition(
+				timetable, timetable.transferTransitions(station, upstreamLine, downstreamLine), query);
+			boolean inVerified = verifiedTransition(timetable, inTransfer);
+
+			TransferMatch bestFootpath = findBestFootpath(
+				timetable, query, upstreamStation, upstreamStationId, upstreamLine, footpaths, preferStepFree);
+
+			if (preferStepFree) {
+				if (inVerified && !timetable.transitionIncludesStairs(inTransfer)) {
+					return TransferEvaluation.of(new TransferMatch(inTransfer, boardStation));
+				}
+				if (bestFootpath != null && !timetable.transitionIncludesStairs(bestFootpath.transition())) {
+					return TransferEvaluation.of(bestFootpath);
+				}
+				if (inVerified) {
+					return TransferEvaluation.of(new TransferMatch(inTransfer, boardStation));
+				}
+				if (bestFootpath != null) {
+					return TransferEvaluation.of(bestFootpath);
+				}
+				return TransferEvaluation.INELIGIBLE;
+			}
+
+			if (inVerified) {
+				return TransferEvaluation.of(new TransferMatch(inTransfer, boardStation));
+			}
+			if (bestFootpath != null) {
+				return TransferEvaluation.of(bestFootpath);
+			}
+			return TransferEvaluation.INELIGIBLE;
+		}
+
+		if (footpaths != null) {
+			boolean hasOpportunity = false;
+			for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
+				if (fp.fromStation() == upstreamStation && fp.fromLine() == upstreamLine) {
+					hasOpportunity = true;
+					break;
+				}
+			}
+			if (hasOpportunity) {
+				TransferMatch bestMatch = findBestFootpath(
+					timetable, query, upstreamStation, upstreamStationId, upstreamLine, footpaths, preferStepFree);
+				if (bestMatch != null) {
+					return TransferEvaluation.of(bestMatch);
+				}
+				return TransferEvaluation.INELIGIBLE;
+			}
+		}
+
+		return TransferEvaluation.NONE;
 	}
 
 	private static Integer terminalDeadline(
@@ -626,9 +779,7 @@ final class ReverseTimetableRaptorPlanner {
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		Candidate candidate
 	) {
-		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs = candidate.legs().stream()
-			.map(leg -> projectLeg(query, timetable, leg))
-			.toList();
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> legs = projectLegs(query, timetable, candidate.legs());
 		TraceAccess entry = (TraceAccess) candidate.legs().getFirst();
 		TraceRide firstRide = candidate.legs().stream().filter(TraceRide.class::isInstance)
 			.map(TraceRide.class::cast).findFirst().orElseThrow();
@@ -654,42 +805,71 @@ final class ReverseTimetableRaptorPlanner {
 		);
 	}
 
-	private static RouteTimetableRaptorPlanner.JourneyLegProjection projectLeg(
+	private static List<RouteTimetableRaptorPlanner.JourneyLegProjection> projectLegs(
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
-		TraceLeg leg
+		List<TraceLeg> legs
 	) {
-		if (leg instanceof TraceAccess access) {
-			return new RouteTimetableRaptorPlanner.JourneyAccessProjection(
-				switch (access.access()) {
-					case ENTRY -> RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY;
-					case TRANSFER -> RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER;
-					case EXIT -> RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT;
-				},
-				access.fromStationId(), access.toStationId(),
-				accessSeconds(query, timetable, access.transition(), access.access()),
-				timetable.transitionDistanceMeters(access.transition()),
-				timetable.transitionIncludesStairs(access.transition()),
-				timetable.transitionVerified(access.transition()),
-				timetable.transitionVerificationStatus(access.transition())
-			);
+		List<RouteTimetableRaptorPlanner.JourneyLegProjection> projected = new ArrayList<>(legs.size());
+		for (int index = 0; index < legs.size(); index += 1) {
+			TraceLeg leg = legs.get(index);
+			if (leg instanceof TraceAccess access) {
+				String transferType = null;
+				Boolean farePenaltyApplies = null;
+				Integer additionalFareWon = null;
+				Integer transferLimitMinutes = null;
+				if (access.access() == Access.TRANSFER && timetable.isOutOfStationTransition(access.transition())) {
+					transferType = "OUT_OF_STATION";
+					if (index > 0 && index + 1 < legs.size()
+						&& legs.get(index - 1) instanceof TraceRide previous
+						&& legs.get(index + 1) instanceof TraceRide next) {
+						int alightSeconds = arrivalSeconds(query, previous.trip(), previous.alightIndex());
+						int boardSeconds = departureSeconds(query, next.trip(), next.boardIndex());
+						int elapsed = boardSeconds - alightSeconds;
+						int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
+						boolean timeout = elapsed > limit;
+						farePenaltyApplies = timeout;
+						additionalFareWon = timeout ? 1400 : 0;
+						transferLimitMinutes = limit / 60;
+					}
+				}
+				projected.add(new RouteTimetableRaptorPlanner.JourneyAccessProjection(
+					switch (access.access()) {
+						case ENTRY -> RouteTimetableRaptorPlanner.JourneyAccessKind.ENTRY;
+						case TRANSFER -> RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER;
+						case EXIT -> RouteTimetableRaptorPlanner.JourneyAccessKind.EXIT;
+					},
+					access.fromStationId(), access.toStationId(),
+					accessSeconds(query, timetable, access.transition(), access.access()),
+					timetable.transitionDistanceMeters(access.transition()),
+					timetable.transitionIncludesStairs(access.transition()),
+					timetable.transitionVerified(access.transition()),
+					timetable.transitionVerificationStatus(access.transition()),
+					transferType,
+					farePenaltyApplies,
+					additionalFareWon,
+					transferLimitMinutes
+				));
+			} else {
+				TraceRide ride = (TraceRide) leg;
+				RouteTimetableRaptorPlanner.RealtimeOverlay rideOverlay = ride.trip().realtimeOverlay();
+				boolean hasRealtimeEvidence = rideOverlay.evidence(ride.trip().scheduledTrip()) != null;
+				projected.add(new RouteTimetableRaptorPlanner.JourneyRideProjection(
+					ride.trip().scheduledTrip().route().lineId(),
+					ride.trip().scheduledTrip().trip().id(),
+					ride.trip().stopTimes().getLast().stationId(),
+					ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
+					ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
+					serviceInstant(ride.trip().serviceDate(), ride.trip().departureSeconds(ride.boardIndex())),
+					serviceInstant(ride.trip().serviceDate(), ride.trip().arrivalSeconds(ride.alightIndex())),
+					!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
+						rideOverlay.departureSeconds(ride.trip().scheduledTrip(), ride.boardIndex())),
+					!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
+						rideOverlay.arrivalSeconds(ride.trip().scheduledTrip(), ride.alightIndex()))
+				));
+			}
 		}
-		TraceRide ride = (TraceRide) leg;
-		RouteTimetableRaptorPlanner.RealtimeOverlay rideOverlay = ride.trip().realtimeOverlay();
-		boolean hasRealtimeEvidence = rideOverlay.evidence(ride.trip().scheduledTrip()) != null;
-		return new RouteTimetableRaptorPlanner.JourneyRideProjection(
-			ride.trip().scheduledTrip().route().lineId(),
-			ride.trip().scheduledTrip().trip().id(),
-			ride.trip().stopTimes().getLast().stationId(),
-			ride.trip().stopTimes().get(ride.boardIndex()).stationId(),
-			ride.trip().stopTimes().get(ride.alightIndex()).stationId(),
-			serviceInstant(ride.trip().serviceDate(), ride.trip().departureSeconds(ride.boardIndex())),
-			serviceInstant(ride.trip().serviceDate(), ride.trip().arrivalSeconds(ride.alightIndex())),
-			!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
-				rideOverlay.departureSeconds(ride.trip().scheduledTrip(), ride.boardIndex())),
-			!hasRealtimeEvidence ? null : serviceInstant(ride.trip().serviceDate(),
-				rideOverlay.arrivalSeconds(ride.trip().scheduledTrip(), ride.alightIndex()))
-		);
+		return List.copyOf(projected);
 	}
 
 	private static Instant serviceInstant(LocalDate serviceDate, int serviceSeconds) {
