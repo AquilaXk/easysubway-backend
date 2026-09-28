@@ -667,6 +667,23 @@ class ReverseTimetableRaptorPlannerTest {
 		assertThat(evalNullFootpaths.hasOpportunity()).isFalse();
 		assertThat(evalNullFootpaths.match()).isNull();
 
+		// Unmatched footpath candidate station or line must return NONE
+		int stationA = compiled.stationIndex("station-a");
+		int lineA = compiled.lineIndex("line-a");
+		var evalUnmatched = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiled, query, downstreamStation, "station-transfer-2", downstreamLine, stationA, "station-a", lineA, footpaths);
+		assertThat(evalUnmatched.hasOpportunity()).isFalse();
+		assertThat(evalUnmatched.match()).isNull();
+
+		int lineB = compiled.lineIndex("line-b");
+		var evalUnmatchedLine = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiled, query, downstreamStation, "station-transfer-2", downstreamLine, upstreamStation, "station-transfer-1", lineB, footpaths);
+		assertThat(evalUnmatchedLine.hasOpportunity()).isFalse();
+		assertThat(evalUnmatchedLine.match()).isNull();
+
+		// Empty transition candidate array returns -1
+		assertThat(ReverseTimetableRaptorPlanner.selectTransferTransition(compiled, new int[0], query)).isEqualTo(-1);
+
 		// stationId indexing boundary checks
 		assertThat(compiled.stationId(-1)).isNull();
 		assertThat(compiled.stationId(Integer.MAX_VALUE)).isNull();
@@ -749,6 +766,117 @@ class ReverseTimetableRaptorPlannerTest {
 			assertThat(transfer.transferType()).isNull();
 			assertThat(transfer.includesStairs()).isTrue();
 		});
+	}
+
+	@Test
+	@DisplayName("prefers step-free in-station transfer over out-of-station footpath under step-free preference")
+	void prefersStepFreeInStationTransferOverOutOfStationFootpathUnderStepFreePreference() {
+		var compiled = forward.compile(sameStationInStationStepFreeTimetable());
+		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
+		var query = new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
+
+		var result = planner.arriveBy(query, compiled,
+			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).singleElement().satisfies(itinerary -> {
+			var transfer = itinerary.legs().stream()
+				.filter(leg -> leg instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection acc
+					&& acc.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER)
+				.map(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::cast)
+				.findFirst().orElseThrow();
+			assertThat(transfer.fromStationId()).isEqualTo("station-transfer");
+			assertThat(transfer.toStationId()).isEqualTo("station-transfer");
+			assertThat(transfer.transferType()).isNull();
+			assertThat(transfer.includesStairs()).isFalse();
+			assertThat(transfer.verified()).isTrue();
+		});
+	}
+
+	@Test
+	@DisplayName("falls back to in-station transfer when both in-station and out-of-station have stairs under step-free preference")
+	void fallsBackToInStationTransferWhenBothHaveStairsUnderStepFreePreference() {
+		var compiled = forward.compile(sameStationBothStairsTimetable());
+		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
+		var query = new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
+
+		var result = planner.arriveBy(query, compiled,
+			compiled.activeServiceDay(SERVICE_DATE), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(), limits());
+
+		assertThat(result.outcome()).isEqualTo(ReverseTimetableRaptorPlanner.Outcome.FOUND);
+		assertThat(result.itineraries()).singleElement().satisfies(itinerary -> {
+			var transfer = itinerary.legs().stream()
+				.filter(leg -> leg instanceof RouteTimetableRaptorPlanner.JourneyAccessProjection acc
+					&& acc.kind() == RouteTimetableRaptorPlanner.JourneyAccessKind.TRANSFER)
+				.map(RouteTimetableRaptorPlanner.JourneyAccessProjection.class::cast)
+				.findFirst().orElseThrow();
+			assertThat(transfer.fromStationId()).isEqualTo("station-transfer");
+			assertThat(transfer.toStationId()).isEqualTo("station-transfer");
+			assertThat(transfer.transferType()).isNull();
+			assertThat(transfer.includesStairs()).isTrue();
+			assertThat(transfer.verified()).isTrue();
+		});
+	}
+
+	@Test
+	@DisplayName("evaluates same-station transfers across step-free preference, stairs fallback, and ineligibility")
+	void evaluatesSameStationTransfersAcrossModes() {
+		var compiledStepFree = forward.compile(sameStationInStationStepFreeTimetable());
+		int station = compiledStepFree.stationIndex("station-transfer");
+		int lineA = compiledStepFree.lineIndex("line-a");
+		int lineB = compiledStepFree.lineIndex("line-b");
+		var footpaths = compiledStepFree.footpathsToStationLine(station, lineB);
+
+		int stepFreeProfileBit = RouteTimetableRaptorPlanner.profileBit(
+			MobilityType.SENIOR, ConstraintMode.PREFER_STEP_FREE);
+		var queryStepFree = new ReverseTimetableRaptorPlanner.Query(
+			"station-a", "station-b", SERVICE_DATE, 0, deadlineAt(34_800, 180), 1, stepFreeProfileBit,
+			SLACK_SECONDS, MobilityPreset.SLOW, 3_600, false, () -> false);
+		var queryStandard = query("station-a", "station-b", 40_000);
+
+		// 1. Step-free in-station transfer under PREFER_STEP_FREE
+		var evalStepFreeIn = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiledStepFree, queryStepFree, station, "station-transfer", lineB, station, "station-transfer", lineA, footpaths);
+		assertThat(evalStepFreeIn.hasOpportunity()).isTrue();
+		assertThat(evalStepFreeIn.match()).isNotNull();
+		assertThat(compiledStepFree.transitionIncludesStairs(evalStepFreeIn.match().transition())).isFalse();
+		assertThat(compiledStepFree.isOutOfStationTransition(evalStepFreeIn.match().transition())).isFalse();
+
+		// 2. Both in-station and out-of-station have stairs under PREFER_STEP_FREE -> falls back to in-station transfer with stairs
+		var compiledBothStairs = forward.compile(sameStationBothStairsTimetable());
+		var evalBothStairs = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiledBothStairs, queryStepFree, station, "station-transfer", lineB, station, "station-transfer", lineA,
+			compiledBothStairs.footpathsToStationLine(station, lineB));
+		assertThat(evalBothStairs.hasOpportunity()).isTrue();
+		assertThat(evalBothStairs.match()).isNotNull();
+		assertThat(compiledBothStairs.transitionIncludesStairs(evalBothStairs.match().transition())).isTrue();
+		assertThat(compiledBothStairs.isOutOfStationTransition(evalBothStairs.match().transition())).isFalse();
+
+		// 3. In-station unverified, out-of-station has stairs under PREFER_STEP_FREE -> falls back to out-of-station footpath
+		var compiledStairsFootpathOnly = forward.compile(sameStationStairsFootpathOnlyTimetable());
+		var evalStairsFootpathFallback = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiledStairsFootpathOnly, queryStepFree, station, "station-transfer", lineB, station, "station-transfer", lineA,
+			compiledStairsFootpathOnly.footpathsToStationLine(station, lineB));
+		assertThat(evalStairsFootpathFallback.hasOpportunity()).isTrue();
+		assertThat(evalStairsFootpathFallback.match()).isNotNull();
+		assertThat(compiledStairsFootpathOnly.isOutOfStationTransition(evalStairsFootpathFallback.match().transition())).isTrue();
+
+		// 4. Same station with no verified in-station and no footpath -> returns INELIGIBLE under both PREFER_STEP_FREE and standard
+		var evalIneligibleStepFree = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiledStairsFootpathOnly, queryStepFree, station, "station-transfer", lineB, station, "station-transfer", lineA, null);
+		assertThat(evalIneligibleStepFree.hasOpportunity()).isTrue();
+		assertThat(evalIneligibleStepFree.match()).isNull();
+
+		var evalIneligibleStandard = ReverseTimetableRaptorPlanner.evaluateTransfer(
+			compiledStairsFootpathOnly, queryStandard, station, "station-transfer", lineB, station, "station-transfer", lineA, null);
+		assertThat(evalIneligibleStandard.hasOpportunity()).isTrue();
+		assertThat(evalIneligibleStandard.match()).isNull();
 	}
 
 	@Test
@@ -1436,5 +1564,111 @@ class ReverseTimetableRaptorPlannerTest {
 				"out-stepfree-rule", "station-transfer", "line-a", "station-transfer", "line-b",
 				"OUT_OF_STATION", 360, "out-stepfree-edge", null, "VERIFIED"));
 		return new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entry, exit, stairsTransfer, stepFreeTransfer), rules, evidence);
+	}
+
+	private static RouteTimetable sameStationInStationStepFreeTimetable() {
+		return timetable(
+			List.of(trip("first", "route-a"), trip("second", "route-b")),
+			List.of(stop("first", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("first", 2, "station-transfer", "line-a", 33_000, 0, 0),
+				stop("second", 1, "station-transfer", "line-b", 34_200, 0, 0),
+				stop("second", 2, "station-b", "line-b", 34_800, 0, 0)),
+			sameStationInStationStepFreeAccess());
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData sameStationInStationStepFreeAccess() {
+		var nodes = List.of(
+			new LoadRouteTimetablePort.PathwayNode("entry-outside", "station-a", null, "ENTRANCE"),
+			new LoadRouteTimetablePort.PathwayNode("entry-platform", "station-a", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-platform", "station-b", "line-b", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-outside", "station-b", null, "EXIT"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-1", "station-transfer", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-2", "station-transfer", "line-b", "PLATFORM"));
+		var entry = edge("entry", "entry-outside", "entry-platform", 300, "VERIFIED");
+		var exit = edge("exit", "exit-platform", "exit-outside", 180, "VERIFIED");
+		var inTransfer = edge("in-transfer-edge", "transfer-1", "transfer-2", 240, false, "VERIFIED");
+		var outTransfer = edge("out-transfer-edge", "transfer-1", "transfer-2", 360, false, "VERIFIED");
+		var evidence = List.of(
+			evidence("entry-e", "station-a", "line-a", "entry", "ENTRY"),
+			evidence("exit-e", "station-b", "line-b", "exit", "EXIT"),
+			evidence("in-transfer-e", "station-transfer", "line-b", "in-transfer-edge", "TRANSFER"),
+			evidence("out-transfer-e", "station-transfer", "line-b", "out-transfer-edge", "TRANSFER"));
+		var rules = List.of(
+			new LoadRouteTimetablePort.TransferRule(
+				"in-transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b",
+				"IN_STATION", 240, "in-transfer-edge", null, "VERIFIED"),
+			new LoadRouteTimetablePort.TransferRule(
+				"out-transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b",
+				"OUT_OF_STATION", 360, "out-transfer-edge", null, "VERIFIED"));
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entry, exit, inTransfer, outTransfer), rules, evidence);
+	}
+
+	private static RouteTimetable sameStationBothStairsTimetable() {
+		return timetable(
+			List.of(trip("first", "route-a"), trip("second", "route-b")),
+			List.of(stop("first", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("first", 2, "station-transfer", "line-a", 33_000, 0, 0),
+				stop("second", 1, "station-transfer", "line-b", 34_200, 0, 0),
+				stop("second", 2, "station-b", "line-b", 34_800, 0, 0)),
+			sameStationBothStairsAccess());
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData sameStationBothStairsAccess() {
+		var nodes = List.of(
+			new LoadRouteTimetablePort.PathwayNode("entry-outside", "station-a", null, "ENTRANCE"),
+			new LoadRouteTimetablePort.PathwayNode("entry-platform", "station-a", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-platform", "station-b", "line-b", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-outside", "station-b", null, "EXIT"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-1", "station-transfer", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-2", "station-transfer", "line-b", "PLATFORM"));
+		var entry = edge("entry", "entry-outside", "entry-platform", 300, "VERIFIED");
+		var exit = edge("exit", "exit-platform", "exit-outside", 180, "VERIFIED");
+		var inTransfer = edge("in-transfer-edge", "transfer-1", "transfer-2", 240, true, "VERIFIED");
+		var outTransfer = edge("out-transfer-edge", "transfer-1", "transfer-2", 360, true, "VERIFIED");
+		var evidence = List.of(
+			evidence("entry-e", "station-a", "line-a", "entry", "ENTRY"),
+			evidence("exit-e", "station-b", "line-b", "exit", "EXIT"),
+			evidence("in-transfer-e", "station-transfer", "line-b", "in-transfer-edge", "TRANSFER"),
+			evidence("out-transfer-e", "station-transfer", "line-b", "out-transfer-edge", "TRANSFER"));
+		var rules = List.of(
+			new LoadRouteTimetablePort.TransferRule(
+				"in-transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b",
+				"IN_STATION", 240, "in-transfer-edge", null, "VERIFIED"),
+			new LoadRouteTimetablePort.TransferRule(
+				"out-transfer-rule", "station-transfer", "line-a", "station-transfer", "line-b",
+				"OUT_OF_STATION", 360, "out-transfer-edge", null, "VERIFIED"));
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entry, exit, inTransfer, outTransfer), rules, evidence);
+	}
+
+	private static RouteTimetable sameStationStairsFootpathOnlyTimetable() {
+		return timetable(
+			List.of(trip("first", "route-a"), trip("second", "route-b")),
+			List.of(stop("first", 1, "station-a", "line-a", 32_400, 0, 0),
+				stop("first", 2, "station-transfer", "line-a", 33_000, 0, 0),
+				stop("second", 1, "station-transfer", "line-b", 34_200, 0, 0),
+				stop("second", 2, "station-b", "line-b", 34_800, 0, 0)),
+			sameStationStairsFootpathOnlyAccess());
+	}
+
+	private static LoadRouteTimetablePort.RouteAccessData sameStationStairsFootpathOnlyAccess() {
+		var nodes = List.of(
+			new LoadRouteTimetablePort.PathwayNode("entry-outside", "station-a", null, "ENTRANCE"),
+			new LoadRouteTimetablePort.PathwayNode("entry-platform", "station-a", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-platform", "station-b", "line-b", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("exit-outside", "station-b", null, "EXIT"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-1", "station-transfer", "line-a", "PLATFORM"),
+			new LoadRouteTimetablePort.PathwayNode("transfer-2", "station-transfer", "line-b", "PLATFORM"));
+		var entry = edge("entry", "entry-outside", "entry-platform", 300, "VERIFIED");
+		var exit = edge("exit", "exit-platform", "exit-outside", 180, "VERIFIED");
+		var stairsTransfer = edge("out-stairs-edge", "transfer-1", "transfer-2", 240, true, "VERIFIED");
+		var evidence = List.of(
+			evidence("entry-e", "station-a", "line-a", "entry", "ENTRY"),
+			evidence("exit-e", "station-b", "line-b", "exit", "EXIT"),
+			evidence("stairs-e", "station-transfer", "line-b", "out-stairs-edge", "TRANSFER"));
+		var rules = List.of(
+			new LoadRouteTimetablePort.TransferRule(
+				"out-stairs-rule", "station-transfer", "line-a", "station-transfer", "line-b",
+				"OUT_OF_STATION", 240, "out-stairs-edge", null, "VERIFIED"));
+		return new LoadRouteTimetablePort.RouteAccessData(nodes, List.of(entry, exit, stairsTransfer), rules, evidence);
 	}
 }

@@ -372,19 +372,14 @@ final class ReverseTimetableRaptorPlanner {
 
 			List<Candidate> candidates = new ArrayList<>();
 			int station = timetable.stationIndex(boardStation);
-			RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths = station >= 0 && downstreamLine >= 0
-				? timetable.footpathsToStationLine(station, downstreamLine)
-				: null;
-			boolean hasFootpaths = footpaths != null && footpaths.length > 0;
+			RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths = timetable.footpathsToStationLine(station, downstreamLine);
+			boolean hasFootpaths = footpaths != null;
 			Set<String> candidateStationIds = null;
 			if (hasFootpaths) {
 				candidateStationIds = new HashSet<>(footpaths.length + 1);
 				candidateStationIds.add(boardStation);
 				for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
-					String fromStationId = timetable.stationId(fp.fromStation());
-					if (fromStationId != null) {
-						candidateStationIds.add(fromStationId);
-					}
+					candidateStationIds.add(timetable.stationId(fp.fromStation()));
 				}
 			}
 			for (DatedScheduledTrip upstreamTrip : activeTrips) {
@@ -460,12 +455,12 @@ final class ReverseTimetableRaptorPlanner {
 		}
 	}
 
-	private static int selectTransferTransition(
+	static int selectTransferTransition(
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		int[] candidates,
 		Query query
 	) {
-		if (candidates == null || candidates.length == 0) {
+		if (candidates.length == 0) {
 			return -1;
 		}
 		int transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, true);
@@ -498,7 +493,7 @@ final class ReverseTimetableRaptorPlanner {
 						if (!preferStepFree || !fpHasStairs) {
 							break;
 						}
-					} else if (preferStepFree && !fpHasStairs && timetable.transitionIncludesStairs(bestMatch.transition())) {
+					} else if (!fpHasStairs) {
 						bestMatch = new TransferMatch(fpTransfer, upstreamStationId);
 						break;
 					}
@@ -538,13 +533,6 @@ final class ReverseTimetableRaptorPlanner {
 				if (bestFootpath != null && !timetable.transitionIncludesStairs(bestFootpath.transition())) {
 					return TransferEvaluation.of(bestFootpath);
 				}
-				if (inVerified) {
-					return TransferEvaluation.of(new TransferMatch(inTransfer, boardStation));
-				}
-				if (bestFootpath != null) {
-					return TransferEvaluation.of(bestFootpath);
-				}
-				return TransferEvaluation.INELIGIBLE;
 			}
 
 			if (inVerified) {
@@ -820,18 +808,16 @@ final class ReverseTimetableRaptorPlanner {
 				Integer transferLimitMinutes = null;
 				if (access.access() == Access.TRANSFER && timetable.isOutOfStationTransition(access.transition())) {
 					transferType = "OUT_OF_STATION";
-					if (index > 0 && index + 1 < legs.size()
-						&& legs.get(index - 1) instanceof TraceRide previous
-						&& legs.get(index + 1) instanceof TraceRide next) {
-						int alightSeconds = arrivalSeconds(query, previous.trip(), previous.alightIndex());
-						int boardSeconds = departureSeconds(query, next.trip(), next.boardIndex());
-						int elapsed = boardSeconds - alightSeconds;
-						int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
-						boolean timeout = elapsed > limit;
-						farePenaltyApplies = timeout;
-						additionalFareWon = timeout ? 1400 : 0;
-						transferLimitMinutes = limit / 60;
-					}
+					TraceRide previous = (TraceRide) legs.get(index - 1);
+					TraceRide next = (TraceRide) legs.get(index + 1);
+					int alightSeconds = arrivalSeconds(query, previous.trip(), previous.alightIndex());
+					int boardSeconds = departureSeconds(query, next.trip(), next.boardIndex());
+					int elapsed = boardSeconds - alightSeconds;
+					int limit = RouteTimetableRaptorPlanner.getTransferLimitSeconds(alightSeconds, boardSeconds);
+					boolean timeout = elapsed > limit;
+					farePenaltyApplies = timeout;
+					additionalFareWon = timeout ? 1400 : 0;
+					transferLimitMinutes = limit / 60;
 				}
 				projected.add(new RouteTimetableRaptorPlanner.JourneyAccessProjection(
 					switch (access.access()) {
