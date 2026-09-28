@@ -36,6 +36,8 @@ management:
 
 easysubway:
   journey:
+    session:
+      max-request-bytes: ${EASYSUBWAY_JOURNEY_SESSION_MAX_REQUEST_BYTES:65536}
     search:
       max-request-bytes: ${EASYSUBWAY_JOURNEY_SEARCH_MAX_REQUEST_BYTES:65536}
     station-timetable:
