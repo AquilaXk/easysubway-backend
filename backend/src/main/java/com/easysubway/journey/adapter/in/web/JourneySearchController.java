@@ -144,9 +144,6 @@ final class JourneySearchController {
 	private static JourneyRequest decodeRequest(byte[] requestBytes) {
 		try {
 			JsonNode request = REQUEST_JSON.readTree(requestBytes);
-			if (request == null || !request.isObject()) {
-				throw invalidRequest();
-			}
 			Set<String> expectedFields = request.has("viaStationId") ? ALLOWED_FIELDS : REQUIRED_FIELDS;
 			if (!hasExactFields(request, expectedFields)
 				|| !request.path("requestId").isTextual()
