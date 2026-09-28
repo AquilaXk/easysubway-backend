@@ -2597,6 +2597,16 @@ public final class RouteTimetableRaptorPlanner {
 		) {
 			return accessTransitions.select(candidates, profileBit, ignoreBlocked, requireVerifiedDistance);
 		}
+		int selectTransition(
+			int[] candidates,
+			int profileBit,
+			boolean ignoreBlocked,
+			boolean requireVerifiedDistance,
+			RealtimeOverlay realtimeOverlay
+		) {
+			return accessTransitions.select(
+				candidates, profileBit, ignoreBlocked, requireVerifiedDistance, requireVerifiedDistance, realtimeOverlay);
+		}
 		int[] entryTransitions(int station, int line) {
 			return accessTransitions.entryCandidates(station, line);
 		}
@@ -4969,6 +4979,43 @@ public final class RouteTimetableRaptorPlanner {
 
 		static RealtimeOverlay empty() {
 			return EMPTY;
+		}
+
+		static RealtimeOverlay combine(RealtimeOverlay a, RealtimeOverlay b) {
+			if (a == null || a.isEmpty()) {
+				return b != null ? b : EMPTY;
+			}
+			if (b == null || b.isEmpty()) {
+				return a;
+			}
+			if (a == b) {
+				return a;
+			}
+			BitSet mergedBlocked = (BitSet) a.blockedTransitions.clone();
+			mergedBlocked.or(b.blockedTransitions);
+
+			int[] mergedPatterns;
+			if (a.affectedPatterns.length == 0) {
+				mergedPatterns = b.affectedPatterns;
+			} else if (b.affectedPatterns.length == 0) {
+				mergedPatterns = a.affectedPatterns;
+			} else {
+				mergedPatterns = java.util.stream.IntStream.concat(
+					java.util.Arrays.stream(a.affectedPatterns),
+					java.util.Arrays.stream(b.affectedPatterns))
+					.distinct().sorted().toArray();
+			}
+
+			return new RealtimeOverlay(
+				a.version != null ? a.version : b.version,
+				a.available || b.available,
+				a.tripIndexes,
+				a.arrivalDeltas,
+				a.departureDeltas,
+				a.cancelled,
+				a.evidence,
+				mergedPatterns,
+				mergedBlocked);
 		}
 
 		String version() {

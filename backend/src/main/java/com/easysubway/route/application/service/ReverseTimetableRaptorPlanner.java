@@ -196,7 +196,7 @@ final class ReverseTimetableRaptorPlanner {
 			ignored -> realtimeOverlay, limits, observations);
 	}
 
-	private Result arriveBy(
+	Result arriveBy(
 		Query query,
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		LocalDate firstServiceDate,
@@ -273,7 +273,8 @@ final class ReverseTimetableRaptorPlanner {
 				permittedDestinationStopExists = true;
 				int line = timetable.lineIndex(trip.lineId(alightIndex));
 				int exit = line < 0 ? -1 : timetable.exitTransition(
-					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
+					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance(),
+					trip.realtimeOverlay());
 				if (!verifiedTransition(timetable, exit)) {
 					limitTracker.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 					continue;
@@ -350,7 +351,8 @@ final class ReverseTimetableRaptorPlanner {
 			if (query.originStationId().equals(boardStation)) {
 				int origin = timetable.stationIndex(boardStation);
 				int entry = origin < 0 || downstreamLine < 0 ? -1 : timetable.entryTransition(
-					origin, downstreamLine, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
+					origin, downstreamLine, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance(),
+					downstreamTrip.realtimeOverlay());
 				if (!verifiedTransition(timetable, entry)) {
 					limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
 					return List.of();
@@ -398,9 +400,11 @@ final class ReverseTimetableRaptorPlanner {
 					}
 					int upstreamStation = boardStation.equals(upstreamStationId) ? station : timetable.stationIndex(upstreamStationId);
 					int upstreamLine = timetable.lineIndex(upstreamTrip.lineId(upstreamAlightIndex));
+					RouteTimetableRaptorPlanner.RealtimeOverlay transferOverlay = RouteTimetableRaptorPlanner.RealtimeOverlay.combine(
+						upstreamTrip.realtimeOverlay(), downstreamTrip.realtimeOverlay());
 					TransferEvaluation eval = evaluateTransfer(
 						timetable, query, station, boardStation, downstreamLine,
-						upstreamStation, upstreamStationId, upstreamLine, footpaths);
+						upstreamStation, upstreamStationId, upstreamLine, footpaths, transferOverlay);
 					if (eval.match() == null) {
 						if (eval.hasOpportunity()) {
 							limits.count("HARD_TRANSFER_ACCESS_ELIGIBILITY_V1");
@@ -458,16 +462,25 @@ final class ReverseTimetableRaptorPlanner {
 	static int selectTransferTransition(
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
 		int[] candidates,
-		Query query
+		Query query,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
 	) {
 		if (candidates.length == 0) {
 			return -1;
 		}
-		int transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, true);
+		int transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, true, realtimeOverlay);
 		if (transfer < 0 && !query.requiresVerifiedJourneyDistance()) {
-			transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, false);
+			transfer = timetable.selectTransition(candidates, query.accessProfileBit(), false, false, realtimeOverlay);
 		}
 		return transfer;
+	}
+
+	static int selectTransferTransition(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		int[] candidates,
+		Query query
+	) {
+		return selectTransferTransition(timetable, candidates, query, RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 	}
 
 	private static TransferMatch findBestFootpath(
@@ -477,7 +490,8 @@ final class ReverseTimetableRaptorPlanner {
 		String upstreamStationId,
 		int upstreamLine,
 		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
-		boolean preferStepFree
+		boolean preferStepFree,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
 	) {
 		if (footpaths == null) {
 			return null;
@@ -485,7 +499,7 @@ final class ReverseTimetableRaptorPlanner {
 		TransferMatch bestMatch = null;
 		for (RouteTimetableRaptorPlanner.OutOfStationFootpath fp : footpaths) {
 			if (fp.fromStation() == upstreamStation && fp.fromLine() == upstreamLine) {
-				int fpTransfer = selectTransferTransition(timetable, fp.candidateTransitions(), query);
+				int fpTransfer = selectTransferTransition(timetable, fp.candidateTransitions(), query, realtimeOverlay);
 				if (verifiedTransition(timetable, fpTransfer)) {
 					boolean fpHasStairs = timetable.transitionIncludesStairs(fpTransfer);
 					if (bestMatch == null) {
@@ -512,7 +526,8 @@ final class ReverseTimetableRaptorPlanner {
 		int upstreamStation,
 		String upstreamStationId,
 		int upstreamLine,
-		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths,
+		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay
 	) {
 		if (station < 0 || downstreamLine < 0 || upstreamStation < 0 || upstreamLine < 0) {
 			return TransferEvaluation.NONE;
@@ -520,11 +535,11 @@ final class ReverseTimetableRaptorPlanner {
 		boolean preferStepFree = RouteTimetableRaptorPlanner.prefersStepFree(query.accessProfileBit());
 		if (upstreamStation == station) {
 			int inTransfer = selectTransferTransition(
-				timetable, timetable.transferTransitions(station, upstreamLine, downstreamLine), query);
+				timetable, timetable.transferTransitions(station, upstreamLine, downstreamLine), query, realtimeOverlay);
 			boolean inVerified = verifiedTransition(timetable, inTransfer);
 
 			TransferMatch bestFootpath = findBestFootpath(
-				timetable, query, upstreamStation, upstreamStationId, upstreamLine, footpaths, preferStepFree);
+				timetable, query, upstreamStation, upstreamStationId, upstreamLine, footpaths, preferStepFree, realtimeOverlay);
 
 			if (preferStepFree) {
 				if (inVerified && !timetable.transitionIncludesStairs(inTransfer)) {
@@ -554,7 +569,7 @@ final class ReverseTimetableRaptorPlanner {
 			}
 			if (hasOpportunity) {
 				TransferMatch bestMatch = findBestFootpath(
-					timetable, query, upstreamStation, upstreamStationId, upstreamLine, footpaths, preferStepFree);
+					timetable, query, upstreamStation, upstreamStationId, upstreamLine, footpaths, preferStepFree, realtimeOverlay);
 				if (bestMatch != null) {
 					return TransferEvaluation.of(bestMatch);
 				}
@@ -563,6 +578,23 @@ final class ReverseTimetableRaptorPlanner {
 		}
 
 		return TransferEvaluation.NONE;
+	}
+
+	static TransferEvaluation evaluateTransfer(
+		RouteTimetableRaptorPlanner.CompiledTimetable timetable,
+		Query query,
+		int station,
+		String boardStation,
+		int downstreamLine,
+		int upstreamStation,
+		String upstreamStationId,
+		int upstreamLine,
+		RouteTimetableRaptorPlanner.OutOfStationFootpath[] footpaths
+	) {
+		return evaluateTransfer(
+			timetable, query, station, boardStation, downstreamLine,
+			upstreamStation, upstreamStationId, upstreamLine, footpaths,
+			RouteTimetableRaptorPlanner.RealtimeOverlay.empty());
 	}
 
 	private static Integer terminalDeadline(
@@ -589,7 +621,8 @@ final class ReverseTimetableRaptorPlanner {
 				}
 				int line = timetable.lineIndex(trip.lineId(alightIndex));
 				int exit = destination < 0 || line < 0 ? -1 : timetable.exitTransition(
-					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
+					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance(),
+					trip.realtimeOverlay());
 				if (!verifiedTransition(timetable, exit)) {
 					continue;
 				}
@@ -619,7 +652,8 @@ final class ReverseTimetableRaptorPlanner {
 				}
 				int line = timetable.lineIndex(trip.lineId(alightIndex));
 				int exit = destination < 0 || line < 0 ? -1 : timetable.exitTransition(
-					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance());
+					destination, line, query.accessProfileBit(), false, query.requiresVerifiedJourneyDistance(),
+					trip.realtimeOverlay());
 				if (verifiedTransition(timetable, exit)) {
 					return true;
 				}
