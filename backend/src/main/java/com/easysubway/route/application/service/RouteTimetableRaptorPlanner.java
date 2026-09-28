@@ -80,7 +80,15 @@ class RouteTimetableRaptorPlanner {
 	private static final int PREFER_STEP_FREE_PROFILE_MASK = profileMask(ConstraintMode.PREFER_STEP_FREE);
 	private static final int NON_STRICT_PROFILE_MASK = profileMask(
 		ConstraintMode.PREFER_STEP_FREE, ConstraintMode.ALLOW_WITH_WARNINGS);
-	private final ThreadLocal<ScanWorkspace> scanWorkspaces = ThreadLocal.withInitial(ScanWorkspace::new);
+	private final ScanWorkspacePool workspacePool;
+
+	public RouteTimetableRaptorPlanner() {
+		this(ScanWorkspacePool.shared());
+	}
+
+	public RouteTimetableRaptorPlanner(ScanWorkspacePool workspacePool) {
+		this.workspacePool = Objects.requireNonNull(workspacePool, "workspacePool");
+	}
 
 	JourneyPlan journeyItineraries(
 		JourneyRaptorQuery query,
@@ -400,26 +408,30 @@ class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay
 	) {
 		ActiveServiceDay activeServiceDay = timetable.activeServiceDay(input.serviceDay().date());
-		ScanWorkspace workspace = scanWorkspaces.get();
-		workspace.prepare(timetable);
-		if (activeServiceDay.trips().isEmpty()) {
-			return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
-		}
-		int origin = timetable.stationIndex(input.originStationId());
-		int destination = timetable.stationIndex(input.destinationStationId());
-		if (origin < 0 || destination < 0) {
-			return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
-		}
-		int[] lowerBounds = computeStationLowerBounds(timetable, destination);
-		workspace.setTargetStation(destination, lowerBounds);
-		workspace.improveOrigin(origin, input.readyAtSeconds());
+		ScanWorkspace workspace = workspacePool.acquire();
+		try {
+			workspace.prepare(timetable);
+			if (activeServiceDay.trips().isEmpty()) {
+				return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
+			}
+			int origin = timetable.stationIndex(input.originStationId());
+			int destination = timetable.stationIndex(input.destinationStationId());
+			if (origin < 0 || destination < 0) {
+				return new ScanResult(input.serviceDay(), List.of(), scanMetrics(workspace));
+			}
+			int[] lowerBounds = computeStationLowerBounds(timetable, destination);
+			workspace.setTargetStation(destination, lowerBounds);
+			workspace.improveOrigin(origin, input.readyAtSeconds());
 
-		int slackSeconds = input.boardingSlackSeconds();
-		int accessProfileBit = input.accessProfileBit();
-		scanMarkedRounds(
-			input, timetable, activeServiceDay, workspace, slackSeconds, accessProfileBit, ignoreAccessBlocks, realtimeOverlay);
-		return destinationScanResult(
-			input, timetable, workspace, destination, accessProfileBit, ignoreAccessBlocks, realtimeOverlay);
+			int slackSeconds = input.boardingSlackSeconds();
+			int accessProfileBit = input.accessProfileBit();
+			scanMarkedRounds(
+				input, timetable, activeServiceDay, workspace, slackSeconds, accessProfileBit, ignoreAccessBlocks, realtimeOverlay);
+			return destinationScanResult(
+				input, timetable, workspace, destination, accessProfileBit, ignoreAccessBlocks, realtimeOverlay);
+		} finally {
+			workspacePool.release(workspace);
+		}
 	}
 
 	private static void scanMarkedRounds(
@@ -3580,11 +3592,19 @@ class RouteTimetableRaptorPlanner {
 		private int[] touchedSlots = new int[0];
 		private int touchedSlotCount;
 
-		private void recordTouchedSlot(int slot) {
+		void recordTouchedSlot(int slot) {
 			if (touchedSlotCount >= touchedSlots.length) {
 				touchedSlots = Arrays.copyOf(touchedSlots, Math.max(32, touchedSlots.length * 2));
 			}
 			touchedSlots[touchedSlotCount++] = slot;
+		}
+
+		int touchedSlotCount() {
+			return touchedSlotCount;
+		}
+
+		int parentTrip(int slot) {
+			return parentTrip[slot];
 		}
 
 		private void prepareInternal(
@@ -3605,6 +3625,7 @@ class RouteTimetableRaptorPlanner {
 				Math.multiplyExact(Math.multiplyExact(totalSlots, LABEL_SLOT_COUNT), WARNING_STATE_COUNT),
 				WARNING_STATE_COUNT
 			);
+			boolean bufferReallocated = false;
 			if (arrivalSeconds.length < labelSlots) {
 				arrivalSeconds = new int[labelSlots];
 				parentTrip = new int[labelSlots];
@@ -3613,12 +3634,15 @@ class RouteTimetableRaptorPlanner {
 				parentAccessTransition = new int[labelSlots];
 				parentLabelSlot = new int[labelSlots];
 				warningBits = new byte[labelSlots];
+				bufferReallocated = true;
 			}
+			boolean markedReallocated = false;
 			if (markedStops.length < requiredStationCount) {
 				markedStops = new int[requiredStationCount];
 				nextMarkedStops = new int[requiredStationCount];
 				marked = new boolean[requiredStationCount];
 				nextMarked = new boolean[requiredStationCount];
+				markedReallocated = true;
 			}
 			if (markedPatterns.length < patternCount) {
 				markedPatterns = new int[patternCount];
@@ -3629,7 +3653,16 @@ class RouteTimetableRaptorPlanner {
 			lowerBounds = null;
 			Arrays.fill(bestTargetArrivalSeconds, 0, WARNING_STATE_COUNT, UNREACHED);
 
-			if (touchedSlotCount > 0) {
+			if (bufferReallocated || touchedSlotCount == 0) {
+				Arrays.fill(arrivalSeconds, 0, labelSlots, UNREACHED);
+				Arrays.fill(parentTrip, 0, labelSlots, -1);
+				Arrays.fill(parentBoardStop, 0, labelSlots, -1);
+				Arrays.fill(parentAlightStop, 0, labelSlots, -1);
+				Arrays.fill(parentAccessTransition, 0, labelSlots, -1);
+				Arrays.fill(parentLabelSlot, 0, labelSlots, -1);
+				Arrays.fill(warningBits, 0, labelSlots, (byte) 0);
+				touchedSlotCount = 0;
+			} else {
 				for (int i = 0; i < touchedSlotCount; i += 1) {
 					int s = touchedSlots[i];
 					arrivalSeconds[s] = UNREACHED;
@@ -3641,31 +3674,25 @@ class RouteTimetableRaptorPlanner {
 					warningBits[s] = (byte) 0;
 				}
 				touchedSlotCount = 0;
-			} else {
-				Arrays.fill(arrivalSeconds, 0, labelSlots, UNREACHED);
-				Arrays.fill(parentTrip, 0, labelSlots, -1);
-				Arrays.fill(parentBoardStop, 0, labelSlots, -1);
-				Arrays.fill(parentAlightStop, 0, labelSlots, -1);
-				Arrays.fill(parentAccessTransition, 0, labelSlots, -1);
-				Arrays.fill(parentLabelSlot, 0, labelSlots, -1);
-				Arrays.fill(warningBits, 0, labelSlots, (byte) 0);
 			}
 
-			if (markedStopCount > 0) {
+			if (markedReallocated || markedStopCount == 0) {
+				Arrays.fill(marked, 0, requiredStationCount, false);
+				markedStopCount = 0;
+			} else {
 				for (int i = 0; i < markedStopCount; i += 1) {
 					marked[markedStops[i]] = false;
 				}
 				markedStopCount = 0;
-			} else {
-				Arrays.fill(marked, 0, requiredStationCount, false);
 			}
-			if (nextMarkedStopCount > 0) {
+			if (markedReallocated || nextMarkedStopCount == 0) {
+				Arrays.fill(nextMarked, 0, requiredStationCount, false);
+				nextMarkedStopCount = 0;
+			} else {
 				for (int i = 0; i < nextMarkedStopCount; i += 1) {
 					nextMarked[nextMarkedStops[i]] = false;
 				}
 				nextMarkedStopCount = 0;
-			} else {
-				Arrays.fill(nextMarked, 0, requiredStationCount, false);
 			}
 			Arrays.fill(firstMarkedPosition, 0, patternCount, -1);
 			clearBag();

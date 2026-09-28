@@ -27,7 +27,15 @@ import java.util.Objects;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
-	private final RouteTimetableRaptorPlanner planner = new RouteTimetableRaptorPlanner();
+	private final RouteTimetableRaptorPlanner planner;
+
+	public JourneyRaptorAdapter() {
+		this(ScanWorkspacePool.shared());
+	}
+
+	public JourneyRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+	}
 
 	@Override
 	public PlanResult plan(

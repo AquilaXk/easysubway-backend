@@ -43,6 +43,7 @@ import com.easysubway.journey.readiness.JourneyReadinessProperties;
 import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
+import com.easysubway.route.application.service.ScanWorkspacePool;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;
@@ -131,6 +132,7 @@ class JourneyProductionConfigurationTest {
 			assertThat(context.getBean(JourneyProfileSnapshotPort.class))
 				.isSameAs(context.getBean(ActiveJourneySnapshotPort.class));
 			assertThat(context).hasSingleBean(StationTimetableSearchService.class);
+			assertThat(context).hasSingleBean(ScanWorkspacePool.class);
 			assertThat(context.getBeansOfType(ExecutorService.class)).hasSize(2)
 				.containsKeys("journeyApplicationExecutor", "journeyMeasurementExecutor");
 			assertThat(context).hasSingleBean(JourneyApplicationDeadlineExecutor.class);
@@ -330,6 +332,8 @@ class JourneyProductionConfigurationTest {
 				assertThat(context).doesNotHaveBean(JourneyApplicationService.class);
 				assertThat(context).doesNotHaveBean(JourneyApplicationDeadlineExecutor.class);
 				assertThat(context).doesNotHaveBean(ExecutorService.class);
+				assertThat(context).doesNotHaveBean(StationTimetableSearchService.class);
+				assertThat(context).doesNotHaveBean(ScanWorkspacePool.class);
 				assertThat(context).doesNotHaveBean(JourneyCandidateCanaryService.class);
 				assertThat(context).doesNotHaveBean(JourneyCandidateCanaryController.class);
 			});

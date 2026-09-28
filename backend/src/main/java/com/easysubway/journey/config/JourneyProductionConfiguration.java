@@ -31,6 +31,7 @@ import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyProfileRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
+import com.easysubway.route.application.service.ScanWorkspacePool;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.security.SecureRandom;
 import java.io.IOException;
@@ -146,8 +147,16 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	JourneyProfileRaptorPort journeyProfileRaptorPort() {
-		return new JourneyProfileRaptorAdapter();
+	ScanWorkspacePool scanWorkspacePool(
+		@Value("${easysubway.journey-v3.raptor.max-workspaces:16}") int maxWorkspaces
+	) {
+		return new ScanWorkspacePool(maxWorkspaces);
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyProfileRaptorPort journeyProfileRaptorPort(ScanWorkspacePool workspacePool) {
+		return new JourneyProfileRaptorAdapter(workspacePool);
 	}
 
 	@Bean
@@ -169,14 +178,17 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	JourneyRaptorPort journeyRaptorPort() {
-		return new JourneyRaptorAdapter();
+	JourneyRaptorPort journeyRaptorPort(ScanWorkspacePool workspacePool) {
+		return new JourneyRaptorAdapter(workspacePool);
 	}
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	JourneyRealtimePort journeyRealtimePort(JourneyTimetableRealtimeResolver resolver) {
-		return new JourneyRealtimeAdapter(resolver, CLOCK, REALTIME_FRESHNESS_TTL);
+	JourneyRealtimePort journeyRealtimePort(
+		JourneyTimetableRealtimeResolver resolver,
+		ScanWorkspacePool workspacePool
+	) {
+		return new JourneyRealtimeAdapter(resolver, CLOCK, REALTIME_FRESHNESS_TTL, workspacePool);
 	}
 
 	@Bean

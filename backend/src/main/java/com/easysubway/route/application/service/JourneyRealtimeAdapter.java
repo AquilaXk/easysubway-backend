@@ -16,16 +16,26 @@ public final class JourneyRealtimeAdapter implements JourneyRealtimePort {
 	private final JourneyTimetableRealtimeResolver resolver;
 	private final Clock clock;
 	private final Duration freshnessTtl;
-	private final RouteTimetableRaptorPlanner planner = new RouteTimetableRaptorPlanner();
+	private final RouteTimetableRaptorPlanner planner;
 
 	public JourneyRealtimeAdapter(
 		JourneyTimetableRealtimeResolver resolver,
 		Clock clock,
 		Duration freshnessTtl
 	) {
+		this(resolver, clock, freshnessTtl, ScanWorkspacePool.shared());
+	}
+
+	public JourneyRealtimeAdapter(
+		JourneyTimetableRealtimeResolver resolver,
+		Clock clock,
+		Duration freshnessTtl,
+		ScanWorkspacePool workspacePool
+	) {
 		this.resolver = Objects.requireNonNull(resolver, "resolver");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		this.freshnessTtl = requirePositive(freshnessTtl);
+		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
 	}
 
 	@Override

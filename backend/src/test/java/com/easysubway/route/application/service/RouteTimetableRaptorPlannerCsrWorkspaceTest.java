@@ -95,14 +95,127 @@ class RouteTimetableRaptorPlannerCsrWorkspaceTest {
 		int invalidSlot = workspace.slot(1, sta1, line2, 0); // line-2 does not stop at sta-1
 		assertThat(workspace.arrivalSeconds[invalidSlot]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
 
-		// Modify a slot
+		// Touch origin slot properly and record it in touchedSlots
+		workspace.recordTouchedSlot(slotOrigin);
 		workspace.arrivalSeconds[slotOrigin] = 28800;
+		assertThat(workspace.touchedSlotCount()).isEqualTo(1);
+
+		// Set an untouched canary slot to prove that prepare performs selective reset, NOT a full array wipe
+		int sta2 = compiled.stationIndex("sta-2");
+		int canarySlot = workspace.slot(0, sta2, workspace.noIncomingLine(), 0);
+		workspace.arrivalSeconds[canarySlot] = 12345;
 
 		// Re-prepare workspace: epoch should advance, and touched slots should be cleared without full array wipe
 		workspace.prepare(compiled);
 		int epoch2 = workspace.epoch();
 		assertThat(epoch2).isEqualTo(epoch1 + 1);
+		assertThat(workspace.touchedSlotCount()).isZero();
 		assertThat(workspace.arrivalSeconds[slotOrigin]).isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+		// Untouched canary slot must NOT be wiped by selective reset
+		assertThat(workspace.arrivalSeconds[canarySlot])
+			.as("Untouched canary slot must NOT be wiped when touchedSlotCount > 0 triggers selective reset")
+			.isEqualTo(12345);
+
+		// Subsequent prepare with touchedSlotCount == 0 triggers fallback full wipe, clearing the canary
+		workspace.prepare(compiled);
+		int epoch3 = workspace.epoch();
+		assertThat(epoch3).isEqualTo(epoch2 + 1);
+		assertThat(workspace.arrivalSeconds[canarySlot])
+			.as("Canary slot must be wiped when touchedSlotCount == 0 triggers full array wipe")
+			.isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+	}
+
+	@Test
+	@DisplayName("이전 쿼리에서 touchedSlotCount > 0인 상태에서 버퍼가 재할당되어도 모든 슬롯이 UNREACHED로 초기화된다")
+	void scanWorkspaceReallocationInitializesAllSlotsEvenWhenPreviouslyTouched() {
+		var workspace = new RouteTimetableRaptorPlanner.ScanWorkspace();
+		// Initial smaller timetable
+		workspace.prepare(2, 1, 1);
+		int slot0 = workspace.slot(0, 0, workspace.noIncomingLine(), 0);
+		assertThat(workspace.improveOrigin(0, 28800)).isTrue();
+		assertThat(workspace.arrivalSeconds[slot0]).isEqualTo(28800);
+		assertThat(workspace.touchedSlotCount()).isPositive();
+
+		// Re-prepare with larger timetable requiring buffer expansion
+		workspace.prepare(10, 2, 2);
+
+		// After reallocation, touchedSlotCount must be 0 and all slots must be properly initialized
+		assertThat(workspace.touchedSlotCount()).isZero();
+		for (int s = 0; s < workspace.totalSlots(); s += 1) {
+			assertThat(workspace.arrivalSeconds[s])
+				.as("Slot %d must be UNREACHED after reallocation", s)
+				.isEqualTo(RouteTimetableRaptorPlanner.UNREACHED);
+			assertThat(workspace.parentTrip(s))
+				.as("Slot %d parentTrip must be -1 after reallocation", s)
+				.isEqualTo(-1);
+		}
+
+		// improveOrigin must succeed on the expanded workspace
+		int newOriginSlot = workspace.slot(0, 1, workspace.noIncomingLine(), 0);
+		assertThat(workspace.improveOrigin(1, 30600)).isTrue();
+		assertThat(workspace.arrivalSeconds[newOriginSlot]).isEqualTo(30600);
+	}
+
+	@Test
+	@DisplayName("쿼리 간 시간표 확장으로 버퍼 재할당이 발생해도 자가 치유 지연 없이 첫 쿼리부터 정상 탐색된다")
+	void journeySearchSucceedsImmediatelyAfterBufferReallocationWithoutSelfHealingLag() {
+		var planner = new RouteTimetableRaptorPlanner();
+		var smallTimetable = smallTimetable();
+		var compiledSmall = planner.compile(smallTimetable);
+
+		// Query 1: Run search on small timetable on the current thread
+		var query1 = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FA1",
+			"sta-1",
+			"sta-transfer",
+			new JourneyRaptorQuery.DepartAt(DEPARTURE.toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1,
+			2,
+			() -> false
+		);
+		var result1 = planner.journeyItineraries(query1, compiledSmall);
+		assertThat(result1.itineraries()).isNotEmpty();
+
+		// Query 2: Immediately execute query on larger timetable on the same thread
+		// This forces buffer reallocation while touchedSlotCount > 0 in ThreadLocal<ScanWorkspace>.
+		var largeTimetable = multiLineTimetable();
+		var compiledLarge = planner.compile(largeTimetable);
+
+		var query2 = new JourneyRaptorQuery(
+			"01ARZ3NDEKTSV4RRFFQ69G5FA2",
+			"sta-1",
+			"sta-3",
+			new JourneyRaptorQuery.DepartAt(DEPARTURE.toInstant()),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED,
+			JourneyRequest.WalkingPace.SLOW,
+			JourneyRequest.MobilityProfile.SLOW,
+			JourneyRequest.ConstraintMode.NONE,
+			1,
+			2,
+			() -> false
+		);
+		var result2 = planner.journeyItineraries(query2, compiledLarge);
+
+		// Must succeed immediately on the very first query without transient failure or self-healing delay
+		assertThat(result2.itineraries())
+			.as("Search must find itineraries immediately upon buffer reallocation without transient failure")
+			.isNotEmpty();
+		var itinerary = result2.itineraries().getFirst();
+		var rides = itinerary.legs().stream()
+			.filter(RouteTimetableRaptorPlanner.JourneyRideProjection.class::isInstance)
+			.map(RouteTimetableRaptorPlanner.JourneyRideProjection.class::cast)
+			.toList();
+		assertThat(rides).hasSize(2);
+		assertThat(rides.get(0).lineId()).isEqualTo("line-1");
+		assertThat(rides.get(1).lineId()).isEqualTo("line-2");
+
+		// Query 3: Consecutive query on large timetable also succeeds
+		var result3 = planner.journeyItineraries(query2, compiledLarge);
+		assertThat(result3.itineraries()).isNotEmpty();
 	}
 
 	@Test
@@ -203,6 +316,51 @@ class RouteTimetableRaptorPlannerCsrWorkspaceTest {
 			edges,
 			List.of(transferRule),
 			evidence
+		);
+	}
+
+	private static RouteTimetable smallTimetable() {
+		var calendar = new ServiceCalendar("cal-1", true, true, true, true, true, true, true, SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
+		var route1 = new TransitRoute("route-1", "line-1", "1", "1호선", "up", "Asia/Seoul");
+
+		// Line 1: sta-1 -> sta-transfer
+		var trip1 = new TransitTrip("trip-l1", "route-1", "cal-1", "head-1", "0", "LOCAL", 28800);
+		var st1 = new TransitStopTime("trip-l1", 1, "sta-1", "line-1", 28800, 28860, 0, 0);
+		var st2 = new TransitStopTime("trip-l1", 2, "sta-transfer", "line-1", 29100, 29160, 1, 0);
+
+		var edges = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"entry", "entrance", "platform-sta1", 120, 60, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayEdge(
+				"exit", "platform-transfer-l1", "outside", 60, 40, false, false, 100,
+				"AVAILABLE", "OFFICIAL_SOURCE", "VERIFIED"));
+		var evidence = List.of(
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"entry-evidence", "sta-1", "line-1", "entry", "ENTRY",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null),
+			new com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteEdgeEvidence(
+				"exit-evidence", "sta-transfer", "line-1", "exit", "EXIT",
+				"OFFICIAL_SOURCE", "VERIFIED", true, null));
+		return new RouteTimetable(
+			List.of(calendar),
+			List.of(),
+			List.of(route1),
+			List.of(trip1),
+			List.of(st1, st2),
+			List.of(),
+			List.of(),
+			null,
+			new RouteAccessData(
+				List.of(
+					new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("entrance", "sta-1", null, "ENTRANCE"),
+					new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-sta1", "sta-1", "line-1", "PLATFORM"),
+					new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("platform-transfer-l1", "sta-transfer", "line-1", "PLATFORM"),
+					new com.easysubway.route.application.port.out.LoadRouteTimetablePort.PathwayNode("outside", "sta-transfer", null, "EXIT")),
+				edges,
+				List.of(),
+				evidence
+			)
 		);
 	}
 }
