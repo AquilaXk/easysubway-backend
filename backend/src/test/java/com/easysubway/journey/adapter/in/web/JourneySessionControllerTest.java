@@ -265,6 +265,23 @@ class JourneySessionControllerTest {
 	}
 
 	@Test
+	@DisplayName("request inputStream 읽기 중 IOException이 발생하면 exact 400으로 차단된다")
+	void rejectsRequestWhenInputStreamThrowsIOException() throws Exception {
+		HttpServletRequest request = mock(HttpServletRequest.class);
+		when(request.getContentLengthLong()).thenReturn(-1L);
+		when(request.getInputStream()).thenThrow(new IOException("Simulated I/O failure"));
+
+		var controller = new JourneySessionController(service, 1024);
+		var exception = assertThrows(
+			JourneySessionException.class,
+			() -> controller.issue(request)
+		);
+
+		assertThat(exception.kind()).isEqualTo(Kind.INVALID_REQUEST);
+		verifyNoInteractions(service);
+	}
+
+	@Test
 	@DisplayName("maxRequestBytes가 0 이하이면 생성자에서 IllegalArgumentException이 발생한다")
 	void constructorRejectsNonPositiveMaxRequestBytes() {
 		assertThrows(IllegalArgumentException.class,
