@@ -9,6 +9,7 @@ import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -25,8 +26,16 @@ import java.util.Objects;
  */
 public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPort {
 
-	private final RouteTimetableRaptorPlanner forward = new RouteTimetableRaptorPlanner();
+	private final RouteTimetableRaptorPlanner forward;
 	private final ReverseTimetableRaptorPlanner reverse = new ReverseTimetableRaptorPlanner();
+
+	public JourneyProfileRaptorAdapter() {
+		this(ScanWorkspacePool.shared());
+	}
+
+	public JourneyProfileRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this.forward = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+	}
 
 	@Override
 	public PlanningResult plan(

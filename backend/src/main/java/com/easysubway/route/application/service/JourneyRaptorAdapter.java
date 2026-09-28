@@ -11,6 +11,7 @@ import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
@@ -27,7 +28,15 @@ import java.util.Objects;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
-	private final RouteTimetableRaptorPlanner planner = new RouteTimetableRaptorPlanner();
+	private final RouteTimetableRaptorPlanner planner;
+
+	public JourneyRaptorAdapter() {
+		this(ScanWorkspacePool.shared());
+	}
+
+	public JourneyRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+	}
 
 	@Override
 	public PlanResult plan(
