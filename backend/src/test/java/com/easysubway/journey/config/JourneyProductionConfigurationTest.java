@@ -43,7 +43,7 @@ import com.easysubway.journey.readiness.JourneyReadinessProperties;
 import com.easysubway.journey.readiness.JourneyReadinessService;
 import com.easysubway.route.application.service.JourneyRaptorAdapter;
 import com.easysubway.route.application.service.JourneyRealtimeAdapter;
-import com.easysubway.route.application.service.ScanWorkspacePool;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import com.easysubway.route.application.service.JourneyTimetableRealtimeResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import java.time.Clock;

@@ -2,6 +2,8 @@ package com.easysubway.route.application.service;
 
 import static org.assertj.core.api.Assertions.assertThat;
 
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
+
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort.RouteAccessData;

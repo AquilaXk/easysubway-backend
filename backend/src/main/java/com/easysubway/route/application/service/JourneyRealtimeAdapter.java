@@ -4,6 +4,7 @@ import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourne
 import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import java.time.Clock;
 import java.time.DateTimeException;
 import java.time.Duration;

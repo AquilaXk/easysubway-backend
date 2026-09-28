@@ -9,6 +9,7 @@ import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;

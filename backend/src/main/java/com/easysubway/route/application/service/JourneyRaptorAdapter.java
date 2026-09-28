@@ -11,6 +11,7 @@ import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.JourneyRequestMeasurement;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
+import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
 import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
