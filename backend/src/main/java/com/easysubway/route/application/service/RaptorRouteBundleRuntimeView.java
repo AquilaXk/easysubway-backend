@@ -33,7 +33,7 @@ public final class RaptorRouteBundleRuntimeView implements RouteBundleRuntimeVie
 		return new RaptorRouteBundleRuntimeView(
 			routeBundleSha256,
 			generation,
-			new RouteTimetableRaptorPlanner().compile(Objects.requireNonNull(timetable, "timetable"))
+			new RouteTimetableRaptorPlanner().compile(routeBundleSha256, generation, Objects.requireNonNull(timetable, "timetable"))
 		);
 	}
 

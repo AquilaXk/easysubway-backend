@@ -26,6 +26,10 @@ import com.easysubway.route.domain.ConstraintMode;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.MobilityPreset;
 import com.easysubway.route.domain.ProfileWalkTimeCalculator.WalkTimeSource;
+import java.nio.ByteBuffer;
+import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.DayOfWeek;
 import java.time.Duration;
 import java.time.Instant;
@@ -40,12 +44,14 @@ import java.util.Comparator;
 import java.util.EnumMap;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.PriorityQueue;
 import java.util.Set;
+import java.util.regex.Pattern;
 import java.util.function.BooleanSupplier;
 import java.util.concurrent.ConcurrentLinkedQueue;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -115,7 +121,8 @@ public final class RouteTimetableRaptorPlanner {
 		RealtimeOverlay realtimeOverlay
 	) {
 		return journeyItineraries(query, timetable, realtimeOverlay,
-			new JourneyRequestMeasurement(query.requestId()), query.requestId(), "test-bundle", 1L);
+			new JourneyRequestMeasurement(query.requestId()), query.requestId(),
+			timetable.routeBundleSha256(), timetable.generation());
 	}
 
 	JourneyPlan journeyItineraries(
@@ -1722,6 +1729,48 @@ public final class RouteTimetableRaptorPlanner {
 		return new CompiledTimetable(timetable);
 	}
 
+	CompiledTimetable compile(String routeBundleSha256, long generation, RouteTimetable timetable) {
+		return new CompiledTimetable(timetable, routeBundleSha256, generation);
+	}
+
+	static String computeTimetableDigest(RouteTimetable timetable) {
+		Objects.requireNonNull(timetable, "timetable must not be null");
+		try {
+			MessageDigest digest = MessageDigest.getInstance("SHA-256");
+			for (TransitRoute route : timetable.transitRoutes()) {
+				if (route.id() != null) {
+					digest.update(route.id().getBytes(StandardCharsets.UTF_8));
+				}
+			}
+			for (TransitTrip trip : timetable.transitTrips()) {
+				if (trip.id() != null) {
+					digest.update(trip.id().getBytes(StandardCharsets.UTF_8));
+				}
+				if (trip.routeId() != null) {
+					digest.update(trip.routeId().getBytes(StandardCharsets.UTF_8));
+				}
+			}
+			ByteBuffer buffer = ByteBuffer.allocate(8);
+			for (TransitStopTime stopTime : timetable.transitStopTimes()) {
+				if (stopTime.tripId() != null) {
+					digest.update(stopTime.tripId().getBytes(StandardCharsets.UTF_8));
+				}
+				if (stopTime.stationId() != null) {
+					digest.update(stopTime.stationId().getBytes(StandardCharsets.UTF_8));
+				}
+				if (stopTime.lineId() != null) {
+					digest.update(stopTime.lineId().getBytes(StandardCharsets.UTF_8));
+				}
+				buffer.clear();
+				buffer.putInt(stopTime.departureSeconds()).putInt(stopTime.arrivalSeconds());
+				digest.update(buffer.array());
+			}
+			return HexFormat.of().formatHex(digest.digest());
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 unavailable", e);
+		}
+	}
+
 	boolean matchesActiveJourneyRealtimeDeparture(
 		CompiledTimetable timetable,
 		JourneyTimetableRealtimeResolver.Departure departure
@@ -2258,7 +2307,11 @@ public final class RouteTimetableRaptorPlanner {
 
 	static final class CompiledTimetable {
 
+		private static final Pattern SHA256_PATTERN = Pattern.compile("^[a-f0-9]{64}$");
+
 		private final RouteTimetable source;
+		private final String routeBundleSha256;
+		private final long generation;
 		private final Map<String, Integer> stationIndex;
 		private final String[] stationIds;
 		private final Map<String, Integer> routeIndex;
@@ -2283,7 +2336,16 @@ public final class RouteTimetableRaptorPlanner {
 		private final int totalStationSlots;
 
 		private CompiledTimetable(RouteTimetable source) {
+			this(source, computeTimetableDigest(source), 1L);
+		}
+
+		private CompiledTimetable(RouteTimetable source, String routeBundleSha256, long generation) {
 			this.source = Objects.requireNonNull(source, "timetable must not be null");
+			this.routeBundleSha256 = requireSha256(routeBundleSha256);
+			if (generation < 1) {
+				throw new IllegalArgumentException("generation must be positive");
+			}
+			this.generation = generation;
 			stationIndex = denseIndex(source.transitStopTimes().stream().map(TransitStopTime::stationId).toList());
 			stationIds = new String[stationIndex.size()];
 			for (Map.Entry<String, Integer> entry : stationIndex.entrySet()) {
@@ -2495,6 +2557,22 @@ public final class RouteTimetableRaptorPlanner {
 
 		RouteTimetable source() {
 			return source;
+		}
+
+		String routeBundleSha256() {
+			return routeBundleSha256;
+		}
+
+		long generation() {
+			return generation;
+		}
+
+		private static String requireSha256(String value) {
+			Objects.requireNonNull(value, "routeBundleSha256 must not be null");
+			if (!SHA256_PATTERN.matcher(value).matches()) {
+				throw new IllegalArgumentException("routeBundleSha256 must be lowercase SHA-256");
+			}
+			return value;
 		}
 
 		int stationCount() {
