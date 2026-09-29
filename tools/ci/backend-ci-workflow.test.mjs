@@ -24,7 +24,9 @@ test('Backend #416 job graph keeps one required Backend CI aggregate over scope,
   assert.match(backend, /^  backend:\n    name: Backend CI\n    runs-on: ubuntu-latest\n    timeout-minutes: 30\n    needs: \[scope, backend-contracts, backend-test, backend-spotbugs\]\n(?:    #[^\n]*\n)*    if: always\(\)\n/);
   const verify = step(backend, 'Verify Backend CI job results');
   assert.match(verify, /BACKEND_CI_NEEDS: \$\{\{ toJSON\(needs\) \}\}/);
-  assert.match(verify, /node tools\/ci\/backend-ci-scope\.mjs verify-jobs --event "\$\{\{ github\.event_name \}\}" --needs "\$\{BACKEND_CI_NEEDS\}"/);
+  assert.match(verify, /BACKEND_CI_EVENT: \$\{\{ github\.event_name \}\}/);
+  assert.match(verify, /git archive "\$\{revision\}" "\$\{source\}" tools\/lib\/is-main-module\.mjs/);
+  assert.match(verify, /node "\$\{trusted\}\/\$\{source\}" verify-jobs --event "\$\{BACKEND_CI_EVENT\}" --needs "\$\{BACKEND_CI_NEEDS\}"/);
   assert.doesNotMatch(verify, /\n        if:/);
   const ordered = steps(backend).map(({ name }) => name);
   assert.deepEqual(ordered.slice(0, 3), ['Checkout', 'Set up Node.js', 'Verify Backend CI job results']);
@@ -36,7 +38,15 @@ test('Backend #416 scope runs first on full history and heavy jobs depend on it'
   const scope = job('scope');
   assert.match(scope, /outputs:\n      heavy: \$\{\{ steps\.classify\.outputs\.heavy \}\}/);
   assert.match(scope, /fetch-depth: 0/);
-  assert.match(step(scope, 'Classify changed paths'), /id: classify\n        run: node tools\/ci\/backend-ci-scope\.mjs classify --event "\$\{\{ github\.event_name \}\}" --output "\$GITHUB_OUTPUT" --summary "\$GITHUB_STEP_SUMMARY"/);
+  const classify = step(scope, 'Classify changed paths');
+  assert.match(classify, /id: classify\n        env:\n          SCOPE_EVENT: \$\{\{ github\.event_name \}\}\n/);
+  for (const literal of [
+    'git archive "${base}" "${source}" tools/lib/is-main-module.mjs',
+    'node "${trusted}/${source}" classify --event pull_request --output "${decision}"',
+    "grep -Eqx 'heavy=(true|false)' \"${decision}\"",
+    'trusted classifier is absent in the base commit',
+  ]) assert.ok(classify.includes(literal), literal);
+  assert.doesNotMatch(classify, /node tools\/ci\/backend-ci-scope\.mjs/);
   assert.doesNotMatch(scope, /\n    (?:if|needs):/);
   for (const name of ['backend-test', 'backend-spotbugs']) {
     const block = job(name);
@@ -85,7 +95,7 @@ test('Backend #416 aggregate merges all shard execution data before the unchange
 test('Backend #416 every Gradle job uses the same pinned Java setup and contract staging', () => {
   const setup = (block) => {
     const texts = steps(block).filter(({ name }) => ['Set up Node.js', 'Set up ORAS', 'Set up Java', 'Stage pinned contracts', 'Stage pinned Journey contracts'].includes(name));
-    return texts.map(({ text }) => text.replace(`        if: ${HEAVY}\n`, '').replace(/\n+$/, '').replace(/\n      # [^\n]*$/, ''));
+    return texts.map(({ text }) => text.replace(`        if: ${HEAVY}\n`, '').replace(/\n+$/, '').replace(/(?:\n      # [^\n]*)+$/, '').replace(/\n+$/, ''));
   };
   const reference = setup(job('backend-test'));
   assert.equal(reference.length, 5);

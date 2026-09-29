@@ -316,9 +316,46 @@ jobs:
           node-version: 24
 
       # PR이 바꾼 경로로 무거운 단계 실행 여부를 정한다. 분류 밖 경로와 push·dispatch는 전체 실행이다.
+      # 판정기는 PR head가 아니라 merge commit의 first parent(base)에서 꺼낸 사본으로 실행한다.
+      # PR이 판정 규칙을 넓혀 자기 변경을 건너뛰게 할 수 없고, base에 판정기가 없으면 전체 실행이다.
       - name: Classify changed paths
         id: classify
-        run: node tools/ci/backend-ci-scope.mjs classify --event "${{ github.event_name }}" --output "$GITHUB_OUTPUT" --summary "$GITHUB_STEP_SUMMARY"
+        env:
+          SCOPE_EVENT: ${{ github.event_name }}
+          SCOPE_TRUSTED_ROOT: ${{ runner.temp }}/backend-ci-scope-trusted
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ "${SCOPE_EVENT}" != "pull_request" ]]; then
+            printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+            printf '## Backend CI scope\n\n- heavy: true — %s always runs the full Backend CI\n' "${SCOPE_EVENT}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          read -r _tested base pr_head extra <<< "$(git rev-list --parents -n 1 HEAD)"
+          if [[ ! "${base:-}" =~ ^[0-9a-f]{40}$ || ! "${pr_head:-}" =~ ^[0-9a-f]{40}$ || -n "${extra:-}" ]]; then
+            echo "pull_request checkout must be a two-parent merge commit" >&2
+            exit 1
+          fi
+          source=tools/ci/backend-ci-scope.mjs
+          if [[ -z "$(git ls-tree "${base}" -- "${source}")" ]]; then
+            printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+            printf '## Backend CI scope\n\n- heavy: true — trusted classifier is absent in the base commit\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ -e "${SCOPE_TRUSTED_ROOT}" || -L "${SCOPE_TRUSTED_ROOT}" ]]; then
+            echo "trusted classifier stage path already exists" >&2
+            exit 1
+          fi
+          mkdir "${SCOPE_TRUSTED_ROOT}"
+          trusted="$(cd "${SCOPE_TRUSTED_ROOT}" && pwd -P)"
+          git archive "${base}" "${source}" tools/lib/is-main-module.mjs | tar -x -C "${trusted}"
+          decision="${trusted}/decision"
+          node "${trusted}/${source}" classify --event pull_request --output "${decision}" --summary "$GITHUB_STEP_SUMMARY"
+          if [[ ! -f "${decision}" ]] || ! grep -Eqx 'heavy=(true|false)' "${decision}" || [[ "$(wc -l < "${decision}")" -ne 1 ]]; then
+            echo "trusted classifier produced no decision" >&2
+            exit 1
+          fi
+          cat "${decision}" >> "$GITHUB_OUTPUT"
 
   backend-contracts:
     name: Backend CI contracts
@@ -473,10 +510,41 @@ jobs:
         with:
           node-version: 24
 
+      # 집계 판정기도 PR head가 약화할 수 없도록 base 커밋의 사본으로 실행한다.
+      # base에 판정기가 없을 때(이 판정기를 처음 들여오는 PR)만 head 사본을 쓰고 그 사실을 기록한다.
       - name: Verify Backend CI job results
         env:
+          BACKEND_CI_EVENT: ${{ github.event_name }}
           BACKEND_CI_NEEDS: ${{ toJSON(needs) }}
-        run: node tools/ci/backend-ci-scope.mjs verify-jobs --event "${{ github.event_name }}" --needs "${BACKEND_CI_NEEDS}" --summary "$GITHUB_STEP_SUMMARY"
+          VERIFY_TRUSTED_ROOT: ${{ runner.temp }}/backend-ci-verify-trusted
+        run: |
+          set -euo pipefail
+          umask 077
+          source=tools/ci/backend-ci-scope.mjs
+          revision=HEAD
+          label="${BACKEND_CI_EVENT} tested commit"
+          if [[ "${BACKEND_CI_EVENT}" == "pull_request" ]]; then
+            read -r _tested base pr_head extra <<< "$(git rev-list --parents -n 1 HEAD)"
+            if [[ ! "${base:-}" =~ ^[0-9a-f]{40}$ || ! "${pr_head:-}" =~ ^[0-9a-f]{40}$ || -n "${extra:-}" ]]; then
+              echo "pull_request checkout must be a two-parent merge commit" >&2
+              exit 1
+            fi
+            if [[ -n "$(git ls-tree "${base}" -- "${source}")" ]]; then
+              revision="${base}"
+              label="base ${base}"
+            else
+              label="pull request head (base has no verifier)"
+            fi
+          fi
+          if [[ -e "${VERIFY_TRUSTED_ROOT}" || -L "${VERIFY_TRUSTED_ROOT}" ]]; then
+            echo "trusted verifier stage path already exists" >&2
+            exit 1
+          fi
+          mkdir "${VERIFY_TRUSTED_ROOT}"
+          trusted="$(cd "${VERIFY_TRUSTED_ROOT}" && pwd -P)"
+          git archive "${revision}" "${source}" tools/lib/is-main-module.mjs | tar -x -C "${trusted}"
+          printf -- '- verifier: %s\n' "${label}" >> "$GITHUB_STEP_SUMMARY"
+          node "${trusted}/${source}" verify-jobs --event "${BACKEND_CI_EVENT}" --needs "${BACKEND_CI_NEEDS}" --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Set up ORAS
         if: needs.scope.outputs.heavy == 'true'
