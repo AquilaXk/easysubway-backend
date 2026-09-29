@@ -54,14 +54,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	public JourneyRaptorAdapter(
 		ScanWorkspacePool workspacePool,
 		FacilityAvailabilityPort facilityAvailabilityPort,
-		boolean facilityStatusRequired
-	) {
-		this(workspacePool, facilityAvailabilityPort, facilityStatusRequired, Clock.systemUTC());
-	}
-
-	public JourneyRaptorAdapter(
-		ScanWorkspacePool workspacePool,
-		FacilityAvailabilityPort facilityAvailabilityPort,
 		boolean facilityStatusRequired,
 		Clock clock
 	) {
@@ -73,10 +65,6 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort) {
 		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, false, Clock.systemUTC());
-	}
-
-	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired) {
-		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, facilityStatusRequired, Clock.systemUTC());
 	}
 
 	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired, Clock clock) {
@@ -498,22 +486,20 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 	}
 
 	private FacilityAvailabilityView resolveFacilityAvailability(ActiveJourneySnapshot snapshot) {
-		if (snapshot.facilityAvailability() != null && snapshot.facilityAvailability().available()) {
-			return snapshot.facilityAvailability();
+		FacilityAvailabilityView snapshotView = snapshot.facilityAvailability();
+		if (snapshotView.available()) {
+			return snapshotView;
 		}
 		FacilityAvailabilityView portView = facilityAvailabilityPort.currentView();
 		if (portView != null && portView.available()) {
 			return portView;
 		}
-		if (snapshot.facilityAvailability() != null) {
-			return snapshot.facilityAvailability();
-		}
-		return portView != null ? portView : FacilityAvailabilityView.unavailable();
+		return snapshotView;
 	}
 
 	private void validateFacilityFreshness(JourneyRequest request, FacilityAvailabilityView facilityView) {
 		if (facilityStatusRequired && request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
-			if (facilityView == null || !facilityView.available() || facilityView.observedAt() == null) {
+			if (!facilityView.available() || facilityView.observedAt() == null) {
 				throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: facility status unavailable");
 			}
 			Instant now = clock.instant();
@@ -528,20 +514,11 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		FacilityAvailabilityView facilityView
 	) {
 		BitSet blocked = new BitSet();
-		if (facilityView == null) {
-			return blocked;
-		}
-		if (facilityView.blockedTransitionIds() != null && !facilityView.blockedTransitionIds().isEmpty()) {
-			blocked.or(facilityView.blockedTransitionIds());
-		}
-		if (facilityView.blockedPathwayEdgeIds() != null && !facilityView.blockedPathwayEdgeIds().isEmpty()) {
-			var timetable = routeRuntime.compiledTimetable();
-			for (String edgeId : facilityView.blockedPathwayEdgeIds()) {
-				if (edgeId != null && !edgeId.isBlank()) {
-					for (int transition : timetable.transitionIdsForEdge(edgeId)) {
-						blocked.set(transition);
-					}
-				}
+		blocked.or(facilityView.blockedTransitionIds());
+		var timetable = routeRuntime.compiledTimetable();
+		for (String edgeId : facilityView.blockedPathwayEdgeIds()) {
+			for (int transition : timetable.transitionIdsForEdge(edgeId)) {
+				blocked.set(transition);
 			}
 		}
 		return blocked;
