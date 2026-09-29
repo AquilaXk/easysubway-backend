@@ -110,7 +110,7 @@ public final class RealtimeEtaOverlay {
 			case UNAVAILABLE -> planned(
 				readyAt,
 				plannedWaitSeconds,
-				EtaSource.FALLBACK,
+				EtaSource.PLANNED_WITHOUT_REALTIME,
 				EtaConfidence.LOW,
 				providerSnapshotId,
 				providerReceivedAt,
@@ -120,7 +120,7 @@ public final class RealtimeEtaOverlay {
 			case EMPTY_PROVIDER_RESULT -> planned(
 				readyAt,
 				plannedWaitSeconds,
-				EtaSource.FALLBACK,
+				EtaSource.PLANNED_WITHOUT_REALTIME,
 				EtaConfidence.LOW,
 				providerSnapshotId,
 				providerReceivedAt,
@@ -150,7 +150,7 @@ public final class RealtimeEtaOverlay {
 			.orElseGet(() -> planned(
 				readyAt,
 				plannedWaitSeconds,
-				EtaSource.FALLBACK,
+				EtaSource.PLANNED_WITHOUT_REALTIME,
 				EtaConfidence.LOW,
 				providerSnapshotId,
 				providerReceivedAt,

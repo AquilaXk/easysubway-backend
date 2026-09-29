@@ -719,9 +719,9 @@ public class RouteSearchService implements RouteSearchUseCase {
 		if (routeSearch.status() != RouteSearchStatus.FOUND || routeSearch.steps().isEmpty()) {
 			return RouteRefreshStatus.REROUTE_REQUIRED;
 		}
-		if (routeSearch.etaSource() == EtaSource.FALLBACK
+		if (routeSearch.etaSource() == EtaSource.PLANNED_WITHOUT_REALTIME
 			|| hasWarning(routeSearch, RouteWarningCode.STALE_ACCESSIBILITY_DATA)) {
-			return RouteRefreshStatus.STALE_FALLBACK;
+			return RouteRefreshStatus.PLANNED_WITHOUT_REALTIME;
 		}
 		if (routeSearch.etaSource() == EtaSource.REALTIME
 			|| routeSearch.etaSource() == EtaSource.MIXED) {
@@ -735,14 +735,14 @@ public class RouteSearchService implements RouteSearchUseCase {
 			case REALTIME -> EtaConfidence.HIGH;
 			case MIXED -> EtaConfidence.MEDIUM;
 			case PLANNED -> EtaConfidence.MEDIUM;
-			case STATIC_BACKEND_ESTIMATE, FALLBACK -> EtaConfidence.LOW;
+			case STATIC_BACKEND_ESTIMATE, PLANNED_WITHOUT_REALTIME -> EtaConfidence.LOW;
 		};
 	}
 
 	private String sourceLabel(RouteRefreshStatus status, RouteSearchResult routeSearch) {
 		return switch (status) {
 			case UPDATED_ETA -> "실시간 도착 정보 기준";
-			case STALE_FALLBACK -> "최근 확인 시간이 오래되어 계획 시간으로 안내";
+			case PLANNED_WITHOUT_REALTIME -> "최근 확인 시간이 오래되어 계획 시간으로 안내";
 			case REROUTE_REQUIRED -> "경로를 다시 찾아야 합니다";
 			case UNCHANGED -> routeSearch.etaSource() == EtaSource.PLANNED
 				? "계획 시간 기준"
@@ -757,8 +757,8 @@ public class RouteSearchService implements RouteSearchUseCase {
 		if (status == RouteRefreshStatus.REROUTE_REQUIRED) {
 			reasons.add("REROUTE_REQUIRED");
 		}
-		if (status == RouteRefreshStatus.STALE_FALLBACK) {
-			reasons.add("STALE_FALLBACK");
+		if (status == RouteRefreshStatus.PLANNED_WITHOUT_REALTIME) {
+			reasons.add("PLANNED_WITHOUT_REALTIME");
 		}
 		routeSearch.warnings().stream()
 			.map(warning -> warning.code().name())

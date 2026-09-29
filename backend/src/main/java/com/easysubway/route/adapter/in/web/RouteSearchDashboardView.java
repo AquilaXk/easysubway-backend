@@ -149,7 +149,7 @@ public record RouteSearchDashboardView(
 			case MIXED -> "일부 실시간 반영";
 			case STATIC_BACKEND_ESTIMATE -> "상수 추정";
 			case PLANNED -> "시간표 기준";
-			case FALLBACK -> "provider 지연/장애 fallback";
+			case PLANNED_WITHOUT_REALTIME -> "실시간 불가 · 계획 시각 안내";
 		};
 	}
 

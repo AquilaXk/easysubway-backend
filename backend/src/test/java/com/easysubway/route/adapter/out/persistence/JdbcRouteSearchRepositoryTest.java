@@ -339,7 +339,7 @@ class JdbcRouteSearchRepositoryTest {
 			.containsExactly(
 				tuple(
 					RouteSearchStatus.FOUND,
-					EtaSource.FALLBACK,
+					EtaSource.PLANNED_WITHOUT_REALTIME,
 					List.of(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
 				),
 				tuple(
@@ -446,7 +446,7 @@ class JdbcRouteSearchRepositoryTest {
 				false,
 				"VERIFIED_STEP_FREE",
 				false,
-				EtaSource.FALLBACK.name(),
+				"FALLBACK",
 				"ESTIMATED_CONSTANT",
 				"낮음"
 			)),

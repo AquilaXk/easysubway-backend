@@ -86,7 +86,7 @@ class RealtimeEtaOverlayTest {
 			List.of()
 		);
 
-		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.etaSource()).isEqualTo(EtaSource.PLANNED_WITHOUT_REALTIME);
 		assertThat(result.confidence()).isEqualTo(EtaConfidence.LOW);
 		assertThat(result.waitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
 		assertThat(result.warningCodes())
@@ -105,7 +105,7 @@ class RealtimeEtaOverlayTest {
 			List.of()
 		);
 
-		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.etaSource()).isEqualTo(EtaSource.PLANNED_WITHOUT_REALTIME);
 		assertThat(result.waitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
 		assertThat(result.warningCodes()).containsExactly("EMPTY_PROVIDER_RESULT");
 	}
@@ -151,7 +151,7 @@ class RealtimeEtaOverlayTest {
 			List.of(wrongDirection)
 		);
 
-		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.etaSource()).isEqualTo(EtaSource.PLANNED_WITHOUT_REALTIME);
 		assertThat(result.waitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
 		assertThat(result.warningCodes()).containsExactly("NO_USABLE_REALTIME_CANDIDATE");
 	}
@@ -180,7 +180,7 @@ class RealtimeEtaOverlayTest {
 			List.of(candidate)
 		);
 
-		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.etaSource()).isEqualTo(EtaSource.PLANNED_WITHOUT_REALTIME);
 		assertThat(result.warningCodes()).containsExactly("NO_USABLE_REALTIME_CANDIDATE");
 	}
 
@@ -239,7 +239,7 @@ class RealtimeEtaOverlayTest {
 			List.of(expressCandidate)
 		);
 
-		assertThat(result.etaSource()).isEqualTo(EtaSource.FALLBACK);
+		assertThat(result.etaSource()).isEqualTo(EtaSource.PLANNED_WITHOUT_REALTIME);
 		assertThat(result.waitSeconds()).isEqualTo(PLANNED_WAIT_SECONDS);
 		assertThat(result.warningCodes()).containsExactly("NO_USABLE_REALTIME_CANDIDATE");
 	}
