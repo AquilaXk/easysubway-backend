@@ -98,15 +98,16 @@ test('workflow and machine policy close event identities and retain bounded loca
   assert.equal((workflow.match(/continue-on-error: true/g) || []).length, 3);
   assert.equal((workflow.match(/^    name: Dependency Vulnerability Scan \/ osv-scan$/gm) || []).length, 1);
   assert.doesNotMatch(workflow, /^  dependency-vulnerability-scan-dispatch:/m);
-  assert.equal(countSetupJavaReferences(workflow), 1, 'workflow must use exactly one setup-java action');
-  const setupJavaSteps = workflow.match(/      - name: Set up Java\n        uses: actions\/setup-java@[0-9a-f]{40}\n        with:\n          distribution: temurin\n          java-version: "21\.0\.11"\n          cache: gradle/g) || [];
-  assert.equal(setupJavaSteps.length, 1, 'workflow must use exactly one Temurin 21.0.11 setup-java step');
+  // Backend #416: Gradle을 쓰는 job은 SpotBugs·테스트 shard·집계 세 개이고 모두 같은 고정 Temurin 단계를 쓴다.
+  assert.equal(countSetupJavaReferences(workflow), 3, 'workflow must use setup-java only in the three Gradle jobs');
+  const setupJavaSteps = workflow.match(/      - name: Set up Java\n(?:        if: needs\.scope\.outputs\.heavy == 'true'\n)?        uses: actions\/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961\n        with:\n          distribution: temurin\n          java-version: "21\.0\.11"\n          cache: gradle\n/g) || [];
+  assert.equal(setupJavaSteps.length, 3, 'every setup-java step must be the pinned Temurin 21.0.11 step');
 });
 
 test('setup-java reference count rejects an additional tag-based action', async () => {
   const workflow = await readFile(workflowUrl, 'utf8');
   const workflowWithTaggedSetupJava = `${workflow}\nuses: actions/setup-java@v4`;
-  assert.equal(countSetupJavaReferences(workflowWithTaggedSetupJava), 2, 'every setup-java reference must be counted');
+  assert.equal(countSetupJavaReferences(workflowWithTaggedSetupJava), countSetupJavaReferences(workflow) + 1, 'every setup-java reference must be counted');
 });
 
 test('policy/workflow static validation fails closed for unknown or malformed mutations', async () => {

@@ -394,6 +394,27 @@ class HttpDatapackReleaseCatalogAdapterTest {
 	}
 
 	@Test
+	void requestBindingLookupFailsClosedOnUnavailableCatalogAndMalformedBinding() throws Exception {
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		for (var body : new String[] {null, "not-json"}) {
+			var httpClient = mock(HttpClient.class);
+			@SuppressWarnings("unchecked")
+			var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+			when(response.statusCode()).thenReturn(body == null ? 503 : 200);
+			if (body != null) {
+				when(response.body()).thenReturn(new java.io.ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8)));
+			}
+			when(httpClient.<InputStream>send(any(), any())).thenReturn(response);
+			var adapter = new HttpDatapackReleaseCatalogAdapter(
+				httpClient, "http://127.0.0.1:8080", publicKey(keyPair), "production-v1");
+
+			assertThatThrownBy(() -> adapter.findByRequest("production", "request-2057"))
+				.as("binding body %s", body)
+				.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		}
+	}
+
+	@Test
 	void injectedClientWithoutExplicitTimeoutUsesDefaultCatalogRequestTimeout() throws Exception {
 		var httpClient = mock(HttpClient.class);
 		@SuppressWarnings("unchecked")
