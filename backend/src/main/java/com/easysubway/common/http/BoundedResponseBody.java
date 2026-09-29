@@ -38,29 +38,31 @@ public final class BoundedResponseBody {
 			throw new HttpTimeoutException("response body read budget exhausted");
 		}
 		AtomicBoolean timedOut = new AtomicBoolean();
-		ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(task -> {
+		byte[] bytes;
+		// shutdownNow로 예약 작업을 먼저 버리므로 try-with-resources의 close()는 기다리지 않고 바로 끝난다.
+		try (ScheduledExecutorService timer = Executors.newSingleThreadScheduledExecutor(task -> {
 			Thread thread = new Thread(task, "bounded-response-body-timeout");
 			thread.setDaemon(true);
 			return thread;
-		});
-		byte[] bytes;
-		try {
-			ScheduledFuture<?> closeOnTimeout = timer.schedule(() -> {
-				timedOut.set(true);
-				closeStalledBody(body);
-			}, timeout.toNanos(), TimeUnit.NANOSECONDS);
+		})) {
 			try {
-				bytes = body.readNBytes(maxBytes + 1);
+				ScheduledFuture<?> closeOnTimeout = timer.schedule(() -> {
+					timedOut.set(true);
+					closeStalledBody(body);
+				}, timeout.toNanos(), TimeUnit.NANOSECONDS);
+				try {
+					bytes = body.readNBytes(maxBytes + 1);
+				} finally {
+					closeOnTimeout.cancel(false);
+				}
+			} catch (IOException exception) {
+				if (!timedOut.get()) {
+					throw exception;
+				}
+				throw timedOut(exception);
 			} finally {
-				closeOnTimeout.cancel(false);
+				timer.shutdownNow();
 			}
-		} catch (IOException exception) {
-			if (!timedOut.get()) {
-				throw exception;
-			}
-			throw timedOut(exception);
-		} finally {
-			timer.shutdownNow();
 		}
 		if (timedOut.get()) {
 			throw timedOut(null);
