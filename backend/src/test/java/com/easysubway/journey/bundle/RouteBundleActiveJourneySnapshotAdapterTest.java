@@ -59,29 +59,7 @@ class RouteBundleActiveJourneySnapshotAdapterTest {
 		assertThat(snapshot.fresh()).isTrue();
 		assertThat(snapshot.servingEvidence()).isEqualTo(ActiveServingEvidence.unobservable());
 		assertThat(snapshot.boundaryReceipt()).isEqualTo(SnapshotBoundaryReceipt.observed(0, 0));
-		assertThat(snapshot.facilityAvailability()).isEqualTo(com.easysubway.journey.application.FacilityAvailabilityView.unavailable());
 		assertThat(clock.instantCalls()).isEqualTo(3);
-	}
-
-	@Test
-	void preservesExplicitFacilityAvailabilityViewAndDefaultsNull() {
-		var runtime = new TestRuntime(MANIFEST_SHA, 1);
-		var customView = com.easysubway.journey.application.FacilityAvailabilityView.empty(NOW);
-		var withExplicit = new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
-			"id:1", "capital-v1", MANIFEST_SHA, TIMETABLE_SHA, ACCESSIBILITY_SHA, 1,
-			runtime, FRESH_UNTIL, true, ActiveServingEvidence.unobservable(),
-			SnapshotBoundaryReceipt.observed(0, 0), SnapshotMeasurementReceipt.unobservable(),
-			customView
-		);
-		assertThat(withExplicit.facilityAvailability()).isSameAs(customView);
-
-		var withNull = new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
-			"id:1", "capital-v1", MANIFEST_SHA, TIMETABLE_SHA, ACCESSIBILITY_SHA, 1,
-			runtime, FRESH_UNTIL, true, ActiveServingEvidence.unobservable(),
-			SnapshotBoundaryReceipt.observed(0, 0), SnapshotMeasurementReceipt.unobservable(),
-			null
-		);
-		assertThat(withNull.facilityAvailability()).isEqualTo(com.easysubway.journey.application.FacilityAvailabilityView.unavailable());
 	}
 
 	@Test

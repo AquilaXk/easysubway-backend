@@ -23,25 +23,15 @@ import java.util.HashSet;
 import java.util.HexFormat;
 import java.util.LinkedHashMap;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
-import com.easysubway.journey.application.FacilityAvailabilityView;
-import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
-import java.util.ArrayList;
-import java.util.BitSet;
-import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
 	private final RouteTimetableRaptorPlanner planner;
-	private final FacilityAvailabilityPort facilityAvailabilityPort;
-	private final boolean facilityStatusRequired;
-	private final Clock clock;
+	private final JourneyFacilityBlockOverlay facilityBlocks;
 
 	public JourneyRaptorAdapter() {
 		this(ScanWorkspacePool.shared(), FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
@@ -58,13 +48,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		Clock clock
 	) {
 		this.planner = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
-		this.facilityAvailabilityPort = Objects.requireNonNull(facilityAvailabilityPort, "facilityAvailabilityPort");
-		this.facilityStatusRequired = facilityStatusRequired;
-		this.clock = Objects.requireNonNull(clock, "clock");
-	}
-
-	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort) {
-		this(ScanWorkspacePool.shared(), facilityAvailabilityPort, false, Clock.systemUTC());
+		this.facilityBlocks = new JourneyFacilityBlockOverlay(facilityAvailabilityPort, facilityStatusRequired, clock);
 	}
 
 	public JourneyRaptorAdapter(FacilityAvailabilityPort facilityAvailabilityPort, boolean facilityStatusRequired, Clock clock) {
@@ -85,10 +69,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		JourneyRequestMeasurement requiredMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 
-		FacilityAvailabilityView facilityView = resolveFacilityAvailability(requiredSnapshot);
-		validateFacilityFreshness(requiredRequest, facilityView);
-
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay = facilityBlocks.capture(
+			requiredRequest.constraintMode(), routeRuntime.compiledTimetable());
 
 		if (requiredRequest.viaStationId() != null) {
 			return planChainedVia(
@@ -98,14 +81,14 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 				realtimeOrNull,
 				requiredMeasurement,
 				routeRuntime,
-				facilityView
+				facilityOverlay
 			);
 		}
 
 		JourneyRaptorQuery query = JourneyRaptorQuery.from(requiredRequest, requiredEffectiveInstant);
 
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay = requireRealtimeOverlay(
-			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull, query, facilityView);
+			requiredRequest, requiredSnapshot, routeRuntime, realtimeOrNull, query, facilityOverlay);
 		RouteTimetableRaptorPlanner.JourneyPlan planned = planner.journeyItineraries(
 			query,
 			routeRuntime.compiledTimetable(),
@@ -144,7 +127,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		RealtimeObservation realtimeOrNull,
 		JourneyRequestMeasurement requiredMeasurement,
 		RaptorRouteBundleRuntimeView routeRuntime,
-		FacilityAvailabilityView facilityView
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
 		String viaStationId = requiredRequest.viaStationId();
 		var timetable = routeRuntime.compiledTimetable();
@@ -165,7 +148,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		);
 		JourneyRaptorQuery leg1Query = JourneyRaptorQuery.from(leg1Request, requiredEffectiveInstant);
 		RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay1 = requireRealtimeOverlay(
-			leg1Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg1Query, facilityView);
+			leg1Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg1Query, facilityOverlay);
 
 		RouteTimetableRaptorPlanner.JourneyPlan planned1 = planner.journeyItineraries(
 			leg1Query,
@@ -219,7 +202,7 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 			);
 			JourneyRaptorQuery leg2Query = JourneyRaptorQuery.from(leg2Request, leg2ReadyAt);
 			RouteTimetableRaptorPlanner.RealtimeOverlay realtimeOverlay2 = requireRealtimeOverlay(
-				leg2Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg2Query, facilityView);
+				leg2Request, requiredSnapshot, routeRuntime, realtimeOrNull, leg2Query, facilityOverlay);
 
 			RouteTimetableRaptorPlanner.JourneyPlan planned2 = planner.journeyItineraries(
 				leg2Query,
@@ -485,57 +468,14 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		return runtime;
 	}
 
-	private FacilityAvailabilityView resolveFacilityAvailability(ActiveJourneySnapshot snapshot) {
-		FacilityAvailabilityView snapshotView = snapshot.facilityAvailability();
-		if (snapshotView.available()) {
-			return snapshotView;
-		}
-		FacilityAvailabilityView portView = facilityAvailabilityPort.currentView();
-		if (portView != null && portView.available()) {
-			return portView;
-		}
-		return snapshotView;
-	}
-
-	private void validateFacilityFreshness(JourneyRequest request, FacilityAvailabilityView facilityView) {
-		if (facilityStatusRequired && request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
-			if (!facilityView.available() || facilityView.observedAt() == null) {
-				throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: facility status unavailable");
-			}
-			Instant now = clock.instant();
-			if (facilityView.observedAt().isBefore(now.minus(Duration.ofMinutes(5)))) {
-				throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: facility status is older than 5 minutes");
-			}
-		}
-	}
-
-	private static BitSet compileFacilityBlockedTransitions(
-		RaptorRouteBundleRuntimeView routeRuntime,
-		FacilityAvailabilityView facilityView
-	) {
-		BitSet blocked = new BitSet();
-		blocked.or(facilityView.blockedTransitionIds());
-		var timetable = routeRuntime.compiledTimetable();
-		for (String edgeId : facilityView.blockedPathwayEdgeIds()) {
-			for (int transition : timetable.transitionIdsForEdge(edgeId)) {
-				blocked.set(transition);
-			}
-		}
-		return blocked;
-	}
-
 	private static RouteTimetableRaptorPlanner.RealtimeOverlay requireRealtimeOverlay(
 		JourneyRequest request,
 		ActiveJourneySnapshot snapshot,
 		RaptorRouteBundleRuntimeView routeRuntime,
 		RealtimeObservation realtimeOrNull,
 		JourneyRaptorQuery query,
-		FacilityAvailabilityView facilityView
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay
 	) {
-		BitSet facilityBlocked = compileFacilityBlockedTransitions(routeRuntime, facilityView);
-		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay =
-			RouteTimetableRaptorPlanner.RealtimeOverlay.blockedOnly(facilityBlocked);
-
 		if (request.timePolicy() == JourneyRequest.TimePolicy.TIMETABLE_REQUIRED) {
 			if (realtimeOrNull != null) {
 				throw new IllegalArgumentException("timetable Journey request must not receive realtime");

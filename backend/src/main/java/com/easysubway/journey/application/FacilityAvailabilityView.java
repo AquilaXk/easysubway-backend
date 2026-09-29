@@ -1,9 +1,15 @@
 package com.easysubway.journey.application;
 
 import java.time.Instant;
-import java.util.BitSet;
 import java.util.Set;
 
+/**
+ * 요청 시점에 캡처한 시설 가동 여부.
+ *
+ * <p>차단 대상은 route bundle의 안정 식별자인 pathway edge id로만 표현한다. 컴파일된 전환 인덱스는
+ * 번들 세대마다 달라지므로 싣지 않는다. 캡처된 번들에서 해석되지 않는 edge id가 있으면 소비자는
+ * 뷰 전체를 사용할 수 없는 상태로 취급한다.</p>
+ */
 public interface FacilityAvailabilityView {
 	boolean available();
 
@@ -11,25 +17,15 @@ public interface FacilityAvailabilityView {
 
 	Set<String> blockedPathwayEdgeIds();
 
-	BitSet blockedTransitionIds();
-
 	static FacilityAvailabilityView unavailable() {
 		return UnavailableFacilityAvailabilityView.INSTANCE;
 	}
 
 	static FacilityAvailabilityView empty(Instant observedAt) {
-		return new SimpleFacilityAvailabilityView(true, observedAt, Set.of(), new BitSet(0));
+		return new SimpleFacilityAvailabilityView(true, observedAt, Set.of());
 	}
 
 	static FacilityAvailabilityView blocked(Instant observedAt, Set<String> blockedPathwayEdgeIds) {
-		return new SimpleFacilityAvailabilityView(true, observedAt, blockedPathwayEdgeIds, new BitSet(0));
-	}
-
-	static FacilityAvailabilityView blocked(
-		Instant observedAt,
-		Set<String> blockedPathwayEdgeIds,
-		BitSet blockedTransitionIds
-	) {
-		return new SimpleFacilityAvailabilityView(true, observedAt, blockedPathwayEdgeIds, blockedTransitionIds);
+		return new SimpleFacilityAvailabilityView(true, observedAt, blockedPathwayEdgeIds);
 	}
 }
