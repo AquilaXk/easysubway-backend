@@ -9,6 +9,7 @@ import com.easysubway.journey.application.JourneyExecutionResult;
 import com.easysubway.journey.application.JourneyRaptorPort;
 import com.easysubway.journey.application.JourneyRaptorQuery;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
+import com.easysubway.journey.application.JourneyRaptorRealtimeView;
 import com.easysubway.journey.application.JourneyRaptorRuntimeView;
 import com.easysubway.journey.application.JourneyRealtimePort;
 import com.easysubway.journey.application.JourneyRequest;
@@ -423,6 +424,27 @@ class JourneyRaptorAdapterTest {
 					Instant.parse("2026-07-01T00:03:00Z"), Instant.parse("2026-07-01T00:13:00Z")),
 				new JourneyCandidate.Exit("station-b", 60));
 		});
+	}
+
+	@Test
+	void rejectsRealtimeObservationsThatDoNotMatchTheCapturedGeneration() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var adapter = new JourneyRaptorAdapter();
+		var realtimeRequest = request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+			JourneyRequest.TimePolicy.REALTIME_REQUIRED);
+		JourneyRaptorRealtimeView foreignView = new JourneyRaptorRealtimeView() {
+			@Override public String identity() { return "realtime-1"; }
+			@Override public String routeBundleSha256() { return ROUTE_BUNDLE_SHA; }
+			@Override public long generation() { return GENERATION; }
+		};
+
+		for (var observation : java.util.Arrays.asList(
+			null,
+			new JourneyRealtimePort.RealtimeObservation("realtime-1", ROUTE_BUNDLE_SHA, foreignView, VALID_UNTIL, true))) {
+			assertThatThrownBy(() -> adapter.plan(realtimeRequest, snapshot(runtime), EFFECTIVE, observation, measurement()))
+				.isInstanceOf(IllegalArgumentException.class)
+				.hasMessage("realtime runtime view does not match captured Journey generation");
+		}
 	}
 
 	@Test
