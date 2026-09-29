@@ -155,8 +155,12 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	JourneyProfileRaptorPort journeyProfileRaptorPort(ScanWorkspacePool workspacePool) {
-		return new JourneyProfileRaptorAdapter(workspacePool);
+	JourneyProfileRaptorPort journeyProfileRaptorPort(
+		ScanWorkspacePool workspacePool,
+		com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort,
+		@Value("${easysubway.journey.facility-status.required:false}") boolean facilityStatusRequired
+	) {
+		return new JourneyProfileRaptorAdapter(workspacePool, facilityAvailabilityPort, facilityStatusRequired, CLOCK);
 	}
 
 	@Bean

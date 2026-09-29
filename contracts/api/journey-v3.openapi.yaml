@@ -384,6 +384,13 @@ paths:
                     code: ROUTING_IDENTITY_MISMATCH
                     retryable: false
                     occurredAt: "2026-09-01T08:00:00+09:00"
+                facilityStatusUnavailable:
+                  value:
+                    contractVersion: JOURNEY_ERROR_V1
+                    requestId: 01K1Y000000000000000000000
+                    code: FACILITY_STATUS_UNAVAILABLE
+                    retryable: false
+                    occurredAt: "2026-09-01T08:00:00+09:00"
                 frontierCapacityExceeded:
                   value:
                     contractVersion: JOURNEY_ERROR_V1

@@ -1,6 +1,7 @@
 package com.easysubway.route.application.service;
 
 import com.easysubway.journey.application.ActiveJourneySnapshotPort.ActiveJourneySnapshot;
+import com.easysubway.journey.application.FacilityAvailabilityPort;
 import com.easysubway.journey.application.JourneyProfileRaptorPort;
 import com.easysubway.journey.application.JourneyProfileResourcePolicy;
 import com.easysubway.journey.application.JourneyRealtimePort.RealtimeObservation;
@@ -10,6 +11,7 @@ import com.easysubway.journey.application.JourneyRequest;
 import com.easysubway.journey.application.ServiceDayResolver;
 import com.easysubway.route.application.port.out.LoadRouteTimetablePort;
 import com.easysubway.route.application.service.RouteTimetableRaptorPlanner.ScanWorkspacePool;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
@@ -28,13 +30,24 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 
 	private final RouteTimetableRaptorPlanner forward;
 	private final ReverseTimetableRaptorPlanner reverse = new ReverseTimetableRaptorPlanner();
+	private final JourneyFacilityBlockOverlay facilityBlocks;
 
 	public JourneyProfileRaptorAdapter() {
 		this(ScanWorkspacePool.shared());
 	}
 
 	public JourneyProfileRaptorAdapter(ScanWorkspacePool workspacePool) {
+		this(workspacePool, FacilityAvailabilityPort.unavailable(), false, Clock.systemUTC());
+	}
+
+	public JourneyProfileRaptorAdapter(
+		ScanWorkspacePool workspacePool,
+		FacilityAvailabilityPort facilityAvailabilityPort,
+		boolean facilityStatusRequired,
+		Clock clock
+	) {
 		this.forward = new RouteTimetableRaptorPlanner(Objects.requireNonNull(workspacePool, "workspacePool"));
+		this.facilityBlocks = new JourneyFacilityBlockOverlay(facilityAvailabilityPort, facilityStatusRequired, clock);
 	}
 
 	@Override
@@ -61,12 +74,14 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		if (requiredQuery.isCancelled()) throw new IllegalStateException("Journey profile planning was cancelled");
 		RaptorRouteBundleRuntimeView runtime = requireRouteRuntime(snapshot);
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable = runtime.compiledTimetable();
+		RouteTimetableRaptorPlanner.RealtimeOverlay facilityOverlay =
+			facilityBlocks.capture(requiredQuery.constraintMode(), timetable);
 		var observations = new JourneyProfilePruningObservationAccumulator(
 			requiredQuery.requestId(), algorithmIdentity(requiredQuery));
 		try {
 			ReverseTimetableRaptorPlanner.LastConnectionPreparation preparation = reverse.prepareLastConnection(
 				forward.reverseLastConnectionQuery(requiredQuery, lastConnection.serviceDate()), timetable,
-				timetable.activeServiceDay(lastConnection.serviceDate()), RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+				timetable.activeServiceDay(lastConnection.serviceDate()), facilityOverlay,
 				requiredLimits, observations);
 			JourneyProfileRaptorPort.Terminal terminal = preparation.outcome()
 				== ReverseTimetableRaptorPlanner.Outcome.FOUND
@@ -99,7 +114,8 @@ public final class JourneyProfileRaptorAdapter implements JourneyProfileRaptorPo
 		}
 		Objects.requireNonNull(runtime, "runtime");
 		RouteTimetableRaptorPlanner.CompiledTimetable timetable = runtime.compiledTimetable();
-		RouteTimetableRaptorPlanner.RealtimeOverlay overlay = RouteTimetableRaptorPlanner.RealtimeOverlay.empty();
+		RouteTimetableRaptorPlanner.RealtimeOverlay overlay =
+			facilityBlocks.capture(requiredQuery.constraintMode(), timetable);
 		JourneyProfilePruningObservationAccumulator observations = new JourneyProfilePruningObservationAccumulator(
 			requiredQuery.requestId(), algorithmIdentity(requiredQuery));
 

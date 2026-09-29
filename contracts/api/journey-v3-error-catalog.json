@@ -160,6 +160,11 @@
     {
       "operation": "profileJourneys",
       "httpStatus": 503,
+      "code": "FACILITY_STATUS_UNAVAILABLE"
+    },
+    {
+      "operation": "profileJourneys",
+      "httpStatus": 503,
       "code": "RAPTOR_FRONTIER_CAPACITY_EXCEEDED"
     },
     {
