@@ -16,6 +16,7 @@ import java.io.InputStream;
 import java.io.InterruptedIOException;
 import java.net.InetSocketAddress;
 import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPairGenerator;
@@ -28,6 +29,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
+import org.mockito.ArgumentCaptor;
 
 class HttpDatapackReleaseCatalogAdapterTest {
 	private static final ObjectMapper JSON = new ObjectMapper();
@@ -389,6 +391,28 @@ class HttpDatapackReleaseCatalogAdapterTest {
 
 	private static String sha256(byte[] value) throws Exception {
 		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
+	}
+
+	@Test
+	void injectedClientWithoutExplicitTimeoutUsesDefaultCatalogRequestTimeout() throws Exception {
+		var httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(503);
+		var request = ArgumentCaptor.forClass(HttpRequest.class);
+		when(httpClient.<InputStream>send(request.capture(), any())).thenReturn(response);
+
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var adapter = new HttpDatapackReleaseCatalogAdapter(
+			httpClient,
+			"http://127.0.0.1:8080",
+			publicKey(keyPair),
+			"production-v1"
+		);
+
+		assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+			.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		assertThat(request.getValue().timeout()).contains(Duration.ofSeconds(10));
 	}
 
 	@Test
