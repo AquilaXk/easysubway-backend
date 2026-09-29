@@ -220,6 +220,24 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void requiredTrueWithStepFreeAndBundleLackingMappingThrowsUnavailableException() {
+		// runtime without facility requirements mapping (legacy bundle)
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var freshFacilityView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of());
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var adapter = new JourneyRaptorAdapter(() -> freshFacilityView, true, clock);
+
+		assertThatThrownBy(() -> adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		)).isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	@Test
 	void requiredTrueWithStepFreeAndNullObservedAtThrowsException() {
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
 		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
@@ -313,6 +331,59 @@ class JourneyRaptorAdapterTest {
 	@Test
 	void verifiesAdapterConstructorOverloads() {
 		assertThat(new JourneyRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared())).isNotNull();
+=======
+		)).isInstanceOf(FacilityStatusUnavailableException.class)
+			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE")
+			.hasMessageContaining("transition facility requirements");
+	}
+
+	@Test
+	void integratedFacilityStatusOverlayControlsStepFreeRouteAvailability() {
+		// Bundle with facility requirement mapping: "entry" requires "fac-1"
+		var requirements = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(java.util.Map.of(
+			"entry", List.of(Set.of("fac-1"))
+		));
+		var runtime = RaptorRouteBundleRuntimeView.compile(
+			ROUTE_BUNDLE_SHA, GENERATION, timetable(true), requirements
+		);
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var currentStatuses = new java.util.HashMap<String, com.easysubway.transit.domain.AccessibilityFacilityStatus>();
+		currentStatuses.put("fac-1", com.easysubway.transit.domain.AccessibilityFacilityStatus.NORMAL);
+
+		var provider = new FacilityStatusOverlayProvider(
+			() -> java.util.Map.copyOf(currentStatuses),
+			() -> requirements,
+			clock,
+			new io.micrometer.core.instrument.simple.SimpleMeterRegistry()
+		);
+		provider.refresh();
+
+		var adapter = new JourneyRaptorAdapter(provider, true, clock);
+
+		// 1. Initial query: facility normal -> route found
+		var stepFreeReq = request(JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
+		var plan1 = adapter.plan(stepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(plan1.candidates()).isNotEmpty();
+
+		// 2. Facility breaks -> refresh -> route blocked (empty)
+		currentStatuses.put("fac-1", com.easysubway.transit.domain.AccessibilityFacilityStatus.BROKEN);
+		provider.refresh();
+		var plan2 = adapter.plan(stepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(plan2.candidates()).isEmpty();
+
+		// Standard query still works even when step-free is blocked
+		var standardReq = request(JourneyRequest.MobilityProfile.STANDARD,
+			JourneyRequest.ConstraintMode.NONE, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
+		var planStandard = adapter.plan(standardReq, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(planStandard.candidates()).isNotEmpty();
+
+		// 3. Facility repaired -> refresh -> route restored
+		currentStatuses.put("fac-1", com.easysubway.transit.domain.AccessibilityFacilityStatus.NORMAL);
+		provider.refresh();
+		var plan3 = adapter.plan(stepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
+		assertThat(plan3.candidates()).isNotEmpty();
+>>>>>>> 7acc8e8f (test(journey): 시설 고장 연계 차단 계산 및 공급자 신선도 검증 테스트 추가 (#418))
 	}
 
 	@Test

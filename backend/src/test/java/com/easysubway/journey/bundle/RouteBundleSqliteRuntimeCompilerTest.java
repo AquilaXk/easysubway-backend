@@ -316,6 +316,64 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThat(runtime.routeBundleSha256()).isEqualTo(SHA);
 	}
 
+	@Test
+	void compilesLegacyBundleWithoutTransitionFacilityRequirementsAsMissing() throws Exception {
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(payloads()));
+		assertThat(runtime.facilityRequirements().isPresent()).isFalse();
+	}
+
+	@Test
+	void compilesBundleWithTransitionFacilityRequirementsTable() throws Exception {
+		var edges = topologyEdges();
+		var topology = sqlite("topology", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE network_edges (id TEXT PRIMARY KEY, from_node_id TEXT NOT NULL,
+				 to_node_id TEXT NOT NULL, duration_seconds INTEGER NOT NULL, distance_meters INTEGER NOT NULL,
+				 edge_type TEXT NOT NULL, service_pattern TEXT NOT NULL, service_class TEXT NOT NULL,
+				 includes_stairs INTEGER NOT NULL, stair_access_state TEXT NOT NULL,
+				 accessibility_status TEXT NOT NULL, reliability_score INTEGER NOT NULL,
+				 source_id TEXT NOT NULL, source_snapshot_id TEXT NOT NULL, provider_record_hash TEXT NOT NULL,
+				 provenance_kind TEXT NOT NULL, verification_status TEXT NOT NULL, facility_id TEXT,
+				 last_verified_at TEXT NOT NULL, evidence_hash TEXT NOT NULL)
+				""");
+			for (var edge : edges) {
+				insert(connection, "INSERT INTO network_edges VALUES(?,?,?,?,?,?,?,?,?,?,'AVAILABLE',100,'src','snap','hash','OFFICIAL_SOURCE','VERIFIED',NULL,'2026-08-12T00:00:00Z',?)",
+					edge.id(), edge.from(), edge.to(), edge.duration(), edge.distance(), edge.type(), edge.pattern(), edge.serviceClass(),
+					edge.includesStairs(), edge.includesStairs() == 1 ? "STAIRS_PRESENT" : "STEP_FREE", "g".repeat(64));
+			}
+		});
+		var evaluation = evaluation(edges);
+		var accessibility = sqlite("accessibility", connection -> {
+			common(connection, identitySql());
+			execute(connection, """
+				CREATE TABLE route_accessibility_edge_evidence (
+				 evaluation_digest TEXT NOT NULL, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL);
+				CREATE TABLE transition_facility_requirement (
+				 transition_key TEXT NOT NULL, segment_index INTEGER NOT NULL, facility_id TEXT NOT NULL,
+				 PRIMARY KEY(transition_key, segment_index, facility_id));
+				""");
+			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
+				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
+			insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?)",
+				"entry-a", 0, "fac-1");
+			insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?)",
+				"entry-a", 0, "fac-2");
+			insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?)",
+				"entry-a", 1, "fac-3");
+		});
+		var validPayloads = payloads();
+		validPayloads.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, com.github.luben.zstd.Zstd.compress(topology, 10));
+		validPayloads.put(RouteBundleSqliteRuntimeCompiler.ACCESSIBILITY_PATH, com.github.luben.zstd.Zstd.compress(accessibility, 10));
+
+		var runtime = new RouteBundleSqliteRuntimeCompiler().compile(input(validPayloads));
+		assertThat(runtime.facilityRequirements().isPresent()).isTrue();
+		var segments = runtime.facilityRequirements().segmentsForTransition("entry-a");
+		assertThat(segments).hasSize(2);
+		assertThat(segments.get(0)).containsExactlyInAnyOrder("fac-1", "fac-2");
+		assertThat(segments.get(1)).containsExactly("fac-3");
+	}
+
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
 		return input(payloads, payloadSha256s(payloads));
 	}
