@@ -5047,6 +5047,14 @@ public final class RouteTimetableRaptorPlanner {
 			return EMPTY;
 		}
 
+		static RealtimeOverlay blockedOnly(BitSet blockedTransitions) {
+			if (blockedTransitions == null || blockedTransitions.isEmpty()) {
+				return EMPTY;
+			}
+			return new RealtimeOverlay(
+				null, false, new int[0], new int[0], new int[0], new boolean[0], new RealtimeEvidence[0], new int[0], blockedTransitions);
+		}
+
 		static RealtimeOverlay combine(RealtimeOverlay a, RealtimeOverlay b) {
 			if (a == null || a.isEmpty()) {
 				return b != null ? b : EMPTY;
@@ -5066,15 +5074,20 @@ public final class RouteTimetableRaptorPlanner {
 				.distinct().sorted().toArray();
 
 			String version = a.version != null ? a.version : b.version;
+			int[] tripIndexes = a.tripIndexes.length > 0 ? a.tripIndexes : b.tripIndexes;
+			int[] arrivalDeltas = a.tripIndexes.length > 0 ? a.arrivalDeltas : b.arrivalDeltas;
+			int[] departureDeltas = a.tripIndexes.length > 0 ? a.departureDeltas : b.departureDeltas;
+			boolean[] cancelled = a.tripIndexes.length > 0 ? a.cancelled : b.cancelled;
+			RealtimeEvidence[] evidence = a.evidence.length > 0 ? a.evidence : b.evidence;
 
 			return new RealtimeOverlay(
 				version,
 				a.available || b.available,
-				a.tripIndexes,
-				a.arrivalDeltas,
-				a.departureDeltas,
-				a.cancelled,
-				a.evidence,
+				tripIndexes,
+				arrivalDeltas,
+				departureDeltas,
+				cancelled,
+				evidence,
 				mergedPatterns,
 				mergedBlocked);
 		}

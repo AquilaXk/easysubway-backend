@@ -178,8 +178,19 @@ public class JourneyProductionConfiguration {
 
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
-	JourneyRaptorPort journeyRaptorPort(ScanWorkspacePool workspacePool) {
-		return new JourneyRaptorAdapter(workspacePool);
+	@org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(com.easysubway.journey.application.FacilityAvailabilityPort.class)
+	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort() {
+		return com.easysubway.journey.application.FacilityAvailabilityPort.unavailable();
+	}
+
+	@Bean
+	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
+	JourneyRaptorPort journeyRaptorPort(
+		ScanWorkspacePool workspacePool,
+		com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort,
+		@Value("${easysubway.journey.facility-status.required:false}") boolean facilityStatusRequired
+	) {
+		return new JourneyRaptorAdapter(workspacePool, facilityAvailabilityPort, facilityStatusRequired, CLOCK);
 	}
 
 	@Bean

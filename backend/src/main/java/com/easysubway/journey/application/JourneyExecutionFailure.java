@@ -26,6 +26,7 @@ public record JourneyExecutionFailure(Reason reason, JourneyExecutionResult.Exec
 		REALTIME_UNAVAILABLE,
 		REALTIME_STALE,
 		REALTIME_IDENTITY_MISMATCH,
+		FACILITY_STATUS_UNAVAILABLE,
 		CANCELLED,
 		RAPTOR_FAILED,
 		NO_ROUTE

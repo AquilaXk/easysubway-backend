@@ -55,6 +55,11 @@
     {
       "operation": "searchJourneys",
       "httpStatus": 503,
+      "code": "FACILITY_STATUS_UNAVAILABLE"
+    },
+    {
+      "operation": "searchJourneys",
+      "httpStatus": 503,
       "code": "ROUTE_SERVICE_UNAVAILABLE"
     },
     {

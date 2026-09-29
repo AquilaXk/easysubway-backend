@@ -366,6 +366,11 @@ class JourneyApplicationServiceTest {
 		assertFailure(exception.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.RAPTOR_FAILED);
 
+		Fakes facilityUnavailable = new Fakes();
+		facilityUnavailable.raptorFailure = new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE");
+		assertFailure(facilityUnavailable.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
+			JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE);
+
 		Fakes nullOutput = new Fakes();
 		nullOutput.planResult = null;
 		nullOutput.returnNullPlan = true;

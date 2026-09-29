@@ -14,4 +14,9 @@ public record SimpleFacilityAvailabilityView(
 		blockedPathwayEdgeIds = blockedPathwayEdgeIds == null ? Set.of() : Set.copyOf(blockedPathwayEdgeIds);
 		blockedTransitionIds = blockedTransitionIds == null ? new BitSet(0) : (BitSet) blockedTransitionIds.clone();
 	}
+
+	@Override
+	public BitSet blockedTransitionIds() {
+		return (BitSet) blockedTransitionIds.clone();
+	}
 }

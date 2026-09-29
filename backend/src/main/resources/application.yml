@@ -44,6 +44,8 @@ easysubway:
       max-request-bytes: ${EASYSUBWAY_STATION_TIMETABLE_MAX_REQUEST_BYTES:65536}
     profile:
       max-request-bytes: ${EASYSUBWAY_JOURNEY_PROFILE_MAX_REQUEST_BYTES:65536}
+    facility-status:
+      required: ${EASYSUBWAY_JOURNEY_FACILITY_STATUS_REQUIRED:false}
   datapack:
     # 워크플로 전용 서비스 토큰. 미설정이면 조회/콜백 API 체인이 전면 거부(자동화 dormant = 안전 기본값).
     workflow-token: ${EASYSUBWAY_DATAPACK_WORKFLOW_TOKEN:}
