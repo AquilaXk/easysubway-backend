@@ -7,7 +7,6 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import com.easysubway.realtime.adapter.out.persistence.InMemoryRealtimeMappingPort;
 import com.easysubway.realtime.application.port.out.RealtimeArrivalArchivePort;
 import com.easysubway.realtime.application.port.out.RealtimeMappingPort;
-import com.easysubway.realtime.application.port.out.RealtimeProviderCallQuotaPort;
 import com.easysubway.realtime.domain.RealtimeArrivalObservation;
 import com.easysubway.realtime.domain.RealtimeMapping;
 import com.easysubway.realtime.domain.RealtimeArrival;
@@ -40,7 +39,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 class RealtimeGatewayServiceTest {
 
 	@Test
-	@DisplayName("Spring constructor는 archive와 shared quota 포트를 필수 의존성으로 받는다")
+	@DisplayName("Spring constructor는 archive 포트를 필수 의존성으로 받는다")
 	void springConstructorRequiresProductionSafetyPorts() {
 		var parameterTypes = Arrays.stream(RealtimeGatewayService.class.getConstructors())
 			.filter(constructor -> constructor.isAnnotationPresent(Autowired.class))
@@ -49,7 +48,7 @@ class RealtimeGatewayServiceTest {
 			.orElseThrow();
 
 		assertThat(parameterTypes)
-			.contains(RealtimeArrivalArchivePort.class, RealtimeProviderCallQuotaPort.class)
+			.contains(RealtimeArrivalArchivePort.class)
 			.contains(Executor.class)
 			.doesNotContain(Optional.class);
 	}
@@ -322,9 +321,6 @@ class RealtimeGatewayServiceTest {
 			InMemoryRealtimeMappingPort.seededFixture(),
 			new RealtimeProviderControl(),
 			archive,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800,
 			executor
 		);
 
@@ -346,9 +342,6 @@ class RealtimeGatewayServiceTest {
 			InMemoryRealtimeMappingPort.seededFixture(),
 			new RealtimeProviderControl(),
 			new CapturingArrivalArchive(),
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800,
 			command -> { throw new IllegalStateException("archive executor unavailable"); }
 		);
 
@@ -419,34 +412,6 @@ class RealtimeGatewayServiceTest {
 		assertThat(service.providerHealthSnapshot().archiveFailureCount()).isEqualTo(1);
 	}
 
-	@Test
-	@DisplayName("quota store 장애는 provider를 호출하지 않고 unavailable로 닫는다")
-	void quotaStoreFailureFailsClosedWithoutProviderCall() {
-		CountingProvider provider = new CountingProvider();
-		RealtimeProviderCallQuotaPort failingQuota = (providerId, now, zone, perMinute, perDay) -> {
-			throw new IllegalStateException("quota store unavailable");
-		};
-		RealtimeGatewayService service = new RealtimeGatewayService(
-			provider,
-			Clock.fixed(Instant.parse("2026-06-26T08:00:00Z"), ZoneOffset.UTC),
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			RealtimeArrivalArchivePort.NO_OP,
-			failingQuota,
-			1,
-			800
-		);
-
-		RealtimeArrivalResult arrivals = service.arrivals(sangnoksuQuery());
-		RealtimeTrainPositionResult positions = service.trainPositions(line4Query());
-
-		assertThat(arrivals.status()).hasToString("UNAVAILABLE");
-		assertThat(arrivals.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
-		assertThat(positions.status()).hasToString("UNAVAILABLE");
-		assertThat(positions.fallbackCode()).isEqualTo("PROVIDER_UNAVAILABLE");
-		assertThat(provider.arrivalCalls).hasValue(0);
-		assertThat(provider.trainPositionCalls).hasValue(0);
-	}
 
 	@Test
 	@DisplayName("같은 도착 요청의 동시 cache miss는 provider 호출을 공유한다")
@@ -621,16 +586,7 @@ class RealtimeGatewayServiceTest {
 	void quotaExhaustionOpensCircuit() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
 		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = new RealtimeGatewayService(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			RealtimeArrivalArchivePort.NO_OP,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800
-		);
+		RealtimeGatewayService service = service(provider, clock);
 		RealtimeQuery arrivalQuery = sangnoksuQuery();
 		RealtimeQuery trainPositionQuery = line4Query();
 
@@ -681,33 +637,6 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
-	@DisplayName("provider call rate limit은 cache가 있어도 payload 없는 unavailable로 종료한다")
-	void providerRateLimitReturnsUnavailableWithoutStaleCache() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			1
-		);
-		RealtimeQuery query = sangnoksuQuery();
-
-		RealtimeArrivalResult first = service.arrivals(query);
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
-		provider.providerReceivedAt = "2026-06-26T08:00:30Z";
-		RealtimeArrivalResult limited = service.arrivals(query);
-
-		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("UNAVAILABLE");
-		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		assertThat(limited.arrivals()).isEmpty();
-		assertThat(provider.arrivalCalls).hasValue(1);
-		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
-	}
-
-	@Test
 	@DisplayName("provider fallback code는 allowlist 밖 값을 API/metric으로 노출하지 않는다")
 	void providerFallbackCodeIsAllowlistedBeforeExposure() {
 		CountingProvider provider = new CountingProvider();
@@ -732,135 +661,7 @@ class RealtimeGatewayServiceTest {
 			.doesNotContain("4123");
 	}
 
-	@Test
-	@DisplayName("provider call rate limit 설정은 안전 상한을 넘지 않는다")
-	void providerRateLimitIsCappedAtSafeDefault() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		StubMappingPort mappingPort = new StubMappingPort();
-		for (int index = 0; index < 2; index += 1) {
-			mappingPort.add(mapping(
-				"station-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"10040004%02d".formatted(index),
-				"상록수%02d".formatted(index),
-				true,
-				false,
-				"OFFICIAL"
-			));
-		}
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			mappingPort,
-			new RealtimeProviderControl(),
-			999
-		);
 
-		RealtimeArrivalResult result = null;
-		for (int index = 0; index < 2; index += 1) {
-			result = service.arrivals(new RealtimeQuery(
-				"station-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"상록수%02d".formatted(index),
-				null
-			));
-		}
-
-		assertThat(result.status()).hasToString("UNAVAILABLE");
-		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		assertThat(provider.arrivalCalls).hasValue(1);
-	}
-
-	@Test
-	@DisplayName("provider call rate limit은 KST 일일 안전 한도도 넘지 않는다")
-	void providerRateLimitBlocksDailyOverflow() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		StubMappingPort mappingPort = new StubMappingPort();
-		for (int index = 0; index < 4; index += 1) {
-			mappingPort.add(mapping(
-				"station-day-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"10040005%02d".formatted(index),
-				"상록수일일%02d".formatted(index),
-				true,
-				false,
-				"OFFICIAL"
-			));
-		}
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			mappingPort,
-			new RealtimeProviderControl(),
-			1,
-			2
-		);
-
-		RealtimeArrivalResult result = null;
-		List<Instant> sameKstDayInstants = List.of(
-			Instant.parse("2026-06-26T08:00:00Z"),
-			Instant.parse("2026-06-26T08:01:00Z"),
-			Instant.parse("2026-06-26T08:02:00Z")
-		);
-		for (int index = 0; index < sameKstDayInstants.size(); index += 1) {
-			clock.instant = sameKstDayInstants.get(index);
-			provider.providerReceivedAt = clock.instant.toString();
-			result = service.arrivals(new RealtimeQuery(
-				"station-day-%02d".formatted(index),
-				"seoul-4",
-				"1004",
-				"상록수일일%02d".formatted(index),
-				null
-			));
-		}
-
-		assertThat(result.status()).hasToString("UNAVAILABLE");
-		assertThat(result.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		clock.instant = Instant.parse("2026-06-26T15:00:00Z");
-		provider.providerReceivedAt = clock.instant.toString();
-		RealtimeArrivalResult nextKstDay = service.arrivals(new RealtimeQuery(
-			"station-day-03",
-			"seoul-4",
-			"1004",
-			"상록수일일03",
-			null
-		));
-
-		assertThat(nextKstDay.status()).hasToString("FRESH");
-		assertThat(provider.arrivalCalls).hasValue(3);
-	}
-
-	@Test
-	@DisplayName("열차 위치 provider call rate limit도 cache가 있어도 payload 없는 unavailable로 종료한다")
-	void trainPositionProviderRateLimitReturnsUnavailableWithoutStaleCache() {
-		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
-		CountingProvider provider = new CountingProvider();
-		RealtimeGatewayService service = service(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			1
-		);
-		RealtimeQuery query = line4Query();
-
-		RealtimeTrainPositionResult first = service.trainPositions(query);
-		clock.instant = Instant.parse("2026-06-26T08:00:30Z");
-		provider.providerReceivedAt = "2026-06-26T08:00:30Z";
-		RealtimeTrainPositionResult limited = service.trainPositions(query);
-
-		assertThat(first.status()).hasToString("FRESH");
-		assertThat(limited.status()).hasToString("UNAVAILABLE");
-		assertThat(limited.fallbackCode()).isEqualTo("PROVIDER_RATE_LIMITED");
-		assertThat(limited.trainPositions()).isEmpty();
-		assertThat(provider.trainPositionCalls).hasValue(1);
-		assertThat(service.providerHealthSnapshot().staleResultRatio()).isZero();
-	}
 
 	@Test
 	@DisplayName("열차 위치 provider fallback code도 allowlist 밖 값을 API/metric으로 노출하지 않는다")
@@ -1478,9 +1279,6 @@ class RealtimeGatewayServiceTest {
 			InMemoryRealtimeMappingPort.seededFixture(),
 			new RealtimeProviderControl(),
 			RealtimeArrivalArchivePort.NO_OP,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800,
 			Runnable::run,
 			meterRegistry
 		);
@@ -1516,7 +1314,7 @@ class RealtimeGatewayServiceTest {
 				"10040004%02d".formatted(index),
 				"상록수%02d".formatted(index),
 				true,
-				false,
+				true,
 				"OFFICIAL"
 			));
 		}
@@ -1535,6 +1333,8 @@ class RealtimeGatewayServiceTest {
 		assertThat(provider.arrivalCalls.get()).isEqualTo(5);
 
 		for (int index = 0; index < 5; index += 1) {
+			clock.instant = clock.instant.plusSeconds(21);
+			provider.providerReceivedAt = clock.instant.toString();
 			RealtimeTrainPositionResult result = service.trainPositions(line4Query());
 			assertThat(result.status()).hasToString("FRESH");
 		}
@@ -1821,16 +1621,7 @@ class RealtimeGatewayServiceTest {
 	}
 
 	private RealtimeGatewayService serviceWithAlwaysAvailableQuota(RealtimeProvider provider, Clock clock) {
-		return new RealtimeGatewayService(
-			provider,
-			clock,
-			InMemoryRealtimeMappingPort.seededFixture(),
-			new RealtimeProviderControl(),
-			RealtimeArrivalArchivePort.NO_OP,
-			(providerId, now, zone, perMinute, perDay) -> true,
-			1,
-			800
-		);
+		return service(provider, clock);
 	}
 
 	private RealtimeGatewayService service(RealtimeProvider provider, Clock clock, RealtimeMappingPort mappingPort) {
@@ -1853,34 +1644,6 @@ class RealtimeGatewayServiceTest {
 		RealtimeProviderControl control
 	) {
 		return new RealtimeGatewayService(provider, clock, mappingPort, control);
-	}
-
-	private RealtimeGatewayService service(
-		RealtimeProvider provider,
-		Clock clock,
-		RealtimeMappingPort mappingPort,
-		RealtimeProviderControl control,
-		int providerCallLimitPerMinute
-	) {
-		return new RealtimeGatewayService(provider, clock, mappingPort, control, providerCallLimitPerMinute);
-	}
-
-	private RealtimeGatewayService service(
-		RealtimeProvider provider,
-		Clock clock,
-		RealtimeMappingPort mappingPort,
-		RealtimeProviderControl control,
-		int providerCallLimitPerMinute,
-		int providerCallLimitPerDay
-	) {
-		return new RealtimeGatewayService(
-			provider,
-			clock,
-			mappingPort,
-			control,
-			providerCallLimitPerMinute,
-			providerCallLimitPerDay
-		);
 	}
 
 	private RealtimeMapping mapping(

@@ -23,10 +23,7 @@ test("서울 TOPIS backend 계약은 capability·secret·quota 경계를 고정�
   );
   assert.deepEqual(contract.quotaPolicy, {
     providerDefaultDailyLimit: 1000,
-    runtimeDailyHardLimit: 800,
-    runtimePerMinuteHardLimit: 1,
     galleryReviewStatus: "PENDING_CAPACITY_ENHANCEMENT_NOT_REQUIRED_FOR_GUARDED_USE",
-    sharedQuotaStore: "realtime_provider_call_quota_state",
     productionUseAllowed: true,
   });
 });

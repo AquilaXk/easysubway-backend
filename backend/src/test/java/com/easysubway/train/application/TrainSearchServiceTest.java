@@ -751,11 +751,6 @@ class TrainSearchServiceTest {
 		}
 
 		@Override
-		public boolean tryAcquireProviderCall(String providerId, ZoneId providerZone, int minuteLimit, int dayLimit) {
-			return true;
-		}
-
-		@Override
 		public int purgeExpiredBefore(Instant cutoff) {
 			int before = legs.size();
 			legs.values().removeIf(value -> value.expiresAt().isBefore(cutoff));
