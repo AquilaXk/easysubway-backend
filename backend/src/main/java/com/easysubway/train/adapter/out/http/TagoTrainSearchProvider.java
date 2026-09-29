@@ -4,7 +4,6 @@ import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.train.application.TrainSearchProvider;
 import com.easysubway.train.application.TrainSearchProvider.Catalog;
 import com.easysubway.train.application.TrainSearchProvider.ProviderFailure;
-import com.easysubway.train.application.TrainSearchProviderCallBudget;
 import com.easysubway.train.domain.TrainSearchModels.Journey;
 import com.easysubway.train.domain.TrainSearchModels.LegQuery;
 import com.easysubway.train.domain.TrainSearchModels.Station;
@@ -74,14 +73,12 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 	private final HttpClient httpClient;
 	private final Clock clock;
 	private final URI baseUri;
-	private final TrainSearchProviderCallBudget callBudget;
 	private final Duration retryDelay;
 
 	@Autowired
 	TagoTrainSearchProvider(
 		@Value("${EASYSUBWAY_TAGO_TRAIN_SERVICE_KEY:}") String serviceKey,
-		ObjectMapper objectMapper,
-		TrainSearchProviderCallBudget callBudget
+		ObjectMapper objectMapper
 	) {
 		this(
 			serviceKey,
@@ -89,13 +86,12 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 			HttpClient.newBuilder().connectTimeout(REQUEST_TIMEOUT).build(),
 			Clock.systemUTC(),
 			DEFAULT_BASE_URI,
-			callBudget,
 			RETRY_DELAY
 		);
 	}
 
 	TagoTrainSearchProvider(String serviceKey, ObjectMapper objectMapper, HttpClient httpClient, Clock clock) {
-		this(serviceKey, objectMapper, httpClient, clock, DEFAULT_BASE_URI, () -> {}, RETRY_DELAY);
+		this(serviceKey, objectMapper, httpClient, clock, DEFAULT_BASE_URI, RETRY_DELAY);
 	}
 
 	TagoTrainSearchProvider(
@@ -105,7 +101,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		Clock clock,
 		URI baseUri
 	) {
-		this(serviceKey, objectMapper, httpClient, clock, baseUri, () -> {}, RETRY_DELAY);
+		this(serviceKey, objectMapper, httpClient, clock, baseUri, RETRY_DELAY);
 	}
 
 	TagoTrainSearchProvider(
@@ -114,18 +110,6 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		HttpClient httpClient,
 		Clock clock,
 		URI baseUri,
-		TrainSearchProviderCallBudget callBudget
-	) {
-		this(serviceKey, objectMapper, httpClient, clock, baseUri, callBudget, RETRY_DELAY);
-	}
-
-	TagoTrainSearchProvider(
-		String serviceKey,
-		ObjectMapper objectMapper,
-		HttpClient httpClient,
-		Clock clock,
-		URI baseUri,
-		TrainSearchProviderCallBudget callBudget,
 		Duration retryDelay
 	) {
 		this.serviceKey = decodedServiceKey(serviceKey);
@@ -133,7 +117,6 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		this.httpClient = httpClient;
 		this.clock = clock;
 		this.baseUri = baseUri;
-		this.callBudget = callBudget;
 		this.retryDelay = retryDelay;
 	}
 
@@ -490,7 +473,6 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 	private String sendWithOneRetry(URI uri, Instant deadline) throws IOException {
 		for (int attempt = 0; attempt < 2; attempt++) {
 			try {
-				callBudget.acquire();
 				HttpRequest request = HttpRequest.newBuilder(uri)
 					.timeout(requestTimeout(deadline))
 					.GET()

@@ -2,7 +2,6 @@ package com.easysubway.train.application;
 
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Optional;
 
@@ -19,8 +18,6 @@ public interface TrainSearchCache {
 	void releaseLease(String key, String owner);
 
 	boolean storeLegAndRelease(String key, String owner, CachedLeg leg);
-
-	boolean tryAcquireProviderCall(String providerId, ZoneId providerZone, int minuteLimit, int dayLimit);
 
 	int purgeExpiredBefore(Instant cutoff);
 
