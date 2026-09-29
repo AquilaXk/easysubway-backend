@@ -438,16 +438,16 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			.orElseThrow();
 	}
 
-	private static Instant instantAt(int readyAtSeconds) {
+	static Instant instantAt(int readyAtSeconds) {
 		return instantAt(SERVICE_DATE, readyAtSeconds);
 	}
 
-	private static Instant instantAt(LocalDate date, int readyAtSeconds) {
+	static Instant instantAt(LocalDate date, int readyAtSeconds) {
 		return date.atStartOfDay().plusSeconds(readyAtSeconds)
 			.atOffset(ZoneOffset.ofHours(9)).toInstant();
 	}
 
-	private static JourneyProfileResourcePolicy policy() {
+	static JourneyProfileResourcePolicy policy() {
 		return policy(32);
 	}
 
@@ -467,7 +467,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 		return new LoadRouteTimetablePort.TransitRoute(routeId, lineId, lineId, lineId, "Terminal", "Asia/Seoul");
 	}
 
-	private static RouteTimetable timetable() {
+	static RouteTimetable timetable() {
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			SERVICE_DATE.minusDays(1), SERVICE_DATE.plusDays(1), "Asia/Seoul");
@@ -489,7 +489,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			accessData());
 	}
 
-	private static RouteTimetable crossCutoffTimetable() {
+	static RouteTimetable crossCutoffTimetable() {
 		var route = new LoadRouteTimetablePort.TransitRoute(
 			"route", "line", "L", "Line", "Terminal", "Asia/Seoul");
 		return new RouteTimetable(
@@ -512,7 +512,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			accessData());
 	}
 
-	private static RouteTimetable threeDayTimetable() {
+	static RouteTimetable threeDayTimetable() {
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			SERVICE_DATE, SERVICE_DATE.plusDays(2), "Asia/Seoul");
@@ -535,7 +535,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), List.of(), null, accessData());
 	}
 
-	private static RouteTimetable frontierCollisionTimetable() {
+	static RouteTimetable frontierCollisionTimetable() {
 		var calendar = new LoadRouteTimetablePort.ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
 			SERVICE_DATE, SERVICE_DATE, "Asia/Seoul");
@@ -567,7 +567,7 @@ class RouteTimetableRaptorPlannerDepartureProfileTest {
 			frontierCollisionAccessData());
 	}
 
-	private static RouteTimetable samePatternSlackTimetable() {
+	static RouteTimetable samePatternSlackTimetable() {
 		var calendar = calendar("daily", SERVICE_DATE);
 		return new RouteTimetable(
 			List.of(calendar), List.of(),
