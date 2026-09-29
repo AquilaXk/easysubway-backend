@@ -187,7 +187,8 @@ class JourneyRaptorAdapterTest {
 
 	@Test
 	void requiredTrueWithStepFreeAndFreshFacilityStatusReturnsStepFreeRoute() {
-		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var requirements = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(java.util.Map.of());
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true), requirements);
 		var freshFacilityView = FacilityAvailabilityView.empty(EFFECTIVE.minus(Duration.ofMinutes(1)));
 		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
 		var adapter = new JourneyRaptorAdapter(() -> freshFacilityView, true, clock);
@@ -206,7 +207,8 @@ class JourneyRaptorAdapterTest {
 
 	@Test
 	void requiredTrueWithStepFreeAndUnavailableFacilityStatusThrowsException() {
-		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var requirements = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(java.util.Map.of());
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true), requirements);
 		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
 		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.unavailable(), true, clock);
 
@@ -332,10 +334,6 @@ class JourneyRaptorAdapterTest {
 	@Test
 	void verifiesAdapterConstructorOverloads() {
 		assertThat(new JourneyRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared())).isNotNull();
-=======
-		)).isInstanceOf(FacilityStatusUnavailableException.class)
-			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE")
-			.hasMessageContaining("transition facility requirements");
 	}
 
 	@Test
@@ -380,7 +378,6 @@ class JourneyRaptorAdapterTest {
 		assertThat(provider.blockedTransitionCount()).isZero();
 		var plan3 = adapter.plan(stepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
 		assertThat(plan3.candidates()).isNotEmpty();
->>>>>>> 7acc8e8f (test(journey): 시설 고장 연계 차단 계산 및 공급자 신선도 검증 테스트 추가 (#418))
 	}
 
 	@Test

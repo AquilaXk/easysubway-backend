@@ -350,17 +350,17 @@ class RouteBundleSqliteRuntimeCompilerTest {
 				CREATE TABLE route_accessibility_edge_evidence (
 				 evaluation_digest TEXT NOT NULL, materialization_digest TEXT NOT NULL, canonical_json TEXT NOT NULL);
 				CREATE TABLE transition_facility_requirement (
-				 transition_key TEXT NOT NULL, segment_index INTEGER NOT NULL, facility_id TEXT NOT NULL,
-				 PRIMARY KEY(transition_key, segment_index, facility_id));
+				 transition_key TEXT NOT NULL, segment TEXT NOT NULL, facility_id TEXT NOT NULL,
+				 PRIMARY KEY(transition_key, segment, facility_id));
 				""");
 			insert(connection, "INSERT INTO route_accessibility_edge_evidence VALUES(?,?,?)",
 				evaluation.path("evaluationDigest").textValue(), "c".repeat(64), canonical(evaluation));
 			insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?)",
-				"entry-a", 0, "fac-1");
+				"entry-a", "entrance-concourse", "fac-1");
 			insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?)",
-				"entry-a", 0, "fac-2");
+				"entry-a", "entrance-concourse", "fac-2");
 			insert(connection, "INSERT INTO transition_facility_requirement VALUES(?,?,?)",
-				"entry-a", 1, "fac-3");
+				"entry-a", "concourse-platform", "fac-3");
 		});
 		var validPayloads = payloads();
 		validPayloads.put(RouteBundleSqliteRuntimeCompiler.TOPOLOGY_PATH, com.github.luben.zstd.Zstd.compress(topology, 10));
@@ -370,8 +370,8 @@ class RouteBundleSqliteRuntimeCompilerTest {
 		assertThat(runtime.facilityRequirements().isPresent()).isTrue();
 		var segments = runtime.facilityRequirements().segmentsForTransition("entry-a");
 		assertThat(segments).hasSize(2);
-		assertThat(segments.get(0)).containsExactlyInAnyOrder("fac-1", "fac-2");
-		assertThat(segments.get(1)).containsExactly("fac-3");
+		assertThat(segments.get(0)).containsExactly("fac-3");
+		assertThat(segments.get(1)).containsExactlyInAnyOrder("fac-1", "fac-2");
 	}
 
 	private RouteBundleSqliteRuntimeCompiler.Input input(Map<String, byte[]> payloads) {
