@@ -519,6 +519,13 @@ jobs:
                 .user.login == "coderabbitai[bot]" and
                 .user.id == 136622811 and
                 .user.type == "Bot";
+              # Claude Code 공식 리뷰 workflow(claude-code-review.yml)의 고정 봇 신원이다 (#390).
+              # CodeRabbit과 같은 frozen discovery 슬롯에서 COMMENTED Review로만 인정한다.
+              def is_claude:
+                .author_association == "NONE" and
+                .user.login == "claude[bot]" and
+                .user.id == 209825114 and
+                .user.type == "Bot";
               def is_canonical_codex:
                 ((.body // "" | startswith("**Actionable comments posted: ")) and
                 ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
@@ -537,7 +544,8 @@ jobs:
                   .author_association == "OWNER" or
                   .author_association == "MEMBER" or
                   .author_association == "COLLABORATOR" or
-                  is_coderabbit
+                  is_coderabbit or
+                  is_claude
                 )] as $trusted |
               ($trusted | map(select(.commit_id == $head))) as $current |
               ($trusted |
@@ -553,14 +561,14 @@ jobs:
               )) as $states |
               ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
               (
-                any($current[]; .state == "APPROVED") or
+                any($current[]; .state == "APPROVED" and (is_claude | not)) or
                 (
                   any($comments[]; is_exact_head_marker) and
                   any($trusted[];
                     .state == "COMMENTED" and
                     (.commit_id | type == "string") and
                     (.commit_id as $review_commit | $commit_ids | index($review_commit) != null) and
-                    (is_coderabbit or is_canonical_codex)
+                    (is_coderabbit or is_claude or is_canonical_codex)
                   )
                 )
               )
