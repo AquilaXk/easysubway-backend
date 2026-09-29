@@ -46,6 +46,7 @@ public class RealtimeGatewayService {
 	private static final int DEFAULT_PROVIDER_CALL_LIMIT_PER_DAY = 800;
 	private static final int MAX_PROVIDER_CALL_LIMIT_PER_MINUTE = 1;
 	private static final int MAX_PROVIDER_CALL_LIMIT_PER_DAY = 800;
+	private static final int MAX_LAST_SERVED_POSITIONS = 5000;
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIMESTAMP_FORMATTER =
 		DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
@@ -73,6 +74,7 @@ public class RealtimeGatewayService {
 	private final Map<String, CachedTrainPosition> trainPositionCache = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeArrivalResult>> arrivalRequests = new ConcurrentHashMap<>();
 	private final Map<String, CompletableFuture<RealtimeTrainPositionResult>> trainPositionRequests = new ConcurrentHashMap<>();
+	private final Map<String, Instant> lastServedPositionAt = new ConcurrentHashMap<>();
 	private volatile java.time.Instant quotaCircuitOpenUntil;
 
 	@Autowired
@@ -380,12 +382,13 @@ public class RealtimeGatewayService {
 			}
 			Instant receivedAt = clock.instant();
 			List<RealtimeTrainPosition> freshTrainPositions = freshTrainPositions(trainPositions, receivedAt);
-			if (freshTrainPositions.isEmpty()) {
+			List<RealtimeTrainPosition> orderedTrainPositions = orderedTrainPositions(freshTrainPositions, receivedAt);
+			if (orderedTrainPositions.isEmpty()) {
 				return RealtimeTrainPositionResult.unavailable("PROVIDER_ERROR");
 			}
 			RealtimeTrainPositionResult result = RealtimeTrainPositionResult.fresh(
 				receivedAt.toString(),
-				freshTrainPositions
+				orderedTrainPositions
 			);
 			trainPositionCache.put(cacheKey, new CachedTrainPosition(result, receivedAt));
 			return result;
@@ -538,6 +541,74 @@ public class RealtimeGatewayService {
 			freshTrainPositions.add(trainPosition);
 		}
 		return List.copyOf(freshTrainPositions);
+	}
+
+	private List<RealtimeTrainPosition> orderedTrainPositions(
+		List<RealtimeTrainPosition> trainPositions,
+		Instant receivedAt
+	) {
+		if (trainPositions.isEmpty()) {
+			return List.of();
+		}
+		Map<String, RealtimeTrainPosition> deduplicated = new java.util.LinkedHashMap<>();
+		for (RealtimeTrainPosition position : trainPositions) {
+			Instant parsed = parseProviderReceivedAt(position.providerReceivedAt());
+			if (parsed == null) {
+				continue;
+			}
+			String key = trainPositionKey(position);
+			RealtimeTrainPosition existing = deduplicated.get(key);
+			if (existing == null) {
+				deduplicated.put(key, position);
+			} else {
+				Instant existingTime = parseProviderReceivedAt(existing.providerReceivedAt());
+				if (existingTime != null && parsed.isAfter(existingTime)) {
+					deduplicated.put(key, position);
+				}
+			}
+		}
+
+		List<RealtimeTrainPosition> kept = new ArrayList<>();
+		for (RealtimeTrainPosition position : deduplicated.values()) {
+			String key = trainPositionKey(position);
+			Instant parsed = parseProviderReceivedAt(position.providerReceivedAt());
+			Instant lastServed = lastServedPositionAt.get(key);
+			if (lastServed != null && parsed.isBefore(lastServed)) {
+				providerMetrics.recordOutOfOrderDrop();
+				continue;
+			}
+			kept.add(position);
+			if (lastServed == null || parsed.isAfter(lastServed)) {
+				lastServedPositionAt.put(key, parsed);
+			}
+		}
+
+		cleanExpiredLastServedPositions(receivedAt);
+		return List.copyOf(kept);
+	}
+
+	private String trainPositionKey(RealtimeTrainPosition position) {
+		return "%s|%s|%s".formatted(
+			position.lineId() == null ? "" : position.lineId(),
+			position.trainNo() == null ? "" : position.trainNo(),
+			position.direction() == null ? "" : position.direction()
+		);
+	}
+
+	private void cleanExpiredLastServedPositions(Instant now) {
+		if (lastServedPositionAt.size() <= MAX_LAST_SERVED_POSITIONS) {
+			return;
+		}
+		Instant cutoff = now.minus(PROVIDER_FRESHNESS_TTL.multipliedBy(2));
+		lastServedPositionAt.entrySet().removeIf(entry -> entry.getValue().isBefore(cutoff));
+		if (lastServedPositionAt.size() > MAX_LAST_SERVED_POSITIONS) {
+			List<Map.Entry<String, Instant>> sorted = new ArrayList<>(lastServedPositionAt.entrySet());
+			sorted.sort(Map.Entry.comparingByValue());
+			int excess = sorted.size() - MAX_LAST_SERVED_POSITIONS;
+			for (int i = 0; i < excess; i++) {
+				lastServedPositionAt.remove(sorted.get(i).getKey());
+			}
+		}
 	}
 
 	private RealtimeArrival adjustArrivalEta(RealtimeArrival arrival, Instant providerReceivedAt, Instant receivedAt) {
@@ -762,6 +833,7 @@ public class RealtimeGatewayService {
 		private final AtomicLong unsupportedResultCount = new AtomicLong();
 		private final AtomicLong providerAuthRejectedCount = new AtomicLong();
 		private final AtomicLong providerRequestRejectedCount = new AtomicLong();
+		private final AtomicLong outOfOrderPositionDropCount = new AtomicLong();
 
 		private void recordProviderCall(Duration latency) {
 			providerCallCount.incrementAndGet();
@@ -784,6 +856,10 @@ public class RealtimeGatewayService {
 			if ("PROVIDER_REQUEST_REJECTED".equals(providerCause)) {
 				providerRequestRejectedCount.incrementAndGet();
 			}
+		}
+
+		private void recordOutOfOrderDrop() {
+			outOfOrderPositionDropCount.incrementAndGet();
 		}
 
 		private void recordEmptyResult() {
@@ -831,7 +907,7 @@ public class RealtimeGatewayService {
 				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls,
 				providerAuthRejectedCount.get(),
 				providerRequestRejectedCount.get(),
-				0L
+				outOfOrderPositionDropCount.get()
 			);
 		}
 
