@@ -206,6 +206,29 @@ export function checkProductionCheats(repoRoot = ROOT_DIR) {
   return violations;
 }
 
+export const JAVA_HOLLOW_PATTERNS = [
+  {
+    regex: /assertTrue\s*\(\s*true\s*\)/g,
+    desc: 'Hollow assertion assertTrue(true) in Java test.',
+  },
+  {
+    regex: /assertThat\s*\(\s*true\s*\)\.isTrue\s*\(\s*\)/g,
+    desc: 'Hollow assertion assertThat(true).isTrue() in Java test.',
+  },
+  {
+    regex: /assertEquals\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*\1\s*\)/g,
+    desc: 'Tautological assertEquals(x, x) in Java test.',
+  },
+  {
+    regex: /assertNotNull\s*\(\s*new\s/g,
+    desc: 'Hollow assertion assertNotNull(new ...) in Java test.',
+  },
+  {
+    regex: /assertThat\s*\(\s*new\s[^;]*\)\s*\.isNotNull\s*\(\s*\)/g,
+    desc: 'Hollow assertion assertThat(new ...).isNotNull() in Java test.',
+  },
+];
+
 export function checkHollowAssertions(repoRoot = ROOT_DIR) {
   const violations = [];
   // Scan JS tests
@@ -243,24 +266,9 @@ export function checkHollowAssertions(repoRoot = ROOT_DIR) {
 
   // Scan Java test files for hollow assertions
   const javaTestFiles = scanDirectory(path.join(repoRoot, 'backend/src/test/java'), /\.java$/);
-  const javaHollowPatterns = [
-    {
-      regex: /assertTrue\s*\(\s*true\s*\)/g,
-      desc: 'Hollow assertion assertTrue(true) in Java test.',
-    },
-    {
-      regex: /assertThat\s*\(\s*true\s*\)\.isTrue\s*\(\s*\)/g,
-      desc: 'Hollow assertion assertThat(true).isTrue() in Java test.',
-    },
-    {
-      regex: /assertEquals\s*\(\s*([a-zA-Z0-9_]+)\s*,\s*\1\s*\)/g,
-      desc: 'Tautological assertEquals(x, x) in Java test.',
-    },
-  ];
-
   for (const file of javaTestFiles) {
     const content = fs.readFileSync(file, 'utf8');
-    for (const pattern of javaHollowPatterns) {
+    for (const pattern of JAVA_HOLLOW_PATTERNS) {
       pattern.regex.lastIndex = 0;
       let match;
       while ((match = pattern.regex.exec(content)) !== null) {
