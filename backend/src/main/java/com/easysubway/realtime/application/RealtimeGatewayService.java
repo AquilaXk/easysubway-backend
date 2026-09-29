@@ -809,7 +809,9 @@ public class RealtimeGatewayService {
 				ratio(freshResultCount.get(), results),
 				ratio(staleResultCount.get(), results),
 				ratio(unsupportedResultCount.get(), results),
-				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls
+				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls,
+				0L,
+				0L
 			);
 		}
 

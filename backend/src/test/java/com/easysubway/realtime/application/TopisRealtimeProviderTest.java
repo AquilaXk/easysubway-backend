@@ -58,6 +58,8 @@ import org.apache.logging.log4j.core.config.Property;
 import org.apache.logging.log4j.core.layout.PatternLayout;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.CsvSource;
 
 @DisplayName("TOPIS 실시간 원천 응답 fail-closed 해석")
 class TopisRealtimeProviderTest {
@@ -379,7 +381,7 @@ class TopisRealtimeProviderTest {
 	}
 
 	@Test
-	@DisplayName("최상위 오류 envelope(INFO-100 인증키 오류)는 도착 없음이 아니라 원천 불가로 닫는다")
+	@DisplayName("최상위 오류 envelope(INFO-100 인증키 오류)는 도착 없음이 아니라 PROVIDER_AUTH_REJECTED로 닫는다")
 	void topLevelErrorEnvelopeIsProviderUnavailable() {
 		ChunkedBodyHttpClient httpClient = ChunkedBodyHttpClient.ok("""
 			{"status": 500, "code": "INFO-100", "message": "인증키가 유효하지 않습니다.",
@@ -388,10 +390,45 @@ class TopisRealtimeProviderTest {
 
 		assertThatThrownBy(() -> provider(httpClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
 			.isInstanceOf(RealtimeProviderException.class)
-			.hasMessage("PROVIDER_UNAVAILABLE");
+			.hasMessage("PROVIDER_AUTH_REJECTED");
 		assertThatThrownBy(() -> provider(httpClient).trainPositions(LINE_3_POSITIONS))
 			.isInstanceOf(RealtimeProviderException.class)
-			.hasMessage("PROVIDER_UNAVAILABLE");
+			.hasMessage("PROVIDER_AUTH_REJECTED");
+	}
+
+	@ParameterizedTest(name = "결과 코드 {0}은 {1} 원인으로 분류한다")
+	@CsvSource({
+		"INFO-100, PROVIDER_AUTH_REJECTED",
+		"ERROR-300, PROVIDER_REQUEST_REJECTED",
+		"ERROR-301, PROVIDER_REQUEST_REJECTED",
+		"ERROR-310, PROVIDER_REQUEST_REJECTED",
+		"ERROR-331, PROVIDER_REQUEST_REJECTED",
+		"ERROR-332, PROVIDER_REQUEST_REJECTED",
+		"ERROR-333, PROVIDER_REQUEST_REJECTED",
+		"ERROR-334, PROVIDER_REQUEST_REJECTED",
+		"ERROR-335, PROVIDER_REQUEST_REJECTED",
+		"ERROR-336, PROVIDER_QUOTA_EXCEEDED",
+		"ERROR-337, PROVIDER_QUOTA_EXCEEDED",
+		"ERROR-500, PROVIDER_UNAVAILABLE",
+		"ERROR-600, PROVIDER_UNAVAILABLE",
+		"ERROR-601, PROVIDER_UNAVAILABLE",
+		"UNKNOWN-999, PROVIDER_UNAVAILABLE"
+	})
+	@DisplayName("TOPIS 결과 코드는 원인별로 명확히 분류된다")
+	void topisResultCodesAreClassified(String code, String expectedCause) {
+		ChunkedBodyHttpClient httpClient = ChunkedBodyHttpClient.ok("""
+			{"status": 500, "code": "%s", "message": "오류 메시지",
+			 "link": "", "developerMessage": "", "total": 0}
+			""".formatted(code));
+
+		assertThatThrownBy(() -> provider(httpClient).arrivals(EULJIRO_3GA_LINE_3_ARRIVALS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.extracting(e -> ((RealtimeProviderException) e).providerCause())
+			.isEqualTo(expectedCause);
+		assertThatThrownBy(() -> provider(httpClient).trainPositions(LINE_3_POSITIONS))
+			.isInstanceOf(RealtimeProviderException.class)
+			.extracting(e -> ((RealtimeProviderException) e).providerCause())
+			.isEqualTo(expectedCause);
 	}
 
 	@Test
