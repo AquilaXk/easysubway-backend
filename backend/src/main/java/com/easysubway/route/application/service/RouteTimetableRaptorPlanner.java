@@ -36,7 +36,6 @@ import java.time.Instant;
 import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
-import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.BitSet;
@@ -4848,7 +4847,7 @@ public final class RouteTimetableRaptorPlanner {
 						if (transferSlack < 0) continue;
 						int childSlack = labelBoardings == 0
 							? PrimitiveProfileLabelPool.NO_TRANSFER_SLACK
-							: Math.min(labelSlack, (int) Math.min(transferSlack, Integer.MAX_VALUE - 1));
+							: Math.min(labelSlack, (int) Math.min(transferSlack, Integer.MAX_VALUE - 1L));
 						byte warnings = (byte) (labelWarnings
 							| timetable.transitionWarningCodes(transition, input.accessProfileBit(), false));
 						for (int alight = position + 1; alight < trip.stopTimes().size(); alight += 1) {
