@@ -49,7 +49,7 @@ import org.springframework.stereotype.Component;
  * (getFcElvtr) and updates master facilities accordingly (#419).
  */
 @Component
-public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartbeatPort {
+public final class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartbeatPort {
 
 	private static final Logger log = LoggerFactory.getLogger(SeoulMetroElevatorStatusCollector.class);
 	private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(10);
