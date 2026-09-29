@@ -1961,6 +1961,8 @@ test('marker 재발행은 marker head를 첫 부모로 하고 main 조상을 둘
     assert.match(failed.stdout, /SYNC_RETURNED/);
     assert.equal(failed.mutations.length, 1, `${mutation} must not retry`);
     assert.equal(failed.authorized, false, `${mutation} response must not authorize the head`);
+    assert.match(failed.stdout, /::warning::PR #85: authorization marker/, `${mutation} must leave a signal`);
+    assert.doesNotMatch(failed.stdout, /now covers/, `${mutation} must not be reported as authorized`);
   }
 });
 

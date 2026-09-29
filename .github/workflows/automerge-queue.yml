@@ -7,7 +7,8 @@ name: Automerge Queue
 # 인증은 github.token 하나뿐이다. GITHUB_TOKEN이 만든 이벤트는 새 workflow run을
 # 만들지 않고 예외는 workflow_dispatch와 repository_dispatch뿐이므로, 이 코디네이터가
 # 끊게 되는 immutable image producer 체인을 head_sha 기준으로 명시 dispatch로 잇는다.
-# PR head는 coordinator가 만들지 않고 PR-owning worktree의 push로만 CI를 붙인다.
+# PR head는 PR-owning worktree의 push가 만든다. 예외는 게이트를 모두 통과한 BEHIND 후보의
+# base 갱신 병합 커밋 하나이며, 이 호출은 CI가 붙도록 AUTOMERGE_PAT로만 한다.
 # 그 외 트리거 공백은 pull_request_review 및 workflow_run 완료 이벤트가 메운다.
 
 on:
@@ -242,7 +243,9 @@ jobs:
           #    set은 300개까지 읽고 네 번째 빈 페이지로 overflow를 판정하므로 REST 요청
           #    4회가 추가된다. Issue comments도 300개까지 읽고 네 번째 빈 페이지로 overflow를
           #    판정하므로 4회가 추가된다. 그래서 후보당 청구는 17회로 잡는다 — 기존 9회에
-          #    commits와 comments bounded-read 각 4회다. 이 여유는 "한 번의 반복이 예약선을 넘지
+          #    commits와 comments bounded-read 각 4회다. authorization marker 재발행은 exact
+          #    marker가 없는 후보에서만 REST 최대 3회(commit·compare·PATCH), 복구는 1회(POST)를
+          #    더 쓰며 이 여유 안에 든다. 이 여유는 "한 번의 반복이 예약선을 넘지
           #    않게" 하는 몫일 뿐이고, 그보다 긴 이력은 후보마다 잔량을 다시 읽는 재확인이
           #    잡는다(아래 budget-recheck). required context별 jq는 로컬 계산이라 요청을
           #    쓰지 않는다. 후보 평가 밖의 고정 비용은 producer 확인과 여유를 둔 값이다.
@@ -405,6 +408,114 @@ jobs:
             offset="$(( RANDOM % total ))"
           fi
           # candidate-offset-end
+          # authorization-marker-sync-begin
+          # exact-head marker는 라벨 이벤트가 게시한다. 코디네이터는 두 경우에만 marker를 맞춘다.
+          #  - 재발행: 기존 canonical marker의 head P를 첫 부모로, main의 조상을 둘째 부모로 둔
+          #    두 부모 병합 커밋(아래 BEHIND 분기의 base 갱신 결과)이 현재 head일 때 marker를
+          #    그 head로 PATCH한다. 그 밖의 head 변화(세션 push)는 재발행하지 않는다.
+          #  - 복구: canonical marker가 아예 없고(라벨 run이 concurrency 대기 중 취소된 경우)
+          #    리뷰 게이트가 인정하는 discovery 리뷰가 PR commit set 안의 커밋에 있을 때 현재
+          #    head로 POST한다.
+          # 조회·형식·변경 실패와 애매한 상태는 marker를 건드리지 않고 아래 리뷰 게이트가 거절하게
+          # 둔다. 변경은 github.token(github-actions[bot])으로만 한다. 게이트는 그 봇의 marker만
+          # 인정한다. 성공하면 GitHub이 돌려준 comment를 게이트 입력에 덧붙인다.
+          sync_authorization_marker() {
+            local target="$1" current_head="$2" commits_path="$3" comments_path="$4" review_pages="$5"
+            local marker_body markers marker_count marker_id marker_head head_commit second_parent ancestry response
+
+            marker_body="<!-- Automerge frozen discovery authorization: ${current_head} -->"
+            markers="$(jq -sc '
+              [flatten[] | select(
+                type == "object" and
+                (.user | type == "object") and
+                .user.login == "github-actions[bot]" and
+                .user.id == 41898282 and
+                .user.type == "Bot" and
+                (.body | type == "string") and
+                (.body | test("^<!-- Automerge frozen discovery authorization: [0-9a-f]{40} -->$"))
+              ) | {id, head: (.body | capture(": (?<sha>[0-9a-f]{40}) -->$").sha)}]
+            ' "${comments_path}")"
+            marker_count="$(jq 'length' <<<"${markers}")"
+            if [[ "${marker_count}" -gt 1 ]] || ! jq -e 'all(.[]; .id | type == "number")' <<<"${markers}" >/dev/null; then
+              echo "::warning::PR #${target}: authorization marker is not a single canonical comment; leaving it unchanged."
+              return 0
+            fi
+            if [[ "${marker_count}" -eq 1 ]]; then
+              marker_id="$(jq -r '.[0].id' <<<"${markers}")"
+              marker_head="$(jq -r '.[0].head' <<<"${markers}")"
+              if [[ "${marker_head}" == "${current_head}" ]]; then
+                return 0
+              fi
+              if ! head_commit="$(gh api "repos/${repo}/commits/${current_head}")" ||
+                ! jq -e --arg first "${marker_head}" '
+                  (.parents | type == "array") and
+                  (.parents | length == 2) and
+                  all(.parents[]; (.sha | type == "string") and (.sha | test("^[0-9a-f]{40}$"))) and
+                  .parents[0].sha == $first
+                ' <<<"${head_commit}" >/dev/null; then
+                echo "PR #${target}: head ${current_head} is not proven to be a base-update merge on authorized head ${marker_head}; authorization is not reissued."
+                return 0
+              fi
+              second_parent="$(jq -r '.parents[1].sha' <<<"${head_commit}")"
+              if ! ancestry="$(gh api "repos/${repo}/compare/${second_parent}...main" --jq '.status')" ||
+                [[ "${ancestry}" != ahead && "${ancestry}" != identical ]]; then
+                echo "PR #${target}: merge parent ${second_parent} is not proven to be on main; authorization is not reissued."
+                return 0
+              fi
+              if ! response="$(gh api --method PATCH "repos/${repo}/issues/comments/${marker_id}" -f body="${marker_body}")"; then
+                echo "::warning::PR #${target}: authorization marker could not be reissued for ${current_head}."
+                return 0
+              fi
+            else
+              if ! jq -e --slurpfile commit_pages "${commits_path}" '
+                def is_coderabbit:
+                  .author_association == "NONE" and
+                  .user.login == "coderabbitai[bot]" and
+                  .user.id == 136622811 and
+                  .user.type == "Bot";
+                def is_canonical_codex:
+                  ((.body // "" | startswith("**Actionable comments posted: ")) and
+                  ((.body // "" | contains("<!-- Review source: Aquila fallback; canonical visible structure:")) or
+                   (.body // "" | contains("<!-- Review source: Aquila Universal Review; engine: aquila-review -->")) or
+                   (.body // "" | contains("<!-- Review source: Codex CLI fallback; canonical visible structure:"))));
+                ($commit_pages | flatten | map(.sha) | unique) as $commit_ids |
+                any(flatten[];
+                  (
+                    .author_association == "OWNER" or
+                    .author_association == "MEMBER" or
+                    .author_association == "COLLABORATOR" or
+                    is_coderabbit
+                  ) and
+                  .state == "COMMENTED" and
+                  (.commit_id | type == "string") and
+                  (.commit_id as $review_commit | $commit_ids | index($review_commit) != null) and
+                  (is_coderabbit or is_canonical_codex)
+                )
+              ' <<<"${review_pages}" >/dev/null; then
+                echo "PR #${target}: no authorization marker and no gate-recognized discovery review in the PR commit set; authorization is not recovered."
+                return 0
+              fi
+              if ! response="$(gh api --method POST "repos/${repo}/issues/${target}/comments" -f body="${marker_body}")"; then
+                echo "::warning::PR #${target}: authorization marker could not be recovered for ${current_head}."
+                return 0
+              fi
+            fi
+            if ! jq -e --arg body "${marker_body}" '
+              type == "object" and
+              (.id | type == "number") and
+              (.user | type == "object") and
+              .user.login == "github-actions[bot]" and
+              .user.id == 41898282 and
+              .user.type == "Bot" and
+              .body == $body
+            ' <<<"${response}" >/dev/null; then
+              echo "::warning::PR #${target}: authorization marker response did not prove the current head; it is not used."
+              return 0
+            fi
+            jq -c '[.]' <<<"${response}" >>"${comments_path}"
+            echo "PR #${target}: authorization marker now covers ${current_head}."
+          }
+          # authorization-marker-sync-end
           while IFS= read -r pr; do
             # budget-recheck-begin
             # per_candidate은 --paginate 추가 페이지까지 덮으라고 잡은 여유값이지 실측이
@@ -517,6 +628,7 @@ jobs:
 
             reviews="$(gh api --paginate --slurp \
               "repos/${repo}/pulls/${pr}/reviews?per_page=100")"
+            sync_authorization_marker "${pr}" "${head}" "${commits_file}" "${comments_file}" "${reviews}"
             # review-state-filter-begin
             if ! jq -e --arg head "${head}" \
               --slurpfile commit_pages "${commits_file}" \
@@ -736,7 +848,23 @@ jobs:
                 fi
                 ;;
               BEHIND)
-                echo "::warning::PR #${pr} is behind main; its owning SSD worktree must rebase and push."
+                # GITHUB_TOKEN이 만든 병합 커밋은 CI를 트리거하지 못하므로 PAT가 없으면 소유
+                # 세션에 돌려보낸다. PAT가 있으면 게이트를 통과한 현재 head를 고정해 base만
+                # 갱신하고 실행을 끝낸다. 새 head의 CI 완료가 다음 실행을 부르고, 그 실행이
+                # marker를 재발행한 뒤 같은 게이트를 다시 통과해야 병합한다.
+                if [[ "${HAS_AUTOMERGE_PAT}" != true ]]; then
+                  echo "::warning::PR #${pr} is behind main; its owning SSD worktree must rebase and push."
+                  continue
+                fi
+                if GH_TOKEN="${MERGE_GH_TOKEN}" gh api --method PUT "repos/${repo}/pulls/${pr}/update-branch" \
+                  -f expected_head_sha="${head}"; then
+                  echo "PR #${pr}: behind main; requested a base merge on gated head ${head}. The next run re-evaluates the new head."
+                  exit 0
+                else
+                  status=$?
+                  echo "::warning::PR #${pr} is behind main and its base merge request failed (status ${status}); skipping without merging."
+                  continue
+                fi
                 ;;
               DIRTY)
                 # 충돌은 소유 세션이 rebase 해야 풀린다. GitHub이 PR에 충돌을 직접 표시하지만
