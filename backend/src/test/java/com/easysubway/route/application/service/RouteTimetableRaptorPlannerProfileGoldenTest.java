@@ -98,6 +98,73 @@ class RouteTimetableRaptorPlannerProfileGoldenTest {
 		}
 	}
 
+	@Test
+	@DisplayName("출발 프로필 경계 픽스처(배차 간격·24시간, 자정 넘김, 3일 달력, frontier 충돌, 연결 여유)의 결과가 골든 파일과 일치한다")
+	void matchesProfileGoldenAcrossDepartureProfileBoundaryFixtures() throws IOException {
+		boolean writeMode = Boolean.parseBoolean(System.getenv("EASYSUBWAY_GOLDEN_WRITE"));
+		if (writeMode && !Files.exists(GOLDEN_DIR)) {
+			Files.createDirectories(GOLDEN_DIR);
+		}
+		record BoundaryFixture(String name, RouteTimetable timetable, JourneyRaptorQuery query) {
+		}
+		List<BoundaryFixture> fixtures = List.of(
+			new BoundaryFixture("boundary-frequency-24h", RouteTimetableRaptorPlannerDepartureProfileTest.timetable(),
+				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB1", "station-a", "station-b",
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(32_000),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(87_000),
+					JourneyRequest.WalkingPace.SLOW, JourneyRequest.MobilityProfile.SLOW, 0, 1)),
+			new BoundaryFixture("boundary-cross-cutoff", RouteTimetableRaptorPlannerDepartureProfileTest.crossCutoffTimetable(),
+				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB2", "station-a", "station-b",
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(96_000),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(99_000),
+					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 0, 1)),
+			new BoundaryFixture("boundary-three-day", RouteTimetableRaptorPlannerDepartureProfileTest.threeDayTimetable(),
+				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB3", "station-a", "station-b",
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(SERVICE_DATE, 10_800),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(SERVICE_DATE.plusDays(2), 10_800),
+					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 0, 1)),
+			new BoundaryFixture("boundary-frontier-collision", RouteTimetableRaptorPlannerDepartureProfileTest.frontierCollisionTimetable(),
+				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB4", "origin", "destination",
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_000),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_001),
+					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 1, 3)),
+			new BoundaryFixture("boundary-same-pattern-slack", RouteTimetableRaptorPlannerDepartureProfileTest.samePatternSlackTimetable(),
+				boundaryQuery("01ARZ3NDEKTSV4RRFFQ69G5FB5", "origin", "destination",
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_000),
+					RouteTimetableRaptorPlannerDepartureProfileTest.instantAt(29_001),
+					JourneyRequest.WalkingPace.STANDARD, JourneyRequest.MobilityProfile.STANDARD, 1, 3)));
+
+		for (BoundaryFixture fixture : fixtures) {
+			Path goldenPath = GOLDEN_DIR.resolve(fixture.name() + ".txt");
+			var observations = new JourneyProfilePruningObservationAccumulator(
+				fixture.query().requestId(), JourneyRaptorPruningInventoryV1.FORWARD_RANGE_RAPTOR);
+			var profile = planner.departureProfile(
+				fixture.query(), planner.compile(fixture.timetable()),
+				RouteTimetableRaptorPlanner.RealtimeOverlay.empty(),
+				RouteTimetableRaptorPlannerDepartureProfileTest.policy().profilePlanningLimits(), observations);
+			String actualCanonical = canonical(profile, observations);
+			assertThat(profile).as("fixture %s must produce profile points", fixture.name()).isNotEmpty();
+			if (writeMode) {
+				Files.writeString(goldenPath, actualCanonical, StandardCharsets.UTF_8);
+			} else {
+				assertThat(Files.exists(goldenPath)).as("Golden file must exist: %s", goldenPath).isTrue();
+				assertThat(actualCanonical)
+					.as("Profile output must match golden for %s", fixture.name())
+					.isEqualTo(Files.readString(goldenPath, StandardCharsets.UTF_8));
+			}
+		}
+	}
+
+	private static JourneyRaptorQuery boundaryQuery(
+		String requestId, String origin, String destination, Instant from, Instant to,
+		JourneyRequest.WalkingPace pace, JourneyRequest.MobilityProfile profile, int maxTransfers, int alternatives
+	) {
+		return new JourneyRaptorQuery(
+			requestId, origin, destination, new JourneyRaptorQuery.DepartBetween(from, to),
+			JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, pace, profile, JourneyRequest.ConstraintMode.NONE,
+			maxTransfers, alternatives, () -> false);
+	}
+
 	static String canonical(
 		List<RouteTimetableRaptorPlanner.JourneyDepartureProfilePoint> profile,
 		JourneyProfilePruningObservationAccumulator observations
