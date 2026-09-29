@@ -12,6 +12,7 @@ import com.easysubway.train.domain.TrainSearchScopePolicy;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLDecoder;
 import java.net.URLEncoder;
@@ -48,6 +49,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 	private static final Duration RETRY_DELAY = Duration.ofMillis(250);
 	private static final int PAGE_SIZE = 100;
 	private static final int MAX_TOTAL_COUNT = 1_000;
+	private static final int MAX_RESPONSE_BYTES = 2 * 1_048_576;
 	private static final ZoneId PROVIDER_ZONE = ZoneId.of("Asia/Seoul");
 	private static final DateTimeFormatter PROVIDER_TIME = DateTimeFormatter.ofPattern("uuuuMMddHHmmss")
 		.withResolverStyle(ResolverStyle.STRICT);
@@ -463,7 +465,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		if (serviceKey.isBlank()) {
 			throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
 		}
-		HttpResponse<String> response;
+		ProviderResponse response;
 		try {
 			response = sendWithOneRetry(uri(operation, parameters), deadline);
 		} catch (IOException exception) {
@@ -483,7 +485,7 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		}
 	}
 
-	private HttpResponse<String> sendWithOneRetry(URI uri, Instant deadline) throws IOException {
+	private ProviderResponse sendWithOneRetry(URI uri, Instant deadline) throws IOException {
 		for (int attempt = 0; attempt < 2; attempt++) {
 			try {
 				callBudget.acquire();
@@ -491,16 +493,17 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 					.timeout(requestTimeout(deadline))
 					.GET()
 					.build();
-				HttpResponse<String> response = httpClient.send(
+				HttpResponse<InputStream> response = httpClient.send(
 					request,
-					HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8)
+					HttpResponse.BodyHandlers.ofInputStream()
 				);
-				requestTimeout(deadline);
-				if (attempt == 0 && retryable(response.statusCode())) {
-					waitBeforeRetry(deadline);
-					continue;
+				try (InputStream body = response.body()) {
+					requestTimeout(deadline);
+					if (!(attempt == 0 && retryable(response.statusCode()))) {
+						return new ProviderResponse(response.statusCode(), boundedBody(body));
+					}
 				}
-				return response;
+				waitBeforeRetry(deadline);
 			} catch (InterruptedException exception) {
 				Thread.currentThread().interrupt();
 				throw new ProviderFailure("TRAIN_SEARCH_UNAVAILABLE");
@@ -512,6 +515,14 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 			}
 		}
 		throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
+	}
+
+	private String boundedBody(InputStream body) throws IOException {
+		byte[] bytes = body.readNBytes(MAX_RESPONSE_BYTES + 1);
+		if (bytes.length > MAX_RESPONSE_BYTES) {
+			throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
+		}
+		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
 	private Duration requestTimeout(Instant deadline) {
@@ -590,4 +601,6 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 	}
 
 	private record ProviderTrainGrade(String name, String code) {}
+
+	private record ProviderResponse(int statusCode, String body) {}
 }

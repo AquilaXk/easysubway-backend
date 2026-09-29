@@ -13,7 +13,9 @@ import com.easysubway.train.domain.TrainSearchModels.LegQuery;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpExchange;
 import com.sun.net.httpserver.HttpServer;
+import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.InetSocketAddress;
 import java.net.URI;
 import java.net.URLDecoder;
@@ -317,16 +319,16 @@ class TagoTrainSearchProviderTest {
 		var budgetCalls = new AtomicInteger();
 		var httpClient = mock(HttpClient.class);
 		@SuppressWarnings("unchecked")
-		var response = (HttpResponse<String>) mock(HttpResponse.class);
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		@SuppressWarnings("unchecked")
-		var emptyResponse = (HttpResponse<String>) mock(HttpResponse.class);
+		var emptyResponse = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		when(response.statusCode()).thenReturn(200);
-		when(response.body()).thenReturn(paginatedResponse("""
+		when(response.body()).thenAnswer(ignored -> bodyStream(paginatedResponse("""
 			{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}
-			""", 1));
+			""", 1)));
 		when(emptyResponse.statusCode()).thenReturn(200);
-		when(emptyResponse.body()).thenReturn(paginatedResponse("[]", 0));
-		when(httpClient.<String>send(any(HttpRequest.class), any()))
+		when(emptyResponse.body()).thenAnswer(ignored -> bodyStream(paginatedResponse("[]", 0)));
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any()))
 			.thenAnswer(invocation -> {
 			if (attempts.incrementAndGet() == 1) {
 				throw new IOException("transient transport failure");
@@ -356,12 +358,12 @@ class TagoTrainSearchProviderTest {
 		var httpClient = mock(HttpClient.class);
 		var clock = mock(Clock.class);
 		@SuppressWarnings("unchecked")
-		var response = (HttpResponse<String>) mock(HttpResponse.class);
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		when(response.statusCode()).thenReturn(200);
-		when(response.body()).thenReturn(paginatedResponse("""
+		when(response.body()).thenAnswer(ignored -> bodyStream(paginatedResponse("""
 			{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}
-			""", 1));
-		when(httpClient.<String>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
+			""", 1)));
+		when(httpClient.<InputStream>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
 			attempts.incrementAndGet();
 			return response;
 		});
@@ -854,6 +856,10 @@ class TagoTrainSearchProviderTest {
 	private String paginatedResponse(String items, int totalCount, int pageNo) {
 		return "{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":"
 			+ items + "},\"pageNo\":" + pageNo + ",\"numOfRows\":100,\"totalCount\":" + totalCount + "}}}";
+	}
+
+	private InputStream bodyStream(String body) {
+		return new ByteArrayInputStream(body.getBytes(StandardCharsets.UTF_8));
 	}
 
 	private String paddedToBytes(String json, int totalBytes) {

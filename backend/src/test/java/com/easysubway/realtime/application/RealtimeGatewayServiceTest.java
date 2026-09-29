@@ -1239,8 +1239,7 @@ class RealtimeGatewayServiceTest {
 				    }
 				  ]
 				}
-				"""),
-			sangnoksuQuery()
+				""")
 		);
 
 		assertThat(arrivals).hasSize(1);
@@ -1275,8 +1274,7 @@ class RealtimeGatewayServiceTest {
 				    }
 				  ]
 				}
-				"""),
-			sangnoksuQuery()
+				""")
 		);
 
 		assertThat(arrivals).hasSize(1);
@@ -1318,8 +1316,7 @@ class RealtimeGatewayServiceTest {
 				    }
 				  ]
 				}
-				"""),
-			sangnoksuQuery()
+				""")
 		);
 
 		assertThat(arrivals).hasSize(1);

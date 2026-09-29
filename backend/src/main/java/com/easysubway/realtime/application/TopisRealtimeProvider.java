@@ -5,6 +5,7 @@ import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
 import java.net.http.HttpClient;
@@ -25,6 +26,7 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 
 	private static final URI TOPIS_BASE_URI = URI.create("http://swopenapi.seoul.go.kr/api/subway/");
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMillis(1500);
+	private static final int MAX_RESPONSE_BYTES = 1_048_576;
 	private static final Pattern ETA_PATTERN = Pattern.compile("(\\d+)\\s*분(?:\\s*(\\d+)\\s*초)?|(\\d+)\\s*초");
 
 	private final String serviceKey;
@@ -59,22 +61,27 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 		}
 		JsonNode payload = request("realtimeStationArrival/0/5/%s".formatted(pathSegment(query.stationQueryName())));
-		return arrivalsFromPayload(payload, query);
+		return arrivalsFromPayload(payload);
 	}
 
-	List<RealtimeArrival> arrivalsFromPayload(JsonNode payload, RealtimeQuery query) {
+	List<RealtimeArrival> arrivalsFromPayload(JsonNode payload) {
 		JsonNode items = payload.path("realtimeArrivalList");
 		if (!items.isArray()) {
-			return List.of();
+			return emptyWhenNoData(payload);
 		}
 		List<RealtimeArrival> arrivals = new ArrayList<>();
 		for (JsonNode item : items) {
+			String lineId = stringOrEmpty(item, "subwayId");
+			String stationName = stringOrEmpty(item, "statnNm");
+			if (lineId.isBlank() || stationName.isBlank()) {
+				continue;
+			}
 			String arvlMsg2 = stringOrEmpty(item, "arvlMsg2");
 			Integer barvlDt = positiveInt(item, "barvlDt");
 			Integer etaSeconds = barvlDt != null ? barvlDt : parseEtaFromMessage(arvlMsg2);
 			arrivals.add(new RealtimeArrival(
-				stringOrFallback(item, "subwayId", query.lineId()),
-				stringOrFallback(item, "statnNm", query.stationQueryName()),
+				lineId,
+				stationName,
 				destination(item),
 				stringOrEmpty(item, "updnLine"),
 				stringOrEmpty(item, "btrainNo"),
@@ -96,12 +103,16 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		JsonNode payload = request("realtimePosition/0/10/%s".formatted(pathSegment(query.lineName())));
 		JsonNode items = payload.path("realtimePositionList");
 		if (!items.isArray()) {
-			return List.of();
+			return emptyWhenNoData(payload);
 		}
 		List<RealtimeTrainPosition> positions = new ArrayList<>();
 		for (JsonNode item : items) {
+			String lineId = stringOrEmpty(item, "subwayId");
+			if (lineId.isBlank()) {
+				continue;
+			}
 			positions.add(new RealtimeTrainPosition(
-				stringOrFallback(item, "subwayId", query.lineId()),
+				lineId,
 				stringOrEmpty(item, "statnNm"),
 				stringOrEmpty(item, "trainNo"),
 				stringOrEmpty(item, "trainSttus"),
@@ -120,16 +131,22 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 			.GET()
 			.build();
 		try {
-			HttpResponse<String> response = httpClient.send(request, HttpResponse.BodyHandlers.ofString(StandardCharsets.UTF_8));
-			if (response.statusCode() == 429) {
-				throw new RealtimeProviderException("PROVIDER_QUOTA_EXCEEDED");
+			HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+			try (InputStream body = response.body()) {
+				if (response.statusCode() == 429) {
+					throw new RealtimeProviderException("PROVIDER_QUOTA_EXCEEDED");
+				}
+				if (response.statusCode() < 200 || response.statusCode() >= 300) {
+					throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+				}
+				byte[] bytes = body.readNBytes(MAX_RESPONSE_BYTES + 1);
+				if (bytes.length > MAX_RESPONSE_BYTES) {
+					throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+				}
+				JsonNode payload = objectMapper.readTree(new String(bytes, StandardCharsets.UTF_8));
+				validateTopisStatus(payload);
+				return payload;
 			}
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
-			}
-			JsonNode payload = objectMapper.readTree(response.body());
-			validateTopisStatus(payload);
-			return payload;
 		} catch (RealtimeProviderException exception) {
 			throw exception;
 		} catch (HttpTimeoutException exception) {
@@ -143,7 +160,7 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	}
 
 	void validateTopisStatus(JsonNode payload) {
-		String code = stringOrEmpty(payload.path("errorMessage"), "code");
+		String code = providerResultCode(payload);
 		if (code.isBlank() || "INFO-000".equals(code)) {
 			return;
 		}
@@ -157,9 +174,19 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		return URLEncoder.encode(value == null ? "" : value, StandardCharsets.UTF_8).replace("+", "%20");
 	}
 
-	private String stringOrFallback(JsonNode node, String fieldName, String fallback) {
-		String value = stringOrEmpty(node, fieldName);
-		return value.isBlank() ? fallback : value;
+	/**
+	 * 정상 응답은 {@code errorMessage.code}에, 해당 데이터 없음·오류 응답은 최상위 {@code code}에 결과 코드를 싣는다.
+	 */
+	private String providerResultCode(JsonNode payload) {
+		String code = stringOrEmpty(payload.path("errorMessage"), "code");
+		return code.isBlank() ? stringOrEmpty(payload, "code") : code;
+	}
+
+	private <T> List<T> emptyWhenNoData(JsonNode payload) {
+		if ("INFO-200".equals(providerResultCode(payload))) {
+			return List.of();
+		}
+		throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 	}
 
 	private String destination(JsonNode node) {
