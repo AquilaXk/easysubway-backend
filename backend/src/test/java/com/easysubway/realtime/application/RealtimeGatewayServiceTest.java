@@ -1393,10 +1393,11 @@ class RealtimeGatewayServiceTest {
 		provider.trainPositionsResponse = initial;
 		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(5001);
 
-		// 캐시 TTL(20초) 경과 후, 제거된 T0와 유지된 T1이 모두 서빙 시각보다 이른 08:00:05로 재도착한다.
+		// 캐시 TTL(20초) 경과 후 두 키가 각자 마지막 서빙 시각보다 이른 시각으로 재도착한다.
+		// T0(서빙 08:00:00)은 07:59:58, T1(서빙 08:00:10)은 08:00:05. 상한 초과로 T0 기록이 제거됐을 때만 T0가 허용된다.
 		clock.instant = Instant.parse("2026-06-26T08:00:55Z");
 		provider.trainPositionsResponse = List.of(
-			new RealtimeTrainPosition("4", "상록수", "T0", "운행중", "상행", "당고개", "2026-06-26T08:00:05Z"),
+			new RealtimeTrainPosition("4", "상록수", "T0", "운행중", "상행", "당고개", "2026-06-26T07:59:58Z"),
 			new RealtimeTrainPosition("4", "상록수", "T1", "운행중", "상행", "당고개", "2026-06-26T08:00:05Z")
 		);
 		RealtimeTrainPositionResult replay = service.trainPositions(line4Query());
