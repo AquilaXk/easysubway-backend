@@ -15,7 +15,7 @@ class BlockedTransitionEvaluatorTest {
 	@Test
 	@DisplayName("구간 대체 2대 중 1대 불가 시 통과 (대체 시설 가용)")
 	void passesWhenOneOfTwoAlternativesIsAvailable() {
-		// transition "t1" has 1 segment with alternatives {fac-1, fac-2}
+		// transition t1 has 1 segment with alternatives fac-1 and fac-2
 		var requirements = TransitionFacilityRequirements.of(Map.of(
 			"t1", List.of(Set.of("fac-1", "fac-2"))
 		));
@@ -50,7 +50,7 @@ class BlockedTransitionEvaluatorTest {
 	@Test
 	@DisplayName("필요한 구간 2개 중 1개 막힘 시 전환 전체 막힘")
 	void blocksWhenAnyRequiredSegmentIsBlocked() {
-		// transition "t1" requires segment 0 {fac-1} AND segment 1 {fac-2}
+		// transition t1 requires segment 0 fac-1 AND segment 1 fac-2
 		var requirements = TransitionFacilityRequirements.of(Map.of(
 			"t1", List.of(Set.of("fac-1"), Set.of("fac-2"))
 		));

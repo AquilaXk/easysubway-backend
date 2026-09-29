@@ -7,6 +7,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
+import java.util.stream.Collectors;
 
 /**
  * Pure evaluation functions for computing blocked transitions based on
@@ -43,12 +44,10 @@ public final class BlockedTransitionEvaluator {
 		if (requirements == null || !requirements.isPresent() || facilityStatuses == null || facilityStatuses.isEmpty()) {
 			return Set.of();
 		}
-		Set<String> disabledFacilityIds = new HashSet<>();
-		for (var entry : facilityStatuses.entrySet()) {
-			if (isFacilityDisabled(entry.getValue())) {
-				disabledFacilityIds.add(entry.getKey());
-			}
-		}
+		Set<String> disabledFacilityIds = facilityStatuses.entrySet().stream()
+			.filter(entry -> isFacilityDisabled(entry.getValue()))
+			.map(Map.Entry::getKey)
+			.collect(Collectors.toSet());
 		return evaluateBlockedTransitionsWithDisabledIds(requirements, disabledFacilityIds);
 	}
 

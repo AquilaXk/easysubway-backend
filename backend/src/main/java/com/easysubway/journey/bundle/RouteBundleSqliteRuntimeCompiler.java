@@ -738,12 +738,10 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		}
 		var result = new LinkedHashMap<String, List<Set<String>>>();
 		for (var entry : raw.entrySet()) {
-			var segmentsMap = entry.getValue();
-			var segmentsList = new ArrayList<Set<String>>(segmentsMap.size());
-			for (var facilities : segmentsMap.values()) {
-				segmentsList.add(Set.copyOf(facilities));
-			}
-			result.put(entry.getKey(), List.copyOf(segmentsList));
+			var segmentsList = entry.getValue().values().stream()
+				.map(Set::copyOf)
+				.toList();
+			result.put(entry.getKey(), segmentsList);
 		}
 		return TransitionFacilityRequirements.of(result);
 	}

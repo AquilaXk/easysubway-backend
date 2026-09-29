@@ -5,6 +5,6 @@ public interface FacilityAvailabilityPort {
 	FacilityAvailabilityView currentView();
 
 	static FacilityAvailabilityPort unavailable() {
-		return () -> FacilityAvailabilityView.unavailable();
+		return FacilityAvailabilityView::unavailable;
 	}
 }
