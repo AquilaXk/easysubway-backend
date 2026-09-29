@@ -414,7 +414,7 @@ public class InMemoryTransitMasterRepository implements
 			facility.description(),
 			status,
 			facility.dataConfidence(),
-			facility.dataSourceType(),
+			DataSourceType.ADMIN_VERIFIED,
 			updatedAt
 		));
 	}
