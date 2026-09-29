@@ -355,6 +355,22 @@ class JdbcRouteSearchRepositoryTest {
 			);
 	}
 
+	@Test
+	@DisplayName("현재 이름 PLANNED_WITHOUT_REALTIME으로 저장된 step 시간 출처도 계획 시간 안내로 집계한다")
+	void loadRouteSearchQualitySignalsReadsCurrentPlannedWithoutRealtimeStepSource() {
+		repository.saveRouteSearch(routeSearchWithStepTimeSource("route-search-1", "PLANNED_WITHOUT_REALTIME"));
+
+		var rows = repository.loadRouteSearchQualitySignalsForDashboard();
+
+		assertThat(rows)
+			.extracting("status", "etaSource", "warningCodes")
+			.containsExactly(tuple(
+				RouteSearchStatus.FOUND,
+				EtaSource.PLANNED_WITHOUT_REALTIME,
+				List.of(RouteWarningCode.STALE_ACCESSIBILITY_DATA)
+			));
+	}
+
 	private RouteSearchResult directRouteSearch(
 		String routeSearchId,
 		String originStationName,
@@ -421,6 +437,10 @@ class JdbcRouteSearchRepositoryTest {
 	}
 
 	private RouteSearchResult fallbackRouteSearch(String routeSearchId) {
+		return routeSearchWithStepTimeSource(routeSearchId, "FALLBACK");
+	}
+
+	private RouteSearchResult routeSearchWithStepTimeSource(String routeSearchId, String timeSource) {
 		return new RouteSearchResult(
 			routeSearchId,
 			"station-origin",
@@ -446,7 +466,7 @@ class JdbcRouteSearchRepositoryTest {
 				false,
 				"VERIFIED_STEP_FREE",
 				false,
-				"FALLBACK",
+				timeSource,
 				"ESTIMATED_CONSTANT",
 				"낮음"
 			)),
