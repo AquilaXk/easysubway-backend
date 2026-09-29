@@ -4,7 +4,6 @@ import com.easysubway.train.application.TrainSearchCache;
 import java.sql.Timestamp;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.ZoneId;
 import java.util.List;
 import java.util.Objects;
 import java.util.Optional;
@@ -169,62 +168,6 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 		) == 1;
 	}
 
-	@Override
-	@Transactional(timeout = 2)
-	public boolean tryAcquireProviderCall(String providerId, ZoneId providerZone, int minuteLimit, int dayLimit) {
-		Objects.requireNonNull(providerId, "providerId must not be null");
-		Objects.requireNonNull(providerZone, "providerZone must not be null");
-		if (minuteLimit <= 0 || dayLimit <= 0) {
-			throw new IllegalArgumentException("quota limits must be positive");
-		}
-		Instant databaseNow = databaseNow();
-		long minuteWindow = databaseNow.getEpochSecond() / 60;
-		long dayWindow = databaseNow.atZone(providerZone).toLocalDate().toEpochDay();
-		jdbcTemplate.update(
-			"""
-				INSERT INTO train_provider_call_quota_state
-				(provider_id, minute_window, minute_calls, day_window, daily_calls, updated_at)
-				VALUES (?, ?, 0, ?, 0, ?)
-				ON CONFLICT DO NOTHING
-				""",
-			providerId,
-			minuteWindow,
-			dayWindow,
-			Timestamp.from(databaseNow)
-		);
-		QuotaState state = requireQuotaState(jdbcTemplate.queryForObject(
-			"""
-				SELECT minute_window, minute_calls, day_window, daily_calls
-				FROM train_provider_call_quota_state WHERE provider_id = ? FOR UPDATE
-				""",
-			(rs, rowNum) -> new QuotaState(
-				rs.getLong("minute_window"),
-				rs.getInt("minute_calls"),
-				rs.getLong("day_window"),
-				rs.getInt("daily_calls")
-			),
-			providerId
-		));
-		int minuteCalls = state.minuteWindow() == minuteWindow ? state.minuteCalls() : 0;
-		int dailyCalls = state.dayWindow() == dayWindow ? state.dailyCalls() : 0;
-		if (minuteCalls >= minuteLimit || dailyCalls >= dayLimit) {
-			return false;
-		}
-		jdbcTemplate.update(
-			"""
-				UPDATE train_provider_call_quota_state
-				SET minute_window = ?, minute_calls = ?, day_window = ?, daily_calls = ?, updated_at = ?
-				WHERE provider_id = ?
-				""",
-			minuteWindow,
-			minuteCalls + 1,
-			dayWindow,
-			dailyCalls + 1,
-			Timestamp.from(databaseNow),
-			providerId
-		);
-		return true;
-	}
 
 	@Override
 	@Transactional(timeout = 2)
@@ -254,13 +197,4 @@ public class JdbcTrainSearchCache implements TrainSearchCache {
 		}
 		return value.toInstant();
 	}
-
-	static QuotaState requireQuotaState(QuotaState value) {
-		if (value == null) {
-			throw new IllegalStateException("provider quota state query returned null");
-		}
-		return value;
-	}
-
-	record QuotaState(long minuteWindow, int minuteCalls, long dayWindow, int dailyCalls) {}
 }

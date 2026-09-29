@@ -310,22 +310,6 @@ class DatabaseMigrationContainerTest {
 				executor.shutdownNow();
 			}
 
-			ZoneId korea = ZoneId.of("Asia/Seoul");
-			assertThat(repository.tryAcquireProviderCall("tago-train", korea, 1, 1)).isTrue();
-			assertThat(repository.tryAcquireProviderCall("tago-train", korea, 1, 1)).isFalse();
-			jdbcTemplate.update("""
-				UPDATE train_provider_call_quota_state
-				SET minute_window = minute_window - 1, minute_calls = 99,
-					day_window = day_window - 1, daily_calls = 99
-				WHERE provider_id = 'tago-train'
-				""");
-			assertThat(repository.tryAcquireProviderCall("tago-train", korea, 1, 1)).isTrue();
-			assertThat(jdbcTemplate.queryForMap("""
-				SELECT minute_calls, daily_calls FROM train_provider_call_quota_state
-				WHERE provider_id = 'tago-train'
-				"""))
-				.containsEntry("minute_calls", 1)
-				.containsEntry("daily_calls", 1);
 
 			// freshLeg/tryAcquireLease는 저장소의 CURRENT_TIMESTAMP(실시간 DB 시계)와 expires_at을
 			// 비교하므로 관측 시각을 실행 시점 기준 상대 시각으로 고정해 시간 의존성을 제거한다.

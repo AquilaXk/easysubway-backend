@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class TagoTrainSearchProviderTest {
@@ -289,7 +291,6 @@ class TagoTrainSearchProviderTest {
 	@Test
 	void mergesPagesAndAcceptsSingleItemShape() throws Exception {
 		var requestedPages = new java.util.concurrent.CopyOnWriteArrayList<String>();
-		var budgetCalls = new AtomicInteger();
 		var server = server(exchange -> {
 			if (respondEmptyForNextDay(exchange)) {
 				requestedPages.add("1");
@@ -302,12 +303,11 @@ class TagoTrainSearchProviderTest {
 			respond(exchange, paginatedResponse(items, 101, page));
 		});
 		try {
-			var provider = provider(server, "test-key", budgetCalls::incrementAndGet);
+			var provider = provider(server, "test-key");
 			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
 
 			assertThat(provider.search(query)).hasSize(101);
 			assertThat(requestedPages).containsExactly("1", "2", "1");
-			assertThat(budgetCalls).hasValue(3);
 		} finally {
 			server.stop(0);
 		}
@@ -316,7 +316,6 @@ class TagoTrainSearchProviderTest {
 	@Test
 	void retriesOneTransportFailureBeforeResponse() throws Exception {
 		var attempts = new AtomicInteger();
-		var budgetCalls = new AtomicInteger();
 		var httpClient = mock(HttpClient.class);
 		@SuppressWarnings("unchecked")
 		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
@@ -342,14 +341,12 @@ class TagoTrainSearchProviderTest {
 			httpClient,
 			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
 			URI.create("https://provider.example/"),
-			budgetCalls::incrementAndGet,
 			java.time.Duration.ZERO
 		);
 		var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
 
 		assertThat(provider.search(query)).hasSize(1);
 		assertThat(attempts).hasValue(3);
-		assertThat(budgetCalls).hasValue(3);
 	}
 
 	@Test
@@ -376,7 +373,6 @@ class TagoTrainSearchProviderTest {
 			httpClient,
 			clock,
 			URI.create("https://provider.example/"),
-			() -> {},
 			java.time.Duration.ZERO
 		);
 
@@ -390,23 +386,17 @@ class TagoTrainSearchProviderTest {
 	}
 
 	@Test
-	void recomputesTheHttpTimeoutAfterQuotaWaiting() throws Exception {
+	void rejectsSearchWhenStartedAtOrAfterDeadline() throws Exception {
 		var attempts = new AtomicInteger();
-		var now = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-07-19T00:00:00Z"));
 		var httpClient = mock(HttpClient.class);
 		var clock = mock(Clock.class);
-		when(clock.instant()).thenAnswer(ignored -> now.get());
-		when(httpClient.<String>send(any(HttpRequest.class), any())).thenAnswer(invocation -> {
-			attempts.incrementAndGet();
-			throw new AssertionError("HTTP send must not start after the deadline");
-		});
+		when(clock.instant()).thenReturn(Instant.parse("2026-07-19T00:00:05Z"));
 		var provider = new TagoTrainSearchProvider(
 			"test-key",
 			JSON,
 			httpClient,
 			clock,
 			URI.create("https://provider.example/"),
-			() -> now.set(Instant.parse("2026-07-19T00:00:05Z")),
 			java.time.Duration.ZERO
 		);
 
@@ -423,7 +413,6 @@ class TagoTrainSearchProviderTest {
 	void retriesTransientHttpStatusesOnce() throws Exception {
 		for (int status : java.util.List.of(408, 429, 503)) {
 			var attempts = new AtomicInteger();
-			var budgetCalls = new AtomicInteger();
 			var server = server(exchange -> {
 				if (attempts.incrementAndGet() == 1) {
 					respond(exchange, status, "temporary");
@@ -440,9 +429,8 @@ class TagoTrainSearchProviderTest {
 					"서울", "대전"
 				);
 
-				assertThat(provider(server, "test-key", budgetCalls::incrementAndGet).search(query)).hasSize(1);
+				assertThat(provider(server, "test-key").search(query)).hasSize(1);
 				assertThat(attempts).hasValue(3);
-				assertThat(budgetCalls).hasValue(3);
 			} finally {
 				server.stop(0);
 			}
@@ -489,7 +477,6 @@ class TagoTrainSearchProviderTest {
 	@Test
 	void rejectsAnOversizedPageWithoutRetryingOrReadingTheBodyToTheEnd() throws Exception {
 		var attempts = new AtomicInteger();
-		var budgetCalls = new AtomicInteger();
 		var httpClient = mock(HttpClient.class);
 		@SuppressWarnings("unchecked")
 		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
@@ -507,7 +494,6 @@ class TagoTrainSearchProviderTest {
 			httpClient,
 			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
 			URI.create("https://provider.example/"),
-			budgetCalls::incrementAndGet,
 			java.time.Duration.ZERO
 		);
 
@@ -515,7 +501,6 @@ class TagoTrainSearchProviderTest {
 			.isInstanceOf(ProviderFailure.class)
 			.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
 		assertThat(attempts).hasValue(1);
-		assertThat(budgetCalls).hasValue(1);
 		assertThat(body.bytesRead()).isLessThanOrEqualTo(2_097_153L).isLessThan(body.length());
 		assertThat(body.closed()).isTrue();
 	}
@@ -545,7 +530,6 @@ class TagoTrainSearchProviderTest {
 				httpClient,
 				Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
 				URI.create("https://provider.example/"),
-				() -> {},
 				java.time.Duration.ZERO
 			);
 
@@ -564,7 +548,6 @@ class TagoTrainSearchProviderTest {
 	@Test
 	void rejectsAPageWhoseBodyFinishesAfterTheSearchDeadline() throws Exception {
 		var attempts = new AtomicInteger();
-		var budgetCalls = new AtomicInteger();
 		var deadline = Instant.parse("2026-07-19T00:00:05Z");
 		var now = new java.util.concurrent.atomic.AtomicReference<>(Instant.parse("2026-07-19T00:00:00Z"));
 		var httpClient = mock(HttpClient.class);
@@ -587,7 +570,6 @@ class TagoTrainSearchProviderTest {
 			httpClient,
 			clock,
 			URI.create("https://provider.example/"),
-			budgetCalls::incrementAndGet,
 			java.time.Duration.ZERO
 		);
 
@@ -595,7 +577,6 @@ class TagoTrainSearchProviderTest {
 			.isInstanceOf(ProviderFailure.class)
 			.hasMessage("TRAIN_SEARCH_UNAVAILABLE");
 		assertThat(attempts).hasValue(1);
-		assertThat(budgetCalls).as("deadline 뒤에 끝난 본문으로 다음 요청을 준비하지 않는다").hasValue(1);
 	}
 
 	@Test
@@ -813,6 +794,30 @@ class TagoTrainSearchProviderTest {
 	}
 
 	@Test
+	@DisplayName("공공 API 자체 호출 한도가 제거되어 61회 검색 요청이 모두 원천에 도달한다")
+	void multipleSearchRequestsReachProviderWithoutBudgetExhaustion() throws Exception {
+		var requests = new AtomicInteger();
+		var server = server(exchange -> {
+			requests.incrementAndGet();
+			if (respondEmptyForNextDay(exchange)) return;
+			respond(exchange, paginatedResponse("""
+				[{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}]
+				""", 1));
+		});
+		try {
+			var provider = provider(server, "test-key");
+			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
+
+			for (int i = 0; i < 61; i++) {
+				assertThat(provider.search(query)).isNotEmpty();
+			}
+			assertThat(requests.get()).isGreaterThanOrEqualTo(61);
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
 	void appliesThreeAmServiceDayBoundary() throws Exception {
 		var provider = new TagoTrainSearchProvider(
 			"never-print-service-key",
@@ -921,21 +926,12 @@ class TagoTrainSearchProviderTest {
 	}
 
 	private TagoTrainSearchProvider provider(HttpServer server, String serviceKey) {
-		return provider(server, serviceKey, () -> {});
-	}
-
-	private TagoTrainSearchProvider provider(
-		HttpServer server,
-		String serviceKey,
-		com.easysubway.train.application.TrainSearchProviderCallBudget budget
-	) {
 		return new TagoTrainSearchProvider(
 			serviceKey,
 			JSON,
 			HttpClient.newHttpClient(),
 			Clock.fixed(Instant.parse("2026-07-19T00:00:00Z"), ZoneOffset.UTC),
 			URI.create("http://127.0.0.1:" + server.getAddress().getPort() + "/"),
-			budget,
 			java.time.Duration.ZERO
 		);
 	}

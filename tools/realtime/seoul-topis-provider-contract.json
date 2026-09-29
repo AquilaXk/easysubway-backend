@@ -2,14 +2,11 @@
   "schemaVersion": 1,
   "providerId": "seoul-topis",
   "displayName": "서울 TOPIS 지하철 실시간 provider",
-  "contractStatus": "production-guarded-default-quota",
+  "contractStatus": "production-provider-quota-only",
   "retrievedAt": "2026-06-25",
   "quotaPolicy": {
     "providerDefaultDailyLimit": 1000,
-    "runtimeDailyHardLimit": 800,
-    "runtimePerMinuteHardLimit": 1,
     "galleryReviewStatus": "PENDING_CAPACITY_ENHANCEMENT_NOT_REQUIRED_FOR_GUARDED_USE",
-    "sharedQuotaStore": "realtime_provider_call_quota_state",
     "productionUseAllowed": true
   },
   "officialSources": [
