@@ -3,18 +3,31 @@ package com.easysubway.datapack.adapter.out.catalog;
 import static java.util.Objects.requireNonNull;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
+import com.easysubway.datapack.application.port.out.DatapackReleaseCatalogPort;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.sun.net.httpserver.HttpServer;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.InterruptedIOException;
 import java.net.InetSocketAddress;
+import java.net.http.HttpClient;
+import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
 import java.security.KeyPairGenerator;
 import java.security.MessageDigest;
 import java.security.Signature;
+import java.time.Duration;
 import java.util.Base64;
 import java.util.HexFormat;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.atomic.AtomicBoolean;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 
 class HttpDatapackReleaseCatalogAdapterTest {
 	private static final ObjectMapper JSON = new ObjectMapper();
@@ -378,6 +391,62 @@ class HttpDatapackReleaseCatalogAdapterTest {
 		return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(value));
 	}
 
+	@Test
+	@Timeout(5)
+	void catalogBodyStalledPastTimeoutIsUnavailable() throws Exception {
+		var httpClient = mock(HttpClient.class);
+		@SuppressWarnings("unchecked")
+		var response = (HttpResponse<InputStream>) mock(HttpResponse.class);
+		when(response.statusCode()).thenReturn(200);
+		when(response.body()).thenReturn(new StalledInputStream());
+		when(httpClient.<InputStream>send(any(), any())).thenReturn(response);
+
+		var keyPair = KeyPairGenerator.getInstance("RSA").generateKeyPair();
+		var adapter = new HttpDatapackReleaseCatalogAdapter(
+			httpClient,
+			"http://127.0.0.1:8080",
+			publicKey(keyPair),
+			"production-v1",
+			Duration.ofMillis(200)
+		);
+
+		long startedAt = System.nanoTime();
+		assertThatThrownBy(() -> adapter.fetchCurrent("production"))
+			.isInstanceOf(DatapackReleaseCatalogPort.Unavailable.class);
+		assertThat(Duration.ofNanos(System.nanoTime() - startedAt))
+			.isLessThan(Duration.ofSeconds(2));
+	}
+
+	private static final class StalledInputStream extends InputStream {
+		private final CountDownLatch closedLatch = new CountDownLatch(1);
+		private final AtomicBoolean closed = new AtomicBoolean();
+		private boolean firstByteRead;
+
+		@Override
+		public int read() throws IOException {
+			if (!firstByteRead) {
+				firstByteRead = true;
+				return '{';
+			}
+			try {
+				closedLatch.await();
+			} catch (InterruptedException exception) {
+				Thread.currentThread().interrupt();
+				throw new InterruptedIOException("read interrupted");
+			}
+			if (closed.get()) {
+				throw new IOException("stream closed");
+			}
+			return -1;
+		}
+
+		@Override
+		public void close() {
+			closed.set(true);
+			closedLatch.countDown();
+		}
+	}
+
 	private static void respond(com.sun.net.httpserver.HttpExchange exchange, byte[] body)
 		throws java.io.IOException {
 		exchange.sendResponseHeaders(200, body.length);
@@ -385,3 +454,4 @@ class HttpDatapackReleaseCatalogAdapterTest {
 		exchange.close();
 	}
 }
+

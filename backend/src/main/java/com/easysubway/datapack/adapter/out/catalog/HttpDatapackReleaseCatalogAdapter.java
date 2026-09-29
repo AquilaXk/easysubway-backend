@@ -44,20 +44,31 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 	private final String baseUrl;
 	private final String publicKeyPem;
 	private final String keyId;
+	private final Duration timeout;
 
 	@org.springframework.beans.factory.annotation.Autowired
 	public HttpDatapackReleaseCatalogAdapter(
 		@Value("${easysubway.datapack.catalog-base-url:}") String baseUrl,
 		@Value("${easysubway.datapack.signing-public-key-pem:}") String publicKeyPem,
 		@Value("${easysubway.datapack.signing-key-id:production-v1}") String keyId) {
-		this(HttpClient.newBuilder().connectTimeout(TIMEOUT).build(), baseUrl, publicKeyPem, keyId);
+		this(HttpClient.newBuilder().connectTimeout(TIMEOUT).build(), baseUrl, publicKeyPem, keyId, TIMEOUT);
 	}
 
 	HttpDatapackReleaseCatalogAdapter(HttpClient httpClient, String baseUrl, String publicKeyPem, String keyId) {
+		this(httpClient, baseUrl, publicKeyPem, keyId, TIMEOUT);
+	}
+
+	HttpDatapackReleaseCatalogAdapter(
+		HttpClient httpClient,
+		String baseUrl,
+		String publicKeyPem,
+		String keyId,
+		Duration timeout) {
 		this.httpClient = httpClient;
 		this.baseUrl = baseUrl == null ? "" : baseUrl.replaceFirst("/+$", "");
 		this.publicKeyPem = publicKeyPem == null ? "" : publicKeyPem.trim();
 		this.keyId = keyId;
+		this.timeout = timeout == null ? TIMEOUT : timeout;
 	}
 
 	@Override
@@ -136,7 +147,7 @@ public class HttpDatapackReleaseCatalogAdapter implements DatapackReleaseCatalog
 		if (baseUrl.isBlank() || publicKeyPem.isBlank()) throw new Unavailable();
 		try {
 			var request = HttpRequest.newBuilder(URI.create(baseUrl + path))
-				.timeout(TIMEOUT).GET().build();
+				.timeout(timeout).GET().build();
 			var response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
 			try (var body = response.body()) {
 				if (response.statusCode() == 404) throw new NotFound();
