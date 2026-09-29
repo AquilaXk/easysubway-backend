@@ -1320,6 +1320,129 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("한 응답 안에서 더 늦은 중복 건이 앞에 오고 이른 건이 뒤에 와도 가장 늦은 1건만 유지한다")
+	void duplicateTrainWithLatestFirstKeepsLatest() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"),
+			new RealtimeTrainPosition("4", "한대앞", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().stationName()).isEqualTo("상록수");
+		assertThat(result.trainPositions().getFirst().providerReceivedAt()).isEqualTo("2026-06-26T08:00:50Z");
+	}
+
+	@Test
+	@DisplayName("providerReceivedAt을 해석할 수 없는 열차 위치는 추정 없이 결과에서 제외한다")
+	void trainPositionWithUnparsableProviderReceivedAtIsDropped() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "한대앞", "3101", "운행중", "상행", "당고개", "not-a-time"),
+			new RealtimeTrainPosition("4", "중앙", "3102", "운행중", "상행", "당고개", null),
+			new RealtimeTrainPosition("4", "고잔", "3103", "운행중", "상행", "당고개", " "),
+			new RealtimeTrainPosition("4", "상록수", "3104", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().trainNo()).isEqualTo("3104");
+	}
+
+	@Test
+	@DisplayName("lineId, trainNo, direction이 null인 열차 위치도 서로 다른 키로 충돌 없이 처리하고 같은 키만 중복 제거한다")
+	void trainPositionsWithNullKeyPartsAreDeduplicatedPerKey() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition(null, "한대앞", null, "운행중", null, "당고개", "2026-06-26T08:00:40Z"),
+			new RealtimeTrainPosition(null, "상록수", null, "운행중", null, "당고개", "2026-06-26T08:00:50Z"),
+			new RealtimeTrainPosition("4", "중앙", null, "운행중", "상행", "당고개", "2026-06-26T08:00:45Z"),
+			new RealtimeTrainPosition("4", "고잔", "3101", "운행중", null, "당고개", "2026-06-26T08:00:46Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+
+		assertThat(result.trainPositions())
+			.extracting(RealtimeTrainPosition::stationName)
+			.containsExactlyInAnyOrder("상록수", "중앙", "고잔");
+	}
+
+	@Test
+	@DisplayName("추적 키가 상한을 넘으면 가장 오래된 키부터 제거되어 그 키의 이른 시각 위치가 다시 허용된다")
+	void lastServedStoreEvictsOldestKeysBeyondCapacity() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:30Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		// MAX_LAST_SERVED_POSITIONS(5000)를 1건 초과: 키 "T0"만 08:00:00으로 가장 오래됐다.
+		List<RealtimeTrainPosition> initial = new java.util.ArrayList<>();
+		initial.add(new RealtimeTrainPosition("4", "한대앞", "T0", "운행중", "상행", "당고개", "2026-06-26T08:00:00Z"));
+		for (int i = 1; i <= 5000; i++) {
+			initial.add(new RealtimeTrainPosition("4", "한대앞", "T" + i, "운행중", "상행", "당고개", "2026-06-26T08:00:10Z"));
+		}
+		provider.trainPositionsResponse = initial;
+		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(5001);
+
+		// 캐시 TTL(20초) 경과 후, 제거된 T0와 유지된 T1이 모두 서빙 시각보다 이른 08:00:05로 재도착한다.
+		clock.instant = Instant.parse("2026-06-26T08:00:55Z");
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "T0", "운행중", "상행", "당고개", "2026-06-26T08:00:05Z"),
+			new RealtimeTrainPosition("4", "상록수", "T1", "운행중", "상행", "당고개", "2026-06-26T08:00:05Z")
+		);
+		RealtimeTrainPositionResult replay = service.trainPositions(line4Query());
+
+		assertThat(replay.trainPositions()).hasSize(1);
+		assertThat(replay.trainPositions().getFirst().trainNo()).isEqualTo("T0");
+		assertThat(service.providerHealthSnapshot().outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
+	@DisplayName("추적 키가 상한을 넘을 때 만료(신선도 TTL의 2배)된 키는 정리되고 살아 있는 키의 순서 보호는 유지된다")
+	void lastServedStoreDropsExpiredKeysAndKeepsLiveKeys() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:30Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		// 08:00:00에 서빙된 키 5000건(상한 이내, 정리 없음).
+		List<RealtimeTrainPosition> initial = new java.util.ArrayList<>();
+		for (int i = 0; i < 5000; i++) {
+			initial.add(new RealtimeTrainPosition("4", "한대앞", "E" + i, "운행중", "상행", "당고개", "2026-06-26T08:00:00Z"));
+		}
+		provider.trainPositionsResponse = initial;
+		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(5000);
+
+		// 180초 초과 경과: 새 키 2건이 들어와 5002건이 되면 만료 키가 정리된다.
+		clock.instant = Instant.parse("2026-06-26T08:03:10Z");
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "상록수", "L1", "운행중", "상행", "당고개", "2026-06-26T08:03:05Z"),
+			new RealtimeTrainPosition("4", "중앙", "L2", "운행중", "상행", "당고개", "2026-06-26T08:03:06Z")
+		);
+		assertThat(service.trainPositions(line4Query()).trainPositions()).hasSize(2);
+
+		// 정리 뒤에도 살아 있는 L1의 더 이른 시각 위치는 폐기되고 L2의 최신 위치는 유지된다.
+		clock.instant = Instant.parse("2026-06-26T08:03:35Z");
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "고잔", "L1", "운행중", "상행", "당고개", "2026-06-26T08:03:00Z"),
+			new RealtimeTrainPosition("4", "초지", "L2", "운행중", "상행", "당고개", "2026-06-26T08:03:20Z")
+		);
+		RealtimeTrainPositionResult after = service.trainPositions(line4Query());
+
+		assertThat(after.trainPositions()).hasSize(1);
+		assertThat(after.trainPositions().getFirst().stationName()).isEqualTo("초지");
+		assertThat(service.providerHealthSnapshot().outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("역전 폐기된 열차 위치 건수는 provider health snapshot의 outOfOrderPositionDropCount로 계측된다")
 	void outOfOrderDropsAreCountedInHealthSnapshot() {
 		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
