@@ -166,6 +166,91 @@ class SeoulMetroElevatorStatusCollectorTest {
 		assertThat(idOther).isEqualTo("seoul:0202:1번 출입구:1");
 	}
 
+	private SeoulMetroElevatorStatusCollector createCollector(HttpClient mockClient) {
+		return new SeoulMetroElevatorStatusCollector(
+			new SeoulMetroElevatorStatusCollector.Configuration("test-key", "https://apis.data.go.kr/B553766/facility/getFcElvtr"),
+			repository,
+			repository,
+			OBJECT_MAPPER,
+			mockClient,
+			clock,
+			meterRegistry
+		);
+	}
+
+	@Test
+	@DisplayName("isAdminVerified는 null 시설 객체에 대해 안전하게 false를 반환한다")
+	void isAdminVerifiedHandlesNull() {
+		assertThat(SeoulMetroElevatorStatusCollector.isAdminVerified(null)).isFalse();
+	}
+
+	@Test
+	@DisplayName("buildFacilityId는 빈 역코드, 상세위치, 또는 1 미만의 sequence에 대해 예외를 발생시킨다")
+	void buildFacilityIdValidatesInputs() {
+		assertThatThrownBy(() -> SeoulMetroElevatorStatusCollector.buildFacilityId("", "pos", 1))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> SeoulMetroElevatorStatusCollector.buildFacilityId("0249", "", 1))
+			.isInstanceOf(IllegalArgumentException.class);
+		assertThatThrownBy(() -> SeoulMetroElevatorStatusCollector.buildFacilityId("0249", "pos", 0))
+			.isInstanceOf(IllegalArgumentException.class);
+	}
+
+	@Test
+	@DisplayName("수집 성공 전 seconds-since-last-success 지표는 NaN을 반환한다")
+	void secondsSinceLastSuccessReturnsNaNBeforeFirstSuccess() {
+		var collector = createCollector(mock(HttpClient.class));
+		var secondsGauge = meterRegistry.find("easysubway.collection.seoul-metro.elevator.seconds-since-last-success").gauge();
+		assertThat(secondsGauge).isNotNull();
+		assertThat(secondsGauge.value()).isNaN();
+	}
+
+	@Test
+	@DisplayName("단일 객체 형태의 items.item 응답도 정상 파싱된다")
+	void singleObjectItemResponseParsedCorrectly() throws Exception {
+		String singleObjectJson = """
+			{
+				"response": {
+					"header": { "resultCode": "00", "resultMsg": "NORMAL SERVICE." },
+					"body": {
+						"items": {
+							"item": {
+								"stnCd": "0249", "stnNm": "신정네거리", "lineNm": "2호선",
+								"dtlPstn": "1번 출입구", "oprtngSitu": "M"
+							}
+						},
+						"numOfRows": 1, "pageNo": 1, "totalCount": 1
+					}
+				}
+			}
+			""";
+
+		HttpClient mockClient = mockHttpClient(200, singleObjectJson);
+		var collector = createCollector(mockClient);
+		collector.collect();
+
+		var facility = repository.facilities.get("seoul:0249:1번 출입구:1");
+		assertThat(facility).isNotNull();
+		assertThat(facility.status()).isEqualTo(AccessibilityFacilityStatus.NORMAL);
+	}
+
+	@Test
+	@DisplayName("수집 중 InterruptedException 발생 시 스레드 인터럽트 플래그를 복구하고 실패 지표를 증가시킨다")
+	void interruptedExceptionRestoresThreadInterrupt() throws Exception {
+		HttpClient mockClient = mock(HttpClient.class);
+		when(mockClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
+			.thenThrow(new InterruptedException("interrupted"));
+
+		var collector = createCollector(mockClient);
+		collector.collect();
+
+		assertThat(Thread.interrupted()).isTrue();
+		assertThat(collector.lastSuccessfulSourceCollectionAt()).isNull();
+		var failureCounter = meterRegistry.find("easysubway.collection.seoul-metro.elevator.sync")
+			.tag("status", "failure").counter();
+		assertThat(failureCounter).isNotNull();
+		assertThat(failureCounter.count()).isEqualTo(1.0);
+	}
+
 	@Test
 	@DisplayName("성공적인 API 응답 파싱 및 상태 반영 (D는 삭제이므로 제외되어 sequence에 영향 없음)")
 	void successfulCollectionParsesAndUpdatesFacilities() throws Exception {
@@ -225,17 +310,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 			""";
 
 		HttpClient mockClient = mockHttpClient(200, responseJson);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			"test-key",
-			"https://apis.data.go.kr/B553766/facility/getFcElvtr",
-			repository,
-			repository,
-			OBJECT_MAPPER,
-			mockClient,
-			clock,
-			meterRegistry
-		);
+		var collector = createCollector(mockClient);
 
 		collector.collect();
 
@@ -284,17 +359,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 	@DisplayName("HTTP 오류 시 심장박동 미갱신 및 failure 지표 증가 (기존 데이터 유지)")
 	void httpErrorDoesNotUpdateHeartbeat() throws Exception {
 		HttpClient mockClient = mockHttpClient(500, "Internal Server Error");
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			"test-key",
-			"https://apis.data.go.kr/B553766/facility/getFcElvtr",
-			repository,
-			repository,
-			OBJECT_MAPPER,
-			mockClient,
-			clock,
-			meterRegistry
-		);
+		var collector = createCollector(mockClient);
 
 		collector.collect();
 
@@ -323,17 +388,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 			""";
 
 		HttpClient mockClient = mockHttpClient(200, errorJson);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			"test-key",
-			"https://apis.data.go.kr/B553766/facility/getFcElvtr",
-			repository,
-			repository,
-			OBJECT_MAPPER,
-			mockClient,
-			clock,
-			meterRegistry
-		);
+		var collector = createCollector(mockClient);
 
 		collector.collect();
 
@@ -384,17 +439,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 			""";
 
 		HttpClient mockClient = mockHttpClient(200, responseJson);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			"test-key",
-			"https://apis.data.go.kr/B553766/facility/getFcElvtr",
-			repository,
-			repository,
-			OBJECT_MAPPER,
-			mockClient,
-			clock,
-			meterRegistry
-		);
+		var collector = createCollector(mockClient);
 
 		collector.collect();
 
@@ -444,17 +489,7 @@ class SeoulMetroElevatorStatusCollectorTest {
 			""";
 
 		HttpClient mockClient = mockHttpClient(200, responseJson);
-
-		var collector = new SeoulMetroElevatorStatusCollector(
-			"test-key",
-			"https://apis.data.go.kr/B553766/facility/getFcElvtr",
-			repository,
-			repository,
-			OBJECT_MAPPER,
-			mockClient,
-			clock,
-			meterRegistry
-		);
+		var collector = createCollector(mockClient);
 
 		collector.collect();
 

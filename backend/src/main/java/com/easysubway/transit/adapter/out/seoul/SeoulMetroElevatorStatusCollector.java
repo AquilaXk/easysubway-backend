@@ -16,6 +16,7 @@ import io.micrometer.core.instrument.Counter;
 import io.micrometer.core.instrument.Gauge;
 import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
+import java.io.IOException;
 import java.io.InputStream;
 import java.net.URI;
 import java.net.URLEncoder;
@@ -53,6 +54,18 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 	private static final Logger log = LoggerFactory.getLogger(SeoulMetroElevatorStatusCollector.class);
 	private static final Duration DEFAULT_REQUEST_TIMEOUT = Duration.ofSeconds(10);
 	private static final int DEFAULT_MAX_RESPONSE_BYTES = 2_097_152; // 2MB
+	private static final String UNKNOWN_CODE = "UNKNOWN";
+
+	public record Configuration(
+		String serviceKey,
+		String endpoint,
+		Duration requestTimeout,
+		int maxResponseBytes
+	) {
+		public Configuration(String serviceKey, String endpoint) {
+			this(serviceKey, endpoint, DEFAULT_REQUEST_TIMEOUT, DEFAULT_MAX_RESPONSE_BYTES);
+		}
+	}
 
 	private final String serviceKey;
 	private final String endpoint;
@@ -81,8 +94,7 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 		ObjectProvider<MeterRegistry> meterRegistryProvider
 	) {
 		this(
-			serviceKey,
-			endpoint,
+			new Configuration(serviceKey, endpoint),
 			loadTransitMasterPortProvider.getIfAvailable(),
 			saveAccessibilityFacilityStatusPortProvider.getIfAvailable(),
 			objectMapper,
@@ -93,8 +105,7 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 	}
 
 	public SeoulMetroElevatorStatusCollector(
-		String serviceKey,
-		String endpoint,
+		Configuration config,
 		LoadTransitMasterPort loadTransitMasterPort,
 		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
 		ObjectMapper objectMapper,
@@ -102,48 +113,25 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 		Clock clock,
 		MeterRegistry meterRegistry
 	) {
-		this(
-			serviceKey,
-			endpoint,
-			loadTransitMasterPort,
-			saveAccessibilityFacilityStatusPort,
-			objectMapper,
-			httpClient,
-			clock,
-			meterRegistry,
-			DEFAULT_REQUEST_TIMEOUT,
-			DEFAULT_MAX_RESPONSE_BYTES
-		);
-	}
-
-	public SeoulMetroElevatorStatusCollector(
-		String serviceKey,
-		String endpoint,
-		LoadTransitMasterPort loadTransitMasterPort,
-		SaveAccessibilityFacilityStatusPort saveAccessibilityFacilityStatusPort,
-		ObjectMapper objectMapper,
-		HttpClient httpClient,
-		Clock clock,
-		MeterRegistry meterRegistry,
-		Duration requestTimeout,
-		int maxResponseBytes
-	) {
-		this.serviceKey = serviceKey != null ? serviceKey.trim() : "";
-		this.endpoint = endpoint != null && !endpoint.isBlank() ? endpoint.trim() : "https://apis.data.go.kr/B553766/facility/getFcElvtr";
+		Configuration effectiveConfig = config != null ? config : new Configuration("", "");
+		this.serviceKey = effectiveConfig.serviceKey() != null ? effectiveConfig.serviceKey().trim() : "";
+		this.endpoint = effectiveConfig.endpoint() != null && !effectiveConfig.endpoint().isBlank()
+			? effectiveConfig.endpoint().trim()
+			: "https://apis.data.go.kr/B553766/facility/getFcElvtr";
 		this.loadTransitMasterPort = loadTransitMasterPort;
 		this.saveAccessibilityFacilityStatusPort = saveAccessibilityFacilityStatusPort;
 		this.objectMapper = Objects.requireNonNull(objectMapper, "objectMapper");
 		this.httpClient = Objects.requireNonNull(httpClient, "httpClient");
 		this.clock = Objects.requireNonNull(clock, "clock");
 		MeterRegistry registry = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
-		this.requestTimeout = requestTimeout != null ? requestTimeout : DEFAULT_REQUEST_TIMEOUT;
-		this.maxResponseBytes = maxResponseBytes > 0 ? maxResponseBytes : DEFAULT_MAX_RESPONSE_BYTES;
+		this.requestTimeout = effectiveConfig.requestTimeout() != null ? effectiveConfig.requestTimeout() : DEFAULT_REQUEST_TIMEOUT;
+		this.maxResponseBytes = effectiveConfig.maxResponseBytes() > 0 ? effectiveConfig.maxResponseBytes() : DEFAULT_MAX_RESPONSE_BYTES;
 
 		this.successCounter = registry.counter("easysubway.collection.seoul-metro.elevator.sync", "status", "success");
 		this.failureCounter = registry.counter("easysubway.collection.seoul-metro.elevator.sync", "status", "failure");
 		this.unknownCodeCounter = registry.counter("easysubway.collection.seoul-metro.elevator.unknown-codes");
 
-		for (String code : List.of("M", "S", "T", "I", "B", "D", "UNKNOWN")) {
+		for (String code : List.of("M", "S", "T", "I", "B", "D", UNKNOWN_CODE)) {
 			AtomicInteger count = new AtomicInteger(0);
 			this.codeCounts.put(code, count);
 			Gauge.builder("easysubway.collection.seoul-metro.elevator.code-count", count, AtomicInteger::get)
@@ -180,6 +168,10 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 			processElevatorItems(items);
 			this.lastSuccessfulCollectionAt = clock.instant();
 			this.successCounter.increment();
+		} catch (InterruptedException exception) {
+			Thread.currentThread().interrupt();
+			log.warn("Seoul Metro elevator status collection interrupted: {}", exception.getMessage());
+			this.failureCounter.increment();
 		} catch (Exception exception) {
 			log.warn("Seoul Metro elevator status collection failed: {}", exception.getMessage());
 			this.failureCounter.increment();
@@ -193,70 +185,82 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 		int totalCount = -1;
 
 		while (totalCount == -1 || collected.size() < totalCount) {
-			String uriStr = endpoint + "?serviceKey=" + URLEncoder.encode(serviceKey, StandardCharsets.UTF_8)
-				+ "&pageNo=" + pageNo
-				+ "&numOfRows=" + numOfRows
-				+ "&dataType=JSON";
-			HttpRequest request = HttpRequest.newBuilder(URI.create(uriStr))
-				.timeout(requestTimeout)
-				.GET()
-				.build();
-
-			long startedAt = System.nanoTime();
-			HttpResponse<?> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
-			if (response.statusCode() != 200) {
-				throw new IllegalStateException("HTTP status " + response.statusCode());
-			}
-
-			byte[] bytes;
-			Object rawBody = response.body();
-			Duration remainingTimeout = requestTimeout.minusNanos(System.nanoTime() - startedAt);
-			if (remainingTimeout.isNegative() || remainingTimeout.isZero()) {
-				remainingTimeout = Duration.ofMillis(100);
-			}
-			if (rawBody instanceof InputStream inputStream) {
-				try (inputStream) {
-					bytes = BoundedResponseBody.read(
-						inputStream,
-						maxResponseBytes,
-						remainingTimeout,
-						() -> new IllegalStateException("Response body exceeded " + maxResponseBytes + " bytes")
-					);
-				}
-			} else if (rawBody instanceof byte[] byteArray) {
-				bytes = byteArray;
-			} else {
-				throw new IllegalStateException("Unexpected response body type: " + rawBody.getClass());
-			}
-
-			JsonNode root = objectMapper.readTree(bytes);
-			JsonNode header = root.path("response").path("header");
-			String resultCode = header.path("resultCode").asText("");
-			if (!"00".equals(resultCode)) {
-				throw new IllegalStateException("API error: resultCode=" + resultCode + ", msg=" + header.path("resultMsg").asText(""));
-			}
-
-			JsonNode bodyNode = root.path("response").path("body");
-			totalCount = bodyNode.path("totalCount").asInt(0);
-			JsonNode itemsNode = bodyNode.path("items").path("item");
-
-			int pageItemCount = 0;
-			if (itemsNode.isArray()) {
-				for (JsonNode item : itemsNode) {
-					collected.add(parseItemNode(item));
-					pageItemCount++;
-				}
-			} else if (itemsNode.isObject()) {
-				collected.add(parseItemNode(itemsNode));
-				pageItemCount++;
-			}
-
-			if (pageItemCount == 0 || collected.size() >= totalCount) {
+			PageResult page = fetchPage(pageNo, numOfRows);
+			totalCount = page.totalCount();
+			collected.addAll(page.items());
+			if (page.items().isEmpty() || collected.size() >= totalCount) {
 				break;
 			}
 			pageNo++;
 		}
 		return collected;
+	}
+
+	private record PageResult(int totalCount, List<RawElevatorItem> items) {
+	}
+
+	private PageResult fetchPage(int pageNo, int numOfRows) throws Exception {
+		String uriStr = endpoint + "?serviceKey=" + URLEncoder.encode(serviceKey, StandardCharsets.UTF_8)
+			+ "&pageNo=" + pageNo
+			+ "&numOfRows=" + numOfRows
+			+ "&dataType=JSON";
+		HttpRequest request = HttpRequest.newBuilder(URI.create(uriStr))
+			.timeout(requestTimeout)
+			.GET()
+			.build();
+
+		long startedAt = System.nanoTime();
+		HttpResponse<?> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
+		if (response.statusCode() != 200) {
+			throw new IllegalStateException("HTTP status " + response.statusCode());
+		}
+
+		byte[] bytes = readResponseBody(response, startedAt);
+		JsonNode root = objectMapper.readTree(bytes);
+		JsonNode header = root.path("response").path("header");
+		String resultCode = header.path("resultCode").asText("");
+		if (!"00".equals(resultCode)) {
+			throw new IllegalStateException("API error: resultCode=" + resultCode + ", msg=" + header.path("resultMsg").asText(""));
+		}
+
+		JsonNode bodyNode = root.path("response").path("body");
+		int totalCount = bodyNode.path("totalCount").asInt(0);
+		List<RawElevatorItem> items = parsePageItems(bodyNode.path("items").path("item"));
+		return new PageResult(totalCount, items);
+	}
+
+	private byte[] readResponseBody(HttpResponse<?> response, long startedAt) throws IOException {
+		Object rawBody = response.body();
+		Duration remainingTimeout = requestTimeout.minusNanos(System.nanoTime() - startedAt);
+		if (remainingTimeout.isNegative() || remainingTimeout.isZero()) {
+			remainingTimeout = Duration.ofMillis(100);
+		}
+		if (rawBody instanceof InputStream inputStream) {
+			try (inputStream) {
+				return BoundedResponseBody.read(
+					inputStream,
+					maxResponseBytes,
+					remainingTimeout,
+					() -> new IllegalStateException("Response body exceeded " + maxResponseBytes + " bytes")
+				);
+			}
+		}
+		if (rawBody instanceof byte[] byteArray) {
+			return byteArray;
+		}
+		throw new IllegalStateException("Unexpected response body type: " + rawBody.getClass());
+	}
+
+	private List<RawElevatorItem> parsePageItems(JsonNode itemsNode) {
+		List<RawElevatorItem> items = new ArrayList<>();
+		if (itemsNode.isArray()) {
+			for (JsonNode item : itemsNode) {
+				items.add(parseItemNode(item));
+			}
+		} else if (itemsNode.isObject()) {
+			items.add(parseItemNode(itemsNode));
+		}
+		return items;
 	}
 
 	private RawElevatorItem parseItemNode(JsonNode item) {
@@ -270,36 +274,14 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 	}
 
 	private void processElevatorItems(List<RawElevatorItem> items) {
-		Map<String, Integer> currentCounts = new LinkedHashMap<>();
-		for (String code : List.of("M", "S", "T", "I", "B", "D", "UNKNOWN")) {
-			currentCounts.put(code, 0);
-		}
-
-		for (RawElevatorItem item : items) {
-			String code = item.oprtngSitu();
-			if (currentCounts.containsKey(code)) {
-				currentCounts.put(code, currentCounts.get(code) + 1);
-			} else {
-				currentCounts.put("UNKNOWN", currentCounts.get("UNKNOWN") + 1);
-			}
-		}
-		currentCounts.forEach((code, count) -> {
-			AtomicInteger gaugeVal = codeCounts.get(code);
-			if (gaugeVal != null) {
-				gaugeVal.set(count);
-			}
-		});
+		updateCodeMetrics(items);
 
 		// 1. Exclude 'D' (deleted) and records with missing station code or position
 		List<RawElevatorItem> activeItems = new ArrayList<>();
 		for (RawElevatorItem item : items) {
-			if ("D".equals(item.oprtngSitu())) {
-				continue;
+			if (!"D".equals(item.oprtngSitu()) && !item.stnCd().isEmpty() && !item.dtlPstn().isEmpty()) {
+				activeItems.add(item);
 			}
-			if (item.stnCd().isEmpty() || item.dtlPstn().isEmpty()) {
-				continue;
-			}
-			activeItems.add(item);
 		}
 
 		// 2. Deterministic sort (Parity with #827 build-transition-facility-requirements.mjs)
@@ -317,63 +299,96 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 			String seqKey = item.stnCd() + "\0" + item.dtlPstn();
 			int sequence = sequenceCounters.getOrDefault(seqKey, 0) + 1;
 			sequenceCounters.put(seqKey, sequence);
+			applyFacilityStatus(item, sequence, observationDate);
+		}
+	}
 
-			AccessibilityFacilityStatus status = parseOperationStatus(item.oprtngSitu());
-			if (status == null) {
-				unknownCodeCounter.increment();
-				continue;
+	private void updateCodeMetrics(List<RawElevatorItem> items) {
+		Map<String, Integer> currentCounts = new LinkedHashMap<>();
+		for (String code : List.of("M", "S", "T", "I", "B", "D", UNKNOWN_CODE)) {
+			currentCounts.put(code, 0);
+		}
+
+		for (RawElevatorItem item : items) {
+			String code = item.oprtngSitu();
+			if (currentCounts.containsKey(code)) {
+				currentCounts.put(code, currentCounts.get(code) + 1);
+			} else {
+				currentCounts.put(UNKNOWN_CODE, currentCounts.get(UNKNOWN_CODE) + 1);
 			}
-
-			String facilityId = buildFacilityId(item.stnCd(), item.dtlPstn(), sequence);
-
-			AccessibilityFacility existing = null;
-			if (loadTransitMasterPort != null) {
-				existing = loadTransitMasterPort.loadAccessibilityFacility(facilityId).orElse(null);
+		}
+		currentCounts.forEach((code, count) -> {
+			AtomicInteger gaugeVal = codeCounts.get(code);
+			if (gaugeVal != null) {
+				gaugeVal.set(count);
 			}
+		});
+	}
 
-			if (!shouldApplyOfficialStatus(existing, observationDate)) {
-				log.debug("Admin verified status retained for facility: {}", facilityId);
-				continue;
-			}
+	private void applyFacilityStatus(RawElevatorItem item, int sequence, LocalDate observationDate) {
+		AccessibilityFacilityStatus status = parseOperationStatus(item.oprtngSitu());
+		if (status == null) {
+			unknownCodeCounter.increment();
+			return;
+		}
 
-			if (saveAccessibilityFacilityStatusPort != null) {
-				if (existing != null) {
-					saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(new AccessibilityFacility(
-						existing.id(),
-						existing.stationId(),
-						existing.exitId(),
-						existing.type(),
-						existing.name(),
-						existing.floorFrom(),
-						existing.floorTo(),
-						existing.latitude(),
-						existing.longitude(),
-						existing.description(),
-						status,
-						DataConfidenceLevel.HIGH,
-						DataSourceType.OFFICIAL_API,
-						observationDate
-					), "seoul-metro-collector");
-				} else {
-					String stationId = resolveStationId(item.stnCd());
-					saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(new AccessibilityFacility(
-						facilityId,
-						stationId,
-						null,
-						AccessibilityFacilityType.ELEVATOR,
-						item.dtlPstn(),
-						null,
-						null,
-						null,
-						null,
-						item.stnNm() + " " + item.lineNm() + " " + item.dtlPstn(),
-						status,
-						DataConfidenceLevel.HIGH,
-						DataSourceType.OFFICIAL_API,
-						observationDate
-					), "seoul-metro-collector");
-				}
-			}
+		String facilityId = buildFacilityId(item.stnCd(), item.dtlPstn(), sequence);
+		AccessibilityFacility existing = loadTransitMasterPort != null
+			? loadTransitMasterPort.loadAccessibilityFacility(facilityId).orElse(null)
+			: null;
+
+		if (!shouldApplyOfficialStatus(existing, observationDate)) {
+			log.debug("Admin verified status retained for facility: {}", facilityId);
+			return;
+		}
+
+		if (saveAccessibilityFacilityStatusPort != null) {
+			persistFacility(item, facilityId, existing, status, observationDate);
+		}
+	}
+
+	private void persistFacility(
+		RawElevatorItem item,
+		String facilityId,
+		AccessibilityFacility existing,
+		AccessibilityFacilityStatus status,
+		LocalDate observationDate
+	) {
+		if (existing != null) {
+			saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(new AccessibilityFacility(
+				existing.id(),
+				existing.stationId(),
+				existing.exitId(),
+				existing.type(),
+				existing.name(),
+				existing.floorFrom(),
+				existing.floorTo(),
+				existing.latitude(),
+				existing.longitude(),
+				existing.description(),
+				status,
+				DataConfidenceLevel.HIGH,
+				DataSourceType.OFFICIAL_API,
+				observationDate
+			), "seoul-metro-collector");
+		} else {
+			String stationId = resolveStationId(item.stnCd());
+			saveAccessibilityFacilityStatusPort.saveAccessibilityFacility(new AccessibilityFacility(
+				facilityId,
+				stationId,
+				null,
+				AccessibilityFacilityType.ELEVATOR,
+				item.dtlPstn(),
+				null,
+				null,
+				null,
+				null,
+				item.stnNm() + " " + item.lineNm() + " " + item.dtlPstn(),
+				status,
+				DataConfidenceLevel.HIGH,
+				DataSourceType.OFFICIAL_API,
+				observationDate
+			), "seoul-metro-collector");
 		}
 	}
 
@@ -390,6 +405,7 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 				}
 			}
 		} catch (Exception ignored) {
+			// Fallback to synthetic station id if station lines cannot be loaded
 		}
 		return "station-" + trimmedCode;
 	}
@@ -433,17 +449,11 @@ public class SeoulMetroElevatorStatusCollector implements SourceCollectionHeartb
 		AccessibilityFacility existingFacility,
 		LocalDate observationDate
 	) {
-		if (existingFacility == null) {
+		if (existingFacility == null || !isAdminVerified(existingFacility)) {
 			return true;
 		}
-		if (isAdminVerified(existingFacility)) {
-			LocalDate adminUpdatedAt = existingFacility.lastUpdatedAt();
-			if (adminUpdatedAt != null && !observationDate.isAfter(adminUpdatedAt)) {
-				return false;
-			}
-			return true;
-		}
-		return true;
+		LocalDate adminUpdatedAt = existingFacility.lastUpdatedAt();
+		return adminUpdatedAt == null || observationDate.isAfter(adminUpdatedAt);
 	}
 
 	private record RawElevatorItem(
