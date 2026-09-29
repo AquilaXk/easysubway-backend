@@ -464,6 +464,24 @@ class TagoTrainSearchProviderTest {
 	}
 
 	@Test
+	void rejectsPageBodyOverTwoMebibytesWithoutParsingTruncatedPrefix() throws Exception {
+		var server = server(exchange -> {
+			if (respondEmptyForNextDay(exchange)) return;
+			respond(exchange, paddedToBytes(paginatedResponse(journeyRow(101), 1), 2_097_153));
+		});
+		try {
+			var provider = provider(server, "test-key");
+			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
+
+			assertThatThrownBy(() -> provider.search(query))
+				.isInstanceOf(ProviderFailure.class)
+				.hasMessage("TRAIN_SEARCH_PROVIDER_ERROR");
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
 	void rejectsAPageThatMakesNoProgress() throws Exception {
 		var server = server(exchange -> respond(exchange, paginatedResponse("[]", 1)));
 		try {
@@ -836,6 +854,12 @@ class TagoTrainSearchProviderTest {
 	private String paginatedResponse(String items, int totalCount, int pageNo) {
 		return "{\"response\":{\"header\":{\"resultCode\":\"00\"},\"body\":{\"items\":{\"item\":"
 			+ items + "},\"pageNo\":" + pageNo + ",\"numOfRows\":100,\"totalCount\":" + totalCount + "}}}";
+	}
+
+	private String paddedToBytes(String json, int totalBytes) {
+		int payloadBytes = json.getBytes(StandardCharsets.UTF_8).length;
+		assertThat(payloadBytes).isLessThan(totalBytes);
+		return json + " ".repeat(totalBytes - payloadBytes);
 	}
 
 	private String journeyRows(int start, int count) {
