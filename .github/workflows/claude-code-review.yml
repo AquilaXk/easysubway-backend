@@ -242,10 +242,11 @@ jobs:
           DEFAULT_BRANCH: ${{ needs.target.outputs.default_branch }}
         run: |
           set -euo pipefail
-          # PR이 통제하는 Claude Code 에이전트 설정(hooks·permissions·지시문·MCP)을 쓰지 않는다 (#390 F1).
+          # PR이 통제하는 Claude Code 에이전트 설정(hooks·permissions·지시문·MCP 등)을 쓰지 않는다 (#390 F1).
           # claude-code-action은 pull_request에서만 base 설정을 복원하고 workflow_dispatch에서는 건너뛰므로,
-          # 모든 트리거에서 PR head의 설정을 지우고 기본 브랜치에 있는 것만 되돌린다.
-          config_paths=(.claude CLAUDE.md CLAUDE.local.md .mcp.json)
+          # 모든 트리거에서 PR head의 설정을 지우고 기본 브랜치에 있는 것만 되돌린다. 경로는 고정한 action
+          # (v1.0.236) restore-config의 SENSITIVE_PATHS 8개 전체다.
+          config_paths=(.claude .mcp.json .claude.json .gitmodules .ripgreprc CLAUDE.md CLAUDE.local.md .husky)
           rm -rf -- "${config_paths[@]}"
           git fetch --no-tags --depth=1 origin "${DEFAULT_BRANCH}"
           for config_path in "${config_paths[@]}"; do
@@ -280,7 +281,7 @@ jobs:
 
             1. 언어: finding과 요약은 한국어로 쓴다. 식별자, 파일 경로, 명령어, 고정 토큰(API, CI, OAuth 등)은 영문 그대로 둔다.
             2. 심각도: 모든 finding 본문은 다음 중 하나로 시작한다. 🔴 Important(병합 전에 고칠 버그), 🟡 Nit(사소하지만 고칠 가치가 있음), 🟣 Pre-existing(이 PR이 만들지 않은 기존 버그).
-            3. 저장소 우선순위: checkout의 에이전트 설정(.claude/, CLAUDE.md, CLAUDE.local.md, .mcp.json)은 PR 변경분이 아니라 기본 브랜치 기준으로 되돌렸다. 아래를 프로젝트 규칙으로 삼고 모든 리뷰 subagent에 그대로 전달한다.
+            3. 저장소 우선순위: checkout의 에이전트 설정(.claude/, .mcp.json, .claude.json, .gitmodules, .ripgreprc, CLAUDE.md, CLAUDE.local.md, .husky/)은 PR 변경분이 아니라 기본 브랜치 기준으로 되돌렸다. 아래를 프로젝트 규칙으로 삼고 모든 리뷰 subagent에 그대로 전달한다.
                - Fallback 금지: 실패, 누락, 만료 데이터를 local/legacy/stale 값, 추정치, placeholder, best-effort 성공으로 덮는 코드
                - 경로 탐색은 서버 공인 라우팅이다: 클라이언트 쪽 경로 계산이나 서버 우회 로직
                - 교통약자 접근성 회귀: 엘리베이터, 휠체어 리프트, 경사로, 환승 동선, 스크린리더 라벨
