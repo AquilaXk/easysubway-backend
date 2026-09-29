@@ -1,5 +1,6 @@
 package com.easysubway.train.adapter.out.http;
 
+import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.train.application.TrainSearchProvider;
 import com.easysubway.train.application.TrainSearchProvider.Catalog;
 import com.easysubway.train.application.TrainSearchProvider.ProviderFailure;
@@ -465,17 +466,14 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		if (serviceKey.isBlank()) {
 			throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
 		}
-		ProviderResponse response;
+		String body;
 		try {
-			response = sendWithOneRetry(uri(operation, parameters), deadline);
+			body = sendWithOneRetry(uri(operation, parameters), deadline);
 		} catch (IOException exception) {
 			throw new ProviderFailure("TRAIN_SEARCH_UNAVAILABLE");
 		}
 		try {
-			if (response.statusCode() < 200 || response.statusCode() >= 300) {
-				throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
-			}
-			JsonNode payload = objectMapper.readTree(response.body());
+			JsonNode payload = objectMapper.readTree(body);
 			if (!"00".equals(payload.path("response").path("header").path("resultCode").asText())) {
 				throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
 			}
@@ -485,7 +483,11 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 		}
 	}
 
-	private ProviderResponse sendWithOneRetry(URI uri, Instant deadline) throws IOException {
+	/**
+	 * 2xx 본문만 돌려준다. 비 2xx는 본문을 읽지 않고 닫는다(첫 시도의 408·429·5xx만 1회 재시도).
+	 * 본문은 2 MiB 상한·남은 deadline 안에서만 읽고, 본문 수신이 deadline을 넘겨 끝나면 TRAIN_SEARCH_UNAVAILABLE이다.
+	 */
+	private String sendWithOneRetry(URI uri, Instant deadline) throws IOException {
 		for (int attempt = 0; attempt < 2; attempt++) {
 			try {
 				callBudget.acquire();
@@ -499,8 +501,19 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 				);
 				try (InputStream body = response.body()) {
 					requestTimeout(deadline);
-					if (!(attempt == 0 && retryable(response.statusCode()))) {
-						return new ProviderResponse(response.statusCode(), boundedBody(body));
+					int status = response.statusCode();
+					if (!(attempt == 0 && retryable(status))) {
+						if (status < 200 || status >= 300) {
+							throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
+						}
+						byte[] bytes = BoundedResponseBody.read(
+							body,
+							MAX_RESPONSE_BYTES,
+							Duration.between(clock.instant(), deadline),
+							() -> new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR")
+						);
+						requestTimeout(deadline);
+						return new String(bytes, StandardCharsets.UTF_8);
 					}
 				}
 				waitBeforeRetry(deadline);
@@ -515,14 +528,6 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 			}
 		}
 		throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
-	}
-
-	private String boundedBody(InputStream body) throws IOException {
-		byte[] bytes = body.readNBytes(MAX_RESPONSE_BYTES + 1);
-		if (bytes.length > MAX_RESPONSE_BYTES) {
-			throw new ProviderFailure("TRAIN_SEARCH_PROVIDER_ERROR");
-		}
-		return new String(bytes, StandardCharsets.UTF_8);
 	}
 
 	private Duration requestTimeout(Instant deadline) {
@@ -601,6 +606,4 @@ public final class TagoTrainSearchProvider implements TrainSearchProvider {
 	}
 
 	private record ProviderTrainGrade(String name, String code) {}
-
-	private record ProviderResponse(int statusCode, String body) {}
 }

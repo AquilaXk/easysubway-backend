@@ -167,7 +167,7 @@ class RealtimeControllerTest {
 					if (returnEmpty) {
 						return List.of();
 					}
-					return List.of(new RealtimeArrival("4", "상록수", "당고개", "상행", "4123", 180,
+					return List.of(new RealtimeArrival("1004", "상록수", "당고개", "상행", "4123", 180,
 						"3분 후", "전역 출발", Instant.now().toString()));
 				}
 

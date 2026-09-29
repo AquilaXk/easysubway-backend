@@ -8,7 +8,7 @@
     "providerId": "seoul-topis",
     "arrivals": [
       {
-        "lineId": "4",
+        "lineId": "1004",
         "stationName": "상록수",
         "destination": "당고개",
         "direction": "당고개 방면",

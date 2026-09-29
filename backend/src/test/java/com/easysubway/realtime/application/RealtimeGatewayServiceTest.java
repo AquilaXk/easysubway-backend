@@ -87,7 +87,7 @@ class RealtimeGatewayServiceTest {
 	void normalizesProviderTimestampToIsoAtBoundary() {
 		// TOPIS recptnDt는 "yyyy-MM-dd HH:mm:ss"(KST). 17:00:00 KST = 08:00:00Z, clock과 20초 차 → fresh.
 		RealtimeProvider provider = query -> List.of(new RealtimeArrival(
-			"seoul-4",
+			"1004",
 			"상록수",
 			"사당",
 			"상행",
@@ -398,7 +398,7 @@ class RealtimeGatewayServiceTest {
 	@DisplayName("archive 관측 생성 실패는 fresh 응답과 cache를 막지 않는다")
 	void archiveObservationFailureDoesNotBreakFreshResponse() {
 		RealtimeProvider provider = query -> List.of(new RealtimeArrival(
-			"4", "상록수", "당고개", "상행", "", 180, "3분 후", "전역 출발", "2026-06-26T08:00:00Z"
+			"1004", "상록수", "당고개", "상행", "", 180, "3분 후", "전역 출발", "2026-06-26T08:00:00Z"
 		));
 		CapturingArrivalArchive archive = new CapturingArrivalArchive();
 		RealtimeGatewayService service = service(
@@ -1642,7 +1642,7 @@ class RealtimeGatewayServiceTest {
 				return List.of();
 			}
 			return List.of(new RealtimeArrival(
-				"4",
+				"1004",
 				"상록수",
 				"당고개",
 				"상행",
@@ -1716,7 +1716,7 @@ class RealtimeGatewayServiceTest {
 			arrivalEntered.countDown();
 			awaitRelease(releaseArrivals);
 			return List.of(new RealtimeArrival(
-				"4",
+				"1004",
 				"상록수",
 				"당고개",
 				"상행",

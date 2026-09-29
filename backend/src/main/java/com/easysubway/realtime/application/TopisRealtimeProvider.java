@@ -1,5 +1,6 @@
 package com.easysubway.realtime.application;
 
+import com.easysubway.common.http.BoundedResponseBody;
 import com.easysubway.realtime.domain.RealtimeArrival;
 import com.easysubway.realtime.domain.RealtimeTrainPosition;
 import com.fasterxml.jackson.databind.JsonNode;
@@ -17,6 +18,8 @@ import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.regex.Pattern;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Component;
@@ -24,6 +27,7 @@ import org.springframework.stereotype.Component;
 @Component
 final class TopisRealtimeProvider implements RealtimeProvider {
 
+	private static final Logger log = LoggerFactory.getLogger(TopisRealtimeProvider.class);
 	private static final URI TOPIS_BASE_URI = URI.create("http://swopenapi.seoul.go.kr/api/subway/");
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMillis(1500);
 	private static final int MAX_RESPONSE_BYTES = 1_048_576;
@@ -92,7 +96,7 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 				stringOrEmpty(item, "btrainSttus")
 			));
 		}
-		return List.copyOf(arrivals);
+		return requiredItemsOnly("ARRIVALS", items.size(), arrivals);
 	}
 
 	@Override
@@ -108,20 +112,42 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		List<RealtimeTrainPosition> positions = new ArrayList<>();
 		for (JsonNode item : items) {
 			String lineId = stringOrEmpty(item, "subwayId");
-			if (lineId.isBlank()) {
+			String stationName = stringOrEmpty(item, "statnNm");
+			String trainNo = stringOrEmpty(item, "trainNo");
+			if (lineId.isBlank() || stationName.isBlank() || trainNo.isBlank()) {
 				continue;
 			}
 			positions.add(new RealtimeTrainPosition(
 				lineId,
-				stringOrEmpty(item, "statnNm"),
-				stringOrEmpty(item, "trainNo"),
+				stationName,
+				trainNo,
 				stringOrEmpty(item, "trainSttus"),
 				stringOrEmpty(item, "updnLine"),
 				stringOrEmpty(item, "statnTnm"),
 				stringOrEmpty(item, "recptnDt")
 			));
 		}
-		return List.copyOf(positions);
+		return requiredItemsOnly("TRAIN_POSITIONS", items.size(), positions);
+	}
+
+	/**
+	 * 필수 필드가 빠진 항목은 질의값·빈 문자열로 채우지 않고 버린다. 비어 있지 않은 원천 목록이 전부 버려지면
+	 * 스키마 이상을 "데이터 없음"으로 덮지 않도록 원천 불가로 닫는다. 로그에는 건수만 남기고 원천 값은 남기지 않는다.
+	 */
+	private <T> List<T> requiredItemsOnly(String capability, int receivedCount, List<T> kept) {
+		int droppedCount = receivedCount - kept.size();
+		if (droppedCount > 0) {
+			log.warn(
+				"TOPIS realtime items dropped for missing required fields. capability={}, receivedCount={}, droppedCount={}",
+				capability,
+				receivedCount,
+				droppedCount
+			);
+			if (kept.isEmpty()) {
+				throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+			}
+		}
+		return List.copyOf(kept);
 	}
 
 	private JsonNode request(String capabilityPath) {
@@ -130,6 +156,7 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 			.timeout(REQUEST_TIMEOUT)
 			.GET()
 			.build();
+		long startedAt = System.nanoTime();
 		try {
 			HttpResponse<InputStream> response = httpClient.send(request, HttpResponse.BodyHandlers.ofInputStream());
 			try (InputStream body = response.body()) {
@@ -139,10 +166,13 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 				if (response.statusCode() < 200 || response.statusCode() >= 300) {
 					throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 				}
-				byte[] bytes = body.readNBytes(MAX_RESPONSE_BYTES + 1);
-				if (bytes.length > MAX_RESPONSE_BYTES) {
-					throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
-				}
+				// 헤더까지 쓴 시간을 뺀 요청 예산 안에서만 본문을 받는다. 넘기면 HttpTimeoutException → PROVIDER_TIMEOUT.
+				byte[] bytes = BoundedResponseBody.read(
+					body,
+					MAX_RESPONSE_BYTES,
+					REQUEST_TIMEOUT.minusNanos(System.nanoTime() - startedAt),
+					() -> new RealtimeProviderException("PROVIDER_UNAVAILABLE")
+				);
 				JsonNode payload = objectMapper.readTree(new String(bytes, StandardCharsets.UTF_8));
 				validateTopisStatus(payload);
 				return payload;
@@ -159,12 +189,13 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		}
 	}
 
+	/**
+	 * INFO-000(정상)과 INFO-200(해당 데이터 없음)만 받아들인다. 결과 코드가 아예 없는 응답은 envelope가 빠진
+	 * 비정상 응답으로 보고 목록 형태와 상관없이 원천 불가로 닫는다.
+	 */
 	void validateTopisStatus(JsonNode payload) {
 		String code = providerResultCode(payload);
-		if (code.isBlank() || "INFO-000".equals(code)) {
-			return;
-		}
-		if ("INFO-200".equals(code)) {
+		if ("INFO-000".equals(code) || "INFO-200".equals(code)) {
 			return;
 		}
 		throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
