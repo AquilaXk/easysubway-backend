@@ -33,9 +33,10 @@ test("CI와 release 및 Gradle은 digest-pinned Journey OCI payload의 현재 st
     assert.doesNotMatch(workflow, new RegExp(journeyArtifact.replace(/[.*+?^${}()|[\]\\]/g, "\\$&")));
     assert.doesNotMatch(workflow, /ghcr\.io\/aquilaxk\/easysubway-backend-contracts@sha256:/);
   }
-  assert.equal(countMatches(ci, /journey_contract_subject="\$\(jq -er/g), 1);
-  assert.equal(countMatches(ci, /oras pull "\$\{journey_contract_subject\}"/g), 1);
-  assert.equal(countMatches(ci, /node backend\/tools\/stage-journey-contracts\.mjs/g), 1);
+  assert.equal(countMatches(ci, /journey_contract_subject="\$\(jq -er/g), 3);
+  assert.equal(countMatches(ci, /oras pull "\$\{journey_contract_subject\}"/g), 3);
+  // Backend #416: SpotBugs·테스트 shard·집계 job이 같은 staging 단계를 각각 실행한다.
+  assert.equal(countMatches(ci, /node backend\/tools\/stage-journey-contracts\.mjs/g), 3);
   assert.equal(countMatches(release, /journey_contract_subject="\$\(jq -er/g), 2);
   assert.equal(countMatches(release, /oras pull "\$\{journey_contract_subject\}"/g), 2);
   assert.equal(countMatches(release, /node backend\/tools\/stage-journey-contracts\.mjs/g), 2);
