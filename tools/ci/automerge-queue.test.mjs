@@ -969,11 +969,17 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       postMergeStates = ['MERGED'],
       captureCalls = false,
       hasPat = false,
+      baseUpdateRecords = [],
+      recordFails = false,
     } = {},
   ) => {
+    const markerSyncBlock = workflow.match(MARKER_SYNC_RE)?.[1];
+    assert.ok(markerSyncBlock, 'authorization marker sync must stay testable');
     const result = stubbedBash([
       'set -euo pipefail',
       `HAS_AUTOMERGE_PAT=${hasPat}`,
+      `base_update_records=${JSON.stringify(JSON.stringify(baseUpdateRecords))}`,
+      `record_fails=${JSON.stringify(recordFails)}`,
       'GH_TOKEN=github-token',
       `disable_auto_failures=${disableAutoFailures}`,
       `label_failures=${labelFailures}`,
@@ -995,6 +1001,8 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `  printf '%s\\n' "gh $*" >> "$GH_LOG"`,
       `  if [[ ${JSON.stringify(failedOperation)} == merge && "$*" == "pr merge --squash"* ]]; then printf '%s\\n' 'merge-stderr-sentinel' >&2; return 41; fi`,
       `  [[ "$*" == api*update-branch* ]] && printf 'UPDATE_BRANCH_TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"`,
+      `  [[ "$*" == "api --method "*"requested: "* ]] && printf 'RECORD_TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"`,
+      `  [[ "$record_fails" == true && "$*" == "api --method "*"requested: "* ]] && return 49`,
       `  [[ ${JSON.stringify(failedOperation)} == update-branch && "$*" == api*update-branch* ]] && return 42`,
       `  [[ ${JSON.stringify(commentFails)} == true && "$*" == "pr comment"* ]] && return 43`,
       '  if [[ "$*" == "pr merge 26 --repo o/r --disable-auto" ]]; then disable_auto_calls=$((disable_auto_calls + 1)); [[ "$disable_auto_calls" -le "$disable_auto_failures" ]] && return 45; fi',
@@ -1015,6 +1023,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       'MERGE_GH_TOKEN=merge-token',
       'GITHUB_RUN_ID=123',
       dedent(clearAutoMergeBlock, 12),
+      dedent(markerSyncBlock),
       'for _ in 1; do',
       dedent(dispatchBlock, 12),
       'done',
@@ -1110,6 +1119,38 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
     'base update must be one PUT pinned to the gated head',
   );
   assert.match(behindWithPat.calls, /^UPDATE_BRANCH_TOKEN=merge-token$/m, 'base update must use the AUTOMERGE_PAT merge token');
+  // 성공한 갱신만 기록한다. 기록은 github.token으로 PR당 canonical 1개로 수렴한다.
+  const recordLine = 'gh api --method POST repos/o/r/issues/26/comments -f body=<!-- Automerge base update requested: old-head -->';
+  assert.ok(behindWithPat.calls.includes(recordLine), 'a successful base update must be recorded');
+  assert.ok(
+    behindWithPat.calls.indexOf('update-branch') < behindWithPat.calls.indexOf(recordLine),
+    'the record must follow the accepted base update',
+  );
+  assert.match(behindWithPat.calls, /^RECORD_TOKEN=github-token$/m, 'the record must be written with github.token');
+  const behindRecorded = runDispatch('BEHIND', {
+    captureCalls: true,
+    hasPat: true,
+    baseUpdateRecords: [{ id: 7, head: 'a'.repeat(40) }],
+  });
+  assert.equal(behindRecorded.status, 0);
+  assert.ok(
+    behindRecorded.calls.includes('gh api --method PATCH repos/o/r/issues/comments/7 -f body=<!-- Automerge base update requested: old-head -->'),
+    'an existing canonical record must be patched to the new requested head',
+  );
+  assert.doesNotMatch(behindRecorded.calls, /--method POST/);
+  const behindAmbiguous = runDispatch('BEHIND', {
+    captureCalls: true,
+    hasPat: true,
+    baseUpdateRecords: [{ id: 7, head: 'a'.repeat(40) }, { id: 8, head: 'b'.repeat(40) }],
+  });
+  assert.equal(behindAmbiguous.status, 0);
+  assert.equal(behindAmbiguous.skipped, false, 'the accepted base update still ends the run');
+  assert.doesNotMatch(behindAmbiguous.calls, /requested: /, 'ambiguous records must not be touched');
+  assert.equal(behindAmbiguous.warned, true);
+  const behindRecordFailed = runDispatch('BEHIND', { captureCalls: true, hasPat: true, recordFails: true });
+  assert.equal(behindRecordFailed.status, 0, 'a record failure must not fail the run after the accepted update');
+  assert.equal(behindRecordFailed.skipped, false);
+  assert.equal(behindRecordFailed.warned, true, 'a record failure must leave a signal');
   // 갱신 요청이 실패하면 병합하지 않고 신호만 남긴 채 다음 후보로 넘어간다. 라벨은 건드리지 않는다.
   const behindUpdateFailed = runDispatch('BEHIND', { hasPat: true, failedOperation: 'update-branch' });
   assert.equal(behindUpdateFailed.status, 0, 'base update failure must skip only this candidate');
@@ -1119,6 +1160,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
   assert.equal(behindUpdateFailed.commented, false);
   assert.equal(behindUpdateFailed.labelRemovalAttempted, false);
   assert.equal((behindUpdateFailed.calls.match(/update-branch/g) ?? []).length, 1, 'base update must not retry');
+  assert.doesNotMatch(behindUpdateFailed.calls, /requested: /, 'a failed base update must not be recorded');
   for (const [mergeState, failedOperation, status] of [
     ['CLEAN', 'merge', 41],
   ]) {
@@ -1407,7 +1449,7 @@ const makeRunQueue =
     }))),
   );
   for (const pr of prs) {
-    const head = String(pr.number).padStart(40, '0');
+    const head = pr.head ?? String(pr.number).padStart(40, '0');
     writeFileSync(
       join(dir, `pr-${pr.number}.json`),
       JSON.stringify({
@@ -1744,6 +1786,7 @@ test('막힌 후보는 뒤의 후보를 굶기지 않고 게이트는 후보별�
 const MARKER_SYNC_RE =
   /# authorization-marker-sync-begin\n([\s\S]*?)\n\s+# authorization-marker-sync-end/;
 const markerFor = (head) => `<!-- Automerge frozen discovery authorization: ${head} -->`;
+const recordFor = (head) => `<!-- Automerge base update requested: ${head} -->`;
 const actionsBotUser = { login: 'github-actions[bot]', id: 41898282, type: 'Bot' };
 const universalDiscoveryBody =
   '**Actionable comments posted: 0**\n<!-- Review source: Aquila Universal Review; engine: aquila-review -->';
@@ -1894,9 +1937,10 @@ test('marker 재발행은 marker head를 첫 부모로 하고 main 조상을 둘
   const head = 'c'.repeat(40);
   const mainParent = 'd'.repeat(40);
   const other = 'e'.repeat(40);
+  const record = { id: 100, body: recordFor(previous), user: actionsBotUser };
   const base = {
     head,
-    comments: [[{ id: 99, body: markerFor(previous), user: actionsBotUser }]],
+    comments: [[{ id: 99, body: markerFor(previous), user: actionsBotUser }, record]],
     reviews: [discoveryReview(previous)],
     commits: [[{ sha: previous }, { sha: head }]],
     headCommit: { sha: head, parents: [{ sha: previous }, { sha: mainParent }] },
@@ -1933,6 +1977,23 @@ test('marker 재발행은 marker head를 첫 부모로 하고 main 조상을 둘
     assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
     assert.match(kept.stdout, /SYNC_RETURNED/, `${label} must fall through to the gate`);
     assert.deepEqual(kept.mutations, [], `${label} must not reissue or recover a marker`);
+    assert.equal(kept.authorized, false, `${label} must leave the current head unauthorized`);
+  }
+
+  // 코디네이터가 그 P에서 base 갱신을 요청했다는 canonical 기록이 정확히 하나 있어야 한다.
+  // 세션이 직접 push한 병합 커밋은 기록이 없거나 P가 달라 조회 전에 걸러진다.
+  const markerComment = { id: 99, body: markerFor(previous), user: actionsBotUser };
+  for (const [label, comments] of [
+    ['no base-update record', [[markerComment]]],
+    ['record for another head', [[markerComment, { ...record, body: recordFor(other) }]]],
+    ['forged record author', [[markerComment, { ...record, user: { ...actionsBotUser, id: 1 } }]]],
+    ['duplicated records', [[markerComment, record, { ...record, id: 101 }]]],
+    ['record with a non-numeric id', [[markerComment, { ...record, id: '100' }]]],
+  ]) {
+    const kept = runMarkerSync(workflow, { ...base, comments });
+    assert.equal(kept.status, 0, `${label}: ${kept.stderr}`);
+    assert.match(kept.stdout, /SYNC_RETURNED/, `${label} must fall through to the gate`);
+    assert.equal(kept.calls, '', `${label} must not reissue or look up anything`);
     assert.equal(kept.authorized, false, `${label} must leave the current head unauthorized`);
   }
 
@@ -2055,20 +2116,50 @@ test('코디네이터 base 갱신 뒤 다음 실행은 marker를 재발행해 �
   const head = String(1).padStart(40, '0');
   const previous = 'b'.repeat(40);
   const mainParent = 'd'.repeat(40);
+  const markerComment = { id: 99, body: markerFor(previous), user: actionsBotUser };
+
+  // 1차 실행: 게이트를 통과한 BEHIND 후보(head P)를 PAT로 갱신하고 github.token으로 기록한다.
+  const requested = runQueue(
+    [{
+      number: 1,
+      head: previous,
+      mergeStateStatus: 'BEHIND',
+      comments: [markerComment],
+      reviews: [discoveryReview(previous)],
+      commits: [{ sha: previous }],
+    }],
+    { hasPat: true },
+  );
+  assert.equal(requested.status, 0, requested.stderr);
+  assert.equal(requested.mergedPr, null);
+  assert.match(requested.calls, new RegExp(`update-branch -f expected_head_sha=${previous}\\nTOKEN=merge-token\\n`));
+  const recordBody = requested.calls.match(
+    /gh api --method POST repos\/o\/r\/issues\/1\/comments -f body=(<!-- Automerge base update requested: [0-9a-f]{40} -->)\nTOKEN=github-token\n/,
+  )?.[1];
+  assert.equal(recordBody, recordFor(previous), 'the accepted base update must be recorded for head P');
+  assert.ok(requested.calls.indexOf('update-branch') < requested.calls.indexOf(recordBody));
+
+  // 2차 실행: GitHub이 만든 병합 커밋 H(첫 부모 P)가 head다. 1차 실행의 기록으로 marker를 재발행하고 병합한다.
   const candidate = {
     number: 1,
     mergeStateStatus: 'CLEAN',
-    comments: [{ id: 99, body: markerFor(previous), user: actionsBotUser }],
+    comments: [markerComment, { id: 100, body: recordBody, user: actionsBotUser }],
     reviews: [discoveryReview(previous)],
     commits: [{ sha: previous }, { sha: head }],
     headParents: [previous, mainParent],
     compare: { [mainParent]: 'ahead' },
   };
-
   const reissued = runQueue([candidate]);
   assert.equal(reissued.status, 0, reissued.stderr);
   assert.match(reissued.calls, new RegExp(`gh api --method PATCH repos/o/r/issues/comments/99 -f body=${markerFor(head)}\\nTOKEN=github-token\\n`));
+  assert.doesNotMatch(reissued.calls, /requested: /, 'reissue must leave the base-update record as is');
   assert.equal(reissued.mergedPr, 1, 'the reissued marker must satisfy the unchanged review gate in the same run');
+
+  // 세션이 직접 push한 같은 모양의 병합 커밋은 코디네이터 기록이 없으므로 재발행하지 않는다.
+  const sessionMerge = runQueue([{ ...candidate, comments: [markerComment] }]);
+  assert.equal(sessionMerge.status, 0, sessionMerge.stderr);
+  assert.doesNotMatch(sessionMerge.calls, /--method (PATCH|POST)/);
+  assert.equal(sessionMerge.mergedPr, null, 'a session-pushed merge commit must wait for a new label authorization');
 
   const sessionPush = runQueue([{ ...candidate, headParents: [previous] }]);
   assert.equal(sessionPush.status, 0, sessionPush.stderr);
