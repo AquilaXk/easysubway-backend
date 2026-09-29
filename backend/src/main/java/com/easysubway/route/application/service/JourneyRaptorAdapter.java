@@ -85,10 +85,9 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		JourneyRequestMeasurement requiredMeasurement = Objects.requireNonNull(requestMeasurement, "requestMeasurement");
 		if (requiredRequest.isCancelled()) throw new IllegalStateException("Journey planning was cancelled");
 
-		FacilityAvailabilityView facilityView = resolveFacilityAvailability(requiredSnapshot);
-		validateFacilityFreshness(requiredRequest, facilityView);
-
 		RaptorRouteBundleRuntimeView routeRuntime = requireRouteRuntime(requiredSnapshot);
+		FacilityAvailabilityView facilityView = resolveFacilityAvailability(requiredSnapshot);
+		validateFacilityFreshness(requiredRequest, facilityView, routeRuntime);
 
 		if (requiredRequest.viaStationId() != null) {
 			return planChainedVia(
@@ -497,8 +496,16 @@ public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 		return snapshotView;
 	}
 
-	private void validateFacilityFreshness(JourneyRequest request, FacilityAvailabilityView facilityView) {
+	private void validateFacilityFreshness(
+		JourneyRequest request,
+		FacilityAvailabilityView facilityView,
+		RaptorRouteBundleRuntimeView routeRuntime
+	) {
 		if (facilityStatusRequired && request.constraintMode() == JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE) {
+			if (!routeRuntime.facilityRequirements().isPresent()) {
+				throw new FacilityStatusUnavailableException(
+					"FACILITY_STATUS_UNAVAILABLE: route bundle lacks transition facility requirements");
+			}
 			if (!facilityView.available() || facilityView.observedAt() == null) {
 				throw new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE: facility status unavailable");
 			}

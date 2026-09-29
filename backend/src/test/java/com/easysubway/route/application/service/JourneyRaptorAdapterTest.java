@@ -29,6 +29,7 @@ import java.time.Instant;
 import java.time.LocalDate;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import com.easysubway.journey.application.FacilityAvailabilityView;
+import com.easysubway.journey.application.FacilityStatusOverlayProvider;
 import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import java.time.Clock;
 import java.time.Duration;
@@ -371,16 +372,12 @@ class JourneyRaptorAdapterTest {
 		provider.refresh();
 		var plan2 = adapter.plan(stepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
 		assertThat(plan2.candidates()).isEmpty();
-
-		// Standard query still works even when step-free is blocked
-		var standardReq = request(JourneyRequest.MobilityProfile.STANDARD,
-			JourneyRequest.ConstraintMode.NONE, JourneyRequest.TimePolicy.TIMETABLE_REQUIRED);
-		var planStandard = adapter.plan(standardReq, snapshot(runtime), EFFECTIVE, null, measurement());
-		assertThat(planStandard.candidates()).isNotEmpty();
+		assertThat(provider.blockedTransitionCount()).isEqualTo(1);
 
 		// 3. Facility repaired -> refresh -> route restored
 		currentStatuses.put("fac-1", com.easysubway.transit.domain.AccessibilityFacilityStatus.NORMAL);
 		provider.refresh();
+		assertThat(provider.blockedTransitionCount()).isZero();
 		var plan3 = adapter.plan(stepFreeReq, snapshot(runtime), EFFECTIVE, null, measurement());
 		assertThat(plan3.candidates()).isNotEmpty();
 >>>>>>> 7acc8e8f (test(journey): 시설 고장 연계 차단 계산 및 공급자 신선도 검증 테스트 추가 (#418))

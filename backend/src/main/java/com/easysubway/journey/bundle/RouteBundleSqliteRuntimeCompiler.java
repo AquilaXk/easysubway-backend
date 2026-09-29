@@ -76,12 +76,20 @@ public final class RouteBundleSqliteRuntimeCompiler {
 	}
 
 	public RaptorRouteBundleRuntimeView compile(Input input) {
-		RouteTimetable timetable = readTimetable(input);
-		return RaptorRouteBundleRuntimeView.compile(input.routeBundleSha256(), input.generation(), timetable);
+		CompiledPayload payload = readCompiledPayload(input);
+		return RaptorRouteBundleRuntimeView.compile(
+			input.routeBundleSha256(),
+			input.generation(),
+			payload.timetable(),
+			payload.facilityRequirements()
+		);
 	}
 
-	// 검증·해제 수명은 여기서 끝내고 탐색용 인덱스 생성과 분리한다.
 	RouteTimetable readTimetable(Input input) {
+		return readCompiledPayload(input).timetable();
+	}
+
+	CompiledPayload readCompiledPayload(Input input) {
 		Objects.requireNonNull(input, "input");
 		Map<String, byte[]> payloads = input.compressedPayloads();
 		if (!payloads.keySet().equals(PAYLOAD_PATHS)) {
@@ -113,9 +121,12 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			var topology = loadTopology(byPath.get(TOPOLOGY_PATH).connection());
 			var evaluations = validateAccessibility(
 				byPath.get(ACCESSIBILITY_PATH).connection(), topology);
+			var facilityRequirements = loadTransitionFacilityRequirements(
+				byPath.get(ACCESSIBILITY_PATH).connection());
 			validateFare(byPath.get(FARE_PATH).connection());
-			return loadTimetable(
+			var timetable = loadTimetable(
 				byPath.get(TIMETABLE_PATH).connection(), topology, evaluations);
+			return new CompiledPayload(timetable, facilityRequirements);
 		} catch (IOException | SQLException exception) {
 			throw new IllegalArgumentException("route-bundle SQLite runtime compilation failed", exception);
 		} finally {
@@ -703,6 +714,63 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			} catch (IOException exception) {
 				throw new IllegalStateException("network edge canonicalization failed", exception);
 			}
+		}
+	}
+
+	private static TransitionFacilityRequirements loadTransitionFacilityRequirements(Connection connection) throws SQLException {
+		if (!hasTable(connection, "transition_facility_requirement")) {
+			return TransitionFacilityRequirements.missing();
+		}
+		requireColumns(connection, "transition_facility_requirement",
+			List.of("transition_key", "segment_index", "facility_id"));
+		var raw = new LinkedHashMap<String, Map<Integer, Set<String>>>();
+		try (var statement = connection.createStatement();
+			var rows = statement.executeQuery(
+				"SELECT transition_key, segment_index, facility_id FROM transition_facility_requirement ORDER BY transition_key, segment_index, facility_id")) {
+			while (rows.next()) {
+				String transitionKey = requireText(rows.getString(1), "transition key");
+				int segmentIndex = rows.getInt(2);
+				if (segmentIndex < 0) {
+					throw new IllegalArgumentException("segment_index must be non-negative");
+				}
+				String facilityId = requireText(rows.getString(3), "facility id");
+				raw.computeIfAbsent(transitionKey, k -> new LinkedHashMap<>())
+					.computeIfAbsent(segmentIndex, k -> new java.util.LinkedHashSet<>())
+					.add(facilityId);
+			}
+		}
+		var result = new LinkedHashMap<String, List<Set<String>>>();
+		for (var entry : raw.entrySet()) {
+			var segmentsMap = entry.getValue();
+			var segmentsList = new ArrayList<Set<String>>(segmentsMap.size());
+			for (int i = 0; i < segmentsMap.size(); i++) {
+				Set<String> facilities = segmentsMap.get(i);
+				if (facilities == null || facilities.isEmpty()) {
+					throw new IllegalArgumentException("non-contiguous or empty segment_index for transition: " + entry.getKey());
+				}
+				segmentsList.add(Set.copyOf(facilities));
+			}
+			result.put(entry.getKey(), List.copyOf(segmentsList));
+		}
+		return TransitionFacilityRequirements.of(result);
+	}
+
+	private static boolean hasTable(Connection connection, String tableName) throws SQLException {
+		try (var statement = connection.prepareStatement(
+			"SELECT 1 FROM sqlite_master WHERE type='table' AND name=?")) {
+			statement.setString(1, tableName);
+			try (var rs = statement.executeQuery()) {
+				return rs.next();
+			}
+		}
+	}
+
+	public record CompiledPayload(RouteTimetable timetable, TransitionFacilityRequirements facilityRequirements) {
+		public CompiledPayload {
+			Objects.requireNonNull(timetable, "timetable");
+			facilityRequirements = facilityRequirements != null
+				? facilityRequirements
+				: TransitionFacilityRequirements.missing();
 		}
 	}
 }
