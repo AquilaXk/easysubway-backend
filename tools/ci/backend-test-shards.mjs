@@ -11,7 +11,7 @@ import { lstatSync, readFileSync, readdirSync, writeFileSync } from 'node:fs';
 import { join, relative, resolve, sep } from 'node:path';
 import { isMainModule } from '../lib/is-main-module.mjs';
 
-export const SHARD_COUNT = 4;
+export const SHARD_COUNT = 6;
 const TEST_ROOT = 'backend/src/test/java';
 const TEST_ANNOTATION = /@(?:Test|ParameterizedTest|RepeatedTest|TestFactory|TestTemplate|ArchTest)\b/;
 const fail = (message) => { throw new Error(`backend test shards: ${message}`); };

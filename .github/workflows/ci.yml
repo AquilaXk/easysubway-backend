@@ -415,7 +415,7 @@ jobs:
       fail-fast: false
       matrix:
         # tools/ci/backend-test-shards.mjs SHARD_COUNT와 같아야 한다.
-        shard: [1, 2, 3, 4]
+        shard: [1, 2, 3, 4, 5, 6]
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
@@ -470,7 +470,7 @@ jobs:
         working-directory: backend
         env:
           EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
-        run: ./gradlew --init-script ../tools/ci/gradle/backend-ci.init.gradle test -PbackendTestShardIndex=${{ matrix.shard }} -PbackendTestShardCount=4 -x jacocoTestReport --no-daemon
+        run: ./gradlew --init-script ../tools/ci/gradle/backend-ci.init.gradle test -PbackendTestShardIndex=${{ matrix.shard }} -PbackendTestShardCount=6 -x jacocoTestReport --no-daemon
 
       - name: Collect shard evidence
         shell: bash
@@ -609,10 +609,10 @@ jobs:
           shards="${RUNNER_TEMP}/backend-test-shards"
           execution="${RUNNER_TEMP}/backend-test-execution"
           mkdir -p "${execution}"
-          test "$(find "${shards}" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 4
+          test "$(find "${shards}" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 6
           results=()
           digests=()
-          for shard in 1 2 3 4; do
+          for shard in 1 2 3 4 5 6; do
             dir="${shards}/backend-test-shard-${shard}-${GITHUB_SHA}"
             test -s "${dir}/test.exec"
             cp "${dir}/test.exec" "${execution}/shard-${shard}.exec"

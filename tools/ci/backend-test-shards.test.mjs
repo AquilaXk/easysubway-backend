@@ -24,7 +24,8 @@ const writeResults = (directory, suites) => {
 };
 
 test('Backend #416 shard rule is a stable SHA-256 of the top-level binary class name', () => {
-  assert.equal(SHARD_COUNT, 4);
+  // Backend #416 F2: 가장 느린 shard를 줄이려 6개로 나눈다(ci.yml matrix와 같다).
+  assert.equal(SHARD_COUNT, 6);
   for (const [name, four, three] of [
     ['com.easysubway.architecture.PackageDependencyRulesTest', 1, 3],
     ['com.easysubway.route.domain.EtaSourceTest', 3, 1],
@@ -86,7 +87,8 @@ test('Backend #416 shard verification rejects missing, duplicated, misassigned, 
   const pick = (shard) => ['com.easysubway.architecture.PackageDependencyRulesTest', 'com.easysubway.route.domain.EtaSourceTest', 'a.B']
     .concat(Array.from({ length: 200 }, (_, index) => `com.example.Generated${index}Test`))
     .filter((name) => shardOf(name) === shard);
-  const classes = [1, 2, 3, 4].map(pick);
+  const shardNumbers = Array.from({ length: SHARD_COUNT }, (_, index) => index + 1);
+  const classes = shardNumbers.map(pick);
   const expected = classes.flat().sort();
   const result = (names, extra = {}) => ({ classes: [...names].sort(), cases: [], tests: names.length * 2, skipped: 0, failures: 0, errors: 0, ...extra });
   const shards = () => classes.map((names) => result(names));
@@ -107,7 +109,7 @@ test('Backend #416 shard verification rejects missing, duplicated, misassigned, 
   assert.throws(() => verifyShards({ expected, shards: empty }), /executed no test classes/);
   const failing = shards(); failing[3] = result(classes[3], { failures: 1 });
   assert.throws(() => verifyShards({ expected, shards: failing }), /failures or errors/);
-  assert.throws(() => verifyShards({ expected, shards: shards().slice(0, 3) }), /results for 4 shards/);
+  assert.throws(() => verifyShards({ expected, shards: shards().slice(0, SHARD_COUNT - 1) }), new RegExp(`results for ${SHARD_COUNT} shards`));
 });
 
 test('Backend #416 JUnit XML reader counts cases and maps nested classes to their top-level class', () => {
@@ -148,10 +150,10 @@ test('Backend #416 compiled class digest is deterministic and byte-sensitive', (
 test('Backend #416 verify command requires four ordered result directories and identical class digests', () => {
   const digest = 'a'.repeat(64);
   const run = (args) => spawnSync(process.execPath, [tool, 'verify', '--repo-root', repositoryRoot, ...args], { encoding: 'utf8' });
-  const results = [1, 2, 3, 4].flatMap((shard) => ['--results', `/nonexistent/${shard}`]);
-  assert.match(run([...results.slice(0, 6), '--summary', '/dev/null']).stderr, /given 4 times/);
-  assert.match(run([...results, ...Array(4).fill(['--classes-digest', digest]).flat(), '--summary', '/dev/null']).stderr, /compiled main classes differ/);
-  assert.match(run([...results, ...Array(4).fill(['--classes-digest', digest]).flat(), '--classes-digest', 'b'.repeat(64), '--summary', '/dev/null']).stderr, /compiled main classes differ/);
+  const results = Array.from({ length: SHARD_COUNT }, (_, index) => ['--results', `/nonexistent/${index + 1}`]).flat();
+  assert.match(run([...results.slice(0, -2), '--summary', '/dev/null']).stderr, new RegExp(`given ${SHARD_COUNT} times`));
+  assert.match(run([...results, ...Array(SHARD_COUNT).fill(['--classes-digest', digest]).flat(), '--summary', '/dev/null']).stderr, /compiled main classes differ/);
+  assert.match(run([...results, ...Array(SHARD_COUNT).fill(['--classes-digest', digest]).flat(), '--classes-digest', 'b'.repeat(64), '--summary', '/dev/null']).stderr, /compiled main classes differ/);
   const unknown = spawnSync(process.execPath, [tool, 'split'], { encoding: 'utf8' });
   assert.notEqual(unknown.status, 0);
   assert.match(unknown.stderr, /usage is plan, digest-classes, or verify/);
