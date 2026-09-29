@@ -42,6 +42,9 @@ jobs:
       statuses: read
     env:
       GH_TOKEN: ${{ github.token }}
+      # 병합 호출만 PAT로 수행한다(GITHUB_TOKEN 병합은 후속 workflow run을 만들지 않는다).
+      MERGE_GH_TOKEN: ${{ secrets.AUTOMERGE_PAT != '' && secrets.AUTOMERGE_PAT || github.token }}
+      HAS_AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}
       EVENT_NAME: ${{ github.event_name }}
       EVENT_PR: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.number || '' }}
       EVENT_HEAD: ${{ github.event_name == 'pull_request_target' && github.event.pull_request.head.sha || '' }}
@@ -187,6 +190,10 @@ jobs:
         run: |
           # shellcheck disable=SC2016
           set -euo pipefail
+
+          if [ "${HAS_AUTOMERGE_PAT}" != "true" ]; then
+            echo "::warning::AUTOMERGE_PAT secret이 없어 GITHUB_TOKEN으로 병합한다. 병합이 후속 workflow run을 만들지 못해 큐 체인이 멈출 수 있다."
+          fi
 
           repo="${GITHUB_REPOSITORY}"
           owner="${repo%%/*}"
@@ -703,7 +710,7 @@ jobs:
 
             case "${merge_state}" in
               CLEAN | HAS_HOOKS | UNSTABLE)
-                if gh pr merge --squash --auto "${pr}" --repo "${repo}" \
+                if GH_TOKEN="${MERGE_GH_TOKEN}" gh pr merge --squash --auto "${pr}" --repo "${repo}" \
                   --match-head-commit "${head}"; then
                   for attempt in {1..6}; do
                     post_merge="$(gh pr view "${pr}" --repo "${repo}" --json state,autoMergeRequest)" || {

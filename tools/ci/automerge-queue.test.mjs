@@ -39,7 +39,7 @@ const stubbedBash = (lines) => {
   };
 };
 
-test('코디네이터는 PAT 없이 GITHUB_TOKEN으로만 동작한다', async () => {
+test('코디네이터는 기본 토큰이 github.token이고 AUTOMERGE_PAT는 병합 토큰으로만 참조한다', async () => {
   const workflow = await readWorkflow();
 
   for (const contract of [
@@ -58,14 +58,53 @@ test('코디네이터는 PAT 없이 GITHUB_TOKEN으로만 동작한다', async (
     assert.ok(workflow.includes(contract), `missing contract: ${contract}`);
   }
 
-  // PAT 의존은 이 저장소의 큐를 통째로 정지시킨 원인이다. 어떤 형태로도 남기지 않는다.
-  assert.doesNotMatch(workflow, /AUTOMERGE_PAT/);
-  assert.doesNotMatch(workflow, /secrets\./);
+  // secrets 참조는 병합 토큰용 AUTOMERGE_PAT 하나뿐이다. 기본 GH_TOKEN은 github.token이다.
+  assert.ok(
+    [...workflow.matchAll(/secrets\.(\w+)/g)].every((match) => match[1] === 'AUTOMERGE_PAT'),
+  );
   // 관리자 우회 병합과 squash 이외의 병합 방식은 사용하지 않는다.
   assert.doesNotMatch(workflow, /--admin|gh pr merge.+--merge|gh pr merge.+--rebase/);
   // 라벨 트리거는 base 저장소 권한으로 도는 pull_request_target이어야 한다.
   assert.ok(workflow.includes("github.event_name != 'pull_request_target'"));
   assert.ok(!workflow.includes('  pull_request:\n'));
+});
+
+test('병합 예약과 update-branch만 AUTOMERGE_PAT 병합 토큰을 쓰고 나머지는 github.token을 유지한다', async () => {
+  const workflow = await readWorkflow();
+  assert.ok(
+    workflow.includes(
+      "MERGE_GH_TOKEN: ${{ secrets.AUTOMERGE_PAT != '' && secrets.AUTOMERGE_PAT || github.token }}",
+    ),
+  );
+  assert.ok(workflow.includes("HAS_AUTOMERGE_PAT: ${{ secrets.AUTOMERGE_PAT != '' }}"));
+  assert.ok(workflow.includes('GH_TOKEN: ${{ github.token }}'));
+  assert.match(workflow, /if \[ "\$\{HAS_AUTOMERGE_PAT\}" != "true" \]; then/);
+  assert.match(workflow, /::warning::AUTOMERGE_PAT/);
+
+  const prefix = 'GH_TOKEN="${MERGE_GH_TOKEN}" ';
+  const lines = workflow.split('\n');
+  const mergeLines = lines.filter((line) => /\bgh pr merge --squash\b/.test(line));
+  const updateLines = lines.filter(
+    (line) => /update-branch/.test(line) && /\bgh (api|pr)\b/.test(line),
+  );
+  assert.ok(mergeLines.length >= 1, 'merge call not found');
+  for (const line of [...mergeLines, ...updateLines]) {
+    assert.ok(
+      line.includes(prefix + 'gh '),
+      'merge/update-branch call must use MERGE_GH_TOKEN: ' + line.trim(),
+    );
+  }
+
+  // 병합 토큰은 병합·update-branch 호출 외에는 어디에도 쓰지 않는다.
+  const prefixed = lines.filter((line) => line.includes(prefix));
+  assert.equal(prefixed.length, mergeLines.length + updateLines.length);
+
+  const others = lines.filter(
+    (l) => /gh api --method (POST|PATCH)/.test(l) || /--disable-auto/.test(l) || /gh workflow run/.test(l),
+  );
+  for (const line of others) {
+    assert.ok(!line.includes('MERGE_GH_TOKEN'), 'must keep github.token: ' + line.trim());
+  }
 });
 
 test('큐는 best-effort FIFO 후보 배열을 훑고 미해결 thread는 fail closed다', async () => {
@@ -496,6 +535,7 @@ test('automerge label은 canonical authorization marker를 PATCH-or-POST 한 번
       `GH_LOG=${JSON.stringify(log)}`,
       `FIX=${JSON.stringify(dir)}`,
       'GITHUB_REPOSITORY=o/r',
+      'MERGE_GH_TOKEN=merge-token',
       `EVENT_PR=${JSON.stringify(pr)}`,
       `EVENT_HEAD=${JSON.stringify(head)}`,
       'repo="$GITHUB_REPOSITORY"',
@@ -896,6 +936,7 @@ test('merge-state 분기는 상태별로 병합·물러남·실패를 구분한�
       `merge_state=${JSON.stringify(mergeState)}`,
       'GITHUB_SERVER_URL=https://github.com',
       'GITHUB_REPOSITORY=o/r',
+      'MERGE_GH_TOKEN=merge-token',
       'GITHUB_RUN_ID=123',
       dedent(clearAutoMergeBlock, 12),
       'for _ in 1; do',
@@ -1341,6 +1382,7 @@ const makeRunQueue =
     `FIX=${JSON.stringify(dir)}`,
     `GITHUB_RUN_NUMBER=${JSON.stringify(String(runNumber))}`,
     'GITHUB_REPOSITORY=o/r',
+    'MERGE_GH_TOKEN=merge-token',
     `cleanup_failure_batches=${JSON.stringify(` ${cleanupFailureBatches.join(' ')} `)}`,
     `cleanup_non_null_batches=${JSON.stringify(` ${cleanupNonNullBatches.join(' ')} `)}`,
     `cleanup_error_batches=${JSON.stringify(` ${cleanupErrorBatches.join(' ')} `)}`,
