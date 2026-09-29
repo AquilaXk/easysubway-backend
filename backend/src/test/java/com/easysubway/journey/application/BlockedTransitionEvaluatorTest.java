@@ -124,4 +124,27 @@ class BlockedTransitionEvaluatorTest {
 		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitions(null, statuses)).isEmpty();
 		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitions(missingReqs, null)).isEmpty();
 	}
+
+	@Test
+	@DisplayName("null 상태 및 빈 컬렉션에 대한 방어 로직 전수 검증")
+	void edgeCasesAndNullChecks() {
+		assertThat(BlockedTransitionEvaluator.isFacilityDisabled(null)).isFalse();
+
+		var reqs = TransitionFacilityRequirements.of(Map.of(
+			"t1", List.of(Set.of("f1"))
+		));
+		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitions(reqs, Map.of())).isEmpty();
+		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitionsWithDisabledIds(null, Set.of("f1"))).isEmpty();
+		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitionsWithDisabledIds(TransitionFacilityRequirements.missing(), Set.of("f1"))).isEmpty();
+		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitionsWithDisabledIds(reqs, null)).isEmpty();
+		assertThat(BlockedTransitionEvaluator.evaluateBlockedTransitionsWithDisabledIds(reqs, Set.of())).isEmpty();
+
+		assertThat(BlockedTransitionEvaluator.isTransitionBlocked(null, Set.of("f1"))).isFalse();
+		assertThat(BlockedTransitionEvaluator.isTransitionBlocked(List.of(), Set.of("f1"))).isFalse();
+
+		assertThat(BlockedTransitionEvaluator.isSegmentBlocked(null, Set.of("f1"))).isFalse();
+		assertThat(BlockedTransitionEvaluator.isSegmentBlocked(Set.of(), Set.of("f1"))).isFalse();
+		assertThat(BlockedTransitionEvaluator.isSegmentBlocked(Set.of("f1"), null)).isFalse();
+		assertThat(BlockedTransitionEvaluator.isSegmentBlocked(Set.of("f1"), Set.of())).isFalse();
+	}
 }

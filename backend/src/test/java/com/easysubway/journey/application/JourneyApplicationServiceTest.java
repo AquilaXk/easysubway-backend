@@ -370,6 +370,11 @@ class JourneyApplicationServiceTest {
 		facilityUnavailable.raptorFailure = new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE");
 		assertFailure(facilityUnavailable.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED)),
 			JourneyExecutionFailure.Reason.FACILITY_STATUS_UNAVAILABLE);
+		Fakes cancelledFacility = new Fakes();
+		cancelledFacility.cancelAfterRaptor = true;
+		cancelledFacility.raptorFailure = new FacilityStatusUnavailableException("FACILITY_STATUS_UNAVAILABLE");
+		assertFailure(cancelledFacility.service().execute(request(JourneyRequest.TimePolicy.TIMETABLE_REQUIRED, cancelledFacility.cancelled)),
+			JourneyExecutionFailure.Reason.CANCELLED);
 
 		Fakes nullOutput = new Fakes();
 		nullOutput.planResult = null;

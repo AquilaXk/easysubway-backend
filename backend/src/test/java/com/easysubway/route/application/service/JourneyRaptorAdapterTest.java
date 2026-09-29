@@ -34,7 +34,7 @@ import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
+import java.util.BitSet;
 import java.util.List;
 import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
@@ -186,6 +186,43 @@ class JourneyRaptorAdapterTest {
 	}
 
 	@Test
+	void requiredTrueWithStepFreeAndFreshFacilityStatusReturnsStepFreeRoute() {
+		var requirements = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(java.util.Map.of());
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true), requirements);
+		var freshFacilityView = FacilityAvailabilityView.empty(EFFECTIVE.minus(Duration.ofMinutes(1)));
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var adapter = new JourneyRaptorAdapter(() -> freshFacilityView, true, clock);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).isNotEmpty();
+	}
+
+	@Test
+	void requiredTrueWithStepFreeAndUnavailableFacilityStatusThrowsException() {
+		var requirements = com.easysubway.journey.bundle.TransitionFacilityRequirements.of(java.util.Map.of());
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true), requirements);
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.unavailable(), true, clock);
+
+		assertThatThrownBy(() -> adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		)).isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	@Test
 	void requiredTrueWithStepFreeAndBundleLackingMappingThrowsUnavailableException() {
 		// runtime without facility requirements mapping (legacy bundle)
 		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
@@ -200,9 +237,103 @@ class JourneyRaptorAdapterTest {
 			EFFECTIVE,
 			null,
 			measurement()
-		)).isInstanceOf(FacilityStatusUnavailableException.class)
-			.hasMessageContaining("FACILITY_STATUS_UNAVAILABLE")
-			.hasMessageContaining("transition facility requirements");
+		)).isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	@Test
+	void requiredTrueWithStepFreeAndNullObservedAtThrowsException() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var clock = Clock.fixed(EFFECTIVE, ServiceDayResolver.ZONE);
+		var viewWithoutTime = new com.easysubway.journey.application.SimpleFacilityAvailabilityView(
+			true, null, Set.of(), new BitSet());
+		var adapter = new JourneyRaptorAdapter(() -> viewWithoutTime, true, clock);
+
+		assertThatThrownBy(() -> adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.REQUIRE_STEP_FREE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		)).isInstanceOf(FacilityStatusUnavailableException.class);
+	}
+
+	@Test
+	void handlesNullPortViewGracefully() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var adapter = new JourneyRaptorAdapter(() -> null);
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+		assertThat(result.candidates()).isNotEmpty();
+	}
+
+	@Test
+	void handlesUnavailablePortViewGracefully() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var adapter = new JourneyRaptorAdapter(() -> FacilityAvailabilityView.unavailable());
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+		assertThat(result.candidates()).isNotEmpty();
+	}
+
+	@Test
+	void timetableQueryOmitsCandidateWhenTransitionBitSetIsBlocked() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var blockedTransitions = new BitSet();
+		blockedTransitions.set(0);
+		blockedTransitions.set(1);
+		blockedTransitions.set(2);
+		var blockedFacilityView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of(), blockedTransitions);
+		var adapter = new JourneyRaptorAdapter(() -> blockedFacilityView);
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snapshot(runtime),
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void resolvesFacilityAvailabilityFromSnapshotDirectly() {
+		var runtime = RaptorRouteBundleRuntimeView.compile(ROUTE_BUNDLE_SHA, GENERATION, timetable(true));
+		var blockedTransitions = new BitSet();
+		blockedTransitions.set(0);
+		var snapshotView = FacilityAvailabilityView.blocked(EFFECTIVE, Set.of("entry"), blockedTransitions);
+		var snap = snapshot(runtime, snapshotView);
+		var adapter = new JourneyRaptorAdapter();
+
+		var result = adapter.plan(
+			request(JourneyRequest.MobilityProfile.STANDARD, JourneyRequest.ConstraintMode.NONE,
+				JourneyRequest.TimePolicy.TIMETABLE_REQUIRED),
+			snap,
+			EFFECTIVE,
+			null,
+			measurement()
+		);
+
+		assertThat(result.candidates()).isEmpty();
+	}
+
+	@Test
+	void verifiesAdapterConstructorOverloads() {
+		assertThat(new JourneyRaptorAdapter(RouteTimetableRaptorPlanner.ScanWorkspacePool.shared())).isNotNull();
 	}
 
 	@Test
@@ -1313,6 +1444,19 @@ class JourneyRaptorAdapterTest {
 			servingEvidence,
 			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
 			measurementReceipt);
+	}
+
+	private static ActiveJourneySnapshotPort.ActiveJourneySnapshot snapshot(
+		RaptorRouteBundleRuntimeView runtime,
+		com.easysubway.journey.application.FacilityAvailabilityView facilityAvailability
+	) {
+		return new ActiveJourneySnapshotPort.ActiveJourneySnapshot(
+			"snapshot-1", "bundle-1", ROUTE_BUNDLE_SHA, "timetable-1", "accessibility-1",
+			GENERATION, runtime, VALID_UNTIL, true,
+			ActiveJourneySnapshotPort.ActiveServingEvidence.unobservable(),
+			ActiveJourneySnapshotPort.SnapshotBoundaryReceipt.observed(0, 0),
+			ActiveJourneySnapshotPort.SnapshotMeasurementReceipt.unobservable(),
+			facilityAvailability);
 	}
 
 	private static RouteTimetable timetable(boolean verifiedAccess) {

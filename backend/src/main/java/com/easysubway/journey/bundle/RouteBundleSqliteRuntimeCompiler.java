@@ -722,20 +722,17 @@ public final class RouteBundleSqliteRuntimeCompiler {
 			return TransitionFacilityRequirements.missing();
 		}
 		requireColumns(connection, "transition_facility_requirement",
-			List.of("transition_key", "segment_index", "facility_id"));
-		var raw = new LinkedHashMap<String, Map<Integer, Set<String>>>();
+			List.of("transition_key", "segment", "facility_id"));
+		var raw = new LinkedHashMap<String, Map<String, Set<String>>>();
 		try (var statement = connection.createStatement();
 			var rows = statement.executeQuery(
-				"SELECT transition_key, segment_index, facility_id FROM transition_facility_requirement ORDER BY transition_key, segment_index, facility_id")) {
+				"SELECT transition_key, segment, facility_id FROM transition_facility_requirement ORDER BY transition_key, segment, facility_id")) {
 			while (rows.next()) {
 				String transitionKey = requireText(rows.getString(1), "transition key");
-				int segmentIndex = rows.getInt(2);
-				if (segmentIndex < 0) {
-					throw new IllegalArgumentException("segment_index must be non-negative");
-				}
+				String segment = requireText(rows.getString(2), "segment");
 				String facilityId = requireText(rows.getString(3), "facility id");
 				raw.computeIfAbsent(transitionKey, k -> new LinkedHashMap<>())
-					.computeIfAbsent(segmentIndex, k -> new java.util.LinkedHashSet<>())
+					.computeIfAbsent(segment, k -> new java.util.LinkedHashSet<>())
 					.add(facilityId);
 			}
 		}
@@ -743,11 +740,7 @@ public final class RouteBundleSqliteRuntimeCompiler {
 		for (var entry : raw.entrySet()) {
 			var segmentsMap = entry.getValue();
 			var segmentsList = new ArrayList<Set<String>>(segmentsMap.size());
-			for (int i = 0; i < segmentsMap.size(); i++) {
-				Set<String> facilities = segmentsMap.get(i);
-				if (facilities == null || facilities.isEmpty()) {
-					throw new IllegalArgumentException("non-contiguous or empty segment_index for transition: " + entry.getKey());
-				}
+			for (var facilities : segmentsMap.values()) {
 				segmentsList.add(Set.copyOf(facilities));
 			}
 			result.put(entry.getKey(), List.copyOf(segmentsList));

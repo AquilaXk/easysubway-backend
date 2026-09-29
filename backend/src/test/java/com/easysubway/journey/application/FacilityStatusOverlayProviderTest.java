@@ -231,5 +231,32 @@ class FacilityStatusOverlayProviderTest {
 		// Must not be available or observedAt must be null so Raptor rejects step-free queries
 		assertThat(view.available() && view.observedAt() != null).isFalse();
 	}
+
+	@Test
+	@DisplayName("초기 갱신 전 메트릭 및 포트 기반 생성자 동작 검증")
+	void verifiesMetricsBeforeRefreshAndPortBasedConstructor() {
+		var clock = new MutableClock(T0);
+		var meterRegistry = new SimpleMeterRegistry();
+		var provider = new FacilityStatusOverlayProvider(
+			() -> Map.of(),
+			null,
+			clock,
+			meterRegistry
+		);
+
+		assertThat(provider.lastSuccessfulUpdate()).isNull();
+		var secondsGauge = meterRegistry.find("easysubway.journey.facility-status.seconds-since-last-update").gauge();
+		assertThat(secondsGauge).isNotNull();
+		assertThat(Double.isNaN(secondsGauge.value())).isTrue();
+
+		var portProvider = new FacilityStatusOverlayProvider(
+			(com.easysubway.transit.application.port.out.LoadTransitMasterPort) null,
+			(com.easysubway.journey.bundle.RouteBundleActivationRegistry) null,
+			clock,
+			new SimpleMeterRegistry()
+		);
+		portProvider.refresh();
+		assertThat(portProvider.currentView().available()).isTrue();
+	}
 }
 
