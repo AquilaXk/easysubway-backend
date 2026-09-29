@@ -31,6 +31,7 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 
 	private final Supplier<Map<String, AccessibilityFacilityStatus>> statusSupplier;
 	private final Supplier<TransitionFacilityRequirements> requirementsSupplier;
+	private final com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort heartbeatPort;
 	private final Clock clock;
 	private volatile FacilityAvailabilityView cachedView = FacilityAvailabilityView.unavailable();
 	private volatile Instant lastSuccessfulUpdate = null;
@@ -39,11 +40,13 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 	public FacilityStatusOverlayProvider(
 		Supplier<Map<String, AccessibilityFacilityStatus>> statusSupplier,
 		Supplier<TransitionFacilityRequirements> requirementsSupplier,
+		com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort heartbeatPort,
 		Clock clock,
 		MeterRegistry meterRegistry
 	) {
 		this.statusSupplier = Objects.requireNonNull(statusSupplier, "statusSupplier");
 		this.requirementsSupplier = requirementsSupplier != null ? requirementsSupplier : TransitionFacilityRequirements::missing;
+		this.heartbeatPort = heartbeatPort;
 		this.clock = Objects.requireNonNull(clock, "clock");
 		MeterRegistry registry = meterRegistry != null ? meterRegistry : new SimpleMeterRegistry();
 
@@ -64,8 +67,18 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 	}
 
 	public FacilityStatusOverlayProvider(
+		Supplier<Map<String, AccessibilityFacilityStatus>> statusSupplier,
+		Supplier<TransitionFacilityRequirements> requirementsSupplier,
+		Clock clock,
+		MeterRegistry meterRegistry
+	) {
+		this(statusSupplier, requirementsSupplier, null, clock, meterRegistry);
+	}
+
+	public FacilityStatusOverlayProvider(
 		LoadTransitMasterPort loadTransitMasterPort,
 		RouteBundleActivationRegistry registry,
+		com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort heartbeatPort,
 		Clock clock,
 		MeterRegistry meterRegistry
 	) {
@@ -95,9 +108,19 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 				}
 				return TransitionFacilityRequirements.missing();
 			},
+			heartbeatPort,
 			clock,
 			meterRegistry
 		);
+	}
+
+	public FacilityStatusOverlayProvider(
+		LoadTransitMasterPort loadTransitMasterPort,
+		RouteBundleActivationRegistry registry,
+		Clock clock,
+		MeterRegistry meterRegistry
+	) {
+		this(loadTransitMasterPort, registry, null, clock, meterRegistry);
 	}
 
 	@Scheduled(fixedDelayString = "${easysubway.journey.facility-status.refresh-interval-ms:60000}")
@@ -108,7 +131,20 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 			Set<String> blockedTransitions = BlockedTransitionEvaluator.evaluateBlockedTransitions(requirements, statuses);
 			Instant now = clock.instant();
 			this.lastSuccessfulUpdate = now;
-			this.cachedView = FacilityAvailabilityView.blocked(now, blockedTransitions);
+			Instant effectiveObservedAt = now;
+			if (heartbeatPort != null) {
+				Instant sourceHeartbeat = heartbeatPort.lastSuccessfulSourceCollectionAt();
+				if (sourceHeartbeat == null) {
+					effectiveObservedAt = null;
+				} else {
+					effectiveObservedAt = sourceHeartbeat.isBefore(now) ? sourceHeartbeat : now;
+				}
+			}
+			if (effectiveObservedAt == null) {
+				this.cachedView = FacilityAvailabilityView.unavailable();
+			} else {
+				this.cachedView = FacilityAvailabilityView.blocked(effectiveObservedAt, blockedTransitions);
+			}
 			this.blockedTransitionCount = blockedTransitions.size();
 		} catch (Exception exception) {
 			log.warn("Failed to refresh facility statuses: {}", exception.getMessage());

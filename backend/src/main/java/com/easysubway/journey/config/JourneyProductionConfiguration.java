@@ -182,11 +182,13 @@ public class JourneyProductionConfiguration {
 	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort(
 		org.springframework.beans.factory.ObjectProvider<com.easysubway.transit.application.port.out.LoadTransitMasterPort> loadTransitMasterPortProvider,
 		org.springframework.beans.factory.ObjectProvider<RouteBundleActivationRegistry> registryProvider,
+		org.springframework.beans.factory.ObjectProvider<com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort> heartbeatPortProvider,
 		org.springframework.beans.factory.ObjectProvider<io.micrometer.core.instrument.MeterRegistry> meterRegistryProvider
 	) {
 		return new com.easysubway.journey.application.FacilityStatusOverlayProvider(
 			loadTransitMasterPortProvider.getIfAvailable(),
 			registryProvider.getIfAvailable(),
+			heartbeatPortProvider.getIfAvailable(),
 			CLOCK,
 			meterRegistryProvider.getIfAvailable()
 		);

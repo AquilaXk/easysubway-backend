@@ -22,6 +22,7 @@ import com.fasterxml.jackson.databind.ObjectMapper;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import java.io.ByteArrayInputStream;
 import java.io.IOException;
+import java.io.InputStream;
 import java.math.BigDecimal;
 import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
@@ -467,9 +468,9 @@ class SeoulMetroElevatorStatusCollectorTest {
 	@SuppressWarnings("unchecked")
 	private static HttpClient mockHttpClient(int statusCode, String responseBody) throws Exception {
 		HttpClient httpClient = mock(HttpClient.class);
-		HttpResponse<byte[]> response = mock(HttpResponse.class);
+		HttpResponse<InputStream> response = (HttpResponse<InputStream>) mock(HttpResponse.class);
 		when(response.statusCode()).thenReturn(statusCode);
-		when(response.body()).thenReturn(responseBody.getBytes(StandardCharsets.UTF_8));
+		when(response.body()).thenAnswer(ignored -> new ByteArrayInputStream(responseBody.getBytes(StandardCharsets.UTF_8)));
 		when(httpClient.send(any(HttpRequest.class), any(HttpResponse.BodyHandler.class)))
 			.thenReturn(response);
 		return httpClient;
