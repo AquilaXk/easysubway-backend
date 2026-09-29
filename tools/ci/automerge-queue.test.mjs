@@ -282,6 +282,70 @@ test('리뷰 게이트는 전 커밋의 활성 상태와 PR commit-set의 frozen
     runReviewFilter([review(1, 'COMMENTED', '2026-08-01T00:00:00Z', '', codeRabbit)]),
     0,
   );
+  // CodeRabbit APPROVED on current head is not a discovery without the frozen marker
+  assert.notEqual(
+    runReviewFilter(
+      [
+        review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
+          user: { login: 'coderabbitai[bot]', id: 136622811, type: 'Bot' },
+          author_association: 'NONE',
+          commit_id: 'head',
+        }),
+      ],
+      [[{ sha: 'head' }]],
+      [[]],
+    ),
+    0,
+    'CodeRabbit APPROVED on current head must be rejected without exact marker',
+  );
+  // trusted human APPROVED on current head still passes
+  assert.equal(
+    runReviewFilter(
+      [
+        review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', {
+          user: { login: 'AquilaXk' },
+          author_association: 'OWNER',
+          commit_id: 'head',
+        }),
+      ],
+      [[{ sha: 'head' }]],
+      [[]],
+    ),
+    0,
+    'trusted human APPROVED on current head must pass without marker',
+  );
+  // 신뢰된 사람 association 세 가지는 각각 marker 없이 APPROVED 경로를 통과한다.
+  for (const association of ['OWNER', 'MEMBER', 'COLLABORATOR']) {
+    assert.equal(
+      runReviewFilter(
+        [review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { author_association: association })],
+        [[{ sha: 'head' }]],
+        [[]],
+      ),
+      0,
+      `${association} APPROVED on current head must pass without marker`,
+    );
+  }
+  // 신뢰되지 않은 association의 APPROVED는 통과하지 못한다.
+  assert.notEqual(
+    runReviewFilter(
+      [review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', { author_association: 'CONTRIBUTOR' })],
+      [[{ sha: 'head' }]],
+      [[]],
+    ),
+    0,
+    'CONTRIBUTOR APPROVED must be rejected',
+  );
+  // 봇 APPROVED는 exact-head marker가 있어도 통과하지 못한다(marker 경로는 COMMENTED discovery 전용).
+  assert.notEqual(
+    runReviewFilter(
+      [review(1, 'APPROVED', '2026-08-01T00:00:00Z', '', codeRabbit)],
+      [[{ sha: 'head' }]],
+      [[{ id: 1, body: marker, user: actionsBot }]],
+    ),
+    0,
+    'CodeRabbit APPROVED must be rejected even with the exact-head marker',
+  );
   // login, immutable id, Bot type 중 하나라도 다르면 NONE 리뷰는 신뢰하지 않는다.
   assert.notEqual(
     runReviewFilter([

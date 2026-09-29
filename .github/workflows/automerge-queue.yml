@@ -560,7 +560,7 @@ jobs:
               )) as $states |
               ($states | length > 0 and all(.[]; . == "APPROVED" or . == "COMMENTED")) and
               (
-                any($current[]; .state == "APPROVED") or
+                any($current[]; .state == "APPROVED" and (.author_association == "OWNER" or .author_association == "MEMBER" or .author_association == "COLLABORATOR")) or
                 (
                   any($comments[]; is_exact_head_marker) and
                   any($trusted[];
