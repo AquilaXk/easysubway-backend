@@ -64,7 +64,9 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 		if (serviceKey.isBlank()) {
 			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 		}
-		JsonNode payload = request("realtimeStationArrival/0/5/%s".formatted(pathSegment(query.stationQueryName())));
+		// 역 단위 응답이라 환승역에서는 다른 노선 행이 섞인다. gateway가 조회 노선만 남기므로 조회 노선 행이
+		// 행 제한 밖으로 밀리지 않게 한 번의 호출(quota 동일)로 0~20행을 받는다.
+		JsonNode payload = request("realtimeStationArrival/0/20/%s".formatted(pathSegment(query.stationQueryName())));
 		return arrivalsFromPayload(payload);
 	}
 
