@@ -94,6 +94,101 @@ class RouteTimetableRaptorPlannerPrimitivePoolParityTest {
 		}
 	}
 
+	@Test
+	@DisplayName("2만 개 무작위 쌍에 대해 풀 동일 벡터 판정과 참조 판정이 완전히 일치한다")
+	void randomSameVectorParity() {
+		Random rng = new Random(20260930L);
+		var pool = new RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool(256);
+
+		for (int i = 0; i < 20_000; i++) {
+			int lStart = rng.nextInt(100);
+			int rStart = rng.nextBoolean() ? lStart : rng.nextInt(100);
+			int lArr = rng.nextInt(100);
+			int rArr = rng.nextBoolean() ? lArr : rng.nextInt(100);
+			int lBoard = rng.nextInt(3);
+			int rBoard = rng.nextBoolean() ? lBoard : rng.nextInt(3);
+			byte lWarn = (byte) rng.nextInt(4);
+			byte rWarn = rng.nextBoolean() ? lWarn : (byte) rng.nextInt(4);
+			int lSec = rng.nextInt(50);
+			int rSec = rng.nextBoolean() ? lSec : rng.nextInt(50);
+			int lDist = rng.nextInt(100);
+			int rDist = rng.nextBoolean() ? lDist : rng.nextInt(100);
+			int lStairs = rng.nextInt(3);
+			int rStairs = rng.nextBoolean() ? lStairs : rng.nextInt(3);
+			ConnectionSlack lSlack = randomSlack(rng);
+			ConnectionSlack rSlack = rng.nextBoolean() ? lSlack : randomSlack(rng);
+
+			int left = pool.allocate(
+				lStart, lArr, lBoard, 0, 0, lWarn,
+				lSec, lDist, lStairs, 0, -1, -1, -1, -1, -1, null, null, lSlack);
+			int right = pool.allocate(
+				rStart, rArr, rBoard, 0, 0, rWarn,
+				rSec, rDist, rStairs, 0, -1, -1, -1, -1, -1, null, null, rSlack);
+
+			boolean expected = lStart == rStart
+				&& lArr == rArr
+				&& lBoard == rBoard
+				&& lSec == rSec
+				&& lDist == rDist
+				&& lStairs == rStairs
+				&& lWarn == rWarn
+				&& ConnectionSlack.compareSafety(lSlack, rSlack) == 0;
+
+			boolean actual = RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.sameVector(pool, left, right);
+			assertThat(actual)
+				.as("Pair %d sameVector mismatch", i)
+				.isEqualTo(expected);
+		}
+	}
+
+	@Test
+	@DisplayName("1만 개 무작위 체인에 대해 풀 traceKey 및 compareTrace가 참조 문자열 비교와 완전히 일치한다")
+	void randomCompareTraceParity() {
+		Random rng = new Random(20261001L);
+		java.time.LocalDate baseDate = java.time.LocalDate.of(2026, 9, 29);
+
+		for (int i = 0; i < 10_000; i++) {
+			var pool = new RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool(16);
+			int depthA = rng.nextInt(6);
+			int depthB = rng.nextInt(6);
+
+			int currA = pool.allocate(0, 0, 0, 0, 0, (byte) 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, null, null, NO_TRANSFER);
+			String refKeyA = "";
+			for (int d = 0; d < depthA; d++) {
+				java.time.LocalDate date = baseDate.plusDays(rng.nextInt(2));
+				int tripIdx = rng.nextInt(100);
+				int fromStop = rng.nextInt(20);
+				int toStop = rng.nextInt(20);
+				int trans = rng.nextInt(10);
+				currA = pool.allocate(0, 0, d + 1, 0, 0, (byte) 0, 0, 0, 0, 0, currA, tripIdx, fromStop, toStop, trans, date, null, NO_TRANSFER);
+				refKeyA = refKeyA + "/" + date + ":" + tripIdx + ":" + fromStop + ":" + toStop + ":" + trans;
+			}
+
+			int currB = pool.allocate(0, 0, 0, 0, 0, (byte) 0, 0, 0, 0, 0, -1, -1, -1, -1, -1, null, null, NO_TRANSFER);
+			String refKeyB = "";
+			for (int d = 0; d < depthB; d++) {
+				java.time.LocalDate date = baseDate.plusDays(rng.nextInt(2));
+				int tripIdx = rng.nextInt(100);
+				int fromStop = rng.nextInt(20);
+				int toStop = rng.nextInt(20);
+				int trans = rng.nextInt(10);
+				currB = pool.allocate(0, 0, d + 1, 0, 0, (byte) 0, 0, 0, 0, 0, currB, tripIdx, fromStop, toStop, trans, date, null, NO_TRANSFER);
+				refKeyB = refKeyB + "/" + date + ":" + tripIdx + ":" + fromStop + ":" + toStop + ":" + trans;
+			}
+
+			String poolKeyA = RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.traceKey(pool, currA);
+			String poolKeyB = RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.traceKey(pool, currB);
+			assertThat(poolKeyA).isEqualTo(refKeyA);
+			assertThat(poolKeyB).isEqualTo(refKeyB);
+
+			int poolComp = RouteTimetableRaptorPlanner.PrimitiveProfileLabelPool.compareTrace(pool, currA, currB);
+			int refComp = refKeyA.compareTo(refKeyB);
+			assertThat(Integer.signum(poolComp))
+				.as("Chain %d compareTrace signum mismatch", i)
+				.isEqualTo(Integer.signum(refComp));
+		}
+	}
+
 	static ConnectionSlack randomSlack(Random rng) {
 		if (rng.nextInt(5) == 0) {
 			return NO_TRANSFER;

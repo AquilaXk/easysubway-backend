@@ -146,7 +146,7 @@ class RouteTimetableRaptorPlannerProfileGoldenTest {
 		return sb.toString();
 	}
 
-	private static RouteTimetable generateGridTimetable(long seed) {
+	static RouteTimetable generateGridTimetable(long seed) {
 		Random rng = new Random(seed);
 		var calendar = new ServiceCalendar(
 			"daily", true, true, true, true, true, true, true,
@@ -271,16 +271,16 @@ class RouteTimetableRaptorPlannerProfileGoldenTest {
 		return "station-" + r + "-" + c;
 	}
 
-	private static Instant instantAt(long secondsOfDay) {
+	static Instant instantAt(long secondsOfDay) {
 		return instantAt(SERVICE_DATE, secondsOfDay);
 	}
 
-	private static Instant instantAt(LocalDate date, long secondsOfDay) {
+	static Instant instantAt(LocalDate date, long secondsOfDay) {
 		return date.atStartOfDay().plusSeconds(secondsOfDay)
 			.atOffset(ZoneOffset.ofHours(9)).toInstant();
 	}
 
-	private static JourneyProfileResourcePolicy testPolicy() {
+	static JourneyProfileResourcePolicy testPolicy() {
 		return new JourneyProfileResourcePolicy(
 			new JourneyProfileResourcePolicy.Identity("golden-profile", "1.0.0", "b".repeat(64)),
 			Duration.ofHours(4), 3, 2_000_000L, 1024, 1024, 128,
