@@ -397,6 +397,29 @@ class DatapackReleaseReconciliationServiceTest {
 			+ "\"releaseSequence\":" + releaseSequence + ",\"convergedWithinTenMinutes\":true}");
 	}
 
+	@Test
+	@DisplayName("worker가 claim한 delivery는 소유권을 확인하는 갱신으로만 종결한다")
+	void claimedDeliveryIsTerminatedThroughOwnerCheckedUpdate() {
+		var pending = delivery();
+		var claimed = new DatapackReleaseDelivery(
+			pending.idempotencyKey(), pending.releaseRequestId(), pending.releaseSequence(),
+			pending.manifestSha256(), pending.channel(), pending.candidateId(), pending.payloadSha256(),
+			pending.signatureSha256(), pending.state(), pending.attempts(), pending.nextAttemptAt(),
+			pending.reconcileDeadline(), pending.deadLetterDeadline(), pending.httpClass(),
+			pending.sanitizedDetail(), T0.plusMinutes(10), "worker-a", pending.createdAt(), pending.updatedAt());
+		var identity = new CatalogIdentity(42, SHA, "production", "request-2057", true, "b".repeat(64));
+		when(catalog.findByRequest("production", "request-2057"))
+			.thenReturn(java.util.Optional.of(identity));
+		when(catalog.fetchCurrent("production")).thenReturn(
+			new CatalogIdentity(43, "e".repeat(64), "production", "", true, "c".repeat(64)));
+
+		service.reconcile(claimed, T0.plusMinutes(10));
+
+		verify(repository).markClaimed(claimed.idempotencyKey(), "worker-a", State.DEAD_LETTER, 0, null,
+			"STALE", "CURRENT_RELEASE_ADVANCED", T0.plusMinutes(10));
+		verify(repository, never()).mark(anyString(), any(), anyInt(), any(), anyString(), anyString(), any());
+	}
+
 	private static DatapackReleaseDelivery delivery() {
 		return DatapackReleaseDelivery.pending(
 			"request-2057", 42, SHA, "production", "candidate-2057",

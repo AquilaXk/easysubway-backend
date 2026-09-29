@@ -146,26 +146,19 @@ jobs:
         with:
           sarif_file: ${{ runner.temp }}/results.sarif
 
-  backend:
-    name: Backend CI
+  # SpotBugs gate는 first-parent 원장을 읽으므로 이 job의 checkout은 전체 history를 가진다.
+  backend-spotbugs:
+    name: Backend CI SpotBugs
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
     steps:
       - name: Checkout
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
         with:
           persist-credentials: false
           fetch-depth: 0
-
-      - name: Lint workflows
-        shell: bash
-        run: |
-          set -euo pipefail
-          # 워크플로를 실제 YAML 파서로 읽는 유일한 게이트다. run 블록의 block scalar가
-          # 깨져 스크립트 일부가 YAML 구조로 새어 나가는 파손은 텍스트 기반 계약 테스트로는
-          # 잡히지 않는다. 이미지는 다른 base image와 같은 규칙으로 digest 고정한다.
-          docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
-            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
 
       - name: Set up Node.js
         uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
@@ -210,34 +203,6 @@ jobs:
             --lock backend/journey-contracts.lock.json \
             --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
             --output backend/build/journey-contracts-staging
-
-      - name: Test and package backend
-        id: test_backend
-        working-directory: backend
-        env:
-          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
-        run: ./gradlew test bootJar --no-daemon
-
-      - name: Check documentation fragment preflight sync
-        if: github.event_name == 'pull_request'
-        env:
-          BASE_REF: ${{ github.event.pull_request.base.sha }}
-        run: node tools/ci/check-documentation-fragment-sync.mjs --base "${BASE_REF}"
-
-      - name: Test backend-owned Node contracts
-        run: |
-          node --test backend/tools/*.test.mjs
-          node --test tools/ci/*.test.mjs
-          node --test tools/routes/*.test.mjs
-          node --test tools/realtime/*.test.mjs
-
-      - name: Check migration DDL compatibility
-        run: node tools/ci/check-migration-ddl-compat.mjs
-
-      - name: Test admin QA contracts
-        run: |
-          npm ci --prefix tools/qa --ignore-scripts
-          npm test --prefix tools/qa
 
       - name: Run SpotBugs main analysis
         id: spotbugs_main
@@ -332,8 +297,335 @@ jobs:
             --output "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-result.json" \
             --summary "${RUNNER_TEMP}/backend-spotbugs/backend-spotbugs-summary.md"
 
+  scope:
+    name: Backend CI scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    outputs:
+      heavy: ${{ steps.classify.outputs.heavy }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      # PR이 바꾼 경로로 무거운 단계 실행 여부를 정한다. 분류 밖 경로와 push·dispatch는 전체 실행이다.
+      # 판정기는 PR head가 아니라 merge commit의 first parent(base)에서 꺼낸 사본으로 실행한다.
+      # PR이 판정 규칙을 넓혀 자기 변경을 건너뛰게 할 수 없고, base에 판정기가 없으면 전체 실행이다.
+      - name: Classify changed paths
+        id: classify
+        env:
+          SCOPE_EVENT: ${{ github.event_name }}
+          SCOPE_TRUSTED_ROOT: ${{ runner.temp }}/backend-ci-scope-trusted
+        run: |
+          set -euo pipefail
+          umask 077
+          if [[ "${SCOPE_EVENT}" != "pull_request" ]]; then
+            printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+            printf '## Backend CI scope\n\n- heavy: true — %s always runs the full Backend CI\n' "${SCOPE_EVENT}" >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          read -r _tested base pr_head extra <<< "$(git rev-list --parents -n 1 HEAD)"
+          if [[ ! "${base:-}" =~ ^[0-9a-f]{40}$ || ! "${pr_head:-}" =~ ^[0-9a-f]{40}$ || -n "${extra:-}" ]]; then
+            echo "pull_request checkout must be a two-parent merge commit" >&2
+            exit 1
+          fi
+          source=tools/ci/backend-ci-scope.mjs
+          if [[ -z "$(git ls-tree "${base}" -- "${source}")" ]]; then
+            printf 'heavy=true\n' >> "$GITHUB_OUTPUT"
+            printf '## Backend CI scope\n\n- heavy: true — trusted classifier is absent in the base commit\n' >> "$GITHUB_STEP_SUMMARY"
+            exit 0
+          fi
+          if [[ -e "${SCOPE_TRUSTED_ROOT}" || -L "${SCOPE_TRUSTED_ROOT}" ]]; then
+            echo "trusted classifier stage path already exists" >&2
+            exit 1
+          fi
+          mkdir "${SCOPE_TRUSTED_ROOT}"
+          trusted="$(cd "${SCOPE_TRUSTED_ROOT}" && pwd -P)"
+          git archive "${base}" "${source}" tools/lib/is-main-module.mjs | tar -x -C "${trusted}"
+          decision="${trusted}/decision"
+          node "${trusted}/${source}" classify --event pull_request --output "${decision}" --summary "$GITHUB_STEP_SUMMARY"
+          if [[ ! -f "${decision}" ]] || ! grep -Eqx 'heavy=(true|false)' "${decision}" || [[ "$(wc -l < "${decision}")" -ne 1 ]]; then
+            echo "trusted classifier produced no decision" >&2
+            exit 1
+          fi
+          cat "${decision}" >> "$GITHUB_OUTPUT"
+
+  backend-contracts:
+    name: Backend CI contracts
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Lint workflows
+        shell: bash
+        run: |
+          set -euo pipefail
+          # 워크플로를 실제 YAML 파서로 읽는 유일한 게이트다. run 블록의 block scalar가
+          # 깨져 스크립트 일부가 YAML 구조로 새어 나가는 파손은 텍스트 기반 계약 테스트로는
+          # 잡히지 않는다. 이미지는 다른 base image와 같은 규칙으로 digest 고정한다.
+          docker run --rm -v "${GITHUB_WORKSPACE}:/repo:ro" -w /repo \
+            rhysd/actionlint@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      - name: Check documentation fragment preflight sync
+        if: github.event_name == 'pull_request'
+        env:
+          BASE_REF: ${{ github.event.pull_request.base.sha }}
+        run: node tools/ci/check-documentation-fragment-sync.mjs --base "${BASE_REF}"
+
+      - name: Test backend-owned Node contracts
+        run: |
+          mkdir -p backend/build
+          node --test backend/tools/*.test.mjs
+          node --test tools/ci/*.test.mjs
+          node --test tools/routes/*.test.mjs
+          node --test tools/realtime/*.test.mjs
+
+      - name: Check migration DDL compatibility
+        run: node tools/ci/check-migration-ddl-compat.mjs
+
+      - name: Test admin QA contracts
+        run: |
+          npm ci --prefix tools/qa --ignore-scripts
+          npm test --prefix tools/qa
+
+  backend-test:
+    name: Backend CI test shard ${{ matrix.shard }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    needs: scope
+    if: needs.scope.outputs.heavy == 'true'
+    strategy:
+      fail-fast: false
+      matrix:
+        # tools/ci/backend-test-shards.mjs SHARD_COUNT와 같아야 한다.
+        shard: [1, 2, 3, 4, 5, 6]
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      - name: Set up ORAS
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        with:
+          version: 1.3.3
+
+      - name: Set up Java
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21.0.11"
+          cache: gradle
+
+      # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
+      - name: Stage pinned contracts
+        shell: bash
+        run: |
+          artifact_url="$(jq -er '.artifactUrl | select(. == "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json")' backend/contracts.lock.json)"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            --output "${RUNNER_TEMP}/backend-contracts.json" \
+            "${artifact_url}"
+          node backend/tools/stage-contracts.mjs \
+            --lock backend/contracts.lock.json \
+            --input "${RUNNER_TEMP}/backend-contracts.json" \
+            --output backend/build/contracts-staging
+
+      - name: Stage pinned Journey contracts
+        shell: bash
+        run: |
+          set -euo pipefail
+          journey_contract_subject="$(jq -er '.artifact | if type == "object" and (.repository | type == "string") and (.manifestDigest | type == "string" and test("^sha256:[a-f0-9]{64}$")) then "\(.repository)@\(.manifestDigest)" else error("invalid Journey contract OCI subject") end' backend/journey-contracts.lock.json)"
+          [[ "${journey_contract_subject}" =~ ^ghcr\.io/aquilaxk/easysubway-backend-contracts@sha256:[a-f0-9]{64}$ ]]
+          oras pull "${journey_contract_subject}" --output "${RUNNER_TEMP}/journey-contract-pull"
+          node backend/tools/stage-journey-contracts.mjs \
+            --lock backend/journey-contracts.lock.json \
+            --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
+            --output backend/build/journey-contracts-staging
+
+      - name: Test backend shard
+        working-directory: backend
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: ./gradlew --init-script ../tools/ci/gradle/backend-ci.init.gradle test -PbackendTestShardIndex=${{ matrix.shard }} -PbackendTestShardCount=6 -x jacocoTestReport --no-daemon
+
+      - name: Collect shard evidence
+        shell: bash
+        run: |
+          set -euo pipefail
+          evidence="${RUNNER_TEMP}/backend-test-shard"
+          mkdir -p "${evidence}"
+          test -s backend/build/jacoco/test.exec
+          cp backend/build/jacoco/test.exec "${evidence}/test.exec"
+          cp -R backend/build/test-results/test "${evidence}/test-results"
+          node tools/ci/backend-test-shards.mjs digest-classes --dir backend/build/classes/java/main > "${evidence}/main-classes.sha256"
+
+      - name: Upload shard evidence
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
+        with:
+          name: backend-test-shard-${{ matrix.shard }}-${{ github.sha }}
+          path: ${{ runner.temp }}/backend-test-shard/
+          retention-days: 5
+          if-no-files-found: error
+
+  backend:
+    name: Backend CI
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    needs: [scope, backend-contracts, backend-test, backend-spotbugs]
+    # 취소·실패·누락을 success로 넘기지 않도록 항상 실행해 모든 job 결과를 판정한다.
+    if: always()
+    steps:
+      - name: Checkout
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Set up Node.js
+        uses: actions/setup-node@48b55a011bda9f5d6aeb4c2d9c7362e8dae4041e
+        with:
+          node-version: 24
+
+      # 집계 판정기도 PR head가 약화할 수 없도록 base 커밋의 사본으로 실행한다.
+      # base에 판정기가 없을 때(이 판정기를 처음 들여오는 PR)만 head 사본을 쓰고 그 사실을 기록한다.
+      - name: Verify Backend CI job results
+        env:
+          BACKEND_CI_EVENT: ${{ github.event_name }}
+          BACKEND_CI_NEEDS: ${{ toJSON(needs) }}
+          VERIFY_TRUSTED_ROOT: ${{ runner.temp }}/backend-ci-verify-trusted
+        run: |
+          set -euo pipefail
+          umask 077
+          source=tools/ci/backend-ci-scope.mjs
+          revision=HEAD
+          label="${BACKEND_CI_EVENT} tested commit"
+          if [[ "${BACKEND_CI_EVENT}" == "pull_request" ]]; then
+            read -r _tested base pr_head extra <<< "$(git rev-list --parents -n 1 HEAD)"
+            if [[ ! "${base:-}" =~ ^[0-9a-f]{40}$ || ! "${pr_head:-}" =~ ^[0-9a-f]{40}$ || -n "${extra:-}" ]]; then
+              echo "pull_request checkout must be a two-parent merge commit" >&2
+              exit 1
+            fi
+            if [[ -n "$(git ls-tree "${base}" -- "${source}")" ]]; then
+              revision="${base}"
+              label="base ${base}"
+            else
+              label="pull request head (base has no verifier)"
+            fi
+          fi
+          if [[ -e "${VERIFY_TRUSTED_ROOT}" || -L "${VERIFY_TRUSTED_ROOT}" ]]; then
+            echo "trusted verifier stage path already exists" >&2
+            exit 1
+          fi
+          mkdir "${VERIFY_TRUSTED_ROOT}"
+          trusted="$(cd "${VERIFY_TRUSTED_ROOT}" && pwd -P)"
+          git archive "${revision}" "${source}" tools/lib/is-main-module.mjs | tar -x -C "${trusted}"
+          printf -- '- verifier: %s\n' "${label}" >> "$GITHUB_STEP_SUMMARY"
+          node "${trusted}/${source}" verify-jobs --event "${BACKEND_CI_EVENT}" --needs "${BACKEND_CI_NEEDS}" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Set up ORAS
+        if: needs.scope.outputs.heavy == 'true'
+        uses: oras-project/setup-oras@1d808f7d7f6995cc68b7bf507bfe5c5446e1dc9d
+        with:
+          version: 1.3.3
+
+      - name: Set up Java
+        if: needs.scope.outputs.heavy == 'true'
+        uses: actions/setup-java@b6effb05e454b25005698d916606bdc6ffcbf961
+        with:
+          distribution: temurin
+          java-version: "21.0.11"
+          cache: gradle
+
+      # v1 datapack은 Journey OCI artifact의 fallback이 아니라 별도 backend resource다.
+      - name: Stage pinned contracts
+        if: needs.scope.outputs.heavy == 'true'
+        shell: bash
+        run: |
+          artifact_url="$(jq -er '.artifactUrl | select(. == "https://raw.githubusercontent.com/AquilaXk/easysubway/6c29b55e6cbdb1713522cb4f766d9754728d5fc8/contracts/bundles/backend-contracts-v1.0.0.json")' backend/contracts.lock.json)"
+          curl --fail --silent --show-error --location \
+            --retry 3 --retry-delay 2 --retry-all-errors \
+            --connect-timeout 10 --max-time 60 \
+            --output "${RUNNER_TEMP}/backend-contracts.json" \
+            "${artifact_url}"
+          node backend/tools/stage-contracts.mjs \
+            --lock backend/contracts.lock.json \
+            --input "${RUNNER_TEMP}/backend-contracts.json" \
+            --output backend/build/contracts-staging
+
+      - name: Stage pinned Journey contracts
+        if: needs.scope.outputs.heavy == 'true'
+        shell: bash
+        run: |
+          set -euo pipefail
+          journey_contract_subject="$(jq -er '.artifact | if type == "object" and (.repository | type == "string") and (.manifestDigest | type == "string" and test("^sha256:[a-f0-9]{64}$")) then "\(.repository)@\(.manifestDigest)" else error("invalid Journey contract OCI subject") end' backend/journey-contracts.lock.json)"
+          [[ "${journey_contract_subject}" =~ ^ghcr\.io/aquilaxk/easysubway-backend-contracts@sha256:[a-f0-9]{64}$ ]]
+          oras pull "${journey_contract_subject}" --output "${RUNNER_TEMP}/journey-contract-pull"
+          node backend/tools/stage-journey-contracts.mjs \
+            --lock backend/journey-contracts.lock.json \
+            --input "${RUNNER_TEMP}/journey-contract-pull/journey-v3-contract-bundle-v2.json" \
+            --output backend/build/journey-contracts-staging
+
+      - name: Download test shard evidence
+        if: needs.scope.outputs.heavy == 'true'
+        uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c
+        with:
+          pattern: backend-test-shard-*-${{ github.sha }}
+          path: ${{ runner.temp }}/backend-test-shards
+
+      # 모든 shard의 JaCoCo 실행 데이터를 합쳐 기존과 같은 jacocoTestReport·evidence를 만들고,
+      # 모든 테스트 클래스가 정확히 한 shard에서 실행됐는지와 main 클래스 바이트코드 동일성을 확인한다.
+      - name: Test and package backend
+        id: test_backend
+        if: needs.scope.outputs.heavy == 'true'
+        shell: bash
+        env:
+          EASYSUBWAY_CONTRACTS_BUNDLE: ${{ runner.temp }}/backend-contracts.json
+        run: |
+          set -euo pipefail
+          shards="${RUNNER_TEMP}/backend-test-shards"
+          execution="${RUNNER_TEMP}/backend-test-execution"
+          mkdir -p "${execution}"
+          test "$(find "${shards}" -mindepth 1 -maxdepth 1 -type d | wc -l)" -eq 6
+          results=()
+          digests=()
+          for shard in 1 2 3 4 5 6; do
+            dir="${shards}/backend-test-shard-${shard}-${GITHUB_SHA}"
+            test -s "${dir}/test.exec"
+            cp "${dir}/test.exec" "${execution}/shard-${shard}.exec"
+            results+=(--results "${dir}/test-results")
+            digests+=(--classes-digest "$(cat "${dir}/main-classes.sha256")")
+          done
+          (cd backend && ./gradlew --init-script ../tools/ci/gradle/backend-ci.init.gradle testClasses bootJar jacocoTestReport -x test -PbackendJacocoExecutionDataDir="${execution}" --no-daemon)
+          digests+=(--classes-digest "$(node tools/ci/backend-test-shards.mjs digest-classes --dir backend/build/classes/java/main)")
+          node tools/ci/backend-test-shards.mjs verify --repo-root . "${results[@]}" "${digests[@]}" --summary "$GITHUB_STEP_SUMMARY"
+
       - name: Analyze backend critical coverage
         id: coverage_analyze
+        if: needs.scope.outputs.heavy == 'true'
         shell: bash
         env:
           COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}
@@ -357,7 +649,7 @@ jobs:
 
       - name: Upload backend critical coverage artifact
         id: coverage_artifact
-        if: always() && !cancelled()
+        if: always() && !cancelled() && needs.scope.outputs.heavy == 'true'
         uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f
         with:
           name: backend-critical-coverage-${{ github.sha }}
@@ -372,12 +664,12 @@ jobs:
 
       - name: Append backend critical coverage summary
         id: coverage_summary
-        if: always() && !cancelled() && steps.coverage_analyze.outcome == 'success'
+        if: always() && !cancelled() && needs.scope.outputs.heavy == 'true' && steps.coverage_analyze.outcome == 'success'
         shell: bash
         run: cat "${RUNNER_TEMP}/backend-critical-coverage/backend-critical-coverage-summary.md" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Enforce backend critical coverage verdict
-        if: always()
+        if: always() && needs.scope.outputs.heavy == 'true'
         shell: bash
         env:
           COVERAGE_PULL_REQUEST_HEAD_SHA: ${{ github.event.pull_request.head.sha || 'none' }}
@@ -409,7 +701,7 @@ jobs:
             --summary-outcome "${{ steps.coverage_summary.outcome }}"
 
       - name: Analyze with SonarQube Cloud
-        if: ${{ github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ needs.scope.outputs.heavy == 'true' && (github.event_name == 'push' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository)) }}
         uses: SonarSource/sonarqube-scan-action@22918119ff8e1ca75a623e15c8296b6ea4fbe28f
         env:
           SONAR_TOKEN: ${{ secrets.SONAR_TOKEN }}
@@ -417,4 +709,5 @@ jobs:
           projectBaseDir: backend
 
       - name: Build image without push
+        if: needs.scope.outputs.heavy == 'true'
         run: docker build --tag easysubway-backend:ci backend
