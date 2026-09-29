@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.assertj.core.api.Assertions.tuple;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -32,6 +33,7 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.stream.IntStream;
+import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 
 class TagoTrainSearchProviderTest {
@@ -807,6 +809,33 @@ class TagoTrainSearchProviderTest {
 			assertThatThrownBy(() -> provider(server, "test-key").search(query))
 				.isInstanceOf(ProviderFailure.class)
 				.hasMessage("TRAIN_SEARCH_NO_VALID_ROWS");
+		} finally {
+			server.stop(0);
+		}
+	}
+
+	@Test
+	@DisplayName("공공 API 자체 호출 한도가 제거되어 61회 검색 요청이 모두 원천에 도달한다")
+	void multipleSearchRequestsReachProviderWithoutBudgetExhaustion() throws Exception {
+		var requests = new AtomicInteger();
+		var server = server(exchange -> {
+			requests.incrementAndGet();
+			if (respondEmptyForNextDay(exchange)) return;
+			respond(exchange, paginatedResponse("""
+				[{"trainno":"101","traingradename":"KTX","depplandtime":"20260720090000","arrplandtime":"20260720100200","depplacename":"서울","arrplacename":"대전","adultcharge":"23700"}]
+				""", 1));
+		});
+		try {
+			var cache = mock(com.easysubway.train.application.TrainSearchCache.class);
+			var calls = new AtomicInteger();
+			when(cache.tryAcquireProviderCall(any(), any(), anyInt(), anyInt())).thenAnswer(inv -> calls.incrementAndGet() <= 60);
+			var budget = new SharedTrainSearchProviderCallBudget(cache, 60, 1000);
+			var provider = provider(server, "test-key", budget);
+			var query = legQuery(LocalDate.parse("2026-07-20"), "KTX", "00");
+
+			for (int i = 0; i < 61; i++) {
+				assertThat(provider.search(query)).isNotEmpty();
+			}
 		} finally {
 			server.stop(0);
 		}

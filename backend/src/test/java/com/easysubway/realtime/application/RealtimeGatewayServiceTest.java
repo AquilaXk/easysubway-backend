@@ -1503,6 +1503,45 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("공공 API 자체 호출 한도가 제거되어 여러 역 동시 요청이 제한 없이 처리된다")
+	void multipleConcurrentRequestsAreProcessedWithoutInternalRateLimit() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:00:00Z"));
+		CountingProvider provider = new CountingProvider();
+		StubMappingPort mappingPort = new StubMappingPort();
+		for (int index = 0; index < 5; index += 1) {
+			mappingPort.add(mapping(
+				"station-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"10040004%02d".formatted(index),
+				"상록수%02d".formatted(index),
+				true,
+				false,
+				"OFFICIAL"
+			));
+		}
+		RealtimeGatewayService service = service(provider, clock, mappingPort);
+
+		for (int index = 0; index < 5; index += 1) {
+			RealtimeArrivalResult result = service.arrivals(new RealtimeQuery(
+				"station-%02d".formatted(index),
+				"seoul-4",
+				"1004",
+				"상록수%02d".formatted(index),
+				"4호선"
+			));
+			assertThat(result.status()).hasToString("FRESH");
+		}
+		assertThat(provider.arrivalCalls.get()).isEqualTo(5);
+
+		for (int index = 0; index < 5; index += 1) {
+			RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+			assertThat(result.status()).hasToString("FRESH");
+		}
+		assertThat(provider.trainPositionCalls.get()).isEqualTo(5);
+	}
+
+	@Test
 	@DisplayName("TOPIS provider는 backend service key가 없으면 unavailable로 낮춘다")
 	void topisProviderWithoutBackendServiceKeyIsUnavailableByDefault() {
 		TimeoutHttpClient httpClient = new TimeoutHttpClient();
