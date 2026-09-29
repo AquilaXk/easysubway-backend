@@ -32,8 +32,6 @@ import com.easysubway.journey.application.FacilityAvailabilityView;
 import com.easysubway.journey.application.FacilityStatusOverlayProvider;
 import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.BitSet;
 import java.util.List;
 import java.util.Set;

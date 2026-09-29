@@ -16,6 +16,8 @@ import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicInteger;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -33,9 +35,9 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 	private final Supplier<TransitionFacilityRequirements> requirementsSupplier;
 	private final com.easysubway.transit.application.port.out.SourceCollectionHeartbeatPort heartbeatPort;
 	private final Clock clock;
-	private volatile FacilityAvailabilityView cachedView = FacilityAvailabilityView.unavailable();
-	private volatile Instant lastSuccessfulUpdate = null;
-	private volatile int blockedTransitionCount = 0;
+	private final AtomicReference<FacilityAvailabilityView> cachedView = new AtomicReference<>(FacilityAvailabilityView.unavailable());
+	private final AtomicReference<Instant> lastSuccessfulUpdate = new AtomicReference<>(null);
+	private final AtomicInteger blockedTransitionCount = new AtomicInteger(0);
 
 	public FacilityStatusOverlayProvider(
 		Supplier<Map<String, AccessibilityFacilityStatus>> statusSupplier,
@@ -130,7 +132,7 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 			TransitionFacilityRequirements requirements = requirementsSupplier.get();
 			Set<String> blockedTransitions = BlockedTransitionEvaluator.evaluateBlockedTransitions(requirements, statuses);
 			Instant now = clock.instant();
-			this.lastSuccessfulUpdate = now;
+			this.lastSuccessfulUpdate.set(now);
 			Instant effectiveObservedAt = now;
 			if (heartbeatPort != null) {
 				Instant sourceHeartbeat = heartbeatPort.lastSuccessfulSourceCollectionAt();
@@ -141,11 +143,11 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 				}
 			}
 			if (effectiveObservedAt == null) {
-				this.cachedView = FacilityAvailabilityView.unavailable();
+				this.cachedView.set(FacilityAvailabilityView.unavailable());
 			} else {
-				this.cachedView = FacilityAvailabilityView.blocked(effectiveObservedAt, blockedTransitions);
+				this.cachedView.set(FacilityAvailabilityView.blocked(effectiveObservedAt, blockedTransitions));
 			}
-			this.blockedTransitionCount = blockedTransitions.size();
+			this.blockedTransitionCount.set(blockedTransitions.size());
 		} catch (Exception exception) {
 			log.warn("Failed to refresh facility statuses: {}", exception.getMessage());
 			// ObservedAt remains the last successful time; previous cache is preserved.
@@ -154,14 +156,14 @@ public class FacilityStatusOverlayProvider implements FacilityAvailabilityPort {
 
 	@Override
 	public FacilityAvailabilityView currentView() {
-		return cachedView;
+		return cachedView.get();
 	}
 
 	public Instant lastSuccessfulUpdate() {
-		return lastSuccessfulUpdate;
+		return lastSuccessfulUpdate.get();
 	}
 
 	public int blockedTransitionCount() {
-		return blockedTransitionCount;
+		return blockedTransitionCount.get();
 	}
 }

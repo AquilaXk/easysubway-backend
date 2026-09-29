@@ -258,5 +258,55 @@ class FacilityStatusOverlayProviderTest {
 		portProvider.refresh();
 		assertThat(portProvider.currentView().available()).isTrue();
 	}
+
+	@Test
+	@DisplayName("포트 기반 생성자에 시설 데이터 및 활성 번들 런타임 뷰가 정상 연동됨")
+	void portBasedConstructorWithFacilitiesAndRaptorView() {
+		var clock = new MutableClock(T0);
+		var facility = new com.easysubway.transit.domain.AccessibilityFacility(
+			"fac-1", "STN_001", "1",
+			com.easysubway.transit.domain.AccessibilityFacilityType.ELEVATOR,
+			"엘리베이터 1호기",
+			"지상", "지하1층",
+			java.math.BigDecimal.valueOf(37.5),
+			java.math.BigDecimal.valueOf(127.0),
+			"지상 - 지하1층",
+			AccessibilityFacilityStatus.NORMAL,
+			com.easysubway.transit.domain.DataConfidenceLevel.HIGH,
+			com.easysubway.transit.domain.DataSourceType.OFFICIAL_API,
+			java.time.LocalDate.of(2026, 6, 30)
+		);
+		var loadPort = org.mockito.Mockito.mock(com.easysubway.transit.application.port.out.LoadTransitMasterPort.class);
+		org.mockito.Mockito.when(loadPort.loadAccessibilityFacilities()).thenReturn(List.of(facility));
+
+		var requirements = TransitionFacilityRequirements.of(Map.of(
+			"t1", List.of(Set.of("fac-1"))
+		));
+		var registry = org.mockito.Mockito.mock(com.easysubway.journey.bundle.RouteBundleActivationRegistry.class);
+		var snapshot = org.mockito.Mockito.mock(com.easysubway.journey.bundle.ActiveRouteBundleSnapshot.class);
+		var raptorView = org.mockito.Mockito.mock(com.easysubway.route.application.service.RaptorRouteBundleRuntimeView.class);
+		org.mockito.Mockito.when(raptorView.facilityRequirements()).thenReturn(requirements);
+		org.mockito.Mockito.when(snapshot.runtimeView()).thenReturn(raptorView);
+		org.mockito.Mockito.when(registry.activeSnapshot()).thenReturn(snapshot);
+
+		var provider = new FacilityStatusOverlayProvider(loadPort, registry, clock, null);
+		provider.refresh();
+		assertThat(provider.currentView().available()).isTrue();
+		assertThat(provider.blockedTransitionCount()).isEqualTo(0);
+	}
+
+	@Test
+	@DisplayName("활성 번들 런타임 뷰 조회 시 예외 발생하거나 비-Raptor 뷰인 경우 missing 요구사항으로 안전 처리")
+	void portBasedConstructorWithFailingRegistry() {
+		var clock = new MutableClock(T0);
+		var registry = org.mockito.Mockito.mock(com.easysubway.journey.bundle.RouteBundleActivationRegistry.class);
+		org.mockito.Mockito.when(registry.activeSnapshot()).thenThrow(new RuntimeException("not ready"));
+		var loadPort = org.mockito.Mockito.mock(com.easysubway.transit.application.port.out.LoadTransitMasterPort.class);
+		org.mockito.Mockito.when(loadPort.loadAccessibilityFacilities()).thenReturn(List.of());
+
+		var provider = new FacilityStatusOverlayProvider(loadPort, registry, clock, new SimpleMeterRegistry());
+		provider.refresh();
+		assertThat(provider.currentView().available()).isTrue();
+	}
 }
 

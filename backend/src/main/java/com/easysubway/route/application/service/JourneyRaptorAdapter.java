@@ -17,24 +17,19 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.ArrayList;
-import java.util.Comparator;
-import java.util.HashSet;
-import java.util.HexFormat;
-import java.util.LinkedHashMap;
 import com.easysubway.journey.application.FacilityAvailabilityPort;
 import com.easysubway.journey.application.FacilityAvailabilityView;
 import com.easysubway.journey.application.FacilityStatusUnavailableException;
 import java.time.Clock;
-import java.time.Duration;
-import java.time.Instant;
 import java.util.ArrayList;
 import java.util.BitSet;
+import java.util.Comparator;
 import java.util.HashSet;
+import java.util.HexFormat;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
-import java.util.Set;
 
 public final class JourneyRaptorAdapter implements JourneyRaptorPort {
 
