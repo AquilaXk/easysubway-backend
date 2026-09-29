@@ -1492,6 +1492,9 @@ const makeRunQueue =
         JSON.stringify({ sha: head, parents: pr.headParents.map((sha) => ({ sha })) }),
       );
     }
+    for (const [page, events] of (pr.events ?? []).entries()) {
+      writeFileSync(join(dir, `events-${pr.number}-${page + 1}.json`), JSON.stringify(events));
+    }
     for (const [base, status] of Object.entries(pr.compare ?? {})) {
       writeFileSync(join(dir, `compare-${base}.json`), JSON.stringify({ status }));
     }
@@ -1571,6 +1574,7 @@ const makeRunQueue =
     `    "api --method PATCH repos/o/r/issues/comments/"*|"api --method POST repos/o/r/issues/"*"/comments "*) printf 'TOKEN=%s\\n' "$GH_TOKEN" >> "$GH_LOG"; body="\${all#*body=}"; jq -nc --arg body "$body" '{id: 99, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}' ;;`,
     '    "api repos/o/r/commits/"*) h="${all#api repos/o/r/commits/}"; [[ -f "$FIX/commit-$h.json" ]] || return 1; cat "$FIX/commit-$h.json" ;;',
     '    "api repos/o/r/compare/"*) b="${all#api repos/o/r/compare/}"; b="${b%%...*}"; [[ -f "$FIX/compare-$b.json" ]] || return 1; jq -r .status "$FIX/compare-$b.json" ;;',
+    '    *issues/*/events*) n="${all#*issues/}"; n="${n%%/events*}"; page="${all##*page=}"; [[ -f "$FIX/events-$n-$page.json" ]] || return 1; cat "$FIX/events-$n-$page.json" ;;',
     '    *pulls/*/commits*) n="${all#*pulls/}"; n="${n%%/commits*}"; page="${all##*page=}"; cat "$FIX/commits-$n-$page.json" ;;',
     '    *issues/*/comments*) n="${all#*issues/}"; n="${n%%/comments*}"; page="${all##*page=}"; cat "$FIX/comments-$n-$page.json" ;;',
     '    *pulls/*/reviews*) n="${all#*pulls/}"; n="${n%%/reviews*}"; cat "$FIX/reviews-$n.json" ;;',
@@ -1812,6 +1816,7 @@ const runMarkerSync = (
     commits = [],
     headCommit = null,
     compare = null,
+    events = null,
     mutation = 'ok',
   },
 ) => {
@@ -1825,6 +1830,7 @@ const runMarkerSync = (
   fixture('comments.json', comments);
   if (headCommit !== null) fixture('head-commit.json', headCommit);
   if (compare !== null) fixture('compare.json', compare);
+  for (const [index, page] of (events ?? []).entries()) fixture(`events-${index + 1}.json`, page);
   const result = spawnSync('bash', ['-c', [
     'set -euo pipefail',
     `GH_LOG=${JSON.stringify(log)}`,
@@ -1848,6 +1854,7 @@ const runMarkerSync = (
     '      jq -nc --arg body "${all#*body=}" \'{id: 99, body: $body, user: {login: "github-actions[bot]", id: 41898282, type: "Bot"}}\' ;;',
     '    "api repos/o/r/commits/"*) payload="$(cat "$FIX/head-commit.json")" ;;',
     '    "api repos/o/r/compare/"*) payload="$(cat "$FIX/compare.json")" ;;',
+    '    "api repos/o/r/issues/85/events?per_page=100&page="*) page="${all##*page=}"; [[ -f "$FIX/events-$page.json" ]] || return 1; payload="$(cat "$FIX/events-$page.json")" ;;',
     '    *) printf "unstubbed gh call: %s\\n" "$all" >&2; return 1 ;;',
     '  esac',
     '  if [[ -n "${payload:-}" ]]; then',
@@ -2032,11 +2039,14 @@ test('marker 복구는 canonical marker가 없고 게이트가 인정하는 disc
   const previous = 'b'.repeat(40);
   const head = 'c'.repeat(40);
   const outside = 'f'.repeat(40);
+  const committedAt = (sha, date) => ({ sha, commit: { committer: { date } } });
+  const labeledAt = (date, name = 'automerge') => ({ event: 'labeled', label: { name }, created_at: date });
   const base = {
     head,
     comments: [[]],
     reviews: [discoveryReview(previous)],
-    commits: [[{ sha: previous }, { sha: head }]],
+    commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, '2026-09-29T01:00:00Z')]],
+    events: [[labeledAt('2026-09-29T02:00:00Z')]],
   };
   const codeRabbit = {
     author_association: 'NONE',
@@ -2082,6 +2092,53 @@ test('marker 복구는 canonical marker가 없고 게이트가 인정하는 disc
   assert.equal(failed.status, 0);
   assert.equal(failed.mutations.length, 1);
   assert.equal(failed.authorized, false, 'a failed recovery must not authorize the head');
+
+  // 복구는 최신 automerge 라벨 시점에 이미 PR head였던 커밋에만 한다. 라벨 run이 취소된 뒤
+  // 세션이 더 push한 커밋이 승인된 것으로 기록되면 안 된다.
+  const recoveredOnlyAt = (label, options) => {
+    const result = runMarkerSync(workflow, { ...base, ...options });
+    assert.equal(result.status, 0, `${label}: ${result.stderr}`);
+    assert.match(result.stdout, /SYNC_RETURNED/, `${label} must fall through to the gate`);
+    return result;
+  };
+  const hundred = (event) => Array.from({ length: 100 }, () => event);
+  for (const [label, options] of [
+    ['head committed at the label time', { events: [[labeledAt('2026-09-29T01:00:00Z')]] }],
+    ['relabel after the head', { events: [[labeledAt('2026-09-28T00:00:00Z'), { event: 'unlabeled', label: { name: 'automerge' }, created_at: '2026-09-28T01:00:00Z' }, labeledAt('2026-09-29T02:00:00Z')]] }],
+    ['force push before the label', { events: [[{ event: 'head_ref_force_pushed', created_at: '2026-09-29T01:30:00Z' }, labeledAt('2026-09-29T02:00:00Z')]] }],
+    ['a full first page followed by an empty page', { events: [hundred(labeledAt('2026-09-29T02:00:00Z')), []] }],
+  ]) {
+    const recovered = recoveredOnlyAt(label, options);
+    assert.deepEqual(
+      recovered.mutations,
+      [`TOKEN=github-token gh api --method POST repos/o/r/issues/85/comments -f body=${markerFor(head)}`],
+      `${label} must recover the labeled head`,
+    );
+    assert.equal(recovered.authorized, true);
+  }
+  for (const [label, options] of [
+    ['head committed after the latest automerge label', { commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, '2026-09-29T03:00:00Z')]] }],
+    ['an older label only precedes the head', { events: [[labeledAt('2026-09-28T00:00:00Z')]] }],
+    ['events lookup failure', { events: ['__FAIL__'] }],
+    ['no events at all', { events: [[]] }],
+    ['only other label events', { events: [[labeledAt('2026-09-29T02:00:00Z', 'ready')]] }],
+    ['force push after the label', { events: [[labeledAt('2026-09-29T02:00:00Z'), { event: 'head_ref_force_pushed', created_at: '2026-09-29T02:30:00Z' }]] }],
+    ['malformed events payload', { events: [{ message: 'Not Found' }] }],
+    ['unparseable label time', { events: [[labeledAt('yesterday')]] }],
+    ['head without a committer date', { commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), { sha: head }]] }],
+    ['unparseable committer date', { commits: [[committedAt(previous, '2026-09-29T00:00:00Z'), committedAt(head, 'soon')]] }],
+    ['event history beyond the bounded read', { events: [hundred(labeledAt('2026-09-29T02:00:00Z')), [labeledAt('2026-09-29T02:00:00Z')]] }],
+  ]) {
+    const kept = recoveredOnlyAt(label, options);
+    assert.deepEqual(kept.mutations, [], `${label} must not recover a marker`);
+    assert.equal(kept.authorized, false, `${label} must leave the current head unauthorized`);
+    assert.doesNotMatch(kept.stdout, /now covers/);
+  }
+  // 이벤트 조회는 discovery가 확인된 뒤에만, 1페이지(가득 차면 overflow 확인 1회)까지만 한다.
+  const eventReads = (result) => (result.calls.match(/issues\/85\/events/g) ?? []).length;
+  assert.equal(eventReads(recoveredOnlyAt('single page', {})), 1);
+  assert.equal(eventReads(recoveredOnlyAt('full page', { events: [hundred(labeledAt('2026-09-29T02:00:00Z')), []] })), 2);
+  assert.equal(eventReads(recoveredOnlyAt('no discovery', { reviews: [] })), 0);
 });
 
 test('marker 동기화의 discovery 판정은 리뷰 게이트와 같은 정의를 쓴다', async () => {
@@ -2166,7 +2223,29 @@ test('코디네이터 base 갱신 뒤 다음 실행은 marker를 재발행해 �
   assert.doesNotMatch(sessionPush.calls, /--method (PATCH|POST)/);
   assert.equal(sessionPush.mergedPr, null, 'a session push must wait for a new label authorization');
 
-  const recovered = runQueue([{ ...candidate, comments: [], headParents: undefined, compare: undefined }]);
+  const recoveryDates = {
+    comments: [],
+    headParents: undefined,
+    compare: undefined,
+    commits: [
+      { sha: previous, commit: { committer: { date: '2026-09-29T00:00:00Z' } } },
+      { sha: head, commit: { committer: { date: '2026-09-29T01:00:00Z' } } },
+    ],
+  };
+  const pushedAfterLabel = runQueue([{
+    ...candidate,
+    ...recoveryDates,
+    events: [[{ event: 'labeled', label: { name: 'automerge' }, created_at: '2026-09-29T00:30:00Z' }]],
+  }]);
+  assert.equal(pushedAfterLabel.status, 0, pushedAfterLabel.stderr);
+  assert.doesNotMatch(pushedAfterLabel.calls, /--method (PATCH|POST)/, 'a head pushed after the label must not be recovered');
+  assert.equal(pushedAfterLabel.mergedPr, null);
+
+  const recovered = runQueue([{
+    ...candidate,
+    ...recoveryDates,
+    events: [[{ event: 'labeled', label: { name: 'automerge' }, created_at: '2026-09-29T02:00:00Z' }]],
+  }]);
   assert.equal(recovered.status, 0, recovered.stderr);
   assert.match(recovered.calls, new RegExp(`gh api --method POST repos/o/r/issues/1/comments -f body=${markerFor(head)}\\nTOKEN=github-token\\n`));
   assert.equal(recovered.mergedPr, 1, 'a recovered marker must satisfy the unchanged review gate in the same run');

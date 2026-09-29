@@ -416,8 +416,16 @@ jobs:
           #    그 밖의 head 변화(세션 push, 세션이 만든 병합 커밋)는 재발행하지 않는다. 기록은
           #    재발행 뒤에도 그대로 두고 다음 갱신 요청이 새 P로 PATCH한다.
           #  - 복구: canonical marker가 아예 없고(라벨 run이 concurrency 대기 중 취소된 경우)
-          #    리뷰 게이트가 인정하는 discovery 리뷰가 PR commit set 안의 커밋에 있을 때 현재
-          #    head로 POST한다.
+          #    리뷰 게이트가 인정하는 discovery 리뷰가 PR commit set 안의 커밋에 있으며, 현재
+          #    head가 최신 automerge labeled 이벤트 시점에 이미 PR head였을 때만 그 head로
+          #    POST한다. 라벨 이후 push된 커밋을 승인된 것으로 기록하지 않기 위해서다.
+          #    판정은 head 커밋의 committer date <= 최신 automerge labeled 시각이고, 그 시각
+          #    이후 head_ref_force_pushed 이벤트가 없는지로 한다. 일반 push는 이벤트를 남기지
+          #    않아(timeline의 committed 항목도 push 시각이 아니라 커밋 날짜로 정렬된다)
+          #    push 시각을 직접 얻을 수 없다. committer date는 작성자가 조작할 수 있으므로
+          #    이 검사는 소유 계정 신뢰를 전제로 한 실수 방지이지 위조 방어가 아니다. 이벤트는
+          #    1페이지(가득 차면 overflow 확인 1회)까지만 읽고, 조회 실패·라벨 이벤트 없음·
+          #    시각 파싱 실패·이력 초과는 복구하지 않는다.
           # 조회·형식·변경 실패와 애매한 상태는 marker를 건드리지 않고 아래 리뷰 게이트가 거절하게
           # 둔다. 변경은 github.token(github-actions[bot])으로만 한다. 게이트는 그 봇의 marker만
           # 인정한다. 성공하면 GitHub이 돌려준 comment를 게이트 입력에 덧붙인다.
@@ -456,7 +464,7 @@ jobs:
           }
           sync_authorization_marker() {
             local target="$1" current_head="$2" commits_path="$3" comments_path="$4" review_pages="$5"
-            local marker_body markers marker_count marker_id marker_head records head_commit second_parent ancestry response
+            local marker_body markers marker_count marker_id marker_head records head_commit second_parent ancestry response events overflow
 
             marker_body="${marker_prefix}${current_head} -->"
             markers="$(canonical_bot_comment_heads "${comments_path}" "${marker_prefix}")"
@@ -523,6 +531,28 @@ jobs:
                 )
               ' <<<"${review_pages}" >/dev/null; then
                 echo "PR #${target}: no authorization marker and no gate-recognized discovery review in the PR commit set; authorization is not recovered."
+                return 0
+              fi
+              if ! events="$(gh api "repos/${repo}/issues/${target}/events?per_page=100&page=1")" ||
+                ! jq -e 'type == "array" and all(.[]; type == "object")' <<<"${events}" >/dev/null; then
+                echo "PR #${target}: label events could not be read; authorization is not recovered."
+                return 0
+              fi
+              if [[ "$(jq 'length' <<<"${events}")" -ge 100 ]] &&
+                { ! overflow="$(gh api "repos/${repo}/issues/${target}/events?per_page=100&page=2")" ||
+                  ! jq -e 'type == "array" and length == 0' <<<"${overflow}" >/dev/null; }; then
+                echo "PR #${target}: label events exceed the bounded read; authorization is not recovered."
+                return 0
+              fi
+              if ! jq -e --arg head "${current_head}" --slurpfile commit_pages "${commits_path}" '
+                ([.[] | select(.event == "labeled" and .label.name? == "automerge") | .created_at | fromdateiso8601] | max) as $labeled_at |
+                ([$commit_pages | flatten[] | select(.sha == $head) | .commit.committer.date] | unique) as $head_dates |
+                ($head_dates | length == 1) and
+                ($labeled_at | type == "number") and
+                ($head_dates[0] | fromdateiso8601) <= $labeled_at and
+                all(.[] | select(.event == "head_ref_force_pushed"); (.created_at | fromdateiso8601) < $labeled_at)
+              ' <<<"${events}" >/dev/null 2>&1; then
+                echo "PR #${target}: head ${current_head} is not proven to predate the latest automerge label; authorization is not recovered."
                 return 0
               fi
               if ! response="$(gh api --method POST "repos/${repo}/issues/${target}/comments" -f body="${marker_body}")"; then
