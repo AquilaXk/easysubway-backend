@@ -1237,11 +1237,17 @@ class RealtimeGatewayServiceTest {
 		RealtimeGatewayService service = service(provider, clock);
 
 		provider.failureCode = "PROVIDER_AUTH_REJECTED";
-		service.arrivals(sangnoksuQuery());
+		RealtimeArrivalResult authRejected = service.arrivals(sangnoksuQuery());
 
 		clock.instant = Instant.parse("2026-06-26T08:01:01Z");
 		provider.failureCode = "PROVIDER_REQUEST_REJECTED";
-		service.trainPositions(line4Query());
+		RealtimeTrainPositionResult requestRejected = service.trainPositions(line4Query());
+
+		// 내부 원인은 공개 응답에서 PROVIDER_ERROR로만 나간다.
+		assertThat(authRejected.status()).hasToString("UNAVAILABLE");
+		assertThat(authRejected.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(requestRejected.status()).hasToString("UNAVAILABLE");
+		assertThat(requestRejected.fallbackCode()).isEqualTo("PROVIDER_ERROR");
 
 		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
 		assertThat(snapshot.providerAuthRejectedCount()).isEqualTo(1);

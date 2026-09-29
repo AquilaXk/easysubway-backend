@@ -35,13 +35,14 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	private static final Pattern ETA_PATTERN = Pattern.compile("(\\d+)\\s*분(?:\\s*(\\d+)\\s*초)?|(\\d+)\\s*초");
 
 	/**
-	 * 서울 열린데이터광장(data.seoul.go.kr) 실시간 지하철 OpenAPI 공통 오류코드 명세 (2026-09-29 확인)
-	 * https://data.seoul.go.kr
+	 * 요청 쪽 오류 코드. 서울 열린데이터광장 OpenAPI 공통 오류코드 표(2026-09-29 확인,
+	 * https://data.gangseo.seoul.kr/openinf/openapiview.jsp?infId=OA-1263 의 서울시 공통 코드와 동일)와
+	 * swopenapi sample 키 실측 기준이다. ERROR-336은 "한 번에 1000건 초과 요청"이라 호출 한도가 아니다.
+	 * 표에는 일별 트래픽 한도 코드가 없으므로 호출 한도 초과는 HTTP 429로만 판정한다.
 	 */
-	private static final Set<String> QUOTA_CODES = Set.of("ERROR-336", "ERROR-337");
 	private static final Set<String> REQUEST_REJECTED_CODES = Set.of(
 		"ERROR-300", "ERROR-301", "ERROR-310",
-		"ERROR-331", "ERROR-332", "ERROR-333", "ERROR-334", "ERROR-335"
+		"ERROR-331", "ERROR-332", "ERROR-333", "ERROR-334", "ERROR-335", "ERROR-336"
 	);
 
 	private final String serviceKey;
@@ -203,22 +204,17 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	}
 
 	/**
-	 * 서울 열린데이터광장(data.seoul.go.kr) 실시간 지하철 OpenAPI 공통 오류코드 명세 (2026-09-29 확인)
-	 * https://data.seoul.go.kr
+	 * 결과 코드 분류 근거는 {@link #REQUEST_REJECTED_CODES} 주석의 공통 오류코드 표다.
 	 *
 	 * INFO-000(정상)과 INFO-200(해당 데이터 없음)만 통과한다.
 	 * INFO-100(인증키 오류)은 PROVIDER_AUTH_REJECTED로 분류한다.
 	 * REQUEST_REJECTED_CODES는 요청 쪽 오류이므로 PROVIDER_REQUEST_REJECTED로 분류한다.
-	 * QUOTA_CODES는 트래픽/요청 건수 한도 초과이므로 PROVIDER_QUOTA_EXCEEDED로 분류한다.
 	 * 그 외 서버/DB 오류(ERROR-500, 600, 601) 및 미확인 코드는 PROVIDER_UNAVAILABLE로 닫는다.
 	 */
 	void validateTopisStatus(JsonNode payload) {
 		String code = providerResultCode(payload);
 		if (code == null || code.isBlank()) {
 			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
-		}
-		if (QUOTA_CODES.contains(code)) {
-			throw new RealtimeProviderException("PROVIDER_QUOTA_EXCEEDED");
 		}
 		if (REQUEST_REJECTED_CODES.contains(code)) {
 			throw new RealtimeProviderException("PROVIDER_REQUEST_REJECTED");
