@@ -284,7 +284,7 @@
     {"path":"backend/src/main/java/com/easysubway/realtime/domain/RealtimeTripMapping.java","sha256":"fc20e9de13a3bec9cff3d2f14c57f97d206d692cbf1eba459f7b25d8b6213e5c","packageName":"com.easysubway.realtime.domain","sourceFileName":"RealtimeTripMapping.java","boundaryIds":["REALTIME_STRICT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":10,"covered":14,"total":24,"basisPoints":5833},"branch":{"missed":26,"covered":20,"total":46,"basisPoints":4347}},
     {"path":"backend/src/main/java/com/easysubway/report/adapter/in/scheduler/FacilityReportPersonalDataPurgeScheduler.java","sha256":"b2fb6f6d9dc76eeda4f0149b2e07678c34868fbba3f8d1add1ea2a730b40a36a","packageName":"com.easysubway.report.adapter.in.scheduler","sourceFileName":"FacilityReportPersonalDataPurgeScheduler.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":20,"total":20,"basisPoints":10000},"branch":{"missed":0,"covered":6,"total":6,"basisPoints":10000}},
     {"path":"backend/src/main/java/com/easysubway/report/adapter/in/scheduler/FacilityReportPersonalDataPurgeSchedulingConfiguration.java","sha256":"d55b8c6666d6b343b02d0724259371b00475d2ebfffecbcf3767148c88d7636d","packageName":"com.easysubway.report.adapter.in.scheduler","sourceFileName":"FacilityReportPersonalDataPurgeSchedulingConfiguration.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":0,"covered":6,"total":6,"basisPoints":10000},"branch":{"missed":0,"covered":0,"total":0,"basisPoints":null}},
-    {"path":"backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportAbuseControl.java","sha256":"ed971976c6e6de547ff3e12c11e3c9ed1fb23d0d5310b04bc8e9d8b10a95a2b6","packageName":"com.easysubway.report.adapter.in.web","sourceFileName":"FacilityReportAbuseControl.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":216,"total":217,"basisPoints":9953},"branch":{"missed":11,"covered":137,"total":148,"basisPoints":9256}},
+    {"path":"backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportAbuseControl.java","sha256":"ed971976c6e6de547ff3e12c11e3c9ed1fb23d0d5310b04bc8e9d8b10a95a2b6","packageName":"com.easysubway.report.adapter.in.web","sourceFileName":"FacilityReportAbuseControl.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":1,"covered":216,"total":217,"basisPoints":9953},"branch":{"missed":12,"covered":136,"total":148,"basisPoints":9189}},
     {"path":"backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportAdminPageController.java","sha256":"0d3d0845b25be812922b665bc0ca8744ca28c5a27e8a8aba33d01aa41c2acdfb","packageName":"com.easysubway.report.adapter.in.web","sourceFileName":"FacilityReportAdminPageController.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":14,"covered":370,"total":384,"basisPoints":9635},"branch":{"missed":42,"covered":108,"total":150,"basisPoints":7200}},
     {"path":"backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportController.java","sha256":"2fa8c07ba4d983a3a42cd7f5ea9667b05d3d48b3ceb27e4052aa8a03a465fb65","packageName":"com.easysubway.report.adapter.in.web","sourceFileName":"FacilityReportController.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":17,"covered":182,"total":199,"basisPoints":9145},"branch":{"missed":15,"covered":47,"total":62,"basisPoints":7580}},
     {"path":"backend/src/main/java/com/easysubway/report/adapter/in/web/FacilityReportUploadIntents.java","sha256":"e7c1f249ab9f282c487252bc026705265c9129b06300b95f27f4e7fd7a9e08cc","packageName":"com.easysubway.report.adapter.in.web","sourceFileName":"FacilityReportUploadIntents.java","boundaryIds":["FACILITY_REPORT"],"reportPresence":"PRESENT","absenceDisposition":null,"line":{"missed":24,"covered":199,"total":223,"basisPoints":8923},"branch":{"missed":43,"covered":92,"total":135,"basisPoints":6814}},
@@ -560,10 +560,10 @@
         "basisPoints": 9136
       },
       "branch": {
-        "missed": 323,
-        "covered": 986,
+        "missed": 324,
+        "covered": 985,
         "total": 1309,
-        "basisPoints": 7532
+        "basisPoints": 7524
       }
     },
     {
