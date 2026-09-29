@@ -179,8 +179,17 @@ public class JourneyProductionConfiguration {
 	@Bean
 	@ConditionalOnProperty(name = "easysubway.journey-v3.search-web.enabled", havingValue = "true")
 	@org.springframework.boot.autoconfigure.condition.ConditionalOnMissingBean(com.easysubway.journey.application.FacilityAvailabilityPort.class)
-	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort() {
-		return com.easysubway.journey.application.FacilityAvailabilityPort.unavailable();
+	com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort(
+		org.springframework.beans.factory.ObjectProvider<com.easysubway.transit.application.port.out.LoadTransitMasterPort> loadTransitMasterPortProvider,
+		org.springframework.beans.factory.ObjectProvider<RouteBundleActivationRegistry> registryProvider,
+		org.springframework.beans.factory.ObjectProvider<io.micrometer.core.instrument.MeterRegistry> meterRegistryProvider
+	) {
+		return new com.easysubway.journey.application.FacilityStatusOverlayProvider(
+			loadTransitMasterPortProvider.getIfAvailable(),
+			registryProvider.getIfAvailable(),
+			CLOCK,
+			meterRegistryProvider.getIfAvailable()
+		);
 	}
 
 	@Bean
@@ -188,7 +197,7 @@ public class JourneyProductionConfiguration {
 	JourneyRaptorPort journeyRaptorPort(
 		ScanWorkspacePool workspacePool,
 		com.easysubway.journey.application.FacilityAvailabilityPort facilityAvailabilityPort,
-		@Value("${easysubway.journey.facility-status.required:false}") boolean facilityStatusRequired
+		@Value("${easysubway.journey.facility-status.required:true}") boolean facilityStatusRequired
 	) {
 		return new JourneyRaptorAdapter(workspacePool, facilityAvailabilityPort, facilityStatusRequired, CLOCK);
 	}

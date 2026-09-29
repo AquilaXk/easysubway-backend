@@ -13,16 +13,21 @@ public final class RaptorRouteBundleRuntimeView implements RouteBundleRuntimeVie
 	private final String routeBundleSha256;
 	private final long generation;
 	private final RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable;
+	private final com.easysubway.journey.bundle.TransitionFacilityRequirements facilityRequirements;
 
 	private RaptorRouteBundleRuntimeView(
 		String routeBundleSha256,
 		long generation,
-		RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable
+		RouteTimetableRaptorPlanner.CompiledTimetable compiledTimetable,
+		com.easysubway.journey.bundle.TransitionFacilityRequirements facilityRequirements
 	) {
 		this.routeBundleSha256 = requireSha256(routeBundleSha256);
 		if (generation < 1) throw new IllegalArgumentException("generation must be positive");
 		this.generation = generation;
 		this.compiledTimetable = Objects.requireNonNull(compiledTimetable, "compiledTimetable");
+		this.facilityRequirements = facilityRequirements != null
+			? facilityRequirements
+			: com.easysubway.journey.bundle.TransitionFacilityRequirements.missing();
 	}
 
 	public static RaptorRouteBundleRuntimeView compile(
@@ -30,11 +35,25 @@ public final class RaptorRouteBundleRuntimeView implements RouteBundleRuntimeVie
 		long generation,
 		RouteTimetable timetable
 	) {
+		return compile(routeBundleSha256, generation, timetable, com.easysubway.journey.bundle.TransitionFacilityRequirements.missing());
+	}
+
+	public static RaptorRouteBundleRuntimeView compile(
+		String routeBundleSha256,
+		long generation,
+		RouteTimetable timetable,
+		com.easysubway.journey.bundle.TransitionFacilityRequirements facilityRequirements
+	) {
 		return new RaptorRouteBundleRuntimeView(
 			routeBundleSha256,
 			generation,
-			new RouteTimetableRaptorPlanner().compile(Objects.requireNonNull(timetable, "timetable"))
+			new RouteTimetableRaptorPlanner().compile(Objects.requireNonNull(timetable, "timetable")),
+			facilityRequirements
 		);
+	}
+
+	public com.easysubway.journey.bundle.TransitionFacilityRequirements facilityRequirements() {
+		return facilityRequirements;
 	}
 
 	@Override
