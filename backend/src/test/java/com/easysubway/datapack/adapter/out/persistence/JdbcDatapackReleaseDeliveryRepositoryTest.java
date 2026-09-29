@@ -182,6 +182,23 @@ class JdbcDatapackReleaseDeliveryRepositoryTest {
 			.isEqualTo(DatapackReleaseDelivery.State.PENDING);
 	}
 
+	@Test
+	@DisplayName("claim한 worker의 완료 갱신은 상태를 바꾸고 claim을 해제한다")
+	void claimOwnerCompletesDeliveryAndReleasesClaim() {
+		repository.upsertSameDelivery(pending(SHA));
+		assertThat(repository.claimDue(T0, "worker-a", 100)).hasSize(1);
+
+		repository.markClaimed(pending(SHA).idempotencyKey(), "worker-a", DatapackReleaseDelivery.State.DELIVERED,
+			1, null, "RECONCILED", null, T0.plusMinutes(1));
+
+		var delivered = repository.findByIdempotencyKey(pending(SHA).idempotencyKey()).orElseThrow();
+		assertThat(delivered.state()).isEqualTo(DatapackReleaseDelivery.State.DELIVERED);
+		assertThat(delivered.attempts()).isEqualTo(1);
+		assertThat(delivered.httpClass()).isEqualTo("RECONCILED");
+		assertThat(delivered.claimOwner()).isNull();
+		assertThat(delivered.claimedAt()).isNull();
+	}
+
 	private static DatapackReleaseDelivery pending(String manifestSha256) {
 		return pending(manifestSha256, "c".repeat(64), "d".repeat(64));
 	}
