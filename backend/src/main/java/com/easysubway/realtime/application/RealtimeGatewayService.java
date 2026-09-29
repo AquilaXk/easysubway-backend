@@ -830,7 +830,8 @@ public class RealtimeGatewayService {
 				ratio(unsupportedResultCount.get(), results),
 				calls == 0 ? 0 : providerLatencyMsTotal.get() / calls,
 				providerAuthRejectedCount.get(),
-				providerRequestRejectedCount.get()
+				providerRequestRejectedCount.get(),
+				0L
 			);
 		}
 

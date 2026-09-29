@@ -1255,6 +1255,93 @@ class RealtimeGatewayServiceTest {
 	}
 
 	@Test
+	@DisplayName("이전에 반환된 시각보다 이른 열차 위치 이벤트는 결과에서 폐기되고 전부 폐기되면 unavailable로 닫는다")
+	void trainPositionOlderThanPreviouslyServedIsDropped() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		RealtimeTrainPositionResult first = service.trainPositions(line4Query());
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(first.trainPositions()).hasSize(1);
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"
+		));
+		RealtimeTrainPositionResult second = service.trainPositions(line4Query());
+		assertThat(second.status()).hasToString("UNAVAILABLE");
+		assertThat(second.fallbackCode()).isEqualTo("PROVIDER_ERROR");
+		assertThat(second.trainPositions()).isEmpty();
+	}
+
+	@Test
+	@DisplayName("이전에 반환된 시각과 동일한 열차 위치 이벤트는 유지된다")
+	void trainPositionWithSameReceivedAtIsKept() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		RealtimeTrainPositionResult first = service.trainPositions(line4Query());
+		assertThat(first.status()).hasToString("FRESH");
+		assertThat(first.trainPositions()).hasSize(1);
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		RealtimeTrainPositionResult second = service.trainPositions(line4Query());
+		assertThat(second.status()).hasToString("FRESH");
+		assertThat(second.trainPositions()).hasSize(1);
+	}
+
+	@Test
+	@DisplayName("한 응답 안에서 동일 열차 키가 중복될 경우 가장 늦은 providerReceivedAt 1건만 유지한다")
+	void duplicateTrainInOneResponseKeepsLatest() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(
+			new RealtimeTrainPosition("4", "한대앞", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"),
+			new RealtimeTrainPosition("4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z")
+		);
+		RealtimeTrainPositionResult result = service.trainPositions(line4Query());
+		assertThat(result.status()).hasToString("FRESH");
+		assertThat(result.trainPositions()).hasSize(1);
+		assertThat(result.trainPositions().getFirst().stationName()).isEqualTo("상록수");
+		assertThat(result.trainPositions().getFirst().providerReceivedAt()).isEqualTo("2026-06-26T08:00:50Z");
+	}
+
+	@Test
+	@DisplayName("역전 폐기된 열차 위치 건수는 provider health snapshot의 outOfOrderPositionDropCount로 계측된다")
+	void outOfOrderDropsAreCountedInHealthSnapshot() {
+		MutableClock clock = new MutableClock(Instant.parse("2026-06-26T08:01:00Z"));
+		CountingProvider provider = new CountingProvider();
+		RealtimeGatewayService service = serviceWithAlwaysAvailableQuota(provider, clock);
+
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:50Z"
+		));
+		service.trainPositions(line4Query());
+
+		clock.instant = Instant.parse("2026-06-26T08:01:25Z");
+		provider.trainPositionsResponse = List.of(new RealtimeTrainPosition(
+			"4", "상록수", "3101", "운행중", "상행", "당고개", "2026-06-26T08:00:40Z"
+		));
+		service.trainPositions(line4Query());
+
+		RealtimeProviderHealthSnapshot snapshot = service.providerHealthSnapshot();
+		assertThat(snapshot.outOfOrderPositionDropCount()).isEqualTo(1);
+	}
+
+	@Test
 	@DisplayName("TOPIS provider는 backend service key가 없으면 unavailable로 낮춘다")
 	void topisProviderWithoutBackendServiceKeyIsUnavailableByDefault() {
 		TimeoutHttpClient httpClient = new TimeoutHttpClient();
@@ -1680,6 +1767,7 @@ class RealtimeGatewayServiceTest {
 		private String failureCode;
 		private boolean emptyArrivals;
 		private String providerReceivedAt = "2026-06-26T08:00:00Z";
+		private List<RealtimeTrainPosition> trainPositionsResponse;
 
 		@Override
 		public List<RealtimeArrival> arrivals(RealtimeQuery query) {
@@ -1708,6 +1796,9 @@ class RealtimeGatewayServiceTest {
 			trainPositionCalls.incrementAndGet();
 			if (failureCode != null) {
 				throw new RealtimeProviderException(failureCode);
+			}
+			if (trainPositionsResponse != null) {
+				return trainPositionsResponse;
 			}
 			return List.of(new RealtimeTrainPosition(
 				"4",
