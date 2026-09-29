@@ -17,6 +17,7 @@ import java.nio.charset.StandardCharsets;
 import java.time.Duration;
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Set;
 import java.util.regex.Pattern;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -32,6 +33,16 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	private static final Duration REQUEST_TIMEOUT = Duration.ofMillis(1500);
 	private static final int MAX_RESPONSE_BYTES = 1_048_576;
 	private static final Pattern ETA_PATTERN = Pattern.compile("(\\d+)\\s*분(?:\\s*(\\d+)\\s*초)?|(\\d+)\\s*초");
+
+	/**
+	 * 서울 열린데이터광장(data.seoul.go.kr) 실시간 지하철 OpenAPI 공통 오류코드 명세 (2026-09-29 확인)
+	 * https://data.seoul.go.kr
+	 */
+	private static final Set<String> QUOTA_CODES = Set.of("ERROR-336", "ERROR-337");
+	private static final Set<String> REQUEST_REJECTED_CODES = Set.of(
+		"ERROR-300", "ERROR-301", "ERROR-310",
+		"ERROR-331", "ERROR-332", "ERROR-333", "ERROR-334", "ERROR-335"
+	);
 
 	private final String serviceKey;
 	private final ObjectMapper objectMapper;
@@ -192,15 +203,33 @@ final class TopisRealtimeProvider implements RealtimeProvider {
 	}
 
 	/**
-	 * INFO-000(정상)과 INFO-200(해당 데이터 없음)만 받아들인다. 결과 코드가 아예 없는 응답은 envelope가 빠진
-	 * 비정상 응답으로 보고 목록 형태와 상관없이 원천 불가로 닫는다.
+	 * 서울 열린데이터광장(data.seoul.go.kr) 실시간 지하철 OpenAPI 공통 오류코드 명세 (2026-09-29 확인)
+	 * https://data.seoul.go.kr
+	 *
+	 * INFO-000(정상)과 INFO-200(해당 데이터 없음)만 통과한다.
+	 * INFO-100(인증키 오류)은 PROVIDER_AUTH_REJECTED로 분류한다.
+	 * REQUEST_REJECTED_CODES는 요청 쪽 오류이므로 PROVIDER_REQUEST_REJECTED로 분류한다.
+	 * QUOTA_CODES는 트래픽/요청 건수 한도 초과이므로 PROVIDER_QUOTA_EXCEEDED로 분류한다.
+	 * 그 외 서버/DB 오류(ERROR-500, 600, 601) 및 미확인 코드는 PROVIDER_UNAVAILABLE로 닫는다.
 	 */
 	void validateTopisStatus(JsonNode payload) {
 		String code = providerResultCode(payload);
-		if ("INFO-000".equals(code) || "INFO-200".equals(code)) {
-			return;
+		if (code == null || code.isBlank()) {
+			throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
 		}
-		throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+		if (QUOTA_CODES.contains(code)) {
+			throw new RealtimeProviderException("PROVIDER_QUOTA_EXCEEDED");
+		}
+		if (REQUEST_REJECTED_CODES.contains(code)) {
+			throw new RealtimeProviderException("PROVIDER_REQUEST_REJECTED");
+		}
+		switch (code) {
+			case "INFO-000", "INFO-200" -> {
+			}
+			case "INFO-100" -> throw new RealtimeProviderException("PROVIDER_AUTH_REJECTED");
+			case "ERROR-500", "ERROR-600", "ERROR-601" -> throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+			default -> throw new RealtimeProviderException("PROVIDER_UNAVAILABLE");
+		}
 	}
 
 	private String pathSegment(String value) {

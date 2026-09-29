@@ -1239,7 +1239,7 @@ class RealtimeGatewayServiceTest {
 		provider.failureCode = "PROVIDER_AUTH_REJECTED";
 		service.arrivals(sangnoksuQuery());
 
-		clock.instant = clock.instant.plusSeconds(10);
+		clock.instant = Instant.parse("2026-06-26T08:01:01Z");
 		provider.failureCode = "PROVIDER_REQUEST_REJECTED";
 		service.trainPositions(line4Query());
 
